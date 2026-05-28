@@ -528,7 +528,9 @@ public class TypeFetcherGenerator {
         // Emit per-bean instantiation helpers (createBean / createBeans) for any InputBean
         // extraction on method-backed fields. Dedup by bean class — nested beans are collected
         // transitively so a single bean class always emits exactly one pair of helpers per
-        // *Fetchers class, regardless of how many distinct service methods reach it.
+        // *Fetchers class, regardless of how many distinct service methods reach it. R238 added
+        // a sibling walk over ServiceField permits whose carrier holds the equivalent
+        // RecordInput / JavaBeanInput shapes; both walks feed the same dedup map.
         var beanHelpers = new java.util.LinkedHashMap<no.sikt.graphitron.javapoet.ClassName,
             CallSiteExtraction.InputBean>();
         fields.stream()
@@ -538,6 +540,12 @@ public class TypeFetcherGenerator {
             .filter(p -> p.extraction() instanceof CallSiteExtraction.InputBean)
             .map(p -> (CallSiteExtraction.InputBean) p.extraction())
             .forEach(ib -> InputBeanInstantiationEmitter.collectTransitively(ib, beanHelpers));
+        // R238: walk the four service permits' carriers for composite ValueShape arms.
+        for (var field : fields) {
+            if (field instanceof no.sikt.graphitron.rewrite.model.ServiceField sf) {
+                collectBeanHelpersFromCarrier(sf.serviceMethodCall(), beanHelpers);
+            }
+        }
         for (var ib : beanHelpers.values()) {
             builder.addMethod(InputBeanInstantiationEmitter.buildSingularHelper(ib));
             builder.addMethod(InputBeanInstantiationEmitter.buildPluralHelper(ib,
@@ -1488,6 +1496,114 @@ public class TypeFetcherGenerator {
         b.addStatement("    .build()");
         b.endControlFlow();
         return b.build();
+    }
+
+    /**
+     * Walks a {@link ServiceMethodCall} carrier and projects every {@link
+     * no.sikt.graphitron.rewrite.model.ValueShape.RecordInput} /
+     * {@link no.sikt.graphitron.rewrite.model.ValueShape.JavaBeanInput} (including transitively
+     * via {@link no.sikt.graphitron.rewrite.model.ValueShape.ListOf} and nested
+     * {@link no.sikt.graphitron.rewrite.model.ValueShape.FieldBinding}s) into the helper-queue
+     * map as a synthetic {@link CallSiteExtraction.InputBean}. The synthetic carries the
+     * structural detail {@link InputBeanInstantiationEmitter} needs (bean class, target, field
+     * bindings); these mirror what {@link CallSiteExtraction.InputBean} carries today for the
+     * legacy MethodBackedField walk, so both arms dedup on the same {@code ClassName} key.
+     */
+    private static void collectBeanHelpersFromCarrier(
+            ServiceMethodCall carrier,
+            java.util.Map<no.sikt.graphitron.javapoet.ClassName, CallSiteExtraction.InputBean> out) {
+        if (carrier instanceof ServiceMethodCall.Instance inst) {
+            for (var e : inst.ctorArgs()) collectFromMappingEntry(e, out);
+        }
+        for (var e : carrier.methodArgs()) collectFromMappingEntry(e, out);
+    }
+
+    private static void collectFromMappingEntry(
+            no.sikt.graphitron.rewrite.model.MappingEntry entry,
+            java.util.Map<no.sikt.graphitron.javapoet.ClassName, CallSiteExtraction.InputBean> out) {
+        if (entry instanceof no.sikt.graphitron.rewrite.model.MappingEntry.FromArg fromArg) {
+            collectFromValueShape(fromArg.shape(), out);
+        }
+    }
+
+    private static void collectFromValueShape(
+            no.sikt.graphitron.rewrite.model.ValueShape shape,
+            java.util.Map<no.sikt.graphitron.javapoet.ClassName, CallSiteExtraction.InputBean> out) {
+        switch (shape) {
+            case no.sikt.graphitron.rewrite.model.ValueShape.Scalar ignored -> { /* leaf */ }
+            case no.sikt.graphitron.rewrite.model.ValueShape.ListOf l -> collectFromValueShape(l.elementShape(), out);
+            case no.sikt.graphitron.rewrite.model.ValueShape.RecordInput rec ->
+                registerBeanHelper(rec.javaClass(), CallSiteExtraction.InputBean.Target.RECORD, rec.fields(), out);
+            case no.sikt.graphitron.rewrite.model.ValueShape.JavaBeanInput jb ->
+                registerBeanHelper(jb.javaClass(), CallSiteExtraction.InputBean.Target.JAVA_BEAN, jb.fields(), out);
+        }
+    }
+
+    private static void registerBeanHelper(
+            no.sikt.graphitron.javapoet.ClassName beanClass,
+            CallSiteExtraction.InputBean.Target target,
+            List<no.sikt.graphitron.rewrite.model.ValueShape.FieldBinding> vsFields,
+            java.util.Map<no.sikt.graphitron.javapoet.ClassName, CallSiteExtraction.InputBean> out) {
+        if (out.containsKey(beanClass)) return;
+        var fieldBindings = new java.util.ArrayList<CallSiteExtraction.FieldBinding>(vsFields.size());
+        for (var vfb : vsFields) {
+            var leafCarrier = leafForFieldBinding(vfb.shape());
+            boolean isList = vfb.shape() instanceof no.sikt.graphitron.rewrite.model.ValueShape.ListOf;
+            var inner = isList
+                ? ((no.sikt.graphitron.rewrite.model.ValueShape.ListOf) vfb.shape()).elementShape()
+                : vfb.shape();
+            String javaElementTypeName = innerElementTypeNameOf(inner);
+            fieldBindings.add(new CallSiteExtraction.FieldBinding(
+                vfb.sdlFieldName(), vfb.javaFieldName(), leafCarrier, isList, javaElementTypeName));
+        }
+        var ib = new CallSiteExtraction.InputBean(beanClass, target, fieldBindings);
+        out.put(beanClass, ib);
+        // Recurse so nested beans register their own helper.
+        for (var vfb : vsFields) {
+            collectFromValueShape(vfb.shape(), out);
+        }
+    }
+
+    /** Returns the per-field leaf extraction the InputBean helper uses to expand each field. */
+    private static CallSiteExtraction leafForFieldBinding(no.sikt.graphitron.rewrite.model.ValueShape shape) {
+        return switch (shape) {
+            case no.sikt.graphitron.rewrite.model.ValueShape.Scalar s -> s.leafTransform();
+            case no.sikt.graphitron.rewrite.model.ValueShape.ListOf l ->
+                l.elementShape() instanceof no.sikt.graphitron.rewrite.model.ValueShape.Scalar ls
+                    ? ls.leafTransform() : leafForFieldBinding(l.elementShape());
+            case no.sikt.graphitron.rewrite.model.ValueShape.RecordInput rec ->
+                new CallSiteExtraction.InputBean(rec.javaClass(),
+                    CallSiteExtraction.InputBean.Target.RECORD,
+                    convertNestedFieldBindings(rec.fields()));
+            case no.sikt.graphitron.rewrite.model.ValueShape.JavaBeanInput jb ->
+                new CallSiteExtraction.InputBean(jb.javaClass(),
+                    CallSiteExtraction.InputBean.Target.JAVA_BEAN,
+                    convertNestedFieldBindings(jb.fields()));
+        };
+    }
+
+    private static List<CallSiteExtraction.FieldBinding> convertNestedFieldBindings(
+            List<no.sikt.graphitron.rewrite.model.ValueShape.FieldBinding> vsFields) {
+        var out = new java.util.ArrayList<CallSiteExtraction.FieldBinding>(vsFields.size());
+        for (var vfb : vsFields) {
+            boolean isList = vfb.shape() instanceof no.sikt.graphitron.rewrite.model.ValueShape.ListOf;
+            var inner = isList
+                ? ((no.sikt.graphitron.rewrite.model.ValueShape.ListOf) vfb.shape()).elementShape()
+                : vfb.shape();
+            out.add(new CallSiteExtraction.FieldBinding(
+                vfb.sdlFieldName(), vfb.javaFieldName(),
+                leafForFieldBinding(vfb.shape()), isList, innerElementTypeNameOf(inner)));
+        }
+        return out;
+    }
+
+    private static String innerElementTypeNameOf(no.sikt.graphitron.rewrite.model.ValueShape shape) {
+        return switch (shape) {
+            case no.sikt.graphitron.rewrite.model.ValueShape.Scalar s -> s.javaType().toString();
+            case no.sikt.graphitron.rewrite.model.ValueShape.ListOf l -> innerElementTypeNameOf(l.elementShape());
+            case no.sikt.graphitron.rewrite.model.ValueShape.RecordInput r -> r.javaClass().toString();
+            case no.sikt.graphitron.rewrite.model.ValueShape.JavaBeanInput jb -> jb.javaClass().toString();
+        };
     }
 
     /**

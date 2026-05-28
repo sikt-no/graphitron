@@ -6394,8 +6394,8 @@ class GraphitronSchemaBuilderTest {
             schema -> {
                 assertThat(schema.field("Query", "externalFilm")).isInstanceOf(QueryField.QueryServiceTableField.class);
                 var f = (QueryField.QueryServiceTableField) schema.field("Query", "externalFilm");
-                assertThat(f.method().className()).isEqualTo("no.sikt.graphitron.rewrite.TestServiceStub");
-                assertThat(f.method().methodName()).isEqualTo("getFilm");
+                assertThat(f.serviceMethodCall().fqClassName()).isEqualTo("no.sikt.graphitron.rewrite.TestServiceStub");
+                assertThat(f.serviceMethodCall().methodName()).isEqualTo("getFilm");
             }) {
             @Override public Set<Class<?>> variants() { return Set.of(QueryField.QueryServiceTableField.class); }
         },
@@ -6583,17 +6583,18 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> {
                 var f = (MutationField.MutationServiceRecordField) schema.field("Mutation", "runWithEnumOverride");
-                var p = f.method().params().get(0);
-                assertThat(p.name()).isEqualTo("mode");
-                assertThat(((no.sikt.graphitron.rewrite.model.ParamSource.Arg) p.source()).graphqlArgName())
-                    .isEqualTo("direction");
-                var extraction = ((no.sikt.graphitron.rewrite.model.ParamSource.Arg) p.source()).extraction();
+                var entry = (no.sikt.graphitron.rewrite.model.MappingEntry.FromArg)
+                    f.serviceMethodCall().methodArgs().get(0);
+                assertThat(entry.javaName()).isEqualTo("mode");
+                var scalar = (no.sikt.graphitron.rewrite.model.ValueShape.Scalar) entry.shape();
+                assertThat(scalar.sdlPath().outerArgName()).isEqualTo("direction");
                 // R229: the schema emit registers .value("asc") / .value("desc") on the
                 // GraphQLEnumValueDefinition, so graphql-java hands the runtime form directly to
                 // env.getArgument(...). The Java method receives the DB string already; no map
                 // lookup needed. Pre-R229 this arm asserted TextMapLookup with mapping
                 // {ASC→"asc", DESC→"desc"} keyed on RUNWITHENUMOVERRIDE_DIRECTION_MAP.
-                assertThat(extraction).isInstanceOf(no.sikt.graphitron.rewrite.model.CallSiteExtraction.Direct.class);
+                assertThat(scalar.leafTransform())
+                    .isInstanceOf(no.sikt.graphitron.rewrite.model.CallSiteExtraction.Direct.class);
             }) {
             @Override public Set<Class<?>> variants() { return Set.of(MutationField.MutationServiceRecordField.class); }
         },
@@ -6614,15 +6615,18 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> {
                 var f = (MutationField.MutationServiceRecordField) schema.field("Mutation", "runWithRenamedInputs");
-                var firstParam = f.method().params().get(0);
-                assertThat(firstParam.name()).isEqualTo("inputs");
-                assertThat(firstParam.source()).isInstanceOf(no.sikt.graphitron.rewrite.model.ParamSource.Arg.class);
-                assertThat(((no.sikt.graphitron.rewrite.model.ParamSource.Arg) firstParam.source()).graphqlArgName())
-                    .isEqualTo("input");
-                var secondParam = f.method().params().get(1);
-                assertThat(secondParam.name()).isEqualTo("dryRun");
-                assertThat(((no.sikt.graphitron.rewrite.model.ParamSource.Arg) secondParam.source()).graphqlArgName())
-                    .isEqualTo("dryRun");
+                var firstEntry = (no.sikt.graphitron.rewrite.model.MappingEntry.FromArg)
+                    f.serviceMethodCall().methodArgs().get(0);
+                assertThat(firstEntry.javaName()).isEqualTo("inputs");
+                // The renamed SDL arg "input" sits at the outer path; ListOf wraps the bean since
+                // the SDL type is [TestDtoStub!]!.
+                var firstList = (no.sikt.graphitron.rewrite.model.ValueShape.ListOf) firstEntry.shape();
+                assertThat(firstList.sdlPath().outerArgName()).isEqualTo("input");
+                var secondEntry = (no.sikt.graphitron.rewrite.model.MappingEntry.FromArg)
+                    f.serviceMethodCall().methodArgs().get(1);
+                assertThat(secondEntry.javaName()).isEqualTo("dryRun");
+                var secondScalar = (no.sikt.graphitron.rewrite.model.ValueShape.Scalar) secondEntry.shape();
+                assertThat(secondScalar.sdlPath().outerArgName()).isEqualTo("dryRun");
             }) {
             @Override public Set<Class<?>> variants() { return Set.of(MutationField.MutationServiceRecordField.class); }
         },
@@ -6644,24 +6648,21 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> {
                 var f = (MutationField.MutationServiceRecordField) schema.field("Mutation", "runWithInputBean");
-                var p0 = f.method().params().get(0);
-                assertThat(p0.source()).isInstanceOf(no.sikt.graphitron.rewrite.model.ParamSource.Arg.class);
-                var extraction = ((no.sikt.graphitron.rewrite.model.ParamSource.Arg) p0.source()).extraction();
-                assertThat(extraction).isInstanceOf(no.sikt.graphitron.rewrite.model.CallSiteExtraction.InputBean.class);
-                var ib = (no.sikt.graphitron.rewrite.model.CallSiteExtraction.InputBean) extraction;
-                assertThat(ib.beanClass().simpleName()).isEqualTo("TestInputBean");
-                assertThat(ib.target())
-                    .isEqualTo(no.sikt.graphitron.rewrite.model.CallSiteExtraction.InputBean.Target.RECORD);
+                var entry = (no.sikt.graphitron.rewrite.model.MappingEntry.FromArg)
+                    f.serviceMethodCall().methodArgs().get(0);
+                var rec = (no.sikt.graphitron.rewrite.model.ValueShape.RecordInput) entry.shape();
+                assertThat(rec.javaClass().simpleName()).isEqualTo("TestInputBean");
                 // Bindings cover all three SDL fields, in record component order.
-                assertThat(ib.fields()).extracting(no.sikt.graphitron.rewrite.model.CallSiteExtraction.FieldBinding::sdlFieldName)
+                assertThat(rec.fields()).extracting(no.sikt.graphitron.rewrite.model.ValueShape.FieldBinding::sdlFieldName)
                     .containsExactly("title", "rating", "nested");
                 // Enum leaf — EnumValueOf for the rating field.
-                assertThat(ib.fields().get(1).leaf())
+                var ratingScalar = (no.sikt.graphitron.rewrite.model.ValueShape.Scalar) rec.fields().get(1).shape();
+                assertThat(ratingScalar.leafTransform())
                     .isInstanceOf(no.sikt.graphitron.rewrite.model.CallSiteExtraction.EnumValueOf.class);
-                // Nested-bean leaf — recursive InputBean for the nested list.
-                assertThat(ib.fields().get(2).leaf())
-                    .isInstanceOf(no.sikt.graphitron.rewrite.model.CallSiteExtraction.InputBean.class);
-                assertThat(ib.fields().get(2).list()).isTrue();
+                // Nested-bean leaf — recursive RecordInput inside ListOf for the nested list.
+                var nestedList = (no.sikt.graphitron.rewrite.model.ValueShape.ListOf) rec.fields().get(2).shape();
+                assertThat(nestedList.elementShape())
+                    .isInstanceOf(no.sikt.graphitron.rewrite.model.ValueShape.RecordInput.class);
             }) {
             @Override public Set<Class<?>> variants() { return Set.of(MutationField.MutationServiceRecordField.class); }
         },
@@ -6681,12 +6682,12 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> {
                 var f = (MutationField.MutationServiceRecordField) schema.field("Mutation", "runWithInputBeans");
-                var p0 = f.method().params().get(0);
-                assertThat(p0.typeName()).startsWith("java.util.List<");
-                var extraction = ((no.sikt.graphitron.rewrite.model.ParamSource.Arg) p0.source()).extraction();
-                assertThat(extraction).isInstanceOf(no.sikt.graphitron.rewrite.model.CallSiteExtraction.InputBean.class);
-                assertThat(((no.sikt.graphitron.rewrite.model.CallSiteExtraction.InputBean) extraction)
-                    .beanClass().simpleName()).isEqualTo("TestInputBean");
+                var entry = (no.sikt.graphitron.rewrite.model.MappingEntry.FromArg)
+                    f.serviceMethodCall().methodArgs().get(0);
+                var listOf = (no.sikt.graphitron.rewrite.model.ValueShape.ListOf) entry.shape();
+                assertThat(listOf.javaType().toString()).startsWith("java.util.List<");
+                var elt = (no.sikt.graphitron.rewrite.model.ValueShape.RecordInput) listOf.elementShape();
+                assertThat(elt.javaClass().simpleName()).isEqualTo("TestInputBean");
             }) {
             @Override public Set<Class<?>> variants() { return Set.of(MutationField.MutationServiceRecordField.class); }
         },
@@ -6706,16 +6707,15 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> {
                 var f = (MutationField.MutationServiceRecordField) schema.field("Mutation", "runWithInputBeanPrimitive");
-                var p0 = f.method().params().get(0);
-                var extraction = ((no.sikt.graphitron.rewrite.model.ParamSource.Arg) p0.source()).extraction();
-                var ib = (no.sikt.graphitron.rewrite.model.CallSiteExtraction.InputBean) extraction;
-                assertThat(ib.target())
-                    .isEqualTo(no.sikt.graphitron.rewrite.model.CallSiteExtraction.InputBean.Target.RECORD);
-                var nField = ib.fields().stream()
+                var entry = (no.sikt.graphitron.rewrite.model.MappingEntry.FromArg)
+                    f.serviceMethodCall().methodArgs().get(0);
+                var rec = (no.sikt.graphitron.rewrite.model.ValueShape.RecordInput) entry.shape();
+                var nField = rec.fields().stream()
                     .filter(fb -> fb.sdlFieldName().equals("n")).findFirst().orElseThrow();
-                assertThat(nField.leaf()).isInstanceOf(no.sikt.graphitron.rewrite.model.CallSiteExtraction.Direct.class);
-                assertThat(nField.list()).isFalse();
-                assertThat(nField.javaElementTypeName())
+                var nScalar = (no.sikt.graphitron.rewrite.model.ValueShape.Scalar) nField.shape();
+                assertThat(nScalar.leafTransform())
+                    .isInstanceOf(no.sikt.graphitron.rewrite.model.CallSiteExtraction.Direct.class);
+                assertThat(nScalar.javaType().toString())
                     .as("primitive int component must box to java.lang.Integer so ClassName.bestGuess succeeds")
                     .isEqualTo("java.lang.Integer");
             }) {
@@ -6735,16 +6735,15 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> {
                 var f = (MutationField.MutationServiceRecordField) schema.field("Mutation", "runWithInputJavaBeanBoolean");
-                var p0 = f.method().params().get(0);
-                var extraction = ((no.sikt.graphitron.rewrite.model.ParamSource.Arg) p0.source()).extraction();
-                var ib = (no.sikt.graphitron.rewrite.model.CallSiteExtraction.InputBean) extraction;
-                assertThat(ib.target())
-                    .isEqualTo(no.sikt.graphitron.rewrite.model.CallSiteExtraction.InputBean.Target.JAVA_BEAN);
-                var activeField = ib.fields().stream()
+                var entry = (no.sikt.graphitron.rewrite.model.MappingEntry.FromArg)
+                    f.serviceMethodCall().methodArgs().get(0);
+                var javaBean = (no.sikt.graphitron.rewrite.model.ValueShape.JavaBeanInput) entry.shape();
+                var activeField = javaBean.fields().stream()
                     .filter(fb -> fb.sdlFieldName().equals("active")).findFirst().orElseThrow();
-                assertThat(activeField.leaf()).isInstanceOf(no.sikt.graphitron.rewrite.model.CallSiteExtraction.Direct.class);
-                assertThat(activeField.list()).isFalse();
-                assertThat(activeField.javaElementTypeName())
+                var activeScalar = (no.sikt.graphitron.rewrite.model.ValueShape.Scalar) activeField.shape();
+                assertThat(activeScalar.leafTransform())
+                    .isInstanceOf(no.sikt.graphitron.rewrite.model.CallSiteExtraction.Direct.class);
+                assertThat(activeScalar.javaType().toString())
                     .as("primitive boolean setter must box to java.lang.Boolean so ClassName.bestGuess succeeds")
                     .isEqualTo("java.lang.Boolean");
             }) {

@@ -180,7 +180,6 @@ class MappingsConstantNameDedupTest {
             fieldName,
             null,
             new ReturnTypeRef.ResultReturnType("Payload", new FieldWrapper.Single(true), payloadFqn),
-            method,
             TestFixtures.stubServiceCall(method),
             channel);
     }
