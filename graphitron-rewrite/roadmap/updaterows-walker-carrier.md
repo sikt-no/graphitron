@@ -188,8 +188,9 @@ Walker stages (one pass per UPDATE field that survived the pre-checks):
 2. **Classify each input field.** For each `GraphQLInputObjectField` on the input type, call a shared classifier subroutine that returns one of:
 
    * A **column-bearing admittance** (`ColumnBinding`, `CompositeColumnBinding`, `ColumnReference`, `CompositeColumnReference`) — each carrying SDL field name + target column(s) + extraction. Feeds stages 3-7.
-   * A **non-contributing admittance** for `UnboundField` with `condition().isPresent() && condition().get().override() == true`. R215's shipped UPDATE shape: the field has no column binding, but its explicit `@condition(override: true)` emits a WHERE predicate orthogonal to the column-driven partition (see `MutationInputResolver.java:482-497` for the today-side rule). The walker admits the field with no contribution — no `SetColumn`, no `KeyColumn`, no entry in the input-covered column set — and the existing arg-condition machinery (`walkInputFieldConditions` → `ConditionFilter`) emits the predicate unchanged. The two predicate sources AND together in the emitter; see § Consumer migration.
-   * A **typed admissibility rejection** (`Structural.UnsupportedInputFieldShape`) for `NestingField`, `UnboundField` *without* `@condition(override: true)` (i.e. no `@condition` at all, or `@condition(override: false)`), or any other non-admitted carrier shape per R130's admitted-carrier set.
+   * A **typed admissibility rejection** (`Structural.UnsupportedInputFieldShape`) for `NestingField` or any non-admitted carrier shape per R130's admitted-carrier set.
+   * A **typed override-condition rejection** (`Structural.OverrideConditionNotSupported`) for `UnboundField` with `condition().isPresent() && condition().get().override() == true`. R215's classifier admits this shape today, but R215 explicitly deferred the emit-side wiring (changelog: "no emitter consumes a `MutationField` projection yet"), so the override-condition's `@condition` method is silently dropped at emit time — the filter the author wrote never runs. R246 makes the deferral honest: the walker rejects the shape with a typed arm naming the field and the offending directive's source location. A separate roadmap item can re-admit the shape once an `overrideConditions` slot and emit-side wiring land alongside.
+   * A **typed admissibility rejection** (`Structural.UnsupportedInputFieldShape`) for any other `UnboundField` (no `@condition` at all, or `@condition(override: false)`) — these are R215's "field has no column binding and no override condition" case, which already rejects today.
 
    Collect rejections across the loop — do not short-circuit, so the LSP surfaces every per-field issue at once.
 
@@ -224,12 +225,9 @@ public final class UpdateRowsEmitter {
 }
 ```
 
-The single-row arm produces today's `UPDATE … SET … WHERE …` shape; the bulk arm produces the `UPDATE t SET c = v.c FROM (VALUES …) AS v(k, c…) WHERE t.k = v.k` shape. The SET map walks `updateRows.setColumns()`; decode locals (for NodeId-bound key columns) project `updateRows.keyColumns()` into `InputColumnBindingGroup` at the call site (grouping by `sdlFieldName`, one decode local per group) and feed the existing `emitLookupKeyDecodeLocals` helper. The projection is a one-line mechanical reshape; the carrier deliberately doesn't bake the `InputColumnBindingGroup` shape into the slot, keeping the carrier focused on UPDATE's semantic partition and leaving emit detail at the emit-time layer.
+The single-row arm produces today's `UPDATE … SET … WHERE …` shape; the bulk arm produces the `UPDATE t SET c = v.c FROM (VALUES …) AS v(k, c…) WHERE t.k = v.k` shape. The WHERE clause is the matched-key equality conjunction from `updateRows.matchedKey().columns()`; the SET map walks `updateRows.setColumns()`; decode locals (for NodeId-bound key columns) project `updateRows.keyColumns()` into `InputColumnBindingGroup` at the call site (grouping by `sdlFieldName`, one decode local per group) and feed the existing `emitLookupKeyDecodeLocals` helper. The projection is a one-line mechanical reshape; the carrier deliberately doesn't bake the `InputColumnBindingGroup` shape into the slot, keeping the carrier focused on UPDATE's semantic partition and leaving emit detail at the emit-time layer.
 
-The final WHERE clause is a conjunction of two predicate sources, ANDed at emit time:
-
-1. **Matched-key equality predicates** from `updateRows.matchedKey().columns()` — the column-driven WHERE the walker pins.
-2. **Override-condition predicates** from any `UnboundField + @condition(override: true)` input fields, emitted unchanged through the existing `walkInputFieldConditions` → `projectFilters` → `ConditionFilter` machinery and threaded into the emitter alongside the carrier (R215 shipped behaviour, preserved). When no such input fields are present, the override-condition source is empty and the WHERE is purely matched-key-driven; this is the common case.
+`@condition(override: true)` on a mutation input field is rejected by the walker (`Structural.OverrideConditionNotSupported`); the emitter never sees such fields. When override-condition emit on UPDATE lands as a follow-up slice, the rejection lifts and the emitter composes the WHERE from two sources (matched-key + override-condition `ConditionFilter`s). For R246's scope, the WHERE is single-sourced.
 
 `buildLookupWhereSingleRow` and `buildUniformShapeGuard("UPDATE")` stay in `TypeFetcherGenerator` as shared utilities the new emitter consumes. There is no legacy fallback path — every classified `MutationUpdateTableField` flows through `UpdateRowsEmitter`.
 
@@ -243,20 +241,22 @@ The final WHERE clause is a conjunction of two predicate sources, ANDed at emit 
 | `Structural.NoSetFields` | `graphitron.update-rows.no-set-fields` |
 | `Structural.MixedCarrierKeyMembership` | `graphitron.update-rows.mixed-carrier-key-membership` |
 | `Structural.UnsupportedInputFieldShape` | `graphitron.update-rows.unsupported-input-field-shape` |
+| `Structural.OverrideConditionNotSupported` | `graphitron.update-rows.override-condition-not-supported` |
 
 Arm payloads:
 
 * `NoUniqueKeyCoverage(table, inputColumns, candidateKeys)` — `table` is the input's `@table` name, `inputColumns` is the set of target columns the input contributes, `candidateKeys` is the list of `MatchedKey` records the walker considered. Message names the table and lists the candidate keys with their column shortfall (e.g. "PK requires {film_id} but input contributes {title, description}; UK 'film_uk_title' requires {title, language_id} but input contributes {title, description}").
 * `NoSetFields(table, matchedKey)` — `table` is the input's `@table` name, `matchedKey` is the key the walker matched. Message: "UPDATE input has nothing to set; every input field contributes to matched key '<keyName>'."
 * `MixedCarrierKeyMembership(fieldName, columnsInKey, columnsOutsideKey)` — `fieldName` is the SDL field name, plus the per-column split. Only possible on composite-reference shapes whose lifted source columns straddle the matched key.
-* `UnsupportedInputFieldShape(fieldName, shape, reason)` — `fieldName` is the SDL field name, `shape` is the per-field classifier output (nested input, unbound, non-admitted carrier, etc.), `reason` is the human-readable description. Subsumes today's per-field rejection prose at `MutationInputResolver.resolveInput`'s field-shape loop (the `NestingField` / `UnboundField` rejections).
+* `UnsupportedInputFieldShape(fieldName, shape, reason)` — `fieldName` is the SDL field name, `shape` is the per-field classifier output (nested input, unbound without override-condition, non-admitted carrier, etc.), `reason` is the human-readable description. Subsumes today's per-field rejection prose at `MutationInputResolver.resolveInput`'s field-shape loop.
+* `OverrideConditionNotSupported(fieldName, conditionLocation)` — `fieldName` is the SDL field name, `conditionLocation` is the source location of the `@condition(override: true)` directive (so the LSP can point the squiggle at the directive rather than the field). Message: "`@condition(override: true)` on a `@mutation(typeName: UPDATE)` input field is not yet emitted; the filter will not run. Remove the directive or wait for override-condition emit support to land." R215's classifier admission inverts into a typed walker rejection.
 
 ## Producer-side failure modes
 
 | Source | Arm |
 |---|---|
 | Input field is `NestingField`, `UnboundField` *without* `@condition(override: true)`, or any non-admitted carrier shape | `Structural.UnsupportedInputFieldShape` |
-| Input field is `UnboundField` with `@condition(override: true)` (R215) | Admitted as non-contributing; no carrier entry, override-condition flows through existing `walkInputFieldConditions` machinery |
+| Input field is `UnboundField` with `@condition(override: true)` | `Structural.OverrideConditionNotSupported` — R215 admitted the classifier shape but the emit-side never landed (filter wouldn't run); R246 rejects with a clear typed error rather than silently dropping. Re-admit when override-condition emit lands. |
 | No PK and no UK has its column set covered by the input | `Structural.NoUniqueKeyCoverage` |
 | Every input field contributes only to the matched key (empty SET) | `Structural.NoSetFields` |
 | A composite-reference input field lifts to columns split between the matched key and outside it | `Structural.MixedCarrierKeyMembership` |
@@ -279,7 +279,7 @@ Three tiers.
 * **`NoSetFields` rejection.** Input covers PK exactly, no extra columns.
 * **`MixedCarrierKeyMembership` rejection.** Composite-reference input field whose lifted source columns straddle the matched key.
 * **`UnsupportedInputFieldShape` rejection.** Nested-input field, `UnboundField` without `@condition(override: true)`, or any non-admitted carrier shape — each produces one typed arm per offending field, collected across the loop (no short-circuit).
-* **`UnboundField + @condition(override: true)` non-contributing admittance (R215 preservation).** Input type carries (a) at least one column-bearing admitted field that covers PK or UK, plus (b) an `UnboundField` field carrying `@condition(override: true)`. Walker admits both; the column partition is computed over (a) only; (b) produces no `SetColumn` / `KeyColumn`. The carrier round-trips with empty contribution from (b); the override-condition WHERE predicate is the existing arg-condition machinery's concern, asserted at pipeline tier.
+* **`OverrideConditionNotSupported` rejection.** Input field is `UnboundField` with `@condition(override: true)`. R215 admits this at classify-time today, but R246 rejects with the typed arm because R215's emit-side deferral means the filter wouldn't run anyway. Assert the rejection carries the field's SDL name and the `@condition` directive's source location.
 * **Table-with-no-keys degenerate case.** `getPrimaryKey() == null` and `getKeys().isEmpty()` → `NoUniqueKeyCoverage` with `candidateKeys = []`.
 * **Composite-PK match through composite NodeId input field** (R130 decode shape).
 * **FK-reference admissibility.** Reference carrier on a non-PK column lands in `setColumns`; reference carrier on a PK column lands in `keyColumns`.
@@ -292,7 +292,7 @@ Three tiers.
 * `multiRow: true` UPDATE fields surface as `UnclassifiedField` with `Rejection.deferred` (empty slug) — the field is excluded from the classified set entirely; no `MutationUpdateTableField` is constructed.
 * `@argCondition` on a mutation input arg surfaces as `UnclassifiedField` with `Rejection.structural`.
 * Typed `Structural.*` arm assertions for each walker rejection case (replacing today's stringly-typed rejection-prose assertions on the equivalent shapes from R144 / R188).
-* **R215 preservation.** The existing `r215_mutationUpdateConditionOverrideTrueOnNonPkFieldAdmits` test (or its R246-renamed equivalent) stays green: a UPDATE input with an admitted column-bearing field plus an `UnboundField + @condition(override: true)` field classifies into `MutationUpdateTableField` with both slots populated; the override-condition emits its `ConditionFilter` through the existing arg-condition machinery; the field is not retracted by the walker.
+* **R215 admission inversion.** The existing `r215_mutationUpdateConditionOverrideTrueOnNonPkFieldAdmits` test (`GraphitronSchemaBuilderTest:4567`) inverts: rename to `r246_mutationUpdateConditionOverrideTrueOnNonPkFieldRejects` and flip the assertion from `isInstanceOf(MutationUpdateTableField.class)` to a walker-`Err` assertion carrying `Structural.OverrideConditionNotSupported` for the offending field. R215's admit-at-classify-time contract is retired with an explicit roadmap-tracked rejection rather than silently dropping the filter at emit time.
 
 **Compilation / Execution (`@CompilationTier` / `@ExecutionTier`)**: `graphitron-sakila-example` provides the regression net. The migration is structurally invariant on observable behaviour for the surviving UPDATE shapes; existing `SingleRecordPayloadDmlTest` (single-row UPDATE, e.g. `updateFilmPayload_updatesRowAndReturnsPayloadWithSingleDataField` at line 179) / `DmlBulkMutationsExecutionTest` round-trips are the safety net. A new execution case lands for the UK-driven UPDATE shape using the existing `nodeidfixture.parent_node.alt_key` fixture (the only non-PK `UNIQUE` constraint in `graphitron-sakila-db/src/main/resources/init.sql`, line 402): an UPDATE input keyed on `alt_key` exercises the `MatchedKey.UniqueKey` arm end-to-end. The `multiRow: true` UPDATE rejection (no example currently uses `multiRow: true` on UPDATE in `graphitron-sakila-example`) is covered at the pipeline tier; no execution-tier coverage is added for it.
 
