@@ -1,7 +1,7 @@
 ---
 id: R255
 title: Dedupe duplicate column projection in @reference DBQueries (RC-6 regression)
-status: Ready
+status: In Progress
 bucket: bug
 priority: 5
 theme: structural-refactor

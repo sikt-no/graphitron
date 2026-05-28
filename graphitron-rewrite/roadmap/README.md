@@ -19,7 +19,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R238` | ServiceMethodCall walker carrier (R222 foundation slice) | Ready | 2026-05-27 <sub>created 2026-05-25</sub> | [plan](methodcall-walker-carrier.md) |
 | `R246` | UpdateRows walker carrier (R222 UPDATE slice) with PK-or-UK identification <sub>blocked by: [methodcall-walker-carrier](methodcall-walker-carrier.md)</sub> | In Progress | 2026-05-28 <sub>created 2026-05-27</sub> | [plan](updaterows-walker-carrier.md) |
 | `R45` | Multi-tenant routing on top of the schema-driven ExecutionInput factory | Spec | 2026-05-20 | [plan](tenant-routing-and-execution-input.md) |
-| `R255` | Dedupe duplicate column projection in @reference DBQueries (RC-6 regression) | Ready | 2026-05-28 | [plan](dedupe-reference-projection.md) |
+| `R255` | Dedupe duplicate column projection in @reference DBQueries (RC-6 regression) | In Progress | 2026-05-28 | [plan](dedupe-reference-projection.md) |
 | `R23` | Multi-parent `NestingField` sharing: `TableField` arm | Spec |  | [plan](nestingfield-multiparent-tablefield.md) |
 | `R186` | Nested input types in @mutation fields | Spec | 2026-05-20 | [plan](nested-input-types-in-mutation-fields.md) |
 | `R13` | Faceted search on `@asConnection` | Spec |  | [plan](faceted-search.md) |
@@ -201,7 +201,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R249` [**Nested @argMapping syntax via GraphQLSelectionParser**](nested-argmapping-syntax.md) — Backlog, feature
 - `R246` [**UpdateRows walker carrier (R222 UPDATE slice) with PK-or-UK identification**](updaterows-walker-carrier.md) — In Progress, structural, blocked by [methodcall-walker-carrier](methodcall-walker-carrier.md)
 - `R236` [**BuildContext nested-input candidate-hint draws from path-origin table instead of @reference terminal table**](validator-reference-candidate-hint-terminal-table.md) — Backlog, bug
-- `R255` [**Dedupe duplicate column projection in @reference DBQueries (RC-6 regression)**](dedupe-reference-projection.md) — Ready, bug
+- `R255` [**Dedupe duplicate column projection in @reference DBQueries (RC-6 regression)**](dedupe-reference-projection.md) — In Progress, bug
 - `R231` [**Emit text-mapped-enum fields as the GraphQL enum type, not String**](emit-text-mapped-enum-fields-as-enum-type.md) — Backlog, architecture
 - `R133` [**Flip leaf-coverage profile activation to opt-in**](leaf-coverage-profile-opt-in.md) — Backlog, cleanup
 - `R166` [**GraphQLSchemaVisitor as the driver for code generation**](graphqlschemavisitor-driven-emission.md) — Backlog, architecture, blocked by [dimensional-model-pivot](dimensional-model-pivot.md)
