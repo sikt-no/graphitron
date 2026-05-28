@@ -185,12 +185,12 @@ Walker stages (one pass per UPDATE field that survived the pre-checks):
 
 1. **Resolve the input arg's table.** Read `@table(name:)` off the input type and look up the jOOQ `Table` in the catalog. Failure here is a structural rejection upstream (resolved as part of building `InputArgRef`); the walker can assume the table resolves.
 
-2. **Classify each input field.** For each `GraphQLInputObjectField` on the input type, call a shared classifier subroutine that returns one of:
+2. **Classify each input field.** The classifier subroutine projects each `GraphQLInputObjectField` against the four admitted `InputField` sub-permits that the existing input-field classifier already produces (`ColumnField`, `CompositeColumnField`, `ColumnReferenceField`, `CompositeColumnReferenceField`) — these types exist in the codebase today; R246 does not introduce new carriers. The walker reshapes each admitted output into a walker-local `ColumnBinding` / `CompositeColumnBinding` / `ColumnReference` / `CompositeColumnReference` carrying SDL field name + target column(s) + extraction. Per-field outcomes:
 
-   * A **column-bearing admittance** (`ColumnBinding`, `CompositeColumnBinding`, `ColumnReference`, `CompositeColumnReference`) — each carrying SDL field name + target column(s) + extraction. Feeds stages 3-7.
-   * A **typed admissibility rejection** (`Structural.UnsupportedInputFieldShape`) for `NestingField` or any non-admitted carrier shape per R130's admitted-carrier set.
-   * A **typed override-condition rejection** (`Structural.OverrideConditionNotSupported`) for `UnboundField` with `condition().isPresent() && condition().get().override() == true`. R215's classifier admits this shape today, but R215 explicitly deferred the emit-side wiring (changelog: "no emitter consumes a `MutationField` projection yet"), so the override-condition's `@condition` method is silently dropped at emit time — the filter the author wrote never runs. R246 makes the deferral honest: the walker rejects the shape with a typed arm naming the field and the offending directive's source location. A separate roadmap item can re-admit the shape once an `overrideConditions` slot and emit-side wiring land alongside.
-   * A **typed admissibility rejection** (`Structural.UnsupportedInputFieldShape`) for any other `UnboundField` (no `@condition` at all, or `@condition(override: false)`) — these are R215's "field has no column binding and no override condition" case, which already rejects today.
+   * Any of the four admitted shapes → **column-bearing admittance**, feeds stages 3-7.
+   * `NestingField` or any other non-admitted classifier output → **typed admissibility rejection** `Structural.UnsupportedInputFieldShape`.
+   * `UnboundField` with `condition().isPresent() && condition().get().override() == true` → **typed override-condition rejection** `Structural.OverrideConditionNotSupported`. R215's classifier admits this shape today, but R215 explicitly deferred the emit-side wiring (changelog: "no emitter consumes a `MutationField` projection yet"), so the override-condition's `@condition` method is silently dropped at emit time — the filter the author wrote never runs. R246 makes the deferral honest: the walker rejects with a typed arm naming the field and the offending directive's source location. A separate roadmap item can re-admit the shape once an `overrideConditions` slot and emit-side wiring land alongside.
+   * Any other `UnboundField` (no `@condition` at all, or `@condition(override: false)`) → **typed admissibility rejection** `Structural.UnsupportedInputFieldShape`. R215's "field has no column binding and no override condition" case, which already rejects today.
 
    Collect rejections across the loop — do not short-circuit, so the LSP surfaces every per-field issue at once.
 
@@ -305,9 +305,17 @@ Three tiers.
 
 ## Dependencies and sequencing
 
-* **R238** (foundation slice): provides `WalkerResult<C>`, `AuthorError.Structural` sealed sub-family, LSP wire conventions, orchestrator collect-Err flow. Hard prerequisite.
-* **R188** (PK-default partition): **not a prerequisite.** R246's walker reads SDL directly and partitions by matched-key membership, bypassing the `TableInputArg.of` rewrite R188 ships. R246 and R188 can land in either order; if R188 ships first, R246 inherits a cleaner classifier state, but R246 doesn't depend on it. R188's UPDATE-side scope is absorbed (see § What this absorbs); its DELETE-side scope and the `@value` directive retirement are independent and unaffected by R246.
-* **R145** (UPSERT): untouched. UPSERT continues through `MutationInputResolver`'s deferral until R145 ships.
+**Hard prerequisites:** **R238** (foundation slice) is the only one. It provides `WalkerResult<C>`, `AuthorError.Structural` sealed sub-family, LSP wire conventions, and the orchestrator collect-Err flow. R246 cannot ship until R238 has landed those primitives.
+
+**Not prerequisites:**
+
+* **R188** (`simplify-update-mutations-drop-value`). Although R188's spec body uses the phrase "four-carrier rule" to describe a partition rule over the four admitted `InputField` sub-permits, **R188 does not introduce those four permits — they exist in the codebase today** (`InputField.ColumnField`, `CompositeColumnField`, `ColumnReferenceField`, `CompositeColumnReferenceField`). R246's walker classifies SDL input fields into walker-local shapes derived from those existing permits and partitions by matched-key membership, bypassing R188's `TableInputArg.of` rewrite entirely. R246 and R188 can land in either order; R188's UPDATE-side scope is absorbed by R246 either way (see § What this absorbs).
+* **R146** (`mutation-cardinality-safety-unique-index`). Fully subsumed by this slice; nothing to ship.
+* **R130** (NodeId composite carriers). The `CompositeColumnField` / `CompositeColumnReferenceField` admitted shapes exist in the codebase today; R246 consumes them via the existing classifier and emit-side decode helpers without modification.
+
+**Untouched:**
+
+* **R145** (UPSERT). UPSERT continues through `MutationInputResolver`'s deferral until R145 ships.
 
 ## Out of scope
 
