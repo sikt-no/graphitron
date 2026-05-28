@@ -29,11 +29,13 @@ Inventoried in `graphitron-rewrite/graphitron/src/main/java/no/sikt/graphitron/r
 3. **`schema/AppliedDirectiveEmitter.java` lines 116–138** — `buildApplication()` returns one `CodeBlock` per applied directive: `newDirective().name(...).argument(.name(...).type(...).valueLiteral(...).build()) × A .build()`. Cardinality: arguments per applied directive. Callers fold its output back into a parent chain (the schema chain via `applicationsForSchema(...)`, the per-type chain via `applicationsFor(...)`).
 
 4. **Per-type generator bodies** — each emits one fluent expression whose chain depth scales with that type's element count. Sites:
-   - `ObjectTypeGenerator.java:127–143` — `newObject().name(...).description(...).withInterface(...) × I .field(...) × F .withAppliedDirective(...) × D .build()`.
+   - `ObjectTypeGenerator.java:127–143` (`buildObjectTypeSpec`) — `newObject().name(...).description(...).withInterface(...) × I .field(...) × F .withAppliedDirective(...) × D .build()`.
+   - `ObjectTypeGenerator.java:165–190` (`buildInterfaceTypeSpec`) — `newInterface().name(...).description(...).field(...) × F .withAppliedDirective(...) × D .build()`. Same fields-per-type scaling as the object case.
+   - `ObjectTypeGenerator.java:194–218` (`buildUnionTypeSpec`) — `newUnionType().name(...).description(...).possibleType(...) × M .withAppliedDirective(...) × D .build()`. Smaller cardinality (members are typically few), but the shape is identical and the per-*Type.java chain-depth assertion in the test plan will run against `<Name>Type.java` outputs from this method too.
    - `InputTypeGenerator.java:69–82` — `newInputObject().name(...).description(...).field(...) × F .withAppliedDirective(...) × D .build()`.
    - `EnumTypeGenerator.java:45–59` — `newEnum().name(...).description(...).value(...) × V .withAppliedDirective(...) × D .build()`.
 
-   Field- and value-per-type cardinality (typically 5–30) dominates applied-directives-per-type (usually 0–1), so Move 1 must flatten the whole fluent expression in each body — not just the `.withAppliedDirective` tail. Per-type classes (`*Type.java`) carry the same hazard as `GraphitronSchema.java` at smaller scale, and the `.field(...)` / `.value(...)` chain is the dominant contributor.
+   Field- and value-per-type cardinality (typically 5–30) dominates applied-directives-per-type (usually 0–1), so Move 1 must flatten the whole fluent expression in each body — not just the `.withAppliedDirective` tail. Per-type classes (`*Type.java`) carry the same hazard as `GraphitronSchema.java` at smaller scale, and the `.field(...)` / `.value(...)` / `.possibleType(...)` chain is the dominant contributor.
 
 Out of scope (already statement-shaped or bounded by GraphQL type nesting depth, which is structurally small):
 
@@ -48,7 +50,7 @@ Two complementary moves. Both apply to all four sites above; the principle is th
 **Move 1: statement-per-element on a shared builder var.** Replace the single fluent chain with one declared local plus N short statements. Apply to:
 
 - `GraphitronSchemaClassGenerator` `schemaBuilder` assembly.
-- `ObjectTypeGenerator` / `InputTypeGenerator` / `EnumTypeGenerator` per-type bodies — flatten the *whole* chain (`.withInterface`, `.field`, `.value`, `.withAppliedDirective`), not only the trailing applied-directive loop. The `.field(...)` / `.value(...)` loop is the dominant contributor at per-type scale.
+- All per-type bodies in `ObjectTypeGenerator` (object, interface, *and* union forms) / `InputTypeGenerator` / `EnumTypeGenerator` — flatten the *whole* chain (`.withInterface`, `.field`, `.value`, `.possibleType`, `.withAppliedDirective`), not only the trailing applied-directive loop. The `.field(...)` / `.value(...)` / `.possibleType(...)` loop is the dominant contributor at per-type scale.
 - The `.argument(...)` loops inside `AppliedDirectiveEmitter.buildApplication` and `DirectiveDefinitionEmitter.buildDefinition` — flatten inside the helper-method bodies introduced by Move 2.
 
 Before (`GraphitronSchemaClassGenerator`):
@@ -104,7 +106,7 @@ Call site is then `schemaBuilder.withSchemaAppliedDirectives(List.of(appliedDire
 
 *Helper-method naming scheme.* Helper names are collision-prone because the same directive can be applied multiple times with different argument literals (e.g. `@auth(roles:["admin"])` and `@auth(roles:["ops"])` on different fields produce two distinct `GraphQLAppliedDirective` objects with name `"auth"`). Pick a scheme that names the *application*, not the *directive*:
 
-- Applied directives: `appliedDirective_<n>` indexed by emission order within the enclosing type/schema. The order is deterministic (driven by `schema.getSchemaAppliedDirectives()` / `container.getAppliedDirectives()` iteration). Per-type generators emit them as private statics on the per-type class; schema-level applications emit on `GraphitronSchema`.
+- Applied directives: `appliedDirective_<n>` indexed by emission order within the enclosing type/schema. The order is deterministic (driven by `schema.getSchemaAppliedDirectives()` / `container.getAppliedDirectives()` iteration). Per-type generators emit them as private statics on the per-type class (covering object, interface, union, input-object, enum forms); schema-level applications emit on `GraphitronSchema`.
 - Directive definitions: `directiveDefinition_<sdlName>` — directive definition names are unique within a schema, so a name-based scheme works (replace any non-identifier characters with `_`).
 - Synthesised scalars: `scalar_<sdlName>` (same uniqueness rationale).
 - Field / input-field / enum-value definitions: `fieldDef_<sdlName>` / `inputFieldDef_<sdlName>` / `enumValueDef_<sdlName>`. Field names are unique within their parent type, and each `*Type.java` class is its own naming scope, so collisions don't cross types.
@@ -119,7 +121,9 @@ Test the structural property, not the symptom. The bug is "the generator emits o
 
 *Carve-out vs the "code-string assertions banned" principle.* `rewrite-design-principles.adoc` § "Pipeline tests are the primary behavioural tier" bans code-string assertions on generated method bodies because they test implementation, not behaviour, and break on every refactor. The proposed structural test is functionally a string-level inspection of emitted source. The carve-out is justified here because the defect *is* an implementation-shape property — chain depth has no behavioural correlate, only the (fragile, JVM-/stack-dependent) `StackOverflowError` symptom. A behavioural test does not exist. The assertion is also a single bound (depth ≤ N) that does not name specific call sequences, so it doesn't break on refactors that change *what* is emitted, only on regressions that re-introduce a long chain. Name the carve-out in the test class's javadoc.
 
-New tests live at `graphitron-rewrite/graphitron/src/test/java/no/sikt/graphitron/rewrite/schema/SchemaEmissionChainDepthTest.java`, annotated `@PipelineTier` (consistent with existing pipeline tests under that directory; the existing `AppliedDirectiveEmitterTest` is `@UnitTier` and exercises a narrower contract). The class adds:
+New tests live at `graphitron-rewrite/graphitron/src/test/java/no/sikt/graphitron/rewrite/SchemaEmissionChainDepthPipelineTest.java`, annotated `@PipelineTier`. Per `graphitron-rewrite/docs/testing.adoc` § "Pipeline tier", pipeline tests live at `graphitron/src/test/java/no/sikt/graphitron/rewrite/` with a `*PipelineTest.java` naming convention (siblings: `TableFieldPipelineTest`, `LookupTableFieldPipelineTest`, `SplitTableFieldPipelineTest`, etc.). The carve-out below replaces what would otherwise be a unit-tier shape assertion; pipeline tier is right because the bound has to be checked against SDL-driven fixtures (federation `@link` imports, the realistic mix in `graphitron-fixtures-codegen`), not against hand-built model fixtures.
+
+The class adds:
 
 - *Bounded chain depth.* Run the generator on the existing pipeline-tier fixtures (`graphitron-fixtures-codegen` covers a realistic mix of types, directives, federation `@link` imports). For each emitted `.java` source string, walk it with a string-level chain counter (count consecutive `.<ident>(...)` segments starting from a method call or `new ...()` expression and not separated by a `;`, a line of leading whitespace + `<ident> =`, or a `return ` token). Assert **no expression-statement in any emitted file contains more than a fixed N = 16 chained method calls**. N = 16 is plenty conservative (cold-stack budget tolerates several hundred) and tight enough that a regression re-introducing a long chain trips it immediately.
 
@@ -135,7 +139,7 @@ Existing semantic tests (presence of `.argument(...)` calls with expected values
 
 - No expression-statement in any generated `.java` file under the pipeline fixtures exceeds the chain-depth bound (asserted by new test on both `GraphitronSchema.java` and every emitted `*Type.java`).
 - Statement count in `GraphitronSchema.build()` scales with schema element count (asserted by new test).
-- All existing generator and pipeline tests pass, including `AppliedDirectiveEmitterTest` and `DirectiveDefinitionEmitterTest` (the shape-preserving change must not perturb their semantic assertions).
+- All existing generator and pipeline tests pass, including `AppliedDirectiveEmitterTest` and `DirectiveDefinitionEmitterTest` under `graphitron/src/test/java/no/sikt/graphitron/rewrite/generators/schema/` (the shape-preserving change must not perturb their semantic assertions).
 - `mvn -f graphitron-rewrite/pom.xml install -Plocal-db` green (covers the cross-module `graphitron-sakila-example` compile against real jOOQ).
 - Manual verification: regen + javac on a representative schema with default `-Xss` does not throw `StackOverflowError`. Not a CI gate (too fragile), but a hand-check the implementer runs at the end.
 
