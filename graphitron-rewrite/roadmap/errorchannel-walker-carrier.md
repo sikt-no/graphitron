@@ -174,7 +174,7 @@ Dispatches on the sealed carrier exhaustively:
 
 ## Cutover sequencing (additive, then destructive)
 
-R238's actual landing sequence is the precedent: ship the new shape additively first, cut consumers over while both shapes coexist, then retire the legacy slot in a final commit. R244 follows the same pattern to keep each commit reviewable and to bound the dual-implementation window to a few commits rather than the lifetime of a feature branch.
+R238's actual landing sequence is the precedent (catalogued under R222's "Transition techniques"): ship the new shape additively first, cut consumers over while both shapes coexist, then retire the legacy slot in a final commit. R244 follows the same pattern to keep each commit reviewable and to bound the dual-implementation window to a few commits rather than the lifetime of a feature branch.
 
 Commit-level sequencing (subject to revision at In Progress time; the load-bearing claim is the *shape* of the sequence, not the exact commit count):
 
@@ -322,7 +322,3 @@ Three tiers, mirroring R238:
 
 - **R241** (`retire-error-payloadclass-transport`, Spec): discarded. R241's framing ("retire transport variant, route through LocalContext") was the wrong shape per R222's dimensional-slot principle — no transport carrier should survive at all. R244 reframes the same direction as a Stage 2 walker-carrier slice. The `SlettPoengformelPayload` incident that motivated R241 lands as a non-event after R244 — the generator never reflects on the payload class.
 - **R201** (`honor-field-directive-in-payload-construction-shape`, Backlog): moot. The construction-shape machinery R201 targets retires here.
-
-## R222 umbrella drift
-
-R238's spec already flagged that R222's destination needs updating: R222 originally named `MethodBackedField` as the slot home with `ServiceField extends MethodBackedField` as a pure marker, but R238 shipped `ServiceField` as a **sibling** of `MethodBackedField` because the carrier is service-specific and broader promotion would force no-op slots on six non-scope implementers. R244 introduces a parallel drift: `WithDmlErrorTransport` lives as a sibling of `WithErrorChannel` during the transition, even though R222's destination unifies everything under one carrier-bearing interface. Both drifts are transitional surface area justified by the same scope-bounding principle ("don't promote a slot to a broader interface until every implementer has its carrier ready"), and the umbrella note for R222 should absorb the revised pattern when next revisited. Neither drift is load-bearing on R244's correctness; both are visible in the In Progress diff.
