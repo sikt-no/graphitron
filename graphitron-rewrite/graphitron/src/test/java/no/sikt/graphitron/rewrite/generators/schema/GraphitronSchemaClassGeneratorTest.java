@@ -1,5 +1,6 @@
 package no.sikt.graphitron.rewrite.generators.schema;
 
+import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
 import org.junit.jupiter.api.Test;
@@ -29,13 +30,12 @@ class GraphitronSchemaClassGeneratorTest {
     @Test
     void build_methodIsPublicStaticReturningGraphQLSchema_withCustomizerParameter() {
         var spec = generate("type Query { x: String }");
-        assertThat(spec.methodSpecs()).extracting(m -> m.name()).containsExactly("build");
-        var method = spec.methodSpecs().get(0);
-        assertThat(method.modifiers()).contains(Modifier.PUBLIC, Modifier.STATIC);
-        assertThat(method.returnType().toString()).isEqualTo("graphql.schema.GraphQLSchema");
-        assertThat(method.parameters()).hasSize(1);
-        assertThat(method.parameters().get(0).name()).isEqualTo("customizer");
-        assertThat(method.parameters().get(0).type().toString())
+        var build = publicBuild(spec);
+        assertThat(build.modifiers()).contains(Modifier.PUBLIC, Modifier.STATIC);
+        assertThat(build.returnType().toString()).isEqualTo("graphql.schema.GraphQLSchema");
+        assertThat(build.parameters()).hasSize(1);
+        assertThat(build.parameters().get(0).name()).isEqualTo("customizer");
+        assertThat(build.parameters().get(0).type().toString())
             .isEqualTo("java.util.function.Consumer<graphql.schema.GraphQLSchema.Builder>");
     }
 
@@ -109,8 +109,7 @@ class GraphitronSchemaClassGeneratorTest {
             directive @auth(roles: [String!]) on FIELD_DEFINITION
             type Query { secret: String @auth(roles: ["admin"]) }
             """);
-        var body = GraphitronSchemaClassGenerator.generate(bundle.model(), bundle.assembled()).get(0)
-            .methodSpecs().get(0).code().toString();
+        var body = GraphitronSchemaClassGenerator.generate(bundle.model(), bundle.assembled()).get(0).toString();
         assertThat(body)
             .contains(".additionalDirective(")
             .contains(".name(\"auth\")");
@@ -131,33 +130,36 @@ class GraphitronSchemaClassGeneratorTest {
             extend schema @link(url: "https://specs.apollo.dev/federation/v2.10", import: ["@key"])
             type Query { x: String }
             """);
-        var body = GraphitronSchemaClassGenerator.generate(bundle.model(), bundle.assembled()).get(0)
-            .methodSpecs().get(0).code().toString();
+        var body = GraphitronSchemaClassGenerator.generate(bundle.model(), bundle.assembled()).get(0).toString();
         assertThat(body)
             .contains(".withSchemaAppliedDirectives(java.util.List.of(")
             .contains("graphql.schema.GraphQLAppliedDirective.newDirective()")
             .contains(".name(\"link\")")
             .contains("https://specs.apollo.dev/federation/v2.10");
         // Must be emitted before .codeRegistry(...) so the schema-level directive
-        // ships on the final GraphQLSchema, not after the build seam.
-        int appliedIdx = body.indexOf(".withSchemaAppliedDirectives(");
-        int registryIdx = body.indexOf(".codeRegistry(codeRegistry.build())");
+        // ships on the final GraphQLSchema, not after the build seam. Look for the
+        // call sites inside the build method.
+        String buildBody = publicBuild(generate("""
+            directive @link(url: String!, import: [String!]) repeatable on SCHEMA
+            extend schema @link(url: "https://specs.apollo.dev/federation/v2.10", import: ["@key"])
+            type Query { x: String }
+            """)).code().toString();
+        int appliedIdx = buildBody.indexOf(".withSchemaAppliedDirectives(");
+        int registryIdx = buildBody.indexOf(".codeRegistry(codeRegistry.build())");
         assertThat(appliedIdx).isGreaterThan(0).isLessThan(registryIdx);
     }
 
     @Test
     void build_skipsWithSchemaAppliedDirectives_whenNoSchemaLevelSurvivors() {
         var bundle = TestSchemaHelper.buildBundle("type Query { x: String }");
-        var body = GraphitronSchemaClassGenerator.generate(bundle.model(), bundle.assembled()).get(0)
-            .methodSpecs().get(0).code().toString();
+        var body = GraphitronSchemaClassGenerator.generate(bundle.model(), bundle.assembled()).get(0).toString();
         assertThat(body).doesNotContain(".withSchemaAppliedDirectives(");
     }
 
     @Test
     void build_skipsAdditionalDirective_forGeneratorOnlyDirectives() {
         var bundle = TestSchemaHelper.buildBundle("type Query { x: String }");
-        var body = GraphitronSchemaClassGenerator.generate(bundle.model(), bundle.assembled()).get(0)
-            .methodSpecs().get(0).code().toString();
+        var body = GraphitronSchemaClassGenerator.generate(bundle.model(), bundle.assembled()).get(0).toString();
         assertThat(body).doesNotContain(".name(\"table\")");
         assertThat(body).doesNotContain(".name(\"field\")");
         assertThat(body).doesNotContain(".name(\"condition\")");
@@ -171,7 +173,7 @@ class GraphitronSchemaClassGeneratorTest {
             type Person { id: ID! }
             """);
         var body = GraphitronSchemaClassGenerator.generate(bundle.model(), bundle.assembled(), Set.of("Film", "Person", "Query"), OUTPUT_PKG)
-            .get(0).methodSpecs().get(0).code().toString();
+            .get(0).toString();
         assertThat(body).contains("com.example.schema.FilmType.registerFetchers(codeRegistry)");
         assertThat(body).contains("com.example.schema.PersonType.registerFetchers(codeRegistry)");
         assertThat(body).contains("com.example.schema.QueryType.registerFetchers(codeRegistry)");
@@ -186,7 +188,7 @@ class GraphitronSchemaClassGeneratorTest {
     void build_callsRegisterFetchersBeforeAnySchemaBuilderSetup() {
         var bundle = TestSchemaHelper.buildBundle("type Query { x: String }");
         var body = GraphitronSchemaClassGenerator.generate(bundle.model(), bundle.assembled(), Set.of("Query"), OUTPUT_PKG)
-            .get(0).methodSpecs().get(0).code().toString();
+            .get(0).toString();
         int registerIdx = body.indexOf("registerFetchers(codeRegistry)");
         int schemaBuilderIdx = body.indexOf("schemaBuilder = graphql.schema.GraphQLSchema.newSchema()");
         assertThat(registerIdx).isGreaterThan(0).isLessThan(schemaBuilderIdx);
@@ -548,7 +550,7 @@ class GraphitronSchemaClassGeneratorTest {
     @Test
     void nonFederation_emitsSingleBuildMethod() {
         var spec = generate("type Query { x: String }");
-        assertThat(spec.methodSpecs()).extracting(m -> m.name()).containsExactly("build");
+        assertThat(publicBuilds(spec)).hasSize(1);
     }
 
     @Test
@@ -556,16 +558,16 @@ class GraphitronSchemaClassGeneratorTest {
         var bundle = TestSchemaHelper.buildBundle("type Query { x: String }");
         var spec = GraphitronSchemaClassGenerator.generate(
             bundle.model(), bundle.assembled(), Set.of(), OUTPUT_PKG, true).get(0);
-        assertThat(spec.methodSpecs()).extracting(m -> m.name())
+        assertThat(publicBuilds(spec)).extracting(MethodSpec::name)
             .containsExactly("build", "build");
     }
 
     @Test
     void federation_oneArgMethodDelegatesToTwoArgForm() {
         var bundle = TestSchemaHelper.buildBundle("type Query { x: String }");
-        var methods = GraphitronSchemaClassGenerator.generate(
-            bundle.model(), bundle.assembled(), Set.of(), OUTPUT_PKG, true).get(0).methodSpecs();
-        var oneArg = methods.get(0);
+        var builds = publicBuilds(GraphitronSchemaClassGenerator.generate(
+            bundle.model(), bundle.assembled(), Set.of(), OUTPUT_PKG, true).get(0));
+        var oneArg = builds.get(0);
         assertThat(oneArg.parameters()).hasSize(1);
         assertThat(oneArg.code().toString()).contains("return build(customizer, fed -> {})");
     }
@@ -573,9 +575,9 @@ class GraphitronSchemaClassGeneratorTest {
     @Test
     void federation_twoArgBodyCallsFederationTransform() {
         var bundle = TestSchemaHelper.buildBundle("type Query { x: String }");
-        var methods = GraphitronSchemaClassGenerator.generate(
-            bundle.model(), bundle.assembled(), Set.of(), OUTPUT_PKG, true).get(0).methodSpecs();
-        var twoArg = methods.get(1);
+        var builds = publicBuilds(GraphitronSchemaClassGenerator.generate(
+            bundle.model(), bundle.assembled(), Set.of(), OUTPUT_PKG, true).get(0));
+        var twoArg = builds.get(1);
         assertThat(twoArg.parameters()).hasSize(2);
         var body = twoArg.code().toString();
         assertThat(body).contains("Federation.transform(base)");
@@ -587,9 +589,9 @@ class GraphitronSchemaClassGeneratorTest {
     @Test
     void federation_twoArgBodyInvokesFederationCustomizerBeforeBuild() {
         var bundle = TestSchemaHelper.buildBundle("type Query { x: String }");
-        var body = GraphitronSchemaClassGenerator.generate(
-            bundle.model(), bundle.assembled(), Set.of(), OUTPUT_PKG, true).get(0)
-            .methodSpecs().get(1).code().toString();
+        var builds = publicBuilds(GraphitronSchemaClassGenerator.generate(
+            bundle.model(), bundle.assembled(), Set.of(), OUTPUT_PKG, true).get(0));
+        var body = builds.get(1).code().toString();
         int customizerIdx = body.indexOf("federationCustomizer.accept(fb)");
         int buildIdx = body.indexOf("return fb.build()");
         assertThat(customizerIdx).isGreaterThan(0).isLessThan(buildIdx);
@@ -660,7 +662,37 @@ class GraphitronSchemaClassGeneratorTest {
         return GraphitronSchemaClassGenerator.generate(bundle.model(), bundle.assembled(), Set.of(), OUTPUT_PKG).get(0);
     }
 
+    /**
+     * Renders the full generated class. Substring assertions in this test cover both the
+     * {@code build()} body and the private static helper methods the post-R254 emitter
+     * factors out (per-directive-definition, per-applied-directive, per-synthesised-scalar).
+     */
     private static String buildBody(String sdl) {
-        return generate(sdl).methodSpecs().get(0).code().toString();
+        return generate(sdl).toString();
+    }
+
+    /**
+     * Returns the single {@code public static} {@code build} method on the schema class.
+     * The class also carries {@code private static} helper methods that factor each
+     * directive definition / applied directive / synthesised scalar out of the build body;
+     * those are excluded here so the assertion focuses on the public surface.
+     */
+    private static MethodSpec publicBuild(TypeSpec spec) {
+        return spec.methodSpecs().stream()
+            .filter(m -> m.modifiers().contains(Modifier.PUBLIC))
+            .filter(m -> "build".equals(m.name()))
+            .findFirst()
+            .orElseThrow(() -> new AssertionError("no public build method in " + spec.name()));
+    }
+
+    /**
+     * Returns the {@code public static build} methods (one for non-federation, two for
+     * federation: one-arg delegate + two-arg form), in declaration order.
+     */
+    private static List<MethodSpec> publicBuilds(TypeSpec spec) {
+        return spec.methodSpecs().stream()
+            .filter(m -> m.modifiers().contains(Modifier.PUBLIC))
+            .filter(m -> "build".equals(m.name()))
+            .toList();
     }
 }

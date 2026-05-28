@@ -29,7 +29,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Consumer;
-import java.util.function.UnaryOperator;
 
 /**
  * Generates {@code GraphitronSchema.java} in {@code <outputPackage>.rewrite.schema}. This is the
@@ -54,12 +53,18 @@ import java.util.function.UnaryOperator;
  *   <li>Calls {@code .build()} and returns the result.</li>
  * </ol>
  *
+ * <p>Method body shape: one local {@code schemaBuilder} variable plus one statement per
+ * registered element (root types, additional types, scalars, directive definitions, schema
+ * applied directives). Non-trivial sub-values (synthesised scalars, directive definitions,
+ * schema-level applied directives) reach the schemaBuilder through {@code private static}
+ * factory methods on the emitted class, allocated by {@link HelperMethodSink}. The shape
+ * keeps chain depth on every emitted expression-statement O(1) regardless of schema element
+ * count; R254 motivates this against the chained-call attribution stack overflow in
+ * incremental {@code javac}.
+ *
  * <p>The generator collects type names from an assembled {@link GraphQLSchema} produced by
  * {@link no.sikt.graphitron.rewrite.GraphitronSchemaBuilder}. Introspection and federation-
- * injected types are skipped to match the per-type emitters. Survivor directive definitions
- * (federation directives plus user-declared custom directives) are emitted via
- * {@code .additionalDirective(...)} in a follow-up sub-commit when the SDL surface for
- * them lands; today the emitted facade does not call {@code additionalDirective}.
+ * injected types are skipped to match the per-type emitters.
  */
 public final class GraphitronSchemaClassGenerator {
 
@@ -83,6 +88,7 @@ public final class GraphitronSchemaClassGenerator {
             ClassName.get(Consumer.class),
             builderType);
 
+        var sink = new HelperMethodSink();
         var body = CodeBlock.builder()
             .addStatement("$T codeRegistry = $T.newCodeRegistry()", CODE_REGISTRY_BLDR, CODE_REGISTRY);
 
@@ -182,13 +188,13 @@ public final class GraphitronSchemaClassGenerator {
             .sorted(Map.Entry.comparingByKey())
             .forEach(e -> body.add(buildErrorTypeFieldFetchers(e.getKey())));
 
-        body.add("$T schemaBuilder = $T.newSchema()", SCHEMA_BUILDER, GRAPHQL_SCHEMA).indent();
+        body.addStatement("$T schemaBuilder = $T.newSchema()", SCHEMA_BUILDER, GRAPHQL_SCHEMA);
 
-        if (plan.hasQuery)        body.add("\n.query($T.type())",        ClassName.get(schemaPackage, "QueryType"));
-        if (plan.hasMutation)     body.add("\n.mutation($T.type())",     ClassName.get(schemaPackage, "MutationType"));
-        if (plan.hasSubscription) body.add("\n.subscription($T.type())", ClassName.get(schemaPackage, "SubscriptionType"));
+        if (plan.hasQuery)        body.addStatement("schemaBuilder.query($T.type())",        ClassName.get(schemaPackage, "QueryType"));
+        if (plan.hasMutation)     body.addStatement("schemaBuilder.mutation($T.type())",     ClassName.get(schemaPackage, "MutationType"));
+        if (plan.hasSubscription) body.addStatement("schemaBuilder.subscription($T.type())", ClassName.get(schemaPackage, "SubscriptionType"));
         for (String name : plan.additionalTypeNames) {
-            body.add("\n.additionalType($T.type())", ClassName.get(schemaPackage, name + "Type"));
+            body.addStatement("schemaBuilder.additionalType($T.type())", ClassName.get(schemaPackage, name + "Type"));
         }
         // Built-in GraphQL scalars aren't auto-registered on a programmatic schema; the SDL
         // path in SchemaGenerator used to add them for us. The classifier resolves every SDL
@@ -196,33 +202,24 @@ public final class GraphitronSchemaClassGenerator {
         // registration here. Resolved scalars (spec built-ins and @scalarType-declared) surface
         // as (owner, fieldName) pointing at a public-static-final GraphQLScalarType constant;
         // Synthesised scalars (federation-namespace names whose renamed forms have no constant
-        // exposed on the federation-jvm public API) emit an inline newScalar().build() with the
-        // coercing borrowed from another constant.
+        // exposed on the federation-jvm public API) reach the builder through a per-scalar
+        // factory method that constructs the GraphQLScalarType inline.
         for (var reg : plan.scalarRegistrations) {
             switch (reg.resolution()) {
                 case no.sikt.graphitron.rewrite.model.ScalarResolution.Resolved r ->
-                    body.add("\n.additionalType($T.$L)", r.scalarConstantOwner(), r.scalarConstantField());
-                case no.sikt.graphitron.rewrite.model.ScalarResolution.Synthesised s ->
-                    body.add("\n.additionalType($T.newScalar().name($S).coercing($T.$L.getCoercing()).build())",
-                        ClassName.get("graphql.schema", "GraphQLScalarType"),
-                        s.sdlName(),
-                        s.coercingSourceOwner(),
-                        s.coercingSourceField());
+                    body.addStatement("schemaBuilder.additionalType($T.$L)", r.scalarConstantOwner(), r.scalarConstantField());
+                case no.sikt.graphitron.rewrite.model.ScalarResolution.Synthesised s -> {
+                    String helper = sink.addSynthesisedScalar(s);
+                    body.addStatement("schemaBuilder.additionalType($L())", helper);
+                }
             }
         }
         for (var dir : DirectiveDefinitionEmitter.survivors(assembled)) {
-            body.add("\n.additionalDirective(").add(DirectiveDefinitionEmitter.buildDefinition(dir)).add(")");
+            String helper = sink.addDirectiveDefinition(dir);
+            body.addStatement("schemaBuilder.additionalDirective($L())", helper);
         }
-        var schemaApplied = AppliedDirectiveEmitter.applicationsForSchema(assembled);
-        if (!schemaApplied.isEmpty()) {
-            body.add("\n.withSchemaAppliedDirectives($T.of(", ClassName.get("java.util", "List"));
-            for (int i = 0; i < schemaApplied.size(); i++) {
-                if (i > 0) body.add(", ");
-                body.add(schemaApplied.get(i));
-            }
-            body.add("))");
-        }
-        body.add("\n.codeRegistry(codeRegistry.build());\n").unindent();
+        AppliedDirectiveEmitter.emitSchemaApplications(body, "schemaBuilder", assembled, sink);
+        body.addStatement("schemaBuilder.codeRegistry(codeRegistry.build())");
 
         var classBuilder = TypeSpec.classBuilder(CLASS_NAME)
             .addModifiers(Modifier.PUBLIC, Modifier.FINAL);
@@ -303,6 +300,7 @@ public final class GraphitronSchemaClassGenerator {
                 .build();
             classBuilder.addMethod(buildMethod);
         }
+        sink.contributeTo(classBuilder);
 
         return List.of(classBuilder.build());
     }
@@ -491,7 +489,7 @@ public final class GraphitronSchemaClassGenerator {
      * One scalar registration call in the emitted {@code GraphitronSchema.build()} body. Carries
      * the SDL name (for stable sort order) and the resolved variant: {@link ScalarResolution.Resolved}
      * emits {@code .additionalType(<owner>.<field>)}; {@link ScalarResolution.Synthesised} emits
-     * an inline {@code .additionalType(GraphQLScalarType.newScalar().name(<sdl>).coercing(<owner>.<field>.getCoercing()).build())}
+     * a call to a generated factory method that constructs the {@code GraphQLScalarType} inline
      * for scalars (notably federation-namespace ones) that have no referenceable
      * public-static-final form.
      */

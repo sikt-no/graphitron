@@ -143,11 +143,11 @@ class AppliedDirectiveEmitterTest {
 
     /**
      * R250: schema-applied directives (e.g. {@code extend schema @link(...)})
-     * round-trip through {@link AppliedDirectiveEmitter#applicationsForSchema}
-     * so the runtime build can attach them via
-     * {@code .withSchemaAppliedDirectives(...)}. The codegen output is a list
-     * of {@code GraphQLAppliedDirective.newDirective()...build()} blocks; one
-     * per survivor schema-level application.
+     * round-trip through the schema-class emission so the runtime build can
+     * attach them via {@code .withSchemaAppliedDirectives(...)}. Each
+     * application reaches the schema body through a {@code private static}
+     * factory method on {@code GraphitronSchema} that constructs the
+     * {@code GraphQLAppliedDirective} value.
      */
     @Test
     void applicationsForSchema_emitsBlocksForSchemaLevelSurvivorDirectives() {
@@ -157,10 +157,10 @@ class AppliedDirectiveEmitterTest {
             type Query { x: String }
             """;
         var bundle = TestSchemaHelper.buildBundle(sdl);
-        var blocks = AppliedDirectiveEmitter.applicationsForSchema(bundle.assembled());
-        assertThat(blocks).hasSize(1);
-        String rendered = blocks.get(0).toString();
+        String rendered = GraphitronSchemaClassGenerator
+            .generate(bundle.model(), bundle.assembled()).get(0).toString();
         assertThat(rendered)
+            .contains(".withSchemaAppliedDirectives(")
             .contains(".name(\"link\")")
             .contains(".name(\"url\")")
             .contains("https://specs.apollo.dev/federation/v2.10")
@@ -172,7 +172,9 @@ class AppliedDirectiveEmitterTest {
     void applicationsForSchema_skipsGeneratorOnlyDirectives() {
         String sdl = "type Query { x: String }";
         var bundle = TestSchemaHelper.buildBundle(sdl);
-        assertThat(AppliedDirectiveEmitter.applicationsForSchema(bundle.assembled())).isEmpty();
+        String rendered = GraphitronSchemaClassGenerator
+            .generate(bundle.model(), bundle.assembled()).get(0).toString();
+        assertThat(rendered).doesNotContain(".withSchemaAppliedDirectives(");
     }
 
     private static String findTypeBody(String sdl, String typeName) {
@@ -182,7 +184,10 @@ class AppliedDirectiveEmitterTest {
             .filter(s -> s.name().equals(typeName))
             .findFirst()
             .orElseThrow(() -> new AssertionError("no " + typeName + " in " + specs));
-        return spec.methodSpecs().get(0).code().toString();
+        // Render the full class — the post-R254 emitter factors each non-trivial sub-value
+        // (per field, per applied directive) into its own private static method, so the
+        // assertion substrings live across the helper bodies as well as the type() method.
+        return spec.toString();
     }
 
     @SuppressWarnings("unused")

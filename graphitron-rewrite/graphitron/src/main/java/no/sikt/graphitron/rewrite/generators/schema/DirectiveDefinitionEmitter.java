@@ -4,17 +4,20 @@ import graphql.schema.GraphQLDirective;
 import graphql.schema.GraphQLSchema;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.CodeBlock;
+import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.rewrite.generators.util.SchemaDirectiveRegistry;
 
+import javax.lang.model.element.Modifier;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 
 /**
- * Emits code that reconstructs survivor directive <em>definitions</em> from the loaded
- * schema. Used by {@link GraphitronSchemaClassGenerator} to call
- * {@code schemaBuilder.additionalDirective(...)} once per survivor so the programmatic
- * schema carries the definitions that its applications need for validation.
+ * Emits a {@code private static GraphQLDirective directiveDefinition_<sdlName>()} factory
+ * method per survivor directive definition in the assembled schema. Used by
+ * {@link GraphitronSchemaClassGenerator} so each {@code schemaBuilder.additionalDirective(...)}
+ * statement reduces to a single helper call instead of a fluent sub-chain whose length scales
+ * with locations + arguments per directive.
  *
  * <p>Translates via the public graphql-java builders ({@code GraphQLDirective.newDirective()},
  * {@code GraphQLArgument.newArgument()}, {@code GraphQLTypeReference.typeRef(...)},
@@ -44,41 +47,43 @@ public final class DirectiveDefinitionEmitter {
     }
 
     /**
-     * Builds a CodeBlock that reconstructs {@code dir} as a {@link GraphQLDirective}
-     * programmatic value (no trailing semicolon, no surrounding call).
+     * Builds a {@code private static GraphQLDirective <methodName>()} factory method whose
+     * body is statement-flattened: one local builder variable plus a statement per builder
+     * call. Chain depth on every statement is bounded by construction.
      */
-    public static CodeBlock buildDefinition(GraphQLDirective dir) {
-        var block = CodeBlock.builder()
-            .add("$T.newDirective()", DIRECTIVE)
-            .add(".name($S)", dir.getName());
+    static MethodSpec buildDefinitionMethod(String methodName, GraphQLDirective dir) {
+        var body = CodeBlock.builder();
+        body.addStatement("$T.Builder b = $T.newDirective()", DIRECTIVE, DIRECTIVE);
+        body.addStatement("b.name($S)", dir.getName());
         if (dir.getDescription() != null && !dir.getDescription().isEmpty()) {
-            block.add(".description($S)", dir.getDescription());
+            body.addStatement("b.description($S)", dir.getDescription());
         }
         if (dir.isRepeatable()) {
-            block.add(".repeatable(true)");
+            body.addStatement("b.repeatable(true)");
         }
         for (var loc : dir.validLocations()) {
-            block.add(".validLocation($T.$L)", DIR_LOCATION, loc.name());
+            body.addStatement("b.validLocation($T.$L)", DIR_LOCATION, loc.name());
         }
+        int argIdx = 0;
         for (var arg : dir.getArguments()) {
-            block.add(".argument(")
-                .add("$T.newArgument()", ARGUMENT)
-                .add(".name($S)", arg.getName())
-                .add(".type(")
-                .add(AppliedDirectiveEmitter.emitInputType(arg.getType()))
-                .add(")");
+            String argVar = "a" + argIdx++;
+            body.addStatement("$T.Builder $L = $T.newArgument()", ARGUMENT, argVar, ARGUMENT);
+            body.addStatement("$L.name($S)", argVar, arg.getName());
+            body.addStatement("$L.type($L)", argVar, AppliedDirectiveEmitter.emitInputType(arg.getType()));
             if (arg.getDescription() != null && !arg.getDescription().isEmpty()) {
-                block.add(".description($S)", arg.getDescription());
+                body.addStatement("$L.description($S)", argVar, arg.getDescription());
             }
             if (arg.hasSetDefaultValue()) {
                 Object defaultValue = graphql.schema.GraphQLArgument.getArgumentDefaultValue(arg);
-                block.add(".defaultValueProgrammatic(")
-                    .add(GraphQLValueEmitter.emit(defaultValue))
-                    .add(")");
+                body.addStatement("$L.defaultValueProgrammatic($L)", argVar, GraphQLValueEmitter.emit(defaultValue));
             }
-            block.add(".build())");
+            body.addStatement("b.argument($L.build())", argVar);
         }
-        block.add(".build()");
-        return block.build();
+        body.addStatement("return b.build()");
+        return MethodSpec.methodBuilder(methodName)
+            .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+            .returns(DIRECTIVE)
+            .addCode(body.build())
+            .build();
     }
 }

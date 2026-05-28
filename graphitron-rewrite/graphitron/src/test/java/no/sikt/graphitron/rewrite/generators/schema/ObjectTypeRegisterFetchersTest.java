@@ -24,7 +24,7 @@ class ObjectTypeRegisterFetchersTest {
     void noRegisterFetchers_whenTypeNotInFetcherBodies() {
         var bundle = TestSchemaHelper.buildBundle(SDL);
         var spec = findByName(ObjectTypeGenerator.generate(bundle.model(), bundle.assembled()), "FilmType");
-        assertThat(spec.methodSpecs()).extracting(m -> m.name()).containsExactly("type");
+        assertThat(publicMethodNames(spec)).containsExactly("type");
     }
 
     @Test
@@ -32,7 +32,7 @@ class ObjectTypeRegisterFetchersTest {
         var body = CodeBlock.of("codeRegistry.dataFetcher($S, null);\n", "Film");
         var bundle = TestSchemaHelper.buildBundle(SDL);
         var spec = findByName(ObjectTypeGenerator.generate(bundle.model(), bundle.assembled(), Map.of("Film", body)), "FilmType");
-        assertThat(spec.methodSpecs()).extracting(m -> m.name())
+        assertThat(publicMethodNames(spec))
             .containsExactlyInAnyOrder("type", "registerFetchers");
     }
 
@@ -74,8 +74,15 @@ class ObjectTypeRegisterFetchersTest {
             Map.of("Film", body, "Node", body, "Hit", body));
         var nodeSpec = findByName(specs, "NodeType");
         var hitSpec = findByName(specs, "HitType");
-        assertThat(nodeSpec.methodSpecs()).extracting(m -> m.name()).containsExactly("type");
-        assertThat(hitSpec.methodSpecs()).extracting(m -> m.name()).containsExactly("type");
+        assertThat(publicMethodNames(nodeSpec)).containsExactly("type");
+        assertThat(publicMethodNames(hitSpec)).containsExactly("type");
+    }
+
+    private static List<String> publicMethodNames(TypeSpec spec) {
+        return spec.methodSpecs().stream()
+            .filter(m -> m.modifiers().contains(Modifier.PUBLIC))
+            .map(m -> m.name())
+            .toList();
     }
 
     private static TypeSpec findByName(List<TypeSpec> specs, String name) {

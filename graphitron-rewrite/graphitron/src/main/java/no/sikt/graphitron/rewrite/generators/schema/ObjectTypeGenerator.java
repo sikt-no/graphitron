@@ -50,6 +50,12 @@ import java.util.Map;
  * ({@link GraphitronSchemaClassGenerator}) invokes {@code registerFetchers} for every such type
  * before sealing the registry into the schema.
  *
+ * <p>The {@code type()} method body is statement-shaped (one local builder variable, one
+ * statement per element). Each non-trivial sub-value (per field, per applied directive)
+ * routes through {@link HelperMethodSink} as its own {@code private static} factory method
+ * on the same emitted class, so no single expression-statement carries a fluent chain whose
+ * depth scales with type-element count.
+ *
  * <p>Introspection types (names starting with {@code __}) and federation-injected types
  * (names starting with {@code _}) are skipped — neither is part of the user surface.
  */
@@ -124,23 +130,22 @@ public final class ObjectTypeGenerator {
 
     private static TypeSpec buildObjectTypeSpec(GraphQLObjectType objectType, CodeBlock fetcherBody,
                                                GraphitronSchema schema) {
-        var body = CodeBlock.builder()
-            .add("return $T.newObject()", OBJECT_TYPE)
-            .indent()
-            .add("\n.name($S)", objectType.getName());
+        var sink = new HelperMethodSink();
+        var body = CodeBlock.builder();
+        body.addStatement("$T.Builder b = $T.newObject()", OBJECT_TYPE, OBJECT_TYPE);
+        body.addStatement("b.name($S)", objectType.getName());
         if (objectType.getDescription() != null && !objectType.getDescription().isEmpty()) {
-            body.add("\n.description($S)", objectType.getDescription());
+            body.addStatement("b.description($S)", objectType.getDescription());
         }
         for (var iface : objectType.getInterfaces()) {
-            body.add("\n.withInterface($T.typeRef($S))", TYPE_REF, iface.getName());
+            body.addStatement("b.withInterface($T.typeRef($S))", TYPE_REF, iface.getName());
         }
         for (var field : objectType.getFieldDefinitions()) {
-            body.add("\n.field(").add(buildFieldDefinition(objectType.getName(), field, schema)).add(")");
+            String helper = sink.addObjectFieldDef(objectType.getName(), field, schema);
+            body.addStatement("b.field($L())", helper);
         }
-        for (var applied : AppliedDirectiveEmitter.applicationsFor(objectType)) {
-            body.add(applied);
-        }
-        body.add("\n.build();\n").unindent();
+        AppliedDirectiveEmitter.emitApplications(body, "b", objectType, sink);
+        body.addStatement("return b.build()");
 
         var classBuilder = TypeSpec.classBuilder(objectType.getName() + "Type")
             .addModifiers(Modifier.PUBLIC, Modifier.FINAL)
@@ -157,6 +162,7 @@ public final class ObjectTypeGenerator {
                 .addCode(fetcherBody)
                 .build());
         }
+        sink.contributeTo(classBuilder);
         return classBuilder.build();
     }
 
@@ -164,109 +170,108 @@ public final class ObjectTypeGenerator {
 
     private static TypeSpec buildInterfaceTypeSpec(GraphQLInterfaceType interfaceType,
                                                    GraphitronSchema schema) {
-        var body = CodeBlock.builder()
-            .add("return $T.newInterface()", INTERFACE_TYPE)
-            .indent()
-            .add("\n.name($S)", interfaceType.getName());
+        var sink = new HelperMethodSink();
+        var body = CodeBlock.builder();
+        body.addStatement("$T.Builder b = $T.newInterface()", INTERFACE_TYPE, INTERFACE_TYPE);
+        body.addStatement("b.name($S)", interfaceType.getName());
         if (interfaceType.getDescription() != null && !interfaceType.getDescription().isEmpty()) {
-            body.add("\n.description($S)", interfaceType.getDescription());
+            body.addStatement("b.description($S)", interfaceType.getDescription());
         }
         for (var field : interfaceType.getFieldDefinitions()) {
-            body.add("\n.field(").add(buildFieldDefinition(interfaceType.getName(), field, schema)).add(")");
+            String helper = sink.addObjectFieldDef(interfaceType.getName(), field, schema);
+            body.addStatement("b.field($L())", helper);
         }
-        for (var applied : AppliedDirectiveEmitter.applicationsFor(interfaceType)) {
-            body.add(applied);
-        }
-        body.add("\n.build();\n").unindent();
+        AppliedDirectiveEmitter.emitApplications(body, "b", interfaceType, sink);
+        body.addStatement("return b.build()");
 
-        return TypeSpec.classBuilder(interfaceType.getName() + "Type")
+        var classBuilder = TypeSpec.classBuilder(interfaceType.getName() + "Type")
             .addModifiers(Modifier.PUBLIC, Modifier.FINAL)
             .addMethod(MethodSpec.methodBuilder("type")
                 .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
                 .returns(INTERFACE_TYPE)
                 .addCode(body.build())
-                .build())
-            .build();
+                .build());
+        sink.contributeTo(classBuilder);
+        return classBuilder.build();
     }
 
     // ===== Union =====
 
     private static TypeSpec buildUnionTypeSpec(GraphQLUnionType unionType) {
-        var body = CodeBlock.builder()
-            .add("return $T.newUnionType()", UNION_TYPE)
-            .indent()
-            .add("\n.name($S)", unionType.getName());
+        var sink = new HelperMethodSink();
+        var body = CodeBlock.builder();
+        body.addStatement("$T.Builder b = $T.newUnionType()", UNION_TYPE, UNION_TYPE);
+        body.addStatement("b.name($S)", unionType.getName());
         if (unionType.getDescription() != null && !unionType.getDescription().isEmpty()) {
-            body.add("\n.description($S)", unionType.getDescription());
+            body.addStatement("b.description($S)", unionType.getDescription());
         }
         for (var member : unionType.getTypes()) {
-            body.add("\n.possibleType($T.typeRef($S))", TYPE_REF, member.getName());
+            body.addStatement("b.possibleType($T.typeRef($S))", TYPE_REF, member.getName());
         }
-        for (var applied : AppliedDirectiveEmitter.applicationsFor(unionType)) {
-            body.add(applied);
-        }
-        body.add("\n.build();\n").unindent();
+        AppliedDirectiveEmitter.emitApplications(body, "b", unionType, sink);
+        body.addStatement("return b.build()");
 
-        return TypeSpec.classBuilder(unionType.getName() + "Type")
+        var classBuilder = TypeSpec.classBuilder(unionType.getName() + "Type")
             .addModifiers(Modifier.PUBLIC, Modifier.FINAL)
             .addMethod(MethodSpec.methodBuilder("type")
                 .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
                 .returns(UNION_TYPE)
                 .addCode(body.build())
-                .build())
-            .build();
+                .build());
+        sink.contributeTo(classBuilder);
+        return classBuilder.build();
     }
 
     // ===== Field / argument / type-ref =====
 
-    private static CodeBlock buildFieldDefinition(String parentTypeName,
-                                                   graphql.schema.GraphQLFieldDefinition field,
-                                                   GraphitronSchema schema) {
+    /**
+     * Builds a {@code private static GraphQLFieldDefinition <methodName>()} factory method.
+     * Each per-arg sub-builder is also statement-flattened on a local variable so the chain
+     * depth on every emitted statement is bounded.
+     */
+    static MethodSpec buildFieldDefinitionMethod(String methodName, String parentTypeName,
+                                                  graphql.schema.GraphQLFieldDefinition field,
+                                                  GraphitronSchema schema, HelperMethodSink sink) {
         // Carrier-field rewriting for directive-driven @asConnection has already happened in the
         // classifier (GraphitronSchemaBuilder.rebuildAssembledForConnections): the field arrives
         // with its return type pointing at the Connection and `first` / `after` arguments
         // appended. Emission reads the field as-is — no probe, no directive inspection.
-        var block = CodeBlock.builder()
-            .add("$T.newFieldDefinition()", FIELD_DEF)
-            .add(".name($S)", field.getName())
-            .add(".type(").add(buildOutputTypeRef(field.getType())).add(")");
-
+        var body = CodeBlock.builder();
+        body.addStatement("$T.Builder b = $T.newFieldDefinition()", FIELD_DEF, FIELD_DEF);
+        body.addStatement("b.name($S)", field.getName());
+        body.addStatement("b.type($L)", buildOutputTypeRef(field.getType()));
         if (field.getDescription() != null && !field.getDescription().isEmpty()) {
-            block.add(".description($S)", field.getDescription());
+            body.addStatement("b.description($S)", field.getDescription());
         }
         if (field.isDeprecated()) {
-            block.add(".deprecate($S)", field.getDeprecationReason());
+            body.addStatement("b.deprecate($S)", field.getDeprecationReason());
         }
+        int argIdx = 0;
         for (var arg : field.getArguments()) {
-            block.add(".argument(").add(buildArgument(arg)).add(")");
+            String argVar = "a" + argIdx++;
+            body.addStatement("$T.Builder $L = $T.newArgument()", ARGUMENT, argVar, ARGUMENT);
+            body.addStatement("$L.name($S)", argVar, arg.getName());
+            body.addStatement("$L.type($L)", argVar, buildInputTypeRef(arg.getType()));
+            if (arg.getDescription() != null && !arg.getDescription().isEmpty()) {
+                body.addStatement("$L.description($S)", argVar, arg.getDescription());
+            }
+            if (arg.hasSetDefaultValue()) {
+                Object defaultValue = graphql.schema.GraphQLArgument.getArgumentDefaultValue(arg);
+                body.addStatement("$L.defaultValueProgrammatic($L)", argVar, GraphQLValueEmitter.emit(defaultValue));
+            }
+            if (arg.isDeprecated()) {
+                body.addStatement("$L.deprecate($S)", argVar, arg.getDeprecationReason());
+            }
+            AppliedDirectiveEmitter.emitApplications(body, argVar, arg, sink);
+            body.addStatement("b.argument($L.build())", argVar);
         }
-        for (var applied : AppliedDirectiveEmitter.applicationsFor(field)) {
-            block.add(applied);
-        }
-        block.add(".build()");
-        return block.build();
-    }
-
-    private static CodeBlock buildArgument(graphql.schema.GraphQLArgument arg) {
-        var block = CodeBlock.builder()
-            .add("$T.newArgument()", ARGUMENT)
-            .add(".name($S)", arg.getName())
-            .add(".type(").add(buildInputTypeRef(arg.getType())).add(")");
-        if (arg.getDescription() != null && !arg.getDescription().isEmpty()) {
-            block.add(".description($S)", arg.getDescription());
-        }
-        if (arg.hasSetDefaultValue()) {
-            Object defaultValue = graphql.schema.GraphQLArgument.getArgumentDefaultValue(arg);
-            block.add(".defaultValueProgrammatic(").add(GraphQLValueEmitter.emit(defaultValue)).add(")");
-        }
-        if (arg.isDeprecated()) {
-            block.add(".deprecate($S)", arg.getDeprecationReason());
-        }
-        for (var applied : AppliedDirectiveEmitter.applicationsFor(arg)) {
-            block.add(applied);
-        }
-        block.add(".build()");
-        return block.build();
+        AppliedDirectiveEmitter.emitApplications(body, "b", field, sink);
+        body.addStatement("return b.build()");
+        return MethodSpec.methodBuilder(methodName)
+            .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+            .returns(FIELD_DEF)
+            .addCode(body.build())
+            .build();
     }
 
     static CodeBlock buildOutputTypeRef(GraphQLOutputType type) {

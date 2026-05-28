@@ -55,8 +55,9 @@ class DirectiveDefinitionEmitterTest {
             type Query { x: String }
             """).assembled();
         var authDef = schema.getDirective("auth");
-        var block = DirectiveDefinitionEmitter.buildDefinition(authDef).toString();
-        assertThat(block)
+        var rendered = DirectiveDefinitionEmitter
+            .buildDefinitionMethod("directiveDefinition_auth", authDef).toString();
+        assertThat(rendered)
             .contains("GraphQLDirective.newDirective()")
             .contains(".name(\"auth\")")
             .contains("DirectiveLocation.FIELD_DEFINITION")
@@ -76,8 +77,10 @@ class DirectiveDefinitionEmitterTest {
             directive @flag(enabled: Boolean = true) on FIELD_DEFINITION
             type Query { x: String }
             """).assembled();
-        var block = DirectiveDefinitionEmitter.buildDefinition(schema.getDirective("flag")).toString();
-        assertThat(block)
+        var rendered = DirectiveDefinitionEmitter
+            .buildDefinitionMethod("directiveDefinition_flag", schema.getDirective("flag"))
+            .toString();
+        assertThat(rendered)
             .contains(".name(\"enabled\")")
             .contains(".defaultValueProgrammatic(")
             .contains("true");
@@ -89,7 +92,9 @@ class DirectiveDefinitionEmitterTest {
             directive @tag(name: String!) repeatable on FIELD_DEFINITION
             type Query { x: String }
             """).assembled();
-        var block = DirectiveDefinitionEmitter.buildDefinition(schema.getDirective("tag")).toString();
-        assertThat(block).contains(".repeatable(true)");
+        var rendered = DirectiveDefinitionEmitter
+            .buildDefinitionMethod("directiveDefinition_tag", schema.getDirective("tag"))
+            .toString();
+        assertThat(rendered).contains(".repeatable(true)");
     }
 }
