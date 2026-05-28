@@ -1,6 +1,7 @@
 package no.sikt.graphitron.rewrite.generators;
 
 import no.sikt.graphitron.javapoet.ClassName;
+import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.rewrite.model.ArgPath;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
@@ -147,7 +148,7 @@ class ServiceMethodCallEmitterTest {
         var fields = List.of(new ValueShape.FieldBinding(
             "title", "title",
             new ValueShape.Scalar(stringType,
-                new ArgPath("input", List.of("title")),
+                new ArgPath("input", List.of(new ArgPath.Segment("title", false))),
                 new CallSiteExtraction.Direct())));
         var entry = new MappingEntry.FromArg("input",
             new ValueShape.RecordInput(beanClass, fields));
@@ -171,7 +172,7 @@ class ServiceMethodCallEmitterTest {
         var fields = List.of(new ValueShape.FieldBinding(
             "title", "title",
             new ValueShape.Scalar(stringType,
-                new ArgPath("input", List.of("title")),
+                new ArgPath("input", List.of(new ArgPath.Segment("title", false))),
                 new CallSiteExtraction.Direct())));
         var entry = new MappingEntry.FromArg("input",
             new ValueShape.JavaBeanInput(beanClass, fields));
@@ -195,7 +196,9 @@ class ServiceMethodCallEmitterTest {
         var intType = ClassName.get(Integer.class);
         var entry = new MappingEntry.FromArg("filmId",
             new ValueShape.Scalar(intType,
-                new ArgPath("input", List.of("items", "id")),
+                new ArgPath("input", List.of(
+                    new ArgPath.Segment("items", false),
+                    new ArgPath.Segment("id", false))),
                 new CallSiteExtraction.Direct()));
         var call = new ServiceMethodCall.Static(
             "com.example.Svc", "find", List.of(entry), intType);
@@ -217,13 +220,72 @@ class ServiceMethodCallEmitterTest {
     }
 
     @Test
+    void emit_static_listBearingPath_emitsStreamMapChain() {
+        // ArgPath with a liftsList=true intermediate segment: argMapping `filmIds: input.items.id`
+        // where SDL `items: [FilmIdItem!]!`. The emitter must dispatch at the list segment to
+        // `_l.stream().map(_e -> ...).toList()` rather than nested Map.get.
+        var intType = ClassName.get(Integer.class);
+        var listOfInt = ParameterizedTypeName.get(ClassName.get(java.util.List.class), intType);
+        var entry = new MappingEntry.FromArg("filmIds",
+            new ValueShape.Scalar(listOfInt,
+                new ArgPath("input", List.of(
+                    new ArgPath.Segment("items", true),
+                    new ArgPath.Segment("id", false))),
+                new CallSiteExtraction.Direct()));
+        var call = new ServiceMethodCall.Static(
+            "com.example.Svc", "find", List.of(entry), intType);
+
+        var stmts = ServiceMethodCallEmitter.emit(call, OUTPUT_PACKAGE);
+
+        String varDecl = stmts.get(0).toString();
+        assertThat(varDecl)
+            .as("Outer arg rebinds as a Map (wildcard-parameterised for -source 17)")
+            .contains("env.getArgument(\"input\") instanceof java.util.Map<?, ?> _m1");
+        assertThat(varDecl)
+            .as("List-bearing segment narrows _m1.get(items) to List<?> and streams")
+            .contains("_m1.get(\"items\") instanceof java.util.List<?> _l2")
+            .contains("_l2.stream().map(_e3")
+            .contains(".toList()");
+        assertThat(varDecl)
+            .as("Inside the lambda the per-element value rebinds as Map and reads the leaf key")
+            .contains("_e3 instanceof java.util.Map<?, ?> _m4")
+            .contains("_m4.get(\"id\")");
+    }
+
+    @Test
+    void emit_static_twoListBearingPath_emitsNestedStreamMap() {
+        // Two-list-deep argMapping `filmIdGroups: input.groups.items.id` from R84 Phase D-list:
+        // streams over `groups`, then over each group's `items`. The leaf cast lands on
+        // List<List<Integer>>; the walker uses Direct as the leaf transform.
+        var intType = ClassName.get(Integer.class);
+        var listOfList = ParameterizedTypeName.get(ClassName.get(java.util.List.class),
+            ParameterizedTypeName.get(ClassName.get(java.util.List.class), intType));
+        var entry = new MappingEntry.FromArg("filmIdGroups",
+            new ValueShape.Scalar(listOfList,
+                new ArgPath("input", List.of(
+                    new ArgPath.Segment("groups", true),
+                    new ArgPath.Segment("items", true),
+                    new ArgPath.Segment("id", false))),
+                new CallSiteExtraction.Direct()));
+        var call = new ServiceMethodCall.Static(
+            "com.example.Svc", "find", List.of(entry), intType);
+
+        var stmts = ServiceMethodCallEmitter.emit(call, OUTPUT_PACKAGE);
+
+        String varDecl = stmts.get(0).toString();
+        // Two streams, one per liftsList segment; nested .toList() calls.
+        assertThat(varDecl.split("\\.stream\\(\\)\\.map\\(", -1)).hasSize(3);
+        assertThat(varDecl.split("\\.toList\\(\\)", -1)).hasSize(3);
+    }
+
+    @Test
     void emit_static_listOfRecordInputArg_callsCreateBeanListHelper() {
         var beanClass = ClassName.get("com.example", "MyInput");
         var stringType = ClassName.get(String.class);
         var fields = List.of(new ValueShape.FieldBinding(
             "title", "title",
             new ValueShape.Scalar(stringType,
-                new ArgPath("inputs", List.of("title")),
+                new ArgPath("inputs", List.of(new ArgPath.Segment("title", false))),
                 new CallSiteExtraction.Direct())));
         var listShape = new ValueShape.ListOf(ArgPath.head("inputs"),
             new ValueShape.RecordInput(beanClass, fields));
