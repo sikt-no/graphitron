@@ -15,7 +15,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | ID | Item | Status | Updated | Plan |
 |---|---|---|---|---|
 | `R19` | Rebase and squash rewrite branch onto main | Ready |  | [plan](history-squash.md) |
-| `R222` | Dimensional model pivot: slots over cross-product permits | Spec | 2026-05-25 <sub>created 2026-05-21</sub> | [plan](dimensional-model-pivot.md) |
+| `R222` | Dimensional model pivot: slots over cross-product permits | Spec | 2026-05-28 <sub>created 2026-05-21</sub> | [plan](dimensional-model-pivot.md) |
 | `R238` | ServiceMethodCall walker carrier (R222 foundation slice) | In Progress | 2026-05-28 <sub>created 2026-05-25</sub> | [plan](methodcall-walker-carrier.md) |
 | `R246` | UpdateRows walker carrier (R222 UPDATE slice) with PK-or-UK identification <sub>blocked by: [methodcall-walker-carrier](methodcall-walker-carrier.md)</sub> | In Progress | 2026-05-28 <sub>created 2026-05-27</sub> | [plan](updaterows-walker-carrier.md) |
 | `R45` | Multi-tenant routing on top of the schema-driven ExecutionInput factory | Spec | 2026-05-20 | [plan](tenant-routing-and-execution-input.md) |

@@ -7,7 +7,7 @@ priority: 3
 theme: structural-refactor
 depends-on: []
 created: 2026-05-21
-last-updated: 2026-05-25
+last-updated: 2026-05-28
 ---
 
 # Dimensional model pivot: slots over cross-product permits
@@ -86,6 +86,14 @@ The rewrite-internal disease is encoding multiple independent axes through one p
 - **Validity lives at the wrapper, not inside the carrier.** Encoding failure inside the carrier family would force every downstream consumer to either filter or handle the failure arm. Encoding it at the wrapper plus a classification/generation phase split lets downstream consumers assume `Ok`-only inputs while classification runs to completion for the LSP's benefit.
 - **LSP-aligned diagnostics from day one.** Every diagnostic carries the LSP-shape fields (severity, code, message, tags, relatedInformation) so the wire-format adapter is a mechanical projection rather than a translation layer. R226's reframing of validator output as walker diagnostics, and R222's walker output, share one wire format.
 - **Each axis is independently testable.** A producer is a pure function: SDL fragment in, sealed result out. Tests don't need a graphitron classification context.
+
+## Transition techniques
+
+Catalog of techniques surfaced by early slices. Not prescriptions; later slices may discard, refine, or invent alternatives based on what their own scope requires. Recorded so the next slice can borrow without re-deriving.
+
+- **Additive cutover, then destructive retirement.** R238's actual landing (commits `f90a2f3` → `c1e7d2b` → `e6b6c1c`) added the new carrier slot alongside the legacy `MethodRef` slot on each record, cut consumers over while both shapes were reachable, then retired the legacy slot. Bounds the dual-implementation window to a short commit sequence rather than a feature-branch lifetime. Each step is reviewable on its own; the legacy stays runnable until the cutover commit lands. R244 adopts the same sequence for the `ErrorChannel.PayloadClass` retirement.
+- **Temporary sibling interface for incompatible-shape implementers.** When a slice's new carrier shape can't accommodate every implementer of the original carrier-bearing interface in one slice's scope, the implementers that can't ride the new shape may split onto a sibling interface for the transition window, with the named follow-on slice absorbing them back. R244 introduces `WithDmlErrorTransport` next to `WithErrorChannel` because the DML carriers' sentinel-based transport doesn't fit the new `Mapped | NoChannel` shape; the DML follow-on slice re-unifies them. Technique trade-off: keeps each slice's scope bounded at the cost of one acknowledged transitional surface that must retire on a named follow-on; the alternative ("scope each slice so every implementer can ride the new shape in one slice") may produce a tighter result where it fits, and is fine to prefer.
+- **Walker substrate concession on blast-radius grounds.** The principled substrate is SDL primitives + classloader directly. R238 took a translator concession (`ServiceMethodCallWalker` reads an upstream-resolved `MethodRef.Service` rather than reflecting from scratch) because today's `ServiceCatalog.reflectServiceMethod` is 1258 LOC of battle-tested reflection that a translator-walker avoids duplicating; a planned follow-up retires the intermediate. R244 has no comparably large intermediate and stays on the principled substrate. Each slice's call.
 
 ## Stages
 
@@ -172,7 +180,7 @@ The names below are the working vocabulary for the umbrella; slices may rename, 
 - **Shared emitter**: a static utility parameterised on a carrier-bearing interface that produces emit-ready code fragments (var-decls, expression blocks). R238 introduces `ServiceMethodCallEmitter(ServiceMethodCall) -> List<CodeBlock>`. Lighter than a dimensional slot when the consumer's only need is the carrier's emission, not multi-carrier composition. Slices choose between shared emitter and dimensional slot per consumer's need.
 - **Per-directive sibling interface**: a sibling of `MethodBackedField` carrying one directive's call slot. R238 introduces `ServiceField` (carrying `ServiceMethodCall`) as the first instance. The earlier umbrella draft framed this as a pure marker sub-interface of `MethodBackedField`; the sibling shape lets each slice ship narrow without forcing the other six `MethodBackedField` implementers to grow no-op slot accessors. `MethodBackedField` retires once every per-directive sibling has landed.
 - **`BackingClass`** — three-arm sealed family (`Pojo`, `JavaRecord`, `JooqTableRecord`); attaches per binding kind where method-call semantics need it.
-- **`Diagnostic`** — LSP-aligned sealed family. Carries non-error events on both `Ok` and `Err`. `BuildWarning` migration retires; the channel is one unified stream at the LSP boundary.
+- **`Diagnostic`** — LSP-aligned record with a graphitron-internal `Severity` enum (arms `Error` / `Warning` / `Information` / `Hint`, paralleling LSP `DiagnosticSeverity`). Carries non-error events on both `Ok` and `Err`. The graphitron-side shape does not import `org.eclipse.lsp4j`; the LSP module's `Diagnostics` projector maps to `lsp4j.Diagnostic` at the wire boundary so no code below the LSP module sees the lsp4j types. `BuildWarning` migration retires; the channel is one unified stream at the LSP boundary.
 - **`AuthorError`** — the existing `Rejection.AuthorError` sealed family. The wire-format adapter projects each leaf to severity=Error LSP `Diagnostic` with a code derived per leaf type (e.g. `AuthorError.UnknownName` → `"graphitron.unknown-name"`).
 - **`@table` / `@record(class:)` on input types** — drop entirely. Table-binding collapses to the consumer's `@table` return at production time. `@record(class:)`'s deserialization-target function collapses to the user's declared service-method param type, read by reflection at the `MethodCall` producer's site.
 - **`@value` on input fields** — drops as redundant scaffolding. The WHERE-vs-SET partition derives from catalog PK membership inside the SQL-emitting producers.
