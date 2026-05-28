@@ -423,6 +423,47 @@ class FederationEntitiesDispatchTest {
     }
 
     /**
+     * R255 regression: a federated {@code _entities} query that selects both {@code id}
+     * (the NodeId-encoded primary key) and a sibling SDL field whose {@code @field(name:)}
+     * resolves to the same underlying column. Pre-fix the two switch arms in
+     * {@code Customer.$fields} both appended {@code table.CUSTOMER_ID} to an {@code ArrayList}
+     * accumulator, so the generated SELECT projected the column twice and jOOQ's
+     * {@code FieldsImpl.indexOf} logged an INFO "Ambiguous match" on every fetched row. The
+     * {@link java.util.LinkedHashSet} accumulator dedupes by jOOQ {@code Field} identity;
+     * the column now appears exactly once in the projection.
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    void entities_nodeIdAndOverlappingSiblingField_projectColumnOnce() {
+        String customerNodeId = NodeIdEncoder.encode("Customer", 1);
+        SQL_LOG.clear();
+        Map<String, Object> data = execute(
+            "query Q($reps: [_Any!]!) { _entities(representations: $reps) {"
+            + " __typename ... on Customer { id customerId firstName } } }",
+            Map.of("reps", List.of(Map.of("__typename", "Customer", "id", customerNodeId))));
+
+        List<Map<String, Object>> entities = (List<Map<String, Object>>) data.get("_entities");
+        assertThat(entities).hasSize(1);
+        assertThat(entities.get(0)).containsEntry("__typename", "Customer");
+
+        var customerSelect = SQL_LOG.stream()
+            .filter(s -> s.contains("'customer' as \"__typename\""))
+            .findFirst()
+            .orElseThrow(() -> new AssertionError("Customer SELECT not found in SQL log: " + SQL_LOG));
+
+        // Extract the projection list (between SELECT and FROM) and count customer_id occurrences.
+        int selectIdx = customerSelect.indexOf("select ");
+        int fromIdx = customerSelect.indexOf(" from ", selectIdx);
+        String projection = customerSelect.substring(selectIdx, fromIdx);
+        long customerIdCount = projection.split("\"customer_id\"", -1).length - 1;
+        assertThat(customerIdCount)
+            .as("Customer SELECT projection must reference customer_id exactly once "
+                + "(id @nodeId and customerId @field both target customer_id; dedupe lives in $fields())\n"
+                + "projection was: " + projection)
+            .isEqualTo(1);
+    }
+
+    /**
      * Compound key batching: multiple reps of the same {@code (typename, alternative,
      * tenantId)} batch into a single SELECT via the {@code VALUES (idx, ...)} derived
      * table. Verifies the row-array machinery emits one SELECT for two reps, not two.
