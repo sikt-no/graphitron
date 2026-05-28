@@ -35,7 +35,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R212` | IntelliJ plugin wrapping graphitron:dev LSP | Spec | 2026-05-21 | [plan](intellij-lsp-plugin.md) |
 | `R112` | Operation-driven test corpus, capability catalog, and runtime trace <sub>blocked by: [capability-catalog](capability-catalog.md)</sub> | Spec |  | [plan](operation-driven-test-corpus.md) |
 | `R188` | Replace @value with PK-default partition on UPDATE/DELETE | Spec | 2026-05-27 <sub>created 2026-05-20</sub> | [plan](simplify-update-mutations-drop-value.md) |
-| `R247` | Emit assembled schema.graphqls into generated-resources/graphitron, federation-aware | In Review | 2026-05-28 <sub>created 2026-05-27</sub> | [plan](emit-assembled-schema-graphqls.md) |
 | `R243` | Per-field direction in @order/@defaultOrder via FieldSort.direction | In Review | 2026-05-27 <sub>created 2026-05-26</sub> | [plan](per-field-sort-direction.md) |
 | `R250` | Propagate schema-applied directives (@link) from consumer SDL to generated buildSchema | In Review | 2026-05-28 <sub>created 2026-05-27</sub> | [plan](propagate-schema-applied-directives.md) |
 
@@ -260,7 +259,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R180` [**Centralize ResultType column-read emission for @record parents**](record-parent-column-read-helper.md)
 - `R220` [**Consolidate looksLikeSourcesShape, couldBeSourcesShape, and classifySourcesType into one predicate**](consolidate-sources-shape-predicates.md)
 - `R242` [**DML payload positional input/output alignment**](dml-payload-positional-alignment.md)
-- `R247` [**Emit assembled schema.graphqls into generated-resources/graphitron, federation-aware**](emit-assembled-schema-graphqls.md)
 - `R85` [**Emit graphitronContext helper into Conditions and Type classes**](helper-emission-non-fetcher-hosts.md)
 - `R244` [**ErrorChannel walker carrier (R222 Stage 2 slice on @service + @tableMethod)**](errorchannel-walker-carrier.md)
 - `R209` [**FieldRegistry classify-input trace loses typed Rejection payload**](field-registry-typed-rejection-trace.md)
