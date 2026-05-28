@@ -2544,7 +2544,7 @@ class FieldBuilder {
             ReturnTypeRef returnType, no.sikt.graphitron.rewrite.model.MethodRef method,
             String parentTypeName, String fieldName,
             SourceLocation location, GraphQLFieldDefinition fieldDef,
-            java.util.function.Function<Optional<ErrorChannel>, GraphitronField> builder) {
+            java.util.function.BiFunction<Optional<ErrorChannel>, no.sikt.graphitron.rewrite.model.ServiceMethodCall, GraphitronField> builder) {
         Optional<ErrorChannel> channel;
         switch (resolveErrorChannel(returnType)) {
             case ErrorChannelResult.NoChannel ignored -> channel = Optional.empty();
@@ -2561,7 +2561,16 @@ class FieldBuilder {
         if (returnTypeReason != null) {
             return new UnclassifiedField(parentTypeName, fieldName, location, fieldDef, Rejection.structural(returnTypeReason));
         }
-        return builder.apply(channel);
+        // R238: project the resolved MethodRef.Service onto a ServiceMethodCall carrier.
+        var walkerResult = new no.sikt.graphitron.rewrite.walker.ServiceMethodCallWalker()
+            .walk(fieldDef, (no.sikt.graphitron.rewrite.model.MethodRef.Service) method);
+        return switch (walkerResult) {
+            case no.sikt.graphitron.rewrite.model.WalkerResult.Ok<no.sikt.graphitron.rewrite.model.ServiceMethodCall> ok ->
+                builder.apply(channel, ok.carrier());
+            case no.sikt.graphitron.rewrite.model.WalkerResult.Err<no.sikt.graphitron.rewrite.model.ServiceMethodCall> err ->
+                new UnclassifiedField(parentTypeName, fieldName, location, fieldDef,
+                    Rejection.structural(err.errors().getFirst().message()));
+        };
     }
 
     /**
@@ -2982,14 +2991,14 @@ class FieldBuilder {
                     new UnclassifiedField(parentTypeName, name, location, fieldDef, r.rejection());
                 case ServiceDirectiveResolver.Resolved.ErrorsLifted e -> e.field();
                 case ServiceDirectiveResolver.Resolved.TableBound tb ->
-                    buildServiceField(tb.returnType(), tb.method(), parentTypeName, name, location, fieldDef, ch ->
-                        new QueryField.QueryServiceTableField(parentTypeName, name, location, tb.returnType(), tb.method(), ch));
+                    buildServiceField(tb.returnType(), tb.method(), parentTypeName, name, location, fieldDef, (ch, smc) ->
+                        new QueryField.QueryServiceTableField(parentTypeName, name, location, tb.returnType(), tb.method(), smc, ch));
                 case ServiceDirectiveResolver.Resolved.Result r ->
-                    buildServiceField(r.returnType(), r.method(), parentTypeName, name, location, fieldDef, ch ->
-                        new QueryField.QueryServiceRecordField(parentTypeName, name, location, r.returnType(), r.method(), ch));
+                    buildServiceField(r.returnType(), r.method(), parentTypeName, name, location, fieldDef, (ch, smc) ->
+                        new QueryField.QueryServiceRecordField(parentTypeName, name, location, r.returnType(), r.method(), smc, ch));
                 case ServiceDirectiveResolver.Resolved.Scalar s ->
-                    buildServiceField(s.returnType(), s.method(), parentTypeName, name, location, fieldDef, ch ->
-                        new QueryField.QueryServiceRecordField(parentTypeName, name, location, s.returnType(), s.method(), ch));
+                    buildServiceField(s.returnType(), s.method(), parentTypeName, name, location, fieldDef, (ch, smc) ->
+                        new QueryField.QueryServiceRecordField(parentTypeName, name, location, s.returnType(), s.method(), smc, ch));
             };
         }
 
@@ -3106,8 +3115,8 @@ class FieldBuilder {
                     new UnclassifiedField(parentTypeName, name, location, fieldDef, r.rejection());
                 case ServiceDirectiveResolver.Resolved.ErrorsLifted e -> e.field();
                 case ServiceDirectiveResolver.Resolved.TableBound tb ->
-                    buildServiceField(tb.returnType(), tb.method(), parentTypeName, name, location, fieldDef, ch ->
-                        new MutationField.MutationServiceTableField(parentTypeName, name, location, tb.returnType(), tb.method(), ch));
+                    buildServiceField(tb.returnType(), tb.method(), parentTypeName, name, location, fieldDef, (ch, smc) ->
+                        new MutationField.MutationServiceTableField(parentTypeName, name, location, tb.returnType(), tb.method(), smc, ch));
                 case ServiceDirectiveResolver.Resolved.Result r -> {
                     // R159: when the @service mutation returns a payload type whose
                     // data field opts into the $source sigil, verify the producer's reflected
@@ -3131,12 +3140,12 @@ class FieldBuilder {
                         yield new UnclassifiedField(parentTypeName, name, location, fieldDef,
                             Rejection.structural(servicePayloadError));
                     }
-                    yield buildServiceField(r.returnType(), r.method(), parentTypeName, name, location, fieldDef, ch ->
-                        new MutationField.MutationServiceRecordField(parentTypeName, name, location, r.returnType(), r.method(), ch));
+                    yield buildServiceField(r.returnType(), r.method(), parentTypeName, name, location, fieldDef, (ch, smc) ->
+                        new MutationField.MutationServiceRecordField(parentTypeName, name, location, r.returnType(), r.method(), smc, ch));
                 }
                 case ServiceDirectiveResolver.Resolved.Scalar s ->
-                    buildServiceField(s.returnType(), s.method(), parentTypeName, name, location, fieldDef, ch ->
-                        new MutationField.MutationServiceRecordField(parentTypeName, name, location, s.returnType(), s.method(), ch));
+                    buildServiceField(s.returnType(), s.method(), parentTypeName, name, location, fieldDef, (ch, smc) ->
+                        new MutationField.MutationServiceRecordField(parentTypeName, name, location, s.returnType(), s.method(), smc, ch));
             };
         }
 

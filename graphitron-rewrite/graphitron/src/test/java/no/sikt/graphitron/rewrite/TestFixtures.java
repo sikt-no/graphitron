@@ -13,8 +13,11 @@ import no.sikt.graphitron.rewrite.model.MethodRef;
 import no.sikt.graphitron.rewrite.model.ParamSource;
 import no.sikt.graphitron.rewrite.model.ParentCorrelation;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
+import no.sikt.graphitron.rewrite.model.ServiceMethodCall;
 import no.sikt.graphitron.rewrite.model.SourceKey;
 import no.sikt.graphitron.rewrite.model.TableRef;
+import no.sikt.graphitron.rewrite.model.WalkerResult;
+import no.sikt.graphitron.rewrite.walker.ServiceMethodCallWalker;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -95,6 +98,23 @@ public final class TestFixtures {
                                                               List<MethodRef.Param> params) {
         return new MethodRef.Service(className, methodName, returnType, params, List.of(),
             new MethodRef.CallShape.InstanceWithDslHolder());
+    }
+
+    /**
+     * R238: stub a {@link ServiceMethodCall} from a {@link MethodRef.Service} via the
+     * production walker. Used by tests building the four root sync {@code @service} permits,
+     * which now carry both legacy {@code method} and the new {@code serviceMethodCall} slots
+     * during the additive cutover. When the walker rejects (multi-DSL invariant violation, etc.),
+     * tests should construct the carrier manually instead.
+     */
+    public static ServiceMethodCall stubServiceCall(MethodRef.Service method) {
+        var result = new ServiceMethodCallWalker().walk(null, method);
+        if (result instanceof WalkerResult.Ok<ServiceMethodCall> ok) {
+            return ok.carrier();
+        }
+        throw new IllegalStateException(
+            "Test fixture's MethodRef.Service did not translate to a ServiceMethodCall — "
+            + "construct the carrier manually for cases that exercise walker rejections.");
     }
 
     /**

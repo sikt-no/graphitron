@@ -174,12 +174,14 @@ class MappingsConstantNameDedupTest {
 
     private static MutationField.MutationServiceRecordField mutationServiceRecordField(
             String fieldName, String payloadFqn, Optional<ErrorChannel> channel) {
+        var method = TestFixtures.staticServiceMethodRef("com.example.SvcStub", "doStuff", TypeName.OBJECT, List.of());
         return new MutationField.MutationServiceRecordField(
             "Mutation",
             fieldName,
             null,
             new ReturnTypeRef.ResultReturnType("Payload", new FieldWrapper.Single(true), payloadFqn),
-            TestFixtures.staticServiceMethodRef("com.example.SvcStub", "doStuff", TypeName.OBJECT, List.of()),
+            method,
+            TestFixtures.stubServiceCall(method),
             channel);
     }
 

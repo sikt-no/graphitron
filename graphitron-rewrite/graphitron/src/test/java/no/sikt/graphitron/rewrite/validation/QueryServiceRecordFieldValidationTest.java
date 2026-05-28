@@ -27,6 +27,7 @@ class QueryServiceRecordFieldValidationTest {
             new QueryServiceRecordField("Query", "externalData", null,
                 new ReturnTypeRef.ResultReturnType("Film", new FieldWrapper.Single(true), null),
                 TestFixtures.staticServiceMethodRef("com.example.Service", "method", TypeName.VOID, List.of()),
+                TestFixtures.stubServiceCall(TestFixtures.staticServiceMethodRef("com.example.Service", "method", TypeName.VOID, List.of())),
                 Optional.empty()),
             List.of());
 
