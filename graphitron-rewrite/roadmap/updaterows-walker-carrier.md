@@ -1,7 +1,7 @@
 ---
 id: R246
 title: UpdateRows walker carrier (R222 UPDATE slice) with PK-or-UK identification
-status: Ready
+status: In Progress
 bucket: structural
 priority: 4
 theme: structural-refactor
