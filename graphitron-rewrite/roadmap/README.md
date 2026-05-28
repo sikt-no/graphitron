@@ -36,7 +36,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R112` | Operation-driven test corpus, capability catalog, and runtime trace <sub>blocked by: [capability-catalog](capability-catalog.md)</sub> | Spec |  | [plan](operation-driven-test-corpus.md) |
 | `R188` | Replace @value with PK-default partition on UPDATE/DELETE | Spec | 2026-05-27 <sub>created 2026-05-20</sub> | [plan](simplify-update-mutations-drop-value.md) |
 | `R243` | Per-field direction in @order/@defaultOrder via FieldSort.direction | In Review | 2026-05-27 <sub>created 2026-05-26</sub> | [plan](per-field-sort-direction.md) |
-| `R250` | Propagate schema-applied directives (@link) from consumer SDL to generated buildSchema | In Review | 2026-05-28 <sub>created 2026-05-27</sub> | [plan](propagate-schema-applied-directives.md) |
 
 ---
 
@@ -270,7 +269,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R252` [**Multi-file federation fixture coverage for schema.graphqls emission**](multi-file-federation-fixture-coverage.md)
 - `R243` [**Per-field direction in @order/@defaultOrder via FieldSort.direction**](per-field-sort-direction.md)
 - `R213` [**Plain-input field rejections attributed to consumer field, losing input-field source location**](input-field-rejection-attribution.md)
-- `R250` [**Propagate schema-applied directives (@link) from consumer SDL to generated buildSchema**](propagate-schema-applied-directives.md)
 - `R188` [**Replace @value with PK-default partition on UPDATE/DELETE**](simplify-update-mutations-drop-value.md)
 - `R51` [**Split PropertyField/RecordField on parent-kind instead of nullable column**](propertyfield-recordfield-nullable-column.md)
 - `R219` [**Unify arity-unique and type-unique inference under a single JavaTypeKey-counted rule**](unify-inference-rule-by-javatypekey.md)
