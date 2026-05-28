@@ -19,6 +19,7 @@ import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.*;
 import javax.lang.model.element.Modifier;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashSet;
 import java.util.List;
 
 import static javax.lang.model.element.Modifier.PUBLIC;
@@ -42,9 +43,10 @@ import static javax.lang.model.element.Modifier.STATIC;
 public class TypeClassGenerator {
 
     // Cross-generator constants (LIST, ENV, SELECTED_FIELD) come from GeneratorUtils via static import.
-    private static final ClassName FIELD          = ClassName.get("org.jooq", "Field");
-    private static final ClassName SELECTION_SET  = ClassName.get("graphql.schema", "DataFetchingFieldSelectionSet");
-    private static final ClassName ARRAY_LIST     = ClassName.get(ArrayList.class);
+    private static final ClassName FIELD             = ClassName.get("org.jooq", "Field");
+    private static final ClassName SELECTION_SET     = ClassName.get("graphql.schema", "DataFetchingFieldSelectionSet");
+    private static final ClassName ARRAY_LIST        = ClassName.get(ArrayList.class);
+    private static final ClassName LINKED_HASH_SET   = ClassName.get(LinkedHashSet.class);
 
     public static List<TypeSpec> generate(GraphitronSchema schema, String outputPackage) {
         return schema.types().entrySet().stream()
@@ -197,13 +199,20 @@ public class TypeClassGenerator {
             ClassName.get(String.class),
             ParameterizedTypeName.get(LIST, SELECTED_FIELD));
 
+        // LinkedHashSet accumulator: dedupes by jOOQ Field identity while preserving insertion
+        // order. Two switch arms emitting the same raw `table.X` collapse to one projection term
+        // (jOOQ caches TableField references per aliased Table instance — same Java object).
+        // Aliased subquery / DSL.field(...).as(name) emissions never collide because each .as(...)
+        // produces a fresh Field; two arms with distinct SDL names stay distinct. The method still
+        // returns List<Field<?>> (callers consume via Collection-accepting jOOQ overloads); the
+        // final return wraps to ArrayList to preserve the signature.
         var builder = MethodSpec.methodBuilder("$fields")
             .addModifiers(PUBLIC, STATIC)
             .returns(listOfField)
             .addParameter(SELECTION_SET, "sel")
             .addParameter(names.jooqTableClass(), "table")
             .addParameter(ENV, "env")
-            .addStatement("$T<$T> fields = new $T<>()", ARRAY_LIST, fieldWildcard, ARRAY_LIST);
+            .addStatement("$T<$T> fields = new $T<>()", LINKED_HASH_SET, fieldWildcard, LINKED_HASH_SET);
 
         var flat = new ArrayList<ChildField>();
         flat.addAll(columnFields);
@@ -218,14 +227,13 @@ public class TypeClassGenerator {
         // Required-projection set: columns the parent SELECT must include regardless of the
         // user's SDL selection — SourceKey columns for DataLoader-backed Split* children, FK
         // source-side columns for child @tableMethod fields (see collectRequiredProjectionColumns
-        // for the full taxonomy). Dedup at runtime against whatever the selection switch appended
-        // (jOOQ Field identity on the aliased table).
+        // for the full taxonomy). The LinkedHashSet accumulator dedupes on add by jOOQ Field
+        // identity, so a plain fields.add(...) is safe; no explicit contains() guard is needed.
         for (ColumnRef col : requiredProjectionColumns) {
-            builder.addStatement("if (!fields.contains(table.$L)) fields.add(table.$L)",
-                col.javaName(), col.javaName());
+            builder.addStatement("fields.add(table.$L)", col.javaName());
         }
 
-        builder.addStatement("return fields");
+        builder.addStatement("return new $T<>(fields)", ARRAY_LIST);
         return builder.build();
     }
 
