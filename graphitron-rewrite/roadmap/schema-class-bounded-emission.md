@@ -1,7 +1,7 @@
 ---
 id: R254
 title: Generated GraphitronSchema emission must have bounded chain depth
-status: Ready
+status: In Progress
 bucket: bug
 depends-on: []
 created: 2026-05-27

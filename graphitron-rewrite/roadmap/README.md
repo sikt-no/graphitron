@@ -34,7 +34,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R212` | IntelliJ plugin wrapping graphitron:dev LSP | Spec | 2026-05-21 | [plan](intellij-lsp-plugin.md) |
 | `R112` | Operation-driven test corpus, capability catalog, and runtime trace <sub>blocked by: [capability-catalog](capability-catalog.md)</sub> | Spec |  | [plan](operation-driven-test-corpus.md) |
 | `R188` | Replace @value with PK-default partition on UPDATE/DELETE | Spec | 2026-05-27 <sub>created 2026-05-20</sub> | [plan](simplify-update-mutations-drop-value.md) |
-| `R254` | Generated GraphitronSchema emission must have bounded chain depth | Ready | 2026-05-28 <sub>created 2026-05-27</sub> | [plan](schema-class-bounded-emission.md) |
+| `R254` | Generated GraphitronSchema emission must have bounded chain depth | In Progress | 2026-05-28 <sub>created 2026-05-27</sub> | [plan](schema-class-bounded-emission.md) |
 | `R243` | Per-field direction in @order/@defaultOrder via FieldSort.direction | In Review | 2026-05-27 <sub>created 2026-05-26</sub> | [plan](per-field-sort-direction.md) |
 
 ---
