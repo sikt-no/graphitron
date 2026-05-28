@@ -35,8 +35,12 @@ import java.util.List;
  * generator can emit types in any order and trust graphql-java's {@code .build()} call to
  * resolve each reference against the registered scalars and types.
  *
- * <p>Descriptions and deprecation reasons are preserved. Default values and directive
- * applications are not yet translated; these are follow-up steps within Commit B.
+ * <p>The {@code type()} method body is statement-shaped; each input-field reaches the local
+ * builder via a {@code private static} {@code inputFieldDef_<sdlName>()} factory method
+ * collected through {@link HelperMethodSink}. Bounds the chain depth on every emitted
+ * statement independently of input-object field count.
+ *
+ * <p>Descriptions and deprecation reasons are preserved.
  */
 public final class InputTypeGenerator {
 
@@ -66,20 +70,19 @@ public final class InputTypeGenerator {
     }
 
     private static TypeSpec buildInputTypeSpec(GraphQLInputObjectType inputType) {
-        var body = CodeBlock.builder()
-            .add("return $T.newInputObject()", INPUT_TYPE)
-            .indent()
-            .add("\n.name($S)", inputType.getName());
+        var sink = new HelperMethodSink();
+        var body = CodeBlock.builder();
+        body.addStatement("$T.Builder b = $T.newInputObject()", INPUT_TYPE, INPUT_TYPE);
+        body.addStatement("b.name($S)", inputType.getName());
         if (inputType.getDescription() != null && !inputType.getDescription().isEmpty()) {
-            body.add("\n.description($S)", inputType.getDescription());
+            body.addStatement("b.description($S)", inputType.getDescription());
         }
         for (var field : inputType.getFieldDefinitions()) {
-            body.add("\n.field(").add(buildFieldDefinition(field)).add(")");
+            String helper = sink.addInputFieldDef(field);
+            body.addStatement("b.field($L())", helper);
         }
-        for (var applied : AppliedDirectiveEmitter.applicationsFor(inputType)) {
-            body.add(applied);
-        }
-        body.add("\n.build();\n").unindent();
+        AppliedDirectiveEmitter.emitApplications(body, "b", inputType, sink);
+        body.addStatement("return b.build()");
 
         var typeMethod = MethodSpec.methodBuilder("type")
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
@@ -87,32 +90,41 @@ public final class InputTypeGenerator {
             .addCode(body.build())
             .build();
 
-        return TypeSpec.classBuilder(inputType.getName() + "Type")
+        var classBuilder = TypeSpec.classBuilder(inputType.getName() + "Type")
             .addModifiers(Modifier.PUBLIC, Modifier.FINAL)
-            .addMethod(typeMethod)
-            .build();
+            .addMethod(typeMethod);
+        sink.contributeTo(classBuilder);
+        return classBuilder.build();
     }
 
-    private static CodeBlock buildFieldDefinition(graphql.schema.GraphQLInputObjectField field) {
-        var block = CodeBlock.builder()
-            .add("$T.newInputObjectField()", INPUT_FIELD)
-            .add(".name($S)", field.getName())
-            .add(".type(").add(buildInputTypeRef(field.getType())).add(")");
+    /**
+     * Builds a {@code private static GraphQLInputObjectField <methodName>()} factory method
+     * whose body is statement-flattened.
+     */
+    static MethodSpec buildFieldDefinitionMethod(String methodName,
+                                                  graphql.schema.GraphQLInputObjectField field,
+                                                  HelperMethodSink sink) {
+        var body = CodeBlock.builder();
+        body.addStatement("$T.Builder b = $T.newInputObjectField()", INPUT_FIELD, INPUT_FIELD);
+        body.addStatement("b.name($S)", field.getName());
+        body.addStatement("b.type($L)", buildInputTypeRef(field.getType()));
         if (field.getDescription() != null && !field.getDescription().isEmpty()) {
-            block.add(".description($S)", field.getDescription());
+            body.addStatement("b.description($S)", field.getDescription());
         }
         if (field.hasSetDefaultValue()) {
             Object defaultValue = graphql.schema.GraphQLInputObjectField.getInputFieldDefaultValue(field);
-            block.add(".defaultValueProgrammatic(").add(GraphQLValueEmitter.emit(defaultValue)).add(")");
+            body.addStatement("b.defaultValueProgrammatic($L)", GraphQLValueEmitter.emit(defaultValue));
         }
         if (field.isDeprecated()) {
-            block.add(".deprecate($S)", field.getDeprecationReason());
+            body.addStatement("b.deprecate($S)", field.getDeprecationReason());
         }
-        for (var applied : AppliedDirectiveEmitter.applicationsFor(field)) {
-            block.add(applied);
-        }
-        block.add(".build()");
-        return block.build();
+        AppliedDirectiveEmitter.emitApplications(body, "b", field, sink);
+        body.addStatement("return b.build()");
+        return MethodSpec.methodBuilder(methodName)
+            .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+            .returns(INPUT_FIELD)
+            .addCode(body.build())
+            .build();
     }
 
     /**

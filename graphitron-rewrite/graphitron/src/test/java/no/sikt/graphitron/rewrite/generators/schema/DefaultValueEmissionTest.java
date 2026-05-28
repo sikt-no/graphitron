@@ -87,6 +87,6 @@ class DefaultValueEmissionTest {
             .filter(s -> s.name().equals(typeName))
             .findFirst()
             .orElseThrow(() -> new AssertionError("no " + typeName + " in " + specs))
-            .methodSpecs().get(0).code().toString();
+            .toString();
     }
 }

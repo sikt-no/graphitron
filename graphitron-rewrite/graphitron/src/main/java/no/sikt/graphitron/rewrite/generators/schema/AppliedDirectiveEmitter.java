@@ -15,21 +15,20 @@ import graphql.schema.GraphQLScalarType;
 import graphql.schema.GraphQLSchema;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.CodeBlock;
+import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.rewrite.ScalarTypeResolver;
 import no.sikt.graphitron.rewrite.generators.util.SchemaDirectiveRegistry;
 import no.sikt.graphitron.rewrite.model.ScalarResolution;
 
-import java.util.ArrayList;
-import java.util.List;
+import javax.lang.model.element.Modifier;
 import java.util.Locale;
 
 /**
- * Emits {@code .withAppliedDirective(GraphQLAppliedDirective.newDirective()...)} blocks for
- * every survivor directive application on a {@link GraphQLDirectiveContainer}. Used by the
- * per-type emitters ({@link ObjectTypeGenerator}, {@link InputTypeGenerator},
- * {@link EnumTypeGenerator}) to preserve federation directives (and user-declared custom
- * directives like {@code @deprecated} when it reaches a schema element not handled via the
- * dedicated {@code .deprecate(...)} builder method) in the programmatic schema.
+ * Emits a {@code private static GraphQLAppliedDirective <name>()} factory method per survivor
+ * applied directive on a {@link GraphQLDirectiveContainer} or schema. Per-type emitters
+ * ({@link ObjectTypeGenerator}, {@link InputTypeGenerator}, {@link EnumTypeGenerator}) and
+ * {@link GraphitronSchemaClassGenerator} register the methods on their enclosing class via
+ * {@link HelperMethodSink} and then call them by name from the builder-statement body.
  *
  * <p>Filtering uses {@link SchemaDirectiveRegistry#isSurvivor(String)}: generator-only
  * directives (Graphitron's own build-time directives) are skipped; everything else survives.
@@ -54,69 +53,61 @@ public final class AppliedDirectiveEmitter {
     private AppliedDirectiveEmitter() {}
 
     /**
-     * Returns a list of {@code .withAppliedDirective(...)} CodeBlocks, one per survivor applied
-     * directive on {@code container}. Each block starts with {@code \n} so the caller can
-     * concatenate onto an already-indented builder chain.
-     *
-     * <p>The list is empty when the container has no survivor applications; callers can emit
-     * without checking.
-     *
-     * <p><b>Shape contract.</b> Per-container blocks are pre-wrapped in
-     * {@code .withAppliedDirective(...)} because graphql-java's per-type builders take one
-     * application at a time. The schema-level sibling, {@link #applicationsForSchema(GraphQLSchema)},
-     * returns the bare {@code GraphQLAppliedDirective.newDirective()...build()} inner
-     * blocks instead, because {@link GraphQLSchema.Builder#withSchemaAppliedDirectives}
-     * takes a single {@code List<GraphQLAppliedDirective>}. The names look symmetric; the
-     * shapes are not.
+     * Allocates one helper method per survivor applied directive on {@code container} via
+     * {@code sink} and writes {@code <builderVar>.withAppliedDirective(<helperName>());}
+     * statements onto {@code body}. Callers pass the local builder variable that the
+     * surrounding statement-shaped body holds (e.g. {@code "b"} inside a {@code type()}
+     * method).
      */
-    public static List<CodeBlock> applicationsFor(GraphQLDirectiveContainer container) {
-        var blocks = new ArrayList<CodeBlock>();
+    static void emitApplications(CodeBlock.Builder body, String builderVar,
+                                  GraphQLDirectiveContainer container, HelperMethodSink sink) {
         for (var applied : container.getAppliedDirectives()) {
             if (!SchemaDirectiveRegistry.isSurvivor(applied.getName())) continue;
-            blocks.add(CodeBlock.builder()
-                .add("\n.withAppliedDirective(")
-                .add(buildApplication(applied))
-                .add(")")
-                .build());
+            String helper = sink.addAppliedDirective(applied);
+            body.addStatement("$L.withAppliedDirective($L())", builderVar, helper);
         }
-        return blocks;
     }
 
     /**
-     * Survivor applied directives sitting on the schema definition itself
-     * ({@link GraphQLSchema#getSchemaAppliedDirectives()}). Used to propagate
-     * the consumer's {@code extend schema @link(url: ..., import: [...])} into
-     * the generated runtime build via
-     * {@link GraphQLSchema.Builder#withSchemaAppliedDirectives}. Filtering
-     * mirrors {@link #applicationsFor}: generator-only directives are skipped;
-     * everything else survives.
+     * Allocates one helper method per survivor application sitting on the schema definition
+     * itself ({@link GraphQLSchema#getSchemaAppliedDirectives()}) and writes a single
+     * {@code <builderVar>.withSchemaAppliedDirectives(java.util.List.of(<helperName>(), ...))}
+     * statement onto {@code body}. Used to propagate the consumer's
+     * {@code extend schema @link(url: ..., import: [...])} into the generated runtime build.
      *
-     * <p><b>Shape contract.</b> Returns the bare
-     * {@code GraphQLAppliedDirective.newDirective()...build()} inner blocks,
-     * unwrapped — the call site assembles them into a single
-     * {@code .withSchemaAppliedDirectives(java.util.List.of(...))} call because
-     * {@link GraphQLSchema.Builder#withSchemaAppliedDirectives} takes a
-     * {@code List<GraphQLAppliedDirective>} rather than one application per
-     * builder call. The per-container sibling {@link #applicationsFor} pre-wraps
-     * each in {@code .withAppliedDirective(...)} to match its singular-builder
-     * call site. The schema-level applied-directive list is not exposed as a
-     * {@link GraphQLDirectiveContainer} in graphql-java, so this entry point
-     * takes the raw {@link GraphQLSchema} rather than reusing
-     * {@link #applicationsFor}.
+     * <p>Single-statement form is intentional: {@link GraphQLSchema.Builder#withSchemaAppliedDirectives}
+     * takes one {@code List<GraphQLAppliedDirective>}, not one application per builder call.
+     * Chain depth on this statement is bounded; the per-application chains live inside the
+     * helper bodies the sink allocates.
      */
-    public static List<CodeBlock> applicationsForSchema(GraphQLSchema schema) {
-        var blocks = new ArrayList<CodeBlock>();
-        for (var applied : schema.getSchemaAppliedDirectives()) {
-            if (!SchemaDirectiveRegistry.isSurvivor(applied.getName())) continue;
-            blocks.add(buildApplication(applied));
+    static void emitSchemaApplications(CodeBlock.Builder body, String builderVar,
+                                        GraphQLSchema schema, HelperMethodSink sink) {
+        var applications = schema.getSchemaAppliedDirectives().stream()
+            .filter(a -> SchemaDirectiveRegistry.isSurvivor(a.getName()))
+            .toList();
+        if (applications.isEmpty()) return;
+
+        var args = CodeBlock.builder();
+        for (int i = 0; i < applications.size(); i++) {
+            if (i > 0) args.add(", ");
+            String helper = sink.addAppliedDirective(applications.get(i));
+            args.add("$L()", helper);
         }
-        return blocks;
+        body.addStatement("$L.withSchemaAppliedDirectives($T.of($L))",
+            builderVar, ClassName.get("java.util", "List"), args.build());
     }
 
-    private static CodeBlock buildApplication(GraphQLAppliedDirective applied) {
-        var block = CodeBlock.builder()
-            .add("$T.newDirective()", APPLIED_DIRECTIVE)
-            .add(".name($S)", applied.getName());
+    /**
+     * Builds a {@code private static GraphQLAppliedDirective <methodName>()} factory method
+     * whose body is statement-flattened: a local builder variable per element, one statement
+     * per builder call. Chain depth on every statement is bounded by construction.
+     */
+    static MethodSpec buildApplicationMethod(String methodName, GraphQLAppliedDirective applied) {
+        var body = CodeBlock.builder();
+        body.addStatement("$T.Builder b = $T.newDirective()", APPLIED_DIRECTIVE, APPLIED_DIRECTIVE);
+        body.addStatement("b.name($S)", applied.getName());
+
+        int argIdx = 0;
         for (var arg : applied.getArguments()) {
             // applied.getArguments() returns one slot per declared argument on the directive,
             // including ones the SDL application did not supply (e.g. @key without resolvable).
@@ -124,17 +115,20 @@ public final class AppliedDirectiveEmitter {
             // state. Skipping the slot lets consumer-side schema build resolve to the
             // directive's declared default.
             if (arg.getArgumentValue().isNotSet()) continue;
-            block.add(".argument(")
-                .add("$T.newArgument()", APPLIED_DIRECTIVE_ARG)
-                .add(".name($S)", arg.getName())
-                .add(".type(").add(emitInputType(arg.getType())).add(")")
-                .add(".valueLiteral(")
-                .add(emitAstLiteralValue(arg))
-                .add(")")
-                .add(".build())");
+            String argVar = "a" + argIdx++;
+            body.addStatement("$T.Builder $L = $T.newArgument()",
+                APPLIED_DIRECTIVE_ARG, argVar, APPLIED_DIRECTIVE_ARG);
+            body.addStatement("$L.name($S)", argVar, arg.getName());
+            body.addStatement("$L.type($L)", argVar, emitInputType(arg.getType()));
+            body.addStatement("$L.valueLiteral($L)", argVar, emitAstLiteralValue(arg));
+            body.addStatement("b.argument($L.build())", argVar);
         }
-        block.add(".build()");
-        return block.build();
+        body.addStatement("return b.build()");
+        return MethodSpec.methodBuilder(methodName)
+            .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+            .returns(APPLIED_DIRECTIVE)
+            .addCode(body.build())
+            .build();
     }
 
     /**

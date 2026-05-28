@@ -34,16 +34,16 @@ class InputTypeGeneratorTest {
     }
 
     @Test
-    void generatedClass_isPublicFinalWithSingleTypeMethod() {
+    void generatedClass_isPublicFinalWithPublicTypeMethod() {
         var spec = findByName(generateFor(INPUT_SCHEMA), "FilterInputType");
         assertThat(spec.modifiers()).contains(Modifier.PUBLIC, Modifier.FINAL);
-        assertThat(spec.methodSpecs()).extracting(m -> m.name()).containsExactly("type");
+        assertThat(spec.methodSpecs()).extracting(m -> m.name()).contains("type");
     }
 
     @Test
     void typeMethod_returnsGraphQLInputObjectType() {
         var method = findByName(generateFor(INPUT_SCHEMA), "FilterInputType")
-            .methodSpecs().get(0);
+            .methodSpecs().stream().filter(m -> "type".equals(m.name())).findFirst().orElseThrow();
         assertThat(method.returnType().toString()).isEqualTo("graphql.schema.GraphQLInputObjectType");
         assertThat(method.modifiers()).contains(Modifier.PUBLIC, Modifier.STATIC);
     }
@@ -51,7 +51,7 @@ class InputTypeGeneratorTest {
     @Test
     void typeMethod_emitsNameAndDescription() {
         var body = findByName(generateFor(INPUT_SCHEMA), "FilterInputType")
-            .methodSpecs().get(0).code().toString();
+            .toString();
         assertThat(body).contains("GraphQLInputObjectType.newInputObject()");
         assertThat(body).contains(".name(\"FilterInput\")");
         assertThat(body).contains(".description(\"A search filter.\")");
@@ -60,7 +60,7 @@ class InputTypeGeneratorTest {
     @Test
     void typeMethod_emitsEachField_withTypeReferenceByName() {
         var body = findByName(generateFor(INPUT_SCHEMA), "FilterInputType")
-            .methodSpecs().get(0).code().toString();
+            .toString();
         assertThat(body).contains(".name(\"keyword\")");
         assertThat(body).contains("GraphQLTypeReference.typeRef(\"String\")");
         assertThat(body).contains(".name(\"limit\")");
@@ -70,7 +70,7 @@ class InputTypeGeneratorTest {
     @Test
     void typeMethod_wrapsNonNullAndListTypes() {
         var body = findByName(generateFor(INPUT_SCHEMA), "FilterInputType")
-            .methodSpecs().get(0).code().toString();
+            .toString();
         assertThat(body).contains("graphql.schema.GraphQLNonNull.nonNull(graphql.schema.GraphQLTypeReference.typeRef(\"Int\"))");
         assertThat(body).contains("graphql.schema.GraphQLList.list(graphql.schema.GraphQLNonNull.nonNull(graphql.schema.GraphQLTypeReference.typeRef(\"String\")))");
     }
@@ -78,7 +78,7 @@ class InputTypeGeneratorTest {
     @Test
     void typeMethod_referencesOtherInputTypesByName() {
         var body = findByName(generateFor(INPUT_SCHEMA), "FilterInputType")
-            .methodSpecs().get(0).code().toString();
+            .toString();
         assertThat(body).contains("GraphQLTypeReference.typeRef(\"NestedInput\")");
     }
 

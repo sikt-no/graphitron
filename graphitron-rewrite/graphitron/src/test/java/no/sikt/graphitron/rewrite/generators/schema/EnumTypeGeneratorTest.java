@@ -38,16 +38,16 @@ class EnumTypeGeneratorTest {
     }
 
     @Test
-    void generate_classIsPublicFinalAndContainsSingleTypeMethod() {
+    void generate_classIsPublicFinalAndContainsPublicTypeMethod() {
         var spec = findByName(generateFor(ENUM_SCHEMA), "StatusType");
         assertThat(spec.modifiers()).contains(Modifier.PUBLIC, Modifier.FINAL);
-        assertThat(spec.methodSpecs()).extracting(m -> m.name()).containsExactly("type");
+        assertThat(spec.methodSpecs()).extracting(m -> m.name()).contains("type");
     }
 
     @Test
     void typeMethod_returnsGraphQLEnumType() {
         var method = findByName(generateFor(ENUM_SCHEMA), "StatusType")
-            .methodSpecs().get(0);
+            .methodSpecs().stream().filter(m -> "type".equals(m.name())).findFirst().orElseThrow();
         assertThat(method.returnType().toString()).isEqualTo("graphql.schema.GraphQLEnumType");
         assertThat(method.modifiers()).contains(Modifier.PUBLIC, Modifier.STATIC);
     }
@@ -55,7 +55,7 @@ class EnumTypeGeneratorTest {
     @Test
     void typeMethod_emitsNewEnumWithNameAndEachValue() {
         var body = findByName(generateFor(ENUM_SCHEMA), "StatusType")
-            .methodSpecs().get(0).code().toString();
+            .toString();
         assertThat(body).contains("GraphQLEnumType.newEnum()");
         assertThat(body).contains(".name(\"Status\")");
         assertThat(body).contains(".name(\"ACTIVE\")");
@@ -66,7 +66,7 @@ class EnumTypeGeneratorTest {
     @Test
     void typeMethod_preservesDescriptionAndDeprecation() {
         var body = findByName(generateFor(DEPRECATED_ENUM_SCHEMA), "MoodType")
-            .methodSpecs().get(0).code().toString();
+            .toString();
         assertThat(body).contains(".description(\"Status of something.\")");
         assertThat(body).contains(".description(\"Only used by legacy code.\")");
         assertThat(body).contains(".deprecationReason(\"renamed to HAPPY\")");
@@ -86,7 +86,7 @@ class EnumTypeGeneratorTest {
                 ANNET
             }
             """), "PersonIdentifikasjonType")
-            .methodSpecs().get(0).code().toString();
+            .toString();
         assertThat(body).contains(".name(\"FODSELSNUMMER\")");
         assertThat(body).contains(".value(\"FØDSELSNUMMER\")");
         // Values without @field(name:) fall back: name == value.

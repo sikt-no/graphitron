@@ -20,6 +20,10 @@ import java.util.List;
  * programmatic graphql-java type at runtime. Reads from
  * {@link GraphitronSchema#types()} only — introspection and federation-injected enums don't
  * appear there because the classifier skips them.
+ *
+ * <p>The {@code type()} method body is statement-shaped; each enum value reaches the local
+ * builder via a {@code private static} {@code enumValueDef_<sdlName>()} factory method
+ * collected through {@link HelperMethodSink}.
  */
 public final class EnumTypeGenerator {
 
@@ -42,21 +46,20 @@ public final class EnumTypeGenerator {
 
     private static TypeSpec buildEnumTypeSpec(GraphitronType.EnumType et) {
         var schemaType = et.schemaType();
-        var body = CodeBlock.builder()
-            .add("return $T.newEnum()", ENUM_TYPE)
-            .indent()
-            .add("\n.name($S)", et.name());
+        var sink = new HelperMethodSink();
+        var body = CodeBlock.builder();
+        body.addStatement("$T.Builder b = $T.newEnum()", ENUM_TYPE, ENUM_TYPE);
+        body.addStatement("b.name($S)", et.name());
         var enumDescription = schemaType.getDescription();
         if (enumDescription != null && !enumDescription.isEmpty()) {
-            body.add("\n.description($S)", enumDescription);
+            body.addStatement("b.description($S)", enumDescription);
         }
         for (var value : et.values()) {
-            body.add("\n.value(").add(buildValueDefinition(value)).add(")");
+            String helper = sink.addEnumValueDef(value);
+            body.addStatement("b.value($L())", helper);
         }
-        for (var applied : AppliedDirectiveEmitter.applicationsFor(schemaType)) {
-            body.add(applied);
-        }
-        body.add("\n.build();\n").unindent();
+        AppliedDirectiveEmitter.emitApplications(body, "b", schemaType, sink);
+        body.addStatement("return b.build()");
 
         var typeMethod = MethodSpec.methodBuilder("type")
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
@@ -64,32 +67,40 @@ public final class EnumTypeGenerator {
             .addCode(body.build())
             .build();
 
-        return TypeSpec.classBuilder(et.name() + "Type")
+        var classBuilder = TypeSpec.classBuilder(et.name() + "Type")
             .addModifiers(Modifier.PUBLIC, Modifier.FINAL)
-            .addMethod(typeMethod)
-            .build();
+            .addMethod(typeMethod);
+        sink.contributeTo(classBuilder);
+        return classBuilder.build();
     }
 
-    private static CodeBlock buildValueDefinition(EnumValueSpec value) {
+    /**
+     * Builds a {@code private static GraphQLEnumValueDefinition <methodName>()} factory method
+     * whose body is statement-flattened.
+     */
+    static MethodSpec buildValueDefinitionMethod(String methodName, EnumValueSpec value,
+                                                  HelperMethodSink sink) {
         // Set the runtime value alongside the name. SchemaGenerator's SDL path defaults runtime
         // value to the name string; `newEnumValueDefinition().name(x).build()` alone leaves it
         // null, which makes every serialization of a "string-matching-enum-name" blow up with
         // "Unknown value 'X'" at the Coercing layer. The runtime string comes pre-resolved off
         // EnumValueSpec — @field(name:) when present, sdlName otherwise.
-        var block = CodeBlock.builder()
-            .add("$T.newEnumValueDefinition()", ENUM_VALUE)
-            .add(".name($S)", value.sdlName())
-            .add(".value($S)", value.runtimeValue());
+        var body = CodeBlock.builder();
+        body.addStatement("$T.Builder b = $T.newEnumValueDefinition()", ENUM_VALUE, ENUM_VALUE);
+        body.addStatement("b.name($S)", value.sdlName());
+        body.addStatement("b.value($S)", value.runtimeValue());
         if (value.description() != null) {
-            block.add(".description($S)", value.description());
+            body.addStatement("b.description($S)", value.description());
         }
         if (value.deprecationReason() != null) {
-            block.add(".deprecationReason($S)", value.deprecationReason());
+            body.addStatement("b.deprecationReason($S)", value.deprecationReason());
         }
-        for (var applied : AppliedDirectiveEmitter.applicationsFor(value.source())) {
-            block.add(applied);
-        }
-        block.add(".build()");
-        return block.build();
+        AppliedDirectiveEmitter.emitApplications(body, "b", value.source(), sink);
+        body.addStatement("return b.build()");
+        return MethodSpec.methodBuilder(methodName)
+            .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+            .returns(ENUM_VALUE)
+            .addCode(body.build())
+            .build();
     }
 }

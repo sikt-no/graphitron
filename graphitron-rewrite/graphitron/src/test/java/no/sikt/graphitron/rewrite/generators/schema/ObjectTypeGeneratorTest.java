@@ -52,22 +52,23 @@ class ObjectTypeGeneratorTest {
     }
 
     @Test
-    void objectType_classIsPublicFinalWithSingleTypeMethod() {
+    void objectType_classIsPublicFinalWithPublicTypeMethod() {
         var spec = findByName(generateFor(BASIC), "FilmType");
         assertThat(spec.modifiers()).contains(Modifier.PUBLIC, Modifier.FINAL);
-        assertThat(spec.methodSpecs()).extracting(m -> m.name()).containsExactly("type");
+        assertThat(spec.methodSpecs()).extracting(m -> m.name()).contains("type");
     }
 
     @Test
     void objectType_returnsGraphQLObjectType() {
-        var method = findByName(generateFor(BASIC), "FilmType").methodSpecs().get(0);
+        var method = findByName(generateFor(BASIC), "FilmType").methodSpecs()
+            .stream().filter(m -> "type".equals(m.name())).findFirst().orElseThrow();
         assertThat(method.returnType().toString()).isEqualTo("graphql.schema.GraphQLObjectType");
         assertThat(method.modifiers()).contains(Modifier.PUBLIC, Modifier.STATIC);
     }
 
     @Test
     void objectType_emitsNameAndDescription() {
-        var body = findByName(generateFor(BASIC), "FilmType").methodSpecs().get(0).code().toString();
+        var body = findByName(generateFor(BASIC), "FilmType").toString();
         assertThat(body).contains("GraphQLObjectType.newObject()");
         assertThat(body).contains(".name(\"Film\")");
         assertThat(body).contains(".description(\"Feature-length motion picture.\")");
@@ -75,33 +76,33 @@ class ObjectTypeGeneratorTest {
 
     @Test
     void objectType_emitsFieldsWithNonNullWrapping() {
-        var body = findByName(generateFor(BASIC), "FilmType").methodSpecs().get(0).code().toString();
+        var body = findByName(generateFor(BASIC), "FilmType").toString();
         assertThat(body).contains(".name(\"title\")");
         assertThat(body).contains("graphql.schema.GraphQLNonNull.nonNull(graphql.schema.GraphQLTypeReference.typeRef(\"String\"))");
     }
 
     @Test
     void objectType_emitsNullableFieldsAsBareTypeRef() {
-        var body = findByName(generateFor(BASIC), "FilmType").methodSpecs().get(0).code().toString();
+        var body = findByName(generateFor(BASIC), "FilmType").toString();
         assertThat(body).contains(".name(\"director\")");
         assertThat(body).contains("GraphQLTypeReference.typeRef(\"Person\")");
     }
 
     @Test
     void objectType_preservesDeprecation() {
-        var body = findByName(generateFor(BASIC), "FilmType").methodSpecs().get(0).code().toString();
+        var body = findByName(generateFor(BASIC), "FilmType").toString();
         assertThat(body).contains(".deprecate(\"use 'score'\")");
     }
 
     @Test
     void objectType_emitsWithInterface_forImplementers() {
-        var body = findByName(generateFor(BASIC), "FilmType").methodSpecs().get(0).code().toString();
+        var body = findByName(generateFor(BASIC), "FilmType").toString();
         assertThat(body).contains(".withInterface(graphql.schema.GraphQLTypeReference.typeRef(\"Node\"))");
     }
 
     @Test
     void objectType_emitsArgumentsOnFields() {
-        var body = findByName(generateFor(BASIC), "QueryType").methodSpecs().get(0).code().toString();
+        var body = findByName(generateFor(BASIC), "QueryType").toString();
         assertThat(body).contains(".name(\"film\")");
         assertThat(body).contains("GraphQLArgument.newArgument()");
         assertThat(body).contains(".name(\"id\")");
@@ -110,15 +111,16 @@ class ObjectTypeGeneratorTest {
 
     @Test
     void objectType_wrapsListAndNonNullCombined() {
-        var body = findByName(generateFor(BASIC), "QueryType").methodSpecs().get(0).code().toString();
+        var body = findByName(generateFor(BASIC), "QueryType").toString();
         assertThat(body).contains("graphql.schema.GraphQLNonNull.nonNull(graphql.schema.GraphQLList.list(graphql.schema.GraphQLNonNull.nonNull(graphql.schema.GraphQLTypeReference.typeRef(\"Film\"))))");
     }
 
     @Test
     void interfaceType_returnsGraphQLInterfaceType() {
-        var method = findByName(generateFor(BASIC), "NodeType").methodSpecs().get(0);
+        var spec = findByName(generateFor(BASIC), "NodeType");
+        var method = spec.methodSpecs().stream().filter(m -> "type".equals(m.name())).findFirst().orElseThrow();
         assertThat(method.returnType().toString()).isEqualTo("graphql.schema.GraphQLInterfaceType");
-        var body = method.code().toString();
+        var body = spec.toString();
         assertThat(body).contains("GraphQLInterfaceType.newInterface()");
         assertThat(body).contains(".name(\"Node\")");
         assertThat(body).contains(".name(\"id\")");
@@ -126,9 +128,10 @@ class ObjectTypeGeneratorTest {
 
     @Test
     void unionType_returnsGraphQLUnionType_andEmitsPossibleTypes() {
-        var method = findByName(generateFor(BASIC), "SearchHitType").methodSpecs().get(0);
+        var spec = findByName(generateFor(BASIC), "SearchHitType");
+        var method = spec.methodSpecs().stream().filter(m -> "type".equals(m.name())).findFirst().orElseThrow();
         assertThat(method.returnType().toString()).isEqualTo("graphql.schema.GraphQLUnionType");
-        var body = method.code().toString();
+        var body = spec.toString();
         assertThat(body).contains("GraphQLUnionType.newUnionType()");
         assertThat(body).contains(".possibleType(graphql.schema.GraphQLTypeReference.typeRef(\"Film\"))");
         assertThat(body).contains(".possibleType(graphql.schema.GraphQLTypeReference.typeRef(\"Person\"))");
@@ -157,7 +160,7 @@ class ObjectTypeGeneratorTest {
 
     @Test
     void asConnection_replacesReturnTypeWithConnectionRef() {
-        var body = findByName(generateFor(WITH_AS_CONNECTION), "QueryType").methodSpecs().get(0).code().toString();
+        var body = findByName(generateFor(WITH_AS_CONNECTION), "QueryType").toString();
         // should reference the synthesised Connection type, not the bare list
         assertThat(body).contains("typeRef(\"QueryFilmsConnection\")");
         assertThat(body).doesNotContain("graphql.schema.GraphQLList.list");
@@ -165,20 +168,20 @@ class ObjectTypeGeneratorTest {
 
     @Test
     void asConnection_addsFirstAndAfterArguments() {
-        var body = findByName(generateFor(WITH_AS_CONNECTION), "QueryType").methodSpecs().get(0).code().toString();
+        var body = findByName(generateFor(WITH_AS_CONNECTION), "QueryType").toString();
         assertThat(body).contains(".name(\"first\")");
         assertThat(body).contains(".name(\"after\")");
     }
 
     @Test
     void asConnection_firstArgumentHasDefaultPageSize() {
-        var body = findByName(generateFor(WITH_AS_CONNECTION), "QueryType").methodSpecs().get(0).code().toString();
+        var body = findByName(generateFor(WITH_AS_CONNECTION), "QueryType").toString();
         assertThat(body).contains(".defaultValueProgrammatic(100)");
     }
 
     @Test
     void asConnection_doesNotEmitAsConnectionDirective() {
-        var body = findByName(generateFor(WITH_AS_CONNECTION), "QueryType").methodSpecs().get(0).code().toString();
+        var body = findByName(generateFor(WITH_AS_CONNECTION), "QueryType").toString();
         assertThat(body).doesNotContain("\"asConnection\"");
     }
 
@@ -187,7 +190,7 @@ class ObjectTypeGeneratorTest {
         // Hand-written FilmsConnection in BASIC schema: no @asConnection directive,
         // connection type exists structurally — should emit as-is (bare list return type).
         // Here we test that the Query.films field in BASIC is emitted as a list.
-        var body = findByName(generateFor(BASIC), "QueryType").methodSpecs().get(0).code().toString();
+        var body = findByName(generateFor(BASIC), "QueryType").toString();
         assertThat(body).contains("graphql.schema.GraphQLList.list");
     }
 
@@ -225,13 +228,13 @@ class ObjectTypeGeneratorTest {
         var assembled = TestSchemaHelper.buildBundle("type Query { x: Int }").assembled();
         var specs = ObjectTypeGenerator.generate(schema, assembled);
 
-        var connBody = findByName(specs, "FilmConnectionType").methodSpecs().get(0).code().toString();
+        var connBody = findByName(specs, "FilmConnectionType").toString();
         assertThat(connBody).contains(".name(\"FilmConnection\")");
         assertThat(connBody).contains(".name(\"edges\")");
         assertThat(connBody).contains(".name(\"nodes\")");
         assertThat(connBody).contains(".name(\"pageInfo\")");
 
-        var edgeBody = findByName(specs, "FilmEdgeType").methodSpecs().get(0).code().toString();
+        var edgeBody = findByName(specs, "FilmEdgeType").toString();
         assertThat(edgeBody).contains(".name(\"FilmEdge\")");
         assertThat(edgeBody).contains(".name(\"cursor\")");
         assertThat(edgeBody).contains(".name(\"node\")");
