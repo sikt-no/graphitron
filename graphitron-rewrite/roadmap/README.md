@@ -17,7 +17,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R19` | Rebase and squash rewrite branch onto main | Ready |  | [plan](history-squash.md) |
 | `R222` | Dimensional model pivot: slots over cross-product permits | Spec | 2026-05-25 <sub>created 2026-05-21</sub> | [plan](dimensional-model-pivot.md) |
 | `R238` | ServiceMethodCall walker carrier (R222 foundation slice) | Ready | 2026-05-27 <sub>created 2026-05-25</sub> | [plan](methodcall-walker-carrier.md) |
-| `R246` | UpdateRows walker carrier (R222 UPDATE slice) with PK-or-UK identification <sub>blocked by: [methodcall-walker-carrier](methodcall-walker-carrier.md), [simplify-update-mutations-drop-value](simplify-update-mutations-drop-value.md)</sub> | Ready | 2026-05-28 <sub>created 2026-05-27</sub> | [plan](updaterows-walker-carrier.md) |
+| `R246` | UpdateRows walker carrier (R222 UPDATE slice) with PK-or-UK identification <sub>blocked by: [methodcall-walker-carrier](methodcall-walker-carrier.md), [simplify-update-mutations-drop-value](simplify-update-mutations-drop-value.md)</sub> | In Progress | 2026-05-28 <sub>created 2026-05-27</sub> | [plan](updaterows-walker-carrier.md) |
 | `R45` | Multi-tenant routing on top of the schema-driven ExecutionInput factory | Spec | 2026-05-20 | [plan](tenant-routing-and-execution-input.md) |
 | `R23` | Multi-parent `NestingField` sharing: `TableField` arm | Spec |  | [plan](nestingfield-multiparent-tablefield.md) |
 | `R186` | Nested input types in @mutation fields | Spec | 2026-05-20 | [plan](nested-input-types-in-mutation-fields.md) |
@@ -199,7 +199,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R171` [**Fold InputType and TableInputType under sealed parent InputLikeType**](input-like-type-sealed-parent.md) — Backlog, architecture
 - `R103` [**Lift jOOQ column defaults onto input fields connected to that column**](lift-jooq-column-defaults-onto-inputs.md) — Backlog, architecture
 - `R249` [**Nested @argMapping syntax via GraphQLSelectionParser**](nested-argmapping-syntax.md) — Backlog, feature
-- `R246` [**UpdateRows walker carrier (R222 UPDATE slice) with PK-or-UK identification**](updaterows-walker-carrier.md) — Ready, structural, blocked by [methodcall-walker-carrier](methodcall-walker-carrier.md), [simplify-update-mutations-drop-value](simplify-update-mutations-drop-value.md)
+- `R246` [**UpdateRows walker carrier (R222 UPDATE slice) with PK-or-UK identification**](updaterows-walker-carrier.md) — In Progress, structural, blocked by [methodcall-walker-carrier](methodcall-walker-carrier.md), [simplify-update-mutations-drop-value](simplify-update-mutations-drop-value.md)
 - `R236` [**BuildContext nested-input candidate-hint draws from path-origin table instead of @reference terminal table**](validator-reference-candidate-hint-terminal-table.md) — Backlog, bug
 - `R255` [**Dedupe duplicate column projection in @reference DBQueries (RC-6 regression)**](dedupe-reference-projection.md) — Backlog, bug
 - `R231` [**Emit text-mapped-enum fields as the GraphQL enum type, not String**](emit-text-mapped-enum-fields-as-enum-type.md) — Backlog, architecture
