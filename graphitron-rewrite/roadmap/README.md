@@ -30,7 +30,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R180` | Centralize ResultType column-read emission for @record parents | Spec | 2026-05-19 | [plan](record-parent-column-read-helper.md) |
 | `R242` | DML payload positional input/output alignment | Spec | 2026-05-26 | [plan](dml-payload-positional-alignment.md) |
 | `R115` | Enumerate the capabilities graphitron delivers | Spec |  | [plan](capability-catalog.md) |
-| `R244` | ErrorChannel walker carrier (R222 Stage 2 slice on @service + @tableMethod) | Spec | 2026-05-26 | [plan](errorchannel-walker-carrier.md) |
+| `R244` | ErrorChannel walker carrier (R222 Stage 2 slice on @service + @tableMethod) | Spec | 2026-05-28 <sub>created 2026-05-26</sub> | [plan](errorchannel-walker-carrier.md) |
 | `R109` | How-to recipe and Sakila fixture for grouped collections via Field<Result<R>> @externalField + multiset | Spec |  | [plan](list-valued-external-field-multiset.md) |
 | `R212` | IntelliJ plugin wrapping graphitron:dev LSP | Spec | 2026-05-21 | [plan](intellij-lsp-plugin.md) |
 | `R112` | Operation-driven test corpus, capability catalog, and runtime trace <sub>blocked by: [capability-catalog](capability-catalog.md)</sub> | Spec |  | [plan](operation-driven-test-corpus.md) |
