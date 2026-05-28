@@ -111,6 +111,12 @@ public final class ContextArgumentClassifier {
         if (field instanceof MethodBackedField mbf) {
             collectFromMethodRef(mbf.method(), byName);
         }
+        // R238: the four root sync @service permits no longer implement MethodBackedField;
+        // their context-arg slots live on the carrier. Walk both rounds and project every
+        // FromContext entry into the same per-name conflict-site map.
+        if (field instanceof no.sikt.graphitron.rewrite.model.ServiceField sf) {
+            collectFromCarrier(sf.serviceMethodCall(), byName);
+        }
         if (field instanceof SqlGeneratingField sgf) {
             for (WhereFilter wf : sgf.filters()) {
                 if (wf instanceof ConditionFilter cf) {
@@ -118,6 +124,48 @@ public final class ContextArgumentClassifier {
                 }
             }
         }
+    }
+
+    /**
+     * Walks a {@link ServiceMethodCall} carrier for {@link MappingEntry.FromContext} entries
+     * across {@code ctorArgs} (when present) and {@code methodArgs}, recording each as a
+     * {@link ConflictSite} keyed on the carrier's class + method coordinate. The walker enforces
+     * the same per-name fold as {@link #collectFromMethodRef}; a minimal synthetic
+     * {@link MethodRef.Service} carries the carrier's coordinate so the existing
+     * {@link ConflictSite#site()} accessor and the conflict-rejection renderer at
+     * {@code Rejection.AuthorError.TypeConflict} continue to work without widening
+     * {@link ConflictSite}'s type. The synthetic carries no params / declaredExceptions / CallShape
+     * detail beyond what the renderer reads ({@code className()} + {@code methodName()}).
+     */
+    private static void collectFromCarrier(
+            no.sikt.graphitron.rewrite.model.ServiceMethodCall carrier,
+            Map<String, List<ConflictSite>> byName) {
+        var site = syntheticServiceMethodRef(carrier);
+        if (carrier instanceof no.sikt.graphitron.rewrite.model.ServiceMethodCall.Instance inst) {
+            for (var entry : inst.ctorArgs()) recordFromContext(entry, site, byName);
+        }
+        for (var entry : carrier.methodArgs()) recordFromContext(entry, site, byName);
+    }
+
+    private static void recordFromContext(
+            no.sikt.graphitron.rewrite.model.MappingEntry entry,
+            MethodRef site,
+            Map<String, List<ConflictSite>> byName) {
+        if (entry instanceof no.sikt.graphitron.rewrite.model.MappingEntry.FromContext fc) {
+            byName.computeIfAbsent(fc.contextKey(), k -> new ArrayList<>())
+                .add(new ConflictSite(site, fc.javaType()));
+        }
+    }
+
+    private static MethodRef syntheticServiceMethodRef(
+            no.sikt.graphitron.rewrite.model.ServiceMethodCall carrier) {
+        return new MethodRef.Service(
+            carrier.fqClassName(),
+            carrier.methodName(),
+            carrier.javaReturnType(),
+            List.of(),
+            List.of(),
+            new MethodRef.CallShape.Static(false));
     }
 
     private static void collectFromInputFieldCondition(GraphitronField field,

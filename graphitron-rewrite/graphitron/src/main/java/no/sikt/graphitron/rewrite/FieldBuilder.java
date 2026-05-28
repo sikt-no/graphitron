@@ -2992,13 +2992,13 @@ class FieldBuilder {
                 case ServiceDirectiveResolver.Resolved.ErrorsLifted e -> e.field();
                 case ServiceDirectiveResolver.Resolved.TableBound tb ->
                     buildServiceField(tb.returnType(), tb.method(), parentTypeName, name, location, fieldDef, (ch, smc) ->
-                        new QueryField.QueryServiceTableField(parentTypeName, name, location, tb.returnType(), tb.method(), smc, ch));
+                        new QueryField.QueryServiceTableField(parentTypeName, name, location, tb.returnType(), smc, ch));
                 case ServiceDirectiveResolver.Resolved.Result r ->
                     buildServiceField(r.returnType(), r.method(), parentTypeName, name, location, fieldDef, (ch, smc) ->
-                        new QueryField.QueryServiceRecordField(parentTypeName, name, location, r.returnType(), r.method(), smc, ch));
+                        new QueryField.QueryServiceRecordField(parentTypeName, name, location, r.returnType(), smc, ch));
                 case ServiceDirectiveResolver.Resolved.Scalar s ->
                     buildServiceField(s.returnType(), s.method(), parentTypeName, name, location, fieldDef, (ch, smc) ->
-                        new QueryField.QueryServiceRecordField(parentTypeName, name, location, s.returnType(), s.method(), smc, ch));
+                        new QueryField.QueryServiceRecordField(parentTypeName, name, location, s.returnType(), smc, ch));
             };
         }
 
@@ -3116,7 +3116,7 @@ class FieldBuilder {
                 case ServiceDirectiveResolver.Resolved.ErrorsLifted e -> e.field();
                 case ServiceDirectiveResolver.Resolved.TableBound tb ->
                     buildServiceField(tb.returnType(), tb.method(), parentTypeName, name, location, fieldDef, (ch, smc) ->
-                        new MutationField.MutationServiceTableField(parentTypeName, name, location, tb.returnType(), tb.method(), smc, ch));
+                        new MutationField.MutationServiceTableField(parentTypeName, name, location, tb.returnType(), smc, ch));
                 case ServiceDirectiveResolver.Resolved.Result r -> {
                     // R159: when the @service mutation returns a payload type whose
                     // data field opts into the $source sigil, verify the producer's reflected
@@ -3141,11 +3141,11 @@ class FieldBuilder {
                             Rejection.structural(servicePayloadError));
                     }
                     yield buildServiceField(r.returnType(), r.method(), parentTypeName, name, location, fieldDef, (ch, smc) ->
-                        new MutationField.MutationServiceRecordField(parentTypeName, name, location, r.returnType(), r.method(), smc, ch));
+                        new MutationField.MutationServiceRecordField(parentTypeName, name, location, r.returnType(), smc, ch));
                 }
                 case ServiceDirectiveResolver.Resolved.Scalar s ->
                     buildServiceField(s.returnType(), s.method(), parentTypeName, name, location, fieldDef, (ch, smc) ->
-                        new MutationField.MutationServiceRecordField(parentTypeName, name, location, s.returnType(), s.method(), smc, ch));
+                        new MutationField.MutationServiceRecordField(parentTypeName, name, location, s.returnType(), smc, ch));
             };
         }
 

@@ -306,15 +306,15 @@ public final class CatalogBuilder {
                 new FieldClassification.QueryPolymorphic(participantNames(f.participants()));
             case QueryField.QueryServiceTableField f ->
                 new FieldClassification.QueryService(
-                    f.method() != null ? f.method().className() : null,
-                    f.method() != null ? f.method().methodName() : null,
+                    f.serviceMethodCall().fqClassName(),
+                    f.serviceMethodCall().methodName(),
                     true,
                     targetTableName(f.returnType()),
                     errorChannelName(f.errorChannel()));
             case QueryField.QueryServiceRecordField f ->
                 new FieldClassification.QueryService(
-                    f.method() != null ? f.method().className() : null,
-                    f.method() != null ? f.method().methodName() : null,
+                    f.serviceMethodCall().fqClassName(),
+                    f.serviceMethodCall().methodName(),
                     false,
                     null,
                     errorChannelName(f.errorChannel()));
@@ -326,16 +326,16 @@ public final class CatalogBuilder {
             case MutationField.MutationUpsertTableField f -> dmlMutation(f, no.sikt.graphitron.rewrite.model.DmlKind.UPSERT);
             case MutationField.MutationServiceTableField f ->
                 new FieldClassification.MutationService(
-                    f.method() != null ? f.method().className() : null,
-                    f.method() != null ? f.method().methodName() : null,
+                    f.serviceMethodCall().fqClassName(),
+                    f.serviceMethodCall().methodName(),
                     true,
                     f.returnType() != null && f.returnType().table() != null
                         ? f.returnType().table().tableName() : null,
                     errorChannelName(f.errorChannel()));
             case MutationField.MutationServiceRecordField f ->
                 new FieldClassification.MutationService(
-                    f.method() != null ? f.method().className() : null,
-                    f.method() != null ? f.method().methodName() : null,
+                    f.serviceMethodCall().fqClassName(),
+                    f.serviceMethodCall().methodName(),
                     false,
                     null,
                     errorChannelName(f.errorChannel()));

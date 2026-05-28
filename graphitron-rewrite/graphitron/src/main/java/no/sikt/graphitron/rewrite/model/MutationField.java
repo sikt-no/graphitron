@@ -123,10 +123,9 @@ public sealed interface MutationField extends RootField, WithErrorChannel
         String name,
         SourceLocation location,
         ReturnTypeRef.TableBoundReturnType returnType,
-        MethodRef method,
         ServiceMethodCall serviceMethodCall,
         Optional<ErrorChannel> errorChannel
-    ) implements MutationField, MethodBackedField, ServiceField {
+    ) implements MutationField, ServiceField {
         /**
          * R204: see {@link ChildField.ServiceTableField#domainReturnType()} — the typed
          * {@code XRecord} is consumer-equivalent to a {@code Record(table)} via subtyping.
@@ -151,10 +150,9 @@ public sealed interface MutationField extends RootField, WithErrorChannel
         String name,
         SourceLocation location,
         ReturnTypeRef returnType,
-        MethodRef method,
         ServiceMethodCall serviceMethodCall,
         Optional<ErrorChannel> errorChannel
-    ) implements MutationField, MethodBackedField, ServiceField {
+    ) implements MutationField, ServiceField {
         /**
          * R204: the carrier-shape case ({@code @service} mutation returning {@code XRecord} or
          * {@code List<XRecord>} for an SDL payload whose single {@code @table}-typed data field's
@@ -170,7 +168,7 @@ public sealed interface MutationField extends RootField, WithErrorChannel
          * by upstream classifier rejections.
          */
         @Override public DomainReturnType domainReturnType() {
-            return new DomainReturnType.TableRecord(OutputField.peelToClassName(method.returnType()));
+            return new DomainReturnType.TableRecord(OutputField.peelToClassName(serviceMethodCall.javaReturnType()));
         }
     }
 

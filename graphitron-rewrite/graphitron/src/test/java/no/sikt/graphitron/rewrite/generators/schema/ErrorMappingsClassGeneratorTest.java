@@ -290,7 +290,6 @@ class ErrorMappingsClassGeneratorTest {
                 fieldName,
                 null,
                 returnType,
-                method,
                 TestFixtures.stubServiceCall(method),
                 Optional.of(channels.get(i)));
             fields.put(FieldCoordinates.coordinates("Mutation", fieldName), field);

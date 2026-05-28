@@ -188,10 +188,9 @@ public sealed interface QueryField extends RootField
         String name,
         SourceLocation location,
         ReturnTypeRef.TableBoundReturnType returnType,
-        MethodRef method,
         ServiceMethodCall serviceMethodCall,
         Optional<ErrorChannel> errorChannel
-    ) implements QueryField, MethodBackedField, ServiceField, WithErrorChannel {
+    ) implements QueryField, ServiceField, WithErrorChannel {
         /**
          * R204: see {@link ChildField.ServiceTableField#domainReturnType()} — the typed
          * {@code XRecord} is consumer-equivalent to a {@code Record(table)} via subtyping,
@@ -219,12 +218,11 @@ public sealed interface QueryField extends RootField
         String name,
         SourceLocation location,
         ReturnTypeRef returnType,
-        MethodRef method,
         ServiceMethodCall serviceMethodCall,
         Optional<ErrorChannel> errorChannel
-    ) implements QueryField, MethodBackedField, ServiceField, WithErrorChannel {
+    ) implements QueryField, ServiceField, WithErrorChannel {
         @Override public DomainReturnType domainReturnType() {
-            return new DomainReturnType.Plain(OutputField.peelToClassName(method.returnType()));
+            return new DomainReturnType.Plain(OutputField.peelToClassName(serviceMethodCall.javaReturnType()));
         }
     }
 }
