@@ -283,13 +283,15 @@ class ErrorMappingsClassGeneratorTest {
                 channels.get(i).payloadClass().simpleName(),
                 new FieldWrapper.Single(true),
                 channels.get(i).payloadClass().reflectionName());
+            var method = TestFixtures.staticServiceMethodRef("com.example.SvcStub", "doStuff",
+                ClassName.get(Object.class), List.of());
             var field = new MutationField.MutationServiceRecordField(
                 "Mutation",
                 fieldName,
                 null,
                 returnType,
-                TestFixtures.staticServiceMethodRef("com.example.SvcStub", "doStuff",
-                    ClassName.get(Object.class), List.of()),
+                method,
+                TestFixtures.stubServiceCall(method),
                 Optional.of(channels.get(i)));
             fields.put(FieldCoordinates.coordinates("Mutation", fieldName), field);
         }

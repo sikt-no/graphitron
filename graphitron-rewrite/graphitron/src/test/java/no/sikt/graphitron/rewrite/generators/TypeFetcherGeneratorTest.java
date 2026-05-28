@@ -702,7 +702,7 @@ class TypeFetcherGeneratorTest {
                 new MethodRef.Param.Typed("ids", "java.util.List<java.lang.Integer>",
                     new ParamSource.Arg(new CallSiteExtraction.Direct(), no.sikt.graphitron.rewrite.PathExpr.head("ids")))));
         var field = new QueryField.QueryServiceTableField("Query", "filmsByService", null,
-            TestFixtures.tableBoundFilm(nonNullList()), method, Optional.empty());
+            TestFixtures.tableBoundFilm(nonNullList()), method, TestFixtures.stubServiceCall(method), Optional.empty());
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null,
             List.of(field), DEFAULT_OUTPUT_PACKAGE);
 
@@ -722,7 +722,7 @@ class TypeFetcherGeneratorTest {
             ClassName.get("java.lang", "Integer"),
             List.of(new MethodRef.Param.Typed("dsl", "org.jooq.DSLContext", new ParamSource.DslContext())));
         var field = new QueryField.QueryServiceRecordField("Query", "filmCount", null,
-            new ReturnTypeRef.ScalarReturnType("Int", single()), method, Optional.empty());
+            new ReturnTypeRef.ScalarReturnType("Int", single()), method, TestFixtures.stubServiceCall(method), Optional.empty());
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null,
             List.of(field), DEFAULT_OUTPUT_PACKAGE);
 
@@ -741,7 +741,7 @@ class TypeFetcherGeneratorTest {
         var method = TestFixtures.staticServiceMethodRef(
             "com.example.Service", "filmCount", TypeName.INT, List.of());
         var field = new QueryField.QueryServiceRecordField("Query", "filmCount", null,
-            new ReturnTypeRef.ScalarReturnType("Int", single()), method, Optional.empty());
+            new ReturnTypeRef.ScalarReturnType("Int", single()), method, TestFixtures.stubServiceCall(method), Optional.empty());
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null,
             List.of(field), DEFAULT_OUTPUT_PACKAGE);
 
@@ -757,7 +757,7 @@ class TypeFetcherGeneratorTest {
             "com.example.Service", "tags",
             ArrayTypeName.of(ClassName.get("java.lang", "String")), List.of());
         var field = new QueryField.QueryServiceRecordField("Query", "tags", null,
-            new ReturnTypeRef.ScalarReturnType("Tags", single()), method, Optional.empty());
+            new ReturnTypeRef.ScalarReturnType("Tags", single()), method, TestFixtures.stubServiceCall(method), Optional.empty());
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null,
             List.of(field), DEFAULT_OUTPUT_PACKAGE);
 
@@ -776,7 +776,7 @@ class TypeFetcherGeneratorTest {
                 ClassName.get("java.lang", "String"),
                 ClassName.get("java.lang", "Integer")), List.of());
         var field = new QueryField.QueryServiceRecordField("Query", "stats", null,
-            new ReturnTypeRef.ScalarReturnType("Stats", single()), method, Optional.empty());
+            new ReturnTypeRef.ScalarReturnType("Stats", single()), method, TestFixtures.stubServiceCall(method), Optional.empty());
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null,
             List.of(field), DEFAULT_OUTPUT_PACKAGE);
 
@@ -794,7 +794,7 @@ class TypeFetcherGeneratorTest {
                 ClassName.get("java.util", "List"),
                 WildcardTypeName.subtypeOf(ClassName.get("java.lang", "Number"))), List.of());
         var field = new QueryField.QueryServiceRecordField("Query", "nums", null,
-            new ReturnTypeRef.ScalarReturnType("Nums", single()), method, Optional.empty());
+            new ReturnTypeRef.ScalarReturnType("Nums", single()), method, TestFixtures.stubServiceCall(method), Optional.empty());
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null,
             List.of(field), DEFAULT_OUTPUT_PACKAGE);
 
@@ -830,6 +830,7 @@ class TypeFetcherGeneratorTest {
             ClassName.bestGuess("com.example.SakPayload"), List.of());
         var field = new QueryField.QueryServiceRecordField("Query", "sak", null,
             new ReturnTypeRef.ScalarReturnType("SakPayload", single()), method,
+            TestFixtures.stubServiceCall(method),
             Optional.of(sakPayloadChannel()));
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null,
             List.of(field), DEFAULT_OUTPUT_PACKAGE);
@@ -851,7 +852,7 @@ class TypeFetcherGeneratorTest {
         var method = TestFixtures.staticServiceMethodRef(
             "com.example.Service", "filmCount", ClassName.get("java.lang", "Integer"), List.of());
         var field = new QueryField.QueryServiceRecordField("Query", "filmCount", null,
-            new ReturnTypeRef.ScalarReturnType("Int", single()), method, Optional.empty());
+            new ReturnTypeRef.ScalarReturnType("Int", single()), method, TestFixtures.stubServiceCall(method), Optional.empty());
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null,
             List.of(field), DEFAULT_OUTPUT_PACKAGE);
 
@@ -870,7 +871,7 @@ class TypeFetcherGeneratorTest {
             ClassName.get("no.sikt.graphitron.rewrite.test.jooq.tables.records", "FilmRecord"),
             List.of());
         var field = new QueryField.QueryServiceTableField("Query", "getFilm", null,
-            tableBoundFilm(single()), method, Optional.of(sakPayloadChannel()));
+            tableBoundFilm(single()), method, TestFixtures.stubServiceCall(method), Optional.of(sakPayloadChannel()));
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null,
             List.of(field), DEFAULT_OUTPUT_PACKAGE);
 
@@ -899,7 +900,7 @@ class TypeFetcherGeneratorTest {
             ClassName.get("no.sikt.graphitron.rewrite.test.jooq.tables.records", "FilmRecord"),
             List.of());
         var field = new MutationField.MutationServiceTableField("Mutation", "createFilm", null,
-            tableBoundFilm(single()), method, Optional.empty());
+            tableBoundFilm(single()), method, TestFixtures.stubServiceCall(method), Optional.empty());
         var spec = TypeFetcherGenerator.generateTypeSpec("Mutation", null, null,
             List.of(field), DEFAULT_OUTPUT_PACKAGE);
 
@@ -924,7 +925,7 @@ class TypeFetcherGeneratorTest {
                 ClassName.get("no.sikt.graphitron.rewrite.test.jooq.tables.records", "FilmRecord")),
             List.of());
         var field = new MutationField.MutationServiceTableField("Mutation", "createFilms", null,
-            tableBoundFilm(nonNullList()), method, Optional.empty());
+            tableBoundFilm(nonNullList()), method, TestFixtures.stubServiceCall(method), Optional.empty());
         var spec = TypeFetcherGenerator.generateTypeSpec("Mutation", null, null,
             List.of(field), DEFAULT_OUTPUT_PACKAGE);
 
@@ -939,6 +940,7 @@ class TypeFetcherGeneratorTest {
             "com.example.Service", "doThing", ClassName.get("java.lang", "Integer"), List.of());
         var field = new MutationField.MutationServiceRecordField("Mutation", "doThing", null,
             new ReturnTypeRef.ScalarReturnType("Int", single()), method,
+            TestFixtures.stubServiceCall(method),
             Optional.empty());
         var spec = TypeFetcherGenerator.generateTypeSpec("Mutation", null, null,
             List.of(field), DEFAULT_OUTPUT_PACKAGE);
@@ -961,6 +963,7 @@ class TypeFetcherGeneratorTest {
             ClassName.bestGuess("com.example.Film"), List.of());
         var field = new MutationField.MutationServiceRecordField("Mutation", "createFilm", null,
             new ReturnTypeRef.ResultReturnType("Film", single(), "com.example.Film"), method,
+            TestFixtures.stubServiceCall(method),
             Optional.empty());
         var spec = TypeFetcherGenerator.generateTypeSpec("Mutation", null, null,
             List.of(field), DEFAULT_OUTPUT_PACKAGE);
@@ -980,6 +983,7 @@ class TypeFetcherGeneratorTest {
             ClassName.bestGuess("com.example.SakPayload"), List.of());
         var field = new MutationField.MutationServiceRecordField("Mutation", "createSak", null,
             new ReturnTypeRef.ScalarReturnType("SakPayload", single()), method,
+            TestFixtures.stubServiceCall(method),
             Optional.of(sakPayloadChannel()));
         var spec = TypeFetcherGenerator.generateTypeSpec("Mutation", null, null,
             List.of(field), DEFAULT_OUTPUT_PACKAGE);
@@ -1001,6 +1005,7 @@ class TypeFetcherGeneratorTest {
             "com.example.Service", "doThing", ClassName.get("java.lang", "Integer"), List.of());
         var field = new MutationField.MutationServiceRecordField("Mutation", "doThing", null,
             new ReturnTypeRef.ScalarReturnType("Int", single()), method,
+            TestFixtures.stubServiceCall(method),
             Optional.empty());
         var spec = TypeFetcherGenerator.generateTypeSpec("Mutation", null, null,
             List.of(field), DEFAULT_OUTPUT_PACKAGE);
@@ -1034,6 +1039,7 @@ class TypeFetcherGeneratorTest {
             "SAK_PAYLOAD");
         var field = new MutationField.MutationServiceRecordField("Mutation", "createSak", null,
             new ReturnTypeRef.ScalarReturnType("SakPayload", single()), method,
+            TestFixtures.stubServiceCall(method),
             Optional.of(channel));
         var spec = TypeFetcherGenerator.generateTypeSpec("Mutation", null, null,
             List.of(field), DEFAULT_OUTPUT_PACKAGE);

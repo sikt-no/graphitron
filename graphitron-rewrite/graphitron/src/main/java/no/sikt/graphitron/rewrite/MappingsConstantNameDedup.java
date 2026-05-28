@@ -189,13 +189,13 @@ public final class MappingsConstantNameDedup {
                 f.parentTypeName(), f.name(), f.location(), f.returnExpression(), f.tableInputArg(),
                 present);
             case MutationField.MutationServiceTableField f -> new MutationField.MutationServiceTableField(
-                f.parentTypeName(), f.name(), f.location(), f.returnType(), f.method(), present);
+                f.parentTypeName(), f.name(), f.location(), f.returnType(), f.method(), f.serviceMethodCall(), present);
             case MutationField.MutationServiceRecordField f -> new MutationField.MutationServiceRecordField(
-                f.parentTypeName(), f.name(), f.location(), f.returnType(), f.method(), present);
+                f.parentTypeName(), f.name(), f.location(), f.returnType(), f.method(), f.serviceMethodCall(), present);
             case QueryField.QueryServiceTableField f -> new QueryField.QueryServiceTableField(
-                f.parentTypeName(), f.name(), f.location(), f.returnType(), f.method(), present);
+                f.parentTypeName(), f.name(), f.location(), f.returnType(), f.method(), f.serviceMethodCall(), present);
             case QueryField.QueryServiceRecordField f -> new QueryField.QueryServiceRecordField(
-                f.parentTypeName(), f.name(), f.location(), f.returnType(), f.method(), present);
+                f.parentTypeName(), f.name(), f.location(), f.returnType(), f.method(), f.serviceMethodCall(), present);
             case QueryField.QueryTableMethodTableField f -> new QueryField.QueryTableMethodTableField(
                 f.parentTypeName(), f.name(), f.location(), f.returnType(), f.method(), present);
             case ChildField.ServiceTableField f -> new ChildField.ServiceTableField(

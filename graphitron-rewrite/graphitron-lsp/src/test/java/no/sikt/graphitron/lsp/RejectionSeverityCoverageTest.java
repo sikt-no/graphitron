@@ -168,6 +168,59 @@ class RejectionSeverityCoverageTest {
                 "summary", "plan-slug",
                 new Rejection.StubKey.VariantClass(null));
         }
+        // R238: ServiceMethodCallError sub-seal of AuthorError. Each typed arm carries the
+        // structural data its diagnostic message needs; the minimal sample is sufficient for
+        // the severity-coverage walk (Diagnostics.compute's switch on Rejection.AuthorError
+        // catches the whole sub-family uniformly).
+        if (permit == no.sikt.graphitron.rewrite.model.ServiceMethodCallError.ClassNotLoadable.class) {
+            return new no.sikt.graphitron.rewrite.model.ServiceMethodCallError.ClassNotLoadable(
+                "com.example.NotLoadable");
+        }
+        if (permit == no.sikt.graphitron.rewrite.model.ServiceMethodCallError.AmbiguousMethod.class) {
+            return new no.sikt.graphitron.rewrite.model.ServiceMethodCallError.AmbiguousMethod(
+                "com.example.Svc", "doThing", List.of("(String)", "(int)"));
+        }
+        if (permit == no.sikt.graphitron.rewrite.model.ServiceMethodCallError.ReturnTypeMismatch.class) {
+            return new no.sikt.graphitron.rewrite.model.ServiceMethodCallError.ReturnTypeMismatch(
+                no.sikt.graphitron.javapoet.ClassName.OBJECT, no.sikt.graphitron.javapoet.ClassName.get(String.class));
+        }
+        if (permit == no.sikt.graphitron.rewrite.model.ServiceMethodCallError.InstanceHolderMissingCtor.class) {
+            return new no.sikt.graphitron.rewrite.model.ServiceMethodCallError.InstanceHolderMissingCtor(
+                "com.example.Svc", "(DSLContext)");
+        }
+        if (permit == no.sikt.graphitron.rewrite.model.ServiceMethodCallError.CtorParamFromArg.class) {
+            return new no.sikt.graphitron.rewrite.model.ServiceMethodCallError.CtorParamFromArg(
+                "com.example.Svc", "title");
+        }
+        if (permit == no.sikt.graphitron.rewrite.model.ServiceMethodCallError.MultipleDslContextSlots.class) {
+            return new no.sikt.graphitron.rewrite.model.ServiceMethodCallError.MultipleDslContextSlots(
+                "com.example.Svc",
+                no.sikt.graphitron.rewrite.model.ServiceMethodCallError.Round.METHOD);
+        }
+        if (permit == no.sikt.graphitron.rewrite.model.ServiceMethodCallError.ParameterNamesMissing.class) {
+            return new no.sikt.graphitron.rewrite.model.ServiceMethodCallError.ParameterNamesMissing(
+                "com.example.Svc", "doThing");
+        }
+        if (permit == no.sikt.graphitron.rewrite.model.ServiceMethodCallError.ParameterUnbindable.class) {
+            return new no.sikt.graphitron.rewrite.model.ServiceMethodCallError.ParameterUnbindable(
+                "title", List.of("name", "year"), "name");
+        }
+        if (permit == no.sikt.graphitron.rewrite.model.ServiceMethodCallError.InputBeanShape.class) {
+            return new no.sikt.graphitron.rewrite.model.ServiceMethodCallError.InputBeanShape(
+                "com.example.Bean", "no public no-arg constructor");
+        }
+        if (permit == no.sikt.graphitron.rewrite.model.ServiceMethodCallError.ArgMappingParseError.class) {
+            return new no.sikt.graphitron.rewrite.model.ServiceMethodCallError.ArgMappingParseError(
+                "title:", "unexpected end of input");
+        }
+        if (permit == no.sikt.graphitron.rewrite.model.ServiceMethodCallError.ArgMappingUnknownArg.class) {
+            return new no.sikt.graphitron.rewrite.model.ServiceMethodCallError.ArgMappingUnknownArg(
+                "title", "ttle", List.of("title", "year"));
+        }
+        if (permit == no.sikt.graphitron.rewrite.model.ServiceMethodCallError.ArgMappingPathRejected.class) {
+            return new no.sikt.graphitron.rewrite.model.ServiceMethodCallError.ArgMappingPathRejected(
+                "title", "details", "intermediate segment 'details' is not an input-object field");
+        }
         return null;
     }
 }
