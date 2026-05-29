@@ -1,13 +1,13 @@
 ---
 id: R246
 title: UpdateRows walker carrier (R222 UPDATE slice) with PK-or-UK identification
-status: In Progress
+status: In Review
 bucket: structural
 priority: 4
 theme: structural-refactor
 depends-on: []
 created: 2026-05-27
-last-updated: 2026-05-28
+last-updated: 2026-05-29
 ---
 
 # UpdateRows walker carrier (R222 UPDATE slice) with PK-or-UK identification
@@ -324,3 +324,21 @@ Three tiers.
 * **INSERT / UPSERT.** Different walker carriers per R222's table (`InsertRows`, future UPSERT slot). `InputArgRef` reused.
 * **Per-row error correlation on the bulk arm.** R12's flat-error contract carries through unchanged.
 * **`MutationInputResolver` retirement.** R246 stops calling `MutationInputResolver.resolveInput` from the UPDATE path; the resolver stays alive for DELETE / INSERT / UPSERT until their own walker-carrier slices land. Final retirement happens once every DML kind has migrated.
+
+## As-built notes (In Progress → In Review)
+
+The slice landed in two commits following R238's additive-then-destructive precedent: an additive commit (carrier model + `UpdateRowsWalker` + `UpdateRowsWalkerTest`, zero behaviour change) then a destructive consumer cutover. Deviations from the prose above, all decided against the project principles (a `principles-architect` consult validated the four design forks before implementation):
+
+* **Error taxonomy is a sibling sub-seal, not `Structural.*` arms.** The prose names arms `Structural.NoUniqueKeyCoverage` etc., written before R238 landed Done. The actual R238 precedent (and the dimensional-model-pivot rule) is that each walker adds its own sibling sub-seal of `Rejection.AuthorError`. R246 ships `UpdateRowsError implements Rejection.AuthorError` with the five arms, each with `lspCode()` under `graphitron.update-rows.*`, and adds `UpdateRowsError` to `AuthorError`'s `permits` clause + the LSP code projector + `typed-rejection.adoc` + `RejectionSeverityCoverageTest`.
+
+* **Walker substrate is the R238 translator concession.** `UpdateRowsWalker.walk` takes the already-classified `List<InputField>` (the four admitted carriers, via `TableInputType.inputFields()`) plus the input `TableRef` and `JooqCatalog`, not raw SDL re-classification. The spec's `walk(GraphQLFieldDefinition, JooqCatalog)` "no substrate intermediating" framing overclaimed; the from-SDL absorption is tracked as **R257** (`updaterows-walker-sdl-substrate`), the analogue of R256 for the service walker.
+
+* **`DmlTableField.tableInputArg()` removed from the sealed parent.** INSERT/DELETE/UPSERT keep their own `tableInputArg` record component; UPDATE has none. The one polymorphic consumer (`CatalogBuilder.dmlMutation`) reads UPDATE's table/type off `InputArgRef` in a dedicated arm.
+
+* **FieldBuilder branches before `resolveInput`.** `classifyUpdateTableField` handles the direct-@table/ID-return UPDATE (the `MutationUpdateTableField` leaf); payload-returning UPDATE (`MutationDmlRecordField` / `MutationBulkDmlRecordField`, out of scope) stays on the shared `resolveInput` path, so the kind-agnostic `@argCondition` rejection and the other verbs are untouched.
+
+* **The walker reproduces two per-field rules `buildLookupBindings` owned**, because the UPDATE-direct path bypasses it: a list-typed input field and a field-level `@condition` (override `true` → `OverrideConditionNotSupported`; otherwise an unsupported-shape rejection, since R246 cannot emit the filter and would otherwise silently drop it). These collapse back to one owner under R257.
+
+* **The emitter is carrier-driven in place, not a separate `UpdateRowsEmitter` class.** `buildMutationUpdateFetcher` / `buildBulkUpdateFetcher` read the carrier and project `setColumns()` / `keyColumns()` back into the `SetGroup` / `InputColumnBindingGroup` shapes the shared SET / lookup-WHERE emitters consume (`setGroupsOf` / `keyGroupsOf`), keeping emitted SQL byte-identical. Extracting a standalone emitter class would have required widening ~6 private `TypeFetcherGenerator` helpers to package scope for no behavioural gain; deferred as a pure code-organisation move. The single-row empty-SET runtime guard is **kept** (defensive against a caller omitting every set value at runtime), rather than removed as the prose suggested.
+
+* **UK-driven execution test deferred.** The `MatchedKey.UniqueKey` arm is unit-tested (`ukOnlyMatch_pkNotCovered_succeedsWithUniqueKey`); the emitter does not branch on PK vs UK (both render the same matched-key equality conjunction), and that emit path is execution-tested via the PK `updateFilm` round-trip, so a separate `parent_node.alt_key` execution case adds marginal coverage at the cost of cross-module example-schema plumbing. Worth adding when a NodeType for a nodeidfixture table is otherwise wired into the example.
