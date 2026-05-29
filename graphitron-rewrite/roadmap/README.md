@@ -16,7 +16,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 |---|---|---|---|---|
 | `R19` | Rebase and squash rewrite branch onto main | Ready |  | [plan](history-squash.md) |
 | `R222` | Dimensional model pivot: slots over cross-product permits | Spec | 2026-05-28 <sub>created 2026-05-21</sub> | [plan](dimensional-model-pivot.md) |
-| `R238` | ServiceMethodCall walker carrier (R222 foundation slice) | Ready | 2026-05-29 <sub>created 2026-05-25</sub> | [plan](methodcall-walker-carrier.md) |
+| `R238` | ServiceMethodCall walker carrier (R222 foundation slice) | In Progress | 2026-05-29 <sub>created 2026-05-25</sub> | [plan](methodcall-walker-carrier.md) |
 | `R246` | UpdateRows walker carrier (R222 UPDATE slice) with PK-or-UK identification <sub>blocked by: [methodcall-walker-carrier](methodcall-walker-carrier.md)</sub> | In Progress | 2026-05-28 <sub>created 2026-05-27</sub> | [plan](updaterows-walker-carrier.md) |
 | `R45` | Multi-tenant routing on top of the schema-driven ExecutionInput factory | Spec | 2026-05-20 | [plan](tenant-routing-and-execution-input.md) |
 | `R255` | Dedupe duplicate column projection in @reference DBQueries (RC-6 regression) | In Review | 2026-05-28 | [plan](dedupe-reference-projection.md) |
@@ -111,6 +111,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 ### Other
 
+- `R256` [**Absorb the service walker substrate: typed per-arm errors + multi-arg ctors**](service-walker-substrate-absorption.md): R238 landed the `ServiceMethodCall` walker carrier across the four root sync `@service` permits, but shipped its walker as a *translator* over a resolved `MethodRef.Service` rather than the spec's fresh SDL+classloader reflection (see R238's "Walker substrate" note). Three consequences of that substrate choice are carved out here as their own vertical, so R238 could land Done without overstating its surface: <sub>updated 2026-05-29</sub> _(blocked by [methodcall-walker-carrier](methodcall-walker-carrier.md))_
 - `R148` [**Advance SourceLocation past description so diagnostics point at the field, not the doc block**](source-location-skips-description.md): graphql-java's `FieldDefinition.getSourceLocation()` (and the same call on type, input-field, and enum-value definitions) returns the start of the *description block* when one is present, not the line of the field name. Build-time validator logs and the R147 LSP diagnostic surface both inherit this: an error on a documented field highlights the opening `"""` of the doc block rather than the field, which is misleading in the console and visually wrong in the editor squiggle. <sub>updated 2026-05-12</sub>
 - `R236` [**BuildContext nested-input candidate-hint draws from path-origin table instead of @reference terminal table**](validator-reference-candidate-hint-terminal-table.md): `BuildContext.classifyInputFieldInternal` (`BuildContext.java:1665`-`1677`) emits a "Did you mean…" hint when a nested-input column name is unresolvable. The candidate list is built from `catalog.columnSqlNamesOf(resolvedTable.tableName())` where `resolvedTable` is the path-*origin* enclosing input's `@table`, not the path's terminal table. <sub>updated 2026-05-23</sub>
 - `R149` [**End-to-end LSP publish-diagnostics test and buildOutput report-population test for R147**](r147-followup-end-to-end-publish-diagnostics-tests.md): R147's spec called for two tests that the implementation deferred: <sub>updated 2026-05-12</sub>
@@ -194,8 +195,9 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### structural-refactor
 
+- `R256` [**Absorb the service walker substrate: typed per-arm errors + multi-arg ctors**](service-walker-substrate-absorption.md) — Backlog, structural, blocked by [methodcall-walker-carrier](methodcall-walker-carrier.md)
 - `R222` [**Dimensional model pivot: slots over cross-product permits**](dimensional-model-pivot.md) — Spec, structural
-- `R238` [**ServiceMethodCall walker carrier (R222 foundation slice)**](methodcall-walker-carrier.md) — Ready, structural
+- `R238` [**ServiceMethodCall walker carrier (R222 foundation slice)**](methodcall-walker-carrier.md) — In Progress, structural
 - `R171` [**Fold InputType and TableInputType under sealed parent InputLikeType**](input-like-type-sealed-parent.md) — Backlog, architecture
 - `R103` [**Lift jOOQ column defaults onto input fields connected to that column**](lift-jooq-column-defaults-onto-inputs.md) — Backlog, architecture
 - `R249` [**Nested @argMapping syntax via GraphQLSelectionParser**](nested-argmapping-syntax.md) — Backlog, feature
