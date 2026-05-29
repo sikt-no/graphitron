@@ -4551,24 +4551,26 @@ class GraphitronSchemaBuilderTest {
             }
             type Query { x: String }
             """);
+        // R246: @value is ignored; the title column carries a @condition the walker cannot emit,
+        // so it rejects with UpdateRowsError.UnsupportedInputFieldShape naming the field.
         var uf = (UnclassifiedField) schema.field("Mutation", "updateFilm");
         assertThat(uf.reason()).contains("title");
-        assertThat(uf.reason()).containsAnyOf(
-            "@condition on a mutation input field is not supported",
-            "@value and @condition on the same input field");
+        assertThat(uf.reason()).contains("@condition", "not supported");
     }
 
     /**
-     * R215 #7 — {@code @mutation(typeName: UPDATE) + @condition(override: true)} on a non-PK
-     * field admits. The mutation classifier admits the UnboundField as a filter-side carrier;
-     * the developer takes over the WHERE half via the explicit condition method.
+     * R246 (inverts R215 #7) — {@code @mutation(typeName: UPDATE) + @condition(override: true)} on
+     * a non-key input field is now rejected by {@code UpdateRowsWalker}. R215 admitted the
+     * {@code UnboundField} at classify time, but its emit-side wiring never landed, so the author's
+     * filter would silently never run; R246 makes the deferral honest with a typed
+     * {@code UpdateRowsError.OverrideConditionNotSupported} rather than dropping the filter at emit.
      */
     @Test
-    void r215_mutationUpdateConditionOverrideTrueOnNonPkFieldAdmits() {
+    void r246_mutationUpdateConditionOverrideTrueOnNonPkFieldRejects() {
         var schema = build("""
             input FilmUpdate @table(name: "film") {
               filmId: Int! @field(name: "film_id")
-              title: String @value
+              title: String
               syntheticName: String
                 @condition(condition: {className: "no.sikt.graphitron.rewrite.TestConditionStub", method: "syntheticNameCondition"}, override: true)
             }
@@ -4578,8 +4580,11 @@ class GraphitronSchemaBuilderTest {
             }
             type Query { x: String }
             """);
-        var f = schema.field("Mutation", "updateFilm");
-        assertThat(f).isInstanceOf(no.sikt.graphitron.rewrite.model.MutationField.MutationUpdateTableField.class);
+        var f = (UnclassifiedField) schema.field("Mutation", "updateFilm");
+        assertThat(f.rejection()).isInstanceOf(
+            no.sikt.graphitron.rewrite.model.UpdateRowsError.OverrideConditionNotSupported.class);
+        assertThat(((no.sikt.graphitron.rewrite.model.UpdateRowsError.OverrideConditionNotSupported) f.rejection())
+            .fieldName()).isEqualTo("syntheticName");
     }
 
     /**
@@ -6900,26 +6905,28 @@ class GraphitronSchemaBuilderTest {
         },
 
         UPDATE_LOOKUP_KEY_COVERS_SINGLE_PK(
-            "UPDATE with @lookupKey on the single-column PK → MutationUpdateTableField with non-empty fieldBindings",
+            "R246: UPDATE input covering the single-column PK plus a non-key column → MutationUpdateTableField with the PK in keyColumns and the extra in setColumns",
             """
             type Film @table(name: "film") { title: String }
             input FilmInput @table(name: "film") {
                 filmId: Int! @field(name: "film_id")
-                title: String @value
+                title: String
             }
             type Query { x: String }
             type Mutation { updateFilm(in: FilmInput!): Film @mutation(typeName: UPDATE) }
             """,
             schema -> {
                 var f = (MutationField.MutationUpdateTableField) schema.field("Mutation", "updateFilm");
-                assertThat(f.tableInputArg().fieldBindings()).hasSize(1);
-                assertThat(f.tableInputArg().fieldBindings().get(0).targetColumns().get(0).sqlName()).isEqualTo("film_id");
+                var ur = (no.sikt.graphitron.rewrite.model.UpdateRows.Identified) f.updateRows();
+                assertThat(ur.matchedKey()).isInstanceOf(no.sikt.graphitron.rewrite.model.MatchedKey.PrimaryKey.class);
+                assertThat(ur.keyColumns()).extracting(k -> k.targetColumn().sqlName()).containsExactly("film_id");
+                assertThat(ur.setColumns()).extracting(s -> s.targetColumn().sqlName()).containsExactly("title");
             }) {
             @Override public Set<Class<?>> variants() { return Set.of(MutationField.MutationUpdateTableField.class); }
         },
 
-        UPDATE_NO_VALUE_FIELDS_REJECTED(
-            "UPDATE without any @value fields → UnclassifiedField (R144 requires at least one @value)",
+        UPDATE_NO_KEY_COVERAGE_REJECTED(
+            "R246: UPDATE input covering no PK or UK → UnclassifiedField carrying UpdateRowsError.NoUniqueKeyCoverage",
             """
             type Film @table(name: "film") { title: String }
             input FilmInput @table(name: "film") { title: String }
@@ -6928,62 +6935,65 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> {
                 var f = (UnclassifiedField) schema.field("Mutation", "updateFilm");
-                assertThat(f.reason()).contains("@mutation(typeName: UPDATE) has no @value fields to set");
+                assertThat(f.rejection()).isInstanceOf(
+                    no.sikt.graphitron.rewrite.model.UpdateRowsError.NoUniqueKeyCoverage.class);
+                assertThat(f.reason()).contains("covers no primary key or unique key");
             }),
 
-        UPDATE_EVERY_FIELD_VALUE_MARKED_REJECTED(
-            "UPDATE where every input field is @value-marked → UnclassifiedField (R144: no filter fields → would update every row)",
+        UPDATE_EMPTY_SET_REJECTED(
+            "R246: UPDATE input covering exactly the PK and nothing else → UnclassifiedField carrying UpdateRowsError.NoSetFields",
             """
             type Film @table(name: "film") { title: String }
             input FilmInput @table(name: "film") {
-                title: String @value
+                filmId: Int! @field(name: "film_id")
             }
             type Query { x: String }
             type Mutation { updateFilm(in: FilmInput!): Film @mutation(typeName: UPDATE) }
             """,
             schema -> {
                 var f = (UnclassifiedField) schema.field("Mutation", "updateFilm");
-                assertThat(f.reason()).contains("no filter fields", "every input field is");
+                assertThat(f.rejection()).isInstanceOf(
+                    no.sikt.graphitron.rewrite.model.UpdateRowsError.NoSetFields.class);
+                assertThat(f.reason()).contains("nothing to set");
             }),
 
         UPDATE_PARTIAL_COMPOSITE_PK_REJECTED(
-            "UPDATE on composite-PK table where filter columns cover only one PK column without multiRow → UnclassifiedField listing missing PK column (R144 PK-coverage)",
+            "R246: UPDATE on composite-PK table covering only one PK column → UnclassifiedField carrying UpdateRowsError.NoUniqueKeyCoverage",
             """
             type FilmActor @table(name: "film_actor") { actorId: Int! @field(name: "actor_id") }
             input FilmActorInput @table(name: "film_actor") {
                 actorId: Int! @field(name: "actor_id")
-                lastUpdate: String @field(name: "last_update") @value
+                lastUpdate: String @field(name: "last_update")
             }
             type Query { x: String }
             type Mutation { updateFilmActor(in: FilmActorInput!): FilmActor @mutation(typeName: UPDATE) }
             """,
             schema -> {
                 var f = (UnclassifiedField) schema.field("Mutation", "updateFilmActor");
-                assertThat(f.reason())
-                    .contains("filter columns do not cover all PK column(s)")
-                    .contains("film_id")
-                    .contains("multiRow: true");
+                assertThat(f.rejection()).isInstanceOf(
+                    no.sikt.graphitron.rewrite.model.UpdateRowsError.NoUniqueKeyCoverage.class);
+                assertThat(f.reason()).contains("film_actor");
             }),
 
         UPDATE_FULL_COMPOSITE_PK_HAPPY(
-            "UPDATE on composite-PK table where filter columns cover all PK columns and one @value field is present → MutationUpdateTableField with both bindings (R144)",
+            "R246: UPDATE on composite-PK table covering all PK columns plus a non-key column → MutationUpdateTableField with both PK columns in keyColumns",
             """
             type FilmActor @table(name: "film_actor") { actorId: Int! @field(name: "actor_id") }
             input FilmActorInput @table(name: "film_actor") {
                 actorId: Int! @field(name: "actor_id")
                 filmId: Int! @field(name: "film_id")
-                lastUpdate: String @field(name: "last_update") @value
+                lastUpdate: String @field(name: "last_update")
             }
             type Query { x: String }
             type Mutation { updateFilmActor(in: FilmActorInput!): FilmActor @mutation(typeName: UPDATE) }
             """,
             schema -> {
                 var f = (MutationField.MutationUpdateTableField) schema.field("Mutation", "updateFilmActor");
-                assertThat(f.tableInputArg().fieldBindings().stream()
-                        .flatMap(g -> g.targetColumns().stream())
-                        .map(c -> c.sqlName())
-                        .toList())
+                var ur = (no.sikt.graphitron.rewrite.model.UpdateRows.Identified) f.updateRows();
+                assertThat(ur.keyColumns()).extracting(k -> k.targetColumn().sqlName())
                     .containsExactlyInAnyOrder("actor_id", "film_id");
+                assertThat(ur.setColumns()).extracting(s -> s.targetColumn().sqlName())
+                    .containsExactly("last_update");
             }),
 
         DELETE_FULL_COMPOSITE_PK_HAPPY(
@@ -7022,22 +7032,23 @@ class GraphitronSchemaBuilderTest {
                     .contains("filter columns do not cover all PK column(s)", "multiRow: true");
             }),
 
-        UPDATE_TIA_PARTITIONS_FIELDS_INTO_LOOKUP_AND_SET(
-            "UPDATE TableInputArg projects fields into typed lookupKeyFields / setFields in declaration order (R144: @value-marked fields land in setFields)",
+        UPDATE_CARRIER_PARTITIONS_FIELDS_INTO_KEY_AND_SET(
+            "R246: the UpdateRows carrier partitions input fields into keyColumns (matched-key members) and setColumns (the rest), in declaration order",
             """
             type Film @table(name: "film") { title: String }
             input FilmInput @table(name: "film") {
                 filmId: Int! @field(name: "film_id")
-                title: String @value
-                description: String @value
+                title: String
+                description: String
             }
             type Query { x: String }
             type Mutation { updateFilm(in: FilmInput!): Film @mutation(typeName: UPDATE) }
             """,
             schema -> {
-                var tia = ((MutationField.MutationUpdateTableField) schema.field("Mutation", "updateFilm")).tableInputArg();
-                assertThat(tia.lookupKeyFields()).extracting("name").containsExactly("filmId");
-                assertThat(tia.setFields()).extracting("name").containsExactly("title", "description");
+                var ur = (no.sikt.graphitron.rewrite.model.UpdateRows.Identified)
+                    ((MutationField.MutationUpdateTableField) schema.field("Mutation", "updateFilm")).updateRows();
+                assertThat(ur.keyColumns()).extracting(k -> k.sdlFieldName()).containsExactly("filmId");
+                assertThat(ur.setColumns()).extracting(s -> s.sdlFieldName()).containsExactly("title", "description");
             }) {
             @Override public Set<Class<?>> variants() { return Set.of(MutationField.MutationUpdateTableField.class); }
         },
@@ -7099,19 +7110,19 @@ class GraphitronSchemaBuilderTest {
             }),
 
         DML_UPDATE_LIST_LIST_OK(
-            "DML UPDATE with listed input + listed @table return → MutationUpdateTableField with tia.list() == true",
+            "DML UPDATE with listed input + listed @table return → MutationUpdateTableField with inputArg.list() == true",
             """
             type Film @table(name: "film") { title: String }
             input FilmInput @table(name: "film") {
                 filmId: Int! @field(name: "film_id")
-                title: String @value
+                title: String
             }
             type Query { x: String }
             type Mutation { updateFilms(in: [FilmInput!]!): [Film!]! @mutation(typeName: UPDATE) }
             """,
             schema -> {
                 var f = (MutationField.MutationUpdateTableField) schema.field("Mutation", "updateFilms");
-                assertThat(f.tableInputArg().list()).isTrue();
+                assertThat(f.inputArg().list()).isTrue();
                 assertThat(f.returnExpression())
                     .isEqualTo(new no.sikt.graphitron.rewrite.model.DmlReturnExpression.ProjectedList("Film"));
             }),
@@ -7475,8 +7486,10 @@ class GraphitronSchemaBuilderTest {
             type Mutation { updateFilm(in: FilmInput!): Film @mutation(typeName: UPDATE) }
             """,
             schema -> {
+                // R246: @value is ignored; a column field carrying @condition is rejected by the
+                // walker because the filter would not be emitted (UnsupportedInputFieldShape).
                 var f = (UnclassifiedField) schema.field("Mutation", "updateFilm");
-                assertThat(f.reason()).contains("@value and @condition", "mutually exclusive");
+                assertThat(f.reason()).contains("filmId", "@condition", "not supported");
             });
 
         final String description;

@@ -1,6 +1,8 @@
 package no.sikt.graphitron.rewrite.walker;
 
+import graphql.language.SourceLocation;
 import graphql.schema.GraphQLFieldDefinition;
+import no.sikt.graphitron.rewrite.ArgConditionRef;
 import no.sikt.graphitron.rewrite.JooqCatalog;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
@@ -17,6 +19,7 @@ import no.sikt.graphitron.rewrite.model.WalkerResult;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 
 /**
@@ -63,14 +66,14 @@ public final class UpdateRowsWalker {
         var contributions = new ArrayList<Contribution>();
         for (var f : inputFields) {
             switch (f) {
-                case InputField.ColumnField c ->
-                    contributions.add(new Contribution(c.name(), List.of(c.column()), c.extraction()));
-                case InputField.CompositeColumnField c ->
-                    contributions.add(new Contribution(c.name(), c.columns(), c.extraction()));
-                case InputField.ColumnReferenceField c ->
-                    contributions.add(new Contribution(c.name(), c.liftedSourceColumns(), c.extraction()));
-                case InputField.CompositeColumnReferenceField c ->
-                    contributions.add(new Contribution(c.name(), c.liftedSourceColumns(), c.extraction()));
+                case InputField.ColumnField c -> classifyColumnCarrier(
+                    c.name(), c.list(), List.of(c.column()), c.extraction(), c.condition(), c.location(), errors, contributions);
+                case InputField.CompositeColumnField c -> classifyColumnCarrier(
+                    c.name(), c.list(), c.columns(), c.extraction(), c.condition(), c.location(), errors, contributions);
+                case InputField.ColumnReferenceField c -> classifyColumnCarrier(
+                    c.name(), c.list(), c.liftedSourceColumns(), c.extraction(), c.condition(), c.location(), errors, contributions);
+                case InputField.CompositeColumnReferenceField c -> classifyColumnCarrier(
+                    c.name(), c.list(), c.liftedSourceColumns(), c.extraction(), c.condition(), c.location(), errors, contributions);
                 case InputField.UnboundField u -> {
                     if (u.condition().isPresent() && u.condition().get().override()) {
                         errors.add(new UpdateRowsError.OverrideConditionNotSupported(u.name(), u.location()));
@@ -161,6 +164,40 @@ public final class UpdateRowsWalker {
 
         // Stage 8: success.
         return new WalkerResult.Ok<>(new UpdateRows.Identified(matchedKey, setColumns, keyColumns));
+    }
+
+    /**
+     * Reshape an admitted column carrier into a {@link Contribution}, unless it carries a
+     * field-level {@code @condition}. R246 does not emit input-field conditions on UPDATE, so a
+     * condition would be silently dropped, the same footgun {@link UpdateRowsError.OverrideConditionNotSupported}
+     * makes honest; reject rather than admit. An {@code override: true} condition reports through
+     * that arm; any other condition (e.g. {@code override: false}, or {@code @value} + {@code @condition})
+     * reports as an unsupported shape.
+     */
+    private void classifyColumnCarrier(
+        String name, boolean list, List<ColumnRef> columns, CallSiteExtraction extraction,
+        Optional<ArgConditionRef> condition, SourceLocation location,
+        List<Rejection.AuthorError> errors, List<Contribution> contributions
+    ) {
+        if (list) {
+            errors.add(new UpdateRowsError.UnsupportedInputFieldShape(
+                name, "list-typed column carrier",
+                "list-typed input field is not supported; list cardinality must live on the outer "
+                + "@table argument, not on an individual input field."));
+            return;
+        }
+        if (condition.isPresent()) {
+            if (condition.get().override()) {
+                errors.add(new UpdateRowsError.OverrideConditionNotSupported(name, location));
+            } else {
+                errors.add(new UpdateRowsError.UnsupportedInputFieldShape(
+                    name, "column carrier with @condition",
+                    "@condition on a @mutation(typeName: UPDATE) input field is not supported; the "
+                    + "filter would not be applied. Remove the directive."));
+            }
+            return;
+        }
+        contributions.add(new Contribution(name, columns, extraction));
     }
 
     private MatchedKey toMatchedKey(JooqCatalog.KeyEntry key) {

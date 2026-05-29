@@ -3167,6 +3167,20 @@ class FieldBuilder {
                 }
             }
             if (kind != null) {
+                // R246: the direct-@table/ID-return UPDATE classifies through the UpdateRowsWalker,
+                // not MutationInputResolver. Branch here on leaf identity (the return type): a
+                // payload-returning UPDATE (ResultReturnType) stays on the shared resolveInput path
+                // below alongside the MutationDmlRecordField / MutationBulkDmlRecordField leaves,
+                // which keep their TableInputArg. Forking before resolveInput keeps that resolver's
+                // UPDATE-specific partition / PK-coverage rules (which R246 replaces with PK-or-UK
+                // + walker partition) from firing on this path.
+                if (kind == DmlKind.UPDATE) {
+                    ReturnTypeRef updateReturnType = ctx.resolveReturnType(baseTypeName(fieldDef), buildWrapper(fieldDef));
+                    if (!(updateReturnType instanceof ReturnTypeRef.ResultReturnType)) {
+                        return classifyUpdateTableField(fieldDef, parentTypeName, name, location, updateReturnType);
+                    }
+                }
+
                 ArgumentRef.InputTypeArg.TableInputArg tia;
                 switch (mutationInputResolver.resolveInput(fieldDef, kind)) {
                     case MutationInputResolver.Resolved.Ok ok -> tia = ok.tia();
@@ -3324,9 +3338,10 @@ class FieldBuilder {
                     case INSERT -> buildDmlField(returnType, parentTypeName, name, location, fieldDef,
                         (rex, ch) -> new MutationField.MutationInsertTableField(parentTypeName, name, location, rex, tia, ch),
                         enc);
-                    case UPDATE -> buildDmlField(returnType, parentTypeName, name, location, fieldDef,
-                        (rex, ch) -> new MutationField.MutationUpdateTableField(parentTypeName, name, location, rex, tia, ch),
-                        enc);
+                    case UPDATE -> throw new IllegalStateException(
+                        "R246: a direct-@table/ID-return UPDATE is intercepted by classifyUpdateTableField "
+                        + "before resolveInput, and a payload-return UPDATE returns from the ResultReturnType "
+                        + "branch above; the final-switch UPDATE arm is unreachable for field '" + name + "'");
                     case DELETE -> buildDmlField(returnType, parentTypeName, name, location, fieldDef,
                         (rex, ch) -> new MutationField.MutationDeleteTableField(parentTypeName, name, location, rex, tia, ch),
                         enc);
@@ -3338,6 +3353,100 @@ class FieldBuilder {
         }
 
         return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural("@" + DIR_SERVICE + " and @" + DIR_MUTATION + " are both absent on this mutation field"));
+    }
+
+    /**
+     * R246 — classifies a direct-@table/ID-return {@code @mutation(typeName: UPDATE)} field into a
+     * {@link MutationField.MutationUpdateTableField}. Runs the whole-arg pre-checks the walker is
+     * not the right layer to diagnose (multiRow rejection, the single {@code @table} arg resolution,
+     * the {@code @argCondition}-on-arg rejection), builds the slim {@link InputArgRef} arg surface
+     * directly from the resolved {@code @table} input type, then runs {@code UpdateRowsWalker} for
+     * the PK-or-UK identification and SET/WHERE partition. A pre-check failure or a walker
+     * {@code Err} surfaces as an {@link UnclassifiedField} carrying the typed rejection (the field
+     * is excluded from the classified set); the walker's typed {@code UpdateRowsError} arms are
+     * preserved verbatim so the LSP projector can read their {@code lspCode()}.
+     */
+    private GraphitronField classifyUpdateTableField(
+            GraphQLFieldDefinition fieldDef, String parentTypeName, String name,
+            SourceLocation location, ReturnTypeRef returnType) {
+        // Pre-check: multiRow: true on UPDATE is rejected outright; the broadcast semantics has no
+        // replacement path under R246 (cover a PK or UK to express an UPDATE).
+        if (MutationInputResolver.parseMultiRow(fieldDef)) {
+            return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.deferred(
+                "@mutation(typeName: UPDATE) with multiRow: true is not yet supported", ""));
+        }
+
+        // Resolve the single @table input argument's slim surface, rejecting the shape constraints
+        // that are the arg's property rather than per-field admissibility.
+        GraphitronType.TableInputType foundTit = null;
+        String argName = null;
+        String argTypeName = null;
+        boolean list = false;
+        for (var arg : fieldDef.getArguments()) {
+            var argType = arg.getType();
+            boolean argList = GraphQLTypeUtil.unwrapNonNull(argType) instanceof GraphQLList;
+            String typeName = ((GraphQLNamedType) GraphQLTypeUtil.unwrapAll(argType)).getName();
+            var resolvedType = ctx.types.get(typeName);
+            if (!(resolvedType instanceof GraphitronType.TableInputType tit)) {
+                return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(
+                    "@mutation fields only accept @table input arguments; found '" + arg.getName()
+                    + "' of type '" + typeName + "'"));
+            }
+            if (arg.hasAppliedDirective(BuildContext.DIR_CONDITION)) {
+                return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(
+                    "@condition on a @mutation field argument is not supported"));
+            }
+            if (foundTit != null) {
+                return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(
+                    "@mutation field has more than one @table input argument"));
+            }
+            foundTit = tit;
+            argName = arg.getName();
+            argTypeName = typeName;
+            list = argList;
+        }
+        if (foundTit == null) {
+            return new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                Rejection.structural("no @table input argument found on @mutation field"));
+        }
+        var inputArg = new no.sikt.graphitron.rewrite.model.InputArgRef(
+            argName, argTypeName, foundTit.table(), list);
+
+        // Invariant #14/#15 return-type validation (shared with the resolveInput path).
+        String returnTypeError = MutationInputResolver.validateReturnType(returnType, DmlKind.UPDATE, list, ctx);
+        if (returnTypeError != null) {
+            return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(returnTypeError));
+        }
+
+        // ID-return encode resolution (mirrors the shared DML path at the @mutation classifier).
+        Optional<HelperRef.Encode> encodeReturn = Optional.empty();
+        if (returnType instanceof ReturnTypeRef.ScalarReturnType s && "ID".equals(s.returnTypeName())) {
+            String tableSqlName = foundTit.table().tableName();
+            encodeReturn = ctx.types.values().stream()
+                .filter(t -> t instanceof NodeType nt && nt.table().tableName().equals(tableSqlName))
+                .map(t -> ((NodeType) t).encodeMethod())
+                .findFirst();
+            if (encodeReturn.isEmpty()) {
+                return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(
+                    "@mutation field '" + name + "' returns ID but no @node type is declared for table '"
+                    + tableSqlName + "'; annotate the type with @node or use a @table return type"));
+            }
+        }
+
+        // R246 walker: PK-or-UK identification + SET/WHERE partition over the already-classified
+        // input fields (the translator concession; see UpdateRowsWalker).
+        var walkerResult = new no.sikt.graphitron.rewrite.walker.UpdateRowsWalker()
+            .walk(fieldDef, foundTit.table(), foundTit.inputFields(), ctx.catalog);
+        var enc = encodeReturn;
+        return switch (walkerResult) {
+            case no.sikt.graphitron.rewrite.model.WalkerResult.Ok<no.sikt.graphitron.rewrite.model.UpdateRows> ok ->
+                buildDmlField(returnType, parentTypeName, name, location, fieldDef,
+                    (rex, ch) -> new MutationField.MutationUpdateTableField(
+                        parentTypeName, name, location, rex, inputArg, ok.carrier(), ch),
+                    enc);
+            case no.sikt.graphitron.rewrite.model.WalkerResult.Err<no.sikt.graphitron.rewrite.model.UpdateRows> err ->
+                new UnclassifiedField(parentTypeName, name, location, fieldDef, err.errors().getFirst());
+        };
     }
 
     /**

@@ -28,6 +28,10 @@ import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.InputColumnBinding;
 import no.sikt.graphitron.rewrite.model.InputColumnBindingGroup;
 import no.sikt.graphitron.rewrite.model.InputField;
+import no.sikt.graphitron.rewrite.model.ColumnRef;
+import no.sikt.graphitron.rewrite.model.KeyColumn;
+import no.sikt.graphitron.rewrite.model.SetColumn;
+import no.sikt.graphitron.rewrite.model.UpdateRows;
 import no.sikt.graphitron.rewrite.model.MethodBackedField;
 import no.sikt.graphitron.rewrite.model.MethodRef;
 import no.sikt.graphitron.rewrite.model.MutationField;
@@ -2053,6 +2057,83 @@ public class TypeFetcherGenerator {
     }
 
     /**
+     * R246: a SET-side input field reduced to what the SET emitter needs — the SDL field name (the
+     * Map presence key), its target columns on the input's own table, and the NodeId decode
+     * extraction (or {@code null} for a raw map read). This is the carrier-driven analogue of an
+     * {@code InputField.SetField}; the UPDATE walker carrier names the partition directly, so the
+     * SET emitters consume these groups rather than re-deriving columns from {@code InputField}.
+     */
+    private record SetGroup(String name, List<ColumnRef> columns, CallSiteExtraction.NodeIdDecodeKeys nidk) {}
+
+    /**
+     * R246: project the UPDATE carrier's flat {@link SetColumn} list back into per-field
+     * {@link SetGroup}s, grouping by {@code sdlFieldName} in encounter order. A composite-NodeId
+     * field contributes several {@code SetColumn}s sharing one name; they regroup into one
+     * {@code SetGroup} whose columns line up positionally with the decode {@code Record<N>} slots.
+     */
+    /**
+     * R246: adapt a legacy {@code List<InputField.SetField>} (the payload-returning DML record
+     * fetchers, which still carry a {@code TableInputArg}) into the {@link SetGroup} shape the SET
+     * emitters now consume. The carrier-driven UPDATE path uses {@link #setGroupsOf} instead.
+     */
+    private static List<SetGroup> setGroupsOfFields(List<InputField.SetField> setFields) {
+        var out = new ArrayList<SetGroup>();
+        for (var sf : setFields) {
+            out.add(new SetGroup(sf.name(), setFieldColumns(sf), setFieldNodeIdExtraction(sf)));
+        }
+        return out;
+    }
+
+    private static List<SetGroup> setGroupsOf(List<SetColumn> setColumns) {
+        var byName = new java.util.LinkedHashMap<String, List<SetColumn>>();
+        for (var sc : setColumns) {
+            byName.computeIfAbsent(sc.sdlFieldName(), k -> new ArrayList<>()).add(sc);
+        }
+        var out = new ArrayList<SetGroup>();
+        for (var e : byName.entrySet()) {
+            var cols = e.getValue().stream().map(SetColumn::targetColumn).toList();
+            var extraction = e.getValue().get(0).extraction();
+            var nidk = extraction instanceof CallSiteExtraction.NodeIdDecodeKeys n ? n : null;
+            out.add(new SetGroup(e.getKey(), cols, nidk));
+        }
+        return out;
+    }
+
+    /**
+     * R246: project the UPDATE carrier's flat {@link KeyColumn} list into the
+     * {@link InputColumnBindingGroup}s the lookup-WHERE emitters consume, grouping by
+     * {@code sdlFieldName} in encounter order. A single-column field becomes a {@code MapGroup}
+     * (carrying its extraction so an arity-1 NodeId still routes through the decode local); a
+     * multi-column field becomes a {@code DecodedRecordGroup} whose positional
+     * {@code RecordBinding}s mirror the decode {@code Record<N>} slots. This reconstructs exactly
+     * the {@code fieldBindings()} shape the legacy {@code TableInputArg} produced for the WHERE
+     * half.
+     */
+    private static List<InputColumnBindingGroup> keyGroupsOf(List<KeyColumn> keyColumns) {
+        var byName = new java.util.LinkedHashMap<String, List<KeyColumn>>();
+        for (var kc : keyColumns) {
+            byName.computeIfAbsent(kc.sdlFieldName(), k -> new ArrayList<>()).add(kc);
+        }
+        var out = new ArrayList<InputColumnBindingGroup>();
+        for (var e : byName.entrySet()) {
+            var group = e.getValue();
+            if (group.size() == 1) {
+                var kc = group.get(0);
+                out.add(new InputColumnBindingGroup.MapGroup(List.of(
+                    new InputColumnBinding.MapBinding(kc.sdlFieldName(), kc.targetColumn(), kc.extraction()))));
+            } else {
+                var bindings = new ArrayList<InputColumnBinding.RecordBinding>();
+                for (int i = 0; i < group.size(); i++) {
+                    bindings.add(new InputColumnBinding.RecordBinding(i, group.get(i).targetColumn()));
+                }
+                out.add(new InputColumnBindingGroup.DecodedRecordGroup(
+                    e.getKey(), (CallSiteExtraction.NodeIdDecodeKeys) group.get(0).extraction(), bindings));
+            }
+        }
+        return out;
+    }
+
+    /**
      * R189: emits {@code Map<Field<?>, Object>} {@code .put(t.col, DSL.val(value, t.col.getDataType()))}
      * statements for each {@code SetField} on {@code setFields}, guarded by a presence check on
      * the SDL field name. The walk is uniform across the four admissible SetField shapes:
@@ -2077,7 +2158,7 @@ public class TypeFetcherGenerator {
      */
     private static void emitSetMapPuts(
             CodeBlock.Builder block,
-            List<InputField.SetField> setFields,
+            List<SetGroup> setFields,
             String setsLocal,
             String presenceLocal,
             String valueMapLocal,
@@ -2088,8 +2169,8 @@ public class TypeFetcherGenerator {
         String presenceCall = useContainsKey ? "containsKey" : "contains";
         for (int sfi = 0; sfi < setFields.size(); sfi++) {
             var sf = setFields.get(sfi);
-            var cols = setFieldColumns(sf);
-            var nidk = setFieldNodeIdExtraction(sf);
+            var cols = sf.columns();
+            var nidk = sf.nidk();
             block.beginControlFlow("if ($L.$L($S))", presenceLocal, presenceCall, sf.name());
             String recLocal = null;
             if (nidk != null) {
@@ -2154,11 +2235,11 @@ public class TypeFetcherGenerator {
      */
     private static void emitSetVColNameAdds(
             CodeBlock.Builder block,
-            List<InputField.SetField> setFields,
+            List<SetGroup> setFields,
             GeneratorUtils.ResolvedTableNames tablesOnly,
             TableRef tableRef) {
         for (var sf : setFields) {
-            var cols = setFieldColumns(sf);
+            var cols = sf.columns();
             block.beginControlFlow("if (firstKeys.contains($S))", sf.name());
             for (var col : cols) {
                 block.addStatement("vColNames.add($T.$L.$L.getName())",
@@ -2177,14 +2258,14 @@ public class TypeFetcherGenerator {
      */
     private static void emitSetBulkCellAdds(
             CodeBlock.Builder block,
-            List<InputField.SetField> setFields,
+            List<SetGroup> setFields,
             String decodeLocalPrefix,
             GeneratorUtils.ResolvedTableNames tablesOnly,
             TableRef tableRef) {
         for (int sfi = 0; sfi < setFields.size(); sfi++) {
             var sf = setFields.get(sfi);
-            var cols = setFieldColumns(sf);
-            var nidk = setFieldNodeIdExtraction(sf);
+            var cols = sf.columns();
+            var nidk = sf.nidk();
             block.beginControlFlow("if (firstKeys.contains($S))", sf.name());
             String recLocal = null;
             if (nidk != null) {
@@ -2214,11 +2295,11 @@ public class TypeFetcherGenerator {
      */
     private static void emitSetVFieldPuts(
             CodeBlock.Builder block,
-            List<InputField.SetField> setFields,
+            List<SetGroup> setFields,
             GeneratorUtils.ResolvedTableNames tablesOnly,
             TableRef tableRef) {
         for (var sf : setFields) {
-            var cols = setFieldColumns(sf);
+            var cols = sf.columns();
             block.beginControlFlow("if (firstKeys.contains($S))", sf.name());
             for (var col : cols) {
                 block.addStatement("sets.put($T.$L.$L, v.field($T.$L.$L))",
@@ -2243,13 +2324,21 @@ public class TypeFetcherGenerator {
      */
     private static MethodSpec buildMutationUpdateFetcher(TypeFetcherEmissionContext ctx, MutationField.MutationUpdateTableField f,
                                                           String outputPackage) {
-        var tia = f.tableInputArg();
-        var tableRef = tia.inputTable();
+        // R246: SET / WHERE partition and the matched-key identity come off the UpdateRows carrier
+        // (updateRows.setColumns() / keyColumns()) and the slim arg surface (inputArg) instead of
+        // a TableInputArg. The emitted SQL is structurally identical to the legacy shape; only the
+        // source of the partition changed. Carrier slots project back into the SetGroup /
+        // InputColumnBindingGroup shapes the shared SET / lookup-WHERE emitters consume.
+        var inputArg = f.inputArg();
+        var tableRef = inputArg.table();
         var tablesOnly = GeneratorUtils.ResolvedTableNames.ofTable(tableRef);
         String tableLocal = tablesOnly.tableLocalName();
+        var setGroups = setGroupsOf(f.updateRows().setColumns());
+        var keyGroups = keyGroupsOf(f.updateRows().keyColumns());
 
-        if (tia.list()) {
-            return buildBulkUpdateFetcher(ctx, f, outputPackage, tia, tableRef, tablesOnly, tableLocal);
+        if (inputArg.list()) {
+            return buildBulkUpdateFetcher(ctx, f, outputPackage, inputArg, tableRef, tablesOnly, tableLocal,
+                setGroups, keyGroups);
         }
 
         // Single-row UPDATE: build the SET clause dynamically from the present-key set so absent
@@ -2260,15 +2349,18 @@ public class TypeFetcherGenerator {
         var linkedHashMap = ClassName.get("java.util", "LinkedHashMap");
         var postInGuard = CodeBlock.builder();
         postInGuard.addStatement("$T<$T<?>, Object> sets = new $T<>()", MAP, fieldClass, linkedHashMap);
-        emitSetMapPuts(postInGuard, tia.setFields(), "sets", "in", "in",
+        emitSetMapPuts(postInGuard, setGroups, "sets", "in", "in",
             "__setKey", tablesOnly, tableRef);
+        // Runtime PATCH guard: the carrier guarantees the schema has at least one settable column,
+        // but a caller may omit every set-field value (sending only key columns); fail with a
+        // friendly message rather than letting jOOQ reject an empty SET map.
         postInGuard.beginControlFlow("if (sets.isEmpty())")
             .addStatement("throw new $T($S)", IllegalArgumentException.class,
                 "@mutation(typeName: UPDATE) call has no settable fields present; "
-                    + "only @lookupKey fields were provided")
+                    + "only key fields were provided")
             .endControlFlow();
 
-        var whereChunk = buildLookupWhereSingleRow(tia, tablesOnly, tableRef);
+        var whereChunk = buildLookupWhereSingleRow(keyGroups, tablesOnly, tableRef, "in");
         postInGuard.add(whereChunk.decodeLocals());
         var dmlChain = CodeBlock.builder()
             .add(".update($L)\n", tableLocal)
@@ -2277,8 +2369,8 @@ public class TypeFetcherGenerator {
             .build();
 
         return buildDmlFetcher(ctx, f.name(), f.returnExpression(), f.errorChannel(),
-            tia.name(), tableRef, tablesOnly, tableLocal,
-            outputPackage, dmlChain, /*postDslGuard=*/ CodeBlock.of(""), postInGuard.build(), tia.list());
+            inputArg.name(), tableRef, tablesOnly, tableLocal,
+            outputPackage, dmlChain, /*postDslGuard=*/ CodeBlock.of(""), postInGuard.build(), inputArg.list());
     }
 
     /**
@@ -2299,10 +2391,12 @@ public class TypeFetcherGenerator {
     private static MethodSpec buildBulkUpdateFetcher(TypeFetcherEmissionContext ctx,
                                                      MutationField.MutationUpdateTableField f,
                                                      String outputPackage,
-                                                     no.sikt.graphitron.rewrite.ArgumentRef.InputTypeArg.TableInputArg tia,
+                                                     no.sikt.graphitron.rewrite.model.InputArgRef inputArg,
                                                      TableRef tableRef,
                                                      GeneratorUtils.ResolvedTableNames tablesOnly,
-                                                     String tableLocal) {
+                                                     String tableLocal,
+                                                     List<SetGroup> setGroups,
+                                                     List<InputColumnBindingGroup> keyGroups) {
         var fieldClass = ClassName.get("org.jooq", "Field");
         var arrayList = ClassName.get("java.util", "ArrayList");
         var linkedHashMap = ClassName.get("java.util", "LinkedHashMap");
@@ -2313,7 +2407,7 @@ public class TypeFetcherGenerator {
         // of the typed Row1<T1>...Row22 forms).
         var rowClass = ClassName.get("org.jooq", "RowN");
         var tableClass = ClassName.get("org.jooq", "Table");
-        var groups = tia.fieldBindings();
+        var groups = keyGroups;
         // Flatten lookup-key target columns across groups for the join-on-column-names construction;
         // every column appears once at slot index i in vColNames / cells / WHERE.
         var lookupTargetColumns = new ArrayList<no.sikt.graphitron.rewrite.model.ColumnRef>();
@@ -2332,7 +2426,7 @@ public class TypeFetcherGenerator {
             postInGuard.addStatement("vColNames.add($T.$L.$L.getName())",
                 tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName());
         }
-        emitSetVColNameAdds(postInGuard, tia.setFields(), tablesOnly, tableRef);
+        emitSetVColNameAdds(postInGuard, setGroups, tablesOnly, tableRef);
 
         // Build per-row v-table cells imperatively, mirroring the column-name walk above so
         // the cell positions line up by construction. DSL.row(Field<?>...) packages the cells;
@@ -2351,7 +2445,7 @@ public class TypeFetcherGenerator {
             var g = groups.get(gi);
             emitLookupKeyCellAdds(postInGuard, g, gi, "row", tablesOnly, tableRef);
         }
-        emitSetBulkCellAdds(postInGuard, tia.setFields(), "__bulkSetKey", tablesOnly, tableRef);
+        emitSetBulkCellAdds(postInGuard, setGroups, "__bulkSetKey", tablesOnly, tableRef);
         postInGuard.addStatement("vRows.add($T.row(cells.toArray(new $T<?>[0])))", DSL, fieldClass);
         postInGuard.endControlFlow();
         postInGuard.addStatement("$T<?> v = $T.values(vRows.toArray(new $T[0])).as($S, vColNames.toArray(new String[0]))",
@@ -2362,11 +2456,11 @@ public class TypeFetcherGenerator {
         // the matching v-column with the target column's type, so no cast is needed at the
         // .set(Map<? extends Field<?>, ?>) call site.
         postInGuard.addStatement("$T<$T<?>, Object> sets = new $T<>()", MAP, fieldClass, linkedHashMap);
-        emitSetVFieldPuts(postInGuard, tia.setFields(), tablesOnly, tableRef);
+        emitSetVFieldPuts(postInGuard, setGroups, tablesOnly, tableRef);
         postInGuard.beginControlFlow("if (sets.isEmpty())")
             .addStatement("throw new $T($S)", IllegalArgumentException.class,
                 "@mutation(typeName: UPDATE) bulk call has no settable fields present in the input rows; "
-                    + "only @lookupKey fields were provided")
+                    + "only key fields were provided")
             .endControlFlow();
 
         // Duplicate-lookup-key guard: build a HashSet<List<Object>> over the per-row lookup-key
@@ -2436,8 +2530,8 @@ public class TypeFetcherGenerator {
             .build();
 
         return buildDmlFetcher(ctx, f.name(), f.returnExpression(), f.errorChannel(),
-            tia.name(), tableRef, tablesOnly, tableLocal,
-            outputPackage, dmlChain, postDslGuard, postInGuard.build(), tia.list());
+            inputArg.name(), tableRef, tablesOnly, tableLocal,
+            outputPackage, dmlChain, postDslGuard, postInGuard.build(), inputArg.list());
     }
 
     /**
@@ -2629,9 +2723,21 @@ public class TypeFetcherGenerator {
             no.sikt.graphitron.rewrite.ArgumentRef.InputTypeArg.TableInputArg tia,
             GeneratorUtils.ResolvedTableNames tablesOnly, TableRef tableRef,
             String mapLocal) {
+        return buildLookupWhereSingleRow(tia.fieldBindings(), tablesOnly, tableRef, mapLocal);
+    }
+
+    /**
+     * R246: the lookup-WHERE chunk built from already-projected {@link InputColumnBindingGroup}s
+     * rather than a {@code TableInputArg}. The UPDATE walker carrier projects its
+     * {@code keyColumns()} into these groups ({@link #keyGroupsOf}) and calls this overload; the
+     * legacy {@code TableInputArg} overloads above delegate here with {@code tia.fieldBindings()}.
+     */
+    private static LookupWhereChunk buildLookupWhereSingleRow(
+            List<InputColumnBindingGroup> groups,
+            GeneratorUtils.ResolvedTableNames tablesOnly, TableRef tableRef,
+            String mapLocal) {
         var locals = CodeBlock.builder();
         var whereExpr = CodeBlock.builder();
-        var groups = tia.fieldBindings();
         int slotIndex = 0;
         for (int gi = 0; gi < groups.size(); gi++) {
             var g = groups.get(gi);
@@ -3913,7 +4019,7 @@ public class TypeFetcherGenerator {
         var linkedHashMap = ClassName.get("java.util", "LinkedHashMap");
         var preGuard = CodeBlock.builder();
         preGuard.addStatement("$T<$T<?>, Object> sets = new $T<>()", MAP, fieldClass, linkedHashMap);
-        emitSetMapPuts(preGuard, tia.setFields(), "sets", "in", "in",
+        emitSetMapPuts(preGuard, setGroupsOfFields(tia.setFields()), "sets", "in", "in",
             "__setKey", tablesOnly, tableRef);
         preGuard.beginControlFlow("if (sets.isEmpty())")
             .addStatement("throw new $T($S)", IllegalArgumentException.class,
@@ -4178,7 +4284,7 @@ public class TypeFetcherGenerator {
         var linkedHashMap = ClassName.get("java.util", "LinkedHashMap");
         var body = CodeBlock.builder();
         body.addStatement("$T<$T<?>, Object> sets = new $T<>()", MAP, fieldClass, linkedHashMap);
-        emitSetMapPuts(body, tia.setFields(), "sets", "row", "row",
+        emitSetMapPuts(body, setGroupsOfFields(tia.setFields()), "sets", "row", "row",
             "__setKey", tablesOnly, tableRef);
         body.beginControlFlow("if (sets.isEmpty())")
             .addStatement("throw new $T($S)", IllegalArgumentException.class,

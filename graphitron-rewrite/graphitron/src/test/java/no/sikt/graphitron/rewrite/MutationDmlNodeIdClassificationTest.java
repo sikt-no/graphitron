@@ -81,7 +81,7 @@ class MutationDmlNodeIdClassificationTest {
     }
 
     @Test
-    void nodeIdFieldInInput_withoutValueMarker_rejected() {
+    void nodeIdFieldInInput_keyOnly_rejectedNoSetFields() {
         var schema = TestSchemaHelper.buildSchema("""
             type Bar implements Node @table(name: "bar") @node(keyColumns: ["id_1", "id_2"]) {
                 id: ID! @nodeId
@@ -89,18 +89,17 @@ class MutationDmlNodeIdClassificationTest {
             }
             input BarInput @table(name: "bar") {
                 id: ID! @nodeId
-                name: String
             }
             type Query { x: String }
             type Mutation { updateBar(in: BarInput!): ID @mutation(typeName: UPDATE) }
             """, NODEID_CTX);
 
         var f = (UnclassifiedField) schema.field("Mutation", "updateBar");
-        // R144: every input field is a WHERE filter by default. UPDATE requires at least one
-        // @value field to define the SET clause; this input has none, so the classifier rejects
-        // with the new "no @value fields" diagnostic.
-        assertThat(f.reason())
-            .contains("@mutation(typeName: UPDATE) has no @value fields to set");
+        // R246: the composite-NodeId key covers the PK exactly, leaving nothing to SET; the walker
+        // rejects with UpdateRowsError.NoSetFields (the @value marker concept is retired).
+        assertThat(f.rejection()).isInstanceOf(
+            no.sikt.graphitron.rewrite.model.UpdateRowsError.NoSetFields.class);
+        assertThat(f.reason()).contains("nothing to set");
     }
 
     @Test
@@ -151,14 +150,19 @@ class MutationDmlNodeIdClassificationTest {
             type Mutation { updateBar(in: UpdateBarInput!): ID @mutation(typeName: UPDATE) }
             """, NODEID_CTX);
 
+        // R246: the composite-NodeId key field projects to two KeyColumn entries sharing the SDL
+        // field name "id"; the @value marker is ignored, name partitions to SET as a non-key column.
         var f = (MutationField.MutationUpdateTableField) schema.field("Mutation", "updateBar");
-        var group = f.tableInputArg().fieldBindings().get(0);
-        assertThat(group).isInstanceOf(
-            no.sikt.graphitron.rewrite.model.InputColumnBindingGroup.DecodedRecordGroup.class);
-        // The set side is the plain name ColumnField, untouched by the NodeId admission path.
-        assertThat(f.tableInputArg().setFields()).hasSize(1);
-        var set0 = (no.sikt.graphitron.rewrite.model.InputField.ColumnField) f.tableInputArg().setFields().get(0);
-        assertThat(set0.name()).isEqualTo("name");
+        var updateRows = (no.sikt.graphitron.rewrite.model.UpdateRows.Identified) f.updateRows();
+        assertThat(updateRows.matchedKey()).isInstanceOf(
+            no.sikt.graphitron.rewrite.model.MatchedKey.PrimaryKey.class);
+        assertThat(updateRows.keyColumns()).hasSize(2);
+        assertThat(updateRows.keyColumns()).extracting(k -> k.sdlFieldName()).containsOnly("id");
+        assertThat(updateRows.keyColumns()).extracting(k -> k.targetColumn().sqlName())
+            .containsExactly("id_1", "id_2");
+        assertThat(updateRows.setColumns()).hasSize(1);
+        assertThat(updateRows.setColumns().get(0).sdlFieldName()).isEqualTo("name");
+        assertThat(updateRows.setColumns().get(0).targetColumn().sqlName()).isEqualTo("name");
     }
 
     @Test
@@ -476,12 +480,15 @@ class MutationDmlNodeIdClassificationTest {
             type Mutation { updateBar(in: UpdateBarInput!): ID @mutation(typeName: UPDATE) }
             """, NODEID_CTX);
 
+        // R246: bazRef (FK-target NodeId ref, lifts id_1) and id2 both partition to the matched PK
+        // (id_1, id_2); name partitions to SET. The @value marker is ignored.
         var f = (MutationField.MutationUpdateTableField) schema.field("Mutation", "updateBar");
-        assertThat(f.tableInputArg().lookupKeyFields()).hasSize(2);
-        assertThat(f.tableInputArg().setFields()).hasSize(1);
-        var setField = f.tableInputArg().setFields().get(0);
-        assertThat(setField).isInstanceOf(no.sikt.graphitron.rewrite.model.InputField.ColumnField.class);
-        assertThat(((no.sikt.graphitron.rewrite.model.InputField.ColumnField) setField).name()).isEqualTo("name");
+        var updateRows = (no.sikt.graphitron.rewrite.model.UpdateRows.Identified) f.updateRows();
+        assertThat(updateRows.keyColumns()).extracting(k -> k.targetColumn().sqlName())
+            .containsExactlyInAnyOrder("id_1", "id_2");
+        assertThat(updateRows.setColumns()).hasSize(1);
+        assertThat(updateRows.setColumns().get(0).sdlFieldName()).isEqualTo("name");
+        assertThat(updateRows.setColumns().get(0).targetColumn().sqlName()).isEqualTo("name");
     }
 
     @Test
