@@ -1,0 +1,19 @@
+package no.sikt.graphitron.rewrite.model;
+
+/**
+ * R246 — one column contribution on the WHERE side of an UPDATE: a column of the matched key the
+ * input fills. Carries the GraphQL input field name it came from, the jOOQ key column it fills,
+ * and how to read the input value at the call-site root.
+ *
+ * <p>Like {@link SetColumn}, decoupled from {@link InputField} per R222. The composite-NodeId case
+ * (R130) maps one SDL input field to N {@code KeyColumn} rows sharing one {@link #sdlFieldName()}
+ * but differing in {@link #targetColumn()}; the emitter groups by {@link #sdlFieldName()} to emit
+ * one decode local that all N columns reference. {@link #extraction()} reuses the existing
+ * {@link CallSiteExtraction} family ({@code Direct}, or arity-1 / arity-N
+ * {@link CallSiteExtraction.NodeIdDecodeKeys}).
+ */
+public record KeyColumn(
+    String sdlFieldName,
+    ColumnRef targetColumn,
+    CallSiteExtraction extraction
+) {}

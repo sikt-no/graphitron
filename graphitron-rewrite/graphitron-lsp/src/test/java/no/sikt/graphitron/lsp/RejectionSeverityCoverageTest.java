@@ -181,6 +181,37 @@ class RejectionSeverityCoverageTest {
             return new no.sikt.graphitron.rewrite.model.ServiceMethodCallError.ParameterUnbindable(
                 "title", List.of("name", "year"), "name");
         }
+        // R246: UpdateRowsError sub-seal of AuthorError. One sample per arm; Diagnostics.compute's
+        // switch on Rejection.AuthorError catches the whole sub-family uniformly (Error severity).
+        if (permit == no.sikt.graphitron.rewrite.model.UpdateRowsError.NoUniqueKeyCoverage.class) {
+            return new no.sikt.graphitron.rewrite.model.UpdateRowsError.NoUniqueKeyCoverage(
+                "film",
+                List.of(new no.sikt.graphitron.rewrite.model.ColumnRef("title", "TITLE", "java.lang.String")),
+                List.of(new no.sikt.graphitron.rewrite.model.MatchedKey.PrimaryKey(
+                    List.of(new no.sikt.graphitron.rewrite.model.ColumnRef("film_id", "FILM_ID", "java.lang.Integer")),
+                    "film_pkey")));
+        }
+        if (permit == no.sikt.graphitron.rewrite.model.UpdateRowsError.NoSetFields.class) {
+            return new no.sikt.graphitron.rewrite.model.UpdateRowsError.NoSetFields(
+                "film",
+                new no.sikt.graphitron.rewrite.model.MatchedKey.PrimaryKey(
+                    List.of(new no.sikt.graphitron.rewrite.model.ColumnRef("film_id", "FILM_ID", "java.lang.Integer")),
+                    "film_pkey"));
+        }
+        if (permit == no.sikt.graphitron.rewrite.model.UpdateRowsError.MixedCarrierKeyMembership.class) {
+            return new no.sikt.graphitron.rewrite.model.UpdateRowsError.MixedCarrierKeyMembership(
+                "ref",
+                List.of(new no.sikt.graphitron.rewrite.model.ColumnRef("actor_id", "ACTOR_ID", "java.lang.Integer")),
+                List.of(new no.sikt.graphitron.rewrite.model.ColumnRef("last_update", "LAST_UPDATE", "java.time.LocalDateTime")));
+        }
+        if (permit == no.sikt.graphitron.rewrite.model.UpdateRowsError.UnsupportedInputFieldShape.class) {
+            return new no.sikt.graphitron.rewrite.model.UpdateRowsError.UnsupportedInputFieldShape(
+                "nested", "NestingField", "nested input types in @mutation(typeName: UPDATE) fields are not yet supported");
+        }
+        if (permit == no.sikt.graphitron.rewrite.model.UpdateRowsError.OverrideConditionNotSupported.class) {
+            return new no.sikt.graphitron.rewrite.model.UpdateRowsError.OverrideConditionNotSupported(
+                "syntheticName", new SourceLocation(1, 1));
+        }
         return null;
     }
 }
