@@ -1,7 +1,7 @@
 ---
 id: R246
 title: UpdateRows walker carrier (R222 UPDATE slice) with PK-or-UK identification
-status: Ready
+status: In Review
 bucket: structural
 priority: 4
 theme: structural-refactor
@@ -358,3 +358,14 @@ Both fixes are mechanical: rows in the existing `MutationDmlCase` enum following
 Minor, non-blocking (fix opportunistically, not a gate item): in `TypeFetcherGenerator`, two javadoc blocks stack immediately above `setGroupsOfFields` (around the R246 SET-projection helpers); the first block's prose describes `setGroupsOf` but attaches to `setGroupsOfFields` by method order, leaving `setGroupsOf` itself undocumented. Re-pair the javadoc with its method.
 
 Re-flip to In Review once the two pipeline rows land; the reviewer-session != implementer-session rule applies again next cycle.
+
+## Rework (Ready -> In Progress -> In Review, 2026-05-29)
+
+Both gate items landed; no production-code change was needed, as the reviewer anticipated. Two `MutationDmlCase` rows were added to `GraphitronSchemaBuilderTest`, following the already-migrated `UPDATE_*` / `R144_INSERT_MULTIROW_REJECTED` patterns:
+
+* `R246_UPDATE_MULTIROW_TRUE_DEFERRED` -- a direct-`@table`/ID-return UPDATE with `multiRow: true` surfaces as `UnclassifiedField` whose `rejection()` is a `Rejection.Deferred` with an empty `planSlug()`, and whose `reason()` names "UPDATE", "multiRow: true", "not yet supported". Guards the net-new pre-check at `FieldBuilder.classifyUpdateTableField` (today's code rejects `multiRow` only on INSERT).
+* `R246_UPDATE_ARG_CONDITION_STRUCTURAL_REJECTED` -- an arg-level `@condition` on the UPDATE-direct `@mutation` field argument surfaces as `UnclassifiedField` whose `rejection()` is a `Rejection.AuthorError.Structural`, naming "@condition", "@mutation field argument", "not supported". Guards the arg-`@condition` pre-check on the UPDATE-direct path.
+
+The minor non-blocking javadoc pairing was also fixed: in `TypeFetcherGenerator`, the `setGroupsOf` javadoc block had stacked above `setGroupsOfFields` (attaching by method order and leaving `setGroupsOf` undocumented); the block now sits directly above `setGroupsOf`, and `setGroupsOfFields` keeps its own block.
+
+Full `mvn -f graphitron-rewrite/pom.xml install -Plocal-db` is green on JDK 25; `GraphitronSchemaBuilderTest` runs 462 cases (the two new rows included), 0 failures/errors. Re-flipped to In Review; the reviewer-session != implementer-session rule applies again.

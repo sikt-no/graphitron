@@ -2066,12 +2066,6 @@ public class TypeFetcherGenerator {
     private record SetGroup(String name, List<ColumnRef> columns, CallSiteExtraction.NodeIdDecodeKeys nidk) {}
 
     /**
-     * R246: project the UPDATE carrier's flat {@link SetColumn} list back into per-field
-     * {@link SetGroup}s, grouping by {@code sdlFieldName} in encounter order. A composite-NodeId
-     * field contributes several {@code SetColumn}s sharing one name; they regroup into one
-     * {@code SetGroup} whose columns line up positionally with the decode {@code Record<N>} slots.
-     */
-    /**
      * R246: adapt a legacy {@code List<InputField.SetField>} (the payload-returning DML record
      * fetchers, which still carry a {@code TableInputArg}) into the {@link SetGroup} shape the SET
      * emitters now consume. The carrier-driven UPDATE path uses {@link #setGroupsOf} instead.
@@ -2084,6 +2078,12 @@ public class TypeFetcherGenerator {
         return out;
     }
 
+    /**
+     * R246: project the UPDATE carrier's flat {@link SetColumn} list back into per-field
+     * {@link SetGroup}s, grouping by {@code sdlFieldName} in encounter order. A composite-NodeId
+     * field contributes several {@code SetColumn}s sharing one name; they regroup into one
+     * {@code SetGroup} whose columns line up positionally with the decode {@code Record<N>} slots.
+     */
     private static List<SetGroup> setGroupsOf(List<SetColumn> setColumns) {
         var byName = new java.util.LinkedHashMap<String, List<SetColumn>>();
         for (var sc : setColumns) {
