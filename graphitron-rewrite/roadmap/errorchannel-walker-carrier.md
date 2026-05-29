@@ -1,101 +1,118 @@
 ---
 id: R244
-title: ErrorChannel walker carrier (R222 Stage 2 slice on @service + @tableMethod)
+title: "Error-channel slice 1: PayloadOrErrors transport, retire @error payload-class construction"
 status: Spec
 bucket: structural
 depends-on: []
 created: 2026-05-26
-last-updated: 2026-05-28
+last-updated: 2026-05-29
 ---
 
-# ErrorChannel walker carrier (R222 Stage 2 slice on @service + @tableMethod)
+# Error-channel slice 1: PayloadOrErrors transport, retire @error payload-class construction
 
-R222 Stage 2 slice on the output-walking surface, scoped to `WithErrorChannel` implementers backed by `@service` or `@tableMethod` (everything that currently classifies through `FieldBuilder.resolveErrorChannel` and emits an `ErrorChannel.PayloadClass` arm). R238 set the conventions for input-walking carriers (`MethodCall` on `MethodBackedField`); this slice mirrors the pattern on the output side, walking the SDL payload type rather than the field's arguments. The slice ships:
+First slice of a staged rewrite that eats the entire `@error`-channel machinery one transport at a time. The end state across all slices: every fetcher-emitting payload field hands graphql-java a typed `PayloadOrErrors<T>` source carrying either the resolved value (`Ok`) or the mapped errors (`Errors`), and the payload type's child fetchers switch on the arm. No developer payload class is constructed on the error path, no `localContext` side channel, no sentinel jOOQ record.
 
-- A reduced `ErrorChannel` carrier — sealed `Mapped | NoChannel` two-arm — replacing the existing `PayloadClass | LocalContext` sealed split. `Mapped` carries `(List<ErrorType> mappedErrorTypes, String mappingsConstantName)` and nothing else. The construction-shape branches (`payloadClass`, `errorsSlot`, `defaultedSlots`) and the entire `PayloadConstructionShape` family retire.
-- A single producer (`ErrorChannelWalker`) that reduces the SDL output payload type: detect the errors-shaped field, identify mapped `@error` types, run channel-level rule checks (today's rule 7 multi-VALIDATION + rule 8 duplicate match-criteria), reflect on each handler's source class for per-`@error`-type accessor coverage, derive the mappings-constant name. Substrate: payload `GraphQLObjectType` plus the codegen classloader. Subsumes `BuildContext.detectErrorsFieldShape`, `FieldBuilder.resolveErrorChannel`, `checkChannelLevelHandlerRules`, `checkDuplicateMatchCriteria`, `checkErrorTypeSourceAccessors`, and the dedup call into `MappingsConstantNameDedup`.
-- Catch-arm emitter rewrite for the in-scope `WithErrorChannel` implementers. The shape: inline the `(Mapping, cause)` match loop at every catch site; on match emit `return DataFetcherResult.<P>newResult().data(null).localContext(List.of(t)).build();`. The genericising `ErrorRouter.dispatch` and per-fetcher `payloadFactory` lambda retire. `Mapping.match(Throwable)` and `ErrorRouter.redact(Throwable, env)` survive as the narrow runtime primitives.
-- Validator pre-step rewrite: `declareEarlyPayloadFromErrors` collapses to `return DataFetcherResult.<P>newResult().data(null).localContext(__violations).build();`. The `declareEarlyPayload*` helper family retires.
-- Async tail (`asyncWrapTail`) rewrites to the same shape on the `.exceptionally(...)` path.
-- Per-field null-source guards on data-channel `ChildField` variants that can sibling an `ErrorsField` *under an `@service` / `@tableMethod` payload*: `PropertyField`, `RecordField`, `ServiceRecordField`, `ServiceTableField`, `TableMethodField`, `RecordTableMethodField`, `ConstructorField`, `NestingField`, `ComputedField`. Many short-circuit naturally via graphql-java's `PropertyDataFetcher`; the audit confirms and adds explicit `if (source == null) return null;` where missing.
-- `ChildField.ErrorsField.Transport.PayloadAccessor` arm retires; errors universally read via `env.getLocalContext()` for in-scope fields. DML's `Transport.LocalContext` arm survives outside scope.
-- R201 (`honor-field-directive-in-payload-construction-shape`) retires as moot.
-- R241 (`retire-error-payloadclass-transport`) supersedes-by this item; the umbrella discards. R241's framing as "retire transport variant + route through LocalContext" was the wrong shape per R222's dimensional-slot principle; R244 is the same direction reframed correctly.
+**This slice is scoped to retiring the domain-object *construction* path, for `@service` and `@tableMethod` fields only.** Today those fields' error path reflects on the developer's payload class and builds it (all-fields-ctor or bean-setter "construction shapes") with the matched errors slotted in; the success path already hands back the raw jOOQ record, so construction is an error-path-only behaviour. That construction machinery (`ErrorChannel.PayloadClass`, the `PayloadConstructionShape` family, the `payloadFactory*` / `declareEarlyPayload*` emitters, `ErrorRouter.dispatch`) is what slice 1 deletes, replaced by the `PayloadOrErrors` wrapper. R238 set the conventions for input-walking carriers (`MethodCall` on `MethodBackedField`); the walker half of this slice mirrors that on the output side, walking the SDL payload type rather than the field's arguments.
 
-All six DML mutation variants keep their existing transport in this slice: the two record carriers (`MutationDmlRecordField`, `MutationBulkDmlRecordField`) on the `ErrorChannel.LocalContext` sentinel-based shape, and the four `DmlTableField` permits (`MutationInsertTableField`, `MutationUpdateTableField`, `MutationDeleteTableField`, `MutationUpsertTableField`), which are channel-less today (their `errorChannel` slot is always `Optional.empty()`; `FieldBuilder.buildDmlField` derives it from `resolveErrorChannel`, which returns `NoChannel` for the non-wrapper `@table` / ID-scalar returns these permits classify ; record-payload DML returns instead classify as `MutationDmlRecordField` / `MutationBulkDmlRecordField` and pick up `LocalContext` via `detectStructuralDmlErrorChannel`). Because `MutationField` extends `WithErrorChannel` at the sealed-interface level (`MutationField.java:17`), all six inherit the slot; this slice relocates them off `WithErrorChannel` onto a sibling `WithDmlErrorTransport` interface (see "DML transport split" below) so the reduced `Mapped | NoChannel` carrier lands cleanly on the nine in-scope implementers. Their migration onto the inline emit pattern is a sibling Stage 2 slice filed at this item's In Progress mark. That follow-on extends the null-source-guard sweep across `SingleRecord*` data-channel variants, lifts the catch-arm rewrite to those fetchers, re-unifies all six onto `WithErrorChannel`, and retires `WithDmlErrorTransport`, `DmlErrorTransport`, `ErrorRouter.dispatchToLocalContext`, the sentinel emitters (`singleRecordSentinelFor`, `bulkRecordSentinelFor`), `LOCAL_CONTEXT_GUARDED_DATA_CHANNEL_VARIANTS`, and `GraphitronSchemaValidator.validateLocalContextErrorsFieldGuards`.
+**Why the wrapper, and not localContext (verified).** An earlier draft proposed `DataFetcherResult.data(null).localContext(errors)`, with the payload's `errors` field reading `env.getLocalContext()`. A pure graphql-java 25.0 spike proved this silently drops errors: a null payload source makes graphql-java's `completeValueForObject` short-circuit *all* the payload's children, so the `errors` field is never fetched and `localContext` is never read ; the response is `{payload: null}` with the error swallowed, no top-level error either. The shipped DML transport already documents exactly this and works around it with a non-null sentinel record (see the `ErrorChannel.LocalContext` javadoc). `PayloadOrErrors` resolves it by construction: the source is always non-null, so graphql-java always descends; the data field projects `Ok.value` (null on `Errors`, so it renders null and its own children are not visited) and the `errors` field projects `Errors.errors`. A second spike confirmed both arms round-trip to the expected `{data, errors}` wire shape. Both spikes are reproduced as a pinned execute-tier test (see Tests).
+
+The slice ships:
+
+- **A generic runtime wrapper `PayloadOrErrors<T>`** ; sealed `Ok(T value) | Errors(List<Object> errors)`, emitted into the runtime-support package. This is the *request-time* GraphQL source object, deliberately distinct from the *classify-time* `ErrorChannel` carrier. (Name open; see "Naming".) It cannot be `Result` (collides with jOOQ `org.jooq.Result<Record>`, the existing DataFetcher return type) or `Resolved` (the builder-step result sealed type).
+- **`ErrorChannel.PayloadClass` replaced by `ErrorChannel.Mapped(List<ErrorType> mappedErrorTypes, String mappingsConstantName)`** ; the classify-time descriptor of which `@error` types map and which `ErrorMappings` constant drives them. `ErrorChannel.LocalContext` is left untouched (DML still uses it), so `ErrorChannel` becomes sealed `Mapped | LocalContext`. `WithErrorChannel.errorChannel()` keeps its `Optional<ErrorChannel>` shape (absence = no channel = redact-only). No interface split, no `NoChannel` arm, no `Optional` removal in this slice ; those are deferred (see "Deferred to later slices").
+- **A producer `ErrorChannelWalker`** reducing the SDL payload type to `ErrorChannel.Mapped` (or no-channel): detect the errors-shaped field, identify mapped `@error` types, run the channel-level rule checks (rule 7 multi-VALIDATION, rule 8 duplicate match-criteria), reflect on handler source classes for per-`@error`-type accessor coverage, derive the mappings-constant name. Subsumes `BuildContext.detectErrorsFieldShape`, the in-scope role of `FieldBuilder.resolveErrorChannel`, `checkChannelLevelHandlerRules`, `checkDuplicateMatchCriteria`, `checkErrorTypeSourceAccessors`.
+- **Emitter rewrite for the in-scope fields.** The success path wraps the existing jOOQ-record return in `Ok(...)`; the error path returns `Errors(matchedErrors)` after the `(Mapping, cause)` match-walk; the unmapped fallback stays `ErrorRouter.redact(...)` (a real top-level GraphQL error, distinct from the typed channel). The validator Jakarta-violation pre-step and the async `.exceptionally(...)` tail emit the same `Errors(...)`. `Mapping.match(Throwable)` and `redact` survive; the payload-factory router `ErrorRouter.dispatch` retires.
+- **Arm-switching child fetchers** for every immediate field of an in-scope (wrapper-typed) payload: the data fields unwrap `Ok.value` before their existing column/key read (null on `Errors`), the errors field reads `Errors.errors`. Pinned by a validator check (see "Payload-child arm-switch invariant") so an un-switched field is a build-time failure, not a silent runtime hole.
+- **A new `ChildField.ErrorsField.Transport.WrapperArm`** arm; in-scope errors fields read `Errors.errors` off the wrapper source. `Transport.LocalContext` (DML) and `Transport.PayloadAccessor` (non-channel parents) are untouched. The `Transport` taxonomy gains an arm; nothing collapses in this slice.
+- R201 (`honor-field-directive-in-payload-construction-shape`) retires as moot; R241 (`retire-error-payloadclass-transport`) is superseded.
+
+**Two transports coexist after slice 1.** DML (`MutationDmlRecordField`, `MutationBulkDmlRecordField`, and the four `DmlTableField` permits) stays on the sentinel/`localContext` transport, selected per-field by the catch-arm emitter. This is a sound intermediate: the wrapper (a GraphQL source object) and the sentinel/`localContext` shape share no runtime type, and `MutationField`'s interface-level `WithErrorChannel` membership is undisturbed because the carrier stays `Optional<ErrorChannel>` with `LocalContext` intact. Migrating DML onto `PayloadOrErrors` and retiring the sentinel machinery is a later slice (see "Deferred to later slices").
+
+## The runtime wrapper (`PayloadOrErrors`)
+
+```java
+// graphitron/.../runtime support package (alongside ErrorRouter / Mapping)
+public sealed interface PayloadOrErrors<T> permits PayloadOrErrors.Ok, PayloadOrErrors.Errors {
+    record Ok<T>(T value) implements PayloadOrErrors<T> {}
+    record Errors<T>(List<Object> errors) implements PayloadOrErrors<T> {}
+}
+```
+
+`Ok.value` holds exactly what the success path produces today (a typed jOOQ `XRecord`, `Result<Record>`, or `List<XRecord>`). `Errors.errors` holds the matched throwables, the same objects the retired `payloadFactory.apply(List.of(t))` received; per-`@error`-type field DataFetchers read off each throwable exactly as today. The two arms map one-to-one onto the two SDL child-field families: data fields read `Ok.value`, the `errors` field reads `Errors.errors`. Its javadoc is the pinned home of the graphql-java completion invariant (why a non-null source is mandatory, why every immediate child must arm-switch), backed by the execute-tier test in Tests.
+
+**Naming (open; pick at In Progress).** `PayloadOrErrors` is the working name. It cannot be `Result` (jOOQ `org.jooq.Result<Record>` is the existing DataFetcher return type) or `Resolved` (the builder-step result sealed type), and the `Error` arm is singular-avoided because `Rejection.AuthorError` and `GraphitronType.ErrorType` are live model types in this area. Candidates: `PayloadOrErrors.{Ok | Errors}` (self-documenting at the fetcher, arms line up with the two SDL field families); `FetcherOutcome.{Ok | Failed}`; `PayloadResult.{Data | Errors}`. The recommendation is `PayloadOrErrors.{Ok | Errors}`. This is a deliberately bounded choice for the implementer, not a design fork.
 
 ## Target emitted code
 
-The reducer backtracks from this shape. Every `@service` or `@tableMethod` fetcher's catch arm reads as a literal mapping-walk followed by either the inline match-return or the redact fallback:
+The reducer backtracks from this shape. Every `@service` / `@tableMethod` fetcher wraps its success return in `Ok` and its mapped error in `Errors`; the unmapped fallback is unchanged:
 
 ```java
 // QueryServiceRecordField example, post-slice
-public static DataFetcherResult<SakPayload> sak(DataFetchingEnvironment env) {
+public static DataFetcherResult<PayloadOrErrors<SakRecord>> sak(DataFetchingEnvironment env) {
     try {
-        SakPayload result = SakService.run(...);
-        return DataFetcherResult.<SakPayload>newResult().data(result).build();
+        SakRecord result = SakService.run(...);
+        return DataFetcherResult.<PayloadOrErrors<SakRecord>>newResult()
+            .data(new Ok<>(result)).build();
     } catch (Throwable e) {
         for (Mapping m : ErrorMappings.SAK_PAYLOAD) {
             for (Throwable t = e; t != null; t = t.getCause()) {
                 if (m.match(t)) {
-                    return DataFetcherResult.<SakPayload>newResult()
-                        .data(null)
-                        .localContext(List.of(t))
-                        .build();
+                    return DataFetcherResult.<PayloadOrErrors<SakRecord>>newResult()
+                        .data(new Errors<>(List.of(t))).build();
                 }
             }
         }
-        return ErrorRouter.redact(e, env);
+        return ErrorRouter.redact(e, env);   // unmapped -> top-level GraphQL error
     }
 }
 ```
 
-The two-deep `for` is emitted inline at every catch site. graphql-java's child fetchers for the SDL payload's data fields read `env.getSource() == null` and return null via `PropertyDataFetcher`'s natural null-source behaviour or graphitron's `@record`-accessor lambda. The SDL payload's `errors` field's child fetcher reads `env.getLocalContext()` and returns the matched throwable list, surfaced through per-`@error`-type field DataFetchers as today.
+The payload type `SakPayload`'s child fetchers receive a non-null `PayloadOrErrors<SakRecord>` as `env.getSource()` and switch on the arm:
 
-Validator pre-step (Jakarta-violation early return) has the same shape:
+```java
+// SakPayload.<dataField> fetcher (was: PropertyDataFetcher.fetching("...") / @record accessor)
+env -> env.getSource() instanceof Ok<SakRecord> ok ? <existing read off ok.value()> : null;
+
+// SakPayload.errors fetcher  (Transport.WrapperArm)
+env -> env.getSource() instanceof Errors<?> errs ? errs.errors() : List.of();
+```
+
+On `Errors`, the data field returns null, so graphql-java renders it null and does not descend into its children; the `errors` field resolves because the *payload* source is non-null. On `Ok`, the data field projects `ok.value()` (the jOOQ record, typed from the field's resolved `ReturnTypeRef` so no blind cast reappears ; see "Payload-child arm-switch invariant") and the errors field returns the empty list.
+
+Validator pre-step (Jakarta-violation early return) returns the same `Errors` arm:
 
 ```java
 // inside buildServiceFetcherCommon, pre-step
 if (!__violations.isEmpty()) {
-    return DataFetcherResult.<SakPayload>newResult()
-        .data(null)
-        .localContext(__violations)
-        .build();
+    return DataFetcherResult.<PayloadOrErrors<SakRecord>>newResult()
+        .data(new Errors<>(__violations)).build();
 }
 ```
 
-No `__earlyPayload` local, no payload-class construction.
+No `__earlyPayload` local, no payload-class construction. The async tail (`.exceptionally(...)` on `CompletableFuture`-shaped fetchers) lifts the same `Errors(...)` into the lambda over the throwable, and the success `.thenApply(...)` wraps in `Ok(...)`; otherwise identical.
 
-Async tail (`.exceptionally(...)` on `CompletableFuture<P>`-shaped child fetchers) lifts the body into a lambda over the throwable, otherwise identical.
+## Classify-time carrier (`ErrorChannel`)
 
-## Slot landing on `WithErrorChannel`
-
-The slot's home is the existing `WithErrorChannel` interface, which already names "fetcher-emitting field that may carry a typed-error channel." The slice replaces the interface's single accessor:
+The carrier stays on the existing `WithErrorChannel` interface, accessor unchanged:
 
 ```java
 // graphitron/src/main/java/no/sikt/graphitron/rewrite/model/WithErrorChannel.java
 public interface WithErrorChannel {
-    ErrorChannel errorChannel();   // replaces Optional<ErrorChannel>
+    Optional<ErrorChannel> errorChannel();   // unchanged in this slice
 }
 ```
 
-The carrier is sealed `Mapped | NoChannel`; consumers pattern-match exhaustively and always get a populated arm. R222's "no Optional slots" applies: the slot is universal across `WithErrorChannel` implementers, presence is payload-shape-gated rather than directive-gated on the implementer, so the `No<Family>` arm is the right encoding for absence (rather than interface non-membership, which R238 uses for directive-gated cases).
+`ErrorChannel` is the *classify-time* descriptor ("what to emit"), not the runtime `PayloadOrErrors` source ("what runs"); the two are kept as separate types deliberately. The walker produces `ErrorChannel.Mapped` for in-scope fields; DML continues to produce `ErrorChannel.LocalContext`; absence is `Optional.empty()`.
 
-**DML transport split.** Today `MutationField` itself `extends WithErrorChannel` (`MutationField.java:17`), so every mutation permit inherits the slot, not just the two service permits this slice migrates. That sweeps in all six DML mutation variants: the two record carriers (`MutationDmlRecordField`, `MutationBulkDmlRecordField`), which populate `ErrorChannel.LocalContext`, and the four `DmlTableField` permits (`MutationInsertTableField`, `MutationUpdateTableField`, `MutationDeleteTableField`, `MutationUpsertTableField`), which carry `Optional.empty()` today. Retyping `WithErrorChannel.errorChannel()` to the non-Optional `Mapped | NoChannel` shape at the interface level would therefore force all six DML variants onto a carrier that does not describe their transport, and deleting the `PayloadClass` arm would strand any DML permit that still resolved one.
-
-The resolution: `MutationField` stops extending `WithErrorChannel`. Membership moves per-permit, mirroring how the Query and Child sides already declare it (`QueryField.java:89,193,223`, `ChildField.java:441,470,654,698`):
-
-- The two mutation service permits (`MutationServiceTableField`, `MutationServiceRecordField`) take an explicit `implements ... WithErrorChannel` and return the reduced `Mapped | NoChannel` carrier like every other in-scope implementer.
-- All six DML mutation variants move to a sibling `WithDmlErrorTransport` interface carrying the legacy sentinel-based transport. Its accessor is `Optional<DmlErrorTransport> dmlErrorTransport()` ; deliberately `Optional`, mirroring the legacy `Optional<ErrorChannel>` slot verbatim so the four channel-less table permits keep `Optional.empty()` and the two record carriers keep their present-or-empty value with zero behavioural change. `DmlErrorTransport` is a new top-level record lifted verbatim from `ErrorChannel.LocalContext` (`List<GraphitronType.ErrorType> mappedErrorTypes, String mappingsConstantName`). `FieldBuilder.detectStructuralDmlErrorChannel` yields `DmlErrorTransport` directly; `FieldBuilder.buildDmlField` passes `Optional.empty()` for the four table permits exactly as it does today.
-
-This deliberately does *not* adopt a non-Optional `Present | NoDmlChannel` sealed shape. `WithDmlErrorTransport` is temporary scaffolding: the DML-absorption follow-on (filed at this item's In Progress mark) deletes it wholesale when it re-unifies all six DML variants under `WithErrorChannel` returning `Mapped | NoChannel`. Introducing a sealed `NoDmlChannel` arm only to delete it weeks later is churn the temporary lifetime does not earn; keeping the slot shape identical to the legacy `Optional<ErrorChannel>` it lifts from keeps this slice's DML touch to a pure relocation. The DML emitter, dedup, and catalog read-sites that consume the DML channel repoint from `errorChannel()` to `dmlErrorTransport()` ; a mechanical accessor rename, no behaviour change.
+**Why `Optional` and the shared carrier stay this slice.** A prior draft narrowed the carrier to a non-Optional `Mapped | NoChannel` and split DML onto a sibling `WithDmlErrorTransport` interface (because `MutationField extends WithErrorChannel` at the interface level, `MutationField.java:17`, so all mutation permits inherit the slot). That works, but it is churn this slice does not need: leaving `Optional<ErrorChannel>` with `LocalContext` intact means `MutationField`'s membership is undisturbed, the DML permits keep their exact behaviour, and slice 1 touches only the `PayloadClass`-using fields. The `Optional` → non-Optional `NoChannel` collapse and the per-permit interface split are bundled with the DML migration (the slice that actually retires `LocalContext`), where they are a single coherent change rather than scaffolding erected and torn down inside one slice. R222's "no Optional slots" is honoured at the end of the staged rewrite, not mid-stream.
 
 ## Carrier shape
 
 ```java
 // graphitron/src/main/java/no/sikt/graphitron/rewrite/model/ErrorChannel.java
-public sealed interface ErrorChannel permits ErrorChannel.Mapped, ErrorChannel.NoChannel {
+public sealed interface ErrorChannel permits ErrorChannel.Mapped, ErrorChannel.LocalContext {
 
+    // NEW ; replaces the retired PayloadClass arm. Drives the PayloadOrErrors emit.
     record Mapped(
         List<GraphitronType.ErrorType> mappedErrorTypes,
         String mappingsConstantName
@@ -109,18 +126,23 @@ public sealed interface ErrorChannel permits ErrorChannel.Mapped, ErrorChannel.N
         }
     }
 
-    record NoChannel() implements ErrorChannel {}
+    // UNCHANGED ; DML sentinel transport, retired by a later slice.
+    record LocalContext(
+        List<GraphitronType.ErrorType> mappedErrorTypes,
+        String mappingsConstantName
+    ) implements ErrorChannel { /* compact ctor as today */ }
 }
 ```
 
-The carrier dissolves `ErrorChannel.PayloadClass` entirely (with its `payloadClass`, `errorsSlot`, `defaultedSlots` components) and absorbs the meaningful payload of `ErrorChannel.LocalContext` into `Mapped`. The existing `ErrorChannel.LocalContext` record moves to a new top-level type `DmlErrorTransport` outside the sealed root, with identical fields. The shared accessors that today live on the sealed `ErrorChannel` root (`mappedErrorTypes`, `mappingsConstantName`) retire — consumers pattern-match on the carrier and read off the `Mapped` arm directly.
+`Mapped` and `LocalContext` carry identical fields by coincidence ; they are distinct types because they drive different emit (`Mapped` → `PayloadOrErrors`, `LocalContext` → sentinel + `dispatchToLocalContext`). The slice deletes `ErrorChannel.PayloadClass` entirely (with its `payloadClass`, `errorsSlot`, `defaultedSlots` components). The shared accessors that today live on the sealed `ErrorChannel` root (`mappedErrorTypes`, `mappingsConstantName`) can stay on the root (both arms have them) or move to per-arm reads; either is fine and is an implementer's call, since the root no longer has a third arm with a different shape.
 
 ## Producer (`ErrorChannelWalker`)
 
 ```java
 // graphitron/src/main/java/no/sikt/graphitron/rewrite/walker/ErrorChannelWalker.java
 public final class ErrorChannelWalker {
-    public WalkerResult<ErrorChannel> walk(
+    // Optional.empty() == payload has no errors-shaped field (redact-only catch arm).
+    public WalkerResult<Optional<ErrorChannel.Mapped>> walk(
         GraphQLObjectType payloadType,
         ClassLoader codegenLoader,
         MappingsConstantNameDedup dedup
@@ -130,16 +152,16 @@ public final class ErrorChannelWalker {
 
 **Substrate is the SDL output payload type directly**, paired with the codegen classloader for handler-class reflection and the build-scoped name-dedup helper. This is the output-walking analogue of R238's `ServiceMethodCallWalker` (`graphitron/src/main/java/no/sikt/graphitron/rewrite/walker/ServiceMethodCallWalker.java`): same producer-as-thin-layer-over-graphql-java pattern, different SDL surface.
 
-R238's shipped walker took a pragmatic substrate concession — it translates from an upstream resolved `MethodRef.Service` rather than reflecting directly on SDL+classloader, because today's `ServiceCatalog.reflectServiceMethod` is 1258 LOC of battle-tested reflection that a translator-walker avoids duplicating. R244 does **not** take that concession: the @error-channel walk has no comparably large intermediate to translate from (today's `FieldBuilder.resolveErrorChannel` is ~200 LOC inlined into the classifier), so the direct-substrate shape is achievable in scope. The walker absorbs `resolveErrorChannel`, `checkChannelLevelHandlerRules`, `checkDuplicateMatchCriteria`, `checkErrorTypeSourceAccessors`, and `BuildContext.detectErrorsFieldShape` verbatim under `walker/internal/`.
+R238's shipped walker took a pragmatic substrate concession ; it translates from an upstream resolved `MethodRef.Service` rather than reflecting directly on SDL+classloader, because today's `ServiceCatalog.reflectServiceMethod` is 1258 LOC of battle-tested reflection that a translator-walker avoids duplicating. This walker does **not** take that concession: the `@error`-channel walk has no comparably large intermediate to translate from (the in-scope part of `FieldBuilder.resolveErrorChannel` is ~200 LOC inlined into the classifier), so the direct-substrate shape is achievable in scope. The walker absorbs the channel-rule and accessor-coverage checks (`checkChannelLevelHandlerRules`, `checkDuplicateMatchCriteria`, `checkErrorTypeSourceAccessors`) under `walker/internal/`, and takes over the in-scope `@error`-type classification role of `resolveErrorChannel`. It *consumes* `BuildContext.detectErrorsFieldShape` (a shared helper that stays, see "What retires") rather than absorbing it.
 
 **Walker stages** (one pass per `WithErrorChannel` field's payload type):
 
-1. **Find the errors-shaped field on the payload.** Walk `payloadType.getFieldDefinitions()` in source order; the first field whose shape matches the "polymorphic list/union/interface of `@error` types" predicate is the errors carrier. Subsumes `BuildContext.detectErrorsFieldShape` and the `liftToErrorsField` lift rules. Absence: emit `Ok(NoChannel)`; the fetcher's catch arm routes through `ErrorRouter.redact(e, env)`.
+1. **Find the errors-shaped field on the payload.** Walk `payloadType.getFieldDefinitions()` in source order; the first field whose shape matches the "polymorphic list/union/interface of `@error` types" predicate is the errors carrier. Subsumes `BuildContext.detectErrorsFieldShape` and the `liftToErrorsField` lift rules. Absence: emit `Ok(Optional.empty())`; the field carries no channel and its catch arm is redact-only.
 2. **Identify mapped `@error` types.** Extract the `@error` types from the field's polymorphic shape (list element, union members, interface implementations). Non-empty by structural rule; one-element for `[SomeError]`, multi-element for unions / interfaces.
 3. **Run channel-level rules.** Rule 7 (no two VALIDATION handlers in one channel), rule 8 (no duplicate match-criteria across the flattened handler list). Failure: typed `ErrorChannelWalkerError.ChannelRuleViolation(payloadTypeName, errorsFieldName, ruleNumber, detail)` arm.
 4. **Reflect on handler source-classes for accessor coverage.** Per (channel, `@error` type, handler), walk the `@error` type's declared SDL fields and verify the handler's source class exposes a `PropertyDataFetcher`-visible accessor. `path` and `message` are exempt (populated by per-`@error`-type synthesised DataFetchers). Subsumes `checkErrorTypeSourceAccessors`. Failure: typed `ErrorChannelWalkerError.HandlerSourceAccessorMissing(...)` arm.
 5. **Resolve the mappings-constant name.** Use `MappingsConstantNameDedup`: derive from `SCREAMING_SNAKE(payloadSdlName)`; on collision, append the 8-hex SHA-256 suffix per the existing dedup rules. The name is build-scoped, so the walker takes the dedup helper as a constructor arg.
-6. **Emit result.** `Ok(Mapped(types, constName), [])` on success; `Ok(NoChannel(), [])` when no errors-shaped field found; `Err(authorErrors, diagnostics)` on any structural failure. `Err` collects across stages; the walker doesn't short-circuit at the first failure.
+6. **Emit result.** `Ok(Optional.of(Mapped(types, constName)), [])` on success; `Ok(Optional.empty(), [])` when no errors-shaped field found; `Err(authorErrors, diagnostics)` on any structural failure. `Err` collects across stages; the walker doesn't short-circuit at the first failure.
 
 **Invocation point.** The walker is invoked from `FieldBuilder` at each constructor site for a `WithErrorChannel` implementer in scope. Today's sites pass through `resolveErrorChannel` (which returns a stringly-typed `ErrorChannelResult`); under the slice, those sites collapse into a single walker call. R238's "no fallback to `UnclassifiedField`" applies: `Err` paths surface through `WalkerResult.Err.errors` and the orchestrator's diagnostic stream; the field is excluded from the classified set. The reflection-shape rejections never construct `UnclassifiedField` for the channel-rejection paths.
 
@@ -161,51 +183,47 @@ All `WithErrorChannel` implementers in scope read `field.errorChannel()` and pat
 | `ChildField.TableMethodField` | `buildChildTableMethodFetcher` |
 | `ChildField.RecordTableMethodField` | `buildRecordBasedDataFetcher` |
 
-**Shared emitter.** A new utility encapsulates the catch-arm body emission, parameterised on the carrier:
+**Shared emitter.** A new utility encapsulates the catch-arm body emission, dispatching on the optional carrier so it serves both transports through one seam:
 
 ```java
 // graphitron/src/main/java/no/sikt/graphitron/rewrite/generators/ChannelCatchArmEmitter.java
 public final class ChannelCatchArmEmitter {
-    public static CodeBlock emit(ErrorChannel channel, TypeName payloadType, String outputPackage);
+    public static CodeBlock emit(Optional<ErrorChannel> channel, TypeName valueType, String outputPackage);
 }
 ```
 
-Dispatches on the sealed carrier exhaustively:
+- `Optional.empty()`: emit `return ErrorRouter.redact(e, env);` (redact-only catch arm).
+- `ErrorChannel.Mapped`: emit the inline mapping-walk loop + `return ...data(new Errors<>(List.of(t)))...` match-return + `redact` fallback shown in the target-code section.
+- `ErrorChannel.LocalContext`: emit today's `return ErrorRouter.dispatchToLocalContext(e, ErrorMappings.CONST, env, sentinel);` (the DML sentinel arm) ; unchanged behaviour, routed through the shared seam so DML and in-scope fields share one emitter rather than two parallel `catchArm` overloads. This arm is reachable only for DML fields; the classifier guarantees in-scope fields never carry `LocalContext`.
 
-- `Mapped` arm: emit the inline mapping-walk loop + match-return + `redact` fallback shown in the target-code section.
-- `NoChannel` arm: emit `return ErrorRouter.redact(e, env);` (the redact-only catch arm).
+The success Ok-wrap is emitted at the existing `returnSyncSuccess` seam (`new Ok<>(result)` instead of the bare `result`). `asyncWrapTail` consumes the same emitter through a small wrapping context that lifts the result into the `.exceptionally(...)` lambda and wraps the `.thenApply(...)` success value in `Ok`. The Jakarta-violation pre-step ; the inline `if (!__violations.isEmpty())` block emitted inside `buildServiceFetcherCommon` (`TypeFetcherGenerator.java:1492`), which today calls `declareEarlyPayloadFromErrors(channel, "__violations")` ; switches to a sibling helper `ChannelEarlyReturnEmitter.emit(channel, valueType, violationsLocal)` emitting the `new Errors<>(violations)` early return.
 
-`asyncWrapTail` consumes the same emitter through a small wrapping context that lifts the result into the `.exceptionally(...)` lambda. The Jakarta-violation pre-step ; the inline `if (!__violations.isEmpty())` block emitted inside `buildServiceFetcherCommon` (`TypeFetcherGenerator.java:1492`), which today calls `declareEarlyPayloadFromErrors(channel, "__violations")` ; switches to a sibling helper `ChannelEarlyReturnEmitter.emit(channel, payloadType, violationsLocal)` that emits the same shape for the violations-list early return.
+`TypeFetcherGenerator.payloadFactoryLambda(+Ctor/+Setters)`, `declareEarlyPayloadFromErrors(+Ctor/+Setters)`, `dispatchCatchArm`, and the `catchArm` ctor-arm overload retire at this seam (the `Mapped` and `LocalContext` arms above subsume their job).
 
-`TypeFetcherGenerator.catchArm`, `dispatchCatchArm`, `payloadFactoryLambda`, `payloadFactoryLambdaCtor`, `payloadFactoryLambdaSetters`, `declareEarlyPayloadFromErrors`, `declareEarlyPayloadCtor`, `declareEarlyPayloadSetters` retire at this seam.
+## Cutover sequencing
 
-## Cutover sequencing (additive, then destructive)
+R238's additive-then-destructive landing is the precedent for the scaffolding and the final delete. One difference matters here: an input carrier could live in a parallel slot while consumers migrated one at a time, because the legacy and new slots were independent. The wrapper is *not* independent ; the moment a payload field's fetcher returns `PayloadOrErrors` instead of a bare record, every one of that payload type's child fetchers must arm-switch in the same commit, because they all read the one shared `env.getSource()`. So the in-scope flip is atomic **per payload type** (the root/child fetchers of one payload move together); it is not atomic across the whole codebase (different payloads can flip in different commits if that helps review).
 
-R238's actual landing sequence is the precedent (catalogued under R222's "Transition techniques"): ship the new shape additively first, cut consumers over while both shapes coexist, then retire the legacy slot in a final commit. R244 follows the same pattern to keep each commit reviewable and to bound the dual-implementation window to a few commits rather than the lifetime of a feature branch.
+Commit-level sequencing (subject to revision at In Progress time; the load-bearing claim is the sequence *shape*):
 
-Commit-level sequencing (subject to revision at In Progress time; the load-bearing claim is the *shape* of the sequence, not the exact commit count):
+1. **Add the unwired pieces.** `PayloadOrErrors<T>` runtime type, `ErrorChannel.Mapped` (added under the sealed root, which temporarily permits `Mapped | PayloadClass | LocalContext`), `ErrorChannelWalkerError` sibling sub-seal, `ChildField.ErrorsField.Transport.WrapperArm`, and the payload-child arm-switch validator pin (see below). Nothing produces or consumes `Mapped` yet; `PayloadClass` is intact and remains what in-scope fields classify to.
+2. **Add the walker and emitters.** `ErrorChannelWalker`, `ChannelCatchArmEmitter`, `ChannelEarlyReturnEmitter`, with unit-tier tests. Still unwired.
+3. **Flip the in-scope fields to the wrapper.** `FieldBuilder` classifies in-scope payload fields to `ErrorChannel.Mapped` via the walker (replacing `resolveErrorChannel`'s `PayloadClass` production for those fields). In the same commit: `returnSyncSuccess` wraps in `Ok`; `ChannelCatchArmEmitter` / `ChannelEarlyReturnEmitter` / `asyncWrapTail` emit the `Errors` arm; every in-scope payload's data-field fetchers arm-switch on `Ok`; in-scope errors fields move to `Transport.WrapperArm`; `MappingsConstantNameDedup` and `CatalogBuilder.errorChannelName` read `Mapped`. This is the atomic-per-payload flip. DML still classifies to `LocalContext` and emits the sentinel arm through the same `ChannelCatchArmEmitter`, unchanged.
+4. **Delete the construction machinery.** `ErrorChannel.PayloadClass` arm (sealed root returns to `Mapped | LocalContext`); `ErrorsSlot`, `DefaultedSlot`, `NonBoundSetter`, `PayloadConstructionShape` family; `FieldBuilder.resolvePayloadConstructionShape` + `tryMutableBean` + `buildErrorChannelCtorArm` + `buildErrorChannelBeanArm` + `collectDefaultedSlots` + `collectNonBoundSetters` + `defaultLiteralFor`; `TypeFetcherGenerator`'s `payloadFactoryLambda*` + `declareEarlyPayload*` + `dispatchCatchArm`; `ErrorRouter.dispatch` (the payload-factory router). `FieldBuilder.resolveErrorChannel` keeps its DML role (`buildDmlField` still calls it; it returns no-channel for the non-wrapper DML returns and `LocalContext` for record-payload DML), so it is trimmed to that role rather than deleted.
 
-1. **Add the new types.** `ErrorChannel.Mapped`, `ErrorChannel.NoChannel`, `ErrorChannelWalkerError` sibling sub-seal, `DmlErrorTransport` record (lifted from `ErrorChannel.LocalContext`), `WithDmlErrorTransport` sibling interface. The existing `ErrorChannel.PayloadClass | LocalContext` sealed split stays intact at this commit — `Mapped | NoChannel` is added under the same `ErrorChannel` sealed root with widened permits.
-2. **Add the walker and emitter.** `ErrorChannelWalker`, `ChannelCatchArmEmitter`, `ChannelEarlyReturnEmitter`, with unit-tier tests. Walker is unwired at this commit; nothing reads its output yet.
-3. **Additive cutover.** Each in-scope `WithErrorChannel` implementer record (the 9 from the consumer migration table) gains a `ErrorChannel.Mapped` / `NoChannel` slot alongside the existing `Optional<ErrorChannel> errorChannel()` slot. `FieldBuilder` populates both at construction. The interface gains a new accessor (e.g. `errorChannelV2()`) returning the new shape; the legacy `errorChannel()` stays alive. All six DML mutation variants gain `WithDmlErrorTransport` membership, their `dmlErrorTransport()` slot populated from the same sources (`Optional.empty()` for the four `DmlTableField` permits, the lifted `LocalContext` → `DmlErrorTransport` for the two record carriers), while keeping their legacy `Optional<ErrorChannel>` slot alive. Consumer code (`TypeFetcherGenerator`, `MappingsConstantNameDedup`, `CatalogBuilder`) still reads the legacy shape.
-4. **Cut consumers over to the new slot.** `TypeFetcherGenerator.buildServiceFetcherCommon` (and the eight other entry points) switch to `ChannelCatchArmEmitter.emit(field.errorChannelV2(), ...)`. `asyncWrapTail` and the validator pre-step switch in the same commit. `MappingsConstantNameDedup` reads `Mapped.mappingsConstantName()` via the new accessor. `CatalogBuilder.errorChannelName` reads the new shape. The DML read-sites (the DML catch-arm emitter, the DML branch of `MappingsConstantNameDedup`, and the DML path of `CatalogBuilder.errorChannelName`) repoint from `errorChannel()` to `dmlErrorTransport()` in the same commit. Errors-field transport rewires to `LocalContext` for in-scope variants (the `ChildField.ErrorsField.Transport.PayloadAccessor` arm becomes dead code at this commit but is not yet deleted).
-5. **Retire legacy.** `ErrorChannel.PayloadClass` arm deletes. `MutationField` drops `extends WithErrorChannel`; the two mutation service permits (`MutationServiceTableField`, `MutationServiceRecordField`) take an explicit `implements WithErrorChannel`, and the six DML permits' legacy `Optional<ErrorChannel>` slot is removed in favour of their `WithDmlErrorTransport.dmlErrorTransport()` slot (relocated, not retired). The interface's legacy `Optional<ErrorChannel> errorChannel()` deletes, and the new accessor renames to the canonical name (`errorChannel()` returning non-Optional `ErrorChannel`). `ErrorsSlot`, `DefaultedSlot`, `NonBoundSetter`, `PayloadConstructionShape` family delete. `TypeFetcherGenerator`'s payload-factory-lambda emitters and `declareEarlyPayload*` family delete. `ChildField.ErrorsField.Transport.PayloadAccessor` arm deletes; `Transport` collapses to single-arm. `FieldBuilder.resolveErrorChannel` deletes ; the walker absorbs its in-scope role, and `buildDmlField`'s use of it (always `NoChannel` for the four `DmlTableField` permits) collapses to passing `Optional.empty()` for their `dmlErrorTransport` slot. `detectStructuralDmlErrorChannel` survives, now yielding `DmlErrorTransport`. `MappingsConstantNameDedup.withResolvedChannel` rebuilds the 9 in-scope permits with the new component shape.
+The dual-shape window is steps 1-2 (additive, unwired) into step 3 (flip); step 4 closes it. `Mapping.match`, `ErrorRouter.redact`, `ErrorRouter.dispatchToLocalContext`, the sentinel emitters, `LOCAL_CONTEXT_GUARDED_DATA_CHANNEL_VARIANTS`, and `validateLocalContextErrorsFieldGuards` all survive slice 1 untouched ; they belong to the DML transport, retired by a later slice.
 
-Step 3 is where the dual-implementation window opens; step 5 closes it. The window is bounded to a single PR or a short PR sequence, not a feature branch. R238 ran the equivalent window from `f90a2f3` (additive cutover) through `e6b6c1c` (retire legacy slot) — five commits, all on trunk in linear order.
+## Payload-child arm-switch invariant
 
-`WithDmlErrorTransport` survives step 5 by design: all six DML mutation variants keep populating it through the same classifier callsites they use today. The DML follow-on slice (filed as a Backlog item at this slice's In Progress mark) re-unifies all six into `WithErrorChannel` returning `Mapped | NoChannel`, retires `WithDmlErrorTransport` and `DmlErrorTransport`, and deletes the DML transport machinery (`ErrorRouter.dispatchToLocalContext`, sentinel emitters, `LOCAL_CONTEXT_GUARDED_DATA_CHANNEL_VARIANTS`, `validateLocalContextErrorsFieldGuards`).
+Under the wrapper, every immediate child field of an in-scope payload type receives a non-null `PayloadOrErrors` as `env.getSource()`. So each such fetcher must unwrap `Ok` before its existing read and return null on `Errors`. The data-channel `ChildField` variants that can sibling an `ErrorsField` under an `@service` / `@tableMethod` payload, all of which already get an explicit graphitron-emitted fetcher (`FetcherRegistrationsEmitter` registers every classified field; none falls through to graphql-java's default `PropertyDataFetcher`), and the read each wraps:
 
-## Per-field null-source guard sweep
+- `PropertyField`, `RecordField`: today `PropertyDataFetcher.fetching(col)` / `@record`-accessor read off the source ; now `src instanceof Ok ok ? <that read on ok.value()> : null`.
+- `ServiceTableField`, `ServiceRecordField`, `TableMethodField`, `RecordTableMethodField`: child `@service` / `@tableMethod` fetchers that read parent keys off the source ; unwrap `Ok` first so the method is never invoked on an `Errors` source.
+- `ConstructorField`, `NestingField`, `ComputedField`: source passthrough / accessor call ; unwrap `Ok` first.
 
-The catch arm emits `data(null)`, so each in-scope payload's data-channel child fetcher must short-circuit on null source. graphql-java's `PropertyDataFetcher.fetching(name)` returns null on null source naturally; graphitron's `@record`-accessor lambdas under `FetcherEmitter.propertyOrRecordValue` likewise. The audit confirms the gap and adds explicit `if (source == null) return null;` to the variants below where missing:
+**The unwrapped value keeps its narrow type.** Per "Classifier guarantees shape emitter assumptions", the `Ok.value()` local is typed from the field's already-resolved `ReturnTypeRef` (e.g. the specific jOOQ `XRecord`), so no blind `Object` cast is reintroduced ; the success path threads a typed record today and the arm-switch must not erase it.
 
-- `ChildField.PropertyField`, `ChildField.RecordField`: read through `PropertyDataFetcher` or `@record`-accessor; usually safe but audit confirms.
-- `ChildField.ServiceRecordField`, `ChildField.ServiceTableField`: child `@service` fetchers; need explicit guard so the service method isn't called with a null source row.
-- `ChildField.TableMethodField`, `ChildField.RecordTableMethodField`: child `@tableMethod` fetchers; same.
-- `ChildField.ConstructorField`, `ChildField.NestingField`: `env.getSource()` passthrough; null-source already returns null implicitly.
-- `ChildField.ComputedField`: accessor call on source; needs explicit guard.
-
-Variants outside scope (DML `SingleRecord*` family) are unchanged; they retain their existing sentinel-based behaviour until the DML-absorption follow-on.
+**This invariant is pinned, not audited.** An un-switched payload child is a silent runtime hole: graphql-java's default fetcher would read a property off the `PayloadOrErrors` object itself. So slice 1 declares the set of data-channel `ChildField` leaves admissible as an immediate child of a wrapper-typed payload and has `GraphitronSchemaValidator` reject any wrapper-typed payload whose immediate child resolves to a leaf outside that set, by the same mechanism the dispatch partition uses (`TypeFetcherGenerator`'s `IMPLEMENTED_LEAVES` / `PROJECTED_LEAVES` / ... partition, enforced exhaustive and disjoint by `GeneratorCoverageTest.everyGraphitronFieldLeafHasAKnownDispatchStatus`). This mirrors the existing DML `LOCAL_CONTEXT_GUARDED_DATA_CHANNEL_VARIANTS` + `validateLocalContextErrorsFieldGuards` pair, which stays in place for DML. A new leaf that can appear under a wrapper payload without an arm-switching fetcher then fails the coverage test at build time, not a production request.
 
 ## AuthorError sub-arms and LSP codes
 
@@ -263,70 +281,74 @@ Arm-to-code mapping (stable strings written next to the arm declaration per R238
 
 `source: "graphitron"`, severity `Error`, primary `SourceLocation` is the payload type's SDL location (or the errors field's location when the rule applies at the channel level). Offending handler details (per-`@error`-type, per-handler) go in `Diagnostic.relatedInformation`. The `AuthorError` parent grows one new permit (`ErrorChannelWalkerError`), keeping its arms one-row-per-walker.
 
-`Rejection.AuthorError.Structural(String reason)` is untouched: existing non-R244 callsites continue producing it. R244 introduces no new `Structural` callsites and no `Other` catch-all under the new sub-seal — every channel-rejection path in scope maps to a typed arm.
+`Rejection.AuthorError.Structural(String reason)` is untouched: existing non-R244 callsites continue producing it. This slice introduces no new `Structural` callsites and no `Other` catch-all under the new sub-seal ; every in-scope channel-rejection path maps to a typed arm.
 
-## What retires
+## What retires (and what explicitly does not)
 
 Model:
 
-- `ErrorChannel.PayloadClass` arm (whole record).
+- `ErrorChannel.PayloadClass` arm (whole record); the sealed root returns to `Mapped | LocalContext`.
 - `ErrorsSlot`, `DefaultedSlot`, `NonBoundSetter` (records + their files).
 - `PayloadConstructionShape` sealed family + `AllFieldsCtor`, `MutableBean`, `SetterBinding`.
-- `ChildField.ErrorsField.Transport.PayloadAccessor` arm (only `LocalContext` survives, only for DML).
-- `WithErrorChannel`'s `Optional<ErrorChannel>` accessor (the six DML permits' equivalent slot relocates to `WithDmlErrorTransport.dmlErrorTransport()`; it is not retired).
-- `MutationField extends WithErrorChannel` ; the interface-level inheritance drops, membership moves per-permit (two service permits keep `WithErrorChannel`, six DML permits take `WithDmlErrorTransport`).
-- `ErrorChannel`'s shared `mappedErrorTypes()` / `mappingsConstantName()` accessors on the sealed root.
+
+*Does not retire this slice:* `ErrorChannel.LocalContext` (DML); `WithErrorChannel.errorChannel()` keeps `Optional<ErrorChannel>`; `MutationField extends WithErrorChannel` is undisturbed; `ChildField.ErrorsField.Transport.PayloadAccessor` and `Transport.LocalContext` both stay (the slice *adds* `Transport.WrapperArm`).
 
 Classifier:
 
 - `FieldBuilder.resolvePayloadConstructionShape` + `tryMutableBean` + helpers (`formatCtorSignatures`, `javaBeanSetterName`).
-- `FieldBuilder.resolveErrorChannel` + `buildErrorChannelCtorArm` + `buildErrorChannelBeanArm` + `collectDefaultedSlots` + `collectNonBoundSetters` + `defaultLiteralFor`.
+- `FieldBuilder.buildErrorChannelCtorArm` + `buildErrorChannelBeanArm` + `collectDefaultedSlots` + `collectNonBoundSetters` + `defaultLiteralFor` (the `PayloadClass`-arm producers).
 - `FieldBuilder.checkChannelLevelHandlerRules`, `checkDuplicateMatchCriteria`, `checkErrorTypeSourceAccessors` (absorbed into the walker).
-- `BuildContext.detectErrorsFieldShape` (moves into the walker as an internal helper).
+
+*Does not retire:* `FieldBuilder.resolveErrorChannel` is trimmed to its DML role (still called by `buildDmlField`; produces no-channel for non-wrapper DML returns), not deleted. `BuildContext.detectErrorsFieldShape` stays a shared helper (called from `GraphitronSchemaBuilder`, `MutationInputResolver`, and the DML path); the walker consumes it rather than absorbing it.
 
 Emitter:
 
 - `TypeFetcherGenerator.payloadFactoryLambda`, `payloadFactoryLambdaCtor`, `payloadFactoryLambdaSetters`.
 - `TypeFetcherGenerator.declareEarlyPayloadFromErrors`, `declareEarlyPayloadCtor`, `declareEarlyPayloadSetters`.
-- `TypeFetcherGenerator.dispatchCatchArm` (replaced by `ChannelCatchArmEmitter.emit`).
-- `TypeFetcherGenerator.catchArm` overload split (one shape now; ctor-arm specifics gone).
-- `ErrorRouter.dispatch` (the generic per-fetcher payload-factory router). `Mapping.match(Throwable)` survives; `redact(Throwable, env)` survives.
+- `TypeFetcherGenerator.dispatchCatchArm` and the `catchArm` ctor-arm overload (the seam moves to `ChannelCatchArmEmitter.emit`).
+- `ErrorRouter.dispatch` (the per-fetcher payload-factory router).
+
+*Does not retire:* `Mapping.match(Throwable)`, `ErrorRouter.redact(Throwable, env)`, `ErrorRouter.dispatchToLocalContext` and the sentinel emitters (`singleRecordSentinelFor`, `bulkRecordSentinelFor`) all survive ; they back the DML transport.
 
 Audit annotations:
 
-- `@LoadBearingClassifierCheck(key = "payload-construction.*")` producer annotations + their `@DependsOnClassifierCheck` consumer pairs.
+- Any `@LoadBearingClassifierCheck` / `@DependsOnClassifierCheck` pairs keyed to payload-construction, if present, retire with the checks they guard.
 
 Tests:
 
 - `PayloadConstructionShapeTest` (7 cases) deletes.
-- `FetcherPipelineTest`'s R154 cases (`serviceMutation_setterShapePayload_emitsSetterFactory`, `serviceMutation_allFieldsCtorPayload_emitsCtorFactory_unchanged`, `serviceMutation_bothShapesPresent_prefersCtorFactory`): rewrite around the new emission shape or delete (some become irrelevant under inline emission).
-- `ErrorRouterClassGeneratorTest`'s tests for the retired `dispatch` method delete; `redact` and `Mapping.match` tests survive.
-- `ErrorChannelClassificationTest`'s positive cases rewrite to assert on `WalkerResult.Ok(ErrorChannel.Mapped)`; rejection cases rewrite to assert on the typed `ErrorChannelWalkerError.*` sub-arms via `WalkerResult.Err`.
-- New `ErrorChannelWalkerTest` (unit tier) and `ChannelCatchArmEmitterTest` (unit tier) mirror R238's `ServiceMethodCallWalkerTest` / `ServiceMethodCallEmitterTest` structure (at `graphitron/src/test/java/no/sikt/graphitron/rewrite/walker/` and `generators/`): one positive arm per `Mapped` shape, one per `ErrorChannelWalkerError.*` rejection, one for `NoChannel`.
-- Execute-tier `GraphQLQueryTest` cases for the catch-arm round-trip continue to pass without changes (the architectural shift is structurally invariant on observable behaviour).
+- `FetcherPipelineTest`'s R154 cases (`serviceMutation_setterShapePayload_emitsSetterFactory`, `serviceMutation_allFieldsCtorPayload_emitsCtorFactory_unchanged`, `serviceMutation_bothShapesPresent_prefersCtorFactory`): rewrite around the wrapper emission or delete.
+- `ErrorRouterClassGeneratorTest`'s tests for the retired `dispatch` method delete; `redact`, `Mapping.match`, and `dispatchToLocalContext` tests survive.
+- `ErrorChannelClassificationTest`'s positive cases rewrite to assert on `WalkerResult.Ok(Optional.of(ErrorChannel.Mapped))` (and `Optional.empty()` for no-channel); rejection cases assert on the typed `ErrorChannelWalkerError.*` sub-arms via `WalkerResult.Err`.
+- New `ErrorChannelWalkerTest` and `ChannelCatchArmEmitterTest` (unit tier) mirror R238's `ServiceMethodCallWalkerTest` / `ServiceMethodCallEmitterTest`.
 
 Documentation:
 
-- The PayloadClass-transport and construction-shape contract language is rewritten to pin the post-slice contract: "all `@service` / `@tableMethod` payload error transport is the inline `data(null).localContext(...)` shape; the generator never constructs the developer's payload class on the error path." Note that no `error-handling-parity.md` file exists in-tree today; the name is a dangling reference carried only in javadoc (`ErrorChannel`, `WithErrorChannel`, `MappingsConstantNameDedup`, `FieldBuilder`, `TypeBuilder`, `GraphitronType`) and in two other roadmap items. R244 rewrites those javadoc references in the files it already touches (per the javadoc bullet below) to state the new contract inline rather than pointing at the absent doc; it does not author the doc. Reconciling the doc references repo-wide (author the doc, or scrub the dangling `{@code error-handling-parity.md}` pointers) is pre-existing debt; file it as a Backlog stub rather than expanding this slice.
-- Javadocs across `TypeFetcherGenerator`, `FieldBuilder`, `WithErrorChannel`, `ChildField.ErrorsField`, `ErrorRouterClassGenerator` update to reflect the single-arm carrier and inline catch-arm shape.
+- `PayloadOrErrors`'s javadoc is the canonical home of the contract and the graphql-java completion invariant (non-null source mandatory; every immediate child arm-switches), backed by the execute-tier test. Javadocs across `TypeFetcherGenerator`, `FieldBuilder`, `WithErrorChannel`, `ChildField.ErrorsField`, `ErrorRouterClassGenerator` update to the wrapper contract.
+- The dangling `{@code error-handling-parity.md}` references in those javadocs (no such file exists in-tree; it is named only in javadoc and two other roadmap items) get rewritten to state the wrapper contract inline rather than point at the absent doc. R244 does not author the doc; scrubbing the dangling pointers repo-wide is pre-existing debt for a Backlog stub.
 
 ## Tests
 
-Three tiers, mirroring R238:
+- **Unit (`@UnitTier`)**: `ErrorChannelWalkerTest` (one per `Mapped` source shape: single `@error`, union, interface, list; one per `ErrorChannelWalkerError.*` arm: rule 7 / rule 8 / handler-accessor-missing; `Optional.empty()` when the payload has no errors-shaped field) and `ChannelCatchArmEmitterTest` (the `Optional.empty()` redact-only arm, the `Mapped` → `Errors` arm, the `LocalContext` → sentinel arm, and the async-tail lambda wrapping).
+- **Pipeline (`@PipelineTier`)**: extend `ErrorChannelClassificationTest` ; positive cases assert on `WalkerResult.Ok(Optional.of(ErrorChannel.Mapped))`, rejection cases on the typed `ErrorChannelWalkerError.*` arms via `WalkerResult.Err`. Any cases asserting fetcher body-string content retire per `rewrite-design-principles.adoc`'s ban on code-string assertions, replaced by structural assertions on the `ErrorChannel.Mapped` carrier.
+- **Execution (`@ExecutionTier`) is the primary safety net here, not a backstop.** The wrapper changes the GraphQL source *type* (`PayloadOrErrors` vs the bare record), so "the wire shape is unchanged" is a claim that must be *tested*, not asserted ; that is exactly the assumption the localContext draft got wrong. Add a generated-pipeline execution test that, for an in-scope `@service` payload field, asserts both arms round-trip: the `Ok` path returns `{data: {...}, errors: []}` and the mapped-error path returns `{data: null, errors: [...]}` with the typed `@error` fields populated, plus the unmapped path producing a redacted top-level error. This reproduces the graphql-java spike against the real generated fetchers and pins the completion invariant `PayloadOrErrors`'s javadoc states. The existing `GraphQLQueryTest` error-path cases should continue to pass ; if any fail, the wrapper round-trip is wrong, which is the signal we want.
+- **Compilation (`@CompilationTier`)**: `mvn install -Plocal-db` end-to-end-green over `graphitron-sakila-example` catches arm-switch / type-narrowing mismatches at the cross-module compile.
 
-- **Unit (`@UnitTier`)**: `ErrorChannelWalkerTest` (~10 cases: one per `Mapped` source shape — single `@error`, union, interface, list; one per `ErrorChannelWalkerError.*` arm — rule 7 / rule 8 / handler-accessor-missing; `NoChannel` when payload has no errors-shaped field) and `ChannelCatchArmEmitterTest` (3 cases: `Mapped` body shape, `NoChannel` body shape, async-tail lambda wrapping).
-- **Pipeline (`@PipelineTier`)**: extend `ErrorChannelClassificationTest` with assertions on `walkerDiagnostics` instead of `Rejection.structural` projection for channel-rejection failures. Existing positive-witness tests keep their author-facing wording but assert against typed `ErrorChannelWalkerError.*` arms. Pipeline cases asserting fetcher body-string content fail under the new emission shape (inline mapping-walk vs the old `ErrorRouter.dispatch(...)` single-statement call); per `rewrite-design-principles.adoc`'s ban on code-string assertions, those assertions retire here and get replaced by structural assertions on the `ErrorChannel.Mapped` carrier.
-- **Compilation / Execution (`@CompilationTier` / `@ExecutionTier`)**: `graphitron-sakila-example` regression net. The migration is structurally invariant on observable response shape (`{film: null, errors: [...]}` vs the old constructed-payload `{film: null, errors: [...]}` are identical at the GraphQL wire), so `mvn install -Plocal-db` end-to-end-green is the safety net.
+## Deferred to later slices
 
-## Out of scope
+The staged plan eats the rest of the error-channel machinery in subsequent items, each filed at this slice's In Progress mark:
 
-- DML migration (all six DML mutation variants: the four `DmlTableField` permits ; `MutationInsertTableField`, `MutationUpdateTableField`, `MutationDeleteTableField`, `MutationUpsertTableField` ; plus `MutationDmlRecordField`, `MutationBulkDmlRecordField`): files separately at this item's In Progress mark. Scope: extend null-source guards across `SingleRecord*`, rewrite the DML catch arm to the inline shape, re-unify all six onto `WithErrorChannel` returning `Mapped | NoChannel`, and retire `WithDmlErrorTransport` + `DmlErrorTransport` + `dispatchToLocalContext` + `singleRecordSentinelFor` + `bulkRecordSentinelFor` + `LOCAL_CONTEXT_GUARDED_DATA_CHANNEL_VARIANTS` + `validateLocalContextErrorsFieldGuards`.
+- **DML transport migration.** Move all six DML mutation variants (the four `DmlTableField` permits ; `MutationInsertTableField`, `MutationUpdateTableField`, `MutationDeleteTableField`, `MutationUpsertTableField` ; plus `MutationDmlRecordField`, `MutationBulkDmlRecordField`) onto `PayloadOrErrors`, and retire `ErrorChannel.LocalContext`, `ErrorRouter.dispatchToLocalContext`, the sentinel emitters (`singleRecordSentinelFor`, `bulkRecordSentinelFor`), `LOCAL_CONTEXT_GUARDED_DATA_CHANNEL_VARIANTS`, and `validateLocalContextErrorsFieldGuards`. The `SingleRecord*` data-channel variants gain the same arm-switch treatment as the in-scope set.
+- **Carrier collapse + interface split.** Once `LocalContext` is gone, `ErrorChannel` has a single arm (`Mapped`); the `Optional<ErrorChannel>` accessor collapses to a non-Optional `Mapped | NoChannel` carrier (R222's "no Optional slots"), and `MutationField` stops extending `WithErrorChannel` with membership moving per-permit. Bundled with the DML migration, where it is one coherent change rather than scaffolding.
+
+## Out of scope (entirely)
+
 - `@condition`-bound paths: not in `WithErrorChannel` (they don't emit fetchers).
-- Universal `UnclassifiedField` retirement: R222 Stage 4. This slice retires `UnclassifiedField` for the error-channel rejection paths only; broader retirement is per other carrier slices.
-- The `DataFetcherBuilder` dimensional slot composition: R222 Stage 3. This slice ships the walker carrier and the shared emitter, not the dimensional slot that would compose `MethodCall` × `ErrorChannel` × … into one emit-ready form.
-- `Rejection.AuthorError.Structural(String reason)` callsites outside the in-scope rejection paths: untouched. R244 introduces no new `Structural` callsites; channel-rejection paths in scope each map to a typed `ErrorChannelWalkerError` arm.
+- Universal `UnclassifiedField` retirement: R222 Stage 4. This slice retires `UnclassifiedField` for the in-scope error-channel rejection paths only.
+- The `DataFetcherBuilder` dimensional slot composition: R222 Stage 3. This slice ships the walker carrier and the wrapper transport, not the dimensional slot that would compose `MethodCall` × `ErrorChannel` × … into one emit-ready form.
+- `Rejection.AuthorError.Structural(String reason)` callsites outside the in-scope rejection paths: untouched. This slice introduces no new `Structural` callsites; in-scope channel-rejection paths each map to a typed `ErrorChannelWalkerError` arm.
 
 ## Supersedes
 
-- **R241** (`retire-error-payloadclass-transport`, Spec): discarded. R241's framing ("retire transport variant, route through LocalContext") was the wrong shape per R222's dimensional-slot principle — no transport carrier should survive at all. R244 reframes the same direction as a Stage 2 walker-carrier slice. The `SlettPoengformelPayload` incident that motivated R241 lands as a non-event after R244 — the generator never reflects on the payload class.
+- **R241** (`retire-error-payloadclass-transport`, Spec): discarded. R241's "route through `localContext`" framing was doubly wrong ; a null payload source silently drops errors (verified, see "Why the wrapper, and not localContext"), and the deeper point is that no developer payload class should be constructed or reflected on at all. This slice routes through the typed `PayloadOrErrors` wrapper instead. The `SlettPoengformelPayload` incident that motivated R241 lands as a non-event ; the generator never reflects on the payload class.
 - **R201** (`honor-field-directive-in-payload-construction-shape`, Backlog): moot. The construction-shape machinery R201 targets retires here.
