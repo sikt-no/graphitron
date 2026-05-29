@@ -1,7 +1,7 @@
 ---
 id: R246
 title: UpdateRows walker carrier (R222 UPDATE slice) with PK-or-UK identification
-status: In Review
+status: Ready
 bucket: structural
 priority: 4
 theme: structural-refactor
@@ -342,3 +342,19 @@ The slice landed in two commits following R238's additive-then-destructive prece
 * **The emitter is carrier-driven in place, not a separate `UpdateRowsEmitter` class.** `buildMutationUpdateFetcher` / `buildBulkUpdateFetcher` read the carrier and project `setColumns()` / `keyColumns()` back into the `SetGroup` / `InputColumnBindingGroup` shapes the shared SET / lookup-WHERE emitters consume (`setGroupsOf` / `keyGroupsOf`), keeping emitted SQL byte-identical. Extracting a standalone emitter class would have required widening ~6 private `TypeFetcherGenerator` helpers to package scope for no behavioural gain; deferred as a pure code-organisation move. The single-row empty-SET runtime guard is **kept** (defensive against a caller omitting every set value at runtime), rather than removed as the prose suggested.
 
 * **UK-driven execution test deferred.** The `MatchedKey.UniqueKey` arm is unit-tested (`ukOnlyMatch_pkNotCovered_succeedsWithUniqueKey`); the emitter does not branch on PK vs UK (both render the same matched-key equality conjunction), and that emit path is execution-tested via the PK `updateFilm` round-trip, so a separate `parent_node.alt_key` execution case adds marginal coverage at the cost of cross-module example-schema plumbing. Worth adding when a NodeType for a nodeidfixture table is otherwise wired into the example.
+
+## Review feedback (In Review -> Ready, 2026-05-29)
+
+Independent In Review gate (reviewer session != implementer session). Full `mvn -f graphitron-rewrite/pom.xml install -Plocal-db` is **green** on JDK 25 (361 graphitron tests, 0 failures/errors; the 11-case `UpdateRowsWalkerTest` and the migrated `MutationDmlCase` rows all pass). The carrier model, `UpdateRowsWalker`, the `UpdateRowsError` sub-seal, the LSP plumbing (`Rejection` permits + `Diagnostics` projector + `typed-rejection.adoc` drift-protection + `RejectionSeverityCoverageTest`), the in-place emitter cutover (`setGroupsOf` / `keyGroupsOf` projections, byte-identical SQL), the unit coverage, the pipeline migration to typed-arm assertions, and the R215 admission inversion are all sound. The four documented deviations and the deferred UK execution test are principled and adequately justified, and they faithfully follow R238's approved precedent (sibling sub-seal; translator-substrate concession with R257 filed; `UnclassifiedField(..., err.errors().getFirst())` surfacing). **Not approving** for one reason:
+
+**Two spec-named pipeline-tier tests are absent**, both guarding *reachable, net-new* pre-check branches in `FieldBuilder.classifyUpdateTableField`:
+
+1. **`multiRow: true` on a direct-`@table`/ID-return UPDATE -> `UnclassifiedField` with `Rejection.deferred` (empty slug).** Required by the Tests section (the `multiRow: true` pipeline bullet). This is net-new behaviour in R246 (today's code rejects `multiRow` only on INSERT), and the pre-check at `FieldBuilder.java:~3372` has no test. The Compilation/Execution prose even asserts this case "is covered at the pipeline tier"; it is not, and the As-built notes do not flag the omission, so the landing record currently overstates coverage. Add a `MutationDmlCase` row (e.g. `UPDATE_MULTIROW_TRUE_DEFERRED`) asserting `f.rejection() instanceof Rejection.Deferred` with the empty slug, mirroring the existing INSERT `multiRow` row.
+
+2. **Arg-level `@condition` on a `@mutation` field argument -> `Rejection.structural`.** Required by the Tests section (the `@argCondition` on a mutation input arg bullet). The pre-check at `FieldBuilder.java:~3395` ("@condition on a @mutation field argument is not supported") has no pipeline test on the UPDATE-direct path. Add a `MutationDmlCase` row asserting the structural rejection.
+
+Both fixes are mechanical: rows in the existing `MutationDmlCase` enum following the already-migrated `UPDATE_*` patterns. No production-code change is implied. (The sibling no-`@table`-arg / multiple-`@table`-args pre-checks are not spec-named and need not be covered, though a row each would be cheap insurance.)
+
+Minor, non-blocking (fix opportunistically, not a gate item): in `TypeFetcherGenerator`, two javadoc blocks stack immediately above `setGroupsOfFields` (around the R246 SET-projection helpers); the first block's prose describes `setGroupsOf` but attaches to `setGroupsOfFields` by method order, leaving `setGroupsOf` itself undocumented. Re-pair the javadoc with its method.
+
+Re-flip to In Review once the two pipeline rows land; the reviewer-session != implementer-session rule applies again next cycle.
