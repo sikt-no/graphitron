@@ -159,6 +159,19 @@ Graphitron is a code generator. The Java version used to build the generator is 
 
 The practical implication: when adding code to a generator, distinguish between code *in* the generator (unrestricted) and code *emitted by* the generator (Java 17).
 
+== Generated code is read and debugged
+
+*Emitted code is read, breakpointed, and stack-traced by the consumers who depend on it ; optimise it for their legibility, not for emitter-side brevity.* A generated method that throws on a real request must produce a stack frame, a line, and locals that a developer who has never seen the generator can reason about. This is the readability companion to "Classifier guarantees shape emitter assumptions": that principle keeps emitted code *tight* (no defensive casts, no wildcard locals); this one keeps it *legible*.
+
+Concrete rules for any code a generator emits:
+
+- *Explicit types, never `var`.* The reader of generated code does not have the generator's context; an explicit type at every local is documentation. (The same `var`-ban appears in "Classifier guarantees shape emitter assumptions" for a different reason ; there it protects the strict-shape guarantee, here it protects the reader.)
+- *Meaningful local names; short is good, throwaway is not.* `nodeId`, `key`, `sakKey` over `_s`, `_r`, `_nl`. Underscore-prefixed pattern-binding names carry no meaning and read as noise; a bare `_` is reserved in Java 21+ besides. Short names are welcome when they name the thing (`row`, `key`); cryptic ones are not.
+- *Statement form over expression tricks.* Prefer named locals and `if`/`else` blocks over deeply-nested ternaries, and never reach for an expression-only contortion (the `((Supplier<X>) () -> { throw ...; }).get()` throw-inside-an-expression trick is the canonical offender) solely to keep emission inline. A developer cannot set a breakpoint inside a ternary arm or read a meaningful frame from a lambda-wrapped throw.
+- *When the output must be an expression* (it is consumed as a method-call argument, a field initialiser, a stream lambda), lift it into a named private helper method per the <<Helper-locality>> convention so the call site stays an expression while the *body* is readable statement form. The helper name documents intent (`decodeSakKey(...)`), and the helper body gets explicit types, named locals, and ordinary control flow.
+
+The smell to watch for: an emitter building a `CodeBlock` whose template spans several lines of nested `? :`, casts to `Object` to dodge a parameterised `instanceof`, and binds `_x`-style locals. That block is being written for the emitter author's convenience, not the consumer's; the fix is a named helper with a statement body. `ArgCallEmitter.buildNodeIdDecodeExtraction` is the current worked counter-example and the R259 cleanup target.
+
 == Rewrite builds independently of legacy Graphitron modules
 
 `graphitron-rewrite/pom.xml` is a self-contained Maven aggregator. `mvn install -f graphitron-rewrite/pom.xml` on a clean local repo builds the rewrite modules (`graphitron-javapoet`, `graphitron`, `graphitron-fixtures-codegen`, `graphitron-sakila-db`, `graphitron-sakila-service`, `graphitron-maven-plugin`, `graphitron-sakila-example`, `graphitron-lsp`, `roadmap-tool`) without resolving any legacy artifact (`graphitron-common`, `graphitron-java-codegen`, `graphitron-maven-plugin`, `graphitron-schema-transform`). The rewrite tree publishes its own `graphitron-javapoet` at `10-SNAPSHOT`, distinct from the legacy `9-SNAPSHOT` coord.
