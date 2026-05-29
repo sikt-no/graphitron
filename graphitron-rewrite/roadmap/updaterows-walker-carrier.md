@@ -5,7 +5,7 @@ status: In Progress
 bucket: structural
 priority: 4
 theme: structural-refactor
-depends-on: [methodcall-walker-carrier]
+depends-on: []
 created: 2026-05-27
 last-updated: 2026-05-28
 ---

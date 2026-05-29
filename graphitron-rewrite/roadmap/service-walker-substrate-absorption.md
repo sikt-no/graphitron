@@ -5,7 +5,7 @@ status: Backlog
 bucket: structural
 priority: 3
 theme: structural-refactor
-depends-on: [methodcall-walker-carrier]
+depends-on: []
 created: 2026-05-29
 last-updated: 2026-05-29
 ---
