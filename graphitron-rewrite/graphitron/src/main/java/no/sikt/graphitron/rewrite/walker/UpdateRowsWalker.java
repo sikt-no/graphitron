@@ -1,0 +1,180 @@
+package no.sikt.graphitron.rewrite.walker;
+
+import graphql.schema.GraphQLFieldDefinition;
+import no.sikt.graphitron.rewrite.JooqCatalog;
+import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
+import no.sikt.graphitron.rewrite.model.ColumnRef;
+import no.sikt.graphitron.rewrite.model.InputField;
+import no.sikt.graphitron.rewrite.model.KeyColumn;
+import no.sikt.graphitron.rewrite.model.MatchedKey;
+import no.sikt.graphitron.rewrite.model.Rejection;
+import no.sikt.graphitron.rewrite.model.SetColumn;
+import no.sikt.graphitron.rewrite.model.TableRef;
+import no.sikt.graphitron.rewrite.model.UpdateRows;
+import no.sikt.graphitron.rewrite.model.UpdateRowsError;
+import no.sikt.graphitron.rewrite.model.WalkerResult;
+
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Set;
+
+/**
+ * R246 — produces the {@link UpdateRows} carrier for an {@code @mutation(typeName: UPDATE)} field
+ * that returns its {@code @table} type directly. The walker's load-bearing claim is PK-or-UK
+ * identification: it queries jOOQ's {@code Table.getPrimaryKey()} / {@code Table.getKeys()} (via
+ * {@link JooqCatalog#candidateKeys(String)}) and picks the first candidate (PK preferred) whose
+ * column set is a subset of the input-covered columns, then partitions the input fields into the
+ * WHERE (matched-key) and SET (everything else) halves.
+ *
+ * <p><b>Substrate concession (mirrors R238's {@code ServiceMethodCallWalker}).</b> The spec's ideal
+ * is a walker reading {@code GraphQLFieldDefinition} + jOOQ catalog directly and re-deriving the
+ * column classification from raw SDL. Re-running {@code InputFieldResolver} /
+ * {@code EnumMappingResolver.buildLookupBindings} (with {@code @reference} FK-join and {@code @nodeId}
+ * decode resolution) inside the walker would duplicate a substantial classifier. Following R238's
+ * recorded "walker substrate concession on blast-radius grounds," this walker instead translates
+ * over the already-classified {@link InputField} permits the upstream classifier produced. The
+ * follow-up that retires the intermediate and reflects from SDL directly is tracked as a Backlog
+ * item ({@code updaterows-walker-sdl-substrate}). The {@code field} parameter is reserved for that
+ * future direct-SDL substrate; the current translator does not read it.
+ *
+ * <p>The new logic this walker owns — PK-or-UK subset matching, SET/WHERE partition by key
+ * membership, empty-SET rejection, and the override-condition rejection — is fully expressible over
+ * the classified permits plus the jOOQ keys, so the concession costs nothing in this slice's scope.
+ * Errors are collected across stages without short-circuiting so the LSP surfaces every per-field
+ * issue at once.
+ */
+public final class UpdateRowsWalker {
+
+    /** A reshaped, column-bearing input field: the SDL field name, its target columns on the
+     * input's own table, and the extraction shape the emitter reuses. */
+    private record Contribution(String sdlFieldName, List<ColumnRef> columns, CallSiteExtraction extraction) {}
+
+    public WalkerResult<UpdateRows> walk(
+        GraphQLFieldDefinition field,
+        TableRef table,
+        List<InputField> inputFields,
+        JooqCatalog catalog
+    ) {
+        var errors = new ArrayList<Rejection.AuthorError>();
+
+        // Stage 2: classify each input field into a walker-local column contribution, collecting
+        // per-field admissibility rejections across the loop (no short-circuit).
+        var contributions = new ArrayList<Contribution>();
+        for (var f : inputFields) {
+            switch (f) {
+                case InputField.ColumnField c ->
+                    contributions.add(new Contribution(c.name(), List.of(c.column()), c.extraction()));
+                case InputField.CompositeColumnField c ->
+                    contributions.add(new Contribution(c.name(), c.columns(), c.extraction()));
+                case InputField.ColumnReferenceField c ->
+                    contributions.add(new Contribution(c.name(), c.liftedSourceColumns(), c.extraction()));
+                case InputField.CompositeColumnReferenceField c ->
+                    contributions.add(new Contribution(c.name(), c.liftedSourceColumns(), c.extraction()));
+                case InputField.UnboundField u -> {
+                    if (u.condition().isPresent() && u.condition().get().override()) {
+                        errors.add(new UpdateRowsError.OverrideConditionNotSupported(u.name(), u.location()));
+                    } else {
+                        errors.add(new UpdateRowsError.UnsupportedInputFieldShape(
+                            u.name(), "UnboundField",
+                            "the field binds no column and carries no @condition(override: true); "
+                            + "UPDATE input fields must bind a column"));
+                    }
+                }
+                case InputField.NestingField n ->
+                    errors.add(new UpdateRowsError.UnsupportedInputFieldShape(
+                        n.name(), "NestingField",
+                        "nested input types in @mutation(typeName: UPDATE) fields are not yet supported"));
+                default ->
+                    errors.add(new UpdateRowsError.UnsupportedInputFieldShape(
+                        f.name(), f.getClass().getSimpleName(),
+                        "input field shape is not a supported UPDATE input carrier"));
+            }
+        }
+        if (!errors.isEmpty()) {
+            // Unadmitted fields make the covered-column set unreliable; surface every per-field
+            // issue without muddying the result with a spurious key-coverage error.
+            return new WalkerResult.Err<>(errors);
+        }
+
+        // Stage 3: union of every admitted field's target columns.
+        var inputColumns = new ArrayList<ColumnRef>();
+        var inputColumnSqlNames = new LinkedHashSet<String>();
+        for (var c : contributions) {
+            for (var col : c.columns()) {
+                if (inputColumnSqlNames.add(col.sqlName())) {
+                    inputColumns.add(col);
+                }
+            }
+        }
+
+        // Stage 4-5: enumerate candidate keys (PK first), find the first whose column set is a
+        // subset of the input-covered columns.
+        var candidates = catalog.candidateKeys(table.tableName()).stream().map(this::toMatchedKey).toList();
+        MatchedKey matchedKey = null;
+        for (var key : candidates) {
+            var keySqlNames = sqlNameSet(key.columns());
+            if (inputColumnSqlNames.containsAll(keySqlNames)) {
+                matchedKey = key;
+                break;
+            }
+        }
+        if (matchedKey == null) {
+            return new WalkerResult.Err<>(List.of(
+                new UpdateRowsError.NoUniqueKeyCoverage(table.tableName(), inputColumns, candidates)));
+        }
+
+        // Stage 6: partition each admitted field into the WHERE (matched-key) or SET (everything
+        // else) half; mixed-membership composite carriers reject.
+        var keySqlNames = sqlNameSet(matchedKey.columns());
+        var setColumns = new ArrayList<SetColumn>();
+        var keyColumns = new ArrayList<KeyColumn>();
+        for (var c : contributions) {
+            var inKey = new ArrayList<ColumnRef>();
+            var outsideKey = new ArrayList<ColumnRef>();
+            for (var col : c.columns()) {
+                (keySqlNames.contains(col.sqlName()) ? inKey : outsideKey).add(col);
+            }
+            if (!inKey.isEmpty() && !outsideKey.isEmpty()) {
+                errors.add(new UpdateRowsError.MixedCarrierKeyMembership(c.sdlFieldName(), inKey, outsideKey));
+                continue;
+            }
+            if (outsideKey.isEmpty()) {
+                for (var col : c.columns()) {
+                    keyColumns.add(new KeyColumn(c.sdlFieldName(), col, c.extraction()));
+                }
+            } else {
+                for (var col : c.columns()) {
+                    setColumns.add(new SetColumn(c.sdlFieldName(), col, c.extraction()));
+                }
+            }
+        }
+        if (!errors.isEmpty()) {
+            return new WalkerResult.Err<>(errors);
+        }
+
+        // Stage 7: UPDATE with nothing to set is structurally ill-formed.
+        if (setColumns.isEmpty()) {
+            return new WalkerResult.Err<>(List.of(
+                new UpdateRowsError.NoSetFields(table.tableName(), matchedKey)));
+        }
+
+        // Stage 8: success.
+        return new WalkerResult.Ok<>(new UpdateRows.Identified(matchedKey, setColumns, keyColumns));
+    }
+
+    private MatchedKey toMatchedKey(JooqCatalog.KeyEntry key) {
+        var columns = key.columns().stream()
+            .map(e -> new ColumnRef(e.sqlName(), e.javaName(), e.columnClass()))
+            .toList();
+        return key.primary()
+            ? new MatchedKey.PrimaryKey(columns, key.keyName())
+            : new MatchedKey.UniqueKey(columns, key.keyName());
+    }
+
+    private static Set<String> sqlNameSet(List<ColumnRef> columns) {
+        var out = new LinkedHashSet<String>();
+        for (var c : columns) out.add(c.sqlName());
+        return out;
+    }
+}

@@ -472,6 +472,58 @@ public class JooqCatalog {
     }
 
     /**
+     * R246 — a candidate row-identifying key on a table: the primary key or a unique key, with its
+     * columns resolved in key-declaration order. {@code primary} distinguishes the PK from a unique
+     * key (the walker prefers the PK when both are covered). {@code keyName} echoes jOOQ's
+     * {@code Key.getName()} for diagnostics.
+     */
+    public record KeyEntry(boolean primary, String keyName, java.util.List<ColumnEntry> columns) {
+        public KeyEntry { columns = java.util.List.copyOf(columns); }
+    }
+
+    /**
+     * Enumerate the table's row-identifying candidate keys for the R246 UPDATE PK-or-UK match: the
+     * primary key first (when present), then every unique key in jOOQ declaration order, deduplicated
+     * on column set so a unique key coinciding with the PK is not listed twice. Reads
+     * {@code Table.getPrimaryKey()} and {@code Table.getKeys()} (jOOQ's {@code getKeys()} returns the
+     * table's unique keys, PK included). Returns an empty list when the table cannot be found or has
+     * no primary key and no unique key (the degenerate {@code NoUniqueKeyCoverage} case).
+     */
+    public java.util.List<KeyEntry> candidateKeys(String tableSqlName) {
+        return findTable(tableSqlName).asEntry().map(te -> {
+            var table = te.table();
+            var out = new ArrayList<KeyEntry>();
+            var seenColumnSets = new java.util.HashSet<java.util.Set<String>>();
+            var pk = table.getPrimaryKey();
+            if (pk != null) {
+                var cols = resolveKeyColumns(table, pk);
+                if (seenColumnSets.add(sqlNameSet(cols))) {
+                    out.add(new KeyEntry(true, pk.getName(), cols));
+                }
+            }
+            for (org.jooq.UniqueKey<?> uk : table.getKeys()) {
+                var cols = resolveKeyColumns(table, uk);
+                if (cols.isEmpty()) continue;
+                if (seenColumnSets.add(sqlNameSet(cols))) {
+                    out.add(new KeyEntry(false, uk.getName(), cols));
+                }
+            }
+            return java.util.List.copyOf(out);
+        }).orElse(java.util.List.of());
+    }
+
+    private java.util.List<ColumnEntry> resolveKeyColumns(Table<?> table, org.jooq.UniqueKey<?> key) {
+        return key.getFields().stream()
+            .map(f -> findColumn(table, f.getName()))
+            .flatMap(Optional::stream)
+            .toList();
+    }
+
+    private static java.util.Set<String> sqlNameSet(java.util.List<ColumnEntry> columns) {
+        return columns.stream().map(ColumnEntry::sqlName).collect(Collectors.toSet());
+    }
+
+    /**
      * Probe for KjerneJooqGenerator's node-identity metadata on the table class with the given
      * SQL name. Reads two static fields via reflection:
      *

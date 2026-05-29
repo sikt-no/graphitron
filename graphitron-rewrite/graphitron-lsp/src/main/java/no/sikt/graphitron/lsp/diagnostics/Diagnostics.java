@@ -215,6 +215,9 @@ public final class Diagnostics {
         if (rejection instanceof no.sikt.graphitron.rewrite.model.ServiceMethodCallError sce) {
             return sce.lspCode();
         }
+        if (rejection instanceof no.sikt.graphitron.rewrite.model.UpdateRowsError ure) {
+            return ure.lspCode();
+        }
         return null;
     }
 
