@@ -1,7 +1,7 @@
 ---
 id: R258
-title: "Payload-returning UPDATE onto the UpdateRows carrier"
-status: Backlog
+title: Payload-returning UPDATE onto the UpdateRows carrier
+status: Spec
 bucket: structural
 priority: 4
 theme: structural-refactor
@@ -16,16 +16,68 @@ R246 migrated only the **direct-`@table`/ID-return** UPDATE leaf onto `UpdateRow
 
 This is the sibling of R246 under R222's "every DML kind on a walker carrier" trajectory; doing it on the walker (rather than a second, divergent PK-partition swap inside `resolveInput`) keeps a single UPDATE partition implementation with one set of typed `UpdateRowsError` arms and the same PK-or-UK semantics R246 established.
 
-## Open design questions (resolve at Backlog -> Spec)
+## Design decisions
 
-* **Where the carrier slot lands.** `MutationDmlRecordField` / `MutationBulkDmlRecordField` are shared across INSERT / UPDATE / UPSERT and currently carry a `TableInputArg`. Options: (a) introduce dedicated `MutationUpdatePayloadField` / `MutationBulkUpdatePayloadField` leaves implementing `UpdateRowsField` (mirrors R246's `MutationUpdateTableField`, branches in `FieldBuilder` on `ResultReturnType` + `DmlKind.UPDATE`), or (b) add an `UpdateRows` slot to the shared record only populated for the UPDATE arm. (a) keeps each leaf's slots non-Optional and honest, consistent with R246; (b) avoids a leaf explosion but reintroduces a kind-conditional Optional slot. Lean (a).
-* **The payload emitter.** `buildMutationDmlRecordFetcher` reads `tia.setFields()` / `tia.lookupKeyFields()` today; it would read `updateRows().setColumns()` / `keyColumns()` / `matchedKey()` via the same `setGroupsOf` / `keyGroupsOf` projections R246 added, emitting byte-identical SQL. Confirm the payload RETURNING / record-construction shape composes with the carrier the same way the direct-return emitter does.
-* **Bulk arm.** `MutationBulkDmlRecordField` is the `[FilmUpdateInput!]!` -> `FilmsPayload` shape; it reuses `inputArg.list()` dispatch exactly as R246's bulk arm does.
-* **`@condition` / override on payload-UPDATE input fields.** R246 rejects these with `OverrideConditionNotSupported` / `UnsupportedInputFieldShape` because it cannot emit the filter; confirm the payload path inherits the same rejection (the walker is shared, so it should fall out for free).
-* **Semantic shift for the payload path.** Today payload-UPDATE partitions by `@value` (PK-coverage enforced separately); after this slice it partitions by PK-or-UK matched-key membership, the same widening R246 made. Any payload-UPDATE that relied on `@value` marking a *PK* column as SET, or a non-PK column as WHERE, changes behaviour. Audit whether such shapes exist in fixtures.
+Resolved from the Backlog open questions, with a `principles-architect` self-check (its two load-bearing corrections are folded into the Implementation section and flagged inline).
 
-## Sequencing
+* **Dedicated leaves, not an Optional slot.** Introduce `MutationField.MutationUpdatePayloadField` (single) and `MutationField.MutationBulkUpdatePayloadField` (bulk), both implementing `UpdateRowsField`. This mirrors R246's `MutationUpdateTableField` and keeps every slot non-Optional and honest. The rejected alternative, an `Optional<UpdateRows>` slot on the shared record leaves populated only for UPDATE, is exactly the "this `DmlKind` value implies these fields are non-null" smell the sealed-hierarchy principle names.
+* **Shrink the shared record leaves via compact-constructor rejection.** `MutationDmlRecordField` and `MutationBulkDmlRecordField` stop carrying `DmlKind.UPDATE`; their compact constructors reject it, the same pattern `MutationBulkDmlRecordField` already uses for `UPSERT` (`MutationField.java:308`). After this slice the live `DmlKind` range is `{INSERT, UPSERT, DELETE}` on the single leaf and `{INSERT, DELETE}` on the bulk leaf. This monotonically shrinks both leaves toward the eventual `dml-record-carrier-sealed-on-kind` lift (referenced in those leaves' Javadoc); carving UPDATE out first *helps* that future split, it does not fight it.
+* **No UPDATE path calls `resolveInput`.** This is the whole point: it is the precondition for R188 retiring `@value`. Both UPDATE shapes (R246's direct-return, R258's payload-return) are intercepted in `FieldBuilder` before the `resolveInput` call.
+* **Carrier-sourced SET/WHERE, including the bulk per-row body.** The new emitters keep the record-carrier *emit structure* (PK-only `.returningResult(pkCols)`, the try/catch payload sentinel, the two-step write-then-SELECT, and the bulk order-preserving accumulator) but source the SET/WHERE partition from the `UpdateRows` carrier via the `setGroupsOf` / `keyGroupsOf` projections R246 added (`TypeFetcherGenerator.java:2087`, `:2112`), never from `tia.setFields()` / `tia.fieldBindings()`.
+* **Semantic shift: PK-or-UK, not `@value`.** The payload path moves from `@value`-partition (with separate PK-coverage enforcement) to PK-or-UK matched-key membership, the same widening R246 made for the direct path. For `FilmUpdateInput` the two partitions coincide (`filmId` = PK -> WHERE; `title` / `description` -> SET), which is *why* the SQL is byte-identical, but this coincidence must be verified by the implementer, not assumed (see Tests).
+
+## Implementation
+
+Flat file-by-file; the change is one atomic cutover (the `resolveInput` dead-code removal is only sound in the same commit that flips the interception, see below).
+
+### `model/MutationField.java`
+
+* Add `MutationUpdatePayloadField` and `MutationBulkUpdatePayloadField` records to the sealed `permits` clause. Each carries: `parentTypeName`, `name`, `location`, `ReturnTypeRef.ResultReturnType returnType` (the narrow type, the payload SDL truth, matching `MutationDmlRecordField.java:210`, *not* the `ReturnTypeRef` root), `InputArgRef inputArg`, `UpdateRows updateRows`, `Optional<ErrorChannel> errorChannel`. Both implement `UpdateRowsField`; both slots are non-Optional (the walker `Err` path never reaches construction, mirroring `MutationUpdateTableField.java:84-85`). No `DmlKind` slot: the leaf identity *is* the kind, which is the honest expression, and removes any compact-constructor kind guard.
+* `domainReturnType()` returns `new DomainReturnType.Record(inputArg.table())`, matching the record-carrier leaves' `DomainReturnType.Record` arm so the validator's structural-equality grouping still agrees with sibling producers reaching the same SDL payload type.
+* On `MutationDmlRecordField`: replace the `// R156: DELETE is admitted ...` no-op compact constructor with one that rejects `DmlKind.UPDATE` (message points at R258 / the payload-UPDATE leaves). On `MutationBulkDmlRecordField`: add the `UPDATE` rejection alongside the existing `UPSERT` one. Update both leaves' Javadoc ("which DML kinds flow through them") to drop UPDATE.
+
+### `FieldBuilder.java`
+
+* **Widen the `kind == UPDATE` interception** (currently `:3177-3182`, which forks only the non-`ResultReturnType` return to `classifyUpdateTableField`). Drop the `if (!(updateReturnType instanceof ResultReturnType))` guard so *both* return shapes are intercepted before the `resolveInput` call at `:3185`: non-`ResultReturnType` -> `classifyUpdateTableField` (R246, unchanged); `ResultReturnType` -> new `classifyUpdatePayloadField`. After this, no UPDATE reaches `resolveInput` or the `ResultReturnType` record-carrier branch at `:3210`.
+* **New `classifyUpdatePayloadField`.** Combines the structural-payload machinery (today inline in the `:3210` `ResultReturnType` branch) with the walker (today in `classifyUpdateTableField`):
+  1. `multiRow: true` pre-check -> `Rejection.deferred` (mirror `classifyUpdateTableField.java:3374`).
+  2. Resolve the single `@table` input argument's slim `InputArgRef` directly (mirror `:3385-3413`), with the same `@condition`-on-arg / more-than-one-arg / non-`@table`-arg rejections. **No `resolveInput` call.**
+  3. `validateReturnType(returnType, DmlKind.UPDATE, list, ctx)` (shared invariant #14/#15 check, as both existing paths do).
+  4. `scanStructuralDmlPayload(rrt.returnTypeName())` -> reject on `Reject`; on `Admit`, require the data field's element kind is `Table` (record-element / ID-element rejections mirror the non-DELETE `:3300-3317` arms; ID-element is the PK-echo DELETE-only permit, record-element needs `@service`), run `requireDmlDataTableMatchesInputTable`, `detectStructuralDmlErrorChannel`, and `fieldRegistry.reclassify` the data field to `SingleRecordTableField` exactly as the existing branch does.
+  5. Run `UpdateRowsWalker().walk(fieldDef, table, foundTit.inputFields(), ctx.catalog)`. On `Err`, return `UnclassifiedField` carrying `err.errors().getFirst()` (mirror `:3447-3448`, preserving the typed `UpdateRowsError` arm and its `lspCode()`). On `Ok`, construct `MutationUpdatePayloadField` (single) or `MutationBulkUpdatePayloadField` (when `inputArg.list()`).
+* Consider extracting the shared steps 2-4 so `classifyUpdateTableField` and `classifyUpdatePayloadField` do not duplicate the arg-resolution / return-validation prose; judgment call for the implementer (the two differ in what they build at the end and in needing the payload scan).
+* The unreachable final-switch `UPDATE` arm at `:3341` stays as the loud `IllegalStateException` backstop; update its message to name both interception sites.
+
+### `MutationInputResolver.java`
+
+* The `if (kind == DmlKind.UPDATE)` `@value` block (`:509-519`) becomes unreachable once the interception is widened. **Atomic constraint** (principles #2): this removal is only sound *in the same commit* that flips the `FieldBuilder` fall-through. Rather than delete silently, replace the block with a loud `throw new IllegalStateException(...)` naming `classifyUpdatePayloadField` / `classifyUpdateTableField`, so a future regression that routes an UPDATE back here fails the build instead of re-demanding `@value` (same "classifier guarantee made loud" pattern as `FieldBuilder.java:3341`).
+* The `@value` directive declaration, `DIR_VALUE`, the `acceptsValueMarker` plumbing, the INSERT `@value` rejection, and `TableInputArg.setFields()` / `valueMarkedNames` stay; their retirement is R188's scope (INSERT/UPSERT emitters still read `tia.setFields()`).
+
+### `generators/TypeFetcherGenerator.java`
+
+* **`IMPLEMENTED_LEAVES` (`:177`):** add `MutationUpdatePayloadField` and `MutationBulkUpdatePayloadField` in the *same commit*; the disjoint-partition coverage test (`GeneratorCoverageTest.everyGraphitronFieldLeafHasAKnownDispatchStatus`) fails the build otherwise, which is the mechanism working as intended.
+* **Dispatch (`:425-432`):** add the two `case` arms routing to the new fetcher builders.
+* **`buildMutationUpdatePayloadFetcher` (single).** Keep the `buildMutationDmlRecordFetcher` skeleton (`:3844`: PK resolution, payload type, `try` / `.returningResult(pkCols).fetchOne()`, `returnSyncSuccess`, `catch` + `singleRecordSentinelFor`), but build the UPDATE chain from the carrier: `setGroupsOf(f.updateRows().setColumns())`, `keyGroupsOf(f.updateRows().keyColumns())`, `buildLookupWhereSingleRow(keyGroups, ...)`, the `sets` map via `emitSetMapPuts`, and the runtime empty-SET PATCH guard, exactly as `buildMutationUpdateFetcher.java:2350-2369` does for the direct path. Source the table off `inputArg.table()`, not `tia.inputTable()`.
+* **`buildMutationBulkUpdatePayloadFetcher` (bulk).** Keep the `buildMutationBulkDmlRecordFetcher` skeleton (`:4126`: empty-list short-circuit, `transactionResult` per-row N+1 accumulator into `Result<RecordN<PK>>` in input order, the order-preservation invariant). **Load-bearing correction (principles #1):** do *not* reuse `buildBulkRecordPerRowUpdateBody` (`:4277`), which reads `setGroupsOfFields(tia.setFields())` (the `@value`-derived projection, `:2073`) and `buildLookupWhereSingleRow(tia, ...)`. Add a carrier-driven per-row UPDATE body sourcing `setGroupsOf(updateRows().setColumns())` / `keyGroupsOf(updateRows().keyColumns())` / `buildLookupWhereSingleRow(keyGroups, ..., "row")`. Reusing the legacy body would keep the payload partition on `@value`, so dropping `@value` from `FilmUpdateInput` would empty the SET clause, breaking exactly the path this slice claims to fix.
+* **Factoring (principles #5):** prefer parameterizing the chain seam on the *carrier source* (`List<SetGroup>` / `List<InputColumnBindingGroup>`), not duplicating `buildMutationDmlRecordFetcher`'s body and not threading a `DmlKind` that re-switches internally (that re-couples the payload-UPDATE arm to the discriminator this slice removes). The existing `buildDmlChainForRecord` / `buildBulkRecordPerRowBody` per-kind seams are the natural extension points.
+
+### `graphitron-sakila-example/src/main/resources/graphql/schema.graphqls`
+
+* Drop `@value` from `FilmUpdateInput` (`:1258`, `:1263`) and rewrite the `:1253-1263` comments to describe PK-or-UK partition (the `filmId` PK covers the WHERE; non-key columns are the SET) instead of the retired `@value` / R144 framing. This is the capability proof: `FilmUpdateInput` is shared by `updateFilm` / `updateFilms` (R246 walker, ignores `@value`) and `updateFilmPayload` / `updateFilmsPayload` (now R258 walker), so once both consumers ignore it the directive can leave this fixture with the full pipeline + execution staying green. Confirm no other fixture's `@value` removal is needed for R258 (INSERT/UPSERT fixtures keep theirs until R188).
+
+## Tests
+
+* **Classification (pipeline tier).** `SingleRecordPayloadPipelineTest` parameterizes its admission cases over `{INSERT, UPDATE}` asserting `MutationDmlRecordField` / `MutationBulkDmlRecordField` (e.g. `:50`, `:111`, `:303`). Split the UPDATE arm out: UPDATE cases now assert `MutationUpdatePayloadField` / `MutationBulkUpdatePayloadField`; INSERT (and any DELETE/UPSERT) cases keep the record-carrier assertion. Drop the `@value` from those fixtures' UPDATE arms (`:382`, `:384`) where they exercise UPDATE.
+* **`@condition` / override inheritance (pipeline tier, principles #6).** Add a `GraphitronSchemaBuilderTest` case: a payload-returning UPDATE whose input field carries `@condition(override: true)` asserts the `UpdateRowsError.OverrideConditionNotSupported` rejection (and a sibling for `UnsupportedInputFieldShape`). The walker is shared so this "falls out for free", which is exactly the claim that must be pinned by a test that fails if it stops being true.
+* **Semantic-shift audit (the byte-identical claim).** Verify the emitted SQL for `updateFilmPayload` / `updateFilmsPayload` is unchanged across the cutover (e.g. `FetcherPipelineTest` body assertions, mirroring the direct-path `:488` bulk assertions). This is the concrete check that the PK-or-UK partition coincides with the old `@value` partition for `FilmUpdateInput`.
+* **Execution tier.** `DmlBulkMutationsExecutionTest.updateFilmsPayload` round-trip (`:660`) must stay green *after* `@value` is dropped from `FilmUpdateInput`, which is the end-to-end capability proof. Confirm the single-row `updateFilmPayload` round-trip (missing-vs-null `description` PATCH semantics) also survives.
+* **Walker reuse.** `UpdateRowsWalkerTest` (11 cases) is unchanged: the walker is shared, R258 adds no new walker behaviour.
+* **Validator/coverage.** `GeneratorCoverageTest` exercises the new `IMPLEMENTED_LEAVES` entries; any leaf-enumeration meta-tests (e.g. `DomainReturnTypeCoverageTest`) gain the two leaves.
+
+## Out of scope / sequencing
 
 * **Depends on R246** (Done): provides `UpdateRowsWalker`, the `UpdateRows` carrier, the `UpdateRowsField` interface, the `UpdateRowsError` sub-seal, and the `setGroupsOf` / `keyGroupsOf` emitter projections this slice reuses.
-* **Unblocks R188**: once this lands, no UPDATE path reads `@value`. R188's remaining surface is then DELETE + the `@value` directive declaration / diagnostics / plumbing retirement (R188's body is being re-scoped to that remainder).
+* **Unblocks R188**: once this lands, no UPDATE path reads `@value`. R188's remaining surface is then DELETE + the `@value` directive declaration / `DIR_VALUE` / diagnostics / `setFields()` plumbing retirement (R188's body is being re-scoped to that remainder).
+* **Helps `dml-record-carrier-sealed-on-kind`** (referenced in the record-carrier leaves' Javadoc): each UPDATE arm carved off shrinks the `DmlKind` range the eventual sealed-on-kind split must carry.
 * **R257** (`updaterows-walker-sdl-substrate`) is orthogonal; both consume the walker and can land in either order.
+* **Not in scope:** the `@value` directive/`DIR_VALUE`/plumbing retirement (R188); bulk-UPDATE-payload UPSERT admission (R145); override-condition *emit* support (the rejection stays a deferral); any sealed-on-kind refactor of the record-carrier leaves.
