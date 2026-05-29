@@ -16,7 +16,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 |---|---|---|---|---|
 | `R19` | Rebase and squash rewrite branch onto main | Ready |  | [plan](history-squash.md) |
 | `R222` | Dimensional model pivot: slots over cross-product permits | Spec | 2026-05-28 <sub>created 2026-05-21</sub> | [plan](dimensional-model-pivot.md) |
-| `R246` | UpdateRows walker carrier (R222 UPDATE slice) with PK-or-UK identification | In Review | 2026-05-29 <sub>created 2026-05-27</sub> | [plan](updaterows-walker-carrier.md) |
 | `R45` | Multi-tenant routing on top of the schema-driven ExecutionInput factory | Spec | 2026-05-20 | [plan](tenant-routing-and-execution-input.md) |
 | `R255` | Dedupe duplicate column projection in @reference DBQueries (RC-6 regression) | In Review | 2026-05-28 | [plan](dedupe-reference-projection.md) |
 | `R23` | Multi-parent `NestingField` sharing: `TableField` arm | Spec |  | [plan](nestingfield-multiparent-tablefield.md) |
@@ -199,7 +198,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R171` [**Fold InputType and TableInputType under sealed parent InputLikeType**](input-like-type-sealed-parent.md) — Backlog, architecture
 - `R103` [**Lift jOOQ column defaults onto input fields connected to that column**](lift-jooq-column-defaults-onto-inputs.md) — Backlog, architecture
 - `R249` [**Nested @argMapping syntax via GraphQLSelectionParser**](nested-argmapping-syntax.md) — Backlog, feature
-- `R246` [**UpdateRows walker carrier (R222 UPDATE slice) with PK-or-UK identification**](updaterows-walker-carrier.md) — In Review, structural
 - `R257` [**UpdateRowsWalker raw-SDL substrate absorption**](updaterows-walker-sdl-substrate.md) — Backlog, structural
 - `R236` [**BuildContext nested-input candidate-hint draws from path-origin table instead of @reference terminal table**](validator-reference-candidate-hint-terminal-table.md) — Backlog, bug
 - `R255` [**Dedupe duplicate column projection in @reference DBQueries (RC-6 regression)**](dedupe-reference-projection.md) — In Review, bug
