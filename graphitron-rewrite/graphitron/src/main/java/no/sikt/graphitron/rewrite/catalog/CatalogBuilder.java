@@ -362,6 +362,22 @@ public final class CatalogBuilder {
                     f.kind(),
                     true,
                     errorChannelName(f.errorChannel()));
+            // R258: payload-returning UPDATE carries InputArgRef (not TableInputArg); the table /
+            // input-type name come off the slim arg surface, and the kind is always UPDATE.
+            case MutationField.MutationUpdatePayloadField f ->
+                new FieldClassification.DmlRecord(
+                    f.inputArg().table().tableName(),
+                    f.inputArg().inputTypeName(),
+                    no.sikt.graphitron.rewrite.model.DmlKind.UPDATE,
+                    false,
+                    errorChannelName(f.errorChannel()));
+            case MutationField.MutationBulkUpdatePayloadField f ->
+                new FieldClassification.DmlRecord(
+                    f.inputArg().table().tableName(),
+                    f.inputArg().inputTypeName(),
+                    no.sikt.graphitron.rewrite.model.DmlKind.UPDATE,
+                    true,
+                    errorChannelName(f.errorChannel()));
 
             // --- InputField permits ---
             case InputField.ColumnField f ->

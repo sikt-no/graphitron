@@ -17,7 +17,8 @@ import java.util.Optional;
 public sealed interface MutationField extends RootField, WithErrorChannel
     permits MutationField.DmlTableField, MutationField.MutationServiceTableField,
             MutationField.MutationServiceRecordField, MutationField.MutationDmlRecordField,
-            MutationField.MutationBulkDmlRecordField {
+            MutationField.MutationBulkDmlRecordField,
+            MutationField.MutationUpdatePayloadField, MutationField.MutationBulkUpdatePayloadField {
 
     /**
      * Sealed common supertype of the four DML mutation variants. Carries the per-field data the
@@ -190,12 +191,12 @@ public sealed interface MutationField extends RootField, WithErrorChannel
      * "payload wrap" shape ({@code createFilm: CreateFilmPayload}). The carrier's data field is
      * classified as {@link ChildField.SingleRecordTableField}.
      *
-     * <p>The {@code kind} discriminator drives per-DML-kind emit variation (INSERT vs UPDATE vs
-     * UPSERT each have distinct SQL shapes); the model is one permit because the components are
-     * identical across the three kinds. {@code kind == DELETE} is rejected at classify time, not
-     * encoded here: DELETE-with-payload-return is incorrect by construction (the row is gone
-     * before the response SELECT can read it). The compact-constructor invariant pins that
-     * type-system guarantee.
+     * <p>The {@code kind} discriminator drives per-DML-kind emit variation (INSERT, UPSERT, and
+     * DELETE each have distinct SQL shapes); the model is one permit because the components are
+     * identical across those kinds. {@code kind == UPDATE} is carved off onto
+     * {@link MutationUpdatePayloadField} (R258), which sources its SET/WHERE partition from the
+     * {@link UpdateRows} walker carrier rather than {@code @value}; the compact-constructor
+     * invariant rejects UPDATE here. The live range is {@code {INSERT, UPSERT, DELETE}}.
      *
      * <p>{@link #returnType()} is the carrier's {@link ReturnTypeRef.ResultReturnType} (no
      * unwrap — the SDL's structural truth). {@link #tableInputArg()} carries the input
@@ -214,13 +215,24 @@ public sealed interface MutationField extends RootField, WithErrorChannel
     ) implements MutationField {
 
         public MutationDmlRecordField {
-            // R156: DELETE is admitted. The per-field carrier on the payload's data field is a
+            // R156: DELETE is admitted; the per-field carrier on the payload's data field is a
             // SingleRecordIdFieldFromReturning (encoded PK echo) or
             // SingleRecordTableFieldFromReturning (PK-only RETURNING projected through a sealed
             // PkResolution switch); both fetcher paths consume the RETURNING record directly,
             // so no follow-up SELECT runs after the row is gone. The DELETE-admissibility
             // decision is enforced at FieldBuilder's @mutation classifier (post-R178) on the
             // DmlElementKind dispatch returned by BuildContext.scanStructuralDmlPayload.
+            // R258: UPDATE is carved off onto MutationUpdatePayloadField — the payload-returning
+            // UPDATE sources its SET/WHERE partition from the UpdateRows walker carrier (PK-or-UK
+            // matched-key membership), not @value, so it no longer flows through this leaf. The
+            // live DmlKind range here is {INSERT, UPSERT, DELETE}; carving UPDATE out monotonically
+            // shrinks the range the eventual dml-record-carrier-sealed-on-kind split must carry.
+            if (kind == DmlKind.UPDATE) {
+                throw new IllegalArgumentException(
+                    "MutationDmlRecordField cannot carry DmlKind.UPDATE — R258 routes the "
+                    + "payload-returning UPDATE onto MutationUpdatePayloadField via the UpdateRows "
+                    + "walker carrier; this leaf carries {INSERT, UPSERT, DELETE}.");
+            }
         }
         @Override public DomainReturnType domainReturnType() {
             return new DomainReturnType.Record(tableInputArg.inputTable());
@@ -239,8 +251,9 @@ public sealed interface MutationField extends RootField, WithErrorChannel
      *
      * <p>The classifier admits exactly
      * {@code (tableInputArg.list() == true, dataField.wrapper().isList() == true,
-     * kind ∈ {INSERT, UPDATE})} and pairs the input cardinality to the data field's element
-     * type. The data table / input table agreement is now structurally pinned by the
+     * kind ∈ {INSERT, DELETE})} and pairs the input cardinality to the data field's element
+     * type. (R258 carved bulk UPDATE off onto {@link MutationBulkUpdatePayloadField}; UPSERT is
+     * deferred to R145.) The data table / input table agreement is now structurally pinned by the
      * {@link ProducerBinding.DmlEmitted} compact constructor's
      * {@code reflectedClass.getName().equals(tableRef.recordClass().reflectionName())}
      * invariant, surfaced via {@link Rejection.AuthorError.RecordBindingMultiProducer} when
@@ -269,9 +282,9 @@ public sealed interface MutationField extends RootField, WithErrorChannel
      * {@code buildMutationBulkDmlRecordFetcher} is the find-usages anchor; the contract is a
      * runtime claim about emit-order iteration with no compile-time signal.
      *
-     * <p><b>Per-kind emit variation.</b> INSERT and UPDATE differ on the per-row statement
-     * and the WHERE/SET clauses; future UPSERT lifts at R145 add a third shape with
-     * ON CONFLICT semantics. The components of this record are the same across kinds today,
+     * <p><b>Per-kind emit variation.</b> INSERT and DELETE differ on the per-row statement
+     * and the WHERE clause (DELETE carries no SET); future UPSERT lifts at R145 add a third shape
+     * with ON CONFLICT semantics. The components of this record are the same across kinds today,
      * but the emit shapes are not; the principles-aligned target is sealed-on-kind permits
      * mirroring {@link DmlTableField}, tracked at {@code dml-record-carrier-sealed-on-kind}
      * as the joint lift over both record-carrier leaves. Until that lift lands, the
@@ -312,6 +325,16 @@ public sealed interface MutationField extends RootField, WithErrorChannel
                     + "MutationInputResolver and lifts via R145 "
                     + "(mutation-cardinality-safety-upsert).");
             }
+            // R258: UPDATE is carved off onto MutationBulkUpdatePayloadField — the payload-returning
+            // bulk UPDATE sources its per-row SET/WHERE partition from the UpdateRows walker carrier
+            // (PK-or-UK matched-key membership), not @value. The live DmlKind range here is
+            // {INSERT, DELETE}.
+            if (kind == DmlKind.UPDATE) {
+                throw new IllegalArgumentException(
+                    "MutationBulkDmlRecordField cannot carry DmlKind.UPDATE — R258 routes the "
+                    + "payload-returning bulk UPDATE onto MutationBulkUpdatePayloadField via the "
+                    + "UpdateRows walker carrier; this leaf carries {INSERT, DELETE}.");
+            }
             if (!tableInputArg.list()) {
                 throw new IllegalArgumentException(
                     "MutationBulkDmlRecordField requires bulk @table input "
@@ -321,6 +344,71 @@ public sealed interface MutationField extends RootField, WithErrorChannel
         }
         @Override public DomainReturnType domainReturnType() {
             return new DomainReturnType.Record(tableInputArg.inputTable());
+        }
+    }
+
+    /**
+     * R258 — the payload-returning {@code @mutation(typeName: UPDATE)} field with single
+     * {@code @table} input (e.g. {@code updateFilmPayload(in: FilmUpdateInput!): FilmPayload}).
+     * Sibling on two axes: of {@link MutationUpdateTableField} (the direct-{@code @table}/ID-return
+     * UPDATE leaf) it shares the walker-driven input semantics — the slim {@link InputArgRef} arg
+     * surface plus the {@link UpdateRows} carrier, with no {@code TableInputArg} and no {@code @value}
+     * dependency; of {@link MutationDmlRecordField} it shares the structural-payload emit shape (a
+     * plain SDL Object wrapping one {@code @table}-element data field classified as
+     * {@link ChildField.SingleRecordTableField}, emitted as a two-step PK-only {@code RETURNING}
+     * inside {@code transactionResult} followed by the data field's response SELECT).
+     *
+     * <p>R246 migrated the direct-return UPDATE off {@code resolveInput}'s {@code @value}-partition
+     * onto the {@code UpdateRowsWalker}'s PK-or-UK matched-key membership; this leaf does the same
+     * for the payload-return shape, so no UPDATE path reads {@code @value} (the precondition for
+     * R188 retiring the directive). Both slots are non-Optional: the field is only constructed when
+     * the FieldBuilder pre-checks and the walker both pass; a walker {@code Err} surfaces as an
+     * {@link no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField} with no carrier.
+     * No {@link DmlKind} slot — the leaf identity is the kind.
+     */
+    record MutationUpdatePayloadField(
+        String parentTypeName,
+        String name,
+        SourceLocation location,
+        ReturnTypeRef.ResultReturnType returnType,
+        InputArgRef inputArg,
+        UpdateRows updateRows,
+        Optional<ErrorChannel> errorChannel
+    ) implements MutationField, UpdateRowsField {
+        @Override public DomainReturnType domainReturnType() {
+            return new DomainReturnType.Record(inputArg.table());
+        }
+    }
+
+    /**
+     * R258 — the payload-returning {@code @mutation(typeName: UPDATE)} field with bulk
+     * {@code @table} input and a list-shaped {@code @table}-element data field on the carrier
+     * (e.g. {@code updateFilmsPayload(in: [FilmUpdateInput!]!): FilmsPayload}). Bulk sibling of
+     * {@link MutationUpdatePayloadField}, exactly as {@link MutationBulkDmlRecordField} is the bulk
+     * sibling of {@link MutationDmlRecordField}.
+     *
+     * <p>Emit follows the bulk record-carrier skeleton: per-row UPDATE inside one
+     * {@code dsl.transactionResult(...)}, collecting PK echoes into a {@code Result<RecordN<PK>>} in
+     * input order so the data field's {@link ChildField.SingleRecordTableField}
+     * ({@link no.sikt.graphitron.rewrite.model.SourceKey.Cardinality#MANY}) fetcher renders rows in
+     * input order. The per-row SET/WHERE partition is sourced from the {@link UpdateRows} carrier
+     * (PK-or-UK matched-key membership) rather than {@code @value}; see
+     * {@link no.sikt.graphitron.rewrite.generators.TypeFetcherGenerator} for the emit path and the
+     * order-preservation invariant {@code DmlBulkMutationsExecutionTest} pins at runtime.
+     *
+     * @see no.sikt.graphitron.rewrite.generators.TypeFetcherGenerator
+     */
+    record MutationBulkUpdatePayloadField(
+        String parentTypeName,
+        String name,
+        SourceLocation location,
+        ReturnTypeRef.ResultReturnType returnType,
+        InputArgRef inputArg,
+        UpdateRows updateRows,
+        Optional<ErrorChannel> errorChannel
+    ) implements MutationField, UpdateRowsField {
+        @Override public DomainReturnType domainReturnType() {
+            return new DomainReturnType.Record(inputArg.table());
         }
     }
 }

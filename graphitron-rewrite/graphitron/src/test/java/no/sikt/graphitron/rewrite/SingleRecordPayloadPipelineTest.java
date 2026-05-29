@@ -48,20 +48,31 @@ class SingleRecordPayloadPipelineTest {
 
     @ParameterizedTest
     @EnumSource(value = DmlKind.class, names = {"INSERT", "UPDATE"})
-    void payload_bulkInput_listDataField_classifiesAsMutationBulkDmlRecordField(DmlKind kind) {
+    void payload_bulkInput_listDataField_classifiesAsBulkLeaf(DmlKind kind) {
         // UPSERT is deferred to R145 (mutation-cardinality-safety-upsert); the classifier surfaces
         // a deferred-to-R145 rejection rather than constructing the leaf, so the parameterised
-        // case excludes UPSERT.
+        // case excludes UPSERT. R258 splits the UPDATE arm: the payload-returning bulk UPDATE
+        // routes onto MutationBulkUpdatePayloadField (walker carrier), while INSERT stays on the
+        // record-carrier MutationBulkDmlRecordField.
         var schema = TestSchemaHelper.buildSchema(payloadDml(kind, "type FilmPayload { films: [Film!] }"));
 
         var mutField = schema.field("Mutation", mutationName(kind));
-        assertThat(mutField).isInstanceOf(MutationField.MutationBulkDmlRecordField.class);
-        var dmlField = (MutationField.MutationBulkDmlRecordField) mutField;
-        assertThat(dmlField.kind()).isEqualTo(kind);
-        assertThat(dmlField.returnType()).isInstanceOf(ReturnTypeRef.ResultReturnType.class);
-        assertThat(dmlField.returnType().returnTypeName()).isEqualTo("FilmPayload");
-        assertThat(dmlField.tableInputArg().inputTable().tableName()).isEqualTo("film");
-        assertThat(dmlField.tableInputArg().list()).isTrue();
+        if (kind == DmlKind.UPDATE) {
+            assertThat(mutField).isInstanceOf(MutationField.MutationBulkUpdatePayloadField.class);
+            var upd = (MutationField.MutationBulkUpdatePayloadField) mutField;
+            assertThat(upd.returnType()).isInstanceOf(ReturnTypeRef.ResultReturnType.class);
+            assertThat(upd.returnType().returnTypeName()).isEqualTo("FilmPayload");
+            assertThat(upd.inputArg().table().tableName()).isEqualTo("film");
+            assertThat(upd.inputArg().list()).isTrue();
+        } else {
+            assertThat(mutField).isInstanceOf(MutationField.MutationBulkDmlRecordField.class);
+            var dmlField = (MutationField.MutationBulkDmlRecordField) mutField;
+            assertThat(dmlField.kind()).isEqualTo(kind);
+            assertThat(dmlField.returnType()).isInstanceOf(ReturnTypeRef.ResultReturnType.class);
+            assertThat(dmlField.returnType().returnTypeName()).isEqualTo("FilmPayload");
+            assertThat(dmlField.tableInputArg().inputTable().tableName()).isEqualTo("film");
+            assertThat(dmlField.tableInputArg().list()).isTrue();
+        }
     }
 
     @Test
@@ -98,8 +109,10 @@ class SingleRecordPayloadPipelineTest {
     void payload_singleDataField_dataFieldClassifiesWithCardinalityOne(DmlKind kind) {
         var schema = TestSchemaHelper.buildSchema(payloadDmlSingleInput(kind, "type FilmPayload { film: Film }"));
 
+        // R258: UPDATE routes onto MutationUpdatePayloadField; INSERT stays on MutationDmlRecordField.
+        // The data field classifies as SingleRecordTableField (cardinality ONE) for both.
         var mutField = schema.field("Mutation", mutationName(kind));
-        assertThat(mutField).isInstanceOf(MutationField.MutationDmlRecordField.class);
+        assertThat(mutField).isInstanceOf(expectedSingleLeaf(kind));
         var dataField = schema.field("FilmPayload", "film");
         assertThat(dataField).isInstanceOf(ChildField.SingleRecordTableField.class);
         var srtf = (ChildField.SingleRecordTableField) dataField;
@@ -108,10 +121,10 @@ class SingleRecordPayloadPipelineTest {
 
     @ParameterizedTest
     @EnumSource(value = DmlKind.class, names = {"INSERT", "UPDATE"})
-    void payload_atRecordWithNullClassName_classifiesAsMutationDmlRecordField(DmlKind kind) {
+    void payload_atRecordWithNullClassName_classifiesAsSinglePayloadLeaf(DmlKind kind) {
         var schema = TestSchemaHelper.buildSchema(payloadDmlSingleInput(kind, "type FilmPayload @record { film: Film }"));
         assertThat(schema.field("Mutation", mutationName(kind)))
-            .isInstanceOf(MutationField.MutationDmlRecordField.class);
+            .isInstanceOf(expectedSingleLeaf(kind));
     }
 
     // ===== DELETE-with-carrier admission (R156) =====
@@ -504,9 +517,11 @@ class SingleRecordPayloadPipelineTest {
             CARRIER_WALK_LOCAL_CONTEXT_ERRORS
             + "type FilmPayload { film: Film errors: [CarrierError!] }"));
 
+        // R258: UPDATE routes onto MutationUpdatePayloadField; INSERT stays on MutationDmlRecordField.
+        // The LocalContext error channel is carried on the common WithErrorChannel supertype either way.
         var mutField = schema.field("Mutation", mutationName(kind));
-        assertThat(mutField).isInstanceOf(MutationField.MutationDmlRecordField.class);
-        var dml = (MutationField.MutationDmlRecordField) mutField;
+        assertThat(mutField).isInstanceOf(expectedSingleLeaf(kind));
+        var dml = (no.sikt.graphitron.rewrite.model.WithErrorChannel) mutField;
         assertThat(dml.errorChannel()).isPresent();
         assertThat(dml.errorChannel().get())
             .isInstanceOf(no.sikt.graphitron.rewrite.model.ErrorChannel.LocalContext.class);
@@ -534,9 +549,11 @@ class SingleRecordPayloadPipelineTest {
             CARRIER_WALK_LOCAL_CONTEXT_ERRORS
             + "type FilmPayload { films: [Film!] errors: [CarrierError!] }"));
 
+        // R258: UPDATE routes onto MutationBulkUpdatePayloadField; INSERT stays on MutationBulkDmlRecordField.
+        // The LocalContext error channel is carried on the common WithErrorChannel supertype either way.
         var mutField = schema.field("Mutation", mutationName(kind));
-        assertThat(mutField).isInstanceOf(MutationField.MutationBulkDmlRecordField.class);
-        var bulk = (MutationField.MutationBulkDmlRecordField) mutField;
+        assertThat(mutField).isInstanceOf(expectedBulkLeaf(kind));
+        var bulk = (no.sikt.graphitron.rewrite.model.WithErrorChannel) mutField;
         assertThat(bulk.errorChannel()).isPresent();
         assertThat(bulk.errorChannel().get())
             .isInstanceOf(no.sikt.graphitron.rewrite.model.ErrorChannel.LocalContext.class);
@@ -607,12 +624,29 @@ class SingleRecordPayloadPipelineTest {
     }
 
     private static String inputBody(DmlKind kind) {
+        // R258: UPDATE no longer marks SET columns with @value — the UpdateRowsWalker partitions
+        // filmId (PK) into WHERE and title into SET by PK-or-UK matched-key membership. UPSERT keeps
+        // @value until R188 retires the directive.
         return switch (kind) {
             case INSERT -> "title: String";
-            case UPDATE -> "filmId: Int! @field(name: \"film_id\"), title: String @value";
+            case UPDATE -> "filmId: Int! @field(name: \"film_id\"), title: String";
             case DELETE -> "filmId: Int! @field(name: \"film_id\")";
             case UPSERT -> "filmId: Int! @field(name: \"film_id\"), title: String @value";
         };
+    }
+
+    /** R258: the single-input payload leaf the classifier lands on for {@code kind}. */
+    private static Class<? extends MutationField> expectedSingleLeaf(DmlKind kind) {
+        return kind == DmlKind.UPDATE
+            ? MutationField.MutationUpdatePayloadField.class
+            : MutationField.MutationDmlRecordField.class;
+    }
+
+    /** R258: the bulk-input payload leaf the classifier lands on for {@code kind}. */
+    private static Class<? extends MutationField> expectedBulkLeaf(DmlKind kind) {
+        return kind == DmlKind.UPDATE
+            ? MutationField.MutationBulkUpdatePayloadField.class
+            : MutationField.MutationBulkDmlRecordField.class;
     }
 
     /** Bulk input ({@code [FilmInput!]!}) → list data field. */

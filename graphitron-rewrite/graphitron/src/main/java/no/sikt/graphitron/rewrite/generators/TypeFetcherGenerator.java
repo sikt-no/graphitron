@@ -190,6 +190,8 @@ public class TypeFetcherGenerator {
         MutationField.MutationUpsertTableField.class,
         MutationField.MutationDmlRecordField.class,
         MutationField.MutationBulkDmlRecordField.class,
+        MutationField.MutationUpdatePayloadField.class,
+        MutationField.MutationBulkUpdatePayloadField.class,
         MutationField.MutationServiceTableField.class,
         MutationField.MutationServiceRecordField.class,
         ChildField.ServiceTableField.class,
@@ -430,6 +432,8 @@ public class TypeFetcherGenerator {
                 case MutationField.MutationServiceRecordField f -> builder.addMethod(buildMutationServiceRecordFetcher(ctx, f, outputPackage));
                 case MutationField.MutationDmlRecordField f    -> builder.addMethod(buildMutationDmlRecordFetcher(ctx, f, outputPackage));
                 case MutationField.MutationBulkDmlRecordField f -> builder.addMethod(buildMutationBulkDmlRecordFetcher(ctx, f, outputPackage));
+                case MutationField.MutationUpdatePayloadField f -> builder.addMethod(buildMutationUpdatePayloadFetcher(ctx, f, outputPackage));
+                case MutationField.MutationBulkUpdatePayloadField f -> builder.addMethod(buildMutationBulkUpdatePayloadFetcher(ctx, f, outputPackage));
                 // ColumnReferenceField has no fetcher method — inline projection via
                 // TypeClassGenerator.$fields (Direct compaction) and a ColumnFetcher value emitted
                 // by FetcherEmitter. The validator rejects the NodeIdEncodeKeys and ConditionJoin
@@ -3844,32 +3848,53 @@ public class TypeFetcherGenerator {
     private static MethodSpec buildMutationDmlRecordFetcher(
             TypeFetcherEmissionContext ctx, MutationField.MutationDmlRecordField f, String outputPackage) {
         var tia = f.tableInputArg();
-        var tableRef = tia.inputTable();
+        // DML chain per kind. Each branch produces a CodeBlock starting with `.<verb>(...)`
+        // suitable for chaining off `DSL.using(tx)` inside transactionResult.
+        return buildSingleRecordTwoStepFetcher(
+            ctx, f.name(), tia.name(), tia.inputTable(), f.errorChannel(), f.qualifiedName(),
+            (tablesOnly, tableLocal) -> buildDmlChainForRecord(f, tia, tia.inputTable(), tablesOnly, tableLocal),
+            outputPackage);
+    }
+
+    /**
+     * R258: the two-step single-record DML emit skeleton shared by
+     * {@link #buildMutationDmlRecordFetcher} (record-carrier INSERT/UPSERT/DELETE, SET/WHERE off the
+     * {@code TableInputArg}) and {@link #buildMutationUpdatePayloadFetcher} (payload-returning
+     * UPDATE, SET/WHERE off the {@link UpdateRows} carrier). The shape is invariant across both: a
+     * PK-only {@code .returningResult(pkCols).fetchOne()} inside {@code dsl.transactionResult(...)},
+     * a {@link #returnSyncSuccess} wrap, and a {@link #catchArm} routing thrown exceptions through
+     * the error channel with a {@link #singleRecordSentinelFor} non-null sentinel. Only the DML
+     * chain (and its pre-DML guards) varies; {@code chainFn} is the seam, parameterised on the
+     * resolved table names rather than threading a {@code DmlKind} that re-switches internally.
+     */
+    private static MethodSpec buildSingleRecordTwoStepFetcher(
+            TypeFetcherEmissionContext ctx, String fieldName, String argName,
+            TableRef tableRef, Optional<ErrorChannel> errorChannel, String qualifiedName,
+            java.util.function.BiFunction<GeneratorUtils.ResolvedTableNames, String, DmlChainAndGuards> chainFn,
+            String outputPackage) {
         var tablesOnly = GeneratorUtils.ResolvedTableNames.ofTable(tableRef);
         String tableLocal = tablesOnly.tableLocalName();
         var pkCols = tableRef.primaryKeyColumns();
         if (pkCols.isEmpty()) {
             throw new IllegalStateException(
-                "MutationDmlRecordField '" + f.qualifiedName() + "' references table '"
+                "Payload-returning DML fetcher '" + qualifiedName + "' references table '"
                 + tableRef.tableName() + "' that has no primary key; admission requires PK columns");
         }
         TypeName payloadType = no.sikt.graphitron.rewrite.model.SourceKey.keyElementType(
             new no.sikt.graphitron.rewrite.model.SourceKey.Wrap.Record(), pkCols);
         var dslContextClass = ClassName.get("org.jooq", "DSLContext");
 
-        var builder = MethodSpec.methodBuilder(f.name())
+        var builder = MethodSpec.methodBuilder(fieldName)
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(syncResultType(payloadType))
             .addParameter(ENV, "env");
         builder.beginControlFlow("try");
         builder.addStatement("$T dsl = $L.getDslContext(env)", dslContextClass, ctx.graphitronContextCall());
-        builder.addStatement("$T<?, ?> in = ($T<?, ?>) env.getArgument($S)", MAP, MAP, tia.name());
+        builder.addStatement("$T<?, ?> in = ($T<?, ?>) env.getArgument($S)", MAP, MAP, argName);
         builder.addStatement("$T $L = $T.$L",
             tablesOnly.jooqTableClass(), tableLocal, tablesOnly.tablesClass(), tableRef.javaFieldName());
 
-        // DML chain per kind. Each branch produces a CodeBlock starting with `.<verb>(...)`
-        // suitable for chaining off `DSL.using(tx)` inside transactionResult.
-        var chainAndGuards = buildDmlChainForRecord(f, tia, tableRef, tablesOnly, tableLocal);
+        var chainAndGuards = chainFn.apply(tablesOnly, tableLocal);
         builder.addCode(chainAndGuards.preGuard());
 
         var dmlEmit = CodeBlock.builder()
@@ -3886,10 +3911,64 @@ public class TypeFetcherGenerator {
 
         builder.addCode(returnSyncSuccess(payloadType, "payload"));
         builder.nextControlFlow("catch ($T e)", Exception.class);
-        builder.addCode(catchArm(outputPackage, f.errorChannel(),
+        builder.addCode(catchArm(outputPackage, errorChannel,
             singleRecordSentinelFor(tableRef, tablesOnly, pkCols)));
         builder.endControlFlow();
         return builder.build();
+    }
+
+    /**
+     * R258: emits the fetcher for a {@link MutationField.MutationUpdatePayloadField} — the
+     * payload-returning single UPDATE. Reuses {@link #buildSingleRecordTwoStepFetcher}'s skeleton;
+     * the SET / WHERE partition is sourced from the {@link UpdateRows} carrier via the shared
+     * {@link #setGroupsOf} / {@link #keyGroupsOf} projections (the same source R246's direct-return
+     * {@link #buildMutationUpdateFetcher} reads), never from {@code tia.setFields()} /
+     * {@code tia.fieldBindings()}, so the payload UPDATE no longer depends on {@code @value}.
+     */
+    private static MethodSpec buildMutationUpdatePayloadFetcher(
+            TypeFetcherEmissionContext ctx, MutationField.MutationUpdatePayloadField f, String outputPackage) {
+        var inputArg = f.inputArg();
+        var setGroups = setGroupsOf(f.updateRows().setColumns());
+        var keyGroups = keyGroupsOf(f.updateRows().keyColumns());
+        return buildSingleRecordTwoStepFetcher(
+            ctx, f.name(), inputArg.name(), inputArg.table(), f.errorChannel(), f.qualifiedName(),
+            (tablesOnly, tableLocal) -> buildCarrierUpdateChainSingle(
+                setGroups, keyGroups, inputArg.table(), tablesOnly, tableLocal),
+            outputPackage);
+    }
+
+    /**
+     * R258: the carrier-driven single-row UPDATE chain for the payload-returning UPDATE fetcher.
+     * Mirrors {@link #buildMutationUpdateFetcher}'s single-row body (the direct-return path): a
+     * dynamic SET map built from the carrier's {@code setColumns()} so absent fields drop out
+     * (PATCH semantics), a runtime empty-SET guard, and the lookup-WHERE built from the carrier's
+     * {@code keyColumns()}. The enclosing {@link #buildSingleRecordTwoStepFetcher} appends
+     * {@code .returningResult(pkCols).fetchOne()} inside {@code transactionResult}.
+     */
+    private static DmlChainAndGuards buildCarrierUpdateChainSingle(
+            List<SetGroup> setGroups, List<InputColumnBindingGroup> keyGroups,
+            TableRef tableRef, GeneratorUtils.ResolvedTableNames tablesOnly, String tableLocal) {
+        var fieldClass = ClassName.get("org.jooq", "Field");
+        var linkedHashMap = ClassName.get("java.util", "LinkedHashMap");
+        var preGuard = CodeBlock.builder();
+        preGuard.addStatement("$T<$T<?>, Object> sets = new $T<>()", MAP, fieldClass, linkedHashMap);
+        emitSetMapPuts(preGuard, setGroups, "sets", "in", "in", "__setKey", tablesOnly, tableRef);
+        // Runtime PATCH guard: the carrier guarantees the schema has at least one settable column,
+        // but a caller may omit every set-field value (sending only key columns); fail with a
+        // friendly message rather than letting jOOQ reject an empty SET map.
+        preGuard.beginControlFlow("if (sets.isEmpty())")
+            .addStatement("throw new $T($S)", IllegalArgumentException.class,
+                "@mutation(typeName: UPDATE) call has no settable fields present; "
+                    + "only key fields were provided")
+            .endControlFlow();
+        var whereChunk = buildLookupWhereSingleRow(keyGroups, tablesOnly, tableRef, "in");
+        preGuard.add(whereChunk.decodeLocals());
+        var chain = CodeBlock.builder()
+            .add(".update($L)\n", tableLocal)
+            .add(".set(sets)\n")
+            .add(".where(").add(whereChunk.whereExpr()).add(")\n")
+            .build();
+        return new DmlChainAndGuards(chain, preGuard.build());
     }
 
     /**
@@ -4126,13 +4205,42 @@ public class TypeFetcherGenerator {
     private static MethodSpec buildMutationBulkDmlRecordFetcher(
             TypeFetcherEmissionContext ctx, MutationField.MutationBulkDmlRecordField f, String outputPackage) {
         var tia = f.tableInputArg();
-        var tableRef = tia.inputTable();
+        return buildBulkRecordTwoStepFetcher(
+            ctx, f.name(), tia.name(), tia.inputTable(), f.errorChannel(), f.qualifiedName(),
+            (tablesOnly, tableLocal, pkCols, recordRowType) ->
+                buildBulkRecordPerRowBody(f, tia, tia.inputTable(), tablesOnly, tableLocal, pkCols, recordRowType),
+            outputPackage);
+    }
+
+    /** R258: the seam for {@link #buildBulkRecordTwoStepFetcher}'s per-row DML body. */
+    @FunctionalInterface
+    private interface BulkPerRowBodyFn {
+        CodeBlock build(GeneratorUtils.ResolvedTableNames tablesOnly, String tableLocal,
+                        List<no.sikt.graphitron.rewrite.model.ColumnRef> pkCols, TypeName recordRowType);
+    }
+
+    /**
+     * R258: the bulk two-step DML emit skeleton shared by {@link #buildMutationBulkDmlRecordFetcher}
+     * (record-carrier INSERT/DELETE) and {@link #buildMutationBulkUpdatePayloadFetcher}
+     * (payload-returning bulk UPDATE). The shape is invariant: an empty-list short-circuit, then a
+     * per-row N+1 accumulator collecting PK echoes into a {@code Result<RecordN<PK>>} in input order
+     * inside one {@code dsl.transactionResult(...)}, wrapped by {@link #returnSyncSuccess} /
+     * {@link #catchArm}. Only the per-row body varies; {@code perRowBodyFn} is the seam, parameterised
+     * on the resolved table names / PK columns rather than threading a {@code DmlKind} that
+     * re-switches internally. The order-preservation invariant ({@code output.data[i]} corresponds
+     * to {@code input[i]}) is a property of this skeleton's input-order loop and is audited at the
+     * execution tier.
+     */
+    private static MethodSpec buildBulkRecordTwoStepFetcher(
+            TypeFetcherEmissionContext ctx, String fieldName, String argName,
+            TableRef tableRef, Optional<ErrorChannel> errorChannel, String qualifiedName,
+            BulkPerRowBodyFn perRowBodyFn, String outputPackage) {
         var tablesOnly = GeneratorUtils.ResolvedTableNames.ofTable(tableRef);
         String tableLocal = tablesOnly.tableLocalName();
         var pkCols = tableRef.primaryKeyColumns();
         if (pkCols.isEmpty()) {
             throw new IllegalStateException(
-                "MutationBulkDmlRecordField '" + f.qualifiedName() + "' references table '"
+                "Payload-returning bulk DML fetcher '" + qualifiedName + "' references table '"
                 + tableRef.tableName() + "' that has no primary key; admission requires PK columns");
         }
         TypeName recordRowType = no.sikt.graphitron.rewrite.model.SourceKey.keyElementType(
@@ -4141,14 +4249,14 @@ public class TypeFetcherGenerator {
         TypeName resultType = ParameterizedTypeName.get(resultClass, recordRowType);
         var dslContextClass = ClassName.get("org.jooq", "DSLContext");
 
-        var builder = MethodSpec.methodBuilder(f.name())
+        var builder = MethodSpec.methodBuilder(fieldName)
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(syncResultType(resultType))
             .addParameter(ENV, "env");
         builder.beginControlFlow("try");
         builder.addStatement("$T dsl = $L.getDslContext(env)", dslContextClass, ctx.graphitronContextCall());
         builder.addStatement("$T<$T<?, ?>> in = ($T<$T<?, ?>>) env.getArgument($S)",
-            LIST, MAP, LIST, MAP, tia.name());
+            LIST, MAP, LIST, MAP, argName);
         builder.addStatement("$T $L = $T.$L",
             tablesOnly.jooqTableClass(), tableLocal, tablesOnly.tablesClass(), tableRef.javaFieldName());
 
@@ -4171,7 +4279,7 @@ public class TypeFetcherGenerator {
             .add("$T txd = $T.using(tx);\n", dslContextClass, DSL)
             .add("$T acc = txd.newResult($L);\n", resultType, buildPkFieldList(pkCols, tablesOnly, tableRef))
             .add("for ($T<?, ?> row : in) {\n", MAP).indent()
-            .add(buildBulkRecordPerRowBody(f, tia, tableRef, tablesOnly, tableLocal, pkCols, recordRowType))
+            .add(perRowBodyFn.build(tablesOnly, tableLocal, pkCols, recordRowType))
             .unindent().add("}\n")
             .add("return acc;\n")
             .unindent().add("});\n")
@@ -4179,10 +4287,71 @@ public class TypeFetcherGenerator {
 
         builder.addCode(returnSyncSuccess(resultType, "payload"));
         builder.nextControlFlow("catch ($T e)", Exception.class);
-        builder.addCode(catchArm(outputPackage, f.errorChannel(),
+        builder.addCode(catchArm(outputPackage, errorChannel,
             bulkRecordSentinelFor(tableRef, tablesOnly, pkCols)));
         builder.endControlFlow();
         return builder.build();
+    }
+
+    /**
+     * R258: emits the fetcher for a {@link MutationField.MutationBulkUpdatePayloadField} — the
+     * payload-returning bulk UPDATE. Reuses {@link #buildBulkRecordTwoStepFetcher}'s skeleton; the
+     * per-row SET / WHERE partition is sourced from the {@link UpdateRows} carrier (not
+     * {@code tia.setFields()} / {@code tia.fieldBindings()}), so the bulk payload UPDATE no longer
+     * depends on {@code @value}. Reusing the legacy {@link #buildBulkRecordPerRowUpdateBody} would
+     * keep the partition on {@code @value} and break exactly the path this slice fixes once
+     * {@code @value} leaves the schema.
+     */
+    private static MethodSpec buildMutationBulkUpdatePayloadFetcher(
+            TypeFetcherEmissionContext ctx, MutationField.MutationBulkUpdatePayloadField f, String outputPackage) {
+        var inputArg = f.inputArg();
+        var setGroups = setGroupsOf(f.updateRows().setColumns());
+        var keyGroups = keyGroupsOf(f.updateRows().keyColumns());
+        return buildBulkRecordTwoStepFetcher(
+            ctx, f.name(), inputArg.name(), inputArg.table(), f.errorChannel(), f.qualifiedName(),
+            (tablesOnly, tableLocal, pkCols, recordRowType) -> buildCarrierBulkPerRowUpdateBody(
+                setGroups, keyGroups, inputArg.table(), tablesOnly, tableLocal, pkCols, recordRowType),
+            outputPackage);
+    }
+
+    /**
+     * R258: the carrier-driven per-row UPDATE body for the bulk payload-returning UPDATE. Mirrors
+     * {@link #buildBulkRecordPerRowUpdateBody} but sources the SET map from the carrier's
+     * {@code setColumns()} ({@link #setGroupsOf}) and the WHERE from the carrier's {@code keyColumns()}
+     * ({@link #keyGroupsOf}) rather than the {@code @value}-derived {@code tia.setFields()} /
+     * {@code tia.fieldBindings()}. The no-match throw preserves the order-preservation invariant.
+     */
+    private static CodeBlock buildCarrierBulkPerRowUpdateBody(
+            List<SetGroup> setGroups, List<InputColumnBindingGroup> keyGroups,
+            TableRef tableRef, GeneratorUtils.ResolvedTableNames tablesOnly, String tableLocal,
+            List<no.sikt.graphitron.rewrite.model.ColumnRef> pkCols, TypeName recordRowType) {
+        var fieldClass = ClassName.get("org.jooq", "Field");
+        var linkedHashMap = ClassName.get("java.util", "LinkedHashMap");
+        var body = CodeBlock.builder();
+        body.addStatement("$T<$T<?>, Object> sets = new $T<>()", MAP, fieldClass, linkedHashMap);
+        emitSetMapPuts(body, setGroups, "sets", "row", "row", "__setKey", tablesOnly, tableRef);
+        body.beginControlFlow("if (sets.isEmpty())")
+            .addStatement("throw new $T($S)", IllegalArgumentException.class,
+                "@mutation(typeName: UPDATE) call has no settable fields present; "
+                    + "only key fields were provided")
+            .endControlFlow();
+        var whereChunk = buildLookupWhereSingleRow(keyGroups, tablesOnly, tableRef, "row");
+        body.add(whereChunk.decodeLocals());
+        body.add("$T rec = txd.update($L)\n", recordRowType, tableLocal)
+            .add("    .set(sets)\n")
+            .add("    .where(").add(whereChunk.whereExpr()).add(")\n")
+            .add("    .returningResult(").add(buildPkFieldList(pkCols, tablesOnly, tableRef)).add(")\n")
+            .add("    .fetchOne();\n");
+        // UPDATE no-match preserves the order-preservation invariant by failing fast rather than
+        // skewing acc.size() against in.size() with a silent skip; the catch arm routes the
+        // exception through the carrier's error channel (R12 wiring).
+        body.beginControlFlow("if (rec == null)")
+            .addStatement("throw new $T($S + row)", IllegalStateException.class,
+                "@mutation(typeName: UPDATE) bulk row matched zero rows; key filter "
+                    + "found no target for input row: ")
+            .endControlFlow();
+        body.add("acc.add(rec);\n");
+        return body.build();
     }
 
     /**

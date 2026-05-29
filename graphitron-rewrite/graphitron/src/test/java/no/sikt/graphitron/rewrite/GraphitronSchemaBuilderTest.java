@@ -4650,6 +4650,64 @@ class GraphitronSchemaBuilderTest {
     }
 
     /**
+     * R258 — the {@code @condition(override: true)} deferral on a non-key input field falls out for
+     * the payload-returning UPDATE shape exactly as it does for the direct-return shape (R246): both
+     * forks run the same {@code UpdateRowsWalker}, so {@code classifyUpdatePayloadField} surfaces the
+     * same typed {@code UpdateRowsError.OverrideConditionNotSupported}. This test pins that the
+     * shared walker rejection is reached on the payload path, not silently dropped.
+     */
+    @Test
+    void r258_mutationUpdatePayloadConditionOverrideTrueOnNonKeyFieldRejects() {
+        var schema = build("""
+            input FilmUpdate @table(name: "film") {
+              filmId: Int! @field(name: "film_id")
+              title: String
+              syntheticName: String
+                @condition(condition: {className: "no.sikt.graphitron.rewrite.TestConditionStub", method: "syntheticNameCondition"}, override: true)
+            }
+            type Film @table(name: "film") { title: String }
+            type FilmPayload { film: Film }
+            type Mutation {
+              updateFilmPayload(in: FilmUpdate!): FilmPayload @mutation(typeName: UPDATE)
+            }
+            type Query { x: String }
+            """);
+        var f = (UnclassifiedField) schema.field("Mutation", "updateFilmPayload");
+        assertThat(f.rejection()).isInstanceOf(
+            no.sikt.graphitron.rewrite.model.UpdateRowsError.OverrideConditionNotSupported.class);
+        assertThat(((no.sikt.graphitron.rewrite.model.UpdateRowsError.OverrideConditionNotSupported) f.rejection())
+            .fieldName()).isEqualTo("syntheticName");
+    }
+
+    /**
+     * R258 sibling — a non-key input field carrying a non-override {@code @condition} (a shape the
+     * walker cannot emit) rejects the payload-returning UPDATE with
+     * {@code UpdateRowsError.UnsupportedInputFieldShape}, the same way the direct-return shape does
+     * (see {@code r215_validatorRejectsConditionOverrideFalseOnMutationInputField}). Confirms the
+     * structural-payload scan admits first and the shared walker owns the field-shape rejection.
+     */
+    @Test
+    void r258_mutationUpdatePayloadConditionNonOverrideOnNonKeyFieldRejects() {
+        var schema = build("""
+            input FilmUpdate @table(name: "film") {
+              filmId: Int! @field(name: "film_id")
+              title: String
+                @condition(condition: {className: "no.sikt.graphitron.rewrite.TestConditionStub", method: "inputColumnCondition"})
+            }
+            type Film @table(name: "film") { title: String }
+            type FilmPayload { film: Film }
+            type Mutation {
+              updateFilmPayload(in: FilmUpdate!): FilmPayload @mutation(typeName: UPDATE)
+            }
+            type Query { x: String }
+            """);
+        var f = (UnclassifiedField) schema.field("Mutation", "updateFilmPayload");
+        assertThat(f.rejection()).isInstanceOf(
+            no.sikt.graphitron.rewrite.model.UpdateRowsError.UnsupportedInputFieldShape.class);
+        assertThat(f.reason()).contains("title");
+    }
+
+    /**
      * R215 #8 — Same shape on a INSERT mutation rejects. INSERT has no WHERE clause for the
      * override condition to bind into.
      */
@@ -6634,6 +6692,62 @@ class GraphitronSchemaBuilderTest {
             @Override public Set<Class<?>> variants() { return Set.of(MutationField.MutationBulkDmlRecordField.class); }
         },
 
+        UPDATE_PAYLOAD_MUTATION_FIELD(
+            "R258: @mutation(typeName: UPDATE) with single @table input and a single-record DML "
+                + "payload → MutationUpdatePayloadField. The payload-returning UPDATE shares the "
+                + "structural-payload emit shape with MutationDmlRecordField but sources its SET/WHERE "
+                + "partition from the UpdateRowsWalker carrier (PK-or-UK), not @value.",
+            """
+            type Film @table(name: "film") { title: String }
+            type FilmPayload { film: Film }
+            input FilmUpdateInput @table(name: "film") { filmId: Int! @field(name: "film_id"), title: String }
+            type Query { x: String }
+            type Mutation {
+                updateFilmPayload(in: FilmUpdateInput!): FilmPayload @mutation(typeName: UPDATE)
+            }
+            """,
+            schema -> {
+                var f = (MutationField.MutationUpdatePayloadField)
+                    schema.field("Mutation", "updateFilmPayload");
+                assertThat(f.returnType().returnTypeName()).isEqualTo("FilmPayload");
+                assertThat(f.inputArg().table().tableName()).isEqualToIgnoringCase("film");
+                assertThat(f.inputArg().list()).isFalse();
+                // PK-or-UK partition: filmId (PK) → WHERE, title (non-key) → SET.
+                assertThat(f.updateRows().keyColumns()).extracting(c -> c.targetColumn().sqlName())
+                    .containsExactly("film_id");
+                assertThat(f.updateRows().setColumns()).extracting(c -> c.targetColumn().sqlName())
+                    .containsExactly("title");
+            }) {
+            @Override public Set<Class<?>> variants() { return Set.of(MutationField.MutationUpdatePayloadField.class); }
+        },
+
+        UPDATE_BULK_PAYLOAD_MUTATION_FIELD(
+            "R258: @mutation(typeName: UPDATE) with bulk @table input and a single-record DML carrier "
+                + "whose data field is list-shaped → MutationBulkUpdatePayloadField. Bulk sibling of "
+                + "MutationUpdatePayloadField; the emitter batches per-row UPDATE in input order off "
+                + "the same UpdateRows carrier partition.",
+            """
+            type Film @table(name: "film") { title: String }
+            type FilmsPayload { films: [Film!] }
+            input FilmUpdateInput @table(name: "film") { filmId: Int! @field(name: "film_id"), title: String }
+            type Query { x: String }
+            type Mutation {
+                updateFilmsPayload(in: [FilmUpdateInput!]!): FilmsPayload @mutation(typeName: UPDATE)
+            }
+            """,
+            schema -> {
+                var f = (MutationField.MutationBulkUpdatePayloadField)
+                    schema.field("Mutation", "updateFilmsPayload");
+                assertThat(f.returnType().returnTypeName()).isEqualTo("FilmsPayload");
+                assertThat(f.inputArg().list()).isTrue();
+                assertThat(f.updateRows().keyColumns()).extracting(c -> c.targetColumn().sqlName())
+                    .containsExactly("film_id");
+                assertThat(f.updateRows().setColumns()).extracting(c -> c.targetColumn().sqlName())
+                    .containsExactly("title");
+            }) {
+            @Override public Set<Class<?>> variants() { return Set.of(MutationField.MutationBulkUpdatePayloadField.class); }
+        },
+
         SERVICE_MUTATION_FIELD_NAME_OVERRIDE_TEXT_ENUM(
             "R53 + R229: argMapping override + text-mapped enum arg → Direct (graphql-java translates at the boundary; the Java-side map retired)",
             """
@@ -7652,7 +7766,8 @@ class GraphitronSchemaBuilderTest {
 
     @Test
     @ProjectionFor({
-        MutationField.MutationDmlRecordField.class, MutationField.MutationBulkDmlRecordField.class
+        MutationField.MutationDmlRecordField.class, MutationField.MutationBulkDmlRecordField.class,
+        MutationField.MutationUpdatePayloadField.class, MutationField.MutationBulkUpdatePayloadField.class
     })
     void dmlRecordProjectionCarriesBulkFlagAndKind() {
         // Single (non-bulk) DML record carrier — bulk = false.
@@ -7683,6 +7798,37 @@ class GraphitronSchemaBuilderTest {
         var bulk = (FieldClassification.DmlRecord) s2.fieldClassificationsByCoord().get("Mutation.createFilmsPayload");
         assertThat(bulk.bulk()).isTrue();
         assertThat(bulk.kind()).isEqualTo(DmlKind.INSERT);
+
+        // R258: the payload-returning UPDATE leaves project to DmlRecord with kind UPDATE off the
+        // slim InputArgRef (single → bulk = false, bulk → bulk = true), so the LSP catalog surfaces
+        // the same hover shape as the INSERT record carriers above.
+        var s3 = buildSnapshot("""
+            type Film @table(name: "film") { title: String }
+            type FilmPayload { film: Film }
+            input FilmUpdateInput @table(name: "film") { filmId: Int! @field(name: "film_id"), title: String }
+            type Query { x: String }
+            type Mutation {
+                updateFilmPayload(in: FilmUpdateInput!): FilmPayload @mutation(typeName: UPDATE)
+            }
+            """);
+        var updSingle = (FieldClassification.DmlRecord) s3.fieldClassificationsByCoord().get("Mutation.updateFilmPayload");
+        assertThat(updSingle.bulk()).isFalse();
+        assertThat(updSingle.kind()).isEqualTo(DmlKind.UPDATE);
+        assertThat(updSingle.tableName()).isEqualToIgnoringCase("film");
+        assertThat(updSingle.inputTypeName()).isEqualTo("FilmUpdateInput");
+
+        var s4 = buildSnapshot("""
+            type Film @table(name: "film") { title: String }
+            type FilmsPayload { films: [Film!] }
+            input FilmUpdateInput @table(name: "film") { filmId: Int! @field(name: "film_id"), title: String }
+            type Query { x: String }
+            type Mutation {
+                updateFilmsPayload(in: [FilmUpdateInput!]!): FilmsPayload @mutation(typeName: UPDATE)
+            }
+            """);
+        var updBulk = (FieldClassification.DmlRecord) s4.fieldClassificationsByCoord().get("Mutation.updateFilmsPayload");
+        assertThat(updBulk.bulk()).isTrue();
+        assertThat(updBulk.kind()).isEqualTo(DmlKind.UPDATE);
     }
 
     @Test
