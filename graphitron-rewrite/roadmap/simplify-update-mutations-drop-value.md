@@ -1,14 +1,24 @@
 ---
 id: R188
-title: "Replace @value with PK-default partition on UPDATE/DELETE"
+title: "Retire the @value directive (DELETE partition + directive removal)"
 status: Spec
 bucket: cleanup
-depends-on: []
+depends-on: [payload-update-onto-updaterows-carrier]
 created: 2026-05-20
-last-updated: 2026-05-27
+last-updated: 2026-05-29
 ---
 
-# Replace @value with PK-default partition on UPDATE/DELETE
+# Retire the @value directive (DELETE partition + directive removal)
+
+> **Re-scope after R246 (2026-05-29).** This spec was written when `TableInputArg.of(...)` partitioned every UPDATE by `@value`. That world is gone. **R246** moved the direct-`@table`/ID-return UPDATE onto `UpdateRowsWalker`, which partitions by **PK-or-UK matched-key membership** (not the PK-only rule this spec's "Partition" section describes) and ignores `@value`. **R258** (`payload-update-onto-updaterows-carrier`) does the same for the payload-returning UPDATE shapes. Once R258 lands, **no UPDATE path reads `@value`**, and R188's remaining job is narrowed to:
+>
+> 1. **DELETE.** Drop `@value`'s involvement on DELETE (today `@value` is *rejected* on DELETE; once the directive is gone those rejection clauses become vacuous) and make DELETE's PK-only input rule explicit as a typed classify-time diagnostic, as the "DELETE input fields are PK-only" subsection below already describes.
+> 2. **Directive retirement.** Remove the `@value` directive declaration, `DIR_VALUE`, `assertDirective(ctx, DIR_VALUE)`, `DmlKind.acceptsValueMarker()`, the `@value`-on-INSERT/DELETE rejection clauses, the `@value` + `@condition` mutual-exclusion check, and the `TableInputArg.setFields()` / `valueMarkedNames` plumbing in `ArgumentRef` / `MutationInputResolver` / `EnumMappingResolver`. Confirm no consumer survives once R258 migrates payload-UPDATE; INSERT does not *use* `@value`, it only rejects it.
+> 3. **Schema + doc cleanup.** Strip `@value` from the example schema and the embedded test SDL; delete `docs/manual/reference/directives/value.adoc`; rewrite the `@value`-referencing prose.
+>
+> **The UPDATE-side "Partition" design below (PK-vs-non-PK over the four carriers, the `TableInputArg.of` rework, the UPDATE-specific diagnostics) is SUPERSEDED** by R246's walker + R258's reuse of it; treat it as historical context, not the plan. The DELETE rule, the directive-retirement implementation list, and the doc cleanup remain live. A full Backlog -> Spec re-draft against the post-R258 codebase should precede picking this up. Note the semantic divergence to reconcile: R246/R258 use **PK-or-UK** coverage, while the prose below assumes **PK-only**; decide whether DELETE follows PK-or-UK to match, or stays PK-only.
+
+---
 
 UPDATE mutations today partition `@table` input fields by an explicit `@value` directive: marked fields become SET, unmarked fields become WHERE. The partition is mechanical and the schema already implies it via PK metadata; PK columns identify the row (WHERE), non-PK columns carry the new values (SET). The `@value` directive and its paired structural diagnostics ("no @value fields", "every field is @value-marked") exist to police a partition the catalog already knows.
 
