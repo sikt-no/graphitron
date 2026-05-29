@@ -16,7 +16,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 |---|---|---|---|---|
 | `R19` | Rebase and squash rewrite branch onto main | Ready |  | [plan](history-squash.md) |
 | `R222` | Dimensional model pivot: slots over cross-product permits | Spec | 2026-05-28 <sub>created 2026-05-21</sub> | [plan](dimensional-model-pivot.md) |
-| `R238` | ServiceMethodCall walker carrier (R222 foundation slice) | In Progress | 2026-05-29 <sub>created 2026-05-25</sub> | [plan](methodcall-walker-carrier.md) |
+| `R238` | ServiceMethodCall walker carrier (R222 foundation slice) | In Review | 2026-05-29 <sub>created 2026-05-25</sub> | [plan](methodcall-walker-carrier.md) |
 | `R246` | UpdateRows walker carrier (R222 UPDATE slice) with PK-or-UK identification <sub>blocked by: [methodcall-walker-carrier](methodcall-walker-carrier.md)</sub> | In Progress | 2026-05-28 <sub>created 2026-05-27</sub> | [plan](updaterows-walker-carrier.md) |
 | `R45` | Multi-tenant routing on top of the schema-driven ExecutionInput factory | Spec | 2026-05-20 | [plan](tenant-routing-and-execution-input.md) |
 | `R255` | Dedupe duplicate column projection in @reference DBQueries (RC-6 regression) | In Review | 2026-05-28 | [plan](dedupe-reference-projection.md) |
@@ -197,7 +197,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 - `R256` [**Absorb the service walker substrate: typed per-arm errors + multi-arg ctors**](service-walker-substrate-absorption.md) — Backlog, structural, blocked by [methodcall-walker-carrier](methodcall-walker-carrier.md)
 - `R222` [**Dimensional model pivot: slots over cross-product permits**](dimensional-model-pivot.md) — Spec, structural
-- `R238` [**ServiceMethodCall walker carrier (R222 foundation slice)**](methodcall-walker-carrier.md) — In Progress, structural
+- `R238` [**ServiceMethodCall walker carrier (R222 foundation slice)**](methodcall-walker-carrier.md) — In Review, structural
 - `R171` [**Fold InputType and TableInputType under sealed parent InputLikeType**](input-like-type-sealed-parent.md) — Backlog, architecture
 - `R103` [**Lift jOOQ column defaults onto input fields connected to that column**](lift-jooq-column-defaults-onto-inputs.md) — Backlog, architecture
 - `R249` [**Nested @argMapping syntax via GraphQLSelectionParser**](nested-argmapping-syntax.md) — Backlog, feature

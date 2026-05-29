@@ -1,7 +1,7 @@
 ---
 id: R238
 title: ServiceMethodCall walker carrier (R222 foundation slice)
-status: In Progress
+status: In Review
 bucket: structural
 priority: 3
 theme: structural-refactor
