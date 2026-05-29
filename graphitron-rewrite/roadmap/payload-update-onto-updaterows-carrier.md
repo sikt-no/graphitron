@@ -1,7 +1,7 @@
 ---
 id: R258
 title: Payload-returning UPDATE onto the UpdateRows carrier
-status: Spec
+status: Ready
 bucket: structural
 priority: 4
 theme: structural-refactor
