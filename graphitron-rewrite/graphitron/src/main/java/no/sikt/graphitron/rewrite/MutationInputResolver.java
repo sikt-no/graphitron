@@ -507,16 +507,17 @@ final class MutationInputResolver {
         }
 
         if (kind == DmlKind.UPDATE) {
-            if (foundTia.setFields().isEmpty()) {
-                return new Resolved.Rejected(Rejection.structural(
-                    "@mutation(typeName: UPDATE) has no @value fields to set; mark at least one "
-                    + "input field with @value to define the SET clause"));
-            }
-            if (foundTia.lookupKeyFields().isEmpty()) {
-                return new Resolved.Rejected(Rejection.structural(
-                    "@mutation(typeName: UPDATE) has no filter fields (every input field is "
-                    + "@value-marked); UPDATE without a WHERE clause would update every row"));
-            }
+            // R246 + R258: every UPDATE is intercepted in FieldBuilder before this call — the
+            // direct-@table/ID-return shape by classifyUpdateTableField, the payload-returning shape
+            // by classifyUpdatePayloadField — and partitioned by the UpdateRowsWalker's PK-or-UK
+            // matched-key membership, never by @value. Reaching here means a future regression
+            // routed an UPDATE back onto resolveInput; fail the build loudly rather than silently
+            // re-demanding @value (R188 retires the directive and this whole arm). Same
+            // "classifier guarantee made loud" pattern as FieldBuilder's final-switch UPDATE arm.
+            throw new IllegalStateException(
+                "MutationInputResolver.resolveInput reached with DmlKind.UPDATE — UPDATE is "
+                + "intercepted in FieldBuilder by classifyUpdateTableField / classifyUpdatePayloadField "
+                + "before resolveInput and never reaches the @value partition (R246 / R258).");
         }
 
         if (kind.requiresPkCoverage() && !multiRow) {

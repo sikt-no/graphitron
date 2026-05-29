@@ -1250,17 +1250,19 @@ input FilmCreateInput @table(name: "film") {
     rentalDuration: Int     @field(name: "rental_duration")
 }
 
-# R22 Phase 4 fixture: minimal UPDATE input. `filmId` defaults to the WHERE filter
-# (PK-covering, R144's filter-by-default rule); `title` and `description` carry `@value`
-# to land in the SET clause. R144 requires at least one `@value` field on UPDATE.
+# R258 fixture: minimal UPDATE input, partitioned by the UpdateRowsWalker's PK-or-UK
+# matched-key membership (no `@value`). `filmId` covers the single-column PK, so it lands in
+# the WHERE clause; the non-key columns `title` and `description` land in the SET clause. This
+# input type is shared by the direct-return UPDATEs (`updateFilm` / `updateFilms`, R246) and the
+# payload-returning UPDATEs (`updateFilmPayload` / `updateFilmsPayload`, R258); both ignore
+# `@value`, which is why the directive could leave this fixture (the precondition for R188).
 input FilmUpdateInput @table(name: "film") {
     filmId:      Int!    @field(name: "film_id")
-    title:       String! @field(name: "title") @value
-    # R77 Phase C: optional `@value` field used by the missing-vs-null execution tests
-    # on single-row UPDATE. Sakila's `description` is a nullable `text` column: omitting
-    # drops it from the SET clause (PATCH semantics); explicit null binds typed null
-    # (writes SQL NULL).
-    description: String  @field(name: "description") @value
+    title:       String! @field(name: "title")
+    # R77 Phase C: optional non-key column used by the missing-vs-null execution tests on
+    # single-row UPDATE. Sakila's `description` is a nullable `text` column: omitting drops it
+    # from the SET clause (PATCH semantics); explicit null binds typed null (writes SQL NULL).
+    description: String  @field(name: "description")
 }
 
 # R77 Phase F fixture: minimal DELETE input. `filmId` is a WHERE filter by default
