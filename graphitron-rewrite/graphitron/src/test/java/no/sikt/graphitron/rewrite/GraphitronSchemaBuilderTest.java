@@ -7490,6 +7490,46 @@ class GraphitronSchemaBuilderTest {
                 // walker because the filter would not be emitted (UnsupportedInputFieldShape).
                 var f = (UnclassifiedField) schema.field("Mutation", "updateFilm");
                 assertThat(f.reason()).contains("filmId", "@condition", "not supported");
+            }),
+
+        R246_UPDATE_MULTIROW_TRUE_DEFERRED(
+            "R246: multiRow: true on a direct-@table/ID-return UPDATE → UnclassifiedField with Rejection.Deferred (empty slug); the broadcast semantics has no replacement path",
+            """
+            type Film @table(name: "film") { title: String }
+            input FilmInput @table(name: "film") {
+                filmId: Int! @field(name: "film_id")
+                title: String
+            }
+            type Query { x: String }
+            type Mutation { updateFilms(in: FilmInput!): Film @mutation(typeName: UPDATE, multiRow: true) }
+            """,
+            schema -> {
+                var f = (UnclassifiedField) schema.field("Mutation", "updateFilms");
+                assertThat(f.rejection()).isInstanceOf(Rejection.Deferred.class);
+                assertThat(((Rejection.Deferred) f.rejection()).planSlug()).isEmpty();
+                assertThat(f.reason()).contains("UPDATE", "multiRow: true", "not yet supported");
+            }),
+
+        R246_UPDATE_ARG_CONDITION_STRUCTURAL_REJECTED(
+            "R246: arg-level @condition on a direct-@table/ID-return UPDATE @mutation field argument → UnclassifiedField with Rejection.AuthorError.Structural",
+            """
+            type Film @table(name: "film") { title: String }
+            input FilmInput @table(name: "film") {
+                filmId: Int! @field(name: "film_id")
+                title: String
+            }
+            type Query { x: String }
+            type Mutation {
+                updateFilm(
+                    in: FilmInput!
+                    @condition(condition: {className: "no.sikt.graphitron.rewrite.TestConditionStub", method: "argCondition"})
+                ): Film @mutation(typeName: UPDATE)
+            }
+            """,
+            schema -> {
+                var f = (UnclassifiedField) schema.field("Mutation", "updateFilm");
+                assertThat(f.rejection()).isInstanceOf(Rejection.AuthorError.Structural.class);
+                assertThat(f.reason()).contains("@condition", "@mutation field argument", "not supported");
             });
 
         final String description;
