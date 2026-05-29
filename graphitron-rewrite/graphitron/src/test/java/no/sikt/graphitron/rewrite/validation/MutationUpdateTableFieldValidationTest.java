@@ -26,14 +26,21 @@ class MutationUpdateTableFieldValidationTest {
             new MutationUpdateTableField(
                 "Mutation", "updateFilm", null,
                 new DmlReturnExpression.ProjectedSingle("Film"),
-                ArgumentRef.InputTypeArg.TableInputArg.of(
-                    "in", "FilmInput", true, false,
-                    TestFixtures.tableRef("film", "FILM", "Film", List.of()),
-                    List.of(),
-                    Optional.empty(),
-                    List.of(),
-                    no.sikt.graphitron.rewrite.model.DmlKind.UPDATE,
-                    java.util.Set.of()),
+                new no.sikt.graphitron.rewrite.model.InputArgRef(
+                    "in", "FilmInput",
+                    TestFixtures.tableRef("film", "FILM", "Film", List.of()), false),
+                new no.sikt.graphitron.rewrite.model.UpdateRows.Identified(
+                    new no.sikt.graphitron.rewrite.model.MatchedKey.PrimaryKey(
+                        List.of(new no.sikt.graphitron.rewrite.model.ColumnRef("film_id", "FILM_ID", "java.lang.Integer")),
+                        "film_pkey"),
+                    List.of(new no.sikt.graphitron.rewrite.model.SetColumn(
+                        "title",
+                        new no.sikt.graphitron.rewrite.model.ColumnRef("title", "TITLE", "java.lang.String"),
+                        new no.sikt.graphitron.rewrite.model.CallSiteExtraction.Direct())),
+                    List.of(new no.sikt.graphitron.rewrite.model.KeyColumn(
+                        "filmId",
+                        new no.sikt.graphitron.rewrite.model.ColumnRef("film_id", "FILM_ID", "java.lang.Integer"),
+                        new no.sikt.graphitron.rewrite.model.CallSiteExtraction.Direct()))),
                 Optional.empty()),
             List.of());
 

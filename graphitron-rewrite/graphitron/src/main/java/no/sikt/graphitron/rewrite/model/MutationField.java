@@ -34,7 +34,6 @@ public sealed interface MutationField extends RootField, WithErrorChannel
             permits MutationInsertTableField, MutationUpdateTableField,
                     MutationDeleteTableField, MutationUpsertTableField {
         DmlReturnExpression returnExpression();
-        ArgumentRef.InputTypeArg.TableInputArg tableInputArg();
         SourceLocation location();
     }
 
@@ -47,12 +46,12 @@ public sealed interface MutationField extends RootField, WithErrorChannel
      */
     private static DomainReturnType dmlDomainReturnType(
             DmlReturnExpression expr,
-            ArgumentRef.InputTypeArg.TableInputArg tableInputArg) {
+            TableRef table) {
         return switch (expr) {
             case DmlReturnExpression.EncodedSingle ignored -> new DomainReturnType.Plain(OutputField.STRING_CLASS);
             case DmlReturnExpression.EncodedList ignored   -> new DomainReturnType.Plain(OutputField.STRING_CLASS);
-            case DmlReturnExpression.ProjectedSingle ignored -> new DomainReturnType.Record(tableInputArg.inputTable());
-            case DmlReturnExpression.ProjectedList ignored   -> new DomainReturnType.Record(tableInputArg.inputTable());
+            case DmlReturnExpression.ProjectedSingle ignored -> new DomainReturnType.Record(table);
+            case DmlReturnExpression.ProjectedList ignored   -> new DomainReturnType.Record(table);
         };
     }
 
@@ -65,20 +64,29 @@ public sealed interface MutationField extends RootField, WithErrorChannel
         Optional<ErrorChannel> errorChannel
     ) implements DmlTableField {
         @Override public DomainReturnType domainReturnType() {
-            return dmlDomainReturnType(returnExpression, tableInputArg);
+            return dmlDomainReturnType(returnExpression, tableInputArg.inputTable());
         }
     }
 
+    /**
+     * R246: the {@code @mutation(typeName: UPDATE)} field that returns its {@code @table} type
+     * directly. Unlike its INSERT / DELETE / UPSERT siblings it carries no {@code TableInputArg};
+     * its input semantics are dissolved into the walker-produced {@link UpdateRows} carrier plus
+     * the slim {@link InputArgRef} arg surface (per R222: input fields have no semantics
+     * independent of the consuming field). Both slots are non-Optional; the field is only
+     * constructed when the FieldBuilder pre-checks and the {@code UpdateRowsWalker} both pass.
+     */
     record MutationUpdateTableField(
         String parentTypeName,
         String name,
         SourceLocation location,
         DmlReturnExpression returnExpression,
-        ArgumentRef.InputTypeArg.TableInputArg tableInputArg,
+        InputArgRef inputArg,
+        UpdateRows updateRows,
         Optional<ErrorChannel> errorChannel
-    ) implements DmlTableField {
+    ) implements DmlTableField, UpdateRowsField {
         @Override public DomainReturnType domainReturnType() {
-            return dmlDomainReturnType(returnExpression, tableInputArg);
+            return dmlDomainReturnType(returnExpression, inputArg.table());
         }
     }
 
@@ -91,7 +99,7 @@ public sealed interface MutationField extends RootField, WithErrorChannel
         Optional<ErrorChannel> errorChannel
     ) implements DmlTableField {
         @Override public DomainReturnType domainReturnType() {
-            return dmlDomainReturnType(returnExpression, tableInputArg);
+            return dmlDomainReturnType(returnExpression, tableInputArg.inputTable());
         }
     }
 
@@ -104,7 +112,7 @@ public sealed interface MutationField extends RootField, WithErrorChannel
         Optional<ErrorChannel> errorChannel
     ) implements DmlTableField {
         @Override public DomainReturnType domainReturnType() {
-            return dmlDomainReturnType(returnExpression, tableInputArg);
+            return dmlDomainReturnType(returnExpression, tableInputArg.inputTable());
         }
     }
 

@@ -320,10 +320,17 @@ public final class CatalogBuilder {
                     errorChannelName(f.errorChannel()));
 
             // --- MutationField permits ---
-            case MutationField.MutationInsertTableField f -> dmlMutation(f, no.sikt.graphitron.rewrite.model.DmlKind.INSERT);
-            case MutationField.MutationUpdateTableField f -> dmlMutation(f, no.sikt.graphitron.rewrite.model.DmlKind.UPDATE);
-            case MutationField.MutationDeleteTableField f -> dmlMutation(f, no.sikt.graphitron.rewrite.model.DmlKind.DELETE);
-            case MutationField.MutationUpsertTableField f -> dmlMutation(f, no.sikt.graphitron.rewrite.model.DmlKind.UPSERT);
+            case MutationField.MutationInsertTableField f -> dmlMutation(f.tableInputArg(), no.sikt.graphitron.rewrite.model.DmlKind.INSERT, f.errorChannel());
+            case MutationField.MutationUpdateTableField f ->
+                // R246: UPDATE carries InputArgRef instead of TableInputArg; the table name and
+                // input type name come off the slim arg surface (both non-Optional by construction).
+                new FieldClassification.DmlMutation(
+                    f.inputArg().table().tableName(),
+                    f.inputArg().inputTypeName(),
+                    no.sikt.graphitron.rewrite.model.DmlKind.UPDATE,
+                    errorChannelName(f.errorChannel()));
+            case MutationField.MutationDeleteTableField f -> dmlMutation(f.tableInputArg(), no.sikt.graphitron.rewrite.model.DmlKind.DELETE, f.errorChannel());
+            case MutationField.MutationUpsertTableField f -> dmlMutation(f.tableInputArg(), no.sikt.graphitron.rewrite.model.DmlKind.UPSERT, f.errorChannel());
             case MutationField.MutationServiceTableField f ->
                 new FieldClassification.MutationService(
                     f.serviceMethodCall().fqClassName(),
@@ -388,14 +395,15 @@ public final class CatalogBuilder {
     }
 
     private static FieldClassification dmlMutation(
-        MutationField.DmlTableField f, no.sikt.graphitron.rewrite.model.DmlKind kind
+        no.sikt.graphitron.rewrite.ArgumentRef.InputTypeArg.TableInputArg inputArg,
+        no.sikt.graphitron.rewrite.model.DmlKind kind,
+        java.util.Optional<no.sikt.graphitron.rewrite.model.ErrorChannel> errorChannel
     ) {
-        var inputArg = f.tableInputArg();
         return new FieldClassification.DmlMutation(
             inputArg != null && inputArg.inputTable() != null ? inputArg.inputTable().tableName() : null,
             inputArg != null ? inputArg.typeName() : null,
             kind,
-            errorChannelName(f.errorChannel())
+            errorChannelName(errorChannel)
         );
     }
 

@@ -180,7 +180,7 @@ public final class MappingsConstantNameDedup {
                 f.parentTypeName(), f.name(), f.location(), f.returnExpression(), f.tableInputArg(),
                 present);
             case MutationField.MutationUpdateTableField f -> new MutationField.MutationUpdateTableField(
-                f.parentTypeName(), f.name(), f.location(), f.returnExpression(), f.tableInputArg(),
+                f.parentTypeName(), f.name(), f.location(), f.returnExpression(), f.inputArg(), f.updateRows(),
                 present);
             case MutationField.MutationDeleteTableField f -> new MutationField.MutationDeleteTableField(
                 f.parentTypeName(), f.name(), f.location(), f.returnExpression(), f.tableInputArg(),
