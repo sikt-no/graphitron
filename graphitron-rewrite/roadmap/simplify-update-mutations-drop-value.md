@@ -3,7 +3,7 @@ id: R188
 title: "Retire the @value directive (DELETE partition + directive removal)"
 status: Spec
 bucket: cleanup
-depends-on: [payload-update-onto-updaterows-carrier]
+depends-on: []
 created: 2026-05-20
 last-updated: 2026-05-29
 ---
