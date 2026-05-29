@@ -1,7 +1,7 @@
 ---
 id: R238
 title: ServiceMethodCall walker carrier (R222 foundation slice)
-status: In Review
+status: Ready
 bucket: structural
 priority: 3
 theme: structural-refactor
@@ -15,6 +15,26 @@ last-updated: 2026-05-29
 The slice lands R222's walker-carrier pattern on the root sync `@service` paths. Four permits migrate: `QueryServiceTableField`, `QueryServiceRecordField`, `MutationServiceTableField`, `MutationServiceRecordField`. Each loses its `MethodRef method` component and gains `ServiceMethodCall serviceMethodCall`, populated by a producer (`ServiceMethodCallWalker`) that reads the field's SDL definition plus the codegen classloader directly. The fetcher emitter for these four (`buildServiceFetcherCommon`) passes the carrier to a shared `ServiceMethodCallEmitter` that returns the lambda body's statements. Alongside the carrier, the slice lands the plumbing every subsequent walker-carrier slice inherits: the `WalkerResult<C>` sealed wrapper, the sealed `AuthorError.Structural` sub-arm pattern, the LSP `Diagnostic` wire conventions, and the orchestrator's collect-Err-exclude-field flow.
 
 The slice is a complete vertical for root sync `@service`. It retires four legacy carryovers that would otherwise leave the new architecture half-applied: silent first-match method resolution, head-only paths in input-bean instantiation, the `(DSLContext)`-only ctor restriction, and locally-reflected context-key types. Each retirement is a producer-side change in the walker; the carrier and emitter contracts absorb them without further extension.
+
+## Review feedback (In Review → Ready, 2026-05-29)
+
+Independent reviewer, In Review → Done gate. **Outcome: rework.** The architectural vertical is sound and the full pipeline (`mvn -f graphitron-rewrite/pom.xml install -Plocal-db`) is green end-to-end (graphitron core, lsp, maven-plugin, sakila-example compilation + execution tiers). The carrier now drives all four root-sync `@service` fetchers; the `MethodRef` slot and `MethodBackedField` clause are retired; the context-arg `ServiceField` harvest and its pipeline tests (agreement + disagreement) landed and are good; no banned code-string body assertions were introduced. The walker-substrate concession (translator over a resolved `MethodRef.Service` rather than direct SDL+classloader reflection) is **accepted** ; it is documented and relied on downstream (`errorchannel-walker-carrier.md:155`, `dimensional-model-pivot.md:39`), so it is not itself a rework trigger.
+
+What blocks Done is that the slice **as recorded overstates what shipped** and leaves untracked scaffold:
+
+1. **10 of 12 `ServiceMethodCallError` arms are dead code.** Only `MultipleDslContextSlots` and `ParameterUnbindable` are produced by the walker; the other ten (`ClassNotLoadable`, `AmbiguousMethod`, `ReturnTypeMismatch`, `InstanceHolderMissingCtor`, `CtorParamFromArg`, `ParameterNamesMissing`, `InputBeanShape`, `ArgMappingParseError`, `ArgMappingUnknownArg`, `ArgMappingPathRejected`) are never instantiated in main and never referenced in any test. Their `message()` / `lspCode()` wire strings and the "LSP wire conventions" + "Producer-side failure modes" tables in this spec are an unpinned wire-contract ; exactly the false-invariant family that `rewrite-design-principles.adoc` § "Documentation names only live tests/code" names. The "Producer-side failure modes" table's claim that "the walker routes today's existing rejections through `WalkerResult.Err`" is false for 11 of 13 rows (the upstream resolver still produces them in prose).
+2. **Two of the four advertised carryover-retirements did not ship.** `ServiceMethodCallWalker`'s javadoc admits `Instance.ctorArgs()` is "always `[FromDsl]` on the current trunk" ; the `(DSLContext)`-only ctor restriction is *not* retired, and first-class multi-arg constructors (Carrier-shape § line "Multi-arg constructors ... are first-class") are not delivered. Silent first-match resolution is likewise not retired (`AmbiguousMethod` is one of the dead arms). Only head-only-path and locally-reflected-context-type retirements actually landed.
+3. **Spec-named rejection-test contracts are unmet.** Unit tier (Tests §): "one rejection case per `ServiceMethodCallError.*` arm plus `UnknownName(SERVICE_METHOD)`" ; 1 of 13 present (`MultipleDslContextSlots`). Also missing: the walker-discipline test, `AmbiguousMethod` arity disambiguation, SDL-cycle → `InputBeanShape`, the multi-arg-ctor unit case. Pipeline tier: "seven rejection arms" ; 1 of 7 present. (Positives and the context-arg harvest tests are fine.)
+4. **Plan housekeeping not done.** The "Handoff (2026-05-28)" section below still declares the item In Progress, presents Strategy A vs B as an open choice, and lists shipped work (Strategy A's destructive cutover, commits `9a183de`…`34ebddd`) as "deferred / concrete next steps." No phases collapsed to `shipped at <sha>`; no follow-up roadmap item owns the deferred wiring.
+
+Minor (not blocking, fold into the follow-up): `ContextArgumentClassifier.syntheticServiceMethodRef` fabricates a `MethodRef.Service` with empty params/exceptions/`Static(false)` solely to satisfy `ConflictSite.site()`, and the bean-helper queue converts `ValueShape` composites back into synthetic `CallSiteExtraction.InputBean`. Both are contained, but they are the "transitional cruft" the Spec phase pushed back on (`c24e7ed`); the Consumer-migration §'s sealed `ConflictSite.site` two-arm widening would be cleaner.
+
+**To reach Done, do one of:**
+
+- **Path 1 (lighter, recommended) ; formalize the landing.** Trim the ten unreachable `ServiceMethodCallError` arms (and their wire-code/failure-mode table rows) down to what the translator-walker actually produces; rewrite the intro's "retires four legacy carryovers" to name only the two that shipped and move the other two to Out-of-scope; collapse the handoff to `shipped at <sha>` notes; and **file a follow-up roadmap item** owning walker-substrate absorption + per-arm error wiring + the spec-named per-arm unit/pipeline tests + multi-arg-ctor support. This is essentially the Strategy-B bookkeeping the handoff sketched, applied on top of Strategy A's cutover.
+- **Path 2 (heavier) ; finish the spec as written.** Absorb the walker substrate so the arms become reachable, deliver multi-arg ctor resolution, and add the spec-named per-arm unit and pipeline rejection tests.
+
+The reviewer-session ≠ implementer-session rule applies again next cycle.
 
 ## Target emitted code
 
