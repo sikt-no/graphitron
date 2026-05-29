@@ -142,13 +142,57 @@ what pins the "this becomes a record, not columns" certainty in the type.
 `NodeIdDecodeRecord` reuses `HelperRef.Decode` unchanged; `nonNull` drives
 throw-vs-null and is read off SDL nullability at classify time.
 
+`nonNull` is **not** the `NodeIdDecodeKeys` Skip-vs-Throw axis re-encoded as a
+boolean. The decode-*mismatch* throw is unconditional here (a wrong-type id at a
+record-materialize slot is always a contract violation; see the helper body
+above), so this leaf never carries the Skip arm. `nonNull` governs the *separate*
+null-wire-value branch: on an `ID!` field a `null`/absent wire value throws, on an
+`ID` field it yields a `null` member. The javadoc on the permit must name this
+distinction so a reviewer does not read `nonNull` as a redundant restatement of
+the sibling sealed taxonomy.
+
 Because `CallSiteExtraction` is a top-level sealed, adding a permit makes every
-exhaustive switch over it a compile error until handled ; that is the intended
-forcing function. The only legal producer is `InputBeanResolver`; the only legal
-consumer is `InputBeanInstantiationEmitter`. Other `CallSiteExtraction` switches
-(notably `ArgCallEmitter.buildArgExtraction`) get an explicit unreachable arm
-("`NodeIdDecodeRecord` is an input-bean field leaf only") rather than a silent
-default.
+**exhaustive, `default`-free** switch over it a compile error until handled ; that
+is the intended forcing function. The one legal producer is `InputBeanResolver`.
+But the leaf has **two** live consumers of `FieldBinding.leaf()`, not one, and the
+forcing function only catches the `default`-free switches: a `default ->` or an
+`instanceof`-ladder fallback swallows the new permit silently. The full consumer
+inventory (architect finding, R195 review) and the required disposition per site:
+
+- **`InputBeanInstantiationEmitter.perFieldValueExpr`** (`:129-138`) ; `switch`
+  with `default -> throw`. Disposition: real `NodeIdDecodeRecord` arm (emits the
+  helper call + per-type `decode<Type>Record` helper). The happy-path consumer.
+- **`ServiceMethodCallWalker.fieldBindingShape`** (`:190-208`) →
+  **`ServiceMethodCallEmitter.scalarLeaf`** (`:153-163`) ; `isLeaf`
+  `instanceof`-ladder, then `else -> new Direct()`, and the `Direct` then hits
+  `scalarLeaf`'s `default -> ($T) cast`. Disposition: **load-bearing.** This is the
+  R238 `@service` emission path and it walks `InputBean` fields too
+  (`inputBeanToValueShape :178-188`). A `NodeIdDecodeRecord` leaf reaching here is
+  silently rewritten to `Direct` and cast to `(SakRecord) raw` ; the exact
+  `ClassCastException` this item exists to kill, on a second path. The compiler
+  will *not* flag it. Either teach this path the leaf (real arm) or reject it ;
+  whichever, the handling must be pinned by a test, not asserted.
+- **`FieldBuilder.javaTypeFor`** (`:1279-1287`) ; exhaustive, `default`-free.
+  Disposition: compile-breaks, add an explicit arm. Column-bound `javaType`
+  resolution; `NodeIdDecodeRecord` is input-bean-only, so an unreachable/throw arm
+  naming that fact is correct.
+- **`ArgCallEmitter.buildArgExtraction`** (`:272-298`) ; exhaustive over
+  `CallSiteExtraction`. Disposition: explicit unreachable arm
+  ("`NodeIdDecodeRecord` is an input-bean field leaf only").
+
+`LookupValuesJoinEmitter`'s decode switch (`:328-334`) is intentionally *excluded*:
+it switches over `DecodeBinding.extraction`, which is statically typed
+`NodeIdDecodeKeys` (`:101`), not the top-level `CallSiteExtraction`, so the new
+permit cannot reach it and it needs no arm. The implementer should re-confirm this
+static-type fact rather than trusting the exclusion blindly, but it is not a site
+to touch.
+
+Per-site, the disposition is reject-or-pin: even where the conclusion is
+"unreachable by construction," the design principle "documentation names only
+live tests/code" wants the unreachability backed by a test or a structural
+guarantee, not an inline assertion. The `ServiceMethodCallWalker` silent-`Direct`
+rewrite is the one that turns this from belt-and-suspenders into the *only* real
+guard on the `@service` path, so its coverage is not optional.
 
 ### Decode-helper resolution: reuse, don't duplicate
 
@@ -162,18 +206,25 @@ changes.
 Instead: resolve `@nodeId(typeName:)` → the backing SDL object type → its
 `@table` name (in scope at the resolver), then call the **existing**
 `BuildContext.resolveDecodeHelperForTable(tableName, typeId, keyColumns)`
-(`BuildContext.java:2080-2105`). Key-column resolution stays in one place. If the
+(`BuildContext.java:2111-2136`). Key-column resolution stays in one place. If the
 key columns are needed before that call, extract
 `NodeIdLeafResolver.resolveTargetKeys` into a shared `BuildContext` method both
 sites call, rather than copying it.
 
-**Correctness subtlety to honour (architect finding 2):**
-`resolveDecodeHelperForTable` derives the decode-method *suffix* from
-`findGraphQLTypeForTable` (singular). When several object types back one table
-that disagrees with the author's explicit `@nodeId(typeName: "Sak")`. The decode
-helper name must be `decode<Sak>` (the author-given typeName), not
-`decode<firstTypeForTable>`. Resolve the suffix from the typeName side; use the
-table only for key columns.
+**Correctness subtlety to honour (architect finding 2):** calling
+`resolveDecodeHelperForTable(tableName, typeName, keyColumns)` *as-is reproduces
+the bug.* In its primary branch (`BuildContext.java:2118-2124`) it ignores the
+passed `typeName` and recomputes the suffix from `findGraphQLTypeForTable(table)`
+(singular); the passed name is only consulted in the no-GraphQL-type-backing
+fallback (`:2133-2135`). `findGraphQLTypeForTable` returns the single backing type
+or *empty* on ambiguity, so when several object types back one table the suffix
+either disagrees with the author's explicit `@nodeId(typeName: "Sak")` or
+collapses to the fallback. The decode helper name must be `decode<Sak>` (the
+author-given typeName), not `decode<someTypeForTable>`. The fix is a
+typeName-anchored suffix, which the existing method does **not** do in its primary
+branch: either add a typeName-first overload/path that uses the table only for key
+columns, or resolve the suffix from the typeName side before the call. Do not
+assume the existing entry point already honours this.
 
 ### Loud rejection
 
@@ -196,7 +247,12 @@ member's loaded Java type is assignable to `org.jooq.Record`, branch:
 "Validator mirrors classifier invariants" principle bans. Replace it with an
 explicit arm per leaf, including the new `NodeIdDecodeRecord` arm that emits the
 helper call + the per-type `decode<Type>Record` helper. A classifier may produce
-the new leaf *iff* the emitter has a real arm for it.
+the new leaf *iff* every consumer that walks `FieldBinding.leaf()` has a real arm
+or a pinned rejection for it ; see the consumer inventory table in "Model: a
+dedicated leaf variant" for the full per-site disposition. The crucial second
+consumer is `ServiceMethodCallWalker.fieldBindingShape`, whose silent
+`else -> new Direct()` fallback is *not* compiler-flagged and would otherwise
+reintroduce the cast on the `@service` path.
 
 ## Tests
 
@@ -206,8 +262,16 @@ the new leaf *iff* the emitter has a real arm for it.
   helper and the bean-field assignment goes through it, with no raw
   `(SomeRecord) raw.get(...)` cast. (TypeSpec-shape / behaviour assertions; no
   code-string body assertions, per the test-tier ban.)
-- **Rejection test.** A jOOQ-record bean member with no `@nodeId` (and the
-  composite-key punt) fails the build via a named `Rejection`.
+- **Rejection test.** A jOOQ-record bean member with no `@nodeId` fails the build
+  via a named `Rejection`. Cover the composite-key punt explicitly as its own
+  rejection case (it is a distinct ladder branch, not a fall-through).
+- **`@service`-path no-cast guard (load-bearing).** The decode happy-path test
+  must exercise the R238 `@service` emission path (`ServiceMethodCallWalker` /
+  `ServiceMethodCallEmitter`), not only `InputBeanInstantiationEmitter`, and
+  assert no raw `(SomeRecord) ...` cast survives there. This is the path the
+  sealed-permit forcing function does *not* protect; without a test, the silent
+  `Direct` rewrite is unguarded. If the chosen disposition for any consumer is
+  "unreachable by construction," that unreachability gets a test too.
 - **Compilation tier.** A fixture in `graphitron-sakila-example` exercising a
   single-key `@nodeId` record member compiles against the real jOOQ catalog
   (catches `from`/type mismatch). Sakila has single-column-PK tables suitable for
@@ -222,10 +286,19 @@ the new leaf *iff* the emitter has a real arm for it.
 - `model/CallSiteExtraction.java` ; the `NodeIdDecodeRecord` permit.
 - `generators/InputBeanInstantiationEmitter.java` ; the new leaf arm + per-type
   `decode<Type>Record` helper; remove the `default -> throw`.
-- `generators/ArgCallEmitter.java` (and any other exhaustive
-  `CallSiteExtraction` switch the compiler flags) ; explicit unreachable arm.
-- `BuildContext.java` ; reuse `resolveDecodeHelperForTable`; possibly host a
-  shared `resolveTargetKeys` lifted from `NodeIdLeafResolver`.
+- `walker/ServiceMethodCallWalker.java` + `generators/ServiceMethodCallEmitter.java`
+  ; the load-bearing second consumer. Teach the leaf or reject it; the current
+  `else -> new Direct()` (`ServiceMethodCallWalker:200-201`) and `scalarLeaf`'s
+  `default -> ($T) cast` (`ServiceMethodCallEmitter:161-162`) silently miscompile
+  the new leaf. Not compiler-flagged ; must be handled by hand + test.
+- `FieldBuilder.java` (`javaTypeFor :1279-1287`) ; exhaustive `default`-free
+  switch, will compile-break ; add an explicit (unreachable, input-bean-only) arm.
+- `generators/ArgCallEmitter.java` (`buildArgExtraction :272-298`) ; explicit
+  unreachable arm.
+- `BuildContext.java` ; reuse `resolveDecodeHelperForTable`, but note its primary
+  branch derives the suffix from the table not the typeName (see finding 2) ; a
+  typeName-anchored suffix path is required. Possibly host a shared
+  `resolveTargetKeys` lifted from `NodeIdLeafResolver:386-412`.
 
 ## Deferred / out of scope
 
