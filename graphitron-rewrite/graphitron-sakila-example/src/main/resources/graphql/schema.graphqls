@@ -71,13 +71,17 @@ type Query {
         order: [FilmOrderBy] @orderBy,
         first: Int, last: Int, after: String, before: String
     ): FilmsConnection! @defaultOrder(primaryKey: true)
-    # R243: per-field direction on @defaultOrder. Heterogeneous spec — release_year DESC
-    # then title ASC. Exercises the lifted ColumnOrderEntry.direction model and the
-    # emitter's per-entry direction handling against real jOOQ classes.
-    filmsByYearDescTitleAsc(
+    # R243: per-field direction on @defaultOrder. Heterogeneous spec — rental_rate DESC
+    # then title ASC. The seed gives the five films distinct rental_rate values with a
+    # three-way tie at 2.99, so the DESC primary is visible in the row order *and* the
+    # ASC secondary breaks the 2.99 tie — both per-entry directions are independently
+    # observable end to end (not just compiled). Exercises the lifted
+    # ColumnOrderEntry.direction model and the emitter's per-entry direction handling
+    # against real jOOQ classes.
+    filmsByRateDescTitleAsc(
         first: Int, last: Int, after: String, before: String
     ): FilmsConnection! @defaultOrder(fields: [
-        {name: "release_year", direction: DESC},
+        {name: "rental_rate", direction: DESC},
         {name: "title", direction: ASC}
     ])
     # argres Phase 4: @condition on INPUT_FIELD_DEFINITION — @table input type.
@@ -981,10 +985,12 @@ enum FilmSort {
     TITLE   @order(fields: [{name: "title"}])
     # R243: heterogeneous per-field direction on an @order enum value. The runtime
     # `direction:` argument on FilmOrderBy is ignored for this entry because the spec
-    # baked in per-column directions; uniformAsc = false on the resolved Fixed.
-    YEAR_DESC_TITLE_ASC @order(fields: [
-        {name: "release_year", direction: DESC},
-        {name: "title",        direction: ASC}
+    # baked in per-column directions; uniformAsc = false on the resolved Fixed. The
+    # rental_rate column varies across the seed (with a 2.99 tie), so the baked-in
+    # rental_rate DESC, title ASC order is observable regardless of the runtime arg.
+    RATE_DESC_TITLE_ASC @order(fields: [
+        {name: "rental_rate", direction: DESC},
+        {name: "title",       direction: ASC}
     ])
 }
 
