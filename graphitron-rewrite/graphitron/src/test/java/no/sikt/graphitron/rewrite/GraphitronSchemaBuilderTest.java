@@ -371,6 +371,68 @@ class GraphitronSchemaBuilderTest {
         tc.assertions.accept(build(tc.sdl));
     }
 
+    // R259: an unresolvable @reference(key:) candidate hint must land in the author's frame.
+    // The author wrote the jOOQ Java-constant form (the TABLE__CONSTRAINT name, detected by the
+    // `__` separator), so the suggestions must be rendered in that namespace, not as the bare SQL
+    // constraint names findForeignKey also accepts.
+    @Test
+    void referenceKeyMiss_constantNamespaceAttempt_suggestsInConstantNamespace() {
+        var schema = build("""
+            type Film @table(name: "film") {
+              languageName: String @reference(path: [{key: "FILM__NO_SUCH_FK"}])
+            }
+            type Query { film: Film }
+            """);
+        var reason = ((UnclassifiedField) schema.field("Film", "languageName")).reason();
+        assertThat(reason)
+            .contains("did you mean:")
+            // a real FK on `film`, rendered in the TABLE__CONSTRAINT form the author used
+            .containsIgnoringCase("FILM__FILM_LANGUAGE_ID_FKEY")
+            // not the bare SQL form, which would read as a different namespace
+            .doesNotContain("film_language_id_fkey");
+    }
+
+    @Test
+    void referenceKeyMiss_sqlNamespaceAttempt_suggestsInSqlNamespace() {
+        var schema = build("""
+            type Film @table(name: "film") {
+              languageName: String @reference(path: [{key: "no_such_fk"}])
+            }
+            type Query { film: Film }
+            """);
+        var reason = ((UnclassifiedField) schema.field("Film", "languageName")).reason();
+        assertThat(reason)
+            .contains("did you mean:")
+            .containsIgnoringCase("film_language_id_fkey")
+            // a FK on an unrelated table is out of scope and must not crowd the hint
+            .doesNotContainIgnoringCase("customer_address_id_fkey");
+    }
+
+    // R259: at a multi-hop path position the candidate set must be scoped to the FKs touching the
+    // current source table, not ranked against every FK in the catalog. Here the failing key sits
+    // on the `film_actor` join table, so only its two FKs are relevant; `film`'s own FKs (which a
+    // global Levenshtein sweep would surface) must not appear.
+    @Test
+    void referenceKeyMiss_secondHop_scopesCandidatesToJoinTable() {
+        var schema = build("""
+            type Actor @table(name: "actor") { name: String }
+            type Film @table(name: "film") {
+              actors: [Actor!]! @splitQuery @reference(path: [
+                {key: "film_actor_film_id_fkey"},
+                {key: "FILM_ACTOR__NO_SUCH_FK"}
+              ])
+            }
+            type Query { film: Film }
+            """);
+        var reason = ((UnclassifiedField) schema.field("Film", "actors")).reason();
+        assertThat(reason)
+            .contains("did you mean:")
+            // the sibling FK on the join table, in the author's namespace
+            .containsIgnoringCase("FILM_ACTOR__FILM_ACTOR_ACTOR_ID_FKEY")
+            // film's own FKs are out of scope at the join-table position
+            .doesNotContainIgnoringCase("FILM__FILM_LANGUAGE_ID_FKEY");
+    }
+
     @Test
     @ProjectionFor(ChildField.ColumnReferenceField.class)
     void columnReferenceFieldProjectionCarriesJoinPathAndTerminalTable() {

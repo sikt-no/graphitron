@@ -243,6 +243,41 @@ public class JooqCatalog {
     }
 
     /**
+     * Returns the jOOQ-generated Java constant names (the {@code TABLE__CONSTRAINT} field names in
+     * each schema's {@code Keys} class) of all foreign keys known to the catalog. Companion to
+     * {@link #allForeignKeySqlNames()}: {@link #findForeignKey(String)} resolves keys in either
+     * namespace, so a candidate hint must be able to render in either to match the form a schema
+     * author used in {@code @reference(key:)}.
+     */
+    public java.util.List<String> allForeignKeyConstantNames() {
+        if (catalog == null) return java.util.List.of();
+        return catalog.schemaStream()
+            .flatMap(schema -> keysClass(schema).stream())
+            .flatMap(cls -> Arrays.stream(cls.getFields()))
+            .filter(f -> ForeignKey.class.isAssignableFrom(f.getType()))
+            .map(Field::getName)
+            .toList();
+    }
+
+    /**
+     * Returns all foreign keys with an endpoint on {@code tableSqlName}, in either direction (the
+     * table is the FK source or the referenced key side; case-insensitive). Used to scope a
+     * {@code @reference(key:)} candidate hint to the FKs that are actually valid at a given path
+     * position, rather than ranking the author's typo against every FK in the catalog. Returns an
+     * empty list when the catalog is unavailable or {@code tableSqlName} is {@code null}.
+     */
+    @SuppressWarnings("unchecked")
+    public List<ForeignKey<?, ?>> foreignKeysTouchingTable(String tableSqlName) {
+        if (catalog == null || tableSqlName == null) return List.of();
+        return (List<ForeignKey<?, ?>>) (List<?>) catalog.schemaStream()
+            .flatMap(schema -> schema.getTables().stream())
+            .flatMap(table -> table.getReferences().stream())
+            .filter(fk -> fk.getTable().getName().equalsIgnoreCase(tableSqlName)
+                || fk.getKey().getTable().getName().equalsIgnoreCase(tableSqlName))
+            .toList();
+    }
+
+    /**
      * Returns the jOOQ record class for the table with the given SQL name, or empty when the
      * table cannot be found or the catalog is unavailable. The returned class is whatever
      * {@link org.jooq.Table#getRecordType()} returns for the matching table — typically the

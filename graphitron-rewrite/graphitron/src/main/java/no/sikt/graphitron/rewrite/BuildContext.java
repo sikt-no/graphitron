@@ -878,6 +878,37 @@ class BuildContext {
     // ===== Reference path parsing =====
 
     /**
+     * Candidate FK names for a {@code @reference(key:)} lookup miss, scoped and namespaced so the
+     * "did you mean" hint lands in the author's frame instead of as global noise.
+     *
+     * <p><b>Scope.</b> When {@code sourceSqlTable} is known (the path position has a table-backed
+     * source) the candidates are the FKs touching that table, i.e. exactly the keys that are valid
+     * at this position. For a join-table hop that is the two or three outgoing FKs, not the whole
+     * catalog. When the source is {@code null} (non-table-backed forward traversal) it falls back
+     * to every FK in the catalog.
+     *
+     * <p><b>Namespace.</b> {@link JooqCatalog#findForeignKey} resolves a key in either the SQL
+     * constraint namespace ({@code opptak_samordna_organisasjon_organisasjon_fk}) or the jOOQ
+     * Java-constant namespace ({@code opptak_samordna_organisasjon__..._organisasjon_fk}, the
+     * {@code TABLE__CONSTRAINT} form). The hint mirrors whichever the author used, detected by the
+     * {@code __} separator in their {@code attempt}, so a suggestion never reads as a different
+     * namespace than the one they typed.
+     */
+    private List<String> fkCandidateNames(String sourceSqlTable, String attempt) {
+        boolean constantNamespace = attempt.contains("__");
+        var touching = catalog.foreignKeysTouchingTable(sourceSqlTable);
+        if (touching.isEmpty()) {
+            return constantNamespace ? catalog.allForeignKeyConstantNames() : catalog.allForeignKeySqlNames();
+        }
+        return touching.stream()
+            .map(fk -> constantNamespace
+                ? catalog.fkJavaConstantName(fk.getName()).orElse(fk.getName())
+                : fk.getName())
+            .distinct()
+            .toList();
+    }
+
+    /**
      * Carries the result of {@link #parsePath}: either a fully resolved list of path elements or
      * an error message. When {@code errorMessage()} is non-null the {@code elements()} list is
      * empty and the containing field must be classified as an unclassified variant.
@@ -1284,7 +1315,7 @@ class BuildContext {
             Optional<ForeignKey<?, ?>> fk = catalog.findForeignKey(keyName.get());
             if (fk.isEmpty()) {
                 errors.add("key '" + keyName.get() + "' could not be resolved in the jOOQ catalog"
-                    + candidateHint(keyName.get(), catalog.allForeignKeySqlNames()));
+                    + candidateHint(keyName.get(), fkCandidateNames(currentSourceSqlName, keyName.get())));
                 return;
             }
             var f = fk.get();
