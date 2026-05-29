@@ -30,7 +30,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R180` | Centralize ResultType column-read emission for @record parents | Spec | 2026-05-19 | [plan](record-parent-column-read-helper.md) |
 | `R242` | DML payload positional input/output alignment | Spec | 2026-05-26 | [plan](dml-payload-positional-alignment.md) |
 | `R115` | Enumerate the capabilities graphitron delivers | Spec |  | [plan](capability-catalog.md) |
-| `R244` | Error-channel slice 1: PayloadOrErrors transport, retire @error payload-class construction | Spec | 2026-05-29 <sub>created 2026-05-26</sub> | [plan](errorchannel-walker-carrier.md) |
+| `R244` | Error-channel slice 1: Outcome transport, retire @error payload-class construction | Spec | 2026-05-29 <sub>created 2026-05-26</sub> | [plan](errorchannel-walker-carrier.md) |
 | `R109` | How-to recipe and Sakila fixture for grouped collections via Field<Result<R>> @externalField + multiset | Spec |  | [plan](list-valued-external-field-multiset.md) |
 | `R212` | IntelliJ plugin wrapping graphitron:dev LSP | Spec | 2026-05-21 | [plan](intellij-lsp-plugin.md) |
 | `R112` | Operation-driven test corpus, capability catalog, and runtime trace <sub>blocked by: [capability-catalog](capability-catalog.md)</sub> | Spec |  | [plan](operation-driven-test-corpus.md) |
@@ -261,7 +261,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R220` [**Consolidate looksLikeSourcesShape, couldBeSourcesShape, and classifySourcesType into one predicate**](consolidate-sources-shape-predicates.md)
 - `R242` [**DML payload positional input/output alignment**](dml-payload-positional-alignment.md)
 - `R85` [**Emit graphitronContext helper into Conditions and Type classes**](helper-emission-non-fetcher-hosts.md)
-- `R244` [**Error-channel slice 1: PayloadOrErrors transport, retire @error payload-class construction**](errorchannel-walker-carrier.md)
+- `R244` [**Error-channel slice 1: Outcome transport, retire @error payload-class construction**](errorchannel-walker-carrier.md)
 - `R209` [**FieldRegistry classify-input trace loses typed Rejection payload**](field-registry-typed-rejection-trace.md)
 - `R254` [**Generated GraphitronSchema emission must have bounded chain depth**](schema-class-bounded-emission.md)
 - `R109` [**How-to recipe and Sakila fixture for grouped collections via Field<Result<R>> @externalField + multiset**](list-valued-external-field-multiset.md)
