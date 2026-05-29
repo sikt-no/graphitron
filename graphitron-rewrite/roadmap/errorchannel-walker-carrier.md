@@ -1,7 +1,7 @@
 ---
 id: R244
 title: "Error-channel slice 1: Outcome transport, retire @error payload-class construction"
-status: Spec
+status: Ready
 bucket: structural
 depends-on: []
 created: 2026-05-26
