@@ -59,7 +59,7 @@ public sealed interface Outcome<T> permits Outcome.Success, Outcome.ErrorList {
 }
 ```
 
-`Success.value` holds exactly what the success path produces today (a typed jOOQ `XRecord`, `Result<Record>`, or `List<XRecord>`). `ErrorList.errors` holds the matched throwables, the same objects the retired `payloadFactory.apply(List.of(t))` received; per-`@error`-type field DataFetchers read off each throwable exactly as today. The two arms map one-to-one onto the outcome type's two field families: data fields read `Success.value`, the errors field reads `ErrorList.errors`. The `ErrorList` arm's type parameter is phantom (the error path discards the success type); it exists only so the arm satisfies `Outcome<T>`. `Outcome`'s javadoc is the pinned home of the graphql-java completion invariant (why a non-null source is mandatory, why every immediate child must arm-switch), backed by the execute-tier test in Tests.
+`Success.value` holds exactly what the success path produces today (a typed jOOQ `XRecord`, `Result<Record>`, or `List<XRecord>`). `ErrorList.errors` is `List<Object>` because it carries two populations: matched throwables on the catch path and Jakarta `ConstraintViolation` objects on the validator pre-step path (both are what the retired `payloadFactory.apply(...)` received). `Object` is the floor this slice faithfully ports rather than a new untyped leak; a later slice could narrow it to a sealed `MatchedError { Caused(Throwable) | Violation(ConstraintViolation) }` so the per-`@error`-type field DataFetchers switch exhaustively instead of `instanceof`-on-`Object`. Those field DataFetchers read off each element exactly as today. The two arms map one-to-one onto the outcome type's two field families: data fields read `Success.value`, the errors field reads `ErrorList.errors`. The `ErrorList` arm's type parameter is phantom (the error path discards the success type); it exists only so the arm satisfies `Outcome<T>`. `Outcome`'s javadoc is the pinned home of the graphql-java completion invariant (why a non-null source is mandatory, why every immediate child must arm-switch), backed by the execute-tier test in Tests.
 
 The naming avoids the live collisions in this area: not `Result` (jOOQ `org.jooq.Result<Record>` is the DataFetcher return type), not `Resolved` (the builder-step result sealed type); the `ErrorList` arm is named for what it carries rather than `Error` (singular), which would shadow `Rejection.AuthorError` and `GraphitronType.ErrorType`.
 
@@ -92,13 +92,20 @@ The outcome type `SakPayload`'s child fetchers receive a non-null `Outcome<SakRe
 
 ```java
 // SakPayload.<dataField> fetcher (was: PropertyDataFetcher.fetching("...") / @record accessor)
-env -> env.getSource() instanceof Success<SakRecord> s ? <existing read off s.value()> : null;
+// The Outcome source is bound to a typed local first; env.getSource() is <T> T getSource(),
+// which infers to Object in an instanceof, so a bare `getSource() instanceof Success<SakRecord>`
+// is rejected ("Object cannot be safely cast"). The typed local makes the narrowing checked and
+// keeps s.value() typed as SakRecord (no blind Object cast reappears).
+env -> {
+    Outcome<SakRecord> src = env.getSource();
+    return src instanceof Success<SakRecord> s ? <existing read off s.value()> : null;
+};
 
-// SakPayload.errors fetcher  (Transport.WrapperArm)
+// SakPayload.errors fetcher  (Transport.WrapperArm) ; wildcard pattern is always legal
 env -> env.getSource() instanceof ErrorList<?> e ? e.errors() : List.of();
 ```
 
-On `ErrorList`, the data fields return null, so graphql-java renders them null and does not descend into their children; the errors field resolves because the outcome-type source is non-null. On `Success`, each data field projects `s.value()` (the jOOQ record, typed from the field's resolved `ReturnTypeRef` so no blind cast reappears ; see "Outcome-child arm-switch invariant") and the errors field returns the empty list.
+On `ErrorList`, the data fields return null, so graphql-java renders them null and does not descend into their children; the errors field resolves because the outcome-type source is non-null. **This holds only when the success-projection fields are nullable**: a non-null data field (`Sak!`) that resolves null on the error arm raises `NonNullableFieldWasNullError` and bubbles null up to the outcome field, dropping the sibling errors field (verified by spike, the same failure class the localContext draft had). The nullable-success-projection invariant is enforced as a validator rule (see "Outcome-child arm-switch invariant"). On `Success`, each data field projects `s.value()` (the jOOQ record, typed from the field's resolved `ReturnTypeRef` via the typed-local narrowing above, so no blind cast reappears) and the errors field returns the empty list.
 
 Validator pre-step (Jakarta-violation early return) returns the same `ErrorList` arm:
 
@@ -156,6 +163,26 @@ public sealed interface ErrorChannel permits ErrorChannel.Mapped, ErrorChannel.L
 ```
 
 `Mapped` and `LocalContext` carry identical fields by coincidence ; they are distinct types because they drive different emit (`Mapped` → `Outcome`, `LocalContext` → sentinel + `dispatchToLocalContext`). The slice deletes `ErrorChannel.PayloadClass` entirely (with its `payloadClass`, `errorsSlot`, `defaultedSlots` components). The shared accessors that today live on the sealed `ErrorChannel` root (`mappedErrorTypes`, `mappingsConstantName`) can stay on the root (both arms have them) or move to per-arm reads; either is fine and is an implementer's call, since the root no longer has a third arm with a different shape.
+
+## The `OutcomeType` classification
+
+`OutcomeType` is a concrete carrier, not a bare predicate, so the guarantees the walker relies on are structural rather than prose. The classifier builds it only after the single-errors-field and nullable-success-projection checks pass, so possessing an `OutcomeType` *is* the proof those invariants hold:
+
+```java
+// graphitron/src/main/java/no/sikt/graphitron/rewrite/model/OutcomeType.java
+public record OutcomeType(
+    GraphitronType.ResultType backing,        // the record-backed type that forks
+    ChildField.ErrorsField errorsField,       // the single errors field (uniqueness already enforced)
+    List<ChildField> successProjection        // the non-errors data fields, all nullable (enforced)
+) {
+    public OutcomeType {
+        successProjection = List.copyOf(successProjection);
+        if (errorsField == null) throw new IllegalArgumentException("OutcomeType: errorsField must be non-null");
+    }
+}
+```
+
+The classifier is the single producer: it runs `BuildContext.detectErrorsFieldShape`, enforces uniqueness (`MultipleErrorsFields`) and nullability (`NonNullableSuccessProjectionField`), and only then constructs `OutcomeType`. The walker takes the built `OutcomeType` and reads `errorsField` directly rather than re-scanning ; the type makes "exactly one errors field, already found" non-bypassable, instead of a comment the walker trusts.
 
 ## Producer (`ErrorChannelWalker`)
 
@@ -225,7 +252,7 @@ R238's additive-then-destructive landing is the precedent for the scaffolding an
 
 Commit-level sequencing (subject to revision at In Progress time; the load-bearing claim is the sequence *shape*):
 
-1. **Add the unwired pieces.** `Outcome<T>` runtime type, the `OutcomeType` classification + its single-errors-field validator rule (the `ErrorChannelWalkerError.MultipleErrorsFields` arm), `ErrorChannel.Mapped` (added under the sealed root, which temporarily permits `Mapped | PayloadClass | LocalContext`), the rest of the `ErrorChannelWalkerError` sub-seal, `ChildField.ErrorsField.Transport.WrapperArm`, and the outcome-child arm-switch validator pin (see below). Nothing produces or consumes `Mapped` yet; `PayloadClass` is intact and remains what in-scope fields classify to. The `OutcomeType` classification can go live here (it is observable only through the new validator rule, which is additive ; it rejects schemas that were already mis-shaped).
+1. **Add the unwired pieces.** `Outcome<T>` runtime type, the `OutcomeType` classification + its two classify-time validator rules (single-errors-field → `MultipleErrorsFields`; nullable-success-projection → `NonNullableSuccessProjectionField`), `ErrorChannel.Mapped` (added under the sealed root, which temporarily permits `Mapped | PayloadClass | LocalContext`), the rest of the `ErrorChannelWalkerError` sub-seal, its `typed-rejection.adoc` paragraph (else `SealedHierarchyDocCoverageTest` fails), `ChildField.ErrorsField.Transport.WrapperArm`, and the outcome-child arm-switch validator pin (`OUTCOME_TYPE_ARM_SWITCHED_DATA_CHANNEL_VARIANTS` + `validateOutcomeChildArmSwitch`, see below). Nothing produces or consumes `Mapped` yet; `PayloadClass` is intact and remains what in-scope fields classify to. The `OutcomeType` classification and both rules can go live here (observable only through the new additive rejections ; they reject schemas that were already mis-shaped). The `ChannelCatchArmEmitter` switch added in step 2 over the transitional three-arm root must handle the `PayloadClass` arm (throw on the unreachable case) so the sealed switch compiles during the additive window.
 2. **Add the walker and emitters.** `ErrorChannelWalker`, `ChannelCatchArmEmitter`, `ChannelEarlyReturnEmitter`, with unit-tier tests. Still unwired.
 3. **Flip the in-scope fields to the wrapper.** `FieldBuilder` classifies in-scope outcome fields to `ErrorChannel.Mapped` via the walker over the classified `OutcomeType` (replacing `resolveErrorChannel`'s `PayloadClass` production for those fields). In the same commit: `returnSyncSuccess` wraps in `Success`; `ChannelCatchArmEmitter` / `ChannelEarlyReturnEmitter` / `asyncWrapTail` emit the `ErrorList` arm; every in-scope outcome type's data-field fetchers arm-switch on `Success`; in-scope errors fields move to `Transport.WrapperArm`; `MappingsConstantNameDedup` and `CatalogBuilder.errorChannelName` read `Mapped`. This is the atomic-per-outcome-type flip. DML still classifies to `LocalContext` and emits the sentinel arm through the same `ChannelCatchArmEmitter`, unchanged.
 4. **Delete the construction machinery.** `ErrorChannel.PayloadClass` arm (sealed root returns to `Mapped | LocalContext`); `ErrorsSlot`, `DefaultedSlot`, `NonBoundSetter`, `PayloadConstructionShape` family; `FieldBuilder.resolvePayloadConstructionShape` + `tryMutableBean` + `buildErrorChannelCtorArm` + `buildErrorChannelBeanArm` + `collectDefaultedSlots` + `collectNonBoundSetters` + `defaultLiteralFor`; `TypeFetcherGenerator`'s `payloadFactoryLambda*` + `declareEarlyPayload*` + `dispatchCatchArm`; `ErrorRouter.dispatch` (the payload-factory router). `FieldBuilder.resolveErrorChannel` keeps its DML role (`buildDmlField` still calls it; it returns no-channel for the non-wrapper DML returns and `LocalContext` for record-payload DML), so it is trimmed to that role rather than deleted.
@@ -240,18 +267,23 @@ Under the wrapper, every immediate child field of an in-scope outcome type recei
 - `ServiceTableField`, `ServiceRecordField`, `TableMethodField`, `RecordTableMethodField`: child `@service` / `@tableMethod` fetchers that read parent keys off the source ; unwrap `Success` first so the method is never invoked on an `ErrorList` source.
 - `ConstructorField`, `NestingField`, `ComputedField`: source passthrough / accessor call ; unwrap `Success` first.
 
-**The unwrapped value keeps its narrow type.** Per "Classifier guarantees shape emitter assumptions", the `Success.value()` local is typed from the field's already-resolved `ReturnTypeRef` (e.g. the specific jOOQ `XRecord`), so no blind `Object` cast is reintroduced ; the success path threads a typed record today and the arm-switch must not erase it.
+**The unwrapped value keeps its narrow type.** Per "Classifier guarantees shape emitter assumptions", the `Success.value()` local is typed from the field's already-resolved `ReturnTypeRef` (e.g. the specific jOOQ `XRecord`) via the typed-local narrowing shown in "Target emitted code", so no blind `Object` cast is reintroduced. The root fetcher emits `Success<X>` and the child emits `instanceof Success<X>` reading the *same* `X` from the *same* `ReturnTypeRef`; that agreement is not carried by the type system across the erased `env.getSource()` seam, so the pin is the cross-module `graphitron-sakila-example` compile (a mismatched `X` is a compile error) plus the execute-tier round-trip, named precisely rather than asserted as a type-system property.
 
-**This invariant is pinned, not audited.** An un-switched outcome-type child is a silent runtime hole: graphql-java's default fetcher would read a property off the `Outcome` object itself. So slice 1 declares the set of data-channel `ChildField` leaves admissible as an immediate child of an outcome type and has `GraphitronSchemaValidator` reject any outcome type whose immediate child resolves to a leaf outside that set, by the same mechanism the dispatch partition uses (`TypeFetcherGenerator`'s `IMPLEMENTED_LEAVES` / `PROJECTED_LEAVES` / ... partition, enforced exhaustive and disjoint by `GeneratorCoverageTest.everyGraphitronFieldLeafHasAKnownDispatchStatus`). This mirrors the existing DML `LOCAL_CONTEXT_GUARDED_DATA_CHANNEL_VARIANTS` + `validateLocalContextErrorsFieldGuards` pair, which stays in place for DML. A new leaf that can appear under an outcome type without an arm-switching fetcher then fails the coverage test at build time, not a production request.
+**Success-projection fields must be nullable.** Verified by spike: on the `ErrorList` arm a data field returns null, and if that field's SDL type is non-null (`Sak!`) graphql-java raises `NonNullableFieldWasNullError` and bubbles the null up to the outcome field, *dropping the sibling errors field* ; the typed `@error` payload is silently lost and replaced by a generic top-level error. This is the same failure class as the localContext draft, surfacing through a different mechanism (non-null coercion rather than null-source short-circuit). So slice 1 promotes the nullability convention to a validator rule (mirror-the-classifier, as with the single-errors-field rule): an outcome type whose success projection contains a non-null field is rejected at classify time with `ErrorChannelWalkerError.NonNullableSuccessProjectionField` (unit-tier test, see Tests). The rejection is what keeps the execute-tier round-trip honest: without it, a non-null data field is the nullable-only blind spot the localContext draft's reasoning had, surviving to a production request as a dropped errors field. (This is plausibly a pre-existing latent issue on the `PayloadClass` path, where a defaulted non-null slot left null bubbles the same way; slice 1 owns surfacing it because it makes the wire-shape-unchanged claim.)
+
+**This invariant is pinned, not audited.** An un-switched outcome-type child is a silent runtime hole: graphql-java's default fetcher would read a property off the `Outcome` object itself. The dispatch partition (`GeneratorCoverageTest.everyGraphitronFieldLeafHasAKnownDispatchStatus`) does *not* catch this: it pins a *global* property (every leaf lands in exactly one dispatch-status set), whereas the arm-switch guarantee is *contextual* (this leaf, *when it is an immediate child of an outcome type*, unwraps `Success`). A `PropertyField` under an outcome type is the same globally-`IMPLEMENTED` leaf as a `PropertyField` anywhere else, so a missing arm-switch leaves the coverage test green. The correct pin is a dedicated validator pass, the direct analogue of the DML `LOCAL_CONTEXT_GUARDED_DATA_CHANNEL_VARIANTS` + `validateLocalContextErrorsFieldGuards` pair: slice 1 adds an `OUTCOME_TYPE_ARM_SWITCHED_DATA_CHANNEL_VARIANTS` allow-list and a `validateOutcomeChildArmSwitch` pass that iterates outcome types and rejects any immediate child whose leaf is off the allow-list. A new data-channel leaf that can appear under an outcome type without an arm-switching fetcher then fails *that* pass at build time, not a production request. (The DML pair stays in place unchanged for the DML transport.)
 
 ## AuthorError sub-arms and LSP codes
 
 Following R238's actual precedent: each walker family gets its **own sibling sub-seal of `AuthorError`**, not a sub-arm under `Structural`. R238's `ServiceMethodCallError` (in `graphitron/src/main/java/no/sikt/graphitron/rewrite/model/ServiceMethodCallError.java`) sets the pattern; R244 mirrors it with `ErrorChannelWalkerError`. Quote from R238's spec on the choice: "Subsequent walker slices each add their own sibling sub-seal rather than piling typed arms under a single flat `Structural` — keeps `AuthorError` permits one-row-per-walker as the dimensional pivot scales, and lets each walker's arm-to-code mapping live next to its own family declaration."
 
+`ErrorChannelWalkerError` is the **error-channel domain's** sub-seal, not literally walk()-only: two arms (`MultipleErrorsFields`, `NonNullableSuccessProjectionField`) are raised by the `OutcomeType` *classification* that produces the walker's input, and the rest are raised by `walk()`. They share one family because they share one SDL surface (the outcome type and its errors field) and one LSP namespace; each arm's javadoc names its actual raiser. (The alternative ; folding uniqueness and nullability into `walk()` so the family is strictly walker-raised ; is viable but pushes errors-field detection into the walker that `BuildContext.detectErrorsFieldShape` already centralises; keeping `OutcomeType` construction as the single producer of those two arms is the smaller seam. See finding in the design review.)
+
 ```java
 // graphitron/src/main/java/no/sikt/graphitron/rewrite/model/ErrorChannelWalkerError.java
 public sealed interface ErrorChannelWalkerError extends Rejection.AuthorError permits
     ErrorChannelWalkerError.MultipleErrorsFields,
+    ErrorChannelWalkerError.NonNullableSuccessProjectionField,
     ErrorChannelWalkerError.ChannelRuleViolation,
     ErrorChannelWalkerError.HandlerSourceAccessorMissing
 {
@@ -267,6 +299,19 @@ public sealed interface ErrorChannelWalkerError extends Rejection.AuthorError pe
     ) implements ErrorChannelWalkerError {
         @Override public String message() { /* names the fields; exactly one is allowed */ }
         @Override public String lspCode() { return "graphitron.error-channel.multiple-errors-fields"; }
+    }
+
+    /**
+     * Raised by the OutcomeType classification: a success-projection (data) field is non-null,
+     * which would bubble null up and drop the errors field on the error arm (see the arm-switch
+     * invariant). Success-projection fields must be nullable.
+     */
+    record NonNullableSuccessProjectionField(
+        String outcomeTypeName,
+        String fieldName
+    ) implements ErrorChannelWalkerError {
+        @Override public String message() { /* names the field; must be nullable */ }
+        @Override public String lspCode() { return "graphitron.error-channel.non-nullable-success-field"; }
     }
 
     record ChannelRuleViolation(
@@ -305,6 +350,7 @@ Arm-to-code mapping (stable strings written next to the arm declaration per R238
 | `ErrorChannelWalkerError` arm | LSP `code` |
 |---|---|
 | `MultipleErrorsFields` | `graphitron.error-channel.multiple-errors-fields` |
+| `NonNullableSuccessProjectionField` | `graphitron.error-channel.non-nullable-success-field` |
 | `ChannelRuleViolation(rule=7, ...)` | `graphitron.error-channel.multi-validation` |
 | `ChannelRuleViolation(rule=8, ...)` | `graphitron.error-channel.duplicate-match-criteria` |
 | `HandlerSourceAccessorMissing` | `graphitron.error-channel.handler-accessor-missing` |
@@ -354,12 +400,13 @@ Tests:
 
 Documentation:
 
-- `Outcome`'s javadoc is the canonical home of the contract and the graphql-java completion invariant (non-null source mandatory; every immediate child arm-switches), backed by the execute-tier test. Javadocs across `TypeFetcherGenerator`, `FieldBuilder`, `WithErrorChannel`, `ChildField.ErrorsField`, `ErrorRouterClassGenerator` update to the wrapper contract.
+- `Outcome`'s javadoc is the canonical home of the contract and the graphql-java completion invariant (non-null source mandatory; success-projection fields nullable; every immediate child arm-switches), backed by the execute-tier test. Javadocs across `TypeFetcherGenerator`, `FieldBuilder`, `WithErrorChannel`, `ChildField.ErrorsField`, `ErrorRouterClassGenerator` update to the wrapper contract.
+- **`typed-rejection.adoc` must gain a paragraph for the new sub-seal.** `SealedHierarchyDocCoverageTest` walks `Rejection.permits()` transitively and fails the build for any permit not documented in `typed-rejection.adoc` (see its "Drift protection" section). This slice adds one `AuthorError` permit (`ErrorChannelWalkerError`) with four arms, so the cutover must land a corresponding `typed-rejection.adoc` paragraph in the same change, not as follow-up.
 - The dangling `{@code error-handling-parity.md}` references in those javadocs (no such file exists in-tree; it is named only in javadoc and two other roadmap items) get rewritten to state the wrapper contract inline rather than point at the absent doc. R244 does not author the doc; scrubbing the dangling pointers repo-wide is pre-existing debt for a Backlog stub.
 
 ## Tests
 
-- **Unit (`@UnitTier`)**: an `OutcomeType` classification test (no errors field → not an outcome type; exactly one → outcome type with the right success projection; two or more → `ErrorChannelWalkerError.MultipleErrorsFields`); `ErrorChannelWalkerTest` (one per `Mapped` source shape: single `@error`, union, interface, list; one per channel-rule arm: rule 7 / rule 8 / handler-accessor-missing); and `ChannelCatchArmEmitterTest` (the `Optional.empty()` redact-only arm, the `Mapped` → `ErrorList` arm, the `LocalContext` → sentinel arm, and the async-tail lambda wrapping).
+- **Unit (`@UnitTier`)**: an `OutcomeType` classification test (no errors field → not an outcome type; exactly one → outcome type with the right success projection; two or more → `ErrorChannelWalkerError.MultipleErrorsFields`; a non-null success-projection field → `ErrorChannelWalkerError.NonNullableSuccessProjectionField`); `ErrorChannelWalkerTest` (one per `Mapped` source shape: single `@error`, union, interface, list; one per channel-rule arm: rule 7 / rule 8 / handler-accessor-missing); and `ChannelCatchArmEmitterTest` (the `Optional.empty()` redact-only arm, the `Mapped` → `ErrorList` arm, the `LocalContext` → sentinel arm, and the async-tail lambda wrapping).
 - **Pipeline (`@PipelineTier`)**: extend `ErrorChannelClassificationTest` ; positive cases assert on `WalkerResult.Ok(ErrorChannel.Mapped)`, rejection cases on the typed `ErrorChannelWalkerError.*` arms via `WalkerResult.Err`. Any cases asserting fetcher body-string content retire per `rewrite-design-principles.adoc`'s ban on code-string assertions, replaced by structural assertions on the `ErrorChannel.Mapped` carrier and the `OutcomeType` classification.
 - **Execution (`@ExecutionTier`) is the primary safety net here, not a backstop.** The wrapper changes the GraphQL source *type* (`Outcome` vs the bare record), so "the wire shape is unchanged" is a claim that must be *tested*, not asserted ; that is exactly the assumption the localContext draft got wrong. Add a generated-pipeline execution test that, for an in-scope `@service` outcome field, asserts both arms round-trip: the `Success` path returns `{data: {...}, errors: []}` and the mapped-error path returns `{data: null, errors: [...]}` with the typed `@error` fields populated, plus the unmapped path producing a redacted top-level error. This reproduces the graphql-java spike against the real generated fetchers and pins the completion invariant `Outcome`'s javadoc states. The existing `GraphQLQueryTest` error-path cases should continue to pass ; if any fail, the wrapper round-trip is wrong, which is the signal we want.
 - **Compilation (`@CompilationTier`)**: `mvn install -Plocal-db` end-to-end-green over `graphitron-sakila-example` catches arm-switch / type-narrowing mismatches at the cross-module compile.
