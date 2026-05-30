@@ -38,6 +38,8 @@ public class GraphitronSchemaValidator {
         schema.fields().values().forEach(field -> validateField(field, types, errors));
         validateNestingParentCompat(schema, errors);
         validateLocalContextErrorsFieldGuards(schema, errors);
+        validateOutcomeTypeShape(schema, errors);
+        validateOutcomeChildArmSwitch(schema, errors);
         validateContextArgumentTypeAgreement(schema, errors);
         return List.copyOf(errors);
     }
@@ -1050,5 +1052,103 @@ public class GraphitronSchemaValidator {
         ChildField.SingleRecordTableField.class,
         ChildField.SingleRecordIdFieldFromReturning.class,
         ChildField.SingleRecordTableFieldFromReturning.class
+    );
+
+    /**
+     * R244 ; mirror-the-classifier check for the single-errors-field invariant on outcome types.
+     * The binary {@code Outcome} witness ({@code Success | ErrorList}) has one error slot, so a type
+     * carrying two {@link ChildField.ErrorsField} children has no well-defined success/error fork.
+     * This is the validator face of the {@code OutcomeType} classification's
+     * {@link no.sikt.graphitron.rewrite.model.ErrorChannelWalkerError.MultipleErrorsFields} rejection;
+     * it runs over the classified model so a mis-shaped type fails the build rather than reaching
+     * the walker.
+     *
+     * <p>Pure model check, independent of the errors-field transport: any object type with two or
+     * more errors fields is rejected, regardless of whether it uses the wrapper, localContext, or
+     * payload-accessor transport.
+     */
+    private void validateOutcomeTypeShape(GraphitronSchema schema, List<ValidationError> errors) {
+        java.util.Map<String, List<ChildField.ErrorsField>> byParent = new java.util.LinkedHashMap<>();
+        for (var f : schema.fields().values()) {
+            if (f instanceof ChildField.ErrorsField ef) {
+                byParent.computeIfAbsent(ef.parentTypeName(), k -> new ArrayList<>()).add(ef);
+            }
+        }
+        for (var entry : byParent.entrySet()) {
+            var errorsFields = entry.getValue();
+            if (errorsFields.size() < 2) continue;
+            var names = errorsFields.stream().map(ChildField.ErrorsField::name).toList();
+            var first = errorsFields.get(0);
+            errors.add(new ValidationError(
+                first.qualifiedName(),
+                new no.sikt.graphitron.rewrite.model.ErrorChannelWalkerError.MultipleErrorsFields(
+                    entry.getKey(), names),
+                first.location()
+            ));
+        }
+    }
+
+    /**
+     * R244 ; the {@code Outcome}-wrapper analogue of {@link #validateLocalContextErrorsFieldGuards}.
+     * Under the wrapper transport ({@link ChildField.Transport.WrapperArm}), every immediate child
+     * of an in-scope outcome type receives a non-null {@code Outcome} as {@code env.getSource()}, so
+     * each data-channel fetcher must unwrap {@code Success} before its existing read (returning null
+     * on {@code ErrorList}). An un-switched child is a silent runtime hole: graphql-java's default
+     * fetcher would read a property off the {@code Outcome} object itself.
+     *
+     * <p>The dispatch-partition coverage test does not catch this: it pins a global property (every
+     * leaf lands in one dispatch-status set), whereas the arm-switch guarantee is contextual (this
+     * leaf, <em>when it is an immediate child of a wrapper outcome type</em>, unwraps {@code Success}).
+     * The correct pin is this dedicated pass, the direct analogue of the DML
+     * {@link #LOCAL_CONTEXT_GUARDED_DATA_CHANNEL_VARIANTS} pair: it iterates wrapper errors fields and
+     * rejects any sibling data-channel field whose leaf is off
+     * {@link #OUTCOME_TYPE_ARM_SWITCHED_DATA_CHANNEL_VARIANTS}. A new data-channel leaf that can appear
+     * under an outcome type without an arm-switching fetcher then fails the build, not a production
+     * request.
+     */
+    private void validateOutcomeChildArmSwitch(GraphitronSchema schema, List<ValidationError> errors) {
+        for (var f : schema.fields().values()) {
+            if (!(f instanceof ChildField.ErrorsField ef)) continue;
+            if (!(ef.transport() instanceof ChildField.Transport.WrapperArm)) continue;
+            for (var sib : schema.fieldsOf(ef.parentTypeName())) {
+                if (sib == ef) continue;
+                if (sib instanceof ChildField.ErrorsField) continue;
+                if (!OUTCOME_TYPE_ARM_SWITCHED_DATA_CHANNEL_VARIANTS.contains(sib.getClass())) {
+                    errors.add(new ValidationError(
+                        ef.qualifiedName(),
+                        Rejection.structural("Field '" + ef.qualifiedName()
+                            + "': WrapperArm errors transport requires the carrier's data-channel "
+                            + "fetcher to arm-switch on the Outcome source, but sibling field '"
+                            + sib.qualifiedName() + "' classifies as " + sib.getClass().getSimpleName()
+                            + " which is not on the Outcome arm-switch allow-list"),
+                        ef.location()
+                    ));
+                }
+            }
+        }
+    }
+
+    /**
+     * R244 ; data-channel {@link ChildField} variants whose generated fetcher arm-switches on the
+     * {@code Outcome} source ({@code src instanceof Success s ? <read on s.value()> : null}), making
+     * them safe siblings for an {@link ChildField.ErrorsField} with
+     * {@link ChildField.Transport.WrapperArm}. These are the immediate-child variants that can
+     * sibling an errors field under a {@code @service} / {@code @tableMethod} outcome type, all of
+     * which get an explicit graphitron-emitted fetcher (none falls through to graphql-java's default
+     * {@code PropertyDataFetcher}).
+     *
+     * <p>Adding a variant to this set requires the matching emitter site to arm-switch; removing the
+     * arm-switch from an existing emitter arm must remove the variant from this set.
+     */
+    private static final java.util.Set<Class<? extends GraphitronField>> OUTCOME_TYPE_ARM_SWITCHED_DATA_CHANNEL_VARIANTS = java.util.Set.of(
+        ChildField.PropertyField.class,
+        ChildField.RecordField.class,
+        ChildField.ServiceTableField.class,
+        ChildField.ServiceRecordField.class,
+        ChildField.TableMethodField.class,
+        ChildField.RecordTableMethodField.class,
+        ChildField.ConstructorField.class,
+        ChildField.NestingField.class,
+        ChildField.ComputedField.class
     );
 }

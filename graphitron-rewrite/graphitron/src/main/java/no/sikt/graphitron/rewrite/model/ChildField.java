@@ -947,5 +947,16 @@ public sealed interface ChildField extends OutputField
          * catch path renders {@code data: null, errors: [...]} at the SDL level.
          */
         record LocalContext() implements Transport {}
+
+        /**
+         * R244 ; the errors list rides on an {@code Outcome.ErrorList} arm carried as the
+         * {@code env.getSource()} of an in-scope ({@code @service} / {@code @tableMethod}) outcome
+         * type. The errors-field fetcher reads {@code ErrorList.errors} off the non-null
+         * {@code Outcome} source; sibling data fields project {@code Success.value} (rendering null
+         * on the error arm). Pairs with an {@link ErrorChannel.Mapped} catch arm. Every immediate
+         * child of such an outcome type must arm-switch (pinned by
+         * {@code GraphitronSchemaValidator.validateOutcomeChildArmSwitch}).
+         */
+        record WrapperArm() implements Transport {}
     }
 }

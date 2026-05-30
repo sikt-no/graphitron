@@ -26,6 +26,7 @@ import no.sikt.graphitron.rewrite.generators.schema.GraphitronSchemaClassGenerat
 import no.sikt.graphitron.rewrite.generators.schema.InputRecordGenerator;
 import no.sikt.graphitron.rewrite.generators.schema.InputTypeGenerator;
 import no.sikt.graphitron.rewrite.generators.schema.ObjectTypeGenerator;
+import no.sikt.graphitron.rewrite.generators.schema.OutcomeClassGenerator;
 import no.sikt.graphitron.rewrite.generators.schema.SchemaSdlEmitter;
 import no.sikt.graphitron.rewrite.generators.util.ColumnFetcherClassGenerator;
 import no.sikt.graphitron.rewrite.generators.util.ConnectionHelperClassGenerator;
@@ -191,6 +192,7 @@ public class GraphQLRewriteGenerator {
         write(GraphitronContextInterfaceGenerator.generate(),                                     "schema",     emittedThisRun);
         write(ConstraintViolationsClassGenerator.generate(),                                      "schema",     emittedThisRun);
         write(ErrorRouterClassGenerator.generate(outputPackage),                                  "schema",     emittedThisRun);
+        write(OutcomeClassGenerator.generate(outputPackage),                                      "schema",     emittedThisRun);
         write(ErrorMappingsClassGenerator.generate(schema, outputPackage),                        "schema",     emittedThisRun);
         write(EnumTypeGenerator.generate(schema),                                                 "schema",     emittedThisRun);
         write(InputTypeGenerator.generate(schema),                                                "schema",     emittedThisRun);
