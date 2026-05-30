@@ -235,8 +235,12 @@ the new leaf *iff* the emitter has a real arm for it.
   `decode<Type>Record` helper; remove the `default -> throw`.
 - `generators/ArgCallEmitter.java` (and any other exhaustive
   `CallSiteExtraction` switch the compiler flags) ; explicit unreachable arm.
-- `BuildContext.java` ; reuse `resolveDecodeHelperForTable`; possibly host a
-  shared `resolveTargetKeys` lifted from `NodeIdLeafResolver`.
+- `BuildContext.java` ; host a shared `resolveTargetKeys` lifted from
+  `NodeIdLeafResolver` (key columns, resolved table-side), and resolve the
+  decode-helper suffix from the author's `typeName` per "Decode-helper
+  resolution" above. Do **not** call `resolveDecodeHelperForTable` here ; it
+  derives the suffix from the table, not the typeName (the trap documented in
+  that section).
 
 ## Deferred / out of scope
 
