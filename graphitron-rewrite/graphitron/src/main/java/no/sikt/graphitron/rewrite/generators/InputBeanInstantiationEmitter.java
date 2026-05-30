@@ -128,13 +128,42 @@ final class InputBeanInstantiationEmitter {
      */
     private static CodeBlock perFieldValueExpr(CallSiteExtraction.FieldBinding fb) {
         String sdl = fb.sdlFieldName();
+        // Exhaustive over CallSiteExtraction with no default: the classifier (InputBeanResolver)
+        // produces only Direct / EnumValueOf / InputBean / NodeIdDecodeRecord on a FieldBinding
+        // leaf, and the remaining permits are unreachable-by-construction here. Listing every
+        // permit (rather than a catch-all default) keeps "validator mirrors classifier invariants"
+        // honest: a new CallSiteExtraction permit fails *this* compile until it is handled or
+        // explicitly ruled out, instead of silently hitting a runtime throw.
         return switch (fb.leaf()) {
             case CallSiteExtraction.Direct ignored -> directExpr(fb, sdl);
             case CallSiteExtraction.EnumValueOf ev -> enumExpr(fb, ev, sdl);
             case CallSiteExtraction.InputBean nested -> nestedBeanExpr(fb, nested, sdl);
-            default -> throw new IllegalStateException(
-                "Unsupported FieldBinding leaf in InputBean: " + fb.leaf().getClass().getSimpleName());
+            case CallSiteExtraction.NodeIdDecodeRecord rec -> recordDecodeExpr(rec, sdl);
+            case CallSiteExtraction.ContextArg ignored -> throw notALeaf(fb);
+            case CallSiteExtraction.JooqConvert ignored -> throw notALeaf(fb);
+            case CallSiteExtraction.NestedInputField ignored -> throw notALeaf(fb);
+            case CallSiteExtraction.NodeIdDecodeKeys ignored -> throw notALeaf(fb);
         };
+    }
+
+    private static IllegalStateException notALeaf(CallSiteExtraction.FieldBinding fb) {
+        return new IllegalStateException(
+            "CallSiteExtraction." + fb.leaf().getClass().getSimpleName()
+            + " is not a valid InputBean field leaf (field '" + fb.sdlFieldName() + "'); the"
+            + " InputBeanResolver classifier never produces it here");
+    }
+
+    /**
+     * Routes a jOOQ-record member through its per-record-type {@code decode<RecordType>} helper
+     * (emitted by {@link #buildRecordDecodeHelper}). Keeps the bean-field assignment a one-liner;
+     * the decode-and-materialize logic lives in the readable statement-form helper.
+     */
+    private static CodeBlock recordDecodeExpr(CallSiteExtraction.NodeIdDecodeRecord rec, String sdl) {
+        return CodeBlock.of("$L(raw.get($S))", recordDecodeHelperName(rec), sdl);
+    }
+
+    private static String recordDecodeHelperName(CallSiteExtraction.NodeIdDecodeRecord rec) {
+        return "decode" + rec.recordType().simpleName();
     }
 
     private static CodeBlock directExpr(CallSiteExtraction.FieldBinding fb, String sdl) {
@@ -199,5 +228,75 @@ final class InputBeanInstantiationEmitter {
                 collectTransitively(nested, out);
             }
         }
+    }
+
+    /**
+     * Collects the unique {@link CallSiteExtraction.NodeIdDecodeRecord} leaves across the given
+     * beans, keyed by their jOOQ record type. The caller passes the already-transitively-collected
+     * bean set (e.g. {@code collectTransitively}'s output), so this is a flat one-level field scan
+     * per bean rather than a second tree walk. Dedup by record type: a given {@code *Record} type
+     * decodes through exactly one {@code decode<RecordType>} helper per {@code *Fetchers} class.
+     */
+    static void collectRecordDecoders(java.util.Collection<CallSiteExtraction.InputBean> beans,
+            java.util.Map<ClassName, CallSiteExtraction.NodeIdDecodeRecord> out) {
+        for (var ib : beans) {
+            for (var fb : ib.fields()) {
+                if (fb.leaf() instanceof CallSiteExtraction.NodeIdDecodeRecord rec) {
+                    out.putIfAbsent(rec.recordType(), rec);
+                }
+            }
+        }
+    }
+
+    /**
+     * Emits {@code private static <Record> decode<Record>(Object wire)}: decode the base64 NodeId
+     * into the NodeType's key tuple and rebuild the jOOQ {@code TableRecord} from it. Statement
+     * form (explicit types, named locals) per the "generated code is read and debugged" principle.
+     *
+     * <pre>
+     *   private static SakRecord decodeSakRecord(Object wire) {
+     *       if (!(wire instanceof String nodeId)) {
+     *           return null;
+     *       }
+     *       Record1&lt;Long&gt; key = NodeIdEncoder.decodeSak(nodeId);
+     *       if (key == null) {
+     *           throw new GraphqlErrorException("...");
+     *       }
+     *       SakRecord record = new SakRecord();
+     *       record.fromMap(key.intoMap());
+     *       return record;
+     *   }
+     * </pre>
+     *
+     * <p>A non-{@code String} (null / absent) wire value yields a {@code null} member: graphql-java
+     * enforces {@code ID!} non-nullness at the boundary, so for a non-null field the {@code String}
+     * branch is always taken; for a nullable field the {@code null} member is correct. A
+     * type-mismatch decode (helper returns {@code null}) is an authored-input error and throws,
+     * mirroring the {@code ThrowOnMismatch} arm. {@code record.fromMap(key.intoMap())} copies the
+     * decoded key columns into the record by field name (jOOQ has no {@code from(Record)} overload;
+     * {@code from(Object)} would POJO-reflect the {@code RecordN} and copy nothing), so no
+     * encoder-generator change is needed.
+     */
+    static MethodSpec buildRecordDecodeHelper(CallSiteExtraction.NodeIdDecodeRecord rec) {
+        ClassName recordType = rec.recordType();
+        var decode = rec.decode();
+        TypeName keyType = decode.returnType();
+        ClassName graphqlError = ClassName.get("graphql", "GraphqlErrorException");
+        return MethodSpec.methodBuilder(recordDecodeHelperName(rec))
+            .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+            .returns(recordType)
+            .addParameter(Object.class, "wire")
+            .beginControlFlow("if (!(wire instanceof String nodeId))")
+            .addStatement("return null")
+            .endControlFlow()
+            .addStatement("$T key = $T.$L(nodeId)", keyType, decode.encoderClass(), decode.methodName())
+            .beginControlFlow("if (key == null)")
+            .addStatement("throw $T.newErrorException().message($S).build()", graphqlError,
+                "Decoded NodeId did not match the expected type for this argument")
+            .endControlFlow()
+            .addStatement("$T record = new $T()", recordType, recordType)
+            .addStatement("record.fromMap(key.intoMap())")
+            .addStatement("return record")
+            .build();
     }
 }

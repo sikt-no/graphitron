@@ -560,6 +560,15 @@ public class TypeFetcherGenerator {
                 no.sikt.graphitron.javapoet.ClassName.bestGuess(outputPackage + "." + className)));
         }
 
+        // R195: emit one decode<RecordType> helper per jOOQ-record-typed @nodeId input-bean member
+        // reached by the collected beans. The create<Bean> helper bodies call these by name.
+        var recordDecoders = new java.util.LinkedHashMap<no.sikt.graphitron.javapoet.ClassName,
+            CallSiteExtraction.NodeIdDecodeRecord>();
+        InputBeanInstantiationEmitter.collectRecordDecoders(beanHelpers.values(), recordDecoders);
+        for (var rec : recordDecoders.values()) {
+            builder.addMethod(InputBeanInstantiationEmitter.buildRecordDecodeHelper(rec));
+        }
+
         // Emit orderBy helper methods for fields with a dynamic @orderBy argument. Covers
         // QueryTableField (root connection + list fetchers) and SplitTableField+Connection
         // (per-parent paginated rows method).

@@ -51,6 +51,19 @@ public final class FilmReviewService {
     }
 
     /**
+     * R195 fixture: takes a {@link FilmRecordAssignment} whose member is a jOOQ
+     * {@code FilmRecord} decoded from an {@code ID! @nodeId(typeName: "Film")} input-bean field.
+     * The generated fetcher decodes the wire id into the record before calling this method; the
+     * body simply reads back the populated key column to prove the decode-and-materialize seam.
+     */
+    public static String assignFilmRecord(FilmRecordAssignment in) {
+        if (in == null || in.film() == null) {
+            return "none";
+        }
+        return "film:" + in.film().getFilmId();
+    }
+
+    /**
      * R154 fixture: identical branching to {@link #submit} but returns the setter-shape sibling
      * payload class. Drives the {@code MutationServiceRecordField} emit through R154's
      * mutable-bean construction shape (no-arg ctor + setters) end-to-end through the execution

@@ -1040,6 +1040,13 @@ input FilmReviewTagInput {
     weight: Int
 }
 
+# R195: input bean whose member is a jOOQ FilmRecord. The `film` field carries
+# `ID! @nodeId(typeName: "Film")`; Java-side it maps to FilmRecordAssignment(FilmRecord film). The
+# generator decodes the wire id into a FilmRecord rather than casting the wire String to it.
+input FilmRecordAssignmentInput {
+    film: ID! @nodeId(typeName: "Film")
+}
+
 input PlainFilmIdInput {
     filmId: ID! @field(name: "film_id")
         @condition(condition: {
@@ -1532,6 +1539,17 @@ type Mutation {
         @service(service: {
             className: "no.sikt.graphitron.rewrite.test.services.FilmReviewService",
             method: "submitWithDetails"
+        })
+
+    # R195 compilation-tier fixture: @service input bean whose member is a jOOQ FilmRecord backed
+    # by `ID! @nodeId(typeName: "Film")`. The fetcher generator emits a createFilmRecordAssignment
+    # helper plus a decodeFilmRecord(Object) helper on MutationFetchers; the bean field routes the
+    # wire id through decodeFilmRecord (NodeIdEncoder.decodeFilm + FilmRecord.from(key)) instead of
+    # casting the wire String to FilmRecord — the R150/R195 ClassCastException this item removes.
+    assignFilmRecord(in: FilmRecordAssignmentInput!): String
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.FilmReviewService",
+            method: "assignFilmRecord"
         })
 
     # R154 execution-tier fixture: @service mutation whose payload class uses the mutable-bean

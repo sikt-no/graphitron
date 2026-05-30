@@ -295,6 +295,11 @@ public final class ArgCallEmitter {
                     nidk, param.typeName(), param.list(), registry);
             case CallSiteExtraction.InputBean ib ->
                 buildInputBeanCallExtraction(ib, param.name(), isListShaped(param));
+            case CallSiteExtraction.NodeIdDecodeRecord ignored ->
+                throw new IllegalStateException(
+                    "NodeIdDecodeRecord is an input-bean field leaf only (decoded into a jOOQ record"
+                    + " inside the create<Bean> helper); it must not reach the condition/argument"
+                    + " call-site emitter for param '" + param.name() + "'");
         };
     }
 

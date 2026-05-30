@@ -1,7 +1,7 @@
 ---
 id: R195
 title: Decode @nodeId into jOOQ-record-typed @service input-bean fields
-status: In Progress
+status: In Review
 bucket: feature
 priority: 5
 theme: model-cleanup
@@ -90,10 +90,11 @@ private static SakRecord decodeSakRecord(Object wire) {
     }
     Record1<Long> key = NodeIdEncoder.decodeSak(nodeId);
     if (key == null) {
-        throw new GraphqlErrorException("Decoded NodeId did not match the expected type for this argument");
+        throw GraphqlErrorException.newErrorException()
+            .message("Decoded NodeId did not match the expected type for this argument").build();
     }
     SakRecord record = new SakRecord();
-    record.from(key);
+    record.fromMap(key.intoMap());
     return record;
 }
 ```
@@ -104,18 +105,41 @@ field* should throw vs. defer to Jakarta non-null validation is settled in
 implementation against the existing non-null-arg behaviour; the decode-mismatch
 throw above is unconditional.
 
-`record.from(key)` is the crux that means **no encoder-generator change is
-needed**: `NodeIdEncoder.decodeSak(...)` builds its `RecordN` from the literal
-`Tables.SAK.<pkCol>` fields (`NodeIdEncoderClassGenerator`, `newRecord(Tables.SAK.COL, ...)`),
-so the decoded tuple's field names are identical to `SakRecord`'s key fields and
-jOOQ's `Record.from(Record)` copies them across by name. The decode returns a
-key tuple (`Record1<Long>` / `RecordN`), *not* a `TableRecord`; `from` is what
-turns it into one.
+`record.fromMap(key.intoMap())` is the crux that means **no encoder-generator
+change is needed**: `NodeIdEncoder.decodeSak(...)` builds its `RecordN` from the
+literal `Tables.SAK.<pkCol>` fields (`NodeIdEncoderClassGenerator`,
+`newRecord(Tables.SAK.COL, ...)`), so the decoded tuple's field names are
+identical to `SakRecord`'s key fields and the by-name copy lands each key column
+in the right slot. The decode returns a key tuple (`Record1<Long>` / `RecordN`),
+*not* a `TableRecord`; `fromMap(intoMap())` is what turns it into one.
 
 Java-17 note: the helper matches on `wire instanceof String nodeId` (legal in
 17). It does **not** pattern-match the parameterised `RecordN` (that would
-require Java 21+); it null-checks the decode result and calls `from`. This avoids
-the `(Object) ... instanceof Record1` dance the existing inline emitter needs.
+require Java 21+); it null-checks the decode result and calls `fromMap`. This
+avoids the `(Object) ... instanceof Record1` dance the existing inline emitter
+needs.
+
+> **Implementation corrections (landed).** Two claims above were wrong against the
+> real jOOQ / graphql-java 25 APIs and were corrected during implementation:
+> - **There is no `Record.from(Record)` by-name overload.** jOOQ's `from(Object)`
+>   POJO-reflects its source; a `RecordN` exposes no `getSakId()` bean property, so
+>   `record.from(key)` copies nothing and leaves the key column `null`. The
+>   working by-name copy is `record.fromMap(key.intoMap())` (`intoMap()` keys by
+>   field name; `fromMap` matches target fields by name). Verified at the
+>   execution tier (`GraphQLQueryTest#assignFilmRecord_decodesNodeIdIntoJooqRecordMember`).
+> - **`new GraphqlErrorException(String)` does not compile** (only a protected
+>   builder constructor exists); the throw uses
+>   `GraphqlErrorException.newErrorException().message(..).build()`. The existing
+>   inline `ThrowOnMismatch` arms in `ArgCallEmitter` /
+>   `CompositeDecodeHelperRegistry` emit the same broken `new GraphqlErrorException($S)`
+>   but no compilation-tier fixture reaches them, so the defect is latent there
+>   (filed as a separate Backlog item).
+> - **A third consumer needed teaching.** The spec said the only consumer is
+>   `InputBeanInstantiationEmitter`, but the R238 `@service` `ValueShape` path
+>   (`ServiceMethodCallWalker.fieldBindingShape`) re-projects each `InputBean`
+>   `FieldBinding` leaf and silently downgraded the unknown `NodeIdDecodeRecord`
+>   to `Direct`. It now carries the leaf through unchanged so the `create<Bean>`
+>   helper still routes through `decode<Record>`.
 
 ### Model: a dedicated leaf variant, not a reuse of `NodeIdDecodeKeys`
 
@@ -131,7 +155,7 @@ Rationale (principles-architect, finding 1): the existing
 `ArgCallEmitter.buildNodeIdDecodeExtraction` to **decompose** the decoded tuple
 into scalar column values (`.value1()` / `::valuesRow`) for a predicate/SET body.
 This new consumer does the opposite ; it keeps the tuple whole and **rebuilds a
-`TableRecord`** via `.from()`. Same decode helper, opposite downstream
+`TableRecord`** via `fromMap(intoMap())`. Same decode helper, opposite downstream
 projection. Reusing the same arm would force two consumers to fork differently on
 the same model field (the "two consumers, same predicate" smell in
 "Generation-thinking"); a distinct leaf makes each consumer fork on *identity*.
@@ -209,22 +233,30 @@ explicit arm per leaf, including the new `NodeIdDecodeRecord` arm that emits the
 helper call + the per-type `decode<Type>Record` helper. A classifier may produce
 the new leaf *iff* the emitter has a real arm for it.
 
-## Tests
+## Tests (landed)
 
-- **Pipeline tier (primary).** SDL with a `@record`/`@service` input bean whose
-  fields are `ID! @nodeId` / `ID @nodeId` targeting `@table` types with
-  record-typed bean members → assert the generated `TypeSpec` carries the decode
-  helper and the bean-field assignment goes through it, with no raw
-  `(SomeRecord) raw.get(...)` cast. (TypeSpec-shape / behaviour assertions; no
-  code-string body assertions, per the test-tier ban.)
-- **Rejection test.** A jOOQ-record bean member with no `@nodeId` (and the
-  composite-key punt) fails the build via a named `Rejection`.
-- **Compilation tier.** A fixture in `graphitron-sakila-example` exercising a
-  single-key `@nodeId` record member compiles against the real jOOQ catalog
-  (catches `from`/type mismatch). Sakila has single-column-PK tables suitable for
-  a `@nodeId` round-trip; pick one for the fixture.
-- **Execution tier (if a fixture is reachable).** A mutation that decodes a
-  NodeId into a record member and round-trips against PostgreSQL.
+- **Pipeline tier (primary).**
+  `generators/NodeIdRecordInputBeanPipelineTest` (6 tests): an `@service` input
+  bean (`TestServiceStub.assignFilm(TestNodeIdRecordBean)`) whose `ID! @nodeId`
+  field maps to a `FilmRecord` member emits a `decodeFilmRecord` helper plus a
+  `createTestNodeIdRecordBean` helper on `QueryFetchers`; the bean field routes
+  through `decodeFilmRecord(raw.get("film"))` with no `(FilmRecord) raw.get(...)`
+  cast; the decode helper returns the record type, takes `Object`, decodes via
+  `decodeFilm` and rebuilds with `fromMap(key.intoMap())`, throwing on a
+  type-mismatch. TypeSpec-shape / helper-presence assertions.
+- **Rejection tests** (same class): a record member with no `@nodeId` fails the
+  build with a named `Rejection` naming the field, the record type, and the
+  `@nodeId(typeName:)` remedy; a composite-key member (`FilmActorRecord`,
+  PK `(actor_id, film_id)`) fails with the composite-key-punt message.
+- **Compilation tier.** `graphitron-sakila-example`:
+  `FilmRecordAssignmentInput { film: ID! @nodeId(typeName: "Film") }` +
+  `Mutation.assignFilmRecord` → `FilmReviewService.assignFilmRecord(FilmRecordAssignment)`.
+  Generated `MutationFetchers.decodeFilmRecord` compiles against the real jOOQ
+  catalog (catches the `from`/`fromMap`/type mismatch).
+- **Execution tier.**
+  `GraphQLQueryTest#assignFilmRecord_decodesNodeIdIntoJooqRecordMember`: a
+  mutation decodes a `Film` NodeId into a `FilmRecord` member and reads the
+  populated `film_id` back, round-tripping against PostgreSQL.
 
 ## Affected code
 

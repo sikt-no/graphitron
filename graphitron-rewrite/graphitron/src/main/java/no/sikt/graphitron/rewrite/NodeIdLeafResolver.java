@@ -4,7 +4,6 @@ import graphql.schema.GraphQLDirectiveContainer;
 import graphql.schema.GraphQLObjectType;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
-import no.sikt.graphitron.rewrite.model.GraphitronType.NodeType;
 import no.sikt.graphitron.rewrite.model.HelperRef;
 import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.JoinStep.FkJoin;
@@ -16,9 +15,7 @@ import java.util.List;
 import java.util.Optional;
 
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_NAME;
-import static no.sikt.graphitron.rewrite.BuildContext.ARG_TYPE_ID;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_TYPE_NAME;
-import static no.sikt.graphitron.rewrite.BuildContext.DIR_NODE;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_NODE_ID;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_REFERENCE;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_TABLE;
@@ -245,7 +242,7 @@ final class NodeIdLeafResolver {
         String targetTableName = argString(targetObj, DIR_TABLE, ARG_NAME)
             .orElse(refTypeName.toLowerCase());
 
-        var keys = resolveTargetKeys(targetObj, refTypeName, targetTableName);
+        var keys = ctx.resolveTargetKeys(targetObj, refTypeName, targetTableName);
         if (keys.error() != null) {
             return new Resolved.Rejected(Rejection.structural(keys.error()));
         }
@@ -373,42 +370,6 @@ final class NodeIdLeafResolver {
                 + ". Specify typeName: explicitly.");
         }
         return new TypeNameResult(candidates.get(0), null);
-    }
-
-    private record TargetKeys(String typeId, List<ColumnRef> keyColumns, String error) {}
-
-    /**
-     * Resolves the target table's NodeType metadata: prefers catalog metadata, falls back to a
-     * post-first-pass {@link NodeType} in {@code ctx.types}, then to {@code @node} on the SDL
-     * with PK columns from the catalog. Returns an error message when none of those produce a
-     * usable {@code typeId} + {@code keyColumns} pair.
-     */
-    private TargetKeys resolveTargetKeys(GraphQLObjectType targetObj, String refTypeName,
-                                         String targetTableName) {
-        var meta = ctx.catalog.nodeIdMetadata(targetTableName);
-        if (meta.isPresent()) {
-            return new TargetKeys(meta.get().typeId(), meta.get().keyColumns(), null);
-        }
-        if (ctx.types != null && ctx.types.get(refTypeName) instanceof NodeType nt) {
-            return new TargetKeys(nt.typeId(), nt.nodeKeyColumns(), null);
-        }
-        if (targetObj.hasAppliedDirective(DIR_NODE)) {
-            String typeId = argString(targetObj, DIR_NODE, ARG_TYPE_ID).orElse(refTypeName);
-            var pkCols = ctx.catalog.findPkColumns(targetTableName).stream()
-                .map(e -> new ColumnRef(e.sqlName(), e.javaName(), e.columnClass()))
-                .toList();
-            if (pkCols.isEmpty()) {
-                return new TargetKeys(null, null,
-                    "@nodeId(typeName: '" + refTypeName + "') targets table '" + targetTableName
-                    + "' which has @node but no resolvable key columns (no catalog metadata, "
-                    + "no @node(keyColumns:), no primary key)");
-            }
-            return new TargetKeys(typeId, pkCols, null);
-        }
-        return new TargetKeys(null, null,
-            "@nodeId(typeName: '" + refTypeName + "') targets table '" + targetTableName
-            + "' which is not a @node type (no NodeId catalog metadata, no @node directive)"
-            + " — annotate the target type with @node or surface the metadata via KjerneJooqGenerator");
     }
 
     private record JoinPathResult(List<JoinStep> path, List<ColumnRef> liftedSourceColumns, String error) {}

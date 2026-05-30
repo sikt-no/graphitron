@@ -25,6 +25,10 @@ import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+import static no.sikt.graphitron.rewrite.BuildContext.ARG_TYPE_NAME;
+import static no.sikt.graphitron.rewrite.BuildContext.DIR_NODE_ID;
+import static no.sikt.graphitron.rewrite.BuildContext.argString;
+
 /**
  * Resolves the {@link CallSiteExtraction.InputBean} arm: a {@code @service} method parameter whose
  * Java type is a consumer-authored class mirroring an SDL {@code input} type, instantiated at the
@@ -273,6 +277,7 @@ final class InputBeanResolver {
             }
             SdlElement sdlElt = peelSdlListNonNull(sdlField.getType());
             boolean listShape = sdlElt.list();
+            boolean nonNull = GraphQLTypeUtil.isNonNull(sdlField.getType());
             String javaElementTypeName = member.elementTypeName();
             CallSiteExtraction leaf;
             if (sdlElt.elementType() instanceof GraphQLInputObjectType nestedIot) {
@@ -295,7 +300,21 @@ final class InputBeanResolver {
                     && tryLoad(javaElementTypeName).isEnum()) {
                 leaf = new CallSiteExtraction.EnumValueOf(javaElementTypeName);
             } else {
-                leaf = new CallSiteExtraction.Direct();
+                // Scalar SDL field. A jOOQ-record-typed member never lands on Direct: a wire ID
+                // String cast to a *Record throws ClassCastException at the first request (the
+                // R150/R195 bug). Branch to a @nodeId-decode leaf, or reject loudly — never fall
+                // through to Direct with a record member.
+                Class<?> memberClass = tryLoad(javaElementTypeName);
+                if (memberClass != null && isJooqRecord(memberClass)) {
+                    RecordLeaf recordLeaf = buildJooqRecordLeaf(sdlField, sdlFieldName,
+                        javaElementTypeName, listShape, nonNull, paramName, methodName, className);
+                    if (recordLeaf instanceof RecordLeaf.Fail rf) {
+                        return new Built.Fail(rf.rejection());
+                    }
+                    leaf = ((RecordLeaf.Ok) recordLeaf).leaf();
+                } else {
+                    leaf = new CallSiteExtraction.Direct();
+                }
             }
             bindings.add(new CallSiteExtraction.FieldBinding(
                 sdlFieldName, member.javaName(), leaf, listShape, javaElementTypeName));
@@ -308,6 +327,83 @@ final class InputBeanResolver {
         }
         return new Built.Ok(new CallSiteExtraction.InputBean(
             ClassName.bestGuess(beanClass.getName()), target, bindings));
+    }
+
+    // ===== jOOQ-record member (@nodeId decode) =====
+
+    /**
+     * Classification of a jOOQ-{@code Record}-typed input-bean member: either a
+     * {@link CallSiteExtraction.NodeIdDecodeRecord} decode leaf or a structural rejection. A record
+     * member has exactly these two outcomes; it never falls through to
+     * {@link CallSiteExtraction.Direct} (R195).
+     */
+    private sealed interface RecordLeaf {
+        record Ok(CallSiteExtraction.NodeIdDecodeRecord leaf) implements RecordLeaf {}
+        record Fail(Rejection rejection) implements RecordLeaf {}
+    }
+
+    /**
+     * Builds the {@link CallSiteExtraction.NodeIdDecodeRecord} leaf for a jOOQ-record-typed bean
+     * member, reading {@code @nodeId(typeName:)} off the SDL field and resolving the per-Node
+     * decode helper through {@link BuildContext#resolveNodeIdRecordDecode}. Rejects (rather than
+     * falling to {@link CallSiteExtraction.Direct}) when the member is list-shaped, carries no
+     * {@code @nodeId}, omits {@code typeName:}, targets an unresolvable NodeType, or has a
+     * composite (multi-column) key. The decode-mismatch / single-key constraints are the v1 scope;
+     * composite keys and list members are deferred (R195 "Deferred / out of scope").
+     */
+    private RecordLeaf buildJooqRecordLeaf(GraphQLInputObjectField sdlField, String sdlFieldName,
+            String recordTypeName, boolean listShape, boolean nonNull,
+            String paramName, String methodName, String className) {
+        String where = "field '" + sdlFieldName + "' (jOOQ record '" + recordTypeName + "') on the"
+            + " bean for parameter '" + paramName + "' of method '" + methodName + "' in class '"
+            + className + "'";
+        if (listShape) {
+            return new RecordLeaf.Fail(Rejection.structural(where
+                + ": list-of-jOOQ-record members are not yet supported — decode a single"
+                + " @nodeId(typeName:) record member per field"));
+        }
+        if (!sdlField.hasAppliedDirective(DIR_NODE_ID)) {
+            return new RecordLeaf.Fail(Rejection.structural(where
+                + ": a jOOQ-record-typed input-bean member must carry @nodeId(typeName:) so the"
+                + " wire-format ID can be decoded into the record — add @nodeId(typeName: \"<NodeType>\")"
+                + " to the SDL field"));
+        }
+        var typeName = argString(sdlField, DIR_NODE_ID, ARG_TYPE_NAME);
+        if (typeName.isEmpty()) {
+            return new RecordLeaf.Fail(Rejection.structural(where
+                + ": @nodeId on a jOOQ-record-typed member must specify typeName: explicitly (the"
+                + " record type alone does not name the NodeType to decode against)"));
+        }
+        var resolution = ctx.resolveNodeIdRecordDecode(typeName.get());
+        if (resolution instanceof BuildContext.NodeIdRecordDecode.Rejected r) {
+            return new RecordLeaf.Fail(Rejection.structural(where + ": " + r.message()));
+        }
+        var resolved = (BuildContext.NodeIdRecordDecode.Resolved) resolution;
+        if (resolved.keyColumns().size() != 1) {
+            return new RecordLeaf.Fail(Rejection.structural(where
+                + ": composite-key record members (" + resolved.keyColumns().size() + " key columns)"
+                + " are not yet supported — only single-column @nodeId keys decode into a record"
+                + " member in this version"));
+        }
+        return new RecordLeaf.Ok(new CallSiteExtraction.NodeIdDecodeRecord(
+            resolved.decode(), ClassName.bestGuess(recordTypeName), nonNull));
+    }
+
+    /**
+     * True when {@code cls} implements {@code org.jooq.Record} (transitively, e.g. via
+     * {@code TableRecord} / {@code UpdatableRecord}). Matched by interface FQN rather than
+     * {@code org.jooq.Record.class.isAssignableFrom(cls)} so the result does not depend on whether
+     * the codegen classloader shares jOOQ's {@code Record} {@link Class} identity with the
+     * generator's loader — the same classloader-agnostic discipline {@link #looksLikeBeanCandidate}
+     * uses with its package-name test.
+     */
+    private static boolean isJooqRecord(Class<?> cls) {
+        if (cls == null) return false;
+        if (cls.getName().equals("org.jooq.Record")) return true;
+        for (Class<?> i : cls.getInterfaces()) {
+            if (isJooqRecord(i)) return true;
+        }
+        return isJooqRecord(cls.getSuperclass());
     }
 
     // ===== Java-side helpers =====

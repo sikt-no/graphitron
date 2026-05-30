@@ -3749,6 +3749,19 @@ class GraphQLQueryTest {
         }
     }
 
+    @Test
+    void assignFilmRecord_decodesNodeIdIntoJooqRecordMember() {
+        // R195: a @service input bean whose member is a jOOQ FilmRecord backed by
+        // `ID! @nodeId(typeName: "Film")`. The fetcher decodes the wire id into a FilmRecord via
+        // decodeFilmRecord (NodeIdEncoder.decodeFilm + FilmRecord.from(key)) instead of casting the
+        // wire String to FilmRecord; the service reads the populated film_id back. Round-trips the
+        // decode-and-materialize end-to-end against PostgreSQL.
+        String filmId3 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Film", 3);
+        Map<String, Object> data = execute(
+            "mutation { assignFilmRecord(in: {film: \"" + filmId3 + "\"}) }");
+        assertThat(data).extractingByKey("assignFilmRecord").isEqualTo("film:3");
+    }
+
     // ===== R77 Phase B: missing-vs-null on single-row INSERT (containsKey-gated DEFAULT) =====
 
     @Test

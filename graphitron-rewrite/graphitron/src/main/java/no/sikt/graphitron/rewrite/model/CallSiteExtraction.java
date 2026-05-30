@@ -30,7 +30,8 @@ public sealed interface CallSiteExtraction
         permits CallSiteExtraction.Direct, CallSiteExtraction.EnumValueOf,
                 CallSiteExtraction.ContextArg,
                 CallSiteExtraction.JooqConvert, CallSiteExtraction.NestedInputField,
-                CallSiteExtraction.NodeIdDecodeKeys, CallSiteExtraction.InputBean {
+                CallSiteExtraction.NodeIdDecodeKeys, CallSiteExtraction.NodeIdDecodeRecord,
+                CallSiteExtraction.InputBean {
 
     /** Pass the argument directly: {@code env.getArgument("name")}. */
     record Direct() implements CallSiteExtraction {}
@@ -161,6 +162,40 @@ public sealed interface CallSiteExtraction
      * {@code @nodeId} on a top-level scalar / list argument bound to a lookup or mutation key.
      */
     record ThrowOnMismatch(HelperRef.Decode decodeMethod) implements NodeIdDecodeKeys {}
+
+    /**
+     * Decode a base64 NodeId into a jOOQ {@code TableRecord} for a {@code @service} input-bean
+     * member field typed as a generated {@code *Record}. Sibling to {@link NodeIdDecodeKeys}: both
+     * carry the same {@link HelperRef.Decode}, but the downstream projection is the opposite. Where
+     * {@link NodeIdDecodeKeys} <em>decomposes</em> the decoded key tuple into scalar column values
+     * for a predicate / SET body, this arm keeps the tuple whole and <em>rebuilds</em> a
+     * {@link org.jooq.TableRecord} from it via {@code record.fromMap(key.intoMap())}; the by-name
+     * column copy means no encoder-generator change is needed (the decoded {@code RecordN} carries
+     * the same {@code Tables.<T>.<col>} field names as the target record's key columns).
+     *
+     * <p>Produced only by {@code InputBeanResolver} when an input-bean field's loaded Java type is
+     * assignable to {@code org.jooq.Record} and the SDL field carries {@code @nodeId(typeName:)};
+     * consumed only by {@code InputBeanInstantiationEmitter}, which emits a per-record-type
+     * {@code decode<RecordType>} helper on the enclosing {@code *Fetchers} class. Any other
+     * exhaustive {@link CallSiteExtraction} switch treats this arm as unreachable-by-construction.
+     *
+     * <p>{@code recordType} is the fully-qualified generated jOOQ record class (the field's Java
+     * type). {@code nonNull} reflects the SDL field's nullability ({@code ID!} vs {@code ID}); a
+     * type-mismatch decode (the helper returns {@code null}) is always an authored-input error and
+     * throws, while a {@code null}/absent wire value follows graphql-java's non-null enforcement at
+     * the boundary, so a nullable field yields a {@code null} member.
+     */
+    record NodeIdDecodeRecord(HelperRef.Decode decode, ClassName recordType, boolean nonNull)
+            implements CallSiteExtraction {
+        public NodeIdDecodeRecord {
+            if (decode == null) {
+                throw new IllegalArgumentException("NodeIdDecodeRecord decode must be non-null");
+            }
+            if (recordType == null) {
+                throw new IllegalArgumentException("NodeIdDecodeRecord recordType must be non-null");
+            }
+        }
+    }
 
     /**
      * Instantiate a consumer-authored Java bean class from a GraphQL input-object Map. Used by
