@@ -64,8 +64,11 @@ generator-vs-output Java-version principle.)
 
 - `ArgCallEmitter.buildNodeIdDecodeExtraction` (scalar + list, throw + skip arms)
   and `CompositeDecodeHelperRegistry` (the arity > 1 helper already lifts to a
-  named method; align its body to the same readable shape and drop underscore
-  locals there too).
+  named method and already emits statement form; it does *not* use
+  underscore-prefixed locals, but its body still binds single-character locals
+  `s`/`r`/`nl` (`CompositeDecodeHelperRegistry.java:94,106`). Rename these to
+  meaningful names (`nodeId`/`key`) to match the readable shape; there is no
+  underscore prefix to drop there).
 - Audit the rest of the rewrite emitters for the same ternary/underscore style
   and the `Supplier`-lambda-throw trick; fold any siblings into this cleanup.
   Two concrete siblings are already known and in scope: the list-aware path
@@ -73,11 +76,19 @@ generator-vs-output Java-version principle.)
   (`graphitron/src/main/java/no/sikt/graphitron/rewrite/generators/ArgCallEmitter.java:675-709`)
   and the matching map-traversal in `ServiceMethodCallEmitter` (~lines 230-247),
   both of which emit counter-suffixed pattern-binding locals (`_m1`, `_l2`,
-  `_e3`) inside nested ternaries. Indexed *helper-method* names (`__lookupKey0`)
-  and jOOQ *aliases* (`<field>_0`) in `TypeFetcherGenerator`/`FieldBuilder` are
-  *not* in scope: they name methods and SQL aliases, not expression-local
-  variables, and do not exhibit the meaningless-underscore-local smell this
-  principle targets.
+  `_e3`) inside nested ternaries. Two near-neighbours are deliberately *not* in
+  scope:
+  - The lookup-WHERE decode local `__lookupKey<i>` (`recLocal` in
+    `TypeFetcherGenerator.buildLookupWhereSingleRow` /
+    `appendMapBindingValueExpr`, `TypeFetcherGenerator.java:2762,2793`) *is* an
+    expression-local, but `appendDecodeLocal` already lifts it into a named
+    statement-form local rather than a nested ternary, and its stem
+    (`lookupKey`) is meaningful, so it does not exhibit the
+    meaningless-underscore-local-in-a-ternary smell this principle targets. (The
+    double-underscore prefix is a separate, lower-value naming nit; out of scope
+    here.)
+  - jOOQ *aliases* (`<field>_0`) in `TypeFetcherGenerator`/`FieldBuilder` name
+    SQL aliases, not expression locals, and are out of scope.
 
 ## Out of scope
 
@@ -85,6 +96,26 @@ generator-vs-output Java-version principle.)
   generated code must be behaviourally identical (pinned by the existing
   pipeline tests and the `graphitron-sakila-example` compile/execute tiers, plus
   any execution-tier test that exercises a NodeId-decoded argument).
+
+## Tests
+
+Behaviour is pinned by the compile/execute tiers above; the classification-tier
+pipeline tests (`NodeIdPipelineTest`) assert the decode *model*
+(`decodeMethod().methodName()`, arm variant) rather than emitted text, so they
+are unaffected. Two unit-tier tests *do* pin the old emitted shape by string
+match and must be updated to the new helper/statement form as part of this work:
+
+- `ServiceMethodCallEmitterTest` (`generators/ServiceMethodCallEmitterTest.java:210-254`)
+  asserts the exact `_m1`/`_m2`/`_l2`/`_e3` pattern-binding text via
+  `.contains(...)`. Since the matching map-traversal is in scope, these
+  assertions break; rewrite them against the new local names / statement shape.
+- `QueryConditionsGeneratorLiftTest` carries the old `_m1` form in a javadoc
+  example (`generators/QueryConditionsGeneratorLiftTest.java:19`); refresh it so
+  the doc does not name a shape the emitter no longer produces.
+
+The refactor should add (or extend an existing) execution-tier test that drives
+a throw-arm NodeId mismatch end to end, so the new helper's `GraphqlErrorException`
+path is exercised, not just compiled.
 
 ## Forcing function
 

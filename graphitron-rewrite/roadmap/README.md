@@ -15,7 +15,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | ID | Item | Status | Updated | Plan |
 |---|---|---|---|---|
 | `R19` | Rebase and squash rewrite branch onto main | Ready |  | [plan](history-squash.md) |
-| `R256` | Absorb the service walker substrate: typed per-arm errors + multi-arg ctors | Spec | 2026-05-29 | [plan](service-walker-substrate-absorption.md) |
+| `R256` | Absorb the service walker substrate: typed per-arm errors + multi-arg ctors | Spec | 2026-05-30 <sub>created 2026-05-29</sub> | [plan](service-walker-substrate-absorption.md) |
 | `R222` | Dimensional model pivot: slots over cross-product permits | Spec | 2026-05-28 <sub>created 2026-05-21</sub> | [plan](dimensional-model-pivot.md) |
 | `R195` | Decode @nodeId into jOOQ-record-typed @service input-bean fields | Spec | 2026-05-30 <sub>created 2026-05-20</sub> | [plan](jooq-record-as-service-input-bean.md) |
 | `R45` | Multi-tenant routing on top of the schema-driven ExecutionInput factory | Spec | 2026-05-20 | [plan](tenant-routing-and-execution-input.md) |
