@@ -218,6 +218,9 @@ public final class Diagnostics {
         if (rejection instanceof no.sikt.graphitron.rewrite.model.UpdateRowsError ure) {
             return ure.lspCode();
         }
+        if (rejection instanceof no.sikt.graphitron.rewrite.model.ErrorChannelWalkerError ecwe) {
+            return ecwe.lspCode();
+        }
         return null;
     }
 

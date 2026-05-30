@@ -4848,6 +4848,11 @@ public class TypeFetcherGenerator {
             return redactCatchArm(outputPackage);
         }
         return switch (errorChannel.get()) {
+            // R244 additive window: Mapped is not produced yet (the Outcome-wrapper emit seam,
+            // ChannelCatchArmEmitter, lands in a later slice-1 commit). Handle the arm so the
+            // sealed switch compiles; it is unreachable until the in-scope fields flip.
+            case ErrorChannel.Mapped m -> throw new IllegalStateException(
+                "catchArm reached ErrorChannel.Mapped before the Outcome-wrapper emit seam landed");
             case ErrorChannel.PayloadClass pc -> dispatchCatchArm(outputPackage, pc);
             case ErrorChannel.LocalContext lc -> {
                 if (localContextSentinel == null) {
@@ -4983,6 +4988,10 @@ public class TypeFetcherGenerator {
             routerCall = CodeBlock.of("$T.redact(t, env)", errorRouterClass(outputPackage));
         } else {
             routerCall = switch (errorChannel.get()) {
+                // R244 additive window: Mapped is not produced yet; the async Outcome-wrapper tail
+                // lands with the in-scope flip. Handle the arm so the sealed switch compiles.
+                case ErrorChannel.Mapped m -> throw new IllegalStateException(
+                    "asyncWrapTail reached ErrorChannel.Mapped before the Outcome-wrapper emit seam landed");
                 case ErrorChannel.PayloadClass pc -> CodeBlock.builder()
                     .add("$T.dispatch(t, $T.$L, env, ",
                         errorRouterClass(outputPackage),

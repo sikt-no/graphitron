@@ -425,6 +425,50 @@ The staged plan eats the rest of the error-channel machinery in subsequent items
 - The `DataFetcherBuilder` dimensional slot composition: R222 Stage 3. This slice ships the walker carrier and the wrapper transport, not the dimensional slot that would compose `MethodCall` × `ErrorChannel` × … into one emit-ready form.
 - `Rejection.AuthorError.Structural(String reason)` callsites outside the in-scope rejection paths: untouched. This slice introduces no new `Structural` callsites; in-scope channel-rejection paths each map to a typed `ErrorChannelWalkerError` arm.
 
+## Progress
+
+**Commit 1 (additive, unwired) ; landed.** The following pieces are in place, observable only
+through the new additive rejections; nothing produces or consumes `Mapped` yet, `PayloadClass` is
+intact and remains what in-scope fields classify to:
+
+- `Outcome` runtime type, emitted by `OutcomeClassGenerator` into `<outputPackage>.schema.Outcome`
+  and registered in `GraphQLRewriteGenerator`. The JavaPoet fork has no `sealed` / `permits` /
+  `recordBuilder` support (see the note in `ConnectionHelperClassGenerator`), so `Outcome` is
+  emitted as a plain generic interface with two implementing classes (`Success<T>` /
+  `ErrorList<T>`) carrying `value()` / `errors()` accessors; the runtime contract (non-null source,
+  the two arms, the accessors) is unchanged. The graphql-java completion invariant lives in the
+  generated type's javadoc and the generator's class javadoc.
+- `OutcomeType` classification record (`model/OutcomeType.java`); carrier, not yet constructed by a
+  producer.
+- `ErrorChannelWalkerError` sub-seal (`model/ErrorChannelWalkerError.java`) with all four arms,
+  added to `Rejection.AuthorError`'s permits, its `typed-rejection.adoc` paragraph, and LSP wiring
+  (`Diagnostics.lspCodeOf` forwards the `graphitron.error-channel.*` codes; `severityOf` already
+  maps the whole `AuthorError` family to `Error`; `RejectionSeverityCoverageTest` samples added).
+- `ErrorChannel.Mapped` arm added under the transitional three-arm sealed root
+  (`Mapped | PayloadClass | LocalContext`). Existing exhaustive switches on the root
+  (`MappingsConstantNameDedup`, `ErrorMappingsClassGenerator`) handle `Mapped` with live behaviour;
+  the emitter switches (`TypeFetcherGenerator.catchArm` / `asyncWrapTail`) throw on the unreachable
+  `Mapped` case until the emit seam lands.
+- `ChildField.ErrorsField.Transport.WrapperArm` arm; `FetcherEmitter`'s `Transport` switch throws on
+  the unreachable `WrapperArm` case until the flip.
+- Validator passes `validateOutcomeTypeShape` (single-errors-field → `MultipleErrorsFields`, a pure
+  model check, live) and `validateOutcomeChildArmSwitch` (+ `OUTCOME_TYPE_ARM_SWITCHED_DATA_CHANNEL_VARIANTS`
+  allow-list). The arm-switch pass is keyed off `Transport.WrapperArm` errors fields, exactly like
+  `validateLocalContextErrorsFieldGuards` keys off `Transport.LocalContext`, so it is dormant until
+  the flip produces `WrapperArm` fields.
+
+Full pipeline (`mvn install -Plocal-db`) green across all tiers, including the cross-module
+sakila-example compile of the generated `Outcome`.
+
+**Sequencing revision (In Progress).** The `NonNullableSuccessProjectionField` arm exists in the
+seal (so the LSP/doc surface is complete), but its *enforcement* moves from commit 1 to the in-scope
+flip (commit 3). Two reasons: a non-null success-projection field is only unsafe under the wrapper
+transport (on `PayloadClass` it is at worst the pre-existing latent issue the spec notes), so
+enforcing it alongside the flip keeps the rule paired with the transport that makes it load-bearing;
+and the success-projection SDL nullability is reachable cleanly only at classify time (where the
+`GraphQLFieldDefinition` / `OutcomeType` construction sits), not from the post-classification model
+the validator walks. The single-errors-field rule needs only the classified model, so it lands now.
+
 ## Supersedes
 
 - **R241** (`retire-error-payloadclass-transport`, Spec): discarded. R241's "route through `localContext`" framing was doubly wrong ; a null payload source silently drops errors (verified, see "Why the wrapper, and not localContext"), and the deeper point is that no developer payload class should be constructed or reflected on at all. This slice routes through the typed `Outcome` wrapper instead. The `SlettPoengformelPayload` incident that motivated R241 lands as a non-event ; the generator never reflects on the payload class.

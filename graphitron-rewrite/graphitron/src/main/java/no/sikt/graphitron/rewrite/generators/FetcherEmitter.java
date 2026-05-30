@@ -96,6 +96,11 @@ public final class FetcherEmitter {
                 }
                 case ChildField.Transport.LocalContext ignored ->
                     CodeBlock.of("($T env) -> env.getLocalContext()", DATA_FETCHING_ENV);
+                // R244 additive window: WrapperArm errors fields are not produced yet (the in-scope
+                // flip to the Outcome wrapper lands in a later slice-1 commit). Handle the arm so the
+                // sealed switch compiles; unreachable until an ErrorsField classifies to WrapperArm.
+                case ChildField.Transport.WrapperArm ignored -> throw new IllegalStateException(
+                    "FetcherEmitter reached Transport.WrapperArm before the Outcome-wrapper emit seam landed");
             };
         }
         if (field instanceof ChildField.PropertyField pf && resultType != null) {

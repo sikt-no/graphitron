@@ -28,7 +28,7 @@ import java.util.List;
  * ({@code MappingsConstantNameDedup}, {@code ErrorMappingsClassGenerator},
  * {@code CheckedExceptionMatcher}) need.
  */
-public sealed interface ErrorChannel {
+public sealed interface ErrorChannel permits ErrorChannel.Mapped, ErrorChannel.PayloadClass, ErrorChannel.LocalContext {
 
     /**
      * The resolved {@code @error} types this channel routes to, in source order. A
@@ -44,6 +44,30 @@ public sealed interface ErrorChannel {
      * different mappings get a hash suffix (see {@code error-handling-parity.md} §3).
      */
     String mappingsConstantName();
+
+    /**
+     * NEW (R244) ; replaces the {@link PayloadClass} arm for {@code @service} / {@code @tableMethod}
+     * outcome fields. The classify-time descriptor of which {@code @error} types map and which
+     * {@code ErrorMappings} constant drives them; it drives the {@code Outcome} wrapper emit (the
+     * success path wraps the jOOQ record in {@code Success}, the error path returns
+     * {@code ErrorList(matchedErrors)}). No developer payload class is constructed or reflected on.
+     *
+     * <p>Carries the same two fields as {@link LocalContext} by coincidence; they are distinct
+     * types because they drive different emit ({@code Mapped} → {@code Outcome},
+     * {@code LocalContext} → sentinel + {@code dispatchToLocalContext}).
+     */
+    record Mapped(
+        List<GraphitronType.ErrorType> mappedErrorTypes,
+        String mappingsConstantName
+    ) implements ErrorChannel {
+        public Mapped {
+            mappedErrorTypes = List.copyOf(mappedErrorTypes);
+            if (mappedErrorTypes.isEmpty()) {
+                throw new IllegalArgumentException(
+                    "ErrorChannel.Mapped: mappedErrorTypes must be non-empty");
+            }
+        }
+    }
 
     /**
      * The catch arm constructs a developer payload class and slots the errors list into it.

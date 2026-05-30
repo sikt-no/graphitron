@@ -138,6 +138,7 @@ public final class MappingsConstantNameDedup {
      */
     private static String groupKey(ErrorChannel ch) {
         return switch (ch) {
+            case ErrorChannel.Mapped m -> m.mappingsConstantName();
             case ErrorChannel.PayloadClass p -> p.payloadClass().reflectionName();
             case ErrorChannel.LocalContext lc -> lc.mappingsConstantName();
         };
@@ -149,6 +150,7 @@ public final class MappingsConstantNameDedup {
      */
     private static ErrorChannel renameChannel(ErrorChannel ch, String newName) {
         return switch (ch) {
+            case ErrorChannel.Mapped m -> new ErrorChannel.Mapped(m.mappedErrorTypes(), newName);
             case ErrorChannel.PayloadClass p -> new ErrorChannel.PayloadClass(
                 p.mappedErrorTypes(), p.payloadClass(), p.errorsSlot(),
                 p.defaultedSlots(), newName);

@@ -212,6 +212,25 @@ class RejectionSeverityCoverageTest {
             return new no.sikt.graphitron.rewrite.model.UpdateRowsError.OverrideConditionNotSupported(
                 "syntheticName", new SourceLocation(1, 1));
         }
+        // R244: ErrorChannelWalkerError sub-seal of AuthorError. One sample per arm; Diagnostics.compute's
+        // switch on Rejection.AuthorError catches the whole sub-family uniformly (Error severity), and
+        // lspCodeOf forwards each arm's stable graphitron.error-channel.* code.
+        if (permit == no.sikt.graphitron.rewrite.model.ErrorChannelWalkerError.MultipleErrorsFields.class) {
+            return new no.sikt.graphitron.rewrite.model.ErrorChannelWalkerError.MultipleErrorsFields(
+                "FilmPayload", List.of("errors", "problems"));
+        }
+        if (permit == no.sikt.graphitron.rewrite.model.ErrorChannelWalkerError.NonNullableSuccessProjectionField.class) {
+            return new no.sikt.graphitron.rewrite.model.ErrorChannelWalkerError.NonNullableSuccessProjectionField(
+                "FilmPayload", "film");
+        }
+        if (permit == no.sikt.graphitron.rewrite.model.ErrorChannelWalkerError.ChannelRuleViolation.class) {
+            return new no.sikt.graphitron.rewrite.model.ErrorChannelWalkerError.ChannelRuleViolation(
+                "FilmPayload", "errors", 7, "two VALIDATION handlers in one channel");
+        }
+        if (permit == no.sikt.graphitron.rewrite.model.ErrorChannelWalkerError.HandlerSourceAccessorMissing.class) {
+            return new no.sikt.graphitron.rewrite.model.ErrorChannelWalkerError.HandlerSourceAccessorMissing(
+                "FilmPayload", "FilmError", "com.example.FilmErrorHandler", "code", List.of("message", "path"));
+        }
         return null;
     }
 }

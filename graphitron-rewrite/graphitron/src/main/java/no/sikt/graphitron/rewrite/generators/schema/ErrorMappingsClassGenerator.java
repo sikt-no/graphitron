@@ -181,6 +181,7 @@ public final class ErrorMappingsClassGenerator {
      */
     private static String channelLabel(ErrorChannel channel) {
         return switch (channel) {
+            case ErrorChannel.Mapped m -> m.mappingsConstantName();
             case ErrorChannel.PayloadClass p -> p.payloadClass().simpleName();
             case ErrorChannel.LocalContext lc -> lc.mappingsConstantName();
         };
