@@ -7,7 +7,7 @@ priority: 3
 theme: structural-refactor
 depends-on: []
 created: 2026-05-29
-last-updated: 2026-05-29
+last-updated: 2026-05-30
 ---
 
 # Absorb the service walker substrate: typed per-arm errors + multi-arg ctors
@@ -87,6 +87,11 @@ walker" cost. (Full retirement of the `MethodRef.Service` → `ServiceMethodCall
 double model — making the walker the sole resolver — is explicitly **not** in
 scope; file a separate item if ever wanted.)
 
+The item title ("Absorb the service walker substrate") is retained for continuity
+with the R238/R261 cross-references that already name this slug; read it as
+"absorb the prose failures *onto* the existing typed substrate," not "absorb
+reflection *into* the walker" — the latter is the reading this section rejects.
+
 ## Design fork: where the wire-coercion rejection lives (resolved)
 
 The sibling item R261 (`wire-coercion-cast-guard`) retires the raw
@@ -117,6 +122,19 @@ service slice and reuses the same predicate for the non-service sites. This give
 R261's "resolve it once, consistently with R256" a concrete shape and keeps the
 two items from each implementing half a cast guard.
 
+**The one shared file, pinned for order-independence.** Both items can touch
+`ServiceMethodCallEmitter.scalarLeaf` (`:155` emits the `(SakRecord)`/`(Long)`
+raw cast for `Direct`; `:159-162` carry the latent `JooqConvert`/`NodeIdDecodeKeys`/`default`
+raw casts R261's secondary scope names). Retiring those raw casts is the *emitter
+consequence of R261's judgment*, so **it is R261's, not R256's**. R256 leaves
+`scalarLeaf` emitting exactly as today and only guarantees the
+`ServiceMethodCallError` channel exists and is end-to-end testable *without* the
+coercion predicate (a reflection-time arm fails the build on its own). That makes
+the `depends-on` order-independent in practice: R256 landing first leaves the
+`Direct` cast live until R261 (no regression, the bug already exists); R256 must
+*not* "helpfully" harden `scalarLeaf`, or it has done R261's judgment work in the
+wrong home.
+
 ## Deliverables
 
 ### 1. Typed per-arm errors (migrate prose → seal)
@@ -125,15 +143,21 @@ For each reflection-time failure in the table above, re-add the
 `ServiceMethodCallError` arm R238 trimmed and produce it **at the `ServiceCatalog`
 site** in place of the `Rejection.structural(...)` it returns today (the typed arm
 implements `Rejection.AuthorError`, so it threads through the existing
-`ServiceReflectionResult.rejection` → exclude-field flow and
-`Diagnostics.lspCodeOf` picks up its `lspCode()` with no projector change). Each
+`ServiceReflectionResult.rejection` → exclude-field flow unchanged). Note
+`Diagnostics.lspCodeOf` dispatches on the *sub-seal* by `instanceof`
+(`ServiceMethodCallError` / `UpdateRowsError`), not generically on an
+`AuthorError.lspCode()`: arms re-added under `ServiceMethodCallError` need no
+projector change, but the new `ReflectionError` sub-seal (see the partition below)
+needs its own `lspCodeOf` branch plus an `lspCode()` declaration on the seal. Each
 arm carries its failure's structured components (class name, method name,
 expected vs actual return type, the unbindable parameter + candidate args, etc.),
 not a baked string. Per the established five-piece checklist (R246/R238
 precedent), each arm lands with all of:
 
-1. the `record` arm in `ServiceMethodCallError`'s `permits` clause;
-2. `lspCode()` returning a stable `graphitron.service-method-call.*` string;
+1. the `record` arm in the appropriate seal's `permits` clause (see the
+   shared-vs-service partition below);
+2. `lspCode()` returning a stable namespaced string (`graphitron.service-method-call.*`
+   for service-binding arms, `graphitron.reflect.*` for the shared reflection arms);
 3. production at the `ServiceCatalog` reflection site, preserved verbatim through
    `WalkerResult.Err` / the `FieldBuilder` switch;
 4. a `RejectionSeverityCoverageTest.sampleFor` branch (the test fails with
@@ -148,16 +172,51 @@ against `ServiceCatalog:283-333` during implementation; the `FromArg`-in-`ctorAr
 case is the cross-round invariant `ServiceMethodCall`'s javadoc already names).
 `MultipleDslContextSlots` and `ParameterUnbindable` stay as-is.
 
-### 2. Validator mirror per arm (no silent acceptance)
+**Shared-vs-service partition (one predicate, one home).** The three reflect
+helpers `reflectServiceMethod` / `reflectTableMethod` / `reflectExternalField`
+share their class-load (`:352`/`:593`/`:678`), return-type-mismatch (`:204`/`:525`),
+parameter-names (`:248`/`:563`) and overload-resolution (`methods.get(0)` at
+`:200`/`:516`/`:633`) code. So `ClassNotLoaded`, `ReturnTypeMismatch`,
+`ParameterNamesMissing` and `AmbiguousMethod` are **reflection-intrinsic, not
+`@service`-specific**. Migrating only the service call site would leave the
+structurally identical `@tableMethod`/`@externalField` failures as prose
+`Structural` and invite the next item to re-derive the same arm — the exact "one
+predicate, one home" drift this Spec invokes elsewhere. **Resolution:** migrate at
+the shared helper so all three callers produce the typed arm, and place the
+reflection-intrinsic arms under a shared `ReflectionError` sub-seal of
+`Rejection.AuthorError` (`graphitron.reflect.*`) rather than forcing
+`ServiceMethodCallError.ClassNotLoaded` to be produced for a `@tableMethod`
+failure. `ServiceMethodCallError` (`graphitron.service-method-call.*`) keeps the
+service-*binding*-specific arms (`MultipleDslContextSlots`, `ParameterUnbindable`,
+the arg-mapping family, and the instance-holder arm to the extent it is service
+specific). Confirm the precise split — which arms are genuinely shared vs.
+service-binding-specific, and whether `checkServiceInstanceHolderShape` is reached
+by `@tableMethod` — against the three reflect helpers during implementation.
+(`@externalField`-specific shape rejections — must be `public static`, `Field<X>`
+return — stay out of scope; they ride that permit's own work.)
 
-Per "Validator mirrors classifier invariants": re-adding an arm is not enough; an
-unimplemented downstream branch for that classification must **fail the build**,
-not produce broken code (this is exactly the gap R261 documents — R238 *designed*
-the arms but nothing build-time-checked the service-arg surface). Each new arm's
-classify-time decision must surface as a validate-time rejection over the
-`@service` / `CallSiteExtraction` surface, not only as a unit-test case. The new
-`AmbiguousMethod` is itself a classifier fork (pick a method vs. reject) and gets
-the same mirror.
+### 2. Validator mirror (only where a new fork is introduced)
+
+Per "Validator mirrors classifier invariants": an unimplemented downstream branch
+must **fail the build**, not produce broken code. But the two classes of arm here
+mirror differently, and the Spec should not assert a single mechanism for both:
+
+- **Reflection-time arms (deliverable 1) are self-mirroring.** They are produced
+  *eagerly* at `ServiceCatalog` as a non-null `ServiceReflectionResult.rejection`,
+  which already drives the exclude-field flow and fails the build. Migrating them
+  from `Structural` prose to a typed arm changes *which* rejection fires, not
+  *whether* the build fails. No new validator partition is needed for these; the
+  pipeline-tier assertion in deliverable 3 (that the build fails with the typed
+  arm and its `lspCode()`) is their mirror.
+- **The genuinely new forks need an added check.** `AmbiguousMethod` (pick a method
+  vs. reject, where `methods.get(0)` silently picked before) and the multi-arg-ctor
+  unbindable case (deliverable 3) are *new* classify-time decisions; for these the
+  mirror is the new `ServiceCatalog`-level rejection plus its pipeline-tier
+  assertion. Note that the dispatch-partition validator the principle anchors on
+  (`GeneratorCoverageTest`) does **not** cover this surface — R261 (`:50-52`)
+  establishes it only partitions `GraphitronField` leaves, not the
+  `@service`/`CallSiteExtraction` surface — so the mirror lives in the
+  `ServiceCatalog`-rejection + pipeline-test pair, not in extending that partition.
 
 ### 3. Multi-arg constructors / silent first-match retirement
 
@@ -169,6 +228,15 @@ the same mirror.
   this (sealed `FromDsl` | `FromContext`), with `FromArg` invalid in `ctorArgs`
   per the existing cross-round invariant, so no carrier-shape change is needed,
   only the producer relaxation and the walker's hard-coded `[FromDsl]` removal.
+  Relaxing the producer guard pulls two obligations in the *same change* (per
+  "Classifier guarantees shape emitter assumptions"): (a) the
+  at-most-one-`FromDsl`-per-round invariant, enforced today only for the method
+  round (`ServiceMethodCallWalker:90-93`), must now also fire for `ctorArgs` — a
+  multi-DSLContext constructor produces `MultipleDslContextSlots` with a new
+  `Round.CONSTRUCTOR` discriminant the walker does not emit today; (b) the
+  `(DSLContext, ContextArg)` ctor's `FromContext` name resolution must reuse the
+  existing method-param context-binding path (`inferBindingsByType` / the ctx-keys
+  walk), not a parallel ctor-only one.
 - Replace `methods.get(0)` with arity-based disambiguation; a genuine tie
   produces `AmbiguousMethod` (deliverable 1).
 
@@ -177,12 +245,16 @@ the same mirror.
 - Widen `ConflictSite.site` from `MethodRef` to a sealed two-arm identifier
   (`MethodRef` | `ServiceMethodCall`), retiring
   `ContextArgumentClassifier.syntheticServiceMethodRef`. This is "Sealed
-  hierarchies over enums" / "narrow component types over broad interfaces": the
+  hierarchies over enums" / "Sub-taxonomies for resolution outcomes": the
   fabricated empty `MethodRef.Service` is a sentinel standing in for "this
   conflict came from a walker carrier"; the sealed widening lets the type carry
   that honestly.
 - Retire the `ValueShape` → synthetic `CallSiteExtraction.InputBean` round-trip in
-  the bean-helper queue.
+  the bean-helper queue: the queue currently re-wraps a `ValueShape` composite as
+  a synthetic `InputBean` so the existing bean-helper path consumes it; it should
+  consume the `ValueShape` directly. (Sketch the replacement during
+  implementation; this is the most opaque of the four deliverables and the one
+  most likely to grow — split it out if it does.)
 
 ## Tests
 
@@ -201,10 +273,13 @@ the same mirror.
 
 ## Affected code
 
-- `ServiceCatalog.java` — typed arms in place of `Rejection.structural(...)`;
-  multi-arg ctor resolution in `checkServiceInstanceHolderShape`; arity
-  disambiguation replacing `methods.get(0)`.
-- `model/ServiceMethodCallError.java` — the re-added arms + `lspCode()`.
+- `ServiceCatalog.java` — typed arms (service-binding + shared reflection) in
+  place of `Rejection.structural(...)` at all three reflect helpers; multi-arg
+  ctor resolution in `checkServiceInstanceHolderShape`; arity disambiguation
+  replacing `methods.get(0)`.
+- `model/ServiceMethodCallError.java` — the re-added service-binding arms;
+  `model/ReflectionError.java` (new sub-seal) — the shared reflection arms; both
+  with `lspCode()`. `Diagnostics.lspCodeOf` — a branch for `ReflectionError`.
 - `walker/ServiceMethodCallWalker.java` — translate richer `CallShape` into
   multi-source `Instance.ctorArgs`; drop the hard-coded `[FromDsl]`.
 - `model/ConflictSite.java`, `ContextArgumentClassifier.java` — the sealed
