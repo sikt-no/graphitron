@@ -1,13 +1,13 @@
 ---
 id: R260
-title: "Readable generated code for NodeId decode extraction (drop ternary/underscore style)"
-status: Backlog
+title: Readable generated code for NodeId decode extraction (drop ternary/underscore style)
+status: Spec
 bucket: cleanup
 priority: 5
 theme: model-cleanup
 depends-on: []
 created: 2026-05-29
-last-updated: 2026-05-29
+last-updated: 2026-05-30
 ---
 
 # Readable generated code for NodeId decode extraction (drop ternary/underscore style)
@@ -68,6 +68,16 @@ generator-vs-output Java-version principle.)
   locals there too).
 - Audit the rest of the rewrite emitters for the same ternary/underscore style
   and the `Supplier`-lambda-throw trick; fold any siblings into this cleanup.
+  Two concrete siblings are already known and in scope: the list-aware path
+  walker `ArgCallEmitter.walkSegments`
+  (`graphitron/src/main/java/no/sikt/graphitron/rewrite/generators/ArgCallEmitter.java:675-709`)
+  and the matching map-traversal in `ServiceMethodCallEmitter` (~lines 230-247),
+  both of which emit counter-suffixed pattern-binding locals (`_m1`, `_l2`,
+  `_e3`) inside nested ternaries. Indexed *helper-method* names (`__lookupKey0`)
+  and jOOQ *aliases* (`<field>_0`) in `TypeFetcherGenerator`/`FieldBuilder` are
+  *not* in scope: they name methods and SQL aliases, not expression-local
+  variables, and do not exhibit the meaningless-underscore-local smell this
+  principle targets.
 
 ## Out of scope
 
