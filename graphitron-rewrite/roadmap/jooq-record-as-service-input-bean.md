@@ -7,7 +7,7 @@ priority: 5
 theme: model-cleanup
 depends-on: []
 created: 2026-05-20
-last-updated: 2026-05-29
+last-updated: 2026-05-30
 ---
 
 # Decode @nodeId into jOOQ-record-typed @service input-bean fields
@@ -159,21 +159,32 @@ typeName→keyColumns→decodeHelper walk ; that is the second site that drifts 
 `NodeIdLeafResolver.resolveTargetKeys` when the `@node(keyColumns:)` fallback
 changes.
 
-Instead: resolve `@nodeId(typeName:)` → the backing SDL object type → its
-`@table` name (in scope at the resolver), then call the **existing**
-`BuildContext.resolveDecodeHelperForTable(tableName, typeId, keyColumns)`
-(`BuildContext.java:2080-2105`). Key-column resolution stays in one place. If the
-key columns are needed before that call, extract
-`NodeIdLeafResolver.resolveTargetKeys` into a shared `BuildContext` method both
-sites call, rather than copying it.
+Two pieces resolve from two different sides, and they must not be conflated:
 
-**Correctness subtlety to honour (architect finding 2):**
-`resolveDecodeHelperForTable` derives the decode-method *suffix* from
-`findGraphQLTypeForTable` (singular). When several object types back one table
-that disagrees with the author's explicit `@nodeId(typeName: "Sak")`. The decode
-helper name must be `decode<Sak>` (the author-given typeName), not
-`decode<firstTypeForTable>`. Resolve the suffix from the typeName side; use the
-table only for key columns.
+- **Key columns: from the table, in one place.** Resolve `@nodeId(typeName:)` →
+  the backing SDL object type → its `@table` name (in scope at the resolver), and
+  derive the key columns from that table. To keep this a single site, extract
+  `NodeIdLeafResolver.resolveTargetKeys` into a shared `BuildContext` method both
+  callers use, rather than copying its `@node(keyColumns:)` fallback logic.
+- **Decode-helper suffix: from the author's typeName, never the table.** The
+  helper name must be `decode<Sak>` (the author-given `@nodeId(typeName: "Sak")`),
+  resolved by reading `GraphitronType.NodeType.decodeMethod()` for the type the
+  typeName names (the NodeType-preferred branch, `BuildContext.java:2121-2122`);
+  that `HelperRef.Decode` already carries the correct name and key columns. When the `types` map is not yet
+  populated at this resolver's pass, fall back to constructing
+  `HelperRef.Decode(encoderClass, "decode" + typeName, keyColumns)` from the
+  typeName, mirroring the two-branch logic inside `resolveDecodeHelperForTable`
+  (`BuildContext.java:2111-2136`) but keyed on the typeName.
+
+**Do not call `resolveDecodeHelperForTable` for this (architect finding 2).** That
+method derives the suffix from `findGraphQLTypeForTable(sqlTableName)` (singular,
+`BuildContext.java:1992`, `:2118`) and consults its `fallbackTypeNameOrTypeId`
+argument *only* on the empty branch; when several object types back one table it
+yields `decode<firstTypeForTable>`, silently disagreeing with the author's explicit
+typeName. The argument name reads as if it drives the suffix but does not, so
+passing the typeName there is a trap. Resolve the suffix from the typeName side as
+above. (Hardening that helper's typeName-vs-table direction is tracked as R263; it
+is not a prerequisite here, and this item must not lean on it.)
 
 ### Loud rejection
 
