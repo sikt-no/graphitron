@@ -194,6 +194,11 @@ public final class ServiceMethodCallWalker {
         ValueShape inner;
         if (leaf instanceof CallSiteExtraction.InputBean nestedBean) {
             inner = inputBeanToValueShape(nestedBean, path);
+        } else if (leaf instanceof CallSiteExtraction.NodeIdDecodeRecord) {
+            // R195: a jOOQ-record member decoded from @nodeId. Carry the leaf through unchanged so
+            // the create<Bean> helper emits the decode<Record> call; never downgrade to Direct (the
+            // wire-String → *Record ClassCastException this item exists to eliminate).
+            inner = new ValueShape.Scalar(elementType, path, leaf);
         } else if (isLeaf(leaf)) {
             inner = new ValueShape.Scalar(elementType, path, leaf);
         } else {

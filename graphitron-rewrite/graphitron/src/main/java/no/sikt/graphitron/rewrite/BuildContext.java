@@ -2136,6 +2136,108 @@ class BuildContext {
     }
 
     /**
+     * Resolved NodeType key metadata for a {@code @nodeId(typeName:)} target: the wire-format
+     * {@code typeId} plus the key {@link ColumnRef} list, or an {@code error} message when none of
+     * the three resolution sources (catalog metadata, a post-first-pass {@link NodeType} in
+     * {@code types}, or {@code @node} on the SDL with PK columns from the catalog) produce a usable
+     * pair. Shared shape: both {@link NodeIdLeafResolver#resolve} and
+     * {@link #resolveNodeIdRecordDecode} read their key columns through {@link #resolveTargetKeys},
+     * so the {@code @node(keyColumns:)} fallback lives in exactly one place.
+     */
+    record TargetKeys(String typeId, List<ColumnRef> keyColumns, String error) {}
+
+    /**
+     * Resolves the target table's NodeType metadata: prefers catalog metadata, falls back to a
+     * post-first-pass {@link NodeType} in {@code types}, then to {@code @node} on the SDL with PK
+     * columns from the catalog. Returns an error message when none of those produce a usable
+     * {@code typeId} + {@code keyColumns} pair. Lifted from {@code NodeIdLeafResolver} so the
+     * input-bean jOOQ-record path ({@link #resolveNodeIdRecordDecode}) shares the same fallback.
+     */
+    TargetKeys resolveTargetKeys(GraphQLObjectType targetObj, String refTypeName,
+                                 String targetTableName) {
+        var meta = catalog.nodeIdMetadata(targetTableName);
+        if (meta.isPresent()) {
+            return new TargetKeys(meta.get().typeId(), meta.get().keyColumns(), null);
+        }
+        if (types != null && types.get(refTypeName) instanceof NodeType nt) {
+            return new TargetKeys(nt.typeId(), nt.nodeKeyColumns(), null);
+        }
+        if (targetObj.hasAppliedDirective(DIR_NODE)) {
+            String typeId = argString(targetObj, DIR_NODE, ARG_TYPE_ID).orElse(refTypeName);
+            var pkCols = catalog.findPkColumns(targetTableName).stream()
+                .map(e -> new ColumnRef(e.sqlName(), e.javaName(), e.columnClass()))
+                .toList();
+            if (pkCols.isEmpty()) {
+                return new TargetKeys(null, null,
+                    "@nodeId(typeName: '" + refTypeName + "') targets table '" + targetTableName
+                    + "' which has @node but no resolvable key columns (no catalog metadata, "
+                    + "no @node(keyColumns:), no primary key)");
+            }
+            return new TargetKeys(typeId, pkCols, null);
+        }
+        return new TargetKeys(null, null,
+            "@nodeId(typeName: '" + refTypeName + "') targets table '" + targetTableName
+            + "' which is not a @node type (no NodeId catalog metadata, no @node directive)"
+            + " — annotate the target type with @node or surface the metadata via KjerneJooqGenerator");
+    }
+
+    /**
+     * Outcome of resolving the decode helper + key columns for a jOOQ-record-typed {@code @service}
+     * input-bean member field carrying {@code @nodeId(typeName:)}. {@link Resolved} carries the
+     * per-Node {@code decode<TypeName>} {@link HelperRef.Decode} plus the target's key columns;
+     * {@link Rejected} carries a fully formatted reason ready for a {@code Rejection}.
+     */
+    sealed interface NodeIdRecordDecode {
+        record Resolved(HelperRef.Decode decode, List<ColumnRef> keyColumns) implements NodeIdRecordDecode {}
+        record Rejected(String message) implements NodeIdRecordDecode {}
+    }
+
+    /**
+     * Resolves the {@code decode<TypeName>} helper and key columns for a jOOQ-record input-bean
+     * member from the author's {@code @nodeId(typeName:)}. Two pieces resolve from two sides and
+     * must not be conflated:
+     *
+     * <ul>
+     *   <li><b>Key columns</b> come from the table backing {@code typeName}, via the shared
+     *       {@link #resolveTargetKeys} (the single {@code @node(keyColumns:)} fallback site).</li>
+     *   <li><b>Decode-helper suffix</b> comes from the author's {@code typeName}, never the table:
+     *       read {@link NodeType#decodeMethod()} for the type {@code typeName} names when the
+     *       {@code types} map is populated, else construct
+     *       {@code decode<typeName>} directly. This avoids the {@code resolveDecodeHelperForTable}
+     *       trap, where the suffix is derived from the (possibly non-unique) GraphQL type backing
+     *       the table rather than the author's explicit typeName.</li>
+     * </ul>
+     */
+    NodeIdRecordDecode resolveNodeIdRecordDecode(String typeName) {
+        var rawGqlType = schema.getType(typeName);
+        if (rawGqlType == null) {
+            return new NodeIdRecordDecode.Rejected(
+                "@nodeId(typeName: '" + typeName + "') type does not exist in the schema");
+        }
+        if (!(rawGqlType instanceof GraphQLObjectType targetObj)
+                || !targetObj.hasAppliedDirective(DIR_TABLE)) {
+            return new NodeIdRecordDecode.Rejected(
+                "@nodeId(typeName: '" + typeName + "') type is not @table-annotated");
+        }
+        String targetTableName = argString(targetObj, DIR_TABLE, ARG_NAME)
+            .orElse(typeName.toLowerCase());
+        var keys = resolveTargetKeys(targetObj, typeName, targetTableName);
+        if (keys.error() != null) {
+            return new NodeIdRecordDecode.Rejected(keys.error());
+        }
+        HelperRef.Decode decode;
+        if (types != null && types.get(typeName) instanceof NodeType nt) {
+            decode = nt.decodeMethod();
+        } else {
+            var encoderClass = no.sikt.graphitron.javapoet.ClassName.get(
+                ctx.outputPackage() + ".util",
+                no.sikt.graphitron.rewrite.generators.util.NodeIdEncoderClassGenerator.CLASS_NAME);
+            decode = new HelperRef.Decode(encoderClass, "decode" + typeName, keys.keyColumns());
+        }
+        return new NodeIdRecordDecode.Resolved(decode, keys.keyColumns());
+    }
+
+    /**
      * Returns every {@code @table}-annotated object type whose table name matches
      * {@code sqlTableName} (case-insensitive), in schema declaration order. Multiple object
      * types may legitimately share a table; callers that need a unique mapping handle the

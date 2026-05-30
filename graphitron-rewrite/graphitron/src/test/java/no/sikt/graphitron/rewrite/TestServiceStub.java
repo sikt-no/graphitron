@@ -553,4 +553,23 @@ class TestServiceStub {
     public static String runWithPackagePrivateBean(TestInputPackagePrivate input) {
         throw new UnsupportedOperationException();
     }
+
+    /**
+     * R195 fixture: takes a {@link TestNodeIdRecordBean} whose member is a jOOQ {@link FilmRecord}.
+     * The SDL input-bean field backing that member carries {@code @nodeId(typeName: "Film")}, so the
+     * classifier must decode the wire-format id into a {@code FilmRecord} rather than casting the
+     * wire {@code String} (the R150/R195 {@code ClassCastException}).
+     */
+    public static String assignFilm(TestNodeIdRecordBean in) {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
+     * R195 fixture: takes a {@link TestNodeIdCompositeRecordBean} whose member is a jOOQ
+     * {@link FilmActorRecord} backed by a composite-key table. Composite-key record members are
+     * deferred in v1, so the classifier rejects this at generation time.
+     */
+    public static String assignFilmActor(TestNodeIdCompositeRecordBean in) {
+        throw new UnsupportedOperationException();
+    }
 }

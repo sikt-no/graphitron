@@ -1284,6 +1284,10 @@ class FieldBuilder {
             case CallSiteExtraction.NestedInputField ignored -> column.columnClass();
             case CallSiteExtraction.NodeIdDecodeKeys ignored -> column.columnClass();
             case CallSiteExtraction.InputBean ignored -> column.columnClass();
+            // NodeIdDecodeRecord is an input-bean field leaf, never a BodyParam extraction; like the
+            // InputBean arm above it cannot reach a column-bound predicate, so the column's own type
+            // is the trivially-correct (unreached) answer.
+            case CallSiteExtraction.NodeIdDecodeRecord ignored -> column.columnClass();
         };
     }
 
