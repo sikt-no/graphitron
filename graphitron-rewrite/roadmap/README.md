@@ -15,8 +15,8 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | ID | Item | Status | Updated | Plan |
 |---|---|---|---|---|
 | `R19` | Rebase and squash rewrite branch onto main | Ready |  | [plan](history-squash.md) |
-| `R256` | Absorb the service walker substrate: typed per-arm errors + multi-arg ctors | Spec | 2026-05-30 <sub>created 2026-05-29</sub> | [plan](service-walker-substrate-absorption.md) |
 | `R222` | Dimensional model pivot: slots over cross-product permits | Spec | 2026-05-28 <sub>created 2026-05-21</sub> | [plan](dimensional-model-pivot.md) |
+| `R256` | Absorb the service walker substrate: typed per-arm errors + multi-arg ctors | Ready | 2026-05-30 <sub>created 2026-05-29</sub> | [plan](service-walker-substrate-absorption.md) |
 | `R45` | Multi-tenant routing on top of the schema-driven ExecutionInput factory | Spec | 2026-05-20 | [plan](tenant-routing-and-execution-input.md) |
 | `R260` | Readable generated code for NodeId decode extraction (drop ternary/underscore style) | Spec | 2026-05-30 <sub>created 2026-05-29</sub> | [plan](nodeid-decode-emitter-readability.md) |
 | `R195` | Decode @nodeId into jOOQ-record-typed @service input-bean fields | Ready | 2026-05-30 <sub>created 2026-05-20</sub> | [plan](jooq-record-as-service-input-bean.md) |
@@ -202,7 +202,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 ### structural-refactor
 
 - `R261` [**Generation-time wire-coercion cast guard across arg-classification sites**](wire-coercion-cast-guard.md) — Backlog, architecture, blocked by [service-walker-substrate-absorption](service-walker-substrate-absorption.md), [dimensional-model-pivot](dimensional-model-pivot.md)
-- `R256` [**Absorb the service walker substrate: typed per-arm errors + multi-arg ctors**](service-walker-substrate-absorption.md) — Spec, structural
+- `R256` [**Absorb the service walker substrate: typed per-arm errors + multi-arg ctors**](service-walker-substrate-absorption.md) — Ready, structural
 - `R222` [**Dimensional model pivot: slots over cross-product permits**](dimensional-model-pivot.md) — Spec, structural
 - `R171` [**Fold InputType and TableInputType under sealed parent InputLikeType**](input-like-type-sealed-parent.md) — Backlog, architecture
 - `R103` [**Lift jOOQ column defaults onto input fields connected to that column**](lift-jooq-column-defaults-onto-inputs.md) — Backlog, architecture

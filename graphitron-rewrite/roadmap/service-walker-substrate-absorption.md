@@ -1,7 +1,7 @@
 ---
 id: R256
 title: "Absorb the service walker substrate: typed per-arm errors + multi-arg ctors"
-status: Spec
+status: Ready
 bucket: structural
 priority: 3
 theme: structural-refactor
