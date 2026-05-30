@@ -19,7 +19,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R256` | Absorb the service walker substrate: typed per-arm errors + multi-arg ctors | Ready | 2026-05-30 <sub>created 2026-05-29</sub> | [plan](service-walker-substrate-absorption.md) |
 | `R45` | Multi-tenant routing on top of the schema-driven ExecutionInput factory | Spec | 2026-05-20 | [plan](tenant-routing-and-execution-input.md) |
 | `R260` | Readable generated code for NodeId decode extraction (drop ternary/underscore style) | Spec | 2026-05-30 <sub>created 2026-05-29</sub> | [plan](nodeid-decode-emitter-readability.md) |
-| `R195` | Decode @nodeId into jOOQ-record-typed @service input-bean fields | Ready | 2026-05-30 <sub>created 2026-05-20</sub> | [plan](jooq-record-as-service-input-bean.md) |
+| `R195` | Decode @nodeId into jOOQ-record-typed @service input-bean fields | In Progress | 2026-05-30 <sub>created 2026-05-20</sub> | [plan](jooq-record-as-service-input-bean.md) |
 | `R255` | Dedupe duplicate column projection in @reference DBQueries (RC-6 regression) | In Review | 2026-05-28 | [plan](dedupe-reference-projection.md) |
 | `R23` | Multi-parent `NestingField` sharing: `TableField` arm | Spec |  | [plan](nestingfield-multiparent-tablefield.md) |
 | `R186` | Nested input types in @mutation fields | Spec | 2026-05-29 <sub>created 2026-05-20</sub> | [plan](nested-input-types-in-mutation-fields.md) |
@@ -190,7 +190,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 - `R234` [**Support jOOQ embedded and UDT records as non-table input backings**](jooq-embedded-and-udt-input-backings.md) — Backlog, architecture
 - `R263` [**Add a typeName-first decode-helper entry point so resolveDecodeHelperForTable is not a misuse trap**](decode-helper-typename-first-resolution.md) — Backlog, cleanup
-- `R195` [**Decode @nodeId into jOOQ-record-typed @service input-bean fields**](jooq-record-as-service-input-bean.md) — Ready, feature
+- `R195` [**Decode @nodeId into jOOQ-record-typed @service input-bean fields**](jooq-record-as-service-input-bean.md) — In Progress, feature
 - `R260` [**Readable generated code for NodeId decode extraction (drop ternary/underscore style)**](nodeid-decode-emitter-readability.md) — Spec, cleanup
 - `R181` [**Validate @order/@defaultOrder: empty directive and @index coexistence**](validate-order-directive-args.md) — Backlog, validation
 - `R16` [**`FkJoin` model cleanup: `JoinConditionRef` wrapper**](fkjoin-model-cleanup.md) — Backlog, cleanup
