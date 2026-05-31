@@ -461,6 +461,25 @@ class GraphQLQueryTest {
     }
 
     @Test
+    void films_filteredByArgNodeId_dropsWrongTypeIdViaSkipHelper() {
+        // R260: the arity-1 list @nodeId decode now lifts to the statement-form helper
+        // QueryConditions.decodeFilmKeys (was an inline nested-ternary). This drives the helper's
+        // SkipMismatchedElement runtime path end to end: a Customer-encoded id passed to a Film
+        // arg decodes to null (wrong NodeType) and is dropped by the helper's filter(nonNull), so
+        // only the genuine Film id survives the WHERE film_id IN (...) predicate. Exercises the
+        // GraphQL→generated-helper→jOOQ path, not just compilation.
+        String filmId2 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Film", 2);
+        String wrongTypeId = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Customer", 2);
+        Map<String, Object> data = execute(
+            "{ filmsByNodeIdArg(ids: [\"" + filmId2 + "\", \"" + wrongTypeId + "\"]) { filmId title } }");
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("filmsByNodeIdArg");
+        assertThat(films)
+            .as("the Customer-encoded id decodes to null for Film and is skipped; only film 2 matches")
+            .extracting(f -> f.get("filmId")).containsExactly(2);
+    }
+
+    @Test
     void filmsByNodeIdArgWithTitleFilter_composesPkInWithSiblingFilter() {
         // R106 acceptance: same-table @nodeId composed with a sibling scalar filter classifies
         // as QueryTableField (not QueryLookupTableField) with a BodyParam.In on film.film_id

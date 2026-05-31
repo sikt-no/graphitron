@@ -59,7 +59,7 @@ public final class ArgCallEmitter {
      * {@link CallSiteExtraction.NestedInputField#outerArgName()} to a local-variable name
      * that already holds the {@code Map<?, ?>} cast of {@code env.getArgument(outerArg)}.
      * When an extraction's outer arg is in the map, the depth-0 step of the chain skips
-     * the {@code instanceof Map<?, ?> _m1} rebind in favour of a {@code <local> != null}
+     * the {@code instanceof Map<?, ?> map1} rebind in favour of a {@code <local> != null}
      * guard against the lifted local. Used by {@link QueryConditionsGenerator} to dedupe
      * the rebind when ≥2 body params on a single method share an outer arg.
      */
@@ -292,7 +292,7 @@ public final class ArgCallEmitter {
             case CallSiteExtraction.NodeIdDecodeKeys nidk ->
                 buildNodeIdDecodeExtraction(
                     CodeBlock.of("env.getArgument($S)", param.name()),
-                    nidk, param.typeName(), param.list(), registry);
+                    nidk, param.list(), registry);
             case CallSiteExtraction.InputBean ib ->
                 buildInputBeanCallExtraction(ib, param.name(), isListShaped(param));
             case CallSiteExtraction.NodeIdDecodeRecord ignored ->
@@ -358,116 +358,34 @@ public final class ArgCallEmitter {
      * {@code GraphqlErrorException} wrapper; the wrapper appears once per element.
      */
     private static CodeBlock buildNodeIdDecodeExtraction(CodeBlock wireExpr,
-            CallSiteExtraction.NodeIdDecodeKeys nidk, String leafTypeName, boolean list,
+            CallSiteExtraction.NodeIdDecodeKeys nidk, boolean list,
             CompositeDecodeHelperRegistry registry) {
         var decode = nidk.decodeMethod();
-        var encoderClass = decode.encoderClass();
-        String methodName = decode.methodName();
-        int arity = decode.outputColumnShape().size();
         boolean throwOnMismatch = nidk instanceof CallSiteExtraction.ThrowOnMismatch;
 
-        // Composite (arity > 1) NodeId decoding lifts to a per-class private helper when the
-        // caller provides a registry. The helper bakes in the wire-shape guard, decode call, and
-        // Record<N>::valuesRow projection, so the call site collapses to <name>(wireExpr).
-        // Arity-1 paths and null-registry callers fall through to the inline form below.
-        if (registry != null && arity > 1) {
-            var mode = throwOnMismatch
-                ? CompositeDecodeHelperRegistry.Mode.THROW
-                : CompositeDecodeHelperRegistry.Mode.SKIP;
-            String helperName = registry.register(decode, mode, list);
-            return CodeBlock.of("$L($L)", helperName, wireExpr);
+        // Every NodeId decode (any arity, skip or throw) lifts to a per-class private helper
+        // registered through the collector; the helper bakes in the wire-shape guard, decode call,
+        // and key projection as readable statement-form code, so the call site collapses to
+        // <name>(wireExpr). This replaces the former inline nested-ternary form (underscore
+        // pattern locals plus a Supplier-lambda-throw trick to stay an expression) with a body a
+        // developer can breakpoint and read a meaningful stack frame from (R260).
+        if (registry == null) {
+            // All NodeId-decoded condition arguments are emitted through QueryConditionsGenerator,
+            // which owns a CompositeDecodeHelperRegistry and drains it onto the <Root>Conditions
+            // class. A registry-less call site reaching a decode is a wiring bug: there would be
+            // nowhere to emit the lifted helper. Fail loudly rather than fall back to the inline
+            // expression-trick form this item removed.
+            throw new IllegalStateException(
+                "NodeId-decode extraction must be lifted into a per-class decode helper, which requires a "
+                + "CompositeDecodeHelperRegistry; none was supplied for decode '" + decode.methodName()
+                + "'. NodeId-decoded condition arguments are emitted through QueryConditionsGenerator, "
+                + "which owns and drains a registry.");
         }
-
-        ClassName objects = ClassName.get(java.util.Objects.class);
-        ClassName collectors = ClassName.get(java.util.stream.Collectors.class);
-
-        if (list) {
-            // Pattern: (wire) instanceof List<?> _nl ? _nl.stream()
-            //          .map(decode).filter(nonNull)[.map(value1) | .map(RecordN::valuesRow)]
-            //          .collect(toList()) : null
-            // wireExpr is wrapped in outer parens so the instanceof binds at the right
-            // precedence (ternary `?:` is right-associative; instanceof binds tighter).
-            var stream = CodeBlock.builder()
-                .add("($L) instanceof $T<?> _nl ? _nl.stream().map(s -> $T.$L((String) s))",
-                    wireExpr, ClassName.get(List.class),
-                    encoderClass, methodName);
-            if (throwOnMismatch) {
-                stream.add(".map(r -> { if (r == null) throw new $T($S); return r; })",
-                    ClassName.get("graphql", "GraphqlErrorException"),
-                    "Decoded NodeId did not match the expected type for this argument");
-            } else {
-                stream.add(".filter($T::nonNull)", objects);
-            }
-            if (arity == 1) {
-                // Arity-1: project to the typed scalar, body emits column.in(List<T>).
-                stream.add(".map(r -> r.value1())");
-            } else {
-                // Arity-N: project the typed RecordN to its typed Row<N><...> via the
-                // RecordN-typed method reference. decode.returnType() is RecordN<T1, ..., TN>,
-                // so the resulting stream element is Row<N><T1, ..., TN>; body can do
-                // DSL.row(cols).in(List<Row<N><T1, ..., TN>>) without coercion.
-                ClassName recordN = ClassName.get("org.jooq", "Record" + arity);
-                stream.add(".map($T::valuesRow)", recordN);
-            }
-            stream.add(".collect($T.toList()) : null", collectors);
-            return stream.build();
-        }
-
-        // scalar -- wrap wireExpr in parens for ternary precedence.
-        // Skip arm: scalar case treats null decode as "no match" (caller's nullable arg).
-        // Throw arm: a null decode raises a GraphqlErrorException via a helper lambda; the
-        // body shape uses a (((Supplier<X>) () -> { throw ...; }).get()) trick to keep the
-        // expression form, but inverting through a helper static is cleaner. Generated code
-        // calls NodeIdEncoder.decode<TypeName>(_s) and wraps via a guard.
-        if (arity == 1) {
-            // Java 17 compatibility: pattern matching with parameterised types is Java 21+.
-            // Cast to Object first so the {@code instanceof Record1 _r} pattern is conditional
-            // (raw {@code Record1} is a strict subtype of {@code Object}); without the cast,
-            // {@code instanceof Record1<X> _r} is an unconditional pattern requiring Java 21+.
-            ClassName recordRaw = ClassName.get("org.jooq", "Record1");
-            ClassName valueClass = ClassName.bestGuess(decode.outputColumnShape().get(0).columnClass());
-            if (throwOnMismatch) {
-                return CodeBlock.of(
-                    "($L) instanceof String _s ? (((Object) $T.$L(_s)) instanceof $T _r ? ($T) _r.value1() : "
-                    + "(($T<?>) () -> { throw new $T($S); }).get()) : null",
-                    wireExpr, encoderClass, methodName, recordRaw, valueClass,
-                    ClassName.get("java.util.function", "Supplier"),
-                    ClassName.get("graphql", "GraphqlErrorException"),
-                    "Decoded NodeId did not match the expected type for this argument");
-            }
-            return CodeBlock.of("($L) instanceof String _s && ((Object) $T.$L(_s)) instanceof $T _r ? ($T) _r.value1() : null",
-                wireExpr, encoderClass, methodName, recordRaw, valueClass);
-        }
-        // arity > 1: raw RecordN pattern (Java-17 compatible, parameterized instanceof patterns
-        // are Java 21+) plus a cast to the typed Row<N><...>. The cast is unchecked but sound:
-        // decode.returnType() is RecordN<T1, ..., TN>, so _r.valuesRow() at runtime is a
-        // Row<N><T1, ..., TN>; the cast just teaches javac the parameterization. Mirrors the
-        // arity-1 raw-pattern + cast form a few lines up.
-        ClassName recordRaw = ClassName.get("org.jooq", "Record" + arity);
-        TypeName rowTyped = typedRowName(decode.outputColumnShape());
-        if (throwOnMismatch) {
-            return CodeBlock.of(
-                "($L) instanceof String _s ? (((Object) $T.$L(_s)) instanceof $T _r ? ($T) _r.valuesRow() : "
-                + "(($T<?>) () -> { throw new $T($S); }).get()) : null",
-                wireExpr, encoderClass, methodName, recordRaw, rowTyped,
-                ClassName.get("java.util.function", "Supplier"),
-                ClassName.get("graphql", "GraphqlErrorException"),
-                "Decoded NodeId did not match the expected type for this argument");
-        }
-        return CodeBlock.of(
-            "($L) instanceof String _s && ((Object) $T.$L(_s)) instanceof $T _r ? ($T) _r.valuesRow() : null",
-            wireExpr, encoderClass, methodName, recordRaw, rowTyped);
-    }
-
-    /** Builds {@code Row<N><T1, ..., TN>} for the cast target. */
-    private static TypeName typedRowName(List<no.sikt.graphitron.rewrite.model.ColumnRef> columns) {
-        int n = columns.size();
-        ClassName rowN = ClassName.get("org.jooq", "Row" + n);
-        TypeName[] typeArgs = new TypeName[n];
-        for (int i = 0; i < n; i++) {
-            typeArgs[i] = ClassName.bestGuess(columns.get(i).columnClass());
-        }
-        return ParameterizedTypeName.get(rowN, typeArgs);
+        var mode = throwOnMismatch
+            ? CompositeDecodeHelperRegistry.Mode.THROW
+            : CompositeDecodeHelperRegistry.Mode.SKIP;
+        String helperName = registry.register(decode, mode, list);
+        return CodeBlock.of("$L($L)", helperName, wireExpr);
     }
 
     /**
@@ -476,14 +394,14 @@ public final class ArgCallEmitter {
      * generated expression is a chain of {@code instanceof Map<?,?>} ternaries:
      *
      * <pre>
-     *     env.getArgument("outer") instanceof Map&lt;?, ?&gt; _m1
-     *         ? (_m1.get("k1") instanceof Map&lt;?, ?&gt; _m2
-     *             ? (... ? (LeafType) _mN.get("kN") : null)
+     *     env.getArgument("outer") instanceof Map&lt;?, ?&gt; map1
+     *         ? (map1.get("k1") instanceof Map&lt;?, ?&gt; map2
+     *             ? (... ? (LeafType) mapN.get("kN") : null)
      *             : null)
      *         : null
      * </pre>
      *
-     * <p>Pattern-variable bindings {@code _m1..._mN} are scoped to the ternary's "then" branch,
+     * <p>Pattern-variable bindings {@code map1..mapN} are scoped to the ternary's "then" branch,
      * so peer expressions in the same method call (multiple condition args) may reuse the same
      * binding names without conflict.
      *
@@ -503,7 +421,7 @@ public final class ArgCallEmitter {
         boolean nodeIdLeaf = leaf instanceof CallSiteExtraction.NodeIdDecodeKeys;
         // When the outer arg has already been lifted to a typed Map<?, ?> local, depth 0 of the
         // chain references the local directly under a null-check; otherwise it falls back to the
-        // inline `env.getArgument(outer) instanceof Map<?, ?> _m1` rebind.
+        // inline `env.getArgument(outer) instanceof Map<?, ?> map1` rebind.
         String topBinding = liftedOuters != null ? liftedOuters.get(outerArgName) : null;
         CodeBlock root = topBinding != null
             ? CodeBlock.of("$L", topBinding)
@@ -512,7 +430,7 @@ public final class ArgCallEmitter {
         if (nodeIdLeaf) {
             CodeBlock mapChain = buildMapChain(root, path, 0, /* leafType= */ null, topBinding);
             return buildNodeIdDecodeExtraction(mapChain, (CallSiteExtraction.NodeIdDecodeKeys) leaf,
-                leafTypeName, list, registry);
+                list, registry);
         }
         ClassName rawLeaf = ClassName.bestGuess(rawComponent(leafTypeName));
         TypeName castTarget = list
@@ -524,15 +442,15 @@ public final class ArgCallEmitter {
     /**
      * Builds the depth-0 step's ternary, recursing for inner steps. When {@code topBinding} is
      * non-null it names a local that is already a {@code Map<?, ?>}, so depth 0 skips the
-     * {@code instanceof Map<?, ?> _m1} check and emits {@code <topBinding> != null ?
-     * (..._)  : null} instead. Inner steps always rebind via {@code _m2, _m3, ...}.
+     * {@code instanceof Map<?, ?> map1} check and emits {@code <topBinding> != null ?
+     * (..._)  : null} instead. Inner steps always rebind via {@code map2, map3, ...}.
      */
     private static CodeBlock buildMapChain(CodeBlock currentExpr, List<String> path, int depth,
             TypeName leafType, String topBinding) {
         String key = path.get(depth);
         boolean isLeaf = depth == path.size() - 1;
         boolean liftedHead = topBinding != null && depth == 0;
-        String binding = liftedHead ? topBinding : "_m" + (depth + 1);
+        String binding = liftedHead ? topBinding : "map" + (depth + 1);
 
         if (isLeaf) {
             // leafType == null means "do not cast the Map.get result" -- the consumer applies its
@@ -607,11 +525,11 @@ public final class ArgCallEmitter {
      * <p>Path {@code [head, items*, id]} where {@code items*} is list-shaped and {@code id} is
      * scalar (Java parameter type {@code List<Integer>}) emits roughly:
      * <pre>
-     *     env.getArgument("head") instanceof Map&lt;?, ?&gt; _m1
-     *         ? (_m1.get("items") instanceof List&lt;?&gt; _l2
-     *             ? _l2.stream()
-     *                 .map(_e3 -&gt; _e3 instanceof Map&lt;?, ?&gt; _m4
-     *                     ? (Integer) _m4.get("id") : null)
+     *     env.getArgument("head") instanceof Map&lt;?, ?&gt; map1
+     *         ? (map1.get("items") instanceof List&lt;?&gt; list2
+     *             ? list2.stream()
+     *                 .map(elem3 -&gt; elem3 instanceof Map&lt;?, ?&gt; map4
+     *                     ? (Integer) map4.get("id") : null)
      *                 .toList()
      *             : null)
      *         : null
@@ -675,7 +593,7 @@ public final class ArgCallEmitter {
      * value at the current depth; {@code tail} is the remaining segments to traverse from there;
      * {@code innerLeafType} is the cast target for the innermost {@code Map.get} (after
      * {@code List<>} wraps have been stripped); {@code counter} is shared across recursive calls
-     * so binding names {@code _m1, _l2, _e3, ...} stay distinct within the same expression.
+     * so binding names {@code map1, list2, elem3, ...} stay distinct within the same expression.
      */
     private static CodeBlock walkSegments(CodeBlock currentExpr, List<PathExpr.Segment> tail,
             String innerLeafType, int[] counter) {
@@ -683,7 +601,7 @@ public final class ArgCallEmitter {
         var rest = tail.subList(1, tail.size());
         boolean isLast = rest.isEmpty();
         int mNum = ++counter[0];
-        String mBind = "_m" + mNum;
+        String mBind = "map" + mNum;
 
         if (isLast) {
             ClassName rawLeaf = ClassName.bestGuess(rawComponent(innerLeafType));
@@ -696,9 +614,9 @@ public final class ArgCallEmitter {
 
         if (seg.liftsList()) {
             int lNum = ++counter[0];
-            String lBind = "_l" + lNum;
+            String lBind = "list" + lNum;
             int eNum = ++counter[0];
-            String eBind = "_e" + eNum;
+            String eBind = "elem" + eNum;
             CodeBlock recursed = walkSegments(CodeBlock.of("$L", eBind), rest, innerLeafType, counter);
             return CodeBlock.of(
                 "$L instanceof $T<?, ?> $L ? ($L.get($S) instanceof $T<?> $L "
