@@ -5,7 +5,7 @@ status: In Progress
 bucket: structural
 depends-on: []
 created: 2026-05-26
-last-updated: 2026-05-30
+last-updated: 2026-05-31
 ---
 
 # Error-channel slice 1: Outcome transport, retire @error payload-class construction
@@ -459,6 +459,45 @@ intact and remains what in-scope fields classify to:
 
 Full pipeline (`mvn install -Plocal-db`) green across all tiers, including the cross-module
 sakila-example compile of the generated `Outcome`.
+
+**Commit 2 (additive, unwired) ; landed.** The walker and the two emitters exist and are unit-tested;
+nothing calls them yet:
+
+- `ErrorChannelWalker` (`walker/ErrorChannelWalker.java`) resolves `ErrorChannel.Mapped` from a
+  classified `OutcomeType`: reads the flattened `@error`-type list off `errorsField().errorTypes()`,
+  runs rule 7 / rule 8 (`walker/internal/ChannelRuleChecks`) and accessor coverage
+  (`walker/internal/HandlerAccessorCheck`), and stamps the bare `SCREAMING_SNAKE(outcomeTypeName)`
+  mappings-constant name. Errors collect across stages into `WalkerResult.Err`; success yields
+  `WalkerResult.Ok(Mapped)`. The output-walking analogue of R238's `ServiceMethodCallWalker`.
+- The `walker/internal/` checks are typed-arm copies of `FieldBuilder.checkChannelLevelHandlerRules`
+  / `checkDuplicateMatchCriteria` / `checkErrorTypeSourceAccessors`: the channel-rule checks return
+  the detail string the walker wraps into `ChannelRuleViolation`; the accessor check returns typed
+  `HandlerSourceAccessorMissing` arms (and now populates `available` by enumerating the source
+  class's public zero-arg accessors). The `FieldBuilder` originals stay live for the `PayloadClass`
+  path and DML during the additive window; commit 4 deletes the in-scope copies and rewires DML's
+  `detectStructuralDmlErrorChannel` onto the shared `ChannelRuleChecks`.
+- `ChannelCatchArmEmitter` (`generators/`) ; the unified sync catch-arm seam over the optional
+  carrier: `Optional.empty()` → `redact`; `Mapped` → the inline `(Mapping, cause)` walk returning
+  `Outcome.ErrorList`; `LocalContext` → the DML `dispatchToLocalContext` sentinel arm (requires a
+  non-null sentinel). `PayloadClass` throws here (it stays on the legacy `dispatchCatchArm` until
+  commit 4).
+- `ChannelEarlyReturnEmitter` (`generators/`) ; the validator-pre-step early return wrapping the
+  violation list in `Outcome.ErrorList`. Channel-agnostic (the wrapper makes the early return
+  independent of which `@error` types map), so it consults no carrier.
+- Unit tests `ErrorChannelWalkerTest` (6) and `ChannelCatchArmEmitterTest` (5, also covering
+  `ChannelEarlyReturnEmitter`) mirror R238's `ServiceMethodCallWalkerTest` /
+  `ServiceMethodCallEmitterTest`.
+
+**Substrate revision (In Progress).** The spec sketched `walk(OutcomeType, ClassLoader,
+MappingsConstantNameDedup)`. Implementation adjusted the signature to `walk(OutcomeType,
+GraphQLSchema, ClassLoader, ReflectTypeResolver)`: the accessor-coverage stage needs the schema (to
+read each `@error` type's SDL fields) and a `ReflectTypeResolver` seam (to map those field types
+onto reflect types without leaking package-private `BuildContext` into the walker package);
+`MappingsConstantNameDedup` is a post-classification cross-field pass with no per-field entry point,
+so the walker stamps the bare name and the existing dedup pass rewrites collisions downstream, the
+same split the legacy per-field classifier already uses. The async `.exceptionally(...)` tail wiring
+deferred from `ChannelCatchArmEmitter` to commit 3 (it lives in `TypeFetcherGenerator.asyncWrapTail`,
+which is rewired at the flip); commit 2's emitter covers the sync catch arm only.
 
 **Sequencing revision (In Progress).** The `NonNullableSuccessProjectionField` arm exists in the
 seal (so the LSP/doc surface is complete), but its *enforcement* moves from commit 1 to the in-scope
