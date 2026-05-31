@@ -1,13 +1,13 @@
 ---
 id: R260
 title: Readable generated code for NodeId decode extraction (drop ternary/underscore style)
-status: Spec
+status: Ready
 bucket: cleanup
 priority: 5
 theme: model-cleanup
 depends-on: []
 created: 2026-05-29
-last-updated: 2026-05-30
+last-updated: 2026-05-31
 ---
 
 # Readable generated code for NodeId decode extraction (drop ternary/underscore style)
