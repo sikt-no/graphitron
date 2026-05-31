@@ -207,14 +207,14 @@ class ServiceMethodCallEmitterTest {
 
         String varDecl = stmts.get(0).toString();
         assertThat(varDecl)
-            .as("Outer arg unwraps via instanceof Map<?, ?> _m1 binding")
-            .contains("env.getArgument(\"input\") instanceof java.util.Map<?, ?> _m1");
+            .as("Outer arg unwraps via instanceof Map<?, ?> map1 binding")
+            .contains("env.getArgument(\"input\") instanceof java.util.Map<?, ?> map1");
         assertThat(varDecl)
-            .as("Inner segment rebinds via instanceof Map<?, ?> _m2 against _m1.get(...)")
-            .contains("_m1.get(\"items\") instanceof java.util.Map<?, ?> _m2");
+            .as("Inner segment rebinds via instanceof Map<?, ?> map2 against map1.get(...)")
+            .contains("map1.get(\"items\") instanceof java.util.Map<?, ?> map2");
         assertThat(varDecl)
             .as("Leaf segment casts the final Map.get to the declared Java type")
-            .contains("_m2.get(\"id\")")
+            .contains("map2.get(\"id\")")
             .contains("java.lang.Integer")
             .endsWith(": null");
     }
@@ -223,8 +223,8 @@ class ServiceMethodCallEmitterTest {
     void emit_static_listBearingPath_emitsStreamMapChain() {
         // ArgPath with a liftsList=true intermediate segment: argMapping `filmIds: input.items.id`
         // where SDL `items: [FilmIdItem!]!`. The emitter must dispatch at the list segment to
-        // `_l.stream().map(_e -> ...).toList()` rather than nested Map.get. The leaf cast strips
-        // one List<> wrap per liftsList segment, so the inner `_m.get("id")` cast is Integer (not
+        // `list.stream().map(elem -> ...).toList()` rather than nested Map.get. The leaf cast strips
+        // one List<> wrap per liftsList segment, so the inner `map.get("id")` cast is Integer (not
         // List<Integer>) — wrapping it in .toList() produces the declared List<Integer>.
         var intType = ClassName.get(Integer.class);
         var listOfInt = ParameterizedTypeName.get(ClassName.get(java.util.List.class), intType);
@@ -242,17 +242,17 @@ class ServiceMethodCallEmitterTest {
         String varDecl = stmts.get(0).toString();
         assertThat(varDecl)
             .as("Outer arg rebinds as a Map (wildcard-parameterised for -source 17)")
-            .contains("env.getArgument(\"input\") instanceof java.util.Map<?, ?> _m1");
+            .contains("env.getArgument(\"input\") instanceof java.util.Map<?, ?> map1");
         assertThat(varDecl)
-            .as("List-bearing segment narrows _m1.get(items) to List<?> and streams")
-            .contains("_m1.get(\"items\") instanceof java.util.List<?> _l2")
-            .contains("_l2.stream().map(_e3")
+            .as("List-bearing segment narrows map1.get(items) to List<?> and streams")
+            .contains("map1.get(\"items\") instanceof java.util.List<?> list2")
+            .contains("list2.stream().map(elem3")
             .contains(".toList()");
         assertThat(varDecl)
             .as("Inside the lambda the per-element value rebinds as Map and reads the leaf key, "
                 + "cast to the stripped inner type (Integer) — NOT the declared List<Integer>")
-            .contains("_e3 instanceof java.util.Map<?, ?> _m4")
-            .contains("(java.lang.Integer) _m4.get(\"id\")");
+            .contains("elem3 instanceof java.util.Map<?, ?> map4")
+            .contains("(java.lang.Integer) map4.get(\"id\")");
     }
 
     @Test

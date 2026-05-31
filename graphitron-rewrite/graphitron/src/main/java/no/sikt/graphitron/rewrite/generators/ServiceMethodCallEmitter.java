@@ -167,9 +167,9 @@ public final class ServiceMethodCallEmitter {
      * Null-safe traversal from a top-level {@code env.getArgument(outer)} through each
      * {@link ArgPath.Segment} of {@code path.deeperSegments()}, with the leaf transform applied
      * to the final {@code Map.get(leafSegment)} value. Map-shaped segments rebind via
-     * {@code instanceof Map<?, ?> _mN} (wildcard-parameterised, conditional under
+     * {@code instanceof Map<?, ?> mapN} (wildcard-parameterised, conditional under
      * {@code -source 17}); list-shaped segments stream through their elements via
-     * {@code _l.stream().map(_e -> ...).toList()}. {@code null} anywhere in the chain yields
+     * {@code list.stream().map(elem -> ...).toList()}. {@code null} anywhere in the chain yields
      * {@code null} rather than an NPE or CCE.
      *
      * <p>The declared {@code javaType} carries one {@code List<>} wrap per {@code liftsList=true}
@@ -216,7 +216,7 @@ public final class ServiceMethodCallEmitter {
      * value at the current depth; {@code segments[depth..]} are the remaining segments;
      * {@code innerElementType} is the leaf scalar's Java type after stripping all
      * {@code liftsList} wraps from the declared Java parameter type; {@code counter} is shared
-     * across recursive calls so binding names {@code _m1, _l2, _e3, ...} stay distinct within
+     * across recursive calls so binding names {@code map1, list2, elem3, ...} stay distinct within
      * the same expression. At the leaf, if the segment itself lifts a list the cast target
      * wraps once in {@code List<innerElementType>}; otherwise the cast is the bare element type.
      */
@@ -228,7 +228,7 @@ public final class ServiceMethodCallEmitter {
         ClassName mapClass = ClassName.get(java.util.Map.class);
         ClassName listClass = ClassName.get(java.util.List.class);
         int mNum = ++counter[0];
-        String mBind = "_m" + mNum;
+        String mBind = "map" + mNum;
 
         if (isLast) {
             TypeName leafCastType = seg.liftsList()
@@ -242,9 +242,9 @@ public final class ServiceMethodCallEmitter {
 
         if (seg.liftsList()) {
             int lNum = ++counter[0];
-            String lBind = "_l" + lNum;
+            String lBind = "list" + lNum;
             int eNum = ++counter[0];
-            String eBind = "_e" + eNum;
+            String eBind = "elem" + eNum;
             CodeBlock recursed = walkSegments(CodeBlock.of("$L", eBind), segments, depth + 1,
                 leaf, innerElementType, counter);
             return CodeBlock.of(

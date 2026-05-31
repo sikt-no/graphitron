@@ -16,7 +16,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Structural tests for {@link QueryConditionsGenerator#computeLiftedOuters}: the per-method
- * outer-arg lift used by R79 §5 to dedupe {@code env.getArgument(outer) instanceof Map<?, ?> _m1}
+ * outer-arg lift used by R79 §5 to dedupe {@code env.getArgument(outer) instanceof Map<?, ?> map1}
  * rebinds when ≥2 NestedInputField call params share an outer arg.
  */
 @UnitTier

@@ -13,9 +13,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Structural tests for {@link CompositeDecodeHelperRegistry}. The registry is the seam between
- * {@link ArgCallEmitter}'s composite-key NodeId path and {@link QueryConditionsGenerator}'s
- * per-class helper emission; these tests pin the dedup key shape and helper-naming matrix so a
- * future refactor cannot silently break either guarantee.
+ * {@link ArgCallEmitter}'s NodeId-decode path (all arities, since R260) and
+ * {@link QueryConditionsGenerator}'s per-class helper emission; these tests pin the dedup key
+ * shape and helper-naming matrix so a future refactor cannot silently break either guarantee.
  */
 @UnitTier
 class CompositeDecodeHelperRegistryTest {
@@ -98,7 +98,60 @@ class CompositeDecodeHelperRegistryTest {
             .isEqualTo("org.jooq.Row2<java.lang.Integer, java.lang.Integer>");
         String body = helper.code().toString();
         assertThat(body)
-            .contains("wire instanceof String s")
-            .contains("r == null ? null : r.valuesRow()");
+            .as("R260: readable statement-form body with meaningful locals, no underscore-prefixed names")
+            .contains("wire instanceof String nodeId")
+            .contains("key == null ? null : key.valuesRow()");
+    }
+
+    private static HelperRef.Decode decodeFilm() {
+        return new HelperRef.Decode(
+            ENCODER, "decodeFilm",
+            List.of(new ColumnRef("film_id", "FILM_ID", "java.lang.Integer")));
+    }
+
+    @Test
+    void register_arity1_namesKeyHelpersAndProjectsSingleColumn() {
+        // R260 extended the registry from composite-only to all arities: an arity-1 decode lifts to
+        // a `decode<Type>Key`/`Keys` helper that returns the bare key column type and projects via
+        // Record1.value1(), rather than the former inline ternary at the call site.
+        var registry = new CompositeDecodeHelperRegistry();
+        var decode = decodeFilm();
+        String scalar = registry.register(decode, CompositeDecodeHelperRegistry.Mode.SKIP, false);
+        String list = registry.register(decode, CompositeDecodeHelperRegistry.Mode.SKIP, true);
+        String listThrow = registry.register(decode, CompositeDecodeHelperRegistry.Mode.THROW, true);
+        assertThat(scalar).isEqualTo("decodeFilmKey");
+        assertThat(list).isEqualTo("decodeFilmKeys");
+        assertThat(listThrow).isEqualTo("decodeFilmKeysOrThrow");
+        assertThat(registry.emit()).hasSize(3);
+    }
+
+    @Test
+    void emit_arity1ScalarSkipHelper_returnsKeyTypeAndProjectsValue1() {
+        var registry = new CompositeDecodeHelperRegistry();
+        registry.register(decodeFilm(), CompositeDecodeHelperRegistry.Mode.SKIP, false);
+        MethodSpec helper = registry.emit().iterator().next();
+        assertThat(helper.name()).isEqualTo("decodeFilmKey");
+        assertThat(helper.returnType().toString()).isEqualTo("java.lang.Integer");
+        String body = helper.code().toString();
+        assertThat(body)
+            .contains("wire instanceof String nodeId")
+            .contains("NodeIdEncoder.decodeFilm(nodeId)")
+            .contains("key == null ? null : key.value1()")
+            .doesNotContain("valuesRow");
+    }
+
+    @Test
+    void emit_arity1ListThrowHelper_returnsListOfKeyTypeAndThrows() {
+        var registry = new CompositeDecodeHelperRegistry();
+        registry.register(decodeFilm(), CompositeDecodeHelperRegistry.Mode.THROW, true);
+        MethodSpec helper = registry.emit().iterator().next();
+        assertThat(helper.name()).isEqualTo("decodeFilmKeysOrThrow");
+        assertThat(helper.returnType().toString()).isEqualTo("java.util.List<java.lang.Integer>");
+        String body = helper.code().toString();
+        assertThat(body)
+            .contains("instanceof java.util.List<?>")
+            .contains("graphql.GraphqlErrorException")
+            .contains("Record1::value1")
+            .doesNotContain("Objects::nonNull");
     }
 }

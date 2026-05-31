@@ -136,11 +136,11 @@ public class QueryConditionsGenerator {
 
         // Lift any NestedInputField outer arg referenced ≥2 times across all filters into a single
         // typed Map<?, ?> local; per-arg expressions then start from that local instead of
-        // re-binding `_m1` per call. Lift naming is `<camelCaseOuterArg>Map` to avoid colliding
+        // re-binding `map1` per call. Lift naming is `<camelCaseOuterArg>Map` to avoid colliding
         // with method parameters (`table`, `env`) or with JooqConvert lifts (`<name>Keys`).
         var liftedOuters = computeLiftedOuters(filters);
         for (var entry : liftedOuters.entrySet()) {
-            builder.addStatement("$T<?, ?> $L = env.getArgument($S) instanceof $T<?, ?> _m ? _m : null",
+            builder.addStatement("$T<?, ?> $L = env.getArgument($S) instanceof $T<?, ?> map ? map : null",
                 Map.class, entry.getValue(), entry.getKey(), Map.class);
         }
 
