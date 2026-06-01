@@ -50,10 +50,10 @@ class ChannelCatchArmEmitterTest {
         assertThat(code)
             .contains(".FILM_PAYLOAD")
             .contains("for (")
-            .contains("__t = e")
-            .contains(".match(__t)")
+            .contains("cause = e")
+            .contains("mapping.match(cause)")
             .contains("ErrorList<>(")
-            .contains("__t")
+            .contains("cause")
             .as("unmapped fall-through stays a redact")
             .contains("redact(e, env)");
     }

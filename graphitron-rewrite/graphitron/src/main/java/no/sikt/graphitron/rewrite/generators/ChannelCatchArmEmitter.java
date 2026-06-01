@@ -73,15 +73,15 @@ public final class ChannelCatchArmEmitter {
     private static CodeBlock mappedCatchArm(
             ErrorChannel.Mapped channel, TypeName valueType, String outputPackage) {
         return CodeBlock.builder()
-            .add("for ($T __m : $T.$L) {\n",
+            .add("for ($T mapping : $T.$L) {\n",
                 mappingInterface(outputPackage), errorMappingsClass(outputPackage),
                 channel.mappingsConstantName())
             .indent()
-            .add("for ($T __t = e; __t != null; __t = __t.getCause()) {\n", ClassName.get(Throwable.class))
+            .add("for ($T cause = e; cause != null; cause = cause.getCause()) {\n", ClassName.get(Throwable.class))
             .indent()
-            .add("if (__m.match(__t)) {\n")
+            .add("if (mapping.match(cause)) {\n")
             .indent()
-            .add("return $T.<$T>newResult().data(new $T<>($T.of(__t))).build();\n",
+            .add("return $T.<$T>newResult().data(new $T<>($T.of(cause))).build();\n",
                 dataFetcherResult(), valueType, errorListClass(outputPackage),
                 ClassName.get(List.class))
             .unindent()
