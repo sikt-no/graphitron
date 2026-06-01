@@ -147,13 +147,13 @@ private static SakRecord decodeSakRecord(Object wire) {
             .message("Decoded NodeId did not match the expected type for this argument").build();
     }
     SakRecord decoded = new SakRecord();
-    decoded.set(Tables.SAK.SAK_ID, Tables.SAK.SAK_ID.getDataType().convert(values[0]));
+    decoded.fromArray(values, Tables.SAK.SAK_ID);
     return decoded;
 }
 ```
 
 (Concrete, per-type, emitted by one reusable emitter; see "Output" below. For a
-composite key the body is one typed `set` per key column. The local is named
+composite key the single `fromArray` call just names N fields. The local is named
 `decoded`, not `record` — `record` is a context-sensitive keyword and reads poorly
 in the exact code a consumer breakpoints.)
 
@@ -180,28 +180,43 @@ to be copied out again, the "build a record to build a record" smell.
 The generated `NodeIdEncoder` already exposes the raw unpack every `decode<Type>`
 calls first (`static String[] decodeValues(String expectedTypeId, String base64Id)`,
 type-id-checked, returns `null` on mismatch). The decode-record helper calls it
-directly and copies into the target record with **typed per-column `set`**:
+directly and loads the values positionally onto the key columns with
+**`Record.fromArray(Object[], Field<?>...)`**:
 
 ```java
-decoded.set(Tables.SAK.SAK_ID, Tables.SAK.SAK_ID.getDataType().convert(values[i]));
+decoded.fromArray(values, Tables.SAK.SAK_ID);            // composite: , Tables.X.A, Tables.X.B
 ```
 
-one statement per key column. `Record.set(Field<T>, T)` is **compile-checked** (the
-field's `T` must match `convert`'s return), so a column/value type mismatch is a
-`graphitron-sakila-example` compile failure (the "Compilation against real jOOQ is
-a test tier" backstop) rather than a DSL-runtime error — the safer expression of
-the contract under "Classifier guarantees shape emitter assumptions". It is exactly
-what `NodeIdEncoder.decode<Type>` already emits to populate its `RecordN`, applied
-to the target record instead of a throwaway one. For a composite key it is N
-explicit typed assignments, which read like hand-written code. No throwaway
-`RecordN`.
+one call regardless of key arity. `fromArray` coerces each value through the
+column's `DataType` / registered `Converter` (the `Configuration.converterProvider`
+path), so it round-trips user-defined types correctly, and it keeps the real
+compile-tier check (the `Tables.<T>.<col>` field references must exist on the record;
+the `graphitron-sakila-example` compile catches a renamed/removed column). No
+throwaway `RecordN`.
 
-> **Rejected alternative: `record.from(values, keyFields...)`.** jOOQ's positional
-> `from(Object source, Field<?>... fields)` (what legacy `NodeIdStrategy.setFields`
-> emits) is one line regardless of arity, but **runtime-loose**: `from(Object,
-> Field<?>...)` is not compile-checked against the value array, so it forfeits the
-> compile-tier backstop above. The pipeline tests pin the typed `set` form; this
-> footnote records why `from` was not chosen.
+> **Decision reversed (In Review): `fromArray`, not typed per-column `set`.** An
+> earlier draft emitted `decoded.set(Tables.SAK.SAK_ID, Tables.SAK.SAK_ID.getDataType().convert(values[i]))`,
+> claiming the typed `set` was a compile-tier backstop against a column/value type
+> mismatch. Two problems surfaced once it shipped:
+> 1. **The "backstop" was tautological.** Both `set` arguments derive from the *same*
+>    `FIELD`: `set(Field<T>, FIELD.getDataType().convert(...))` where `getDataType()`
+>    is `DataType<T>` and `convert` returns that `T`. There is no independent value
+>    type to mismatch, so the check could never fail. `fromArray`'s field-existence
+>    check is the only real compile-tier guarantee, and it keeps that.
+> 2. **`DataType.convert(Object)` is deprecated for removal in jOOQ 3.20** (it bypasses
+>    `converterProvider` and is buggy for user-defined types). Emitting it forced a
+>    `@SuppressWarnings({"deprecation","removal"})` onto every consumer's `*Fetchers`
+>    class — suppressing a *removal* warning, which only hides a future hard compile
+>    break. `fromArray` is the supported, non-deprecated coercion path and needs no
+>    suppression. (`NodeIdEncoder.decode<Type>` still carries the same suppressed
+>    `convert` for the `NodeIdDecodeKeys` filter/lookup paths; that is pre-existing and
+>    tracked separately, not in R195 scope.)
+>
+> The earlier "rejected alternative" footnote argued *against* the positional load on
+> the strength of the tautological backstop; with that benefit shown illusory and the
+> deprecation cost real, the positional `fromArray` is the chosen form. The pipeline
+> tests pin `fromArray` and the *absence* of `getDataType().convert` / a removal
+> suppression.
 
 The output is a concrete per-type helper from one reusable emitter (see "Output:
 per-type concrete helpers"), not a generic generated helper.
@@ -435,20 +450,24 @@ shape is now uniform across types:
   output
   buys nothing and costs the points below.
 - **Concrete types, not generics + varargs.** The concrete method has
-  `-> SakRecord` and `record.set(Tables.SAK.SAK_ID, …)` baked in. The generic form
-  needs `<R extends TableRecord<R>>` + `TableField<R,?>...` varargs (looser typing,
-  per-call array allocation) to express what the generator already knows
-  concretely, and threads `typeId` / fields / record-type through as *runtime*
-  arguments rather than emitting them as literals.
+  `-> SakRecord`, `new SakRecord()`, and `decoded.fromArray(values, Tables.SAK.SAK_ID)`
+  baked in. The generic form needs `<R extends TableRecord<R>>` + `TableField<R,?>...`
+  varargs (looser typing, per-call array allocation) to express what the generator
+  already knows concretely, and threads `typeId` / fields / record-type through as
+  *runtime* arguments rather than emitting them as literals.
 - **Readability and stack frames.** A frame reading `decodeSakRecord` beats
   `decodeNodeIdRecord(…, "Sak", …)` (per "Generated code is read and debugged"),
   and it matches the codebase's own conventions: `NodeIdEncoder` emits per-type
   `decodeFilm` / `decodeFilmActor`, and R260's `CompositeDecodeHelperRegistry`
   emits per-type `decodeFilmKeys` / `decodeFilmActorRow`. A generic helper here
   would be the lone exception.
-- **Compiler-leverage in the body.** A concrete method lets the body be
-  compile-checked via typed `record.set(Field<T>, T)` (see "Materialization"); the
-  generic helper's `from(values, fields)` is runtime-loose.
+- **Field references resolved as literals.** The concrete body names
+  `Tables.SAK.SAK_ID` directly, so the cross-module `graphitron-sakila-example`
+  compile verifies the columns exist on the record. The generic form would pass the
+  fields in as `TableField<R,?>...` runtime arguments, moving that check off the
+  compiler. (Both forms coerce through `fromArray` / the column converter at runtime;
+  the per-column type itself is not independently compile-checkable, see
+  "Materialization".)
 
 Legacy used a single *runtime* helper (`NodeIdStrategy.nodeIdToTableRecord`)
 because it had a runtime library; the rewrite generates statics, so the
@@ -472,16 +491,16 @@ equivalent consolidation lives in the emitter, and the output stays concrete.
   `createTestNodeIdRecordBean` helper on `QueryFetchers`; the bean field routes
   through `decodeFilmRecord(raw.get("film"))` with no `(FilmRecord) raw.get(...)`
   cast; the decode helper returns the record type, takes `Object`, and
-  materializes via `NodeIdEncoder.decodeValues("Film", nodeId)` + typed
-  `record.set(Tables.FILM.FILM_ID, …convert(values[0]))`, throwing on a
+  materializes via `NodeIdEncoder.decodeValues("Film", nodeId)` +
+  `decoded.fromArray(values, Tables.FILM.FILM_ID)`, throwing on a
   type-mismatch (`values == null`). TypeSpec-shape / helper-presence assertions.
   **Landed against the v1 `decode<Type>` + `fromMap(intoMap())` shape; reworked to
-  the copy-into-target body per "Materialization".**
+  the positional `fromArray` body per "Materialization".**
 - **Compilation tier.** `graphitron-sakila-example`:
   `FilmRecordAssignmentInput { film: ID! @nodeId(typeName: "Film") }` +
   `Mutation.assignFilmRecord` → `FilmReviewService.assignFilmRecord(FilmRecordAssignment)`.
   Generated `MutationFetchers.decodeFilmRecord` compiles against the real jOOQ
-  catalog (catches a value/column type mismatch).
+  catalog (the `Tables.FILM.FILM_ID` field reference must exist on `FilmRecord`).
 - **Execution tier.**
   `GraphQLQueryTest#assignFilmRecord_decodesNodeIdIntoJooqRecordMember`: a
   mutation decodes a `Film` NodeId into a `FilmRecord` member and reads the
@@ -496,8 +515,8 @@ equivalent consolidation lives in the emitter, and the output stays concrete.
 > coverage, rather than converting two rejection tests.
 
 - **Pipeline tier.** `NodeIdRecordInputBeanPipelineTest`: `compositeKeyRecordMember_…`
-  converted from rejection to success (`decodeFilmActorRecord`, two typed `set`s,
-  routed through `createTestNodeIdCompositeRecordBean`); added
+  converted from rejection to success (`decodeFilmActorRecord`, one `fromArray`
+  naming both key columns, routed through `createTestNodeIdCompositeRecordBean`); added
   `listRecordMember_emitsListDecodeHelper_delegatingToScalar` (`decodeFilmRecordList`
   returns `List<FilmRecord>`, delegates to `decodeFilmRecord`) and
   `listOfCompositeRecordMember_exercisesBothDimensions` (`List<FilmActorRecord>`). The
@@ -511,7 +530,8 @@ equivalent consolidation lives in the emitter, and the output stays concrete.
   (`[ID!] @nodeId(typeName: "Film")`), and the both-dimensions corner
   `FilmActorRecordListAssignmentInput` (`[ID!] @nodeId(typeName: "FilmActor")`), with
   matching `FilmReviewService` beans + methods. Each generated helper compiles against
-  the real jOOQ catalog (the typed `set` and `List<…>` return type line up).
+  the real jOOQ catalog (the `fromArray` field references and the `List<…>` return type
+  line up).
 - **Execution tier.** `GraphQLQueryTest`: `assignFilmActorRecord_…` decodes a
   `FilmActor` NodeId into a composite member and reads both `actor_id` and `film_id`
   back; `assignFilmRecordList_…` decodes a list of `Film` NodeIds into a
@@ -535,8 +555,9 @@ the `ServiceMethodCallWalker` carry-through, `resolveTargetKeys`) are landed.
 - `generators/InputBeanInstantiationEmitter.java` ; this *is* the one reusable
   emitter — generalize the existing per-type record-decode-helper builder to all
   arities and rework its emitted body from `decode<Type>` + `fromMap(intoMap())` to
-  `decodeValues(typeId, nodeId)` + typed per-column `record.set(field,
-  convert(values[i]))` (no throwaway `RecordN`). Emit the `decode<Type>RecordList`
+  `decodeValues(typeId, nodeId)` + `decoded.fromArray(values, Tables.<T>.<col>…)` (no
+  throwaway `RecordN`, no deprecated `DataType.convert(Object)`; see "Materialization"
+  for why `fromArray` over a typed `set`). Emit the `decode<Type>RecordList`
   stream variant when the `FieldBinding` is list-shaped. Output stays per-type
   concrete helpers, deduped by record type. Update the helper javadoc that claims
   "no encoder-generator change is needed". The switch is already exhaustive (no
