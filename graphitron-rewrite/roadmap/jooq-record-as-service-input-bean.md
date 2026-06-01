@@ -1,7 +1,7 @@
 ---
 id: R195
 title: Decode @nodeId into jOOQ-record-typed @service input-bean fields
-status: Ready
+status: In Review
 bucket: feature
 priority: 5
 theme: model-cleanup
@@ -61,6 +61,25 @@ last-updated: 2026-06-01
 >
 > Reviewer session ≠ implementer session (`01JfK…`). The next In Review → Done reviewer must
 > again be a different session than whoever lands this rework.
+>
+> **Resolution (In Progress, this pass).** Both findings addressed; full `mvn install -Plocal-db`
+> green (graphitron pipeline 9/9, `GraphQLQueryTest` 228/0/0, sakila-example compile, lsp).
+> 1. `NodeIdRecordInputBeanPipelineTest` rewritten to structural assertions only, zero
+>    `method(...).code().toString()` matches: helper presence by name, helper signatures, and a new
+>    `decodeRecordLeaf(...)` walk down the **classified model** (`serviceMethodCall → FromArg →
+>    ValueShape.RecordInput → FieldBinding → (ListOf →) Scalar.leafTransform`) asserting the leaf is
+>    `NodeIdDecodeRecord` (the cast itself pins "not `Direct`") with the expected `typeId`,
+>    key-column arity (1 single / 2 composite, by `sqlName`), record class, and `nonNull`. The
+>    `…oneSetPerKeyColumn` name dropped; the `…_noSuppressionNeeded` test now asserts the helper's
+>    `MethodSpec.annotations()` is empty (structural, not a body match). The runtime decode-mismatch
+>    throw moved to the execution tier (`assignFilmRecord_wrongTypeNodeId_throwsDecodeMismatch`:
+>    a wrong-type NodeId raises an error and yields no value; the fetcher redacts the message, so the
+>    test asserts the failure, not its text).
+> 2. All six stale "typed set" / `getDataType().convert` descriptions swept to `fromArray`
+>    (`CallSiteExtraction` leaf javadoc, the renamed pipeline test, the two `GraphQLQueryTest`
+>    comments, the two `schema.graphqls` comments). The spec's Tests section and the "Decision
+>    reversed" pin directive were rewritten to call for structural/behavioural verification, not
+>    body-string pins.
 
 ## Problem
 
@@ -264,9 +283,13 @@ throwaway `RecordN`.
 >
 > The earlier "rejected alternative" footnote argued *against* the positional load on
 > the strength of the tautological backstop; with that benefit shown illusory and the
-> deprecation cost real, the positional `fromArray` is the chosen form. The pipeline
-> tests pin `fromArray` and the *absence* of `getDataType().convert` / a removal
-> suppression.
+> deprecation cost real, the positional `fromArray` is the chosen form. The `fromArray`
+> body and the *absence* of `getDataType().convert` / a removal suppression are verified
+> structurally and behaviourally, not by code-string body assertions: the decode helper
+> carries no `@SuppressWarnings` (a structural `MethodSpec` check), the cross-module
+> `graphitron-sakila-example` compile must stay warning-clean against the real catalog, and
+> the execution tier round-trips the coercion. (See "Tests"; `rewrite-design-principles.adoc`
+> line 131 bans body-string assertions at every tier.)
 
 The output is a concrete per-type helper from one reusable emitter (see "Output:
 per-type concrete helpers"), not a generic generated helper.
@@ -537,12 +560,17 @@ equivalent consolidation lives in the emitter, and the output stays concrete.
 
 ## Tests
 
-> The pipeline assertions stay per-type (`decodeFilmRecord` etc.) ; the output is
-> per-type concrete helpers (see "Output: per-type concrete helpers"). Only the
-> helper *body* the assertions inspect changes: from the v1
-> `decodeFilm(...)` + `fromMap(intoMap())` shape to `decodeValues("Film", …)` +
-> typed per-column `set` (no throwaway `RecordN`). The no-cast routing and
-> round-trip behaviour they pin are unchanged.
+> The pipeline assertions are **structural** (per-`rewrite-design-principles.adoc` line 131,
+> code-string assertions on generated method bodies are banned at every tier): helper
+> presence by name (`decodeFilmRecord` etc. via `extracting(MethodSpec::name)`), helper
+> signatures (return type, `Object` parameter, `List<…Record>` for the list variant), the
+> classified-model leaf shape (`NodeIdDecodeRecord` with the expected `typeId`,
+> `keyColumns` arity, and `table().recordClass()` rather than `Direct`), and
+> `Rejection.message()` for the reject cases. The helper-*body* facts (`decodeValues` →
+> `fromArray`, no cast, no `getDataType().convert`) are verified where the principle wants
+> behaviour pinned: the cross-module compile tier (the `Tables.<T>.<col>` field references
+> must exist) and the execution tier (the decode round-trips, and a wrong-type NodeId
+> throws). No `method(...).code().toString()` matching.
 
 ### Landed (single-key, v1)
 
@@ -550,14 +578,13 @@ equivalent consolidation lives in the emitter, and the output stays concrete.
   `generators/NodeIdRecordInputBeanPipelineTest`: an `@service` input
   bean (`TestServiceStub.assignFilm(TestNodeIdRecordBean)`) whose `ID! @nodeId`
   field maps to a `FilmRecord` member emits a `decodeFilmRecord` helper plus a
-  `createTestNodeIdRecordBean` helper on `QueryFetchers`; the bean field routes
-  through `decodeFilmRecord(raw.get("film"))` with no `(FilmRecord) raw.get(...)`
-  cast; the decode helper returns the record type, takes `Object`, and
-  materializes via `NodeIdEncoder.decodeValues("Film", nodeId)` +
-  `decoded.fromArray(values, Tables.FILM.FILM_ID)`, throwing on a
-  type-mismatch (`values == null`). TypeSpec-shape / helper-presence assertions.
-  **Landed against the v1 `decode<Type>` + `fromMap(intoMap())` shape; reworked to
-  the positional `fromArray` body per "Materialization".**
+  `createTestNodeIdRecordBean` helper on `QueryFetchers`; the decode helper returns
+  the record type and takes `Object`; and the classified member field carries a
+  `NodeIdDecodeRecord` leaf (`typeId` `"Film"`, one key column, `FilmRecord` table)
+  rather than a `Direct` cast. Structural assertions only (helper presence by name,
+  signatures, classified-leaf shape) ; the no-cast routing and the `fromArray`
+  materialization are verified at the compile + execution tiers, not by inspecting the
+  generated body. **Reworked off the v1 body-string assertions per "Tests" above.**
 - **Compilation tier.** `graphitron-sakila-example`:
   `FilmRecordAssignmentInput { film: ID! @nodeId(typeName: "Film") }` +
   `Mutation.assignFilmRecord` → `FilmReviewService.assignFilmRecord(FilmRecordAssignment)`.
@@ -577,14 +604,17 @@ equivalent consolidation lives in the emitter, and the output stays concrete.
 > coverage, rather than converting two rejection tests.
 
 - **Pipeline tier.** `NodeIdRecordInputBeanPipelineTest`: `compositeKeyRecordMember_…`
-  converted from rejection to success (`decodeFilmActorRecord`, one `fromArray`
-  naming both key columns, routed through `createTestNodeIdCompositeRecordBean`); added
+  converted from rejection to success (`decodeFilmActorRecord` present, classified leaf
+  carries two key columns, routed through `createTestNodeIdCompositeRecordBean`); added
   `listRecordMember_emitsListDecodeHelper_delegatingToScalar` (`decodeFilmRecordList`
-  returns `List<FilmRecord>`, delegates to `decodeFilmRecord`) and
-  `listOfCompositeRecordMember_exercisesBothDimensions` (`List<FilmActorRecord>`). The
-  `decodeHelper_…throwingOnTypeMismatch` body assertion was updated to the
-  `decodeValues("Film", …)` + typed-`set` shape. Only the malformed-directive
-  rejection (`recordMember_withoutNodeId_…`) survives. New fixtures:
+  present, returns `List<FilmRecord>`) and
+  `listOfCompositeRecordMember_exercisesBothDimensions` (`List<FilmActorRecord>`). All
+  pipeline assertions are structural (helper presence, signatures, classified-leaf arity)
+  per the "Tests" intro ; the runtime decode-mismatch throw is covered at the execution
+  tier (`assignFilmRecord_wrongTypeNodeId_throws`) rather than by a body-string assertion.
+  Only the malformed-directive and type-mismatch rejections
+  (`recordMember_withoutNodeId_…`, `recordMember_typeMismatchesNodeIdTypeName_…`) survive.
+  New fixtures:
   `TestNodeIdRecordListBean`, `TestNodeIdCompositeRecordListBean`, and the
   `assignFilmList` / `assignFilmActorList` `TestServiceStub` methods.
 - **Compilation tier.** `graphitron-sakila-example`: `FilmActorRecordAssignmentInput`

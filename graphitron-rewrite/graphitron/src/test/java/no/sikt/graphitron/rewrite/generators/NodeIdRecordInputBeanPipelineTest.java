@@ -3,11 +3,13 @@ package no.sikt.graphitron.rewrite.generators;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
+import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField;
+import no.sikt.graphitron.rewrite.model.MappingEntry;
+import no.sikt.graphitron.rewrite.model.ServiceField;
+import no.sikt.graphitron.rewrite.model.ValueShape;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
-
-import java.util.List;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_OUTPUT_PACKAGE;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -47,11 +49,27 @@ class NodeIdRecordInputBeanPipelineTest {
 
     @Test
     void recordMember_withNodeId_emitsDecodeHelperOnFetchersClass() {
+        // The decode helper's presence is the structural signal that the record member classified to
+        // a NodeIdDecodeRecord leaf rather than a Direct (FilmRecord) raw.get(...) cast: Direct emits
+        // an inline cast and no helper, so a decode<Record> on the class means no R150/R195 CCE.
         var fetchers = findSpec("QueryFetchers", HAPPY_SDL);
         assertThat(fetchers.methodSpecs())
             .extracting(MethodSpec::name)
             .as("the create<Bean> helper and the per-record decode<Record> helper both land on the class")
             .contains("createTestNodeIdRecordBean", "decodeFilmRecord");
+    }
+
+    @Test
+    void recordMember_classifiesToNodeIdDecodeRecordLeaf_notDirect() {
+        // SDL → classified model: the single-key scalar record member resolves to a NodeIdDecodeRecord
+        // leaf (not a Direct (FilmRecord) raw.get(...) cast — the R150/R195 CCE), carrying the typeId,
+        // single key column, target record type, and SDL non-nullability the emitter materialises from.
+        var leaf = decodeRecordLeaf(HAPPY_SDL, "assignFilm", false);
+        assertThat(leaf.typeId()).as("typeId resolved from @nodeId(typeName:)").isEqualTo("Film");
+        assertThat(leaf.keyColumns()).as("single-PK arity").hasSize(1);
+        assertThat(leaf.keyColumns().get(0).sqlName()).isEqualTo("film_id");
+        assertThat(leaf.table().recordClass().toString()).isEqualTo(RECORD_TYPE_FQN);
+        assertThat(leaf.nonNull()).as("ID! is non-null").isTrue();
     }
 
     @Test
@@ -63,50 +81,16 @@ class NodeIdRecordInputBeanPipelineTest {
     }
 
     @Test
-    void beanHelper_routesRecordMemberThroughDecode_withNoRawCast() {
-        var create = method(findSpec("QueryFetchers", HAPPY_SDL), "createTestNodeIdRecordBean");
-        var body = create.code().toString();
-        assertThat(body)
-            .as("the record member is populated through the decode helper, not a wire-String cast")
-            .contains("decodeFilmRecord(raw.get(\"film\"))");
-        assertThat(body)
-            .as("no raw (FilmRecord) raw.get(...) cast — that is the R150/R195 ClassCastException")
-            .doesNotContain("(" + RECORD_TYPE_FQN + ") raw.get");
-    }
-
-    @Test
-    void decodeHelper_decodesValuesThenLoadsIntoRecord_throwingOnTypeMismatch() {
+    void decodeHelper_carriesNoSuppressWarnings() {
+        // fromArray is the supported, non-deprecated coercion path, so the helper needs no
+        // @SuppressWarnings: a deprecation/removal suppression on a helper that lands in the
+        // consumer's *Fetchers package would only hide a future hard compile break. Structural
+        // assertion on the MethodSpec's annotation list — not on its body. The warning-clean
+        // outcome is enforced for real by the graphitron-sakila-example compile tier.
         var decode = method(findSpec("QueryFetchers", HAPPY_SDL), "decodeFilmRecord");
-        var body = decode.code().toString();
-        assertThat(body)
-            .as("decodes the raw key values via decodeValues and loads them positionally into the"
-                + " target record via fromArray (no throwaway RecordN, no fromMap)")
-            .contains(".decodeValues(\"Film\", nodeId)")
-            .contains("decoded.fromArray(values,")
-            .doesNotContain("fromMap")
-            .doesNotContain("intoMap");
-        assertThat(body)
-            .as("fromArray coerces through the column's converter, never the deprecated-for-removal"
-                + " DataType.convert(Object) — generated consumer code must stay warning-clean")
-            .doesNotContain("getDataType().convert");
-        assertThat(body)
-            .as("a type-mismatch decode (null/wrong-arity values) is an authored-input error, not a silent null")
-            .contains("graphql.GraphqlErrorException");
-    }
-
-    @Test
-    void decodeHelper_usesNonDeprecatedCoercion_noSuppressionNeeded() {
-        // The decode helper must NOT call DataType.convert(Object) (deprecated for removal in jOOQ
-        // 3.20) and must NOT carry a deprecation/removal @SuppressWarnings: suppressing on a helper
-        // that lands in the consumer's *Fetchers package only hides a future hard compile break.
-        // fromArray is the supported coercion path, so neither is present.
-        var decode = method(findSpec("QueryFetchers", HAPPY_SDL), "decodeFilmRecord");
-        assertThat(decode.code().toString())
-            .as("no deprecated-for-removal DataType.convert(Object) in generated consumer code")
-            .doesNotContain("getDataType().convert");
-        assertThat(decode.annotations().toString())
-            .as("a deprecation-for-removal warning is fixed at the source, never suppressed")
-            .doesNotContain("removal");
+        assertThat(decode.annotations())
+            .as("the decode helper emits no @SuppressWarnings — fromArray needs no deprecation suppression")
+            .isEmpty();
     }
 
     @Test
@@ -191,40 +175,35 @@ class NodeIdRecordInputBeanPipelineTest {
         """;
 
     @Test
-    void compositeKeyRecordMember_emitsCompositeDecodeHelper_oneSetPerKeyColumn() {
+    void compositeKeyRecordMember_emitsCompositeDecodeHelper() {
         var fetchers = findSpec("QueryFetchers", COMPOSITE_SDL);
         assertThat(fetchers.methodSpecs())
             .extracting(MethodSpec::name)
             .as("the composite-key member resolves to a decode helper, not a 'not yet supported' rejection")
             .contains("createTestNodeIdCompositeRecordBean", "decodeFilmActorRecord");
-        var body = method(fetchers, "decodeFilmActorRecord").code().toString();
-        assertThat(body)
-            .as("a composite key loads all key columns positionally in one fromArray call")
-            .contains("decoded.fromArray(values,")
-            .contains("ACTOR_ID")
-            .contains("FILM_ID");
-        assertThat(method(fetchers, "createTestNodeIdCompositeRecordBean").code().toString())
-            .as("the bean member routes through the composite decode helper, not a wire cast")
-            .contains("decodeFilmActorRecord(raw.get(\"filmActor\"))");
+        var leaf = decodeRecordLeaf(COMPOSITE_SDL, "assignFilmActor", false);
+        assertThat(leaf.typeId()).isEqualTo("FilmActor");
+        assertThat(leaf.keyColumns())
+            .as("a composite-PK member carries both key columns (arity is the resolved key-column count)")
+            .extracting(c -> c.sqlName())
+            .containsExactly("actor_id", "film_id");
     }
 
     @Test
-    void listRecordMember_emitsListDecodeHelper_delegatingToScalar() {
+    void listRecordMember_emitsListDecodeHelper() {
         var fetchers = findSpec("QueryFetchers", LIST_SDL);
         assertThat(fetchers.methodSpecs())
             .extracting(MethodSpec::name)
             .as("a list-valued record member emits the list variant plus the scalar helper it delegates to")
             .contains("createTestNodeIdRecordListBean", "decodeFilmRecordList", "decodeFilmRecord");
-        var listHelper = method(fetchers, "decodeFilmRecordList");
-        assertThat(listHelper.returnType().toString())
+        assertThat(method(fetchers, "decodeFilmRecordList").returnType().toString())
             .as("the list helper returns List<FilmRecord>")
             .isEqualTo("java.util.List<" + RECORD_TYPE_FQN + ">");
-        assertThat(listHelper.code().toString())
-            .as("each element is materialised through the singular helper (throws on a wrong-type element)")
-            .contains("decodeFilmRecord(element)");
-        assertThat(method(fetchers, "createTestNodeIdRecordListBean").code().toString())
-            .as("the list member routes through the list decode helper, not a wire cast")
-            .contains("decodeFilmRecordList(raw.get(\"films\"))");
+        // SDL → model: list-ness is the member shape being ListOf; the per-element leaf is the same
+        // single-key NodeIdDecodeRecord the scalar helper materialises.
+        var leaf = decodeRecordLeaf(LIST_SDL, "assignFilmList", true);
+        assertThat(leaf.typeId()).isEqualTo("Film");
+        assertThat(leaf.keyColumns()).hasSize(1);
     }
 
     @Test
@@ -235,14 +214,33 @@ class NodeIdRecordInputBeanPipelineTest {
             .as("the both-dimensions corner: a list variant over a composite-key per-element decode")
             .contains("createTestNodeIdCompositeRecordListBean",
                 "decodeFilmActorRecordList", "decodeFilmActorRecord");
-        var scalarBody = method(fetchers, "decodeFilmActorRecord").code().toString();
-        assertThat(scalarBody)
-            .as("each element loads both composite key columns")
-            .contains("ACTOR_ID")
-            .contains("FILM_ID");
+        // SDL → model: both dimensions on one leaf — list shape + composite-key arity.
+        var leaf = decodeRecordLeaf(LIST_COMPOSITE_SDL, "assignFilmActorList", true);
+        assertThat(leaf.typeId()).isEqualTo("FilmActor");
+        assertThat(leaf.keyColumns()).hasSize(2);
     }
 
     // ===== Helpers =====
+
+    /**
+     * Navigates the classified model from a {@code @service} Query field down to the
+     * {@link CallSiteExtraction.NodeIdDecodeRecord} leaf of its single input-bean record member:
+     * {@code field → serviceMethodCall → the record-bean arg → its one field → (list element →) the
+     * Scalar leafTransform}. Asserting the leaf is a {@code NodeIdDecodeRecord} (the cast) is itself
+     * the structural pin that the member did not fall through to {@code Direct}.
+     */
+    private static CallSiteExtraction.NodeIdDecodeRecord decodeRecordLeaf(
+            String sdl, String queryField, boolean list) {
+        var field = TestSchemaHelper.buildSchema(sdl).field("Query", queryField);
+        var bean = ((ServiceField) field).serviceMethodCall().methodArgs().stream()
+            .filter(e -> e instanceof MappingEntry.FromArg fa && fa.shape() instanceof ValueShape.RecordInput)
+            .map(e -> (ValueShape.RecordInput) ((MappingEntry.FromArg) e).shape())
+            .findFirst()
+            .orElseThrow(() -> new AssertionError("no record-input bean arg on " + queryField));
+        ValueShape memberShape = bean.fields().get(0).shape();
+        ValueShape elementShape = list ? ((ValueShape.ListOf) memberShape).elementShape() : memberShape;
+        return (CallSiteExtraction.NodeIdDecodeRecord) ((ValueShape.Scalar) elementShape).leafTransform();
+    }
 
     private static TypeSpec findSpec(String className, String sdl) {
         return TypeFetcherGenerator.generate(TestSchemaHelper.buildSchema(sdl), DEFAULT_OUTPUT_PACKAGE)
