@@ -130,6 +130,33 @@ class NodeIdRecordInputBeanPipelineTest {
             .contains("@nodeId(typeName:)");
     }
 
+    @Test
+    void recordMember_typeMismatchesNodeIdTypeName_rejectsAtGenerationTime() {
+        // The bean member is a FilmActorRecord, but @nodeId(typeName: "Film") decodes into a
+        // FilmRecord (Film's own @table). A NodeId cannot be loaded into a different record type;
+        // the classifier rejects this loudly instead of emitting a decode helper whose return type
+        // mismatches the bean field (the downstream javac "incompatible types" the gate replaces).
+        var sdl = """
+            type Film implements Node @table(name: "film") @node { id: ID! title: String }
+            type FilmActor implements Node @table(name: "film_actor") @node { id: ID! }
+            input AssignMismatchedInput {
+                film: ID! @nodeId(typeName: "Film")
+            }
+            type Query {
+                assignMismatched(in: AssignMismatchedInput!): String
+                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "assignMismatchedRecord"})
+            }
+            """;
+        var field = TestSchemaHelper.buildSchema(sdl).field("Query", "assignMismatched");
+        assertThat(field).isInstanceOf(UnclassifiedField.class);
+        assertThat(((UnclassifiedField) field).rejection().message())
+            .as("the rejection names the declared record type, the node-table record, and the typeName,"
+                + " and points at both remedies — never a silent fall-through")
+            .contains("FilmActorRecord")
+            .contains("test.jooq.tables.records.FilmRecord")
+            .contains("@nodeId(typeName: \"Film\")");
+    }
+
     private static final String COMPOSITE_SDL = """
         type FilmActor implements Node @table(name: "film_actor") @node { id: ID! }
         input AssignFilmActorInput {

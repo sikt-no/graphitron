@@ -391,7 +391,19 @@ member's (element) Java type is assignable to `org.jooq.Record`, branch:
   shape* cases:
   - no `@nodeId` on the record member (remedy: add `@nodeId(typeName:)`);
   - `@nodeId` without `typeName:` (the record type alone does not name the NodeType);
-  - `typeName:` resolves to no known NodeType.
+  - `typeName:` resolves to no known NodeType;
+  - the member's declared jOOQ record type does not match the record of the
+    `@nodeId(typeName:)` type's own `@table` (added after In Review on a real-project
+    report: a `List<SoknadSoknadsbehandlingTaggRecord>` member backed by
+    `@nodeId(typeName: "SoknadsbehandlingTagg")`, whose `@table` is
+    `soknadsbehandling_tagg` → `SoknadsbehandlingTaggRecord`). A NodeId decodes into the
+    record of its own `@table`; the `Tables.<NodeTable>.<col>` field references the helper
+    emits are not fields of a *different* record, and the helper would return the wrong
+    record type into the bean field. Without the gate this surfaced only downstream as a
+    javac "incompatible types" error in the consumer's `*Fetchers`, not as a graphitron
+    rejection. The gate compares `resolved.table().recordClass()` to the member's declared
+    element type and rejects with both remedies (declare the matching record type, or point
+    `@nodeId` at the NodeType whose `@table` backs the declared record).
 
   This is the same typed-rejection contract the resolver already uses
   (`InputBeanResolver.java:65-68, 141-176`); it fails the build.
