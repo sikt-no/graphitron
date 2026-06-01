@@ -1,7 +1,7 @@
 ---
 id: R195
 title: Decode @nodeId into jOOQ-record-typed @service input-bean fields
-status: Spec
+status: Ready
 bucket: feature
 priority: 5
 theme: model-cleanup
