@@ -34,8 +34,6 @@ import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.DSL;
 public final class FetcherEmitter {
 
     private static final ClassName DATA_FETCHING_ENV = ClassName.get("graphql.schema", "DataFetchingEnvironment");
-    private static final ClassName DATA_FETCHER = ClassName.get("graphql.schema", "DataFetcher");
-    private static final ClassName ENV_IMPL = ClassName.get("graphql.schema", "DataFetchingEnvironmentImpl");
     private static final ClassName LIST = ClassName.get("java.util", "List");
 
     private FetcherEmitter() {}
@@ -64,39 +62,20 @@ public final class FetcherEmitter {
             GraphitronField field, ClassName fetchersClass,
             TableRef parentTable, GraphitronType.ResultType resultType,
             String outputPackage, boolean sourceIsOutcome) {
-        CodeBlock raw = dataFetcherValueRaw(field, fetchersClass, parentTable, resultType, outputPackage);
         if (sourceIsOutcome && !(field instanceof ChildField.ErrorsField)) {
-            return outcomeSuccessUnwrap(raw, outputPackage);
+            // R244: a data-channel child of a flipped outcome type must emit an explicit read
+            // against Success.value() (and null on the ErrorList arm), not delegate to its raw
+            // fetcher. That inline read is built with the classifier flip in slice-1 commit 3b,
+            // where the execution-tier round-trip pins it against the real backing shapes; until
+            // then no field classifies to WrapperArm, so sourceIsOutcome is never set and this is
+            // unreachable. (An earlier delegation prototype was dropped after the principles review:
+            // it re-instantiated the inner fetcher per request and hid the read behind an env
+            // rebind, against the explicit-fetcher stance.)
+            throw new IllegalStateException(
+                "FetcherEmitter: arm-switched read for an Outcome-sourced field lands in slice-1 "
+                + "commit 3b; no field classifies to WrapperArm yet, so this path is unreachable");
         }
-        return raw;
-    }
-
-    /**
-     * Wraps a data-channel field's fetcher so it operates on {@code Success.value()} of an
-     * {@code Outcome} source and resolves null on the {@code ErrorList} arm (R244). The wrapper
-     * rebinds the source to the unwrapped value and delegates to the field's existing fetcher,
-     * which keeps every per-field read shape (column, record accessor, nested service call) intact
-     * without re-deriving it here; the same {@code DataFetchingEnvironmentImpl.newDataFetchingEnvironment}
-     * rebind idiom the federation entity dispatch uses for argument substitution.
-     */
-    private static CodeBlock outcomeSuccessUnwrap(CodeBlock inner, String outputPackage) {
-        return CodeBlock.builder()
-            .add("($T env) -> {\n", DATA_FETCHING_ENV)
-            .indent()
-            .add("if (env.getSource() instanceof $T<?> success) {\n", successClass(outputPackage))
-            .indent()
-            .add("$T<?> inner = $L;\n", DATA_FETCHER, inner)
-            .add("return inner.get($T.newDataFetchingEnvironment(env).source(success.value()).build());\n", ENV_IMPL)
-            .unindent()
-            .add("}\n")
-            .add("return null;\n")
-            .unindent()
-            .add("}")
-            .build();
-    }
-
-    private static ClassName successClass(String outputPackage) {
-        return ClassName.get(outputPackage + ".schema", "Outcome").nestedClass("Success");
+        return dataFetcherValueRaw(field, fetchersClass, parentTable, resultType, outputPackage);
     }
 
     private static ClassName errorListClass(String outputPackage) {
