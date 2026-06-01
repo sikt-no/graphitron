@@ -2233,23 +2233,12 @@ class FieldBuilder {
      * step (§5) and never reaches the dispatch arm, so no shadowing window remains.)
      */
     static String checkChannelLevelHandlerRules(List<ErrorType> mappedErrorTypes) {
-        // Rule 7: multiple VALIDATION handlers in the same channel.
-        var validationCarriers = new java.util.ArrayList<String>();
-        for (var et : mappedErrorTypes) {
-            for (var h : et.handlers()) {
-                if (h instanceof ErrorType.ValidationHandler) {
-                    validationCarriers.add(et.name());
-                    break;
-                }
-            }
-        }
-        if (validationCarriers.size() > 1) {
-            return "@error channel has more than one {handler: VALIDATION} entry across "
-                + "@error types " + String.join(", ", validationCarriers)
-                + "; VALIDATION is a single fan-out target per payload — split into separate "
-                + "fields with distinct payloads, or collapse to one VALIDATION-carrying type";
-        }
-        return null;
+        // Rule 7 (multiple VALIDATION handlers). Single implementation lives in the R244 walker's
+        // internal helper; this method delegates so the DML path and the legacy PayloadClass path
+        // share one body with the ErrorChannelWalker (no drift during the additive window). Commit 4
+        // rewires the remaining callers onto ChannelRuleChecks directly and deletes this delegator.
+        return no.sikt.graphitron.rewrite.walker.internal.ChannelRuleChecks
+            .checkMultiValidation(mappedErrorTypes);
     }
 
     /**
@@ -2275,43 +2264,10 @@ class FieldBuilder {
      * {@code ExceptionStrategyConfigurationGenerator} silently allowed duplicates.
      */
     static String checkDuplicateMatchCriteria(List<ErrorType> mappedErrorTypes) {
-        record CriteriaKey(String variant, String discriminator, java.util.Optional<String> matches) {}
-        var seen = new java.util.LinkedHashMap<CriteriaKey, String>();
-        for (var et : mappedErrorTypes) {
-            for (var h : et.handlers()) {
-                CriteriaKey key;
-                String fingerprint;
-                if (h instanceof ErrorType.ExceptionHandler eh) {
-                    key = new CriteriaKey("ExceptionHandler", eh.exceptionClassName(), eh.matches());
-                    fingerprint = "ExceptionHandler(className=\"" + eh.exceptionClassName() + "\""
-                        + matchesSuffix(eh.matches()) + ")";
-                } else if (h instanceof ErrorType.SqlStateHandler sh) {
-                    key = new CriteriaKey("SqlStateHandler", sh.sqlState(), sh.matches());
-                    fingerprint = "SqlStateHandler(sqlState=\"" + sh.sqlState() + "\""
-                        + matchesSuffix(sh.matches()) + ")";
-                } else if (h instanceof ErrorType.VendorCodeHandler vh) {
-                    key = new CriteriaKey("VendorCodeHandler", vh.vendorCode(), vh.matches());
-                    fingerprint = "VendorCodeHandler(vendorCode=\"" + vh.vendorCode() + "\""
-                        + matchesSuffix(vh.matches()) + ")";
-                } else {
-                    continue;
-                }
-                String trace = et.name() + " " + fingerprint;
-                String prior = seen.putIfAbsent(key, trace);
-                if (prior != null) {
-                    return "@error channel has two handlers with identical match-criteria: "
-                        + prior + " and " + trace
-                        + "; the runtime's source-order findFirst on MAPPINGS would make the "
-                        + "second mapping unreachable — collapse the duplicate or differentiate "
-                        + "the criteria";
-                }
-            }
-        }
-        return null;
-    }
-
-    private static String matchesSuffix(java.util.Optional<String> matches) {
-        return matches.isPresent() ? ", matches=\"" + matches.get() + "\"" : "";
+        // Rule 8 (duplicate intra-variant match-criteria). Delegates to the same single
+        // implementation as rule 7; see checkChannelLevelHandlerRules.
+        return no.sikt.graphitron.rewrite.walker.internal.ChannelRuleChecks
+            .checkDuplicateMatchCriteria(mappedErrorTypes);
     }
 
     /**
