@@ -1,7 +1,7 @@
 ---
 id: R195
 title: Decode @nodeId into jOOQ-record-typed @service input-bean fields
-status: In Review
+status: Ready
 bucket: feature
 priority: 5
 theme: model-cleanup
@@ -11,6 +11,56 @@ last-updated: 2026-06-01
 ---
 
 # Decode @nodeId into jOOQ-record-typed @service input-bean fields
+
+> **Rework (In Review → Ready, 2026-06-01, independent review).** The feature is
+> functionally complete and correct: spec→diff alignment is strong (both shape gates
+> dropped, composite + list + list-of-composite all in, `fromArray` materialization,
+> `decodeValues` exposed public, leaf reshaped off the dead `HelperRef.Decode`,
+> exhaustive switch, `ServiceMethodCallWalker` carry-through), and all R195 tiers pass
+> (`NodeIdRecordInputBeanPipelineTest` 9/9; `GraphQLQueryTest` execution round-trips
+> single / composite / list / list-of-composite against PostgreSQL; sakila-example
+> compile green). Two findings block Done:
+>
+> 1. **Code-string assertions on generated method bodies (banned).**
+>    `NodeIdRecordInputBeanPipelineTest` asserts on `method(...).code().toString()` in 6
+>    of 10 tests (line numbers as of HEAD after `18f79a2`: `:68`, `:80-95`, `:104-106`,
+>    `:200`/`:206`, `:222`/`:225`, `:238`):
+>    `.contains(".decodeValues(\"Film\", nodeId)")`, `.contains("decoded.fromArray(values,")`,
+>    `.contains("ACTOR_ID")`, `.doesNotContain("getDataType().convert")`, the
+>    `decodeFilmRecord(raw.get(...))` routing strings, etc. `rewrite-design-principles.adoc`
+>    line 131 bans these "at every tier" (they test implementation, not behaviour, and break
+>    on every refactor); it is also a named In Review → Done gate. The c3e10a3 churn
+>    (rewriting the `getDataType().convert` assertions to `fromArray`) is a live
+>    demonstration of exactly that brittleness. Behaviour is already pinned where the
+>    principle wants it: the execution tier (round-trip) and the compile tier (the
+>    `Tables.<T>.<col>` field references must exist). **Fix:** reduce these tests to
+>    structural assertions (method presence via `extracting(MethodSpec::name)`, return /
+>    parameter types, `Rejection.message()` for the reject cases — all already present; the
+>    rejection tests at `:113` and the `18f79a2` `:134` are the correct style to follow) and
+>    drop the `.code().toString()` body matches. **The spec's own Tests section endorses
+>    these pins** ("The pipeline tests pin `fromArray` and the absence of `getDataType().convert`");
+>    revise that directive too, so the next pass does not re-introduce them.
+>
+> 2. **Stale "typed set" / `getDataType().convert` documentation left by the c3e10a3
+>    `fromArray` reversal.** The reversal updated the emitter's own javadoc and the pipeline
+>    body assertions but did not sweep six other places that still describe the removed typed
+>    per-column `set(... getDataType().convert(values[i]))` mechanism:
+>    - `model/CallSiteExtraction.java:174-178, 196` — the `NodeIdDecodeRecord` leaf javadoc
+>      (the canonical description of the leaf) still says it "copies each value … with a typed
+>      `record.set(Tables.<T>.<col>, <col>.getDataType().convert(values[i]))` … the typed set is
+>      compile-checked" and "one typed set per column". This is the most material: a model-level
+>      doc contradicting the actual emission, and the spec's "Decision reversed" section
+>      explicitly required the contradicting javadoc be updated.
+>    - `generators/.../NodeIdRecordInputBeanPipelineTest.java:194` — test name
+>      `…_oneSetPerKeyColumn`.
+>    - `graphitron-sakila-example/.../GraphQLQueryTest.java:3775, 3788` — "decodeValues + a typed
+>      record.set", "one typed set each".
+>    - `graphitron-sakila-example/.../schema.graphqls:1052, 1568, 1577` — fixture SDL comments,
+>      same wording.
+>    **Fix:** sweep all six to the `fromArray` description.
+>
+> Reviewer session ≠ implementer session (`01JfK…`). The next In Review → Done reviewer must
+> again be a different session than whoever lands this rework.
 
 ## Problem
 
