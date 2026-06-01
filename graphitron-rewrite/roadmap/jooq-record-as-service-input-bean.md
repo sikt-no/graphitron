@@ -61,22 +61,29 @@ SDL field carries `@nodeId(typeName:)`. The original R195 framing ("the
 parameter *itself* is a jOOQ record", `@table` + `@field(name:)` translation) is
 explicitly **deferred** ; see "Deferred / out of scope" below.
 
-**Key arity: all arities are in scope (single-column and composite).** The
-driving case (`Sak`, `Bruker`) happens to be single-PK, but a `@nodeId` member
-backed by a composite-PK NodeType (`FilmActorRecord`, PK `(actor_id, film_id)`)
-must decode and materialize just like a single-key one. Composite keys are *not*
-a separate feature here: the materialization (see "Materialization" below) is
-arity-agnostic (one typed `set` per key column, single or composite), and the raw
-decode unpack (`NodeIdEncoder.decodeValues`) already returns all key values per
-NodeType.
-Punting composite to a future item would ship a half-feature that throws a build
-error on a legitimate, mechanically-supported shape; that is not acceptable.
+**All record-member shapes are in scope: single-column and composite key, scalar
+and list-valued.** The driving case (`Sak`, `Bruker`) happens to be a single-PK
+scalar member, but neither dimension is a separate feature:
+
+- *Key arity.* A `@nodeId` member backed by a composite-PK NodeType
+  (`FilmActorRecord`, PK `(actor_id, film_id)`) materializes exactly like a
+  single-key one ; the materialization is arity-agnostic (one typed `set` per key
+  column) and `NodeIdEncoder.decodeValues` already returns all key values.
+- *List-ness.* A list-valued member (`List<SakRecord>` from `[ID!] @nodeId`)
+  wraps the same per-element materialization in a stream/collect, mirroring
+  R260's `decodeFilmKeys`/`decodeFilmActorRows` list helpers one level up.
+
+Both compose orthogonally (the `{scalar,list} × {single,composite}` matrix R260
+already emits for keys), so the reusable emitter handles them with one per-column
+`set` loop and one optional stream wrapper. Punting either to a future item would
+ship a half-feature that throws a build error on a legitimate,
+mechanically-supported shape; that is not acceptable.
 
 Two deliverables, both required:
 
 1. **Decode happy path.** Read `@nodeId(typeName:)` on a jOOQ-record-typed bean
    field, emit a NodeId-decode-and-materialize instead of a cast. Works for any
-   key arity.
+   key arity and for scalar or list-valued members.
 2. **Loud rejection (load-bearing half).** Any jOOQ-`Record`-typed bean member
    without a *handled* decode strategy is rejected at generation time, never
    falls through to `Direct`. After this item, a jOOQ-record member has exactly
@@ -92,10 +99,12 @@ Two deliverables, both required:
 > than the one that landed this rescope.
 >
 > **Delta from landed v1 (the work this revision adds):**
-> 1. **Composite keys in.** Drop the `keyColumns.size() == 1` gate in
->    `InputBeanResolver.buildJooqRecordLeaf`; remove the "composite-key... not yet
->    supported" message; update that method's javadoc (do not leave it claiming
->    composite is deferred). See "Loud rejection".
+> 1. **Composite keys + list members in.** Drop both shape gates in
+>    `InputBeanResolver.buildJooqRecordLeaf`: the `keyColumns.size() == 1` check
+>    (`:382-387`) and the `listShape` check (`:360-364`); remove both "not yet
+>    supported" messages; update that method's javadoc (do not leave it claiming
+>    composite or list is deferred). The remaining rejections are malformed-directive
+>    only. See "Loud rejection".
 > 2. **Materialization: copy decoded values into the target record.** Rework the
 >    helper body off `decode<Type>` + `fromMap(intoMap())` to `decodeValues(typeId,
 >    nodeId)` + typed per-column `record.set(field, convert(values[i]))` (or
@@ -109,9 +118,12 @@ Two deliverables, both required:
 >    `unpack<Type>` wrapper). See "Materialization".
 > 5. **Keep per-type concrete `decode<Type>Record` helpers** (deduped by record
 >    type), emitted by **one reusable emitter** generalized to all arities, rather
->    than a generic generated helper. See "Output: per-type concrete helpers".
-> 6. **Tests:** convert the composite-rejection pipeline test to a composite-success
->    test; add composite compile + execute coverage. See "Tests".
+>    than a generic generated helper. The same emitter emits a `decode<Type>RecordList`
+>    variant for list members. See "Output: per-type concrete helpers".
+> 6. **Tests:** convert the composite-rejection *and* list-rejection pipeline tests
+>    to success tests; add composite and list-of-record compile + execute coverage
+>    (including the `List<FilmActorRecord>` corner that exercises both dimensions).
+>    See "Tests".
 
 ## Design (resolved for Spec)
 
@@ -188,6 +200,31 @@ and both avoiding the throwaway `RecordN`:
 
 Either way the output is a concrete per-type helper from one reusable emitter (see
 "Output: per-type concrete helpers"), not a generic generated helper.
+
+**List-valued members** (`List<SakRecord>` from `[ID!] @nodeId(typeName: "Sak")`)
+wrap the same per-element materialization in a stream, mirroring R260's
+`decodeFilmKeys`/`decodeFilmActorRows` list helpers one level up:
+
+```java
+private static List<SakRecord> decodeSakRecordList(Object wire) {
+    if (!(wire instanceof List<?> nodeIds)) {
+        return null;
+    }
+    List<SakRecord> records = new ArrayList<>(nodeIds.size());
+    for (Object element : nodeIds) {
+        records.add(decodeSakRecord(element));   // same per-element helper; throws on a wrong-type element
+    }
+    return records;
+}
+```
+
+A present-but-wrong-type element is a wrong input (the authored contract), so it
+throws (the singular helper already throws on mismatch) rather than silently
+dropping ; this differs from the *filter* path's `SkipMismatchedElement`, because
+an input-bean member is materialized input, not a query predicate. The reusable
+emitter emits the scalar helper always and the `…List` variant when
+`FieldBinding.listShape` ; both share the per-element body. List-ness is carried on
+`FieldBinding`, not duplicated on the leaf.
 
 - **Encoder access.** `decodeValues` is package-private and the helper lands in a
   different package (`…generated.fetchers` vs `…generated.util`). Expose it:
@@ -304,22 +341,34 @@ hand-roll a parallel `typeName → keyColumns` walk.
 ### Loud rejection
 
 In the `buildInputBeanBody` leaf ladder, before `else -> new Direct()`: if the
-member's loaded Java type is assignable to `org.jooq.Record`, branch:
+member's (element) Java type is assignable to `org.jooq.Record`, branch:
 
-- `@nodeId` present and target + key columns resolve (**any arity**, single or
-  composite) → `NodeIdDecodeRecord`.
-- otherwise (no `@nodeId`; unresolvable target; list-of-record member) →
-  `Built.Fail` / `Result.Failed` with a message naming the field, the record
-  type, and the remedy ("add `@nodeId(typeName:)`"). This is the same
-  typed-rejection contract the resolver already uses
+- `@nodeId` present and target + key columns resolve → `NodeIdDecodeRecord`. This
+  holds for **every shape**: single-key or composite-key, scalar member or
+  list-valued member. Arity is the key-column count; list-ness is carried on the
+  enclosing `FieldBinding.listShape` and drives the scalar-vs-list emitter variant.
+- otherwise → `Built.Fail` / `Result.Failed`. After this item the **only**
+  jOOQ-record-member rejections are *malformed directive* cases, not *unsupported
+  shape* cases:
+  - no `@nodeId` on the record member (remedy: add `@nodeId(typeName:)`);
+  - `@nodeId` without `typeName:` (the record type alone does not name the NodeType);
+  - `typeName:` resolves to no known NodeType.
+
+  This is the same typed-rejection contract the resolver already uses
   (`InputBeanResolver.java:65-68, 141-176`); it fails the build.
 
-There is **no composite-key gate.** The v1 single-column-key check
-(`keyColumns.size() == 1`) that fell composite members into the rejection arm is
-removed; a composite-PK `@nodeId` member resolves its full key-column list and
-produces `NodeIdDecodeRecord` exactly as a single-key one does. A "composite-key
-record members are not yet supported" message must no longer appear in the
-codebase.
+**No shape gates.** Both v1 shape gates are removed:
+
+- the `keyColumns.size() == 1` check that rejected composite-PK members
+  (`InputBeanResolver.java:382-387`), and
+- the `listShape` check that rejected list-valued members
+  (`InputBeanResolver.java:360-364`).
+
+Neither "composite-key record members are not yet supported" nor
+"list-of-jOOQ-record members are not yet supported" may appear in the codebase
+after this item. A composite member resolves its full key-column list; a list
+member produces the same leaf and emits through the list variant of the helper
+(stream the wire `List<String>`, materialize one record per element, collect).
 
 ### Emitter exhaustiveness (landed)
 
@@ -337,13 +386,15 @@ reusable.** These are two different axes and the right answer differs on each:
 
 - *Generated output:* one concrete `decode<Type>Record(Object) -> <Type>Record`
   per record type (deduped by record type, so N fields of the same type share one
-  helper, as v1 already does). **Not** a single generic
-  `<R extends TableRecord<R>> R decodeNodeIdRecord(Object, String typeId, R fresh,
-  TableField<R,?>... keyFields)`.
+  helper, as v1 already does), plus a `decode<Type>RecordList(Object) ->
+  List<<Type>Record>` variant when a member of that type is list-valued. **Not** a
+  single generic `<R extends TableRecord<R>> R decodeNodeIdRecord(Object, String
+  typeId, R fresh, TableField<R,?>... keyFields)`.
 - *Generator code:* a single reusable emitter method (the existing
   `InputBeanInstantiationEmitter` record-decode-helper builder, generalized to all
   arities) parameterized by `(recordType, typeId, keyColumns, nonNull)`, emitting
-  the concrete helper. One generator-side definition, no duplicated emitter logic.
+  the concrete scalar helper and, for list members, the `…List` stream variant that
+  delegates to it. One generator-side definition, no duplicated emitter logic.
 
 Why concrete output rather than a generic generated helper, even though the body
 shape is now uniform across types:
@@ -407,27 +458,30 @@ equivalent consolidation lives in the emitter, and the output stays concrete.
   mutation decodes a `Film` NodeId into a `FilmRecord` member and reads the
   populated `film_id` back, round-tripping against PostgreSQL.
 
-### Required by the rescope (composite key) — not yet landed
+### Required by the rescope (composite key + list members) — not yet landed
 
-- **Convert the composite-rejection test.** The current
-  `NodeIdRecordInputBeanPipelineTest` rejection case asserting a composite-key
-  member (`FilmActorRecord`, PK `(actor_id, film_id)`) fails with the
-  composite-key-punt message must be **removed** and replaced with a *success*
-  case: the composite member emits a `decodeFilmActorRecord` helper that
-  materializes via `NodeIdEncoder.decodeValues("FilmActor", nodeId)` + one typed
-  `record.set(...)` per key column (`ACTOR_ID`, `FILM_ID`), routed through
-  `createTestNodeIdRecordBean` with no cast. The only surviving rejection case is
-  the no-`@nodeId` one.
-- **Compilation tier (composite).** Add a composite-PK fixture to
-  `graphitron-sakila-example`: an `@service` input bean with a member typed as a
-  composite-PK `*Record` (`FilmActorRecord`) carrying
-  `ID! @nodeId(typeName: "FilmActor")`. The generated `decodeFilmActorRecord`
-  must compile against the real jOOQ catalog ; this is the primary guard that both
-  typed `set` assignments match their key columns.
-- **Execution tier (composite).** A mutation decodes a `FilmActor` NodeId into a
-  composite `FilmActorRecord` member and reads both `actor_id` and `film_id` back
-  populated, round-tripping against PostgreSQL ; proves the per-column `set`
-  materialization fills every key column, not just the first.
+- **Convert the shape-rejection tests to success tests.** The current
+  `NodeIdRecordInputBeanPipelineTest` rejection cases — a composite-key member
+  (`FilmActorRecord`, PK `(actor_id, film_id)`) and a list-valued member
+  (`List<FilmRecord>`) failing with "not yet supported" — must be **removed** and
+  replaced with *success* cases: the composite member emits a `decodeFilmActorRecord`
+  helper (one typed `record.set(...)` per key column); the list member emits a
+  `decodeFilmRecordList` helper (stream/collect over `decodeFilmRecord`); both route
+  through `createTestNodeIdRecordBean` with no cast. The only surviving rejections
+  are the malformed-directive cases (no `@nodeId`, missing `typeName`, unresolvable
+  NodeType).
+- **Compilation tier (composite + list).** Add fixtures to
+  `graphitron-sakila-example`: a composite-PK member (`FilmActorRecord` /
+  `ID! @nodeId(typeName: "FilmActor")`), a list member (`List<FilmRecord>` /
+  `[ID!] @nodeId(typeName: "Film")`), and the corner that exercises both
+  (`List<FilmActorRecord>` / `[ID!] @nodeId(typeName: "FilmActor")`). Each generated
+  helper compiles against the real jOOQ catalog — the primary guard that the typed
+  `set` assignments and the `List<…>` return type line up.
+- **Execution tier (composite + list).** A mutation decodes a `FilmActor` NodeId
+  into a composite member and reads both `actor_id` and `film_id` back; another
+  decodes a list of `Film` NodeIds into a `List<FilmRecord>` and reads each
+  `film_id` back, round-tripping against PostgreSQL. Proves per-column `set` fills
+  every key column and the list variant materializes one record per element.
 
 ## Affected code
 
@@ -435,21 +489,23 @@ This section lists the **delta** the rework touches; symbols not listed (the lea
 permit's existence, the exhaustive switch, the `ArgCallEmitter` unreachable arm,
 the `ServiceMethodCallWalker` carry-through, `resolveTargetKeys`) are landed.
 
-- `InputBeanResolver.java` (`buildJooqRecordLeaf`) ; drop the
-  `keyColumns.size() == 1` gate and the composite-punt message; populate the
-  reshaped `NodeIdDecodeRecord` leaf (`encoderClass, typeId, keyColumns,
-  recordType, nonNull`); update the method javadoc that currently says composite
-  is deferred.
+- `InputBeanResolver.java` (`buildJooqRecordLeaf`) ; drop **both** shape gates —
+  the `keyColumns.size() == 1` gate (`:382-387`) and the `listShape` gate
+  (`:360-364`) — and their "not yet supported" messages; populate the reshaped
+  `NodeIdDecodeRecord` leaf (`encoderClass, typeId, keyColumns, recordType,
+  nonNull`) for every shape; update the method javadoc that currently says
+  composite and list are deferred.
 - `model/CallSiteExtraction.java` ; reshape the `NodeIdDecodeRecord` permit's
   components (drop `HelperRef.Decode`) per "Model".
 - `generators/InputBeanInstantiationEmitter.java` ; this *is* the one reusable
   emitter — generalize the existing per-type record-decode-helper builder to all
   arities and rework its emitted body from `decode<Type>` + `fromMap(intoMap())` to
   `decodeValues(typeId, nodeId)` + typed per-column `record.set(field,
-  convert(values[i]))` (no throwaway `RecordN`). Output stays per-type concrete
-  `decode<Type>Record` helpers, deduped by record type. Update the helper javadoc
-  that claims "no encoder-generator change is needed". The switch is already
-  exhaustive (no `default -> throw` to remove).
+  convert(values[i]))` (no throwaway `RecordN`). Emit the `decode<Type>RecordList`
+  stream variant when the `FieldBinding` is list-shaped. Output stays per-type
+  concrete helpers, deduped by record type. Update the helper javadoc that claims
+  "no encoder-generator change is needed". The switch is already exhaustive (no
+  `default -> throw` to remove).
 - The `NodeIdEncoder` class generator (`util/NodeIdEncoderClassGenerator.java`) ;
   expose the raw unpack the helper calls — make `decodeValues` `public`, or emit a
   public `unpack<Type>(String): String[]` wrapper. (Replaces v1's reliance on the
@@ -468,7 +524,6 @@ the `ServiceMethodCallWalker` carry-through, `resolveTargetKeys`) are landed.
 - **`@field(name:)` / `@table`-on-input translation.** Not needed for the
   reported case (the record member's key columns come from the target table's PK,
   no name inversion). Folds into R97's consumer-derivation direction.
-- **List-of-jOOQ-record members.** Reject in v1.
 - **Readability of the *existing* inline NodeId emitter.** Tracked separately as
   R260; this item's new helper must emit the readable statement form from day
   one, but it does not refactor `ArgCallEmitter.buildNodeIdDecodeExtraction`.
