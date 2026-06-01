@@ -3,7 +3,7 @@ id: R245
 title: "Wire @condition through to mutation WHERE (emit half + new placements)"
 status: Backlog
 bucket: cleanup
-depends-on: [simplify-update-mutations-drop-value]
+depends-on: [deleterows-walker-carrier]
 created: 2026-05-27
 last-updated: 2026-05-27
 ---
@@ -12,7 +12,7 @@ last-updated: 2026-05-27
 
 `@condition` on mutations is half-built today: `MutationInputResolver.java` admits input-field-level `@condition(override: true)` (R215, lines ~482-498) but the directive is a no-op at emit (no `.where(...)` clause is produced). Argument-level `@condition` on a non-`@table` mutation argument is rejected outright (line 446). Input-field-level `@condition` without `override:` is rejected. This item closes the emit half and lifts the two admission rejections so the directive does something useful.
 
-Was Strand B of R188 (split out so R188 can land as a focused `@value` removal). The PK-default partition R188 ships is the baseline this item layers `@condition` predicates on top of.
+Was Strand B of R188 (now discarded; its `@value` removal and PK-default partition moved to R266). The PK-or-UK partition R246 ships for UPDATE and R266 ships for DELETE is the baseline this item layers `@condition` predicates on top of.
 
 ## Design
 
@@ -40,7 +40,7 @@ All non-override `@condition` predicates AND together. At most one input-field-l
 
 When an override is present, it replaces the implicit PK WHERE; non-override predicates still AND in. When no override is present, the implicit PK predicates drive WHERE and the non-override predicates AND alongside. Inner explicit `@condition`s are always preserved regardless of override (the `filmsOuterOverrideTableInput` regression-fence applies on the mutation side).
 
-`@condition` does not move fields between R188's SET/WHERE partition. It contributes predicates AND-ed into WHERE; it does not remove columns from SET.
+`@condition` does not move fields between the SET/WHERE partition (R246 for UPDATE, R266 for DELETE). It contributes predicates AND-ed into WHERE; it does not remove columns from SET.
 
 ### Row-identity disjunction (R144 update)
 
@@ -52,7 +52,7 @@ The R144 check stays a disjunction: the field has a row-identity proof iff at le
 
 holds; else the field is `UnclassifiedField` via `mutation-input.where-identifies-row`. No sealed `RowIdentity` taxonomy; the disjunction is checked directly in `MutationInputResolver`, and the emitter forks once on the three cases.
 
-R188 ships with the override-true case present-but-no-emit; this item makes it emit, so the disjunction's middle arm becomes load-bearing rather than just an admission.
+The override-true case is admitted but no-op at emit today (R215); this item makes it emit, so the disjunction's middle arm becomes load-bearing rather than just an admission.
 
 ## Implementation
 
@@ -125,7 +125,7 @@ Execution: add to `DmlMutationsExecutionTest` / `DmlBulkMutationsExecutionTest`:
 ## User documentation
 
 * **Revise** `docs/manual/reference/directives/condition.adoc`. Add a "Use on `@mutation` fields" subsection naming the two placements (input field with or without `override:`, non-`@table` argument), the composition rule (non-override predicates AND in, single override replaces PK WHERE), and a link to `mutation.adoc` for the UPDATE-specific story.
-* **Cross-link from** `docs/manual/reference/directives/mutation.adoc` (R188 already mentions `@condition` as the escape hatch for non-PK row identity; this item makes that statement true at emit).
+* **Cross-link from** `docs/manual/reference/directives/mutation.adoc` (R266's rewrite of that doc mentions `@condition` as the escape hatch for non-PK row identity; this item makes that statement true at emit).
 
 ## Roadmap entries
 
