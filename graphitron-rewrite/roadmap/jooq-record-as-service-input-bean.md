@@ -65,12 +65,12 @@ explicitly **deferred** ; see "Deferred / out of scope" below.
 driving case (`Sak`, `Bruker`) happens to be single-PK, but a `@nodeId` member
 backed by a composite-PK NodeType (`FilmActorRecord`, PK `(actor_id, film_id)`)
 must decode and materialize just like a single-key one. Composite keys are *not*
-a separate feature here: the `record.fromMap(key.intoMap())` materialization is
-arity-agnostic (the decoded `RecordN`'s field names match the target record's key
-columns whatever N is), and the decode helper (`decode<Type>` returning
-`Record1`/`RecordN`) already exists per NodeType. Punting composite to a future
-item would ship a half-feature that throws a build error on a legitimate,
-mechanically-supported shape; that is not acceptable.
+a separate feature here: the `record.from(values, keyFields)` materialization
+(see "Materialization" below) is arity-agnostic (the `Field...` varargs is the
+full key-column list, single or composite), and the raw decode unpack
+(`NodeIdEncoder.decodeValues`) already returns all key values per NodeType.
+Punting composite to a future item would ship a half-feature that throws a build
+error on a legitimate, mechanically-supported shape; that is not acceptable.
 
 Two deliverables, both required:
 
@@ -111,13 +111,13 @@ private static SakRecord decodeSakRecord(Object wire) {
     if (!(wire instanceof String nodeId)) {
         return null;                          // nullable ID, or absent key → null member
     }
-    Record1<Long> key = NodeIdEncoder.decodeSak(nodeId);
-    if (key == null) {
+    String[] values = NodeIdEncoder.decodeValues("Sak", nodeId);
+    if (values == null) {
         throw GraphqlErrorException.newErrorException()
             .message("Decoded NodeId did not match the expected type for this argument").build();
     }
     SakRecord record = new SakRecord();
-    record.fromMap(key.intoMap());
+    record.from(values, Tables.SAK.SAK_ID);   // positional array → fields; jOOQ converts per DataType
     return record;
 }
 ```
@@ -128,45 +128,77 @@ field* should throw vs. defer to Jakarta non-null validation is settled in
 implementation against the existing non-null-arg behaviour; the decode-mismatch
 throw above is unconditional.
 
-`record.fromMap(key.intoMap())` is the crux that means **no encoder-generator
-change is needed** *and* that this generalises to composite keys with no extra
-machinery: `NodeIdEncoder.decodeSak(...)` builds its `RecordN` from the literal
-`Tables.SAK.<pkCol>` fields (`NodeIdEncoderClassGenerator`,
-`newRecord(Tables.SAK.COL, ...)`), so the decoded tuple's field names are
-identical to the target record's key fields and the by-name copy lands each key
-column in the right slot. The decode returns a key tuple (`Record1<Long>` /
-`RecordN`), *not* a `TableRecord`; `fromMap(intoMap())` is what turns it into one.
+### Materialization: `record.from(values, fields)`, not `fromMap(intoMap())`
 
-For a composite-PK NodeType the only thing that changes is the decode return
-arity: `NodeIdEncoder.decodeFilmActor(...)` returns `Record2<Integer, Integer>`
-whose fields are `Tables.FILM_ACTOR.ACTOR_ID` / `.FILM_ID`, and
-`filmActor.fromMap(key.intoMap())` copies both columns by name. The helper body,
-the `instanceof String` guard, the throw-vs-null logic, and the call site are all
-identical; only the `Record1<Long>` local type in the example above widens to the
-NodeType's `RecordN`. Because the materialization is name-keyed it is insensitive
-to key-column order, so no positional reasoning is needed.
+**This supersedes v1's `record.fromMap(key.intoMap())`.** Researching how the
+legacy generator solved the same problem (`graphitron-common`
+`NodeIdStrategy.setFields` / `nodeIdToTableRecord`) surfaced a materially leaner
+mechanism that this item adopts:
+
+```java
+// legacy NodeIdStrategy.setFields:
+String[] values = unpackIdValues(typeId, id, keyColumnFields);  // base64 → raw String[]
+record.from(values, keyColumnFields);                           // positional; jOOQ converts each via DataType
+```
+
+`org.jooq.Record.from(Object source, Field<?>... fields)` copies a raw `String[]`
+positionally into exactly the named fields, running each value through that
+field's `DataType` converter. One hop: `base64 → String[] → target record`.
+
+v1 instead went `base64 → NodeIdEncoder.decodeSak(...)` (a *throwaway* typed
+`RecordN`, built via `newRecord(cols)` + per-column `set(convert(...))`) →
+`key.intoMap()` (a name-keyed `Map`) → `target.fromMap(map)` (re-match by name).
+Three intermediate representations and a whole throwaway record materialized only
+to be copied out again. That is the "build a record to build a record" smell.
+
+The generated `NodeIdEncoder` already exposes the raw unpack every `decode<Type>`
+calls first (`static String[] decodeValues(String expectedTypeId, String base64Id)`,
+type-id-checked, returns `null` on mismatch). The decode-record helper bypasses
+the typed `RecordN` and calls it directly, then `record.from(values, <keyFields>)`.
+
+- **Encoder access.** `decodeValues` is package-private and the helper lands in a
+  different package (`…generated.fetchers` vs `…generated.util`). Expose it:
+  make `decodeValues` `public`, or generate a public `unpack<Type>(String): String[]`
+  wrapper. (Implementation choice; prefer the smaller surface.)
+- **Arity-agnostic by construction.** `record.from(values, field1, field2, …)` takes
+  the full key-`Field` list as varargs, so single- and composite-PK are the same
+  call; the `Field[]` is `tableFieldsBlock(<keyColumns>)`, the columns resolved per
+  "Decode-helper resolution" below. Positional: `values[i]` ↔ `fields[i]`, and the
+  encoder packs values in key-column order, so order is consistent end to end.
+- **No encoder-generator change for the decode itself.** The encoder already emits
+  `decodeValues`; only its visibility (or a thin public wrapper) changes.
+
+> **Legacy lineage / further option.** Legacy wraps this in a single *runtime*
+> helper `nodeIdToTableRecord(id, typeId, List<TableField>)` (decode → `newRecord` →
+> `from` → return), so it generates *no* per-type materialization code at all. The
+> rewrite has deliberately moved off the runtime `NodeIdStrategy` onto generated
+> `NodeIdEncoder` statics, so a pure runtime helper does not fit; but the same
+> consolidation is available as *one* generated helper
+> `decodeRecord(String wire, String typeId, TableField<?,?>... fields)` instead of
+> N per-type `decode<Type>Record` methods. Whether to collapse to one generic
+> helper or keep per-type helpers is a reviewer call; either way the body is the
+> `from(values, fields)` shape above, not `fromMap(intoMap())`.
 
 Java-17 note: the helper matches on `wire instanceof String nodeId` (legal in
-17). It does **not** pattern-match the parameterised `RecordN` (that would
-require Java 21+); it null-checks the decode result and calls `fromMap`. This
-avoids the `(Object) ... instanceof Record1` dance the existing inline emitter
-needs.
+17). It does **not** pattern-match a parameterised `RecordN` (Java 21+); it
+null-checks the `String[]` and calls `record.from`. This sidesteps both the
+`(Object) ... instanceof Record1` dance the inline emitter needs *and* the
+throwaway-`RecordN` allocation.
 
-> **Implementation corrections (landed).** Two claims above were wrong against the
-> real jOOQ / graphql-java 25 APIs and were corrected during implementation:
-> - **There is no `Record.from(Record)` by-name overload.** jOOQ's `from(Object)`
->   POJO-reflects its source; a `RecordN` exposes no `getSakId()` bean property, so
->   `record.from(key)` copies nothing and leaves the key column `null`. The
->   working by-name copy is `record.fromMap(key.intoMap())` (`intoMap()` keys by
->   field name; `fromMap` matches target fields by name). Verified at the
->   execution tier (`GraphQLQueryTest#assignFilmRecord_decodesNodeIdIntoJooqRecordMember`).
+> **v1 implementation note (superseded).** v1 landed `record.fromMap(key.intoMap())`
+> after discovering that `record.from(key)` (POJO reflection) copies nothing from a
+> `RecordN` (no `getSakId()` bean property). `fromMap(intoMap())` works but is the
+> wasteful three-hop path above; the `from(values, fields)` mechanism this section
+> now specifies avoids both the reflection trap and the throwaway record. The
+> landed single-key code must be reworked to it (the change is local to the
+> generated helper body + exposing `decodeValues`).
 > - **`new GraphqlErrorException(String)` does not compile** (only a protected
 >   builder constructor exists); the throw uses
 >   `GraphqlErrorException.newErrorException().message(..).build()`. The existing
 >   inline `ThrowOnMismatch` arms in `ArgCallEmitter` /
 >   `CompositeDecodeHelperRegistry` emit the same broken `new GraphqlErrorException($S)`
 >   but no compilation-tier fixture reaches them, so the defect is latent there
->   (filed as a separate Backlog item).
+>   (filed as R265).
 > - **A third consumer needed teaching.** The spec said the only consumer is
 >   `InputBeanInstantiationEmitter`, but the R238 `@service` `ValueShape` path
 >   (`ServiceMethodCallWalker.fieldBindingShape`) re-projects each `InputBean`
@@ -187,10 +219,11 @@ Rationale (principles-architect, finding 1): the existing
 `NodeIdDecodeKeys.{ThrowOnMismatch | SkipMismatchedElement}` arms are consumed by
 `ArgCallEmitter.buildNodeIdDecodeExtraction` to **decompose** the decoded tuple
 into scalar column values (`.value1()` / `::valuesRow`) for a predicate/SET body.
-This new consumer does the opposite ; it keeps the tuple whole and **rebuilds a
-`TableRecord`** via `fromMap(intoMap())`. Same decode helper, opposite downstream
-projection. Reusing the same arm would force two consumers to fork differently on
-the same model field (the "two consumers, same predicate" smell in
+This new consumer does the opposite ; it **rebuilds a `TableRecord`** by copying
+the decoded key values straight into the target record's key fields
+(`record.from(values, keyFields)`, see "Materialization"). Same NodeType decode,
+opposite downstream shape. Reusing the same arm would force two consumers to fork
+differently on the same model field (the "two consumers, same predicate" smell in
 "Generation-thinking"); a distinct leaf makes each consumer fork on *identity*.
 The `recordType` is also available on `FieldBinding.javaElementTypeName`, but
 carrying it on the leaf (rather than re-reading the string in the emitter) is
@@ -283,14 +316,17 @@ the new leaf *iff* the emitter has a real arm for it.
   field maps to a `FilmRecord` member emits a `decodeFilmRecord` helper plus a
   `createTestNodeIdRecordBean` helper on `QueryFetchers`; the bean field routes
   through `decodeFilmRecord(raw.get("film"))` with no `(FilmRecord) raw.get(...)`
-  cast; the decode helper returns the record type, takes `Object`, decodes via
-  `decodeFilm` and rebuilds with `fromMap(key.intoMap())`, throwing on a
-  type-mismatch. TypeSpec-shape / helper-presence assertions.
+  cast; the decode helper returns the record type, takes `Object`, and
+  materializes via `record.from(NodeIdEncoder.decodeValues("Film", nodeId),
+  Tables.FILM.FILM_ID)`, throwing on a type-mismatch (`values == null`).
+  TypeSpec-shape / helper-presence assertions. **Landed against the v1
+  `fromMap(intoMap())` shape; reworked to `from(values, fields)` per
+  "Materialization".**
 - **Compilation tier.** `graphitron-sakila-example`:
   `FilmRecordAssignmentInput { film: ID! @nodeId(typeName: "Film") }` +
   `Mutation.assignFilmRecord` → `FilmReviewService.assignFilmRecord(FilmRecordAssignment)`.
   Generated `MutationFetchers.decodeFilmRecord` compiles against the real jOOQ
-  catalog (catches the `from`/`fromMap`/type mismatch).
+  catalog (catches the `from(values, fields)`/type mismatch).
 - **Execution tier.**
   `GraphQLQueryTest#assignFilmRecord_decodesNodeIdIntoJooqRecordMember`: a
   mutation decodes a `Film` NodeId into a `FilmRecord` member and reads the
@@ -302,28 +338,35 @@ the new leaf *iff* the emitter has a real arm for it.
   `NodeIdRecordInputBeanPipelineTest` rejection case asserting a composite-key
   member (`FilmActorRecord`, PK `(actor_id, film_id)`) fails with the
   composite-key-punt message must be **removed** and replaced with a *success*
-  case: the composite member emits a `decodeFilmActorRecord` helper that decodes
-  via `decodeFilmActor` (returning `Record2<Integer, Integer>`) and rebuilds with
-  `fromMap(key.intoMap())`, routed through `createTestNodeIdRecordBean` with no
-  cast. The only surviving rejection case is the no-`@nodeId` one.
+  case: the composite member emits a `decodeFilmActorRecord` helper that
+  materializes via `record.from(NodeIdEncoder.decodeValues("FilmActor", nodeId),
+  Tables.FILM_ACTOR.ACTOR_ID, Tables.FILM_ACTOR.FILM_ID)`, routed through
+  `createTestNodeIdRecordBean` with no cast. The only surviving rejection case is
+  the no-`@nodeId` one.
 - **Compilation tier (composite).** Add a composite-PK fixture to
   `graphitron-sakila-example`: an `@service` input bean with a member typed as a
   composite-PK `*Record` (`FilmActorRecord`) carrying
   `ID! @nodeId(typeName: "FilmActor")`. The generated `decodeFilmActorRecord`
   must compile against the real jOOQ catalog ; this is the primary guard that the
-  two-column `fromMap(intoMap())` lands both key fields with correct types.
+  two-element `from(values, field1, field2)` lands both key fields with correct
+  types.
 - **Execution tier (composite).** A mutation decodes a `FilmActor` NodeId into a
   composite `FilmActorRecord` member and reads both `actor_id` and `film_id` back
-  populated, round-tripping against PostgreSQL ; proves name-keyed materialization
-  fills every key column, not just the first.
+  populated, round-tripping against PostgreSQL ; proves the positional
+  `from(values, fields)` materialization fills every key column, not just the first.
 
 ## Affected code
 
 - `InputBeanResolver.java` ; read `@nodeId`, the jOOQ-record branch, the
   `NodeIdDecodeRecord` leaf, the loud rejections.
 - `model/CallSiteExtraction.java` ; the `NodeIdDecodeRecord` permit.
-- `generators/InputBeanInstantiationEmitter.java` ; the new leaf arm + per-type
-  `decode<Type>Record` helper; remove the `default -> throw`.
+- `generators/InputBeanInstantiationEmitter.java` ; the new leaf arm + the
+  `decode<Type>Record` helper whose body is the `record.from(decodeValues(...),
+  <keyFields>)` shape (see "Materialization"); remove the `default -> throw`.
+- The `NodeIdEncoder` class generator (`…rewrite` encoder generator) ; expose the
+  raw unpack the helper calls — make `decodeValues` `public`, or emit a public
+  `unpack<Type>(String): String[]` wrapper. (This replaces v1's reliance on the
+  typed `decode<Type>` + `intoMap`.)
 - `generators/ArgCallEmitter.java` (and any other exhaustive
   `CallSiteExtraction` switch the compiler flags) ; explicit unreachable arm.
 - `BuildContext.java` ; host a shared `resolveTargetKeys` lifted from
