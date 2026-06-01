@@ -19,7 +19,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R256` | Absorb the service walker substrate: typed per-arm errors + multi-arg ctors | Ready | 2026-05-30 <sub>created 2026-05-29</sub> | [plan](service-walker-substrate-absorption.md) |
 | `R265` | Inline ThrowOnMismatch arms emit non-compiling new GraphqlErrorException(String) | Spec | 2026-05-31 <sub>created 2026-05-30</sub> | [plan](nodeid-throwonmismatch-graphqlerrorexception-ctor.md) |
 | `R45` | Multi-tenant routing on top of the schema-driven ExecutionInput factory | Spec | 2026-05-20 | [plan](tenant-routing-and-execution-input.md) |
-| `R195` | Decode @nodeId into jOOQ-record-typed @service input-bean fields | In Review | 2026-06-01 <sub>created 2026-05-20</sub> | [plan](jooq-record-as-service-input-bean.md) |
 | `R255` | Dedupe duplicate column projection in @reference DBQueries (RC-6 regression) | In Review | 2026-05-28 | [plan](dedupe-reference-projection.md) |
 | `R260` | Readable generated code for NodeId decode extraction (drop ternary/underscore style) | In Review | 2026-05-31 <sub>created 2026-05-29</sub> | [plan](nodeid-decode-emitter-readability.md) |
 | `R23` | Multi-parent `NestingField` sharing: `TableField` arm | Spec |  | [plan](nestingfield-multiparent-tablefield.md) |
@@ -193,7 +192,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R234` [**Support jOOQ embedded and UDT records as non-table input backings**](jooq-embedded-and-udt-input-backings.md) — Backlog, architecture
 - `R263` [**Add a typeName-first decode-helper entry point so resolveDecodeHelperForTable is not a misuse trap**](decode-helper-typename-first-resolution.md) — Backlog, cleanup
 - `R267` [**Replace deprecated-for-removal DataType.convert(Object) in NodeIdEncoder.decode<Type>**](nodeid-encoder-deprecated-convert.md) — Backlog, tech-debt
-- `R195` [**Decode @nodeId into jOOQ-record-typed @service input-bean fields**](jooq-record-as-service-input-bean.md) — In Review, feature
 - `R265` [**Inline ThrowOnMismatch arms emit non-compiling new GraphqlErrorException(String)**](nodeid-throwonmismatch-graphqlerrorexception-ctor.md) — Spec, cleanup
 - `R260` [**Readable generated code for NodeId decode extraction (drop ternary/underscore style)**](nodeid-decode-emitter-readability.md) — In Review, cleanup
 - `R181` [**Validate @order/@defaultOrder: empty directive and @index coexistence**](validate-order-directive-args.md) — Backlog, validation
