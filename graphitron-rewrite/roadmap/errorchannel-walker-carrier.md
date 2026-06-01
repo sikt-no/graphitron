@@ -541,6 +541,32 @@ the `ErrorList` arm; the errors field's `WrapperArm` fetcher reads `ErrorList.er
 the `Success` arm). The transport selection (`FieldBuilder.transportForParent`/`selectErrorsTransport`)
 flips the errors field of a flipped `@service` payload type from `PayloadAccessor` to `WrapperArm`.
 
+**Arm-switch mechanism settled by principles review (option B).** Commit 3a first prototyped the
+arm-switch as a delegation wrapper: narrow to `Success`, rebuild the env with
+`DataFetchingEnvironmentImpl.newDataFetchingEnvironment(env).source(value()).build()`, and delegate
+to the field's unchanged inner `DataFetcher`. The `principles-architect` review (and the owner)
+rejected that: it re-instantiated the inner fetcher per request, asserted env-rebuild transparency on
+exactly the nested service/dataloader fetchers least exercised by tests, and hid the read behind an
+opaque delegation, against the explicit-fetcher stance ("we wire explicit fetchers with full
+generation-time knowledge of what each sees"). The agreed mechanism is the explicit inline read above:
+each eligible data child emits its read directly against `success.value()`. The read shapes it must
+cover, by parent backing: an accessor call `((Backing) success.value()).getX()` for `@record`-Java-backed
+payloads (the `methodCallExpr` / `FieldRead` forms), an inline `((Record) success.value()).get(col)`
+for jOOQ-record-backed payloads (the `ColumnFetcher` body, which is just that), and a passthrough of
+`success.value()` for `ConstructorField` / `NestingField`. Nested `@service` / `@tableMethod` children
+under an outcome type (method-refs to separately generated fetchers) are not inline-readable the same
+way; if they occur they are narrowed out of `OUTCOME_TYPE_ARM_SWITCHED_DATA_CHANNEL_VARIANTS` so the
+arm-switch validator rejects them with a clear message until a follow-up supports them.
+
+The delegation prototype was removed from `FetcherEmitter` (the `sourceIsOutcome`-set data path now
+throws an unreachable marker, like the slice's other additive-window throws), because the inline read
+is best built *with* the classifier flip in commit 3b, where the execution-tier round-trip pins it
+against the real backing shapes; the `WrapperArm` errors-field emit and the per-type `sourceIsOutcome`
+threading (commit 3a) stay, since they are mechanism-independent. The review also produced two fixes
+already landed: the `OutcomeClassGenerator` javadoc no longer claims a nullability pin that is not yet
+wired, and `FieldBuilder`'s rule-7/8 checks now delegate to `walker/internal/ChannelRuleChecks` so the
+two pure rule bodies are not duplicated across the additive window.
+
 ## Supersedes
 
 - **R241** (`retire-error-payloadclass-transport`, Spec): discarded. R241's "route through `localContext`" framing was doubly wrong ; a null payload source silently drops errors (verified, see "Why the wrapper, and not localContext"), and the deeper point is that no developer payload class should be constructed or reflected on at all. This slice routes through the typed `Outcome` wrapper instead. The `SlettPoengformelPayload` incident that motivated R241 lands as a non-event ; the generator never reflects on the payload class.
