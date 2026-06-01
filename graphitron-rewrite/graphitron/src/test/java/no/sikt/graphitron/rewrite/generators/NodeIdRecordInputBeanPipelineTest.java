@@ -75,33 +75,38 @@ class NodeIdRecordInputBeanPipelineTest {
     }
 
     @Test
-    void decodeHelper_decodesValuesThenCopiesIntoRecord_throwingOnTypeMismatch() {
+    void decodeHelper_decodesValuesThenLoadsIntoRecord_throwingOnTypeMismatch() {
         var decode = method(findSpec("QueryFetchers", HAPPY_SDL), "decodeFilmRecord");
         var body = decode.code().toString();
         assertThat(body)
-            .as("decodes the raw key values via decodeValues and copies them straight into the"
-                + " target record's key column with a typed set (no throwaway RecordN, no fromMap)")
+            .as("decodes the raw key values via decodeValues and loads them positionally into the"
+                + " target record via fromArray (no throwaway RecordN, no fromMap)")
             .contains(".decodeValues(\"Film\", nodeId)")
-            .contains(".getDataType().convert(values[0])")
+            .contains("decoded.fromArray(values,")
             .doesNotContain("fromMap")
             .doesNotContain("intoMap");
+        assertThat(body)
+            .as("fromArray coerces through the column's converter, never the deprecated-for-removal"
+                + " DataType.convert(Object) — generated consumer code must stay warning-clean")
+            .doesNotContain("getDataType().convert");
         assertThat(body)
             .as("a type-mismatch decode (null/wrong-arity values) is an authored-input error, not a silent null")
             .contains("graphql.GraphqlErrorException");
     }
 
     @Test
-    void decodeHelper_suppressesJooqConvertRemovalWarning() {
-        // The typed col.getDataType().convert(values[i]) uses DataType.convert(Object), deprecated
-        // for removal in jOOQ 3.20. Unlike NodeIdEncoder (suppressed class-wide), this helper lands
-        // on the consumer's *Fetchers class, so the suppression must sit on the method — otherwise
-        // every consumer build warns. Pins the javadoc claim in buildRecordDecodeHelper.
+    void decodeHelper_usesNonDeprecatedCoercion_noSuppressionNeeded() {
+        // The decode helper must NOT call DataType.convert(Object) (deprecated for removal in jOOQ
+        // 3.20) and must NOT carry a deprecation/removal @SuppressWarnings: suppressing on a helper
+        // that lands in the consumer's *Fetchers package only hides a future hard compile break.
+        // fromArray is the supported coercion path, so neither is present.
         var decode = method(findSpec("QueryFetchers", HAPPY_SDL), "decodeFilmRecord");
+        assertThat(decode.code().toString())
+            .as("no deprecated-for-removal DataType.convert(Object) in generated consumer code")
+            .doesNotContain("getDataType().convert");
         assertThat(decode.annotations().toString())
-            .as("the decode helper suppresses the DataType.convert(Object) removal warning")
-            .contains("SuppressWarnings")
-            .contains("deprecation")
-            .contains("removal");
+            .as("a deprecation-for-removal warning is fixed at the source, never suppressed")
+            .doesNotContain("removal");
     }
 
     @Test
@@ -166,9 +171,11 @@ class NodeIdRecordInputBeanPipelineTest {
             .as("the composite-key member resolves to a decode helper, not a 'not yet supported' rejection")
             .contains("createTestNodeIdCompositeRecordBean", "decodeFilmActorRecord");
         var body = method(fetchers, "decodeFilmActorRecord").code().toString();
-        assertThat(body.split("\\.set\\(").length - 1)
-            .as("a composite key materialises one typed set per key column (actor_id, film_id)")
-            .isEqualTo(2);
+        assertThat(body)
+            .as("a composite key loads all key columns positionally in one fromArray call")
+            .contains("decoded.fromArray(values,")
+            .contains("ACTOR_ID")
+            .contains("FILM_ID");
         assertThat(method(fetchers, "createTestNodeIdCompositeRecordBean").code().toString())
             .as("the bean member routes through the composite decode helper, not a wire cast")
             .contains("decodeFilmActorRecord(raw.get(\"filmActor\"))");
@@ -202,9 +209,10 @@ class NodeIdRecordInputBeanPipelineTest {
             .contains("createTestNodeIdCompositeRecordListBean",
                 "decodeFilmActorRecordList", "decodeFilmActorRecord");
         var scalarBody = method(fetchers, "decodeFilmActorRecord").code().toString();
-        assertThat(scalarBody.split("\\.set\\(").length - 1)
-            .as("each element materialises both composite key columns")
-            .isEqualTo(2);
+        assertThat(scalarBody)
+            .as("each element loads both composite key columns")
+            .contains("ACTOR_ID")
+            .contains("FILM_ID");
     }
 
     // ===== Helpers =====

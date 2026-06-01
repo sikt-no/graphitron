@@ -1,6 +1,5 @@
 package no.sikt.graphitron.rewrite.generators;
 
-import no.sikt.graphitron.javapoet.AnnotationSpec;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.MethodSpec;
@@ -272,9 +271,9 @@ final class InputBeanInstantiationEmitter {
 
     /**
      * Emits {@code private static <Record> decode<Record>(Object wire)}: decode the base64 NodeId to
-     * its raw key values and copy each straight into a fresh target record's key column with a typed
-     * {@code set}. Statement form (explicit types, named locals, no {@code var}) per the "generated
-     * code is read and debugged" principle.
+     * its raw key values and load them positionally into a fresh target record via
+     * {@link org.jooq.Record#fromArray(Object[], org.jooq.Field...)}. Statement form (explicit types,
+     * named locals, no {@code var}) per the "generated code is read and debugged" principle.
      *
      * <pre>
      *   private static SakRecord decodeSakRecord(Object wire) {
@@ -286,32 +285,27 @@ final class InputBeanInstantiationEmitter {
      *           throw GraphqlErrorException.newErrorException().message("...").build();
      *       }
      *       SakRecord decoded = new SakRecord();
-     *       decoded.set(Tables.SAK.SAK_ID, Tables.SAK.SAK_ID.getDataType().convert(values[0]));
+     *       decoded.fromArray(values, Tables.SAK.SAK_ID);
      *       return decoded;
      *   }
      * </pre>
      *
-     * <p>One typed {@code set} per key column, so a composite key is N explicit assignments. The
-     * typed {@code Record.set(Field<T>, T)} is compile-checked against the real jOOQ catalog, so a
-     * column/value type mismatch is a {@code graphitron-sakila-example} compile failure rather than a
-     * DSL-runtime surprise (the "compilation against real jOOQ is a test tier" backstop), and there
-     * is no throwaway {@code RecordN}. The local is named {@code decoded}, not {@code record}, since
-     * {@code record} is a context-sensitive keyword and reads poorly in code a consumer breakpoints.
+     * <p>{@code fromArray} maps the positional key values onto the key columns, coercing each through
+     * the column's {@code DataType} / registered {@code Converter} (the {@link Configuration}'s
+     * {@code converterProvider} path). One call regardless of key arity, so a composite key just names
+     * N fields. This deliberately does <em>not</em> use {@code col.getDataType().convert(Object)}:
+     * that overload is deprecated for removal in jOOQ 3.20 (it bypasses the {@code converterProvider}
+     * and is buggy for user-defined types), and suppressing the resulting warning on a helper that
+     * lands in the consumer's {@code *Fetchers} package would just hide a future hard compile break.
+     * {@code fromArray} is the supported, non-deprecated coercion path and keeps the real compile-tier
+     * check (the {@code Tables.<T>.<col>} field references must exist on the record). The local is
+     * named {@code decoded}, not {@code record}, since {@code record} is a context-sensitive keyword.
      *
      * <p>A non-{@code String} (null / absent) wire value yields a {@code null} member: graphql-java
      * enforces {@code ID!} non-nullness at the boundary, so for a non-null field the {@code String}
      * branch is always taken; for a nullable field the {@code null} member is correct. A
      * type-mismatch decode ({@code decodeValues} returns {@code null} on a typeId mismatch, or a
      * wrong arity) is an authored-input error and throws, mirroring the {@code ThrowOnMismatch} arm.
-     *
-     * <p>The typed {@code col.getDataType().convert(values[i])} routes the wire {@code String} into
-     * the column's Java type via {@code DataType.convert(Object)}, which jOOQ deprecated for removal
-     * in 3.20 with no public successor that accepts {@code Object} input. The method carries
-     * {@code @SuppressWarnings({"deprecation", "removal"})} so consumer builds stay clean, matching
-     * the class-wide suppression {@code NodeIdEncoderClassGenerator} applies for the identical
-     * {@code convert} call in its {@code decode<Type>} helpers. (Unlike {@code NodeIdEncoder}, this
-     * helper lands on the consumer's {@code *Fetchers} class, so the suppression must sit on the
-     * method.)
      */
     static MethodSpec buildRecordDecodeHelper(CallSiteExtraction.NodeIdDecodeRecord rec) {
         ClassName recordType = rec.table().recordClass();
@@ -321,9 +315,6 @@ final class InputBeanInstantiationEmitter {
         int arity = rec.keyColumns().size();
         var b = MethodSpec.methodBuilder(recordDecodeHelperName(rec))
             .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
-            .addAnnotation(AnnotationSpec.builder(SuppressWarnings.class)
-                .addMember("value", "{$S, $S}", "deprecation", "removal")
-                .build())
             .returns(recordType)
             .addParameter(Object.class, "wire")
             .beginControlFlow("if (!(wire instanceof String nodeId))")
@@ -336,13 +327,13 @@ final class InputBeanInstantiationEmitter {
                 "Decoded NodeId did not match the expected type for this argument")
             .endControlFlow()
             .addStatement("$T decoded = new $T()", recordType, recordType);
+        // decoded.fromArray(values, Tables.<T>.<col1>, Tables.<T>.<col2>, ...): positional load that
+        // coerces each value through the column's DataType/Converter — no deprecated convert(Object).
+        CodeBlock.Builder fields = CodeBlock.builder();
         for (int i = 0; i < arity; i++) {
-            String col = rec.keyColumns().get(i).javaName();
-            b.addStatement("decoded.set($T.$L.$L, $T.$L.$L.getDataType().convert(values[$L]))",
-                tablesClass, tableField, col,
-                tablesClass, tableField, col,
-                i);
+            fields.add(", $T.$L.$L", tablesClass, tableField, rec.keyColumns().get(i).javaName());
         }
+        b.addStatement("decoded.fromArray(values$L)", fields.build());
         return b.addStatement("return decoded").build();
     }
 
