@@ -1,13 +1,13 @@
 ---
 id: R195
 title: Decode @nodeId into jOOQ-record-typed @service input-bean fields
-status: In Review
+status: Spec
 bucket: feature
 priority: 5
 theme: model-cleanup
 depends-on: []
 created: 2026-05-20
-last-updated: 2026-05-30
+last-updated: 2026-06-01
 ---
 
 # Decode @nodeId into jOOQ-record-typed @service input-bean fields
@@ -61,15 +61,38 @@ SDL field carries `@nodeId(typeName:)`. The original R195 framing ("the
 parameter *itself* is a jOOQ record", `@table` + `@field(name:)` translation) is
 explicitly **deferred** ; see "Deferred / out of scope" below.
 
+**Key arity: all arities are in scope (single-column and composite).** The
+driving case (`Sak`, `Bruker`) happens to be single-PK, but a `@nodeId` member
+backed by a composite-PK NodeType (`FilmActorRecord`, PK `(actor_id, film_id)`)
+must decode and materialize just like a single-key one. Composite keys are *not*
+a separate feature here: the `record.fromMap(key.intoMap())` materialization is
+arity-agnostic (the decoded `RecordN`'s field names match the target record's key
+columns whatever N is), and the decode helper (`decode<Type>` returning
+`Record1`/`RecordN`) already exists per NodeType. Punting composite to a future
+item would ship a half-feature that throws a build error on a legitimate,
+mechanically-supported shape; that is not acceptable.
+
 Two deliverables, both required:
 
 1. **Decode happy path.** Read `@nodeId(typeName:)` on a jOOQ-record-typed bean
-   field, emit a NodeId-decode-and-materialize instead of a cast.
+   field, emit a NodeId-decode-and-materialize instead of a cast. Works for any
+   key arity.
 2. **Loud rejection (load-bearing half).** Any jOOQ-`Record`-typed bean member
    without a *handled* decode strategy is rejected at generation time, never
    falls through to `Direct`. After this item, a jOOQ-record member has exactly
    two outcomes: decode-record leaf, or typed `Result.Failed`. `Direct` never
    sees one again.
+
+> **Rescope (In Review → Spec, R260-adjacent review).** v1 landed single-column
+> keys only and rejected composite-PK members with a "not yet supported" build
+> error. That deferral was rejected on review: a composite-PK `@nodeId` record
+> member is a legitimate shape the materialization already supports, so the punt
+> was a gratuitous half-feature. This spec now scopes composite keys *in*. What
+> already landed (single-key happy path + rejection plumbing) stays; the
+> remaining delta is dropping the single-column-key gate, converting the
+> composite-rejection test into a composite-success test, and adding composite
+> coverage across the pipeline / compile / execute tiers. The next `Spec → Ready`
+> sign-off must be a session other than the one that landed this rescope.
 
 ## Design (resolved for Spec)
 
@@ -106,12 +129,22 @@ implementation against the existing non-null-arg behaviour; the decode-mismatch
 throw above is unconditional.
 
 `record.fromMap(key.intoMap())` is the crux that means **no encoder-generator
-change is needed**: `NodeIdEncoder.decodeSak(...)` builds its `RecordN` from the
-literal `Tables.SAK.<pkCol>` fields (`NodeIdEncoderClassGenerator`,
+change is needed** *and* that this generalises to composite keys with no extra
+machinery: `NodeIdEncoder.decodeSak(...)` builds its `RecordN` from the literal
+`Tables.SAK.<pkCol>` fields (`NodeIdEncoderClassGenerator`,
 `newRecord(Tables.SAK.COL, ...)`), so the decoded tuple's field names are
-identical to `SakRecord`'s key fields and the by-name copy lands each key column
-in the right slot. The decode returns a key tuple (`Record1<Long>` / `RecordN`),
-*not* a `TableRecord`; `fromMap(intoMap())` is what turns it into one.
+identical to the target record's key fields and the by-name copy lands each key
+column in the right slot. The decode returns a key tuple (`Record1<Long>` /
+`RecordN`), *not* a `TableRecord`; `fromMap(intoMap())` is what turns it into one.
+
+For a composite-PK NodeType the only thing that changes is the decode return
+arity: `NodeIdEncoder.decodeFilmActor(...)` returns `Record2<Integer, Integer>`
+whose fields are `Tables.FILM_ACTOR.ACTOR_ID` / `.FILM_ID`, and
+`filmActor.fromMap(key.intoMap())` copies both columns by name. The helper body,
+the `instanceof String` guard, the throw-vs-null logic, and the call site are all
+identical; only the `Record1<Long>` local type in the example above widens to the
+NodeType's `RecordN`. Because the materialization is name-keyed it is insensitive
+to key-column order, so no positional reasoning is needed.
 
 Java-17 note: the helper matches on `wire instanceof String nodeId` (legal in
 17). It does **not** pattern-match the parameterised `RecordN` (that would
@@ -215,13 +248,20 @@ is not a prerequisite here, and this item must not lean on it.)
 In the `buildInputBeanBody` leaf ladder, before `else -> new Direct()`: if the
 member's loaded Java type is assignable to `org.jooq.Record`, branch:
 
-- `@nodeId` present and target + single-column key resolve → `NodeIdDecodeRecord`.
-- otherwise (no `@nodeId`; unresolvable target; composite/multi-column key we
-  punt on in v1; list-of-record member) → `Built.Fail` / `Result.Failed` with a
-  message naming the field, the record type, and the remedy ("add
-  `@nodeId(typeName:)`", or "composite-key record members are not yet
-  supported"). This is the same typed-rejection contract the resolver already
-  uses (`InputBeanResolver.java:65-68, 141-176`); it fails the build.
+- `@nodeId` present and target + key columns resolve (**any arity**, single or
+  composite) → `NodeIdDecodeRecord`.
+- otherwise (no `@nodeId`; unresolvable target; list-of-record member) →
+  `Built.Fail` / `Result.Failed` with a message naming the field, the record
+  type, and the remedy ("add `@nodeId(typeName:)`"). This is the same
+  typed-rejection contract the resolver already uses
+  (`InputBeanResolver.java:65-68, 141-176`); it fails the build.
+
+There is **no composite-key gate.** The v1 single-column-key check
+(`keyColumns.size() == 1`) that fell composite members into the rejection arm is
+removed; a composite-PK `@nodeId` member resolves its full key-column list and
+produces `NodeIdDecodeRecord` exactly as a single-key one does. A "composite-key
+record members are not yet supported" message must no longer appear in the
+codebase.
 
 ### Emitter exhaustiveness
 
@@ -233,10 +273,12 @@ explicit arm per leaf, including the new `NodeIdDecodeRecord` arm that emits the
 helper call + the per-type `decode<Type>Record` helper. A classifier may produce
 the new leaf *iff* the emitter has a real arm for it.
 
-## Tests (landed)
+## Tests
+
+### Landed (single-key, v1)
 
 - **Pipeline tier (primary).**
-  `generators/NodeIdRecordInputBeanPipelineTest` (6 tests): an `@service` input
+  `generators/NodeIdRecordInputBeanPipelineTest`: an `@service` input
   bean (`TestServiceStub.assignFilm(TestNodeIdRecordBean)`) whose `ID! @nodeId`
   field maps to a `FilmRecord` member emits a `decodeFilmRecord` helper plus a
   `createTestNodeIdRecordBean` helper on `QueryFetchers`; the bean field routes
@@ -244,10 +286,6 @@ the new leaf *iff* the emitter has a real arm for it.
   cast; the decode helper returns the record type, takes `Object`, decodes via
   `decodeFilm` and rebuilds with `fromMap(key.intoMap())`, throwing on a
   type-mismatch. TypeSpec-shape / helper-presence assertions.
-- **Rejection tests** (same class): a record member with no `@nodeId` fails the
-  build with a named `Rejection` naming the field, the record type, and the
-  `@nodeId(typeName:)` remedy; a composite-key member (`FilmActorRecord`,
-  PK `(actor_id, film_id)`) fails with the composite-key-punt message.
 - **Compilation tier.** `graphitron-sakila-example`:
   `FilmRecordAssignmentInput { film: ID! @nodeId(typeName: "Film") }` +
   `Mutation.assignFilmRecord` → `FilmReviewService.assignFilmRecord(FilmRecordAssignment)`.
@@ -257,6 +295,27 @@ the new leaf *iff* the emitter has a real arm for it.
   `GraphQLQueryTest#assignFilmRecord_decodesNodeIdIntoJooqRecordMember`: a
   mutation decodes a `Film` NodeId into a `FilmRecord` member and reads the
   populated `film_id` back, round-tripping against PostgreSQL.
+
+### Required by the rescope (composite key) — not yet landed
+
+- **Convert the composite-rejection test.** The current
+  `NodeIdRecordInputBeanPipelineTest` rejection case asserting a composite-key
+  member (`FilmActorRecord`, PK `(actor_id, film_id)`) fails with the
+  composite-key-punt message must be **removed** and replaced with a *success*
+  case: the composite member emits a `decodeFilmActorRecord` helper that decodes
+  via `decodeFilmActor` (returning `Record2<Integer, Integer>`) and rebuilds with
+  `fromMap(key.intoMap())`, routed through `createTestNodeIdRecordBean` with no
+  cast. The only surviving rejection case is the no-`@nodeId` one.
+- **Compilation tier (composite).** Add a composite-PK fixture to
+  `graphitron-sakila-example`: an `@service` input bean with a member typed as a
+  composite-PK `*Record` (`FilmActorRecord`) carrying
+  `ID! @nodeId(typeName: "FilmActor")`. The generated `decodeFilmActorRecord`
+  must compile against the real jOOQ catalog ; this is the primary guard that the
+  two-column `fromMap(intoMap())` lands both key fields with correct types.
+- **Execution tier (composite).** A mutation decodes a `FilmActor` NodeId into a
+  composite `FilmActorRecord` member and reads both `actor_id` and `film_id` back
+  populated, round-tripping against PostgreSQL ; proves name-keyed materialization
+  fills every key column, not just the first.
 
 ## Affected code
 
@@ -283,8 +342,6 @@ the new leaf *iff* the emitter has a real arm for it.
 - **`@field(name:)` / `@table`-on-input translation.** Not needed for the
   reported case (the record member's key columns come from the target table's PK,
   no name inversion). Folds into R97's consumer-derivation direction.
-- **Composite-key (`RecordN`, N > 1) record members.** Reject in v1; the `from`
-  shape generalises but wants its own test matrix.
 - **List-of-jOOQ-record members.** Reject in v1.
 - **Readability of the *existing* inline NodeId emitter.** Tracked separately as
   R260; this item's new helper must emit the readable statement form from day
