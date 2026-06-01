@@ -508,6 +508,39 @@ and the success-projection SDL nullability is reachable cleanly only at classify
 `GraphQLFieldDefinition` / `OutcomeType` construction sits), not from the post-classification model
 the validator walks. The single-errors-field rule needs only the classified model, so it lands now.
 
+**Commit 3 scope + design decisions (In Progress, from owner review).** The flip is narrowed and
+its mechanics pinned by direct owner guidance:
+
+- **`@service` only this flip; `@tableMethod` is scoped out.** In the current model `@tableMethod`
+  returns are `TableBound`, so `resolveErrorChannel` already returns `NoChannel` for them
+  (`FieldBuilder.java:2035`); they carry no `PayloadClass` to retire. The in-scope set collapses to
+  the four root `@service` variants (`buildServiceField`) plus the two child `@service` variants
+  (`buildMethodBackedWithChannel`, discriminating `MethodRef.Service` from `TableMethod`). The
+  consumer table's `@tableMethod`/`RecordTableMethod` rows defer to a follow-up slice.
+- **`Success.value()` is the record the service returns** (a raw jOOQ `XRecord` / `Result` / a custom
+  Java record), not a schema-shaped payload class. A service that returns a payload class mirroring
+  the GraphQL type is an anti-pattern (the service layer must not adapt to the GraphQL layer); the
+  flip neither requires nor preserves it. The child data fields read their column/property off
+  `Success.value()` exactly as they read off the bare record today; the win is that the error path
+  constructs no payload class.
+- **Arm-switch is a generation-time decision, not runtime introspection.** The generator knows
+  per-fetcher whether its source is an `Outcome`, so the child emitter is told explicitly (a flag
+  threaded from the classifier, e.g. the parent payload's flipped status) and emits the unwrap
+  directly. No sibling-scanning at emit time.
+- **No `PropertyDataFetcher`.** Every field gets an explicit wired fetcher with full gen-time
+  knowledge of what its source is; the flip removes the lone `PropertyDataFetcher.fetching("errors")`
+  usage (the `PayloadAccessor` errors transport) in favour of the explicit `WrapperArm` fetcher
+  (`source instanceof Outcome.ErrorList<?> errorList -> errorList.errors()`).
+- **Generated-code style:** no dunder-prefixed locals (use readable names like `source`, `success`,
+  `cause`, `mapping`, `violations`); no ternaries unless a ternary reads better than `if`/`return`.
+  Commit 2's `ChannelCatchArmEmitter` loop vars retrofitted accordingly.
+
+The arm-switch for a data child therefore emits an explicit `if`/`return` that narrows the source to
+`Outcome.Success<X>`, runs the field's existing read against `success.value()`, and returns null on
+the `ErrorList` arm; the errors field's `WrapperArm` fetcher reads `ErrorList.errors()` (empty list on
+the `Success` arm). The transport selection (`FieldBuilder.transportForParent`/`selectErrorsTransport`)
+flips the errors field of a flipped `@service` payload type from `PayloadAccessor` to `WrapperArm`.
+
 ## Supersedes
 
 - **R241** (`retire-error-payloadclass-transport`, Spec): discarded. R241's "route through `localContext`" framing was doubly wrong ; a null payload source silently drops errors (verified, see "Why the wrapper, and not localContext"), and the deeper point is that no developer payload class should be constructed or reflected on at all. This slice routes through the typed `Outcome` wrapper instead. The `SlettPoengformelPayload` incident that motivated R241 lands as a non-event ; the generator never reflects on the payload class.
