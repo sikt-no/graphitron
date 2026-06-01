@@ -1049,7 +1049,7 @@ input FilmRecordAssignmentInput {
 
 # R195 composite-key fixture: input bean whose member is a jOOQ FilmActorRecord (PK actor_id,
 # film_id), backed by `ID! @nodeId(typeName: "FilmActor")`. decodeFilmActorRecord materialises both
-# key columns with one typed set each — composite keys are in scope, not deferred.
+# key columns in one fromArray call — composite keys are in scope, not deferred.
 input FilmActorRecordAssignmentInput {
     filmActor: ID! @nodeId(typeName: "FilmActor")
 }
@@ -1565,7 +1565,7 @@ type Mutation {
     # R195 compilation-tier fixture: @service input bean whose member is a jOOQ FilmRecord backed
     # by `ID! @nodeId(typeName: "Film")`. The fetcher generator emits a createFilmRecordAssignment
     # helper plus a decodeFilmRecord(Object) helper on MutationFetchers; the bean field routes the
-    # wire id through decodeFilmRecord (NodeIdEncoder.decodeValues + a typed record.set) instead of
+    # wire id through decodeFilmRecord (NodeIdEncoder.decodeValues + record.fromArray) instead of
     # casting the wire String to FilmRecord — the R150/R195 ClassCastException this item removes.
     assignFilmRecord(in: FilmRecordAssignmentInput!): String
         @service(service: {
@@ -1574,8 +1574,8 @@ type Mutation {
         })
 
     # R195 composite-key fixture: decodeFilmActorRecord materialises a composite-PK FilmActorRecord
-    # (one typed set per key column) from a single FilmActor NodeId. The service reads both key
-    # columns back.
+    # (both key columns in one fromArray call) from a single FilmActor NodeId. The service reads both
+    # key columns back.
     assignFilmActorRecord(in: FilmActorRecordAssignmentInput!): String
         @service(service: {
             className: "no.sikt.graphitron.rewrite.test.services.FilmReviewService",

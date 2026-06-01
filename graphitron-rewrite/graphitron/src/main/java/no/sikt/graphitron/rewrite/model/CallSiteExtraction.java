@@ -170,18 +170,20 @@ public sealed interface CallSiteExtraction
      * <em>decomposes</em> the decoded key tuple into scalar column values for a predicate / SET
      * body (and so needs the typed {@code RecordN} projection of {@link HelperRef.Decode}), this arm
      * <em>materialises a {@link org.jooq.TableRecord}</em>: it calls
-     * {@code encoderClass.decodeValues(typeId, nodeId)} for the raw {@code String[]} and copies each
-     * value straight into the target record's key column with a typed
-     * {@code record.set(Tables.<T>.<col>, <col>.getDataType().convert(values[i]))}. No throwaway
-     * {@code RecordN}, no {@code fromMap(intoMap())} name round-trip, and the typed {@code set} is
-     * compile-checked against the real jOOQ catalog (the {@code graphitron-sakila-example} compile
-     * tier catches a column/value type mismatch).
+     * {@code encoderClass.decodeValues(typeId, nodeId)} for the raw {@code String[]} and loads those
+     * values positionally onto the target record's key columns with a single
+     * {@code record.fromArray(values, Tables.<T>.<col1>, Tables.<T>.<col2>, ...)} call. No throwaway
+     * {@code RecordN}, no {@code fromMap(intoMap())} name round-trip, and no deprecated-for-removal
+     * {@code DataType.convert(Object)}: {@code fromArray} coerces each value through the column's
+     * {@code DataType} / registered {@code Converter} and keeps the real compile-tier check (the
+     * {@code Tables.<T>.<col>} field references must exist on the record, which the
+     * {@code graphitron-sakila-example} compile tier verifies).
      *
      * <p>The leaf therefore carries no {@code decode<Type>} method name (it never calls
      * {@code decode<Type>}): {@code encoderClass} reaches {@code decodeValues}, {@code typeId} is its
-     * first argument, {@code keyColumns} drives the per-column {@code set} loop, and {@code table}
-     * supplies the record class ({@code new <T>Record()}), the {@code Tables} constants class, and
-     * the table field name needed to write {@code Tables.<T>.<col>}. {@code keyColumns} is kept
+     * first argument, {@code keyColumns} names the {@code Tables.<T>.<col>} fields passed to
+     * {@code fromArray}, and {@code table} supplies the record class ({@code new <T>Record()}) and the
+     * {@code Tables} constants class. {@code keyColumns} is kept
      * separate from {@code table.primaryKeyColumns()} because an {@code @node(keyColumns:)} key may
      * differ from the PK.
      *
@@ -193,8 +195,9 @@ public sealed interface CallSiteExtraction
      * {@link CallSiteExtraction} switch treats this arm as unreachable-by-construction.
      *
      * <p>Both arities (single-column and composite key) and both shapes (scalar and list-valued
-     * member) flow through this one leaf: arity is {@code keyColumns.size()} (one typed {@code set}
-     * per column), and list-ness is carried on the enclosing {@link FieldBinding#list()}, not
+     * member) flow through this one leaf: arity is {@code keyColumns.size()} (each column named as a
+     * positional field in the one {@code fromArray} call), and list-ness is carried on the enclosing
+     * {@link FieldBinding#list()}, not
      * duplicated here. {@code nonNull} reflects the SDL field's nullability ({@code ID!} vs
      * {@code ID}); a type-mismatch decode (the helper returns {@code null}) is always an
      * authored-input error and throws, while a {@code null}/absent wire value follows graphql-java's

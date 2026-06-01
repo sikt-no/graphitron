@@ -3772,7 +3772,7 @@ class GraphQLQueryTest {
     void assignFilmRecord_decodesNodeIdIntoJooqRecordMember() {
         // R195: a @service input bean whose member is a jOOQ FilmRecord backed by
         // `ID! @nodeId(typeName: "Film")`. The fetcher decodes the wire id into a FilmRecord via
-        // decodeFilmRecord (NodeIdEncoder.decodeValues + a typed record.set) instead of casting the
+        // decodeFilmRecord (NodeIdEncoder.decodeValues + record.fromArray) instead of casting the
         // wire String to FilmRecord; the service reads the populated film_id back. Round-trips the
         // decode-and-materialize end-to-end against PostgreSQL.
         String filmId3 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Film", 3);
@@ -3782,11 +3782,32 @@ class GraphQLQueryTest {
     }
 
     @Test
+    void assignFilmRecord_wrongTypeNodeId_throwsDecodeMismatch() {
+        // R195 runtime decode-mismatch: a NodeId whose embedded type id is not "Film" (here a
+        // FilmActor id) fails the decodeValues("Film", …) type check, so decodeFilmRecord throws
+        // instead of materialising a wrong record. The fetcher's catch arm surfaces it as an error
+        // (the message is redacted to a UUID reference, so we assert the failure, not its text) and
+        // the mutation returns no value. Pins the throw-on-mismatch contract behaviourally at the
+        // execution tier; the pipeline tier asserts the decode-record leaf structurally instead of
+        // inspecting the generated body.
+        String wrongTypeId = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("FilmActor", 1, 2);
+        graphql.ExecutionResult result = executeRaw(
+            "mutation { assignFilmRecord(in: {film: \"" + wrongTypeId + "\"}) }");
+        assertThat(result.getErrors())
+            .as("a wrong-type NodeId in a jOOQ-record member is an authored-input error, not a silent decode")
+            .isNotEmpty();
+        Map<String, Object> data = result.getData();
+        assertThat(data.get("assignFilmRecord"))
+            .as("the mutation does not succeed with a wrong-type NodeId")
+            .isNull();
+    }
+
+    @Test
     void assignFilmActorRecord_decodesCompositeNodeIdIntoBothKeyColumns() {
         // R195 composite key: a @service input bean whose member is a composite-PK FilmActorRecord
         // backed by `ID! @nodeId(typeName: "FilmActor")`. decodeFilmActorRecord materialises both
-        // key columns (actor_id, film_id) with one typed set each; the service reads both back.
-        // Proves the per-column set fills every key column, round-tripping against PostgreSQL.
+        // key columns (actor_id, film_id) in one fromArray call; the service reads both back.
+        // Proves fromArray fills every key column positionally, round-tripping against PostgreSQL.
         String filmActorId = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("FilmActor", 1, 2);
         Map<String, Object> data = execute(
             "mutation { assignFilmActorRecord(in: {filmActor: \"" + filmActorId + "\"}) }");
