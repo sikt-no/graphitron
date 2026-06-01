@@ -120,6 +120,7 @@ public final class FetcherRegistrationsEmitter {
         ClassName nestedFetchersClass = ntw.fields().stream().anyMatch(f -> f instanceof BatchKeyField)
             ? ClassName.get(fetchersPackage, ntw.nestedTypeName() + "Fetchers") : null;
 
+        boolean sourceIsOutcome = hasWrapperArmErrors(ntw.fields());
         var body = CodeBlock.builder();
         body.add("codeRegistry").indent();
         for (var field : ntw.fields()) {
@@ -129,7 +130,7 @@ public final class FetcherRegistrationsEmitter {
                     nestedFetchersClass, field.name());
             } else {
                 body.add(registrationEntry(ntw.nestedTypeName(), field,
-                    null, ntw.representativeParentTable(), null, outputPackage));
+                    null, ntw.representativeParentTable(), null, outputPackage, sourceIsOutcome));
             }
         }
         body.add(";\n").unindent();
@@ -170,9 +171,11 @@ public final class FetcherRegistrationsEmitter {
     private static CodeBlock buildBody(String typeName, List<GraphitronField> fields,
             ClassName fetchersClass, TableRef parentTable, GraphitronType.ResultType resultType,
             String outputPackage) {
+        boolean sourceIsOutcome = hasWrapperArmErrors(fields);
         var body = CodeBlock.builder().add("codeRegistry").indent();
         for (var field : fields) {
-            body.add(registrationEntry(typeName, field, fetchersClass, parentTable, resultType, outputPackage));
+            body.add(registrationEntry(typeName, field, fetchersClass, parentTable, resultType,
+                outputPackage, sourceIsOutcome));
         }
         body.add(";\n").unindent();
         return body.build();
@@ -180,12 +183,25 @@ public final class FetcherRegistrationsEmitter {
 
     private static CodeBlock registrationEntry(String typeName, GraphitronField field,
             ClassName fetchersClass, TableRef parentTable, GraphitronType.ResultType resultType,
-            String outputPackage) {
+            String outputPackage, boolean sourceIsOutcome) {
         return CodeBlock.builder()
             .add("\n.dataFetcher($T.coordinates($S, $S), ", FIELD_COORDS, typeName, field.name())
-            .add(FetcherEmitter.dataFetcherValue(field, fetchersClass, parentTable, resultType, outputPackage))
+            .add(FetcherEmitter.dataFetcherValue(field, fetchersClass, parentTable, resultType,
+                outputPackage, sourceIsOutcome))
             .add(")")
             .build();
+    }
+
+    /**
+     * Whether a type's classified fields include an errors field on the R244 {@code Outcome}
+     * wrapper transport. When true, the type's fetchers receive an {@code Outcome} as
+     * {@code env.getSource()}, so every data-channel sibling must arm-switch on {@code Success}.
+     * The signal is the parent's own {@code WrapperArm} errors field, knowable at generation time
+     * without re-walking the classifier.
+     */
+    private static boolean hasWrapperArmErrors(List<? extends GraphitronField> fields) {
+        return fields.stream().anyMatch(f -> f instanceof ChildField.ErrorsField ef
+            && ef.transport() instanceof ChildField.Transport.WrapperArm);
     }
 
     private static void collectNestedTypes(GraphitronField field, Map<String, NestedTypeWiring> out) {

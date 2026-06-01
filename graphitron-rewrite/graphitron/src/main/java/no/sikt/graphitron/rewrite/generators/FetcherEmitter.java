@@ -34,6 +34,9 @@ import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.DSL;
 public final class FetcherEmitter {
 
     private static final ClassName DATA_FETCHING_ENV = ClassName.get("graphql.schema", "DataFetchingEnvironment");
+    private static final ClassName DATA_FETCHER = ClassName.get("graphql.schema", "DataFetcher");
+    private static final ClassName ENV_IMPL = ClassName.get("graphql.schema", "DataFetchingEnvironmentImpl");
+    private static final ClassName LIST = ClassName.get("java.util", "List");
 
     private FetcherEmitter() {}
 
@@ -48,8 +51,59 @@ public final class FetcherEmitter {
      *                      {@code null} when the parent is not table-backed
      * @param resultType    the parent type's {@code @record} backing, or {@code null}
      * @param outputPackage the base output package (e.g. {@code no.sikt.graphql})
+     * @param sourceIsOutcome {@code true} when this field is an immediate child of an outcome type
+     *                        that has flipped to the {@code Outcome} wrapper transport (R244): its
+     *                        fetcher receives an {@code Outcome} as {@code env.getSource()}, so a
+     *                        data-channel field's read must unwrap {@code Success} first and resolve
+     *                        null on the {@code ErrorList} arm. The errors field itself is exempt
+     *                        (it reads {@code ErrorList.errors()} directly via its {@code WrapperArm}
+     *                        transport). The caller knows this at generation time from the parent
+     *                        type's classified fields.
      */
     public static CodeBlock dataFetcherValue(
+            GraphitronField field, ClassName fetchersClass,
+            TableRef parentTable, GraphitronType.ResultType resultType,
+            String outputPackage, boolean sourceIsOutcome) {
+        CodeBlock raw = dataFetcherValueRaw(field, fetchersClass, parentTable, resultType, outputPackage);
+        if (sourceIsOutcome && !(field instanceof ChildField.ErrorsField)) {
+            return outcomeSuccessUnwrap(raw, outputPackage);
+        }
+        return raw;
+    }
+
+    /**
+     * Wraps a data-channel field's fetcher so it operates on {@code Success.value()} of an
+     * {@code Outcome} source and resolves null on the {@code ErrorList} arm (R244). The wrapper
+     * rebinds the source to the unwrapped value and delegates to the field's existing fetcher,
+     * which keeps every per-field read shape (column, record accessor, nested service call) intact
+     * without re-deriving it here; the same {@code DataFetchingEnvironmentImpl.newDataFetchingEnvironment}
+     * rebind idiom the federation entity dispatch uses for argument substitution.
+     */
+    private static CodeBlock outcomeSuccessUnwrap(CodeBlock inner, String outputPackage) {
+        return CodeBlock.builder()
+            .add("($T env) -> {\n", DATA_FETCHING_ENV)
+            .indent()
+            .add("if (env.getSource() instanceof $T<?> success) {\n", successClass(outputPackage))
+            .indent()
+            .add("$T<?> inner = $L;\n", DATA_FETCHER, inner)
+            .add("return inner.get($T.newDataFetchingEnvironment(env).source(success.value()).build());\n", ENV_IMPL)
+            .unindent()
+            .add("}\n")
+            .add("return null;\n")
+            .unindent()
+            .add("}")
+            .build();
+    }
+
+    private static ClassName successClass(String outputPackage) {
+        return ClassName.get(outputPackage + ".schema", "Outcome").nestedClass("Success");
+    }
+
+    private static ClassName errorListClass(String outputPackage) {
+        return ClassName.get(outputPackage + ".schema", "Outcome").nestedClass("ErrorList");
+    }
+
+    private static CodeBlock dataFetcherValueRaw(
             GraphitronField field, ClassName fetchersClass,
             TableRef parentTable, GraphitronType.ResultType resultType,
             String outputPackage) {
@@ -96,11 +150,13 @@ public final class FetcherEmitter {
                 }
                 case ChildField.Transport.LocalContext ignored ->
                     CodeBlock.of("($T env) -> env.getLocalContext()", DATA_FETCHING_ENV);
-                // R244 additive window: WrapperArm errors fields are not produced yet (the in-scope
-                // flip to the Outcome wrapper lands in a later slice-1 commit). Handle the arm so the
-                // sealed switch compiles; unreachable until an ErrorsField classifies to WrapperArm.
-                case ChildField.Transport.WrapperArm ignored -> throw new IllegalStateException(
-                    "FetcherEmitter reached Transport.WrapperArm before the Outcome-wrapper emit seam landed");
+                // R244: the errors list rides on the Outcome.ErrorList arm of the non-null Outcome
+                // source. On the Success arm there are no errors, so resolve the empty list; the
+                // ternary reads cleaner than an if/return here because both arms are single
+                // expressions over the same source check.
+                case ChildField.Transport.WrapperArm ignored ->
+                    CodeBlock.of("($T env) -> env.getSource() instanceof $T<?> errorList ? errorList.errors() : $T.of()",
+                        DATA_FETCHING_ENV, errorListClass(outputPackage), LIST);
             };
         }
         if (field instanceof ChildField.PropertyField pf && resultType != null) {
