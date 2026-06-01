@@ -65,10 +65,10 @@ explicitly **deferred** ; see "Deferred / out of scope" below.
 driving case (`Sak`, `Bruker`) happens to be single-PK, but a `@nodeId` member
 backed by a composite-PK NodeType (`FilmActorRecord`, PK `(actor_id, film_id)`)
 must decode and materialize just like a single-key one. Composite keys are *not*
-a separate feature here: the `record.from(values, keyFields)` materialization
-(see "Materialization" below) is arity-agnostic (the `Field...` varargs is the
-full key-column list, single or composite), and the raw decode unpack
-(`NodeIdEncoder.decodeValues`) already returns all key values per NodeType.
+a separate feature here: the materialization (see "Materialization" below) is
+arity-agnostic (one typed `set` per key column, single or composite), and the raw
+decode unpack (`NodeIdEncoder.decodeValues`) already returns all key values per
+NodeType.
 Punting composite to a future item would ship a half-feature that throws a build
 error on a legitimate, mechanically-supported shape; that is not acceptable.
 
@@ -96,18 +96,20 @@ Two deliverables, both required:
 >    `InputBeanResolver.buildJooqRecordLeaf`; remove the "composite-key... not yet
 >    supported" message; update that method's javadoc (do not leave it claiming
 >    composite is deferred). See "Loud rejection".
-> 2. **Materialization: `record.from(values, fields)`.** Rework the helper body off
->    `decode<Type>` + `fromMap(intoMap())` to `decodeValues(typeId, nodeId)` +
->    `record.from(values, keyFields)`. Update the contradicting helper javadoc. See
->    "Materialization".
+> 2. **Materialization: copy decoded values into the target record.** Rework the
+>    helper body off `decode<Type>` + `fromMap(intoMap())` to `decodeValues(typeId,
+>    nodeId)` + typed per-column `record.set(field, convert(values[i]))` (or
+>    `record.from(values, keyFields)`), no throwaway `RecordN`. Update the
+>    contradicting helper javadoc. See "Materialization".
 > 3. **Leaf component set.** Change `NodeIdDecodeRecord` to carry
 >    `(encoderClass, typeId, keyColumns, recordType, nonNull)` (drop the
 >    `HelperRef.Decode` whose `decode<Type>` method name the new body never calls).
 >    See "Model".
 > 4. **Expose `decodeValues`** on the generated `NodeIdEncoder` (public, or a public
 >    `unpack<Type>` wrapper). See "Materialization".
-> 5. **Consolidate to one generic `decodeNodeIdRecord` helper** instead of N
->    per-type `decode<Type>Record` methods. See "Helper consolidation".
+> 5. **Keep per-type concrete `decode<Type>Record` helpers** (deduped by record
+>    type), emitted by **one reusable emitter** generalized to all arities, rather
+>    than a generic generated helper. See "Output: per-type concrete helpers".
 > 6. **Tests:** convert the composite-rejection pipeline test to a composite-success
 >    test; add composite compile + execute coverage. See "Tests".
 
@@ -134,10 +136,13 @@ private static SakRecord decodeSakRecord(Object wire) {
             .message("Decoded NodeId did not match the expected type for this argument").build();
     }
     SakRecord record = new SakRecord();
-    record.from(values, Tables.SAK.SAK_ID);   // positional array → fields; jOOQ converts per DataType
+    record.set(Tables.SAK.SAK_ID, Tables.SAK.SAK_ID.getDataType().convert(values[0]));
     return record;
 }
 ```
+
+(Concrete, per-type, emitted by one reusable emitter; see "Output" below. For a
+composite key the body is one typed `set` per key column.)
 
 For a non-null SDL field (`ID!`) the helper throws on a `null` decode; for a
 nullable field (`ID`) it returns `null`. Whether a *null wire value on an `ID!`
@@ -145,66 +150,62 @@ field* should throw vs. defer to Jakarta non-null validation is settled in
 implementation against the existing non-null-arg behaviour; the decode-mismatch
 throw above is unconditional.
 
-### Materialization: `record.from(values, fields)`, not `fromMap(intoMap())`
+### Materialization: copy decoded values straight into the target record
 
 **This supersedes v1's `record.fromMap(key.intoMap())`.** Researching how the
 legacy generator solved the same problem (`graphitron-common`
-`NodeIdStrategy.setFields` / `nodeIdToTableRecord`) surfaced a materially leaner
-mechanism that this item adopts:
-
-```java
-// legacy NodeIdStrategy.setFields:
-String[] values = unpackIdValues(typeId, id, keyColumnFields);  // base64 → raw String[]
-record.from(values, keyColumnFields);                           // positional; jOOQ converts each via DataType
-```
-
-`org.jooq.Record.from(Object source, Field<?>... fields)` copies a raw `String[]`
-positionally into exactly the named fields, running each value through that
-field's `DataType` converter. One hop: `base64 → String[] → target record`.
+`NodeIdStrategy.setFields` / `nodeIdToTableRecord`) surfaced the core insight:
+decode the wire id to raw values and copy them **straight into the target
+record's key columns**, with no intermediate typed `RecordN`.
 
 v1 instead went `base64 → NodeIdEncoder.decodeSak(...)` (a *throwaway* typed
 `RecordN`, built via `newRecord(cols)` + per-column `set(convert(...))`) →
 `key.intoMap()` (a name-keyed `Map`) → `target.fromMap(map)` (re-match by name).
 Three intermediate representations and a whole throwaway record materialized only
-to be copied out again. That is the "build a record to build a record" smell.
+to be copied out again, the "build a record to build a record" smell.
 
 The generated `NodeIdEncoder` already exposes the raw unpack every `decode<Type>`
 calls first (`static String[] decodeValues(String expectedTypeId, String base64Id)`,
-type-id-checked, returns `null` on mismatch). The decode-record helper bypasses
-the typed `RecordN` and calls it directly, then `record.from(values, <keyFields>)`.
+type-id-checked, returns `null` on mismatch). The decode-record helper calls it
+directly and copies into the target record. Two body forms, both arity-agnostic
+and both avoiding the throwaway `RecordN`:
+
+- **Typed per-column `set` (recommended).**
+  `record.set(Tables.SAK.SAK_ID, Tables.SAK.SAK_ID.getDataType().convert(values[i]))`,
+  one statement per key column. `Record.set(Field<T>, T)` is **compile-checked**
+  (the field's `T` must match `convert`'s return), so this leverages the type
+  system, and it is exactly what `NodeIdEncoder.decode<Type>` already emits to
+  populate its `RecordN`, applied to the target record instead of a throwaway one.
+  For a composite key it is N explicit typed assignments, which read like
+  hand-written code.
+- **`record.from(values, keyFields...)` (concise alternative).** jOOQ's
+  positional `from(Object source, Field<?>... fields)` copies the `String[]` into
+  the named fields in one call, converting each via `DataType`. This is what
+  legacy emits (`NodeIdStrategy.setFields`). One line regardless of arity, but
+  **runtime-loose**: `from(Object, Field<?>...)` is not compile-checked against the
+  value array. Prefer the typed `set` form unless the one-liner is judged worth
+  the lost checking.
+
+Either way the output is a concrete per-type helper from one reusable emitter (see
+"Output: per-type concrete helpers"), not a generic generated helper.
 
 - **Encoder access.** `decodeValues` is package-private and the helper lands in a
   different package (`…generated.fetchers` vs `…generated.util`). Expose it:
   make `decodeValues` `public`, or generate a public `unpack<Type>(String): String[]`
   wrapper. (Implementation choice; prefer the smaller surface.)
-- **Arity-agnostic by construction.** `record.from(values, field1, field2, …)` takes
-  the full key-`Field` list as varargs, so single- and composite-PK are the same
-  call; the `Field[]` is `tableFieldsBlock(<keyColumns>)`, the columns resolved per
-  "Decode-helper resolution" below. Positional: `values[i]` ↔ `fields[i]`, and the
-  encoder packs values in key-column order, so order is consistent end to end.
 - **No encoder-generator change for the decode itself.** The encoder already emits
   `decodeValues`; only its visibility (or a thin public wrapper) changes.
 
-> **Legacy lineage.** Legacy wraps this in a single *runtime* helper
-> `nodeIdToTableRecord(id, typeId, List<TableField>)` (decode → `newRecord` →
-> `from` → return), generating *no* per-type materialization code. The rewrite has
-> deliberately moved off the runtime `NodeIdStrategy` onto generated
-> `NodeIdEncoder` statics, so a pure runtime helper does not fit; but the same
-> consolidation is achieved with *one* generated static helper rather than N
-> per-type ones. See "Helper consolidation" below ; this fork is resolved toward
-> the single generic helper. The example above is shown per-type only to make the
-> body shape concrete.
-
 Java-17 note: the helper matches on `wire instanceof String nodeId` (legal in
 17). It does **not** pattern-match a parameterised `RecordN` (Java 21+); it
-null-checks the `String[]` and calls `record.from`. This sidesteps both the
-`(Object) ... instanceof Record1` dance the inline emitter needs *and* the
-throwaway-`RecordN` allocation.
+null-checks the `String[]` and sets the target record's columns. This sidesteps
+both the `(Object) ... instanceof Record1` dance the inline emitter needs *and*
+the throwaway-`RecordN` allocation.
 
 > **v1 implementation note (superseded).** v1 landed `record.fromMap(key.intoMap())`
 > after discovering that `record.from(key)` (POJO reflection) copies nothing from a
 > `RecordN` (no `getSakId()` bean property). `fromMap(intoMap())` works but is the
-> wasteful three-hop path above; the `from(values, fields)` mechanism this section
+> wasteful three-hop path above; the copy-into-target mechanism this section
 > now specifies avoids both the reflection trap and the throwaway record. The
 > landed single-key code must be reworked to it (the change is local to the
 > generated helper body + exposing `decodeValues`).
@@ -329,45 +330,58 @@ invariants" principle bans). The `NodeIdDecodeRecord` arm emits the helper call;
 a new permit fails *that* switch to compile. This is landed; the rework only
 changes the **body** the `NodeIdDecodeRecord` arm emits (see "Materialization").
 
-### Helper consolidation: one generic helper, not N per-type (resolve toward generic)
+### Output: per-type concrete helpers, from one reusable emitter
 
-v1 emits one `decode<Type>Record` per record type, because each carried a distinct
-typed `decode<Type>` call. With the `record.from(decodeValues(typeId, nodeId),
-keyFields)` body, the only things that vary per type are `recordType`, `typeId`
-(a `$S`), and the `keyFields` varargs ; the decode call is uniform. Per
-Helper-locality and generation-thinking (don't emit per-type what is uniform),
-collapse to **one** generated static helper, e.g.
+**Generated output is per-type and concrete; the *emitter* is single and
+reusable.** These are two different axes and the right answer differs on each:
 
-```java
-private static <R extends TableRecord<R>> R decodeNodeIdRecord(
-        Object wire, String typeId, R fresh, TableField<R, ?>... keyFields) {
-    if (!(wire instanceof String nodeId)) return null;
-    String[] values = NodeIdEncoder.decodeValues(typeId, nodeId);
-    if (values == null) {
-        throw GraphqlErrorException.newErrorException().message("…").build();
-    }
-    fresh.from(values, keyFields);
-    return fresh;
-}
-```
+- *Generated output:* one concrete `decode<Type>Record(Object) -> <Type>Record`
+  per record type (deduped by record type, so N fields of the same type share one
+  helper, as v1 already does). **Not** a single generic
+  `<R extends TableRecord<R>> R decodeNodeIdRecord(Object, String typeId, R fresh,
+  TableField<R,?>... keyFields)`.
+- *Generator code:* a single reusable emitter method (the existing
+  `InputBeanInstantiationEmitter` record-decode-helper builder, generalized to all
+  arities) parameterized by `(recordType, typeId, keyColumns, nonNull)`, emitting
+  the concrete helper. One generator-side definition, no duplicated emitter logic.
 
-with the call site `decodeNodeIdRecord(raw.get("sakId"), "Sak", new SakRecord(),
-Tables.SAK.SAK_ID)`. This mirrors legacy's single `nodeIdToTableRecord` while
-staying a generated static (honouring the deliberate move off the runtime
-`NodeIdStrategy`): one place to read and breakpoint, fewer emitted methods. The
-nullable-vs-`ID!` throw/return choice can stay a flag arg or two helper variants.
-The per-type forcing function (a distinct typed `RecordN` decode) that justified N
-helpers is gone, so this fork is resolved toward the generic helper rather than
-left open.
+Why concrete output rather than a generic generated helper, even though the body
+shape is now uniform across types:
+
+- **DRY belongs in the emitter, not the output.** The usual argument for a generic
+  helper, "centralize so copies can't drift", does not transfer to generated code:
+  the generator *is* the single definition, so every emitted `decode<Type>Record`
+  is identical by construction and there is no drift to prevent. Reusing the
+  *emitter* already captures the no-duplication win; pushing it into the output
+  buys nothing and costs the points below.
+- **Concrete types, not generics + varargs.** The concrete method has
+  `-> SakRecord` and `record.set(Tables.SAK.SAK_ID, …)` baked in. The generic form
+  needs `<R extends TableRecord<R>>` + `TableField<R,?>...` varargs (looser typing,
+  per-call array allocation) to express what the generator already knows
+  concretely, and threads `typeId` / fields / record-type through as *runtime*
+  arguments rather than emitting them as literals.
+- **Readability and stack frames.** A frame reading `decodeSakRecord` beats
+  `decodeNodeIdRecord(…, "Sak", …)` (per "Generated code is read and debugged"),
+  and it matches the codebase's own conventions: `NodeIdEncoder` emits per-type
+  `decodeFilm` / `decodeFilmActor`, and R260's `CompositeDecodeHelperRegistry`
+  emits per-type `decodeFilmKeys` / `decodeFilmActorRow`. A generic helper here
+  would be the lone exception.
+- **Compiler-leverage in the body.** A concrete method lets the body be
+  compile-checked via typed `record.set(Field<T>, T)` (see "Materialization"); the
+  generic helper's `from(values, fields)` is runtime-loose.
+
+Legacy used a single *runtime* helper (`NodeIdStrategy.nodeIdToTableRecord`)
+because it had a runtime library; the rewrite generates statics, so the
+equivalent consolidation lives in the emitter, and the output stays concrete.
 
 ## Tests
 
-> The v1 pipeline assertions below name the per-type `decodeFilmRecord` helper.
-> Once helpers consolidate to the single generic `decodeNodeIdRecord` (see "Helper
-> consolidation"), the helper-presence assertions retarget to that one method and
-> its call site (`decodeNodeIdRecord(raw.get("film"), "Film", new FilmRecord(),
-> Tables.FILM.FILM_ID)`); the no-cast and round-trip behaviour they pin is
-> unchanged.
+> The pipeline assertions stay per-type (`decodeFilmRecord` etc.) ; the output is
+> per-type concrete helpers (see "Output: per-type concrete helpers"). Only the
+> helper *body* the assertions inspect changes: from the v1
+> `decodeFilm(...)` + `fromMap(intoMap())` shape to `decodeValues("Film", …)` +
+> typed per-column `set` (no throwaway `RecordN`). The no-cast routing and
+> round-trip behaviour they pin are unchanged.
 
 ### Landed (single-key, v1)
 
@@ -378,16 +392,16 @@ left open.
   `createTestNodeIdRecordBean` helper on `QueryFetchers`; the bean field routes
   through `decodeFilmRecord(raw.get("film"))` with no `(FilmRecord) raw.get(...)`
   cast; the decode helper returns the record type, takes `Object`, and
-  materializes via `record.from(NodeIdEncoder.decodeValues("Film", nodeId),
-  Tables.FILM.FILM_ID)`, throwing on a type-mismatch (`values == null`).
-  TypeSpec-shape / helper-presence assertions. **Landed against the v1
-  `fromMap(intoMap())` shape; reworked to `from(values, fields)` per
-  "Materialization".**
+  materializes via `NodeIdEncoder.decodeValues("Film", nodeId)` + typed
+  `record.set(Tables.FILM.FILM_ID, …convert(values[0]))`, throwing on a
+  type-mismatch (`values == null`). TypeSpec-shape / helper-presence assertions.
+  **Landed against the v1 `decode<Type>` + `fromMap(intoMap())` shape; reworked to
+  the copy-into-target body per "Materialization".**
 - **Compilation tier.** `graphitron-sakila-example`:
   `FilmRecordAssignmentInput { film: ID! @nodeId(typeName: "Film") }` +
   `Mutation.assignFilmRecord` → `FilmReviewService.assignFilmRecord(FilmRecordAssignment)`.
   Generated `MutationFetchers.decodeFilmRecord` compiles against the real jOOQ
-  catalog (catches the `from(values, fields)`/type mismatch).
+  catalog (catches a value/column type mismatch).
 - **Execution tier.**
   `GraphQLQueryTest#assignFilmRecord_decodesNodeIdIntoJooqRecordMember`: a
   mutation decodes a `Film` NodeId into a `FilmRecord` member and reads the
@@ -400,21 +414,20 @@ left open.
   member (`FilmActorRecord`, PK `(actor_id, film_id)`) fails with the
   composite-key-punt message must be **removed** and replaced with a *success*
   case: the composite member emits a `decodeFilmActorRecord` helper that
-  materializes via `record.from(NodeIdEncoder.decodeValues("FilmActor", nodeId),
-  Tables.FILM_ACTOR.ACTOR_ID, Tables.FILM_ACTOR.FILM_ID)`, routed through
+  materializes via `NodeIdEncoder.decodeValues("FilmActor", nodeId)` + one typed
+  `record.set(...)` per key column (`ACTOR_ID`, `FILM_ID`), routed through
   `createTestNodeIdRecordBean` with no cast. The only surviving rejection case is
   the no-`@nodeId` one.
 - **Compilation tier (composite).** Add a composite-PK fixture to
   `graphitron-sakila-example`: an `@service` input bean with a member typed as a
   composite-PK `*Record` (`FilmActorRecord`) carrying
   `ID! @nodeId(typeName: "FilmActor")`. The generated `decodeFilmActorRecord`
-  must compile against the real jOOQ catalog ; this is the primary guard that the
-  two-element `from(values, field1, field2)` lands both key fields with correct
-  types.
+  must compile against the real jOOQ catalog ; this is the primary guard that both
+  typed `set` assignments match their key columns.
 - **Execution tier (composite).** A mutation decodes a `FilmActor` NodeId into a
   composite `FilmActorRecord` member and reads both `actor_id` and `film_id` back
-  populated, round-tripping against PostgreSQL ; proves the positional
-  `from(values, fields)` materialization fills every key column, not just the first.
+  populated, round-tripping against PostgreSQL ; proves the per-column `set`
+  materialization fills every key column, not just the first.
 
 ## Affected code
 
@@ -429,12 +442,14 @@ the `ServiceMethodCallWalker` carry-through, `resolveTargetKeys`) are landed.
   is deferred.
 - `model/CallSiteExtraction.java` ; reshape the `NodeIdDecodeRecord` permit's
   components (drop `HelperRef.Decode`) per "Model".
-- `generators/InputBeanInstantiationEmitter.java` ; rework the
-  `NodeIdDecodeRecord` arm body from `decode<Type>` + `fromMap(intoMap())` to the
-  single generic `decodeNodeIdRecord` helper (`record.from(decodeValues(...),
-  <keyFields>)`), replacing the N per-type `decode<Type>Record` helpers; update
-  the helper javadoc that claims "no encoder-generator change is needed". The
-  switch is already exhaustive (no `default -> throw` to remove).
+- `generators/InputBeanInstantiationEmitter.java` ; this *is* the one reusable
+  emitter — generalize the existing per-type record-decode-helper builder to all
+  arities and rework its emitted body from `decode<Type>` + `fromMap(intoMap())` to
+  `decodeValues(typeId, nodeId)` + typed per-column `record.set(field,
+  convert(values[i]))` (no throwaway `RecordN`). Output stays per-type concrete
+  `decode<Type>Record` helpers, deduped by record type. Update the helper javadoc
+  that claims "no encoder-generator change is needed". The switch is already
+  exhaustive (no `default -> throw` to remove).
 - The `NodeIdEncoder` class generator (`util/NodeIdEncoderClassGenerator.java`) ;
   expose the raw unpack the helper calls — make `decodeValues` `public`, or emit a
   public `unpack<Type>(String): String[]` wrapper. (Replaces v1's reliance on the
