@@ -379,6 +379,23 @@ final class InputBeanResolver {
             return new RecordLeaf.Fail(Rejection.structural(where + ": " + r.message()));
         }
         var resolved = (BuildContext.NodeIdRecordDecode.Resolved) resolution;
+        // The NodeId for `typeName` decodes into the record of that type's own @table. Loading those
+        // key values into a *different* jOOQ record is unsound: the Tables.<NodeTable>.<col> field
+        // references the decode helper emits are not fields of the declared record, and the helper
+        // would return the node-table record into a bean field of the declared type. Without this
+        // gate that surfaces only downstream as a javac "incompatible types" error in the consumer's
+        // *Fetchers (the opptak List<SoknadSoknadsbehandlingTaggRecord> vs List<SoknadsbehandlingTaggRecord>
+        // case), not as a graphitron rejection. Catch it at classification: the member's declared
+        // record type must equal the node table's record type.
+        String nodeTableRecord = resolved.table().recordClass().toString();
+        if (!nodeTableRecord.equals(recordTypeName)) {
+            return new RecordLeaf.Fail(Rejection.structural(where
+                + ": the member is typed as jOOQ record '" + recordTypeName + "', but"
+                + " @nodeId(typeName: \"" + typeName.get() + "\") decodes into '" + nodeTableRecord
+                + "' (the record of that type's own @table). A NodeId cannot be decoded into a"
+                + " different record type — declare the member as '" + nodeTableRecord + "', or point"
+                + " @nodeId at the NodeType whose @table backs '" + recordTypeName + "'"));
+        }
         return new RecordLeaf.Ok(new CallSiteExtraction.NodeIdDecodeRecord(
             resolved.encoderClass(), resolved.typeId(), resolved.keyColumns(),
             resolved.table(), nonNull));

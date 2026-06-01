@@ -591,4 +591,14 @@ class TestServiceStub {
     public static String assignFilmActorList(TestNodeIdCompositeRecordListBean in) {
         throw new UnsupportedOperationException();
     }
+
+    /**
+     * R195 fixture: takes a {@link TestNodeIdMismatchedRecordBean} whose member is a
+     * {@code FilmActorRecord}, while the SDL field carries {@code @nodeId(typeName: "Film")} (whose
+     * {@code @table} is {@code film} → {@code FilmRecord}). The record-type / typeName mismatch must
+     * be rejected at generation time, not emitted as a decode helper returning the wrong record type.
+     */
+    public static String assignMismatchedRecord(TestNodeIdMismatchedRecordBean in) {
+        throw new UnsupportedOperationException();
+    }
 }
