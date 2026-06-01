@@ -1047,6 +1047,27 @@ input FilmRecordAssignmentInput {
     film: ID! @nodeId(typeName: "Film")
 }
 
+# R195 composite-key fixture: input bean whose member is a jOOQ FilmActorRecord (PK actor_id,
+# film_id), backed by `ID! @nodeId(typeName: "FilmActor")`. decodeFilmActorRecord materialises both
+# key columns with one typed set each — composite keys are in scope, not deferred.
+input FilmActorRecordAssignmentInput {
+    filmActor: ID! @nodeId(typeName: "FilmActor")
+}
+
+# R195 list fixture: input bean whose member is List<FilmRecord>, backed by
+# `[ID!] @nodeId(typeName: "Film")`. decodeFilmRecordList streams the wire ids and materialises one
+# FilmRecord per element via the singular decodeFilmRecord helper.
+input FilmRecordListAssignmentInput {
+    films: [ID!] @nodeId(typeName: "Film")
+}
+
+# R195 both-dimensions corner: input bean whose member is List<FilmActorRecord>, backed by
+# `[ID!] @nodeId(typeName: "FilmActor")`. decodeFilmActorRecordList wraps the composite-key
+# per-element decode — list-ness and composite arity at once.
+input FilmActorRecordListAssignmentInput {
+    filmActors: [ID!] @nodeId(typeName: "FilmActor")
+}
+
 input PlainFilmIdInput {
     filmId: ID! @field(name: "film_id")
         @condition(condition: {
@@ -1544,12 +1565,37 @@ type Mutation {
     # R195 compilation-tier fixture: @service input bean whose member is a jOOQ FilmRecord backed
     # by `ID! @nodeId(typeName: "Film")`. The fetcher generator emits a createFilmRecordAssignment
     # helper plus a decodeFilmRecord(Object) helper on MutationFetchers; the bean field routes the
-    # wire id through decodeFilmRecord (NodeIdEncoder.decodeFilm + FilmRecord.from(key)) instead of
+    # wire id through decodeFilmRecord (NodeIdEncoder.decodeValues + a typed record.set) instead of
     # casting the wire String to FilmRecord — the R150/R195 ClassCastException this item removes.
     assignFilmRecord(in: FilmRecordAssignmentInput!): String
         @service(service: {
             className: "no.sikt.graphitron.rewrite.test.services.FilmReviewService",
             method: "assignFilmRecord"
+        })
+
+    # R195 composite-key fixture: decodeFilmActorRecord materialises a composite-PK FilmActorRecord
+    # (one typed set per key column) from a single FilmActor NodeId. The service reads both key
+    # columns back.
+    assignFilmActorRecord(in: FilmActorRecordAssignmentInput!): String
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.FilmReviewService",
+            method: "assignFilmActorRecord"
+        })
+
+    # R195 list fixture: decodeFilmRecordList materialises a List<FilmRecord> from a list of Film
+    # NodeIds. The service reads each film_id back.
+    assignFilmRecordList(in: FilmRecordListAssignmentInput!): String
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.FilmReviewService",
+            method: "assignFilmRecordList"
+        })
+
+    # R195 both-dimensions corner: decodeFilmActorRecordList materialises a List<FilmActorRecord>
+    # (each element a composite-key record) from a list of FilmActor NodeIds.
+    assignFilmActorRecordList(in: FilmActorRecordListAssignmentInput!): String
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.FilmReviewService",
+            method: "assignFilmActorRecordList"
         })
 
     # R154 execution-tier fixture: @service mutation whose payload class uses the mutable-bean

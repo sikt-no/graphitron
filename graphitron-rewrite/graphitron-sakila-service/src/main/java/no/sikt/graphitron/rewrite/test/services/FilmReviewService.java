@@ -64,6 +64,48 @@ public final class FilmReviewService {
     }
 
     /**
+     * R195 composite-key fixture: takes a {@link FilmActorRecordAssignment} whose member is a jOOQ
+     * {@code FilmActorRecord} (composite PK {@code actor_id, film_id}) decoded from a single
+     * {@code FilmActor} NodeId. The body reads both populated key columns back to prove the
+     * composite per-column {@code set} fills every key column.
+     */
+    public static String assignFilmActorRecord(FilmActorRecordAssignment in) {
+        if (in == null || in.filmActor() == null) {
+            return "none";
+        }
+        return "filmActor:" + in.filmActor().getActorId() + ":" + in.filmActor().getFilmId();
+    }
+
+    /**
+     * R195 list fixture: takes a {@link FilmRecordListAssignment} whose member is a
+     * {@code List<FilmRecord>} decoded from a list of {@code Film} NodeIds. The body reads each
+     * populated {@code film_id} back to prove the list variant materialises one record per element.
+     */
+    public static String assignFilmRecordList(FilmRecordListAssignment in) {
+        if (in == null || in.films() == null) {
+            return "none";
+        }
+        return "films:" + in.films().stream()
+            .map(f -> String.valueOf(f.getFilmId()))
+            .collect(java.util.stream.Collectors.joining(","));
+    }
+
+    /**
+     * R195 both-dimensions fixture: takes a {@link FilmActorRecordListAssignment} whose member is a
+     * {@code List<FilmActorRecord>} decoded from a list of {@code FilmActor} NodeIds. The body reads
+     * each element's composite key back to prove the list variant wraps the composite per-element
+     * decode.
+     */
+    public static String assignFilmActorRecordList(FilmActorRecordListAssignment in) {
+        if (in == null || in.filmActors() == null) {
+            return "none";
+        }
+        return "filmActors:" + in.filmActors().stream()
+            .map(fa -> fa.getActorId() + ":" + fa.getFilmId())
+            .collect(java.util.stream.Collectors.joining(","));
+    }
+
+    /**
      * R154 fixture: identical branching to {@link #submit} but returns the setter-shape sibling
      * payload class. Drives the {@code MutationServiceRecordField} emit through R154's
      * mutable-bean construction shape (no-arg ctor + setters) end-to-end through the execution

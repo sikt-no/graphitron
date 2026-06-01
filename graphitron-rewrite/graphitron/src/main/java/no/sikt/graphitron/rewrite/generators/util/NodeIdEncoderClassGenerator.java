@@ -112,8 +112,11 @@ public class NodeIdEncoderClassGenerator {
             .endControlFlow()
             .build();
 
+        // PUBLIC (not package-private): the R195 input-bean record-decode helpers land in the
+        // generated `…fetchers` package and call decodeValues directly to materialise a typed
+        // jOOQ record from the raw key values, so the raw unpack must cross the package boundary.
         var decodeValues = MethodSpec.methodBuilder("decodeValues")
-            .addModifiers(Modifier.STATIC)
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(String[].class)
             .addParameter(String.class, "expectedTypeId")
             .addParameter(String.class, "base64Id")

@@ -566,10 +566,29 @@ class TestServiceStub {
 
     /**
      * R195 fixture: takes a {@link TestNodeIdCompositeRecordBean} whose member is a jOOQ
-     * {@link FilmActorRecord} backed by a composite-key table. Composite-key record members are
-     * deferred in v1, so the classifier rejects this at generation time.
+     * {@link FilmActorRecord} backed by a composite-key table ({@code film_actor}, PK
+     * {@code (actor_id, film_id)}). The classifier decodes the wire-format id into a
+     * {@code FilmActorRecord}, materialising both key columns with one typed {@code set} each.
      */
     public static String assignFilmActor(TestNodeIdCompositeRecordBean in) {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
+     * R195 fixture: takes a {@link TestNodeIdRecordListBean} whose member is a
+     * {@code List<FilmRecord>} backed by a {@code [ID!] @nodeId(typeName: "Film")} SDL field. The
+     * classifier decodes each wire-format id into a {@code FilmRecord} via the list helper variant.
+     */
+    public static String assignFilmList(TestNodeIdRecordListBean in) {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
+     * R195 fixture: the both-dimensions corner — a {@code List<FilmActorRecord>} member backed by a
+     * {@code [ID!] @nodeId(typeName: "FilmActor")} SDL field, exercising the list variant over a
+     * composite-key per-element decode.
+     */
+    public static String assignFilmActorList(TestNodeIdCompositeRecordListBean in) {
         throw new UnsupportedOperationException();
     }
 }

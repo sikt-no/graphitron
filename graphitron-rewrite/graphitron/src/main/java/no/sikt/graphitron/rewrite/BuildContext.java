@@ -2182,31 +2182,35 @@ class BuildContext {
     }
 
     /**
-     * Outcome of resolving the decode helper + key columns for a jOOQ-record-typed {@code @service}
-     * input-bean member field carrying {@code @nodeId(typeName:)}. {@link Resolved} carries the
-     * per-Node {@code decode<TypeName>} {@link HelperRef.Decode} plus the target's key columns;
-     * {@link Rejected} carries a fully formatted reason ready for a {@code Rejection}.
+     * Outcome of resolving the NodeId-decode materialization data for a jOOQ-record-typed
+     * {@code @service} input-bean member field carrying {@code @nodeId(typeName:)}. {@link Resolved}
+     * carries everything the {@code decode<Record>} helper materialises a {@link org.jooq.TableRecord}
+     * from: the generated {@code NodeIdEncoder} {@code encoderClass} (to call {@code decodeValues}),
+     * the wire-format {@code typeId} (its first argument), the target's key columns (the per-column
+     * {@code set} loop), and the resolved {@link no.sikt.graphitron.rewrite.model.TableRef} (the
+     * record class, the {@code Tables} constants class, and the table field name needed to write
+     * {@code Tables.<T>.<col>}). {@link Rejected} carries a fully formatted reason ready for a
+     * {@code Rejection}.
+     *
+     * <p>No {@code decode<TypeName>} method name is resolved: the materialization calls
+     * {@code decodeValues(typeId, nodeId)}, never {@code decode<Type>}, so there is no suffix to
+     * derive and the {@code resolveDecodeHelperForTable} typeName-vs-table trap does not apply here.
      */
     sealed interface NodeIdRecordDecode {
-        record Resolved(HelperRef.Decode decode, List<ColumnRef> keyColumns) implements NodeIdRecordDecode {}
+        record Resolved(no.sikt.graphitron.javapoet.ClassName encoderClass, String typeId,
+                        List<ColumnRef> keyColumns,
+                        no.sikt.graphitron.rewrite.model.TableRef table) implements NodeIdRecordDecode {}
         record Rejected(String message) implements NodeIdRecordDecode {}
     }
 
     /**
-     * Resolves the {@code decode<TypeName>} helper and key columns for a jOOQ-record input-bean
-     * member from the author's {@code @nodeId(typeName:)}. Two pieces resolve from two sides and
-     * must not be conflated:
-     *
-     * <ul>
-     *   <li><b>Key columns</b> come from the table backing {@code typeName}, via the shared
-     *       {@link #resolveTargetKeys} (the single {@code @node(keyColumns:)} fallback site).</li>
-     *   <li><b>Decode-helper suffix</b> comes from the author's {@code typeName}, never the table:
-     *       read {@link NodeType#decodeMethod()} for the type {@code typeName} names when the
-     *       {@code types} map is populated, else construct
-     *       {@code decode<typeName>} directly. This avoids the {@code resolveDecodeHelperForTable}
-     *       trap, where the suffix is derived from the (possibly non-unique) GraphQL type backing
-     *       the table rather than the author's explicit typeName.</li>
-     * </ul>
+     * Resolves the NodeId-decode materialization data for a jOOQ-record input-bean member from the
+     * author's {@code @nodeId(typeName:)}: the wire-format {@code typeId} and key columns come from
+     * the table backing {@code typeName} via the shared {@link #resolveTargetKeys} (the single
+     * {@code @node(keyColumns:)} fallback site), and the {@link no.sikt.graphitron.rewrite.model.TableRef}
+     * comes from the jOOQ catalog entry for that table (record class + {@code Tables} constants).
+     * Works for any key arity (single-column or composite); the caller (the input-bean resolver)
+     * decides scalar-vs-list from the member's Java shape.
      */
     NodeIdRecordDecode resolveNodeIdRecordDecode(String typeName) {
         var rawGqlType = schema.getType(typeName);
@@ -2225,16 +2229,17 @@ class BuildContext {
         if (keys.error() != null) {
             return new NodeIdRecordDecode.Rejected(keys.error());
         }
-        HelperRef.Decode decode;
-        if (types != null && types.get(typeName) instanceof NodeType nt) {
-            decode = nt.decodeMethod();
-        } else {
-            var encoderClass = no.sikt.graphitron.javapoet.ClassName.get(
-                ctx.outputPackage() + ".util",
-                no.sikt.graphitron.rewrite.generators.util.NodeIdEncoderClassGenerator.CLASS_NAME);
-            decode = new HelperRef.Decode(encoderClass, "decode" + typeName, keys.keyColumns());
+        var tableEntry = catalog.findTable(targetTableName).asEntry();
+        if (tableEntry.isEmpty()) {
+            return new NodeIdRecordDecode.Rejected(
+                "@nodeId(typeName: '" + typeName + "') targets table '" + targetTableName
+                + "' which is not in the jOOQ catalog");
         }
-        return new NodeIdRecordDecode.Resolved(decode, keys.keyColumns());
+        var encoderClass = no.sikt.graphitron.javapoet.ClassName.get(
+            ctx.outputPackage() + ".util",
+            no.sikt.graphitron.rewrite.generators.util.NodeIdEncoderClassGenerator.CLASS_NAME);
+        return new NodeIdRecordDecode.Resolved(encoderClass, keys.typeId(), keys.keyColumns(),
+            tableEntry.get().toTableRef(targetTableName));
     }
 
     /**

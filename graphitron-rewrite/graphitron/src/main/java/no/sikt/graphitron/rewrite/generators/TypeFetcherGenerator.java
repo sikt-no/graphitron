@@ -560,13 +560,22 @@ public class TypeFetcherGenerator {
                 no.sikt.graphitron.javapoet.ClassName.bestGuess(outputPackage + "." + className)));
         }
 
-        // R195: emit one decode<RecordType> helper per jOOQ-record-typed @nodeId input-bean member
-        // reached by the collected beans. The create<Bean> helper bodies call these by name.
-        var recordDecoders = new java.util.LinkedHashMap<no.sikt.graphitron.javapoet.ClassName,
+        // R195: emit one decode<RecordType>Record helper per jOOQ-record-typed @nodeId input-bean
+        // member reached by the collected beans, plus a decode<RecordType>RecordList variant for
+        // list-valued members (which delegates to the scalar helper per element). The create<Bean>
+        // helper bodies call these by name. Scalar and list variants dedup independently by record
+        // type; the scalar helper is always emitted because the list variant delegates to it.
+        var scalarDecoders = new java.util.LinkedHashMap<no.sikt.graphitron.javapoet.ClassName,
             CallSiteExtraction.NodeIdDecodeRecord>();
-        InputBeanInstantiationEmitter.collectRecordDecoders(beanHelpers.values(), recordDecoders);
-        for (var rec : recordDecoders.values()) {
+        var listDecoders = new java.util.LinkedHashMap<no.sikt.graphitron.javapoet.ClassName,
+            CallSiteExtraction.NodeIdDecodeRecord>();
+        InputBeanInstantiationEmitter.collectRecordDecoders(beanHelpers.values(),
+            scalarDecoders, listDecoders);
+        for (var rec : scalarDecoders.values()) {
             builder.addMethod(InputBeanInstantiationEmitter.buildRecordDecodeHelper(rec));
+        }
+        for (var rec : listDecoders.values()) {
+            builder.addMethod(InputBeanInstantiationEmitter.buildRecordDecodeHelperList(rec));
         }
 
         // Emit orderBy helper methods for fields with a dynamic @orderBy argument. Covers

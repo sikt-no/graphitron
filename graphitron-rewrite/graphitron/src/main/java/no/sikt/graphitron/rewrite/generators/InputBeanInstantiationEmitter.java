@@ -138,7 +138,7 @@ final class InputBeanInstantiationEmitter {
             case CallSiteExtraction.Direct ignored -> directExpr(fb, sdl);
             case CallSiteExtraction.EnumValueOf ev -> enumExpr(fb, ev, sdl);
             case CallSiteExtraction.InputBean nested -> nestedBeanExpr(fb, nested, sdl);
-            case CallSiteExtraction.NodeIdDecodeRecord rec -> recordDecodeExpr(rec, sdl);
+            case CallSiteExtraction.NodeIdDecodeRecord rec -> recordDecodeExpr(fb, rec, sdl);
             case CallSiteExtraction.ContextArg ignored -> throw notALeaf(fb);
             case CallSiteExtraction.JooqConvert ignored -> throw notALeaf(fb);
             case CallSiteExtraction.NestedInputField ignored -> throw notALeaf(fb);
@@ -155,15 +155,25 @@ final class InputBeanInstantiationEmitter {
 
     /**
      * Routes a jOOQ-record member through its per-record-type {@code decode<RecordType>} helper
-     * (emitted by {@link #buildRecordDecodeHelper}). Keeps the bean-field assignment a one-liner;
-     * the decode-and-materialize logic lives in the readable statement-form helper.
+     * (emitted by {@link #buildRecordDecodeHelper}), or — when the member is list-valued — through
+     * the {@code decode<RecordType>List} variant ({@link #buildRecordDecodeHelperList}). Keeps the
+     * bean-field assignment a one-liner; the decode-and-materialize logic lives in the readable
+     * statement-form helper.
      */
-    private static CodeBlock recordDecodeExpr(CallSiteExtraction.NodeIdDecodeRecord rec, String sdl) {
-        return CodeBlock.of("$L(raw.get($S))", recordDecodeHelperName(rec), sdl);
+    private static CodeBlock recordDecodeExpr(CallSiteExtraction.FieldBinding fb,
+                                              CallSiteExtraction.NodeIdDecodeRecord rec, String sdl) {
+        String helper = fb.list() ? recordDecodeListHelperName(rec) : recordDecodeHelperName(rec);
+        return CodeBlock.of("$L(raw.get($S))", helper, sdl);
     }
 
+    /** {@code decode<RecordType>}, e.g. {@code decodeFilmRecord}. Named from the target table's record class. */
     private static String recordDecodeHelperName(CallSiteExtraction.NodeIdDecodeRecord rec) {
-        return "decode" + rec.recordType().simpleName();
+        return "decode" + rec.table().recordClass().simpleName();
+    }
+
+    /** {@code decode<RecordType>List}, e.g. {@code decodeFilmRecordList}. */
+    private static String recordDecodeListHelperName(CallSiteExtraction.NodeIdDecodeRecord rec) {
+        return recordDecodeHelperName(rec) + "List";
     }
 
     private static CodeBlock directExpr(CallSiteExtraction.FieldBinding fb, String sdl) {
@@ -231,72 +241,134 @@ final class InputBeanInstantiationEmitter {
     }
 
     /**
-     * Collects the unique {@link CallSiteExtraction.NodeIdDecodeRecord} leaves across the given
-     * beans, keyed by their jOOQ record type. The caller passes the already-transitively-collected
+     * Collects the {@link CallSiteExtraction.NodeIdDecodeRecord} leaves across the given beans into
+     * two dedup maps keyed by jOOQ record type. The caller passes the already-transitively-collected
      * bean set (e.g. {@code collectTransitively}'s output), so this is a flat one-level field scan
-     * per bean rather than a second tree walk. Dedup by record type: a given {@code *Record} type
-     * decodes through exactly one {@code decode<RecordType>} helper per {@code *Fetchers} class.
+     * per bean rather than a second tree walk.
+     *
+     * <p>Every record type that appears (scalar- or list-valued) lands in {@code scalarOut}: the
+     * scalar {@code decode<RecordType>} helper is always emitted, because the list variant delegates
+     * to it per element. A record type that appears list-valued anywhere additionally lands in
+     * {@code listOut}, driving the {@code decode<RecordType>List} variant. List-ness is read off the
+     * enclosing {@link CallSiteExtraction.FieldBinding#list()}, not the leaf, so the two variants
+     * dedup independently and a type used both ways emits both helpers, each once.
      */
     static void collectRecordDecoders(java.util.Collection<CallSiteExtraction.InputBean> beans,
-            java.util.Map<ClassName, CallSiteExtraction.NodeIdDecodeRecord> out) {
+            java.util.Map<ClassName, CallSiteExtraction.NodeIdDecodeRecord> scalarOut,
+            java.util.Map<ClassName, CallSiteExtraction.NodeIdDecodeRecord> listOut) {
         for (var ib : beans) {
             for (var fb : ib.fields()) {
                 if (fb.leaf() instanceof CallSiteExtraction.NodeIdDecodeRecord rec) {
-                    out.putIfAbsent(rec.recordType(), rec);
+                    ClassName key = rec.table().recordClass();
+                    scalarOut.putIfAbsent(key, rec);
+                    if (fb.list()) {
+                        listOut.putIfAbsent(key, rec);
+                    }
                 }
             }
         }
     }
 
     /**
-     * Emits {@code private static <Record> decode<Record>(Object wire)}: decode the base64 NodeId
-     * into the NodeType's key tuple and rebuild the jOOQ {@code TableRecord} from it. Statement
-     * form (explicit types, named locals) per the "generated code is read and debugged" principle.
+     * Emits {@code private static <Record> decode<Record>(Object wire)}: decode the base64 NodeId to
+     * its raw key values and copy each straight into a fresh target record's key column with a typed
+     * {@code set}. Statement form (explicit types, named locals, no {@code var}) per the "generated
+     * code is read and debugged" principle.
      *
      * <pre>
      *   private static SakRecord decodeSakRecord(Object wire) {
      *       if (!(wire instanceof String nodeId)) {
      *           return null;
      *       }
-     *       Record1&lt;Long&gt; key = NodeIdEncoder.decodeSak(nodeId);
-     *       if (key == null) {
-     *           throw new GraphqlErrorException("...");
+     *       String[] values = NodeIdEncoder.decodeValues("Sak", nodeId);
+     *       if (values == null || values.length != 1) {
+     *           throw GraphqlErrorException.newErrorException().message("...").build();
      *       }
-     *       SakRecord record = new SakRecord();
-     *       record.fromMap(key.intoMap());
-     *       return record;
+     *       SakRecord decoded = new SakRecord();
+     *       decoded.set(Tables.SAK.SAK_ID, Tables.SAK.SAK_ID.getDataType().convert(values[0]));
+     *       return decoded;
      *   }
      * </pre>
+     *
+     * <p>One typed {@code set} per key column, so a composite key is N explicit assignments. The
+     * typed {@code Record.set(Field<T>, T)} is compile-checked against the real jOOQ catalog, so a
+     * column/value type mismatch is a {@code graphitron-sakila-example} compile failure rather than a
+     * DSL-runtime surprise (the "compilation against real jOOQ is a test tier" backstop), and there
+     * is no throwaway {@code RecordN}. The local is named {@code decoded}, not {@code record}, since
+     * {@code record} is a context-sensitive keyword and reads poorly in code a consumer breakpoints.
      *
      * <p>A non-{@code String} (null / absent) wire value yields a {@code null} member: graphql-java
      * enforces {@code ID!} non-nullness at the boundary, so for a non-null field the {@code String}
      * branch is always taken; for a nullable field the {@code null} member is correct. A
-     * type-mismatch decode (helper returns {@code null}) is an authored-input error and throws,
-     * mirroring the {@code ThrowOnMismatch} arm. {@code record.fromMap(key.intoMap())} copies the
-     * decoded key columns into the record by field name (jOOQ has no {@code from(Record)} overload;
-     * {@code from(Object)} would POJO-reflect the {@code RecordN} and copy nothing), so no
-     * encoder-generator change is needed.
+     * type-mismatch decode ({@code decodeValues} returns {@code null} on a typeId mismatch, or a
+     * wrong arity) is an authored-input error and throws, mirroring the {@code ThrowOnMismatch} arm.
      */
     static MethodSpec buildRecordDecodeHelper(CallSiteExtraction.NodeIdDecodeRecord rec) {
-        ClassName recordType = rec.recordType();
-        var decode = rec.decode();
-        TypeName keyType = decode.returnType();
+        ClassName recordType = rec.table().recordClass();
+        ClassName tablesClass = rec.table().constantsClass();
+        String tableField = rec.table().javaFieldName();
         ClassName graphqlError = ClassName.get("graphql", "GraphqlErrorException");
-        return MethodSpec.methodBuilder(recordDecodeHelperName(rec))
+        int arity = rec.keyColumns().size();
+        var b = MethodSpec.methodBuilder(recordDecodeHelperName(rec))
             .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
             .returns(recordType)
             .addParameter(Object.class, "wire")
             .beginControlFlow("if (!(wire instanceof String nodeId))")
             .addStatement("return null")
             .endControlFlow()
-            .addStatement("$T key = $T.$L(nodeId)", keyType, decode.encoderClass(), decode.methodName())
-            .beginControlFlow("if (key == null)")
+            .addStatement("$T values = $T.decodeValues($S, nodeId)",
+                String[].class, rec.encoderClass(), rec.typeId())
+            .beginControlFlow("if (values == null || values.length != $L)", arity)
             .addStatement("throw $T.newErrorException().message($S).build()", graphqlError,
                 "Decoded NodeId did not match the expected type for this argument")
             .endControlFlow()
-            .addStatement("$T record = new $T()", recordType, recordType)
-            .addStatement("record.fromMap(key.intoMap())")
-            .addStatement("return record")
+            .addStatement("$T decoded = new $T()", recordType, recordType);
+        for (int i = 0; i < arity; i++) {
+            String col = rec.keyColumns().get(i).javaName();
+            b.addStatement("decoded.set($T.$L.$L, $T.$L.$L.getDataType().convert(values[$L]))",
+                tablesClass, tableField, col,
+                tablesClass, tableField, col,
+                i);
+        }
+        return b.addStatement("return decoded").build();
+    }
+
+    /**
+     * Emits {@code private static List<<Record>> decode<Record>List(Object wire)}: stream the wire
+     * {@code List} of base64 NodeIds, materialise one record per element through the singular
+     * {@link #buildRecordDecodeHelper} helper, and collect. A present-but-wrong-type element throws
+     * (the singular helper already throws on mismatch), because an input-bean member is materialized
+     * input, not a query predicate — there is no silent-drop {@code SkipMismatchedElement} path here.
+     *
+     * <pre>
+     *   private static List<SakRecord> decodeSakRecordList(Object wire) {
+     *       if (!(wire instanceof List<?> nodeIds)) {
+     *           return null;
+     *       }
+     *       List<SakRecord> records = new ArrayList<>(nodeIds.size());
+     *       for (Object element : nodeIds) {
+     *           records.add(decodeSakRecord(element));
+     *       }
+     *       return records;
+     *   }
+     * </pre>
+     */
+    static MethodSpec buildRecordDecodeHelperList(CallSiteExtraction.NodeIdDecodeRecord rec) {
+        ClassName recordType = rec.table().recordClass();
+        TypeName listOfRecord = ParameterizedTypeName.get(LIST, recordType);
+        ClassName arrayList = ClassName.get(java.util.ArrayList.class);
+        return MethodSpec.methodBuilder(recordDecodeListHelperName(rec))
+            .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+            .returns(listOfRecord)
+            .addParameter(Object.class, "wire")
+            .beginControlFlow("if (!(wire instanceof $T<?> nodeIds))", LIST)
+            .addStatement("return null")
+            .endControlFlow()
+            .addStatement("$T records = new $T<>(nodeIds.size())", listOfRecord, arrayList)
+            .beginControlFlow("for (Object element : nodeIds)")
+            .addStatement("records.add($L(element))", recordDecodeHelperName(rec))
+            .endControlFlow()
+            .addStatement("return records")
             .build();
     }
 }
