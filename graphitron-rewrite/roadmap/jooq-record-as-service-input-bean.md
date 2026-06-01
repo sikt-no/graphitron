@@ -1,7 +1,7 @@
 ---
 id: R195
 title: Decode @nodeId into jOOQ-record-typed @service input-bean fields
-status: Ready
+status: In Review
 bucket: feature
 priority: 5
 theme: model-cleanup
@@ -268,15 +268,32 @@ the throwaway-`RecordN` allocation.
 ### Model: a dedicated leaf variant, not a reuse of `NodeIdDecodeKeys`
 
 Add a new `CallSiteExtraction` permit carried at the `FieldBinding` leaf slot,
-carrying exactly what the `from(values, fields)` materialization needs and nothing
-more:
+carrying exactly what the typed-`set` materialization needs and nothing more:
 
 ```java
 record NodeIdDecodeRecord(ClassName encoderClass, String typeId,
-                          List<ColumnRef> keyColumns, ClassName recordType,
+                          List<ColumnRef> keyColumns, TableRef table,
                           boolean nonNull)
     implements CallSiteExtraction {}
 ```
+
+> **Implemented shape (In Progress fork).** The leaf carries the resolved
+> `TableRef table`, not a bare `ClassName recordType`. The typed per-column `set`
+> emits `Tables.<T>.<col>` (the `record.set(Field<T>, T)` form under
+> "Materialization"), which needs the target table's `constantsClass` and
+> `javaFieldName` in addition to the record class; a bare `recordType` cannot
+> supply those. `TableRef` bundles all three (`recordClass()`, `constantsClass()`,
+> `javaFieldName()`) and is the codebase's canonical "resolved table" type, so it is
+> the narrow component for "this becomes *this* record": the emitter reads
+> `table.recordClass()` for the helper return type and `new <T>Record()`, and
+> `table.constantsClass()` + `table.javaFieldName()` for the `Tables.<T>.<col>`
+> references. `keyColumns` stays separate (an `@node(keyColumns:)` key may differ
+> from `table.primaryKeyColumns()`). Same five-component count as the sketch above,
+> with `TableRef` in the `recordType` slot; the compact constructor null-checks
+> every component and copies `keyColumns`. `BuildContext.NodeIdRecordDecode.Resolved`
+> was reshaped to `(encoderClass, typeId, keyColumns, table)` to feed it (dropping
+> the dead `HelperRef.Decode`), resolving the `TableRef` from the catalog entry for
+> the target table.
 
 > **Component-set note (was `HelperRef.Decode`).** v1 carried
 > `NodeIdDecodeRecord(HelperRef.Decode decode, ClassName recordType, boolean nonNull)`.
@@ -286,8 +303,9 @@ record NodeIdDecodeRecord(ClassName encoderClass, String typeId,
 > method name was a component the emitter had to carry and ignore (against "narrow
 > component types"). The leaf now carries the flat five components above —
 > `encoderClass` (to call `decodeValues`), `typeId` (the `$S` first arg to
-> `decodeValues`), `keyColumns` (the per-column `set` loop), `recordType`, and
-> `nonNull`. **Decision: the flat form, not a `HelperRef.DecodeValues` sub-record** —
+> `decodeValues`), `keyColumns` (the per-column `set` loop), `table` (the record
+> class + `Tables` constants for the typed `set`; see the implemented-shape note
+> above), and `nonNull`. **Decision: the flat form, not a `HelperRef.DecodeValues` sub-record** —
 > these components have no other consumer to share a grouping with (the leaf is the
 > sole reader), so a new `HelperRef` sibling would be a type for one call site. The
 > only invariant that matters is no `decode<Type>` method name on the leaf.
@@ -469,30 +487,36 @@ equivalent consolidation lives in the emitter, and the output stays concrete.
   mutation decodes a `Film` NodeId into a `FilmRecord` member and reads the
   populated `film_id` back, round-tripping against PostgreSQL.
 
-### Required by the rescope (composite key + list members) — not yet landed
+### Landed by the rescope (composite key + list members)
 
-- **Convert the shape-rejection tests to success tests.** The current
-  `NodeIdRecordInputBeanPipelineTest` rejection cases — a composite-key member
-  (`FilmActorRecord`, PK `(actor_id, film_id)`) and a list-valued member
-  (`List<FilmRecord>`) failing with "not yet supported" — must be **removed** and
-  replaced with *success* cases: the composite member emits a `decodeFilmActorRecord`
-  helper (one typed `record.set(...)` per key column); the list member emits a
-  `decodeFilmRecordList` helper (stream/collect over `decodeFilmRecord`); both route
-  through `createTestNodeIdRecordBean` with no cast. The only surviving rejections
-  are the malformed-directive cases (no `@nodeId`, missing `typeName`, unresolvable
-  NodeType).
-- **Compilation tier (composite + list).** Add fixtures to
-  `graphitron-sakila-example`: a composite-PK member (`FilmActorRecord` /
-  `ID! @nodeId(typeName: "FilmActor")`), a list member (`List<FilmRecord>` /
-  `[ID!] @nodeId(typeName: "Film")`), and the corner that exercises both
-  (`List<FilmActorRecord>` / `[ID!] @nodeId(typeName: "FilmActor")`). Each generated
-  helper compiles against the real jOOQ catalog — the primary guard that the typed
-  `set` assignments and the `List<…>` return type line up.
-- **Execution tier (composite + list).** A mutation decodes a `FilmActor` NodeId
-  into a composite member and reads both `actor_id` and `film_id` back; another
-  decodes a list of `Film` NodeIds into a `List<FilmRecord>` and reads each
-  `film_id` back, round-tripping against PostgreSQL. Proves per-column `set` fills
-  every key column and the list variant materializes one record per element.
+> **Spec correction (In Progress).** The Spec→Ready review flagged that
+> `NodeIdRecordInputBeanPipelineTest` had only a composite-key *rejection* test, not a
+> list-rejection one (the `listShape` gate was unpinned by any pipeline test). So this
+> work *converts* the one composite-rejection test to a success test and *adds* list
+> coverage, rather than converting two rejection tests.
+
+- **Pipeline tier.** `NodeIdRecordInputBeanPipelineTest`: `compositeKeyRecordMember_…`
+  converted from rejection to success (`decodeFilmActorRecord`, two typed `set`s,
+  routed through `createTestNodeIdCompositeRecordBean`); added
+  `listRecordMember_emitsListDecodeHelper_delegatingToScalar` (`decodeFilmRecordList`
+  returns `List<FilmRecord>`, delegates to `decodeFilmRecord`) and
+  `listOfCompositeRecordMember_exercisesBothDimensions` (`List<FilmActorRecord>`). The
+  `decodeHelper_…throwingOnTypeMismatch` body assertion was updated to the
+  `decodeValues("Film", …)` + typed-`set` shape. Only the malformed-directive
+  rejection (`recordMember_withoutNodeId_…`) survives. New fixtures:
+  `TestNodeIdRecordListBean`, `TestNodeIdCompositeRecordListBean`, and the
+  `assignFilmList` / `assignFilmActorList` `TestServiceStub` methods.
+- **Compilation tier.** `graphitron-sakila-example`: `FilmActorRecordAssignmentInput`
+  (composite, `ID! @nodeId(typeName: "FilmActor")`), `FilmRecordListAssignmentInput`
+  (`[ID!] @nodeId(typeName: "Film")`), and the both-dimensions corner
+  `FilmActorRecordListAssignmentInput` (`[ID!] @nodeId(typeName: "FilmActor")`), with
+  matching `FilmReviewService` beans + methods. Each generated helper compiles against
+  the real jOOQ catalog (the typed `set` and `List<…>` return type line up).
+- **Execution tier.** `GraphQLQueryTest`: `assignFilmActorRecord_…` decodes a
+  `FilmActor` NodeId into a composite member and reads both `actor_id` and `film_id`
+  back; `assignFilmRecordList_…` decodes a list of `Film` NodeIds into a
+  `List<FilmRecord>`; `assignFilmActorRecordList_…` covers the list-of-composite
+  corner. All round-trip against PostgreSQL.
 
 ## Affected code
 

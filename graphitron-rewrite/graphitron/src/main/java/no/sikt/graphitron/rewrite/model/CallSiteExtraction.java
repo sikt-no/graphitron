@@ -165,34 +165,58 @@ public sealed interface CallSiteExtraction
 
     /**
      * Decode a base64 NodeId into a jOOQ {@code TableRecord} for a {@code @service} input-bean
-     * member field typed as a generated {@code *Record}. Sibling to {@link NodeIdDecodeKeys}: both
-     * carry the same {@link HelperRef.Decode}, but the downstream projection is the opposite. Where
-     * {@link NodeIdDecodeKeys} <em>decomposes</em> the decoded key tuple into scalar column values
-     * for a predicate / SET body, this arm keeps the tuple whole and <em>rebuilds</em> a
-     * {@link org.jooq.TableRecord} from it via {@code record.fromMap(key.intoMap())}; the by-name
-     * column copy means no encoder-generator change is needed (the decoded {@code RecordN} carries
-     * the same {@code Tables.<T>.<col>} field names as the target record's key columns).
+     * member field typed as a generated {@code *Record}. Sibling to {@link NodeIdDecodeKeys}: same
+     * NodeId wire decode at the root, opposite downstream projection. Where {@link NodeIdDecodeKeys}
+     * <em>decomposes</em> the decoded key tuple into scalar column values for a predicate / SET
+     * body (and so needs the typed {@code RecordN} projection of {@link HelperRef.Decode}), this arm
+     * <em>materialises a {@link org.jooq.TableRecord}</em>: it calls
+     * {@code encoderClass.decodeValues(typeId, nodeId)} for the raw {@code String[]} and copies each
+     * value straight into the target record's key column with a typed
+     * {@code record.set(Tables.<T>.<col>, <col>.getDataType().convert(values[i]))}. No throwaway
+     * {@code RecordN}, no {@code fromMap(intoMap())} name round-trip, and the typed {@code set} is
+     * compile-checked against the real jOOQ catalog (the {@code graphitron-sakila-example} compile
+     * tier catches a column/value type mismatch).
+     *
+     * <p>The leaf therefore carries no {@code decode<Type>} method name (it never calls
+     * {@code decode<Type>}): {@code encoderClass} reaches {@code decodeValues}, {@code typeId} is its
+     * first argument, {@code keyColumns} drives the per-column {@code set} loop, and {@code table}
+     * supplies the record class ({@code new <T>Record()}), the {@code Tables} constants class, and
+     * the table field name needed to write {@code Tables.<T>.<col>}. {@code keyColumns} is kept
+     * separate from {@code table.primaryKeyColumns()} because an {@code @node(keyColumns:)} key may
+     * differ from the PK.
      *
      * <p>Produced only by {@code InputBeanResolver} when an input-bean field's loaded Java type is
      * assignable to {@code org.jooq.Record} and the SDL field carries {@code @nodeId(typeName:)};
      * consumed only by {@code InputBeanInstantiationEmitter}, which emits a per-record-type
-     * {@code decode<RecordType>} helper on the enclosing {@code *Fetchers} class. Any other
-     * exhaustive {@link CallSiteExtraction} switch treats this arm as unreachable-by-construction.
+     * {@code decode<RecordType>Record} helper (plus a {@code …RecordList} variant for list-valued
+     * members) on the enclosing {@code *Fetchers} class. Any other exhaustive
+     * {@link CallSiteExtraction} switch treats this arm as unreachable-by-construction.
      *
-     * <p>{@code recordType} is the fully-qualified generated jOOQ record class (the field's Java
-     * type). {@code nonNull} reflects the SDL field's nullability ({@code ID!} vs {@code ID}); a
-     * type-mismatch decode (the helper returns {@code null}) is always an authored-input error and
-     * throws, while a {@code null}/absent wire value follows graphql-java's non-null enforcement at
-     * the boundary, so a nullable field yields a {@code null} member.
+     * <p>Both arities (single-column and composite key) and both shapes (scalar and list-valued
+     * member) flow through this one leaf: arity is {@code keyColumns.size()} (one typed {@code set}
+     * per column), and list-ness is carried on the enclosing {@link FieldBinding#list()}, not
+     * duplicated here. {@code nonNull} reflects the SDL field's nullability ({@code ID!} vs
+     * {@code ID}); a type-mismatch decode (the helper returns {@code null}) is always an
+     * authored-input error and throws, while a {@code null}/absent wire value follows graphql-java's
+     * non-null enforcement at the boundary, so a nullable field yields a {@code null} member.
      */
-    record NodeIdDecodeRecord(HelperRef.Decode decode, ClassName recordType, boolean nonNull)
+    record NodeIdDecodeRecord(ClassName encoderClass, String typeId,
+                              List<ColumnRef> keyColumns, TableRef table,
+                              boolean nonNull)
             implements CallSiteExtraction {
         public NodeIdDecodeRecord {
-            if (decode == null) {
-                throw new IllegalArgumentException("NodeIdDecodeRecord decode must be non-null");
+            if (encoderClass == null) {
+                throw new IllegalArgumentException("NodeIdDecodeRecord encoderClass must be non-null");
             }
-            if (recordType == null) {
-                throw new IllegalArgumentException("NodeIdDecodeRecord recordType must be non-null");
+            if (typeId == null || typeId.isEmpty()) {
+                throw new IllegalArgumentException("NodeIdDecodeRecord typeId must be non-empty");
+            }
+            if (keyColumns == null || keyColumns.isEmpty()) {
+                throw new IllegalArgumentException("NodeIdDecodeRecord keyColumns must be non-empty");
+            }
+            keyColumns = List.copyOf(keyColumns);
+            if (table == null) {
+                throw new IllegalArgumentException("NodeIdDecodeRecord table must be non-null");
             }
         }
     }

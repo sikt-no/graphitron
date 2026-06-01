@@ -3772,13 +3772,49 @@ class GraphQLQueryTest {
     void assignFilmRecord_decodesNodeIdIntoJooqRecordMember() {
         // R195: a @service input bean whose member is a jOOQ FilmRecord backed by
         // `ID! @nodeId(typeName: "Film")`. The fetcher decodes the wire id into a FilmRecord via
-        // decodeFilmRecord (NodeIdEncoder.decodeFilm + FilmRecord.from(key)) instead of casting the
+        // decodeFilmRecord (NodeIdEncoder.decodeValues + a typed record.set) instead of casting the
         // wire String to FilmRecord; the service reads the populated film_id back. Round-trips the
         // decode-and-materialize end-to-end against PostgreSQL.
         String filmId3 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Film", 3);
         Map<String, Object> data = execute(
             "mutation { assignFilmRecord(in: {film: \"" + filmId3 + "\"}) }");
         assertThat(data).extractingByKey("assignFilmRecord").isEqualTo("film:3");
+    }
+
+    @Test
+    void assignFilmActorRecord_decodesCompositeNodeIdIntoBothKeyColumns() {
+        // R195 composite key: a @service input bean whose member is a composite-PK FilmActorRecord
+        // backed by `ID! @nodeId(typeName: "FilmActor")`. decodeFilmActorRecord materialises both
+        // key columns (actor_id, film_id) with one typed set each; the service reads both back.
+        // Proves the per-column set fills every key column, round-tripping against PostgreSQL.
+        String filmActorId = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("FilmActor", 1, 2);
+        Map<String, Object> data = execute(
+            "mutation { assignFilmActorRecord(in: {filmActor: \"" + filmActorId + "\"}) }");
+        assertThat(data).extractingByKey("assignFilmActorRecord").isEqualTo("filmActor:1:2");
+    }
+
+    @Test
+    void assignFilmRecordList_decodesListOfNodeIdsIntoListOfRecords() {
+        // R195 list member: a @service input bean whose member is List<FilmRecord> backed by
+        // `[ID!] @nodeId(typeName: "Film")`. decodeFilmRecordList materialises one FilmRecord per
+        // wire id; the service reads each film_id back. Round-trips against PostgreSQL.
+        String filmId3 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Film", 3);
+        String filmId5 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Film", 5);
+        Map<String, Object> data = execute(
+            "mutation { assignFilmRecordList(in: {films: [\"" + filmId3 + "\", \"" + filmId5 + "\"]}) }");
+        assertThat(data).extractingByKey("assignFilmRecordList").isEqualTo("films:3,5");
+    }
+
+    @Test
+    void assignFilmActorRecordList_decodesListOfCompositeNodeIds() {
+        // R195 both-dimensions corner: a List<FilmActorRecord> member backed by
+        // `[ID!] @nodeId(typeName: "FilmActor")`. decodeFilmActorRecordList wraps the composite-key
+        // per-element decode; the service reads each element's (actor_id, film_id) back.
+        String fa12 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("FilmActor", 1, 2);
+        String fa24 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("FilmActor", 2, 4);
+        Map<String, Object> data = execute(
+            "mutation { assignFilmActorRecordList(in: {filmActors: [\"" + fa12 + "\", \"" + fa24 + "\"]}) }");
+        assertThat(data).extractingByKey("assignFilmActorRecordList").isEqualTo("filmActors:1:2,2:4");
     }
 
     // ===== R77 Phase B: missing-vs-null on single-row INSERT (containsKey-gated DEFAULT) =====

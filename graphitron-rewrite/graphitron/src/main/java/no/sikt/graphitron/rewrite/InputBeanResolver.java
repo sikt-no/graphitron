@@ -307,7 +307,7 @@ final class InputBeanResolver {
                 Class<?> memberClass = tryLoad(javaElementTypeName);
                 if (memberClass != null && isJooqRecord(memberClass)) {
                     RecordLeaf recordLeaf = buildJooqRecordLeaf(sdlField, sdlFieldName,
-                        javaElementTypeName, listShape, nonNull, paramName, methodName, className);
+                        javaElementTypeName, nonNull, paramName, methodName, className);
                     if (recordLeaf instanceof RecordLeaf.Fail rf) {
                         return new Built.Fail(rf.rejection());
                     }
@@ -344,24 +344,24 @@ final class InputBeanResolver {
 
     /**
      * Builds the {@link CallSiteExtraction.NodeIdDecodeRecord} leaf for a jOOQ-record-typed bean
-     * member, reading {@code @nodeId(typeName:)} off the SDL field and resolving the per-Node
-     * decode helper through {@link BuildContext#resolveNodeIdRecordDecode}. Rejects (rather than
-     * falling to {@link CallSiteExtraction.Direct}) when the member is list-shaped, carries no
-     * {@code @nodeId}, omits {@code typeName:}, targets an unresolvable NodeType, or has a
-     * composite (multi-column) key. The decode-mismatch / single-key constraints are the v1 scope;
-     * composite keys and list members are deferred (R195 "Deferred / out of scope").
+     * member, reading {@code @nodeId(typeName:)} off the SDL field and resolving the decode
+     * materialization data through {@link BuildContext#resolveNodeIdRecordDecode}. Handles
+     * <strong>every</strong> record-member shape: single-column and composite key (arity is the
+     * resolved key-column count, one typed {@code set} per column), scalar and list-valued (the
+     * caller carries list-ness on the enclosing {@link CallSiteExtraction.FieldBinding}, which
+     * drives the scalar-vs-list emitter variant). The leaf is arity- and shape-agnostic.
+     *
+     * <p>Rejects (rather than falling to {@link CallSiteExtraction.Direct}) only for
+     * <em>malformed-directive</em> cases: no {@code @nodeId} on the member, {@code @nodeId} without
+     * {@code typeName:}, or a {@code typeName:} that resolves to no known NodeType. There are no
+     * shape gates: a composite-key or list-valued member is supported, not deferred.
      */
     private RecordLeaf buildJooqRecordLeaf(GraphQLInputObjectField sdlField, String sdlFieldName,
-            String recordTypeName, boolean listShape, boolean nonNull,
+            String recordTypeName, boolean nonNull,
             String paramName, String methodName, String className) {
         String where = "field '" + sdlFieldName + "' (jOOQ record '" + recordTypeName + "') on the"
             + " bean for parameter '" + paramName + "' of method '" + methodName + "' in class '"
             + className + "'";
-        if (listShape) {
-            return new RecordLeaf.Fail(Rejection.structural(where
-                + ": list-of-jOOQ-record members are not yet supported — decode a single"
-                + " @nodeId(typeName:) record member per field"));
-        }
         if (!sdlField.hasAppliedDirective(DIR_NODE_ID)) {
             return new RecordLeaf.Fail(Rejection.structural(where
                 + ": a jOOQ-record-typed input-bean member must carry @nodeId(typeName:) so the"
@@ -379,14 +379,9 @@ final class InputBeanResolver {
             return new RecordLeaf.Fail(Rejection.structural(where + ": " + r.message()));
         }
         var resolved = (BuildContext.NodeIdRecordDecode.Resolved) resolution;
-        if (resolved.keyColumns().size() != 1) {
-            return new RecordLeaf.Fail(Rejection.structural(where
-                + ": composite-key record members (" + resolved.keyColumns().size() + " key columns)"
-                + " are not yet supported — only single-column @nodeId keys decode into a record"
-                + " member in this version"));
-        }
         return new RecordLeaf.Ok(new CallSiteExtraction.NodeIdDecodeRecord(
-            resolved.decode(), ClassName.bestGuess(recordTypeName), nonNull));
+            resolved.encoderClass(), resolved.typeId(), resolved.keyColumns(),
+            resolved.table(), nonNull));
     }
 
     /**
