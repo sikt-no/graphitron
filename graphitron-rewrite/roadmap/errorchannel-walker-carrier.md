@@ -601,10 +601,30 @@ no in-scope payload has a non-null success-projection field or a nested `@servic
 data child, so neither the nullability rejection nor the unsupported-shape `armSwitchValueExpr` guard
 fires on any fixture.
 
-**Deferred to commit 4 (the delete pass):** the now-dead `PayloadClass` emit machinery
-(`declareEarlyPayload*`, `payloadFactoryLambda*`, `dispatchCatchArm`, the `catchArm`/`asyncWrapTail`
-throw-on-`Mapped` guards) and the `ErrorChannel.PayloadClass` arm itself, once any remaining non-flip
-`PayloadClass` users are accounted for.
+**Commit 4 audit ; the full delete pass is blocked, only one orphan removed.** The plan staged
+commit 4 as the deletion of the `PayloadClass` emit + construction machinery "once any remaining
+non-flip `PayloadClass` users are accounted for." The accounting is now done, and the answer is that
+they are not gone:
+
+- `buildMethodBackedWithChannel` (child `@service` and root + child `@tableMethod` variants) still
+  routes through `resolveErrorChannel`, which produces `ErrorChannel.PayloadClass` via
+  `resolvePayloadConstructionShape` + `buildErrorChannelCtorArm`/`buildErrorChannelBeanArm`. It is
+  wired to ~7 live classify call sites. R244 slice 1 explicitly deferred the child-`@service` and
+  `@tableMethod` flips, so these remain live `PayloadClass` users.
+- Consequently the `ErrorChannel.PayloadClass` arm, the construction-shape family
+  (`PayloadConstructionShape`, `ErrorsSlot`, `DefaultedSlot`, `NonBoundSetter`), `dispatchCatchArm`,
+  `payloadFactoryLambda*`, the `catchArm`/`asyncWrapTail` `Mapped`-throws + `PayloadClass` arms, and
+  `ErrorRouter.dispatch` all stay. Deleting them would break the deferred paths.
+
+What commit 3b *did* genuinely orphan, and what was removed here: the `declareEarlyPayload*` cluster
+in `TypeFetcherGenerator` (`declareEarlyPayloadFromErrors`, `declareEarlyPayloadSetters`,
+`declareEarlyPayloadCtor`, `newPayloadFromErrorsCtor`) ; the validator-pre-step early-return payload
+construction, replaced by `ChannelEarlyReturnEmitter` and confirmed to have no remaining caller (main
+or test). Removed; full pipeline green (63 + 367 tests, execution tier included).
+
+The full `PayloadClass` retirement is therefore correctly a follow-up slice that runs *after* the
+child-`@service` and `@tableMethod` flips, not part of R244 slice 1. R244 slice 1 closes with the
+`@service` root flip landed and the `PayloadClass` arm intact for the still-deferred field kinds.
 
 ## Supersedes
 

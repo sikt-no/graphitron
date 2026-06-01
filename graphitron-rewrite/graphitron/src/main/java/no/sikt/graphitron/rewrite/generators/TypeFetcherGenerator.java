@@ -1694,62 +1694,6 @@ public class TypeFetcherGenerator {
     }
 
     /**
-     * Emits the statements that declare a local {@code __earlyPayload} populated from the
-     * validation-violations list. Used by the validator pre-step where the caller subsequently
-     * references {@code __earlyPayload} inside {@code .data(...)}. Dispatches on the channel's
-     * {@link ErrorsSlot} arm: the ctor arm emits a single
-     * {@code <Payload> __earlyPayload = new <Payload>(...)} statement; the setter arm emits a
-     * sequence of {@code __earlyPayload.setX(...)} statements after a no-arg construction.
-     */
-    private static CodeBlock declareEarlyPayloadFromErrors(ErrorChannel.PayloadClass channel, String errorsLocal) {
-        return switch (channel.errorsSlot()) {
-            case no.sikt.graphitron.rewrite.model.ErrorsSlot.CtorParameterIndex cpi ->
-                declareEarlyPayloadCtor(channel, cpi.index(), errorsLocal);
-            case no.sikt.graphitron.rewrite.model.ErrorsSlot.SetterMethod sm ->
-                declareEarlyPayloadSetters(channel, sm, errorsLocal);
-        };
-    }
-
-    private static CodeBlock declareEarlyPayloadSetters(
-            ErrorChannel.PayloadClass channel,
-            no.sikt.graphitron.rewrite.model.ErrorsSlot.SetterMethod sm,
-            String errorsLocal) {
-        var b = CodeBlock.builder();
-        b.add("$T __earlyPayload = new $T();\n", channel.payloadClass(), channel.payloadClass());
-        b.add("__earlyPayload.$L($L);\n", sm.boundSetter().getName(), errorsLocal);
-        for (var nbs : sm.nonBoundSetters()) {
-            b.add("__earlyPayload.$L($L);\n", nbs.setter().getName(), nbs.defaultLiteral());
-        }
-        return b.build();
-    }
-
-    private static CodeBlock declareEarlyPayloadCtor(ErrorChannel.PayloadClass channel, int errorsCtorIndex,
-                                                      String errorsLocal) {
-        return CodeBlock.builder()
-            .add("$T __earlyPayload = ", channel.payloadClass())
-            .add(newPayloadFromErrorsCtor(channel, errorsCtorIndex, errorsLocal))
-            .add(";\n")
-            .build();
-    }
-
-    private static CodeBlock newPayloadFromErrorsCtor(ErrorChannel.PayloadClass channel, int errorsCtorIndex,
-                                                      String errorsLocal) {
-        var args = CodeBlock.builder();
-        int slotCount = 1 + channel.defaultedSlots().size();
-        var defaultsByIndex = channel.defaultedSlots().stream()
-            .collect(java.util.stream.Collectors.toMap(s -> s.index(), s -> s.defaultLiteral()));
-        for (int i = 0; i < slotCount; i++) {
-            if (i > 0) args.add(", ");
-            if (i == errorsCtorIndex) {
-                args.add(errorsLocal);
-            } else {
-                args.add(defaultsByIndex.get(i));
-            }
-        }
-        return CodeBlock.of("new $T($L)", channel.payloadClass(), args.build());
-    }
-
-    /**
      * Sanitises a GraphQL argument name into a Java identifier suffix for use as a local
      * variable name in the validator pre-step. Replaces every non-{@code [A-Za-z0-9_]}
      * character with {@code _}; GraphQL arg names are already restricted to ASCII identifier
