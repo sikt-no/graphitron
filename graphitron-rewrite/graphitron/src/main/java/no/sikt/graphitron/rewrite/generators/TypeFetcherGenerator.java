@@ -9,6 +9,7 @@ import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.javapoet.WildcardTypeName;
 import no.sikt.graphitron.rewrite.generators.schema.ConstraintViolationsClassGenerator;
 import no.sikt.graphitron.rewrite.generators.schema.ErrorMappingsClassGenerator;
+import no.sikt.graphitron.rewrite.generators.schema.OutcomeClassGenerator;
 import no.sikt.graphitron.rewrite.generators.util.ConnectionHelperClassGenerator;
 import no.sikt.graphitron.rewrite.generators.util.ConnectionResultClassGenerator;
 import no.sikt.graphitron.rewrite.generators.util.OrderByResultClassGenerator;
@@ -1370,24 +1371,25 @@ public class TypeFetcherGenerator {
                                                         String parentTypeName, TypeName valueType,
                                                         Optional<ErrorChannel> errorChannel,
                                                         String outputPackage) {
+        // R244: an @service outcome field (Mapped channel) hands graphql-java a typed Outcome<X>
+        // source. The DataFetcherResult payload type becomes Outcome<X>; the inner method result
+        // local stays X (the service's return), wrapped in Success on the happy path and replaced by
+        // ErrorList on the mapped-error path. A channel-less @service field (no errors field) keeps
+        // the bare X payload and the redact-only catch arm.
+        boolean wrap = errorChannel.isPresent() && errorChannel.get() instanceof ErrorChannel.Mapped;
+        TypeName payloadType = wrap ? outcomeOf(valueType, outputPackage) : valueType;
+
         var builder = MethodSpec.methodBuilder(fieldName)
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
-            .returns(syncResultType(valueType))
+            .returns(syncResultType(payloadType))
             .addParameter(ENV, "env");
 
         // Pre-execution Jakarta validation. Emitted ahead of the try block so a Validator-side
-        // throw still propagates to the wrapper's catch arm uniformly with the body's
-        // exceptions; the body is never invoked when violations exist. Only the
-        // PayloadClass arm supports the validator pre-step today: it materialises an early
-        // payload class populated from the violations list, then short-circuits. The
-        // LocalContext arm has no payload class to construct; if a LocalContext channel ever
-        // declares a ValidationHandler the producer must wire a sibling pre-step that emits
-        // {@code data(null).localContext(violations)} instead. The pre-step still reads
-        // MethodRef.params() for SDL arg names; migrating it off the legacy slot is a later step.
-        if (errorChannel.isPresent()
-                && errorChannel.get() instanceof ErrorChannel.PayloadClass payloadChannel
-                && hasValidationHandler(payloadChannel)) {
-            builder.addCode(validatorPreStep(ctx, carrier, fieldName, payloadChannel, valueType, outputPackage));
+        // throw still propagates to the wrapper's catch arm uniformly with the body's exceptions;
+        // the body is never invoked when violations exist. The early return wraps the violation
+        // list in Outcome.ErrorList (channel-agnostic under the wrapper).
+        if (wrap && hasValidationHandler(errorChannel.get())) {
+            builder.addCode(validatorPreStep(ctx, carrier, fieldName, payloadType, outputPackage));
         }
 
         builder.beginControlFlow("try");
@@ -1397,12 +1399,34 @@ public class TypeFetcherGenerator {
         ctx.graphitronContextCall();
         ServiceMethodCallEmitter.emit(carrier, outputPackage, valueType)
             .forEach(builder::addStatement);
-        builder.addCode(returnSyncSuccess(valueType, "result"));
+        if (wrap) {
+            builder.addCode(returnSyncSuccessWrapped(payloadType, outputPackage, "result"));
+        } else {
+            builder.addCode(returnSyncSuccess(valueType, "result"));
+        }
         builder.nextControlFlow("catch ($T e)", Exception.class);
-        builder.addCode(catchArm(outputPackage, errorChannel));
+        if (wrap) {
+            builder.addCode(ChannelCatchArmEmitter.emit(errorChannel, payloadType, outputPackage, null));
+        } else {
+            builder.addCode(catchArm(outputPackage, errorChannel));
+        }
         builder.endControlFlow();
 
         return builder.build();
+    }
+
+    /** {@code Outcome<X>} in the run's schema-support package (R244), boxing primitive {@code X}. */
+    private static TypeName outcomeOf(TypeName valueType, String outputPackage) {
+        return ParameterizedTypeName.get(
+            ClassName.get(outputPackage + ".schema", OutcomeClassGenerator.CLASS_NAME), boxed(valueType));
+    }
+
+    /** Success-path return wrapping the method result in {@code Outcome.Success} (R244). */
+    private static CodeBlock returnSyncSuccessWrapped(TypeName outcomeType, String outputPackage, String resultLocal) {
+        var success = ClassName.get(outputPackage + ".schema", OutcomeClassGenerator.CLASS_NAME)
+            .nestedClass(OutcomeClassGenerator.SUCCESS_CLASS);
+        return CodeBlock.of("return $T.<$T>newResult().data(new $T<>($L)).build();\n",
+            DATA_FETCHER_RESULT, outcomeType, success, resultLocal);
     }
 
     /**
@@ -1442,7 +1466,7 @@ public class TypeFetcherGenerator {
     }
 
     /** Whether any flattened handler on the channel is a {@code ValidationHandler}. */
-    private static boolean hasValidationHandler(ErrorChannel.PayloadClass channel) {
+    private static boolean hasValidationHandler(ErrorChannel channel) {
         return channel.mappedErrorTypes().stream()
             .flatMap(et -> et.handlers().stream())
             .anyMatch(h -> h instanceof no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.ValidationHandler);
@@ -1474,12 +1498,12 @@ public class TypeFetcherGenerator {
      */
     private static CodeBlock validatorPreStep(TypeFetcherEmissionContext ctx, ServiceMethodCall carrier,
                                               String fieldName,
-                                              ErrorChannel.PayloadClass channel,
-                                              TypeName valueType, String outputPackage) {
+                                              TypeName outcomeType, String outputPackage) {
         var validator = ClassName.get("jakarta.validation", "Validator");
         var constraintViolation = ClassName.get("jakarta.validation", "ConstraintViolation");
-        var graphQLError = ClassName.get("graphql", "GraphQLError");
-        var listOfErrors = ParameterizedTypeName.get(LIST, graphQLError);
+        // List<Object> so the violations feed straight into Outcome.ErrorList(List<Object>) on the
+        // early return; each element is a GraphQLError from ConstraintViolations.toGraphQLError.
+        var listOfErrors = ParameterizedTypeName.get(LIST, ClassName.get(Object.class));
         var arrayList = ClassName.get("java.util", "ArrayList");
         var constraintViolations = ClassName.get(outputPackage + ".schema",
             ConstraintViolationsClassGenerator.CLASS_NAME);
@@ -1516,10 +1540,7 @@ public class TypeFetcherGenerator {
             b.endControlFlow();
         }
         b.beginControlFlow("if (!__violations.isEmpty())");
-        b.add(declareEarlyPayloadFromErrors(channel, "__violations"));
-        b.add("return $T.<$T>newResult()\n", DATA_FETCHER_RESULT, boxed(valueType));
-        b.add("    .data(__earlyPayload)\n");
-        b.addStatement("    .build()");
+        b.add(ChannelEarlyReturnEmitter.emit(outcomeType, "__violations", outputPackage));
         b.endControlFlow();
         return b.build();
     }

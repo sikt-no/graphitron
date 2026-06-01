@@ -40,6 +40,8 @@ import no.sikt.graphitron.rewrite.model.AccessorRef;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.DmlKind;
 import no.sikt.graphitron.rewrite.model.ErrorChannel;
+import no.sikt.graphitron.rewrite.model.ErrorChannelWalkerError;
+import no.sikt.graphitron.rewrite.model.OutcomeType;
 import no.sikt.graphitron.rewrite.model.DmlReturnExpression;
 import no.sikt.graphitron.rewrite.model.InputColumnBinding;
 import no.sikt.graphitron.rewrite.model.InputColumnBindingGroup;
@@ -1881,6 +1883,28 @@ class FieldBuilder {
         return new ErrorsField(parentTypeName, name, location, errorTypes, transport);
     }
 
+    /**
+     * R244: whether {@code payloadTypeName} is the (unwrapped) return type of a root {@code @service}
+     * field on Query or Mutation. Read directly off the assembled schema so it is independent of
+     * field-classification order; the payload-side {@code WrapperArm} transport and the producing
+     * field's {@link ErrorChannel.Mapped} channel agree because both derive from this same fact.
+     */
+    private boolean isRootServiceProducedPayload(String payloadTypeName) {
+        return hasServiceFieldReturning(ctx.schema.getQueryType(), payloadTypeName)
+            || hasServiceFieldReturning(ctx.schema.getMutationType(), payloadTypeName);
+    }
+
+    private static boolean hasServiceFieldReturning(GraphQLObjectType root, String payloadTypeName) {
+        if (root == null) return false;
+        for (var f : root.getFieldDefinitions()) {
+            if (f.hasAppliedDirective(DIR_SERVICE)
+                && payloadTypeName.equals(((GraphQLNamedType) GraphQLTypeUtil.unwrapAll(f.getType())).getName())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private ChildField.Transport transportForParent(GraphQLFieldDefinition fieldDef,
             String errorsFieldName, String parentTypeName, Class<?> parentBackingClass) {
         // Active-channel gate: a parent qualifies as carrying an error channel iff a producer-
@@ -1888,6 +1912,17 @@ class FieldBuilder {
         // @record types reachable as service / query returns whose errors-shaped field is a
         // developer-owned slot, or orphan carrier-shaped types unreachable through any producer)
         // fall back to PayloadAccessor.
+        // R244: an @service-produced outcome type rides the typed Outcome wrapper, so its errors
+        // field reads ErrorList.errors() off the Outcome source (WrapperArm), not a payload accessor
+        // or localContext. This is the payload-side counterpart of resolveServiceOutcomeChannel's
+        // ErrorChannel.Mapped on the producing @service field; the two flip together. The signal is
+        // "this payload type is returned by a root @service field" (read straight off the schema,
+        // order-independent), not the ServiceEmitted producer binding, which only grounds the
+        // @table-data-field carrier shape and is absent for the @record scalar payloads in scope.
+        // DML payloads keep their LocalContext/PayloadAccessor selection (out of scope this slice).
+        if (isRootServiceProducedPayload(parentTypeName)) {
+            return new ChildField.Transport.WrapperArm();
+        }
         boolean activeChannel = dmlEmittedBinding(parentTypeName).isPresent()
             || serviceEmittedBinding(parentTypeName).isPresent();
         if (!activeChannel) {
@@ -2005,6 +2040,79 @@ class FieldBuilder {
     }
 
     private static final ErrorChannelResult NO_CHANNEL = new ErrorChannelResult.NoChannel();
+
+    /**
+     * R244 result of resolving an {@code @service} outcome field's channel onto the typed
+     * {@code Outcome} wrapper transport. Three terminal states mirroring {@link ErrorChannelResult},
+     * except the channel arm is the new {@link ErrorChannel.Mapped} and the reject arm carries the
+     * <em>typed</em> {@link ErrorChannelWalkerError} (preserved into {@code UnclassifiedField} so the
+     * LSP projector keeps its wire {@code code}, the way {@code buildServiceField} already preserves
+     * {@code ServiceMethodCallError}).
+     */
+    private sealed interface ServiceOutcomeResult {
+        record NoChannel() implements ServiceOutcomeResult {}
+        record Channel(ErrorChannel.Mapped channel) implements ServiceOutcomeResult {}
+        record Reject(Rejection.AuthorError rejection) implements ServiceOutcomeResult {}
+    }
+
+    /**
+     * R244: resolves the {@link ErrorChannel.Mapped} carrier for an {@code @service} outcome field,
+     * replacing the {@code PayloadClass} construction path for these fields. Finds the payload's
+     * single errors field (reusing {@link BuildContext#detectErrorsFieldShape}), enforces the
+     * nullable-success-projection invariant
+     * ({@link ErrorChannelWalkerError.NonNullableSuccessProjectionField}), then runs the
+     * {@link no.sikt.graphitron.rewrite.walker.ErrorChannelWalker} over the classified
+     * {@link OutcomeType} to run the channel-level rules + accessor coverage and stamp the
+     * mappings-constant name. A payload with no errors field is not an outcome type ({@code NoChannel}).
+     */
+    private ServiceOutcomeResult resolveServiceOutcomeChannel(ReturnTypeRef returnType) {
+        if (!(returnType instanceof ReturnTypeRef.ResultReturnType result)) {
+            return new ServiceOutcomeResult.NoChannel();
+        }
+        if (!(ctx.schema.getType(result.returnTypeName()) instanceof GraphQLObjectType payloadObj)) {
+            return new ServiceOutcomeResult.NoChannel();
+        }
+        List<ErrorType> mappedErrorTypes = null;
+        GraphQLFieldDefinition errorsFieldDef = null;
+        for (var f : payloadObj.getFieldDefinitions()) {
+            var detected = ctx.detectErrorsFieldShape(f);
+            if (detected != null) {
+                mappedErrorTypes = detected;
+                errorsFieldDef = f;
+                break;
+            }
+        }
+        if (mappedErrorTypes == null) {
+            return new ServiceOutcomeResult.NoChannel();
+        }
+        // Nullable-success-projection invariant: a non-null data field resolves null on the
+        // ErrorList arm and bubbles NonNullableFieldWasNullError up, dropping the sibling errors
+        // field. Enforced here (classify time) where the SDL nullability is visible.
+        for (var f : payloadObj.getFieldDefinitions()) {
+            if (f == errorsFieldDef) continue;
+            if (graphql.schema.GraphQLTypeUtil.isNonNull(f.getType())) {
+                return new ServiceOutcomeResult.Reject(
+                    new ErrorChannelWalkerError.NonNullableSuccessProjectionField(
+                        result.returnTypeName(), f.getName()));
+            }
+        }
+        if (!(ctx.types.get(result.returnTypeName()) instanceof GraphitronType.ResultType backing)) {
+            return new ServiceOutcomeResult.NoChannel();
+        }
+        var errorsLocation = errorsFieldDef.getDefinition() != null
+            ? errorsFieldDef.getDefinition().getSourceLocation() : null;
+        var errorsField = new ChildField.ErrorsField(result.returnTypeName(), errorsFieldDef.getName(),
+            errorsLocation, mappedErrorTypes, new ChildField.Transport.WrapperArm());
+        var outcomeType = new OutcomeType(backing, errorsField, List.of());
+        var walkerResult = new no.sikt.graphitron.rewrite.walker.ErrorChannelWalker()
+            .walk(outcomeType, ctx.schema, ctx.codegenLoader(), this::mapGraphQLTypeToReflectType);
+        return switch (walkerResult) {
+            case no.sikt.graphitron.rewrite.model.WalkerResult.Ok<ErrorChannel.Mapped> ok ->
+                new ServiceOutcomeResult.Channel(ok.carrier());
+            case no.sikt.graphitron.rewrite.model.WalkerResult.Err<ErrorChannel.Mapped> err ->
+                new ServiceOutcomeResult.Reject(err.errors().getFirst());
+        };
+    }
 
     /**
      * Resolves the carrier-side {@link ErrorChannel} for a fetcher-emitting field. Walks the
@@ -2505,12 +2613,15 @@ class FieldBuilder {
             String parentTypeName, String fieldName,
             SourceLocation location, GraphQLFieldDefinition fieldDef,
             java.util.function.BiFunction<Optional<ErrorChannel>, no.sikt.graphitron.rewrite.model.ServiceMethodCall, GraphitronField> builder) {
+        // R244: @service outcome fields classify to ErrorChannel.Mapped via the ErrorChannelWalker
+        // (the Outcome wrapper transport) rather than PayloadClass construction. NoChannel when the
+        // payload carries no errors field.
         Optional<ErrorChannel> channel;
-        switch (resolveErrorChannel(returnType)) {
-            case ErrorChannelResult.NoChannel ignored -> channel = Optional.empty();
-            case ErrorChannelResult.Channel c -> channel = Optional.of(c.channel());
-            case ErrorChannelResult.Reject r -> {
-                return new UnclassifiedField(parentTypeName, fieldName, location, fieldDef, Rejection.structural(r.reason()));
+        switch (resolveServiceOutcomeChannel(returnType)) {
+            case ServiceOutcomeResult.NoChannel ignored -> channel = Optional.empty();
+            case ServiceOutcomeResult.Channel c -> channel = Optional.of(c.channel());
+            case ServiceOutcomeResult.Reject r -> {
+                return new UnclassifiedField(parentTypeName, fieldName, location, fieldDef, r.rejection());
             }
         }
         String exceptionsReason = checkDeclaredCheckedExceptions(method, channel);

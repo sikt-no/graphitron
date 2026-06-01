@@ -266,17 +266,19 @@ class FetcherPipelineTest {
             """;
 
     @Test
-    void serviceField_withResolvedErrorChannel_catchArmCallsErrorRouterDispatch() {
-        // R12 §3 end-to-end: classifier resolves the ErrorChannel for a @service field whose
-        // payload exposes an errors slot, then the emitter wires the catch arm through
-        // ErrorRouter.dispatch with the channel's mapping-table constant. Counterpart to the
-        // unit test queryServiceRecordField_withErrorChannel_* but going through the full
-        // SDL → classifier → emitter pipeline.
+    void serviceField_withResolvedErrorChannel_catchArmEmitsMappedErrorList() {
+        // R244 end-to-end: classifier resolves ErrorChannel.Mapped for a @service field whose
+        // payload carries an errors field, then the emitter wires the Outcome wrapper: the success
+        // path wraps the result in Outcome.Success, and the catch arm walks the channel's Mapping
+        // table returning Outcome.ErrorList on the first matched cause, falling through to
+        // ErrorRouter.redact on no match. No ErrorRouter.dispatch / payload-factory.
         var sak = method(findSpec("QueryFetchers", SAK_DISPATCH_SDL), "sak");
         var body = sak.code().toString();
-        assertThat(body).contains("ErrorRouter.dispatch");
         assertThat(body).contains("ErrorMappings.SAK_PAYLOAD");
-        assertThat(body).doesNotContain("ErrorRouter.redact");
+        assertThat(body).contains("ErrorList<>(");
+        assertThat(body).contains("Outcome.Success<>(result)");
+        assertThat(body).contains("ErrorRouter.redact(e, env)");
+        assertThat(body).doesNotContain("ErrorRouter.dispatch");
     }
 
     @Test
@@ -297,72 +299,16 @@ class FetcherPipelineTest {
     }
 
     // ===== R154 §2: mutable-bean payload shape admission =====
-
-    /** Same SDL as SAK_DISPATCH_SDL but referencing the setter-shape SakPayload sibling class.
-     *  Service method returns the setter-shape type directly (legacy passthrough), so only the
-     *  ErrorChannel resolves against the setter-shape payload class. */
-    private static final String SETTER_SHAPE_SAK_SDL = """
-            type ValidationErr @error(handlers: [{handler: VALIDATION}]) {
-                path: [String!]!
-                message: String!
-            }
-            type DbErr @error(handlers: [{handler: DATABASE, sqlState: "23503"}]) {
-                path: [String!]!
-                message: String!
-            }
-            union SakError = ValidationErr | DbErr
-            type SakPayload @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.SetterShapeSakPayload"}) {
-                data: String
-                errors: [SakError]
-            }
-            type Query {
-                sak: SakPayload
-                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "runSetterSak"})
-            }
-            """;
-
-    @Test
-    void serviceMutation_setterShapePayload_emitsSetterFactory() {
-        // Mutable-bean payload: classifier resolves ErrorsSlot.SetterMethod; emitter prints the
-        // multi-statement factory body (var p = new Payload(); p.setX(...); p.setErrors(errors);
-        // ...; return p;) inside the catch-arm payload-factory lambda.
-        var sak = method(findSpec("QueryFetchers", SETTER_SHAPE_SAK_SDL), "sak");
-        var body = sak.code().toString();
-        assertThat(body).contains("ErrorRouter.dispatch");
-        assertThat(body).contains("errors -> {");
-        assertThat(body).contains("new no.sikt.graphitron.codereferences.dummyreferences.SetterShapeSakPayload()");
-        assertThat(body).contains(".setErrors(errors)");
-        assertThat(body).contains(".setData(null)");
-        assertThat(body).contains("return p;");
-    }
-
-    @Test
-    void serviceMutation_allFieldsCtorPayload_emitsCtorFactory_unchanged() {
-        // Regression cover: the all-fields-ctor path still emits the positional new Payload(...)
-        // expression, with no setter calls.
-        var sak = method(findSpec("QueryFetchers", SAK_DISPATCH_SDL), "sak");
-        var body = sak.code().toString();
-        assertThat(body).contains("ErrorRouter.dispatch");
-        assertThat(body).contains("errors -> new no.sikt.graphitron.codereferences.dummyreferences.SakPayload(");
-        assertThat(body).doesNotContain(".setErrors(errors)");
-    }
-
-    @Test
-    void serviceMutation_bothShapesPresent_prefersCtorFactory() {
-        // Canonical-over-bridge precedence: when a payload exposes both an all-fields ctor and
-        // a no-arg ctor + setters, the classifier picks AllFieldsCtor (predicate 1 short-
-        // circuits the walk). Emit reflects the positional ctor form.
-        var sdl = SETTER_SHAPE_SAK_SDL
-            .replace(
-                "no.sikt.graphitron.codereferences.dummyreferences.SetterShapeSakPayload",
-                "no.sikt.graphitron.codereferences.dummyreferences.BothShapesSakPayload")
-            .replace("runSetterSak", "runBothShapesSak");
-        var sak = method(findSpec("QueryFetchers", sdl), "sak");
-        var body = sak.code().toString();
-        assertThat(body).contains("ErrorRouter.dispatch");
-        assertThat(body).contains("errors -> new no.sikt.graphitron.codereferences.dummyreferences.BothShapesSakPayload(");
-        assertThat(body).doesNotContain(".setErrors(errors)");
-    }
+    //
+    // R244: serviceMutation_setterShapePayload_emitsSetterFactory,
+    // serviceMutation_allFieldsCtorPayload_emitsCtorFactory_unchanged, and
+    // serviceMutation_bothShapesPresent_prefersCtorFactory deleted. They pinned the catch-arm
+    // payload-factory lambda (ctor / setter construction shapes), which @service fields no longer
+    // emit, they now wrap success in Outcome.Success and the error path in Outcome.ErrorList, with
+    // no developer payload constructed. The Outcome emission is pinned by
+    // serviceField_withResolvedErrorChannel_catchArmEmitsMappedErrorList above, the
+    // ChannelCatchArmEmitter unit test, and the execution-tier round-trip; the construction-shape
+    // admission itself stays covered by PayloadConstructionShapeTest and retires in commit 4.
 
     @Test
     void dmlDeleteField_tableReturn_keepsExistingRawRowEmissionAndRedacts() {

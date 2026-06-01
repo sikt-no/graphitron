@@ -63,8 +63,9 @@ class ErrorChannelClassificationTest {
 
         var f = (MutationField.MutationServiceRecordField) schema.field("Mutation", "behandleSak");
         assertThat(f.errorChannel()).isPresent();
-        var ch = (no.sikt.graphitron.rewrite.model.ErrorChannel.PayloadClass) f.errorChannel().get();
-        assertThat(ch.payloadClass()).isEqualTo(ClassName.bestGuess(SAK_PAYLOAD_FQN));
+        // R244: @service outcome fields classify to ErrorChannel.Mapped (the Outcome wrapper
+        // transport), not PayloadClass; no developer payload class is constructed on the error path.
+        var ch = (no.sikt.graphitron.rewrite.model.ErrorChannel.Mapped) f.errorChannel().get();
         assertThat(ch.mappedErrorTypes())
             .extracting(et -> et.name())
             .containsExactly("ValidationErr", "DbErr");
@@ -84,26 +85,10 @@ class ErrorChannelClassificationTest {
             .containsExactly("ValidationErr", "DbErr");
     }
 
-    @Test
-    void payloadConstructor_recordsErrorsSlotAndDefaultLiterals() {
-        // Verifies the slot resolution: errorsSlot points at the errors-typed parameter (Phase 1
-        // produces ErrorsSlot.CtorParameterIndex); defaultedSlots covers every other slot with
-        // its language-default literal. SakPayload is (String data, List<?> errors), so the
-        // errors slot's ctor index is 1 and defaultedSlots holds one entry for "data" → "null".
-        var schema = build(UNION_ERROR_PAYLOAD_SDL + """
-            type Query { sak: SakPayload %s }
-            """.formatted(SERVICE_DECL));
-
-        var f = (QueryField.QueryServiceRecordField) schema.field("Query", "sak");
-        var ch = (no.sikt.graphitron.rewrite.model.ErrorChannel.PayloadClass) f.errorChannel().orElseThrow();
-        assertThat(ch.errorsSlot())
-            .isEqualTo(new no.sikt.graphitron.rewrite.model.ErrorsSlot.CtorParameterIndex(1));
-        assertThat(ch.defaultedSlots()).hasSize(1);
-        var dataSlot = ch.defaultedSlots().get(0);
-        assertThat(dataSlot.index()).isEqualTo(0);
-        assertThat(dataSlot.name()).isEqualTo("data");
-        assertThat(dataSlot.defaultLiteral()).isEqualTo("null");
-    }
+    // R244: payloadConstructor_recordsErrorsSlotAndDefaultLiterals deleted. The ctor errors-slot /
+    // defaulted-slot resolution it pinned is PayloadClass-construction internals, which @service
+    // fields no longer use (they classify to ErrorChannel.Mapped). The construction-shape machinery
+    // is exercised directly by PayloadConstructionShapeTest and retires in slice-1 commit 4.
 
     @Test
     void payloadWithoutErrorsField_producesNoChannel() {
@@ -458,42 +443,10 @@ class ErrorChannelClassificationTest {
         assertThat(f.errorChannel()).isEqualTo(Optional.<ErrorChannel>empty());
     }
 
-    @Test
-    void payloadWithMultipleConstructors_canonicalCtorIsSelectedByArity() {
-        // MultiCtorSakPayload declares two constructors: a no-arg one (defaulting fields) and the
-        // all-fields (String, List<?>) constructor that mirrors SakPayload's shape. The carrier
-        // classifier must pick the all-fields constructor by parameter count matching the SDL
-        // field count (2) rather than rejecting on the presence of multiple constructors.
-        String multiCtorPayloadFqn =
-            "no.sikt.graphitron.codereferences.dummyreferences.MultiCtorSakPayload";
-        String multiCtorServiceDecl =
-            "@service(service: {className: \"no.sikt.graphitron.rewrite.TestServiceStub\","
-                + " method: \"runMultiCtorSak\"})";
-        var schema = build("""
-            type ValidationErr @error(handlers: [{handler: VALIDATION}]) {
-                path: [String!]!
-                message: String!
-            }
-            type DbErr @error(handlers: [{handler: DATABASE, sqlState: "23503"}]) {
-                path: [String!]!
-                message: String!
-            }
-            union SakError = ValidationErr | DbErr
-            type SakPayload @record(record: {className: "%s"}) {
-                data: String
-                errors: [SakError]
-            }
-            type Query { sak: SakPayload %s }
-            """.formatted(multiCtorPayloadFqn, multiCtorServiceDecl));
-
-        var f = (QueryField.QueryServiceRecordField) schema.field("Query", "sak");
-        assertThat(f.errorChannel()).isPresent();
-        var ch = (no.sikt.graphitron.rewrite.model.ErrorChannel.PayloadClass) f.errorChannel().get();
-        assertThat(ch.errorsSlot())
-            .isEqualTo(new no.sikt.graphitron.rewrite.model.ErrorsSlot.CtorParameterIndex(1));
-        assertThat(ch.defaultedSlots()).hasSize(1);
-        assertThat(ch.defaultedSlots().get(0).name()).isEqualTo("data");
-    }
+    // R244: payloadWithMultipleConstructors_canonicalCtorIsSelectedByArity deleted. Canonical-ctor
+    // selection by arity is PayloadClass-construction internals that @service fields no longer reach
+    // (they classify to ErrorChannel.Mapped). Covered directly by PayloadConstructionShapeTest;
+    // retires in slice-1 commit 4.
 
     @Test
     void extraField_missingAccessorOnGenericSourceClass_rejectsCarrier() {
