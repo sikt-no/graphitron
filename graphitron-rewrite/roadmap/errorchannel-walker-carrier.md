@@ -5,7 +5,7 @@ status: In Progress
 bucket: structural
 depends-on: []
 created: 2026-05-26
-last-updated: 2026-05-31
+last-updated: 2026-06-01
 ---
 
 # Error-channel slice 1: Outcome transport, retire @error payload-class construction
@@ -566,6 +566,45 @@ threading (commit 3a) stay, since they are mechanism-independent. The review als
 already landed: the `OutcomeClassGenerator` javadoc no longer claims a nullability pin that is not yet
 wired, and `FieldBuilder`'s rule-7/8 checks now delegate to `walker/internal/ChannelRuleChecks` so the
 two pure rule bodies are not duplicated across the additive window.
+
+**Commit 3b (the atomic `@service` flip) ; landed, all tiers green.** Root `@service` outcome fields
+now classify to `ErrorChannel.Mapped` and hand graphql-java a typed `Outcome<X>` source:
+
+- `FieldBuilder.resolveServiceOutcomeChannel` builds an `OutcomeType` and runs the
+  `ErrorChannelWalker` to produce `Mapped` (or a typed `ErrorChannelWalkerError` rejection, preserved
+  into `UnclassifiedField`); `buildServiceField` routes the four root `@service` variants through it.
+  The nullable-success-projection invariant is enforced here at classify time. `@tableMethod` and
+  child `@service` are untouched (they classify to `NoChannel`/`PayloadClass` as before).
+- `FieldBuilder.transportForParent` flips the errors field of a root-`@service`-produced payload to
+  `Transport.WrapperArm`. The signal is "the payload is the unwrapped return type of a root
+  `@service` field" read straight off the schema (`isRootServiceProducedPayload`), <em>not</em> the
+  `ServiceEmitted` producer binding: that binding only grounds the `@table`-data-field carrier shape
+  and is absent for the `@record` scalar payloads in scope (this was the bug that left the first flip
+  attempt's child fetchers un-switched).
+- `TypeFetcherGenerator.buildServiceFetcherCommon` returns `Outcome<X>` for a `Mapped` field: the
+  success path wraps the result in `Outcome.Success`, the catch arm routes through
+  `ChannelCatchArmEmitter` (the mapping-walk returning `Outcome.ErrorList`, redact fallthrough), and
+  the Jakarta validator pre-step's early return goes through `ChannelEarlyReturnEmitter`. A
+  channel-less `@service` field keeps the bare `X` payload and the redact-only catch arm.
+- `FetcherEmitter` emits the explicit inline arm-switch read for the in-scope shapes (accessor read
+  against `success.value()`, constructor/nesting passthrough), threaded per type by
+  `FetcherRegistrationsEmitter.hasWrapperArmErrors`.
+
+The execution-tier round-trip (`GraphQLQueryTest` `filmLookup` / `submitFilmReview` /
+`submitSetterShapeFilmReview`, success + mapped-error + happy-path arms) passes unchanged, which is
+the load-bearing proof the wire shape is preserved. Pipeline/unit tests that pinned the retired
+`@service` `PayloadClass` behaviour were updated: `ErrorChannelClassificationTest`'s positive case
+asserts `Mapped` (its two construction-shape cases deleted), `FetcherPipelineTest`'s catch-arm case
+asserts the `Outcome` emission (its three payload-factory cases deleted), and
+`TypeFetcherGeneratorTest`'s validator-pre-step case carries a `Mapped` channel. Inventory confirmed
+no in-scope payload has a non-null success-projection field or a nested `@service`/`@tableMethod`
+data child, so neither the nullability rejection nor the unsupported-shape `armSwitchValueExpr` guard
+fires on any fixture.
+
+**Deferred to commit 4 (the delete pass):** the now-dead `PayloadClass` emit machinery
+(`declareEarlyPayload*`, `payloadFactoryLambda*`, `dispatchCatchArm`, the `catchArm`/`asyncWrapTail`
+throw-on-`Mapped` guards) and the `ErrorChannel.PayloadClass` arm itself, once any remaining non-flip
+`PayloadClass` users are accounted for.
 
 ## Supersedes
 

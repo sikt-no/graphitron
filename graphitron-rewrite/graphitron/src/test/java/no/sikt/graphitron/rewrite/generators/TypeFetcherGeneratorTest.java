@@ -1025,13 +1025,9 @@ class TypeFetcherGeneratorTest {
             "SakValidationErr",
             null,
             List.of(new no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.ValidationHandler(Optional.empty())));
-        var channel = new ErrorChannel.PayloadClass(
-            List.of(validationErr),
-            ClassName.bestGuess("com.example.SakPayload"),
-            new no.sikt.graphitron.rewrite.model.ErrorsSlot.CtorParameterIndex(1),
-            List.of(new no.sikt.graphitron.rewrite.model.DefaultedSlot(
-                0, "data", ClassName.get("java.lang", "String"), "null")),
-            "SAK_PAYLOAD");
+        // R244: @service outcome fields carry ErrorChannel.Mapped; the validator pre-step is gated
+        // on Mapped and emits the Outcome.ErrorList early return.
+        var channel = new ErrorChannel.Mapped(List.of(validationErr), "SAK_PAYLOAD");
         var field = new MutationField.MutationServiceRecordField("Mutation", "createSak", null,
             new ReturnTypeRef.ScalarReturnType("SakPayload", single()),             TestFixtures.stubServiceCall(method),
             Optional.of(channel));

@@ -63,19 +63,59 @@ public final class FetcherEmitter {
             TableRef parentTable, GraphitronType.ResultType resultType,
             String outputPackage, boolean sourceIsOutcome) {
         if (sourceIsOutcome && !(field instanceof ChildField.ErrorsField)) {
-            // R244: a data-channel child of a flipped outcome type must emit an explicit read
-            // against Success.value() (and null on the ErrorList arm), not delegate to its raw
-            // fetcher. That inline read is built with the classifier flip in slice-1 commit 3b,
-            // where the execution-tier round-trip pins it against the real backing shapes; until
-            // then no field classifies to WrapperArm, so sourceIsOutcome is never set and this is
-            // unreachable. (An earlier delegation prototype was dropped after the principles review:
-            // it re-instantiated the inner fetcher per request and hid the read behind an env
-            // rebind, against the explicit-fetcher stance.)
-            throw new IllegalStateException(
-                "FetcherEmitter: arm-switched read for an Outcome-sourced field lands in slice-1 "
-                + "commit 3b; no field classifies to WrapperArm yet, so this path is unreachable");
+            return armSwitchedDataFetcher(field, resultType, outputPackage);
         }
         return dataFetcherValueRaw(field, fetchersClass, parentTable, resultType, outputPackage);
+    }
+
+    /**
+     * R244: a data-channel child of a flipped outcome type reads off {@code Success.value()} of the
+     * non-null {@code Outcome} source and resolves null on the {@code ErrorList} arm. The read is
+     * emitted explicitly (not delegated to the field's raw fetcher), so the generated code is a
+     * recognizable accessor call rather than an opaque shim. Slice 1 covers the only shapes the
+     * in-scope {@code @service} payloads use: a {@code @record}-Java-backed accessor read and the
+     * constructor/nesting source passthrough. Other shapes (jOOQ-column reads, nested
+     * {@code @service}/{@code @tableMethod} children) do not occur under an in-scope outcome type;
+     * they are excluded by {@code OUTCOME_TYPE_ARM_SWITCHED_DATA_CHANNEL_VARIANTS} and throw here as
+     * an unreached guard until a follow-up supports them.
+     */
+    private static CodeBlock armSwitchedDataFetcher(
+            GraphitronField field, GraphitronType.ResultType resultType, String outputPackage) {
+        return CodeBlock.of("($T env) -> env.getSource() instanceof $T<?> success ? $L : null",
+            DATA_FETCHING_ENV, successClass(outputPackage), armSwitchValueExpr(field, resultType));
+    }
+
+    private static CodeBlock armSwitchValueExpr(GraphitronField field, GraphitronType.ResultType resultType) {
+        if (field instanceof ChildField.ConstructorField || field instanceof ChildField.NestingField) {
+            return CodeBlock.of("success.value()");
+        }
+        AccessorResolution.Resolved accessor =
+            field instanceof ChildField.PropertyField pf ? pf.accessor()
+            : field instanceof ChildField.RecordField rf ? rf.accessor()
+            : null;
+        String javaBackingFqcn =
+            resultType instanceof GraphitronType.JavaRecordType jrt ? jrt.fqClassName()
+            : resultType instanceof GraphitronType.PojoResultType.Backed b ? b.fqClassName()
+            : null;
+        if (accessor != null && javaBackingFqcn != null) {
+            var backing = ClassName.bestGuess(javaBackingFqcn);
+            return switch (accessor) {
+                case AccessorResolution.GetterPrefixed gp ->
+                    CodeBlock.of("(($T) success.value()).$L()", backing, gp.method().getName());
+                case AccessorResolution.BareName bn ->
+                    CodeBlock.of("(($T) success.value()).$L()", backing, bn.method().getName());
+                case AccessorResolution.FieldRead fr ->
+                    CodeBlock.of("(($T) success.value()).$L", backing, fr.field().getName());
+            };
+        }
+        throw new IllegalStateException(
+            "R244 arm-switch: unsupported success-projection field " + field.getClass().getSimpleName()
+            + " on backing " + resultType + "; slice 1 supports @record-Java-backed accessor reads and "
+            + "constructor/nesting passthrough only");
+    }
+
+    private static ClassName successClass(String outputPackage) {
+        return ClassName.get(outputPackage + ".schema", "Outcome").nestedClass("Success");
     }
 
     private static ClassName errorListClass(String outputPackage) {
