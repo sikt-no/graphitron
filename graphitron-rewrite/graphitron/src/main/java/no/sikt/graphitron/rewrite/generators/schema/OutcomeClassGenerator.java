@@ -40,9 +40,11 @@ import java.util.List;
  *   <li><b>Success-projection fields must be nullable.</b> On the {@code ErrorList} arm a data
  *       field resolves null; if its SDL type is non-null, graphql-java raises
  *       {@code NonNullableFieldWasNullError} and bubbles the null up to the outcome field, dropping
- *       the sibling errors field. Pinned at build time by
- *       {@code GraphitronSchemaValidator.validateOutcomeTypeShape} /
- *       {@code ErrorChannelWalkerError.NonNullableSuccessProjectionField}.</li>
+ *       the sibling errors field. The typed rejection is
+ *       {@code ErrorChannelWalkerError.NonNullableSuccessProjectionField}; its classify-time
+ *       enforcement lands with the in-scope flip (the slice-1 commit that flips {@code @service}
+ *       fields to the wrapper), where the SDL nullability is reachable. Until then the rule's
+ *       message and LSP surface exist but nothing rejects on it.</li>
  * </ul>
  *
  * <p>{@code ErrorList.errors} is {@code List<Object>} because it carries two populations: matched
