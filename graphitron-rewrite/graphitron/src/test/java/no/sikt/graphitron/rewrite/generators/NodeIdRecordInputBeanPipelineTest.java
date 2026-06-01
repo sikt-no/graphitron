@@ -91,6 +91,20 @@ class NodeIdRecordInputBeanPipelineTest {
     }
 
     @Test
+    void decodeHelper_suppressesJooqConvertRemovalWarning() {
+        // The typed col.getDataType().convert(values[i]) uses DataType.convert(Object), deprecated
+        // for removal in jOOQ 3.20. Unlike NodeIdEncoder (suppressed class-wide), this helper lands
+        // on the consumer's *Fetchers class, so the suppression must sit on the method — otherwise
+        // every consumer build warns. Pins the javadoc claim in buildRecordDecodeHelper.
+        var decode = method(findSpec("QueryFetchers", HAPPY_SDL), "decodeFilmRecord");
+        assertThat(decode.annotations().toString())
+            .as("the decode helper suppresses the DataType.convert(Object) removal warning")
+            .contains("SuppressWarnings")
+            .contains("deprecation")
+            .contains("removal");
+    }
+
+    @Test
     void recordMember_withoutNodeId_rejectsAtGenerationTime() {
         var sdl = """
             type Film implements Node @table(name: "film") @node { id: ID! title: String }

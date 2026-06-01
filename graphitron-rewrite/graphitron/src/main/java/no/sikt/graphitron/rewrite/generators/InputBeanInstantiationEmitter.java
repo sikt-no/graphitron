@@ -1,5 +1,6 @@
 package no.sikt.graphitron.rewrite.generators;
 
+import no.sikt.graphitron.javapoet.AnnotationSpec;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.MethodSpec;
@@ -302,6 +303,15 @@ final class InputBeanInstantiationEmitter {
      * branch is always taken; for a nullable field the {@code null} member is correct. A
      * type-mismatch decode ({@code decodeValues} returns {@code null} on a typeId mismatch, or a
      * wrong arity) is an authored-input error and throws, mirroring the {@code ThrowOnMismatch} arm.
+     *
+     * <p>The typed {@code col.getDataType().convert(values[i])} routes the wire {@code String} into
+     * the column's Java type via {@code DataType.convert(Object)}, which jOOQ deprecated for removal
+     * in 3.20 with no public successor that accepts {@code Object} input. The method carries
+     * {@code @SuppressWarnings({"deprecation", "removal"})} so consumer builds stay clean, matching
+     * the class-wide suppression {@code NodeIdEncoderClassGenerator} applies for the identical
+     * {@code convert} call in its {@code decode<Type>} helpers. (Unlike {@code NodeIdEncoder}, this
+     * helper lands on the consumer's {@code *Fetchers} class, so the suppression must sit on the
+     * method.)
      */
     static MethodSpec buildRecordDecodeHelper(CallSiteExtraction.NodeIdDecodeRecord rec) {
         ClassName recordType = rec.table().recordClass();
@@ -311,6 +321,9 @@ final class InputBeanInstantiationEmitter {
         int arity = rec.keyColumns().size();
         var b = MethodSpec.methodBuilder(recordDecodeHelperName(rec))
             .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+            .addAnnotation(AnnotationSpec.builder(SuppressWarnings.class)
+                .addMember("value", "{$S, $S}", "deprecation", "removal")
+                .build())
             .returns(recordType)
             .addParameter(Object.class, "wire")
             .beginControlFlow("if (!(wire instanceof String nodeId))")
