@@ -93,7 +93,7 @@ class RecordFieldAccessorValidationTest {
             .noneMatch(m -> m.contains("TestType.fooBar"));
         var pf = (PropertyField) schema.field("TestType", "fooBar");
         assertThat(pf.accessor()).isInstanceOf(AccessorResolution.Resolved.class);
-        var resolved = switch ((AccessorResolution.Resolved) pf.accessor()) {
+        var resolved = switch (pf.accessor()) {
             case AccessorResolution.GetterPrefixed gp -> gp.method();
             case AccessorResolution.BareName bn -> bn.method();
             case AccessorResolution.FieldRead fr -> null;
@@ -147,7 +147,7 @@ class RecordFieldAccessorValidationTest {
             .noneMatch(m -> m.contains("TestType.fooBar"));
         var pf = (PropertyField) schema.field("TestType", "fooBar");
         assertThat(pf.accessor()).isInstanceOf(AccessorResolution.Resolved.class);
-        var method = switch ((AccessorResolution.Resolved) pf.accessor()) {
+        var method = switch (pf.accessor()) {
             case AccessorResolution.GetterPrefixed gp -> gp.method();
             case AccessorResolution.BareName bn -> bn.method();
             case AccessorResolution.FieldRead fr -> null;
