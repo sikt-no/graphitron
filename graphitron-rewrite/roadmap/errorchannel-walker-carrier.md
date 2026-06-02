@@ -1,7 +1,7 @@
 ---
 id: R244
 title: "Error-channel slice 1: Outcome transport, retire @error payload-class construction"
-status: In Review
+status: Ready
 bucket: structural
 depends-on: []
 created: 2026-05-26
@@ -625,6 +625,48 @@ or test). Removed; full pipeline green (63 + 367 tests, execution tier included)
 The full `PayloadClass` retirement is therefore correctly a follow-up slice that runs *after* the
 child-`@service` and `@tableMethod` flips, not part of R244 slice 1. R244 slice 1 closes with the
 `@service` root flip landed and the `PayloadClass` arm intact for the still-deferred field kinds.
+
+## Review feedback (In Review -> Ready, 2026-06-02)
+
+Independent-reviewer pass on the In Review -> Done gate. Build verified green end-to-end
+(`mvn -f graphitron-rewrite/pom.xml install -Plocal-db`, all modules SUCCESS including the
+`graphitron-sakila-example` compilation tier and the `GraphQLQueryTest` execution-tier round-trip,
+228/0/0). Architecture, scope (root-`@service` flip atomic, `@tableMethod`/child deferred), the
+commit-4 audit justifying the intact `PayloadClass` arm, the walker/emitters/transport/sub-seal/LSP
+wiring, and `typed-rejection.adoc` all reviewed and sound. Two required gaps plus minor cleanups
+block Done:
+
+**Required ; missing spec-named classification-rejection tests.** § Tests names a unit-tier
+`OutcomeType` classification test covering `MultipleErrorsFields` and
+`NonNullableSuccessProjectionField`, and the pipeline tier "including `MultipleErrorsFields` from
+the `OutcomeType` classification". Neither arm has any behavioural coverage: a repo-wide search
+finds them only in main code and in `RejectionSeverityCoverageTest` (which samples severity
+mapping, it does not drive classification).
+
+- `NonNullableSuccessProjectionField` is live at `FieldBuilder.java:2091-2098` but fires on no
+  fixture (commit-3b inventory confirmed none in scope) and is asserted nowhere. This is the
+  load-bearing rail the whole wrapper-over-localContext decision rests on (it prevents the silent
+  errors-drop documented in "Outcome-child arm-switch invariant"); a no-op regression here stays
+  build-green and reintroduces exactly that bug. Add a negative test that classifies an outcome
+  type with a non-null success-projection field and asserts the typed rejection.
+- `MultipleErrorsFields` (`GraphitronSchemaValidator.java:1084`, `validateOutcomeTypeShape`) has no
+  test. Add a case with a type carrying two errors fields asserting the typed rejection.
+
+**Optional ; body-string assertion holdover.** `FetcherPipelineTest`
+(`@PipelineTier`) `serviceField_withResolvedErrorChannel_catchArmEmitsMappedErrorList` asserts
+`body.contains("Outcome.Success<>(result)")` / `"ErrorList<>("` / `"ErrorRouter.redact(e, env)"` on
+`sak.code().toString()`. `rewrite-design-principles.adoc:131` bans code-string assertions on
+generated bodies at every tier; the behaviour is already pinned by the execution-tier round-trip and
+the `ChannelCatchArmEmitter` unit test. Convert to a structural assertion on the `Mapped` carrier,
+or delete as redundant.
+
+**Nits.** `ChannelCatchArmEmitter` class javadoc still says the loop binds `__t`/`__m`; the emitted
+code uses readable `cause`/`mapping` (per the commit-3 dunder cleanup), so the doc is stale. And
+`OutcomeType.successProjection` is constructed as `List.of()` at the live `FieldBuilder.java:2106`
+site (the nullability check runs inline before construction), leaving the field vestigial on that
+path; a one-line note would stop the empty list reading as "no data fields".
+
+The reviewer-session != implementer-session rule applies again on the next In Review -> Done pass.
 
 ## Supersedes
 
