@@ -1,7 +1,7 @@
 ---
 id: R276
 title: Record binding is reflection-only; remove @record-directive-consulting code
-status: Ready
+status: In Progress
 bucket: cleanup
 priority: 1
 theme: model-cleanup
