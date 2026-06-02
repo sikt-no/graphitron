@@ -24,10 +24,14 @@ All five seams shipped; the design below is the as-built contract. Per-seam land
   `RecordTableMethodField`) fall through to `dataFetcherValueRaw` (the method reference; the
   generated method owns its own arm-switch), and inline-resolved data fields
   (`ConstructorField` / `NestingField` / `PropertyField` / `RecordField`, via
-  `isInlineArmSwitchedDataField`) arm-switch in place. The record-backed accessor read is the
-  shared `recordBackedAccessorRead(backing, accessor, sourceExpr)`, called by both
-  `propertyOrRecordValue` (source `env.getSource()`) and the arm-switch (source `success.value()`),
-  so the accessor switch lives in one place, no parallel taxonomy.
+  `isInlineArmSwitchedDataField`) arm-switch in place. `inlineSuccessRead` covers both inline-read
+  backings the spec scopes in: the jOOQ-record column `get` (`((Record) success.value()).get(col)`,
+  mirroring `ColumnFetcher`) and the `@record`-Java accessor read (the shared
+  `recordBackedAccessorRead(backing, accessor, sourceExpr)`, called by both `propertyOrRecordValue`
+  with `env.getSource()` and the arm-switch with `success.value()`, so the accessor switch lives in
+  one place). A `NoBacking` parent reads via `PropertyDataFetcher` and is rejected by the validator
+  (seam 5) before generation, so `inlineSuccessRead`'s final throw is a defensive backstop, not an
+  author-reachable crash.
 - **Seams 2+3 (DataLoader fields), `GeneratorUtils` + `DataLoaderFetcherEmitter` +
   `TypeFetcherGenerator`.** `buildRecordParentKeyExtraction` and the `buildFkRowKey` /
   `buildLifterRowKey` / `buildAccessorKeySingle` / `buildAccessorKeyMany` helpers take a source
@@ -50,7 +54,9 @@ All five seams shipped; the design below is the as-built contract. Per-seam land
 Tests: execution-tier `GraphQLQueryTest.submitFilmReviewWithFilm_*` (new sakila fixture pairing a
 `@table` DataLoader data field with the errors field under a root `@service` payload; both arms
 round-trip); pipeline-tier `FetcherPipelineTest.outcomePayload_tableDataField_*` (RecordTableField
-emission + method-reference wiring, not PropertyDataFetcher); validation-tier
+emission + method-reference wiring, not PropertyDataFetcher) and
+`outcomePayload_columnDataField_armSwitchesInlineReadOnSuccessValue` (jOOQ-record column read
+arm-switches as a lambda, not a bare ColumnFetcher or a generation throw); validation-tier
 `OutcomeTypeValidationTest.outcomePayloadWithTableDataField_isNotRejected` (the false-rejection fix).
 
 The four nested-method variants (`ServiceTableField` / `ServiceRecordField` / `TableMethodField` /

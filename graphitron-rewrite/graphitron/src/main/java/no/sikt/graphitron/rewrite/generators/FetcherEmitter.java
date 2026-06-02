@@ -37,6 +37,7 @@ public final class FetcherEmitter {
 
     private static final ClassName DATA_FETCHING_ENV = ClassName.get("graphql.schema", "DataFetchingEnvironment");
     private static final ClassName LIST = ClassName.get("java.util", "List");
+    private static final ClassName RECORD = ClassName.get("org.jooq", "Record");
 
     /** The default source binding for an inline read: {@code env.getSource()}. */
     private static final CodeBlock ENV_SOURCE = CodeBlock.of("env.getSource()");
@@ -66,9 +67,19 @@ public final class FetcherEmitter {
      * {@code Outcome} object itself rather than arm-switching. Two emit-time sources (R268):
      * an {@code ErrorsField} on the {@code PayloadAccessor} transport, and a property/record field
      * on a {@code PojoResultType.NoBacking} parent (both emit {@code PropertyDataFetcher.fetching}
-     * in {@link #dataFetcherValueRaw} / {@link #propertyOrRecordValue}). These are the
-     * <em>sufficient conditions under the current emitter shape</em>; the validator consults this so
-     * it mirrors what the emitter actually keys on rather than re-deriving it.
+     * in {@link #dataFetcherValueRaw} / {@link #propertyOrRecordValue}). The validator consults this
+     * predicate so it keys on the emitter's own dispositions rather than re-deriving them; the
+     * coupling to {@link #propertyOrRecordValue}'s {@code NoBacking} arm is by convention, not
+     * mechanical, so a third {@code PropertyDataFetcher}-emitting arm added there must be reflected
+     * here too. The live cases are pinned by {@code FetcherPipelineTest} wiring assertions.
+     *
+     * <p>This is the {@code PropertyDataFetcher} (registration-escape) family only, the invariant
+     * {@code validateOutcomeChildArmSwitch} enforces per R268's spec. It does <em>not</em> claim to
+     * catch every non-arm-switching emit path: a {@code ComputedField} or other
+     * {@code ColumnFetcher}-backed leaf would emit a (non-arm-switched) {@code LightDataFetcher}
+     * rather than a {@code PropertyDataFetcher}, but such shapes are inventory-absent under a
+     * {@code @record}-backed {@code @service} payload (they need a SELECT-projected parent), which is
+     * the scope boundary R268 chose.
      *
      * <p>An {@code UnclassifiedField} (which gets no registration at all, so graphql-java installs
      * its default {@code PropertyDataFetcher}) is the third source, but it is absence-of-registration
@@ -161,11 +172,41 @@ public final class FetcherEmitter {
             DATA_FETCHING_ENV, successClass(outputPackage), inlineSuccessRead(field, resultType));
     }
 
-    /** The success-arm value expression: the field's own read, source-bound to {@code success.value()}. */
+    /**
+     * The success-arm value expression: the field's own read, source-bound to {@code success.value()}.
+     * The read shape follows the field's backing, mirroring {@link #dataFetcherValueRaw} /
+     * {@link #propertyOrRecordValue} so there is no parallel taxonomy: a jOOQ-record column
+     * {@code get} (what {@code ColumnFetcher} does, inlined onto {@code success.value()}), a
+     * {@code @record}-Java accessor call, or the constructor/nesting source passthrough.
+     *
+     * <p>A {@code PropertyField} / {@code RecordField} on a {@link GraphitronType.PojoResultType.NoBacking}
+     * parent has neither a column nor a resolved accessor (it reads via graphql-java's
+     * {@code PropertyDataFetcher}); that shape is rejected under the wrapper transport by
+     * {@link #resolvesViaPropertyDataFetcher} in {@code GraphitronSchemaValidator}, so it never
+     * reaches here in a validated build. The final {@code throw} is the defensive backstop for that
+     * single case.
+     */
     private static CodeBlock inlineSuccessRead(GraphitronField field, GraphitronType.ResultType resultType) {
         if (field instanceof ChildField.ConstructorField || field instanceof ChildField.NestingField) {
             return CodeBlock.of("success.value()");
         }
+        // jOOQ-record-backed column read: ColumnFetcher's ((Record) source).get(column), inlined
+        // onto success.value(). Same two arms as propertyOrRecordValue's jOOQ branches.
+        ColumnRef column = field instanceof ChildField.PropertyField pf ? pf.column()
+            : field instanceof ChildField.RecordField rf ? rf.column()
+            : null;
+        String columnName = field instanceof ChildField.PropertyField pf ? pf.columnName()
+            : field instanceof ChildField.RecordField rf ? rf.columnName()
+            : null;
+        if (resultType instanceof GraphitronType.JooqTableRecordType jtrt && column != null && jtrt.table() != null) {
+            return CodeBlock.of("(($T) success.value()).get($T.$L.$L)",
+                RECORD, jtrt.table().constantsClass(), jtrt.table().javaFieldName(), column.javaName());
+        }
+        if ((resultType instanceof GraphitronType.JooqTableRecordType
+                || resultType instanceof GraphitronType.JooqRecordType) && columnName != null) {
+            return CodeBlock.of("(($T) success.value()).get($T.field($S))", RECORD, DSL, columnName);
+        }
+        // @record-Java-backed accessor read.
         AccessorResolution.Resolved accessor =
             field instanceof ChildField.PropertyField pf ? pf.accessor()
             : field instanceof ChildField.RecordField rf ? rf.accessor()
@@ -181,7 +222,8 @@ public final class FetcherEmitter {
         throw new IllegalStateException(
             "R268 arm-switch: unsupported inline success-projection field "
             + field.getClass().getSimpleName() + " on backing " + resultType
-            + "; record-backed accessor reads and constructor/nesting passthrough only");
+            + "; a NoBacking parent resolves via PropertyDataFetcher and is rejected by "
+            + "GraphitronSchemaValidator.validateOutcomeChildArmSwitch before generation");
     }
 
     private static ClassName successClass(String outputPackage) {
