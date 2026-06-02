@@ -2,6 +2,7 @@ package no.sikt.graphitron.rewrite.validation;
 
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
 import no.sikt.graphitron.rewrite.ValidationError;
+import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import org.junit.jupiter.api.Test;
 
@@ -53,6 +54,14 @@ class OutcomeTypeValidationTest {
             type Query { sak: SakPayload %s }
             """.formatted(SAK_PAYLOAD_FQN, SERVICE_DECL));
 
+        // Precondition that makes the non-vacuity explicit: both fields independently lift to
+        // ChildField.ErrorsField on SakPayload, which is what gives validateOutcomeTypeShape two
+        // entries to group. Without this, a future refactor that collapsed them to a single
+        // ErrorsField at field-classification time would empty the group and let the validator
+        // assertion below pass-by-accident (or go vacuous); pinning it here fails loudly instead.
+        assertThat(schema.field("SakPayload", "errors")).isInstanceOf(ChildField.ErrorsField.class);
+        assertThat(schema.field("SakPayload", "moreErrors")).isInstanceOf(ChildField.ErrorsField.class);
+
         assertThat(validate(schema))
             .extracting(ValidationError::message)
             .anySatisfy(m -> assertThat(m)
@@ -60,5 +69,34 @@ class OutcomeTypeValidationTest {
                 .contains("errors")
                 .contains("moreErrors")
                 .contains("exactly one errors field is allowed"));
+    }
+
+    @Test
+    void outcomeTypeWithSingleErrorsField_isNotRejected() {
+        // Negative control: the same shape with exactly one errors field must NOT trip
+        // validateOutcomeTypeShape. Proves the rule discriminates (fires on two, not one) rather
+        // than over-firing, and keeps the positive case above honestly non-vacuous. (build(SDL) in
+        // ErrorChannelClassificationTest does not run GraphitronSchemaValidator, so this discrimination
+        // is pinned only here.)
+        var schema = TestSchemaHelper.buildSchema("""
+            type ValidationErr @error(handlers: [{handler: VALIDATION}]) {
+                path: [String!]!
+                message: String!
+            }
+            type DbErr @error(handlers: [{handler: DATABASE, sqlState: "23503"}]) {
+                path: [String!]!
+                message: String!
+            }
+            union SakError = ValidationErr | DbErr
+            type SakPayload @record(record: {className: "%s"}) {
+                data: String
+                errors: [SakError]
+            }
+            type Query { sak: SakPayload %s }
+            """.formatted(SAK_PAYLOAD_FQN, SERVICE_DECL));
+
+        assertThat(validate(schema))
+            .extracting(ValidationError::message)
+            .noneMatch(m -> m.contains("more than one errors field"));
     }
 }
