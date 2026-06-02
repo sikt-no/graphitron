@@ -37,7 +37,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R269` | Null-guard split-query key extraction for nullable to-one records | Spec | 2026-06-02 <sub>created 2026-06-01</sub> | [plan](nullable-to-one-record-into-npe.md) |
 | `R112` | Operation-driven test corpus, capability catalog, and runtime trace <sub>blocked by: [capability-catalog](capability-catalog.md)</sub> | Spec |  | [plan](operation-driven-test-corpus.md) |
 | `R268` | Collapse the Outcome arm-switch to a binary fork over reused field resolution <sub>blocked by: [errorchannel-walker-carrier](errorchannel-walker-carrier.md)</sub> | Ready | 2026-06-02 <sub>created 2026-06-01</sub> | [plan](errorchannel-arm-switch-table-data-fields.md) |
-| `R244` | Error-channel slice 1: Outcome transport, retire @error payload-class construction | In Progress | 2026-06-02 <sub>created 2026-05-26</sub> | [plan](errorchannel-walker-carrier.md) |
+| `R244` | Error-channel slice 1: Outcome transport, retire @error payload-class construction | In Review | 2026-06-02 <sub>created 2026-05-26</sub> | [plan](errorchannel-walker-carrier.md) |
 | `R254` | Generated GraphitronSchema emission must have bounded chain depth | In Review | 2026-05-28 <sub>created 2026-05-27</sub> | [plan](schema-class-bounded-emission.md) |
 
 ---
