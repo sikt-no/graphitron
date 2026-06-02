@@ -1,7 +1,7 @@
 ---
 id: R265
 title: NodeId ThrowOnMismatch decode helper emits non-compiling new GraphqlErrorException(String)
-status: In Progress
+status: In Review
 bucket: cleanup
 priority: 5
 theme: model-cleanup
@@ -118,29 +118,33 @@ Switch each `throw new $T($S)` (with `$T = GraphqlErrorException`) to
 
 No message-string changes; no new helper; no signature changes; no model-arm field.
 
-### 2. Regression guard: a compilation-tier fixture exercising the reachable throw arm
+### 2. Regression guard: not feasible without exercising legacy behavior (deferred to R273)
 
-The bug survived because no fixture drives a `ThrowOnMismatch` arm through `javac`. The mirror for
-"emitter renders non-compiling Java" is a **compilation-tier fixture**, not a pipeline/unit string
-assertion (a `contains(".newErrorException()")` guard would re-create the exact "string looked
-plausible but didn't compile" blind spot one layer up; code-string assertions on generated bodies are
-banned at every tier).
+The bug survived because no fixture drives a `ThrowOnMismatch` arm through `javac`, and the natural
+mirror for "emitter renders non-compiling Java" is a compilation-tier fixture. But that fixture
+cannot be built without exercising legacy behavior, so it is **not added here**.
 
-Add a `graphitron-sakila-example` schema field with the SDL shape identified above (non-`@nodeId`,
-non-`@lookupKey`, arity-1 scalar `ID` argument on a node-type-backed query field) so the generated
-`*Conditions` source compiles its `decode<Type>KeyOrThrow` helper against the real graphql-java 25
-API. This drives the **scalar arm (`:131`)**, the one reachable site, and is the load-bearing guard:
-it is what would have caught the bug.
+`ThrowOnMismatch` has exactly one producer in the generator: the bare-`ID` block at
+`FieldBuilder.java:1108`, which gates on `ctx.catalog.nodeIdMetadata(rt.tableName())`, the reflection
+over the `__NODE_TYPE_ID` / `__NODE_KEY_COLUMNS` constants. Per project direction those constants are
+legacy: their only sanctioned role is to let a `Node`-implementing type infer `@node` at
+classification time, after which all NodeId metadata comes from `@node` + the catalog primary key.
+The block's own comment (`FieldBuilder.java:1019`) already calls it "the legacy implicit scalar-ID
+arm." So the scalar throw arm is reachable only down a legacy path.
 
-**The list arm (`:113`) cannot be compile-covered today**, because no classification produces a list
-`ThrowOnMismatch` (see Reachability). Its fix in Deliverable 1 is defensive, and it stays pinned only
-by the existing `CompositeDecodeHelperRegistryTest` list-throw unit assertions (`:121`, `:146`-`:153`)
-until the list-arity-1 filter path is wired. Do not force an unreachable fixture; cover the reachable
-arm and record the gap.
+Concretely, the door is shut in `graphitron-sakila-example`: its `@node` types (Film, Customer,
+Address) carry no `__NODE_*` metadata (only the tables hard-listed in
+`NodeIdFixtureGenerator.METADATA` do), and the single-PK `__NODE_*` fixture tables live in the
+`nodeidfixture` / `idreffixture` jOOQ schemas the example SDL never references. A `filmByNode(id:
+ID!): Film` field therefore falls through to ordinary column binding ("column 'id' could not be
+resolved in table 'film'") rather than reaching the throw arm.
 
-Confirm the routing during implementation against `FieldBuilder.java:1107-1140` (the `ID`-arg block)
-and `ArgCallEmitter.java:292` (the `NodeIdDecodeKeys` case) -> `buildNodeIdDecodeExtraction` (`:360`)
--> `registry.register`.
+Forcing the fixture would mean wiring a single-PK public table into `NodeIdFixtureGenerator.METADATA`
+purely to exercise a path that is being retired. **R273** now owns the fate of this arm: it folds in
+the `__NODE_*` -> `@node` inference refactor and settles the mismatch policy that decides whether the
+arm is deleted or reshaped. Until then the construction fix in Deliverable 1 stays pinned by the
+existing `CompositeDecodeHelperRegistryTest` string assertions (`:88`, `:121`, `:146`-`:153`), which
+still pass against the builder form (the FQN `graphql.GraphqlErrorException` renders identically).
 
 ### 3. Resolve the FetcherEmitter:284 thread (verification, not a fix)
 
@@ -151,26 +155,24 @@ generators resolves `$T` to `GraphqlErrorException`.
 
 ## Tests
 
-- **Compilation tier** (`graphitron-sakila-example`): the new fixture generates a `*Conditions` source
-  whose `ThrowOnMismatch` scalar decode helper compiles against the real graphql-java 25 API. This is
-  the load-bearing guard.
+- **No new fixture or assertion.** The compilation-tier guard is deferred to R273 (see Deliverable 2);
+  building it here would require exercising the legacy `__NODE_*` path.
 - **Existing unit assertions stay green.** `CompositeDecodeHelperRegistryTest:88` and `:153` assert
   `body.contains("graphql.GraphqlErrorException")`; the builder form still renders the FQN
-  `graphql.GraphqlErrorException`, so the fix is non-breaking. No new string assertion is added.
+  `graphql.GraphqlErrorException`, so the fix is non-breaking and these remain the arm's pin.
 
 ## Affected code
 
 - `generators/CompositeDecodeHelperRegistry.java` - two construction sites (`:113` list, `:131`
-  scalar), shared `MISMATCH_MESSAGE` (`:46`), both in `buildHelper` (`:86`).
-- `graphitron-sakila-example` schema + (if needed) service/query stubs - the compilation-tier fixture
-  for the reachable scalar `ThrowOnMismatch` arm.
+  scalar), shared `MISMATCH_MESSAGE` (`:46`), both in `buildHelper` (`:86`). This is the whole change.
 
 ## Out of scope
 
 - The list throw arm's *reachability* (wiring the list-arity-1 NodeId filter path); R265 only fixes
   the construction so it compiles if/when reached.
-- Whether a bare non-`@nodeId` `ID` argument should get NodeId-decode + throw semantics at all (the
-  classification inversion the fixture relies on); a separate question if it is one.
+- Whether a bare non-`@nodeId` `ID` argument should get NodeId-decode + throw semantics at all, and
+  whether the `__NODE_*` metadata sourcing should be replaced by `@node` + catalog-PK inference:
+  **R273** owns both. This item only makes the existing arm compile.
 - Any shared exception-construction helper, generated error-helper class, or model-arm message field.
 - `FetcherEmitter.java:284` (verified correct: `UnsupportedOperationException`).
 </content>
