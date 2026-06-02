@@ -1,11 +1,11 @@
 ---
 id: R244
 title: "Error-channel slice 1: Outcome transport, retire @error payload-class construction"
-status: In Progress
+status: In Review
 bucket: structural
 depends-on: []
 created: 2026-05-26
-last-updated: 2026-06-01
+last-updated: 2026-06-02
 ---
 
 # Error-channel slice 1: Outcome transport, retire @error payload-class construction
