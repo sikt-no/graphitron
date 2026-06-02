@@ -666,6 +666,23 @@ code uses readable `cause`/`mapping` (per the commit-3 dunder cleanup), so the d
 site (the nullability check runs inline before construction), leaving the field vestigial on that
 path; a one-line note would stop the empty list reading as "no data fields".
 
+**Scope coordination with R268 (read before reworking).** R268
+(`errorchannel-arm-switch-table-data-fields`, Spec, `depends-on` this item) retires the child-side
+arm-switch machinery this slice shipped: `FetcherEmitter.armSwitchValueExpr`, the
+`OUTCOME_TYPE_ARM_SWITCHED_DATA_CHANNEL_VARIANTS` allow-list, and `validateOutcomeChildArmSwitch`
+(R268 § "What retires, what stays"). It also owns the latent-crash / false-rejection defect that
+allow-list carries (it false-rejects valid consumer schemas with a `@table`-bound `RecordTableField`
+sibling to the errors field). So the rework here must **not** invest in testing or extending the
+allow-list / `validateOutcomeChildArmSwitch` / `armSwitchValueExpr` path, and must **not** attempt
+the consumer false-rejection fix; both are R268's.
+
+R268 § "What retires, what stays" explicitly **keeps** both rules this rework must cover
+(`MultipleErrorsFields`, `NonNullableSuccessProjectionField`) and assigns their ownership to R244,
+adding no tests for them itself (its only new fixture is the `@table` DataLoader round-trip). The
+coverage gap is therefore genuinely R244's to close. Net rework scope: the two rejection-rule tests
+(required) plus the body-string conversion and javadoc nits (optional), nothing touching the
+arm-switch emitter/validator that R268 is about to delete.
+
 The reviewer-session != implementer-session rule applies again on the next In Review -> Done pass.
 
 ## Supersedes
