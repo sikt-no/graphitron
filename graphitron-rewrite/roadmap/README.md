@@ -30,13 +30,13 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R8` | Docs as an index into classification tests | Ready (deferred) |  | [plan](docs-as-index-into-tests.md) |
 | `R26` | Retire `graphitron-maven-plugin` + `graphitron-schema-transform` | In Progress |  | [plan](retire-maven-plugin.md) |
 | `R180` | Centralize ResultType column-read emission for @record parents | Spec | 2026-05-19 | [plan](record-parent-column-read-helper.md) |
-| `R268` | Collapse the Outcome arm-switch to a binary fork over reused field resolution <sub>blocked by: [errorchannel-walker-carrier](errorchannel-walker-carrier.md)</sub> | Spec | 2026-06-02 <sub>created 2026-06-01</sub> | [plan](errorchannel-arm-switch-table-data-fields.md) |
 | `R242` | DML payload positional input/output alignment | Spec | 2026-05-26 | [plan](dml-payload-positional-alignment.md) |
 | `R115` | Enumerate the capabilities graphitron delivers | Spec |  | [plan](capability-catalog.md) |
 | `R109` | How-to recipe and Sakila fixture for grouped collections via Field<Result<R>> @externalField + multiset | Spec |  | [plan](list-valued-external-field-multiset.md) |
 | `R212` | IntelliJ plugin wrapping graphitron:dev LSP | Spec | 2026-05-21 | [plan](intellij-lsp-plugin.md) |
 | `R269` | Null-guard split-query key extraction for nullable to-one records | Spec | 2026-06-02 <sub>created 2026-06-01</sub> | [plan](nullable-to-one-record-into-npe.md) |
 | `R112` | Operation-driven test corpus, capability catalog, and runtime trace <sub>blocked by: [capability-catalog](capability-catalog.md)</sub> | Spec |  | [plan](operation-driven-test-corpus.md) |
+| `R268` | Collapse the Outcome arm-switch to a binary fork over reused field resolution <sub>blocked by: [errorchannel-walker-carrier](errorchannel-walker-carrier.md)</sub> | Ready | 2026-06-02 <sub>created 2026-06-01</sub> | [plan](errorchannel-arm-switch-table-data-fields.md) |
 | `R244` | Error-channel slice 1: Outcome transport, retire @error payload-class construction | Ready | 2026-06-02 <sub>created 2026-05-26</sub> | [plan](errorchannel-walker-carrier.md) |
 | `R254` | Generated GraphitronSchema emission must have bounded chain depth | In Review | 2026-05-28 <sub>created 2026-05-27</sub> | [plan](schema-class-bounded-emission.md) |
 

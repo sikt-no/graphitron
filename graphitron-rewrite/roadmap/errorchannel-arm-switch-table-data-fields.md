@@ -1,7 +1,7 @@
 ---
 id: R268
-title: "Collapse the Outcome arm-switch to a binary fork over reused field resolution"
-status: Spec
+title: Collapse the Outcome arm-switch to a binary fork over reused field resolution
+status: Ready
 bucket: structural
 depends-on: [errorchannel-walker-carrier]
 created: 2026-06-01
