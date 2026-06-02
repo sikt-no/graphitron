@@ -110,7 +110,7 @@ final class CompositeDecodeHelperRegistry {
             CodeBlock.Builder chain = CodeBlock.builder()
                 .add("return nodeIds.stream().map(nodeId -> $T.$L((String) nodeId))", encoder, decodeMethod);
             if (mode == Mode.THROW) {
-                chain.add(".map(key -> { if (key == null) throw new $T($S); return key; })",
+                chain.add(".map(key -> { if (key == null) throw $T.newErrorException().message($S).build(); return key; })",
                     graphqlErr, MISMATCH_MESSAGE);
             } else {
                 chain.add(".filter($T::nonNull)", objects);
@@ -128,7 +128,7 @@ final class CompositeDecodeHelperRegistry {
             builder.addStatement("$T key = $T.$L(nodeId)", recordType, encoder, decodeMethod);
             String projection = arity == 1 ? "key.value1()" : "key.valuesRow()";
             if (mode == Mode.THROW) {
-                builder.addStatement("if (key == null) throw new $T($S)", graphqlErr, MISMATCH_MESSAGE);
+                builder.addStatement("if (key == null) throw $T.newErrorException().message($S).build()", graphqlErr, MISMATCH_MESSAGE);
                 builder.addStatement("return $L", projection);
             } else {
                 builder.addStatement("return key == null ? null : $L", projection);
