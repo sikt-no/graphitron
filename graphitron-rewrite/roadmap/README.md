@@ -18,9 +18,10 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R222` | Dimensional model pivot: slots over cross-product permits | Spec | 2026-05-28 <sub>created 2026-05-21</sub> | [plan](dimensional-model-pivot.md) |
 | `R256` | Absorb the service walker substrate: typed per-arm errors + multi-arg ctors | Ready | 2026-05-30 <sub>created 2026-05-29</sub> | [plan](service-walker-substrate-absorption.md) |
 | `R45` | Multi-tenant routing on top of the schema-driven ExecutionInput factory | Spec | 2026-05-20 | [plan](tenant-routing-and-execution-input.md) |
-| `R271` | Retire dunder-prefixed locals in emitted generator code | Ready | 2026-06-02 | [plan](drop-dunder-locals-in-emitted-code.md) |
-| `R265` | NodeId ThrowOnMismatch decode helper emits non-compiling new GraphqlErrorException(String) | In Progress | 2026-06-02 <sub>created 2026-05-30</sub> | [plan](nodeid-throwonmismatch-graphqlerrorexception-ctor.md) |
+| `R273` | Source NodeId metadata from @node + catalog PK (inferred from `implements Node`), and settle wrong-type/malformed mismatch semantics, retiring the legacy __NODE bare-ID arm | Spec | 2026-06-02 | [plan](nodeid-skip-mismatch-error-surfacing.md) |
+| `R271` | Retire dunder-prefixed locals in emitted generator code | In Progress | 2026-06-02 | [plan](drop-dunder-locals-in-emitted-code.md) |
 | `R255` | Dedupe duplicate column projection in @reference DBQueries (RC-6 regression) | In Review | 2026-05-28 | [plan](dedupe-reference-projection.md) |
+| `R265` | NodeId ThrowOnMismatch decode helper emits non-compiling new GraphqlErrorException(String) | In Review | 2026-06-02 <sub>created 2026-05-30</sub> | [plan](nodeid-throwonmismatch-graphqlerrorexception-ctor.md) |
 | `R260` | Readable generated code for NodeId decode extraction (drop ternary/underscore style) | In Review | 2026-05-31 <sub>created 2026-05-29</sub> | [plan](nodeid-decode-emitter-readability.md) |
 | `R23` | Multi-parent `NestingField` sharing: `TableField` arm | Spec |  | [plan](nestingfield-multiparent-tablefield.md) |
 | `R186` | Nested input types in @mutation fields | Spec | 2026-05-29 <sub>created 2026-05-20</sub> | [plan](nested-input-types-in-mutation-fields.md) |
@@ -37,7 +38,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R269` | Null-guard split-query key extraction for nullable to-one records | Spec | 2026-06-02 <sub>created 2026-06-01</sub> | [plan](nullable-to-one-record-into-npe.md) |
 | `R112` | Operation-driven test corpus, capability catalog, and runtime trace <sub>blocked by: [capability-catalog](capability-catalog.md)</sub> | Spec |  | [plan](operation-driven-test-corpus.md) |
 | `R268` | Collapse the Outcome arm-switch to a binary fork over reused field resolution <sub>blocked by: [errorchannel-walker-carrier](errorchannel-walker-carrier.md)</sub> | Ready | 2026-06-02 <sub>created 2026-06-01</sub> | [plan](errorchannel-arm-switch-table-data-fields.md) |
-| `R244` | Error-channel slice 1: Outcome transport, retire @error payload-class construction | Ready | 2026-06-02 <sub>created 2026-05-26</sub> | [plan](errorchannel-walker-carrier.md) |
+| `R244` | Error-channel slice 1: Outcome transport, retire @error payload-class construction | In Review | 2026-06-02 <sub>created 2026-05-26</sub> | [plan](errorchannel-walker-carrier.md) |
 | `R254` | Generated GraphitronSchema emission must have bounded chain depth | In Review | 2026-05-28 <sub>created 2026-05-27</sub> | [plan](schema-class-bounded-emission.md) |
 
 ---
@@ -113,7 +114,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 - `R136` [**Execution-tier coverage for FK-target/NodeType-keyColumns permutation**](nodeid-fk-permutation-execution-tier.md): R131's permutation relaxation is pinned at the pipeline tier (`InputFieldFkTargetNodeIdCase.FK_TARGET_REORDERED_KEY_PERMUTATION_DIRECT_FK{,_SINGULAR}` in `NodeIdPipelineTest`), which asserts `liftedSourceColumns` is permuted into `@node.keyColumns` order on the resolver's `DirectFk` carrier. The end-to-end SQL correctness — that the emitted `BodyParam.RowEq` against `liftedSourceColumns` actually matches the right rows when joined against decoded NodeId values — is not exercised by an execution-tier test in this repo.
 - `R135` [**Multi-hop @nodeId pipeline test for FK-target/NodeType-keyColumns permutation**](multi-hop-nodeid-fk-permutation-test.md): R131's permutation relaxation in `NodeIdLeafResolver.resolve` accepts set-equality between the terminal hop's target columns and the NodeType's `@node(keyColumns:)`, then permutes `liftedSourceColumns` into NodeType-keyColumns order before constructing `Resolved.FkTarget.DirectFk`. The pipeline-tier test pinning this lands on the single-hop `reordered_pk_parent` fixture (`InputFieldFkTargetNodeIdCase.FK_TARGET_REORDERED_KEY_PERMUTATION_DIRECT_FK{,_SINGULAR}`).
 - `R181` [**Validate @order/@defaultOrder: empty directive and @index coexistence**](validate-order-directive-args.md): A real user report (paraphrased) crashed the schema build: <sub>updated 2026-05-20, created 2026-05-19</sub>
-- `R273` [**Decide whether SkipMismatchedElement should surface an error instead of silently dropping wrong-type node IDs**](nodeid-skip-mismatch-error-surfacing.md): When a NodeId argument is in **filter** position, a supplied node ID that decodes to the wrong type (or is malformed) is currently dropped silently and the query proceeds as if that ID were never passed. The reviewer is not convinced this silent-drop is ever the correct behavior: a client that passes a `Film` id where an `Actor` id is expected has almost certainly made a mistake, and returning a partial-or-empty result with no signal hides that mistake rather than reporting it. This item is to revisit the decision and choose deliberately. <sub>updated 2026-06-02</sub>
 - `R107` [**Classify leaf mentions in inference-axis-coverage report**](leaf-coverage-mention-classification.md): `LeafCoverageReport.parseMentions` (R104) joins each sealed leaf simple-name against every roadmap `*.md` body via a `\b<simpleName>\b` regex. The match is undifferentiated: backticked code spans, code-fenced blocks, and bare prose mentions all collapse into the same `Roadmap` cell. Two consequences. First, every roadmap edit that names a leaf in any form drifts `inference-axis-coverage.adoc` and trips the `verify-leaf-coverage-report` CI gate, which is the regen-friction tax R104 deferred. Second, a reviewer reading the column has no way to sanity-check a match — `Field` against `FieldType` is excluded by `\b`, but a phrase like "the field type" cannot be told apart from a deliberate `` `Field` `` symbol reference without re-reading the source spec body.
 
 ### Other
@@ -156,7 +156,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R136` [**Execution-tier coverage for FK-target/NodeType-keyColumns permutation**](nodeid-fk-permutation-execution-tier.md) — Backlog, validation
 - `R135` [**Multi-hop @nodeId pipeline test for FK-target/NodeType-keyColumns permutation**](multi-hop-nodeid-fk-permutation-test.md) — Backlog, validation
 - `R57` [**FK-target argument @nodeId, JOIN-with-translation emission**](nodeid-fk-target-arg-join-translation.md) — Backlog, architecture
-- `R273` [**Decide whether SkipMismatchedElement should surface an error instead of silently dropping wrong-type node IDs**](nodeid-skip-mismatch-error-surfacing.md) — Backlog, validation
+- `R273` [**Source NodeId metadata from @node + catalog PK (inferred from `implements Node`), and settle wrong-type/malformed mismatch semantics, retiring the legacy __NODE bare-ID arm**](nodeid-skip-mismatch-error-surfacing.md) — Spec, architecture
 - `R24` [**`NodeIdReferenceField` JOIN-projection form**](nodeidreferencefield-join-projection-form.md) — Backlog, cleanup
 
 ### service
@@ -197,9 +197,9 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R234` [**Support jOOQ embedded and UDT records as non-table input backings**](jooq-embedded-and-udt-input-backings.md) — Backlog, architecture
 - `R263` [**Add a typeName-first decode-helper entry point so resolveDecodeHelperForTable is not a misuse trap**](decode-helper-typename-first-resolution.md) — Backlog, cleanup
 - `R267` [**Replace deprecated-for-removal DataType.convert(Object) in NodeIdEncoder.decode<Type>**](nodeid-encoder-deprecated-convert.md) — Backlog, tech-debt
-- `R265` [**NodeId ThrowOnMismatch decode helper emits non-compiling new GraphqlErrorException(String)**](nodeid-throwonmismatch-graphqlerrorexception-ctor.md) — In Progress, cleanup
+- `R265` [**NodeId ThrowOnMismatch decode helper emits non-compiling new GraphqlErrorException(String)**](nodeid-throwonmismatch-graphqlerrorexception-ctor.md) — In Review, cleanup
 - `R260` [**Readable generated code for NodeId decode extraction (drop ternary/underscore style)**](nodeid-decode-emitter-readability.md) — In Review, cleanup
-- `R271` [**Retire dunder-prefixed locals in emitted generator code**](drop-dunder-locals-in-emitted-code.md) — Ready, cleanup
+- `R271` [**Retire dunder-prefixed locals in emitted generator code**](drop-dunder-locals-in-emitted-code.md) — In Progress, cleanup
 - `R181` [**Validate @order/@defaultOrder: empty directive and @index coexistence**](validate-order-directive-args.md) — Backlog, validation
 - `R16` [**`FkJoin` model cleanup: `JoinConditionRef` wrapper**](fkjoin-model-cleanup.md) — Backlog, cleanup
 - `R97` [**Deprecate @table on input types; consumer-derived tables + argMapping grouping**](consumer-derived-input-tables.md) — Backlog, architecture
