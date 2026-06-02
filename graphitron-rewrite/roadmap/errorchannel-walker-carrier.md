@@ -652,8 +652,21 @@ Closes the gaps from the review feedback below. Full pipeline
   `FieldBuilder` `OutcomeType` construction site annotated to explain the empty `successProjection`.
 
 The arm-switch emitter/validator was left untouched (R268's lane), and no new `GraphqlErrorException`
-construction was introduced (R265's lane). Ready for a fresh In Review -> Done pass by a session
-other than this implementer.
+construction was introduced (R265's lane).
+
+**Self-review (principles-architect, 2026-06-02).** Read-only design pass over the rework confirmed
+the test-home split mirrors each rule's raiser, the body-string conversion is a legitimate
+structural (return-type) signal rather than the banned pattern relocated, and the
+`NonNullableSuccessProjectionField` rail is non-vacuously pinned. Two actions taken in response:
+(1) the `MultipleErrorsFields` test gained an explicit precondition asserting both fields lift to
+`ChildField.ErrorsField` on the payload (finding C: its non-vacuity otherwise rested on an unstated
+two-`ErrorsField` ordering fact), plus a single-errors-field negative control proving the rule
+discriminates rather than over-fires; (2) the vestigial `OutcomeType.successProjection` (finding E1,
+pre-existing from commit 3b: the nullability invariant lives in an inline loop, not the carrier) is
+filed as Backlog **R274** rather than re-architected inside this bounded rework. The one remaining
+body-string assertion the agent noted (finding E2, the no-channel `redact` sibling in
+`FetcherPipelineTest`) is pre-existing and out of this rework's scope; left for a dedicated test-quality
+pass. Ready for a fresh In Review -> Done pass by a session other than this implementer.
 
 ## Review feedback (In Review -> Ready, 2026-06-02)
 
