@@ -1,16 +1,16 @@
 ---
 id: R265
-title: "Inline ThrowOnMismatch arms emit non-compiling new GraphqlErrorException(String)"
+title: "NodeId ThrowOnMismatch decode helper emits non-compiling new GraphqlErrorException(String)"
 status: Spec
 bucket: cleanup
 priority: 5
 theme: model-cleanup
 depends-on: []
 created: 2026-05-30
-last-updated: 2026-05-31
+last-updated: 2026-06-02
 ---
 
-# Inline ThrowOnMismatch arms emit non-compiling new GraphqlErrorException(String)
+# NodeId ThrowOnMismatch decode helper emits non-compiling new GraphqlErrorException(String)
 
 ## Problem
 
@@ -18,142 +18,160 @@ graphql-java 25's `GraphqlErrorException` has only a protected builder construct
 public `GraphqlErrorException(String)`. The correct construction is
 `GraphqlErrorException.newErrorException().message(..).build()`.
 
-Two NodeId `ThrowOnMismatch` emitters still emit `throw new $T($S)` with `$T = GraphqlErrorException`,
-which **does not compile**:
+The NodeId-decode helper emitter still constructs the broken form at two sites, both inside
+`CompositeDecodeHelperRegistry.buildHelper`:
 
-- `generators/ArgCallEmitter.java:395` (list throw arm), `:432` (arity-1 scalar throw arm), `:451`
-  (arity-N scalar throw arm) — three sites in one file.
-- `generators/CompositeDecodeHelperRegistry.java:98` (list throw arm), `:113` (scalar throw arm) —
-  two sites.
+- `generators/CompositeDecodeHelperRegistry.java:113` (list throw arm, inside the `.map(key -> ...)`
+  chain), and `:131` (scalar throw arm). Both emit `throw new $T($S)` with `$T = GraphqlErrorException`
+  and the shared `MISMATCH_MESSAGE` constant (`:46`), which **does not compile**.
 
-This is latent, not live: no compilation-tier fixture currently exercises a `ThrowOnMismatch` arm
-(a top-level non-`@lookupKey` scalar / list `@nodeId` argument on a node-type table, classified in
-`FieldBuilder.java:1129`). The broken string is generated only by pipeline-tier tests that stop at
-the `TypeSpec` shape and never run `javac` over it. R195's `decode<Record>` helper became the first
-*compile-tested* NodeId throw and failed against the real graphql-java API, surfacing the class.
+This was a five-site bug across two files when first filed. **R260
+(`nodeid-decode-emitter-readability`) has since landed** and reshaped the surface: it lifted every
+NodeId decode (all arities, skip and throw) out of `ArgCallEmitter`'s inline arms and through
+`CompositeDecodeHelperRegistry` into named statement-form helpers, deleting the three former
+`ArgCallEmitter` construction sites and the `((Supplier<X>) () -> { throw ...; }).get()` wrapper that
+used to surround them. The broken `new $T($S)` construction rode along into the registry helper
+unchanged; `ArgCallEmitter` no longer constructs the exception at all. So the live bug is now two
+sites in one method, not five across two files.
 
-The same shape is **already correct** at three other sites, which proves the fix and bounds the
+The same construction is **already correct** at four other sites, which proves the fix and bounds the
 scope:
 
 - `generators/LookupValuesJoinEmitter.java:330` (parameterized message: `...for argument '<name>'`)
-- `generators/TypeFetcherGenerator.java:2033` and `:2835` (parameterized message: `...input field '<name>'`)
-- `generators/InputBeanInstantiationEmitter.java:294` (bare constant message; R195 landed this)
+- `generators/TypeFetcherGenerator.java:2007` and `:2809` (parameterized message: `...input field '<name>'`)
+- `generators/InputBeanInstantiationEmitter.java:326` (bare constant message; R195 landed this)
 
-## Design fork: patch in place, do not centralize (resolved)
+This survived because no test runs `javac` over a `ThrowOnMismatch` arm. The registry's throw bodies
+are exercised only by `CompositeDecodeHelperRegistryTest` (a `@UnitTier` test that asserts
+`body.contains("graphql.GraphqlErrorException")` at `:88` and `:153`), and that string-shape
+assertion is exactly the layer that did not catch the bug: the FQN renders identically in the broken
+and the builder form. R195's `InputBeanInstantiationEmitter` site only got the construction right
+because it was the first *compile-tested* NodeId throw.
 
-The construction shape `GraphqlErrorException.newErrorException().message($S).build()` is now
-duplicated across five-plus sites: three render it correctly, two render the non-compiling variant.
-The tempting move is to single-home it behind one emitter helper (`GraphqlErrors.throwNodeIdMismatch()`).
-Per principles-architect, **do not.** This Spec patches the two broken files in place and introduces
-no shared helper and no model field.
+## Reachability (drives the test scope)
 
-- **"One predicate, one home" does not reach this surface.** That rule governs *classification
-  decisions over the model* (a derived name, which side of a join holds the FK) that can drift in
-  *meaning*. What is duplicated here is the construction syntax for a third-party type; it cannot
-  drift in meaning, only be right or wrong against a fixed external API. There is no model field,
-  no consumer evaluating a predicate.
-- **The part that actually varies is the message, and it must stay per-site.** Three correct sites
-  parameterize the message with call-site context (`argument '<name>'`, `input field '<name>'`); the
-  two broken sites and `InputBeanInstantiationEmitter` use the bare constant. A helper that
-  single-homed the message would erase the context three sites deliberately carry (an **Error
-  quality** regression); a helper that parameterized it would wrap a single builder call and save
-  nothing.
-- **A helper would freeze the contortion R260 is removing.** The two ArgCallEmitter scalar arms wrap
-  the throw in a `(($T<?>) () -> { throw ...; }).get()` Supplier-lambda to stay in expression
-  position. That construct is the canonical offender named by "Generated code is read and debugged",
-  and **R260** (`nodeid-decode-emitter-readability`) owns deleting it. Centralizing now would mint a
-  `throwNodeIdMismatchExpression()` whose whole job is to emit the construct a sibling item is trying
-  to dissolve.
+The single production producer of `ThrowOnMismatch` is `FieldBuilder.java:1131`, inside the `ID`-arg
+classification block. Tracing its guards settles which throw arm a fixture can actually drive through
+`javac`:
 
-**Boundary with R260 (order-independent siblings, no `depends-on`).** R265 and R260 overlap on
-`ArgCallEmitter.buildNodeIdDecodeExtraction` (`:355-455`). R265 swaps *only* the exception
-construction inside the existing arms (`new $T($S)` -> `newErrorException().message($S).build()`),
-leaving the Supplier-lambda wrapper exactly as today; the lambda is R260's to remove. If R260 lands
-first it rewrites these arms into statement-position helpers and naturally uses the builder form,
-making R265's scalar-arm edits moot (no regression: the builder form is what R260 would write). If
-R265 lands first it makes the arms compile now and R260 rewrites them later. Neither blocks the
-other. R265 must **not** "helpfully" lift the scalar arms into a named decode helper — that is
-R260's charter and widens R265's blast radius into the three currently-correct sites for no
-compile-correctness gain.
+- **arity-1, non-list, non-`@lookupKey`** `ID` argument: produces `ScalarArg.ColumnArg(ThrowOnMismatch,
+  isLookupKey=false)`, which flows through the condition path
+  (`FieldBuilder` `BodyParam.Eq` -> `CallParam` -> `GeneratedConditionFilter` -> `QueryConditionsGenerator`
+  -> `ArgCallEmitter:292` -> `registry.register(.., Mode.THROW, list=false)`) to the **scalar arm
+  `:131`. Reachable.**
+- arity-1, **list**, non-`@lookupKey`: caught by the fall-through guard at `FieldBuilder.java:1123`
+  ("not yet wired") and never produces a `ThrowOnMismatch`.
+- composite (arity > 1), non-`@lookupKey`: rejected as `UnclassifiedArg` at `FieldBuilder.java:1117`.
+- any `@lookupKey` arg: routed by `LookupMappingResolver` to `LookupValuesJoinEmitter` (a
+  currently-correct site), never the registry.
+- `@nodeId`-decorated argument: classified as `SkipMismatchedElement`, not `ThrowOnMismatch`.
 
-**Why not hang the message on the model arm.** Floated and rejected: putting the message template on
-`CallSiteExtraction.NodeIdDecodeKeys.ThrowOnMismatch` pushes against "Wire-format encoding is a
-boundary concern, never a model concern" (the arm is the boundary carrier R50 introduced; it must
-not grow an emitted-string template) and against generation-thinking (the human-readable message is
-presentation the emitter supplies from call-site context, not a classified fact). The arm already
-carries the right fact: the `ThrowOnMismatch` vs `SkipMismatchedElement` fork. Leave the message in
-the emitters.
+So the registry's **list throw arm (`:113`) is unreachable today**; only the **scalar arm (`:131`)
+is**. No validator inspects the extraction inside a `CallParam`, so nothing build-fails the reachable
+shape before emission.
+
+The SDL shape that reaches the scalar arm is a non-`@nodeId`, non-`@lookupKey`, arity-1 scalar `ID`
+argument on a query field backed by a node-type table, for example:
+
+```graphql
+type Query {
+  filmByNode(id: ID!): Film
+}
+```
+
+where `Film` is `@table` + `@node` with a single-column PK and `id` carries neither `@nodeId` nor
+`@lookupKey`. Note the inversion the fixture relies on: a **bare** `ID` argument decodes-against-PK
+with throw-on-mismatch, while an explicitly `@nodeId`-marked argument skips. This is the only door to
+the throw arm; R265 relies on it but does not adjudicate whether the inversion is the intended design
+(out of scope; see below).
+
+## Why not centralize the construction
+
+The construction shape is now duplicated across six sites (two broken, four correct). The tempting
+move is to single-home it behind one helper. **Do not.** One leg of this rejection stands on its own:
+
+The skip-vs-throw decision is a classified model fact (`CallSiteExtraction.NodeIdDecodeKeys.{SkipMismatchedElement
+| ThrowOnMismatch}`, the R50 boundary carrier); the human-readable message is presentation the emitter
+supplies from call-site context. Hanging a message template on the model arm pushes against "Wire-format
+encoding is a boundary concern, never a model concern" and against generation-thinking. The arm already
+carries the right fact (the skip/throw fork); leave the message in the emitters.
+
+(The original Spec also argued against a *shared emitter helper* on two further grounds, both now
+moot: the Supplier-lambda contortion a helper would have frozen is gone after R260, and the
+"per-site message context would be erased" concern does not apply to the two broken sites, which share
+one constant message. A pure emitter-side `CodeBlock` helper would consolidate the six spellings but
+provides no compile coverage of the *emitted* throw, so it does not address this bug's root cause;
+if desirable as DRY cleanup it is a separate item, not R265.)
 
 ## Deliverables
 
-### 1. Fix the five broken construction sites
+### 1. Fix the two broken construction sites
 
 Switch each `throw new $T($S)` (with `$T = GraphqlErrorException`) to
-`throw $T.newErrorException().message($S).build()`, mirroring the three correct sites:
+`throw $T.newErrorException().message($S).build()`, mirroring the four correct sites:
 
-- `ArgCallEmitter.java:395` (list throw arm), `:432` (arity-1 scalar throw arm, inside the Supplier
-  lambda), `:451` (arity-N scalar throw arm, inside the Supplier lambda). The Supplier-lambda wrapper
-  stays; only the exception construction inside it changes.
-- `CompositeDecodeHelperRegistry.java:98` (list throw arm), `:113` (scalar throw arm). The
-  `MISMATCH_MESSAGE` constant is reused as-is.
+- `CompositeDecodeHelperRegistry.java:131` (scalar throw arm).
+- `CompositeDecodeHelperRegistry.java:113` (list throw arm). Fix it too even though it is unreachable
+  today: it is still wrong code, and `FieldBuilder.java:1123` flags the list-arity-1 filter path as
+  "not yet wired", i.e. a path that could become reachable. The `MISMATCH_MESSAGE` constant is reused
+  as-is at both arms.
 
-No message-string changes; no new helper; no signature changes.
+No message-string changes; no new helper; no signature changes; no model-arm field.
 
-### 2. Regression guard: a compilation-tier fixture exercising the throw arms
+### 2. Regression guard: a compilation-tier fixture exercising the reachable throw arm
 
 The bug survived because no fixture drives a `ThrowOnMismatch` arm through `javac`. The mirror for
-"emitter renders non-compiling Java" is a **compilation-tier fixture**, not a pipeline string
-assertion (code-string assertions on generated bodies are banned at every tier, and a
-`contains(".newErrorException()")` guard would re-create the exact "string looked plausible but
-didn't compile" blind spot one layer up).
+"emitter renders non-compiling Java" is a **compilation-tier fixture**, not a pipeline/unit string
+assertion (a `contains(".newErrorException()")` guard would re-create the exact "string looked
+plausible but didn't compile" blind spot one layer up; code-string assertions on generated bodies are
+banned at every tier).
 
-Add a `graphitron-sakila-example` schema field (or fields) with a top-level **non-`@lookupKey`**
-scalar/list `@nodeId` argument so the `ThrowOnMismatch` arm compiles against the real graphql-java
-API. **The fixture set must cover both routing paths and both shapes**, because the five sites split
-across two files by arity and list-ness:
+Add a `graphitron-sakila-example` schema field with the SDL shape identified above (non-`@nodeId`,
+non-`@lookupKey`, arity-1 scalar `ID` argument on a node-type-backed query field) so the generated
+`*Conditions` source compiles its `decode<Type>KeyOrThrow` helper against the real graphql-java 25
+API. This drives the **scalar arm (`:131`)**, the one reachable site, and is the load-bearing guard:
+it is what would have caught the bug.
 
-- arity-1 scalar and arity-1 list -> inline `ArgCallEmitter` arms (`:432`, `:395`);
-- arity > 1 (composite-PK NodeType) scalar and list -> `CompositeDecodeHelperRegistry` arms
-  (`:113`, `:98`, registry non-null).
+**The list arm (`:113`) cannot be compile-covered today**, because no classification produces a list
+`ThrowOnMismatch` (see Reachability). Its fix in Deliverable 1 is defensive, and it stays pinned only
+by the existing `CompositeDecodeHelperRegistryTest` list-throw unit assertions (`:121`, `:146`-`:153`)
+until the list-arity-1 filter path is wired. Do not force an unreachable fixture; cover the reachable
+arm and record the gap.
 
-A single arity-1 scalar fixture compiles only one of the five arms; the guard is incomplete unless
-it spans arity-1/arity-N and scalar/list. Confirm the exact routing during implementation against
-`FieldBuilder.java:1105-1138` (the `ID`-arg/`nodeIdMetadata` block) and
-`ArgCallEmitter.perArgExpr -> buildNodeIdDecodeExtraction`; note `FieldBuilder` currently surfaces
-**non-`@lookupKey` composite-PK** scalar args as `UnclassifiedArg` (`:1113-1117`) and **non-`@lookupKey`
-arity-1 list** falls through to column-name resolution (`:1120`), so the fixture shapes that actually
-reach the throw arms need verifying. If a needed shape is not classifiable today, note it and cover
-the reachable arms rather than forcing an unreachable fixture.
+Confirm the routing during implementation against `FieldBuilder.java:1107-1140` (the `ID`-arg block)
+and `ArgCallEmitter.java:292` (the `NodeIdDecodeKeys` case) -> `buildNodeIdDecodeExtraction` (`:360`)
+-> `registry.register`.
 
-### 3. Resolve the FetcherEmitter:209 thread (verification, not a fix)
+### 3. Resolve the FetcherEmitter:284 thread (verification, not a fix)
 
-`FetcherEmitter.java:209` emits `throw new $T($S)`. Verified during spec drafting: `$T` is
-`UnsupportedOperationException` (a String-ctor exception), **not** `GraphqlErrorException` — it is
-correct and stays out of scope. Recorded here so it does not resurface as a "sixth site" mid
-implementation. No other `new $T($S)` site in the generators resolves `$T` to `GraphqlErrorException`
-(swept via `grep 'new \$T' graphitron/src/main/java`).
+`FetcherEmitter.java:284` emits `throw new $T($S)`. Verified: `$T` is `UnsupportedOperationException`
+(a String-ctor exception), **not** `GraphqlErrorException`; it is correct and stays out of scope.
+Recorded here so it does not resurface as a "sixth site". No other `new $T($S)` site in the
+generators resolves `$T` to `GraphqlErrorException`.
 
 ## Tests
 
-- **Compilation tier** (`graphitron-sakila-example`): the new fixture(s) generate `*Fetchers`
-  sources whose `ThrowOnMismatch` throw arms compile against the real graphql-java 25 API. This is
-  the load-bearing guard — it is what would have caught the bug.
-- **Existing pipeline assertion stays green.** `CompositeDecodeHelperRegistryTest:88` asserts
+- **Compilation tier** (`graphitron-sakila-example`): the new fixture generates a `*Conditions` source
+  whose `ThrowOnMismatch` scalar decode helper compiles against the real graphql-java 25 API. This is
+  the load-bearing guard.
+- **Existing unit assertions stay green.** `CompositeDecodeHelperRegistryTest:88` and `:153` assert
   `body.contains("graphql.GraphqlErrorException")`; the builder form still renders the FQN
-  `graphql.GraphqlErrorException`, so the fix is non-breaking. (No new string assertion is added —
-  see deliverable 2 on why.)
+  `graphql.GraphqlErrorException`, so the fix is non-breaking. No new string assertion is added.
 
 ## Affected code
 
-- `generators/ArgCallEmitter.java` — three construction sites (`:395`, `:432`, `:451`).
-- `generators/CompositeDecodeHelperRegistry.java` — two construction sites (`:98`, `:113`).
-- `graphitron-sakila-example` schema + (if needed) service/query stubs — the compilation-tier
-  fixture(s) for the `ThrowOnMismatch` scalar/list, arity-1/arity-N arms.
+- `generators/CompositeDecodeHelperRegistry.java` - two construction sites (`:113` list, `:131`
+  scalar), shared `MISMATCH_MESSAGE` (`:46`), both in `buildHelper` (`:86`).
+- `graphitron-sakila-example` schema + (if needed) service/query stubs - the compilation-tier fixture
+  for the reachable scalar `ThrowOnMismatch` arm.
 
 ## Out of scope
 
-- The `(($T<?>) () -> { throw ...; }).get()` Supplier-lambda contortion in the scalar arms — that is
-  **R260**'s (`nodeid-decode-emitter-readability`); R265 leaves the wrapper in place and only fixes
-  the construction inside it.
-- Any shared exception-construction helper or model-arm message field (rejected above).
-- `FetcherEmitter.java:209` (verified correct: `UnsupportedOperationException`).
+- The list throw arm's *reachability* (wiring the list-arity-1 NodeId filter path); R265 only fixes
+  the construction so it compiles if/when reached.
+- Whether a bare non-`@nodeId` `ID` argument should get NodeId-decode + throw semantics at all (the
+  classification inversion the fixture relies on); a separate question if it is one.
+- Any shared exception-construction helper, generated error-helper class, or model-arm message field.
+- `FetcherEmitter.java:284` (verified correct: `UnsupportedOperationException`).
+</content>
+</invoke>
