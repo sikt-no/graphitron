@@ -20,7 +20,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R45` | Multi-tenant routing on top of the schema-driven ExecutionInput factory | Spec | 2026-05-20 | [plan](tenant-routing-and-execution-input.md) |
 | `R273` | Source NodeId metadata from @node + catalog PK (inferred from `implements Node`), and settle wrong-type/malformed mismatch semantics, retiring the legacy __NODE bare-ID arm | Spec | 2026-06-02 | [plan](nodeid-skip-mismatch-error-surfacing.md) |
 | `R255` | Dedupe duplicate column projection in @reference DBQueries (RC-6 regression) | In Review | 2026-05-28 | [plan](dedupe-reference-projection.md) |
-| `R265` | NodeId ThrowOnMismatch decode helper emits non-compiling new GraphqlErrorException(String) | In Review | 2026-06-02 <sub>created 2026-05-30</sub> | [plan](nodeid-throwonmismatch-graphqlerrorexception-ctor.md) |
 | `R260` | Readable generated code for NodeId decode extraction (drop ternary/underscore style) | In Review | 2026-05-31 <sub>created 2026-05-29</sub> | [plan](nodeid-decode-emitter-readability.md) |
 | `R23` | Multi-parent `NestingField` sharing: `TableField` arm | Spec |  | [plan](nestingfield-multiparent-tablefield.md) |
 | `R186` | Nested input types in @mutation fields | Spec | 2026-05-29 <sub>created 2026-05-20</sub> | [plan](nested-input-types-in-mutation-fields.md) |
@@ -197,7 +196,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R234` [**Support jOOQ embedded and UDT records as non-table input backings**](jooq-embedded-and-udt-input-backings.md) — Backlog, architecture
 - `R263` [**Add a typeName-first decode-helper entry point so resolveDecodeHelperForTable is not a misuse trap**](decode-helper-typename-first-resolution.md) — Backlog, cleanup
 - `R267` [**Replace deprecated-for-removal DataType.convert(Object) in NodeIdEncoder.decode<Type>**](nodeid-encoder-deprecated-convert.md) — Backlog, tech-debt
-- `R265` [**NodeId ThrowOnMismatch decode helper emits non-compiling new GraphqlErrorException(String)**](nodeid-throwonmismatch-graphqlerrorexception-ctor.md) — In Review, cleanup
 - `R260` [**Readable generated code for NodeId decode extraction (drop ternary/underscore style)**](nodeid-decode-emitter-readability.md) — In Review, cleanup
 - `R181` [**Validate @order/@defaultOrder: empty directive and @index coexistence**](validate-order-directive-args.md) — Backlog, validation
 - `R16` [**`FkJoin` model cleanup: `JoinConditionRef` wrapper**](fkjoin-model-cleanup.md) — Backlog, cleanup
