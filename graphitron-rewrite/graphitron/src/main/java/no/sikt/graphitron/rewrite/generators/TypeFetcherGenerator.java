@@ -1513,12 +1513,12 @@ public class TypeFetcherGenerator {
             ClassName.get(Map.class), ClassName.get(String.class), ClassName.get(Object.class));
 
         var b = CodeBlock.builder();
-        b.addStatement("$T __validator = $L.getValidator(env)", validator, ctx.graphitronContextCall());
-        b.addStatement("$T __violations = new $T<>()", listOfErrors, arrayList);
+        b.addStatement("$T validator = $L.getValidator(env)", validator, ctx.graphitronContextCall());
+        b.addStatement("$T violations = new $T<>()", listOfErrors, arrayList);
         for (var entry : carrier.methodArgs()) {
             if (!(entry instanceof no.sikt.graphitron.rewrite.model.MappingEntry.FromArg fromArg)) continue;
             String argName = outerArgOfValueShape(fromArg.shape());
-            String local = "__arg_" + sanitizeIdent(argName);
+            String local = "arg_" + sanitizeIdent(argName);
             ClassName inputClass = resolveInputArgClass(ctx, fieldName, argName, outputPackage);
             if (inputClass != null) {
                 // Input-typed SDL arg: materialise the graphitron-emitted class via fromMap
@@ -1533,14 +1533,14 @@ public class TypeFetcherGenerator {
                 b.addStatement("$T $L = env.getArgument($S)", Object.class, local, argName);
             }
             b.beginControlFlow("if ($L != null)", local);
-            b.beginControlFlow("for ($T __v : __validator.validate($L))", violationWildcard, local);
-            b.addStatement("__violations.add($T.toGraphQLError(__v, env, $S))",
+            b.beginControlFlow("for ($T violation : validator.validate($L))", violationWildcard, local);
+            b.addStatement("violations.add($T.toGraphQLError(violation, env, $S))",
                 constraintViolations, argName);
             b.endControlFlow();
             b.endControlFlow();
         }
-        b.beginControlFlow("if (!__violations.isEmpty())");
-        b.add(ChannelEarlyReturnEmitter.emit(outcomeType, "__violations", outputPackage));
+        b.beginControlFlow("if (!violations.isEmpty())");
+        b.add(ChannelEarlyReturnEmitter.emit(outcomeType, "violations", outputPackage));
         b.endControlFlow();
         return b.build();
     }
@@ -1773,23 +1773,23 @@ public class TypeFetcherGenerator {
             if (hasDecodeLocals) {
                 dmlChain.add(".valuesOfRows(in.stream()\n").indent()
                     .add(".map(row -> {\n").indent()
-                    .add(buildInsertDecodeLocals(fields, "row", "__insertKey"))
+                    .add(buildInsertDecodeLocals(fields, "row", "insertKey"))
                     .add("return $T.row(\n", DSL).indent()
-                    .add(buildPerCellValueList(fields, tablesOnly, tableRef, "row", "__insertKey")).unindent()
+                    .add(buildPerCellValueList(fields, tablesOnly, tableRef, "row", "insertKey")).unindent()
                     .add(");\n").unindent()
                     .add("})\n")
                     .add(".toList())\n").unindent();
             } else {
                 dmlChain.add(".valuesOfRows(in.stream()\n").indent()
                     .add(".map(row -> $T.row(\n", DSL).indent()
-                    .add(buildPerCellValueList(fields, tablesOnly, tableRef, "row", "__insertKey")).unindent()
+                    .add(buildPerCellValueList(fields, tablesOnly, tableRef, "row", "insertKey")).unindent()
                     .add("))\n")
                     .add(".toList())\n").unindent();
             }
         } else {
-            postInGuard.add(buildInsertDecodeLocals(fields, "in", "__insertKey"));
+            postInGuard.add(buildInsertDecodeLocals(fields, "in", "insertKey"));
             dmlChain.add(".values(\n").indent()
-                .add(buildPerCellValueList(fields, tablesOnly, tableRef, "in", "__insertKey")).unindent()
+                .add(buildPerCellValueList(fields, tablesOnly, tableRef, "in", "insertKey")).unindent()
                 .add(")\n");
         }
 
@@ -1832,10 +1832,10 @@ public class TypeFetcherGenerator {
      *       extraction) — one cell, value read directly from {@code mapLocal.get(name)}.</li>
      *   <li>{@link InputField.ColumnField} with {@link CallSiteExtraction.NodeIdDecodeKeys} —
      *       one cell, value read from the per-record decode local
-     *       ({@code __insertKey_<fi>.value1()}). Caller must declare the decode local; see
+     *       ({@code insertKey_<fi>.value1()}). Caller must declare the decode local; see
      *       {@link #buildInsertDecodeLocals}.</li>
      *   <li>{@link InputField.CompositeColumnField} — N cells, values read from
-     *       {@code __insertKey_<fi>.value1()..value<N>()}.</li>
+     *       {@code insertKey_<fi>.value1()..value<N>()}.</li>
      * </ul>
      */
     private static CodeBlock buildPerCellValueList(
@@ -1975,7 +1975,7 @@ public class TypeFetcherGenerator {
      * Builds the per-record NodeId decode locals for an INSERT/UPSERT INSERT-arm. For each
      * NodeId-bearing carrier ({@link InputField.ColumnField} with
      * {@link CallSiteExtraction.NodeIdDecodeKeys}, {@link InputField.CompositeColumnField}),
-     * emits one {@code Record<N> __insertKey_<fi> = ...} local reading from {@code mapLocal}.
+     * emits one {@code Record<N> insertKey_<fi> = ...} local reading from {@code mapLocal}.
      * Locals are conditional on the source key's presence so an absent key (DEFAULT-resolved
      * cell) does not force a decode; null returns on a present key throw
      * {@code GraphqlErrorException}, mirroring the lookup-WHERE null handling.
@@ -2337,7 +2337,7 @@ public class TypeFetcherGenerator {
         var postInGuard = CodeBlock.builder();
         postInGuard.addStatement("$T<$T<?>, Object> sets = new $T<>()", MAP, fieldClass, linkedHashMap);
         emitSetMapPuts(postInGuard, setGroups, "sets", "in", "in",
-            "__setKey", tablesOnly, tableRef);
+            "setKey", tablesOnly, tableRef);
         // Runtime PATCH guard: the carrier guarantees the schema has at least one settable column,
         // but a caller may omit every set-field value (sending only key columns); fail with a
         // friendly message rather than letting jOOQ reject an empty SET map.
@@ -2432,7 +2432,7 @@ public class TypeFetcherGenerator {
             var g = groups.get(gi);
             emitLookupKeyCellAdds(postInGuard, g, gi, "row", tablesOnly, tableRef);
         }
-        emitSetBulkCellAdds(postInGuard, setGroups, "__bulkSetKey", tablesOnly, tableRef);
+        emitSetBulkCellAdds(postInGuard, setGroups, "bulkSetKey", tablesOnly, tableRef);
         postInGuard.addStatement("vRows.add($T.row(cells.toArray(new $T<?>[0])))", DSL, fieldClass);
         postInGuard.endControlFlow();
         postInGuard.addStatement("$T<?> v = $T.values(vRows.toArray(new $T[0])).as($S, vColNames.toArray(new String[0]))",
@@ -2598,16 +2598,16 @@ public class TypeFetcherGenerator {
             if (hasDecodeLocals) {
                 dmlChain.add(".valuesOfRows(in.stream()\n").indent()
                     .add(".map(row -> {\n").indent()
-                    .add(buildInsertDecodeLocals(fields, "row", "__insertKey"))
+                    .add(buildInsertDecodeLocals(fields, "row", "insertKey"))
                     .add("return $T.row(\n", DSL).indent()
-                    .add(buildPerCellValueList(fields, tablesOnly, tableRef, "row", "__insertKey")).unindent()
+                    .add(buildPerCellValueList(fields, tablesOnly, tableRef, "row", "insertKey")).unindent()
                     .add(");\n").unindent()
                     .add("})\n")
                     .add(".toList())\n").unindent();
             } else {
                 dmlChain.add(".valuesOfRows(in.stream()\n").indent()
                     .add(".map(row -> $T.row(\n", DSL).indent()
-                    .add(buildPerCellValueList(fields, tablesOnly, tableRef, "row", "__insertKey")).unindent()
+                    .add(buildPerCellValueList(fields, tablesOnly, tableRef, "row", "insertKey")).unindent()
                     .add("))\n")
                     .add(".toList())\n").unindent();
             }
@@ -2615,9 +2615,9 @@ public class TypeFetcherGenerator {
             // Single-row decode locals lift into postInGuard. The if-not-empty block above
             // already wrote setsUpdate-side guards; appending the decode locals here keeps the
             // statement order (uniform-shape guard → setsUpdate construction → decode locals).
-            postInGuard.add(buildInsertDecodeLocals(fields, "in", "__insertKey"));
+            postInGuard.add(buildInsertDecodeLocals(fields, "in", "insertKey"));
             dmlChain.add(".values(\n").indent()
-                .add(buildPerCellValueList(fields, tablesOnly, tableRef, "in", "__insertKey")).unindent()
+                .add(buildPerCellValueList(fields, tablesOnly, tableRef, "in", "insertKey")).unindent()
                 .add(")\n");
         }
         dmlChain.add(".onConflict(").add(conflictCols.build()).add(")\n");
@@ -2684,11 +2684,11 @@ public class TypeFetcherGenerator {
      *   <li>{@link InputColumnBindingGroup.MapGroup} — per binding, emits
      *       {@code t.col.eq(DSL.val(in.get(name), t.col.getDataType()))}. When the binding's
      *       extraction is {@link CallSiteExtraction.NodeIdDecodeKeys}, the value source becomes
-     *       {@code __lookupKey<i>.value1()} (the per-row decode local, declared above) and the
+     *       {@code lookupKey<i>.value1()} (the per-row decode local, declared above) and the
      *       wrapping {@code DSL.val} keeps the typed column-data-type binding.</li>
      *   <li>{@link InputColumnBindingGroup.DecodedRecordGroup} — emits one decode local
      *       (with {@code ThrowOnMismatch} / {@code SkipMismatchedElement} null handling) above,
-     *       and N {@code t.col_k.eq(__lookupKey<i>.value<k+1>())} chained equalities into the
+     *       and N {@code t.col_k.eq(lookupKey<i>.value<k+1>())} chained equalities into the
      *       WHERE expression.</li>
      * </ul>
      */
@@ -2742,7 +2742,7 @@ public class TypeFetcherGenerator {
                     }
                 }
                 case InputColumnBindingGroup.DecodedRecordGroup drg -> {
-                    String recLocal = "__lookupKey" + gi;
+                    String recLocal = "lookupKey" + gi;
                     appendDecodeLocal(locals, recLocal, drg.extraction(), mapLocal, drg.sourceFieldName());
                     for (var binding : drg.bindings()) {
                         if (slotIndex > 0) whereExpr.add(".and(");
@@ -2773,7 +2773,7 @@ public class TypeFetcherGenerator {
             GeneratorUtils.ResolvedTableNames tablesOnly, TableRef tableRef,
             int groupIndex) {
         if (binding.extraction() instanceof CallSiteExtraction.NodeIdDecodeKeys nidk) {
-            String recLocal = "__lookupKey" + groupIndex;
+            String recLocal = "lookupKey" + groupIndex;
             appendDecodeLocal(locals, recLocal, nidk, mapLocal, binding.fieldName());
             whereExpr.add("$T.val($L.value1(), $T.$L.$L.getDataType())",
                 DSL, recLocal,
@@ -2815,7 +2815,7 @@ public class TypeFetcherGenerator {
      * Emits per-row decode locals for every NodeId-decoded lookup-key group on the TIA. One
      * {@code Record<N>} local per {@link InputColumnBindingGroup.DecodedRecordGroup} or per
      * NodeIdDecodeKeys-extracted {@link InputColumnBinding.MapBinding}, named
-     * {@code __bulkKey<gi>} (composite) / {@code __bulkKey<gi>_<bi>} (per-binding). Reads from
+     * {@code bulkKey<gi>} (composite) / {@code bulkKey<gi>_<bi>} (per-binding). Reads from
      * {@code mapLocal.get(sourceField)}. Used by bulk-arm walks where the decode runs inside the
      * per-row loop / lambda body. {@link InputColumnBindingGroup.MapGroup} bindings with
      * non-NodeId extractions emit no locals.
@@ -2831,21 +2831,21 @@ public class TypeFetcherGenerator {
                     for (int bi = 0; bi < mg.bindings().size(); bi++) {
                         var binding = mg.bindings().get(bi);
                         if (binding.extraction() instanceof CallSiteExtraction.NodeIdDecodeKeys nidk) {
-                            appendDecodeLocal(block, "__bulkKey" + gi + "_" + bi, nidk, mapLocal, binding.fieldName());
+                            appendDecodeLocal(block, "bulkKey" + gi + "_" + bi, nidk, mapLocal, binding.fieldName());
                         }
                     }
                 }
                 case InputColumnBindingGroup.DecodedRecordGroup drg ->
-                    appendDecodeLocal(block, "__bulkKey" + gi, drg.extraction(), mapLocal, drg.sourceFieldName());
+                    appendDecodeLocal(block, "bulkKey" + gi, drg.extraction(), mapLocal, drg.sourceFieldName());
             }
         }
     }
 
     /**
      * Emits per-row {@code cells.add($T.val(...))} statements for one lookup-key group.
-     * MapBinding entries with NodeIdDecodeKeys read from the matching {@code __bulkKey<gi>_<bi>}
+     * MapBinding entries with NodeIdDecodeKeys read from the matching {@code bulkKey<gi>_<bi>}
      * local declared by {@link #emitLookupKeyDecodeLocals}; DecodedRecordGroup entries read
-     * {@code __bulkKey<gi>.value<k+1>()} per slot. Direct-extracted MapBindings read raw
+     * {@code bulkKey<gi>.value<k+1>()} per slot. Direct-extracted MapBindings read raw
      * {@code mapLocal.get(name)} verbatim.
      */
     private static void emitLookupKeyCellAdds(
@@ -2859,7 +2859,7 @@ public class TypeFetcherGenerator {
                 for (int bi = 0; bi < mg.bindings().size(); bi++) {
                     var binding = mg.bindings().get(bi);
                     if (binding.extraction() instanceof CallSiteExtraction.NodeIdDecodeKeys) {
-                        String recLocal = "__bulkKey" + groupIndex + "_" + bi;
+                        String recLocal = "bulkKey" + groupIndex + "_" + bi;
                         block.addStatement("cells.add($T.val($L.value1(), $T.$L.$L.getDataType()))",
                             DSL, recLocal,
                             tablesOnly.tablesClass(), tableRef.javaFieldName(), binding.targetColumn().javaName());
@@ -2871,7 +2871,7 @@ public class TypeFetcherGenerator {
                 }
             }
             case InputColumnBindingGroup.DecodedRecordGroup drg -> {
-                String recLocal = "__bulkKey" + groupIndex;
+                String recLocal = "bulkKey" + groupIndex;
                 for (var binding : drg.bindings()) {
                     block.addStatement("cells.add($T.val($L.value$L(), $T.$L.$L.getDataType()))",
                         DSL, recLocal, binding.index() + 1,
@@ -2917,13 +2917,13 @@ public class TypeFetcherGenerator {
                         for (int bi = 0; bi < mg.bindings().size(); bi++) {
                             var binding = mg.bindings().get(bi);
                             if (binding.extraction() instanceof CallSiteExtraction.NodeIdDecodeKeys nidk) {
-                                String recLocal = "__bulkKey" + gi + "_" + bi;
+                                String recLocal = "bulkKey" + gi + "_" + bi;
                                 appendDecodeLocal(lambdaLocals, recLocal, nidk, "row", binding.fieldName());
                             }
                         }
                     }
                     case InputColumnBindingGroup.DecodedRecordGroup drg -> {
-                        String recLocal = "__bulkKey" + gi;
+                        String recLocal = "bulkKey" + gi;
                         appendDecodeLocal(lambdaLocals, recLocal, drg.extraction(), "row", drg.sourceFieldName());
                     }
                 }
@@ -2987,7 +2987,7 @@ public class TypeFetcherGenerator {
                     if (!first) b.add(", ");
                     first = false;
                     if (binding.extraction() instanceof CallSiteExtraction.NodeIdDecodeKeys) {
-                        String recLocal = "__bulkKey" + groupIndex + "_" + bi;
+                        String recLocal = "bulkKey" + groupIndex + "_" + bi;
                         b.add("$T.val($L.value1(), $T.$L.$L.getDataType())",
                             DSL, recLocal,
                             tablesOnly.tablesClass(), tableRef.javaFieldName(), binding.targetColumn().javaName());
@@ -2999,7 +2999,7 @@ public class TypeFetcherGenerator {
                 }
             }
             case InputColumnBindingGroup.DecodedRecordGroup drg -> {
-                String recLocal = "__bulkKey" + groupIndex;
+                String recLocal = "bulkKey" + groupIndex;
                 for (var binding : drg.bindings()) {
                     if (!first) b.add(", ");
                     first = false;
@@ -3935,7 +3935,7 @@ public class TypeFetcherGenerator {
         var linkedHashMap = ClassName.get("java.util", "LinkedHashMap");
         var preGuard = CodeBlock.builder();
         preGuard.addStatement("$T<$T<?>, Object> sets = new $T<>()", MAP, fieldClass, linkedHashMap);
-        emitSetMapPuts(preGuard, setGroups, "sets", "in", "in", "__setKey", tablesOnly, tableRef);
+        emitSetMapPuts(preGuard, setGroups, "sets", "in", "in", "setKey", tablesOnly, tableRef);
         // Runtime PATCH guard: the carrier guarantees the schema has at least one settable column,
         // but a caller may omit every set-field value (sending only key columns); fail with a
         // friendly message rather than letting jOOQ reject an empty SET map.
@@ -4047,23 +4047,23 @@ public class TypeFetcherGenerator {
             if (hasDecodeLocals) {
                 chain.add(".valuesOfRows(in.stream()\n").indent()
                     .add(".map(row -> {\n").indent()
-                    .add(buildInsertDecodeLocals(fields, "row", "__insertKey"))
+                    .add(buildInsertDecodeLocals(fields, "row", "insertKey"))
                     .add("return $T.row(\n", DSL).indent()
-                    .add(buildPerCellValueList(fields, tablesOnly, tableRef, "row", "__insertKey")).unindent()
+                    .add(buildPerCellValueList(fields, tablesOnly, tableRef, "row", "insertKey")).unindent()
                     .add(");\n").unindent()
                     .add("})\n")
                     .add(".toList())\n").unindent();
             } else {
                 chain.add(".valuesOfRows(in.stream()\n").indent()
                     .add(".map(row -> $T.row(\n", DSL).indent()
-                    .add(buildPerCellValueList(fields, tablesOnly, tableRef, "row", "__insertKey")).unindent()
+                    .add(buildPerCellValueList(fields, tablesOnly, tableRef, "row", "insertKey")).unindent()
                     .add("))\n")
                     .add(".toList())\n").unindent();
             }
         } else {
-            preGuard.add(buildInsertDecodeLocals(fields, "in", "__insertKey"));
+            preGuard.add(buildInsertDecodeLocals(fields, "in", "insertKey"));
             chain.add(".values(\n").indent()
-                .add(buildPerCellValueList(fields, tablesOnly, tableRef, "in", "__insertKey")).unindent()
+                .add(buildPerCellValueList(fields, tablesOnly, tableRef, "in", "insertKey")).unindent()
                 .add(")\n");
         }
         return new DmlChainAndGuards(chain.build(), preGuard.build());
@@ -4082,7 +4082,7 @@ public class TypeFetcherGenerator {
         var preGuard = CodeBlock.builder();
         preGuard.addStatement("$T<$T<?>, Object> sets = new $T<>()", MAP, fieldClass, linkedHashMap);
         emitSetMapPuts(preGuard, setGroupsOfFields(tia.setFields()), "sets", "in", "in",
-            "__setKey", tablesOnly, tableRef);
+            "setKey", tablesOnly, tableRef);
         preGuard.beginControlFlow("if (sets.isEmpty())")
             .addStatement("throw new $T($S)", IllegalArgumentException.class,
                 "@mutation(typeName: UPDATE) call has no settable fields present; "
@@ -4121,7 +4121,7 @@ public class TypeFetcherGenerator {
                         + "only @lookupKey fields were provided")
                 .endControlFlow();
         }
-        preGuard.add(buildInsertDecodeLocals(fields, "in", "__insertKey"));
+        preGuard.add(buildInsertDecodeLocals(fields, "in", "insertKey"));
         var conflictCols = CodeBlock.builder();
         var conflictTargetColumns = new ArrayList<no.sikt.graphitron.rewrite.model.ColumnRef>();
         for (var g : tia.fieldBindings()) conflictTargetColumns.addAll(g.targetColumns());
@@ -4134,7 +4134,7 @@ public class TypeFetcherGenerator {
         var chain = CodeBlock.builder()
             .add(".insertInto($L, ", tableLocal).add(colList).add(")\n")
             .add(".values(\n").indent()
-            .add(buildPerCellValueList(fields, tablesOnly, tableRef, "in", "__insertKey")).unindent()
+            .add(buildPerCellValueList(fields, tablesOnly, tableRef, "in", "insertKey")).unindent()
             .add(")\n")
             .add(".onConflict(").add(conflictCols.build()).add(")\n");
         if (!tia.setFields().isEmpty()) {
@@ -4312,7 +4312,7 @@ public class TypeFetcherGenerator {
         var linkedHashMap = ClassName.get("java.util", "LinkedHashMap");
         var body = CodeBlock.builder();
         body.addStatement("$T<$T<?>, Object> sets = new $T<>()", MAP, fieldClass, linkedHashMap);
-        emitSetMapPuts(body, setGroups, "sets", "row", "row", "__setKey", tablesOnly, tableRef);
+        emitSetMapPuts(body, setGroups, "sets", "row", "row", "setKey", tablesOnly, tableRef);
         body.beginControlFlow("if (sets.isEmpty())")
             .addStatement("throw new $T($S)", IllegalArgumentException.class,
                 "@mutation(typeName: UPDATE) call has no settable fields present; "
@@ -4415,10 +4415,10 @@ public class TypeFetcherGenerator {
         var fields = tia.fields();
         var colList = buildInsertColumnList(fields, tablesOnly, tableRef);
         var body = CodeBlock.builder();
-        body.add(buildInsertDecodeLocals(fields, "row", "__insertKey"));
+        body.add(buildInsertDecodeLocals(fields, "row", "insertKey"));
         body.add("$T rec = txd.insertInto($L, ", recordRowType, tableLocal).add(colList).add(")\n")
             .add("    .values(\n").indent().indent()
-            .add(buildPerCellValueList(fields, tablesOnly, tableRef, "row", "__insertKey")).unindent().unindent()
+            .add(buildPerCellValueList(fields, tablesOnly, tableRef, "row", "insertKey")).unindent().unindent()
             .add(")\n")
             .add("    .returningResult(").add(buildPkFieldList(pkCols, tablesOnly, tableRef)).add(")\n")
             .add("    .fetchOne();\n")
@@ -4437,7 +4437,7 @@ public class TypeFetcherGenerator {
         var body = CodeBlock.builder();
         body.addStatement("$T<$T<?>, Object> sets = new $T<>()", MAP, fieldClass, linkedHashMap);
         emitSetMapPuts(body, setGroupsOfFields(tia.setFields()), "sets", "row", "row",
-            "__setKey", tablesOnly, tableRef);
+            "setKey", tablesOnly, tableRef);
         body.beginControlFlow("if (sets.isEmpty())")
             .addStatement("throw new $T($S)", IllegalArgumentException.class,
                 "@mutation(typeName: UPDATE) call has no settable fields present; "

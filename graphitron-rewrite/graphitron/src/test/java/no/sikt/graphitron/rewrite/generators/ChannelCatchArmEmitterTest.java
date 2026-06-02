@@ -85,12 +85,12 @@ class ChannelCatchArmEmitterTest {
 
     @Test
     void earlyReturn_wrapsViolationsLocalInErrorList() {
-        var code = ChannelEarlyReturnEmitter.emit(OUTCOME_OF_RECORD, "__violations", OUTPUT_PACKAGE)
+        var code = ChannelEarlyReturnEmitter.emit(OUTCOME_OF_RECORD, "violations", OUTPUT_PACKAGE)
             .toString();
 
         assertThat(code)
             .contains("newResult()")
-            .contains("ErrorList<>(__violations)")
+            .contains("ErrorList<>(violations)")
             .contains("build()");
     }
 

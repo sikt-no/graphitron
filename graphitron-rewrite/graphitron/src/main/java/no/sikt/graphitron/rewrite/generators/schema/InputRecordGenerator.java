@@ -200,7 +200,7 @@ public final class InputRecordGenerator {
         for (int i = 0; i < shape.components().size(); i++) {
             if (i > 0) ctorArgs.add(",\n");
             InputComponent c = shape.components().get(i);
-            String local = "__c_" + c.javaComponentName();
+            String local = "c_" + c.javaComponentName();
             body.add(readComponent(c, outputPackage, local));
             ctorArgs.add("$L", local);
         }
@@ -246,11 +246,11 @@ public final class InputRecordGenerator {
             if (isInputClass(element, outputPackage)) {
                 ClassName elemClass = (ClassName) element;
                 b.addStatement(
-                    "$T $L = $L == null ? null : $L.stream().map(__e -> $T.fromMap(($T) __e)).toList()",
+                    "$T $L = $L == null ? null : $L.stream().map(element -> $T.fromMap(($T) element)).toList()",
                     javaType, local, rawLocal, rawLocal, elemClass, MAP_STRING_OBJECT);
             } else {
                 b.addStatement(
-                    "$T $L = $L == null ? null : $L.stream().map(__e -> ($T) __e).toList()",
+                    "$T $L = $L == null ? null : $L.stream().map(element -> ($T) element).toList()",
                     javaType, local, rawLocal, rawLocal, element);
             }
         } else if (isInputClass(javaType, outputPackage)) {

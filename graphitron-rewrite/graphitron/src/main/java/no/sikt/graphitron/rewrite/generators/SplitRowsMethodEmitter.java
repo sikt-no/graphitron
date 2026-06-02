@@ -87,11 +87,26 @@ public final class SplitRowsMethodEmitter {
         return ClassName.get("org.jooq", "Record" + arity);
     }
 
+    // Synthetic SQL column aliases for the split-rows projection. The double-underscore wrapping
+    // (__name__) is a deliberate collision-avoidance device, NOT the lazy dunder convention this
+    // class otherwise avoids for Java locals: these names live in the result-set column namespace
+    // alongside real table columns, which the consumer's DB schema controls. Wrapping in __ keeps
+    // a synthetic alias from colliding with a real column the consumer happens to name `idx` or
+    // `rn`. They reach generated code as string literals (.as("__idx__"), r.get("__rn__")), never
+    // as Java identifiers, so the no-regression meta-test (which scans for dunder-prefixed
+    // identifiers) correctly leaves them alone.
+
     /**
-     * SELECT-projection alias for the parent-input {@code idx} column. Chosen to be
-     * collision-unlikely with any GraphQL field name or {@code @field(name:)} mapping.
+     * SELECT-projection alias for the parent-input {@code idx} column that drives the Java-side
+     * scatter back to the originating parent row.
      */
     public static final String IDX_COLUMN = "__idx__";
+
+    /**
+     * SELECT-projection alias for the windowed {@code ROW_NUMBER()} column; the outer SELECT
+     * filters {@code RN_COLUMN <= page.limit()} to enforce the per-partition page limit.
+     */
+    public static final String RN_COLUMN = "__rn__";
 
     private SplitRowsMethodEmitter() {}
 
@@ -975,9 +990,9 @@ public final class SplitRowsMethodEmitter {
             ClassName.get("java.util", "ArrayList"), wildField, ClassName.get("java.util", "ArrayList"));
         body.addStatement("$T<Integer> idxField = parentInput.field(0, $T.class)",
             FIELD, Integer.class);
-        body.addStatement("selectFields.add(idxField.as($S))", "__idx__");
+        body.addStatement("selectFields.add(idxField.as($S))", IDX_COLUMN);
         body.addStatement("selectFields.add($T.rowNumber().over($T.partitionBy(idxField).orderBy(page.effectiveOrderBy())).as($S))",
-            DSL, DSL, "__rn__");
+            DSL, DSL, RN_COLUMN);
 
         // Inner windowed SELECT — attaches .orderBy()/.seek() for cursor-driven filtering; the
         // OS-level seek predicate falls in as WHERE, filtering BEFORE ROW_NUMBER() is computed.
@@ -1054,7 +1069,7 @@ public final class SplitRowsMethodEmitter {
         outer.add(".select()\n");
         outer.add(".from(ranked)\n");
         outer.add(".where(ranked.field($S, $T.class).le($T.val(page.limit())))\n",
-            "__rn__", Integer.class, DSL);
+            RN_COLUMN, Integer.class, DSL);
         outer.add(".fetch();\n");
         outer.unindent();
         body.add(outer.build());

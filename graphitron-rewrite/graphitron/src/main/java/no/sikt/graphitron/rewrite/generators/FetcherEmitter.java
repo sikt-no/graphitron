@@ -371,7 +371,7 @@ public final class FetcherEmitter {
                 : ParameterizedTypeName.get(javaUtilList, WildcardTypeName.subtypeOf(Object.class));
             var orgJooqResult = ClassName.get("org.jooq", "Result");
             var resultOfRecord = ParameterizedTypeName.get(orgJooqResult, orgJooqRecord);
-            body.add("    $T __fetched = dsl.select($T.$$fields(env.getSelectionSet(), $T.$L, env))\n",
+            body.add("    $T fetched = dsl.select($T.$$fields(env.getSelectionSet(), $T.$L, env))\n",
                 resultOfRecord, typeClass, table.constantsClass(), table.javaFieldName());
             body.add("        .from($T.$L)\n", table.constantsClass(), table.javaFieldName());
             body.add("        .where(");
@@ -400,49 +400,49 @@ public final class FetcherEmitter {
             // R141: PK-keyed-map indirection. The SELECT returns rows in Postgres's scan order
             // (no SQL ordering guarantee); re-key by PK then walk source's input-ordered PK
             // list to project in input order. See class-Javadoc above for the contract.
-            body.add("    $T<$T, $T> __byPk = new $T<>(__fetched.size());\n",
+            body.add("    $T<$T, $T> byPk = new $T<>(fetched.size());\n",
                 javaUtilMap, keyType, orgJooqRecord, javaUtilHashMap);
-            body.add("    for ($T __r : __fetched) __byPk.put(",
+            body.add("    for ($T row : fetched) byPk.put(",
                 orgJooqRecord);
             if (pkColumns.size() == 1) {
                 var col = pkColumns.get(0);
-                body.add("__r.get($T.$L.$L)",
+                body.add("row.get($T.$L.$L)",
                     table.constantsClass(), table.javaFieldName(), col.javaName());
             } else {
                 body.add("$T.of(", javaUtilList);
                 for (int i = 0; i < pkColumns.size(); i++) {
                     if (i > 0) body.add(", ");
                     var col = pkColumns.get(i);
-                    body.add("__r.get($T.$L.$L)",
+                    body.add("row.get($T.$L.$L)",
                         table.constantsClass(), table.javaFieldName(), col.javaName());
                 }
                 body.add(")");
             }
-            body.add(", __r);\n");
-            body.add("    $T<$T> __ordered = new $T<>(source.size());\n",
+            body.add(", row);\n");
+            body.add("    $T<$T> ordered = new $T<>(source.size());\n",
                 javaUtilList, orgJooqRecord, javaUtilArrayList);
-            body.add("    for ($T __src : source) {\n",
+            body.add("    for ($T sourceRow : source) {\n",
                 rowType);
-            body.add("        $T __key = ", keyType);
+            body.add("        $T key = ", keyType);
             if (pkColumns.size() == 1) {
                 var col = pkColumns.get(0);
-                body.add("__src.get($T.$L.$L)",
+                body.add("sourceRow.get($T.$L.$L)",
                     table.constantsClass(), table.javaFieldName(), col.javaName());
             } else {
                 body.add("$T.of(", javaUtilList);
                 for (int i = 0; i < pkColumns.size(); i++) {
                     if (i > 0) body.add(", ");
                     var col = pkColumns.get(i);
-                    body.add("__src.get($T.$L.$L)",
+                    body.add("sourceRow.get($T.$L.$L)",
                         table.constantsClass(), table.javaFieldName(), col.javaName());
                 }
                 body.add(")");
             }
             body.add(";\n");
-            body.add("        $T __match = __byPk.get(__key);\n", orgJooqRecord);
-            body.add("        if (__match != null) __ordered.add(__match);\n");
+            body.add("        $T match = byPk.get(key);\n", orgJooqRecord);
+            body.add("        if (match != null) ordered.add(match);\n");
             body.add("    }\n");
-            body.add("    return __ordered;\n");
+            body.add("    return ordered;\n");
         } else {
             body.add("    return dsl.select($T.$$fields(env.getSelectionSet(), $T.$L, env))\n",
                 typeClass, table.constantsClass(), table.javaFieldName());
@@ -520,7 +520,7 @@ public final class FetcherEmitter {
                 : ParameterizedTypeName.get(javaUtilList, WildcardTypeName.subtypeOf(Object.class));
             var orgJooqResult = ClassName.get("org.jooq", "Result");
             var resultOfRecord = ParameterizedTypeName.get(orgJooqResult, orgJooqRecord);
-            body.add("    $T __fetched = dsl.select($T.$$fields(env.getSelectionSet(), $T.$L, env))\n",
+            body.add("    $T fetched = dsl.select($T.$$fields(env.getSelectionSet(), $T.$L, env))\n",
                 resultOfRecord, typeClass, table.constantsClass(), table.javaFieldName());
             body.add("        .from($T.$L)\n", table.constantsClass(), table.javaFieldName());
             body.add("        .where(");
@@ -549,49 +549,49 @@ public final class FetcherEmitter {
             // R141 order-preservation: PK-keyed-map indirection. Mirrors the Wrap.Record arm
             // exactly; only the source row type differs (XRecord vs RecordN), and the PK
             // accessors are positional record.get(<Table.PK>) reads in both arms.
-            body.add("    $T<$T, $T> __byPk = new $T<>(__fetched.size());\n",
+            body.add("    $T<$T, $T> byPk = new $T<>(fetched.size());\n",
                 javaUtilMap, keyType, orgJooqRecord, javaUtilHashMap);
-            body.add("    for ($T __r : __fetched) __byPk.put(",
+            body.add("    for ($T row : fetched) byPk.put(",
                 orgJooqRecord);
             if (pkColumns.size() == 1) {
                 var col = pkColumns.get(0);
-                body.add("__r.get($T.$L.$L)",
+                body.add("row.get($T.$L.$L)",
                     table.constantsClass(), table.javaFieldName(), col.javaName());
             } else {
                 body.add("$T.of(", javaUtilList);
                 for (int i = 0; i < pkColumns.size(); i++) {
                     if (i > 0) body.add(", ");
                     var col = pkColumns.get(i);
-                    body.add("__r.get($T.$L.$L)",
+                    body.add("row.get($T.$L.$L)",
                         table.constantsClass(), table.javaFieldName(), col.javaName());
                 }
                 body.add(")");
             }
-            body.add(", __r);\n");
-            body.add("    $T<$T> __ordered = new $T<>(source.size());\n",
+            body.add(", row);\n");
+            body.add("    $T<$T> ordered = new $T<>(source.size());\n",
                 javaUtilList, orgJooqRecord, javaUtilArrayList);
-            body.add("    for ($T __src : source) {\n",
+            body.add("    for ($T sourceRow : source) {\n",
                 recordType);
-            body.add("        $T __key = ", keyType);
+            body.add("        $T key = ", keyType);
             if (pkColumns.size() == 1) {
                 var col = pkColumns.get(0);
-                body.add("__src.get($T.$L.$L)",
+                body.add("sourceRow.get($T.$L.$L)",
                     table.constantsClass(), table.javaFieldName(), col.javaName());
             } else {
                 body.add("$T.of(", javaUtilList);
                 for (int i = 0; i < pkColumns.size(); i++) {
                     if (i > 0) body.add(", ");
                     var col = pkColumns.get(i);
-                    body.add("__src.get($T.$L.$L)",
+                    body.add("sourceRow.get($T.$L.$L)",
                         table.constantsClass(), table.javaFieldName(), col.javaName());
                 }
                 body.add(")");
             }
             body.add(";\n");
-            body.add("        $T __match = __byPk.get(__key);\n", orgJooqRecord);
-            body.add("        if (__match != null) __ordered.add(__match);\n");
+            body.add("        $T match = byPk.get(key);\n", orgJooqRecord);
+            body.add("        if (match != null) ordered.add(match);\n");
             body.add("    }\n");
-            body.add("    return __ordered;\n");
+            body.add("    return ordered;\n");
         } else {
             body.add("    return dsl.select($T.$$fields(env.getSelectionSet(), $T.$L, env))\n",
                 typeClass, table.constantsClass(), table.javaFieldName());
@@ -658,12 +658,12 @@ public final class FetcherEmitter {
                 ClassName.get("java.util", "List"), stringClass);
             body.add("    $T source = ($T) env.getSource();\n", resultOfRecord, resultOfRecord);
             body.add("    if (source == null) return null;\n");
-            body.add("    $T __ids = new $T(source.size());\n", listOfString, arrayListOfString);
-            body.add("    for ($T __r : source) {\n", jooqRecord);
-            body.add("        __ids.add($T.$L(", encoderClass, encoderMethod);
+            body.add("    $T ids = new $T(source.size());\n", listOfString, arrayListOfString);
+            body.add("    for ($T row : source) {\n", jooqRecord);
+            body.add("        ids.add($T.$L(", encoderClass, encoderMethod);
             for (int i = 0; i < pkColumns.size(); i++) {
                 if (i > 0) body.add(", ");
-                body.add("__r.get(($T<$T>) $T.field($S, $T.class))",
+                body.add("row.get(($T<$T>) $T.field($S, $T.class))",
                     ClassName.get("org.jooq", "Field"),
                     ClassName.bestGuess(pkColumns.get(i).columnClass()),
                     DSL, pkColumns.get(i).sqlName(),
@@ -671,7 +671,7 @@ public final class FetcherEmitter {
             }
             body.add("));\n");
             body.add("    }\n");
-            body.add("    return __ids;\n");
+            body.add("    return ids;\n");
         } else {
             body.add("    $T source = ($T) env.getSource();\n", jooqRecord, jooqRecord);
             body.add("    if (source == null) return null;\n");
@@ -714,7 +714,7 @@ public final class FetcherEmitter {
      * raw PK column value; the encoder runs downstream.
      *
      * <p><b>Same-Field-instance round-trip.</b> The PK copy emits
-     * {@code __r.set(Tables.FILM.FILM_ID, __src.get(Tables.FILM.FILM_ID))}: the same
+     * {@code row.set(Tables.FILM.FILM_ID, sourceRow.get(Tables.FILM.FILM_ID))}: the same
      * {@code Field<T>} instance reads the source and writes the synthesized Record. This is
      * what makes the copy type-erasure-free in the generated code — jOOQ's
      * {@code Field<T>}-typed accessor returns and accepts the same {@code T}, so no cast or
@@ -746,29 +746,29 @@ public final class FetcherEmitter {
             var resultOfRecord = ParameterizedTypeName.get(jooqResult, jooqRecord);
             body.add("    $T source = ($T) env.getSource();\n", resultOfRecord, resultOfRecord);
             body.add("    if (source == null) return null;\n");
-            body.add("    $T __out = new $T(source.size());\n", listOfRecord, arrayListOfRecord);
-            body.add("    for ($T __src : source) {\n", jooqRecord);
-            body.add("        $T __r = $T.$L.newRecord();\n",
+            body.add("    $T out = new $T(source.size());\n", listOfRecord, arrayListOfRecord);
+            body.add("    for ($T sourceRow : source) {\n", jooqRecord);
+            body.add("        $T row = $T.$L.newRecord();\n",
                 jooqRecord, table.constantsClass(), table.javaFieldName());
             for (var pk : pkColumns) {
-                body.add("        __r.set($T.$L.$L, __src.get($T.$L.$L));\n",
+                body.add("        row.set($T.$L.$L, sourceRow.get($T.$L.$L));\n",
                     table.constantsClass(), table.javaFieldName(), pk.javaName(),
                     table.constantsClass(), table.javaFieldName(), pk.javaName());
             }
-            body.add("        __out.add(__r);\n");
+            body.add("        out.add(row);\n");
             body.add("    }\n");
-            body.add("    return __out;\n");
+            body.add("    return out;\n");
         } else {
-            body.add("    $T __src = ($T) env.getSource();\n", jooqRecord, jooqRecord);
-            body.add("    if (__src == null) return null;\n");
-            body.add("    $T __r = $T.$L.newRecord();\n",
+            body.add("    $T sourceRow = ($T) env.getSource();\n", jooqRecord, jooqRecord);
+            body.add("    if (sourceRow == null) return null;\n");
+            body.add("    $T row = $T.$L.newRecord();\n",
                 jooqRecord, table.constantsClass(), table.javaFieldName());
             for (var pk : pkColumns) {
-                body.add("    __r.set($T.$L.$L, __src.get($T.$L.$L));\n",
+                body.add("    row.set($T.$L.$L, sourceRow.get($T.$L.$L));\n",
                     table.constantsClass(), table.javaFieldName(), pk.javaName(),
                     table.constantsClass(), table.javaFieldName(), pk.javaName());
             }
-            body.add("    return __r;\n");
+            body.add("    return row;\n");
         }
         body.add("}");
         return body.build();

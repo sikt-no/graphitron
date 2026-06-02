@@ -164,16 +164,16 @@ class GeneratorUtils {
      *   <li>{@link SourceKey.Reader.AccessorCall} + {@link SourceKey.Cardinality#ONE} — single
      *       typed {@code TableRecord} via instance accessor, projected to the element table's PK
      *       columns: <pre>{@code
-     *   ElementRecord __elt = ((BackingClass) env.getSource()).<accessor>();
-     *   RecordN<...> key = __elt.into(Tables.T.PK1, Tables.T.PK2);
+     *   ElementRecord element = ((BackingClass) env.getSource()).<accessor>();
+     *   RecordN<...> key = element.into(Tables.T.PK1, Tables.T.PK2);
      * }</pre></li>
      *   <li>{@link SourceKey.Reader.AccessorCall} + {@link SourceKey.Cardinality#MANY} —
      *       {@code List<X>} / {@code Set<X>} accessor; each element projects to a
      *       {@code RecordN<...>} key via a typed for-loop over {@code Iterable}: <pre>{@code
      *   List<RecordN<...>> keys = new ArrayList<>();
-     *   for (ElementRecord __elt : ((BackingClass) env.getSource()).<accessor>()) {
-     *       RecordN<...> __k = __elt.into(Tables.T.PK1, Tables.T.PK2);
-     *       keys.add(__k);
+     *   for (ElementRecord element : ((BackingClass) env.getSource()).<accessor>()) {
+     *       RecordN<...> key = element.into(Tables.T.PK1, Tables.T.PK2);
+     *       keys.add(key);
      *   }
      * }</pre></li>
      * </ul>
@@ -260,9 +260,9 @@ class GeneratorUtils {
             intoArgs.add("$T.$L.$L", tablesClass, tableField, pkCols.get(i).javaName());
         }
         return CodeBlock.builder()
-            .addStatement("$T __elt = (($T) env.getSource()).$L()",
+            .addStatement("$T element = (($T) env.getSource()).$L()",
                 elementClass, backingClass, accessor.methodName())
-            .addStatement("$T key = __elt.into($L)", keyType, intoArgs.build())
+            .addStatement("$T key = element.into($L)", keyType, intoArgs.build())
             .build();
     }
 
@@ -287,10 +287,10 @@ class GeneratorUtils {
         // because DataLoader.loadMany takes a List.
         var b = CodeBlock.builder()
             .addStatement("$T keys = new $T<>()", keysListType, arrayList)
-            .beginControlFlow("for ($T __elt : (($T) env.getSource()).$L())",
+            .beginControlFlow("for ($T element : (($T) env.getSource()).$L())",
                 elementClass, backingClass, accessor.methodName())
-            .addStatement("$T __k = __elt.into($L)", keyType, intoArgs.build())
-            .addStatement("keys.add(__k)")
+            .addStatement("$T key = element.into($L)", keyType, intoArgs.build())
+            .addStatement("keys.add(key)")
             .endControlFlow();
         return b.build();
     }
