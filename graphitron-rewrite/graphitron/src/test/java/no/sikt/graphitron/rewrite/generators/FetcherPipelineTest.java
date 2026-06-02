@@ -299,6 +299,56 @@ class FetcherPipelineTest {
         assertThat(body).doesNotContain("ErrorRouter.dispatch");
     }
 
+    // ===== R268: @table DataLoader data field under a flipped @service Outcome payload =====
+    //
+    // The pairing R244's inventory lacked and the retired arm-switch allow-list wrongly rejected:
+    // a RecordTableField (DataLoader-resolved @table field) sibling to a WrapperArm errors field
+    // under a root @service payload. The data field still gets its async DataLoader fetcher (which
+    // arm-switches inside that method, narrowing Outcome.Success and reading the key off
+    // success.value()), and its registration is a real fetcher reference, never graphql-java's
+    // default PropertyDataFetcher.
+    private static final String OUTCOME_TABLE_FIELD_SDL = """
+            type ValidationErr @error(handlers: [{handler: VALIDATION}]) { path: [String!]! message: String! }
+            type DbErr @error(handlers: [{handler: DATABASE, sqlState: "23503"}]) { path: [String!]! message: String! }
+            union SakError = ValidationErr | DbErr
+            type Language @table(name: "language") { name: String }
+            type SakPayload @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.SakPayload"}) {
+                data: String
+                language: Language @reference(path: [{key: "film_language_id_fkey"}])
+                errors: [SakError]
+            }
+            type Query {
+                sak: SakPayload
+                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "runSak"})
+            }
+            """;
+
+    @Test
+    void outcomePayload_tableDataField_emitsArmSwitchingDataLoaderFetcher() {
+        // RecordTableField classification under the WrapperArm payload: the @table field gets its
+        // async DataLoader fetcher method (the same CompletableFuture<DataFetcherResult<Record>>
+        // shape as the non-outcome RecordTableField), not a stub or a registration fall-through.
+        // Before R268 this schema failed validation outright (RecordTableField was off the
+        // arm-switch allow-list); the emission here is the structural proof the false rejection is
+        // gone. The arm-switch prelude (narrow Success / completedFuture(null) on ErrorList) is
+        // pinned behaviourally by the GraphQLQueryTest execution round-trip, not a body-string here.
+        var fetchers = findSpec("SakPayloadFetchers", OUTCOME_TABLE_FIELD_SDL);
+        assertThat(method(fetchers, "language").returnType().toString())
+            .isEqualTo("java.util.concurrent.CompletableFuture<graphql.execution.DataFetcherResult<org.jooq.Record>>");
+    }
+
+    @Test
+    void outcomePayload_tableDataField_wiringIsMethodReferenceNotPropertyFetcher() {
+        // Structural-check counterpart: the @table data field resolves through a graphitron-emitted
+        // fetcher (a method reference into SakPayloadFetchers), never graphql-java's default
+        // PropertyDataFetcher that would read a property off the Outcome source object. This is the
+        // invariant GraphitronSchemaValidator.validateOutcomeChildArmSwitch now enforces structurally
+        // in place of allow-list membership.
+        var bodies = fetcherBodies(OUTCOME_TABLE_FIELD_SDL);
+        assertThat(TypeSpecAssertions.wiringFor(bodies, "SakPayload", "language"))
+            .contains(DataFetcherKind.METHOD_REFERENCE);
+    }
+
     // ===== R154 §2: mutable-bean payload shape admission =====
     //
     // R244: serviceMutation_setterShapePayload_emitsSetterFactory,

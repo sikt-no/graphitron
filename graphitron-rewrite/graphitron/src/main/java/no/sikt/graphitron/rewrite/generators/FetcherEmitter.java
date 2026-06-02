@@ -16,6 +16,8 @@ import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.SourceKey;
 import no.sikt.graphitron.rewrite.model.TableRef;
 
+import java.util.List;
+
 import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.DSL;
 
 /**
@@ -36,7 +38,51 @@ public final class FetcherEmitter {
     private static final ClassName DATA_FETCHING_ENV = ClassName.get("graphql.schema", "DataFetchingEnvironment");
     private static final ClassName LIST = ClassName.get("java.util", "List");
 
+    /** The default source binding for an inline read: {@code env.getSource()}. */
+    private static final CodeBlock ENV_SOURCE = CodeBlock.of("env.getSource()");
+
     private FetcherEmitter() {}
+
+    /**
+     * Whether {@code fields} include an errors field on the R244 {@code Outcome} wrapper transport.
+     * When true the type is a flipped outcome payload: its fetchers receive a non-null
+     * {@code Outcome} as {@code env.getSource()}, so every data-channel sibling must arm-switch on
+     * {@code Success}. The signal is the parent's own {@code WrapperArm} errors field, knowable at
+     * generation time without re-walking the classifier.
+     *
+     * <p>Single home for the predicate so the two consumers that fork on it — the registration-site
+     * routing in {@code FetcherRegistrationsEmitter} and the DataLoader-method emission in
+     * {@code TypeFetcherGenerator} — cannot drift (R268).
+     */
+    public static boolean hasWrapperArmErrors(List<? extends GraphitronField> fields) {
+        return fields.stream().anyMatch(f -> f instanceof ChildField.ErrorsField ef
+            && ef.transport() instanceof ChildField.Transport.WrapperArm);
+    }
+
+    /**
+     * Whether {@code field} would resolve to graphql-java's {@code PropertyDataFetcher} (a property
+     * read off the source object) rather than a graphitron-emitted fetcher. Under an
+     * {@code Outcome} wrapper this is a silent runtime hole: the read would land on the
+     * {@code Outcome} object itself rather than arm-switching. Two emit-time sources (R268):
+     * an {@code ErrorsField} on the {@code PayloadAccessor} transport, and a property/record field
+     * on a {@code PojoResultType.NoBacking} parent (both emit {@code PropertyDataFetcher.fetching}
+     * in {@link #dataFetcherValueRaw} / {@link #propertyOrRecordValue}). These are the
+     * <em>sufficient conditions under the current emitter shape</em>; the validator consults this so
+     * it mirrors what the emitter actually keys on rather than re-deriving it.
+     *
+     * <p>An {@code UnclassifiedField} (which gets no registration at all, so graphql-java installs
+     * its default {@code PropertyDataFetcher}) is the third source, but it is absence-of-registration
+     * rather than an emitted value, so the validator checks it separately.
+     */
+    public static boolean resolvesViaPropertyDataFetcher(
+            GraphitronField field, GraphitronType.ResultType resultType) {
+        if (field instanceof ChildField.ErrorsField ef
+                && ef.transport() instanceof ChildField.Transport.PayloadAccessor) {
+            return true;
+        }
+        return (field instanceof ChildField.PropertyField || field instanceof ChildField.RecordField)
+            && resultType instanceof GraphitronType.PojoResultType.NoBacking;
+    }
 
     /**
      * Builds the {@code DataFetcher} value expression for {@code field}.
@@ -62,30 +108,61 @@ public final class FetcherEmitter {
             GraphitronField field, ClassName fetchersClass,
             TableRef parentTable, GraphitronType.ResultType resultType,
             String outputPackage, boolean sourceIsOutcome) {
-        if (sourceIsOutcome && !(field instanceof ChildField.ErrorsField)) {
-            return armSwitchedDataFetcher(field, resultType, outputPackage);
+        // R268: an immediate child of a flipped Outcome payload receives a non-null Outcome as
+        // env.getSource(). Three structural roles, only one of which is an inline arm-switch here:
+        //   - the errors field reads ErrorList.errors via its WrapperArm transport (the raw emitter
+        //     already handles it, so it falls through);
+        //   - inline-resolved data fields (record-backed accessor reads, constructor/nesting
+        //     passthrough) arm-switch here: narrow Success and point the field's own read at
+        //     success.value(), resolving null on the ErrorList arm;
+        //   - DataLoader/method-backed data fields (RecordTableField, RecordLookupTableField,
+        //     RecordTableMethodField, and the @service/@tableMethod nested-method variants) resolve
+        //     to a generated fetcher method that arm-switches internally (TypeFetcherGenerator +
+        //     GeneratorUtils source-bound key extraction), so the registration emits the plain
+        //     method reference unchanged via dataFetcherValueRaw.
+        // The fork is on a structural fact the model already carries (inline value vs. method
+        // reference), not a parallel allow-list of "blessed" variants.
+        if (sourceIsOutcome && isInlineArmSwitchedDataField(field)) {
+            return armSwitchedInlineDataFetcher(field, resultType, outputPackage);
         }
         return dataFetcherValueRaw(field, fetchersClass, parentTable, resultType, outputPackage);
     }
 
     /**
-     * R244: a data-channel child of a flipped outcome type reads off {@code Success.value()} of the
-     * non-null {@code Outcome} source and resolves null on the {@code ErrorList} arm. The read is
-     * emitted explicitly (not delegated to the field's raw fetcher), so the generated code is a
-     * recognizable accessor call rather than an opaque shim. Slice 1 covers the only shapes the
-     * in-scope {@code @service} payloads use: a {@code @record}-Java-backed accessor read and the
-     * constructor/nesting source passthrough. Other shapes (jOOQ-column reads, nested
-     * {@code @service}/{@code @tableMethod} children) do not occur under an in-scope outcome type;
-     * they are excluded by {@code OUTCOME_TYPE_ARM_SWITCHED_DATA_CHANNEL_VARIANTS} and throw here as
-     * an unreached guard until a follow-up supports them.
+     * The inline-resolved data-channel shapes that can appear as an immediate child of a
+     * {@code @record}-backed {@code Outcome} payload. Each resolves to an inline value expression in
+     * {@link #dataFetcherValueRaw} that reads {@code env.getSource()}; under the wrapper transport
+     * that read is repointed at {@code success.value()} (see {@link #armSwitchedInlineDataFetcher}).
+     *
+     * <p>The errors field is excluded (it reads {@code ErrorList.errors} via its
+     * {@code WrapperArm} transport). DataLoader/method-backed fields are excluded because their
+     * generated fetcher method owns the arm-switch; the registration site emits a plain method
+     * reference for them. This is not the retired allow-list: it names the shapes whose value is
+     * emitted <em>here</em> as a narrowable inline read, a structural property of the emit path.
      */
-    private static CodeBlock armSwitchedDataFetcher(
-            GraphitronField field, GraphitronType.ResultType resultType, String outputPackage) {
-        return CodeBlock.of("($T env) -> env.getSource() instanceof $T<?> success ? $L : null",
-            DATA_FETCHING_ENV, successClass(outputPackage), armSwitchValueExpr(field, resultType));
+    private static boolean isInlineArmSwitchedDataField(GraphitronField field) {
+        return field instanceof ChildField.ConstructorField
+            || field instanceof ChildField.NestingField
+            || field instanceof ChildField.PropertyField
+            || field instanceof ChildField.RecordField;
     }
 
-    private static CodeBlock armSwitchValueExpr(GraphitronField field, GraphitronType.ResultType resultType) {
+    /**
+     * R244/R268: an inline-resolved data-channel child of a flipped outcome type reads off
+     * {@code Success.value()} of the non-null {@code Outcome} source and resolves null on the
+     * {@code ErrorList} arm. The success-arm read is the field's <em>own</em> read, source-bound to
+     * {@code success.value()} instead of {@code env.getSource()} — for record-backed accessors via
+     * the shared {@link #recordBackedAccessorRead} (the same helper {@link #propertyOrRecordValue}
+     * uses), so there is no parallel accessor taxonomy.
+     */
+    private static CodeBlock armSwitchedInlineDataFetcher(
+            GraphitronField field, GraphitronType.ResultType resultType, String outputPackage) {
+        return CodeBlock.of("($T env) -> env.getSource() instanceof $T<?> success ? $L : null",
+            DATA_FETCHING_ENV, successClass(outputPackage), inlineSuccessRead(field, resultType));
+    }
+
+    /** The success-arm value expression: the field's own read, source-bound to {@code success.value()}. */
+    private static CodeBlock inlineSuccessRead(GraphitronField field, GraphitronType.ResultType resultType) {
         if (field instanceof ChildField.ConstructorField || field instanceof ChildField.NestingField) {
             return CodeBlock.of("success.value()");
         }
@@ -98,20 +175,13 @@ public final class FetcherEmitter {
             : resultType instanceof GraphitronType.PojoResultType.Backed b ? b.fqClassName()
             : null;
         if (accessor != null && javaBackingFqcn != null) {
-            var backing = ClassName.bestGuess(javaBackingFqcn);
-            return switch (accessor) {
-                case AccessorResolution.GetterPrefixed gp ->
-                    CodeBlock.of("(($T) success.value()).$L()", backing, gp.method().getName());
-                case AccessorResolution.BareName bn ->
-                    CodeBlock.of("(($T) success.value()).$L()", backing, bn.method().getName());
-                case AccessorResolution.FieldRead fr ->
-                    CodeBlock.of("(($T) success.value()).$L", backing, fr.field().getName());
-            };
+            return recordBackedAccessorRead(
+                ClassName.bestGuess(javaBackingFqcn), accessor, CodeBlock.of("success.value()"));
         }
         throw new IllegalStateException(
-            "R244 arm-switch: unsupported success-projection field " + field.getClass().getSimpleName()
-            + " on backing " + resultType + "; slice 1 supports @record-Java-backed accessor reads and "
-            + "constructor/nesting passthrough only");
+            "R268 arm-switch: unsupported inline success-projection field "
+            + field.getClass().getSimpleName() + " on backing " + resultType
+            + "; record-backed accessor reads and constructor/nesting passthrough only");
     }
 
     private static ClassName successClass(String outputPackage) {
@@ -792,35 +862,52 @@ public final class FetcherEmitter {
             var propertyDataFetcher = ClassName.get("graphql.schema", "PropertyDataFetcher");
             return CodeBlock.of("$T.fetching($S)", propertyDataFetcher, columnName);
         }
-        // @record-Java-backed parent: read the pre-resolved accessor handle.
+        // @record-Java-backed parent: read the pre-resolved accessor handle. The read itself is the
+        // shared recordBackedAccessorRead, source-bound to env.getSource(); the R268 arm-switch path
+        // calls the same helper with success.value(), so the accessor switch lives in one place.
         String fqClassName = (resultType instanceof GraphitronType.JavaRecordType jrt)
             ? jrt.fqClassName()
             : ((GraphitronType.PojoResultType.Backed) resultType).fqClassName();
         var backingClass = ClassName.bestGuess(fqClassName);
+        return CodeBlock.of("($T env) -> $L",
+            DATA_FETCHING_ENV, recordBackedAccessorRead(backingClass, accessor, ENV_SOURCE));
+    }
+
+    /**
+     * The value expression reading a {@code @record}-Java-backed accessor off a source object. The
+     * source is supplied as a {@link CodeBlock} ({@code env.getSource()} on the normal path,
+     * {@code success.value()} on the R268 outcome arm-switch), so this one helper serves both the
+     * normal {@link #propertyOrRecordValue} lambda and the arm-switch ternary. Field reads emit
+     * {@code (($T) src).field}; method accessors delegate to {@link #methodCallValue} for the
+     * zero-arg / full-environment / per-argument injection forms.
+     */
+    private static CodeBlock recordBackedAccessorRead(
+            ClassName backingClass, AccessorResolution.Resolved accessor, CodeBlock sourceExpr) {
         return switch (accessor) {
-            case AccessorResolution.GetterPrefixed gp -> methodCallExpr(backingClass, gp.method());
-            case AccessorResolution.BareName bn -> methodCallExpr(backingClass, bn.method());
-            case AccessorResolution.FieldRead fr -> CodeBlock.of("($T env) -> (($T) env.getSource()).$L",
-                DATA_FETCHING_ENV, backingClass, fr.field().getName());
+            case AccessorResolution.GetterPrefixed gp -> methodCallValue(backingClass, gp.method(), sourceExpr);
+            case AccessorResolution.BareName bn -> methodCallValue(backingClass, bn.method(), sourceExpr);
+            case AccessorResolution.FieldRead fr ->
+                CodeBlock.of("(($T) $L).$L", backingClass, sourceExpr, fr.field().getName());
         };
     }
 
     /**
-     * Emits the method-call expression for a resolved accessor. Three injection forms:
-     * zero-arg ({@code .name()}), full-environment ({@code .name(env)} when the method takes a
-     * single {@code DataFetchingEnvironment}), or per-argument ({@code .name(($T) env.getArgument($S), …)}
-     * — uses the candidate method's reflected parameter names as the SDL argument keys, which
-     * holds when the consumer compiles with {@code -parameters}).
+     * Emits the method-call value expression for a resolved accessor, read off {@code sourceExpr}.
+     * Three injection forms: zero-arg ({@code .name()}), full-environment ({@code .name(env)} when
+     * the method takes a single {@code DataFetchingEnvironment}), or per-argument
+     * ({@code .name(($T) env.getArgument($S), …)} — uses the candidate method's reflected parameter
+     * names as the SDL argument keys, which holds when the consumer compiles with
+     * {@code -parameters}). The {@code env} reference for the full-environment and per-argument forms
+     * is supplied by the enclosing lambda, independent of where the source object is read from.
      */
-    private static CodeBlock methodCallExpr(ClassName backingClass, java.lang.reflect.Method method) {
+    private static CodeBlock methodCallValue(
+            ClassName backingClass, java.lang.reflect.Method method, CodeBlock sourceExpr) {
         var paramTypes = method.getParameterTypes();
         if (paramTypes.length == 0) {
-            return CodeBlock.of("($T env) -> (($T) env.getSource()).$L()",
-                DATA_FETCHING_ENV, backingClass, method.getName());
+            return CodeBlock.of("(($T) $L).$L()", backingClass, sourceExpr, method.getName());
         }
         if (paramTypes.length == 1 && "graphql.schema.DataFetchingEnvironment".equals(paramTypes[0].getName())) {
-            return CodeBlock.of("($T env) -> (($T) env.getSource()).$L(env)",
-                DATA_FETCHING_ENV, backingClass, method.getName());
+            return CodeBlock.of("(($T) $L).$L(env)", backingClass, sourceExpr, method.getName());
         }
         var parameters = method.getParameters();
         var argsBuilder = CodeBlock.builder();
@@ -834,7 +921,7 @@ public final class FetcherEmitter {
             argsBuilder.add("($T) env.getArgument($S)",
                 ClassName.get(parameters[i].getType()), parameters[i].getName());
         }
-        return CodeBlock.of("($T env) -> (($T) env.getSource()).$L($L)",
-            DATA_FETCHING_ENV, backingClass, method.getName(), argsBuilder.build());
+        return CodeBlock.of("(($T) $L).$L($L)",
+            backingClass, sourceExpr, method.getName(), argsBuilder.build());
     }
 }

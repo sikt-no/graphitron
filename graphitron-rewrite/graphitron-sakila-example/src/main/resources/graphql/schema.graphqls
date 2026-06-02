@@ -453,6 +453,25 @@ type SetterShapeFilmReviewPayload @record(record: {className: "no.sikt.graphitro
     errors: [FilmReviewError]
 }
 
+# R268 fixture (errorchannel-arm-switch-table-data-fields.md): a root @service Outcome payload
+# that pairs a @table-bound DataLoader data field with the errors field — the combination
+# R244's inventory found nowhere in sakila. `film` is the @sourceRow leaf-PK shape proven by
+# CreateFilmPayload.language (a RecordTableField resolved via a DataLoader batch keyed off the
+# payload's backing object), here sibling to a WrapperArm errors field. It is nullable per the
+# success-projection rule: on the ErrorList arm the generated film fetcher narrows
+# Outcome.Success, sees the error arm, and returns completedFuture(null) before key extraction
+# (no NPE on a missing key), so the field renders null while the sibling errors field stays
+# reachable. reviewId is the inline-read arm-switch (record accessor off success.value()).
+type FilmReviewWithFilmPayload @record(record: {className: "no.sikt.graphitron.rewrite.test.services.FilmReviewWithFilmPayload"}) {
+    reviewId: Int
+    film: [Film!]
+        @sourceRow(
+            className: "no.sikt.graphitron.rewrite.test.services.FilmReviewWithFilmPayloadLifter",
+            method: "liftFilmId"
+        )
+    errors: [FilmReviewError]
+}
+
 # R12 fixture: DML mutation with a LocalContext error channel. The payload is a plain SDL
 # Object (no @record(record:{className:})), so the structural DML-payload scan admits it and
 # FieldBuilder.detectStructuralDmlErrorChannel binds the channel to ErrorChannel.LocalContext.
@@ -1546,6 +1565,20 @@ type Mutation {
     submitFilmReview(filmId: Int!, rating: Int!): FilmReviewPayload
         @service(service: {
             className: "no.sikt.graphitron.rewrite.test.services.FilmReviewService",
+            method: "submit"
+        })
+
+    # R268 fixture (errorchannel-arm-switch-table-data-fields.md): a root @service Outcome
+    # payload whose data field is a @table-bound DataLoader field (FilmReviewWithFilmPayload.film)
+    # sibling to the errors field — the pairing R244's inventory lacked. The success arm
+    # round-trips reviewId + the batched Film lookup + empty errors; a thrown exception renders
+    # { reviewId: null, film: null, errors: [...] } via the arm-switch inside the generated
+    # film fetcher (narrow Outcome.Success, return completedFuture(null) on the ErrorList arm
+    # before touching the loader). See FilmReviewWithFilmService.submit and the execute-tier
+    # driver in GraphQLQueryTest.
+    submitFilmReviewWithFilm(filmId: Int!, rating: Int!): FilmReviewWithFilmPayload
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.FilmReviewWithFilmService",
             method: "submit"
         })
 

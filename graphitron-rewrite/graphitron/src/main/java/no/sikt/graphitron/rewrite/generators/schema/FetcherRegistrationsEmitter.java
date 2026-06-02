@@ -120,7 +120,7 @@ public final class FetcherRegistrationsEmitter {
         ClassName nestedFetchersClass = ntw.fields().stream().anyMatch(f -> f instanceof BatchKeyField)
             ? ClassName.get(fetchersPackage, ntw.nestedTypeName() + "Fetchers") : null;
 
-        boolean sourceIsOutcome = hasWrapperArmErrors(ntw.fields());
+        boolean sourceIsOutcome = FetcherEmitter.hasWrapperArmErrors(ntw.fields());
         var body = CodeBlock.builder();
         body.add("codeRegistry").indent();
         for (var field : ntw.fields()) {
@@ -171,7 +171,7 @@ public final class FetcherRegistrationsEmitter {
     private static CodeBlock buildBody(String typeName, List<GraphitronField> fields,
             ClassName fetchersClass, TableRef parentTable, GraphitronType.ResultType resultType,
             String outputPackage) {
-        boolean sourceIsOutcome = hasWrapperArmErrors(fields);
+        boolean sourceIsOutcome = FetcherEmitter.hasWrapperArmErrors(fields);
         var body = CodeBlock.builder().add("codeRegistry").indent();
         for (var field : fields) {
             body.add(registrationEntry(typeName, field, fetchersClass, parentTable, resultType,
@@ -190,18 +190,6 @@ public final class FetcherRegistrationsEmitter {
                 outputPackage, sourceIsOutcome))
             .add(")")
             .build();
-    }
-
-    /**
-     * Whether a type's classified fields include an errors field on the R244 {@code Outcome}
-     * wrapper transport. When true, the type's fetchers receive an {@code Outcome} as
-     * {@code env.getSource()}, so every data-channel sibling must arm-switch on {@code Success}.
-     * The signal is the parent's own {@code WrapperArm} errors field, knowable at generation time
-     * without re-walking the classifier.
-     */
-    private static boolean hasWrapperArmErrors(List<? extends GraphitronField> fields) {
-        return fields.stream().anyMatch(f -> f instanceof ChildField.ErrorsField ef
-            && ef.transport() instanceof ChildField.Transport.WrapperArm);
     }
 
     private static void collectNestedTypes(GraphitronField field, Map<String, NestedTypeWiring> out) {

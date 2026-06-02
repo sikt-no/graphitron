@@ -99,4 +99,47 @@ class OutcomeTypeValidationTest {
             .extracting(ValidationError::message)
             .noneMatch(m -> m.contains("more than one errors field"));
     }
+
+    @Test
+    void outcomePayloadWithTableDataField_isNotRejected() {
+        // R268: a @table-bound DataLoader data field (RecordTableField) sibling to a WrapperArm
+        // errors field under a root @service payload must validate. The retired allow-list rejected
+        // it (RecordTableField was not on OUTCOME_TYPE_ARM_SWITCHED_DATA_CHANNEL_VARIANTS) even
+        // though the field arm-switches correctly inside its generated DataLoader fetcher; a
+        // @table-bound DataLoader data field is a generator capability, not an author error. The
+        // structural check replacing the allow-list rejects only siblings that would fall through to
+        // graphql-java's default PropertyDataFetcher, which a RecordTableField does not. See the
+        // emission counterpart in FetcherPipelineTest.outcomePayload_tableDataField_* and the
+        // execution round-trip in GraphQLQueryTest.submitFilmReviewWithFilm_*.
+        var schema = TestSchemaHelper.buildSchema("""
+            type ValidationErr @error(handlers: [{handler: VALIDATION}]) {
+                path: [String!]!
+                message: String!
+            }
+            type DbErr @error(handlers: [{handler: DATABASE, sqlState: "23503"}]) {
+                path: [String!]!
+                message: String!
+            }
+            union SakError = ValidationErr | DbErr
+            type Language @table(name: "language") { name: String }
+            type SakPayload @record(record: {className: "%s"}) {
+                data: String
+                language: Language @reference(path: [{key: "film_language_id_fkey"}])
+                errors: [SakError]
+            }
+            type Query { sak: SakPayload %s }
+            """.formatted(SAK_PAYLOAD_FQN, SERVICE_DECL));
+
+        // Precondition: the @table sibling classifies as a DataLoader-backed RecordTableField (the
+        // variant the allow-list excluded), and the errors field is on the WrapperArm transport, so
+        // the structural pass actually exercises the pairing rather than passing vacuously.
+        assertThat(schema.field("SakPayload", "language")).isInstanceOf(ChildField.RecordTableField.class);
+        assertThat(schema.field("SakPayload", "errors")).isInstanceOf(ChildField.ErrorsField.class);
+
+        assertThat(validate(schema))
+            .extracting(ValidationError::message)
+            .noneMatch(m -> m.contains("PropertyDataFetcher")
+                || m.contains("arm-switch")
+                || m.contains("WrapperArm errors transport requires"));
+    }
 }
