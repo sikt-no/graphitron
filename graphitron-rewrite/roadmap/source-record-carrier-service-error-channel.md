@@ -1,11 +1,11 @@
 ---
 id: R275
 title: Error channel and data projection for source-record-carrier @service mutations
-status: Ready
+status: In Progress
 bucket: structural
 priority: 2
 theme: mutations-errors
-depends-on: []
+depends-on: [record-binding-reflection-only]
 created: 2026-06-02
 last-updated: 2026-06-02
 ---

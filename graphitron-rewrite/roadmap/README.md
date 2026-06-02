@@ -14,8 +14,9 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 | ID | Item | Status | Updated | Plan |
 |---|---|---|---|---|
-| `R275` | Error channel and data projection for source-record-carrier @service mutations | Ready | 2026-06-02 | [plan](source-record-carrier-service-error-channel.md) |
+| `R276` | Record binding is reflection-only; remove @record-directive-consulting code | Spec | 2026-06-02 | [plan](record-binding-reflection-only.md) |
 | `R19` | Rebase and squash rewrite branch onto main | Ready |  | [plan](history-squash.md) |
+| `R275` | Error channel and data projection for source-record-carrier @service mutations <sub>blocked by: [record-binding-reflection-only](record-binding-reflection-only.md)</sub> | In Progress | 2026-06-02 | [plan](source-record-carrier-service-error-channel.md) |
 | `R222` | Dimensional model pivot: slots over cross-product permits | Spec | 2026-05-28 <sub>created 2026-05-21</sub> | [plan](dimensional-model-pivot.md) |
 | `R256` | Absorb the service walker substrate: typed per-arm errors + multi-arg ctors | Ready | 2026-05-30 <sub>created 2026-05-29</sub> | [plan](service-walker-substrate-absorption.md) |
 | `R45` | Multi-tenant routing on top of the schema-driven ExecutionInput factory | Spec | 2026-05-20 | [plan](tenant-routing-and-execution-input.md) |
@@ -173,7 +174,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### mutations-errors
 
-- `R275` [**Error channel and data projection for source-record-carrier @service mutations**](source-record-carrier-service-error-channel.md) — Ready, structural
+- `R275` [**Error channel and data projection for source-record-carrier @service mutations**](source-record-carrier-service-error-channel.md) — In Progress, structural, blocked by [record-binding-reflection-only](record-binding-reflection-only.md)
 - `R262` [**Reject @nodeId on non-ID coordinates and federation encoded @key fields at validate time**](reject-nodeid-on-non-id-coordinates.md) — Backlog, validation
 - `R170` [**Sakila execute-tier fixture for the Jakarta ValidationHandler channel (R94-blocked)**](validator-integration-execute-coverage.md) — Backlog, testing
 - `R186` [**Nested input types in @mutation fields**](nested-input-types-in-mutation-fields.md) — Spec, architecture
@@ -193,6 +194,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### model-cleanup
 
+- `R276` [**Record binding is reflection-only; remove @record-directive-consulting code**](record-binding-reflection-only.md) — Spec, cleanup
 - `R234` [**Support jOOQ embedded and UDT records as non-table input backings**](jooq-embedded-and-udt-input-backings.md) — Backlog, architecture
 - `R263` [**Add a typeName-first decode-helper entry point so resolveDecodeHelperForTable is not a misuse trap**](decode-helper-typename-first-resolution.md) — Backlog, cleanup
 - `R267` [**Replace deprecated-for-removal DataType.convert(Object) in NodeIdEncoder.decode<Type>**](nodeid-encoder-deprecated-convert.md) — Backlog, tech-debt
