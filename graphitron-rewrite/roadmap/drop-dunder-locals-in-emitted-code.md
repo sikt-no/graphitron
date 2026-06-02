@@ -1,7 +1,7 @@
 ---
 id: R271
 title: Retire dunder-prefixed locals in emitted generator code
-status: In Progress
+status: In Review
 bucket: cleanup
 priority: 5
 theme: model-cleanup
