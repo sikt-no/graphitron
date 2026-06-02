@@ -2103,6 +2103,10 @@ class FieldBuilder {
             ? errorsFieldDef.getDefinition().getSourceLocation() : null;
         var errorsField = new ChildField.ErrorsField(result.returnTypeName(), errorsFieldDef.getName(),
             errorsLocation, mappedErrorTypes, new ChildField.Transport.WrapperArm());
+        // successProjection is left empty here, not "no data fields": the walker reads only
+        // errorsField off the OutcomeType, and the nullable-success-projection invariant is already
+        // enforced inline above (the loop at line ~2091) where SDL nullability is visible. Populating
+        // it would let the nullability check move onto the carrier; that consolidation is deferred.
         var outcomeType = new OutcomeType(backing, errorsField, List.of());
         var walkerResult = new no.sikt.graphitron.rewrite.walker.ErrorChannelWalker()
             .walk(outcomeType, ctx.schema, ctx.codegenLoader(), this::mapGraphQLTypeToReflectType);

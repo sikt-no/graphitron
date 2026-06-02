@@ -626,6 +626,35 @@ The full `PayloadClass` retirement is therefore correctly a follow-up slice that
 child-`@service` and `@tableMethod` flips, not part of R244 slice 1. R244 slice 1 closes with the
 `@service` root flip landed and the `PayloadClass` arm intact for the still-deferred field kinds.
 
+## Rework pass (In Progress, 2026-06-02) ; landed
+
+Closes the gaps from the review feedback below. Full pipeline
+(`mvn -f graphitron-rewrite/pom.xml install -Plocal-db`) green across all tiers.
+
+- **`NonNullableSuccessProjectionField` test ; landed.**
+  `ErrorChannelClassificationTest.nonNullableSuccessProjectionField_rejectsCarrier`: a root-`@service`
+  field whose payload has a non-null success-projection field (`data: String!`) sibling to the errors
+  field classifies to `UnclassifiedField`, asserting the typed rejection's message (the
+  `resolveServiceOutcomeChannel` Reject arm). Non-vacuous: a nullable `data` would classify to
+  `Mapped` and fail the `isInstanceOf(UnclassifiedField)` assertion.
+- **`MultipleErrorsFields` test ; landed.** New `validation/OutcomeTypeValidationTest`
+  (`@UnitTier`): a payload type with two errors fields drives `validate(schema)` to emit the typed
+  `MultipleErrorsFields` `ValidationError`. Placed in the `validation/` package because
+  `validateOutcomeTypeShape` is a whole-schema validator pass, not a per-field classification (the
+  rule 7 / rule 8 cases stay in `ErrorChannelClassificationTest`).
+- **Body-string assertion converted.** `FetcherPipelineTest`'s former
+  `serviceField_withResolvedErrorChannel_catchArmEmitsMappedErrorList` is now
+  `…_emitsOutcomeWrapperReturnType`, asserting the fetcher's return type is
+  `DataFetcherResult<Outcome<…>>` (structural, refactor-stable) instead of `body.contains(...)` on
+  the generated method body. Behaviour stays pinned by `ChannelCatchArmEmitterTest` (unit) and the
+  `GraphQLQueryTest` execution round-trip.
+- **Nits.** `ChannelCatchArmEmitter` javadoc corrected (`cause`/`mapping`, not `__t`/`__m`);
+  `FieldBuilder` `OutcomeType` construction site annotated to explain the empty `successProjection`.
+
+The arm-switch emitter/validator was left untouched (R268's lane), and no new `GraphqlErrorException`
+construction was introduced (R265's lane). Ready for a fresh In Review -> Done pass by a session
+other than this implementer.
+
 ## Review feedback (In Review -> Ready, 2026-06-02)
 
 Independent-reviewer pass on the In Review -> Done gate. Build verified green end-to-end

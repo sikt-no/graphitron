@@ -31,9 +31,10 @@ import java.util.Optional;
  * </ul>
  *
  * <p>The thrown value is the local {@code e} (matching the existing fetcher try/catch discipline);
- * the loop's cause-walk binds {@code __t} and the mapping {@code __m} to avoid colliding with
- * author-visible names. Scoped to the synchronous catch arm in slice-1 commit 2; the async
- * {@code .exceptionally(...)} tail is rewired to this carrier at the in-scope flip.
+ * the loop's cause-walk binds readable locals {@code cause} and {@code mapping} (the commit-3
+ * generated-code-style pass retired the earlier dunder-prefixed names). Scoped to the synchronous
+ * catch arm in slice-1 commit 2; the async {@code .exceptionally(...)} tail is rewired to this
+ * carrier at the in-scope flip.
  */
 public final class ChannelCatchArmEmitter {
 
