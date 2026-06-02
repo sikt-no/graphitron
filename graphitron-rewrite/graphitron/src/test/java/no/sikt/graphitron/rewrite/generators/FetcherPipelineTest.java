@@ -337,6 +337,38 @@ class FetcherPipelineTest {
             .isEqualTo("java.util.concurrent.CompletableFuture<graphql.execution.DataFetcherResult<org.jooq.Record>>");
     }
 
+    // R268 column-read arm-switch: an @service Outcome payload backed by a jOOQ TableRecord (the
+    // service returns FilmRecord) carries a column-projected data field. Under the wrapper transport
+    // its inline read must be the ColumnFetcher get inlined onto success.value(), not the bare
+    // ColumnFetcher (which would read off the Outcome object) and not a generation-time throw. The
+    // spec's "Per-shape mechanism" scopes the column inline-read in alongside the @record accessor.
+    private static final String OUTCOME_COLUMN_FIELD_SDL = """
+            type ValidationErr @error(handlers: [{handler: VALIDATION}]) { path: [String!]! message: String! }
+            type DbErr @error(handlers: [{handler: DATABASE, sqlState: "23503"}]) { path: [String!]! message: String! }
+            union SakError = ValidationErr | DbErr
+            type FilmRecordPayload @record(record: {className: "no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord"}) {
+                title: String @field(name: "TITLE")
+                errors: [SakError]
+            }
+            type Query {
+                film: FilmRecordPayload
+                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getFilm"})
+            }
+            """;
+
+    @Test
+    void outcomePayload_columnDataField_armSwitchesInlineReadOnSuccessValue() {
+        // The column field's registration is a lambda (the arm-switch ternary narrowing Success and
+        // reading the column off success.value()), not a bare ColumnFetcher and not an
+        // IllegalStateException at generation. Building the spec at all proves the throw is gone for
+        // this in-scope shape; the LAMBDA kind proves it arm-switched rather than emitting the
+        // straight ColumnFetcher that would read off the Outcome object. The success.value().get(col)
+        // body shape is pinned structurally here, not by a code-string assertion (banned).
+        var bodies = fetcherBodies(OUTCOME_COLUMN_FIELD_SDL);
+        assertThat(TypeSpecAssertions.wiringFor(bodies, "FilmRecordPayload", "title"))
+            .contains(DataFetcherKind.LAMBDA);
+    }
+
     @Test
     void outcomePayload_tableDataField_wiringIsMethodReferenceNotPropertyFetcher() {
         // Structural-check counterpart: the @table data field resolves through a graphitron-emitted
