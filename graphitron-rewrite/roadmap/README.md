@@ -14,7 +14,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 | ID | Item | Status | Updated | Plan |
 |---|---|---|---|---|
-| `R275` | Error channel and data projection for source-record-carrier @service mutations | Spec | 2026-06-02 | [plan](source-record-carrier-service-error-channel.md) |
+| `R275` | Error channel and data projection for source-record-carrier @service mutations | Ready | 2026-06-02 | [plan](source-record-carrier-service-error-channel.md) |
 | `R19` | Rebase and squash rewrite branch onto main | Ready |  | [plan](history-squash.md) |
 | `R222` | Dimensional model pivot: slots over cross-product permits | Spec | 2026-05-28 <sub>created 2026-05-21</sub> | [plan](dimensional-model-pivot.md) |
 | `R256` | Absorb the service walker substrate: typed per-arm errors + multi-arg ctors | Ready | 2026-05-30 <sub>created 2026-05-29</sub> | [plan](service-walker-substrate-absorption.md) |
@@ -173,7 +173,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### mutations-errors
 
-- `R275` [**Error channel and data projection for source-record-carrier @service mutations**](source-record-carrier-service-error-channel.md) — Spec, structural
+- `R275` [**Error channel and data projection for source-record-carrier @service mutations**](source-record-carrier-service-error-channel.md) — Ready, structural
 - `R262` [**Reject @nodeId on non-ID coordinates and federation encoded @key fields at validate time**](reject-nodeid-on-non-id-coordinates.md) — Backlog, validation
 - `R170` [**Sakila execute-tier fixture for the Jakarta ValidationHandler channel (R94-blocked)**](validator-integration-execute-coverage.md) — Backlog, testing
 - `R186` [**Nested input types in @mutation fields**](nested-input-types-in-mutation-fields.md) — Spec, architecture
