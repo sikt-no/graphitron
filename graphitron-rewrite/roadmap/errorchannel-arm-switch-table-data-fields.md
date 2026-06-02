@@ -1,7 +1,7 @@
 ---
 id: R268
 title: Collapse the Outcome arm-switch to a binary fork over reused field resolution
-status: Ready
+status: In Review
 bucket: structural
 depends-on: []
 created: 2026-06-01
@@ -13,6 +13,51 @@ last-updated: 2026-06-02
 R244's `@service` flip hands graphql-java a typed `Outcome<X>` source for every root `@service` outcome field, and its child fetchers "arm-switch" on the `Success` / `ErrorList` fork. But the way slice 1 built the arm-switch introduced a **second switch over the `ChildField` taxonomy**: `FetcherEmitter.armSwitchValueExpr` re-derives the per-variant read that `dataFetcherValueRaw` already knows how to emit, gated by an allow-list (`OUTCOME_TYPE_ARM_SWITCHED_DATA_CHANNEL_VARIANTS`) and a validator pass (`validateOutcomeChildArmSwitch`) that rejects any outcome-type child whose variant isn't on the list. That is a duplicated hierarchy: the allow-list names nine variants, the emitter implements four, and they drift. The drift surfaces two ways: (1) a latent crash, four allow-listed variants (`ServiceTableField`, `ServiceRecordField`, `TableMethodField`, `RecordTableMethodField`) would pass the validator and then throw `IllegalStateException` at `FetcherEmitter.java:111`; and (2) a false rejection, real consumer schemas (`opptak-subgraph`) put a `@table`-bound, DataLoader-resolved data field (`RecordTableField`) next to the errors field in nearly every `@service` mutation payload, and since that variant isn't on the list the build fails with an author error even though nothing is wrong with the schema.
 
 The allow-list conflates two unrelated things: "this is an author mistake" and "the parallel emitter hasn't caught up on this variant." A variant that can't arm-switch is a generator limitation, not an author error. This slice removes the duplication at the root rather than reconciling the two switches.
+
+## Implementation (In Progress -> In Review, landed)
+
+All five seams shipped; the design below is the as-built contract. Per-seam landing:
+
+- **Seam 1 (inline reads), `FetcherEmitter`.** `armSwitchValueExpr` / `armSwitchedDataFetcher`
+  retired. `dataFetcherValue` now forks three ways under `sourceIsOutcome`: the errors field and
+  method-backed DataLoader fields (`RecordTableField` / `RecordLookupTableField` /
+  `RecordTableMethodField`) fall through to `dataFetcherValueRaw` (the method reference; the
+  generated method owns its own arm-switch), and inline-resolved data fields
+  (`ConstructorField` / `NestingField` / `PropertyField` / `RecordField`, via
+  `isInlineArmSwitchedDataField`) arm-switch in place. The record-backed accessor read is the
+  shared `recordBackedAccessorRead(backing, accessor, sourceExpr)`, called by both
+  `propertyOrRecordValue` (source `env.getSource()`) and the arm-switch (source `success.value()`),
+  so the accessor switch lives in one place, no parallel taxonomy.
+- **Seams 2+3 (DataLoader fields), `GeneratorUtils` + `DataLoaderFetcherEmitter` +
+  `TypeFetcherGenerator`.** `buildRecordParentKeyExtraction` and the `buildFkRowKey` /
+  `buildLifterRowKey` / `buildAccessorKeySingle` / `buildAccessorKeyMany` helpers take a source
+  binding (`CodeBlock`, default `SOURCE_FROM_ENV`); the outcome path passes `success.value()`.
+  `DataLoaderFetcherEmitter.build` gained a pre-registration-prelude overload, and
+  `buildRecordBasedDataFetcher` emits, when `sourceIsOutcome`, the narrow + `completedFuture(null)`
+  on the `ErrorList` arm *ahead of* the loader `computeIfAbsent` (the preferred seam-3 ordering, so
+  the error arm neither registers nor dispatches).
+- **Seam 4 (signal threading).** `hasWrapperArmErrors` moved to one home,
+  `FetcherEmitter.hasWrapperArmErrors`, consulted by both `FetcherRegistrationsEmitter` (registration
+  routing) and `TypeFetcherGenerator.generateTypeSpec` (DataLoader-method emission); the duplicated
+  predicate is gone.
+- **Seam 5 (validator), `GraphitronSchemaValidator`.** `OUTCOME_TYPE_ARM_SWITCHED_DATA_CHANNEL_VARIANTS`
+  and the allow-list-membership rejection deleted. `validateOutcomeChildArmSwitch` now rejects only a
+  sibling that would resolve through graphql-java's default `PropertyDataFetcher`: an
+  `UnclassifiedField` (no registration) or a value whose emit is `PropertyDataFetcher.fetching` per the
+  shared `FetcherEmitter.resolvesViaPropertyDataFetcher` (a `PayloadAccessor` errors field or a
+  property/record read on a `NoBacking` parent). R270 stays moot (no list to reconcile).
+
+Tests: execution-tier `GraphQLQueryTest.submitFilmReviewWithFilm_*` (new sakila fixture pairing a
+`@table` DataLoader data field with the errors field under a root `@service` payload; both arms
+round-trip); pipeline-tier `FetcherPipelineTest.outcomePayload_tableDataField_*` (RecordTableField
+emission + method-reference wiring, not PropertyDataFetcher); validation-tier
+`OutcomeTypeValidationTest.outcomePayloadWithTableDataField_isNotRejected` (the false-rejection fix).
+
+The four nested-method variants (`ServiceTableField` / `ServiceRecordField` / `TableMethodField` /
+`RecordTableMethodField` nested-method emit path) remain out of scope and inventory-absent under
+in-scope outcome types; retiring the allow-list removed their latent `IllegalStateException` crash
+vector without implementing them. `ComputedField` (jOOQ-result-aliased read) is likewise absent under
+a `@record`-backed `@service` payload, so it is not in the inline arm-switch set.
 
 ## The design: `Outcome` is binary; T-resolution is reused
 

@@ -97,6 +97,31 @@ public final class DataLoaderFetcherEmitter {
             CodeBlock batchLoaderLambda,
             CodeBlock keyExtraction,
             CodeBlock asyncWrapTail) {
+        return build(fieldName, keyType, loaderValueType, outerReturnType, registration,
+            batchLoaderLambda, CodeBlock.of(""), keyExtraction, asyncWrapTail);
+    }
+
+    /**
+     * Pre-registration-prelude overload (R268). {@code preRegistrationPrelude} is emitted before
+     * the path-name and {@code computeIfAbsent} loader registration, so a fetcher that is an
+     * immediate child of a flipped {@code Outcome} payload can narrow {@code env.getSource()} to
+     * {@code Outcome.Success} and {@code return CompletableFuture.completedFuture(null)} on the
+     * {@code ErrorList} arm <em>before</em> touching the loader registry. Placing the early return
+     * ahead of registration (rather than after, relying on idempotent {@code computeIfAbsent}) keeps
+     * the generated error-arm code honest: it neither registers nor dispatches the loader. The
+     * caller pairs this with a {@code success.value()} source binding on {@code keyExtraction} so
+     * the key reads come off the unwrapped backing object. An empty prelude is the non-outcome path.
+     */
+    public static MethodSpec build(
+            String fieldName,
+            TypeName keyType,
+            TypeName loaderValueType,
+            TypeName outerReturnType,
+            LoaderRegistration registration,
+            CodeBlock batchLoaderLambda,
+            CodeBlock preRegistrationPrelude,
+            CodeBlock keyExtraction,
+            CodeBlock asyncWrapTail) {
 
         TypeName loaderType = ParameterizedTypeName.get(DATA_LOADER, keyType, loaderValueType);
         String factoryMethod = registration.container() == LoaderRegistration.Container.MAPPED_SET
@@ -107,6 +132,7 @@ public final class DataLoaderFetcherEmitter {
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(outerReturnType)
             .addParameter(ENV, "env")
+            .addCode(preRegistrationPrelude)
             .addCode(buildDataLoaderName())
             .addCode(
                 "$T loader = env.getDataLoaderRegistry()\n" +

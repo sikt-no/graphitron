@@ -44,6 +44,14 @@ class GeneratorUtils {
     static final ClassName ENV              = ClassName.get("graphql.schema", "DataFetchingEnvironment");
     /** {@code graphql.schema.SelectedField} */
     static final ClassName SELECTED_FIELD   = ClassName.get("graphql.schema", "SelectedField");
+
+    /**
+     * The default source binding for a record-parent key extraction: the fetcher reads its backing
+     * object straight off {@code env.getSource()}. The R268 arm-switch substitutes
+     * {@code success.value()} here once it has narrowed the {@code Outcome} source to
+     * {@code Success}; see {@link #buildRecordParentKeyExtraction(SourceKey, GraphitronType.ResultType, CodeBlock)}.
+     */
+    static final CodeBlock SOURCE_FROM_ENV = CodeBlock.of("env.getSource()");
     /** {@code <outputPackage>.schema.GraphitronContext} — generated per build; see {@link no.sikt.graphitron.rewrite.generators.util.GraphitronContextInterfaceGenerator}. */
     static ClassName graphitronContext(String outputPackage) {
         return ClassName.get(outputPackage + ".schema", "GraphitronContext");
@@ -181,16 +189,32 @@ class GeneratorUtils {
     static CodeBlock buildRecordParentKeyExtraction(
             SourceKey sourceKey,
             GraphitronType.ResultType resultType) {
+        return buildRecordParentKeyExtraction(sourceKey, resultType, SOURCE_FROM_ENV);
+    }
+
+    /**
+     * Source-bound variant of {@link #buildRecordParentKeyExtraction(SourceKey, GraphitronType.ResultType)}.
+     * {@code sourceExpr} is the Java expression the backing object is read from before the cast:
+     * {@code env.getSource()} on the normal path, {@code success.value()} when this fetcher is an
+     * immediate child of a flipped {@code Outcome} payload (R268) and the caller has already narrowed
+     * {@code env.getSource()} to {@code Outcome.Success}. The cast and accessor logic are identical
+     * either way; only the source binding moves, so the arm-switch reuses the field's own key
+     * extraction rather than re-deriving it.
+     */
+    static CodeBlock buildRecordParentKeyExtraction(
+            SourceKey sourceKey,
+            GraphitronType.ResultType resultType,
+            CodeBlock sourceExpr) {
         TypeName keyType = sourceKey.keyElementType();
         return switch (sourceKey.reader()) {
             case SourceKey.Reader.ColumnRead ignored ->
-                buildFkRowKey(sourceKey.columns(), keyType, resultType);
+                buildFkRowKey(sourceKey.columns(), keyType, resultType, sourceExpr);
             case SourceKey.Reader.SourceRowsCall src ->
-                buildLifterRowKey(src.lifter(), keyType, resultType);
+                buildLifterRowKey(src.lifter(), keyType, resultType, sourceExpr);
             case SourceKey.Reader.AccessorCall ac ->
                 sourceKey.cardinality() == SourceKey.Cardinality.MANY
-                    ? buildAccessorKeyMany(sourceKey, ac.accessor(), keyType)
-                    : buildAccessorKeySingle(sourceKey, ac.accessor(), keyType);
+                    ? buildAccessorKeyMany(sourceKey, ac.accessor(), keyType, sourceExpr)
+                    : buildAccessorKeySingle(sourceKey, ac.accessor(), keyType, sourceExpr);
             case SourceKey.Reader.ServiceTableRecord ignored ->
                 throw new IllegalArgumentException(
                     "buildRecordParentKeyExtraction does not handle Reader.ServiceTableRecord "
@@ -209,26 +233,26 @@ class GeneratorUtils {
 
     private static CodeBlock buildFkRowKey(
             List<ColumnRef> fkCols, TypeName keyType,
-            GraphitronType.ResultType resultType) {
+            GraphitronType.ResultType resultType, CodeBlock sourceExpr) {
         var rowArgs = CodeBlock.builder();
         for (int i = 0; i < fkCols.size(); i++) {
             if (i > 0) rowArgs.add(", ");
             ColumnRef col = fkCols.get(i);
             if (resultType instanceof GraphitronType.JooqTableRecordType jtt) {
                 var tablesClass = jtt.table().constantsClass();
-                rowArgs.add("(($T) env.getSource()).get($T.$L.$L)",
-                    RECORD, tablesClass, jtt.table().javaFieldName(), col.javaName());
+                rowArgs.add("(($T) $L).get($T.$L.$L)",
+                    RECORD, sourceExpr, tablesClass, jtt.table().javaFieldName(), col.javaName());
             } else if (resultType instanceof GraphitronType.JooqRecordType) {
-                rowArgs.add("(($T) env.getSource()).get($S)", RECORD, col.sqlName());
+                rowArgs.add("(($T) $L).get($S)", RECORD, sourceExpr, col.sqlName());
             } else if (resultType instanceof GraphitronType.JavaRecordType jrt) {
                 var backingClass = ClassName.bestGuess(jrt.fqClassName());
-                rowArgs.add("(($T) env.getSource()).$L()", backingClass, toCamelCase(col.sqlName()));
+                rowArgs.add("(($T) $L).$L()", backingClass, sourceExpr, toCamelCase(col.sqlName()));
             } else {
                 var prt = (GraphitronType.PojoResultType.Backed) resultType;
                 var backingClass = ClassName.bestGuess(prt.fqClassName());
                 var accessorBase = toCamelCase(col.sqlName());
                 var getter = "get" + Character.toUpperCase(accessorBase.charAt(0)) + accessorBase.substring(1);
-                rowArgs.add("(($T) env.getSource()).$L()", backingClass, getter);
+                rowArgs.add("(($T) $L).$L()", backingClass, sourceExpr, getter);
             }
         }
         return CodeBlock.builder()
@@ -238,16 +262,16 @@ class GeneratorUtils {
 
     private static CodeBlock buildLifterRowKey(
             LifterRef lifter, TypeName keyType,
-            GraphitronType.ResultType resultType) {
+            GraphitronType.ResultType resultType, CodeBlock sourceExpr) {
         ClassName backingClass = backingClassOf(resultType);
         return CodeBlock.builder()
-            .addStatement("$T key = $T.$L(($T) env.getSource())",
-                keyType, lifter.declaringClass(), lifter.methodName(), backingClass)
+            .addStatement("$T key = $T.$L(($T) $L)",
+                keyType, lifter.declaringClass(), lifter.methodName(), backingClass, sourceExpr)
             .build();
     }
 
     private static CodeBlock buildAccessorKeySingle(
-            SourceKey sourceKey, AccessorRef accessor, TypeName keyType) {
+            SourceKey sourceKey, AccessorRef accessor, TypeName keyType, CodeBlock sourceExpr) {
         ClassName backingClass = accessor.parentBackingClass();
         ClassName elementClass = accessor.elementClass();
         TableRef elementTable = sourceKey.target();
@@ -260,14 +284,14 @@ class GeneratorUtils {
             intoArgs.add("$T.$L.$L", tablesClass, tableField, pkCols.get(i).javaName());
         }
         return CodeBlock.builder()
-            .addStatement("$T element = (($T) env.getSource()).$L()",
-                elementClass, backingClass, accessor.methodName())
+            .addStatement("$T element = (($T) $L).$L()",
+                elementClass, backingClass, sourceExpr, accessor.methodName())
             .addStatement("$T key = element.into($L)", keyType, intoArgs.build())
             .build();
     }
 
     private static CodeBlock buildAccessorKeyMany(
-            SourceKey sourceKey, AccessorRef accessor, TypeName keyType) {
+            SourceKey sourceKey, AccessorRef accessor, TypeName keyType, CodeBlock sourceExpr) {
         ClassName backingClass = accessor.parentBackingClass();
         ClassName elementClass = accessor.elementClass();
         TableRef elementTable = sourceKey.target();
@@ -287,8 +311,8 @@ class GeneratorUtils {
         // because DataLoader.loadMany takes a List.
         var b = CodeBlock.builder()
             .addStatement("$T keys = new $T<>()", keysListType, arrayList)
-            .beginControlFlow("for ($T element : (($T) env.getSource()).$L())",
-                elementClass, backingClass, accessor.methodName())
+            .beginControlFlow("for ($T element : (($T) $L).$L())",
+                elementClass, backingClass, sourceExpr, accessor.methodName())
             .addStatement("$T key = element.into($L)", keyType, intoArgs.build())
             .addStatement("keys.add(key)")
             .endControlFlow();

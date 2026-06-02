@@ -339,6 +339,15 @@ public class TypeFetcherGenerator {
         // method bodies for the literal "graphitronContext(env)".
         var ctx = new TypeFetcherEmissionContext(assembled, typeName);
 
+        // R268: when this type is a flipped Outcome payload (it owns a WrapperArm errors field), its
+        // children receive a non-null Outcome as env.getSource(). DataLoader-backed data fields
+        // (RecordTableField / RecordLookupTableField / RecordTableMethodField) arm-switch inside
+        // their generated fetcher method: narrow Success, read the key off success.value(), and
+        // return completedFuture(null) on the ErrorList arm. The same predicate drives the
+        // registration-site routing in FetcherRegistrationsEmitter; FetcherEmitter.hasWrapperArmErrors
+        // is the single home so the two sites cannot drift.
+        boolean sourceIsOutcome = FetcherEmitter.hasWrapperArmErrors(fields);
+
         for (var field : fields) {
             switch (field) {
                 case ChildField.ColumnField cf -> {
@@ -453,11 +462,11 @@ public class TypeFetcherGenerator {
                 // resolver reads it back via FetcherEmitter's ParticipantColumnReferenceField arm.
                 case ChildField.ParticipantColumnReferenceField ignored -> { }
                 case ChildField.RecordTableField rtf -> {
-                    builder.addMethod(buildRecordBasedDataFetcher(ctx, rtf, rtf.returnType(), rtf.sourceKey(), resultType, outputPackage));
+                    builder.addMethod(buildRecordBasedDataFetcher(ctx, rtf, rtf.returnType(), rtf.sourceKey(), resultType, sourceIsOutcome, outputPackage));
                     builder.addMethod(SplitRowsMethodEmitter.buildForRecordTable(ctx, rtf, outputPackage));
                 }
                 case ChildField.RecordLookupTableField rltf -> {
-                    builder.addMethod(buildRecordBasedDataFetcher(ctx, rltf, rltf.returnType(), rltf.sourceKey(), resultType, outputPackage));
+                    builder.addMethod(buildRecordBasedDataFetcher(ctx, rltf, rltf.returnType(), rltf.sourceKey(), resultType, sourceIsOutcome, outputPackage));
                     builder.addMethod(SplitRowsMethodEmitter.buildForRecordLookupTable(ctx, rltf, outputPackage));
                     // Input-rows helper identical in shape to SplitLookupTableField's — reads
                     // @lookupKey args from env.getArgument(name) and emits the typed Row<M+1>[].
@@ -470,7 +479,7 @@ public class TypeFetcherGenerator {
                 }
                 case ChildField.TableMethodField f              -> builder.addMethod(buildChildTableMethodFetcher(ctx, f, outputPackage));
                 case ChildField.RecordTableMethodField rtmf -> {
-                    builder.addMethod(buildRecordBasedDataFetcher(ctx, rtmf, rtmf.returnType(), rtmf.sourceKey(), resultType, outputPackage));
+                    builder.addMethod(buildRecordBasedDataFetcher(ctx, rtmf, rtmf.returnType(), rtmf.sourceKey(), resultType, sourceIsOutcome, outputPackage));
                     builder.addMethod(SplitRowsMethodEmitter.buildForRecordTableMethod(ctx, rtmf, outputPackage));
                 }
                 // SingleRecordTableField has no per-field fetcher method — its DataFetcher
@@ -4709,7 +4718,8 @@ public class TypeFetcherGenerator {
             buildRecordBasedDataFetcher(TypeFetcherEmissionContext ctx, T field,
                     ReturnTypeRef.TableBoundReturnType returnType,
                     SourceKey sourceKey,
-                    GraphitronType.ResultType resultType, String outputPackage) {
+                    GraphitronType.ResultType resultType, boolean sourceIsOutcome,
+                    String outputPackage) {
 
         boolean isList = returnType.wrapper().isList();
 
@@ -4727,12 +4737,36 @@ public class TypeFetcherGenerator {
         TypeName keyType = sourceKey.keyElementType();
         LoaderRegistration registration = field.loaderRegistration();
 
+        // R268 arm-switch: under a flipped Outcome payload the source is a non-null Outcome, so
+        // narrow Success ahead of the loader registration (returning completedFuture(null) on the
+        // ErrorList arm) and read the key off success.value() — the same backing object the
+        // non-wrapped source would have been (R244's Success.value() invariant). The key-extraction
+        // logic is reused verbatim; only its source binding moves from env.getSource() to
+        // success.value().
+        CodeBlock prelude;
+        CodeBlock keyExtraction;
+        if (sourceIsOutcome) {
+            var successClass = ClassName.get(outputPackage + ".schema", "Outcome").nestedClass("Success");
+            var completableFuture = ClassName.get("java.util.concurrent", "CompletableFuture");
+            prelude = CodeBlock.builder()
+                .beginControlFlow("if (!(env.getSource() instanceof $T<?> success))", successClass)
+                .addStatement("return $T.completedFuture(null)", completableFuture)
+                .endControlFlow()
+                .build();
+            keyExtraction = GeneratorUtils.buildRecordParentKeyExtraction(
+                sourceKey, resultType, CodeBlock.of("success.value()"));
+        } else {
+            prelude = CodeBlock.of("");
+            keyExtraction = GeneratorUtils.buildRecordParentKeyExtraction(sourceKey, resultType);
+        }
+
         return DataLoaderFetcherEmitter.build(
             field.name(),
             keyType, valueType, asyncResultType(resultValueType),
             registration,
             RowsMethodCall.batchLoaderLambda(field.rowsMethodName(), keyType, registration),
-            GeneratorUtils.buildRecordParentKeyExtraction(sourceKey, resultType),
+            prelude,
+            keyExtraction,
             asyncWrapTail(resultValueType, outputPackage, Optional.empty()));
     }
 

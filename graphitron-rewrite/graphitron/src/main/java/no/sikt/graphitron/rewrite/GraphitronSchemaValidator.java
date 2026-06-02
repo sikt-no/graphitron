@@ -1,6 +1,7 @@
 package no.sikt.graphitron.rewrite;
 
 import graphql.language.SourceLocation;
+import no.sikt.graphitron.rewrite.generators.FetcherEmitter;
 import no.sikt.graphitron.rewrite.generators.TypeFetcherGenerator;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
@@ -1089,66 +1090,59 @@ public class GraphitronSchemaValidator {
     }
 
     /**
-     * R244 ; the {@code Outcome}-wrapper analogue of {@link #validateLocalContextErrorsFieldGuards}.
+     * R244/R268 ; the {@code Outcome}-wrapper analogue of {@link #validateLocalContextErrorsFieldGuards}.
      * Under the wrapper transport ({@link ChildField.Transport.WrapperArm}), every immediate child
      * of an in-scope outcome type receives a non-null {@code Outcome} as {@code env.getSource()}, so
      * each data-channel fetcher must unwrap {@code Success} before its existing read (returning null
      * on {@code ErrorList}). An un-switched child is a silent runtime hole: graphql-java's default
-     * fetcher would read a property off the {@code Outcome} object itself.
+     * {@code PropertyDataFetcher} would read a property off the {@code Outcome} object itself.
+     *
+     * <p>R268 retired the former allow-list of "arm-switchable" variants (a parallel taxonomy that
+     * drifted from the emitter: a child that can't arm-switch is a generator limitation, not an
+     * author error, and {@code @table}-bound DataLoader data fields were wrongly rejected by it).
+     * The arm-switch now lives where it belongs: inline reads narrow {@code Success} at the
+     * registration site, DataLoader fields narrow inside their generated fetcher method. This pass
+     * keeps a contextual structural guarantee instead of allow-list membership: every immediate
+     * child of a wrapper outcome type must resolve through a graphitron-emitted fetcher, never
+     * graphql-java's default {@code PropertyDataFetcher}.
      *
      * <p>The dispatch-partition coverage test does not catch this: it pins a global property (every
-     * leaf lands in one dispatch-status set), whereas the arm-switch guarantee is contextual (this
-     * leaf, <em>when it is an immediate child of a wrapper outcome type</em>, unwraps {@code Success}).
-     * The correct pin is this dedicated pass, the direct analogue of the DML
-     * {@link #LOCAL_CONTEXT_GUARDED_DATA_CHANNEL_VARIANTS} pair: it iterates wrapper errors fields and
-     * rejects any sibling data-channel field whose leaf is off
-     * {@link #OUTCOME_TYPE_ARM_SWITCHED_DATA_CHANNEL_VARIANTS}. A new data-channel leaf that can appear
-     * under an outcome type without an arm-switching fetcher then fails the build, not a production
-     * request.
+     * leaf lands in one dispatch-status set), whereas this guarantee is contextual (this leaf,
+     * <em>when it is an immediate child of a wrapper outcome type</em>, resolves through a real
+     * fetcher). A child resolves through {@code PropertyDataFetcher} in two ways, both rejected here:
+     * it is an {@link GraphitronField.UnclassifiedField} (no registration, so graphql-java installs
+     * its default), or its emitted value is {@code PropertyDataFetcher.fetching} per
+     * {@link FetcherEmitter#resolvesViaPropertyDataFetcher} (a {@code PayloadAccessor} errors field
+     * or a property/record read on a no-backing parent). {@code UnclassifiedField} is the only
+     * unregistered leaf that can sibling an errors field on an object type (the other
+     * {@code NOT_DISPATCHED_LEAVES} are {@code InputField} leaves, which only attach to input
+     * objects); stubbed variants are already rejected by {@code validateVariantIsImplemented}.
      */
     private void validateOutcomeChildArmSwitch(GraphitronSchema schema, List<ValidationError> errors) {
         for (var f : schema.fields().values()) {
             if (!(f instanceof ChildField.ErrorsField ef)) continue;
             if (!(ef.transport() instanceof ChildField.Transport.WrapperArm)) continue;
+            var parentType = schema.type(ef.parentTypeName());
+            GraphitronType.ResultType resultType =
+                parentType instanceof GraphitronType.ResultType rt ? rt : null;
             for (var sib : schema.fieldsOf(ef.parentTypeName())) {
                 if (sib == ef) continue;
                 if (sib instanceof ChildField.ErrorsField) continue;
-                if (!OUTCOME_TYPE_ARM_SWITCHED_DATA_CHANNEL_VARIANTS.contains(sib.getClass())) {
+                boolean unregistered = sib instanceof GraphitronField.UnclassifiedField;
+                if (unregistered || FetcherEmitter.resolvesViaPropertyDataFetcher(sib, resultType)) {
                     errors.add(new ValidationError(
                         ef.qualifiedName(),
                         Rejection.structural("Field '" + ef.qualifiedName()
-                            + "': WrapperArm errors transport requires the carrier's data-channel "
-                            + "fetcher to arm-switch on the Outcome source, but sibling field '"
-                            + sib.qualifiedName() + "' classifies as " + sib.getClass().getSimpleName()
-                            + " which is not on the Outcome arm-switch allow-list"),
+                            + "': WrapperArm errors transport requires every sibling data field to "
+                            + "resolve through an arm-switching graphitron fetcher, but '"
+                            + sib.qualifiedName() + "' (" + sib.getClass().getSimpleName()
+                            + ") would resolve through graphql-java's default PropertyDataFetcher, "
+                            + "reading a property off the Outcome source object instead of unwrapping "
+                            + "Success"),
                         ef.location()
                     ));
                 }
             }
         }
     }
-
-    /**
-     * R244 ; data-channel {@link ChildField} variants whose generated fetcher arm-switches on the
-     * {@code Outcome} source ({@code src instanceof Success s ? <read on s.value()> : null}), making
-     * them safe siblings for an {@link ChildField.ErrorsField} with
-     * {@link ChildField.Transport.WrapperArm}. These are the immediate-child variants that can
-     * sibling an errors field under a {@code @service} / {@code @tableMethod} outcome type, all of
-     * which get an explicit graphitron-emitted fetcher (none falls through to graphql-java's default
-     * {@code PropertyDataFetcher}).
-     *
-     * <p>Adding a variant to this set requires the matching emitter site to arm-switch; removing the
-     * arm-switch from an existing emitter arm must remove the variant from this set.
-     */
-    private static final java.util.Set<Class<? extends GraphitronField>> OUTCOME_TYPE_ARM_SWITCHED_DATA_CHANNEL_VARIANTS = java.util.Set.of(
-        ChildField.PropertyField.class,
-        ChildField.RecordField.class,
-        ChildField.ServiceTableField.class,
-        ChildField.ServiceRecordField.class,
-        ChildField.TableMethodField.class,
-        ChildField.RecordTableMethodField.class,
-        ChildField.ConstructorField.class,
-        ChildField.NestingField.class,
-        ChildField.ComputedField.class
-    );
 }

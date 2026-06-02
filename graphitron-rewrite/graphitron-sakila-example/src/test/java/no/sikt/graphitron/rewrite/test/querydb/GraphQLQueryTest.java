@@ -4383,6 +4383,75 @@ class GraphQLQueryTest {
         payload.extractingByKey("errors", as(LIST)).isEmpty();
     }
 
+    // ===== R268 arm-switch: @table DataLoader data field under a root @service Outcome payload =====
+    //
+    // submitFilmReviewWithFilm returns a FilmReviewWithFilmPayload whose `film` field is a
+    // @table-bound DataLoader lookup (RecordTableField, @sourceRow leaf-PK keyed off the payload's
+    // filmId) sibling to the WrapperArm errors field. This is the pairing R244's inventory found
+    // nowhere in sakila and that the retired arm-switch allow-list wrongly rejected. Both arms run
+    // against the real generated fetchers: the success arm batch-loads the Film off
+    // Outcome.Success.value(); the error arm narrows Success, sees the ErrorList arm, and returns
+    // completedFuture(null) before key extraction (no NPE on a missing key), rendering film: null
+    // while the sibling errors field stays reachable.
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void submitFilmReviewWithFilm_validInput_armSwitchLoadsFilmAndEmptyErrors() {
+        // Happy path: service returns the payload (reviewId = 5 * 10000 + 1 = 50001, filmId = 1).
+        // The film fetcher narrows Outcome.Success, lifts filmId off success.value(), and
+        // batch-loads film 1 (ACADEMY DINOSAUR); errors resolves empty on the Success arm.
+        Map<String, Object> data = execute("""
+            mutation {
+                submitFilmReviewWithFilm(filmId: 1, rating: 5) {
+                    reviewId
+                    film { filmId title }
+                    errors { __typename }
+                }
+            }
+            """);
+        var payload = assertThat(data).extractingByKey("submitFilmReviewWithFilm", as(MAP));
+        payload.containsEntry("reviewId", 50001);
+        payload.extractingByKey("errors", as(LIST)).isEmpty();
+        var only = payload.extractingByKey("film", as(list(Map.class)))
+            .hasSize(1)
+            .element(0, as(MAP));
+        only.containsEntry("filmId", 1);
+        only.containsEntry("title", "ACADEMY DINOSAUR");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void submitFilmReviewWithFilm_invalidRating_armSwitchRendersFilmNull() {
+        // Error arm: rating outside [1,10] throws; the throwable lands on Outcome.ErrorList. The
+        // @table-bound film fetcher arm-switches to completedFuture(null) before touching the
+        // DataLoader — the regression R268 fixes (an un-arm-switched @table child would read a
+        // property off the Outcome object or NPE on a missing key). film renders null, the sibling
+        // errors field stays reachable, and reviewId resolves null on the error arm.
+        Map<String, Object> data = execute("""
+            mutation {
+                submitFilmReviewWithFilm(filmId: 1, rating: 11) {
+                    reviewId
+                    film { filmId title }
+                    errors {
+                        __typename
+                        ... on FilmReviewBadRating { path message }
+                        ... on FilmReviewMissingFilm { path message }
+                    }
+                }
+            }
+            """);
+        var payload = assertThat(data).extractingByKey("submitFilmReviewWithFilm", as(MAP));
+        payload.containsEntry("reviewId", null);
+        payload.containsEntry("film", null);
+        var only = payload.extractingByKey("errors", as(list(Map.class)))
+            .hasSize(1)
+            .element(0, as(MAP));
+        only.containsEntry("__typename", "FilmReviewBadRating");
+        only.containsEntry("message", "rating must be in [1, 10]; got 11");
+        only.extractingByKey("path", as(LIST))
+            .containsExactly("submitFilmReviewWithFilm", "errors", "0", "path");
+    }
+
     // ===== R12 DML LocalContext error channel end-to-end =====
     //
     // Mirrors the @service-backed submitFilmReview tests on the DML pillar. The
