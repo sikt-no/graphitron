@@ -652,6 +652,24 @@ mapping, it does not drive classification).
 - `MultipleErrorsFields` (`GraphitronSchemaValidator.java:1084`, `validateOutcomeTypeShape`) has no
   test. Add a case with a type carrying two errors fields asserting the typed rejection.
 
+*Test-home note (the original § Tests "unit-tier `OutcomeType` classification test" framing predates
+the implementation and no longer maps cleanly; the two rules fire at different layers and need
+different harnesses).* `OutcomeType`'s record constructor only null-checks, so neither rule is a
+unit test on it. Instead:
+
+- `MultipleErrorsFields` is a `GraphitronSchemaValidator` pass (`validateOutcomeTypeShape`) emitting a
+  `ValidationError` over the classified model, independent of transport. Home: the `validation/`
+  package's `ValidatorCase` enum pattern (sibling to `ServiceFieldValidationTest` /
+  `LookupTableFieldValidationTest`); build a fixture type with two `ChildField.ErrorsField` children
+  and assert the validator yields the typed `MultipleErrorsFields`. A bare mis-shaped type suffices;
+  no `@service` field needed.
+- `NonNullableSuccessProjectionField` is raised in `FieldBuilder.resolveServiceOutcomeChannel` at
+  classify time (the field drops to `UnclassifiedField` via the walker-result reject path), exactly
+  like the rule 7 / rule 8 cases already in `ErrorChannelClassificationTest`. Home: a sibling case
+  there, and it needs a real root-`@service` field whose payload carries a non-null
+  success-projection field (it only fires on the `@service` classification path), not just a bare
+  type.
+
 **Optional ; body-string assertion holdover.** `FetcherPipelineTest`
 (`@PipelineTier`) `serviceField_withResolvedErrorChannel_catchArmEmitsMappedErrorList` asserts
 `body.contains("Outcome.Success<>(result)")` / `"ErrorList<>("` / `"ErrorRouter.redact(e, env)"` on
