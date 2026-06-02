@@ -213,8 +213,10 @@ class GeneratedSourcesLintTest {
      * External tokens we consume but do not own, allowed to appear as emitted identifiers: jOOQ's
      * reflective NodeId metadata constants. The Apollo-Federation {@code federation__} /
      * {@code link__} SDL scalar names are not double-underscore-leading and so never match
-     * {@link #DUNDER_IDENTIFIER} in the first place. See rewrite-design-principles.adoc, "Generated
-     * code is read and debugged".
+     * {@link #DUNDER_IDENTIFIER} in the first place; the GraphQL introspection {@code __typename}
+     * meta-field (and the synthetic {@code __typename} SQL column sharing its spelling) reaches
+     * generated code only as a string literal, so it is masked before the scan and needs no
+     * allowlist entry. See rewrite-design-principles.adoc, "Generated code is read and debugged".
      */
     private static final List<String> EXTERNAL_TOKEN_PREFIXES = List.of("__NODE_");
 
