@@ -182,6 +182,39 @@ class ErrorChannelClassificationTest {
     }
 
     @Test
+    void nonNullableSuccessProjectionField_rejectsCarrier() {
+        // R244: a success-projection (data) field declared non-null resolves null on the ErrorList
+        // arm, which raises NonNullableFieldWasNullError and bubbles the null up to the outcome
+        // field, dropping the sibling errors field (the silent errors-drop the wrapper transport
+        // exists to prevent). The classifier rejects such an outcome type at classify time, before
+        // the wrapper is ever emitted. Surfaces as UnclassifiedField on the carrier (the
+        // resolveServiceOutcomeChannel Reject arm), not on the payload type.
+        var schema = build("""
+            type ValidationErr @error(handlers: [{handler: VALIDATION}]) {
+                path: [String!]!
+                message: String!
+            }
+            type DbErr @error(handlers: [{handler: DATABASE, sqlState: "23503"}]) {
+                path: [String!]!
+                message: String!
+            }
+            union SakError = ValidationErr | DbErr
+            type SakPayload @record(record: {className: "%s"}) {
+                data: String!
+                errors: [SakError]
+            }
+            type Query { sak: SakPayload %s }
+            """.formatted(SAK_PAYLOAD_FQN, SERVICE_DECL));
+
+        var field = schema.field("Query", "sak");
+        assertThat(field).isInstanceOf(UnclassifiedField.class);
+        var u = (UnclassifiedField) field;
+        assertThat(u.reason())
+            .contains("non-null success-projection field 'data'")
+            .contains("must be nullable");
+    }
+
+    @Test
     void validationCoexistsWithBroadExceptionHandler_isAccepted() {
         // §5 retire of rule 9: VALIDATION runs as a wrapper pre-execution step and never
         // reaches the dispatcher, so a coexisting broad ExceptionHandler is no longer a

@@ -266,19 +266,20 @@ class FetcherPipelineTest {
             """;
 
     @Test
-    void serviceField_withResolvedErrorChannel_catchArmEmitsMappedErrorList() {
-        // R244 end-to-end: classifier resolves ErrorChannel.Mapped for a @service field whose
-        // payload carries an errors field, then the emitter wires the Outcome wrapper: the success
-        // path wraps the result in Outcome.Success, and the catch arm walks the channel's Mapping
-        // table returning Outcome.ErrorList on the first matched cause, falling through to
-        // ErrorRouter.redact on no match. No ErrorRouter.dispatch / payload-factory.
+    void serviceField_withResolvedErrorChannel_emitsOutcomeWrapperReturnType() {
+        // R244 end-to-end: a @service field whose payload carries an errors field classifies to
+        // ErrorChannel.Mapped, and buildServiceFetcherCommon lifts the fetcher's return to the
+        // Outcome wrapper (DataFetcherResult<Outcome<X>>). The return type is the structural,
+        // refactor-stable signal that the flip propagated from classifier to emitter; a revert to
+        // the legacy payload-factory path would drop the Outcome parameterisation here (and fail the
+        // ErrorChannel.Mapped assertion in ErrorChannelClassificationTest). The catch-arm body shape
+        // (the Outcome.ErrorList mapping-walk + redact fallthrough) is pinned behaviourally by
+        // ChannelCatchArmEmitterTest (unit) and the GraphQLQueryTest execution-tier round-trip, not
+        // by a code-string assertion on the generated body (banned per rewrite-design-principles.adoc).
         var sak = method(findSpec("QueryFetchers", SAK_DISPATCH_SDL), "sak");
-        var body = sak.code().toString();
-        assertThat(body).contains("ErrorMappings.SAK_PAYLOAD");
-        assertThat(body).contains("ErrorList<>(");
-        assertThat(body).contains("Outcome.Success<>(result)");
-        assertThat(body).contains("ErrorRouter.redact(e, env)");
-        assertThat(body).doesNotContain("ErrorRouter.dispatch");
+        assertThat(sak.returnType().toString())
+            .contains("graphql.execution.DataFetcherResult")
+            .contains("Outcome");
     }
 
     @Test
@@ -305,9 +306,9 @@ class FetcherPipelineTest {
     // serviceMutation_bothShapesPresent_prefersCtorFactory deleted. They pinned the catch-arm
     // payload-factory lambda (ctor / setter construction shapes), which @service fields no longer
     // emit, they now wrap success in Outcome.Success and the error path in Outcome.ErrorList, with
-    // no developer payload constructed. The Outcome emission is pinned by
-    // serviceField_withResolvedErrorChannel_catchArmEmitsMappedErrorList above, the
-    // ChannelCatchArmEmitter unit test, and the execution-tier round-trip; the construction-shape
+    // no developer payload constructed. The Outcome flip is pinned structurally by
+    // serviceField_withResolvedErrorChannel_emitsOutcomeWrapperReturnType above, and behaviourally by
+    // the ChannelCatchArmEmitter unit test plus the execution-tier round-trip; the construction-shape
     // admission itself stays covered by PayloadConstructionShapeTest and retires in commit 4.
 
     @Test
