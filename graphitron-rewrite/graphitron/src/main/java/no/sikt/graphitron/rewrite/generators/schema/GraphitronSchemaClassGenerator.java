@@ -75,6 +75,19 @@ public final class GraphitronSchemaClassGenerator {
     private static final ClassName CODE_REGISTRY  = ClassName.get("graphql.schema", "GraphQLCodeRegistry");
     private static final ClassName CODE_REGISTRY_BLDR = ClassName.get("graphql.schema", "GraphQLCodeRegistry", "Builder");
 
+    /**
+     * Synthetic result-set column carrying the participant typename, read off the jOOQ {@code Record}
+     * inside the emitted polymorphic {@code typeResolver}. The {@code __}-wrapping is a deliberate
+     * collision-avoidance device (the alias shares the column namespace with consumer-controlled
+     * table columns), not the lazy dunder convention banned for Java locals; it reaches generated
+     * code as a string literal. The spelling deliberately mirrors the GraphQL introspection
+     * {@code __typename} meta-field the column ultimately feeds, but the two live in different
+     * namespaces: this constant is the SQL column projected by {@code MultiTablePolymorphicEmitter},
+     * whereas the federation {@code _entities} resolver below reads the GraphQL {@code __typename}
+     * straight off the gateway's representation map (see that site's note).
+     */
+    private static final String TYPENAME_COLUMN = "__typename";
+
     private GraphitronSchemaClassGenerator() {}
 
     public static List<TypeSpec> generate(GraphitronSchema schema, GraphQLSchema assembled,
@@ -157,7 +170,7 @@ public final class GraphitronSchemaClassGenerator {
                 cb.addStatement("$T record = ($T) env.getObject()", JOOQ_RECORD, JOOQ_RECORD);
                 cb.addStatement("if (record == null) return null");
                 cb.addStatement("String typeName = record.get($T.field($T.name($S)), String.class)",
-                    JOOQ_DSL, JOOQ_DSL, "__typename");
+                    JOOQ_DSL, JOOQ_DSL, TYPENAME_COLUMN);
                 cb.addStatement("return typeName == null ? null : env.getSchema().getObjectType(typeName)");
                 cb.unindent().add("});\n");
                 body.add(cb.build());
@@ -265,6 +278,9 @@ public final class GraphitronSchemaClassGenerator {
                     .add(".resolveEntityType(env -> {\n").indent()
                         .addStatement("Object rep = env.getObject()")
                         .addStatement("if (!(rep instanceof java.util.Map<?, ?> m)) return null")
+                        // The federation gateway's entity representation is a wire-format map keyed
+                        // by the GraphQL introspection __typename meta-field (federation spec), not
+                        // the synthetic SQL TYPENAME_COLUMN above; left as the literal field name.
                         .addStatement("Object tn = m.get(\"__typename\")")
                         .addStatement("return tn != null ? ($T) env.getSchema().getObjectType(tn.toString()) : null", OBJ_TYPE)
                         .unindent().add("})\n")
