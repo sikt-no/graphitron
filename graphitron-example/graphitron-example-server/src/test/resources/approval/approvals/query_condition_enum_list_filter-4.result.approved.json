@@ -1,0 +1,16 @@
+{
+    "data": {
+        "languagesByName": {
+            "nodes": [
+                {
+                    "id": "TGFuZ3VhZ2U6MQ",
+                    "name": "English             "
+                },
+                {
+                    "id": "TGFuZ3VhZ2U6NQ",
+                    "name": "French              "
+                }
+            ]
+        }
+    }
+}

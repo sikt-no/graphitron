@@ -7,6 +7,20 @@ extend type Query {
     customerWithNextCustomerId(customerId: ID! @nodeId(typeName: "Customer") @condition(condition: {className: "no.sikt.graphitron.example.service.conditions.CustomerConditions", method: "customerWithNextCustomerId"}, override: true)): Customer
     customerWithNextCustomerIdWithNodeIdString(customerId: ID! @nodeId(typeName: "Customer") @condition(condition: {className: "no.sikt.graphitron.example.service.conditions.CustomerConditions", method: "customerWithNextCustomerIdWithNodeIdString"}, override: true)): Customer
     customerWithSumOfCustomerIds(customerIds: [ID!]! @nodeId(typeName: "Customer") @condition(condition: {className: "no.sikt.graphitron.example.service.conditions.CustomerConditions", method: "customerWithSumOfCustomerIds"}, override: true)): Customer
+
+    # Condition with a @record filter input containing a list-of-enum field. Reproduces the NPE
+    # in QueryHelper.makeEnumMap(List,...) when the enum list is explicitly passed as null.
+    languagesByName(filter: LanguageNameFilter!): [Language] @asConnection @condition(condition: {className: "no.sikt.graphitron.example.service.conditions.LanguageConditions", method: "byNames"}, override: true)
+}
+
+input LanguageNameFilter @record(record: {className: "no.sikt.graphitron.example.service.records.LanguageNameFilterRecord"}) {
+    names: [LanguageNameEnum!]
+}
+
+enum LanguageNameEnum {
+    ENGLISH @field(name: "English")
+    FRENCH @field(name: "French")
+    GERMAN @field(name: "German")
 }
 
 input StaffInput {

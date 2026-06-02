@@ -155,6 +155,9 @@ public class QueryHelper {
     }
 
     public static <T extends Constable, U extends Constable> List<U> makeEnumMap(List<T> values, List<T> from, List<U> to) {
+        if (values == null) {
+            return null;
+        }
         var map = buildEnumMap(from, to);
         return values
                 .stream()
