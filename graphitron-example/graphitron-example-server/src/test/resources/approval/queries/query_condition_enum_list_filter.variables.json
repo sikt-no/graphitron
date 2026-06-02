@@ -1,0 +1,14 @@
+[
+  {
+    "filter": {}
+  },
+  {
+    "filter": { "names": [] }
+  },
+  {
+    "filter": { "names": null }
+  },
+  {
+    "filter": { "names": ["ENGLISH", "FRENCH"] }
+  }
+]
