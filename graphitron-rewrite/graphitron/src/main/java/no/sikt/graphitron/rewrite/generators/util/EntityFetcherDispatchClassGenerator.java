@@ -55,6 +55,12 @@ public final class EntityFetcherDispatchClassGenerator {
     public static final String RESOLVE_BY_REPS_METHOD = "resolveByReps";
     public static final String RESOLVE_TYPE_METHOD = "resolveType";
     public static final String TYPENAME_FOR_TYPE_ID_METHOD = "typenameForTypeId";
+    /**
+     * Synthetic result-set column carrying the participant typename. The {@code __}-wrapping is a
+     * deliberate collision-avoidance device (the alias shares the column namespace with
+     * consumer-controlled table columns), not the lazy dunder convention banned for Java locals; it
+     * reaches generated code as a string literal, so the dunder-identifier meta-test leaves it alone.
+     */
     public static final String TYPENAME_COLUMN = "__typename";
 
     private static final ClassName ENV          = ClassName.get("graphql.schema", "DataFetchingEnvironment");

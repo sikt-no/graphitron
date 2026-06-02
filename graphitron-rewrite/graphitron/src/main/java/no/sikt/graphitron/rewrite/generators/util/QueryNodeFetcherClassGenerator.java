@@ -45,6 +45,12 @@ public class QueryNodeFetcherClassGenerator {
     public static final String DISPATCH_METHOD           = "getNode";
     public static final String DISPATCH_NODES_METHOD     = "getNodes";
     public static final String REGISTER_RESOLVER_METHOD  = "registerTypeResolver";
+    /**
+     * Synthetic result-set column carrying the participant typename. The {@code __}-wrapping is a
+     * deliberate collision-avoidance device (the alias shares the column namespace with
+     * consumer-controlled table columns), not the lazy dunder convention banned for Java locals; it
+     * reaches generated code as a string literal, so the dunder-identifier meta-test leaves it alone.
+     */
     public static final String TYPENAME_COLUMN           = "__typename";
     public static final String NODE_INTERFACE_NAME       = "Node";
 

@@ -38,6 +38,11 @@ class GeneratedSourcesLintTest {
 
     private static final Pattern VAR_DECLARATION = Pattern.compile("\\bvar\\b\\s+\\w+");
 
+    /** Conservative lower bound on the number of emitted {@code .java} files the dunder scan must
+     *  see. The Sakila + fixtures pipeline emits well over this; the floor only catches a tree
+     *  that is empty or near-empty because generation did not run. */
+    private static final int DUNDER_SCAN_FILE_FLOOR = 20;
+
     /** The jOOQ tables package for the test fixtures. Full-package qualification of any
      *  class under this prefix inside an emitted fetcher body indicates an importer
      *  collision (two classes share a simple name) that the local-variable rename in
@@ -194,6 +199,80 @@ class GeneratedSourcesLintTest {
             .isEmpty();
     }
 
+    /**
+     * Identifier token that begins with a double underscore. After comments and string/char
+     * literals are masked out (see {@link #maskCommentsAndLiterals}), any surviving match is a
+     * Java identifier (local, parameter, or field reference) that leads with {@code __}. The
+     * negative lookbehind keeps mid-token {@code __} (jOOQ foreign-key constants like
+     * {@code FILM__FILM_LANGUAGE_ID_FKEY}) from matching: only an identifier that <em>starts</em>
+     * with {@code __} is a lazy dunder.
+     */
+    private static final Pattern DUNDER_IDENTIFIER = Pattern.compile("(?<![\\w$])__\\w+");
+
+    /**
+     * External tokens we consume but do not own, allowed to appear as emitted identifiers: jOOQ's
+     * reflective NodeId metadata constants. The Apollo-Federation {@code federation__} /
+     * {@code link__} SDL scalar names are not double-underscore-leading and so never match
+     * {@link #DUNDER_IDENTIFIER} in the first place. See rewrite-design-principles.adoc, "Generated
+     * code is read and debugged".
+     */
+    private static final List<String> EXTERNAL_TOKEN_PREFIXES = List.of("__NODE_");
+
+    /**
+     * The no-regression guard for R271: no emitted Java <em>identifier</em> (local, parameter, or
+     * field) may lead with {@code __}. Synthetic SQL column aliases ({@code __sort__},
+     * {@code __idx__}, {@code __rn__}, {@code __typename}, {@code __pkN__}) are deliberate
+     * collision-avoidance names that reach generated code only as string literals, so masking
+     * literals (and comments) before the scan leaves them alone; the discriminator is exactly
+     * "Java identifier vs string literal in the emitted output". A reintroduced lazy dunder local
+     * surfaces as a bare identifier and trips this with file and line.
+     *
+     * <p>Scans the real pipeline output over the Sakila + fixtures schemas, which exercise every
+     * renamed emitter (batch loaders, the validator pre-step, DML decode locals, the multi-table
+     * polymorphic and split-rows pagination machinery, input-record factories). The file-floor
+     * assertion guards against a vacuous pass: were generation skipped or the jOOQ catalog jar
+     * clobbered (the {@code -Plocal-db} footgun), the tree would be empty and a content-only scan
+     * would pass trivially.
+     */
+    @Test
+    void emittedSourcesHaveNoDunderIdentifiers() throws IOException {
+        assertThat(GENERATED_REWRITE_ROOT).exists();
+        var offenders = new ArrayList<String>();
+        var scannedFiles = new java.util.concurrent.atomic.AtomicInteger();
+        try (Stream<Path> paths = Files.walk(GENERATED_REWRITE_ROOT)) {
+            paths.filter(p -> p.toString().endsWith(".java")).forEach(p -> {
+                scannedFiles.incrementAndGet();
+                try {
+                    String masked = maskCommentsAndLiterals(Files.readString(p));
+                    String[] lines = masked.split("\n", -1);
+                    for (int i = 0; i < lines.length; i++) {
+                        Matcher m = DUNDER_IDENTIFIER.matcher(lines[i]);
+                        while (m.find()) {
+                            String token = m.group();
+                            if (EXTERNAL_TOKEN_PREFIXES.stream().anyMatch(token::startsWith)) continue;
+                            offenders.add(p.getFileName() + ":" + (i + 1) + "  " + token);
+                        }
+                    }
+                } catch (IOException e) {
+                    throw new RuntimeException(e);
+                }
+            });
+        }
+        assertThat(scannedFiles.get())
+            .as("Generated-sources tree is suspiciously small — generation may not have run, or the\n"
+                + "jOOQ catalog jar was clobbered (the -Plocal-db footgun). A dunder scan over an\n"
+                + "empty tree passes vacuously; this floor makes that failure loud instead.")
+            .isGreaterThanOrEqualTo(DUNDER_SCAN_FILE_FLOOR);
+        assertThat(offenders)
+            .as("Emitted code must not declare or reference Java identifiers that lead with `__`.\n"
+                + "The `__`-prefix is reserved for synthetic SQL column aliases (string literals\n"
+                + "with the DB-column-collision rationale), never for Java locals/params/fields.\n"
+                + "Pick a readable name (`row`, `byPk`, `fetched`, `violations`); for author-derived\n"
+                + "locals use a readable deterministic prefix (`arg_<name>`, `c_<name>`).\n"
+                + "See rewrite-design-principles.adoc, \"Generated code is read and debugged\".")
+            .isEmpty();
+    }
+
     private static boolean isCommentLine(String line) {
         String trimmed = line.trim();
         return trimmed.startsWith("//") || trimmed.startsWith("*") || trimmed.startsWith("/*");
@@ -206,5 +285,53 @@ class GeneratedSourcesLintTest {
     private static String stripInlineComment(String line) {
         int idx = line.indexOf("//");
         return idx < 0 ? line : line.substring(0, idx);
+    }
+
+    /**
+     * Returns {@code src} with every line comment, block comment, javadoc, string literal, and
+     * char literal replaced by spaces (newlines preserved, so line numbers and column offsets
+     * survive). A single left-to-right scan tracks which lexical mode each character is in, so a
+     * {@code //} inside a string is not treated as a comment and a {@code "} inside a comment is
+     * not treated as a string. After masking, only genuine code characters remain, so a
+     * subsequent identifier scan cannot be fooled by a dunder that lives in a comment (e.g. an
+     * inline {@code // re-key by __idx__} note) or a synthetic-column string literal
+     * ({@code .as("__sort__")}).
+     */
+    static String maskCommentsAndLiterals(String src) {
+        StringBuilder out = new StringBuilder(src.length());
+        int mode = 0; // 0 code, 1 line comment, 2 block comment, 3 string, 4 char
+        for (int i = 0; i < src.length(); i++) {
+            char c = src.charAt(i);
+            char next = i + 1 < src.length() ? src.charAt(i + 1) : '\0';
+            switch (mode) {
+                case 0 -> {
+                    if (c == '/' && next == '/') { mode = 1; out.append("  "); i++; }
+                    else if (c == '/' && next == '*') { mode = 2; out.append("  "); i++; }
+                    else if (c == '"') { mode = 3; out.append(' '); }
+                    else if (c == '\'') { mode = 4; out.append(' '); }
+                    else out.append(c);
+                }
+                case 1 -> { // line comment until newline
+                    if (c == '\n') { mode = 0; out.append('\n'); }
+                    else out.append(c == '\t' ? '\t' : ' ');
+                }
+                case 2 -> { // block comment / javadoc until */
+                    if (c == '*' && next == '/') { mode = 0; out.append("  "); i++; }
+                    else out.append(c == '\n' ? '\n' : (c == '\t' ? '\t' : ' '));
+                }
+                case 3 -> { // string literal until unescaped "
+                    if (c == '\\') { out.append("  "); i++; }
+                    else if (c == '"') { mode = 0; out.append(' '); }
+                    else out.append(c == '\n' ? '\n' : ' ');
+                }
+                case 4 -> { // char literal until unescaped '
+                    if (c == '\\') { out.append("  "); i++; }
+                    else if (c == '\'') { mode = 0; out.append(' '); }
+                    else out.append(' ');
+                }
+                default -> out.append(c);
+            }
+        }
+        return out.toString();
     }
 }

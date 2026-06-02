@@ -50,10 +50,23 @@ import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.*;
  */
 public final class MultiTablePolymorphicEmitter {
 
+    // Synthetic SQL column aliases for the stage-1 projection. The double-underscore wrapping
+    // (__name__) is a deliberate collision-avoidance device, NOT the lazy dunder convention this
+    // class otherwise avoids for Java locals: these names live in the result-set column namespace
+    // alongside real table columns, which the consumer's DB schema controls. Wrapping in __ keeps
+    // a synthetic alias from colliding with a real column the consumer happens to name `sort`,
+    // `idx`, `typename`, etc. They reach generated code as string literals (.as("__sort__"),
+    // r.get("__typename")), never as Java identifiers, so the no-regression meta-test (which scans
+    // for dunder-prefixed identifiers) correctly leaves them alone.
+
     /** Synthetic stage-1 projection column carrying the participant typename literal. */
     public static final String TYPENAME_COLUMN = "__typename";
     /** Stage-1 sort key column alias. Single PK projects the column directly; composite PKs use {@code DSL.jsonbArray(...)}. */
     public static final String SORT_COLUMN = "__sort__";
+    /** Stage-1 parent-index column alias; drives the Java-side scatter back to the originating parent row. */
+    public static final String IDX_COLUMN = "__idx__";
+    /** Stage-1 windowed row-number alias; the outer SELECT filters {@code RN_COLUMN <= page.limit()} for the per-partition limit. */
+    public static final String RN_COLUMN = "__rn__";
     /** Stage-1 PK projection alias prefix; per-slot index appended ({@code __pk0__}, {@code __pk1__}, …). */
     public static final String PK_COLUMN_PREFIX = "__pk";
     /** Stage-1 PK projection alias suffix. */
@@ -1006,7 +1019,7 @@ public final class MultiTablePolymorphicEmitter {
         // condition.
         TypeName idxFieldType = ParameterizedTypeName.get(FIELD, integerClass);
         b.addStatement("$T idxField = $T.field($T.name($S), $T.class)",
-            idxFieldType, DSL, DSL, "__idx__", integerClass);
+            idxFieldType, DSL, DSL, IDX_COLUMN, integerClass);
 
         // Ranked CTE: ROW_NUMBER() OVER (PARTITION BY __idx__ ORDER BY effectiveOrderBy).
         // The .orderBy/.seek on this CTE filter rows BEFORE ROW_NUMBER is computed (the seek
@@ -1019,7 +1032,7 @@ public final class MultiTablePolymorphicEmitter {
         b.add("        sortField,\n");
         b.add("        idxField,\n");
         b.add("        $T.rowNumber().over($T.partitionBy(idxField).orderBy(page.effectiveOrderBy())).as($S))\n",
-            DSL, DSL, "__rn__");
+            DSL, DSL, RN_COLUMN);
         b.add("    .from($L)\n", CONNECTION_PAGES_LOCAL);
         b.add("    .orderBy(page.effectiveOrderBy())\n");
         b.add("    .seek(page.seekFields())\n");
@@ -1031,7 +1044,7 @@ public final class MultiTablePolymorphicEmitter {
         b.add("    .select()\n");
         b.add("    .from(ranked)\n");
         b.add("    .where(ranked.field($S, $T.class).le($T.val(page.limit())))\n",
-            "__rn__", integerClass, DSL);
+            RN_COLUMN, integerClass, DSL);
         b.add("    .fetch();\n");
 
         // Bucketize: group by typename, populate parentIdxByOuter parallel array.
@@ -1042,7 +1055,7 @@ public final class MultiTablePolymorphicEmitter {
         b.addStatement("int[] parentIdxByOuter = new int[stage1.size()]");
         b.beginControlFlow("for (int outerIdx = 0; outerIdx < stage1.size(); outerIdx++)");
         b.addStatement("$T r = stage1.get(outerIdx)", RECORD);
-        b.addStatement("parentIdxByOuter[outerIdx] = r.get($S, $T.class)", "__idx__", integerClass);
+        b.addStatement("parentIdxByOuter[outerIdx] = r.get($S, $T.class)", IDX_COLUMN, integerClass);
         b.addStatement("String tn = r.get($S, String.class)", TYPENAME_COLUMN);
         b.addStatement("Object[] pks = new Object[]{r.get($S)}", PK_COLUMN_PREFIX + 0 + PK_COLUMN_SUFFIX);
         b.addStatement("byType.computeIfAbsent(tn, k -> new $T<>()).add(new Object[]{outerIdx, pks})", ARRAY_LIST);
@@ -1093,7 +1106,7 @@ public final class MultiTablePolymorphicEmitter {
 
     /**
      * B4c-2 per-branch projection: same shape as {@link #branchProjection} but additionally
-     * projects {@code parentInput.field(0).as("__idx__")} so the windowed CTE can partition by
+     * projects {@code parentInput.field(0).as(IDX_COLUMN)} so the windowed CTE can partition by
      * the parent index. Single-PK participants only (validator-enforced for connection mode);
      * the {@code __sort__} alias is the participant PK directly.
      */
@@ -1103,7 +1116,7 @@ public final class MultiTablePolymorphicEmitter {
         b.add("$T.inline($S).as($S)", DSL, participant.typeName(), TYPENAME_COLUMN);
         b.add(", $L.$L.as($S)", tableAlias, pks.get(0).javaName(), PK_COLUMN_PREFIX + 0 + PK_COLUMN_SUFFIX);
         b.add(", $L.$L.as($S)", tableAlias, pks.get(0).javaName(), SORT_COLUMN);
-        b.add(", parentInput.field(0, $T.class).as($S)", ClassName.get(Integer.class), "__idx__");
+        b.add(", parentInput.field(0, $T.class).as($S)", ClassName.get(Integer.class), IDX_COLUMN);
         return b.build();
     }
 
@@ -1367,7 +1380,7 @@ public final class MultiTablePolymorphicEmitter {
         // idx slot — used both for bucketing and per-typename dispatch carrying.
         TypeName idxFieldType = ParameterizedTypeName.get(FIELD, integerClass);
         b.addStatement("$T idxField = $T.field($T.name($S), $T.class)",
-            idxFieldType, DSL, DSL, "__idx__", integerClass);
+            idxFieldType, DSL, DSL, IDX_COLUMN, integerClass);
 
         // Bucketize: byType + parentIdxByOuter parallel array (mirrors connection-rows scatter).
         b.addStatement("Object[] result = new Object[stage1.size()]");
@@ -1432,7 +1445,7 @@ public final class MultiTablePolymorphicEmitter {
         for (int s = 0; s < pks.size(); s++) {
             b.add(", $L.$L.as($S)", tableAlias, pks.get(s).javaName(), PK_COLUMN_PREFIX + s + PK_COLUMN_SUFFIX);
         }
-        b.add(", parentInput.field(0, $T.class).as($S)", ClassName.get(Integer.class), "__idx__");
+        b.add(", parentInput.field(0, $T.class).as($S)", ClassName.get(Integer.class), IDX_COLUMN);
         return b.build();
     }
 

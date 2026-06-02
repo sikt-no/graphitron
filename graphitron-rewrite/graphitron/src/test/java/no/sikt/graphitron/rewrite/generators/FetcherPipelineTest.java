@@ -787,12 +787,12 @@ class FetcherPipelineTest {
         assertThat(body)
             .contains(DEFAULT_OUTPUT_PACKAGE + ".inputs.TestInputBean")
             .contains(".fromMap(")
-            .contains("__validator.validate");
+            .contains("validator.validate");
         // Negative half of the regression guard: the typed local feeds validate, not the raw
-        // Map. The pre-step's "Object __arg_input = env.getArgument(...)" raw-coerce shape
+        // Map. The pre-step's "Object arg_input = env.getArgument(...)" raw-coerce shape
         // belongs to the legacy fallback (used only when the assembled schema is missing).
         assertThat(body)
-            .doesNotContain("Object __arg_input = env.getArgument");
+            .doesNotContain("Object arg_input = env.getArgument");
     }
 
     /**

@@ -7,7 +7,7 @@ import no.sikt.graphitron.rewrite.generators.schema.OutcomeClassGenerator;
 
 /**
  * Emits the Jakarta-violation early return for a service fetcher's validator pre-step (R244):
- * {@code return DataFetcherResult.<P>newResult().data(new Outcome.ErrorList<>(__violations)).build();}.
+ * {@code return DataFetcherResult.<P>newResult().data(new Outcome.ErrorList<>(violations)).build();}.
  * Replaces the legacy {@code TypeFetcherGenerator.declareEarlyPayloadFromErrors}, which built a
  * developer payload class from the violation list.
  *
@@ -16,7 +16,7 @@ import no.sikt.graphitron.rewrite.generators.schema.OutcomeClassGenerator;
  * retired payload-factory it consults no {@link no.sikt.graphitron.rewrite.model.ErrorChannel}
  * carrier. {@code valueType} is the {@code DataFetcherResult} payload type (the {@code Outcome<X>}
  * parameterisation); {@code violationsLocal} is the local holding the {@code ConstraintViolation}
- * list (today {@code __violations}).
+ * list (today {@code violations}).
  */
 public final class ChannelEarlyReturnEmitter {
 
