@@ -36,13 +36,27 @@ public final class FieldRegistry {
 
     private final Map<FieldCoordinates, GraphitronField> fields = new LinkedHashMap<>();
 
-    /** Register an output field. Throws if {@code coords} are already registered. */
+    /**
+     * Register an output field. A double-classification is a generator-internal conflict, but it
+     * must not abort the whole classification/validation pass (which would hide every other
+     * diagnostic). Instead the colliding coordinate is recorded as an
+     * {@link GraphitronField.UnclassifiedField} so the validator surfaces it as a clean build error
+     * and classification continues, mirroring how reflection/binding failures already degrade.
+     */
     public void classify(FieldCoordinates coords, GraphitronField field) {
         Objects.requireNonNull(coords, "coords");
         Objects.requireNonNull(field, "field");
-        if (fields.containsKey(coords)) {
-            throw new IllegalStateException("classify(" + coords + "): already classified as "
-                + fields.get(coords).getClass().getSimpleName());
+        var existing = fields.get(coords);
+        if (existing != null) {
+            var conflict = new GraphitronField.UnclassifiedField(
+                coords.getTypeName(), coords.getFieldName(), field.location(), null,
+                no.sikt.graphitron.rewrite.model.Rejection.structural(
+                    "field classified more than once (generator conflict): already "
+                        + existing.getClass().getSimpleName() + ", attempted "
+                        + field.getClass().getSimpleName()));
+            fields.put(coords, conflict);
+            traceOutput(conflict);
+            return;
         }
         fields.put(coords, field);
         traceOutput(field);
