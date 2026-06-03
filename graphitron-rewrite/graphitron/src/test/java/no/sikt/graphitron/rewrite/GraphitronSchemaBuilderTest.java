@@ -3521,8 +3521,8 @@ class GraphitronSchemaBuilderTest {
     })
     void resultTypeBackingProjectionsCarryClassNameAndTablePayloads() {
         // PojoResultType.NoBacking → TypeClassification.UnbackedPojoResult. R276: a standalone
-        // untyped @record is now a PlainObjectType; NoBacking survives only for a carrier-promoted
-        // DML payload, so the projection is exercised through that shape.
+        // R276: a DML carrier binds to its RETURNING table's record (JooqTableRecordType), so its
+        // catalog projection is a JooqTableRecord; NoBacking / UnbackedPojoResult is retired.
         var s1 = buildSnapshot("""
             type Film @table(name: "film") { title: String }
             input FilmInput @table(name: "film") { title: String }
@@ -3531,7 +3531,7 @@ class GraphitronSchemaBuilderTest {
             type Mutation { createFilms(in: [FilmInput!]!): FilmPayload @mutation(typeName: INSERT) }
             """);
         assertThat(s1.typeClassificationsByName().get("FilmPayload"))
-            .isInstanceOf(TypeClassification.UnbackedPojoResult.class);
+            .isInstanceOf(TypeClassification.JooqTableRecord.class);
 
         // PojoResultType.Backed → TypeClassification.PojoResult(fqClassName). R276: backing comes
         // from the @service producer's reflected return type, not the @record directive.

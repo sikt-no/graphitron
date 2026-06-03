@@ -2778,11 +2778,11 @@ class FieldBuilder {
      * {@link UnclassifiedField}.
      */
     private String checkSourceSigilTypeMatch(
-            no.sikt.graphitron.rewrite.model.ReturnTypeRef.ResultReturnType returnType,
+            String returnTypeName,
             no.sikt.graphitron.rewrite.model.MethodRef method) {
-        var shape = detectStructuralServicePayloadShape(returnType.returnTypeName());
+        var shape = detectStructuralServicePayloadShape(returnTypeName);
         if (shape == null) return null;
-        var dataField = findStructuralPayloadDataField(returnType.returnTypeName());
+        var dataField = findStructuralPayloadDataField(returnTypeName);
         if (dataField == null) return null;
         var parsed = FieldSourceSigil.parseArgFieldNameRef(dataField, DIR_FIELD, ARG_NAME);
         boolean isSourceSigil = parsed instanceof FieldSourceSigil.ParseResult.Ok ok
@@ -2880,7 +2880,21 @@ class FieldBuilder {
             no.sikt.graphitron.rewrite.model.ReturnTypeRef.ResultReturnType returnType,
             no.sikt.graphitron.rewrite.model.MethodRef method) {
         if (returnType.fqClassName() != null) return null;
-        var shape = detectStructuralServicePayloadShape(returnType.returnTypeName());
+        return classifyServicePayloadProducerByName(returnType.returnTypeName(), method);
+    }
+
+    /**
+     * R276: the carrier strict-return check keyed by SDL type name, so it runs whether the
+     * {@code @service} return resolved to a Result (a backed payload) or a Scalar (a carrier-shaped
+     * payload that did not bind because the producer return did not match). A carrier shape whose
+     * producer return does not equal {@code XRecord} / {@code List<XRecord>} never binds (RootService
+     * and ServiceEmitted both require the match), so it reaches the Scalar arm as a PlainObjectType;
+     * this check rejects it with the expected-return diagnostic rather than silently admitting a
+     * mismatched producer.
+     */
+    private String classifyServicePayloadProducerByName(
+            String returnTypeName, no.sikt.graphitron.rewrite.model.MethodRef method) {
+        var shape = detectStructuralServicePayloadShape(returnTypeName);
         if (shape == null) return null;
         var target = shape.table();
         var cardinality = shape.cardinality();
@@ -3202,7 +3216,7 @@ class FieldBuilder {
                     // return type matches the SDL element's backing class. The check is colocated
                     // here because the producer's MethodRef is in scope; the rejection flows
                     // through the existing UnclassifiedField -> ValidationError -> LSP path.
-                    String sourceSigilError = checkSourceSigilTypeMatch(r.returnType(), r.method());
+                    String sourceSigilError = checkSourceSigilTypeMatch(r.returnType().returnTypeName(), r.method());
                     if (sourceSigilError != null) {
                         yield new UnclassifiedField(parentTypeName, name, location, fieldDef,
                             Rejection.structural(sourceSigilError));
@@ -3222,9 +3236,26 @@ class FieldBuilder {
                     yield buildServiceField(r.returnType(), r.method(), parentTypeName, name, location, fieldDef, (ch, smc) ->
                         new MutationField.MutationServiceRecordField(parentTypeName, name, location, r.returnType(), smc, ch));
                 }
-                case ServiceDirectiveResolver.Resolved.Scalar s ->
-                    buildServiceField(s.returnType(), s.method(), parentTypeName, name, location, fieldDef, (ch, smc) ->
+                case ServiceDirectiveResolver.Resolved.Scalar s -> {
+                    // R276: a carrier-shaped return that did not bind (the producer return did not
+                    // match XRecord / List<XRecord>) resolves to a Scalar over a PlainObjectType;
+                    // reject it here so a mismatched producer is an author error, not a silent admit.
+                    // Run the $source-sigil check first (mirrors the Result arm), so a $source-typed
+                    // data field gets the more specific $source diagnostic; otherwise the generic
+                    // carrier strict-return diagnostic applies.
+                    String sourceSigilError = checkSourceSigilTypeMatch(s.returnType().returnTypeName(), s.method());
+                    if (sourceSigilError != null) {
+                        yield new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                            Rejection.structural(sourceSigilError));
+                    }
+                    String carrierError = classifyServicePayloadProducerByName(s.returnType().returnTypeName(), s.method());
+                    if (carrierError != null) {
+                        yield new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                            Rejection.structural(carrierError));
+                    }
+                    yield buildServiceField(s.returnType(), s.method(), parentTypeName, name, location, fieldDef, (ch, smc) ->
                         new MutationField.MutationServiceRecordField(parentTypeName, name, location, s.returnType(), smc, ch));
+                }
             };
         }
 
@@ -3307,7 +3338,12 @@ class FieldBuilder {
                                     var carrier = new ChildField.SingleRecordIdFieldFromReturning(
                                         rrt.returnTypeName(), dataField.getName(), dataFieldLocation, returnType_id,
                                         new no.sikt.graphitron.rewrite.model.CallSiteCompaction.NodeIdEncodeKeys(encoder));
-                                    ctx.fieldRegistry.reclassify(coords, carrier, ChildField.SingleRecordIdFieldFromReturning.class);
+                                    // R276: the DELETE carrier now binds to the deleted table's JooqTableRecordType, so
+                                    // the per-field pass classifies this ID field as a PropertyField/ColumnField
+                                    // provisional (not the old NoBacking-path SingleRecordIdFieldFromReturning). Accept any
+                                    // provisional — the @mutation DELETE classifier owns the final carrier, mirroring the
+                                    // Table arm below which already passes null.
+                                    ctx.fieldRegistry.reclassify(coords, carrier, null);
                                 }
                                 case BuildContext.DmlElementKind.Table tbl -> {
                                     String tableMismatch = requireDmlDataTableMatchesInputTable(

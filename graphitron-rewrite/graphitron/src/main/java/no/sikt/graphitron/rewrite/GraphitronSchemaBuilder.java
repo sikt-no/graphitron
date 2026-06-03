@@ -246,8 +246,15 @@ public class GraphitronSchemaBuilder {
                     (nDml.isPresent() && nDml.get().kind() != no.sikt.graphitron.rewrite.model.DmlKind.DELETE)
                     || nService.isPresent();
                 var scan = ctx.scanStructuralDmlPayload(objType.getName());
-                if (scan instanceof BuildContext.DmlPayloadScan.Admit && !skipForUnifiedPath
-                        && parentType instanceof no.sikt.graphitron.rewrite.model.GraphitronType.PojoResultType.NoBacking) {
+                // A DELETE carrier's data field is owned by the @mutation DELETE classifier
+                // (SingleRecordIdFieldFromReturning / SingleRecordTableFieldFromReturning, set via
+                // reclassify). R276 binds the carrier to a JooqTableRecordType, so the standard
+                // per-type pass below would classify that same data field a second time and collide;
+                // skip it here, classifying only the errors field, exactly as the retired NoBacking
+                // branch did. (Orphan carriers are no longer promoted, so they fall through to the
+                // PlainObjectType guard below.)
+                if (scan instanceof BuildContext.DmlPayloadScan.Admit
+                        && nDml.isPresent() && nDml.get().kind() == no.sikt.graphitron.rewrite.model.DmlKind.DELETE) {
                     Class<?> parentBackingClass0 = typeBuilder.recordBackingClasses().get(objType.getName());
                     for (var f : objType.getFieldDefinitions()) {
                         if (ctx.detectErrorsFieldShape(f) != null) {
