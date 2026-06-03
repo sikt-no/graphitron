@@ -149,13 +149,16 @@ class TableMethodFieldPipelineTest {
     void dtoParentFkAutoDerive_emitsDataLoaderFetcherAndRowsMethod() {
         var schema = TestSchemaHelper.buildSchema("""
             type Language @table(name: "language") { name: String }
-            type FilmDetails @record(record: {className: "no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord"}) {
+            type FilmDetails {
                 language: Language
                     @tableMethod(className: "no.sikt.graphitron.rewrite.TestTableMethodStub", method: "getLanguage")
                     @reference(path: [{key: "film_language_id_fkey"}])
             }
             type Film @table(name: "film") { details: FilmDetails }
-            type Query { film: Film }
+            type Query {
+                film: Film
+                filmDetails: FilmDetails @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getFilm"})
+            }
             """);
 
         var fetchers = TypeFetcherGenerator.generate(schema, DEFAULT_OUTPUT_PACKAGE).stream()

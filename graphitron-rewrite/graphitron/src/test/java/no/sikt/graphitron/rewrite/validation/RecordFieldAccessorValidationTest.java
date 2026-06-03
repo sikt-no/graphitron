@@ -29,13 +29,23 @@ class RecordFieldAccessorValidationTest {
 
     private static final String FIXTURES_FQN_PREFIX = "no.sikt.graphitron.codereferences.dummyreferences.R88AccessorFixtures$";
 
+    private static final String DUMMY_SERVICE_FQN =
+        "no.sikt.graphitron.codereferences.dummyreferences.DummyService";
+
     private static GraphitronSchema buildWithRecord(String fixtureSimpleName, String typeBody) {
+        // R276: bind TestType through the real reflection path, a @service producer whose method
+        // returns the R88 fixture class, rather than the removed @record(className) idiom. The
+        // backing class (and therefore the inner-field accessor classification under test) is
+        // identical; only the binding source changes from directive to reflected return type.
+        // DummyService declares one r88<FixtureSimpleName>() method per fixture.
         return TestSchemaHelper.buildSchema("""
-            type Query { result: TestType }
-            type TestType @record(record: {className: "%s%s"}) {
+            type Query {
+                result: TestType @service(service: {className: "%s", method: "r88%s"})
+            }
+            type TestType {
               %s
             }
-            """.formatted(FIXTURES_FQN_PREFIX, fixtureSimpleName, typeBody));
+            """.formatted(DUMMY_SERVICE_FQN, fixtureSimpleName, typeBody));
     }
 
     private static java.util.List<ValidationError> validate(GraphitronSchema schema) {

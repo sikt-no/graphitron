@@ -1,7 +1,6 @@
 package no.sikt.graphitron.rewrite;
 
 import no.sikt.graphitron.rewrite.model.ChildField;
-import no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField;
 import no.sikt.graphitron.rewrite.model.MutationField;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
@@ -108,35 +107,9 @@ class SettKvotesporsmalShapeRegressionTest {
         assertThat(df).isNotInstanceOf(ChildField.SingleRecordTableField.class);
     }
 
-    /**
-     * Diagnostic-wording pin: when an {@code @service} method's reflected return type doesn't
-     * match what the payload class admits, the rejection diagnostic must not cite the inner
-     * table's record class. The SettKvotesporsmal bug surfaced specifically because the
-     * carrier-walk-specific message ({@code "must return 'KvotesporsmalRecord' ... got
-     * '<PayloadClass>'"}) cited {@code KvotesporsmalRecord}, the inner table's record class
-     * (here {@code FilmRecord}), rather than something the author would recognise as the
-     * payload-level type. Under R178 step 3 the rejection routes through
-     * {@code FieldBuilder.buildServiceField}'s legacy-equality check, which cites the
-     * payload-level reflected type instead.
-     */
-    @Test
-    void classBacked_returnMismatch_diagnosticDoesNotCiteInnerTableRecord() {
-        var schema = TestSchemaHelper.buildSchema(FILM_TABLE + """
-            type Payload @record(record: { className: "%s" }) {
-                film: Film!
-            }
-            type Query { x: String }
-            type Mutation {
-                doIt: Payload
-                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getLanguagesAsList"})
-            }
-            """.formatted(PAYLOAD_CLASS));
-
-        var mut = schema.field("Mutation", "doIt");
-        assertThat(mut).isInstanceOf(UnclassifiedField.class);
-        var reason = ((UnclassifiedField) mut).rejection().message();
-        assertThat(reason).contains("getLanguagesAsList");
-        assertThat(reason).contains("payload");
-        assertThat(reason).doesNotContain("FilmRecord");
-    }
+    // R276: classBacked_returnMismatch_diagnosticDoesNotCiteInnerTableRecord was deleted. It
+    // pinned the diagnostic for a mismatch between a @record(className)-declared backing and the
+    // @service method's reflected return type. Under reflection-only binding the payload's backing
+    // *is* the method's reflected return, so that mismatch is structurally impossible and the test
+    // has no scenario left to exercise.
 }

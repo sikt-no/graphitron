@@ -189,10 +189,12 @@ class FieldSourceSigilPipelineTest {
     @Test
     void sourceSigil_atNonCarrierRecordSite_surfacesAccessorMismatch() {
         var schema = TestSchemaHelper.buildSchema("""
-            type Foo @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyRecord"}) {
+            type Foo {
                 renamed: String @field(name: "$source")
             }
-            type Query { foo: Foo }
+            type Query {
+                foo: Foo @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeDummyRecord"})
+            }
             """);
         var field = schema.field("Foo", "renamed");
         assertThat(field).isInstanceOf(UnclassifiedField.class);

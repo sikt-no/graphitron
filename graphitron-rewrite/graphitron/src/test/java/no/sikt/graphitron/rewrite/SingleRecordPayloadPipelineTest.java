@@ -222,10 +222,12 @@ class SingleRecordPayloadPipelineTest {
         // No SingleRecordTableField is registered on a JavaRecordType / PojoResultType.Backed.
         var schema = TestSchemaHelper.buildSchema("""
             type Film @table(name: "film") { title: String }
-            type FilmCarrier @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyRecord"}) {
+            type FilmCarrier {
                 films: [Film!]
             }
-            type Query { carrier: FilmCarrier }
+            type Query {
+                carrier: FilmCarrier @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeDummyRecord"})
+            }
             """);
 
         var dataField = schema.field("FilmCarrier", "films");
@@ -282,14 +284,17 @@ class SingleRecordPayloadPipelineTest {
     void authoredCarrier_atRecordWithClassName_remainsBacked() {
         var schema = TestSchemaHelper.buildSchema("""
             type Film @table(name: "film") { title: String }
-            type FilmCarrier @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyRecord"}) {
+            type FilmCarrier {
                 films: [Film!]
             }
-            type Query { carrier: FilmCarrier }
+            type Query {
+                carrier: FilmCarrier @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeDummyRecord"})
+            }
             """);
         var carrierType = schema.type("FilmCarrier");
-        // @record(className) routes to either JavaRecordType / PojoResultType.Backed; assert the
-        // negative — it is NOT a NoBacking arm, so the carrier-promotion path didn't claim it.
+        // R276: a producer-backed carrier (DummyRecord via @service reflection) routes to
+        // JavaRecordType / PojoResultType.Backed; assert the negative — it is NOT a NoBacking arm,
+        // so the carrier-promotion path didn't claim it.
         assertThat(carrierType).isNotInstanceOf(GraphitronType.PojoResultType.NoBacking.class);
     }
 
@@ -446,11 +451,12 @@ class SingleRecordPayloadPipelineTest {
         // bound parents.
         var schema = TestSchemaHelper.buildSchema("""
             type Film @table(name: "film") { title: String }
-            type FilmDto @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyRecord"}) {
-                title: String
-            }
+            type FilmDto { title: String }
             type FilmDtoPayload { film: FilmDto }
-            type Query { x: FilmDtoPayload }
+            type Query {
+                x: FilmDtoPayload
+                aFilmDto: FilmDto @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeDummyRecord"})
+            }
             """);
 
         var carrier = schema.type("FilmDtoPayload");
@@ -469,12 +475,12 @@ class SingleRecordPayloadPipelineTest {
         // pointing to @service as the right path.
         String sdl = """
             type Film @table(name: "film") { title: String }
-            type FilmDto @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyRecord"}) {
-                title: String
-            }
+            type FilmDto { title: String }
             type FilmDtoPayload { film: FilmDto }
             input FilmInput @table(name: "film") { %s }
-            type Query { x: String }
+            type Query {
+                aFilmDto: FilmDto @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeDummyRecord"})
+            }
             type Mutation { %s(in: FilmInput!): FilmDtoPayload @mutation(typeName: %s) }
             """.formatted(inputBody(kind), mutationName(kind), kind.name());
 

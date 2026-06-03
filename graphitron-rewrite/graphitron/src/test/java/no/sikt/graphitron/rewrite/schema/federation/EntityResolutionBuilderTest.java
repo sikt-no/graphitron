@@ -281,8 +281,10 @@ class EntityResolutionBuilderTest {
         // because @record types intentionally have no @table. Name the kind explicitly so
         // the author sees that @key on @record is the misuse, not a forgotten @table.
         var schema = TestSchemaHelper.buildSchema(FEDERATION_DIRECTIVES + """
-            type Query { x: FooRec }
-            type FooRec @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyRecord"}) @key(fields: "fooId") {
+            type Query {
+                x: FooRec @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeDummyRecord"})
+            }
+            type FooRec @key(fields: "fooId") {
                 fooId: Int
             }
             """);

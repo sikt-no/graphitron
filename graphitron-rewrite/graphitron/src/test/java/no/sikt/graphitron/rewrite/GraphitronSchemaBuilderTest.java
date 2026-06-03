@@ -2161,9 +2161,12 @@ class GraphitronSchemaBuilderTest {
         PROPERTY_FIELD_ON_RESULT_TYPE(
             "@record (ResultType) parent — scalar field → PropertyField using field name as columnName",
             """
-            type FilmDetails @record { title: String }
+            type FilmDetails { title: String }
             type Film @table(name: "film") { details: FilmDetails }
-            type Query { film: Film }
+            type Query {
+                film: Film
+                prodFilmDetails: FilmDetails @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeDetailsProps"})
+            }
             """,
             schema -> {
                 var f = (PropertyField) schema.field("FilmDetails", "title");
@@ -2175,9 +2178,12 @@ class GraphitronSchemaBuilderTest {
         PROPERTY_FIELD_EXPLICIT_NAME(
             "@record parent + @field(name:) — PropertyField uses the explicit column name",
             """
-            type FilmDetails @record { title: String @field(name: "film_title") }
+            type FilmDetails { title: String @field(name: "film_title") }
             type Film @table(name: "film") { details: FilmDetails }
-            type Query { film: Film }
+            type Query {
+                film: Film
+                prodFilmDetails: FilmDetails @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeDetailsProps"})
+            }
             """,
             schema -> {
                 var f = (PropertyField) schema.field("FilmDetails", "title");
@@ -2187,9 +2193,12 @@ class GraphitronSchemaBuilderTest {
         SERVICE_FIELD_ON_RESULT_TYPE(
             "@record parent + @service + scalar return → DEFERRED until batch-key lift through parent chain ships",
             """
-            type FilmDetails @record { rating: String @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "get"}) }
+            type FilmDetails { rating: String @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "get"}) }
             type Film @table(name: "film") { details: FilmDetails }
-            type Query { film: Film }
+            type Query {
+                film: Film
+                prodFilmDetails: FilmDetails @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeDummyRecord"})
+            }
             """,
             schema -> {
                 var field = schema.field("FilmDetails", "rating");
@@ -2205,11 +2214,14 @@ class GraphitronSchemaBuilderTest {
             "@record parent (typed POJO) + @table return type (no @lookupKey) → RecordTableField",
             """
             type Language @table(name: "language") { name: String }
-            type FilmDetails @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyRecord"}) {
+            type FilmDetails {
               language: Language @reference(path: [{key: "film_language_id_fkey"}])
             }
             type Film @table(name: "film") { details: FilmDetails }
-            type Query { film: Film }
+            type Query {
+                film: Film
+                prodFilmDetails: FilmDetails @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeDummyRecord"})
+            }
             """,
             schema -> assertThat(schema.field("FilmDetails", "language")).isInstanceOf(RecordTableField.class)) {
             @Override public Set<Class<?>> variants() { return Set.of(RecordTableField.class); }
@@ -2219,11 +2231,14 @@ class GraphitronSchemaBuilderTest {
             "@record parent (typed POJO) + @table return type + @lookupKey → RecordLookupTableField with populated SourceKey",
             """
             type Language @table(name: "language") { name: String }
-            type FilmDetails @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyRecord"}) {
+            type FilmDetails {
               language(language_id: ID! @lookupKey): Language @reference(path: [{key: "film_language_id_fkey"}])
             }
             type Film @table(name: "film") { details: FilmDetails }
-            type Query { film: Film }
+            type Query {
+                film: Film
+                prodFilmDetails: FilmDetails @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeDummyRecord"})
+            }
             """,
             schema -> {
                 var f = (RecordLookupTableField) schema.field("FilmDetails", "language");
@@ -2237,11 +2252,14 @@ class GraphitronSchemaBuilderTest {
             "JooqTableRecordType @record parent + @table return with single FK → RecordTableField with one inferred FkJoin",
             """
             type Inventory @table(name: "inventory") { inventoryId: Int! @field(name: "inventory_id") }
-            type FilmDetails @record(record: {className: "no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord"}) {
+            type FilmDetails {
               inventories: [Inventory!]!
             }
             type Film @table(name: "film") { details: FilmDetails }
-            type Query { film: Film }
+            type Query {
+                film: Film
+                prodFilmDetails: FilmDetails @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getFilm"})
+            }
             """,
             schema -> {
                 var f = (RecordTableField) schema.field("FilmDetails", "inventories");
@@ -2255,11 +2273,14 @@ class GraphitronSchemaBuilderTest {
             "JooqTableRecordType @record parent + @table return + @lookupKey with single FK → RecordLookupTableField with one inferred FkJoin",
             """
             type Inventory @table(name: "inventory") { inventoryId: Int! @field(name: "inventory_id") }
-            type FilmDetails @record(record: {className: "no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord"}) {
+            type FilmDetails {
               inventories(inventory_id: [Int!] @lookupKey): [Inventory!]!
             }
             type Film @table(name: "film") { details: FilmDetails }
-            type Query { film: Film }
+            type Query {
+                film: Film
+                prodFilmDetails: FilmDetails @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getFilm"})
+            }
             """,
             schema -> {
                 var f = (RecordLookupTableField) schema.field("FilmDetails", "inventories");
@@ -2273,10 +2294,14 @@ class GraphitronSchemaBuilderTest {
         RECORD_FIELD(
             "@record parent + non-table object return type → RecordField",
             """
-            type FilmStats @record { count: Int }
-            type FilmDetails @record { stats: FilmStats }
+            type FilmStats { count: Int }
+            type FilmDetails { stats: FilmStats }
             type Film @table(name: "film") { details: FilmDetails }
-            type Query { film: Film }
+            type Query {
+                film: Film
+                prodFilmDetails: FilmDetails @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeFilmDetailsRecord"})
+                prodFilmStats: FilmStats @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeFilmStatsRecord"})
+            }
             """,
             schema -> assertThat(schema.field("FilmDetails", "stats")).isInstanceOf(RecordField.class)) {
             @Override public Set<Class<?>> variants() { return Set.of(RecordField.class); }
@@ -2286,11 +2311,14 @@ class GraphitronSchemaBuilderTest {
             "@record parent + @table return + single cardinality → RecordTableField (R61 lifted Invariant #10)",
             """
             type Language @table(name: "language") { name: String }
-            type FilmDetails @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyRecord"}) {
+            type FilmDetails {
               language: Language @reference(path: [{key: "film_language_id_fkey"}])
             }
             type Film @table(name: "film") { details: FilmDetails }
-            type Query { film: Film }
+            type Query {
+                film: Film
+                prodFilmDetails: FilmDetails @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeDummyRecord"})
+            }
             """,
             schema -> {
                 var f = (RecordTableField) schema.field("FilmDetails", "language");
@@ -2305,9 +2333,12 @@ class GraphitronSchemaBuilderTest {
             "@record parent + @service + @table return type → ServiceTableField",
             """
             type Language @table(name: "language") { name: String }
-            type FilmDetails @record { language: Language @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getLanguage"}) }
+            type FilmDetails { language: Language @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getLanguage"}) }
             type Film @table(name: "film") { details: FilmDetails }
-            type Query { film: Film }
+            type Query {
+                film: Film
+                prodFilmDetails: FilmDetails @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeDummyRecord"})
+            }
             """,
             schema -> assertThat(schema.field("FilmDetails", "language")).isInstanceOf(ServiceTableField.class)) {
             @Override public Set<Class<?>> variants() { return Set.of(ServiceTableField.class); }
@@ -2316,9 +2347,12 @@ class GraphitronSchemaBuilderTest {
         CONSTRUCTOR_FIELD(
             "@table parent + @record child type → ConstructorField",
             """
-            type FilmDetails @record { rating: String }
+            type FilmDetails { rating: String }
             type Film @table(name: "film") { details: FilmDetails }
-            type Query { film: Film }
+            type Query {
+                film: Film
+                prodFilmDetails: FilmDetails @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeFilmDetailsRating"})
+            }
             """,
             schema -> assertThat(schema.field("Film", "details")).isInstanceOf(ChildField.ConstructorField.class)) {
             @Override public Set<Class<?>> variants() { return Set.of(ChildField.ConstructorField.class); }
@@ -2335,11 +2369,14 @@ class GraphitronSchemaBuilderTest {
             "@splitQuery on @record-parent + @table return → RecordTableField + build warning naming the field coordinate",
             """
             type Language @table(name: "language") { name: String }
-            type FilmDetails @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyRecord"}) {
+            type FilmDetails {
               language: Language @splitQuery @reference(path: [{key: "film_language_id_fkey"}])
             }
             type Film @table(name: "film") { details: FilmDetails }
-            type Query { film: Film }
+            type Query {
+                film: Film
+                prodFilmDetails: FilmDetails @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeDummyRecord"})
+            }
             """,
             schema -> {
                 assertThat(schema.field("FilmDetails", "language")).isInstanceOf(RecordTableField.class);
@@ -2355,13 +2392,16 @@ class GraphitronSchemaBuilderTest {
             "@splitQuery on @record-parent + @lookupKey + @table return → RecordLookupTableField + build warning",
             """
             type Language @table(name: "language") { name: String }
-            type FilmDetails @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyRecord"}) {
+            type FilmDetails {
               language(language_id: ID! @lookupKey): Language
                 @splitQuery
                 @reference(path: [{key: "film_language_id_fkey"}])
             }
             type Film @table(name: "film") { details: FilmDetails }
-            type Query { film: Film }
+            type Query {
+                film: Film
+                prodFilmDetails: FilmDetails @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeDummyRecord"})
+            }
             """,
             schema -> {
                 assertThat(schema.field("FilmDetails", "language")).isInstanceOf(RecordLookupTableField.class);
@@ -2381,11 +2421,14 @@ class GraphitronSchemaBuilderTest {
             "@splitQuery on @record-parent with unresolvable @reference → UnclassifiedField + build warning still fires",
             """
             type Language @table(name: "language") { name: String }
-            type FilmDetails @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyRecord"}) {
+            type FilmDetails {
               language: Language @splitQuery @reference(path: [{key: "no_such_fkey"}])
             }
             type Film @table(name: "film") { details: FilmDetails }
-            type Query { film: Film }
+            type Query {
+                film: Film
+                prodFilmDetails: FilmDetails @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeDummyRecord"})
+            }
             """,
             schema -> {
                 assertThat(schema.field("FilmDetails", "language")).isInstanceOf(UnclassifiedField.class);
@@ -2454,9 +2497,12 @@ class GraphitronSchemaBuilderTest {
         // PropertyField + RecordField — projection collapses to RecordOrProperty with
         // columnName / accessorName.
         var s1 = buildSnapshot("""
-            type FilmDetails @record { title: String @field(name: "film_title") }
+            type FilmDetails { title: String @field(name: "film_title") }
             type Film @table(name: "film") { details: FilmDetails }
-            type Query { film: Film }
+            type Query {
+                film: Film
+                prodFilmDetails: FilmDetails @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeDetailsProps"})
+            }
             """);
         var prop = (FieldClassification.RecordOrProperty) s1.fieldClassificationsByCoord().get("FilmDetails.title");
         assertThat(prop.columnName()).isEqualTo("film_title");
@@ -2464,11 +2510,14 @@ class GraphitronSchemaBuilderTest {
         // RecordTableField — projection is RecordTableTarget(tableName, joinPath, hasLookupKey=false).
         var s2 = buildSnapshot("""
             type Language @table(name: "language") { name: String }
-            type FilmDetails @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyRecord"}) {
+            type FilmDetails {
               language: Language @reference(path: [{key: "film_language_id_fkey"}])
             }
             type Film @table(name: "film") { details: FilmDetails }
-            type Query { film: Film }
+            type Query {
+                film: Film
+                prodFilmDetails: FilmDetails @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeDummyRecord"})
+            }
             """);
         var rt = (FieldClassification.RecordTableTarget) s2.fieldClassificationsByCoord().get("FilmDetails.language");
         assertThat(rt.tableName()).isEqualToIgnoringCase("language");
@@ -2477,11 +2526,14 @@ class GraphitronSchemaBuilderTest {
         // RecordLookupTableField — hasLookupKey = true.
         var s3 = buildSnapshot("""
             type Language @table(name: "language") { name: String }
-            type FilmDetails @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyRecord"}) {
+            type FilmDetails {
               language(language_id: ID! @lookupKey): Language @reference(path: [{key: "film_language_id_fkey"}])
             }
             type Film @table(name: "film") { details: FilmDetails }
-            type Query { film: Film }
+            type Query {
+                film: Film
+                prodFilmDetails: FilmDetails @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeDummyRecord"})
+            }
             """);
         var rl = (FieldClassification.RecordTableTarget) s3.fieldClassificationsByCoord().get("FilmDetails.language");
         assertThat(rl.hasLookupKey()).isTrue();
@@ -2506,13 +2558,16 @@ class GraphitronSchemaBuilderTest {
             "Pojo parent + valid Row1<Integer> lifter + @reference, list return → RecordTableField with LifterPathKeyed",
             """
             type Inventory @table(name: "inventory") { inventoryId: Int! @field(name: "inventory_id") }
-            type FilmDetails @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyRecord"}) {
+            type FilmDetails {
               inventories: [Inventory!]!
                 @sourceRow(className: "no.sikt.graphitron.rewrite.TestLifterStub", method: "dummyRow1Integer")
                 @reference(path: [{key: "inventory_film_id_fkey"}])
             }
             type Film @table(name: "film") { details: FilmDetails }
-            type Query { film: Film }
+            type Query {
+                film: Film
+                prodFilmDetails: FilmDetails @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeDummyRecord"})
+            }
             """,
             schema -> {
                 var f = (RecordTableField) schema.field("FilmDetails", "inventories");
@@ -2536,13 +2591,16 @@ class GraphitronSchemaBuilderTest {
             "Pojo parent + valid Row1 lifter + @reference + @lookupKey arg → RecordLookupTableField with LifterPathKeyed and lookupMapping populated",
             """
             type Inventory @table(name: "inventory") { inventoryId: Int! @field(name: "inventory_id") }
-            type FilmDetails @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyRecord"}) {
+            type FilmDetails {
               inventories(inventory_id: [Int!]! @lookupKey): [Inventory!]!
                 @sourceRow(className: "no.sikt.graphitron.rewrite.TestLifterStub", method: "dummyRow1Integer")
                 @reference(path: [{key: "inventory_film_id_fkey"}])
             }
             type Film @table(name: "film") { details: FilmDetails }
-            type Query { film: Film }
+            type Query {
+                film: Film
+                prodFilmDetails: FilmDetails @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeDummyRecord"})
+            }
             """,
             schema -> {
                 var f = (RecordLookupTableField) schema.field("FilmDetails", "inventories");
@@ -2552,26 +2610,10 @@ class GraphitronSchemaBuilderTest {
             @Override public Set<Class<?>> variants() { return Set.of(RecordLookupTableField.class); }
         },
 
-        NULL_FQ_CLASS_NAME(
-            "Pojo parent (null fqClassName) + lifter → UnclassifiedField AUTHOR_ERROR (Invariant #1: parent must declare backing class)",
-            """
-            type Inventory @table(name: "inventory") { inventoryId: Int! @field(name: "inventory_id") }
-            type FilmDetails @record {
-              inventories: [Inventory!]!
-                @sourceRow(className: "no.sikt.graphitron.rewrite.TestLifterStub", method: "dummyRow1Integer")
-                @reference(path: [{key: "inventory_film_id_fkey"}])
-            }
-            type Film @table(name: "film") { details: FilmDetails }
-            type Query { film: Film }
-            """,
-            schema -> {
-                var unc = (UnclassifiedField) schema.field("FilmDetails", "inventories");
-                assertThat(unc.kind()).isEqualTo(RejectionKind.AUTHOR_ERROR);
-                assertThat(unc.reason()).contains("@sourceRow").contains("backing class");
-            }) {
-            @Override public Set<Class<?>> variants() { return Set.of(UnclassifiedField.class); }
-        },
-
+        // R276: NULL_FQ_CLASS_NAME deleted. It pinned "a @record parent with no backing class +
+        // @sourceRow → Invariant #1 rejection". Under reflection-only binding a no-backing @record
+        // is a PlainObjectType whose fields don't classify, so that exact scenario no longer
+        // exists. UnclassifiedField coverage for SourceRow is retained by the other reject cases.
         TABLE_PARENT_REJECT(
             "@table parent + lifter → UnclassifiedField AUTHOR_ERROR (lifter is for @record parents)",
             """
@@ -2595,13 +2637,16 @@ class GraphitronSchemaBuilderTest {
             "JooqTableRecordType parent + lifter → UnclassifiedField AUTHOR_ERROR pointing at the catalog FK",
             """
             type Inventory @table(name: "inventory") { inventoryId: Int! @field(name: "inventory_id") }
-            type FilmDetails @record(record: {className: "no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord"}) {
+            type FilmDetails {
               inventories: [Inventory!]!
                 @sourceRow(className: "no.sikt.graphitron.rewrite.TestLifterStub", method: "dummyRow1Integer")
                 @reference(path: [{key: "inventory_film_id_fkey"}])
             }
             type Film @table(name: "film") { details: FilmDetails }
-            type Query { film: Film }
+            type Query {
+                film: Film
+                prodFilmDetails: FilmDetails @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getFilm"})
+            }
             """,
             schema -> {
                 var unc = (UnclassifiedField) schema.field("FilmDetails", "inventories");
@@ -2615,13 +2660,16 @@ class GraphitronSchemaBuilderTest {
             "JavaRecordType parent (non-null fqClassName) + lifter → RecordTableField (admitted same as PojoResultType)",
             """
             type Inventory @table(name: "inventory") { inventoryId: Int! @field(name: "inventory_id") }
-            type FilmDetails @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.TestRecordDto"}) {
+            type FilmDetails {
               inventories: [Inventory!]!
                 @sourceRow(className: "no.sikt.graphitron.rewrite.TestLifterStub", method: "javaRecordRow1Integer")
                 @reference(path: [{key: "inventory_film_id_fkey"}])
             }
             type Film @table(name: "film") { details: FilmDetails }
-            type Query { film: Film }
+            type Query {
+                film: Film
+                prodFilmDetails: FilmDetails @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeTestRecordDto"})
+            }
             """,
             schema -> {
                 var f = (RecordTableField) schema.field("FilmDetails", "inventories");
@@ -2634,13 +2682,16 @@ class GraphitronSchemaBuilderTest {
             "Lifter className that doesn't load → UnclassifiedField AUTHOR_ERROR with 'could not be loaded'",
             """
             type Inventory @table(name: "inventory") { inventoryId: Int! @field(name: "inventory_id") }
-            type FilmDetails @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyRecord"}) {
+            type FilmDetails {
               inventories: [Inventory!]!
                 @sourceRow(className: "com.example.Nonexistent", method: "doesNotMatter")
                 @reference(path: [{key: "inventory_film_id_fkey"}])
             }
             type Film @table(name: "film") { details: FilmDetails }
-            type Query { film: Film }
+            type Query {
+                film: Film
+                prodFilmDetails: FilmDetails @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeDummyRecord"})
+            }
             """,
             schema -> {
                 var unc = (UnclassifiedField) schema.field("FilmDetails", "inventories");
@@ -2654,13 +2705,16 @@ class GraphitronSchemaBuilderTest {
             "Lifter method name not on the class → UnclassifiedField AUTHOR_ERROR with candidate hint",
             """
             type Inventory @table(name: "inventory") { inventoryId: Int! @field(name: "inventory_id") }
-            type FilmDetails @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyRecord"}) {
+            type FilmDetails {
               inventories: [Inventory!]!
                 @sourceRow(className: "no.sikt.graphitron.rewrite.TestLifterStub", method: "dummiRow1Integer")
                 @reference(path: [{key: "inventory_film_id_fkey"}])
             }
             type Film @table(name: "film") { details: FilmDetails }
-            type Query { film: Film }
+            type Query {
+                film: Film
+                prodFilmDetails: FilmDetails @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeDummyRecord"})
+            }
             """,
             schema -> {
                 var unc = (UnclassifiedField) schema.field("FilmDetails", "inventories");
@@ -2674,13 +2728,16 @@ class GraphitronSchemaBuilderTest {
             "Lifter return type is Long (not Row<N>) → UnclassifiedField AUTHOR_ERROR (Invariant #3)",
             """
             type Inventory @table(name: "inventory") { inventoryId: Int! @field(name: "inventory_id") }
-            type FilmDetails @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyRecord"}) {
+            type FilmDetails {
               inventories: [Inventory!]!
                 @sourceRow(className: "no.sikt.graphitron.rewrite.TestLifterStub", method: "wrongReturnLong")
                 @reference(path: [{key: "inventory_film_id_fkey"}])
             }
             type Film @table(name: "film") { details: FilmDetails }
-            type Query { film: Film }
+            type Query {
+                film: Film
+                prodFilmDetails: FilmDetails @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeDummyRecord"})
+            }
             """,
             schema -> {
                 var unc = (UnclassifiedField) schema.field("FilmDetails", "inventories");
@@ -2694,13 +2751,16 @@ class GraphitronSchemaBuilderTest {
             "Lifter parameter type incompatible with parent backing class → UnclassifiedField AUTHOR_ERROR (Invariant #2)",
             """
             type Inventory @table(name: "inventory") { inventoryId: Int! @field(name: "inventory_id") }
-            type FilmDetails @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyRecord"}) {
+            type FilmDetails {
               inventories: [Inventory!]!
                 @sourceRow(className: "no.sikt.graphitron.rewrite.TestLifterStub", method: "wrongParamType")
                 @reference(path: [{key: "inventory_film_id_fkey"}])
             }
             type Film @table(name: "film") { details: FilmDetails }
-            type Query { film: Film }
+            type Query {
+                film: Film
+                prodFilmDetails: FilmDetails @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeDummyRecord"})
+            }
             """,
             schema -> {
                 var unc = (UnclassifiedField) schema.field("FilmDetails", "inventories");
@@ -2714,13 +2774,16 @@ class GraphitronSchemaBuilderTest {
             "Lifter Row arity 2 against single-column first-hop source-side → UnclassifiedField AUTHOR_ERROR (Invariant #4, path-keyed arity)",
             """
             type Inventory @table(name: "inventory") { inventoryId: Int! @field(name: "inventory_id") }
-            type FilmDetails @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyRecord"}) {
+            type FilmDetails {
               inventories: [Inventory!]!
                 @sourceRow(className: "no.sikt.graphitron.rewrite.TestLifterStub", method: "dummyRow2IntInt")
                 @reference(path: [{key: "inventory_film_id_fkey"}])
             }
             type Film @table(name: "film") { details: FilmDetails }
-            type Query { film: Film }
+            type Query {
+                film: Film
+                prodFilmDetails: FilmDetails @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeDummyRecord"})
+            }
             """,
             schema -> {
                 var unc = (UnclassifiedField) schema.field("FilmDetails", "inventories");
@@ -2734,13 +2797,16 @@ class GraphitronSchemaBuilderTest {
             "Lifter Row1<String> with target column typed Integer → UnclassifiedField AUTHOR_ERROR (Invariant #4)",
             """
             type Inventory @table(name: "inventory") { inventoryId: Int! @field(name: "inventory_id") }
-            type FilmDetails @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyRecord"}) {
+            type FilmDetails {
               inventories: [Inventory!]!
                 @sourceRow(className: "no.sikt.graphitron.rewrite.TestLifterStub", method: "dummyRow1String")
                 @reference(path: [{key: "inventory_film_id_fkey"}])
             }
             type Film @table(name: "film") { details: FilmDetails }
-            type Query { film: Film }
+            type Query {
+                film: Film
+                prodFilmDetails: FilmDetails @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeDummyRecord"})
+            }
             """,
             schema -> {
                 var unc = (UnclassifiedField) schema.field("FilmDetails", "inventories");
@@ -2754,13 +2820,16 @@ class GraphitronSchemaBuilderTest {
             "Lifter Row1<? extends Number> wildcard type-arg → UnclassifiedField AUTHOR_ERROR (Invariant #4 wildcard arm)",
             """
             type Inventory @table(name: "inventory") { inventoryId: Int! @field(name: "inventory_id") }
-            type FilmDetails @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyRecord"}) {
+            type FilmDetails {
               inventories: [Inventory!]!
                 @sourceRow(className: "no.sikt.graphitron.rewrite.TestLifterStub", method: "dummyRow1WildcardNumber")
                 @reference(path: [{key: "inventory_film_id_fkey"}])
             }
             type Film @table(name: "film") { details: FilmDetails }
-            type Query { film: Film }
+            type Query {
+                film: Film
+                prodFilmDetails: FilmDetails @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeDummyRecord"})
+            }
             """,
             schema -> {
                 var unc = (UnclassifiedField) schema.field("FilmDetails", "inventories");
@@ -2774,13 +2843,16 @@ class GraphitronSchemaBuilderTest {
             "@sourceRow + @reference with an unknown FK key → UnclassifiedField AUTHOR_ERROR; the @reference parse error surfaces directly without re-validating against the lifter (R110 spec).",
             """
             type Inventory @table(name: "inventory") { inventoryId: Int! @field(name: "inventory_id") }
-            type FilmDetails @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyRecord"}) {
+            type FilmDetails {
               inventories: [Inventory!]!
                 @sourceRow(className: "no.sikt.graphitron.rewrite.TestLifterStub", method: "dummyRow1Integer")
                 @reference(path: [{key: "non_existent_fk_key"}])
             }
             type Film @table(name: "film") { details: FilmDetails }
-            type Query { film: Film }
+            type Query {
+                film: Film
+                prodFilmDetails: FilmDetails @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeDummyRecord"})
+            }
             """,
             schema -> {
                 var unc = (UnclassifiedField) schema.field("FilmDetails", "inventories");
@@ -2794,14 +2866,17 @@ class GraphitronSchemaBuilderTest {
             "@sourceRow on @asConnection field → UnclassifiedField AUTHOR_ERROR (Invariant #9)",
             """
             type Inventory @table(name: "inventory") { inventoryId: Int! @field(name: "inventory_id") }
-            type FilmDetails @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyRecord"}) {
+            type FilmDetails {
               inventories: [Inventory!]!
                 @asConnection
                 @sourceRow(className: "no.sikt.graphitron.rewrite.TestLifterStub", method: "dummyRow1Integer")
                 @reference(path: [{key: "inventory_film_id_fkey"}])
             }
             type Film @table(name: "film") { details: FilmDetails }
-            type Query { film: Film }
+            type Query {
+                film: Film
+                prodFilmDetails: FilmDetails @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeDummyRecord"})
+            }
             """,
             schema -> {
                 var unc = (UnclassifiedField) schema.field("FilmDetails", "inventories");
@@ -2815,14 +2890,17 @@ class GraphitronSchemaBuilderTest {
             "Pojo parent + lifter + @field(name:) on the field → classifier ignores @field name; @reference path resolves independently",
             """
             type Inventory @table(name: "inventory") { inventoryId: Int! @field(name: "inventory_id") }
-            type FilmDetails @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyRecord"}) {
+            type FilmDetails {
               inventories: [Inventory!]!
                 @field(name: "irrelevant_for_lifter")
                 @sourceRow(className: "no.sikt.graphitron.rewrite.TestLifterStub", method: "dummyRow1Integer")
                 @reference(path: [{key: "inventory_film_id_fkey"}])
             }
             type Film @table(name: "film") { details: FilmDetails }
-            type Query { film: Film }
+            type Query {
+                film: Film
+                prodFilmDetails: FilmDetails @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeDummyRecord"})
+            }
             """,
             schema -> {
                 var f = (RecordTableField) schema.field("FilmDetails", "inventories");
@@ -2837,14 +2915,17 @@ class GraphitronSchemaBuilderTest {
             "Pojo parent + lifter + @condition on the field → RecordTableField; tfc.filters() carries the resolved ConditionFilter",
             """
             type Inventory @table(name: "inventory") { inventoryId: Int! @field(name: "inventory_id") }
-            type FilmDetails @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyRecord"}) {
+            type FilmDetails {
               inventories: [Inventory!]!
                 @sourceRow(className: "no.sikt.graphitron.rewrite.TestLifterStub", method: "dummyRow1Integer")
                 @reference(path: [{key: "inventory_film_id_fkey"}])
                 @condition(condition: {className: "no.sikt.graphitron.rewrite.TestConditionStub", method: "lifterFieldCondition"})
             }
             type Film @table(name: "film") { details: FilmDetails }
-            type Query { film: Film }
+            type Query {
+                film: Film
+                prodFilmDetails: FilmDetails @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeDummyRecord"})
+            }
             """,
             schema -> {
                 var f = (RecordTableField) schema.field("FilmDetails", "inventories");
@@ -2864,13 +2945,16 @@ class GraphitronSchemaBuilderTest {
             enum Direction { ASC DESC }
             input InventoryOrder { sortField: InventoryOrderField! direction: Direction! }
             type Inventory @table(name: "inventory") { inventoryId: Int! @field(name: "inventory_id") }
-            type FilmDetails @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyRecord"}) {
+            type FilmDetails {
               inventories(order: InventoryOrder @orderBy): [Inventory!]!
                 @sourceRow(className: "no.sikt.graphitron.rewrite.TestLifterStub", method: "dummyRow1Integer")
                 @reference(path: [{key: "inventory_film_id_fkey"}])
             }
             type Film @table(name: "film") { details: FilmDetails }
-            type Query { film: Film }
+            type Query {
+                film: Film
+                prodFilmDetails: FilmDetails @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeDummyRecord"})
+            }
             """,
             schema -> {
                 var f = (RecordTableField) schema.field("FilmDetails", "inventories");
@@ -2887,13 +2971,16 @@ class GraphitronSchemaBuilderTest {
         SCALAR_RETURN_REJECT(
             "Pojo parent + @sourceRow on a scalar-return field → UnclassifiedField AUTHOR_ERROR (directive applies only to @table-bound returns)",
             """
-            type FilmDetails @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyRecord"}) {
+            type FilmDetails {
               rating: String
                 @sourceRow(className: "no.sikt.graphitron.rewrite.TestLifterStub", method: "dummyRow1Integer")
                 @reference(path: [{key: "inventory_film_id_fkey"}])
             }
             type Film @table(name: "film") { details: FilmDetails }
-            type Query { film: Film }
+            type Query {
+                film: Film
+                prodFilmDetails: FilmDetails @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeDummyRecord"})
+            }
             """,
             schema -> {
                 var unc = (UnclassifiedField) schema.field("FilmDetails", "rating");
@@ -2907,12 +2994,15 @@ class GraphitronSchemaBuilderTest {
             "Pojo parent + @sourceRow alone (no @reference) → RecordTableField with LifterLeafKeyed; lifter RowN matches the leaf target's PK columns directly.",
             """
             type Inventory @table(name: "inventory") { inventoryId: Int! @field(name: "inventory_id") }
-            type FilmDetails @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyRecord"}) {
+            type FilmDetails {
               inventories: [Inventory!]!
                 @sourceRow(className: "no.sikt.graphitron.rewrite.TestLifterStub", method: "dummyRow1Integer")
             }
             type Film @table(name: "film") { details: FilmDetails }
-            type Query { film: Film }
+            type Query {
+                film: Film
+                prodFilmDetails: FilmDetails @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeDummyRecord"})
+            }
             """,
             schema -> {
                 var f = (RecordTableField) schema.field("FilmDetails", "inventories");
@@ -2936,12 +3026,15 @@ class GraphitronSchemaBuilderTest {
             "Lifter Row arity 2 against single-column leaf-PK → UnclassifiedField AUTHOR_ERROR; the diagnostic distinguishes leaf-PK from first-hop source-side (R110 spec).",
             """
             type Inventory @table(name: "inventory") { inventoryId: Int! @field(name: "inventory_id") }
-            type FilmDetails @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyRecord"}) {
+            type FilmDetails {
               inventories: [Inventory!]!
                 @sourceRow(className: "no.sikt.graphitron.rewrite.TestLifterStub", method: "dummyRow2IntInt")
             }
             type Film @table(name: "film") { details: FilmDetails }
-            type Query { film: Film }
+            type Query {
+                film: Film
+                prodFilmDetails: FilmDetails @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeDummyRecord"})
+            }
             """,
             schema -> {
                 var unc = (UnclassifiedField) schema.field("FilmDetails", "inventories");
@@ -2959,14 +3052,17 @@ class GraphitronSchemaBuilderTest {
             "@splitQuery on @sourceRow @record-parent field → RecordTableField + build warning naming the field coordinate",
             """
             type Inventory @table(name: "inventory") { inventoryId: Int! @field(name: "inventory_id") }
-            type FilmDetails @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyRecord"}) {
+            type FilmDetails {
               inventories: [Inventory!]!
                 @splitQuery
                 @sourceRow(className: "no.sikt.graphitron.rewrite.TestLifterStub", method: "dummyRow1Integer")
                 @reference(path: [{key: "inventory_film_id_fkey"}])
             }
             type Film @table(name: "film") { details: FilmDetails }
-            type Query { film: Film }
+            type Query {
+                film: Film
+                prodFilmDetails: FilmDetails @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeDummyRecord"})
+            }
             """,
             schema -> {
                 assertThat(schema.field("FilmDetails", "inventories")).isInstanceOf(RecordTableField.class);
@@ -2985,14 +3081,17 @@ class GraphitronSchemaBuilderTest {
             "@splitQuery on @sourceRow with bad lifter signature → UnclassifiedField + build warning still fires",
             """
             type Inventory @table(name: "inventory") { inventoryId: Int! @field(name: "inventory_id") }
-            type FilmDetails @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyRecord"}) {
+            type FilmDetails {
               inventories: [Inventory!]!
                 @splitQuery
                 @sourceRow(className: "no.sikt.graphitron.rewrite.TestLifterStub", method: "wrongReturnLong")
                 @reference(path: [{key: "inventory_film_id_fkey"}])
             }
             type Film @table(name: "film") { details: FilmDetails }
-            type Query { film: Film }
+            type Query {
+                film: Film
+                prodFilmDetails: FilmDetails @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeDummyRecord"})
+            }
             """,
             schema -> {
                 var unc = (UnclassifiedField) schema.field("FilmDetails", "inventories");
@@ -3040,10 +3139,12 @@ class GraphitronSchemaBuilderTest {
             "List field + list-of-TableRecord accessor → RecordTableField with AccessorCall + Cardinality.MANY",
             """
             type Film @table(name: "film") { filmId: Int! @field(name: "film_id") }
-            type Payload @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.AccessorPayloads$ListPayload"}) {
+            type Payload {
               films: [Film!]!
             }
-            type Query { payload: Payload }
+            type Query {
+              payload: Payload @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeAccessorListPayload"})
+            }
             """,
             schema -> {
                 var f = (RecordTableField) schema.field("Payload", "films");
@@ -3063,10 +3164,12 @@ class GraphitronSchemaBuilderTest {
             "List field + set-of-TableRecord accessor → RecordTableField with AccessorCall + Cardinality.MANY",
             """
             type Film @table(name: "film") { filmId: Int! @field(name: "film_id") }
-            type Payload @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.AccessorPayloads$SetPayload"}) {
+            type Payload {
               films: [Film!]!
             }
-            type Query { payload: Payload }
+            type Query {
+              payload: Payload @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeAccessorSetPayload"})
+            }
             """,
             schema -> {
                 var f = (RecordTableField) schema.field("Payload", "films");
@@ -3083,10 +3186,12 @@ class GraphitronSchemaBuilderTest {
             "Single field + single-TableRecord accessor → RecordTableField with AccessorCall + Cardinality.ONE",
             """
             type Film @table(name: "film") { filmId: Int! @field(name: "film_id") }
-            type Payload @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.AccessorPayloads$SinglePayload"}) {
+            type Payload {
               film: Film
             }
-            type Query { payload: Payload }
+            type Query {
+              payload: Payload @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeAccessorSinglePayload"})
+            }
             """,
             schema -> {
                 var f = (RecordTableField) schema.field("Payload", "film");
@@ -3106,10 +3211,12 @@ class GraphitronSchemaBuilderTest {
             "Two accessors returning List<FilmRecord> for the same @table → UnclassifiedField (ambiguous)",
             """
             type Film @table(name: "film") { filmId: Int! @field(name: "film_id") }
-            type Payload @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.AccessorPayloads$AmbiguousListPayload"}) {
+            type Payload {
               films: [Film!]!
             }
-            type Query { payload: Payload }
+            type Query {
+              payload: Payload @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeAccessorAmbiguousListPayload"})
+            }
             """,
             schema -> {
                 var unc = (UnclassifiedField) schema.field("Payload", "films");
@@ -3126,10 +3233,12 @@ class GraphitronSchemaBuilderTest {
             "List field + single-record accessor → UnclassifiedField (cardinality mismatch)",
             """
             type Film @table(name: "film") { filmId: Int! @field(name: "film_id") }
-            type Payload @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.AccessorPayloads$SingleAccessorOnListField"}) {
+            type Payload {
               films: [Film!]!
             }
-            type Query { payload: Payload }
+            type Query {
+              payload: Payload @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeAccessorSingleAccessorOnListField"})
+            }
             """,
             schema -> {
                 var unc = (UnclassifiedField) schema.field("Payload", "films");
@@ -3144,10 +3253,12 @@ class GraphitronSchemaBuilderTest {
             "@field(name:) on a free-form @record parent remaps the accessor base name → admits with the directive-named accessor",
             """
             type Film @table(name: "film") { filmId: Int! @field(name: "film_id") }
-            type Payload @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.AccessorPayloads$RemappedPayload"}) {
+            type Payload {
               film: Film @field(name: "filmRecord")
             }
-            type Query { payload: Payload }
+            type Query {
+              payload: Payload @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeAccessorRemappedPayload"})
+            }
             """,
             schema -> {
                 var f = (RecordTableField) schema.field("Payload", "film");
@@ -3168,10 +3279,12 @@ class GraphitronSchemaBuilderTest {
             "Divergent accessor name with no @field(name:) on a free-form @record parent → falls through to the three-option AUTHOR_ERROR",
             """
             type Film @table(name: "film") { filmId: Int! @field(name: "film_id") }
-            type Payload @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.AccessorPayloads$RemappedPayload"}) {
+            type Payload {
               film: Film
             }
-            type Query { payload: Payload }
+            type Query {
+              payload: Payload @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeAccessorRemappedPayload"})
+            }
             """,
             schema -> {
                 var unc = (UnclassifiedField) schema.field("Payload", "film");
@@ -3187,10 +3300,12 @@ class GraphitronSchemaBuilderTest {
             "Accessor element TableRecord doesn't match field's @table → falls through to three-option AUTHOR_ERROR",
             """
             type Film @table(name: "film") { filmId: Int! @field(name: "film_id") }
-            type Payload @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.AccessorPayloads$HeterogeneousElementPayload"}) {
+            type Payload {
               films: Film
             }
-            type Query { payload: Payload }
+            type Query {
+              payload: Payload @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeAccessorHeterogeneousElementPayload"})
+            }
             """,
             schema -> {
                 var unc = (UnclassifiedField) schema.field("Payload", "films");
@@ -3234,11 +3349,14 @@ class GraphitronSchemaBuilderTest {
             "JooqTableRecordType @record parent + @tableMethod with single FK → RecordTableMethodField, auto-FK source-key",
             """
             type Inventory @table(name: "inventory") { inventoryId: Int! @field(name: "inventory_id") }
-            type FilmDetails @record(record: {className: "no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord"}) {
+            type FilmDetails {
               inventories: [Inventory!]! @tableMethod(className: "no.sikt.graphitron.rewrite.TestTableMethodStub", method: "getInventory")
             }
             type Film @table(name: "film") { details: FilmDetails }
-            type Query { film: Film }
+            type Query {
+                film: Film
+                prodFilmDetails: FilmDetails @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getFilm"})
+            }
             """,
             schema -> {
                 var f = (RecordTableMethodField) schema.field("FilmDetails", "inventories");
@@ -3253,13 +3371,16 @@ class GraphitronSchemaBuilderTest {
             "JooqTableRecordType @record parent + @tableMethod + @reference(path:) → RecordTableMethodField with explicit FK path",
             """
             type Language @table(name: "language") { name: String }
-            type FilmDetails @record(record: {className: "no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord"}) {
+            type FilmDetails {
               language: Language
                 @tableMethod(className: "no.sikt.graphitron.rewrite.TestTableMethodStub", method: "getLanguage")
                 @reference(path: [{key: "film_language_id_fkey"}])
             }
             type Film @table(name: "film") { details: FilmDetails }
-            type Query { film: Film }
+            type Query {
+                film: Film
+                prodFilmDetails: FilmDetails @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getFilm"})
+            }
             """,
             schema -> {
                 var f = (RecordTableMethodField) schema.field("FilmDetails", "language");
@@ -3272,11 +3393,14 @@ class GraphitronSchemaBuilderTest {
             "Pojo parent (no FK metadata) + @tableMethod without @sourceRow → UnclassifiedField AUTHOR_ERROR pointing at the lift options",
             """
             type Inventory @table(name: "inventory") { inventoryId: Int! @field(name: "inventory_id") }
-            type FilmDetails @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyRecord"}) {
+            type FilmDetails {
               inventories: [Inventory!]! @tableMethod(className: "no.sikt.graphitron.rewrite.TestTableMethodStub", method: "getInventory")
             }
             type Film @table(name: "film") { details: FilmDetails }
-            type Query { film: Film }
+            type Query {
+                film: Film
+                prodFilmDetails: FilmDetails @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeDummyRecord"})
+            }
             """,
             schema -> {
                 var unc = (UnclassifiedField) schema.field("FilmDetails", "inventories");
@@ -3307,120 +3431,78 @@ class GraphitronSchemaBuilderTest {
     void recordTableMethodFieldProjectionFlipsRecordParentFlag() {
         var snapshot = buildSnapshot("""
             type Language @table(name: "language") { name: String }
-            type FilmDetails @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyRecord"}) {
+            type FilmDetails {
               language: Language
                 @tableMethod(className: "no.sikt.graphitron.rewrite.TestTableMethodStub", method: "getLanguage")
                 @reference(path: [{key: "film_language_id_fkey"}])
             }
             type Film @table(name: "film") { details: FilmDetails }
-            type Query { film: Film }
+            type Query {
+                film: Film
+                prodFilmDetails: FilmDetails @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeDummyRecord"})
+            }
             """);
         var p = (FieldClassification.TableMethod) snapshot.fieldClassificationsByCoord().get("FilmDetails.language");
         assertThat(p.tableName()).isEqualToIgnoringCase("language");
         assertThat(p.recordParent()).isTrue();
     }
 
-    // ===== ResultType backing-class classification =====
-
-    enum ResultTypeCase implements ClassificationCase {
-        NO_CLASS(
-            "@record with no backing class → PojoResultType.NoBacking",
+    // ===== ResultType backing-class classification (reflection-only) =====
+    // R276: a result type's backing comes from the producing @service field's reflected return
+    // type, or, for a NoBacking carrier, a DML RETURNING payload — never the @record directive.
+    // One case per ResultType sealed leaf so VariantCoverageTest sees each classified.
+    enum ResultTypeBackingCase implements ClassificationCase {
+        BACKED_POJO(
+            "@service producing a plain Java class → PojoResultType.Backed",
             """
-            type FilmDetails @record { id: ID }
-            type Query { foo: String }
+            type FilmDetails { id: ID }
+            type Query {
+                foo: FilmDetails @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeDummyRecord"})
+            }
             """,
-            schema -> {
-                var t = (PojoResultType.NoBacking) schema.type("FilmDetails");
-                assertThat(t.fqClassName()).isNull();
-            }) {
-            @Override public Set<Class<?>> variants() { return Set.of(PojoResultType.NoBacking.class); }
-        },
-
-        POJO_CLASS(
-            "@record with plain Java class → PojoResultType.Backed with fqClassName",
-            """
-            type FilmDetails @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyRecord"}) { id: ID }
-            type Query { foo: String }
-            """,
-            schema -> {
-                var t = (PojoResultType.Backed) schema.type("FilmDetails");
-                assertThat(t.fqClassName()).isEqualTo("no.sikt.graphitron.codereferences.dummyreferences.DummyRecord");
-            }) {
+            schema -> assertThat(schema.type("FilmDetails")).isInstanceOf(PojoResultType.Backed.class)) {
             @Override public Set<Class<?>> variants() { return Set.of(PojoResultType.Backed.class); }
         },
 
-        JAVA_RECORD_CLASS(
-            "@record with Java record class → JavaRecordType with fqClassName",
+        JAVA_RECORD(
+            "@service producing a Java record → JavaRecordType",
             """
-            type FilmDetails @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.TestRecordDto"}) { id: ID }
-            type Query { foo: String }
+            type FilmDetails { id: ID }
+            type Query {
+                foo: FilmDetails @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeTestRecordDto"})
+            }
             """,
-            schema -> {
-                var t = (JavaRecordType) schema.type("FilmDetails");
-                assertThat(t.fqClassName()).isEqualTo("no.sikt.graphitron.codereferences.dummyreferences.TestRecordDto");
-            }) {
+            schema -> assertThat(schema.type("FilmDetails")).isInstanceOf(JavaRecordType.class)) {
             @Override public Set<Class<?>> variants() { return Set.of(JavaRecordType.class); }
         },
 
-        JOOQ_TABLE_RECORD_CLASS(
-            "@record with jOOQ TableRecord class → JooqTableRecordType with fqClassName and resolved table",
+        JOOQ_TABLE_RECORD(
+            "@service producing a jOOQ TableRecord → JooqTableRecordType",
             """
-            type FilmDetails @record(record: {className: "no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord"}) { id: ID }
-            type Query { foo: String }
+            type FilmDetails { id: ID }
+            type Query {
+                foo: FilmDetails @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getFilm"})
+            }
             """,
-            schema -> {
-                var t = (JooqTableRecordType) schema.type("FilmDetails");
-                assertThat(t.fqClassName()).isEqualTo("no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord");
-                assertThat(t.table()).isNotNull();
-                assertThat(t.table().tableName()).isEqualTo("film");
-            }) {
+            schema -> assertThat(schema.type("FilmDetails")).isInstanceOf(JooqTableRecordType.class)) {
             @Override public Set<Class<?>> variants() { return Set.of(JooqTableRecordType.class); }
-        },
-
-        UNKNOWN_CLASS(
-            "@record with unresolvable class → UnclassifiedType with explanation",
-            """
-            type FilmDetails @record(record: {className: "com.example.nonexistent.Missing"}) { id: ID }
-            type Query { foo: String }
-            """,
-            schema -> {
-                var t = (UnclassifiedType) schema.type("FilmDetails");
-                assertThat(t.reason()).contains("com.example.nonexistent.Missing").contains("could not be loaded");
-            }) {
-            @Override public Set<Class<?>> variants() { return Set.of(); }
-        },
-
-        ARG_MAPPING_INERT_ON_RECORD(
-            "R53: argMapping on @record → UnclassifiedType (structural-inertness rejection)",
-            """
-            type FilmDetails @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.TestRecordDto", argMapping: "x: y"}) { id: ID }
-            type Query { foo: String }
-            """,
-            schema -> {
-                var t = (UnclassifiedType) schema.type("FilmDetails");
-                assertThat(t.reason()).contains("argMapping is not supported on @record");
-            }) {
-            @Override public Set<Class<?>> variants() { return Set.of(); }
         };
+        // PojoResultType.NoBacking is intentionally not covered here — it is removed in R275
+        // (DML/service carriers bind to their jOOQ record); see NO_CASE_REQUIRED in VariantCoverageTest.
 
         final String sdl;
         final Consumer<GraphitronSchema> assertions;
-        ResultTypeCase(String description, String sdl, Consumer<GraphitronSchema> assertions) {
+        ResultTypeBackingCase(String description, String sdl, Consumer<GraphitronSchema> assertions) {
             this.sdl = sdl;
             this.assertions = assertions;
         }
-        @Override public Set<Class<?>> variants() {
-            // Per-case overrides above; this default is unused since NO_CLASS and POJO_CLASS
-            // declare their own concrete sub-permit, and the JavaRecordType / JooqTableRecordType
-            // / UnclassifiedType cases override too. Kept for the case-of-last-resort.
-            return Set.of();
-        }
+        @Override public Set<Class<?>> variants() { return Set.of(); }
         @Override public String toString() { return name().toLowerCase().replace('_', ' '); }
     }
 
     @ParameterizedTest(name = "{0}")
-    @EnumSource(ResultTypeCase.class)
-    void resultTypeBackingClassClassification(ResultTypeCase tc) {
+    @EnumSource(ResultTypeBackingCase.class)
+    void resultTypeBackingClassification(ResultTypeBackingCase tc) {
         tc.assertions.accept(build(tc.sdl));
     }
 
@@ -3430,34 +3512,46 @@ class GraphitronSchemaBuilderTest {
         JavaRecordType.class, JooqTableRecordType.class
     })
     void resultTypeBackingProjectionsCarryClassNameAndTablePayloads() {
-        // PojoResultType.NoBacking → TypeClassification.UnbackedPojoResult
+        // PojoResultType.NoBacking → TypeClassification.UnbackedPojoResult. R276: a standalone
+        // untyped @record is now a PlainObjectType; NoBacking survives only for a carrier-promoted
+        // DML payload, so the projection is exercised through that shape.
         var s1 = buildSnapshot("""
-            type FilmDetails @record { id: ID }
-            type Query { foo: String }
+            type Film @table(name: "film") { title: String }
+            input FilmInput @table(name: "film") { title: String }
+            type FilmPayload { films: [Film!] }
+            type Query { x: String }
+            type Mutation { createFilms(in: [FilmInput!]!): FilmPayload @mutation(typeName: INSERT) }
             """);
-        assertThat(s1.typeClassificationsByName().get("FilmDetails"))
+        assertThat(s1.typeClassificationsByName().get("FilmPayload"))
             .isInstanceOf(TypeClassification.UnbackedPojoResult.class);
 
-        // PojoResultType.Backed → TypeClassification.PojoResult(fqClassName)
+        // PojoResultType.Backed → TypeClassification.PojoResult(fqClassName). R276: backing comes
+        // from the @service producer's reflected return type, not the @record directive.
         var s2 = buildSnapshot("""
-            type FilmDetails @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyRecord"}) { id: ID }
-            type Query { foo: String }
+            type FilmDetails { id: ID }
+            type Query {
+                foo: FilmDetails @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeDummyRecord"})
+            }
             """);
         var backed = (TypeClassification.PojoResult) s2.typeClassificationsByName().get("FilmDetails");
         assertThat(backed.fqClassName()).isEqualTo("no.sikt.graphitron.codereferences.dummyreferences.DummyRecord");
 
         // JavaRecordType → TypeClassification.JavaRecord
         var s3 = buildSnapshot("""
-            type FilmDetails @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.TestRecordDto"}) { id: ID }
-            type Query { foo: String }
+            type FilmDetails { id: ID }
+            type Query {
+                foo: FilmDetails @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeTestRecordDto"})
+            }
             """);
         var jr = (TypeClassification.JavaRecord) s3.typeClassificationsByName().get("FilmDetails");
         assertThat(jr.fqClassName()).isEqualTo("no.sikt.graphitron.codereferences.dummyreferences.TestRecordDto");
 
         // JooqTableRecordType → TypeClassification.JooqTableRecord with table
         var s4 = buildSnapshot("""
-            type FilmDetails @record(record: {className: "no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord"}) { id: ID }
-            type Query { foo: String }
+            type FilmDetails { id: ID }
+            type Query {
+                foo: FilmDetails @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getFilm"})
+            }
             """);
         var jtr = (TypeClassification.JooqTableRecord) s4.typeClassificationsByName().get("FilmDetails");
         assertThat(jtr.fqClassName()).isEqualTo("no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord");
@@ -4129,8 +4223,10 @@ class GraphitronSchemaBuilderTest {
         POJO_CLASS(
             "@record with plain Java class → PojoInputType with fqClassName",
             """
-            input FilmInput @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyRecord"}) { id: ID }
-            type Query { x: String }
+            input FilmInput { id: ID }
+            type Query {
+                foo(in: FilmInput): String @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "consumeDummyRecord"})
+            }
             """,
             schema -> {
                 var t = (PojoInputType) schema.type("FilmInput");
@@ -4140,8 +4236,10 @@ class GraphitronSchemaBuilderTest {
         JAVA_RECORD_CLASS(
             "@record with Java record class → JavaRecordInputType with fqClassName",
             """
-            input FilmInput @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.TestRecordDto"}) { id: ID }
-            type Query { x: String }
+            input FilmInput { id: ID }
+            type Query {
+                foo(in: FilmInput): String @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "consumeTestRecordDto"})
+            }
             """,
             schema -> {
                 var t = (JavaRecordInputType) schema.type("FilmInput");
@@ -4153,8 +4251,10 @@ class GraphitronSchemaBuilderTest {
         JOOQ_TABLE_RECORD_CLASS(
             "@record with jOOQ TableRecord class → JooqTableRecordInputType with fqClassName and resolved table",
             """
-            input FilmInput @record(record: {className: "no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord"}) { id: ID }
-            type Query { x: String }
+            input FilmInput { id: ID }
+            type Query {
+                foo(in: FilmInput): String @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "consumeFilmRecord"})
+            }
             """,
             schema -> {
                 var t = (JooqTableRecordInputType) schema.type("FilmInput");
@@ -4163,19 +4263,6 @@ class GraphitronSchemaBuilderTest {
                 assertThat(t.table().tableName()).isEqualTo("film");
             }) {
             @Override public Set<Class<?>> variants() { return Set.of(JooqTableRecordInputType.class); }
-        },
-
-        UNKNOWN_CLASS(
-            "@record with unresolvable class → UnclassifiedType with explanation",
-            """
-            input FilmInput @record(record: {className: "com.example.nonexistent.Missing"}) { id: ID }
-            type Query { x: String }
-            """,
-            schema -> {
-                var t = (UnclassifiedType) schema.type("FilmInput");
-                assertThat(t.reason()).contains("com.example.nonexistent.Missing").contains("could not be loaded");
-            }) {
-            @Override public Set<Class<?>> variants() { return Set.of(); }
         },
 
         TABLE_PLUS_RECORD(
@@ -5862,11 +5949,12 @@ class GraphitronSchemaBuilderTest {
             }),
 
         // R12 source-direct dispatch: @error has no developer-supplied data class. @record and
-        // @error are mutually exclusive — the matched throwable itself is the runtime source
-        // for fields declared on the @error type, so co-locating @record(record: {className})
-        // would name a Java class that classifier never instantiates and the runtime never reads.
-        REJECT_RECORD_PLUS_ERROR_MUTUALLY_EXCLUSIVE(
-            "@error co-located with @record → UnclassifiedType (mutually exclusive)",
+        // R276/D1: @record is deprecated and ignored, so co-locating it on an @error type is no
+        // longer a conflict — @error wins and @record is dropped. (The matched throwable is the
+        // runtime source for an @error type's fields; @record would name a class the classifier
+        // never instantiates and the runtime never reads, so it is simply ignored.)
+        ERROR_PLUS_RECORD_IGNORES_RECORD(
+            "@error co-located with @record → ErrorType; @record ignored (D1), not a conflict",
             """
             type ValidationError
                 @error(handlers: [{handler: VALIDATION}])
@@ -5876,13 +5964,7 @@ class GraphitronSchemaBuilderTest {
             }
             type Query { x: String }
             """,
-            schema -> {
-                var t = (UnclassifiedType) schema.type("ValidationError");
-                assertThat(t.reason())
-                    .contains("@record")
-                    .contains("@error")
-                    .contains("mutually exclusive");
-            });
+            schema -> assertThat(schema.type("ValidationError")).isInstanceOf(ErrorType.class));
 
         final String sdl;
         final Consumer<GraphitronSchema> assertions;
@@ -5986,11 +6068,14 @@ class GraphitronSchemaBuilderTest {
                 message: String!
             }
             union BehandleSakError = ValidationErr | DbErr
-            type BehandleSakPayload @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyRecord"}) {
+            type BehandleSakPayload {
                 ok: Boolean
                 errors: [BehandleSakError!]
             }
-            type Query { x: String }
+            type Query {
+                x: String
+                p: BehandleSakPayload @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeDummyRecord"})
+            }
             """,
             schema -> {
                 var field = schema.field("BehandleSakPayload", "errors");
@@ -5999,11 +6084,11 @@ class GraphitronSchemaBuilderTest {
                 assertThat(ef.errorTypes())
                     .extracting(et -> et.name())
                     .containsExactly("ValidationErr", "DbErr");
-                // Phase B round-trip pin: the lifted ErrorsField carries the Transport
-                // discriminator selected at classify time. Today's lift defaults to
-                // PayloadAccessor because no producer emits ErrorChannel.LocalContext yet.
+                // R276/R244: BehandleSakPayload is now produced by a root @service field, so its
+                // errors field rides the Outcome wrapper transport (WrapperArm), not the legacy
+                // developer-errors-slot PayloadAccessor passthrough.
                 assertThat(ef.transport())
-                    .isInstanceOf(no.sikt.graphitron.rewrite.model.ChildField.Transport.PayloadAccessor.class);
+                    .isInstanceOf(no.sikt.graphitron.rewrite.model.ChildField.Transport.WrapperArm.class);
             }),
 
         INTERFACE_IMPLEMENTED_BY_ALL_ERROR_TYPES_LIFTS_TO_ERRORS_FIELD(
@@ -6021,11 +6106,14 @@ class GraphitronSchemaBuilderTest {
                 path: [String!]!
                 message: String!
             }
-            type BehandleSakPayload @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyRecord"}) {
+            type BehandleSakPayload {
                 ok: Boolean
                 errors: [BehandleSakError]
             }
-            type Query { x: String }
+            type Query {
+                x: String
+                p: BehandleSakPayload @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeDummyRecord"})
+            }
             """,
             schema -> {
                 var field = schema.field("BehandleSakPayload", "errors");
@@ -6044,11 +6132,14 @@ class GraphitronSchemaBuilderTest {
                 message: String!
             }
             union BehandleSakError = DbErr
-            type BehandleSakPayload @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyRecord"}) {
+            type BehandleSakPayload {
                 ok: Boolean
                 errors: [BehandleSakError]
             }
-            type Query { x: String }
+            type Query {
+                x: String
+                p: BehandleSakPayload @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeDummyRecord"})
+            }
             """,
             schema -> {
                 var field = schema.field("BehandleSakPayload", "errors");
@@ -6058,33 +6149,11 @@ class GraphitronSchemaBuilderTest {
                     .containsExactly("DbErr");
             }),
 
-        MIXED_ERROR_AND_NON_ERROR_UNION_REJECTS(
-            "mixed @error + non-@error union — UnclassifiedField with mixed-not-supported reason",
-            """
-            type DbErr @error(handlers: [{handler: DATABASE}]) {
-                path: [String!]!
-                message: String!
-            }
-            type Plain @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyRecord"}) {
-                whatever: String
-            }
-            union Mixed = DbErr | Plain
-            type Payload @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyRecord"}) {
-                ok: Boolean
-                errors: [Mixed]
-            }
-            type Query { x: String }
-            """,
-            schema -> {
-                var field = schema.field("Payload", "errors");
-                assertThat(field).isInstanceOf(UnclassifiedField.class);
-                var u = (UnclassifiedField) field;
-                assertThat(u.reason())
-                    .contains("every member declared @error")
-                    .contains("Plain");
-                assertThat(u.kind()).isEqualTo(RejectionKind.AUTHOR_ERROR);
-            }),
-
+        // R276/R275: MIXED_ERROR_AND_NON_ERROR_UNION_REJECTS deleted. Under reflection-only
+        // binding the payload is produced by a @service field, so a mixed (not-all-@error) union
+        // errors field is simply "not an errors field" and routes to accessor resolution rather
+        // than the @record-orphan-era "every member declared @error" errors-lift rejection. The
+        // mixed-union errors-field validation is folded into R275's errors-field rules.
         NON_NULL_LIST_OF_ERRORS_REJECTS(
             "errors: [SomeError]! (non-null list) — UnclassifiedField with nullability reason",
             """
@@ -6097,11 +6166,14 @@ class GraphitronSchemaBuilderTest {
                 message: String!
             }
             union BehandleSakError = ValidationErr | DbErr
-            type BehandleSakPayload @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyRecord"}) {
+            type BehandleSakPayload {
                 ok: Boolean
                 errors: [BehandleSakError!]!
             }
-            type Query { x: String }
+            type Query {
+                x: String
+                p: BehandleSakPayload @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeDummyRecord"})
+            }
             """,
             schema -> {
                 var field = schema.field("BehandleSakPayload", "errors");
@@ -6110,35 +6182,10 @@ class GraphitronSchemaBuilderTest {
                 assertThat(u.reason())
                     .contains("must be nullable");
                 assertThat(u.kind()).isEqualTo(RejectionKind.AUTHOR_ERROR);
-            }),
-
-        NON_ERROR_POLYMORPHIC_FALLS_THROUGH_TO_DEFERRED_REJECTION(
-            "polymorphic with no @error members on a Pojo parent + single cardinality — DEFERRED via R105's single-cardinality arm",
-            // R105 wires the @record-parent polymorphic classifier arm but defers the Pojo /
-            // JavaRecord + single-cardinality shape (the single-cardinality emitter cannot
-            // safely consume a non-jOOQ-Record source). The field falls into that deferred arm
-            // before reaching the @sourceRow follow-up; the message reflects the
-            // single-cardinality deferral, not the original "polymorphic not supported" wording.
-            """
-            type Cat @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyRecord"}) {
-                whiskers: Int
-            }
-            type Dog @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyRecord"}) {
-                tail: String
-            }
-            union Pet = Cat | Dog
-            type Payload @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyRecord"}) {
-                pet: Pet
-            }
-            type Query { x: String }
-            """,
-            schema -> {
-                var field = schema.field("Payload", "pet");
-                assertThat(field).isInstanceOf(UnclassifiedField.class);
-                var u = (UnclassifiedField) field;
-                assertThat(u.reason()).contains("polymorphic");
-                assertThat(u.kind()).isEqualTo(RejectionKind.DEFERRED);
             });
+        // R276/R105: NON_ERROR_POLYMORPHIC_FALLS_THROUGH_TO_DEFERRED_REJECTION deleted; the
+        // non-error-polymorphic-on-record-parent deferral is covered by
+        // RecordParentMultiTablePolymorphicPipelineTest (childUnionField_recordParent_accessorKeyedSingle_deferred).
 
         final String sdl;
         final Consumer<GraphitronSchema> assertions;
@@ -8707,9 +8754,12 @@ class GraphitronSchemaBuilderTest {
     @Test
     void constructorField_tableParentRecordChild_classifiedAsConstructorField() {
         var schema = build("""
-            type FilmDetails @record { rating: String }
+            type FilmDetails { rating: String }
             type Film @table(name: "film") { details: FilmDetails }
-            type Query { film: Film }
+            type Query {
+                film: Film
+                prodFilmDetails: FilmDetails @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeFilmDetailsRating"})
+            }
             """);
         assertThat(schema.field("Film", "details")).isInstanceOf(ChildField.ConstructorField.class);
     }
@@ -8718,9 +8768,12 @@ class GraphitronSchemaBuilderTest {
     @ProjectionFor(ChildField.ConstructorField.class)
     void constructorFieldProjectionIsZeroPayload() {
         var snapshot = buildSnapshot("""
-            type FilmDetails @record { rating: String }
+            type FilmDetails { rating: String }
             type Film @table(name: "film") { details: FilmDetails }
-            type Query { film: Film }
+            type Query {
+                film: Film
+                prodFilmDetails: FilmDetails @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeFilmDetailsRating"})
+            }
             """);
         assertThat(snapshot.fieldClassificationsByCoord().get("Film.details"))
             .isInstanceOf(FieldClassification.Constructor.class);
@@ -8732,14 +8785,9 @@ class GraphitronSchemaBuilderTest {
 
     enum TypeDirectiveConflictCase implements ClassificationCase {
 
-        TABLE_AND_RECORD_CONFLICT(
-            "@table and @record on the same type → UnclassifiedType with reason mentioning both",
-            """
-            type Film @table(name: "film") @record { title: String }
-            type Query { film: Film }
-            """,
-            "Film", "@table", "@record"),
-
+        // R276/D1: TABLE_AND_RECORD_CONFLICT deleted — @record is deprecated and ignored, so
+        // @table + @record is no longer a conflict (@table wins; the directive-ignored warning
+        // fires instead). @table vs @error remains mutually exclusive.
         TABLE_AND_ERROR_CONFLICT(
             "@table and @error on the same type → UnclassifiedType with reason mentioning both",
             """

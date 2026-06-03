@@ -52,10 +52,12 @@ class PolymorphicNestingFilterTest {
               filmId: Int @field(name: "film_id")
             }
             union FilmReferrer = Inventory | Content
-            type Film @record(record: {className: "no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord"}) {
+            type Film {
               referrers: [FilmReferrer!]!
             }
-            type Query { film: Film }
+            type Query {
+              film: Film @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getFilm"})
+            }
             """);
 
         var filmFetchers = TypeFetcherGenerator.generate(schema, DEFAULT_OUTPUT_PACKAGE).stream()

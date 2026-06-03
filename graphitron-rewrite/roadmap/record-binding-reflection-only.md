@@ -1,13 +1,13 @@
 ---
 id: R276
 title: Record binding is reflection-only; remove @record-directive-consulting code
-status: In Progress
+status: In Review
 bucket: cleanup
 priority: 1
 theme: model-cleanup
 depends-on: []
 created: 2026-06-02
-last-updated: 2026-06-02
+last-updated: 2026-06-03
 ---
 
 # Record binding is reflection-only; remove @record-directive-consulting code
@@ -24,7 +24,7 @@ Binding is reflection-only. No classifier or binding-resolver code reads `@recor
 
 Remove (these read the directive to drive binding/classification):
 
-* `RecordBindingResolver.groundServiceField` (`~236-248`): the `sdlHasRecord` gate on the result-axis `RootService` observation. Ground the observation from the reflected return element unconditionally. This is the load-bearing change that makes the carrier payload bind.
+* `RecordBindingResolver.groundServiceField` (`~236-248`): the `sdlHasRecord` gate on the result-axis `RootService` observation. Replace it with a **cardinality-match** guard, not unconditional grounding. Bind the SDL return type to the producer's reflected return element only when the SDL field's cardinality matches the Java return's cardinality (both single, or both a list/collection). This is the load-bearing change that makes a single-record carrier payload bind to its record (a `JooqTableRecordType`). Grounding unconditionally is wrong: a single-object SDL field produced by a *collection* return (e.g. `payload: FooPayload @service` whose method returns `List<BarRecord>`) is a list carrier whose collection feeds the payload's inner list field, not the wrapper; binding the wrapper to the element type breaks that R75 carrier path (regression-caught by `R96RecordBindingPipelineTest.plainCarrier_serviceReturnDoesNotBindWrapperType_R75CarrierPathPreserved`). The cardinalities always agree for `@record` payloads (single->single, list->list), so the guard preserves their binding unchanged.
 * `TypeBuilder.classifyType` (`576`): the `|| objType.hasAppliedDirective(DIR_RECORD)` arm. A type classifies as a `ResultType` only when it has a reflected producer binding.
 * `TypeBuilder.buildResultType` (`~893-917`): the directive-`className` fallback (the `readRecordClassName` branch and its arg-mapping inertness check). Keep only the reflected-class path.
 * `TypeBuilder.buildInputType` (`~1085-1100`): the analogous input-side directive-`className` fallback.
