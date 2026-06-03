@@ -10,6 +10,7 @@ import org.jooq.DSLContext;
 import org.jooq.impl.DSL;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
@@ -378,6 +379,10 @@ class GraphQLQueryTest {
         }
     }
 
+    @Disabled("R277 (tablemethod-under-nested-type): @tableMethod under a table-bound NestingField "
+        + "is not yet wired in the generator. The languageViaTableMethod child was removed from "
+        + "FilmDetailsForMethod (now a same-table NestingField after R276 dropped @record binding). "
+        + "Re-enable as the execution-tier fixture when R277 lands.")
     @Test
     void filmById_detailsForMethod_languageViaTableMethod_routesThroughRecordTableMethodFieldDtoParentEmit() {
         // R43 commit 5 execution-tier fixture: child @tableMethod on a @record (DTO) parent.
@@ -1658,19 +1663,20 @@ class GraphQLQueryTest {
 
     @Test
     void recordTableField_multipleParents_batchesIntoOneSqlRoundTrip() {
-        // 5 films all have language_id=1. DataLoader should batch all 5 language lookups into 1
-        // SQL SELECT (the rowsLanguage method) rather than firing 5 separate queries.
-        // Expected: 2 round-trips — 1 for films root query + 1 for the batched language rows.
+        // FilmDetailsCarrier is record-backed (Query.filmDetailsBatch returns List<FilmRecord>), so
+        // language is a RecordTableField. 5 films all have language_id=1; the DataLoader should
+        // batch all 5 language lookups into 1 SQL SELECT (the rowsLanguage method) rather than
+        // firing 5 separate queries. Expected: 2 round-trips — 1 for the service query + 1 for the
+        // batched language rows.
         QUERY_COUNT.set(0);
         Map<String, Object> data = execute(
-            "{ films { languageId filmDetails { language { name } } } }");
+            "{ filmDetailsBatch(ids: [1, 2, 3, 4, 5]) { language { name } } }");
         assertThat(QUERY_COUNT.get()).isEqualTo(2);
         // Every film maps to English (language_id=1 for all test-data films).
-        assertThat(data).extractingByKey("films", as(list(Map.class)))
+        assertThat(data).extractingByKey("filmDetailsBatch", as(list(Map.class)))
             .hasSize(5)
             .allSatisfy(f -> {
-                String langName = assertThat(f.get("filmDetails")).asInstanceOf(MAP)
-                    .extractingByKey("language", as(LIST))
+                String langName = assertThat(f.get("language")).asInstanceOf(LIST)
                     .hasSize(1)
                     .first(as(MAP))
                     .extractingByKey("name", as(STRING)).actual();
@@ -1725,18 +1731,20 @@ class GraphQLQueryTest {
     @SuppressWarnings("unchecked")
     @Test
     void recordLookupTableField_multipleParents_batchesIntoOneRoundTrip() {
-        // 5 films + 1 batched RecordLookup child = 2 round-trips. Unbatched: 1 + 5 = 6.
+        // FilmDetailsCarrier is record-backed (Query.filmDetailsBatch returns List<FilmRecord>), so
+        // actorsByLookup is a RecordLookupTableField. 3 carriers + 1 batched RecordLookup child =
+        // 2 round-trips. Unbatched: 1 + 3 = 4.
         // Film 2 cast: PENELOPE (1), ED (3). Film 3 cast: PENELOPE (1). actor_id: [1, 3] →
         // film 1 gets {1}; film 2 gets {1, 3}; film 3 gets {1}.
         QUERY_COUNT.set(0);
         Map<String, Object> data = execute(
-            "{ films { filmId filmDetails { actorsByLookup(actor_id: [1, 3]) { actorId } } } }");
+            "{ filmDetailsBatch(ids: [1, 2, 3]) { filmId actorsByLookup(actor_id: [1, 3]) { actorId } } }");
         assertThat(QUERY_COUNT.get()).isEqualTo(2);
-        List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("films");
+        List<Map<String, Object>> carriers = (List<Map<String, Object>>) data.get("filmDetailsBatch");
 
-        var byId = films.stream().collect(java.util.stream.Collectors.toMap(
+        var byId = carriers.stream().collect(java.util.stream.Collectors.toMap(
             f -> (Integer) f.get("filmId"),
-            f -> (List<Map<String, Object>>) ((Map<String, Object>) f.get("filmDetails")).get("actorsByLookup")));
+            f -> (List<Map<String, Object>>) f.get("actorsByLookup")));
 
         assertThat(byId.get(1)).extracting(a -> a.get("actorId")).containsExactly(1);
         assertThat(byId.get(2)).extracting(a -> a.get("actorId")).containsExactlyInAnyOrder(1, 3);

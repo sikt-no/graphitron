@@ -1,7 +1,7 @@
 ---
 id: R276
-title: Record binding is reflection-only; remove @record-directive-consulting code
-status: In Review
+title: Record binding is reflection-only and sound; remove @record reads, ground all producers, eliminate PlainObjectType
+status: In Progress
 bucket: cleanup
 priority: 1
 theme: model-cleanup
@@ -15,6 +15,18 @@ last-updated: 2026-06-03
 The `@record` directive is deprecated and ignored: graphitron derives every result and input backing class from the producing field's reflected return type (R96), and `TypeBuilder.emitDirectiveIgnoredWarnings` already warns the author that the directive does nothing. Despite that, several classifier sites still *read* `@record` to drive binding and type classification. That residual coupling is a standing bug source, and it actively produces a wrong classification for the source-record-carrier shape.
 
 The load-bearing case: `RecordBindingResolver.groundServiceField` gates the result-axis producer observation on `resultObjType.hasAppliedDirective(DIR_RECORD)` (`RecordBindingResolver.java:240`). So a `@service` field whose method returns a jOOQ `TableRecord` into a payload that carries no `@record` (the only supported authoring style) never grounds a result binding; the payload stays a `PlainObjectType` instead of binding to the producer's record type. A classification probe confirms it: for `makeFilm: MakeFilmPayload @service(...returns FilmRecord)` with `MakeFilmPayload { film: Film @splitQuery, errors: [FilmErr] }`, `MakeFilmPayload` classifies as `PlainObjectType`, the field resolves `errorChannel: Optional.empty`, and the inner `film` field gets no datafetcher. This is the direct blocker for R275: the carrier never becomes a `ResultType`, so no error channel attaches and the inner data field never classifies.
+
+> **Reopened In Review -> In Progress (2026-06-03).** The first cut (removing the four `@record`
+> binding reads, D1/D2/D3, the test migration) shipped to trunk and **broke main**: removing
+> `@record` binding without a complete reflection-only replacement left whole shapes unbound, and
+> the classifier admits unbound types silently, so the breakage surfaced at execution time, not
+> build time. "Binding is reflection-only" is not finished until the replacement is *complete*
+> (every producer kind grounds a binding) and *sound* (an unbound type or field is impossible, it
+> fails the build rather than degrading to a runtime null). Both are now owned here; see
+> [Completion](#completion-binding-completeness-and-classification-soundness). The `@tableMethod`-
+> under-`NestingField` generator gap that surfaced alongside is carved out to
+> tablemethod-under-nested-type (R277). The carrier model and `NoBacking` removal, originally
+> folded into R275, move here too, since they are part of making binding sound.
 
 ## Target
 
@@ -57,7 +69,54 @@ Keep (these are the deprecation itself, not binding behavior):
 ## Coordination
 
 * **R275 depends on this.** Once R276 lands, the source-record-carrier payload is a `JooqTableRecordType` / `ResultReturnType`, `resolveServiceOutcomeChannel` attaches `ErrorChannel.Mapped`, and the inner `@table @splitQuery` field classifies via `classifyChildFieldOnResultType`. R275 then owns the channel emit, the inner-field success-branch DataLoader, the bucket-C success-arm `errors: null`, and the new errors-nullable rejection rule. R275's failure-map "current state" and Implementation step 1 are corrected in tandem to drop the inaccurate "`MutationServiceTableField` over `TableBoundReturnType`" framing.
-* **R222 (adjacent).** The author's planned classification-hierarchy cleanup. Keep R276 scoped to removing the `@record` binding source; leave hierarchy restructuring to R222.
+* **R277 (tablemethod-under-nested-type, Backlog).** Carved out of the completion work: `@tableMethod` under a table-bound `NestingField` is not wired in the generator (the nested-fetcher machinery keys on `BatchKeyField`, and `TableMethodField` is `MethodBackedField` but not `BatchKeyField`). R276 only defers it (removes the `languageViaTableMethod` child, disables the execution test); R277 implements the generator support and re-enables the fixture.
+* **R222 (adjacent).** The author's planned classification-hierarchy cleanup. The completion work here now removes `PlainObjectType` and `PojoResultType.NoBacking`, which *is* hierarchy restructuring, so coordinate that slice with R222 rather than treating them as disjoint: R276 takes the two deletions its soundness invariant requires, R222 keeps any broader restructuring. Confirm the boundary with the R222 author at the Spec -> Ready gate.
+
+## Completion: binding completeness and classification soundness
+
+Added 2026-06-03 after the first cut broke main. This section owns making the reflection-only model complete and sound.
+
+### Root cause
+
+`TypeBuilder.classifyType` (`~578-581`) routes any reachable object type with no `@table`/`@error`/producer binding to `PlainObjectType`, the only fall-through. `GraphitronSchemaValidator` then accepts it (`:88`, "no domain directives, nothing to validate structurally"), and its fields resolve through graphql-java's default `PropertyDataFetcher`, a reflective read off `env.getSource()` that returns `null` (or an un-lifted partial record) at runtime. Two failures compound: the reflection-only binding does not ground *every* producer kind, and when a type consequently loses its binding, `PlainObjectType` swallows it silently instead of failing the build. That is why removing `@record` binding surfaced as execution-time regressions, not classification errors.
+
+### Binding completeness: ground `@externalField` + the parent-accessor cascade
+
+The field-walk grounding loop (`RecordBindingResolver:~204-211`) calls `groundServiceField` / `groundTableMethodField` / `groundDmlMutationField`, never a `groundExternalField`, so `@externalField` return types get no result-axis binding. Add `groundExternalField`: reflect the `@externalField` method's return element (`ServiceCatalog.reflectExternalField` already exists) and ground a result observation under the same cardinality-match guard as `groundServiceField`. Once the return type binds, the existing `ProducerBinding.ParentAccessor` walk (`~527`) cascades down its accessor-reached children, so the whole chain grounds (`FilmCardWrapper` -> `FilmCardData`; `FilmCardData.film()` -> `FilmRecord`; `FilmCardData.example()` -> `RecordExampleType` -> `RecordExample`). This single grounding is the root fix for the `FilmCardWrapper.film` AccessorKeyedSingle and `RecordExample.fieldC` `@field`-rebind execution regressions.
+
+### Classification soundness: eliminate `PlainObjectType`
+
+Target invariant: **no reachable object type may remain a `PlainObjectType` after classification.** Each binds to a concrete variant or becomes an `UnclassifiedType`, which the validator already rejects at build time (`:958` / `:966`). `PlainObjectType` is removed as a terminal classification. Its four current roles are each re-homed:
+
+* **Catch-all for unbound** (`TypeBuilder:581`): route to `UnclassifiedType` with a precise reason (the type name and why no binding was found) so it fails the build instead of degrading at runtime.
+* **Nested DTOs under a `@table` parent:** already resolved at the field level via the table-bound `NestingField` (`FieldBuilder.classifyObjectReturnChildField`); the type-level entry follows the same table binding, not `PlainObjectType`.
+* **Transient staging for connection/PageInfo promotion** (`ConnectionPromoter:126/157`): classify these structurally up front, or keep an internal pre-promotion marker guaranteed to be promoted before classification completes, so nothing *terminal* is `PlainObjectType`.
+* **LSP backing shape** (`CatalogBuilder:631` -> `TypeBackingShape.NoBacking.UnbackedResult`): re-home the LSP taxonomy entry alongside the model change. This is the path `R157PipelineTest` exercises.
+
+### Drop `PojoResultType.NoBacking` (moved here from R275)
+
+A DML `RETURNING` yields a jOOQ `Record` / `Result<Record>`, and an `@service` source-record carrier yields a table record; neither is `NoBacking`. There is no valid schema that classifies as `NoBacking`, so it is removed: `TypeBuilder.promoteSingleRecordPayloads` binds the carrier to its `JooqTableRecordType` instead, and `PojoResultType` collapses to `Backed`. Delete `TypeClassification.UnbackedPojoResult` and `TypeBackingShape.NoBacking.UnbackedResult`; drop the `NoBacking` arms in `FetcherEmitter`, `FieldBuilder`, `GraphitronSchemaBuilder`, `CatalogBuilder`, and the `VariantCoverageTest` / `ProjectionCoverageTest` entries for the removed variants.
+
+### Example-schema and test reconciliation
+
+* **Case 2** (NoBacking carrier): `SingleFilmCardCarrier` + `createFilmCard` removed from `schema.graphqls` (done). `FilmCardData` survives (it backs `FilmCardWrapper` via `@externalField`); `FilmCardFactoryService` is dead, optional cleanup.
+* **Case 3** (`@tableMethod` under `NestingField`): `languageViaTableMethod` removed from `FilmDetailsForMethod`, the execution test disabled, carved to tablemethod-under-nested-type (R277) (done).
+* **#2/#3** (`FilmCardWrapper.film`/`example` null): fixed by `groundExternalField` + the cascade.
+* **#4** (`FilmDetails.language` round-trip count): `FilmDetails` reclassifies from `JooqTableRecordType` to a table-bound `NestingField`, so `language` is an inline to-one `TableField` (1 round trip), not a record-keyed DataLoader (2). The `RecordTableField`-batching coverage belongs on a still-record-backed fixture (`FilmCardWrapper.film`, AccessorKeyedSingle); update or relocate `recordTableField_multipleParents` / `recordLookupTableField_multipleParents` accordingly, after confirming the data is correct on the inline path.
+* **LSP** (`R157PipelineTest`): the two backing-shape tests migrated to `@service` producers (done); the `CatalogBuilder` taxonomy re-home keeps them aligned.
+
+### Implementation seams
+
+* `RecordBindingResolver`: add `groundExternalField` to the field-walk loop; cardinality-match guard mirroring `groundServiceField`.
+* `TypeBuilder.classifyType`: replace the `PlainObjectType` catch-all with `UnclassifiedType`-with-reason for genuinely-unbound reachable objects; route nested-DTO and connection/PageInfo cases to their real classifications.
+* Delete `GraphitronType.PlainObjectType` and `PojoResultType.NoBacking`; update every consumer (`ObjectTypeGenerator`, `FetcherEmitter`, `FieldBuilder`, `GraphitronSchemaBuilder`, `CatalogBuilder`, `EntityResolutionBuilder`, `FetcherRegistrationsEmitter`, `ConnectionPromoter`, `GraphitronSchemaValidator`).
+* `TypeBuilder.promoteSingleRecordPayloads`: bind the carrier to its `JooqTableRecordType`.
+
+### Tests and acceptance
+
+* **Soundness (Unit/Pipeline).** A reachable object type with no binding is rejected as `UnclassifiedType`, never silently accepted; pin the message. A meta-assertion that `GraphitronType.PlainObjectType` no longer exists as a variant.
+* **Binding (Execution).** `FilmCardWrapper.film` resolves the lifted Film row (`title` non-null); `RecordExample.fieldC` resolves the `@field` rebind.
+* **Acceptance.** `mvn -f graphitron-rewrite/pom.xml install -Plocal-db` green end-to-end across `graphitron`, `graphitron-lsp`, and `graphitron-sakila-example`, un-breaking trunk. This is the gate for moving back to In Review.
 
 ## Out of scope
 
