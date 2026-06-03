@@ -117,10 +117,11 @@ class R58TypedRejectionPipelineTest {
     }
 
     @Test
-    void directiveConflict_typeLevelTableRecordMutualExclusion() {
-        // @table and @record on the same type are pairwise mutually exclusive; the
-        // detectTypeDirectiveConflict helper now returns a typed DirectiveConflict, and the
-        // TypeBuilder caller projects it through unchanged (no Rejection.structural rewrap).
+    void tableRecordCombination_recordIgnored_noLongerRejects() {
+        // R276/D1: @record is deprecated and ignored, so @table + @record on one type is no longer
+        // a DirectiveConflict. @table wins (the type stays table-backed) and the directive-ignored
+        // warning fires (the warning itself is pinned by R96RecordBindingPipelineTest); the type is
+        // not demoted to UnclassifiedType. Only @table vs @error remains mutually exclusive.
         var schema = TestSchemaHelper.buildSchema("""
             type Query { x: String }
             type Conflicted @table(name: "film") @record(record: {className: "no.sikt.graphitron.rewrite.TestDtoStub"}) {
@@ -128,14 +129,7 @@ class R58TypedRejectionPipelineTest {
             }
             """);
 
-        var type = schema.type("Conflicted");
-        assertThat(type).isInstanceOf(UnclassifiedType.class);
-
-        var rejection = ((UnclassifiedType) type).rejection();
-        assertThat(rejection).isInstanceOf(Rejection.InvalidSchema.DirectiveConflict.class);
-
-        var conflict = (Rejection.InvalidSchema.DirectiveConflict) rejection;
-        assertThat(conflict.directives()).containsExactly("table", "record");
+        assertThat(schema.type("Conflicted")).isNotInstanceOf(UnclassifiedType.class);
     }
 
     // R232: the ConditionJoinReportable capability and its three sibling tests

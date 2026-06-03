@@ -86,10 +86,13 @@ class R96RecordBindingPipelineTest {
     }
 
     @Test
-    void unreachable_recordTypeFallsBackToDirectiveClassNameForBackwardCompat() {
-        // Transitional fallback path: no producer reaches FilmDetails; the directive's className
-        // is used as the binding source. The directive-ignored warning does NOT fire (the type
-        // isn't "reachable" under the walker's reachability predicate).
+    void unreachable_recordTypeIsIgnored_classifiesAsPlainObject() {
+        // R276: @record is deprecated and ignored; binding is reflection-only with no directive
+        // fallback. A type carrying @record but reached by no producer has no backing class to
+        // bind to, so it classifies as a PlainObjectType (the directive supplies nothing). The
+        // directive-ignored warning does not fire here (the type isn't "reachable" under the
+        // walker's reachability predicate). This pins that the removed className-fallback stays
+        // removed.
         var schema = TestSchemaHelper.buildSchema("""
             type FilmDetails @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyRecord"}) {
                 title: String
@@ -97,10 +100,8 @@ class R96RecordBindingPipelineTest {
             type Query { x: String }
             """);
 
-        var t = schema.type("FilmDetails");
-        assertThat(t).isInstanceOf(GraphitronType.PojoResultType.Backed.class);
-        assertThat(((GraphitronType.PojoResultType.Backed) t).fqClassName())
-            .isEqualTo("no.sikt.graphitron.codereferences.dummyreferences.DummyRecord");
+        assertThat(schema.type("FilmDetails"))
+            .isInstanceOf(GraphitronType.PlainObjectType.class);
     }
 
     @Test

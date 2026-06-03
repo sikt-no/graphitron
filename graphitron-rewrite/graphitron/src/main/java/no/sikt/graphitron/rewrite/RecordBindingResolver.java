@@ -39,7 +39,6 @@ import static no.sikt.graphitron.rewrite.BuildContext.ARG_NAME;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_SERVICE_REF;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_TYPE_NAME;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_MUTATION;
-import static no.sikt.graphitron.rewrite.BuildContext.DIR_RECORD;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_SERVICE;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_TABLE;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_TABLE_METHOD;
@@ -227,18 +226,32 @@ final class RecordBindingResolver {
 
         SourceLocation loc = locationOf(field);
 
-        // Ground result-axis binding from method return-element type, but only when the
-        // SDL return type carries @record. Plain SDL Objects (single-record carriers,
-        // R75 Phase 1) and non-@record types do not consume the producer's return class
-        // as their binding — the producer feeds their inner data field instead. Restricting
-        // the result-side observation to @record SDL types matches the spec's intent (replace
-        // the directive's className with reflection) while preserving R75's carrier shape.
+        // R276: ground the result-axis binding from the method's reflected return-element type.
+        // Binding is reflection-only; the @record directive is deprecated and ignored, so the
+        // producer's signature is the single source of truth for the SDL return type's backing
+        // class. A source-record carrier (an @service returning a single jOOQ TableRecord into a
+        // single-object payload that carries no @record) binds to that record and classifies as a
+        // JooqTableRecordType, the same as any other @service-produced payload.
+        //
+        // Cardinality-match guard: bind only when the SDL field and the Java return agree on
+        // cardinality. A single-object SDL field produced by a *collection* return is a carrier
+        // wrapper (e.g. `payload: FooPayload @service` whose method returns `List<BarRecord>`); the
+        // collection feeds the payload's inner list field, not the wrapper itself, so the wrapper
+        // does not bind (it stays a PlainObjectType, the R75 carrier path). The two cardinalities
+        // always match for @record payloads (single->single, list->list), so this preserves their
+        // binding while admitting the single-record carrier and excluding the list carrier.
+        //
+        // @table-backed-SDL-type guard: a @service whose SDL return type is itself @table-bound is
+        // a service-over-a-table-type (MutationServiceTableField / QueryServiceTableField). That
+        // type's backing comes from its @table (the RootTable observation), and the method's return
+        // is validated to match it elsewhere; grounding a RootService observation here would be a
+        // second producer for the same type and collide as a spurious multi-producer conflict. The
+        // result-axis binding is only for payload types that take their backing from the producer.
         String resultSdl = unwrappedTypeName(field.getType());
-        if (resultSdl != null) {
-            var resultObjType = ctx.schema.getType(resultSdl);
-            boolean sdlHasRecord = resultObjType instanceof GraphQLObjectType ro
-                && ro.hasAppliedDirective(DIR_RECORD);
-            if (sdlHasRecord) {
+        if (resultSdl != null && !isTableBackedSdlType(resultSdl)) {
+            boolean sdlIsList = GraphQLTypeUtil.unwrapNonNull(field.getType()) instanceof GraphQLList;
+            boolean javaIsMulti = isMultiCardinalityReturn(method.getGenericReturnType());
+            if (sdlIsList == javaIsMulti) {
                 Class<?> retElement = peelReturnElement(method.getGenericReturnType());
                 if (retElement != null && shouldBind(retElement)) {
                     addResultObservation(resultSdl, new ProducerBinding.RootService(
@@ -650,6 +663,49 @@ final class RecordBindingResolver {
             current = args[0];
         }
         return current instanceof Class<?> c ? c : null;
+    }
+
+    /**
+     * Whether the producer's reflected return type denotes multiple elements (a
+     * {@link java.util.List} / {@link java.util.Set} / {@link java.util.Collection} /
+     * {@link org.jooq.Result}), peeling a single {@link java.util.Optional} /
+     * {@link java.util.concurrent.CompletableFuture} async wrapper first. Used by the cardinality-
+     * match guard in {@link #groundServiceField}: a single-element return matches a single-object
+     * SDL field (the carrier binds to its record), a multi-element return matches a list SDL field.
+     */
+    private static boolean isMultiCardinalityReturn(Type t) {
+        Type current = t;
+        for (int i = 0; i < 4; i++) {
+            if (!(current instanceof ParameterizedType pt)) return false;
+            if (!(pt.getRawType() instanceof Class<?> raw)) return false;
+            if (java.util.List.class.isAssignableFrom(raw)
+                || java.util.Set.class.isAssignableFrom(raw)
+                || java.util.Collection.class.isAssignableFrom(raw)
+                || org.jooq.Result.class.isAssignableFrom(raw)) {
+                return true;
+            }
+            if (java.util.Optional.class.isAssignableFrom(raw)
+                || java.util.concurrent.CompletableFuture.class.isAssignableFrom(raw)) {
+                Type[] args = pt.getActualTypeArguments();
+                if (args.length != 1) return false;
+                current = args[0];
+                continue;
+            }
+            return false;
+        }
+        return false;
+    }
+
+    /**
+     * Whether the named SDL output type is {@code @table}-bound (an OBJECT carrying {@code @table},
+     * which includes {@code @node} types since those also carry {@code @table}). Such a type takes
+     * its backing from its {@code @table} via the {@link ProducerBinding.RootTable} observation, so
+     * a {@code @service} producing it must not also ground a {@link ProducerBinding.RootService}
+     * result observation for the same SDL type.
+     */
+    private boolean isTableBackedSdlType(String sdlTypeName) {
+        return ctx.schema.getType(sdlTypeName) instanceof GraphQLObjectType obj
+            && obj.hasAppliedDirective(DIR_TABLE);
     }
 
     /**

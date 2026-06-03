@@ -70,8 +70,11 @@ class FetcherPipelineTest {
     @Test
     void recordType_producesAFetchersClass() {
         var classes = generate("""
-            type Container @record { value: String }
-            type Query { dummy: String }
+            type Container { value: String }
+            type Query {
+                dummy: String
+                c: Container @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeContainerRecord"})
+            }
             """);
         assertThat(classes).contains("ContainerFetchers");
     }
@@ -81,8 +84,11 @@ class FetcherPipelineTest {
     @Test
     void propertyField_onRecordType_hasWiringEntry() {
         var sdl = """
-            type Container @record { value: String }
-            type Query { dummy: String }
+            type Container { value: String }
+            type Query {
+                dummy: String
+                c: Container @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeContainerRecord"})
+            }
             """;
         var bodies = fetcherBodies(sdl);
         assertThat(TypeSpecAssertions.wiringFor(bodies, "Container", "value")).isPresent();
@@ -91,31 +97,44 @@ class FetcherPipelineTest {
     @Test
     void propertyField_onRecordType_fetchersHasNoMethods() {
         var fetchers = findSpec("ContainerFetchers", """
-            type Container @record { value: String }
-            type Query { dummy: String }
+            type Container { value: String }
+            type Query {
+                dummy: String
+                c: Container @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeContainerRecord"})
+            }
             """);
         // PropertyField wired in ContainerWiring — the Fetchers class has no methods.
         assertThat(fetchers.methodSpecs()).isEmpty();
     }
 
     @Test
-    void propertyField_untypedPojo_usesPropertyFetcher() {
-        // @record with no backing class → PojoResultType(null) → PropertyDataFetcher.fetching(...)
+    void propertyField_onBackedRecord_usesAccessorLambda() {
+        // R276: a standalone untyped @record no longer yields a NoBacking PropertyDataFetcher (it
+        // is a PlainObjectType now). A reflection-backed record type reads its scalar field through
+        // the record accessor, emitted as a lambda. The untyped-NoBacking PropertyDataFetcher path
+        // survives only for carrier-promoted DML payloads (see SingleRecordPayloadPipelineTest).
         var sdl = """
-            type Container @record { value: String }
-            type Query { dummy: String }
+            type Container { value: String }
+            type Query {
+                dummy: String
+                c: Container @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeContainerRecord"})
+            }
             """;
         var bodies = fetcherBodies(sdl);
         assertThat(TypeSpecAssertions.wiringFor(bodies, "Container", "value"))
-            .contains(DataFetcherKind.PROPERTY_FETCHER);
+            .contains(DataFetcherKind.LAMBDA);
     }
 
     @Test
     void recordField_onRecordType_hasWiringEntry() {
         var sdl = """
-            type FilmStats @record { count: Int }
-            type FilmDetails @record { stats: FilmStats }
-            type Query { dummy: String }
+            type FilmStats { count: Int }
+            type FilmDetails { stats: FilmStats }
+            type Query {
+                dummy: String
+                fd: FilmDetails @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeFilmDetailsRecord"})
+                fs: FilmStats @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeFilmStatsRecord"})
+            }
             """;
         var bodies = fetcherBodies(sdl);
         assertThat(TypeSpecAssertions.wiringFor(bodies, "FilmDetails", "stats")).isPresent();
@@ -124,9 +143,13 @@ class FetcherPipelineTest {
     @Test
     void recordField_onRecordType_fetchersHasNoMethods() {
         var fetchers = findSpec("FilmDetailsFetchers", """
-            type FilmStats @record { count: Int }
-            type FilmDetails @record { stats: FilmStats }
-            type Query { dummy: String }
+            type FilmStats { count: Int }
+            type FilmDetails { stats: FilmStats }
+            type Query {
+                dummy: String
+                fd: FilmDetails @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeFilmDetailsRecord"})
+                fs: FilmStats @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeFilmStatsRecord"})
+            }
             """);
         // RecordField wired in FilmDetailsWiring — the Fetchers class has no methods.
         assertThat(fetchers.methodSpecs()).isEmpty();
@@ -136,11 +159,14 @@ class FetcherPipelineTest {
 
     private static final String RECORD_TABLE_SDL = """
             type Language @table(name: "language") { name: String }
-            type FilmDetails @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyRecord"}) {
+            type FilmDetails {
               language: Language @reference(path: [{key: "film_language_id_fkey"}])
             }
             type Film @table(name: "film") { details: FilmDetails }
-            type Query { film: Film }
+            type Query {
+              film: Film
+              filmDetails: FilmDetails @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeDummyRecord"})
+            }
             """;
 
     @Test
@@ -171,14 +197,17 @@ class FetcherPipelineTest {
 
     private static final String RECORD_LOOKUP_TABLE_SDL = """
             type Actor @table(name: "actor") { actorId: Int @field(name: "actor_id") }
-            type FilmDetails @record(record: {className: "no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord"}) {
+            type FilmDetails {
               actorsByLookup(actor_id: [Int!] @lookupKey): [Actor!]! @reference(path: [
                 {key: "film_actor_film_id_fkey"},
                 {key: "film_actor_actor_id_fkey"}
               ])
             }
             type Film @table(name: "film") { details: FilmDetails }
-            type Query { film: Film }
+            type Query {
+              film: Film
+              filmDetails: FilmDetails @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getFilm"})
+            }
             """;
 
     @Test
@@ -207,41 +236,11 @@ class FetcherPipelineTest {
         assertThat(fetchers.methodSpecs()).extracting(MethodSpec::name).contains("actorsByLookupInputRows");
     }
 
-    // ===== ErrorsField — wired via PropertyDataFetcher passthrough =====
-
-    private static final String ERRORS_FIELD_SDL = """
-            type ValidationErr @error(handlers: [{handler: VALIDATION}]) {
-                path: [String!]!
-                message: String!
-            }
-            type DbErr @error(handlers: [{handler: DATABASE, sqlState: "23503"}]) {
-                path: [String!]!
-                message: String!
-            }
-            union BehandleSakError = ValidationErr | DbErr
-            type BehandleSakPayload @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyRecord"}) {
-                ok: Boolean
-                errors: [BehandleSakError!]
-            }
-            type Query { x: String }
-            """;
-
-    @Test
-    void errorsField_onRecordPayload_wiringUsesPropertyFetcher() {
-        // ErrorsField is a passthrough off the parent payload's errors accessor; the runtime
-        // carrier (per-error dispatch + try/catch wrapping) ships later in error-handling-parity.md.
-        var bodies = fetcherBodies(ERRORS_FIELD_SDL);
-        assertThat(TypeSpecAssertions.wiringFor(bodies, "BehandleSakPayload", "errors"))
-            .contains(DataFetcherKind.PROPERTY_FETCHER);
-    }
-
-    @Test
-    void errorsField_onRecordPayload_fetchersClassEmitsNoMethodForIt() {
-        // ErrorsField is in IMPLEMENTED_LEAVES with a no-op dispatch arm — no per-field method
-        // is emitted; the wiring entry is the entire footprint.
-        var fetchers = findSpec("BehandleSakPayloadFetchers", ERRORS_FIELD_SDL);
-        assertThat(fetchers.methodSpecs()).extracting(MethodSpec::name).doesNotContain("errors");
-    }
+    // R276: the legacy "@record payload with a developer-owned errors slot read via
+    // PropertyDataFetcher" tests were deleted. That passthrough required a backed payload with no
+    // producer (the removed @record-className idiom); a @service-produced errors payload now rides
+    // the R244 Outcome WrapperArm transport, covered by SAK_DISPATCH_SDL / the OUTCOME_*_SDL tests
+    // below.
 
     // ===== R12 §3 try/catch wrapper: end-to-end SDL exercising the dispatch arm =====
 

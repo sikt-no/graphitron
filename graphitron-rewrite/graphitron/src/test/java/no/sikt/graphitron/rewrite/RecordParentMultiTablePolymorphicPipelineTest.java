@@ -75,11 +75,14 @@ class RecordParentMultiTablePolymorphicPipelineTest {
         // construction when the table-backed parent is the same hub; pin TypeSpec equivalence to
         // surface any drift across the two producers.
         var schema = TestSchemaHelper.buildSchema(INTERFACE_PARTICIPANTS + """
-            type FilmInfo @record(record: {className: "no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord"}) {
+            type FilmInfo {
               referrers: [FilmReferrer!]!
             }
             type Film @table(name: "film") { info: FilmInfo }
-            type Query { film: Film }
+            type Query {
+              film: Film
+              filmInfo: FilmInfo @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getFilm"})
+            }
             """);
         var field = (ChildField.InterfaceField) schema.field("FilmInfo", "referrers");
         assertThat(field.parentSourceKey().reader()).isInstanceOf(SourceKey.Reader.ColumnRead.class);
@@ -91,15 +94,18 @@ class RecordParentMultiTablePolymorphicPipelineTest {
 
     @Test
     void childInterfaceField_recordParent_rowKeyed_typeSpecEqualsTableBacked() {
-        // Two SDLs differing only in the parent declaration: @record(record: FilmRecord) vs.
-        // @table(name: "film"). Both classify to the same RowKeyed permit on the same hub, so
-        // the emitted FilmFetchers TypeSpec for the polymorphic child field should be
-        // identical. Drift in either producer fails this comparison.
+        // Two SDLs differing only in how Film acquires its film backing: a @service producer
+        // returning FilmRecord (-> JooqTableRecordType) vs. @table(name: "film"). Both classify to
+        // the same RowKeyed permit on the same hub, so the emitted FilmFetchers TypeSpec for the
+        // polymorphic child field should be identical. Drift in either producer fails this
+        // comparison.
         var recordParentSchema = TestSchemaHelper.buildSchema(INTERFACE_PARTICIPANTS + """
-            type Film @record(record: {className: "no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord"}) {
+            type Film {
               referrers: [FilmReferrer!]!
             }
-            type Query { film: Film }
+            type Query {
+              film: Film @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getFilm"})
+            }
             """);
         var tableParentSchema = TestSchemaHelper.buildSchema(INTERFACE_PARTICIPANTS + """
             type Film @table(name: "film") {
@@ -137,10 +143,12 @@ class RecordParentMultiTablePolymorphicPipelineTest {
         // (AccessorKeyedMany) is reachable because the list arm is DataLoader-batched and
         // already routes through the parentKey-aware buildBatchedListFetcher.
         var schema = TestSchemaHelper.buildSchema(INTERFACE_PARTICIPANTS + """
-            type SinglePayloadType @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.AccessorPayloads$SinglePayload"}) {
+            type SinglePayloadType {
               film: FilmReferrer
             }
-            type Query { sp: SinglePayloadType }
+            type Query {
+              sp: SinglePayloadType @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeAccessorSinglePayload"})
+            }
             """);
         var field = schema.field("SinglePayloadType", "film");
         assertThat(field).isInstanceOf(no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField.class);
@@ -158,10 +166,12 @@ class RecordParentMultiTablePolymorphicPipelineTest {
         // list-cardinality polymorphic child named `films` resolves to AccessorKeyedMany;
         // dispatch is LOAD_MANY (loader.loadMany returns one Record per element key).
         var schema = TestSchemaHelper.buildSchema(INTERFACE_PARTICIPANTS + """
-            type ListPayloadType @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.AccessorPayloads$ListPayload"}) {
+            type ListPayloadType {
               films: [FilmReferrer!]!
             }
-            type Query { lp: ListPayloadType }
+            type Query {
+              lp: ListPayloadType @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeAccessorListPayload"})
+            }
             """);
         var field = (ChildField.InterfaceField) schema.field("ListPayloadType", "films");
         var psk = field.parentSourceKey();
@@ -181,10 +191,12 @@ class RecordParentMultiTablePolymorphicPipelineTest {
         // Without the directive-honored remap, the matcher would search for an accessor named
         // `referrers` / `getReferrers` / `isReferrers` and fall through to UnclassifiedField.
         var schema = TestSchemaHelper.buildSchema(INTERFACE_PARTICIPANTS + """
-            type ListPayloadType @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.AccessorPayloads$ListPayload"}) {
+            type ListPayloadType {
               referrers: [FilmReferrer!]! @field(name: "films")
             }
-            type Query { lp: ListPayloadType }
+            type Query {
+              lp: ListPayloadType @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeAccessorListPayload"})
+            }
             """);
         var field = (ChildField.InterfaceField) schema.field("ListPayloadType", "referrers");
         var psk = field.parentSourceKey();
@@ -202,11 +214,14 @@ class RecordParentMultiTablePolymorphicPipelineTest {
     @Test
     void childUnionField_recordParent_rowKeyed() {
         var schema = TestSchemaHelper.buildSchema(UNION_PARTICIPANTS + """
-            type FilmInfo @record(record: {className: "no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord"}) {
+            type FilmInfo {
               referrers: [FilmReferrer!]!
             }
             type Film @table(name: "film") { info: FilmInfo }
-            type Query { film: Film }
+            type Query {
+              film: Film
+              filmInfo: FilmInfo @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getFilm"})
+            }
             """);
         var field = (ChildField.UnionField) schema.field("FilmInfo", "referrers");
         assertThat(field.parentSourceKey().reader()).isInstanceOf(SourceKey.Reader.ColumnRead.class);
@@ -218,10 +233,12 @@ class RecordParentMultiTablePolymorphicPipelineTest {
     void childUnionField_recordParent_accessorKeyedSingle_deferred() {
         // Same single-cardinality deferral as the InterfaceField sibling.
         var schema = TestSchemaHelper.buildSchema(UNION_PARTICIPANTS + """
-            type SinglePayloadType @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.AccessorPayloads$SinglePayload"}) {
+            type SinglePayloadType {
               film: FilmReferrer
             }
-            type Query { sp: SinglePayloadType }
+            type Query {
+              sp: SinglePayloadType @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeAccessorSinglePayload"})
+            }
             """);
         var field = schema.field("SinglePayloadType", "film");
         assertThat(field).isInstanceOf(no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField.class);
@@ -232,10 +249,12 @@ class RecordParentMultiTablePolymorphicPipelineTest {
     @Test
     void childUnionField_recordParent_accessorKeyedMany() {
         var schema = TestSchemaHelper.buildSchema(UNION_PARTICIPANTS + """
-            type ListPayloadType @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.AccessorPayloads$ListPayload"}) {
+            type ListPayloadType {
               films: [FilmReferrer!]!
             }
-            type Query { lp: ListPayloadType }
+            type Query {
+              lp: ListPayloadType @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeAccessorListPayload"})
+            }
             """);
         var field = (ChildField.UnionField) schema.field("ListPayloadType", "films");
         var psk = field.parentSourceKey();
@@ -254,10 +273,12 @@ class RecordParentMultiTablePolymorphicPipelineTest {
         // @sourceRow route is currently deferred for polymorphic returns per spec Out of
         // scope).
         var schema = TestSchemaHelper.buildSchema(UNION_PARTICIPANTS + """
-            type DummyRecordType @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyRecord"}) {
+            type DummyRecordType {
               films: [FilmReferrer!]!
             }
-            type Query { dr: DummyRecordType }
+            type Query {
+              dr: DummyRecordType @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeDummyRecord"})
+            }
             """);
         var field = schema.field("DummyRecordType", "films");
         assertThat(field).isInstanceOf(no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField.class);
@@ -294,10 +315,12 @@ class RecordParentMultiTablePolymorphicPipelineTest {
             union FilmReferrer = Inventory | Content
             """;
         var schema = TestSchemaHelper.buildSchema(asymmetricParticipants + """
-            type Film @record(record: {className: "no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord"}) {
+            type Film {
               referrers: [FilmReferrer!]!
             }
-            type Query { film: Film }
+            type Query {
+              film: Film @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getFilm"})
+            }
             """);
 
         // Classifier: the asymmetric fixture produces a UnionField with both participants

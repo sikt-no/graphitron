@@ -34,7 +34,7 @@ class VariantCoverageTest {
      * one-line reason. The goal is for this map to stay small — every schema-reachable
      * leaf should have a case showing the classifier lands there.
      */
-    private static final Map<Class<?>, String> NO_CASE_REQUIRED = Map.of(
+    private static final Map<Class<?>, String> NO_CASE_REQUIRED = withNoBacking(Map.of(
         no.sikt.graphitron.rewrite.model.MutationField.MutationUpsertTableField.class,
             "R144 retires UPSERT generation pending R145 (mutation-cardinality-safety-upsert); "
             + "the classifier rejects every UPSERT mutation at MutationInputResolver, so no "
@@ -92,7 +92,22 @@ class VariantCoverageTest {
             + "and tableInput_overrideTrueWithoutMatchingColumn_classifiesAsUnboundField "
             + "@Test methods (one carries @ProjectionFor(UnboundField.class)), which "
             + "land outside the enum-style ClassificationCase shape this coverage walker reads."
-    );
+    ));
+
+    /**
+     * R276: {@link GraphitronType.PojoResultType.NoBacking} is still produced (the DML-carrier
+     * promotion in {@code TypeBuilder.promoteSingleRecordPayloads}), but it is being removed in
+     * R275 (DML and {@code @service} carriers bind to their jOOQ record instead). R276 keeps the
+     * leaf and deliberately writes no classification case for a type on its way out; this exclusion
+     * is removed together with the leaf in R275.
+     */
+    private static Map<Class<?>, String> withNoBacking(Map<Class<?>, String> base) {
+        var m = new java.util.LinkedHashMap<Class<?>, String>(base);
+        m.put(GraphitronType.PojoResultType.NoBacking.class,
+            "Removed in R275 (DML/service carriers bind to their jOOQ record); R276 keeps the leaf "
+            + "but writes no classification case for a type on its way out.");
+        return Map.copyOf(m);
+    }
 
     private static final List<Class<?>> ROOTS = List.of(
         GraphitronField.class, GraphitronType.class);

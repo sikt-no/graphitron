@@ -321,10 +321,13 @@ class TypeBuilder {
                     ? locationOf(inp)
                     : null;
 
-            // Shadowed by @table — input-only (the OBJECT-side @table + @record combination is
-            // rejected by detectTypeDirectiveConflict before this site is reached).
-            if (isInput && container.hasAppliedDirective(DIR_TABLE)) {
-                String message = "Input type '" + name + "' carries both @table and "
+            // Shadowed by @table. R276: a @table + @record combination is no longer a hard
+            // conflict (detectTypeDirectiveConflict ignores @record), so both OBJECT and INPUT
+            // carriers reach this site; @table wins and @record is ignored. Warn so the author
+            // removes the dead directive, with the @table-specific message (the backing comes from
+            // @table metadata, not a producing field's reflected return).
+            if (container.hasAppliedDirective(DIR_TABLE)) {
+                String message = (isInput ? "Input type '" : "Type '") + name + "' carries both @table and "
                     + formatRecordRef(declaredClassName)
                     + ". Graphitron derives the backing class from @table; "
                     + "the @record directive is ignored. Remove it.";
@@ -566,15 +569,14 @@ class TypeBuilder {
             if (objType.hasAppliedDirective(DIR_ERROR)) {
                 return buildErrorType(objType);
             }
-            // R96: reflection-derived binding from the resolver. A reachable type with a
-            // resolved binding classifies into the appropriate backed variant. The dispatch
-            // also fires on @record (with or without className) for transitional compatibility
-            // with fixtures predating the producer-required regime; the directive-ignored
-            // warning surfaces this for reachable types and the directive's className acts as
-            // a fallback class source for unreached types.
-            if (bindings.resolveResult(name).isPresent()
-                    || objType.hasAppliedDirective(DIR_RECORD)) {
-                return buildResultType(objType, name, location);
+            // R96/R276: reflection-derived binding from the resolver is the only signal. A
+            // reachable type with a resolved producer binding classifies into the appropriate
+            // backed variant; the @record directive is deprecated and ignored (it never drives
+            // classification). A type with no reflected producer is a PlainObjectType, including
+            // one that carries only a bare @record (the directive-ignored warning still fires;
+            // there is no producer to read a backing class from).
+            if (bindings.resolveResult(name).isPresent()) {
+                return buildResultType(name, location);
             }
             return new PlainObjectType(name, location, objType);
         }
@@ -883,38 +885,15 @@ class TypeBuilder {
 
     /**
      * Constructs the appropriate {@link ResultType} sub-type from the resolved backing class.
-     * R96's {@link RecordBindingResolver} is the primary source; a transitional directive
-     * fallback covers types declared with {@code @record(record:{className:})} but unreached
-     * by any real producer (pending fixture migration). The directive-ignored warning at
-     * {@link #emitDirectiveIgnoredWarnings} surfaces both arms for reachable types.
+     * R96/R276: {@link RecordBindingResolver} reflection is the only source. This is reached only
+     * for a type with a resolved producer binding (gated in {@link #classifyType}); the
+     * {@code @record} directive is deprecated and ignored, surfaced by the directive-ignored
+     * warning at {@link #emitDirectiveIgnoredWarnings} rather than consulted here.
      */
-    private GraphitronType buildResultType(GraphQLObjectType objType, String name, SourceLocation location) {
-        Class<?> cls = bindings.resolveResult(name).orElse(null);
-        if (cls == null) {
-            // Transitional fallback: directive's className when reflection finds nothing.
-            String declared = readRecordClassName(objType);
-            if (declared == null) {
-                return new GraphitronType.PojoResultType.NoBacking(name, location);
-            }
-            try {
-                cls = Class.forName(declared, false, ctx.codegenLoader());
-                // Validate the directive's argMapping inertness before falling back.
-                var dir = objType.getAppliedDirective(DIR_RECORD);
-                if (dir != null) {
-                    var recordArg = dir.getArgument(ARG_RECORD);
-                    if (recordArg != null && recordArg.getValue() != null) {
-                        String inertness = checkArgMappingInert(asMap(recordArg.getValue()), "record");
-                        if (inertness != null) {
-                            return new UnclassifiedType(name, location, Rejection.structural(inertness));
-                        }
-                    }
-                }
-                recordBackingClasses.put(name, cls);
-            } catch (ClassNotFoundException e) {
-                return new UnclassifiedType(name, location, Rejection.structural(
-                    "record backing class '" + declared + "' could not be loaded"));
-            }
-        }
+    private GraphitronType buildResultType(String name, SourceLocation location) {
+        Class<?> cls = bindings.resolveResult(name).orElseThrow(() -> new IllegalStateException(
+            "buildResultType reached for '" + name + "' without a reflected producer binding; "
+            + "classifyType must gate on bindings.resolveResult(name).isPresent()"));
         String className = cls.getName();
         if (cls.isRecord()) {
             return new GraphitronType.JavaRecordType(name, location, className);
@@ -1074,8 +1053,10 @@ class TypeBuilder {
 
     /**
      * Constructs the appropriate {@link InputType} sub-type from the resolved backing class.
-     * Symmetric with {@link #buildResultType}: walker is the primary source, directive is a
-     * transitional fallback for unreached types.
+     * R96/R276: symmetric with {@link #buildResultType}, {@link RecordBindingResolver} reflection
+     * is the only source. An input type with no reflected producer binding is a backing-less
+     * {@link GraphitronType.PojoInputType}; the {@code @record} directive is deprecated and
+     * ignored (it never supplies a fallback className).
      */
     private GraphitronType buildNonTableInputType(GraphQLInputObjectType inputType, String name, SourceLocation location) {
         var shape = buildInputRecordShape(name, inputType);
@@ -1085,27 +1066,7 @@ class TypeBuilder {
         }
         Class<?> cls = bindings.resolveInput(name).orElse(null);
         if (cls == null) {
-            // Transitional fallback: directive's className when reflection finds nothing.
-            String declared = readRecordClassName(inputType);
-            if (declared == null) {
-                return new GraphitronType.PojoInputType(name, location, null, inputType, shape);
-            }
-            try {
-                cls = Class.forName(declared, false, ctx.codegenLoader());
-                var dir = inputType.getAppliedDirective(DIR_RECORD);
-                if (dir != null) {
-                    var recordArg = dir.getArgument(ARG_RECORD);
-                    if (recordArg != null && recordArg.getValue() != null) {
-                        String inertness = checkArgMappingInert(asMap(recordArg.getValue()), "record");
-                        if (inertness != null) {
-                            return new UnclassifiedType(name, location, Rejection.structural(inertness));
-                        }
-                    }
-                }
-            } catch (ClassNotFoundException e) {
-                return new UnclassifiedType(name, location, Rejection.structural(
-                    "record backing class '" + declared + "' could not be loaded"));
-            }
+            return new GraphitronType.PojoInputType(name, location, null, inputType, shape);
         }
         String className = cls.getName();
         if (cls.isRecord()) {
@@ -1429,22 +1390,24 @@ class TypeBuilder {
      * Returns a reason string when mutually exclusive type-classification directives appear
      * together on one OBJECT, or {@code null} when the combination is allowed.
      *
-     * <p>{@code @table}, {@code @record}, and {@code @error} are pairwise mutually exclusive.
-     * {@code @table} resolves columns from jOOQ metadata; {@code @record} binds an SDL type
-     * to a developer-supplied Java class; {@code @error} declares an SDL-side error shape (the
-     * runtime source is the matched throwable itself; there is no developer-supplied data class
-     * for an {@code @error} type).
+     * <p>{@code @table} and {@code @error} are mutually exclusive. {@code @table} resolves columns
+     * from jOOQ metadata; {@code @error} declares an SDL-side error shape (the runtime source is
+     * the matched throwable itself; there is no developer-supplied data class for an {@code @error}
+     * type).
+     *
+     * <p>R276: {@code @record} is deprecated and ignored, so its mere presence is not a conflict.
+     * A {@code @table} + {@code @record} or {@code @error} + {@code @record} combination is allowed
+     * to classify ({@code @table}/{@code @error} wins) and surfaces the directive-ignored warning
+     * in {@link #emitDirectiveIgnoredWarnings} rather than a hard rejection.
      */
     private static Rejection.InvalidSchema.DirectiveConflict detectTypeDirectiveConflict(GraphQLObjectType objType) {
         boolean hasTable = objType.hasAppliedDirective(DIR_TABLE);
-        boolean hasRecord = objType.hasAppliedDirective(DIR_RECORD);
         boolean hasError = objType.hasAppliedDirective(DIR_ERROR);
-        int present = (hasTable ? 1 : 0) + (hasRecord ? 1 : 0) + (hasError ? 1 : 0);
+        int present = (hasTable ? 1 : 0) + (hasError ? 1 : 0);
         if (present > 1) {
             var bareNames = new java.util.ArrayList<String>();
             var atNames = new java.util.ArrayList<String>();
             if (hasTable)  { bareNames.add(DIR_TABLE);  atNames.add("@" + DIR_TABLE); }
-            if (hasRecord) { bareNames.add(DIR_RECORD); atNames.add("@" + DIR_RECORD); }
             if (hasError)  { bareNames.add(DIR_ERROR);  atNames.add("@" + DIR_ERROR); }
             return new Rejection.InvalidSchema.DirectiveConflict(
                 bareNames, String.join(", ", atNames) + " are mutually exclusive");
