@@ -3147,15 +3147,16 @@ class GraphitronSchemaBuilderTest {
             }
             """,
             schema -> {
-                var f = (RecordTableField) schema.field("Payload", "films");
-                var sk = f.sourceKey();
-                assertThat(sk.reader()).isInstanceOf(SourceKey.Reader.AccessorCall.class);
-                assertThat(sk.cardinality()).isEqualTo(SourceKey.Cardinality.MANY);
-                assertThat(((SourceKey.Reader.AccessorCall) sk.reader()).accessor().methodName()).isEqualTo("films");
-                assertThat(sk.columns()).hasSize(1);
-                assertThat(sk.columns().get(0).sqlName()).isEqualTo("film_id");
-                assertThat(f.joinPath()).hasSize(1);
-                assertThat(f.joinPath().get(0)).isSameAs(sk.path().get(0));
+                assertThat(schema.field("Payload", "films")).isInstanceOfSatisfying(RecordTableField.class, f -> {
+                    var sk = f.sourceKey();
+                    assertThat(sk.reader()).isInstanceOf(SourceKey.Reader.AccessorCall.class);
+                    assertThat(sk.cardinality()).isEqualTo(SourceKey.Cardinality.MANY);
+                    assertThat(((SourceKey.Reader.AccessorCall) sk.reader()).accessor().methodName()).isEqualTo("films");
+                    assertThat(sk.columns()).hasSize(1);
+                    assertThat(sk.columns().get(0).sqlName()).isEqualTo("film_id");
+                    assertThat(f.joinPath()).hasSize(1);
+                    assertThat(f.joinPath().get(0)).isSameAs(sk.path().get(0));
+                });
             }) {
             @Override public Set<Class<?>> variants() { return Set.of(RecordTableField.class); }
         },
@@ -3172,12 +3173,13 @@ class GraphitronSchemaBuilderTest {
             }
             """,
             schema -> {
-                var f = (RecordTableField) schema.field("Payload", "films");
-                var sk = f.sourceKey();
-                assertThat(sk.reader()).isInstanceOf(SourceKey.Reader.AccessorCall.class);
-                assertThat(sk.cardinality()).isEqualTo(SourceKey.Cardinality.MANY);
-                // The Set<X> vs List<X> split inside Many is not preserved on the SourceKey; emit
-                // is uniform via Iterable. The fixture still exercises the Set classifier path.
+                assertThat(schema.field("Payload", "films")).isInstanceOfSatisfying(RecordTableField.class, f -> {
+                    var sk = f.sourceKey();
+                    assertThat(sk.reader()).isInstanceOf(SourceKey.Reader.AccessorCall.class);
+                    assertThat(sk.cardinality()).isEqualTo(SourceKey.Cardinality.MANY);
+                    // The Set<X> vs List<X> split inside Many is not preserved on the SourceKey; emit
+                    // is uniform via Iterable. The fixture still exercises the Set classifier path.
+                });
             }) {
             @Override public Set<Class<?>> variants() { return Set.of(RecordTableField.class); }
         },
@@ -3194,15 +3196,16 @@ class GraphitronSchemaBuilderTest {
             }
             """,
             schema -> {
-                var f = (RecordTableField) schema.field("Payload", "film");
-                var sk = f.sourceKey();
-                assertThat(sk.reader()).isInstanceOf(SourceKey.Reader.AccessorCall.class);
-                assertThat(sk.cardinality()).isEqualTo(SourceKey.Cardinality.ONE);
-                assertThat(((SourceKey.Reader.AccessorCall) sk.reader()).accessor().methodName()).isEqualTo("film");
-                assertThat(sk.columns()).hasSize(1);
-                assertThat(sk.columns().get(0).sqlName()).isEqualTo("film_id");
-                assertThat(f.joinPath()).hasSize(1);
-                assertThat(f.joinPath().get(0)).isSameAs(sk.path().get(0));
+                assertThat(schema.field("Payload", "film")).isInstanceOfSatisfying(RecordTableField.class, f -> {
+                    var sk = f.sourceKey();
+                    assertThat(sk.reader()).isInstanceOf(SourceKey.Reader.AccessorCall.class);
+                    assertThat(sk.cardinality()).isEqualTo(SourceKey.Cardinality.ONE);
+                    assertThat(((SourceKey.Reader.AccessorCall) sk.reader()).accessor().methodName()).isEqualTo("film");
+                    assertThat(sk.columns()).hasSize(1);
+                    assertThat(sk.columns().get(0).sqlName()).isEqualTo("film_id");
+                    assertThat(f.joinPath()).hasSize(1);
+                    assertThat(f.joinPath().get(0)).isSameAs(sk.path().get(0));
+                });
             }) {
             @Override public Set<Class<?>> variants() { return Set.of(RecordTableField.class); }
         },
@@ -3219,12 +3222,13 @@ class GraphitronSchemaBuilderTest {
             }
             """,
             schema -> {
-                var unc = (UnclassifiedField) schema.field("Payload", "films");
-                assertThat(unc.kind()).isEqualTo(RejectionKind.AUTHOR_ERROR);
-                assertThat(unc.reason()).contains("more than one typed accessor");
-                assertThat(unc.reason()).contains("films");
-                assertThat(unc.reason()).contains("getFilms");
-                assertThat(unc.reason()).contains("@sourceRow");
+                assertThat(schema.field("Payload", "films")).isInstanceOfSatisfying(UnclassifiedField.class, unc -> {
+                    assertThat(unc.kind()).isEqualTo(RejectionKind.AUTHOR_ERROR);
+                    assertThat(unc.reason()).contains("more than one typed accessor");
+                    assertThat(unc.reason()).contains("films");
+                    assertThat(unc.reason()).contains("getFilms");
+                    assertThat(unc.reason()).contains("@sourceRow");
+                });
             }) {
             @Override public Set<Class<?>> variants() { return Set.of(UnclassifiedField.class); }
         },
@@ -3241,10 +3245,11 @@ class GraphitronSchemaBuilderTest {
             }
             """,
             schema -> {
-                var unc = (UnclassifiedField) schema.field("Payload", "films");
-                assertThat(unc.kind()).isEqualTo(RejectionKind.AUTHOR_ERROR);
-                assertThat(unc.reason()).contains("list field 'films'");
-                assertThat(unc.reason()).contains("returning a single record");
+                assertThat(schema.field("Payload", "films")).isInstanceOfSatisfying(UnclassifiedField.class, unc -> {
+                    assertThat(unc.kind()).isEqualTo(RejectionKind.AUTHOR_ERROR);
+                    assertThat(unc.reason()).contains("list field 'films'");
+                    assertThat(unc.reason()).contains("returning a single record");
+                });
             }) {
             @Override public Set<Class<?>> variants() { return Set.of(UnclassifiedField.class); }
         },
@@ -3261,16 +3266,17 @@ class GraphitronSchemaBuilderTest {
             }
             """,
             schema -> {
-                var f = (RecordTableField) schema.field("Payload", "film");
-                var sk = f.sourceKey();
-                assertThat(sk.reader()).isInstanceOf(SourceKey.Reader.AccessorCall.class);
-                assertThat(sk.cardinality()).isEqualTo(SourceKey.Cardinality.ONE);
-                // The carried method name is the actual accessor name (the directive value),
-                // not the SDL field name.
-                assertThat(((SourceKey.Reader.AccessorCall) sk.reader()).accessor().methodName())
-                    .isEqualTo("filmRecord");
-                assertThat(sk.columns()).hasSize(1);
-                assertThat(sk.columns().get(0).sqlName()).isEqualTo("film_id");
+                assertThat(schema.field("Payload", "film")).isInstanceOfSatisfying(RecordTableField.class, f -> {
+                    var sk = f.sourceKey();
+                    assertThat(sk.reader()).isInstanceOf(SourceKey.Reader.AccessorCall.class);
+                    assertThat(sk.cardinality()).isEqualTo(SourceKey.Cardinality.ONE);
+                    // The carried method name is the actual accessor name (the directive value),
+                    // not the SDL field name.
+                    assertThat(((SourceKey.Reader.AccessorCall) sk.reader()).accessor().methodName())
+                        .isEqualTo("filmRecord");
+                    assertThat(sk.columns()).hasSize(1);
+                    assertThat(sk.columns().get(0).sqlName()).isEqualTo("film_id");
+                });
             }) {
             @Override public Set<Class<?>> variants() { return Set.of(RecordTableField.class); }
         },
@@ -3287,11 +3293,12 @@ class GraphitronSchemaBuilderTest {
             }
             """,
             schema -> {
-                var unc = (UnclassifiedField) schema.field("Payload", "film");
-                assertThat(unc.kind()).isEqualTo(RejectionKind.AUTHOR_ERROR);
-                assertThat(unc.reason()).contains("typed accessor");
-                assertThat(unc.reason()).contains("@sourceRow");
-                assertThat(unc.reason()).contains("typed jOOQ TableRecord");
+                assertThat(schema.field("Payload", "film")).isInstanceOfSatisfying(UnclassifiedField.class, unc -> {
+                    assertThat(unc.kind()).isEqualTo(RejectionKind.AUTHOR_ERROR);
+                    assertThat(unc.reason()).contains("typed accessor");
+                    assertThat(unc.reason()).contains("@sourceRow");
+                    assertThat(unc.reason()).contains("typed jOOQ TableRecord");
+                });
             }) {
             @Override public Set<Class<?>> variants() { return Set.of(UnclassifiedField.class); }
         },
@@ -3308,13 +3315,14 @@ class GraphitronSchemaBuilderTest {
             }
             """,
             schema -> {
-                var unc = (UnclassifiedField) schema.field("Payload", "films");
-                assertThat(unc.kind()).isEqualTo(RejectionKind.AUTHOR_ERROR);
-                // Falls through to the rewritten three-option message; the typed-accessor and
-                // @sourceRow and @table TableRecord options should all be named.
-                assertThat(unc.reason()).contains("typed accessor");
-                assertThat(unc.reason()).contains("@sourceRow");
-                assertThat(unc.reason()).contains("typed jOOQ TableRecord");
+                assertThat(schema.field("Payload", "films")).isInstanceOfSatisfying(UnclassifiedField.class, unc -> {
+                    assertThat(unc.kind()).isEqualTo(RejectionKind.AUTHOR_ERROR);
+                    // Falls through to the rewritten three-option message; the typed-accessor and
+                    // @sourceRow and @table TableRecord options should all be named.
+                    assertThat(unc.reason()).contains("typed accessor");
+                    assertThat(unc.reason()).contains("@sourceRow");
+                    assertThat(unc.reason()).contains("typed jOOQ TableRecord");
+                });
             }) {
             @Override public Set<Class<?>> variants() { return Set.of(UnclassifiedField.class); }
         };

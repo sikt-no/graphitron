@@ -64,16 +64,9 @@ With both rules in force, the success arm emits `null` for the errors field unco
 * **R269 (Spec):** null-guards split-query key extraction for nullable to-one records. The `sak` field here is a to-one record resolved by split query, so R269's null-guard applies to its key extraction. Logically independent; land in either order and rebase the helper shape.
 * **R274 (Backlog):** populates `OutcomeType.successProjection` so the nullability invariant lives on the carrier rather than an inline loop. This item needs `successProjection` populated with the single source-record-backed data field; either R274 lands first and this item consumes the populated projection, or this item populates it for the new shape and R274 generalises. Decide ordering at Ready.
 
-## Folded-in scope: unify carriers on the jOOQ record, drop `PojoResultType.NoBacking`
+## Carrier model and `NoBacking` removal moved to R276
 
-Decided during R276 review (2026-06-03). R276 makes record binding reflection-only; a consequence is that `PojoResultType.NoBacking` has no legitimate producer left. Its only remaining producer is `TypeBuilder.promoteSingleRecordPayloads`, which promotes a DML-carrier-shaped `PlainObjectType` to `NoBacking`. But a DML `RETURNING` yields a jOOQ `Record` / `Result<Record>`, so that carrier should bind to its jOOQ record (a `JooqTableRecordType`), exactly like this item's `@service` source-record carrier. There is no valid schema that should classify as `NoBacking`, so it is removed and DML and `@service` carriers are unified on the same Record-backed model.
-
-R276 stays scoped to removing the `@record`-directive reads and fixing tests in a direction that aligns with `NoBacking` being dropped (where `NoBacking` coverage is still required, e.g. `ProjectionCoverageTest`, it is reproduced via the surviving DML-carrier producer, never the dead standalone-`@record` path). This item owns the model change:
-
-* `TypeBuilder.promoteSingleRecordPayloads` enriches the carrier to a `JooqTableRecordType` (the input `@table`'s record) instead of `NoBacking`, so the carrier is a `ResultType` and its single data field classifies through `classifyChildFieldOnResultType` (the `dmlEmitted` / `serviceEmitted` arm), identical to the `@service` carrier.
-* Delete `GraphitronType.PojoResultType.NoBacking` (collapse `PojoResultType` to `Backed`), `TypeClassification.UnbackedPojoResult`, and `TypeBackingShape.NoBacking.UnbackedResult`; drop the `NoBacking` arms in `FetcherEmitter`, `FieldBuilder`, `GraphitronSchemaBuilder`, `CatalogBuilder`, and the `ProjectionCoverageTest` / `VariantCoverageTest` entries for the removed variants.
-
-This materially widens what the original `Spec -> Ready` sign-off covered, so it needs a fresh review when this item resumes (reopen `Ready -> Spec` once R276 lands, or re-confirm at the next gate).
+The carrier unification (DML and `@service` carriers bind to their jOOQ record) and the removal of `PojoResultType.NoBacking` were originally folded in here. They moved to R276 (record-binding-reflection-only) on 2026-06-03, because they are part of making reflection-only binding *sound and complete*, which is R276's reopened scope, and R276 is the item on trunk that broke and must be un-broken. Once R276 lands, every carrier is a `ResultType` (`JooqTableRecordType`) and the source-record carrier this item targets binds the same way. This item then consumes that and owns only the error-channel and data-projection wiring below.
 
 ## Out of scope
 

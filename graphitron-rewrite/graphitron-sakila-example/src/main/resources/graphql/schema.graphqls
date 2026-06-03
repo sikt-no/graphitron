@@ -16,6 +16,13 @@ type Query {
         className: "no.sikt.graphitron.rewrite.test.services.UserGreetingService",
         method: "greet"
     }, contextArguments: ["userId"])
+    # Producer for FilmDetailsCarrier: returns the film records as a list, binding the carrier to
+    # FilmRecord (JooqTableRecordType) by reflection. Drives the RecordTableField /
+    # RecordLookupTableField multi-parent DataLoader-batching tests.
+    filmDetailsBatch(ids: [Int!]!): [FilmDetailsCarrier!]! @service(service: {
+        className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService",
+        method: "filmsByIds"
+    })
     films(
         rating: MpaaRating @field(name: "RATING"),
         textRating: TextRating @field(name: "TEXT_RATING"),
@@ -613,31 +620,16 @@ type FilmCard @record(record: {className: "no.sikt.graphitron.rewrite.test.jooq.
     filmId: Int @field(name: "film_id")
 }
 
-# R43 commit 5 fixture: a @record-typed type whose parent is the full Film row record
-# (via ConstructorField passthrough from Film.detailsForMethod). The FilmRecord backing
-# makes this a JooqTableRecordType parent, which is the auto-FK-derive arm of
-# FieldBuilder.classifyChildFieldOnResultType's @tableMethod branch. languageId is
-# materialised on the parent record by being declared here so the framework projects
-# film.language_id; languageViaTableMethod's RecordTableMethodField fetcher then reads
-# parentRecord.get(film.LANGUAGE_ID) for the DataLoader key tuple. Both shapes of the
-# DTO-parent @tableMethod branch ship together (FK-auto-derive on the JooqTableRecord
-# parent + the explicit-@reference variant via the SDL directive).
-type FilmDetailsForMethod @record(record: {className: "no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord"}) {
+# Same-table nesting: a plain object child of @table Film with no boundary directive, so it
+# classifies as a NestingField bound to the film table and its columns project off the parent
+# film row. It used to carry a @tableMethod child (languageViaTableMethod) to exercise the
+# DTO-parent @tableMethod emit, but @record-typed parents no longer exist (R276) and the type
+# is now a NestingField; @tableMethod under a NestingField is not yet wired in the generator.
+# The @tableMethod child is deferred to R277 (tablemethod-under-nested-type).
+type FilmDetailsForMethod {
     filmId: Int @field(name: "film_id")
     languageId: Int @field(name: "language_id")
-    languageViaTableMethod: Language @tableMethod(
-        className: "no.sikt.graphitron.rewrite.test.services.SampleQueryService",
-        method: "tableMethodLanguage"
-    ) @reference(path: [{key: "film_language_id_fkey"}])
 }
-
-# Compilation-tier fixture: plain SDL Object carrier whose single data field 'card' has a
-# @record-backed element type (FilmCardWrapper, see below). No @record / @table on the
-# carrier itself; TypeBuilder.promoteSingleRecordCarriers (now consulting
-# BuildContext.scanStructuralDmlPayload) promotes it to PojoResultType.NoBacking, and the
-# unified per-field classifier on the producer-bound parent resolves 'card'. Wired through
-# createFilmCard on the Mutation below.
-type SingleFilmCardCarrier { card: FilmCardWrapper }
 
 type FilmCardWrapper @record(record: {className: "no.sikt.graphitron.rewrite.test.services.FilmCardData"}) {
     # AccessorKeyedSingle: the canonical Java-record accessor `film()` on FilmCardData returns
@@ -685,6 +677,23 @@ type FilmDetails @record(record: {className: "no.sikt.graphitron.rewrite.test.jo
     # film_id, with the lookup-input VALUES join narrowing by the caller-provided actor_id list.
     # @splitQuery is not needed on record-parent fields; classifyChildFieldOnResultType never
     # inspects it (record-parent table-bound fields are DataLoader-batched unconditionally).
+    actorsByLookup(actor_id: [Int!] @lookupKey): [Actor!]! @reference(path: [
+        {key: "film_actor_film_id_fkey"},
+        {key: "film_actor_actor_id_fkey"}
+    ])
+}
+
+# Record-backed sibling of FilmDetails, produced by the @service Query.filmDetailsBatch (which
+# returns List<FilmRecord>), so it binds to FilmRecord (JooqTableRecordType) by reflection. Its
+# language / actorsByLookup children classify as RecordTableField / RecordLookupTableField and
+# DataLoader-batch across the producer's list elements. This carries the multi-parent batching
+# coverage that FilmDetails lost when R276 reclassified it (reached only via the Film.filmDetails
+# passthrough, no producer) into a same-table NestingField. Kept a distinct type from FilmDetails
+# because a single SDL type cannot have two producers that disagree on the env.getSource() Java
+# type (the passthrough's parent row vs this service's FilmRecord).
+type FilmDetailsCarrier {
+    filmId:   Int          @field(name: "film_id")
+    language: [Language!]! @reference(path: [{key: "film_language_id_fkey"}])
     actorsByLookup(actor_id: [Int!] @lookupKey): [Actor!]! @reference(path: [
         {key: "film_actor_film_id_fkey"},
         {key: "film_actor_actor_id_fkey"}
@@ -843,10 +852,9 @@ type Film implements Node & Searchable @table(name: "film") @node {
         className: "no.sikt.graphitron.rewrite.test.services.SampleQueryService",
         method: "tableMethodLanguage"
     ) @reference(path: [{key: "film_language_id_fkey"}])
-    # R43 commit 5 fixture: child @tableMethod on a @record-typed parent (DTO-parent emit).
-    # ConstructorField passthrough: env.getSource() at FilmDetailsForMethod's depth is the
-    # parent Film row record (carrying all projected columns including language_id), which
-    # the FilmRecord-backed @record on FilmDetailsForMethod accepts as its source.
+    # Same-table nesting: FilmDetailsForMethod is a plain object child with no boundary directive,
+    # so it stays bound to this film row (a NestingField) and its columns project off the parent
+    # film record. See its definition for the deferred @tableMethod-under-nesting note (R277).
     detailsForMethod: FilmDetailsForMethod
 }
 
@@ -1639,17 +1647,5 @@ type Mutation {
         @service(service: {
             className: "no.sikt.graphitron.rewrite.test.services.FilmReviewService",
             method: "submitSetterShape"
-        })
-
-    # Compilation-tier fixture: @service Mutation returning a single-record carrier with a
-    # record-element data field. The service method returns FilmCardData directly; the
-    # carrier classifies as MutationServiceRecordField with a NoBacking ResultReturnType, and
-    # the data field 'card: FilmCardWrapper' resolves through the unified per-field classifier
-    # on the producer-bound parent. graphql-java's traversal walks through the carrier into
-    # FilmCardWrapper and beyond.
-    createFilmCard(filmId: Int!): SingleFilmCardCarrier
-        @service(service: {
-            className: "no.sikt.graphitron.rewrite.test.services.FilmCardFactoryService",
-            method: "create"
         })
 }

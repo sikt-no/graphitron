@@ -38,6 +38,8 @@ import static no.sikt.graphitron.rewrite.BuildContext.ARG_METHOD;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_NAME;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_SERVICE_REF;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_TYPE_NAME;
+import static no.sikt.graphitron.rewrite.BuildContext.ARG_EXTERNAL_FIELD_REF;
+import static no.sikt.graphitron.rewrite.BuildContext.DIR_EXTERNAL_FIELD;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_MUTATION;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_SERVICE;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_TABLE;
@@ -199,12 +201,14 @@ final class RecordBindingResolver {
             }
         });
 
-        // @service, @tableMethod, and @mutation (R178 DmlEmitted) on field definitions.
+        // @service, @externalField (ComputedField), @tableMethod, and @mutation (R178 DmlEmitted)
+        // on field definitions.
         ctx.schema.getAllTypesAsList().forEach(named -> {
             if (!(named instanceof GraphQLObjectType obj)) return;
             if (named.getName().startsWith("__")) return;
             for (GraphQLFieldDefinition field : obj.getFieldDefinitions()) {
                 groundServiceField(obj, field);
+                groundComputedField(obj, field);
                 groundTableMethodField(obj, field);
                 groundDmlMutationField(obj, field);
             }
@@ -227,38 +231,16 @@ final class RecordBindingResolver {
         SourceLocation loc = locationOf(field);
 
         // R276: ground the result-axis binding from the method's reflected return-element type.
-        // Binding is reflection-only; the @record directive is deprecated and ignored, so the
-        // producer's signature is the single source of truth for the SDL return type's backing
-        // class. A source-record carrier (an @service returning a single jOOQ TableRecord into a
-        // single-object payload that carries no @record) binds to that record and classifies as a
-        // JooqTableRecordType, the same as any other @service-produced payload.
-        //
-        // Cardinality-match guard: bind only when the SDL field and the Java return agree on
-        // cardinality. A single-object SDL field produced by a *collection* return is a carrier
-        // wrapper (e.g. `payload: FooPayload @service` whose method returns `List<BarRecord>`); the
-        // collection feeds the payload's inner list field, not the wrapper itself, so the wrapper
-        // does not bind (it stays a PlainObjectType, the R75 carrier path). The two cardinalities
-        // always match for @record payloads (single->single, list->list), so this preserves their
-        // binding while admitting the single-record carrier and excluding the list carrier.
-        //
-        // @table-backed-SDL-type guard: a @service whose SDL return type is itself @table-bound is
-        // a service-over-a-table-type (MutationServiceTableField / QueryServiceTableField). That
-        // type's backing comes from its @table (the RootTable observation), and the method's return
-        // is validated to match it elsewhere; grounding a RootService observation here would be a
-        // second producer for the same type and collide as a spurious multi-producer conflict. The
-        // result-axis binding is only for payload types that take their backing from the producer.
+        // Binding is reflection-only; the @service signature is the single source of truth for the
+        // SDL return type's backing class. The grounding rules (cardinality-match, the
+        // @table-backed-SDL guard, shouldBind) live in groundProducerResult, shared with
+        // @externalField / ComputedField, which take the same return rules as a @service field.
+        Class<?> retElement = peelReturnElement(method.getGenericReturnType());
+        groundProducerResult(field, retElement, isMultiCardinalityReturn(method.getGenericReturnType()),
+            () -> new ProducerBinding.RootService(
+                retElement, parent.getName(), field.getName(), className, methodName, loc));
+
         String resultSdl = unwrappedTypeName(field.getType());
-        if (resultSdl != null && !isTableBackedSdlType(resultSdl)) {
-            boolean sdlIsList = GraphQLTypeUtil.unwrapNonNull(field.getType()) instanceof GraphQLList;
-            boolean javaIsMulti = isMultiCardinalityReturn(method.getGenericReturnType());
-            if (sdlIsList == javaIsMulti) {
-                Class<?> retElement = peelReturnElement(method.getGenericReturnType());
-                if (retElement != null && shouldBind(retElement)) {
-                    addResultObservation(resultSdl, new ProducerBinding.RootService(
-                        retElement, parent.getName(), field.getName(), className, methodName, loc));
-                }
-            }
-        }
 
         // R178 step 2b: ServiceEmitted observation for @service-carrier candidates. The check
         // is structural: the payload SDL must be a GraphQL Object with exactly one @table-typed
@@ -287,6 +269,88 @@ final class RecordBindingResolver {
             addInputObservation(inputSdl, new ProducerBinding.RootService(
                 paramElement, parent.getName(), field.getName(), className, methodName, loc));
         }
+    }
+
+    /**
+     * Shared result-axis grounding for a reflected producer field. Grounds the SDL return type's
+     * backing from the producer's reflected return element, under the rules every producer shares:
+     *
+     * <ul>
+     *   <li><b>@table-backed-SDL guard:</b> a producer whose SDL return type is itself
+     *       {@code @table}-bound takes its backing from that {@code @table} (the {@link
+     *       ProducerBinding.RootTable} observation); grounding here would be a spurious second
+     *       producer and collide in the fold. Result-axis grounding is only for payload types that
+     *       take their backing from the producer.</li>
+     *   <li><b>Cardinality-match guard:</b> bind only when the SDL field and the reflected return
+     *       agree on cardinality. A single-object SDL field produced by a collection return is a
+     *       list carrier whose collection feeds an inner list field, not the wrapper, so the
+     *       wrapper does not bind.</li>
+     *   <li><b>{@link #shouldBind}:</b> only bindable element classes ground.</li>
+     * </ul>
+     *
+     * <p>The producer-specific part (which method, how its return element is reflected) is the
+     * caller's; the return rules live here so {@code @service} and {@code @externalField} /
+     * {@code ComputedField} share one definition. {@code binding} is a supplier so it is built only
+     * when grounding actually proceeds. This is the seam a later producer-grounding unification
+     * consolidates around.
+     */
+    private void groundProducerResult(GraphQLFieldDefinition field, Class<?> reflectedElement,
+            boolean reflectedIsMulti, java.util.function.Supplier<ProducerBinding> binding) {
+        String resultSdl = unwrappedTypeName(field.getType());
+        if (resultSdl == null || isTableBackedSdlType(resultSdl)) return;
+        boolean sdlIsList = GraphQLTypeUtil.unwrapNonNull(field.getType()) instanceof GraphQLList;
+        if (sdlIsList != reflectedIsMulti) return;
+        if (reflectedElement == null || !shouldBind(reflectedElement)) return;
+        addResultObservation(resultSdl, binding.get());
+    }
+
+    /**
+     * Grounds the result-axis binding for an {@code @externalField} field, the SDL directive whose
+     * model field is {@link no.sikt.graphitron.rewrite.model.ChildField.ComputedField}. It is only
+     * legal on a child field of a {@code @table}-typed parent: its developer-supplied static method
+     * takes that parent's jOOQ {@code Table<?>} and returns {@code org.jooq.Field<X>}, where
+     * {@code X} is the backing class for the SDL return type (a payload reached through the computed
+     * field, e.g. a lifted {@code FilmRecord} or a hand-rolled record). The return type is not its
+     * own producer variant: it grounds the same {@link ProducerBinding.RootService} observation
+     * under the same return rules as a {@code @service} field ({@link #groundProducerResult}), so a
+     * carrier reached only through {@code @externalField} binds and classifies exactly as a
+     * {@code @service}-produced payload would. Full method-shape validation (public static, single
+     * {@code Table<?>} parameter) stays with {@code ExternalFieldDirectiveResolver}; here we only
+     * need {@code X} to ground the binding.
+     */
+    private void groundComputedField(GraphQLObjectType parent, GraphQLFieldDefinition field) {
+        if (!field.hasAppliedDirective(DIR_EXTERNAL_FIELD)) return;
+        GraphQLAppliedDirective dir = field.getAppliedDirective(DIR_EXTERNAL_FIELD);
+        var refArg = dir.getArgument(ARG_EXTERNAL_FIELD_REF);
+        if (refArg == null || refArg.getValue() == null) return;
+        Map<String, Object> ref = asMap(refArg.getValue());
+        String className = Optional.ofNullable(ref.get(ARG_CLASS_NAME)).map(Object::toString).orElse(null);
+        if (className == null) return;
+        // method: defaults to the GraphQL field name when omitted, mirroring ExternalFieldDirectiveResolver.
+        String methodName = Optional.ofNullable(ref.get(ARG_METHOD)).map(Object::toString).orElse(field.getName());
+        Method method = findUniqueMethod(className, methodName);
+        if (method == null) return;
+        Class<?> element = jooqFieldElement(method.getGenericReturnType());
+        SourceLocation loc = locationOf(field);
+        groundProducerResult(field, element, false,
+            () -> new ProducerBinding.RootService(
+                element, parent.getName(), field.getName(), className, methodName, loc));
+    }
+
+    /**
+     * Extracts {@code X} from a {@code org.jooq.Field<X>} reflected return type, or {@code null}
+     * when the return is not a parameterised {@code Field<X>} with a {@code Class} element (the
+     * stricter {@code @externalField} return-shape validation lives in
+     * {@code ServiceCatalog.reflectExternalField}).
+     */
+    private static Class<?> jooqFieldElement(java.lang.reflect.Type genericReturn) {
+        if (genericReturn instanceof java.lang.reflect.ParameterizedType pt
+                && pt.getRawType() == org.jooq.Field.class
+                && pt.getActualTypeArguments().length == 1
+                && pt.getActualTypeArguments()[0] instanceof Class<?> x) {
+            return x;
+        }
+        return null;
     }
 
     /**
@@ -484,6 +548,12 @@ final class RecordBindingResolver {
     // ===== Phase 2: parent-accessor propagation =====
 
     private void propagateAccessorChains() {
+        // Fold the root-producer observations into resultMemo/inputMemo first, so the loop below
+        // reads concrete bindings on its first pass. Without this the snapshot (further down) starts
+        // empty and the cascade never propagates: it lay dormant while @record/@table bound every
+        // nested type independently, and R276 makes it load-bearing (e.g. a @record type reached
+        // only through a parent accessor, with no @record directive left to bind it).
+        foldAll();
         // Iterate until no new bindings are produced. Each pass walks every SDL Object/Input
         // type with a currently-observed binding and propagates through its accessor edges.
         boolean changed = true;
@@ -519,6 +589,15 @@ final class RecordBindingResolver {
             if (field.hasAppliedDirective(DIR_TABLE_METHOD)) continue;
             String childSdl = unwrappedTypeName(field.getType());
             if (childSdl == null) continue;
+            // Don't re-ground a child SDL type that already has a binding (e.g. an @table type
+            // bound via RootTable). The cascade exists to bind types that have no other producer;
+            // adding an accessor observation to an already-bound type is at best redundant and at
+            // worst a spurious conflict when the accessor's element is heterogeneous (a `film: Film`
+            // field whose parent accessor returns LanguageRecord, not FilmRecord, would otherwise
+            // ground Film <- LanguageRecord, collide with @table's FilmRecord, and knock Film out of
+            // its @table classification). The field classifier handles such a mismatch as an
+            // author-error rejection on the TableRecord path; the cascade must not pre-empt it.
+            if (resultMemo.get(childSdl) != null) continue;
             // Find the accessor method/field on the parent class.
             Type accessorReturn = findAccessorReturnType(parentClass, field.getName());
             if (accessorReturn == null) continue;

@@ -58,11 +58,13 @@ class R157PipelineTest {
     @Test
     void recordBackedTypeSurfacesComponentsThroughSnapshot() {
         var artefacts = build("""
-            type FilmCard @record(record: {className: "no.sikt.graphitron.lsp.fixtures.R157FilmRecord"}) {
+            type FilmCard {
                 filmId: Int @field(name: "filmId")
                 title: String @field(name: "title")
             }
-            type Query { x: FilmCard }
+            type Query {
+                x: FilmCard @service(service: {className: "no.sikt.graphitron.lsp.fixtures.R157Service", method: "makeFilmRecord"})
+            }
             """);
 
         var backing = artefacts.snapshot().typesByName().get("FilmCard");
@@ -91,11 +93,13 @@ class R157PipelineTest {
     @Test
     void pojoBackedTypeSurfacesBeanAccessorsThroughSnapshot() {
         var artefacts = build("""
-            type FilmPojoView @record(record: {className: "no.sikt.graphitron.lsp.fixtures.R157FilmPojo"}) {
+            type FilmPojoView {
                 filmId: Int @field(name: "filmId")
                 title: String @field(name: "title")
             }
-            type Query { x: FilmPojoView }
+            type Query {
+                x: FilmPojoView @service(service: {className: "no.sikt.graphitron.lsp.fixtures.R157Service", method: "makeFilmPojo"})
+            }
             """);
 
         var backing = artefacts.snapshot().typesByName().get("FilmPojoView");
