@@ -726,6 +726,16 @@ final class RecordBindingResolver {
             if (!(current instanceof ParameterizedType pt)) return null;
             if (!(pt.getRawType() instanceof Class<?> raw)) return null;
             Type[] args = pt.getActualTypeArguments();
+            // A @service batch lift returns Map<ParentKey, Value> (a developer-written batch
+            // function: Set<key> -> Map<key, value>); the field's backing is the map's Value, so
+            // peel to the second type argument. This is the reflection-only replacement for the old
+            // @record class on such batch-keyed payloads (without it the raw Map is treated as the
+            // element, fails shouldBind, and the field falls back to the whole Map as its value
+            // type, producing a doubly-nested Map<key, Map<key, value>> at the loader).
+            if (java.util.Map.class.isAssignableFrom(raw)) {
+                if (args.length == 2) { current = args[1]; continue; }
+                return raw;
+            }
             // Recognise common single-arg containers.
             boolean unwrap =
                 java.util.List.class.isAssignableFrom(raw)
@@ -762,6 +772,15 @@ final class RecordBindingResolver {
                 || java.util.Collection.class.isAssignableFrom(raw)
                 || org.jooq.Result.class.isAssignableFrom(raw)) {
                 return true;
+            }
+            if (java.util.Map.class.isAssignableFrom(raw)) {
+                // A @service batch lift Map<ParentKey, Value>: the field's cardinality follows the
+                // Value (Map<key, List<X>> is a to-many field; Map<key, X> is single). Peel to Value
+                // and continue, mirroring peelReturnElement.
+                Type[] args = pt.getActualTypeArguments();
+                if (args.length != 2) return false;
+                current = args[1];
+                continue;
             }
             if (java.util.Optional.class.isAssignableFrom(raw)
                 || java.util.concurrent.CompletableFuture.class.isAssignableFrom(raw)) {

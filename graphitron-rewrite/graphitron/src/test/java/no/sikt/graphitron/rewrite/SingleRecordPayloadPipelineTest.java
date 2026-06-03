@@ -270,14 +270,15 @@ class SingleRecordPayloadPipelineTest {
         assertThat(mutField).isInstanceOf(MutationField.MutationBulkDmlRecordField.class);
     }
 
-    // ===== Carrier promotion: plain SDL Object becomes PojoResultType.NoBacking =====
+    // ===== Carrier binding: plain SDL Object binds to its producer's JooqTableRecordType =====
 
     @Test
-    void payload_plainSdlObject_promotesToPojoResultTypeNoBacking() {
+    void payload_plainSdlObject_bindsToJooqTableRecordType() {
         var schema = TestSchemaHelper.buildSchema(payloadDml(DmlKind.INSERT,
             "type FilmPayload { films: [Film!] }"));
         var carrierType = schema.type("FilmPayload");
-        assertThat(carrierType).isInstanceOf(GraphitronType.PojoResultType.NoBacking.class);
+        // R276: a DML carrier binds to its RETURNING table's record (NoBacking is removed).
+        assertThat(carrierType).isInstanceOf(GraphitronType.JooqTableRecordType.class);
     }
 
     @Test
@@ -460,7 +461,10 @@ class SingleRecordPayloadPipelineTest {
             """);
 
         var carrier = schema.type("FilmDtoPayload");
-        assertThat(carrier).isInstanceOf(GraphitronType.PojoResultType.NoBacking.class);
+        // R276: a carrier-shaped payload that no producer returns (orphan) has no record to bind to,
+        // so it stays a PlainObjectType and its data field stays unregistered. The soundness pass
+        // will later reject such an orphan as an UnclassifiedType; until then it is an inert plain object.
+        assertThat(carrier).isInstanceOf(GraphitronType.PlainObjectType.class);
 
         assertThat(schema.field("FilmDtoPayload", "film")).isNull();
     }

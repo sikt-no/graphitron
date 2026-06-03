@@ -105,10 +105,11 @@ class R96RecordBindingPipelineTest {
     }
 
     @Test
-    void plainCarrier_serviceReturnDoesNotBindWrapperType_R75CarrierPathPreserved() {
-        // FilmListPayload is a plain SDL Object (no @record) returned by a @service mutation.
-        // R96's walker does NOT bind the carrier — the producer feeds the inner data field,
-        // not the wrapper. The R75 Phase 1 promotion to PojoResultType.NoBacking is preserved.
+    void serviceListCarrier_bindsWrapperToJooqTableRecord() {
+        // FilmListPayload is a plain SDL Object (no @record) returned by a @service mutation whose
+        // method returns List<FilmRecord>. R276 unifies carriers on JooqTableRecordType: the wrapper
+        // binds to the element's table record (the R75 "wrapper does not bind" / NoBacking path is
+        // retired), and the inner data field reads off it through the standard record-backed path.
         var schema = TestSchemaHelper.buildSchema("""
             type Film @table(name: "film") { title: String }
             type FilmListPayload { films: [Film!] }
@@ -120,7 +121,7 @@ class R96RecordBindingPipelineTest {
             """);
 
         assertThat(schema.type("FilmListPayload"))
-            .isInstanceOf(GraphitronType.PojoResultType.NoBacking.class);
+            .isInstanceOf(GraphitronType.JooqTableRecordType.class);
     }
 
     @Test

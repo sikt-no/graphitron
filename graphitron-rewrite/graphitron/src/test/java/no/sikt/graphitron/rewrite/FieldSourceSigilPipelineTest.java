@@ -62,11 +62,11 @@ class FieldSourceSigilPipelineTest {
         var mutField = schema.field("Mutation", "runFilms");
         assertThat(mutField).isInstanceOf(MutationField.MutationServiceRecordField.class);
 
-        // The carrier promotes to PojoResultType.NoBacking and the data field classifies as
-        // SingleRecordTableField (the existing R75 Phase 1 shape; the @field(name: "$source")
-        // directive is a no-op confirmation of that binding).
+        // R276: the carrier binds to its element's JooqTableRecordType (NoBacking retired); the data
+        // field classifies as SingleRecordTableField (the @field(name: "$source") directive is a
+        // no-op confirmation of that binding).
         assertThat(schema.type("FilmListPayload"))
-            .isInstanceOf(GraphitronType.PojoResultType.NoBacking.class);
+            .isInstanceOf(GraphitronType.JooqTableRecordType.class);
         var dataField = schema.field("FilmListPayload", "films");
         assertThat(dataField).isInstanceOf(ChildField.SingleRecordTableField.class);
         var srtf = (ChildField.SingleRecordTableField) dataField;

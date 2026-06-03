@@ -225,23 +225,28 @@ class TypeBuilder {
         // issued IDs, which would violate the durability invariant.
         validateNodeTypeIdUniqueness(ctx.typeRegistry);
 
-        // R75 Phase 1: promote plain SDL Objects that pass the single-record-carrier trigger
-        // to PojoResultType.NoBacking. After promotion the type machinery treats them as a
-        // ResultType arm (resolveReturnType produces ResultReturnType; the mutation classifier
-        // reads the trigger to admit MutationDmlRecordField); plain SDL Objects that don't
-        // match the trigger remain as PlainObjectType for the developer to wire by hand.
+        // R75 Phase 1 / R276: bind plain SDL Objects that pass the single-record-carrier trigger to
+        // their producer's jOOQ table record (JooqTableRecordType), so the mutation/service
+        // classifier resolves the data field through the standard record-backed path. Carrier-shaped
+        // payloads with no producer stay PlainObjectType and are rejected downstream.
         promoteSingleRecordPayloads();
 
         return ctx.typeRegistry.entries();
     }
 
     /**
-     * R178 Phase 4 — walks every {@link PlainObjectType} in the registry and promotes those
-     * whose structural carrier-shape scan ({@link BuildContext#scanStructuralDmlPayload})
-     * admits, to {@link GraphitronType.PojoResultType.NoBacking}. Must run after the second
-     * pass so the scan sees the fully-classified element-type registry; the scan reads
-     * {@code types.get(dataElementName)} and requires it to be a {@link TableBackedType}
-     * (or a recognized {@code @record} / ID element kind).
+     * R178 Phase 4 / R276 — walks every {@link PlainObjectType} in the registry and binds those
+     * whose structural carrier-shape scan ({@link BuildContext#scanStructuralDmlPayload}) admits
+     * to a {@link GraphitronType.JooqTableRecordType}: the carrier is a payload over a DML
+     * {@code RETURNING} or an {@code @service} method's jOOQ record, so it binds to that producer's
+     * table record and its data field classifies through the standard record-backed path, exactly
+     * like any other {@code JooqTableRecordType} payload.
+     *
+     * <p>Must run after the second pass so the scan sees the fully-classified element-type registry
+     * and so the {@code DmlEmitted} / {@code ServiceEmitted} producer bindings are grounded. A
+     * carrier-shaped payload that no producer returns (orphan) has no record to bind to; it stays a
+     * {@link PlainObjectType} and is rejected by the soundness pass. {@code PojoResultType.NoBacking}
+     * is removed: there is no valid schema that classifies as a backing-less result.
      */
     private void promoteSingleRecordPayloads() {
         var plainObjectNames = ctx.typeRegistry.entries().entrySet().stream()
@@ -249,11 +254,27 @@ class TypeBuilder {
             .map(java.util.Map.Entry::getKey)
             .toList();
         for (var name : plainObjectNames) {
-            if (ctx.scanStructuralDmlPayload(name) instanceof BuildContext.DmlPayloadScan.Admit) {
-                var current = (PlainObjectType) ctx.typeRegistry.get(name);
-                ctx.typeRegistry.enrich(name,
-                    new GraphitronType.PojoResultType.NoBacking(name, current.location()));
+            if (!(ctx.scanStructuralDmlPayload(name) instanceof BuildContext.DmlPayloadScan.Admit)) {
+                continue;
             }
+            var current = (PlainObjectType) ctx.typeRegistry.get(name);
+            // A producer-backed carrier binds its wrapper to the producer's table record: a DML
+            // RETURNING or an @service method yields a Record (single) or Result<Record> (multi),
+            // so the carrier IS that record, single or multi cardinality alike. Both DML
+            // (DmlEmitted) and @service (ServiceEmitted) carriers unify on JooqTableRecordType; the
+            // inner data field reads off the record through the standard record-backed path, and
+            // the cardinality lives on the producing field, not the carrier type. A carrier-shaped
+            // payload with no matching producer (orphan, or a return whose element/cardinality does
+            // not match the carrier so neither RootService nor *Emitted grounds) stays a
+            // PlainObjectType and is rejected by the soundness pass — there is no record to bind to.
+            var table = dmlEmittedBinding(name).map(b -> b.tableRef())
+                .or(() -> serviceEmittedBinding(name).map(b -> b.tableRef()))
+                .orElse(null);
+            if (table == null) {
+                continue;
+            }
+            ctx.typeRegistry.enrich(name,
+                new GraphitronType.JooqTableRecordType(name, current.location(), null, table));
         }
     }
 
