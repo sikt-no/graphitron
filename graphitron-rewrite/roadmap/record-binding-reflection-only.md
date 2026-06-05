@@ -1,7 +1,7 @@
 ---
 id: R276
 title: Record binding is reflection-only and sound; remove @record reads, ground all producers, eliminate PlainObjectType
-status: In Progress
+status: In Review
 bucket: cleanup
 priority: 1
 theme: model-cleanup
