@@ -1399,6 +1399,20 @@ type FilmServicePayload {
     film: Film
 }
 
+# R275 execution-tier fixture (source-record-carrier-service-error-channel.md): the source-record
+# carrier shape — a @service producer returning a bare FilmRecord into a payload that pairs the
+# @table-bound `film` data field with an `errors` union. This is the opptak `{ sak: Sak, errors }`
+# shape on sakila. Because the payload carries an errors field, the producer wraps the record in
+# Outcome, so `film` classifies as SingleRecordTableField with ResultRowWalk envelope
+# OUTCOME_SUCCESS: its fetcher narrows Outcome.Success and reads off success.value(), rendering
+# null on the ErrorList arm. The errors field is the WrapperArm transport, resolving null (not [])
+# on the success arm. Distinct from FilmServicePayload (no errors field -> DIRECT envelope) and from
+# FilmReviewWithFilmPayload (a @record payload whose film is a DataLoader-batched @sourceRow field).
+type FilmCarrierWithErrorsPayload {
+    film: Film
+    errors: [FilmReviewError]
+}
+
 type FilmsServicePayload {
     films: [Film!]
 }
@@ -1552,6 +1566,16 @@ type Mutation {
     serviceFilmById(id: Int!): FilmServicePayload
         @service(service: {
             className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService",
+            method: "filmById"
+        })
+
+    # R275 source-record carrier with an error channel: the producer returns a bare FilmRecord,
+    # the payload pairs `film` (SingleRecordTableField, OUTCOME_SUCCESS envelope) with `errors`.
+    # id 999 throws the mapped @error (ErrorList arm -> film null, typed error); any other id
+    # resolves the film off Outcome.Success.value() and errors null on the success arm.
+    serviceFilmByIdWithErrors(id: Int!): FilmCarrierWithErrorsPayload
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierWithErrorsService",
             method: "filmById"
         })
 

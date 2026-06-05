@@ -223,6 +223,10 @@ class RejectionSeverityCoverageTest {
             return new no.sikt.graphitron.rewrite.model.ErrorChannelWalkerError.NonNullableSuccessProjectionField(
                 "FilmPayload", "film");
         }
+        if (permit == no.sikt.graphitron.rewrite.model.ErrorChannelWalkerError.NonNullableErrorsField.class) {
+            return new no.sikt.graphitron.rewrite.model.ErrorChannelWalkerError.NonNullableErrorsField(
+                "FilmPayload", "errors");
+        }
         if (permit == no.sikt.graphitron.rewrite.model.ErrorChannelWalkerError.ChannelRuleViolation.class) {
             return new no.sikt.graphitron.rewrite.model.ErrorChannelWalkerError.ChannelRuleViolation(
                 "FilmPayload", "errors", 7, "two VALIDATION handlers in one channel");

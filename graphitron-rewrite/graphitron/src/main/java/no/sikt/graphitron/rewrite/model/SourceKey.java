@@ -140,7 +140,7 @@ public record SourceKey(
                 + "recordClass cannot carry a non-empty path (the service already produced a "
                 + "target-aligned record; walking past target is structurally redundant).");
         }
-        if (reader instanceof Reader.ResultRowWalk) {
+        if (reader instanceof Reader.ResultRowWalk rrw) {
             boolean wrapOk = wrap instanceof Wrap.Record
                 || (wrap instanceof Wrap.TableRecord tr
                     && target != null
@@ -156,6 +156,17 @@ public record SourceKey(
                 throw new IllegalArgumentException(
                     "SourceKey: Reader.ResultRowWalk requires empty path (target-aligned by "
                     + "construction; the producer's row shape IS the data table).");
+            }
+            // R275: the Outcome envelope only ever pairs with the @service carrier (Wrap.TableRecord);
+            // the DML carrier (Wrap.Record) delivers its row(s) bare on env.getSource(). Pinning the
+            // coupling here lets the data-field emitter handle the narrowing in the TableRecord arm
+            // only, with no envelope branch in the Record (DML) arm.
+            if (rrw.envelope() == Reader.SourceEnvelope.OUTCOME_SUCCESS
+                    && !(wrap instanceof Wrap.TableRecord)) {
+                throw new IllegalArgumentException(
+                    "SourceKey: Reader.ResultRowWalk(OUTCOME_SUCCESS) requires Wrap.TableRecord "
+                    + "(the Outcome envelope is the @service error-channel carrier, whose producer "
+                    + "returns a typed TableRecord); got " + wrap);
             }
         }
     }
@@ -228,6 +239,26 @@ public record SourceKey(
     public sealed interface Reader {
 
         /**
+         * How a {@link ResultRowWalk} reaches its source row(s) inside {@code env.getSource()}.
+         * The row shape ({@link Wrap}) is identical on both arms; this axis records only the
+         * outer envelope the upstream producer wrapped the row(s) in, so the data-field fetcher
+         * knows whether to read {@code env.getSource()} directly or unwrap an {@code Outcome} first.
+         */
+        enum SourceEnvelope {
+            /** {@code env.getSource()} is the row(s) directly (DML mutation carrier). */
+            DIRECT,
+            /**
+             * {@code env.getSource()} is the non-null {@code Outcome} of an error-channel
+             * {@code @service} carrier (R244/R275): the row(s) live in
+             * {@code Outcome.Success.value()}, and the {@code Outcome.ErrorList} arm resolves the
+             * data field to {@code null}. Set at classification time when the carrier payload
+             * carries an {@code errors} field, the same condition that gives the producer its
+             * {@code ErrorChannel.Mapped} channel.
+             */
+            OUTCOME_SUCCESS
+        }
+
+        /**
          * Catalog-FK column read off the parent record. The body emits
          * {@code parent.get(fkColumn)} (or the equivalent indexed access against a
          * {@code TableRecord}) and packages the result as a {@code RowN<...>} key.
@@ -277,13 +308,19 @@ public record SourceKey(
         record ServiceUntypedRecord() implements Reader {}
 
         /**
-         * Source rows come from a {@code Result<RecordN<...>>} that an upstream DML
-         * mutation fetcher produced and graphql-java is now traversing. The data field's
-         * fetcher reads {@code env.getSource()} typed by {@link SourceKey#wrap()} ×
-         * {@link SourceKey#columns()} and extracts {@code SourceRow} instances directly;
-         * the single-record DML carrier's data field is plain {@code DataFetcher}, not
-         * DataLoader-batched, so the paired {@link LoaderRegistration} is absent at the
-         * field record level.
+         * Source rows come from an upstream producer's row(s) that graphql-java is now
+         * traversing. The data field's fetcher reads them off {@code env.getSource()} typed by
+         * {@link SourceKey#wrap()} × {@link SourceKey#columns()} and extracts {@code SourceRow}
+         * instances directly; the single-record carrier's data field is plain {@code DataFetcher},
+         * not DataLoader-batched, so the paired {@link LoaderRegistration} is absent at the field
+         * record level.
+         *
+         * <p>{@link #envelope()} records whether {@code env.getSource()} is the row(s) directly
+         * ({@link SourceEnvelope#DIRECT}, DML mutation carrier) or the non-null {@code Outcome} of
+         * an error-channel {@code @service} carrier ({@link SourceEnvelope#OUTCOME_SUCCESS}, whose
+         * row(s) live in {@code Outcome.Success.value()}). This is the only difference between the
+         * DML and {@code @service} error-channel carriers at the read site, so it rides on the
+         * reader rather than being re-derived from sibling fields at emit time.
          *
          * <p>{@link SourceKey#path()} is empty by construction (target-aligned: the
          * producer's row shape IS the data table); {@link SourceKey#wrap()} is either
@@ -295,6 +332,10 @@ public record SourceKey(
          * {@link Cardinality#MANY}). The structural invariants are enforced by
          * {@link SourceKey}'s compact constructor.
          */
-        record ResultRowWalk() implements Reader {}
+        record ResultRowWalk(SourceEnvelope envelope) implements Reader {
+            public ResultRowWalk {
+                Objects.requireNonNull(envelope, "envelope");
+            }
+        }
     }
 }
