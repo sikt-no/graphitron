@@ -1,7 +1,7 @@
 ---
 id: R279
 title: Field-first reachability-driven classification driver
-status: Spec
+status: Ready
 bucket: architecture
 priority: 4
 theme: structural-refactor
