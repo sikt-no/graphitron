@@ -30,11 +30,14 @@ behind R278.
 
 Replace the type-pass / field-pass / four-post-pass sequence with a single
 reachability-driven, field-first classification walk, then validate, then emit. This is a
-slice under the R222 (`dimensional-model-pivot`) umbrella. It **absorbs** R278
-(`classify-polymorphic-types-in-field-context`, now retired into the "Polymorphic types
-and participants" section below) and **supersedes** R166
-(`graphqlschemavisitor-driven-emission`); R279 is the field-context classification
-mechanism R278 called for. It supersedes R166 rather than implementing
+slice under the R222 (`dimensional-model-pivot`) umbrella and **supersedes** R166
+(`graphqlschemavisitor-driven-emission`). It is a behaviour-preserving restructure of the
+*driver*: it does not redesign how polymorphic types (interface/union) classify. The walk
+classifies them exactly as the current type pass does (the existing `ParticipantRef`
+model, unchanged), just triggered on demand from the reaching field. The separate question
+of whether `ParticipantRef` is the right primitive at all (the proposal to drop it in
+favour of sealed `TableUnionType` / `ErrorUnionType` variants) is R278's scope, orthogonal
+to and not a prerequisite of this item. It supersedes R166 rather than implementing
 it: R166 proposed a `GraphQLSchemaVisitor`-driven *emission* walk to fix per-emitter skip-
 filter drift (the R165 bug class: N emitters each choosing their own skip rules, so
 `FetcherRegistrationsEmitter` keeps an empty-bodied keyset entry, `ObjectTypeGenerator`
@@ -82,10 +85,9 @@ classified `GraphitronSchema` and are not visitor-based.
   single per-name classification.
   - *Directive-bearing types are a pure function of the target.* The only legal type
     directives are `@node` / `@table` / `@error`; the type classifies from its own
-    directives, and a polymorphic type additionally reads its *participants'* directives
-    (`ParticipantRef` gains the `Error` permit R278 flagged, so participants classify
-    `TableBound` / `Unbound` / `Error`). Same target, same verdict, regardless of who
-    points at it.
+    directives, and a polymorphic type additionally reads its participants' directives
+    (as today, via the existing `ParticipantRef` model). Same target, same verdict,
+    regardless of who points at it.
   - *Directiveless types inherit their classification from the fields pointing at them.*
     They fall out as `NestingType`, payload carrier, etc. from the reaching field, so the
     verdict is field-derived, not target-intrinsic. A second field that re-derives a
@@ -93,11 +95,6 @@ classified `GraphitronSchema` and are not visitor-based.
     demote to `UnclassifiedType` at classification time, which the validator surfaces as
     the deterministic conflict error. (Order-independent: compatible derivations agree
     regardless of arrival order, and any incompatible pair demotes the same way.)
-- *Population strategy leaves type classification entirely.* Whether a non-`@table`
-  polymorphic member is *legal* depends on how the returning field populates the type
-  (generated SQL polymorphism requires all members table-bound; service/reflection
-  dispatch does not). That validity check moves to the validator in field context
-  (closing R278), keeping the type verdict pure.
 - *Arguments and inputs are read from the field definition, not walked.* The visitor
   visits fields only. Argument interpretation is a function of the field's classification,
   and everything the classifier needs about arguments and the input-type trees they reach
@@ -107,46 +104,6 @@ classified `GraphitronSchema` and are not visitor-based.
   split stays; what collapses is the intra-classify multiphase. Classification must be
   order-independent; validation runs sorted for stable diagnostics. Both validation and
   emission iterate the classified `GraphitronSchema`.
-
-## Polymorphic types and participants (absorbed from R278)
-
-R276 made type classification reflection-only and left directiveless objects unclassified
-at the type pass, which surfaced that the participant / polymorphic-type model classifies
-types *in isolation* rather than in the context of the returning field. The field-first
-walk is the mechanism that fixes this; the specifics R278 worked out, to fold into the
-Spec:
-
-- *Participant kinds.* `ParticipantRef permits TableBound, Unbound` today overloads
-  `Unbound` with two unrelated meanings (an `@error` member vs a directiveless plain-
-  interface implementor). Add a dedicated `Error` participant kind so a member classifies
-  `TableBound` / `Unbound` / `Error` from its directive, and retire the overloaded
-  `Unbound` arm.
-- *Population strategy is the field's, and it decides admissibility and `TypeResolver`
-  dispatch.* Generated SQL polymorphism reads members off a `__typename` column from a
-  multi-table query, so every member must be table-bound; service/reflection population
-  dispatches by runtime source class, so a non-`@table` member is fine. The field carries
-  the strategy; the validator enforces member admissibility against it. This lets
-  `buildParticipantList` shed its `allowNonTableMembers` flag.
-- *An all-`@error` union is an `ErrorType`.* A type with `@error` is an `ErrorType`, and a
-  union of `ErrorType` is too. Today it is a `UnionType` with `@error` `Unbound`
-  participants, special-cased downstream by `GraphitronSchemaClassGenerator`'s `isErrorUnion`
-  fork plus a source-class `TypeResolver`. Classify it as an `ErrorType` (aggregating the
-  members' handlers, keyed per member type for the `TypeResolver` dispatch) and let the
-  emitter read it off the `ErrorType` instead of re-deriving the shape.
-- *Service/reflection-populated non-error polymorphic types are an unhandled gap to
-  specify or explicitly reject.* `TypeBuilder.classifyType` never consults
-  `bindings.resolveResult` for interfaces/unions (unlike objects), so a polymorphic type
-  returned by an `@service` is just a plain `InterfaceType` / `UnionType`. The emitter has
-  only three `TypeResolver` strategies (TableInterfaceType discriminator column; plain
-  InterfaceType/UnionType `__typename` column from a SQL result; `@error`-only source-
-  class) and **none** for a service/reflection-populated non-error polymorphic type, whose
-  runtime objects carry no `__typename` column. The field-context classification makes this
-  gap explicit; the Spec must either implement the strategy or reject the construct at
-  validate time.
-- *Cleanup markers.* The `R278` markers in `TypeBuilder` and `ParticipantRef`, the pre-R276
-  `buildParticipantList` behaviour (`@table` -> `TableBound`; non-`@table` -> `Unbound`
-  when `allowNonTableMembers` else error; `@error` riding the second `Unbound` arm), and
-  the `allowNonTableMembers` flag are the concrete undo targets.
 
 ## Implementation plan (slicing)
 
@@ -168,44 +125,35 @@ design principles, shape it more than anything else:
 - *No classifier invariant spans a slice boundary without a validator mirror.* Where a slice
   retires an enforcement mechanism, the replacement lands in the same commit.
 
-Slices, in landing order:
+Polymorphic-type classification is preserved unchanged throughout (the `ParticipantRef`
+redesign is R278, separate). Slices, in landing order:
 
-1. **R278 pure-model pieces, under the old driver.** Add the `ParticipantRef.Error` permit and
-   retire the overloaded `Unbound` `@error` meaning; classify an all-`@error` union/interface as
-   `ErrorType` (aggregating member handlers keyed per member for the `TypeResolver`), updating
-   `GraphitronSchemaClassGenerator`'s `isErrorUnion` fork and the validator. This lands *first*
-   because the on-demand type classification in slice 4 *consumes* the `Error` permit (the
-   dependency arrow points this way), and landing it under the known-good old driver isolates
-   "did the new variant classify right" from "did the new driver classify right." Decide the
-   service/reflection-populated non-error polymorphic gap here; safe default per "validator
-   mirrors classifier" is a validate-time rejection (`STUBBED_VARIANTS`-style build failure)
-   unless the `TypeResolver` strategy is implemented. Keep `allowNonTableMembers` for now (it is
-   field-context-dependent; retired in slice 5). Gate: truth table (`ErrorTypeCase`) + sakila.
-2. **Reachability observatory + differential bisect aid (additive, zero behaviour change).**
+1. **Reachability observatory + differential bisect aid (additive, zero behaviour change).**
    Build the `SchemaTraverser` walk that computes the reachable set (seed: Query + Mutation +
    `@node`/`@key` directive scan; descend field->target, interface->implementor,
    union->members) and the projection-snapshot comparator. The test asserts the *durable*
    invariant **reachable ⊆ classified** (every reachable type is classified, the safety property
    every later slice preserves) and separately *measures* the classified-but-unreachable orphan
-   set as an inventory slice 7 will prune, phrased as an observation, not a correctness invariant.
-3. **On-demand memoised single-type classification (byte-identical output).** Extract per-type
+   set as an inventory slice 6 will prune, phrased as an observation, not a correctness invariant.
+2. **On-demand memoised single-type classification (byte-identical output).** Extract per-type
    classification (and participant enrichment) from the eager loop into a memoised single-type
    entry, but keep driving it eagerly over `getAllTypesAsList()` so output is unchanged. This
    decouples "how a type is classified" from "when," creating the entry point the walk calls.
    Gate: truth table + sakila, identical output (differential as bisect aid).
-4. **The inversion.** Replace the eager type pass + all-objects field pass with the field-first
-   walk: seed, visit fields, classify each field, classify its target on demand (slice 3's
+3. **The inversion.** Replace the eager type pass + all-objects field pass with the field-first
+   walk: seed, visit fields, classify each field, classify its target on demand (slice 2's
    entry) with the re-entrancy/cycle guard (open question 1). Fold `registerNestingTypes` and
    `promoteSingleRecordPayloads` into the walk (the directiveless-from-field case). **Keep
    `validateUniformDomainReturnType`'s demote-to-`UnclassifiedField` intact through this slice**
-   so no enforcement gap opens; it is retired in slice 5 when its replacement goes green. Gate:
+   so no enforcement gap opens; it is retired in slice 4 when its replacement goes green. Gate:
    truth table + sakila pipeline `TypeSpec` + compile + execute. No dual-run flag.
-5. **Field-context validation (R278 completion).** Move `DomainReturnType` onto the field and
-   replace `validateUniformDomainReturnType` with a validator agreement check, *model change and
-   validator rule in one commit*. Move polymorphic member admissibility (SQL-polymorphism
-   requires all `TableBound`; service/reflection admits `Unbound`) to the validator and drop the
-   `allowNonTableMembers` flag. Gate: truth table + sakila.
-6. **Fold ConnectionPromoter into the walk.** Synthesise `Connection`/`Edge`/`PageInfo` into the
+4. **`DomainReturnType` on the field; retire `validateUniformDomainReturnType`.** Move
+   `DomainReturnType` onto the field and replace the post-pass agreement check with a validator
+   rule, *model change and validator rule in one commit* so no enforcement gap opens. (This is
+   the directiveless-types-inherit-from-fields invariant made structural: the walk's
+   compatible-or-demote already covers it; this slice removes the now-redundant post-pass.)
+   Gate: truth table + sakila.
+5. **Fold ConnectionPromoter into the walk.** Synthesise `Connection`/`Edge`/`PageInfo` into the
    registry on demand when an `@asConnection` field is visited. Make
    `rebuildAssembledForConnections` a *pure function of the walk's synthesised-type set* (a typed
    parameter, not a second `schema.types()` scan) so there is one producer and the rebuilt
@@ -213,8 +161,8 @@ Slices, in landing order:
    types otherwise. Add a pipeline assertion covering the assembled-schema delta (the
    differential's blind spot). Delete the now-dead phases; keep `rejectCaseInsensitiveTypeCollisions`
    as a post-walk registry sweep (a global cross-type check, not field-driven).
-7. **Prune orphans (the payoff, intended behaviour change).** Stop classifying unreachable types;
-   the walk already only reaches the reachable surface. Flip slice 2's orphan *measurement* into
+6. **Prune orphans (the payoff, intended behaviour change).** Stop classifying unreachable types;
+   the walk already only reaches the reachable surface. Flip slice 1's orphan *measurement* into
    an assertion that the orphan set is empty (or rejected), and update any truth-table rows that
    relied on orphan classification.
 
