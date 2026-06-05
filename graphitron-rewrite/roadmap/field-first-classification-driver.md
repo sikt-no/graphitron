@@ -12,7 +12,7 @@ last-updated: 2026-06-05
 
 # Field-first reachability-driven classification driver
 
-Backlog stub. Classification today is a strict-ordered multiphase build in
+Classification today is a strict-ordered multiphase build in
 `GraphitronSchemaBuilder.buildSchema`: an eager type pass (`TypeBuilder.buildTypes`)
 that classifies every named SDL type *in isolation*, then a field pass over *every*
 `GraphQLObjectType` in `schema.getAllTypesAsList()` (no reachability sweep; graphql-java
@@ -54,13 +54,27 @@ Walk shape (converged in the originating discussion; not yet a frozen contract).
 **only** visitor-based phase is classification; validation and emission iterate the
 classified `GraphitronSchema` and are not visitor-based.
 
-- *Driver.* Seed `graphql.schema.SchemaTraverser` from the Query and Mutation roots and
-  visit fields. The graphql-java visitor machinery is already in-tree
-  (`ConnectionPromoter` uses `GraphQLTypeVisitorStub` + `SchemaTransformer`
-  post-classification today). Other roots are reached transitively, not seeded
-  separately: federation `_entities` and `@node` targets fall out of handling the
-  `Query._entities` / `Query.node` field classifiers. Subscription, if added, is a third
-  seed.
+- *Driver.* Seed `graphql.schema.SchemaTraverser` via
+  `depthFirst(visitor.toTypeVisitor(), roots)`, where `visitor` is a
+  `graphql.schema.visitor.GraphQLSchemaVisitor` (graphql-java 25; its
+  `FieldDefinitionVisitorEnvironment` exposes `getContainer()` for the parent type and
+  `getUnwrappedType()` for the base return type, the two inputs field classification
+  needs). The graphql-java visitor machinery is already in-tree (`ConnectionPromoter` uses
+  the lower-level `GraphQLTypeVisitorStub` + `SchemaTransformer` post-classification today).
+  The seed set is **Query + Mutation roots plus a `@node`/`@key` directive scan**, not just
+  the two roots:
+  - `Query.node` / `Query.nodes` return the `Node` *interface*; concrete `@node`
+    implementors are reachable only across the interface->implementor edge, which a
+    field-return descent does not traverse, so every `@node` type must be seeded.
+  - Federation `_entities` / `_Entity` / `Query._entities` **do not exist at classification
+    time**: Apollo injects them post-build in `GraphitronSchemaClassGenerator`. So
+    `@key`-bearing entity types are not reachable through any field and must be seeded by
+    directive scan, exactly as `EntityResolutionBuilder` gathers them today (the `@node` and
+    `@key` seed sets largely coincide, since `KeyNodeSynthesiser` gives every `@node` a
+    `@key`). The earlier "reach federation through the `Query._entities` field classifier"
+    framing was wrong and is corrected here.
+  - Subscription is recognised-but-unsupported (its root fields classify to
+    `UnclassifiedField`), so it reaches no targets today; a future third seed.
 - *Fields drive types.* Each visited field is classified or registered as an
   `UnclassifiedField`. Classifying a field triggers classification of its target type
   *on demand* (memoised), which replaces both the eager type pass and the four post-passes.
@@ -134,10 +148,80 @@ Spec:
   when `allowNonTableMembers` else error; `@error` riding the second `Unbound` arm), and
   the `allowNonTableMembers` flag are the concrete undo targets.
 
-## Open design questions (defer to Spec)
+## Implementation plan (slicing)
 
-Non-trivial; warrants a Spec pass with the `principles-architect` subagent before
-commitment, per R166's precedent.
+The slicing is built for risk isolation and bisectability. Two constraints, both from the
+design principles, shape it more than anything else:
+
+- *The merge gate is the designated primary tier, not the differential.* The behavioural
+  proof is the exhaustive `GraphitronSchemaBuilderTest` truth table (~398 enum rows over the
+  sealed hierarchy, `VariantCoverageTest`-enforced) plus the sakila pipeline-tier `TypeSpec`
+  assertions, the `graphitron-sakila-example` Java-17 compile, and the execution tier. A
+  projection-snapshot differential (old-vs-new through `CatalogBuilder.buildSnapshot`, the
+  one model surface that compares by value since `GraphitronSchema` carries identity-equality
+  graphql-java nodes) is a *development bisect aid only*, never the gate: it is a lossy shadow
+  (it flattens assembled-schema identity, `ErrorType` handler aggregation, raw node refs), and
+  elevating it above the pipeline tier would pin the shadow, not the behaviour. There is no
+  permanent dual-run flag inside the classifier; the inversion lands directly behind the
+  truth-table + sakila tiers. (If a specific regression is found that those tiers cannot catch,
+  that gap is closed by adding a pipeline assertion, not by a parallel classifier.)
+- *No classifier invariant spans a slice boundary without a validator mirror.* Where a slice
+  retires an enforcement mechanism, the replacement lands in the same commit.
+
+Slices, in landing order:
+
+1. **R278 pure-model pieces, under the old driver.** Add the `ParticipantRef.Error` permit and
+   retire the overloaded `Unbound` `@error` meaning; classify an all-`@error` union/interface as
+   `ErrorType` (aggregating member handlers keyed per member for the `TypeResolver`), updating
+   `GraphitronSchemaClassGenerator`'s `isErrorUnion` fork and the validator. This lands *first*
+   because the on-demand type classification in slice 4 *consumes* the `Error` permit (the
+   dependency arrow points this way), and landing it under the known-good old driver isolates
+   "did the new variant classify right" from "did the new driver classify right." Decide the
+   service/reflection-populated non-error polymorphic gap here; safe default per "validator
+   mirrors classifier" is a validate-time rejection (`STUBBED_VARIANTS`-style build failure)
+   unless the `TypeResolver` strategy is implemented. Keep `allowNonTableMembers` for now (it is
+   field-context-dependent; retired in slice 5). Gate: truth table (`ErrorTypeCase`) + sakila.
+2. **Reachability observatory + differential bisect aid (additive, zero behaviour change).**
+   Build the `SchemaTraverser` walk that computes the reachable set (seed: Query + Mutation +
+   `@node`/`@key` directive scan; descend field->target, interface->implementor,
+   union->members) and the projection-snapshot comparator. The test asserts the *durable*
+   invariant **reachable ⊆ classified** (every reachable type is classified, the safety property
+   every later slice preserves) and separately *measures* the classified-but-unreachable orphan
+   set as an inventory slice 7 will prune, phrased as an observation, not a correctness invariant.
+3. **On-demand memoised single-type classification (byte-identical output).** Extract per-type
+   classification (and participant enrichment) from the eager loop into a memoised single-type
+   entry, but keep driving it eagerly over `getAllTypesAsList()` so output is unchanged. This
+   decouples "how a type is classified" from "when," creating the entry point the walk calls.
+   Gate: truth table + sakila, identical output (differential as bisect aid).
+4. **The inversion.** Replace the eager type pass + all-objects field pass with the field-first
+   walk: seed, visit fields, classify each field, classify its target on demand (slice 3's
+   entry) with the re-entrancy/cycle guard (open question 1). Fold `registerNestingTypes` and
+   `promoteSingleRecordPayloads` into the walk (the directiveless-from-field case). **Keep
+   `validateUniformDomainReturnType`'s demote-to-`UnclassifiedField` intact through this slice**
+   so no enforcement gap opens; it is retired in slice 5 when its replacement goes green. Gate:
+   truth table + sakila pipeline `TypeSpec` + compile + execute. No dual-run flag.
+5. **Field-context validation (R278 completion).** Move `DomainReturnType` onto the field and
+   replace `validateUniformDomainReturnType` with a validator agreement check, *model change and
+   validator rule in one commit*. Move polymorphic member admissibility (SQL-polymorphism
+   requires all `TableBound`; service/reflection admits `Unbound`) to the validator and drop the
+   `allowNonTableMembers` flag. Gate: truth table + sakila.
+6. **Fold ConnectionPromoter into the walk.** Synthesise `Connection`/`Edge`/`PageInfo` into the
+   registry on demand when an `@asConnection` field is visited. Make
+   `rebuildAssembledForConnections` a *pure function of the walk's synthesised-type set* (a typed
+   parameter, not a second `schema.types()` scan) so there is one producer and the rebuilt
+   assembled schema cannot drift from the registry, the R165 bug class relocated to Connection
+   types otherwise. Add a pipeline assertion covering the assembled-schema delta (the
+   differential's blind spot). Delete the now-dead phases; keep `rejectCaseInsensitiveTypeCollisions`
+   as a post-walk registry sweep (a global cross-type check, not field-driven).
+7. **Prune orphans (the payoff, intended behaviour change).** Stop classifying unreachable types;
+   the walk already only reaches the reachable surface. Flip slice 2's orphan *measurement* into
+   an assertion that the orphan set is empty (or rejected), and update any truth-table rows that
+   relied on orphan classification.
+
+## Open design questions (defer to implementation slices)
+
+A `principles-architect` read on this slicing landed (its findings are folded into the slice
+order and the gate posture above). Remaining per-slice design forks:
 
 1. **On-demand target classification re-entrancy and cycles.** Classifying a field's
    target inside the visit callback must guard against recursive (`A.b: B`, `B.a: A`) and
