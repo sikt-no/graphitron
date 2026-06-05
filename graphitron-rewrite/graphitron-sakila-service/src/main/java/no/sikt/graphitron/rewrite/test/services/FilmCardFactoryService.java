@@ -3,14 +3,11 @@ package no.sikt.graphitron.rewrite.test.services;
 import no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord;
 
 /**
- * Compilation-tier fixture: an {@code @service} method whose return type is the
- * {@code @record}-backed Java class {@link FilmCardData}. Wired through a {@code Mutation}
- * field returning a plain SDL Object carrier ({@code SingleFilmCardCarrier}); the carrier
- * promotes to {@code PojoResultType.NoBacking} via {@code TypeBuilder.promoteSingleRecordCarriers}
- * (now consulting {@code BuildContext.scanStructuralDmlPayload}), and the unified per-field
- * classifier on the producer-bound parent resolves the {@code card: FilmCardWrapper} data field.
- *
- * <p>Exists at the compilation tier only — confirms the schema compiles end-to-end.
+ * Orphaned compilation-tier fixture. It produced the {@code SingleFilmCardCarrier} /
+ * {@code createFilmCard} carrier path that R276 removed (the NoBacking carrier promotion is
+ * retired; carriers now bind to {@code JooqTableRecordType}). No schema field or test references
+ * this factory any more; it is a deletion candidate. {@code FilmCardData} itself is still live
+ * (used by {@code InventoryExtensions} and the schema), so only this factory is dead.
  */
 public final class FilmCardFactoryService {
 

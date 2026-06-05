@@ -735,7 +735,7 @@ class BuildContext {
         boolean fieldNullable = !(fieldDef.getType() instanceof graphql.schema.GraphQLNonNull);
         if (classified == null) {
             // No classification — treat as unsupported. Could happen if the element type is a
-            // PlainObjectType whose fields the schema walk left unclassified. Rejecting the
+            // NestingType whose fields the schema walk left unclassified. Rejecting the
             // projection is honest: it cannot resolve a field the classifier never typed.
             return new PerFieldOutcome.UnsupportedField(fieldName, "unclassified");
         }

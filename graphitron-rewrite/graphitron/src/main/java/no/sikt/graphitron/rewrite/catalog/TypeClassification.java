@@ -48,7 +48,6 @@ public sealed interface TypeClassification
             TypeClassification.JooqTableRecord,
             TypeClassification.JooqTableRecordInput,
             TypeClassification.PojoResult,
-            TypeClassification.UnbackedPojoResult,
             TypeClassification.PojoInput,
             TypeClassification.TableInput,
             TypeClassification.Root,
@@ -157,12 +156,6 @@ public sealed interface TypeClassification
     record PojoResult(String fqClassName) implements TypeClassification {}
 
     /**
-     * A {@code @record}-declared output type with no resolved backing class, or a plain SDL
-     * object treated as a result type. Covers {@code GraphitronType.PojoResultType.NoBacking}.
-     */
-    record UnbackedPojoResult() implements TypeClassification {}
-
-    /**
      * A {@code @record}-declared input type backed by a plain Java class. Covers
      * {@code GraphitronType.PojoInputType}; {@code fqClassName} is null when the directive
      * omitted the class name.
@@ -222,7 +215,7 @@ public sealed interface TypeClassification
 
     /**
      * A plain SDL object type with no domain directive. Covers
-     * {@code GraphitronType.PlainObjectType}.
+     * {@code GraphitronType.NestingType}.
      */
     record PlainObject() implements TypeClassification {}
 

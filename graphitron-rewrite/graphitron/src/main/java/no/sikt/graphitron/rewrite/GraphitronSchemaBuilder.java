@@ -233,7 +233,7 @@ public class GraphitronSchemaBuilder {
                 // routes payload-returning DML through the unified path. For payloads with a
                 // producer binding (DmlEmitted for non-DELETE, or ServiceEmitted), the per-type
                 // pass runs against the binding to construct the data-field permit. For orphan
-                // NoBacking carriers (carrier-shaped payload that no producer mutation returns)
+                // carriers (carrier-shaped payload that no producer mutation returns)
                 // and for DELETE DML carriers (data-field permit constructed at the @mutation
                 // classifier from the DmlElementKind dispatch), the data field stays
                 // unregistered at this site; graphql-java's never-traverse-unproduced-fields
@@ -250,9 +250,8 @@ public class GraphitronSchemaBuilder {
                 // (SingleRecordIdFieldFromReturning / SingleRecordTableFieldFromReturning, set via
                 // reclassify). R276 binds the carrier to a JooqTableRecordType, so the standard
                 // per-type pass below would classify that same data field a second time and collide;
-                // skip it here, classifying only the errors field, exactly as the retired NoBacking
-                // branch did. (Orphan carriers are no longer promoted, so they fall through to the
-                // PlainObjectType guard below.)
+                // skip it here, classifying only the errors field. (Orphan carriers are no longer
+                // promoted, so they fall through to the NestingType guard below.)
                 if (scan instanceof BuildContext.DmlPayloadScan.Admit
                         && nDml.isPresent() && nDml.get().kind() == no.sikt.graphitron.rewrite.model.DmlKind.DELETE) {
                     Class<?> parentBackingClass0 = typeBuilder.recordBackingClasses().get(objType.getName());
@@ -265,16 +264,17 @@ public class GraphitronSchemaBuilder {
                     }
                     return;
                 }
-                // Fields on plain SDL object types (no domain directive) are the developer's
-                // responsibility to wire — the classifier records the parent in schema.types()
-                // but leaves per-field classification out.
-                if (parentType instanceof no.sikt.graphitron.rewrite.model.GraphitronType.PlainObjectType) return;
+                // A directiveless object the type pass left unclassified (ctx.types.get == null,
+                // handled by the early return above) has its fields resolved through the NestingField
+                // that embeds it, not standalone here. NestingType is assigned post-field-pass from
+                // those NestingFields (registerNestingTypes), so no parent is a NestingType yet.
                 Class<?> parentBackingClass = typeBuilder.recordBackingClasses().get(objType.getName());
                 objType.getFieldDefinitions().forEach(fieldDef ->
                     ctx.fieldRegistry.classify(
                         FieldCoordinates.coordinates(objType.getName(), fieldDef.getName()),
                         fieldBuilder.classifyField(fieldDef, objType.getName(), parentType, parentBackingClass)));
             });
+        registerNestingTypes(ctx);
         validateUniformDomainReturnType(ctx);
         var rewrites = ConnectionPromoter.promote(ctx);
         var rebuiltAssembled = ConnectionPromoter.rebuildAssembledForConnections(ctx.schema, ctx.types, rewrites);
@@ -297,6 +297,33 @@ public class GraphitronSchemaBuilder {
         var model = new GraphitronSchema(
             ctx.types, Collections.unmodifiableMap(dedupedFields), entitiesByType, ctx.warnings());
         return new BuildResult(model, rebuiltAssembled);
+    }
+
+    /**
+     * R276: assign {@link no.sikt.graphitron.rewrite.model.GraphitronType.NestingType} to every SDL
+     * object type that a {@code NestingField} embeds. The type pass leaves a directiveless object
+     * unclassified (it cannot know what it is); a {@code NestingField} built during the field pass is
+     * the only thing that establishes it as a nesting projection of a table-backed parent, so this
+     * walk registers exactly those, recursing into nested {@code NestingField}s. The invariant
+     * {@code NestingType} ⟺ {@code ∃ NestingField} therefore holds by construction.
+     *
+     * <p>A directiveless object that no {@code NestingField} embeds is left unclassified (absent from
+     * {@code schema.types()}). It is an orphan: the field that returns it already classifies as
+     * {@code UnclassifiedField}, so the rejection surfaces at the field edge.
+     */
+    private static void registerNestingTypes(BuildContext ctx) {
+        ctx.fieldRegistry.entries().values().forEach(f -> registerNestingTypesIn(ctx, f));
+    }
+
+    private static void registerNestingTypesIn(BuildContext ctx, no.sikt.graphitron.rewrite.model.GraphitronField field) {
+        if (!(field instanceof no.sikt.graphitron.rewrite.model.ChildField.NestingField nf)) return;
+        String name = nf.returnType().returnTypeName();
+        if (!ctx.typeRegistry.contains(name)) {
+            var objType = ctx.schema.getObjectType(name);
+            ctx.typeRegistry.classify(name, new no.sikt.graphitron.rewrite.model.GraphitronType.NestingType(
+                name, BuildContext.locationOf(objType), objType));
+        }
+        nf.nestedFields().forEach(child -> registerNestingTypesIn(ctx, child));
     }
 
     /**

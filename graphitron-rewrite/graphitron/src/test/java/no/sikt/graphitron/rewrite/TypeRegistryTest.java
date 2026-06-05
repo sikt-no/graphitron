@@ -1,7 +1,7 @@
 package no.sikt.graphitron.rewrite;
 
 import no.sikt.graphitron.rewrite.model.GraphitronType;
-import no.sikt.graphitron.rewrite.model.GraphitronType.PlainObjectType;
+import no.sikt.graphitron.rewrite.model.GraphitronType.NestingType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.UnclassifiedType;
 import no.sikt.graphitron.rewrite.model.Rejection;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
@@ -14,7 +14,7 @@ import static org.assertj.core.api.Assertions.assertThatIllegalStateException;
 class TypeRegistryTest {
 
     private static GraphitronType plain(String name) {
-        return new PlainObjectType(name, null, null);
+        return new NestingType(name, null, null);
     }
 
     private static UnclassifiedType demoted(String name, String reason) {
@@ -27,7 +27,7 @@ class TypeRegistryTest {
         registry.classify("Film", plain("Film"));
 
         assertThat(registry.contains("Film")).isTrue();
-        assertThat(registry.get("Film")).isInstanceOf(PlainObjectType.class);
+        assertThat(registry.get("Film")).isInstanceOf(NestingType.class);
         assertThat(registry.entries()).containsOnlyKeys("Film");
 
         // Live view: subsequent classify should be visible without re-fetching entries().

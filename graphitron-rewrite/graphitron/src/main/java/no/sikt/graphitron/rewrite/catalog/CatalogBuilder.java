@@ -544,8 +544,6 @@ public final class CatalogBuilder {
                     t.table() != null ? t.table().tableName() : null);
             case GraphitronType.PojoResultType.Backed t ->
                 new TypeClassification.PojoResult(t.fqClassName());
-            case GraphitronType.PojoResultType.NoBacking ignored ->
-                new TypeClassification.UnbackedPojoResult();
             case GraphitronType.PojoInputType t ->
                 new TypeClassification.PojoInput(t.fqClassName());
             case GraphitronType.TableInputType t ->
@@ -568,7 +566,7 @@ public final class CatalogBuilder {
                 new TypeClassification.Scalar(
                     t.resolution() != null && t.resolution().javaType() != null
                         ? t.resolution().javaType().toString() : null);
-            case GraphitronType.PlainObjectType ignored ->
+            case GraphitronType.NestingType ignored ->
                 new TypeClassification.PlainObject();
             case GraphitronType.UnclassifiedType t ->
                 new TypeClassification.Unclassified(t.reason());
@@ -621,14 +619,13 @@ public final class CatalogBuilder {
             case GraphitronType.RootType ignored -> new TypeBackingShape.NoBacking.Root();
             case GraphitronType.InterfaceType ignored -> new TypeBackingShape.NoBacking.UnclassifiedInterface();
             case GraphitronType.UnionType ignored -> new TypeBackingShape.NoBacking.UnbackedResult();
-            case GraphitronType.PojoResultType.NoBacking ignored -> new TypeBackingShape.NoBacking.UnbackedResult();
             case GraphitronType.ErrorType ignored -> new TypeBackingShape.NoBacking.UnbackedResult();
             case GraphitronType.EnumType ignored -> new TypeBackingShape.NoBacking.UnbackedResult();
             case GraphitronType.ScalarType ignored -> new TypeBackingShape.NoBacking.UnbackedResult();
             case GraphitronType.ConnectionType ignored -> new TypeBackingShape.NoBacking.UnbackedResult();
             case GraphitronType.EdgeType ignored -> new TypeBackingShape.NoBacking.UnbackedResult();
             case GraphitronType.PageInfoType ignored -> new TypeBackingShape.NoBacking.UnbackedResult();
-            case GraphitronType.PlainObjectType ignored -> new TypeBackingShape.NoBacking.UnbackedResult();
+            case GraphitronType.NestingType ignored -> new TypeBackingShape.NoBacking.UnbackedResult();
             case GraphitronType.UnclassifiedType ignored -> new TypeBackingShape.NoBacking.UnbackedResult();
         };
     }

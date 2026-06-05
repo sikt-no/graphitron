@@ -68,7 +68,7 @@ class GraphitronSchemaClassGeneratorTest {
     void build_registersNonRootTypesViaAdditionalType() {
         var body = buildBody("""
             type Query { film: Film }
-            type Film { id: ID! }
+            type Film @table(name: "film") { id: ID! }
             """);
         assertThat(body).contains(".additionalType(com.example.schema.FilmType.type())");
     }
@@ -258,8 +258,8 @@ class GraphitronSchemaClassGeneratorTest {
         var bundle = TestSchemaHelper.buildBundle("""
             type Query { x: String }
             type Mutation { y: String }
-            type Zebra { id: ID! }
-            type Alpha { id: ID! }
+            type Zebra @table(name: "film") { id: ID! }
+            type Alpha @table(name: "actor") { id: ID! }
             """);
         var plan = GraphitronSchemaClassGenerator.planFor(bundle.model(), bundle.assembled());
         assertThat(plan.hasQuery()).isTrue();

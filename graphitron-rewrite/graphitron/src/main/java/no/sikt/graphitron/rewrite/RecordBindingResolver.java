@@ -244,8 +244,8 @@ final class RecordBindingResolver {
 
         // R178 step 2b: ServiceEmitted observation for @service-carrier candidates. The check
         // is structural: the payload SDL must be a GraphQL Object with exactly one @table-typed
-        // field whose record class matches the method's reflected return-element. Both NoBacking
-        // (plain SDL Object) and ClassBacked (@record-bound) carriers ground here; this map is
+        // field whose record class matches the method's reflected return-element. Both plain SDL
+        // Object and ClassBacked (@record-bound) carriers ground here; this map is
         // independent of the main result-axis fold and the existing RootService observation
         // above. The classifier-side dispatch in FieldBuilder.classifyChildFieldOnResultType
         // reads through TypeBuilder.serviceEmittedBinding to construct

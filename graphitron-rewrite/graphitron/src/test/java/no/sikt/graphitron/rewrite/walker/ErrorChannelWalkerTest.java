@@ -140,7 +140,7 @@ class ErrorChannelWalkerTest {
         var loc = new SourceLocation(1, 1);
         var errorsField = new ChildField.ErrorsField(
             typeName, errorsFieldName, loc, List.of(errorTypes), new ChildField.Transport.WrapperArm());
-        var backing = new GraphitronType.PojoResultType.NoBacking(typeName, loc);
+        var backing = new GraphitronType.PojoResultType.Backed(typeName, loc, "com.example." + typeName);
         return new OutcomeType(backing, errorsField, List.of());
     }
 

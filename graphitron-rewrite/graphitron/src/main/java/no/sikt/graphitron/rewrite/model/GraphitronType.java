@@ -18,7 +18,7 @@ public sealed interface GraphitronType
             GraphitronType.InterfaceType, GraphitronType.UnionType, GraphitronType.ErrorType,
             GraphitronType.InputType, GraphitronType.TableInputType,
             GraphitronType.ConnectionType, GraphitronType.EdgeType, GraphitronType.PageInfoType,
-            GraphitronType.PlainObjectType, GraphitronType.EnumType, GraphitronType.ScalarType,
+            GraphitronType.NestingType, GraphitronType.EnumType, GraphitronType.ScalarType,
             GraphitronType.UnclassifiedType {
 
     String name();
@@ -107,24 +107,15 @@ public sealed interface GraphitronType
     ) implements ResultType {}
 
     /**
-     * A {@code @record} type backed by a plain Java class (POJO), or one whose backing class
-     * was not declared in the directive.
+     * A {@code @record} type backed by a plain Java class (POJO).
      *
-     * <p>R75 / Phase 1 split this from a single nullable-className record into a sealed
-     * sub-taxonomy: {@link Backed} for authored payloads with {@code @record(record: {className: ...})},
-     * {@link NoBacking} for {@code @record}-declared types whose {@code className} field is
-     * unset (and historically for plain SDL Objects promoted to {@code ResultType}; R178
-     * retired the promotion pass). Lifts the prior sentinel overload at the type level: every
-     * consumer learns which case it's looking at from the permit identity, not from a nullable.
-     *
-     * <p>The {@link ResultType#fqClassName()} method is preserved on the interface — {@link Backed}
-     * returns the non-null class name; {@link NoBacking} returns {@code null}. Sites that today
-     * check {@code instanceof PojoResultType && fqClassName == null/!= null} migrate to
-     * {@code instanceof PojoResultType.NoBacking} / {@code instanceof PojoResultType.Backed}.
-     * The lift of the nullable contract on the interface itself is a separate downstream cleanup.
+     * <p>The sole permitted sub-type is {@link Backed}: an authored payload carrier declared
+     * with {@code @record(record: {className: ...})}. The {@link ResultType#fqClassName()}
+     * method returns the non-null backing class name. Sites identify the case from the permit
+     * identity ({@code instanceof PojoResultType.Backed}) rather than from a nullable.
      */
     sealed interface PojoResultType extends ResultType
-        permits PojoResultType.Backed, PojoResultType.NoBacking {
+        permits PojoResultType.Backed {
 
         /**
          * R75 Phase 1: an authored payload carrier declared with
@@ -136,22 +127,8 @@ public sealed interface GraphitronType
             String fqClassName
         ) implements PojoResultType {
             public Backed {
-                java.util.Objects.requireNonNull(fqClassName, "PojoResultType.Backed requires non-null fqClassName; use NoBacking when no className is declared");
+                java.util.Objects.requireNonNull(fqClassName, "PojoResultType.Backed requires non-null fqClassName");
             }
-        }
-
-        /**
-         * R75 Phase 1: an SDL Object the trigger promoted to a {@code ResultType} arm at
-         * type-classification time, or a {@code @record}-declared type whose
-         * {@code className} field is unset. Has no backing class to reflect on; the
-         * {@link #fqClassName()} accessor returns {@code null} for {@link ResultType}
-         * interface compatibility.
-         */
-        record NoBacking(
-            String name,
-            SourceLocation location
-        ) implements PojoResultType {
-            @Override public String fqClassName() { return null; }
         }
     }
 
@@ -407,20 +384,28 @@ public sealed interface GraphitronType
     ) implements GraphitronType, EmitsPerTypeFile, HasInputRecordShape {}
 
     /**
-     * A plain SDL object type — no {@code @table}, {@code @record}, {@code @error}, or other
-     * domain directive, and not a root operation type. Typically a DTO nested under a parent
-     * that carries the table context, or a standalone return type the developer wires manually.
+     * A nesting projection: a directiveless SDL object type embedded under a {@code @table}-bound
+     * parent through a {@code ChildField.NestingField}. The nested SDL type inherits the parent's
+     * {@code @table} and maps to the same database row; its fields are columns on the embedding
+     * table (the same column may appear under several nested names, sharing one SELECT term).
      *
-     * <p>No SQL is generated for the type itself. The classifier records it so
-     * {@code schema.types()} is complete — every emittable type has an entry — and so the
-     * schema emitters can iterate the model without falling back to the assembled
-     * {@link graphql.schema.GraphQLSchema}.
+     * <p>This classification is assigned <em>only</em> by the post-field-pass walk that registers
+     * the element type of each {@code NestingField} (see {@code GraphitronSchemaBuilder
+     * .registerNestingTypes}); the type pass leaves a directiveless object unclassified because it
+     * cannot yet know whether anything nests it. The invariant {@code NestingType} ⟺ a corresponding
+     * {@code NestingField} therefore holds by construction. A directiveless object that nothing
+     * nests is left unclassified (an orphan) and the field that returns it classifies as
+     * {@code UnclassifiedField}.
+     *
+     * <p>No standalone SQL or fetcher is generated for the type itself: its fields inline into the
+     * embedding parent's query and read off the parent row through the {@code NestingField}. The
+     * registry entry exists so {@code schema.types()} is complete for the schema emitters.
      *
      * <p>{@code schemaType} is the graphql-java object referenced from the assembled schema at
      * classification time. Emission reads field list, description, and applied directives
      * through it.
      */
-    record PlainObjectType(
+    record NestingType(
         String name,
         SourceLocation location,
         GraphQLObjectType schemaType

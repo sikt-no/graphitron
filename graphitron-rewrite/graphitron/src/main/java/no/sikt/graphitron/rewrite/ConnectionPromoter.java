@@ -123,7 +123,7 @@ final class ConnectionPromoter {
                 var edgeSchema = promotion.edgeSchemaType();
                 // Directive-driven connections: name does not exist in the SDL → synthesize.
                 // Structural connections: SDL declares the Connection / Edge object types with
-                // no domain directive, so the first pass classifies them as PlainObjectType;
+                // no domain directive, so the first pass classifies them as NestingType;
                 // promotion replaces that with the typed ConnectionType / EdgeType (an enrich).
                 var carrierLocation = BuildContext.locationOf(fieldDef);
                 var connectionType = new ConnectionType(
@@ -154,12 +154,17 @@ final class ConnectionPromoter {
         } else if (ctx.schema.getType("PageInfo") instanceof GraphQLObjectType pageInfoObj
                 && !(ctx.types.get("PageInfo") instanceof PageInfoType)) {
             boolean shareable = pageInfoObj.hasAppliedDirective("shareable");
-            // SDL-declared PageInfo: first pass classified it as PlainObjectType (no domain
-            // directive). Connection promotion replaces that with PageInfoType so the
-            // connection-emitter can pick up the shareable flag and SDL-derived schema form.
-            // Structurally an enrich; the synthesise arm above handles the no-SDL case.
-            ctx.typeRegistry.enrich("PageInfo", new PageInfoType(
-                "PageInfo", null, shareable, pageInfoObj));
+            // SDL-declared PageInfo: the type pass left it unclassified (a directiveless object), so
+            // it is absent from the registry. Connection promotion registers it as a PageInfoType so
+            // the connection-emitter picks up the shareable flag and SDL-derived schema form. Use
+            // synthesize when absent (the common case now) and enrich only if some earlier pass
+            // already registered it; the synthesise arm above handles the no-SDL case.
+            var pageInfoType = new PageInfoType("PageInfo", null, shareable, pageInfoObj);
+            if (ctx.typeRegistry.contains("PageInfo")) {
+                ctx.typeRegistry.enrich("PageInfo", pageInfoType);
+            } else {
+                ctx.typeRegistry.synthesize("PageInfo", pageInfoType);
+            }
         }
         return rewrites;
     }

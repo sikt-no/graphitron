@@ -108,7 +108,7 @@ class ErrorChannelClassificationTest {
         // R96: the @record directive's className no longer drives binding. Even when @record
         // carries no className, the @service producer's reflected return type grounds the
         // backing class, so the payload class IS reflectable and the error channel populates.
-        // (Pre-R96 behaviour: without an explicit className the type would be NoBacking and
+        // (Pre-R96 behaviour: without an explicit className the type would be unbacked and
         // produce an empty channel; R96 corrects this by reading the producer's return type.)
         var schema = build(UNION_ERROR_PAYLOAD_SDL.replace(
                 "@record(record: {className: \"" + SAK_PAYLOAD_FQN + "\"})",
@@ -551,7 +551,7 @@ class ErrorChannelClassificationTest {
 
     @Test
     void payloadErrorsField_classifiesAsErrorsFieldWithLocalContextTransport() {
-        // A plain SDL Object carrier (PojoResultType.NoBacking after promotion) with an
+        // A plain SDL Object carrier (bound to a JooqTableRecordType after promotion) with an
         // errors-shaped field admits at the structural DML-payload scan. The errors field
         // classifies as ChildField.ErrorsField carrying Transport.LocalContext (the
         // discriminator FetcherEmitter reads at emit time). The mutation classifies as

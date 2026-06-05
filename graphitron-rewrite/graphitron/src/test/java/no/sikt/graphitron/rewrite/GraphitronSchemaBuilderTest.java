@@ -2612,7 +2612,7 @@ class GraphitronSchemaBuilderTest {
 
         // R276: NULL_FQ_CLASS_NAME deleted. It pinned "a @record parent with no backing class +
         // @sourceRow → Invariant #1 rejection". Under reflection-only binding a no-backing @record
-        // is a PlainObjectType whose fields don't classify, so that exact scenario no longer
+        // is a NestingType whose fields don't classify, so that exact scenario no longer
         // exists. UnclassifiedField coverage for SourceRow is retained by the other reject cases.
         TABLE_PARENT_REJECT(
             "@table parent + lifter → UnclassifiedField AUTHOR_ERROR (lifter is for @record parents)",
@@ -3457,7 +3457,7 @@ class GraphitronSchemaBuilderTest {
 
     // ===== ResultType backing-class classification (reflection-only) =====
     // R276: a result type's backing comes from the producing @service field's reflected return
-    // type, or, for a NoBacking carrier, a DML RETURNING payload — never the @record directive.
+    // type, or, for a DML carrier, a DML RETURNING payload, never the @record directive.
     // One case per ResultType sealed leaf so VariantCoverageTest sees each classified.
     enum ResultTypeBackingCase implements ClassificationCase {
         BACKED_POJO(
@@ -3495,8 +3495,6 @@ class GraphitronSchemaBuilderTest {
             schema -> assertThat(schema.type("FilmDetails")).isInstanceOf(JooqTableRecordType.class)) {
             @Override public Set<Class<?>> variants() { return Set.of(JooqTableRecordType.class); }
         };
-        // PojoResultType.NoBacking is intentionally not covered here — it is removed in R275
-        // (DML/service carriers bind to their jOOQ record); see NO_CASE_REQUIRED in VariantCoverageTest.
 
         final String sdl;
         final Consumer<GraphitronSchema> assertions;
@@ -3516,13 +3514,12 @@ class GraphitronSchemaBuilderTest {
 
     @Test
     @ProjectionFor({
-        PojoResultType.NoBacking.class, PojoResultType.Backed.class,
+        PojoResultType.Backed.class,
         JavaRecordType.class, JooqTableRecordType.class
     })
     void resultTypeBackingProjectionsCarryClassNameAndTablePayloads() {
-        // PojoResultType.NoBacking → TypeClassification.UnbackedPojoResult. R276: a standalone
         // R276: a DML carrier binds to its RETURNING table's record (JooqTableRecordType), so its
-        // catalog projection is a JooqTableRecord; NoBacking / UnbackedPojoResult is retired.
+        // catalog projection is a JooqTableRecord.
         var s1 = buildSnapshot("""
             type Film @table(name: "film") { title: String }
             input FilmInput @table(name: "film") { title: String }
@@ -9255,35 +9252,26 @@ class GraphitronSchemaBuilderTest {
 
     // ===== Plain object type classification =====
 
-    enum PlainObjectTypeCase implements ClassificationCase {
-        NESTED_DTO_WITHOUT_DIRECTIVES(
-            "plain object type with no directives → PlainObjectType entry in schema.types()",
+    enum NestingTypeCase implements ClassificationCase {
+        NESTED_UNDER_TABLE_PARENT(
+            "directiveless object nested under a @table parent classifies as NestingType (R276: a "
+            + "NestingType is assigned only via the NestingField that embeds it)",
             """
-            type Film { id: ID! title: String }
-            type Query { foo: String }
+            type Inner { title: String }
+            type Film @table(name: "film") { details: Inner }
+            type Query { film: Film }
             """,
             schema -> {
-                var t = (no.sikt.graphitron.rewrite.model.GraphitronType.PlainObjectType)
-                    schema.type("Film");
-                assertThat(t.name()).isEqualTo("Film");
+                var t = (no.sikt.graphitron.rewrite.model.GraphitronType.NestingType)
+                    schema.type("Inner");
+                assertThat(t.name()).isEqualTo("Inner");
                 assertThat(t.schemaType()).isNotNull();
-                assertThat(t.schemaType().getName()).isEqualTo("Film");
-                assertThat(t.schemaType().getFieldDefinition("id")).isNotNull();
-            }),
-
-        STANDALONE_RETURN_TYPE(
-            "plain object used as a Query return also classifies as PlainObjectType",
-            """
-            type Meta { totalCount: Int }
-            type Query { meta: Meta }
-            """,
-            schema -> {
-                assertThat(schema.type("Meta"))
-                    .isInstanceOf(no.sikt.graphitron.rewrite.model.GraphitronType.PlainObjectType.class);
+                assertThat(t.schemaType().getName()).isEqualTo("Inner");
+                assertThat(t.schemaType().getFieldDefinition("title")).isNotNull();
             }),
 
         DOES_NOT_OVERRIDE_DIRECTIVE_CLASSIFICATION(
-            "@table-annotated types still classify as TableType, not PlainObjectType",
+            "@table-annotated types still classify as TableType, not NestingType",
             """
             type Film @table(name: "film") { id: ID! }
             type Query { f: Film }
@@ -9291,32 +9279,32 @@ class GraphitronSchemaBuilderTest {
             schema -> {
                 assertThat(schema.type("Film"))
                     .isInstanceOf(TableType.class)
-                    .isNotInstanceOf(no.sikt.graphitron.rewrite.model.GraphitronType.PlainObjectType.class);
+                    .isNotInstanceOf(no.sikt.graphitron.rewrite.model.GraphitronType.NestingType.class);
             });
 
         final String sdl;
         final Consumer<GraphitronSchema> assertions;
-        PlainObjectTypeCase(String description, String sdl, Consumer<GraphitronSchema> assertions) {
+        NestingTypeCase(String description, String sdl, Consumer<GraphitronSchema> assertions) {
             this.sdl = sdl;
             this.assertions = assertions;
         }
         @Override public Set<Class<?>> variants() {
-            return Set.of(no.sikt.graphitron.rewrite.model.GraphitronType.PlainObjectType.class);
+            return Set.of(no.sikt.graphitron.rewrite.model.GraphitronType.NestingType.class);
         }
         @Override public String toString() { return name().toLowerCase().replace('_', ' '); }
     }
 
     @ParameterizedTest(name = "{0}")
-    @EnumSource(PlainObjectTypeCase.class)
-    void plainObjectTypeClassification(PlainObjectTypeCase tc) {
+    @EnumSource(NestingTypeCase.class)
+    void plainObjectTypeClassification(NestingTypeCase tc) {
         tc.assertions.accept(build(tc.sdl));
     }
 
     @Test
-    @ProjectionFor(no.sikt.graphitron.rewrite.model.GraphitronType.PlainObjectType.class)
+    @ProjectionFor(no.sikt.graphitron.rewrite.model.GraphitronType.NestingType.class)
     void plainObjectTypeProjectionIsZeroPayload() {
         var snapshot = buildSnapshot("""
-            type Inner { id: ID! title: String }
+            type Inner { title: String }
             type Film @table(name: "film") { details: Inner }
             type Query { film: Film }
             """);
@@ -9414,8 +9402,8 @@ class GraphitronSchemaBuilderTest {
         SDL_VS_SDL(
             "two SDL types differing only in case both demote to UnclassifiedType with full-group messages",
             """
-            type Poengklasse @record { v: String }
-            type poengklasse @record { v: String }
+            type Poengklasse @table(name: "film") { v: String }
+            type poengklasse @table(name: "film") { v: String }
             type Query { a: Poengklasse b: poengklasse }
             """,
             (schema, sdl) -> {
@@ -9437,7 +9425,7 @@ class GraphitronSchemaBuilderTest {
         SYNTH_VS_SYNTH(
             "two @asConnection carriers whose synth Connection-names differ only in case demote both",
             """
-            type Item @record { v: String }
+            type Item @table(name: "film") { v: String }
             type Query {
                 foo: [Item!]! @asConnection(connectionName: "FooConnection")
                 bar: [Item!]! @asConnection(connectionName: "fooConnection")
@@ -9479,8 +9467,8 @@ class GraphitronSchemaBuilderTest {
         SDL_VS_SYNTH(
             "an SDL type whose name case-equals a synthesised Connection-name demotes both",
             """
-            type Item @record { v: String }
-            type fooConnection @record { v: String }
+            type Item @table(name: "film") { v: String }
+            type fooConnection @table(name: "film") { v: String }
             type Query {
                 foo: [Item!]! @asConnection(connectionName: "FooConnection")
                 stash: fooConnection
@@ -9517,8 +9505,8 @@ class GraphitronSchemaBuilderTest {
         SYNTH_EDGE_VS_SDL(
             "an SDL type case-equal to a synthesised Edge name demotes both via the SYNTH_EDGE origin arm",
             """
-            type Item @record { v: String }
-            type fooEdge @record { v: String }
+            type Item @table(name: "film") { v: String }
+            type fooEdge @table(name: "film") { v: String }
             type Query {
                 foo: [Item!]! @asConnection(connectionName: "FooConnection")
                 stash: fooEdge
@@ -9555,8 +9543,8 @@ class GraphitronSchemaBuilderTest {
         SYNTH_PAGE_INFO_VS_SDL(
             "an SDL type case-equal to the synthesised PageInfo demotes both via the SYNTH_PAGE_INFO origin arm",
             """
-            type Item @record { v: String }
-            type pageInfo @record { v: String }
+            type Item @table(name: "film") { v: String }
+            type pageInfo @table(name: "film") { v: String }
             type Query {
                 foo: [Item!]! @asConnection
                 stash: pageInfo
@@ -9593,9 +9581,9 @@ class GraphitronSchemaBuilderTest {
         THREE_WAY_GROUP(
             "three case-equivalent SDL types each surface a ValidationError naming all three",
             """
-            type Foo @record { v: String }
-            type FOO @record { v: String }
-            type foo @record { v: String }
+            type Foo @table(name: "film") { v: String }
+            type FOO @table(name: "film") { v: String }
+            type foo @table(name: "film") { v: String }
             type Query { a: Foo b: FOO c: foo }
             """,
             (schema, sdl) -> {
@@ -9618,8 +9606,8 @@ class GraphitronSchemaBuilderTest {
         NO_CLASH_BASELINE(
             "distinct type names without case-equivalence produce no collision diagnostics",
             """
-            type Foo @record { v: String }
-            type Bar @record { v: String }
+            type Foo @table(name: "film") { v: String }
+            type Bar @table(name: "film") { v: String }
             type Query { a: Foo b: Bar }
             """,
             (schema, sdl) -> {

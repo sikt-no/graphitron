@@ -4265,7 +4265,7 @@ public class TypeFetcherGenerator {
         // RecordN to the Result. On any per-row throw (constraint violation, type mismatch, RLS
         // denial, ...), the transaction rolls back; the outer catch arm routes the exception
         // through ErrorRouter into the carrier's error channel (R12 wiring, currently no-op for
-        // NoBacking carriers).
+        // DML carriers).
         builder.addCode(CodeBlock.builder()
             .add("$T payload = dsl.transactionResult(tx -> {\n", resultType).indent()
             .add("$T txd = $T.using(tx);\n", dslContextClass, DSL)
