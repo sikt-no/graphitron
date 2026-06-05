@@ -1,5 +1,5 @@
 ---
-next-id: R280
+next-id: R281
 ---
 
 # Rewrite Changelog
@@ -9,6 +9,8 @@ Historical record of completed rewrite work. Entries are roughly reverse-chronol
 The `next-id:` front-matter field is the canonical counter for `R<n>` allocation, maintained by `roadmap-tool create`. Numbers are never reused (see [`workflow.adoc`](../docs/workflow.adoc)); the counter advances past every `Done` so the gaps left by deleted item files don't collide with future allocations.
 
 ---
+
+- R166 (Backlog, never specced; retired without a landing commit): `graphqlschemavisitor-driven-emission` superseded by R279 (`field-first-classification-driver`). R166 proposed a `GraphQLSchemaVisitor`-driven emission walk to fix per-emitter skip-filter drift (the R165 bug class) and the missing reachability sweep; R279 delivers both at classification time (the prune is structural, emission stays plain iteration over the pruned `GraphitronSchema`), so the visitor-driven emitter and R166's standalone `ReachabilityPruner` alternative are both unneeded. R166's emission-side open questions (cross-cutting aggregators, utility-class emitters, visitor ordering/determinism, visitor test ergonomics) evaporate with emission staying iteration-based. The one orthogonal sub-thread, the typed non-empty carrier for `FetcherRegistrationsEmitter.emit`'s `Map<String, CodeBlock>` return (R166 Q7, originally R165), spun out to R280 (`fetcher-bodies-nonempty-carrier`).
 
 - R278 (Backlog, never specced; retired without a landing commit): `classify-polymorphic-types-in-field-context` absorbed into R279 (`field-first-classification-driver`). R278's analysis (participant role belongs to the returning field's population strategy, not the member's standalone `@table`; `ParticipantRef` needs an `Error` participant kind; an all-`@error` union is conceptually an `ErrorType`; service/reflection-populated non-error polymorphic types are an unhandled `TypeResolver` gap; the `R278` markers and `allowNonTableMembers` flag in `TypeBuilder`/`ParticipantRef` are the cleanup targets) lives in R279's "Polymorphic types and participants" section. R279 is the field-first classification walk that makes field-context polymorphic classification fall out structurally.
 
