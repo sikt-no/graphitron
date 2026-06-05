@@ -14,7 +14,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 | ID | Item | Status | Updated | Plan |
 |---|---|---|---|---|
-| `R276` | Record binding is reflection-only and sound; remove @record reads, ground all producers, eliminate PlainObjectType | In Progress | 2026-06-05 <sub>created 2026-06-02</sub> | [plan](record-binding-reflection-only.md) |
+| `R276` | Record binding is reflection-only and sound; remove @record reads, ground all producers, eliminate PlainObjectType | In Review | 2026-06-05 <sub>created 2026-06-02</sub> | [plan](record-binding-reflection-only.md) |
 | `R19` | Rebase and squash rewrite branch onto main | Ready |  | [plan](history-squash.md) |
 | `R275` | Error channel and data projection for source-record-carrier @service mutations <sub>blocked by: [record-binding-reflection-only](record-binding-reflection-only.md)</sub> | In Progress | 2026-06-05 <sub>created 2026-06-02</sub> | [plan](source-record-carrier-service-error-channel.md) |
 | `R222` | Dimensional model pivot: slots over cross-product permits | Spec | 2026-05-28 <sub>created 2026-05-21</sub> | [plan](dimensional-model-pivot.md) |
@@ -196,7 +196,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### model-cleanup
 
-- `R276` [**Record binding is reflection-only and sound; remove @record reads, ground all producers, eliminate PlainObjectType**](record-binding-reflection-only.md) — In Progress, cleanup
+- `R276` [**Record binding is reflection-only and sound; remove @record reads, ground all producers, eliminate PlainObjectType**](record-binding-reflection-only.md) — In Review, cleanup
 - `R234` [**Support jOOQ embedded and UDT records as non-table input backings**](jooq-embedded-and-udt-input-backings.md) — Backlog, architecture
 - `R263` [**Add a typeName-first decode-helper entry point so resolveDecodeHelperForTable is not a misuse trap**](decode-helper-typename-first-resolution.md) — Backlog, cleanup
 - `R267` [**Replace deprecated-for-removal DataType.convert(Object) in NodeIdEncoder.decode<Type>**](nodeid-encoder-deprecated-convert.md) — Backlog, tech-debt
