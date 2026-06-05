@@ -117,10 +117,14 @@ public sealed interface TypeBackingShape
         record Root() implements NoBacking {}
 
         /**
-         * A result type whose classifier produced no backing: union types, an
-         * {@code @record}-declared type whose {@code className} was unset, or
-         * a plain SDL object. The diagnostic hint is "add {@code @record} or
-         * {@code @table}".
+         * A result type with no backing-class projection: unions, errors,
+         * enums, scalars, connection / edge / PageInfo wrappers, nesting types,
+         * an unclassified type, or an input object whose backing class did not
+         * resolve. None carry a component / accessor list a {@code @field(name:)}
+         * site could resolve against, so the {@code @field} arm produces no
+         * completions. (Since R276 removed {@code @record} binding, a plain SDL
+         * object no longer lands here: it either binds by reflection or
+         * classifies as an {@code UnclassifiedType}.)
          */
         record UnbackedResult() implements NoBacking {}
 

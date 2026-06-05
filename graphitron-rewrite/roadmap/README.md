@@ -14,7 +14,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 | ID | Item | Status | Updated | Plan |
 |---|---|---|---|---|
-| `R276` | Record binding is reflection-only and sound; remove @record reads, ground all producers, eliminate PlainObjectType | In Progress | 2026-06-03 <sub>created 2026-06-02</sub> | [plan](record-binding-reflection-only.md) |
+| `R276` | Record binding is reflection-only and sound; remove @record reads, ground all producers, eliminate PlainObjectType | In Progress | 2026-06-05 <sub>created 2026-06-02</sub> | [plan](record-binding-reflection-only.md) |
 | `R19` | Rebase and squash rewrite branch onto main | Ready |  | [plan](history-squash.md) |
 | `R275` | Error channel and data projection for source-record-carrier @service mutations <sub>blocked by: [record-binding-reflection-only](record-binding-reflection-only.md)</sub> | In Progress | 2026-06-05 <sub>created 2026-06-02</sub> | [plan](source-record-carrier-service-error-channel.md) |
 | `R222` | Dimensional model pivot: slots over cross-product permits | Spec | 2026-05-28 <sub>created 2026-05-21</sub> | [plan](dimensional-model-pivot.md) |
