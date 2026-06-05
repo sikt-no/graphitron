@@ -103,7 +103,7 @@ class ConnectionPromoterTest {
     void structuralConnectionTypedReturn_enrichesPlainObjectEntries_noCarrierRewrite() {
         // SDL declares the Connection / Edge object types itself; the carrier field returns
         // CustomerConnection without @asConnection. Promotion should enrich the
-        // PlainObjectType entries to typed ConnectionType / EdgeType, but emit no
+        // NestingType entries to typed ConnectionType / EdgeType, but emit no
         // CarrierRewrite (the return type already names the Connection).
         String sdl = """
             type Customer { id: ID! }

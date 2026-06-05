@@ -271,8 +271,6 @@ public final class DeclarationHovers {
                   .append("\n\nTable: `").append(nullSafe(t.tableName())).append("`");
             case TypeClassification.PojoResult t ->
                 sb.append("\n\nBacking class: `").append(nullSafe(t.fqClassName())).append("`");
-            case TypeClassification.UnbackedPojoResult ignored ->
-                sb.append("\n\nNo backing class declared.");
             case TypeClassification.PojoInput p ->
                 sb.append("\n\nBacking class: `").append(nullSafe(p.fqClassName())).append("`");
             case TypeClassification.TableInput ti ->

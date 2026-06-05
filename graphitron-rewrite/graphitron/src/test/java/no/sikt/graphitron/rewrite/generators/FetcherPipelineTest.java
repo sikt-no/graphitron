@@ -109,10 +109,9 @@ class FetcherPipelineTest {
 
     @Test
     void propertyField_onBackedRecord_usesAccessorLambda() {
-        // R276: a standalone untyped @record no longer yields a NoBacking PropertyDataFetcher (it
-        // is a PlainObjectType now). A reflection-backed record type reads its scalar field through
-        // the record accessor, emitted as a lambda. The untyped-NoBacking PropertyDataFetcher path
-        // survives only for carrier-promoted DML payloads (see SingleRecordPayloadPipelineTest).
+        // R276: a standalone untyped @record no longer yields an unbacked PropertyDataFetcher (it
+        // is a NestingType now). A reflection-backed record type reads its scalar field through
+        // the record accessor, emitted as a lambda.
         var sdl = """
             type Container { value: String }
             type Query {

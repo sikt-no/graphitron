@@ -249,18 +249,6 @@ class CatalogBuilderSnapshotTest {
             .isInstanceOf(TypeBackingShape.NoBacking.UnclassifiedInterface.class);
     }
 
-    @Test
-    void pojoResultTypeNoBackingProjectsToUnbackedResult() {
-        var registry = new SchemaParser().parse("type Query { x: Int }");
-        var schema = schemaOf("Hint",
-            new GraphitronType.PojoResultType.NoBacking("Hint", SourceLocation.EMPTY));
-
-        var snapshot = CatalogBuilder.buildSnapshot(registry, schema, CompletionData.empty());
-
-        assertThat(snapshot.typesByName().get("Hint"))
-            .isInstanceOf(TypeBackingShape.NoBacking.UnbackedResult.class);
-    }
-
     private static GraphitronSchema schemaOf(String name, GraphitronType type) {
         var types = new LinkedHashMap<String, GraphitronType>();
         types.put(name, type);

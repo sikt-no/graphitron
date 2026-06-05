@@ -23,7 +23,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * R75 Phase 1 execution-tier coverage for single-record DML carrier mutations against
  * PostgreSQL. Each verb's {@code *Payload} mutation returns {@code FilmPayload}, a plain
  * SDL Object wrapping a single {@code @table}-element data field — no Java carrier on
- * disk. The classifier promotes {@code FilmPayload} to {@code PojoResultType.NoBacking};
+ * disk. The classifier binds {@code FilmPayload} to its RETURNING table's
+ * {@code JooqTableRecordType} (R276; NoBacking is retired);
  * the mutation classifies as {@code MutationField.MutationDmlRecordField} with PK-only
  * RETURNING inside a tight transaction; the data field classifies as
  * {@code ChildField.SingleRecordTableField} and runs the response SELECT outside the

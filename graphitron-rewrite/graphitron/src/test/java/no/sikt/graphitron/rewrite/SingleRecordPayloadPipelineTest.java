@@ -277,7 +277,7 @@ class SingleRecordPayloadPipelineTest {
         var schema = TestSchemaHelper.buildSchema(payloadDml(DmlKind.INSERT,
             "type FilmPayload { films: [Film!] }"));
         var carrierType = schema.type("FilmPayload");
-        // R276: a DML carrier binds to its RETURNING table's record (NoBacking is removed).
+        // R276: a DML carrier binds to its RETURNING table's record.
         assertThat(carrierType).isInstanceOf(GraphitronType.JooqTableRecordType.class);
     }
 
@@ -293,10 +293,10 @@ class SingleRecordPayloadPipelineTest {
             }
             """);
         var carrierType = schema.type("FilmCarrier");
-        // R276: a producer-backed carrier (DummyRecord via @service reflection) routes to
-        // JavaRecordType / PojoResultType.Backed; assert the negative — it is NOT a NoBacking arm,
-        // so the carrier-promotion path didn't claim it.
-        assertThat(carrierType).isNotInstanceOf(GraphitronType.PojoResultType.NoBacking.class);
+        // R276: a producer-backed carrier (DummyRecord via @service reflection) routes to a
+        // record-backed ResultType (JavaRecordType / PojoResultType.Backed), confirming the
+        // carrier-promotion path bound it to a concrete backing.
+        assertThat(carrierType).isInstanceOf(GraphitronType.ResultType.class);
     }
 
     // ===== Cross-paths =====
@@ -460,11 +460,11 @@ class SingleRecordPayloadPipelineTest {
             }
             """);
 
-        var carrier = schema.type("FilmDtoPayload");
-        // R276: a carrier-shaped payload that no producer returns (orphan) has no record to bind to,
-        // so it stays a PlainObjectType and its data field stays unregistered. The soundness pass
-        // will later reject such an orphan as an UnclassifiedType; until then it is an inert plain object.
-        assertThat(carrier).isInstanceOf(GraphitronType.PlainObjectType.class);
+        // R276: a carrier-shaped payload that no producer returns (orphan) has no record to bind to
+        // and is not nested under a table-backed parent, so the type pass leaves it unclassified
+        // (absent from schema.types()); its data field stays unregistered. The field that returns it
+        // (Query.x) classifies as UnclassifiedField, surfacing the orphan at the field edge.
+        assertThat(schema.type("FilmDtoPayload")).isNull();
 
         assertThat(schema.field("FilmDtoPayload", "film")).isNull();
     }

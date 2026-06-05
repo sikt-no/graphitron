@@ -121,7 +121,7 @@ public final class ObjectTypeGenerator {
         if (variant instanceof ConnectionType ct) return ct.schemaType();
         if (variant instanceof EdgeType et) return et.schemaType();
         if (variant instanceof PageInfoType pi) return pi.schemaType();
-        if (variant instanceof GraphitronType.PlainObjectType pot) return pot.schemaType();
+        if (variant instanceof GraphitronType.NestingType pot) return pot.schemaType();
         var t = assembled.getType(name);
         return t instanceof GraphQLNamedType named ? named : null;
     }

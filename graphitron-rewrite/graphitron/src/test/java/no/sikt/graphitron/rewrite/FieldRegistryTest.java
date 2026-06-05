@@ -11,7 +11,6 @@ import org.junit.jupiter.api.Test;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatIllegalStateException;
 
 @UnitTier
 class FieldRegistryTest {
@@ -44,13 +43,20 @@ class FieldRegistryTest {
     }
 
     @Test
-    void classify_rejectsDuplicateCoordinates() {
+    void classify_duplicateCoordinates_recordsConflictWithoutThrowing() {
+        // R276 robustness: a double-classification is a generator conflict, but it must not abort
+        // the classification pass (which would hide every other diagnostic). classify records the
+        // colliding coordinate as an UnclassifiedField — surfaced cleanly by the validator — and
+        // continues, rather than throwing an IllegalStateException.
         var registry = new FieldRegistry();
         var field = simpleColumnField("FilmInput", "title");
         registry.classify(coords("FilmInput", "title"), field);
-        assertThatIllegalStateException()
-            .isThrownBy(() -> registry.classify(coords("FilmInput", "title"), field))
-            .withMessageContaining("already classified");
+        registry.classify(coords("FilmInput", "title"), field);
+
+        var entry = registry.get(coords("FilmInput", "title"));
+        assertThat(entry).isInstanceOf(no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField.class);
+        assertThat(((no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField) entry).rejection().message())
+            .contains("classified more than once");
     }
 
     @Test

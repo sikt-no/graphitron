@@ -71,10 +71,10 @@ public final class FetcherRegistrationsEmitter {
             .filter(e -> e.getValue() instanceof GraphitronType.TableType
                       || e.getValue() instanceof GraphitronType.NodeType
                       || e.getValue() instanceof GraphitronType.RootType
-                      // R75 Phase 1: single-record DML carriers register as
-                      // PojoResultType.NoBacking and hold one SingleRecordTableField data field
-                      // that needs a wired fetcher entry. They fall through this filter via the
-                      // ResultType arm — no PlainObjectType widening required.
+                      // Single-record DML carriers bind to a JooqTableRecordType and hold one
+                      // SingleRecordTableField data field that needs a wired fetcher entry. They
+                      // fall through this filter via the ResultType arm — no NestingType
+                      // widening required.
                       || e.getValue() instanceof GraphitronType.ResultType)
             .forEach(e -> typeBody(schema, e.getKey(), fetchersPackage, outputPackage)
                 .ifPresent(body -> result.put(e.getKey(), body)));

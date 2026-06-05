@@ -824,9 +824,9 @@ class FieldBuilder {
         // on TableBackedType by classifyChildFieldOnTableType's caller at line 1217.
         //
         // "No domain classification" includes both the pre-classifier-records-plain-types state
-        // (elementType == null) and the post-Phase-4 state (classified as PlainObjectType).
+        // (elementType == null) and the post-Phase-4 state (classified as NestingType).
         boolean isPlainObjectElement = elementType == null
-            || elementType instanceof GraphitronType.PlainObjectType;
+            || elementType instanceof GraphitronType.NestingType;
         if (ctx.schema.getType(elementTypeName) instanceof GraphQLObjectType graphQLObjectType
                 && isPlainObjectElement) {
             var wrapper = buildWrapper(fieldDef);
@@ -1936,7 +1936,7 @@ class FieldBuilder {
     /**
      * R178 step 2: probe the parent's reflected class for an accessor matching the SDL
      * errors-shaped field name. Returns {@code false} when the parent has no developer-
-     * supplied class (NoBacking carriers) or when no accessor matches.
+     * supplied class or when no accessor matches.
      *
      * <p>The expected return type is {@code java.util.List} — errors-shaped fields are
      * list-typed by structural rule (validated upstream in {@link #liftToErrorsField}).
@@ -2857,20 +2857,20 @@ class FieldBuilder {
 
     /**
      * R178 step 3: structural strict-return check for {@code @service} mutations whose payload
-     * is a NoBacking carrier (no {@code @record} class on the SDL payload type). Inspects the
+     * has no {@code @record} class on the SDL payload type. Inspects the
      * payload SDL directly (single {@code @table}-typed data field) and compares the method's
      * reflected return type against the expected {@code XRecord} (Cardinality.ONE) /
      * {@code List<XRecord>} (Cardinality.MANY) shape.
      *
-     * <p>The check is restricted to NoBacking payloads because ClassBacked payloads have their
+     * <p>The check is restricted to unbacked payloads because ClassBacked payloads have their
      * own diagnostic path through {@link #buildServiceField}'s surviving legacy-equality
      * check, which produces a diagnostic citing the SDL payload's reflected class (not the
      * inner table's record class). The SettKvotesporsmal regression pinned this split:
      * ClassBacked payloads route through {@code buildServiceField}'s "must return
-     * '&lt;PayloadClass&gt;'" reject; NoBacking payloads route through this structural
+     * '&lt;PayloadClass&gt;'" reject; unbacked payloads route through this structural
      * strict-return check.
      *
-     * <p>Returns a non-null rejection string when the payload is NoBacking, structurally a
+     * <p>Returns a non-null rejection string when the payload is unbacked, structurally a
      * single-{@code @table}-data-field carrier, and the method's return type does not equal
      * exactly {@code XRecord} or {@code List<XRecord>}; {@code null} otherwise. Non-carrier
      * payloads (zero or multiple {@code @table}-typed data fields), ClassBacked payloads, and
@@ -2888,7 +2888,7 @@ class FieldBuilder {
      * {@code @service} return resolved to a Result (a backed payload) or a Scalar (a carrier-shaped
      * payload that did not bind because the producer return did not match). A carrier shape whose
      * producer return does not equal {@code XRecord} / {@code List<XRecord>} never binds (RootService
-     * and ServiceEmitted both require the match), so it reaches the Scalar arm as a PlainObjectType;
+     * and ServiceEmitted both require the match), so it reaches the Scalar arm as a NestingType;
      * this check rejects it with the expected-return diagnostic rather than silently admitting a
      * mismatched producer.
      */
@@ -2911,7 +2911,7 @@ class FieldBuilder {
     }
 
     /**
-     * R178 step 3: structural detection for an {@code @service}-carrier shape on a NoBacking
+     * R178 step 3: structural detection for an {@code @service}-carrier shape on an unbacked
      * SDL payload. Mirrors {@code RecordBindingResolver.groundServicePayloadBinding}'s payload
      * SDL walk: scans the payload object's field definitions, looks for exactly one
      * {@code @table}-typed data field (the field's element type is a GraphQL Object carrying
@@ -3222,7 +3222,7 @@ class FieldBuilder {
                             Rejection.structural(sourceSigilError));
                     }
                     // R178 step 3: @service-payload strict-return check detects the payload shape
-                    // directly from the payload SDL. The check fires only for NoBacking payloads
+                    // directly from the payload SDL. The check fires only for unbacked payloads
                     // (no @record class); ClassBacked payloads route through the surviving
                     // legacy-equality check inside buildServiceField, which produces the
                     // payload-class diagnostic. This split is the SettKvotesporsmal bug's
@@ -3238,7 +3238,7 @@ class FieldBuilder {
                 }
                 case ServiceDirectiveResolver.Resolved.Scalar s -> {
                     // R276: a carrier-shaped return that did not bind (the producer return did not
-                    // match XRecord / List<XRecord>) resolves to a Scalar over a PlainObjectType;
+                    // match XRecord / List<XRecord>) resolves to a Scalar over a NestingType;
                     // reject it here so a mismatched producer is an author error, not a silent admit.
                     // Run the $source-sigil check first (mirrors the Result arm), so a $source-typed
                     // data field gets the more specific $source diagnostic; otherwise the generic
@@ -3340,7 +3340,7 @@ class FieldBuilder {
                                         new no.sikt.graphitron.rewrite.model.CallSiteCompaction.NodeIdEncodeKeys(encoder));
                                     // R276: the DELETE carrier now binds to the deleted table's JooqTableRecordType, so
                                     // the per-field pass classifies this ID field as a PropertyField/ColumnField
-                                    // provisional (not the old NoBacking-path SingleRecordIdFieldFromReturning). Accept any
+                                    // provisional (not the old unbacked-path SingleRecordIdFieldFromReturning). Accept any
                                     // provisional — the @mutation DELETE classifier owns the final carrier, mirroring the
                                     // Table arm below which already passes null.
                                     ctx.fieldRegistry.reclassify(coords, carrier, null);
@@ -4340,12 +4340,8 @@ class FieldBuilder {
      * {@link no.sikt.graphitron.rewrite.model.ChildField.RecordLookupTableField}) by reading the
      * FK source columns from the join path's first {@link JoinStep.FkJoin} step.
      *
-     * <p>Returns {@code null} (→ caller falls through to typed-accessor derivation) when:
-     * <ul>
-     *   <li>the join path is empty or its first step is not an {@link JoinStep.FkJoin}</li>
-     *   <li>the parent is an untyped {@link GraphitronType.PojoResultType} with a {@code null} class
-     *       (cannot generate a typed cast for key extraction)</li>
-     * </ul>
+     * <p>Returns {@code null} (→ caller falls through to typed-accessor derivation) when the join
+     * path is empty or its first step is not an {@link JoinStep.FkJoin}.
      *
      * <p>Otherwise returns the projection: {@link SourceKey.Wrap.Row} +
      * {@link SourceKey.Reader.ColumnRead} (the catalog-FK row-keyed shape) with
@@ -4360,9 +4356,6 @@ class FieldBuilder {
             List<JoinStep> joinPath, GraphitronType.ResultType parentResultType,
             ReturnTypeRef.TableBoundReturnType tb) {
         if (joinPath.isEmpty() || !(joinPath.get(0) instanceof JoinStep.FkJoin fkJoin)) {
-            return null;
-        }
-        if (parentResultType instanceof GraphitronType.PojoResultType.NoBacking) {
             return null;
         }
         boolean isList = tb.wrapper().isList();
@@ -4475,7 +4468,7 @@ class FieldBuilder {
         // permits. JooqRecordType / JooqTableRecordType participate in the FK-derivation path
         // and never reach this helper with the FK derivation having returned non-null; on the
         // null-FK path they have no typed accessor mapping the field's @table return, so they
-        // fall through to None. PojoResultType with null fqClassName has no class to reflect on.
+        // fall through to None.
         String parentFqClassName = switch (parentResultType) {
             case GraphitronType.JavaRecordType jrt -> jrt.fqClassName();
             case GraphitronType.PojoResultType prt -> prt.fqClassName();

@@ -86,13 +86,12 @@ class R96RecordBindingPipelineTest {
     }
 
     @Test
-    void unreachable_recordTypeIsIgnored_classifiesAsPlainObject() {
+    void unreachable_recordTypeIsIgnored_leftUnclassified() {
         // R276: @record is deprecated and ignored; binding is reflection-only with no directive
         // fallback. A type carrying @record but reached by no producer has no backing class to
-        // bind to, so it classifies as a PlainObjectType (the directive supplies nothing). The
-        // directive-ignored warning does not fire here (the type isn't "reachable" under the
-        // walker's reachability predicate). This pins that the removed className-fallback stays
-        // removed.
+        // bind to and is not nested under a table-backed parent, so the type pass leaves it
+        // unclassified (absent from schema.types()) — the directive supplies nothing. This pins
+        // that the removed className-fallback stays removed: @record never produces a binding.
         var schema = TestSchemaHelper.buildSchema("""
             type FilmDetails @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyRecord"}) {
                 title: String
@@ -100,15 +99,14 @@ class R96RecordBindingPipelineTest {
             type Query { x: String }
             """);
 
-        assertThat(schema.type("FilmDetails"))
-            .isInstanceOf(GraphitronType.PlainObjectType.class);
+        assertThat(schema.type("FilmDetails")).isNull();
     }
 
     @Test
     void serviceListCarrier_bindsWrapperToJooqTableRecord() {
         // FilmListPayload is a plain SDL Object (no @record) returned by a @service mutation whose
         // method returns List<FilmRecord>. R276 unifies carriers on JooqTableRecordType: the wrapper
-        // binds to the element's table record (the R75 "wrapper does not bind" / NoBacking path is
+        // binds to the element's table record (the R75 "wrapper does not bind" path is
         // retired), and the inner data field reads off it through the standard record-backed path.
         var schema = TestSchemaHelper.buildSchema("""
             type Film @table(name: "film") { title: String }

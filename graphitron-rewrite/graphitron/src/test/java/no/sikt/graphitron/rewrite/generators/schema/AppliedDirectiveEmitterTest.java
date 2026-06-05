@@ -113,7 +113,7 @@ class AppliedDirectiveEmitterTest {
         String sdl = """
             directive @audit(reason: String, ticket: String) on OBJECT
             type Query { user: User }
-            type User @audit(reason: "pii") {
+            type User @table(name: "film") @audit(reason: "pii") {
               id: ID!
             }
             """;
@@ -136,7 +136,7 @@ class AppliedDirectiveEmitterTest {
 
     @Test
     void typesWithoutSurvivors_emitNoWithAppliedDirective() {
-        String sdl = "type Query { x: String } type Film { id: ID! }";
+        String sdl = "type Query { x: String } type Film @table(name: \"film\") { id: ID! }";
         var filmBody = findTypeBody(sdl, "FilmType");
         assertThat(filmBody).doesNotContain(".withAppliedDirective(");
     }

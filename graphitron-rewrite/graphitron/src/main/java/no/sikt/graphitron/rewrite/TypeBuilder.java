@@ -32,7 +32,7 @@ import no.sikt.graphitron.rewrite.model.GraphitronType.InputType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.InterfaceType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.NodeType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.PageInfoType;
-import no.sikt.graphitron.rewrite.model.GraphitronType.PlainObjectType;
+import no.sikt.graphitron.rewrite.model.GraphitronType.NestingType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ResultType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.RootType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.TableBackedType;
@@ -209,7 +209,7 @@ class TypeBuilder {
                 case ConnectionType ignored   -> type;
                 case EdgeType ignored         -> type;
                 case PageInfoType ignored     -> type;
-                case PlainObjectType ignored  -> type;
+                case NestingType ignored  -> type;
                 case no.sikt.graphitron.rewrite.model.GraphitronType.EnumType ignored -> type;
                 case no.sikt.graphitron.rewrite.model.GraphitronType.ScalarType ignored -> type;
                 case UnclassifiedType ignored -> type;
@@ -228,14 +228,14 @@ class TypeBuilder {
         // R75 Phase 1 / R276: bind plain SDL Objects that pass the single-record-carrier trigger to
         // their producer's jOOQ table record (JooqTableRecordType), so the mutation/service
         // classifier resolves the data field through the standard record-backed path. Carrier-shaped
-        // payloads with no producer stay PlainObjectType and are rejected downstream.
+        // payloads with no producer stay NestingType and are rejected downstream.
         promoteSingleRecordPayloads();
 
         return ctx.typeRegistry.entries();
     }
 
     /**
-     * R178 Phase 4 / R276 — walks every {@link PlainObjectType} in the registry and binds those
+     * R178 Phase 4 / R276 — walks every {@link NestingType} in the registry and binds those
      * whose structural carrier-shape scan ({@link BuildContext#scanStructuralDmlPayload}) admits
      * to a {@link GraphitronType.JooqTableRecordType}: the carrier is a payload over a DML
      * {@code RETURNING} or an {@code @service} method's jOOQ record, so it binds to that producer's
@@ -245,19 +245,22 @@ class TypeBuilder {
      * <p>Must run after the second pass so the scan sees the fully-classified element-type registry
      * and so the {@code DmlEmitted} / {@code ServiceEmitted} producer bindings are grounded. A
      * carrier-shaped payload that no producer returns (orphan) has no record to bind to; it stays a
-     * {@link PlainObjectType} and is rejected by the soundness pass. {@code PojoResultType.NoBacking}
-     * is removed: there is no valid schema that classifies as a backing-less result.
+     * {@link NestingType} and is rejected by the soundness pass. There is no valid schema that
+     * classifies as a backing-less result.
      */
     private void promoteSingleRecordPayloads() {
-        var plainObjectNames = ctx.typeRegistry.entries().entrySet().stream()
-            .filter(e -> e.getValue() instanceof PlainObjectType)
-            .map(java.util.Map.Entry::getKey)
+        // Carrier candidates are the directiveless object types the type pass left unclassified
+        // (classifyType returned null). Scan the SDL for them rather than the registry, since they
+        // have no registry entry yet.
+        var candidates = ctx.schema.getAllTypesAsList().stream()
+            .filter(t -> t instanceof GraphQLObjectType && !t.getName().startsWith("__"))
+            .map(graphql.schema.GraphQLNamedType::getName)
+            .filter(name -> !ctx.typeRegistry.contains(name))
             .toList();
-        for (var name : plainObjectNames) {
+        for (var name : candidates) {
             if (!(ctx.scanStructuralDmlPayload(name) instanceof BuildContext.DmlPayloadScan.Admit)) {
                 continue;
             }
-            var current = (PlainObjectType) ctx.typeRegistry.get(name);
             // A producer-backed carrier binds its wrapper to the producer's table record: a DML
             // RETURNING or an @service method yields a Record (single) or Result<Record> (multi),
             // so the carrier IS that record, single or multi cardinality alike. Both DML
@@ -265,16 +268,16 @@ class TypeBuilder {
             // inner data field reads off the record through the standard record-backed path, and
             // the cardinality lives on the producing field, not the carrier type. A carrier-shaped
             // payload with no matching producer (orphan, or a return whose element/cardinality does
-            // not match the carrier so neither RootService nor *Emitted grounds) stays a
-            // PlainObjectType and is rejected by the soundness pass — there is no record to bind to.
+            // not match the carrier so neither RootService nor *Emitted grounds) is left unclassified
+            // here; the field that returns it surfaces the rejection.
             var table = dmlEmittedBinding(name).map(b -> b.tableRef())
                 .or(() -> serviceEmittedBinding(name).map(b -> b.tableRef()))
                 .orElse(null);
             if (table == null) {
                 continue;
             }
-            ctx.typeRegistry.enrich(name,
-                new GraphitronType.JooqTableRecordType(name, current.location(), null, table));
+            ctx.typeRegistry.classify(name,
+                new GraphitronType.JooqTableRecordType(name, locationOf(ctx.schema.getObjectType(name)), null, table));
         }
     }
 
@@ -418,7 +421,15 @@ class TypeBuilder {
             if (named instanceof GraphQLObjectType obj) loc = locationOf(obj);
             else if (named instanceof GraphQLInputObjectType inp) loc = locationOf(inp);
             else continue;
-            ctx.typeRegistry.demote(name, new UnclassifiedType(name, loc, rejection));
+            var unclassified = new UnclassifiedType(name, loc, rejection);
+            // R276: a multi-producer type may have been left unclassified at the type pass (a
+            // directiveless object with no single agreed producer is not registered). demote requires
+            // a prior entry, so classify it as the rejection when absent, demote when present.
+            if (ctx.typeRegistry.contains(name)) {
+                ctx.typeRegistry.demote(name, unclassified);
+            } else {
+                ctx.typeRegistry.classify(name, unclassified);
+            }
         }
     }
 
@@ -454,11 +465,23 @@ class TypeBuilder {
     }
 
     /**
-     * @param allowNestingAsUnbound when {@code true}, plain object types without domain
-     *     directives are accepted as {@link ParticipantRef.Unbound} — they are nesting types
-     *     whose fields expand against the parent table. When {@code false} (union and
-     *     {@code TableInterfaceType} participants), every member must be table-bound or
-     *     carry a domain directive; plain object types are an error.
+     * Classifies each interface implementor / union member into a {@link ParticipantRef}: a
+     * {@code @table}-bound member becomes {@link ParticipantRef.TableBound}; a non-table member
+     * becomes {@link ParticipantRef.Unbound} when the context admits non-table members
+     * ({@code allowNonTableMembers}, a plain interface), else it is an error.
+     *
+     * <p><b>R278 interim:</b> {@code ParticipantRef.Unbound} is overloaded here for two distinct
+     * things, {@code @error} members (e.g. an {@code @error}-only union) and directiveless
+     * implementors of a plain interface, and the participant role is derived from the member type's
+     * standalone classification rather than from the field that returns the polymorphic type. The
+     * proper model (classify in the context of the returning field, give {@code @error} its own
+     * participant kind, handle service-populated polymorphic types) is tracked as a separate roadmap
+     * item; this method keeps the pre-R276 behaviour, only adapted to directiveless objects now being
+     * left unclassified ({@code gt == null}) instead of a {@code PlainObjectType}.
+     *
+     * @param allowNonTableMembers whether non-table members are admitted as {@link ParticipantRef.Unbound}
+     *     (true for a plain {@link InterfaceType}; false for unions and {@code TableInterfaceType},
+     *     where a non-table member is an error).
      * @param interfaceTable the {@code TableInterfaceType}'s own table when building participants
      *     for a single-table interface. Used to detect each participant's cross-table fields
      *     (those whose {@code @reference} terminates on a different table than the interface
@@ -467,7 +490,7 @@ class TypeBuilder {
      *     plain {@link InterfaceType} and {@link UnionType} contexts, which do not project
      *     cross-table fields through this path.
      */
-    private ParticipantListResult buildParticipantList(List<String> typeNames, boolean allowNestingAsUnbound,
+    private ParticipantListResult buildParticipantList(List<String> typeNames, boolean allowNonTableMembers,
                                                        TableRef interfaceTable) {
         var result = new ArrayList<ParticipantRef>();
         var errors = new ArrayList<String>();
@@ -479,12 +502,13 @@ class TypeBuilder {
                     ? extractCrossTableFields(typeName, interfaceTable)
                     : List.of();
                 result.add(new ParticipantRef.TableBound(typeName, tbt.table(), discriminatorValue, crossTableFields));
-            } else if (gt instanceof PlainObjectType && allowNestingAsUnbound) {
-                // Plain SDL object types join as nesting participants only in contexts that
-                // allow nesting (plain InterfaceType). Unions and TableInterfaceType require
-                // a domain directive or table binding.
+            } else if (gt == null && allowNonTableMembers) {
+                // Directiveless implementor of a plain interface: the type pass left it unclassified
+                // (gt == null), and this context admits non-table members. (R278: see class note.)
                 result.add(new ParticipantRef.Unbound(typeName));
-            } else if (gt != null && !(gt instanceof UnclassifiedType) && !(gt instanceof PlainObjectType)) {
+            } else if (gt != null && !(gt instanceof UnclassifiedType)) {
+                // A classified non-table member, e.g. an @error type in an @error-only union.
+                // (R278: @error deserves its own participant kind; see method note.)
                 result.add(new ParticipantRef.Unbound(typeName));
             } else {
                 errors.add("implementing type '" + typeName + "' is not table-bound (missing @table directive)");
@@ -593,13 +617,17 @@ class TypeBuilder {
             // R96/R276: reflection-derived binding from the resolver is the only signal. A
             // reachable type with a resolved producer binding classifies into the appropriate
             // backed variant; the @record directive is deprecated and ignored (it never drives
-            // classification). A type with no reflected producer is a PlainObjectType, including
-            // one that carries only a bare @record (the directive-ignored warning still fires;
-            // there is no producer to read a backing class from).
+            // classification).
             if (bindings.resolveResult(name).isPresent()) {
                 return buildResultType(name, location);
             }
-            return new PlainObjectType(name, location, objType);
+            // A directiveless object with no producer is left UNCLASSIFIED here: the type builder
+            // cannot yet know what it is. It becomes a NestingType only if a NestingField later
+            // references it (assigned post-field-pass, so NestingType implies a corresponding
+            // NestingField by construction); a carrier-shaped payload is bound by
+            // promoteSingleRecordPayloads below; anything else is an orphan, caught at the field
+            // edge where the field referencing it classifies as UnclassifiedField.
+            return null;
         }
         if (namedType instanceof GraphQLInterfaceType iface) {
             if (iface.hasAppliedDirective(DIR_TABLE) && iface.hasAppliedDirective(DIR_DISCRIMINATE)) {

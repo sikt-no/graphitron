@@ -64,14 +64,11 @@ public final class FetcherEmitter {
      * Whether {@code field} would resolve to graphql-java's {@code PropertyDataFetcher} (a property
      * read off the source object) rather than a graphitron-emitted fetcher. Under an
      * {@code Outcome} wrapper this is a silent runtime hole: the read would land on the
-     * {@code Outcome} object itself rather than arm-switching. Two emit-time sources (R268):
-     * an {@code ErrorsField} on the {@code PayloadAccessor} transport, and a property/record field
-     * on a {@code PojoResultType.NoBacking} parent (both emit {@code PropertyDataFetcher.fetching}
-     * in {@link #dataFetcherValueRaw} / {@link #propertyOrRecordValue}). The validator consults this
-     * predicate so it keys on the emitter's own dispositions rather than re-deriving them; the
-     * coupling to {@link #propertyOrRecordValue}'s {@code NoBacking} arm is by convention, not
-     * mechanical, so a third {@code PropertyDataFetcher}-emitting arm added there must be reflected
-     * here too. The live cases are pinned by {@code FetcherPipelineTest} wiring assertions.
+     * {@code Outcome} object itself rather than arm-switching. The emit-time source (R268) is
+     * an {@code ErrorsField} on the {@code PayloadAccessor} transport, which emits
+     * {@code PropertyDataFetcher.fetching} in {@link #dataFetcherValueRaw}. The validator consults
+     * this predicate so it keys on the emitter's own dispositions rather than re-deriving them.
+     * The live case is pinned by {@code FetcherPipelineTest} wiring assertions.
      *
      * <p>This is the {@code PropertyDataFetcher} (registration-escape) family only, the invariant
      * {@code validateOutcomeChildArmSwitch} enforces per R268's spec. It does <em>not</em> claim to
@@ -87,12 +84,8 @@ public final class FetcherEmitter {
      */
     public static boolean resolvesViaPropertyDataFetcher(
             GraphitronField field, GraphitronType.ResultType resultType) {
-        if (field instanceof ChildField.ErrorsField ef
-                && ef.transport() instanceof ChildField.Transport.PayloadAccessor) {
-            return true;
-        }
-        return (field instanceof ChildField.PropertyField || field instanceof ChildField.RecordField)
-            && resultType instanceof GraphitronType.PojoResultType.NoBacking;
+        return field instanceof ChildField.ErrorsField ef
+                && ef.transport() instanceof ChildField.Transport.PayloadAccessor;
     }
 
     /**
@@ -179,12 +172,8 @@ public final class FetcherEmitter {
      * {@code get} (what {@code ColumnFetcher} does, inlined onto {@code success.value()}), a
      * {@code @record}-Java accessor call, or the constructor/nesting source passthrough.
      *
-     * <p>A {@code PropertyField} / {@code RecordField} on a {@link GraphitronType.PojoResultType.NoBacking}
-     * parent has neither a column nor a resolved accessor (it reads via graphql-java's
-     * {@code PropertyDataFetcher}); that shape is rejected under the wrapper transport by
-     * {@link #resolvesViaPropertyDataFetcher} in {@code GraphitronSchemaValidator}, so it never
-     * reaches here in a validated build. The final {@code throw} is the defensive backstop for that
-     * single case.
+     * <p>The final {@code throw} is a defensive backstop for any field/backing combination that
+     * has neither a column nor a resolved accessor and so cannot be projected inline.
      */
     private static CodeBlock inlineSuccessRead(GraphitronField field, GraphitronType.ResultType resultType) {
         if (field instanceof ChildField.ConstructorField || field instanceof ChildField.NestingField) {
@@ -221,9 +210,7 @@ public final class FetcherEmitter {
         }
         throw new IllegalStateException(
             "R268 arm-switch: unsupported inline success-projection field "
-            + field.getClass().getSimpleName() + " on backing " + resultType
-            + "; a NoBacking parent resolves via PropertyDataFetcher and is rejected by "
-            + "GraphitronSchemaValidator.validateOutcomeChildArmSwitch before generation");
+            + field.getClass().getSimpleName() + " on backing " + resultType);
     }
 
     private static ClassName successClass(String outputPackage) {
@@ -899,10 +886,6 @@ public final class FetcherEmitter {
         if (resultType instanceof GraphitronType.JooqTableRecordType
                 || resultType instanceof GraphitronType.JooqRecordType) {
             return CodeBlock.of("new $T<>($T.field($S))", columnFetcherClass, DSL, columnName);
-        }
-        if (resultType instanceof GraphitronType.PojoResultType.NoBacking) {
-            var propertyDataFetcher = ClassName.get("graphql.schema", "PropertyDataFetcher");
-            return CodeBlock.of("$T.fetching($S)", propertyDataFetcher, columnName);
         }
         // @record-Java-backed parent: read the pre-resolved accessor handle. The read itself is the
         // shared recordBackedAccessorRead, source-bound to env.getSource(); the R268 arm-switch path

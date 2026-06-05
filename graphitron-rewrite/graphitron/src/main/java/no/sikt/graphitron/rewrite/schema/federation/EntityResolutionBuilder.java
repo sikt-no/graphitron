@@ -19,7 +19,7 @@ import no.sikt.graphitron.rewrite.model.GraphitronType.JavaRecordType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.JooqRecordType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.JooqTableRecordType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.NodeType;
-import no.sikt.graphitron.rewrite.model.GraphitronType.PlainObjectType;
+import no.sikt.graphitron.rewrite.model.GraphitronType.NestingType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.PojoResultType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.TableInterfaceType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.TableType;
@@ -91,6 +91,22 @@ public final class EntityResolutionBuilder {
         Consumer<BuildWarning> warningSink
     ) {
         var out = new LinkedHashMap<String, EntityResolution>();
+        // R276: a @key object type the type pass left unclassified (a directiveless object — a
+        // federation entity needs a @table) is absent from the registry, so the entity loop below
+        // never sees it. Reject it here with the federation diagnostic rather than letting it slip
+        // through as a generic unclassified field. (Once classified it rides the UnclassifiedType
+        // skip in the loop below.)
+        for (var named : assembled.getAllTypesAsList()) {
+            if (named instanceof GraphQLObjectType keyObj
+                    && !keyObj.getName().startsWith("__")
+                    && !keyObj.getAppliedDirectives(KEY_DIRECTIVE).isEmpty()
+                    && !registry.contains(keyObj.getName())) {
+                var loc = keyObj.getDefinition() != null ? keyObj.getDefinition().getSourceLocation() : null;
+                registry.classify(keyObj.getName(), new UnclassifiedType(keyObj.getName(), loc, Rejection.structural(
+                    "@key on type '" + keyObj.getName() + "' requires a table-bound type, but '" + keyObj.getName()
+                    + "' is classified as a plain object type — federation entities need a @table directive.")));
+            }
+        }
         for (var entry : List.copyOf(registry.entries().entrySet())) {
             String typeName = entry.getKey();
             GraphitronType gType = entry.getValue();
@@ -173,7 +189,7 @@ public final class EntityResolutionBuilder {
      */
     private static String kindLabel(GraphitronType gType) {
         return switch (gType) {
-            case PlainObjectType p -> "a plain object type";
+            case NestingType p -> "a plain object type";
             case JavaRecordType r -> "a @record type";
             case PojoResultType r -> "a @record type";
             case JooqRecordType r -> "a @record type";
