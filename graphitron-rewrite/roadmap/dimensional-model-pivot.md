@@ -7,7 +7,7 @@ priority: 3
 theme: structural-refactor
 depends-on: []
 created: 2026-05-21
-last-updated: 2026-05-28
+last-updated: 2026-06-05
 ---
 
 # Dimensional model pivot: slots over cross-product permits
@@ -113,7 +113,7 @@ R164's content. `DataFetcherBuilder`, `QueryBuilder`, `ValidationBuilder` dimens
 
 ### Stage 4 — Failure at the wrapper everywhere
 
-R226's content. `UnclassifiedType` and `UnclassifiedField` retire. `GraphitronSchemaValidator.validateUnclassifiedType` / `validateUnclassifiedField` retire. Type-level classification (`GraphitronSchemaBuilder`'s type-classification step) lifts into `WalkerResult<C>`. The validator's surface narrows to cross-type invariant checks. `ValidationReport`'s `errors` / `warnings` slots collapse into the unified `Diagnostic` stream.
+R226's content. `UnclassifiedType` and `UnclassifiedField` retire. `GraphitronSchemaValidator.validateUnclassifiedType` / `validateUnclassifiedField` retire. Type-level classification (`GraphitronSchemaBuilder`'s type-classification step) lifts into `WalkerResult<C>`. The validator's surface narrows to cross-type invariant checks. `ValidationReport`'s `errors` / `warnings` slots collapse into the unified `Diagnostic` stream. R279 (`field-first-classification-driver`, supersedes R166) restructures that classification driver ahead of this lift, into a single reachability-driven field-first walk; it preserves the `Unclassified*` carriers and the classify → validate split, so this Stage 4 lift rides on its walk rather than the eager type pass.
 
 ### Stage 5 — Legacy permit deletion
 
@@ -155,7 +155,7 @@ Adjacent but not absorbed:
 - **R220 / R193** (`ServiceCatalog` predicate consolidation, sealed `UnresolvedParam`): same disease in a different file. R222 primes the pattern; those items apply it on the consumer-side surface independently.
 - **R122** (compound-entity-mutations): contract partner. R122 owns `InsertRowsWalker`'s tree shape and FK threading; R222 names the slot the producer fills.
 - **R200 / R195** (honor `@field(name:)` in `InputBeanResolver`): naming binding between SDL fields and Java members, orthogonal to the pivot.
-- **R166 Phase 1** (reachability slot): orthogonal; producers run on reachable fields anyway.
+- **R279** (`field-first-classification-driver`): a slice under this umbrella that restructures `GraphitronSchemaBuilder`'s classification *driver* into a single reachability-driven, field-first walk, and supersedes R166. Orthogonal to the slot/carrier work here, the dimensional-slot producers run on reachable fields regardless, but it is where the umbrella's reachability prune (the old R166 Phase 1 reachability slot) actually lands, and the Stage 4 failure-at-the-wrapper lift rides on its walk.
 
 ## Dependencies and sequencing
 
@@ -191,7 +191,7 @@ The names below are the working vocabulary for the umbrella; slices may rename, 
 - The R122 `InsertRowsWalker` tree shape and FK threading — R122 owns.
 - `ServiceCatalog` predicate consolidation (R220 / R193) — adjacent disease in a different file.
 - `argMapping` grouping syntax (R97 Phase 1) — adjacent.
-- Reachability pruning across all type kinds (R166 Phase 1) — orthogonal.
+- Reachability pruning across all type kinds — owned by R279 (`field-first-classification-driver`, supersedes R166 Phase 1), the driver-restructure slice; orthogonal to the slot/carrier work here.
 - Producer-side unification of method invocation paths (uniform reflection-mapping rules across `@service` / `@externalField` / `@tableMethod` / `@condition`) — separate work that R164's `DataFetcherBuilder` dimension may absorb piecewise; not load-bearing on the umbrella.
 
 ## Previous design attempts
