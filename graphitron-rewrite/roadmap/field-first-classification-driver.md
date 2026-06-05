@@ -36,11 +36,19 @@ and participants" section below) and **supersedes** R166
 (`graphqlschemavisitor-driven-emission`); R279 is the field-context classification
 mechanism R278 called for. It supersedes R166 rather than implementing
 it: R166 proposed a `GraphQLSchemaVisitor`-driven *emission* walk to fix per-emitter skip-
-filter drift and the missing reachability sweep; here the visitor walk is **classification
-only**, the reachability prune happens once at classification, and emission (like
-validation) stays plain iteration over the already-pruned `GraphitronSchema` and needs no
-per-emitter filters because the model only contains reachable, classified things. R166's
-goals are met without a visitor-driven emitter.
+filter drift (the R165 bug class: N emitters each choosing their own skip rules, so
+`FetcherRegistrationsEmitter` keeps an empty-bodied keyset entry, `ObjectTypeGenerator`
+skips the method, `GraphitronSchemaClassGenerator` emits the call site, and the consumer's
+`javac` fails) and the missing reachability sweep; here the visitor walk is
+**classification only**, the reachability prune happens once at classification, and
+emission (like validation) stays plain iteration over the already-pruned `GraphitronSchema`
+and needs no per-emitter filters because the model only contains reachable, classified
+things. R166's goals are met without a visitor-driven emitter, and its standalone
+`ReachabilityPruner` post-pass alternative is obviated: reachability is structural here, not
+a filter bolted onto `schema.types()`. R166's one orthogonal sub-thread, the typed
+non-empty carrier for `FetcherRegistrationsEmitter`'s return (R166 Q7, originally R165),
+spun out to R280 (`fetcher-bodies-nonempty-carrier`) since it is an emitter-return invariant
+independent of how classification works.
 
 Walk shape (converged in the originating discussion; not yet a frozen contract). The
 **only** visitor-based phase is classification; validation and emission iterate the
