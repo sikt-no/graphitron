@@ -4289,14 +4289,15 @@ class GraphQLQueryTest {
     @SuppressWarnings("unchecked")
     void filmLookup_validId_returnsHappyPathPayload() {
         // Happy path: the service returns FilmLookupPayload directly (NoAssembly), no catch arm
-        // fires, errors is the empty list. Confirms the per-fetcher try/catch wrapper doesn't
-        // perturb non-error returns.
+        // fires, errors resolves null on the Success arm (R275: null, not [], honouring the
+        // nullable errors field). Confirms the per-fetcher try/catch wrapper doesn't perturb
+        // non-error returns.
         Map<String, Object> data = execute("""
             { filmLookup(id: 5) { title errors { __typename } } }
             """);
         var payload = assertThat(data).extractingByKey("filmLookup", as(MAP));
         payload.containsEntry("title", "THE LOOKED-UP FILM");
-        payload.extractingByKey("errors", as(LIST)).isEmpty();
+        payload.containsEntry("errors", null);
     }
 
     // ===== R12 mutation-side @error end-to-end =====
@@ -4388,7 +4389,7 @@ class GraphQLQueryTest {
             """);
         var payload = assertThat(data).extractingByKey("submitFilmReview", as(MAP));
         payload.containsEntry("reviewId", 50042);
-        payload.extractingByKey("errors", as(LIST)).isEmpty();
+        payload.containsEntry("errors", null);
     }
 
     // ===== R268 arm-switch: @table DataLoader data field under a root @service Outcome payload =====
@@ -4404,10 +4405,11 @@ class GraphQLQueryTest {
 
     @Test
     @SuppressWarnings("unchecked")
-    void submitFilmReviewWithFilm_validInput_armSwitchLoadsFilmAndEmptyErrors() {
+    void submitFilmReviewWithFilm_validInput_armSwitchLoadsFilmAndNullErrors() {
         // Happy path: service returns the payload (reviewId = 5 * 10000 + 1 = 50001, filmId = 1).
         // The film fetcher narrows Outcome.Success, lifts filmId off success.value(), and
-        // batch-loads film 1 (ACADEMY DINOSAUR); errors resolves empty on the Success arm.
+        // batch-loads film 1 (ACADEMY DINOSAUR); errors resolves null on the Success arm (R275:
+        // null, not [], so the wire honours the nullable errors field's SDL nullability).
         Map<String, Object> data = execute("""
             mutation {
                 submitFilmReviewWithFilm(filmId: 1, rating: 5) {
@@ -4419,7 +4421,7 @@ class GraphQLQueryTest {
             """);
         var payload = assertThat(data).extractingByKey("submitFilmReviewWithFilm", as(MAP));
         payload.containsEntry("reviewId", 50001);
-        payload.extractingByKey("errors", as(LIST)).isEmpty();
+        payload.containsEntry("errors", null);
         var only = payload.extractingByKey("film", as(list(Map.class)))
             .hasSize(1)
             .element(0, as(MAP));
@@ -4458,6 +4460,61 @@ class GraphQLQueryTest {
         only.containsEntry("message", "rating must be in [1, 10]; got 11");
         only.extractingByKey("path", as(LIST))
             .containsExactly("submitFilmReviewWithFilm", "errors", "0", "path");
+    }
+
+    // ===== R275 source-record carrier with an error channel end-to-end =====
+    //
+    // serviceFilmByIdWithErrors returns a bare FilmRecord into { film: Film, errors: [...] }. The
+    // producer wraps the record in Outcome; the `film` field is a SingleRecordTableField with the
+    // OUTCOME_SUCCESS envelope, so its fetcher narrows Outcome.Success and reads off success.value()
+    // (success arm) or returns null (ErrorList arm). Before R275 the fetcher cast the Outcome source
+    // straight to FilmRecord and threw ClassCastException — the opptak buckets B/D defect.
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void serviceFilmByIdWithErrors_validId_armSwitchReadsFilmOffSuccessValue() {
+        // Success arm: the service returns FilmRecord(1); the producer emits Outcome.Success. The
+        // film fetcher narrows Success, casts success.value() to FilmRecord, and re-selects the full
+        // row; errors resolves null on the success arm (R275: null, not []).
+        Map<String, Object> data = execute("""
+            mutation {
+                serviceFilmByIdWithErrors(id: 1) {
+                    film { filmId title }
+                    errors { __typename }
+                }
+            }
+            """);
+        var payload = assertThat(data).extractingByKey("serviceFilmByIdWithErrors", as(MAP));
+        payload.containsEntry("errors", null);
+        var film = payload.extractingByKey("film", as(MAP));
+        film.containsEntry("filmId", 1);
+        film.containsEntry("title", "ACADEMY DINOSAUR");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void serviceFilmByIdWithErrors_missingFilm_armSwitchRendersFilmNull() {
+        // Error arm: id 999 throws the mapped @error; the producer routes it onto Outcome.ErrorList.
+        // The film fetcher narrows Success, sees the error arm, and resolves null before any key
+        // read (no ClassCastException, no NPE); the typed error lands in the errors union.
+        Map<String, Object> data = execute("""
+            mutation {
+                serviceFilmByIdWithErrors(id: 999) {
+                    film { filmId title }
+                    errors {
+                        __typename
+                        ... on FilmReviewMissingFilm { message }
+                    }
+                }
+            }
+            """);
+        var payload = assertThat(data).extractingByKey("serviceFilmByIdWithErrors", as(MAP));
+        payload.containsEntry("film", null);
+        var only = payload.extractingByKey("errors", as(list(Map.class)))
+            .hasSize(1)
+            .element(0, as(MAP));
+        only.containsEntry("__typename", "FilmReviewMissingFilm");
+        only.containsEntry("message", "film 999 not found");
     }
 
     // ===== R12 DML LocalContext error channel end-to-end =====
@@ -4568,7 +4625,7 @@ class GraphQLQueryTest {
             """);
         var payload = assertThat(data).extractingByKey("submitSetterShapeFilmReview", as(MAP));
         payload.containsEntry("reviewId", 50042);
-        payload.extractingByKey("errors", as(LIST)).isEmpty();
+        payload.containsEntry("errors", null);
     }
 
     @Test
@@ -4621,6 +4678,6 @@ class GraphQLQueryTest {
             """);
         var payload = assertThat(data).extractingByKey("submitFilmReviewWithDetails", as(MAP));
         payload.containsEntry("reviewId", 50042);
-        payload.extractingByKey("errors", as(LIST)).isEmpty();
+        payload.containsEntry("errors", null);
     }
 }

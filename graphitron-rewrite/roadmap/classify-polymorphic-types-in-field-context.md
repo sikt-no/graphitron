@@ -5,7 +5,7 @@ status: Backlog
 bucket: structural-refactor
 priority: 6
 theme: structural-refactor
-depends-on: [R276]
+depends-on: [record-binding-reflection-only]
 created: 2026-06-04
 last-updated: 2026-06-04
 ---

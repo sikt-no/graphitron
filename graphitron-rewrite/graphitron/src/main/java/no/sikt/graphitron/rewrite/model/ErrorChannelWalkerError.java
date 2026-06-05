@@ -32,6 +32,7 @@ import java.util.stream.Collectors;
 public sealed interface ErrorChannelWalkerError extends Rejection.AuthorError permits
     ErrorChannelWalkerError.MultipleErrorsFields,
     ErrorChannelWalkerError.NonNullableSuccessProjectionField,
+    ErrorChannelWalkerError.NonNullableErrorsField,
     ErrorChannelWalkerError.ChannelRuleViolation,
     ErrorChannelWalkerError.HandlerSourceAccessorMissing
 {
@@ -80,6 +81,26 @@ public sealed interface ErrorChannelWalkerError extends Rejection.AuthorError pe
                 + "Success-projection fields must be nullable";
         }
         @Override public String lspCode() { return "graphitron.error-channel.non-nullable-success-field"; }
+    }
+
+    /**
+     * Raised by the {@code OutcomeType} classification (R275): the errors field carries a non-null
+     * list type ({@code [X!]!}). The mirror of {@link NonNullableSuccessProjectionField}: the
+     * success arm resolves the errors field to {@code null} (there are no errors), so a non-null
+     * errors field would raise {@code NonNullableFieldWasNullError} and drop the sibling data field
+     * on every success. Errors fields must be nullable so {@code null} is a legal success-arm value.
+     */
+    record NonNullableErrorsField(
+        String outcomeTypeName,
+        String fieldName
+    ) implements ErrorChannelWalkerError {
+        @Override public String message() {
+            return "outcome type '" + outcomeTypeName + "' has a non-null errors field '"
+                + fieldName + "'; on the success arm there are no errors and this field resolves "
+                + "null, which would raise NonNullableFieldWasNullError and drop the sibling data "
+                + "field. Errors fields must be nullable";
+        }
+        @Override public String lspCode() { return "graphitron.error-channel.non-nullable-errors-field"; }
     }
 
     /**

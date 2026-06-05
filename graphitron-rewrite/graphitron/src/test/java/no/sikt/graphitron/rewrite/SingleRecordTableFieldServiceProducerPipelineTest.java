@@ -44,12 +44,59 @@ class SingleRecordTableFieldServiceProducerPipelineTest {
         var srtf = (ChildField.SingleRecordTableField) dataField;
         var sk = srtf.sourceKey();
         assertThat(sk.reader()).isInstanceOf(SourceKey.Reader.ResultRowWalk.class);
+        // No errors field on the payload -> the producer returns the record bare, so the source
+        // envelope is DIRECT (env.getSource() is the FilmRecord, not an Outcome).
+        assertThat(((SourceKey.Reader.ResultRowWalk) sk.reader()).envelope())
+            .isEqualTo(SourceKey.Reader.SourceEnvelope.DIRECT);
         assertThat(sk.wrap()).isInstanceOf(SourceKey.Wrap.TableRecord.class);
         assertThat(((SourceKey.Wrap.TableRecord) sk.wrap()).className())
             .isEqualTo(sk.target().recordClass());
         assertThat(sk.cardinality()).isEqualTo(SourceKey.Cardinality.ONE);
         assertThat(sk.path()).isEmpty();
         assertThat(sk.columns()).extracting(c -> c.sqlName()).containsExactly("film_id");
+    }
+
+    /**
+     * R275: the source-record carrier with an error channel. Adding an {@code errors} field to the
+     * payload routes the {@code @service} producer through the typed {@code Outcome} wrapper, so the
+     * data field's {@link SourceKey.Reader.ResultRowWalk} records the {@code OUTCOME_SUCCESS}
+     * envelope (the fetcher narrows {@code Outcome.Success} and reads off {@code success.value()})
+     * and the sibling errors field is the {@code WrapperArm} transport. This is the opptak
+     * {@code { sak: Sak, errors: [...] }} shape that buckets B/D failed on before R275.
+     */
+    @Test
+    void serviceProducer_withErrorsField_recordsOutcomeSuccessEnvelope() {
+        var schema = TestSchemaHelper.buildSchema("""
+            type Film @table(name: "film") { title: String }
+            type DbErr @error(handlers: [{handler: DATABASE}]) {
+                path: [String!]!
+                message: String!
+            }
+            union FilmError = DbErr
+            type FilmPayload {
+                film: Film
+                errors: [FilmError]
+            }
+            type Query { x: String }
+            type Mutation {
+                runFilm: FilmPayload
+                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "runFilm"})
+            }
+            """);
+
+        var dataField = schema.field("FilmPayload", "film");
+        assertThat(dataField).isInstanceOf(ChildField.SingleRecordTableField.class);
+        var sk = ((ChildField.SingleRecordTableField) dataField).sourceKey();
+        assertThat(sk.reader()).isInstanceOf(SourceKey.Reader.ResultRowWalk.class);
+        assertThat(((SourceKey.Reader.ResultRowWalk) sk.reader()).envelope())
+            .isEqualTo(SourceKey.Reader.SourceEnvelope.OUTCOME_SUCCESS);
+        assertThat(sk.wrap()).isInstanceOf(SourceKey.Wrap.TableRecord.class);
+
+        // The sibling errors field rides the WrapperArm transport (the Outcome.ErrorList arm).
+        var errorsField = schema.field("FilmPayload", "errors");
+        assertThat(errorsField).isInstanceOf(ChildField.ErrorsField.class);
+        assertThat(((ChildField.ErrorsField) errorsField).transport())
+            .isInstanceOf(ChildField.Transport.WrapperArm.class);
     }
 
     /** MANY / single-PK admission: @service returning {@code List<FilmRecord>}. */

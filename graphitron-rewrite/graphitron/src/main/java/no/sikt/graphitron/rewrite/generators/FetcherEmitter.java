@@ -36,7 +36,6 @@ import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.DSL;
 public final class FetcherEmitter {
 
     private static final ClassName DATA_FETCHING_ENV = ClassName.get("graphql.schema", "DataFetchingEnvironment");
-    private static final ClassName LIST = ClassName.get("java.util", "List");
     private static final ClassName RECORD = ClassName.get("org.jooq", "Record");
 
     /** The default source binding for an inline read: {@code env.getSource()}. */
@@ -268,13 +267,15 @@ public final class FetcherEmitter {
                 }
                 case ChildField.Transport.LocalContext ignored ->
                     CodeBlock.of("($T env) -> env.getLocalContext()", DATA_FETCHING_ENV);
-                // R244: the errors list rides on the Outcome.ErrorList arm of the non-null Outcome
-                // source. On the Success arm there are no errors, so resolve the empty list; the
-                // ternary reads cleaner than an if/return here because both arms are single
-                // expressions over the same source check.
+                // R244/R275: the errors list rides on the Outcome.ErrorList arm of the non-null
+                // Outcome source. On the Success arm there are no errors, so resolve null (not
+                // List.of()) to honour the errors field's SDL nullability on the wire (admissio
+                // parity). The NonNullableErrorsField classify-time rule guarantees the field is
+                // nullable, so null is always a legal success-arm value. The ternary reads cleaner
+                // than an if/return here because both arms are single expressions over the same check.
                 case ChildField.Transport.WrapperArm ignored ->
-                    CodeBlock.of("($T env) -> env.getSource() instanceof $T<?> errorList ? errorList.errors() : $T.of()",
-                        DATA_FETCHING_ENV, errorListClass(outputPackage), LIST);
+                    CodeBlock.of("($T env) -> env.getSource() instanceof $T<?> errorList ? errorList.errors() : null",
+                        DATA_FETCHING_ENV, errorListClass(outputPackage));
             };
         }
         if (field instanceof ChildField.PropertyField pf && resultType != null) {
@@ -597,14 +598,29 @@ public final class FetcherEmitter {
         var pkColumns = sk.columns();
         boolean many = sk.cardinality() == SourceKey.Cardinality.MANY;
         var javaUtilList = ClassName.get("java.util", "List");
+        // R275: read the source envelope off the field's SourceKey (recorded at classification).
+        // Under OUTCOME_SUCCESS the @service producer wrapped its returned record in a non-null
+        // Outcome, so narrow Success and read the record off success.value(), resolving null on the
+        // ErrorList arm; under DIRECT the record is env.getSource() verbatim. The SourceKey
+        // invariant pins OUTCOME_SUCCESS to this (Wrap.TableRecord) arm, so the Record (DML) arm
+        // needs no envelope branch.
+        boolean outcomeWrapped = ((SourceKey.Reader.ResultRowWalk) srtf.sourceKey().reader()).envelope()
+            == SourceKey.Reader.SourceEnvelope.OUTCOME_SUCCESS;
+        CodeBlock sourceExpr = outcomeWrapped
+            ? CodeBlock.of("success.value()")
+            : CodeBlock.of("env.getSource()");
 
         var body = CodeBlock.builder().add("($T env) -> {\n", DATA_FETCHING_ENV);
+        if (outcomeWrapped) {
+            body.add("    if (!(env.getSource() instanceof $T<?> success)) return null;\n",
+                successClass(outputPackage));
+        }
         if (many) {
             var listOfRecord = ParameterizedTypeName.get(javaUtilList, recordType);
-            body.add("    $T source = ($T) env.getSource();\n", listOfRecord, listOfRecord);
+            body.add("    $T source = ($T) $L;\n", listOfRecord, listOfRecord, sourceExpr);
             body.add("    if (source.isEmpty()) return source;\n");
         } else {
-            body.add("    $T source = ($T) env.getSource();\n", recordType, recordType);
+            body.add("    $T source = ($T) $L;\n", recordType, recordType, sourceExpr);
             body.add("    if (source == null) return null;\n");
         }
         body.add("    $T dsl = (($T) env.getGraphQlContext().get($T.class)).getDslContext(env);\n",

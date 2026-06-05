@@ -1868,8 +1868,12 @@ class FieldBuilder {
                     + "Use [" + returnType.returnTypeName() + "] or [" + returnType.returnTypeName() + "!]"));
         }
         if (!list.listNullable()) {
-            return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural("errors-shaped list field must be nullable; declared as non-null. "
-                    + "Use [" + returnType.returnTypeName() + "] or [" + returnType.returnTypeName() + "!]"));
+            // R275: typed NonNullableErrorsField arm (mirror of NonNullableSuccessProjectionField).
+            // On the Outcome success arm the errors field resolves null, so a non-null list would
+            // raise NonNullableFieldWasNullError and drop the sibling data field; errors fields must
+            // be nullable. Typed so the LSP projects the stable graphitron.error-channel.* code.
+            return new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                new ErrorChannelWalkerError.NonNullableErrorsField(parentTypeName, name));
         }
 
         // R178 step 2 / Phase 4: transport selection runs through {@link #selectErrorsTransport}
@@ -2085,6 +2089,10 @@ class FieldBuilder {
         if (mappedErrorTypes == null) {
             return new ServiceOutcomeResult.NoChannel();
         }
+        // The errors field's own nullability (it must be a nullable list) is enforced where the
+        // errors field is classified, in liftToErrorsField -> NonNullableErrorsField; a non-null
+        // errors field surfaces there as an UnclassifiedField on the errors field itself, so it is
+        // not re-checked here. This sibling check owns only the success-projection (data) field.
         // Nullable-success-projection invariant: a non-null data field resolves null on the
         // ErrorList arm and bubbles NonNullableFieldWasNullError up, dropping the sibling errors
         // field. Enforced here (classify time) where the SDL nullability is visible.
@@ -3771,6 +3779,28 @@ class FieldBuilder {
             bareNames, String.join(", ", atNames) + " are mutually exclusive");
     }
 
+    /**
+     * R275: whether the carrier payload type declares an {@code errors} field (structural match
+     * via {@link BuildContext#detectErrorsFieldShape}). This is the condition under which an
+     * {@code @service} carrier's producer routes through the typed {@code Outcome} wrapper (the
+     * mutation field's {@link ErrorChannel.Mapped} channel from
+     * {@link #resolveServiceOutcomeChannel}); the data field uses it to record its
+     * {@link SourceKey.Reader.SourceEnvelope}. Mirrors the errors-field detection in
+     * {@code resolveServiceOutcomeChannel} so the consumer-side envelope and the producer-side
+     * channel agree on the same structural signal.
+     */
+    private boolean carrierPayloadHasErrorsField(String payloadTypeName) {
+        if (!(ctx.schema.getType(payloadTypeName) instanceof GraphQLObjectType payloadObj)) {
+            return false;
+        }
+        for (var f : payloadObj.getFieldDefinitions()) {
+            if (ctx.detectErrorsFieldShape(f) != null) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private GraphitronField classifyChildFieldOnResultType(GraphQLFieldDefinition fieldDef, String parentTypeName,
             ResultType parentResultType, Class<?> parentBackingClass) {
         String name = fieldDef.getName();
@@ -3822,7 +3852,10 @@ class FieldBuilder {
                     List.of(),
                     new SourceKey.Wrap.Record(),
                     cardinality,
-                    new SourceKey.Reader.ResultRowWalk());
+                    // DML carriers deliver the RecordN<PK> directly on env.getSource() (the
+                    // sentinel/localContext transport); errors ride the LocalContext channel, not
+                    // an Outcome wrapper, so the source envelope is always DIRECT.
+                    new SourceKey.Reader.ResultRowWalk(SourceKey.Reader.SourceEnvelope.DIRECT));
                 return new ChildField.SingleRecordTableField(
                     parentTypeName, name, location, tb, sourceKey);
             }
@@ -3862,13 +3895,22 @@ class FieldBuilder {
                 var cardinality = tb.wrapper().isList()
                     ? SourceKey.Cardinality.MANY
                     : SourceKey.Cardinality.ONE;
+                // R275: an @service carrier whose payload carries an errors field routes the
+                // producer through the typed Outcome wrapper (the same condition that gives the
+                // mutation field its ErrorChannel.Mapped channel, see resolveServiceOutcomeChannel),
+                // so the data field reads its record off Outcome.Success.value(). With no errors
+                // field the producer returns the XRecord bare. The envelope rides on the field so
+                // the emitter never re-derives it from sibling fields.
+                var envelope = carrierPayloadHasErrorsField(parentTypeName)
+                    ? SourceKey.Reader.SourceEnvelope.OUTCOME_SUCCESS
+                    : SourceKey.Reader.SourceEnvelope.DIRECT;
                 var sourceKey = new SourceKey(
                     binding.tableRef(),
                     pkColumns,
                     List.of(),
                     new SourceKey.Wrap.TableRecord(binding.tableRef().recordClass()),
                     cardinality,
-                    new SourceKey.Reader.ResultRowWalk());
+                    new SourceKey.Reader.ResultRowWalk(envelope));
                 return new ChildField.SingleRecordTableField(
                     parentTypeName, name, location, tb, sourceKey);
             }

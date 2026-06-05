@@ -150,7 +150,7 @@ class SourceKeyTest {
             List.of(),
             new SourceKey.Wrap.Record(),
             SourceKey.Cardinality.MANY,
-            new SourceKey.Reader.ResultRowWalk());
+            new SourceKey.Reader.ResultRowWalk(SourceKey.Reader.SourceEnvelope.DIRECT));
         assertThat(key.reader()).isInstanceOf(SourceKey.Reader.ResultRowWalk.class);
         assertThat(key.wrap()).isInstanceOf(SourceKey.Wrap.Record.class);
     }
@@ -165,9 +165,40 @@ class SourceKeyTest {
             List.of(),
             new SourceKey.Wrap.TableRecord(FILM_TABLE.recordClass()),
             SourceKey.Cardinality.MANY,
-            new SourceKey.Reader.ResultRowWalk());
+            new SourceKey.Reader.ResultRowWalk(SourceKey.Reader.SourceEnvelope.DIRECT));
         assertThat(key.reader()).isInstanceOf(SourceKey.Reader.ResultRowWalk.class);
         assertThat(key.wrap()).isInstanceOf(SourceKey.Wrap.TableRecord.class);
+    }
+
+    @Test
+    void resultRowWalkOutcomeSuccessEnvelopeAcceptsTableRecord() {
+        // R275: the OUTCOME_SUCCESS envelope (the @service error-channel carrier) pairs with
+        // Wrap.TableRecord(target.recordClass()) — the producer wrapped its typed record in Outcome.
+        var key = new SourceKey(
+            FILM_TABLE,
+            List.of(FILM_ID),
+            List.of(),
+            new SourceKey.Wrap.TableRecord(FILM_TABLE.recordClass()),
+            SourceKey.Cardinality.ONE,
+            new SourceKey.Reader.ResultRowWalk(SourceKey.Reader.SourceEnvelope.OUTCOME_SUCCESS));
+        assertThat(((SourceKey.Reader.ResultRowWalk) key.reader()).envelope())
+            .isEqualTo(SourceKey.Reader.SourceEnvelope.OUTCOME_SUCCESS);
+    }
+
+    @Test
+    void resultRowWalkOutcomeSuccessEnvelopeRejectsWrapRecord() {
+        // R275: the OUTCOME_SUCCESS envelope only ever pairs with Wrap.TableRecord (the @service
+        // carrier). Wrap.Record is the DML carrier, which delivers its row bare and is always DIRECT.
+        assertThatThrownBy(() -> new SourceKey(
+                FILM_TABLE,
+                List.of(FILM_ID),
+                List.of(),
+                new SourceKey.Wrap.Record(),
+                SourceKey.Cardinality.ONE,
+                new SourceKey.Reader.ResultRowWalk(SourceKey.Reader.SourceEnvelope.OUTCOME_SUCCESS)))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("OUTCOME_SUCCESS")
+            .hasMessageContaining("Wrap.TableRecord");
     }
 
     @Test
@@ -182,7 +213,7 @@ class SourceKeyTest {
                 List.of(),
                 new SourceKey.Wrap.TableRecord(otherRecord),
                 SourceKey.Cardinality.ONE,
-                new SourceKey.Reader.ResultRowWalk()))
+                new SourceKey.Reader.ResultRowWalk(SourceKey.Reader.SourceEnvelope.DIRECT)))
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessageContaining("ResultRowWalk")
             .hasMessageContaining("target.recordClass");
@@ -196,7 +227,7 @@ class SourceKeyTest {
                 List.of(TestFixtures.liftedHop(FILM_TABLE, List.of(FILM_ID), "step_0")),
                 new SourceKey.Wrap.Record(),
                 SourceKey.Cardinality.MANY,
-                new SourceKey.Reader.ResultRowWalk()))
+                new SourceKey.Reader.ResultRowWalk(SourceKey.Reader.SourceEnvelope.DIRECT)))
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessageContaining("ResultRowWalk")
             .hasMessageContaining("empty path");
@@ -211,7 +242,7 @@ class SourceKeyTest {
                 List.of(TestFixtures.liftedHop(FILM_TABLE, List.of(FILM_ID), "step_0")),
                 new SourceKey.Wrap.TableRecord(FILM_TABLE.recordClass()),
                 SourceKey.Cardinality.MANY,
-                new SourceKey.Reader.ResultRowWalk()))
+                new SourceKey.Reader.ResultRowWalk(SourceKey.Reader.SourceEnvelope.DIRECT)))
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessageContaining("ResultRowWalk")
             .hasMessageContaining("empty path");
@@ -225,7 +256,7 @@ class SourceKeyTest {
                 List.of(),
                 new SourceKey.Wrap.Row(),
                 SourceKey.Cardinality.MANY,
-                new SourceKey.Reader.ResultRowWalk()))
+                new SourceKey.Reader.ResultRowWalk(SourceKey.Reader.SourceEnvelope.DIRECT)))
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessageContaining("ResultRowWalk");
     }
