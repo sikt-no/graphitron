@@ -30,10 +30,11 @@ behind R278.
 
 Replace the type-pass / field-pass / four-post-pass sequence with a single
 reachability-driven, field-first classification walk, then validate, then emit. This is a
-slice under the R222 (`dimensional-model-pivot`) umbrella and **subsumes** both R166
-(`graphqlschemavisitor-driven-emission`) and R278
-(`classify-polymorphic-types-in-field-context`). It is the *mechanism* R278 needs to
-classify polymorphic types in field context. It supersedes R166 rather than implementing
+slice under the R222 (`dimensional-model-pivot`) umbrella. It **absorbs** R278
+(`classify-polymorphic-types-in-field-context`, now retired into the "Polymorphic types
+and participants" section below) and **supersedes** R166
+(`graphqlschemavisitor-driven-emission`); R279 is the field-context classification
+mechanism R278 called for. It supersedes R166 rather than implementing
 it: R166 proposed a `GraphQLSchemaVisitor`-driven *emission* walk to fix per-emitter skip-
 filter drift and the missing reachability sweep; here the visitor walk is **classification
 only**, the reachability prune happens once at classification, and emission (like
@@ -84,6 +85,46 @@ classified `GraphitronSchema` and are not visitor-based.
   split stays; what collapses is the intra-classify multiphase. Classification must be
   order-independent; validation runs sorted for stable diagnostics. Both validation and
   emission iterate the classified `GraphitronSchema`.
+
+## Polymorphic types and participants (absorbed from R278)
+
+R276 made type classification reflection-only and left directiveless objects unclassified
+at the type pass, which surfaced that the participant / polymorphic-type model classifies
+types *in isolation* rather than in the context of the returning field. The field-first
+walk is the mechanism that fixes this; the specifics R278 worked out, to fold into the
+Spec:
+
+- *Participant kinds.* `ParticipantRef permits TableBound, Unbound` today overloads
+  `Unbound` with two unrelated meanings (an `@error` member vs a directiveless plain-
+  interface implementor). Add a dedicated `Error` participant kind so a member classifies
+  `TableBound` / `Unbound` / `Error` from its directive, and retire the overloaded
+  `Unbound` arm.
+- *Population strategy is the field's, and it decides admissibility and `TypeResolver`
+  dispatch.* Generated SQL polymorphism reads members off a `__typename` column from a
+  multi-table query, so every member must be table-bound; service/reflection population
+  dispatches by runtime source class, so a non-`@table` member is fine. The field carries
+  the strategy; the validator enforces member admissibility against it. This lets
+  `buildParticipantList` shed its `allowNonTableMembers` flag.
+- *An all-`@error` union is an `ErrorType`.* A type with `@error` is an `ErrorType`, and a
+  union of `ErrorType` is too. Today it is a `UnionType` with `@error` `Unbound`
+  participants, special-cased downstream by `GraphitronSchemaClassGenerator`'s `isErrorUnion`
+  fork plus a source-class `TypeResolver`. Classify it as an `ErrorType` (aggregating the
+  members' handlers, keyed per member type for the `TypeResolver` dispatch) and let the
+  emitter read it off the `ErrorType` instead of re-deriving the shape.
+- *Service/reflection-populated non-error polymorphic types are an unhandled gap to
+  specify or explicitly reject.* `TypeBuilder.classifyType` never consults
+  `bindings.resolveResult` for interfaces/unions (unlike objects), so a polymorphic type
+  returned by an `@service` is just a plain `InterfaceType` / `UnionType`. The emitter has
+  only three `TypeResolver` strategies (TableInterfaceType discriminator column; plain
+  InterfaceType/UnionType `__typename` column from a SQL result; `@error`-only source-
+  class) and **none** for a service/reflection-populated non-error polymorphic type, whose
+  runtime objects carry no `__typename` column. The field-context classification makes this
+  gap explicit; the Spec must either implement the strategy or reject the construct at
+  validate time.
+- *Cleanup markers.* The `R278` markers in `TypeBuilder` and `ParticipantRef`, the pre-R276
+  `buildParticipantList` behaviour (`@table` -> `TableBound`; non-`@table` -> `Unbound`
+  when `allowNonTableMembers` else error; `@error` riding the second `Unbound` arm), and
+  the `allowNonTableMembers` flag are the concrete undo targets.
 
 ## Open design questions (defer to Spec)
 
