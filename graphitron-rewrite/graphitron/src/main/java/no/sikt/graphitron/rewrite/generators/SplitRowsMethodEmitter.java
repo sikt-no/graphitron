@@ -1085,39 +1085,6 @@ public final class SplitRowsMethodEmitter {
     }
 
     // -----------------------------------------------------------------------
-    // Stubs: runtime (body-throws) and codegen (emitter-throws)
-    // -----------------------------------------------------------------------
-
-    /**
-     * Runtime stub: signature is correct (same as the real rows method), body throws so the
-     * regression surfaces the first time the variant is actually called. Used for cardinality,
-     * ConditionJoin, and empty-joinPath branches that C1/C2 don't emit real bodies for.
-     */
-    private static MethodSpec buildRuntimeStub(String methodName, SourceKey sourceKey,
-            ReturnTypeRef.TableBoundReturnType returnType, String reason, String outputPackage) {
-        TypeName keyElement = sourceKey.keyElementType();
-        TypeName keysListType = ParameterizedTypeName.get(LIST, keyElement);
-        TypeName valueType;
-        if (returnType.wrapper() instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.Connection) {
-            ClassName connectionResultClass = ClassName.get(
-                outputPackage + ".util", "ConnectionResult");
-            valueType = ParameterizedTypeName.get(LIST, connectionResultClass);
-        } else {
-            boolean isList = returnType.wrapper().isList();
-            valueType = isList
-                ? ParameterizedTypeName.get(LIST, ParameterizedTypeName.get(LIST, RECORD))
-                : ParameterizedTypeName.get(LIST, RECORD);
-        }
-        return MethodSpec.methodBuilder(methodName)
-            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
-            .returns(valueType)
-            .addParameter(keysListType, "keys")
-            .addParameter(ENV, "env")
-            .addStatement("throw new $T($S)", UnsupportedOperationException.class, reason)
-            .build();
-    }
-
-    // -----------------------------------------------------------------------
     // Scatter helper — emitted once per fetcher class that has any Split* field.
     // -----------------------------------------------------------------------
 
