@@ -107,28 +107,68 @@ classified `GraphitronSchema` and are not visitor-based.
   as its `TraverserContext` parent under a synthetic `NodeLocation`, so classification must not
   key off parent/location for these nodes (field classification reads `getContainer()` /
   `getUnwrappedType()` off the field environment, which is unaffected).
-- *Fields drive types.* Each visited field is classified or registered as an
-  `UnclassifiedField`. Classifying a field triggers classification of its target type
-  *on demand* (memoised), which replaces both the eager type pass and the four post-passes.
-- *Type classification splits on whether the target carries a directive.* A type is a
-  single per-name classification.
-  - *Directive-bearing types are a pure function of the target.* The only legal type
-    directives are `@node` / `@table` / `@error`; the type classifies from its own
-    directives, and a polymorphic type additionally reads its participants' directives
-    (as today, via the existing `ParticipantRef` model). Same target, same verdict,
-    regardless of who points at it.
-  - *Directiveless types inherit their classification from the fields pointing at them.*
-    They fall out as `NestingType`, payload carrier, etc. from the reaching field, so the
-    verdict is field-derived, not target-intrinsic. A second field that re-derives a
-    *compatible* classification is idempotent; an *incompatible* one triggers an automatic
-    demote to `UnclassifiedType` at classification time, which the validator surfaces as
-    the deterministic conflict error. (Order-independent: compatible derivations agree
-    regardless of arrival order, and any incompatible pair demotes the same way.)
-- *Arguments and inputs are read from the field definition, not walked.* The visitor
-  visits fields only. Argument interpretation is a function of the field's classification,
-  and everything the classifier needs about arguments and the input-type trees they reach
-  is read directly off the `GraphQLFieldDefinition` while classifying the field; the walk
-  does not descend into arguments or input objects as separate visit events.
+- *Fields drive types; types are never classified up front.* The premise that a type has a
+  classification computable from the type alone is false, and is the root of today's multiphase
+  mess: the information that classifies a type (a producer's reflected return class, a parent's
+  table context, a payload's carrier shape) lives on the *fields that reach it*, not on the type.
+  So there is no type pass. The walk visits fields; each field visit classifies the field and, as
+  a byproduct, **registers** a classification for the field's target type. A field is visited once,
+  so it is classified once; a type is reached by every field that returns it, so it is registered
+  many times. This single rule replaces the eager type pass and all four post-passes.
+- *The classifier is a pure producer; the schema accumulator owns multiplicity and reconciliation.*
+  The classifier never reads back a prior verdict and never reasons about conflict: it registers
+  what the current field implies for itself and for its target. The `GraphitronSchema` accumulator's
+  contract is that a field or type coordinate may be registered more than once; reconciling repeated
+  registrations is *its* job, not the classifier's. Compatible repeats agree (idempotent); an
+  incompatible repeat demotes the type to `UnclassifiedType`. **Demotion is the schema's concern,
+  not the classifier's**, the classifier does not know demotion exists. This collapses the four
+  `TypeRegistry` write verbs to one `register`, dissolves the on-demand re-entrancy/cycle guard
+  (re-registration is normal; walk-level cycles are the traverser's visited-set), and makes the
+  result order-independent (the accumulator's merge is commutative, so walk order cannot change a
+  verdict). The legal type directives stay `@node` / `@table` / `@error`, and a polymorphic target
+  additionally reads its participants' directives (the existing `ParticipantRef` model, unchanged).
+- *What a verdict closes over: node SDL, reflection, and downward context only.* A field is
+  classified from three inputs and no others: the SDL readable at the node (its own directives, its
+  parent type's, its target type's directives and kind), reflection on any referenced Java method,
+  and context passed *down* the walk from ancestors (next bullet). Critically, "is my target a
+  table" is answered by reading the target's `@table` directive off the SDL, **not** by reading a
+  prior classification verdict, so it needs no type pass to have run first; this is the direct
+  refutation of today's `ctx.types.get(target) instanceof TableBackedType`. The completeness rule:
+  every input to a verdict is `node SDL + reflection + downward context`; nothing is read
+  *sideways* (a sibling's or another branch's verdict) or *back* (the accumulator). The construct
+  in today's code that violates this is `TypeBuilder.findReturnTablesForInput`, an O(N) sideways
+  back-scan; it dissolves into a local read at the field visit (see the arguments bullet below).
+- *Down-the-walk context: two dimensions, never sideways.* The downward context rides on the
+  traverser's `TraverserContext` vars (`setVar` on a node, `getVarFromParents` in a descendant),
+  which flow ancestor->descendant and are invisible to siblings, exactly the "down, never sideways"
+  discipline the completeness rule needs. It carries two dimensions:
+  - *Query (scope) dimension.* The current SQL scope: whether we are inside an open scope, the
+    `TableRef` it is rooted on, and the source context that owns it (`Unmapped` / `Table-mapped` /
+    `Result-mapped`). This lets a field answer "am I part of an existing query, or do I open a new
+    one." **Scope is corrected here from the legacy vocabulary:** `code-generation-triggers` says
+    scope is "determined by the (source context, target type) pair," which cannot hold for a walk,
+    the pair determines a *transition* (Enter / Split / record-handoff / Exit) and the resulting
+    scope is the inherited scope with that transition applied. Scope membership is a function of the
+    ancestor chain, not of the field alone. (This is the "scope/orthogonality claim" R8 flagged as
+    the doc's actual defect.)
+  - *DataFetcher dimension.* The source-side wiring context for the current subtree: the backing
+    class a producer (`@service` / `@tableMethod`) established for the record type it returns, so
+    that record's child accessors can reflect against it and decide whether they are valid, plus the
+    source-key shape hints (`Wrap` / `Reader`, the dispatch-axis model). This is the
+    producer->descendant propagation worked through in the originating discussion.
+  These are *classify-time* context, distinct from R222's emit-time `QueryBuilder` /
+  `DataFetcherBuilder` dimensional slots that share the dimension names; the context is what lets a
+  producer *fill* those slots.
+- *Arguments and inputs are classified per field-usage, at the field visit.* The visitor visits
+  fields only; it does not descend into arguments or input objects as separate events. An
+  argument's classification is a function of the visited field: to bind argument `a`, read field
+  `f`'s return type and bind `a`'s input fields against that return table, and when the return is a
+  union or interface, against the participants' tables (reachable from the visit). The same input
+  type used by two fields with different return tables is *not* a conflict to detect, each visit
+  binds against its own field's return table, which is "different consumers, different POJOs" by
+  default (R222's R98 absorption). This is the local read that replaces
+  `TypeBuilder.findReturnTablesForInput`'s global back-scan, and it is why input-side
+  classification needs no separate input-type pass.
 - *Classify (deterministic) then validate (sorted) then emit.* The classify -> validate
   split stays; what collapses is the intra-classify multiphase. Classification must be
   order-independent; validation runs sorted for stable diagnostics. Both validation and
@@ -181,6 +221,16 @@ are checked against:
      directive-bearing types as a pure function of the target vs directiveless types inheriting
      their verdict from the reaching field, and the compatible-or-demote-to-`Unclassified*`
      conflict path with its order-independence guarantee;
+   - the producer/accumulator split: types are never classified up front; the classifier registers
+     a field once and its target type as a byproduct (fields classified once, types registered many
+     times), and the schema accumulator, not the classifier, owns reconciling repeated registrations
+     (compatible-or-demote); demotion is the schema's concern;
+   - the down-the-walk context and its two dimensions (Query/scope and DataFetcher), carried on
+     `TraverserContext` vars ancestor->descendant, and the corrected definition of Scope as a
+     transition over the inherited scope rather than a function of the (source, target) pair alone;
+   - the completeness rule: every verdict closes over node SDL + reflection + downward context,
+     never sideways or back, with `findReturnTablesForInput`'s dissolved back-scan as the worked
+     example;
    - polymorphic participants: the `ParticipantRef` model, and the reachability asymmetry above
      (union members are native graphql-java children, interface implementors are reached only
      through the synthesised child-function fan-out);
@@ -213,14 +263,17 @@ are checked against:
    invariant **reachable ⊆ classified** (every reachable type is classified, the safety property
    every later slice preserves) and separately *measures* the classified-but-unreachable orphan
    set as an inventory slice 6 will prune, phrased as an observation, not a correctness invariant.
-2. **On-demand memoised single-type classification (byte-identical output).** Extract per-type
-   classification (and participant enrichment) from the eager loop into a memoised single-type
-   entry, but keep driving it eagerly over `getAllTypesAsList()` so output is unchanged. This
-   decouples "how a type is classified" from "when," creating the entry point the walk calls.
-   Gate: truth table + sakila, identical output (differential as bisect aid).
+2. **Single-type registration entry (byte-identical output).** Extract per-type classification
+   (and participant enrichment) from the eager loop into a single `register`-a-type entry on the
+   schema accumulator that tolerates repeated registration (idempotent on a compatible repeat),
+   but keep driving it eagerly over `getAllTypesAsList()` so output is unchanged. This decouples
+   "how a type is classified" from "who triggers it," creating the entry point field classification
+   will call as a byproduct. Gate: truth table + sakila, identical output (differential as bisect aid).
 3. **The inversion.** Replace the eager type pass + all-objects field pass with the field-first
-   walk: seed, visit fields, classify each field, classify its target on demand (slice 2's
-   entry) with the re-entrancy/cycle guard (open question 1). Fold `registerNestingTypes` and
+   walk: seed, visit fields, classify each field, and register its target type as a byproduct
+   (slice 2's entry). No on-demand recursion and no re-entrancy guard, registration is the only
+   write and the accumulator absorbs repeats; walk-level cycles are the traverser's visited-set.
+   Fold `registerNestingTypes` and
    `promoteSingleRecordPayloads` into the walk (the directiveless-from-field case). **Keep
    `validateUniformDomainReturnType`'s demote-to-`UnclassifiedField` intact through this slice**
    so no enforcement gap opens; it is retired in slice 4 when its replacement goes green. Gate:
@@ -247,34 +300,31 @@ are checked against:
 ## Open design questions (defer to implementation slices)
 
 A `principles-architect` read on this slicing landed (its findings are folded into the slice
-order and the gate posture above). Remaining per-slice design forks:
+order and the gate posture above). The model above (pure-producer classifier + reconciling schema
+accumulator, downward-only context) resolves the four forks earlier tracked here:
 
-1. **On-demand target classification re-entrancy and cycles.** Classifying a field's
-   target inside the visit callback must guard against recursive (`A.b: B`, `B.a: A`) and
-   self-referential schemas, and memoise. graphql-java avoids re-traversing nodes, but
-   classify-on-demand is the caller's own recursion.
-2. **`TypeRegistry` write-verb collapse.** Largely decided: the target is single
-   per-name classification with idempotent re-derivation on a *compatible* repeat and an
-   automatic `demote` to `UnclassifiedType` on an *incompatible* one. So `demote` survives
-   as the conflict mechanism and `classify` becomes idempotent-compatible; `enrich` and
-   `synthesize` should dissolve. Spec pins the exact before/after and the
-   compatibility predicate (when are two directiveless-derived verdicts "compatible").
-3. **Determinism of the walk.** `SchemaTraverser` order is implementation-defined.
-   Directive-bearing verdicts are order-independent by construction; directiveless
-   agreement and the conflict-as-error detection must be order-independent too. Decide
-   between fixed-seed-order reliance and accumulate-then-compare.
-4. **Input-side backing-class classification from the field definition.** The
-   `JavaRecord`/`Pojo`/`JooqRecord`/`JooqTableRecord` input split is reflection-derived
-   from the consuming method signature; confirm everything it needs is reachable from the
-   `GraphQLFieldDefinition` read during field classification, since the walk does not
-   visit arguments or input objects separately.
-5. **Test ergonomics.** Unit tests call `FieldBuilder.classifyField` / `TypeBuilder`
-   directly; a walk-driven classifier needs either a one-seed in-test driver or a
-   direct-call shim.
-6. **Reuse boundary.** `FieldBuilder.classifyQueryField` / `classifyMutationField` and the
-   per-field dispatch are reusable as-is; the change is the driver, reachability, and
-   on-demand target classification, not the ~5400 lines of per-field logic. Confirm the
-   blast radius stays bounded to the driver.
+- *Re-entrancy and cycles* (was Q1): dissolved. The classifier registers rather than recursing on
+  demand, so there is no caller-side recursion to guard; re-registration is normal and walk-level
+  cycles are the traverser's visited-set.
+- *`TypeRegistry` write-verb collapse* (was Q2): resolved. One `register`; demotion is the
+  accumulator's internal reaction to an incompatible repeat, not a verb the classifier calls;
+  `classify` / `enrich` / `synthesize` / `demote` dissolve into it. The residual detail for
+  slices 2-3 is the exact compatibility predicate (when two directiveless-derived registrations are
+  "compatible"), which lives in the accumulator.
+- *Determinism* (was Q3): resolved structurally. The accumulator's merge is commutative and the
+  classifier reads only SDL + reflection + downward context, so no verdict depends on walk order;
+  no fixed-seed-order reliance is needed.
+- *Input-side classification* (was Q4): resolved. Arguments are classified per field-usage at the
+  field visit from the return type and participants; the back-scan dissolves (see the arguments
+  bullet in the walk shape).
+
+Genuine residual forks:
+
+1. **Test ergonomics.** Unit tests call `FieldBuilder.classifyField` / `TypeBuilder` directly; a
+   walk-driven classifier needs either a one-seed in-test driver or a direct-call shim.
+2. **Reuse boundary.** `FieldBuilder.classifyQueryField` / `classifyMutationField` and the
+   per-field dispatch are reusable as-is; the change is the driver, reachability, and registration,
+   not the ~5400 lines of per-field logic. Confirm the blast radius stays bounded to the driver.
 
 The LSP `TypeClassification` / `FieldClassification` projections are read-only consumers
 of the classified model and should be unaffected.
