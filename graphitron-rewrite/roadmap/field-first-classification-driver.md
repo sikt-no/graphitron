@@ -194,8 +194,9 @@ are checked against:
    make each taxonomy table a map into the `GraphitronSchemaBuilderTest` truth table (one pointer
    per table to the enum that asserts it) so the doc engages the reader by pointing into the
    executable spec rather than duplicating it. R8's already-shipped work (the variant-coverage
-   meta-test that retired its step 5) stands; on landing this slice R8 is closed as
-   superseded-by-R279. While reworking the page, fix the stale `code-generation-triggers.md`
+   meta-test that retired its step 5) stands; R8 has been discarded as superseded-by-R279, with
+   its remaining steps 3-4 executing here. While reworking the page, fix the stale
+   `code-generation-triggers.md`
    (now `.adoc`) Javadoc references in `GraphitronSchemaBuilderTest` and `LookupMapping` that the
    roadmap staleness audit flagged.
 
