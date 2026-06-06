@@ -26,7 +26,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R13` | Faceted search on `@asConnection` | Spec |  | [plan](faceted-search.md) |
 | `R63` | Type UPSERT dialect requirement on the model | Spec |  | [plan](dml-dialect-requirement-on-model.md) |
 | `R92` | Surface database CHECK constraints as Jakarta validation rules | Spec |  | [plan](catalog-check-constraint-validation.md) |
-| `R8` | Docs as an index into classification tests | Ready (deferred) |  | [plan](docs-as-index-into-tests.md) |
 | `R26` | Retire `graphitron-maven-plugin` + `graphitron-schema-transform` | In Progress |  | [plan](retire-maven-plugin.md) |
 | `R180` | Centralize ResultType column-read emission for @record parents | Spec | 2026-05-19 | [plan](record-parent-column-read-helper.md) |
 | `R242` | DML payload positional input/output alignment | Spec | 2026-05-26 | [plan](dml-payload-positional-alignment.md) |
@@ -237,7 +236,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 - `R17` [**Annotated walkthrough of a generated file**](generated-output-walkthrough.md) — Backlog, cleanup
 - `R35` [**Class-level Javadoc and `package-info.java` sweep**](source-orientation-javadocs.md) — Backlog, cleanup
-- `R8` [**Docs as an index into classification tests**](docs-as-index-into-tests.md) — Ready
 - `R168` [**Sub-agent classifier for blast-radius effort (Low/Medium/High) at Spec stage**](effort-blast-radius-classification.md) — Backlog, cleanup
 
 ### testing
