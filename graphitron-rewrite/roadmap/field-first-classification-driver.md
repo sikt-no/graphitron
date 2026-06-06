@@ -7,7 +7,7 @@ priority: 4
 theme: structural-refactor
 depends-on: [dimensional-model-pivot]
 created: 2026-06-05
-last-updated: 2026-06-05
+last-updated: 2026-06-06
 ---
 
 # Field-first reachability-driven classification driver
@@ -66,9 +66,12 @@ classified `GraphitronSchema` and are not visitor-based.
   the lower-level `GraphQLTypeVisitorStub` + `SchemaTransformer` post-classification today).
   The seed set is **Query + Mutation roots plus a `@node`/`@key` directive scan**, not just
   the two roots:
-  - `Query.node` / `Query.nodes` return the `Node` *interface*; concrete `@node`
-    implementors are reachable only across the interface->implementor edge, which a
-    field-return descent does not traverse, so every `@node` type must be seeded.
+  - `Query.node` / `Query.nodes` return the `Node` *interface*. With the interface fan-out
+    in the child function (below) its `@node` implementors are reachable across the
+    interface->implementor edge whenever a field reaches `Node`, but the directive scan still
+    seeds them directly so reachability does not hinge on a `Query.node`/`Query.nodes` field
+    being present, and so a single scan covers both `@node` and the federation `@key` case
+    below.
   - Federation `_entities` / `_Entity` / `Query._entities` **do not exist at classification
     time**: Apollo injects them post-build in `GraphitronSchemaClassGenerator`. So
     `@key`-bearing entity types are not reachable through any field and must be seeded by
@@ -78,6 +81,32 @@ classified `GraphitronSchema` and are not visitor-based.
     framing was wrong and is corrected here.
   - Subscription is recognised-but-unsupported (its root fields classify to
     `UnclassifiedField`), so it reaches no targets today; a future third seed.
+- *Child function: the interface fan-out (an asymmetry that is load-bearing).* The walk's
+  descent edges are not all native graphql-java child edges, so the traverser must be built
+  with the `SchemaTraverser(Function<GraphQLSchemaElement, List<GraphQLSchemaElement>>)`
+  constructor, **not** the no-arg default that the `depthFirst(visitor.toTypeVisitor(), roots)`
+  form above implies. `GraphQLUnionType.getChildren()` includes its member types (`getTypes()`),
+  so a field returning a union descends into every member for free. `GraphQLInterfaceType.getChildren()`
+  does **not** include its implementors (only its own fields, the interfaces it implements, and
+  directives); the only native edge is the reverse, implementor->interface
+  (`GraphQLObjectType.getChildren()` lists `getInterfaces()`), which never fires unless the
+  implementor is already reachable some other way. So the interface->implementor edge must be
+  supplied: the custom child function returns, for a `GraphQLInterfaceType`, `iface.getChildren()`
+  unioned with `schema.getImplementations(iface)`. This mirrors what `TypeBuilder` already does
+  manually today (union enrichment reads `getTypes()`; interface enrichment reads
+  `getImplementations(iface)` precisely because the traversal does not surface implementors).
+  Supplying the edge in the child function rather than by pre-expanding the seed set is the
+  correct choice, not a convenience: interface reachability is transitive and discovered late (an
+  interface can first appear deep in the walk, e.g. `Query -> Foo -> field: InterfaceX`), and
+  `getChildren` is applied lazily per node as each node is dequeued (`TraverserState.pushAll`
+  calls `getChildren.apply(node)`), so the fan-out fires whenever an interface is reached at any
+  depth, a reachability fixpoint for free; a one-shot seed pre-expansion would only catch
+  interfaces named at the roots. The synthesised implementors are deduped against already-visited
+  nodes and routed through `backRef`, so an implementor also reachable elsewhere is not
+  double-visited. One caveat for the visitor: a synthesised implementor enters with the interface
+  as its `TraverserContext` parent under a synthetic `NodeLocation`, so classification must not
+  key off parent/location for these nodes (field classification reads `getContainer()` /
+  `getUnwrappedType()` off the field environment, which is unaffected).
 - *Fields drive types.* Each visited field is classified or registered as an
   `UnclassifiedField`. Classifying a field triggers classification of its target type
   *on demand* (memoised), which replaces both the eager type pass and the four post-passes.
@@ -130,8 +159,9 @@ redesign is R278, separate). Slices, in landing order:
 
 1. **Reachability observatory + differential bisect aid (additive, zero behaviour change).**
    Build the `SchemaTraverser` walk that computes the reachable set (seed: Query + Mutation +
-   `@node`/`@key` directive scan; descend field->target, interface->implementor,
-   union->members) and the projection-snapshot comparator. The test asserts the *durable*
+   `@node`/`@key` directive scan; descend field->target and union->members on native child
+   edges, and interface->implementor on the synthesised edge supplied by the custom child
+   function, see Driver) and the projection-snapshot comparator. The test asserts the *durable*
    invariant **reachable ⊆ classified** (every reachable type is classified, the safety property
    every later slice preserves) and separately *measures* the classified-but-unreachable orphan
    set as an inventory slice 6 will prune, phrased as an observation, not a correctness invariant.
