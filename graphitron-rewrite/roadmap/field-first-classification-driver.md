@@ -160,19 +160,23 @@ redesign is R278, separate). Deliverables in landing order; slice 0 is documenta
 are checked against:
 
 0. **Document how classification works (the first deliverable, no code change).** Before any
-   driver change, write the prose reference for the classification *process and contract* under
-   `graphitron-rewrite/docs/` (a dedicated page, or an extension of
-   `code-generation-triggers.adoc`, which today lists the variant *taxonomy* but not the walk
-   that produces it), rendered into the doc site. This is the deliverable the rest of R279 is
-   built against: together with the `GraphitronSchemaBuilderTest` truth table (the executable
-   spec) it is what each later slice is checked against, and what maintenance reads first. It
-   documents the model *as it must behave*, the contract the inversion preserves, not the current
-   multiphase mechanics it replaces, and it covers:
+   driver change, produce the single classification reference by **absorbing
+   `code-generation-triggers.adoc`** rather than writing a parallel page. That doc is today's
+   classification taxonomy (the Type / Query / Mutation / Child / Input variant tables) but
+   stops short of the *process and contract* that produces it. Rework it in place, keeping its
+   path so the ~8 inbound `xref`s and the links the roadmap-tool generates
+   (`roadmap-tool/.../Main.java`) stay valid, and fold the process/contract material into it so
+   one page covers both how a verdict is reached and what every verdict is. This is the
+   deliverable the rest of R279 is built against: together with the `GraphitronSchemaBuilderTest`
+   truth table (the executable spec) it is what each later slice is checked against, and what
+   maintenance reads first. It documents the model *as it must behave*, the contract the inversion
+   preserves, not the current multiphase mechanics it replaces, and it covers:
    - the classify -> validate -> emit pipeline and where each phase's responsibility begins and
      ends (classification is the only place directives are read; validation rejects `Unclassified*`
      and surfaces diagnostics; emission iterates the pruned, classified model);
    - the sealed `TypeClassification` / `FieldClassification` hierarchy, what each verdict means
-     and what it produces downstream (cross-referencing the taxonomy page rather than restating it);
+     and what it produces downstream (the existing variant tables, retained as the one-glance
+     taxonomy);
    - the directive rules: the legal type directives (`@node` / `@table` / `@error`),
      directive-bearing types as a pure function of the target vs directiveless types inheriting
      their verdict from the reaching field, and the compatible-or-demote-to-`Unclassified*`
@@ -184,6 +188,16 @@ are checked against:
      federation entities are not field-reachable);
    - the per-field dispatch entry points (`classifyQueryField` / `classifyMutationField`) as the
      reuse boundary the driver change does not touch.
+
+   This **subsumes the remaining steps of R8 (`docs-as-index-into-tests`)**, whose open steps 3-4
+   were deferred "until the sealed hierarchy stabilises", which is exactly what this item does:
+   make each taxonomy table a map into the `GraphitronSchemaBuilderTest` truth table (one pointer
+   per table to the enum that asserts it) so the doc engages the reader by pointing into the
+   executable spec rather than duplicating it. R8's already-shipped work (the variant-coverage
+   meta-test that retired its step 5) stands; on landing this slice R8 is closed as
+   superseded-by-R279. While reworking the page, fix the stale `code-generation-triggers.md`
+   (now `.adoc`) Javadoc references in `GraphitronSchemaBuilderTest` and `LookupMapping` that the
+   roadmap staleness audit flagged.
 
    Gate: review by a reader who confirms the prose matches intended behaviour (the pipeline tiers
    do not exercise prose, so the gate is human review, not a test delta). The page is kept current
