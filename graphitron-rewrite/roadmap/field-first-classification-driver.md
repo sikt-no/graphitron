@@ -155,7 +155,40 @@ design principles, shape it more than anything else:
   retires an enforcement mechanism, the replacement lands in the same commit.
 
 Polymorphic-type classification is preserved unchanged throughout (the `ParticipantRef`
-redesign is R278, separate). Slices, in landing order:
+redesign is R278, separate). Deliverables in landing order; slice 0 is documentation, slices
+1-6 are the risk-isolated, gated code transformation that the documentation and the truth table
+are checked against:
+
+0. **Document how classification works (the first deliverable, no code change).** Before any
+   driver change, write the prose reference for the classification *process and contract* under
+   `graphitron-rewrite/docs/` (a dedicated page, or an extension of
+   `code-generation-triggers.adoc`, which today lists the variant *taxonomy* but not the walk
+   that produces it), rendered into the doc site. This is the deliverable the rest of R279 is
+   built against: together with the `GraphitronSchemaBuilderTest` truth table (the executable
+   spec) it is what each later slice is checked against, and what maintenance reads first. It
+   documents the model *as it must behave*, the contract the inversion preserves, not the current
+   multiphase mechanics it replaces, and it covers:
+   - the classify -> validate -> emit pipeline and where each phase's responsibility begins and
+     ends (classification is the only place directives are read; validation rejects `Unclassified*`
+     and surfaces diagnostics; emission iterates the pruned, classified model);
+   - the sealed `TypeClassification` / `FieldClassification` hierarchy, what each verdict means
+     and what it produces downstream (cross-referencing the taxonomy page rather than restating it);
+   - the directive rules: the legal type directives (`@node` / `@table` / `@error`),
+     directive-bearing types as a pure function of the target vs directiveless types inheriting
+     their verdict from the reaching field, and the compatible-or-demote-to-`Unclassified*`
+     conflict path with its order-independence guarantee;
+   - polymorphic participants: the `ParticipantRef` model, and the reachability asymmetry above
+     (union members are native graphql-java children, interface implementors are reached only
+     through the synthesised child-function fan-out);
+   - the seed set and reachability (Query + Mutation roots + `@node`/`@key` directive scan; why
+     federation entities are not field-reachable);
+   - the per-field dispatch entry points (`classifyQueryField` / `classifyMutationField`) as the
+     reuse boundary the driver change does not touch.
+
+   Gate: review by a reader who confirms the prose matches intended behaviour (the pipeline tiers
+   do not exercise prose, so the gate is human review, not a test delta). The page is kept current
+   as the driver inverts: slice 3 updates the pipeline/driver section to the field-first walk, and
+   slice 6 updates the reachability section once orphan pruning is live.
 
 1. **Reachability observatory + differential bisect aid (additive, zero behaviour change).**
    Build the `SchemaTraverser` walk that computes the reachable set (seed: Query + Mutation +
