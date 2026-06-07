@@ -132,18 +132,27 @@ single big-bang conversion:
    verbatim; an example must be selectable via a query/fragment) *before* the expensive grind. The
    closure rule already pins most of what projects, so the renderer prototype is cheap insurance,
    not a hard gate.
-2. **Bulk migration + enum retirement.** Migrate the ~398 `GraphitronSchemaBuilderTest` rows into the
-   corpus, rewire `VariantCoverageTest` to derive coverage from the corpus, and retire the enum
-   table. The heavy middle, de-risked by slice 1. This is the milestone that lets R279's merge gate
-   adopt the corpus as its primary tier.
-3. **Prose, interleaved.** Author the doc prose referencing the corpus through the renderer. This can
-   interleave with the migration (author each area's prose as its examples land) rather than strictly
-   follow all of it; it is where R279 slice 0 (the `code-generation-triggers` absorption) consumes
-   the corpus.
+2. **Documentation-first; migrate while documenting.** Drive the migration from the prose: writing
+   the documentation (this *is* R279 slice 0's `code-generation-triggers` absorption) pulls each
+   example it needs into the corpus, authored with `@expectClassification` and rendered via the
+   query-as-view, and the corresponding enum row is deleted as the example lands. Duplication with
+   the enum table is therefore transient per example, and the table shrinks as the doc grows. Every
+   migrated example arrives with a documentation home and a written rationale, and the order is
+   pedagogical rather than enum-declaration order.
+3. **Coverage sweep, then enum retirement.** Documentation is curated: it covers the explainable
+   majority, not necessarily every one of the ~398 sealed leaves. The coverage meta-test surfaces
+   the untested long tail; migrate those as corpus entries (tested, not necessarily prose-featured),
+   then rewire `VariantCoverageTest` onto the corpus and delete the now-empty enum table. So every
+   doc example is a corpus example, but not every corpus example is in the doc (the swept tail).
+   Completion here (full corpus coverage, enum table retired) is the milestone that lets R279's merge
+   gate adopt the corpus as its primary tier.
 
 ## Relationship to R279
 
 R279 (`field-first-classification-driver`) is the first consumer and the motivating context.
-Cross-reference both ways once this reaches Spec: R279's merge-gate posture and slice 0 (doc
-absorption) both lean on this corpus. No code dependency in the other direction, this can land
-independently and against the current classifier.
+Under the documentation-first phasing above, R281's phase 2 *is* R279 slice 0: writing the absorbed
+`code-generation-triggers` prose is what pulls the migration, so the two are one interleaved effort
+rather than sequential items, and R279 slice 0 depends on R281's thin slice (harness + renderer)
+landing first. R279's merge gate adopts the corpus as its primary tier only at phase 3 completion
+(full coverage, enum table retired). Cross-reference both ways once this reaches Spec. No code
+dependency in the other direction: the corpus and renderer build against the current classifier.
