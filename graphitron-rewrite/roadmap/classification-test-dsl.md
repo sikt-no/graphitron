@@ -16,9 +16,10 @@ Classification behaviour today is specified twice: as prose in `code-generation-
 (the variant tables) and as ~398 enum rows in `GraphitronSchemaBuilderTest` (the executable truth
 table). The two drift, and neither reads as a *specification by example*: you cannot look at one
 artifact and see "this schema shape produces this verdict, and here is the rule in a sentence."
-R8 (`docs-as-index-into-tests`, discarded into R279) wanted to make the doc a map into the tests;
-this item proposes the cleaner collapse, make the test fixture itself the readable spec, by
-embedding the expected classification in the SDL fixture as a directive.
+R8 (`docs-as-index-into-tests`, discarded as superseded; its doc-as-index intent now lives here)
+wanted to make the doc a map into the tests; this item proposes the cleaner collapse, make the test
+fixture itself the readable spec, by embedding the expected classification in the SDL fixture as a
+directive.
 
 ## The shape
 
@@ -87,10 +88,10 @@ necessarily a standalone repro; honouring the closure rule is what keeps the exc
   `directives.graphqls`. It asserts the sealed leaf name; a second argument should be able to
   assert the rejection code for the `UnclassifiedField` / `UnclassifiedType` cases (and later
   R222's `WalkerResult.Err`), since the *reason* a thing fails to classify is part of the spec.
-- **Doc renders from fixtures (the R279 slice-0 payoff).** Once the corpus exists, R279's absorbed
-  `code-generation-triggers` page can render its taxonomy from the fixtures (variant → asserting
-  fixture → its description), the truest form of "doc as a map into the tests." This is the
-  coupling point with R279 slice 0; the two should reference each other.
+- **Doc renders from fixtures.** R281 owns the documentation deliverable outright (it ate R279's
+  former slice 0): the `code-generation-triggers` page is reworked here, rendering its taxonomy from
+  the fixtures (variant -> asserting fixture -> its description), the truest form of "doc as a map
+  into the tests."
 
 ## Open design questions (mechanical, for Spec)
 
@@ -133,12 +134,14 @@ single big-bang conversion:
    closure rule already pins most of what projects, so the renderer prototype is cheap insurance,
    not a hard gate.
 2. **Documentation-first; migrate while documenting.** Drive the migration from the prose: writing
-   the documentation (this *is* R279 slice 0's `code-generation-triggers` absorption) pulls each
-   example it needs into the corpus, authored with `@expectClassification` and rendered via the
-   query-as-view, and the corresponding enum row is deleted as the example lands. Duplication with
-   the enum table is therefore transient per example, and the table shrinks as the doc grows. Every
-   migrated example arrives with a documentation home and a written rationale, and the order is
-   pedagogical rather than enum-declaration order.
+   the documentation (the `code-generation-triggers` absorption R281 took over from R279's former
+   slice 0) pulls each example it needs into the corpus, authored with `@expectClassification` and
+   rendered via the query-as-view, and the corresponding enum row is deleted as the example lands.
+   Duplication with the enum table is therefore transient per example, and the table shrinks as the
+   doc grows. Every migrated example arrives with a documentation home and a written rationale, and
+   the order is pedagogical rather than enum-declaration order. This phase also folds in the stale
+   `code-generation-triggers.md` -> `.adoc` Javadoc-reference cleanup in `GraphitronSchemaBuilderTest`
+   / `LookupMapping` that the staleness audit flagged, which rode with the old slice 0.
 3. **Coverage sweep, then enum retirement.** Documentation is curated: it covers the explainable
    majority, not necessarily every one of the ~398 sealed leaves. The coverage meta-test surfaces
    the untested long tail; migrate those as corpus entries (tested, not necessarily prose-featured),
@@ -150,9 +153,10 @@ single big-bang conversion:
 ## Relationship to R279
 
 R279 (`field-first-classification-driver`) is the first consumer and the motivating context.
-Under the documentation-first phasing above, R281's phase 2 *is* R279 slice 0: writing the absorbed
-`code-generation-triggers` prose is what pulls the migration, so the two are one interleaved effort
-rather than sequential items, and R279 slice 0 depends on R281's thin slice (harness + renderer)
-landing first. R279's merge gate adopts the corpus as its primary tier only at phase 3 completion
-(full coverage, enum table retired). Cross-reference both ways once this reaches Spec. No code
-dependency in the other direction: the corpus and renderer build against the current classifier.
+**R281 has eaten R279's former slice 0**: the entire documentation deliverable (the
+`code-generation-triggers` absorption, R8's doc-as-index intent, the stale-ref cleanup) lives here,
+and R279 is now purely the driver-restructure code work. The coupling that remains: R279's slices 3
+and 6 (the inversion and orphan pruning) require corresponding updates to this doc when they land,
+and R279's merge gate adopts the corpus as its primary tier only at phase 3 completion (full
+coverage, enum table retired). No code dependency in the other direction: the corpus and renderer
+build against the current classifier, so R281 can land independently and ahead of R279's inversion.
