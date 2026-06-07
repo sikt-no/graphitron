@@ -12,6 +12,63 @@ last-updated: 2026-06-07
 
 # Classification test DSL: @classified spec-by-example
 
+> **PENDING REWRITE — dimensional-driver reframing (agreed 2026-06-07).** The body below still
+> describes `@classified(as: <leaf>)` asserting today's cross-product permit names. That is being
+> reframed: R281 becomes the *design driver and executable acceptance spec* for R222's dimensional
+> field pivot (Stage 3, the former R164), not a consumer that waits for it. A fresh session does the
+> rewrite. Brief:
+>
+> - **Why.** Writing "the rule in a sentence" for every case forces you to name the axes; the
+>   cross-product permit name is exactly the form you don't utter when you describe the rule. So
+>   authoring the corpus *is* dimensional discovery, from the reader's angle, validated cheaply in
+>   prose+tests before R164's model surgery. This is the workflow's first-client check applied to a
+>   model refactor: if the rendered dimensional doc reads as clean orthogonal rules the axes are
+>   right; if muddy, R164's decomposition is wrong. Direct corroboration: R279 notes legacy
+>   `code-generation-triggers` already tries a dimensional description ("scope = (source context,
+>   target type) pair") and gets it subtly wrong, which R8 flagged as "the doc's actual defect." The
+>   corpus is the instrument that corrects it.
+> - **Directive shape.** `@classified(as: <leaf-enum>)` → dimensional args
+>   `@classified(source: Root, action: Service, target: Table)` with per-axis enums
+>   (`SourceAxis`, `ActionAxis`, `TargetAxis`) replacing the flat `FieldVerdict`. Provisional axis
+>   vocabulary to validate in the phase-1 thin slice (NOT frozen): source = Root / OnlyChild /
+>   ListChild; action/invocation = no-IO / `@service` / generated-jOOQ; target = table-bound /
+>   record / outcome. `@classifiedType` stays for now; whether types also go dimensional is open.
+> - **Throwaway adapter is the load-bearing mechanism.** The harness maps today's classifier verdict
+>   `leaf → dimension-tuple` (e.g. `QueryServiceTableField → (Root, Service, Table)`) and checks it
+>   against the asserted dimensions. Building that adapter *to full coverage* (which the coverage
+>   sweep already forces) IS the complete leaf↔dimension truth table = R164's spec, empirically
+>   validated against every real verdict. When R164 lands the adapter is deleted, slots are read
+>   directly, and the corpus assertions are unchanged — their continued green is the proof R164 was
+>   behaviour-preserving. The doomed cross-product leaf names then live only in that adapter, never
+>   in the corpus or the docs.
+> - **Dependency flips.** R281 leads; the DataFetcher dimensional-slot slice (to be filed as the
+>   next free id **R282**, see stub below) *consumes* R281's discovered vocabulary. Delete the
+>   "R281 depends-on dimensional-model-pivot / rides its vocabulary" framing from the body and the
+>   "Relationship to R222" section; replace with "R281 is the pivot's driver and acceptance spec."
+> - **Vocabulary ownership.** R281 discovers/proposes the axes; the model becomes source of truth
+>   once R164 lands. A later axis-value rename is a cheap assertion-value update, far cheaper than
+>   rewriting against collapsed leaf names, and R164 is likely to adopt R281's names since R281 drove
+>   the discovery.
+> - **Keep unchanged from the current body:** query-as-view renderer; doc-renders-from-fixtures;
+>   out-of-scope set (input-field classification, failure/`Unclassified*`, rejection codes,
+>   `TypeSpec`/emission assertions, capability catalog, legacy modules); AsciiDoc `include` regions
+>   for Java fixtures; "add a schema when shapes conflict" partitioning. The meta-test generalises
+>   from enum⇄leaf to (per-axis enum ⇄ axis-value-set) + adapter-completeness (every leaf maps to a
+>   tuple; every axis value is exercised).
+> - **R282 stub to file (roadmap-tool needs JDK 25, unavailable in the capture session; file in a
+>   JDK-25 session):** slug `datafetcher-field-dimensional-slots`, title "DataFetcher field
+>   dimensional slots: collapse the service/source/target cross-product", bucket architecture,
+>   priority 3, theme structural-refactor, status Backlog. Body: R222 Stage 3 spin-out (former R164,
+>   discarded into R222), *consumes* R281's dimensional corpus as its acceptance spec; scope =
+>   `DataFetcherBuilder` dimension only (source × action × target), collapsing
+>   `QueryServiceTableField` / `MutationServiceTableField` / `MutationServiceRecordField` /
+>   `ChildField.ServiceTableField` / `ChildField.ServiceRecordField` and the wider
+>   `QueryField`/`MutationField`/`ChildField` set (R222 line 27) into one record per emit-relevant
+>   identity carrying dimension properties; sibling dimensions `QueryBuilder` / `ValidationBuilder`
+>   are separate future slices; Stage 1 foundation has landed (`ServiceField`/`ServiceMethodCall` in
+>   `main`). Also confirm R222's "R238 (Spec)" foundation-slice annotation against `changelog.md` —
+>   the code shipped, so the `R238` file is gone (stale annotation, not a missing item).
+
 Classification behaviour today is specified twice: as prose in `code-generation-triggers.adoc`
 (the variant tables) and as ~398 enum rows in `GraphitronSchemaBuilderTest` (the executable truth
 table). The two drift, and neither reads as a *specification by example*: you cannot look at one
