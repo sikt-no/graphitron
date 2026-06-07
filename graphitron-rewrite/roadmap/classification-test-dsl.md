@@ -1,7 +1,7 @@
 ---
 id: R281
 title: "Classification test DSL: @expectClassification spec-by-example"
-status: Backlog
+status: Spec
 bucket: testing
 priority: 4
 theme: testing
