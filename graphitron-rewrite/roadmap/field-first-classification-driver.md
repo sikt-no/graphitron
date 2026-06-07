@@ -7,7 +7,7 @@ priority: 4
 theme: structural-refactor
 depends-on: [dimensional-model-pivot]
 created: 2026-06-05
-last-updated: 2026-06-06
+last-updated: 2026-06-07
 ---
 
 # Field-first reachability-driven classification driver
@@ -195,65 +195,13 @@ design principles, shape it more than anything else:
   retires an enforcement mechanism, the replacement lands in the same commit.
 
 Polymorphic-type classification is preserved unchanged throughout (the `ParticipantRef`
-redesign is R278, separate). Deliverables in landing order; slice 0 is documentation, slices
-1-6 are the risk-isolated, gated code transformation that the documentation and the truth table
-are checked against:
-
-0. **Document how classification works (the first deliverable, no code change).** Before any
-   driver change, produce the single classification reference by **absorbing
-   `code-generation-triggers.adoc`** rather than writing a parallel page. That doc is today's
-   classification taxonomy (the Type / Query / Mutation / Child / Input variant tables) but
-   stops short of the *process and contract* that produces it. Rework it in place, keeping its
-   path so the ~8 inbound `xref`s and the links the roadmap-tool generates
-   (`roadmap-tool/.../Main.java`) stay valid, and fold the process/contract material into it so
-   one page covers both how a verdict is reached and what every verdict is. This is the
-   deliverable the rest of R279 is built against: together with the `GraphitronSchemaBuilderTest`
-   truth table (the executable spec) it is what each later slice is checked against, and what
-   maintenance reads first. It documents the model *as it must behave*, the contract the inversion
-   preserves, not the current multiphase mechanics it replaces, and it covers:
-   - the classify -> validate -> emit pipeline and where each phase's responsibility begins and
-     ends (classification is the only place directives are read; validation rejects `Unclassified*`
-     and surfaces diagnostics; emission iterates the pruned, classified model);
-   - the sealed `TypeClassification` / `FieldClassification` hierarchy, what each verdict means
-     and what it produces downstream (the existing variant tables, retained as the one-glance
-     taxonomy);
-   - the directive rules: the legal type directives (`@node` / `@table` / `@error`),
-     directive-bearing types as a pure function of the target vs directiveless types inheriting
-     their verdict from the reaching field, and the compatible-or-demote-to-`Unclassified*`
-     conflict path with its order-independence guarantee;
-   - the producer/accumulator split: types are never classified up front; the classifier registers
-     a field once and its target type as a byproduct (fields classified once, types registered many
-     times), and the schema accumulator, not the classifier, owns reconciling repeated registrations
-     (compatible-or-demote); demotion is the schema's concern;
-   - the down-the-walk context and its two dimensions (Query/scope and DataFetcher), carried on
-     `TraverserContext` vars ancestor->descendant, and the corrected definition of Scope as a
-     transition over the inherited scope rather than a function of the (source, target) pair alone;
-   - the completeness rule: every verdict closes over node SDL + reflection + downward context,
-     never sideways or back, with `findReturnTablesForInput`'s dissolved back-scan as the worked
-     example;
-   - polymorphic participants: the `ParticipantRef` model, and the reachability asymmetry above
-     (union members are native graphql-java children, interface implementors are reached only
-     through the synthesised child-function fan-out);
-   - the seed set and reachability (Query + Mutation roots + `@node`/`@key` directive scan; why
-     federation entities are not field-reachable);
-   - the per-field dispatch entry points (`classifyQueryField` / `classifyMutationField`) as the
-     reuse boundary the driver change does not touch.
-
-   This **subsumes the remaining steps of R8 (`docs-as-index-into-tests`)**, whose open steps 3-4
-   were deferred "until the sealed hierarchy stabilises", which is exactly what this item does:
-   make each taxonomy table a map into the `GraphitronSchemaBuilderTest` truth table (one pointer
-   per table to the enum that asserts it) so the doc engages the reader by pointing into the
-   executable spec rather than duplicating it. R8's already-shipped work (the variant-coverage
-   meta-test that retired its step 5) stands; R8 has been discarded as superseded-by-R279, with
-   its remaining steps 3-4 executing here. While reworking the page, fix the stale
-   `code-generation-triggers.md`
-   (now `.adoc`) Javadoc references in `GraphitronSchemaBuilderTest` and `LookupMapping` that the
-   roadmap staleness audit flagged.
-
-   Gate: review by a reader who confirms the prose matches intended behaviour (the pipeline tiers
-   do not exercise prose, so the gate is human review, not a test delta). The page is kept current
-   as the driver inverts: slice 3 updates the pipeline/driver section to the field-first walk, and
-   slice 6 updates the reachability section once orphan pruning is live.
+redesign is R278, separate). The documentation deliverable that earlier sat here as slice 0
+(absorb `code-generation-triggers`, fold in R8's doc-as-index intent, fix the stale Javadoc
+references) has been **eaten by R281 (`classification-test-dsl`)**, whose documentation-first
+phase produces that prose against its executable example corpus; R279 no longer owns a doc slice.
+Coupling that survives: when R279's inversion (slice 3) and orphan pruning (slice 6) land, the
+R281 classification doc must be updated to match. What remains here is the risk-isolated, gated
+code transformation, slices in landing order:
 
 1. **Reachability observatory + differential bisect aid (additive, zero behaviour change).**
    Build the `SchemaTraverser` walk that computes the reachable set (seed: Query + Mutation +
