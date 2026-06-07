@@ -22,8 +22,9 @@ embedding the expected classification in the SDL fixture as a directive.
 
 ## The shape
 
-A test-only directive carries the expectation on the schema element it classifies, with the rule
-stated in the GraphQL description:
+The corpus is **one annotated schema file** (SDL, plus reflection-backed Java fixtures for the
+`@service` / `@tableMethod` examples). Each element whose classification is being specified carries
+an inline test-only directive; the description states the rule:
 
 ```graphql
 type Query {
@@ -34,12 +35,33 @@ type Query {
 type Film @table(name: "Film") @expectClassification(is: "TableType") { ... }
 ```
 
-The harness parses the fixture, runs the classifier, and asserts each annotated coordinate's
-sealed-leaf verdict equals the `is:` value. The SDL is the example, the directive is the
-assertion, the description is the spec sentence. This is the declarative form of R222's
-unit-test claim ("parse a fragment, run the producer, assert on the sealed result") and is
-idiomatic with the existing `@capability` / `@exemplifies` SDL-annotation directives that tooling
-already reads without runtime meaning.
+The harness parses the whole corpus, runs the classifier once, and asserts each annotated
+coordinate's sealed-leaf verdict equals its `is:` value. The SDL is the example, the directive is
+the assertion, the description is the spec sentence, the declarative form of R222's unit-test claim
+and idiomatic with the existing `@capability` / `@exemplifies` annotation directives. One run over a
+single coherent schema keeps every example mutually consistent (FKs resolve, participants exist) and
+contains the deliberately-unclassified examples (the harness classifies-and-inspects; it does not run
+the validator-rejects path), so `@expectClassification(is: "UnclassifiedField")` is a first-class case.
+
+## Rendering: queries as views over the corpus
+
+Prose does not embed schema; it embeds a **query** naming the fields (or types) it wants to show.
+The renderer resolves that selection against the corpus, takes the touched coordinates, and
+regenerates minimal SDL for that closure (graphql-java `SchemaPrinter` over the projected subgraph).
+One mechanism does three jobs at once:
+
+- *Import what's relevant* (the earlier requirement): the query's selection set is the projection,
+  reusing GraphQL's own selection mechanism instead of bespoke include-tags.
+- *Strip the test directives*: regenerated SDL emits only real schema, so internal directives are
+  simply not printed. The render-strip is not a separate filter; it falls out of regeneration.
+- *Bound the snippet honestly*: the closure to emit is exactly what R279's completeness rule says
+  the verdict closes over, the node, its directives, its parent's, and its target's directives and
+  participants. Honour that closure and the displayed excerpt actually classifies to the asserted
+  verdict; the downward-context examples (a record child field needing its `@service` ancestor's
+  backing class) stay honest because the query selects through the ancestor.
+
+So a rendered example is a faithful *excerpt* of a coordinate classified in full-corpus context, not
+necessarily a standalone repro; honouring the closure rule is what keeps the excerpt from lying.
 
 ## Design forks to settle at Spec
 
@@ -64,6 +86,24 @@ already reads without runtime meaning.
   `code-generation-triggers` page can render its taxonomy from the fixtures (variant → asserting
   fixture → its description), the truest form of "doc as a map into the tests." This is the
   coupling point with R279 slice 0; the two should reference each other.
+
+## Open design questions (mechanical, for Spec)
+
+- **Internal-vs-real directive partition.** The projector needs an explicit set of test/enrichment
+  directives to omit (`@expectClassification`, and any future enrichment directive); `@table` /
+  `@service` / `@node` etc. are the rule being demonstrated and must render.
+- **Namespace collisions in one file.** A single coherent schema cannot hold two different shapes of
+  the same concept (a `Film` with `@table` and a `Film` without, to show two verdicts). Examples that
+  need conflicting setups need distinct names, and since the query-view renders real names, those
+  names must read well in prose. This is the main scaling tension of the single-file corpus; revisit
+  if it forces a split into a small number of coherent corpora rather than one file.
+- **Type-display convention.** Queries are field-rooted, so demonstrating a type's verdict
+  (`Film -> TableType`) needs either a field that returns it or a small `@show(type:)`-style
+  convention in the query DSL.
+- **Java fixtures.** Reflection-backed examples carry companion Java classes/records on the test
+  classpath; reuse `GraphitronSchemaBuilderTest`'s existing fixtures where possible.
+- **Parse-invalid examples are out.** Malformed SDL would break the whole corpus; only
+  classification-invalid examples (contained, asserted as `Unclassified*` / rejection) belong.
 
 ## Relationship to R279
 
