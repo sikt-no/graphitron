@@ -18,7 +18,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R275` | Error channel and data projection for source-record-carrier @service mutations | In Progress | 2026-06-05 <sub>created 2026-06-02</sub> | [plan](source-record-carrier-service-error-channel.md) |
 | `R222` | Dimensional model pivot: slots over cross-product permits | Spec | 2026-06-05 <sub>created 2026-05-21</sub> | [plan](dimensional-model-pivot.md) |
 | `R256` | Absorb the service walker substrate: typed per-arm errors + multi-arg ctors | Ready | 2026-05-30 <sub>created 2026-05-29</sub> | [plan](service-walker-substrate-absorption.md) |
-| `R279` | Field-first reachability-driven classification driver <sub>blocked by: [dimensional-model-pivot](dimensional-model-pivot.md)</sub> | Ready | 2026-06-07 <sub>created 2026-06-05</sub> | [plan](field-first-classification-driver.md) |
+| `R279` | Field-first reachability-driven classification driver <sub>blocked by: [dimensional-model-pivot](dimensional-model-pivot.md)</sub> | Spec | 2026-06-07 <sub>created 2026-06-05</sub> | [plan](field-first-classification-driver.md) |
 | `R45` | Multi-tenant routing on top of the schema-driven ExecutionInput factory | Spec | 2026-05-20 | [plan](tenant-routing-and-execution-input.md) |
 | `R273` | Source NodeId metadata from @node + catalog PK (inferred from `implements Node`), and settle wrong-type/malformed mismatch semantics, retiring the legacy __NODE bare-ID arm | Spec | 2026-06-02 | [plan](nodeid-skip-mismatch-error-surfacing.md) |
 | `R23` | Multi-parent `NestingField` sharing: `TableField` arm | Spec |  | [plan](nestingfield-multiparent-tablefield.md) |
@@ -206,7 +206,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R256` [**Absorb the service walker substrate: typed per-arm errors + multi-arg ctors**](service-walker-substrate-absorption.md) — Ready, structural
 - `R266` [**DELETE mutations onto the DeleteRows walker carrier, retiring @value (R222 DELETE slice)**](deleterows-walker-carrier.md) — Backlog, structural
 - `R222` [**Dimensional model pivot: slots over cross-product permits**](dimensional-model-pivot.md) — Spec, structural
-- `R279` [**Field-first reachability-driven classification driver**](field-first-classification-driver.md) — Ready, architecture, blocked by [dimensional-model-pivot](dimensional-model-pivot.md)
+- `R279` [**Field-first reachability-driven classification driver**](field-first-classification-driver.md) — Spec, architecture, blocked by [dimensional-model-pivot](dimensional-model-pivot.md)
 - `R171` [**Fold InputType and TableInputType under sealed parent InputLikeType**](input-like-type-sealed-parent.md) — Backlog, architecture
 - `R103` [**Lift jOOQ column defaults onto input fields connected to that column**](lift-jooq-column-defaults-onto-inputs.md) — Backlog, architecture
 - `R249` [**Nested @argMapping syntax via GraphQLSelectionParser**](nested-argmapping-syntax.md) — Backlog, feature
