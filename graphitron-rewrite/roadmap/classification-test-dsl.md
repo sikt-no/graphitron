@@ -55,25 +55,26 @@ Two test-only directives, split by what they classify, each carrying a GraphQL e
 validated SDL-side (a typo is a parse error graphql-java rejects before the harness runs) and
 autocompletes in an editor:
 
-- `@classified(as: FieldVerdict!) on FIELD_DEFINITION | INPUT_FIELD_DEFINITION` asserts the
-  `GraphitronField` sealed leaf a field coordinate classifies to. This is the prevalent directive
-  (most annotated coordinates are fields), so it is short.
+- `@classified(as: FieldVerdict!) on FIELD_DEFINITION` asserts the `OutputField` sealed leaf an
+  output-field coordinate classifies to. This is the prevalent directive (most annotated coordinates
+  are output fields), so it is short.
 - `@classifiedType(as: TypeVerdict!) on OBJECT | INTERFACE | UNION | INPUT_OBJECT | ENUM | SCALAR`
   asserts the `GraphitronType` sealed leaf a type classifies to.
 
-`FieldVerdict` and `TypeVerdict` are GraphQL enums whose constants correspond one-to-one to the
-sealed leaves of `GraphitronField` and `GraphitronType` respectively, minus the two failure leaves
-(`UnclassifiedField`, `UnclassifiedType`), which are out of scope. A meta-test asserts each enum's
-constant set equals its hierarchy's leaf set (excluding the failure leaves): adding a sealed leaf
-without a matching enum constant fails the build. This is the validator-mirrors-classifier discipline
-turned on the test DSL itself, and it is what makes "coverage derived from the corpus" (below) harder
-to game than the old reflective enum scan, the enum *is* the leaf set by construction.
+Input-field classification is out of scope (see [Out of scope](#out-of-scope)): an input field is
+interpreted relative to the output field it feeds, a different game. So `@classified` sits only on
+output `FIELD_DEFINITION` coordinates, and `FieldVerdict` mirrors `OutputField`, not the full
+`GraphitronField` hierarchy.
 
-A handful of leaf simple names collide across the input/output split (`CompositeColumnField` and
-`CompositeColumnReferenceField` each exist under both `ChildField` and `InputField`). The enum
-constants disambiguate these with a family prefix; the meta-test keys its constant-to-leaf map on the
-leaf class, not the simple name, so the collision is resolved once in the map rather than re-litigated
-at every authoring site.
+`FieldVerdict` enumerates the sealed leaves of `OutputField` (the `RootField` and `ChildField`
+families); `TypeVerdict` enumerates the leaves of `GraphitronType` minus the failure leaf
+`UnclassifiedType`. A meta-test asserts each enum's constant set equals its hierarchy's leaf set:
+adding a sealed leaf without a matching enum constant fails the build. This is the
+validator-mirrors-classifier discipline turned on the test DSL itself, and it is what makes "coverage
+derived from the corpus" (below) harder to game than the old reflective enum scan, the enum *is* the
+leaf set by construction. With input fields out, output-field leaf simple names are unique (the
+`CompositeColumnField` / `CompositeColumnReferenceField` collisions live on the `InputField` side),
+so the enum constants are the plain leaf simple names, no disambiguation needed.
 
 **On distinguishing the two directives by capitalization (`@classified` vs `@Classified`): recommend
 against.** Two directives differing only in the case of their first letter is a scan-and-typo footgun,
@@ -114,13 +115,17 @@ necessarily a standalone repro; honouring the closure rule is what keeps the exc
   (its primary tier becomes this corpus). R279 is the first consumer, not the owner.
 - **Replace the enum truth table, do not run beside it.** Adding the DSL on top of the ~398 enum
   rows recreates the exact duplication R8 fought; the value lands only when the fixture corpus
-  *becomes* the truth table and the enum rows retire. That migration (plus rewiring
-  `VariantCoverageTest`) is the bulk of the cost. Slice accordingly (see Slicing below).
+  *becomes* the truth table and the migrated enum rows retire. Scope note: the output-field and type
+  rows migrate; input-field classification rows stay in the enum table as their own game (out of
+  scope here). That migration (plus rewiring `VariantCoverageTest`) is the bulk of the cost. Slice
+  accordingly (see Slicing below).
 - **Coverage derived from the corpus.** `VariantCoverageTest.everySealedLeafHasAClassificationCase`
-  walks the `GraphitronField` / `GraphitronType` roots today; it becomes "every `GraphitronField` /
-  `GraphitronType` sealed leaf (excluding the two failure leaves) is asserted by some fixture", with
-  the covered set computed from the fixtures' `as:` values resolved to leaf classes. The enum-to-leaf
-  meta-test above is what makes this harder to game than the old reflective enum scan.
+  walks the `GraphitronField` / `GraphitronType` roots today; the corpus-backed coverage is "every
+  `OutputField` / `GraphitronType` sealed leaf (excluding `UnclassifiedType`) is asserted by some
+  fixture", with the covered set computed from the fixtures' `as:` values resolved to leaf classes.
+  `InputField` leaves and the failure leaves stay covered by their existing mechanism (see Out of
+  scope), so only the output-field and type portion moves onto the corpus. The enum-to-leaf meta-test
+  above is what makes the migrated portion harder to game than the old reflective enum scan.
 - **Directive mechanics.** Both directives are test-only: declared in the test schema, ignored by the
   classifier, read only by the harness, and must never leak into the auto-injected
   `directives.graphqls`. See [Classification directives](#classification-directives) for the
@@ -159,6 +164,10 @@ necessarily a standalone repro; honouring the closure rule is what keeps the exc
 
 ## Out of scope
 
+- **Input-field classification.** An input field is interpreted relative to the output field it
+  feeds, a separate concern with its own rules. `@classified` sits only on output `FIELD_DEFINITION`
+  coordinates; `InputField` leaves stay covered by the existing `GraphitronSchemaBuilderTest` enum
+  cases, not this corpus.
 - **Classification failure.** The `UnclassifiedField` / `UnclassifiedType` leaves and the *reason* a
   coordinate fails to classify (the rejection code) are not asserted by `@classified` /
   `@classifiedType`. Failure-path testing is a separate mechanism, deferred; post-R222 it becomes a
@@ -204,9 +213,11 @@ single big-bang conversion:
    majority, not necessarily every one of the ~398 enum cases in the truth table. The coverage
    meta-test surfaces
    the untested long tail; migrate those as corpus entries (tested, not necessarily prose-featured),
-   then rewire `VariantCoverageTest` onto the corpus and delete the now-empty enum table. So every
-   doc example is a corpus example, but not every corpus example is in the doc (the swept tail).
-   Completion here (full corpus coverage, enum table retired) is the milestone that lets R279's merge
+   then rewire `VariantCoverageTest`'s output-field and type coverage onto the corpus and delete the
+   migrated enum rows. The input-field classification rows remain (their own game, out of scope), so
+   the enum table shrinks to that residue rather than emptying. So every doc example is a corpus
+   example, but not every corpus example is in the doc (the swept tail).
+   Completion here (full output-field and type corpus coverage) is the milestone that lets R279's merge
    gate adopt the corpus as its primary tier.
 
 ## Relationship to R279
@@ -228,7 +239,7 @@ sealed `WalkerResult<C>`, and its Stage 4 retires `UnclassifiedType` / `Unclassi
 
 - **The success-verdict taxonomy survives; the failure representation does not.** R222 changes how
   classification is *driven* and how *failure* is represented, but the positive leaves of
-  `GraphitronField` / `GraphitronType` persist as carrier types. A corpus that asserts only successful
+  `OutputField` / `GraphitronType` persist as carrier types. A corpus that asserts only successful
   verdicts via `@classified` / `@classifiedType` is therefore forward-compatible with R222: it does
   not get rebuilt when the walker lands.
 - **So failure is deliberately out of scope.** Anchoring `UnclassifiedField` / `UnclassifiedType` or
