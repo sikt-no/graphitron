@@ -22,9 +22,13 @@ embedding the expected classification in the SDL fixture as a directive.
 
 ## The shape
 
-The corpus is **one annotated schema file** (SDL, plus reflection-backed Java fixtures for the
-`@service` / `@tableMethod` examples). Each element whose classification is being specified carries
-an inline test-only directive; the description states the rule:
+The corpus is **one or more annotated schemas** (SDL, plus reflection-backed Java fixtures for the
+`@service` / `@tableMethod` examples). Each test case lives inside a *larger* schema rather than as
+an isolated fragment, so it is classified in realistic context (reachability, participants, and FKs
+resolve); using several schemas is fine and is how conflicting setups are kept apart (see open
+questions). Every example parses, that is an invariant graphql-java gates, so a non-parsing example
+does not exist. Each element whose classification is specified carries an inline test-only directive;
+the description states the rule:
 
 ```graphql
 type Query {
@@ -35,19 +39,21 @@ type Query {
 type Film @table(name: "Film") @expectClassification(is: "TableType") { ... }
 ```
 
-The harness parses the whole corpus, runs the classifier once, and asserts each annotated
-coordinate's sealed-leaf verdict equals its `is:` value. The SDL is the example, the directive is
-the assertion, the description is the spec sentence, the declarative form of R222's unit-test claim
-and idiomatic with the existing `@capability` / `@exemplifies` annotation directives. One run over a
-single coherent schema keeps every example mutually consistent (FKs resolve, participants exist) and
-contains the deliberately-unclassified examples (the harness classifies-and-inspects; it does not run
-the validator-rejects path), so `@expectClassification(is: "UnclassifiedField")` is a first-class case.
+The harness parses each schema, runs the classifier, and asserts each annotated coordinate's
+sealed-leaf verdict equals its `is:` value. The SDL is the example, the directive is the assertion,
+the description is the spec sentence, the declarative form of R222's unit-test claim and idiomatic
+with the existing `@capability` / `@exemplifies` annotation directives. Classifying a schema in one
+run keeps its examples mutually consistent (FKs resolve, participants exist) and contains the
+deliberately-unclassified examples (the harness classifies-and-inspects; it does not run the
+validator-rejects path), so `@expectClassification(is: "UnclassifiedField")` is a first-class case.
 
 ## Rendering: queries as views over the corpus
 
-Prose does not embed schema; it embeds a **query** naming the fields (or types) it wants to show.
-The renderer resolves that selection against the corpus, takes the touched coordinates, and
-regenerates minimal SDL for that closure (graphql-java `SchemaPrinter` over the projected subgraph).
+Prose does not embed schema; it embeds a **query** naming the fields it wants to show, or a
+**fragment** whose `on Type` condition names a type directly (the type-display case, no extra
+convention needed). The renderer resolves that selection against the corpus, takes the touched
+coordinates, and regenerates minimal SDL for that closure (graphql-java `SchemaPrinter` over the
+projected subgraph).
 One mechanism does three jobs at once:
 
 - *Import what's relevant* (the earlier requirement): the query's selection set is the projection,
@@ -92,18 +98,25 @@ necessarily a standalone repro; honouring the closure rule is what keeps the exc
 - **Internal-vs-real directive partition.** The projector needs an explicit set of test/enrichment
   directives to omit (`@expectClassification`, and any future enrichment directive); `@table` /
   `@service` / `@node` etc. are the rule being demonstrated and must render.
-- **Namespace collisions in one file.** A single coherent schema cannot hold two different shapes of
-  the same concept (a `Film` with `@table` and a `Film` without, to show two verdicts). Examples that
-  need conflicting setups need distinct names, and since the query-view renders real names, those
-  names must read well in prose. This is the main scaling tension of the single-file corpus; revisit
-  if it forces a split into a small number of coherent corpora rather than one file.
-- **Type-display convention.** Queries are field-rooted, so demonstrating a type's verdict
-  (`Film -> TableType`) needs either a field that returns it or a small `@show(type:)`-style
-  convention in the query DSL.
-- **Java fixtures.** Reflection-backed examples carry companion Java classes/records on the test
-  classpath; reuse `GraphitronSchemaBuilderTest`'s existing fixtures where possible.
-- **Parse-invalid examples are out.** Malformed SDL would break the whole corpus; only
-  classification-invalid examples (contained, asserted as `Unclassified*` / rejection) belong.
+- **Partitioning across schemas.** A single schema cannot hold two shapes of the same concept (a
+  `Film` with `@table` and a `Film` without, to show two verdicts); since multiple corpora are
+  allowed, such conflicting examples live in separate schemas. This is a partitioning decision, not a
+  scaling wall. Open: the partitioning convention (per broad area, per conflicting-shape cluster) and
+  keeping type names prose-readable, since the query-view renders real names.
+- **Companion Java mechanism (direction found).** Reflection-backed examples (`@service` /
+  `@tableMethod`) need real, compiled Java the classifier reflects against and that prose can show
+  without copy-paste drift. The JVM-native facility is **JEP 413's `@snippet` tag** (Java 18+):
+  external snippet files in a `snippet-files/` directory (or on `--snippet-path`), referenced by
+  named region (`// @start region="r"` ... `// @end` in the source, pulled via
+  `{@snippet class="Fixture" region="r"}`). But `@snippet` renders into *Javadoc*, and graphitron's
+  contributor docs are *AsciiDoc*; the direct equivalent already in the toolchain is AsciiDoctor
+  `include::Fixture.java[tags=r]` over `// tag::r[]` regions. Either way the honesty guarantee comes
+  from the fixtures being real test sources the build compiles and the classifier reflects against,
+  not from the snippet tool, which only governs how prose references them. Note the asymmetry with
+  SDL: SDL examples are *projected* (the query-as-view regenerates minimal SDL), whereas Java
+  fixtures are *excerpted verbatim* by region, you can project a schema subgraph but you show Java
+  as-written. Decision for Spec: AsciiDoc `include` regions (matches the AsciiDoc docs) vs `@snippet`
+  (if any of this also surfaces in Javadoc); reuse `GraphitronSchemaBuilderTest`'s fixtures where possible.
 
 ## Relationship to R279
 
