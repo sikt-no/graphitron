@@ -78,8 +78,7 @@ necessarily a standalone repro; honouring the closure rule is what keeps the exc
 - **Replace the enum truth table, do not run beside it.** Adding the DSL on top of the ~398 enum
   rows recreates the exact duplication R8 fought; the value lands only when the fixture corpus
   *becomes* the truth table and the enum rows retire. That migration (plus rewiring
-  `VariantCoverageTest`) is the bulk of the cost. Slice accordingly: harness + directive + a few
-  exemplar fixtures + a coverage meta-test first; bulk migration as a named follow-on.
+  `VariantCoverageTest`) is the bulk of the cost. Slice accordingly (see Slicing below).
 - **Coverage derived from the corpus.** `VariantCoverageTest.everySealedLeafHasAClassificationCase`
   becomes "every `FieldClassification` / `GraphitronType` sealed leaf is asserted by some fixture",
   with the covered set computed from the fixtures' `is:` values, harder to game than the enum scan.
@@ -117,6 +116,30 @@ necessarily a standalone repro; honouring the closure rule is what keeps the exc
   fixtures are *excerpted verbatim* by region, you can project a schema subgraph but you show Java
   as-written. Decision for Spec: AsciiDoc `include` regions (matches the AsciiDoc docs) vs `@snippet`
   (if any of this also surfaces in Javadoc); reuse `GraphitronSchemaBuilderTest`'s fixtures where possible.
+
+## Slicing (recommended phasing)
+
+The corpus is the source of truth and the prose is a view over it, so prose genuinely follows the
+corpus (you cannot reference examples that do not exist). But the test side should not land as a
+single big-bang conversion:
+
+1. **Thin vertical slice, end to end.** The `@expectClassification` directive + harness + coverage
+   meta-test + a handful of exemplar examples in a small corpus, running *alongside* the existing
+   enum truth table (transitional coexistence, not the permanent duplication the fork above rejects),
+   plus a prototype of the query-as-view renderer (query/fragment -> projected SDL, internal
+   directives stripped) over those few examples. This proves both sides at small scale and, more
+   importantly, surfaces the authoring constraints (real names must read well since they render
+   verbatim; an example must be selectable via a query/fragment) *before* the expensive grind. The
+   closure rule already pins most of what projects, so the renderer prototype is cheap insurance,
+   not a hard gate.
+2. **Bulk migration + enum retirement.** Migrate the ~398 `GraphitronSchemaBuilderTest` rows into the
+   corpus, rewire `VariantCoverageTest` to derive coverage from the corpus, and retire the enum
+   table. The heavy middle, de-risked by slice 1. This is the milestone that lets R279's merge gate
+   adopt the corpus as its primary tier.
+3. **Prose, interleaved.** Author the doc prose referencing the corpus through the renderer. This can
+   interleave with the migration (author each area's prose as its examples land) rather than strictly
+   follow all of it; it is where R279 slice 0 (the `code-generation-triggers` absorption) consumes
+   the corpus.
 
 ## Relationship to R279
 
