@@ -105,8 +105,10 @@ values are the phase-1 starting point, and the corpus's job is to confirm or bre
 [Validating the axis set](#validating-the-axis-set)). What this Spec settles is the *mechanism* (a
 dimensional directive, per-axis enums, the adapter, and the totality/no-collapse falsifier); what
 slice 1 settles is the resulting axis set. So the three-argument signature above is illustrative of
-the shape, not a frozen arity: phase 1 may well add a fourth axis (the likely `Query`-vs-`Mutation`
-collision, see [Validating the axis set](#validating-the-axis-set)), which is a directive-argument,
+the shape, not a frozen arity: phase 1 may add an axis (if the adapter's no-unintended-collapse check
+finds two leaves the emitter forks on but the three axes fuse) or confirm that a permit split the
+leaf set carries is spurious (the `Query`-vs-`Mutation` service-field pair, which emit identically;
+see [Validating the axis set](#validating-the-axis-set)). Adding an axis is a directive-argument,
 enum, adapter-column, and re-annotation change, not the one-line edit a value *rename* is. Downstream
 items bind to the corpus only after slice 1 closes the axis set: R279's merge gate adopts it at
 phase-3 completion, and R282 consumes the vocabulary slice 1 settled, not the provisional three.
@@ -159,6 +161,15 @@ implemented/projected/... leaf groups) so "emit differently" reduces to "land in
 dispatch arms" rather than an annotation. This item settles the axis *decomposition*; R282 settles
 the axis *grounding*.
 
+Note also that `(source, action, target)` is a *projection*, not the field's complete emit key. Other
+emit-determinants exist, notably output cardinality (single / list / connection) and the error
+channel, both of which fork `buildServiceFetcherCommon` today and which R222 models as their own
+carriers (`Pagination`, the `ErrorChannel` family). They are dimensions in their own right, just not
+ones `@classified`'s three axes assert; a leaf maps to one tuple even when it covers several
+cardinalities. So the no-collapse check operates leaf-to-leaf (do two leaves the emitter dispatches
+differently share a tuple), and within-leaf forks like cardinality are out of this directive's scope,
+carried elsewhere in the dimensional model.
+
 When R164 lands, the field carries `source()` / `action()` / `target()` slots directly. The adapter
 is deleted, the harness reads the slots instead of mapping a leaf, and **the corpus assertions do not
 change.** Their continued green is the proof that R164's decomposition was behaviour-preserving. The
@@ -175,14 +186,20 @@ enforces over it (corpus coverage adds a third, axis-value exercise; see
 - **Totality.** Every `OutputField` sealed leaf maps to a tuple; a leaf with no mapping fails the
   build. This is the validator-mirrors-classifier discipline (adding a leaf forces an adapter row),
   and it is what makes corpus-derived coverage harder to game than the old reflective enum scan.
-- **No spurious collapse.** Two distinct leaves that emit differently must not map to the same tuple.
-  If they do, the three axes are *incomplete*, an axis is missing, and the adapter cannot be written
-  as a function without losing information. This is the discovery the driver exists to force. The
-  first such collision is likely `QueryServiceTableField` vs `MutationServiceTableField`: both are
-  `(Root, Service, Table)` under the three provisional axes, yet they emit differently (DML / error
-  channel on the mutation side). That collision is the corpus telling us a fourth axis (operation, or
-  cardinality, or both) is real before R164 has to discover it the expensive way. Resolving it is
-  phase-1 work, not a defect in the plan; the plan is the thing that surfaces it.
+- **No *unintended* collapse.** A collapse is usually the goal, not the hazard: two leaves that emit
+  identically *should* map to one tuple, and that collapse is precisely the pivot dissolving a
+  spurious permit. `QueryServiceTableField` and `MutationServiceTableField` are the clean example.
+  Both map to `(Root, Service, Table)`, and they genuinely emit the same code: `TypeFetcherGenerator`
+  dispatches both to one shared `buildServiceFetcherCommon` with no query-vs-mutation branch (the
+  query/mutation distinction is a root-type label, not an emit fork; what actually forks the body is
+  the error channel and cardinality, which both leaves carry as properties). So a corpus that asserts
+  both as `(Root, Service, Table)` is documenting exactly the consolidation R164 will codify, not
+  hiding a distinction. The hazard is the *opposite*: collapsing two leaves the emitter actually
+  treats differently, which would mean a real axis is missing. The check therefore anchors "emit
+  differently" on the existing dispatch partition (`TypeFetcherGenerator`'s implemented / projected /
+  ... leaf groups), not on leaf identity: two leaves may share a tuple only when they share emit
+  behaviour. If a tuple ever fuses leaves that dispatch differently, phase 1 has found a missing axis
+  before R164 has to.
 
 So the axis vocabulary in the table above is where phase 1 *starts*, and the adapter's two checks are
 how phase 1 *finishes*: with an axis set rich enough that the leaf→tuple map is total and collision-
@@ -306,9 +323,11 @@ single big-bang conversion:
    duplication the fork above rejects), plus a prototype of the query-as-view renderer
    (query/fragment -> projected SDL, internal directives stripped) over those few examples. This
    slice's primary deliverable is the *validated axis set*: it must drive the adapter to totality and
-   collision-freedom across `OutputField`, which is what forces any missing axis (the likely
-   `Query`-vs-`Mutation` collision, see [Validating the axis set](#validating-the-axis-set)) out into
-   the open and settles the final axis vocabulary R164 inherits. Secondarily it surfaces the authoring
+   to no *unintended* collapse across `OutputField` (legitimate collapses, like the emit-identical
+   `Query`-vs-`Mutation` service-field pair, are the goal; see
+   [Validating the axis set](#validating-the-axis-set)), which is what forces any genuinely missing
+   axis out into the open and settles the final axis vocabulary R164 inherits. Secondarily it surfaces
+   the authoring
    constraints (real names must read well since they render verbatim; an example must be selectable
    via a query/fragment) *before* the expensive grind. The closure rule already pins most of what
    projects, so the renderer prototype is cheap insurance, not a hard gate.
