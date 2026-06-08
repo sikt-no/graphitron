@@ -219,10 +219,18 @@ design. The placement splits along that boundary, anchored on one constant:
 - **Generated** `<outputPackage>.util.OneOfDirectiveSdl` is emitted by a new
   `OneOfDirectiveSdlGenerator` (in `generators/util`, beside
   `ConnectionHelperClassGenerator`), wired into `GraphQLRewriteGenerator`'s
-  per-run `write(..., "util", ...)` under the `usesOneOf(assembled)` gate. Its
-  `DEFINITION` literal is emitted from the codegen-side constant, so the exact
+  per-run `write(..., "util", ...)` under a `federationLink && usesOneOf(assembled)`
+  gate. The `federationLink` conjunct matters: the generated helper's only caller
+  is the runtime federation `build` arm (the wrapped `return`, itself inside
+  `if (federationLink)`), so a non-federation schema that uses `@oneOf` needs no
+  runtime helper (its file arm goes through `printPlain`, which already emits the
+  definition, and its runtime `build` has no `_Service.sdl` to correct). Gating on
+  `usesOneOf` alone would emit a dead, uncalled helper into a non-federation
+  consumer's `util` package. Both `federationLink` and `assembled` are in scope at
+  the `write(...)` site in `runPipeline`, so the conjunction is a one-line guard.
+  Its `DEFINITION` literal is emitted from the codegen-side constant, so the exact
   definition string is single-sourced; the writer's orphan sweep removes the
-  generated helper if a schema later drops `@oneOf`.
+  generated helper if a schema later drops `@oneOf` (or drops federation).
 
 This is the same codegen/runtime division the rest of the runtime support
 surface already uses (`ConnectionHelper`, the generated `ConstraintViolations`
@@ -298,7 +306,7 @@ No current fixture applies `@oneOf` (confirmed: no `@oneOf` in any
 - `graphitron-rewrite/graphitron/src/main/java/no/sikt/graphitron/rewrite/generators/schema/SchemaSdlEmitter.java`: `OneOfDirectiveSdl.augment(...)` over the `generateServiceSDLV2` output on the federation arm. The plain arm (`printPlain`) is not touched; it already emits the definition.
 - `graphitron-rewrite/graphitron/src/main/java/no/sikt/graphitron/rewrite/generators/schema/GraphitronSchemaClassGenerator.java`: one-line tail change in the two-arg federation `build`: `return <outputPackage>.util.OneOfDirectiveSdl.withOneOfDefinition(fb.build())` under the `usesOneOf` gate, else `return fb.build()` verbatim.
 - A new codegen-side `graphitron-rewrite/graphitron/src/main/java/no/sikt/graphitron/rewrite/generators/schema/OneOfDirectiveSdl.java` (source of truth: `DEFINITION`, `usesOneOf`, `augment`), called directly by the file arm.
-- A new `graphitron-rewrite/graphitron/src/main/java/no/sikt/graphitron/rewrite/generators/util/OneOfDirectiveSdlGenerator.java` emitting the consumer-side `<outputPackage>.util.OneOfDirectiveSdl` runtime helper (`withOneOfDefinition`), plus its `usesOneOf`-gated wiring into `GraphQLRewriteGenerator`. The generated helper has no checked-in source file.
+- A new `graphitron-rewrite/graphitron/src/main/java/no/sikt/graphitron/rewrite/generators/util/OneOfDirectiveSdlGenerator.java` emitting the consumer-side `<outputPackage>.util.OneOfDirectiveSdl` runtime helper (`withOneOfDefinition`), plus its `federationLink && usesOneOf`-gated wiring into `GraphQLRewriteGenerator` (the helper serves only the federation runtime arm). The generated helper has no checked-in source file.
 - `graphitron-rewrite/graphitron/src/test/java/no/sikt/graphitron/rewrite/generators/schema/SchemaSdlEmitterTest.java`: unit assertions + no-op guard.
 - `graphitron-rewrite/graphitron-sakila-example/src/test/java/no/sikt/graphitron/rewrite/test/querydb/FederationBuildSmokeTest.java`: runtime `_service.sdl` assertion.
 - A `@oneOf` test fixture (unit-tier schema + pipeline-tier federated fixture input).
