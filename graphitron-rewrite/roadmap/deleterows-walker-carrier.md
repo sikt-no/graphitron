@@ -1,7 +1,7 @@
 ---
 id: R266
 title: DELETE mutations onto the DeleteRows walker carrier, retiring @value (R222 DELETE slice)
-status: Spec
+status: Ready
 bucket: structural
 priority: 3
 theme: structural-refactor
