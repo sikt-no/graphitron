@@ -222,6 +222,34 @@ class FederationBuildSmokeTest {
         return graphql.schema.idl.UnExecutableSchemaGenerator.makeUnExecutableSchema(registry);
     }
 
+    /**
+     * R283: graphitron emits the {@code @oneOf} <em>application</em> into the runtime
+     * {@code _Service.sdl} but {@code ServiceSDLPrinter.generateServiceSDLV2} strips the
+     * spec-built-in <em>definition</em>. The generated {@code OneOfDirectiveSdl} helper, wrapped
+     * around the federation build's return, reinstates {@code directive @oneOf on INPUT_OBJECT}
+     * on the served SDL so Apollo composition does not reject the subgraph with
+     * {@code Unknown directive "@oneOf"}. Asserts the executed {@code { _service { sdl } }} carries
+     * both the application and the definition, with no GraphQL errors.
+     */
+    @Test
+    void serviceSdlExposesOneOfDirectiveDefinition() {
+        GraphQLSchema schema = Graphitron.buildSchema(b -> {}, fed -> {});
+        var graphql = GraphQL.newGraphQL(schema).build();
+        var input = ExecutionInput.newExecutionInput()
+            .query("{ _service { sdl } }")
+            .build();
+        var result = graphql.execute(input);
+        assertThat(result.getErrors()).isEmpty();
+        @SuppressWarnings("unchecked")
+        var service = (Map<String, Object>) ((Map<String, Object>) result.getData()).get("_service");
+        var sdl = (String) service.get("sdl");
+        assertThat(sdl)
+            .as("the @oneOf application must round-trip into the runtime _Service.sdl")
+            .containsPattern("input\\s+FilmOneOfFilter\\b[^{]*@oneOf")
+            .as("the @oneOf directive definition must be reinstated on the served SDL")
+            .contains("directive @oneOf on INPUT_OBJECT");
+    }
+
     @Test
     void serviceSdlExposesCanonicalKeyDirectiveShape() {
         GraphQLSchema schema = Graphitron.buildSchema(b -> {}, fed -> {});

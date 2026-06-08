@@ -5,7 +5,7 @@ status: Backlog
 bucket: feature
 depends-on: []
 created: 2026-05-27
-last-updated: 2026-05-27
+last-updated: 2026-06-08
 ---
 
 # Make pipeline<->runtime SDL parity test pass
@@ -31,6 +31,31 @@ loop and the per-type `applicationsFor` survivor filter on
 `AppliedDirectiveEmitter`; the emitter still prints from `assembled`,
 which carries every consumer-authored directive declaration and
 application.
+
+## Relationship to R283 (preserve the `@oneOf` carve-out)
+
+R283 shipped the `@oneOf` directive-definition fix on the same federation
+seam, by string-augmenting the `generateServiceSDLV2` output through
+`OneOfDirectiveSdl.augment(...)` (file arm) and the generated
+`<outputPackage>.util.OneOfDirectiveSdl.withOneOfDefinition(...)` (runtime
+arm). It also added a `@oneOf` input to both the federated and shared
+sakila fixtures, so this test, once re-enabled, gains `@oneOf` parity
+coverage for free.
+
+**Route 1/3's `includeSchemaElement` predicate above would re-break R283.**
+`@oneOf` *is* spec-specified, so
+`!DirectiveInfo.isGraphqlSpecifiedDirective(d)` strips its definition, and
+naming `oneOf` in `includeDirectiveDefinition` does **not** re-admit it (the
+`includeSchemaElement` filter removes it again, verified in R283's spec).
+Whichever route this item takes must therefore carve `@oneOf` out of the
+`includeSchemaElement` filter (e.g. `d -> !isGraphqlSpecifiedDirective(d) ||
+"oneOf".equals(d.getName())`) **or** keep R283's `augment`-equivalent over
+the printed output. The now-live parity test plus the `@oneOf` fixture will
+catch a regression, but the predicate must be written with this in mind. If
+R283's `SchemaSdlEmitter.augment` call is removed in favour of the
+controlled printer, the runtime arm (`withOneOfDefinition`) must stay or be
+replaced in lockstep, or the on-disk and runtime SDL diverge and this very
+test fails.
 
 ## Implementation routes
 

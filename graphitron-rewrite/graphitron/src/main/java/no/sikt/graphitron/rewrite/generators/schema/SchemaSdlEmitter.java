@@ -55,7 +55,11 @@ public final class SchemaSdlEmitter {
             .setFederation2(true)
             .resolveEntityType(env -> null)
             .fetchEntities(env -> List.of());
-        return ServiceSDLPrinter.generateServiceSDLV2(transformer.build());
+        String sdl = ServiceSDLPrinter.generateServiceSDLV2(transformer.build());
+        // generateServiceSDLV2 emits the @oneOf application but strips the spec-built-in
+        // definition (R283). Reinstate it so Apollo composition does not reject the subgraph
+        // with "Unknown directive @oneOf"; no-op (byte-identical) when the schema has no @oneOf.
+        return OneOfDirectiveSdl.augment(assembled, sdl);
     }
 
     private static String printPlain(GraphQLSchema assembled) {

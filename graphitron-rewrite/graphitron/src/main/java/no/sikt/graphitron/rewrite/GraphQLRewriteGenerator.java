@@ -26,6 +26,7 @@ import no.sikt.graphitron.rewrite.generators.schema.GraphitronSchemaClassGenerat
 import no.sikt.graphitron.rewrite.generators.schema.InputRecordGenerator;
 import no.sikt.graphitron.rewrite.generators.schema.InputTypeGenerator;
 import no.sikt.graphitron.rewrite.generators.schema.ObjectTypeGenerator;
+import no.sikt.graphitron.rewrite.generators.schema.OneOfDirectiveSdl;
 import no.sikt.graphitron.rewrite.generators.schema.OutcomeClassGenerator;
 import no.sikt.graphitron.rewrite.generators.schema.SchemaSdlEmitter;
 import no.sikt.graphitron.rewrite.generators.util.ColumnFetcherClassGenerator;
@@ -35,6 +36,7 @@ import no.sikt.graphitron.rewrite.generators.util.EntityFetcherDispatchClassGene
 import no.sikt.graphitron.rewrite.generators.util.GraphitronContextInterfaceGenerator;
 import no.sikt.graphitron.rewrite.generators.util.GraphitronValuesClassGenerator;
 import no.sikt.graphitron.rewrite.generators.util.NodeIdEncoderClassGenerator;
+import no.sikt.graphitron.rewrite.generators.util.OneOfDirectiveSdlGenerator;
 import no.sikt.graphitron.rewrite.generators.util.QueryNodeFetcherClassGenerator;
 import no.sikt.graphitron.rewrite.generators.util.OrderByResultClassGenerator;
 import no.sikt.graphitron.rewrite.generators.util.PolymorphicSelectionSetClassGenerator;
@@ -187,6 +189,14 @@ public class GraphQLRewriteGenerator {
         write(EntityFetcherDispatchClassGenerator.generate(schema, outputPackage),                "util",       emittedThisRun);
         write(ConnectionResultClassGenerator.generate(outputPackage),                             "util",       emittedThisRun);
         write(ConnectionHelperClassGenerator.generate(outputPackage),                             "util",       emittedThisRun);
+        // R283: the runtime _Service.sdl helper serves only the federation build arm (the wrapped
+        // `return` in GraphitronSchemaClassGenerator's two-arg build, itself inside `if
+        // (federationLink)`). A non-federation schema that uses @oneOf has no _Service.sdl to
+        // correct (its file arm prints the definition through SchemaPrinter already), so gating on
+        // usesOneOf alone would emit a dead, uncalled helper into a non-federation consumer's util.
+        if (federationLink && OneOfDirectiveSdl.usesOneOf(assembled)) {
+            write(OneOfDirectiveSdlGenerator.generate(outputPackage),                              "util",       emittedThisRun);
+        }
         write(PolymorphicSelectionSetClassGenerator.generate(),                                   "util",       emittedThisRun);
         write(OrderByResultClassGenerator.generate(),                                             "util",       emittedThisRun);
         write(GraphitronContextInterfaceGenerator.generate(),                                     "schema",     emittedThisRun);

@@ -36,6 +36,18 @@ class SchemaSdlEmitterTest {
             .build();
     }
 
+    /**
+     * A schema whose {@code Filter} input applies the built-in {@code @oneOf} directive.
+     * Built through graphql-java's SchemaGenerator (as the real pipeline does) so the input
+     * object reports {@link graphql.schema.GraphQLInputObjectType#isOneOf()}.
+     */
+    private static GraphQLSchema oneOfSchema() {
+        String sdl = "type Query { search(filter: Filter): String }\n"
+            + "input Filter @oneOf { byId: ID byName: String }\n";
+        var registry = new graphql.schema.idl.SchemaParser().parse(sdl);
+        return graphql.schema.idl.UnExecutableSchemaGenerator.makeUnExecutableSchema(registry);
+    }
+
     @Test
     void federationArmRoutesThroughServiceSdlPrinter(@TempDir Path root) throws IOException {
         GraphQLSchema schema = sampleSchema();
@@ -74,5 +86,50 @@ class SchemaSdlEmitterTest {
 
         assertThat(target).isEqualTo(root.resolve("schema.graphqls"));
         assertThat(target).exists();
+    }
+
+    /**
+     * R283: the new behavior. {@code generateServiceSDLV2} emits the {@code @oneOf}
+     * application but strips the spec-built-in definition; the federation arm reinstates it.
+     */
+    @Test
+    void federationArmEmitsOneOfDefinitionWhenSchemaUsesOneOf(@TempDir Path root) throws IOException {
+        Path target = SchemaSdlEmitter.emit(oneOfSchema(), true, root, "com.example.app");
+        String sdl = Files.readString(target, StandardCharsets.UTF_8);
+
+        assertThat(sdl)
+            .as("federation arm must reinstate the @oneOf directive definition")
+            .contains("directive @oneOf on INPUT_OBJECT")
+            .as("the @oneOf application must remain on the input type")
+            .containsPattern("input\\s+Filter\\b[^{]*@oneOf");
+    }
+
+    /**
+     * R283 no-op / byte-stability guard: a schema that never uses {@code @oneOf} must not gain
+     * the definition. (The exact-equality assertion in
+     * {@link #federationArmRoutesThroughServiceSdlPrinter} pins byte-stability more strongly;
+     * this names the invariant explicitly.)
+     */
+    @Test
+    void federationArmOmitsOneOfDefinitionWhenSchemaHasNoOneOf(@TempDir Path root) throws IOException {
+        Path target = SchemaSdlEmitter.emit(sampleSchema(), true, root, "com.example.app");
+
+        assertThat(Files.readString(target, StandardCharsets.UTF_8))
+            .as("schemas that never use @oneOf keep byte-identical federation output")
+            .doesNotContain("directive @oneOf");
+    }
+
+    /**
+     * Regression guard on existing graphql-java 25.0 behavior, NOT coverage of R283's fix:
+     * the non-federation {@link SchemaPrinter} already prints spec-built-in directive
+     * definitions, so the plain arm emits {@code @oneOf} without any graphitron augmentation.
+     */
+    @Test
+    void plainArmEmitsOneOfDefinitionUnchanged(@TempDir Path root) throws IOException {
+        Path target = SchemaSdlEmitter.emit(oneOfSchema(), false, root, "com.example.app");
+
+        assertThat(Files.readString(target, StandardCharsets.UTF_8))
+            .as("graphql-java's SchemaPrinter already emits the @oneOf definition on the plain arm")
+            .contains("directive @oneOf on INPUT_OBJECT");
     }
 }

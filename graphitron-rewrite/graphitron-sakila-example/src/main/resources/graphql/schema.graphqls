@@ -350,6 +350,14 @@ type Query {
             className: "no.sikt.graphitron.rewrite.test.services.CustomerAddressSummaryService",
             method: "lookup"
         })
+
+    # R283 fixture: a @oneOf input on a non-federation schema. Pins the
+    # federationLink=false, usesOneOf=true gate branch: no runtime OneOfDirectiveSdl helper is
+    # emitted (the runtime _service.sdl correction is a federation-only concern), yet the on-disk
+    # plain SDL still carries `directive @oneOf on INPUT_OBJECT` because graphql-java's
+    # SchemaPrinter emits spec-built-in directive definitions. Implicit-condition @table shape
+    # mirrors Query.filmsWithImplicitInput above, so codegen routes through a proven path.
+    filmsByOneOf(filter: FilmOneOfFilter): [Film!]!
 }
 
 # R110 fixture: free-form (non-table-backed) @record payload. The backing class is a
@@ -1136,6 +1144,15 @@ input NestedFilmInput @table(name: "film") {
 # behavior (absent means unconstrained) is also exercised by tests.
 input FilmImplicitInput @table(name: "film") {
     filmId: ID @field(name: "film_id")
+}
+
+# R283 fixture: @oneOf input filter (see Query.filmsByOneOf). @oneOf demands all-nullable
+# fields; both column filters are nullable. The @oneOf application must reach the emitted
+# schema (and the on-disk plain SDL must carry its definition), but no runtime helper is
+# emitted on the non-federation arm.
+input FilmOneOfFilter @table(name: "film") @oneOf {
+    filmId: Int    @field(name: "film_id")
+    title:  String @field(name: "title")
 }
 
 # R84 (argmapping-path-expressions.md): wrapper input for `filmsByPath`. The argMapping
