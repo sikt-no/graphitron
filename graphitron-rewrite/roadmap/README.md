@@ -16,10 +16,10 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 |---|---|---|---|---|
 | `R19` | Rebase and squash rewrite branch onto main | Ready |  | [plan](history-squash.md) |
 | `R275` | Error channel and data projection for source-record-carrier @service mutations | In Progress | 2026-06-05 <sub>created 2026-06-02</sub> | [plan](source-record-carrier-service-error-channel.md) |
-| `R266` | DELETE mutations onto the DeleteRows walker carrier, retiring @value (R222 DELETE slice) | Spec | 2026-06-08 <sub>created 2026-06-01</sub> | [plan](deleterows-walker-carrier.md) |
 | `R222` | Dimensional model pivot: slots over cross-product permits | Spec | 2026-06-05 <sub>created 2026-05-21</sub> | [plan](dimensional-model-pivot.md) |
 | `R283` | Emit the @oneOf directive definition into generated SDL outputs | Spec | 2026-06-08 | [plan](emit-oneof-directive-definition.md) |
 | `R256` | Absorb the service walker substrate: typed per-arm errors + multi-arg ctors | Ready | 2026-05-30 <sub>created 2026-05-29</sub> | [plan](service-walker-substrate-absorption.md) |
+| `R266` | DELETE mutations onto the DeleteRows walker carrier, retiring @value (R222 DELETE slice) | Ready | 2026-06-08 <sub>created 2026-06-01</sub> | [plan](deleterows-walker-carrier.md) |
 | `R281` | Classification test DSL: @classified spec-by-example | Spec | 2026-06-07 | [plan](classification-test-dsl.md) |
 | `R279` | Field-first reachability-driven classification driver <sub>blocked by: [dimensional-model-pivot](dimensional-model-pivot.md)</sub> | Ready | 2026-06-07 <sub>created 2026-06-05</sub> | [plan](field-first-classification-driver.md) |
 | `R45` | Multi-tenant routing on top of the schema-driven ExecutionInput factory | Spec | 2026-05-20 | [plan](tenant-routing-and-execution-input.md) |
@@ -205,7 +205,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 - `R261` [**Generation-time wire-coercion cast guard across arg-classification sites**](wire-coercion-cast-guard.md) — Backlog, architecture, blocked by [service-walker-substrate-absorption](service-walker-substrate-absorption.md), [dimensional-model-pivot](dimensional-model-pivot.md)
 - `R256` [**Absorb the service walker substrate: typed per-arm errors + multi-arg ctors**](service-walker-substrate-absorption.md) — Ready, structural
-- `R266` [**DELETE mutations onto the DeleteRows walker carrier, retiring @value (R222 DELETE slice)**](deleterows-walker-carrier.md) — Spec, structural
+- `R266` [**DELETE mutations onto the DeleteRows walker carrier, retiring @value (R222 DELETE slice)**](deleterows-walker-carrier.md) — Ready, structural
 - `R222` [**Dimensional model pivot: slots over cross-product permits**](dimensional-model-pivot.md) — Spec, structural
 - `R279` [**Field-first reachability-driven classification driver**](field-first-classification-driver.md) — Ready, architecture, blocked by [dimensional-model-pivot](dimensional-model-pivot.md)
 - `R171` [**Fold InputType and TableInputType under sealed parent InputLikeType**](input-like-type-sealed-parent.md) — Backlog, architecture
