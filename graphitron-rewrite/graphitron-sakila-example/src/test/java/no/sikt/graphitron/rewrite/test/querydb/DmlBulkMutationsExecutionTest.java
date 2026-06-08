@@ -953,4 +953,55 @@ class DmlBulkMutationsExecutionTest {
                 .where(DSL.field("film_id", Integer.class).in(id1, id2)).execute();
         }
     }
+
+    // ===== R266: UK-covering single-row DELETE =====
+    //
+    // storage_bin is the one public-schema table with a UNIQUE constraint (`code`) distinct from
+    // its `bin_id` PK. deleteStorageBinByCode covers `code` only, so the DeleteRowsWalker's
+    // PK-or-UK match lands on the UniqueKey arm rather than the PK — the UK-covering single-row
+    // delete every other Sakila DELETE fixture (all PK-keyed) leaves unproven at execution tier.
+    // The emitted statement is `DELETE FROM storage_bin WHERE code = ? RETURNING bin_id`, and the
+    // `: ID` return encodes the matched bin_id as a StorageBin NodeId. R246 deferred the UK
+    // execution case for UPDATE; this is the DELETE-side proof.
+
+    private int insertStorageBin(String code, String label) {
+        return dsl.insertInto(DSL.table("storage_bin"))
+            .set(DSL.field("code"), code)
+            .set(DSL.field("label"), label)
+            .returningResult(DSL.field("bin_id", Integer.class))
+            .fetchOne().value1();
+    }
+
+    private int countStorageBin(int binId) {
+        return dsl.fetchCount(DSL.selectOne().from(DSL.table("storage_bin"))
+            .where(DSL.field("bin_id", Integer.class).eq(binId)));
+    }
+
+    @Test
+    void deleteStorageBinByCode_singleRow_deletesRowMatchedByUniqueKey() {
+        // Two rows differing only by their UNIQUE `code`. The mutation covers `code` (not the
+        // bin_id PK), so the row is identified by the UniqueKey arm. The sibling with a different
+        // code must survive — proof the WHERE keys on the UK value, not a blanket delete.
+        String code = randomMarker("R266-UK");
+        String survivorCode = randomMarker("R266-UK-KEEP");
+        int targetId = insertStorageBin(code, "target");
+        int survivorId = insertStorageBin(survivorCode, "survivor");
+        try {
+            Map<String, Object> data = execute("""
+                mutation {
+                    deleteStorageBinByCode(in: { code: "%s" })
+                }
+                """.formatted(code));
+            // The returned NodeId encodes the matched row's PK (bin_id), proving RETURNING
+            // projected the PK even though the WHERE keyed on the UNIQUE `code`.
+            String returned = (String) data.get("deleteStorageBinByCode");
+            assertThat(returned)
+                .isEqualTo(no.sikt.graphitron.generated.util.NodeIdEncoder.encode("StorageBin", targetId));
+            assertThat(countStorageBin(targetId)).as("row matched by its UK value is deleted").isZero();
+            assertThat(countStorageBin(survivorId)).as("sibling with a different UK survives").isEqualTo(1);
+        } finally {
+            dsl.deleteFrom(DSL.table("storage_bin"))
+                .where(DSL.field("code").in(code, survivorCode)).execute();
+        }
+    }
 }

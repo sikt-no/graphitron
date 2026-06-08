@@ -360,6 +360,20 @@ CREATE TABLE keyed_node (
     label varchar(64) NOT NULL
 );
 
+-- R266 execution-tier fixture: the public-schema table whose UNIQUE constraint is distinct
+-- from its primary key. A DELETE keyed on the unique (non-PK) `code` column drives the
+-- DeleteRowsWalker's PK-or-UK match onto the UniqueKey arm end-to-end (every other Sakila
+-- DELETE fixture covers the PK, so the UK arm had no execution proof). `bin_id` is the
+-- surrogate PK the @node NodeId encodes for the `deleteStorageBinByCode` `: ID` return; the
+-- emitted statement filters `WHERE code = ?` while `RETURNING` projects `bin_id`, so the row
+-- is identified by the UK and the returned NodeId encodes the matched PK. No seed rows — the
+-- execution test seeds and cleans up its own.
+CREATE TABLE storage_bin (
+    bin_id  serial      PRIMARY KEY,
+    code    varchar(64) NOT NULL UNIQUE,
+    label   varchar(64) NOT NULL
+);
+
 -- ===========================
 -- nodeidfixture schema
 -- ===========================
