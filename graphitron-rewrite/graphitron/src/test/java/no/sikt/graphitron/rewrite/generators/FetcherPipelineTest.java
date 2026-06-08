@@ -470,8 +470,8 @@ class FetcherPipelineTest {
             type Film @table(name: "film") { title: String }
             input FilmUpsertInput @table(name: "film") {
                 filmId: Int! @field(name: "film_id")
-                title: String! @field(name: "title") @value
-                description: String @field(name: "description") @value
+                title: String! @field(name: "title")
+                description: String @field(name: "description")
             }
             type Query { dummy: String }
             type Mutation { upsertFilms(in: [FilmUpsertInput!]!): [Film!]! @mutation(typeName: UPSERT) }
@@ -517,8 +517,8 @@ class FetcherPipelineTest {
             type Film @table(name: "film") { title: String }
             input FilmUpdateInput @table(name: "film") {
                 filmId: Int! @field(name: "film_id")
-                title: String! @field(name: "title") @value
-                description: String @field(name: "description") @value
+                title: String! @field(name: "title")
+                description: String @field(name: "description")
             }
             type Query { dummy: String }
             type Mutation { updateFilms(in: [FilmUpdateInput!]!): [Film!]! @mutation(typeName: UPDATE) }
@@ -589,8 +589,8 @@ class FetcherPipelineTest {
             type Film @table(name: "film") { title: String }
             input FilmUpdateInput @table(name: "film") {
                 filmId: Int! @field(name: "film_id")
-                title: String @field(name: "title") @value
-                description: String @field(name: "description") @value
+                title: String @field(name: "title")
+                description: String @field(name: "description")
             }
             type Query { dummy: String }
             type Mutation { updateFilm(in: FilmUpdateInput!): Film @mutation(typeName: UPDATE) }

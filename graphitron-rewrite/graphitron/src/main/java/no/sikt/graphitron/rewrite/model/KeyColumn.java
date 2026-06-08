@@ -1,9 +1,12 @@
 package no.sikt.graphitron.rewrite.model;
 
 /**
- * R246 — one column contribution on the WHERE side of an UPDATE: a column of the matched key the
- * input fills. Carries the GraphQL input field name it came from, the jOOQ key column it fills,
- * and how to read the input value at the call-site root.
+ * R246 — one column contribution on the WHERE side of an UPDATE or DELETE: a filter column the
+ * input fills. Carries the GraphQL input field name it came from, the jOOQ column it fills, and how
+ * to read the input value at the call-site root. On UPDATE every {@code KeyColumn} is a matched-key
+ * column (R246's WHERE partition); on DELETE (R266) it is any admitted input column, since DELETE
+ * has no SET partition and every input column is a WHERE filter — the matched key there is a
+ * single-row guard, not the WHERE-column set.
  *
  * <p>Like {@link SetColumn}, decoupled from {@link InputField} per R222. The composite-NodeId case
  * (R130) maps one SDL input field to N {@code KeyColumn} rows sharing one {@link #sdlFieldName()}

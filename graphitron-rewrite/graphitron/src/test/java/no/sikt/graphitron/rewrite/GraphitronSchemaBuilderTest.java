@@ -3927,7 +3927,7 @@ class GraphitronSchemaBuilderTest {
             schema -> {
                 // R144: @lookupKey on INPUT_FIELD_DEFINITION is retired across mutation and query
                 // surfaces. The diagnostic mentions the migration target (filter-by-default on
-                // mutation inputs, @value for UPDATE assignment columns).
+                // mutation inputs; the UPDATE SET/WHERE partition is catalog-derived by the walker).
                 // For Query, the @lookupKey moves to the arg if lookup behavior is intended;
                 // see LOOKUP_KEY_ON_NODEID_INPUT_FIELD_ADMITTED for that shape.
                 var f = (no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField) schema.field("Query", "filmByKey");
@@ -4696,7 +4696,7 @@ class GraphitronSchemaBuilderTest {
         var schema = build("""
             input FilmUpdate @table(name: "film") {
               filmId: Int! @field(name: "film_id")
-              title: String @value
+              title: String
                 @condition(condition: {className: "no.sikt.graphitron.rewrite.TestConditionStub", method: "inputColumnCondition"})
             }
             type Film implements Node @table(name: "film") @node { id: ID! @nodeId filmId: Int! @field(name: "film_id") }
@@ -4705,8 +4705,8 @@ class GraphitronSchemaBuilderTest {
             }
             type Query { x: String }
             """);
-        // R246: @value is ignored; the title column carries a @condition the walker cannot emit,
-        // so it rejects with UpdateRowsError.UnsupportedInputFieldShape naming the field.
+        // R246: the title column carries a @condition the walker cannot emit, so it rejects with
+        // UpdateRowsError.UnsupportedInputFieldShape naming the field.
         var uf = (UnclassifiedField) schema.field("Mutation", "updateFilm");
         assertThat(uf.reason()).contains("title");
         assertThat(uf.reason()).contains("@condition", "not supported");
@@ -4768,6 +4768,34 @@ class GraphitronSchemaBuilderTest {
         assertThat(f.rejection()).isInstanceOf(
             no.sikt.graphitron.rewrite.model.UpdateRowsError.OverrideConditionNotSupported.class);
         assertThat(((no.sikt.graphitron.rewrite.model.UpdateRowsError.OverrideConditionNotSupported) f.rejection())
+            .fieldName()).isEqualTo("syntheticName");
+    }
+
+    /**
+     * R266 (DELETE analogue of R246's override-condition deferral) — {@code @mutation(typeName:
+     * DELETE) + @condition(override: true)} on an input field is rejected by {@code DeleteRowsWalker}
+     * with a typed {@code DeleteRowsError.OverrideConditionNotSupported}, rather than silently
+     * dropping the filter at emit. The classifier routes the DELETE through the walker (not
+     * resolveInput), so the rejection is the walker's typed arm.
+     */
+    @Test
+    void r266_mutationDeleteConditionOverrideTrueOnInputFieldRejects() {
+        var schema = build("""
+            input FilmDelete @table(name: "film") {
+              filmId: Int! @field(name: "film_id")
+              syntheticName: String
+                @condition(condition: {className: "no.sikt.graphitron.rewrite.TestConditionStub", method: "syntheticNameCondition"}, override: true)
+            }
+            type Film implements Node @table(name: "film") @node { id: ID! @nodeId filmId: Int! @field(name: "film_id") }
+            type Mutation {
+              deleteFilm(in: FilmDelete!): ID @mutation(typeName: DELETE)
+            }
+            type Query { x: String }
+            """);
+        var f = (UnclassifiedField) schema.field("Mutation", "deleteFilm");
+        assertThat(f.rejection()).isInstanceOf(
+            no.sikt.graphitron.rewrite.model.DeleteRowsError.OverrideConditionNotSupported.class);
+        assertThat(((no.sikt.graphitron.rewrite.model.DeleteRowsError.OverrideConditionNotSupported) f.rejection())
             .fieldName()).isEqualTo("syntheticName");
     }
 
@@ -6605,7 +6633,7 @@ class GraphitronSchemaBuilderTest {
             "@mutation(typeName: UPDATE) → MutationUpdateTableField",
             """
             type Film @table(name: "film") { title: String }
-            input FilmInput @table(name: "film") { filmId: Int! @field(name: "film_id"), title: String @value }
+            input FilmInput @table(name: "film") { filmId: Int! @field(name: "film_id"), title: String }
             type Query { x: String }
             type Mutation { updateFilm(in: FilmInput!): Film @mutation(typeName: UPDATE) }
             """,
@@ -6614,14 +6642,22 @@ class GraphitronSchemaBuilderTest {
         },
 
         DELETE_MUTATION_FIELD(
-            "@mutation(typeName: DELETE) → MutationDeleteTableField",
+            "R266: @mutation(typeName: DELETE) → MutationDeleteTableField carrying the DeleteRows "
+                + "walker carrier (filmId covers the PK → Identified; whereColumns is every admitted "
+                + "input column).",
             """
             type Film @table(name: "film") { title: String }
             input FilmInput @table(name: "film") { filmId: Int! @field(name: "film_id") }
             type Query { x: String }
             type Mutation { deleteFilm(in: FilmInput!): Film @mutation(typeName: DELETE) }
             """,
-            schema -> assertThat(schema.field("Mutation", "deleteFilm")).isInstanceOf(MutationField.MutationDeleteTableField.class)) {
+            schema -> {
+                var f = (MutationField.MutationDeleteTableField) schema.field("Mutation", "deleteFilm");
+                var deleteRows = (no.sikt.graphitron.rewrite.model.DeleteRows.Identified) f.deleteRows();
+                assertThat(deleteRows.matchedKey().columns()).extracting(c -> c.sqlName()).containsExactly("film_id");
+                assertThat(deleteRows.whereColumns()).extracting(c -> c.targetColumn().sqlName()).containsExactly("film_id");
+                assertThat(f.inputArg().table().tableName()).isEqualToIgnoringCase("film");
+            }) {
             @Override public Set<Class<?>> variants() { return Set.of(MutationField.MutationDeleteTableField.class); }
         },
 
@@ -6642,18 +6678,22 @@ class GraphitronSchemaBuilderTest {
         },
 
         DELETE_MUTATION_MISSING_PK_COVERAGE(
-            "@mutation(typeName: DELETE) on a composite-PK table with one filter column missing → UnclassifiedField (R144 PK-coverage rejection without multiRow)",
+            "R266: @mutation(typeName: DELETE) on a composite-PK table with one PK column missing and "
+                + "no covered UK, without multiRow → UnclassifiedField carrying "
+                + "DeleteRowsError.NoUniqueKeyCoverage.",
             """
             type FilmActor @table(name: "film_actor") { actorId: Int, filmId: Int }
             input FilmActorKey @table(name: "film_actor") { filmId: Int! @field(name: "film_id") }
             type Query { x: String }
-            type Mutation { deleteFilmActor(in: FilmActorKey!): ID @mutation(typeName: DELETE) }
+            type Mutation { deleteFilmActor(in: FilmActorKey!): FilmActor @mutation(typeName: DELETE) }
             """,
             schema -> {
                 var field = schema.field("Mutation", "deleteFilmActor");
                 assertThat(field).isInstanceOf(UnclassifiedField.class);
+                assertThat(((UnclassifiedField) field).rejection())
+                    .isInstanceOf(no.sikt.graphitron.rewrite.model.DeleteRowsError.NoUniqueKeyCoverage.class);
                 assertThat(((UnclassifiedField) field).reason())
-                    .contains("filter columns do not cover all PK column(s)", "multiRow: true");
+                    .contains("covers no primary key or unique key", "multiRow: true");
             }) {
             @Override public Set<Class<?>> variants() { return Set.of(UnclassifiedField.class); }
         },
@@ -6662,7 +6702,7 @@ class GraphitronSchemaBuilderTest {
             "@mutation(typeName: UPSERT) → UnclassifiedField (R144 refuses UPSERT pending R145)",
             """
             type Film @table(name: "film") { title: String }
-            input FilmInput @table(name: "film") { filmId: Int! @field(name: "film_id"), title: String @value }
+            input FilmInput @table(name: "film") { filmId: Int! @field(name: "film_id"), title: String }
             type Query { x: String }
             type Mutation { upsertFilm(in: FilmInput!): Film @mutation(typeName: UPSERT) }
             """,
@@ -6798,6 +6838,59 @@ class GraphitronSchemaBuilderTest {
                     .containsExactly("title");
             }) {
             @Override public Set<Class<?>> variants() { return Set.of(MutationField.MutationBulkUpdatePayloadField.class); }
+        },
+
+        DELETE_PAYLOAD_MUTATION_FIELD(
+            "R266: @mutation(typeName: DELETE) with single @table input and a single-record DML "
+                + "payload → MutationDeletePayloadField. Shares the structural-payload emit shape with "
+                + "MutationDmlRecordField but sources its WHERE columns from the DeleteRows walker "
+                + "carrier, not a TableInputArg.",
+            """
+            type Film @table(name: "film") { title: String }
+            type FilmPayload { film: Film }
+            input FilmDeleteInput @table(name: "film") { filmId: Int! @field(name: "film_id") }
+            type Query { x: String }
+            type Mutation {
+                deleteFilmPayload(in: FilmDeleteInput!): FilmPayload @mutation(typeName: DELETE)
+            }
+            """,
+            schema -> {
+                var f = (MutationField.MutationDeletePayloadField)
+                    schema.field("Mutation", "deleteFilmPayload");
+                assertThat(f.returnType().returnTypeName()).isEqualTo("FilmPayload");
+                assertThat(f.inputArg().table().tableName()).isEqualToIgnoringCase("film");
+                assertThat(f.inputArg().list()).isFalse();
+                var deleteRows = (no.sikt.graphitron.rewrite.model.DeleteRows.Identified) f.deleteRows();
+                assertThat(deleteRows.whereColumns()).extracting(c -> c.targetColumn().sqlName())
+                    .containsExactly("film_id");
+            }) {
+            @Override public Set<Class<?>> variants() { return Set.of(MutationField.MutationDeletePayloadField.class); }
+        },
+
+        DELETE_BULK_PAYLOAD_MUTATION_FIELD(
+            "R266: @mutation(typeName: DELETE) with bulk @table input and a single-record DML carrier "
+                + "whose data field is list-shaped → MutationBulkDeletePayloadField. Bulk sibling of "
+                + "MutationDeletePayloadField; the emitter batches per-row DELETE in input order off "
+                + "the same DeleteRows carrier WHERE columns.",
+            """
+            type Film @table(name: "film") { title: String }
+            type FilmsPayload { films: [Film!] }
+            input FilmDeleteInput @table(name: "film") { filmId: Int! @field(name: "film_id") }
+            type Query { x: String }
+            type Mutation {
+                deleteFilmsPayload(in: [FilmDeleteInput!]!): FilmsPayload @mutation(typeName: DELETE)
+            }
+            """,
+            schema -> {
+                var f = (MutationField.MutationBulkDeletePayloadField)
+                    schema.field("Mutation", "deleteFilmsPayload");
+                assertThat(f.returnType().returnTypeName()).isEqualTo("FilmsPayload");
+                assertThat(f.inputArg().list()).isTrue();
+                var deleteRows = (no.sikt.graphitron.rewrite.model.DeleteRows.Identified) f.deleteRows();
+                assertThat(deleteRows.whereColumns()).extracting(c -> c.targetColumn().sqlName())
+                    .containsExactly("film_id");
+            }) {
+            @Override public Set<Class<?>> variants() { return Set.of(MutationField.MutationBulkDeletePayloadField.class); }
         },
 
         SERVICE_MUTATION_FIELD_NAME_OVERRIDE_TEXT_ENUM(
@@ -7225,7 +7318,9 @@ class GraphitronSchemaBuilderTest {
             }),
 
         DELETE_FULL_COMPOSITE_PK_HAPPY(
-            "DELETE on composite-PK table where @lookupKey covers all PK columns → MutationDeleteTableField with both bindings",
+            "R266: DELETE on a composite-PK table where the input covers all PK columns → "
+                + "MutationDeleteTableField with a DeleteRows.Identified carrier whose whereColumns "
+                + "are both PK columns.",
             """
             type FilmActor @table(name: "film_actor") { actorId: Int! @field(name: "actor_id") }
             input FilmActorInput @table(name: "film_actor") {
@@ -7237,15 +7332,16 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> {
                 var f = (MutationField.MutationDeleteTableField) schema.field("Mutation", "deleteFilmActor");
-                assertThat(f.tableInputArg().fieldBindings().stream()
-                        .flatMap(g -> g.targetColumns().stream())
-                        .map(c -> c.sqlName())
-                        .toList())
+                var deleteRows = (no.sikt.graphitron.rewrite.model.DeleteRows.Identified) f.deleteRows();
+                assertThat(deleteRows.matchedKey().columns()).extracting(c -> c.sqlName())
+                    .containsExactlyInAnyOrder("actor_id", "film_id");
+                assertThat(deleteRows.whereColumns()).extracting(c -> c.targetColumn().sqlName())
                     .containsExactlyInAnyOrder("actor_id", "film_id");
             }),
 
         DELETE_PARTIAL_COMPOSITE_PK_REJECTED(
-            "DELETE on composite-PK table with only one filter column and no multiRow → UnclassifiedField (R144 PK-coverage rejection)",
+            "R266: DELETE on composite-PK table with only one PK column covered and no multiRow → "
+                + "UnclassifiedField carrying DeleteRowsError.NoUniqueKeyCoverage",
             """
             type FilmActor @table(name: "film_actor") { actorId: Int! @field(name: "actor_id") }
             input FilmActorInput @table(name: "film_actor") {
@@ -7256,8 +7352,10 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> {
                 var f = (UnclassifiedField) schema.field("Mutation", "deleteFilmActor");
+                assertThat(f.rejection())
+                    .isInstanceOf(no.sikt.graphitron.rewrite.model.DeleteRowsError.NoUniqueKeyCoverage.class);
                 assertThat(f.reason())
-                    .contains("filter columns do not cover all PK column(s)", "multiRow: true");
+                    .contains("covers no primary key or unique key", "multiRow: true");
             }),
 
         UPDATE_CARRIER_PARTITIONS_FIELDS_INTO_KEY_AND_SET(
@@ -7356,7 +7454,7 @@ class GraphitronSchemaBuilderTest {
             }),
 
         DML_DELETE_LIST_LIST_OK(
-            "DML DELETE with listed input + listed @table return → MutationDeleteTableField with tia.list() == true",
+            "DML DELETE with listed input + listed @table return → MutationDeleteTableField with inputArg.list() == true",
             """
             type Film @table(name: "film") { title: String }
             input FilmInput @table(name: "film") {
@@ -7367,7 +7465,7 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> {
                 var f = (MutationField.MutationDeleteTableField) schema.field("Mutation", "deleteFilms");
-                assertThat(f.tableInputArg().list()).isTrue();
+                assertThat(f.inputArg().list()).isTrue();
                 assertThat(f.returnExpression())
                     .isEqualTo(new no.sikt.graphitron.rewrite.model.DmlReturnExpression.ProjectedList("Film"));
             }),
@@ -7378,7 +7476,7 @@ class GraphitronSchemaBuilderTest {
             type Film @table(name: "film") { title: String }
             input FilmInput @table(name: "film") {
                 filmId: Int! @field(name: "film_id")
-                title: String @value
+                title: String
             }
             type Query { x: String }
             type Mutation { upsertFilms(in: [FilmInput!]!): [Film!]! @mutation(typeName: UPSERT) }
@@ -7558,7 +7656,7 @@ class GraphitronSchemaBuilderTest {
             type Film @table(name: "film") { title: String }
             input FilmInput @table(name: "film") {
                 filmIds: [Int!]! @field(name: "film_id")
-                title: String @value
+                title: String
             }
             type Query { x: String }
             type Mutation { updateFilm(in: FilmInput!): Film @mutation(typeName: UPDATE) }
@@ -7569,7 +7667,7 @@ class GraphitronSchemaBuilderTest {
             }),
 
         DML_RECORD_PAYLOAD_WITH_ERRORS_HAPPY(
-            "DML returning a @record carrier with film+errors → MutationDmlRecordField (@record(record:{className:}) on a Java-record-backed wrapper, admitted by the structural DML-payload scan)",
+            "R266: DELETE returning a @record carrier with film+errors → MutationDeletePayloadField (@record(record:{className:}) on a Java-record-backed wrapper, admitted by the structural DML-payload scan)",
             """
             type ValidationErr @error(handlers: [{handler: VALIDATION}]) {
                 path: [String!]!
@@ -7590,13 +7688,14 @@ class GraphitronSchemaBuilderTest {
             type Mutation { deleteFilm(in: FilmInput!): DeleteFilmPayload @mutation(typeName: DELETE) }
             """,
             schema -> {
-                var f = (MutationField.MutationDmlRecordField) schema.field("Mutation", "deleteFilm");
-                assertThat(f.kind()).isEqualTo(no.sikt.graphitron.rewrite.model.DmlKind.DELETE);
+                // R266: payload-returning DELETE classifies as MutationDeletePayloadField (no kind()
+                // slot — the leaf identity is the kind).
+                var f = (MutationField.MutationDeletePayloadField) schema.field("Mutation", "deleteFilm");
                 assertThat(f.errorChannel()).isPresent();
             }),
 
         DML_RECORD_PAYLOAD_ROW_ONLY_HAPPY(
-            "DML returning a @record carrier with film only → MutationDmlRecordField (bare carrier on JavaRecordType wrapper, no errors channel, admitted by the structural DML-payload scan)",
+            "R266: DELETE returning a @record carrier with film only → MutationDeletePayloadField (bare carrier on JavaRecordType wrapper, no errors channel, admitted by the structural DML-payload scan)",
             """
             type Film @table(name: "film") { title: String }
             type DeleteFilmPayload @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DeleteFilmRowOnlyPayload"}) {
@@ -7607,8 +7706,9 @@ class GraphitronSchemaBuilderTest {
             type Mutation { deleteFilm(in: FilmInput!): DeleteFilmPayload @mutation(typeName: DELETE) }
             """,
             schema -> {
-                var f = (MutationField.MutationDmlRecordField) schema.field("Mutation", "deleteFilm");
-                assertThat(f.kind()).isEqualTo(no.sikt.graphitron.rewrite.model.DmlKind.DELETE);
+                // R266: payload-returning DELETE classifies as MutationDeletePayloadField (no kind()
+                // slot — the leaf identity is the kind).
+                var f = (MutationField.MutationDeletePayloadField) schema.field("Mutation", "deleteFilm");
                 assertThat(f.errorChannel()).isEmpty();
             }),
 
@@ -7686,39 +7786,11 @@ class GraphitronSchemaBuilderTest {
                 assertThat(f.reason()).contains("INSERT", "does not accept multiRow: true");
             }),
 
-        R144_DELETE_VALUE_DIRECTIVE_REJECTED(
-            "R144: @value on DELETE input field → UnclassifiedField (DELETE has no assignment clause)",
-            """
-            type Film @table(name: "film") { title: String }
-            input FilmInput @table(name: "film") {
-                filmId: Int! @field(name: "film_id")
-                title: String @value
-            }
-            type Query { x: String }
-            type Mutation { deleteFilm(in: FilmInput!): Film @mutation(typeName: DELETE) }
-            """,
-            schema -> {
-                var f = (UnclassifiedField) schema.field("Mutation", "deleteFilm");
-                assertThat(f.reason()).contains("@value is not valid", "DELETE");
-            }),
-
-        R144_VALUE_WITH_CONDITION_REJECTED(
-            "R144: @value and @condition on the same input field → UnclassifiedField (mutually exclusive)",
-            """
-            type Film @table(name: "film") { title: String, rating: String }
-            input FilmInput @table(name: "film") {
-                filmId: Int! @field(name: "film_id") @value
-                    @condition(condition: {className: "no.sikt.graphitron.rewrite.TestConditionStub", method: "inputColumnCondition"})
-            }
-            type Query { x: String }
-            type Mutation { updateFilm(in: FilmInput!): Film @mutation(typeName: UPDATE) }
-            """,
-            schema -> {
-                // R246: @value is ignored; a column field carrying @condition is rejected by the
-                // walker because the filter would not be emitted (UnsupportedInputFieldShape).
-                var f = (UnclassifiedField) schema.field("Mutation", "updateFilm");
-                assertThat(f.reason()).contains("filmId", "@condition", "not supported");
-            }),
+        // R266 retired @value entirely, so the former R144_DELETE_VALUE_DIRECTIVE_REJECTED and
+        // R144_VALUE_WITH_CONDITION_REJECTED coverage rows are gone: @value is no longer a declared
+        // directive (an unknown-directive parse error, not a classifier rejection), and the
+        // @condition-on-input-field rejection they leaned on is covered by the R215 / R246 tests
+        // (r215_validatorRejectsConditionOverrideFalseOnMutationInputField and the walker unit tests).
 
         R246_UPDATE_MULTIROW_TRUE_DEFERRED(
             "R246: multiRow: true on a direct-@table/ID-return UPDATE → UnclassifiedField with Rejection.Deferred (empty slug); the broadcast semantics has no replacement path",
@@ -7784,7 +7856,7 @@ class GraphitronSchemaBuilderTest {
         MutationField.MutationDeleteTableField.class
     })
     void dmlMutationProjectionCarriesKindAndTablePayload() {
-        // Three independent snapshots — separate registries because @value-annotated UPDATE
+        // Three independent snapshots — separate registries because the UPDATE / UPSERT input
         // shapes don't cleanly coexist with the INSERT-canonical "title" column in one fixture.
         var sIns = buildSnapshot("""
             type Film @table(name: "film") { title: String }
@@ -7799,7 +7871,7 @@ class GraphitronSchemaBuilderTest {
 
         var sUpd = buildSnapshot("""
             type Film @table(name: "film") { title: String }
-            input FilmInput @table(name: "film") { filmId: Int! @field(name: "film_id") title: String @value }
+            input FilmInput @table(name: "film") { filmId: Int! @field(name: "film_id") title: String }
             type Query { x: String }
             type Mutation { updateFilm(in: FilmInput!): Film @mutation(typeName: UPDATE) }
             """);
@@ -7819,7 +7891,8 @@ class GraphitronSchemaBuilderTest {
     @Test
     @ProjectionFor({
         MutationField.MutationDmlRecordField.class, MutationField.MutationBulkDmlRecordField.class,
-        MutationField.MutationUpdatePayloadField.class, MutationField.MutationBulkUpdatePayloadField.class
+        MutationField.MutationUpdatePayloadField.class, MutationField.MutationBulkUpdatePayloadField.class,
+        MutationField.MutationDeletePayloadField.class, MutationField.MutationBulkDeletePayloadField.class
     })
     void dmlRecordProjectionCarriesBulkFlagAndKind() {
         // Single (non-bulk) DML record carrier — bulk = false.
@@ -7881,6 +7954,36 @@ class GraphitronSchemaBuilderTest {
         var updBulk = (FieldClassification.DmlRecord) s4.fieldClassificationsByCoord().get("Mutation.updateFilmsPayload");
         assertThat(updBulk.bulk()).isTrue();
         assertThat(updBulk.kind()).isEqualTo(DmlKind.UPDATE);
+
+        // R266: the payload-returning DELETE leaves project to DmlRecord with kind DELETE off the
+        // slim InputArgRef, the same hover shape as the UPDATE payload carriers above.
+        var s5 = buildSnapshot("""
+            type Film @table(name: "film") { title: String }
+            type FilmPayload { film: Film }
+            input FilmDeleteInput @table(name: "film") { filmId: Int! @field(name: "film_id") }
+            type Query { x: String }
+            type Mutation {
+                deleteFilmPayload(in: FilmDeleteInput!): FilmPayload @mutation(typeName: DELETE)
+            }
+            """);
+        var delSingle = (FieldClassification.DmlRecord) s5.fieldClassificationsByCoord().get("Mutation.deleteFilmPayload");
+        assertThat(delSingle.bulk()).isFalse();
+        assertThat(delSingle.kind()).isEqualTo(DmlKind.DELETE);
+        assertThat(delSingle.tableName()).isEqualToIgnoringCase("film");
+        assertThat(delSingle.inputTypeName()).isEqualTo("FilmDeleteInput");
+
+        var s6 = buildSnapshot("""
+            type Film @table(name: "film") { title: String }
+            type FilmsPayload { films: [Film!] }
+            input FilmDeleteInput @table(name: "film") { filmId: Int! @field(name: "film_id") }
+            type Query { x: String }
+            type Mutation {
+                deleteFilmsPayload(in: [FilmDeleteInput!]!): FilmsPayload @mutation(typeName: DELETE)
+            }
+            """);
+        var delBulk = (FieldClassification.DmlRecord) s6.fieldClassificationsByCoord().get("Mutation.deleteFilmsPayload");
+        assertThat(delBulk.bulk()).isTrue();
+        assertThat(delBulk.kind()).isEqualTo(DmlKind.DELETE);
     }
 
     @Test
@@ -7929,7 +8032,7 @@ class GraphitronSchemaBuilderTest {
     enum MutationDeletePayloadCase implements ClassificationCase {
 
         BULK_DELETE_TABLE_NULLABLE_NON_PK_ADMITS(
-            "bulk DELETE + [Foo!] carrier with only nullable non-PK column fields → MutationBulkDmlRecordField + SingleRecordTableFieldFromReturning with PkResolution.NonPkNullable projection",
+            "R266: bulk DELETE + [Foo!] carrier with only nullable non-PK column fields → MutationBulkDeletePayloadField + SingleRecordTableFieldFromReturning with PkResolution.NonPkNullable projection",
             """
             type Film @table(name: "film") { title: String }
             input FilmInput @table(name: "film") { filmId: Int! @field(name: "film_id") }
@@ -7939,7 +8042,7 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> {
                 var mut = schema.field("Mutation", "deleteFilms");
-                assertThat(mut).isInstanceOf(MutationField.MutationBulkDmlRecordField.class);
+                assertThat(mut).isInstanceOf(MutationField.MutationBulkDeletePayloadField.class);
                 var dataField = schema.field("DeletedFilmsPayload", "deleted");
                 assertThat(dataField).isInstanceOf(ChildField.SingleRecordTableFieldFromReturning.class);
                 var tableCarrier = (ChildField.SingleRecordTableFieldFromReturning) dataField;
@@ -7948,7 +8051,7 @@ class GraphitronSchemaBuilderTest {
                                   && n.fieldName().equals("title"));
             }) {
             @Override public Set<Class<?>> variants() {
-                return Set.of(MutationField.MutationBulkDmlRecordField.class,
+                return Set.of(MutationField.MutationBulkDeletePayloadField.class,
                     ChildField.SingleRecordTableFieldFromReturning.class);
             }
         },
@@ -8006,7 +8109,7 @@ class GraphitronSchemaBuilderTest {
             "UPDATE + [ID!] carrier → UnclassifiedField (the ID-typed PK-echo shape is admitted only on DELETE)",
             """
             type Film @table(name: "film") @node(typeId: "Film", keyColumns: ["film_id"]) { id: ID! @nodeId title: String }
-            input FilmInput @table(name: "film") { filmId: Int! @field(name: "film_id") title: String @value }
+            input FilmInput @table(name: "film") { filmId: Int! @field(name: "film_id") title: String }
             type UpdatedFilmsPayload { updatedIds: [ID!] }
             type Query { x: String }
             type Mutation { updateFilms(in: [FilmInput!]!): UpdatedFilmsPayload @mutation(typeName: UPDATE) }
@@ -8022,7 +8125,7 @@ class GraphitronSchemaBuilderTest {
             "UPSERT + [ID!] carrier → UnclassifiedField (the ID-typed shape's verb rule fires before R144's UPSERT-defer)",
             """
             type Film @table(name: "film") @node(typeId: "Film", keyColumns: ["film_id"]) { id: ID! @nodeId title: String }
-            input FilmInput @table(name: "film") { filmId: Int! @field(name: "film_id") title: String @value }
+            input FilmInput @table(name: "film") { filmId: Int! @field(name: "film_id") title: String }
             type UpsertedFilmsPayload { upsertedIds: [ID!] }
             type Query { x: String }
             type Mutation { upsertFilms(in: [FilmInput!]!): UpsertedFilmsPayload @mutation(typeName: UPSERT) }

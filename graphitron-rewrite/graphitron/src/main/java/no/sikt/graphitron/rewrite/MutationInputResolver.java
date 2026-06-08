@@ -17,7 +17,6 @@ import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
 
 import java.util.List;
 import java.util.Optional;
-import java.util.stream.Collectors;
 
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_MULTI_ROW;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_OVERRIDE;
@@ -25,7 +24,6 @@ import static no.sikt.graphitron.rewrite.BuildContext.ARG_TYPE_NAME;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_CONDITION;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_LOOKUP_KEY;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_MUTATION;
-import static no.sikt.graphitron.rewrite.BuildContext.DIR_VALUE;
 
 /**
  * Resolves the DML {@code @mutation} concern: walks a mutation field's arguments to find the
@@ -285,7 +283,9 @@ final class MutationInputResolver {
 
     /**
      * Walks a DML {@code @mutation} field's arguments and resolves the single {@code @table}
-     * input argument that drives the statement. R144 enforces:
+     * input argument that drives the statement. After R246 / R258 / R266 intercept UPDATE and
+     * DELETE before this call, INSERT is the lone verb that completes resolveInput (UPSERT is
+     * refused at the top, deferred to R145). It enforces:
      *
      * <ul>
      *   <li>UPSERT is refused outright (deferred to R145).</li>
@@ -293,14 +293,15 @@ final class MutationInputResolver {
      *   <li>Per-input-field structural checks: only {@link InputField.ColumnField} and
      *       {@link InputField.CompositeColumnField} are admitted; reference carriers and nesting
      *       fields stay deferred. {@code @lookupKey} on input fields rejects via the classifier's
-     *       retirement diagnostic (handled upstream).</li>
-     *   <li>{@code @value}-on-DELETE / {@code @value}-on-INSERT and
-     *       {@code @value}-with-{@code @condition} on the same field are mutually exclusive
-     *       structural rejections.</li>
-     *   <li>DELETE / UPDATE: WHERE-side filter columns must cover the table's primary key, unless
-     *       the mutation carries {@code multiRow: true}.</li>
-     *   <li>UPDATE: at least one {@code @value}-marked field; not every field {@code @value}-marked.</li>
+     *       retirement diagnostic (R144). {@code @condition} without {@code override: true} rejects
+     *       (R215).</li>
      * </ul>
+     *
+     * <p>UPDATE and DELETE never reach the body: their walker classifiers in {@link FieldBuilder}
+     * intercept them before this call, and a regression that routes one back here fails loudly via
+     * the {@code IllegalStateException} guard. R266 retired {@code @value} (the last partition
+     * machinery) along with the UPDATE/DELETE PK-coverage check, both of which moved onto the
+     * {@code UpdateRowsWalker} / {@code DeleteRowsWalker}.
      *
      * <p>The empty-input case ("no fields on the {@code @table} input") needs no resolver-level
      * check: graphql-java rejects empty input types at parse time
@@ -350,43 +351,26 @@ final class MutationInputResolver {
                     "@mutation input '" + argTypeName + "' did not resolve as an InputObject in the schema"));
             }
 
-            // Validate directive presence per verb. @value rejects on DELETE / INSERT;
-            // @lookupKey on any input field rejects with the retirement diagnostic (R144);
-            // @value + @condition on the same field is mutually exclusive.
-            var valueMarkedNames = new java.util.LinkedHashSet<String>();
+            // Validate directive presence per input field. @lookupKey on any input field rejects
+            // with the retirement diagnostic (R144); @condition without override(true) is filter-
+            // shape that competes with the verb's WHERE shape and rejects (R215). R266 retired
+            // @value (UPDATE and DELETE both classify through their walkers now; INSERT is the lone
+            // verb reaching here and never partitioned its input fields), so there is no @value
+            // marker to accumulate or reject.
             for (var sdlField : iot.getFieldDefinitions()) {
-                boolean hasValue = sdlField.hasAppliedDirective(DIR_VALUE);
                 boolean hasLookupKey = sdlField.hasAppliedDirective(DIR_LOOKUP_KEY);
                 boolean hasCondition = sdlField.hasAppliedDirective(DIR_CONDITION);
                 if (hasLookupKey) {
                     return new Resolved.Rejected(Rejection.structural(
                         "@mutation input '" + argTypeName + "' field '" + sdlField.getName()
                         + "': @lookupKey on a mutation input field is no longer supported (R144); "
-                        + "remove it (the field is a filter by default), or replace it with "
-                        + "@value on UPDATE value fields"));
-                }
-                if (hasValue) {
-                    if (!kind.acceptsValueMarker()) {
-                        String suffix = kind == DmlKind.DELETE
-                            ? "DELETE has no assignment clause"
-                            : "INSERT does not partition its input fields";
-                        return new Resolved.Rejected(Rejection.structural(
-                            "@mutation input '" + argTypeName + "' field '" + sdlField.getName()
-                            + "': @value is not valid on @mutation(typeName: " + kind + ") inputs; " + suffix));
-                    }
-                    if (hasCondition) {
-                        return new Resolved.Rejected(Rejection.structural(
-                            "@mutation input '" + argTypeName + "' field '" + sdlField.getName()
-                            + "': @value and @condition on the same input field are mutually exclusive"));
-                    }
-                    valueMarkedNames.add(sdlField.getName());
+                        + "remove it (the field is a filter by default)"));
                 }
                 // R215: @condition(override: false) on a mutation input field is filter-shape that
                 // would compete with the mutation's verb-specific WHERE shape; reject at classify
-                // time with the field's source location. The @condition(override: true) case
-                // routes through the classifier's UnboundField collapse and is admitted by the
-                // per-field admission loop below on UPDATE / DELETE.
-                if (hasCondition && !hasValue) {
+                // time. The @condition(override: true) case routes through the classifier's
+                // UnboundField collapse and is handled by the per-field admission loop below.
+                if (hasCondition) {
                     var condDir = sdlField.getAppliedDirective(DIR_CONDITION);
                     var overrideArg = condDir != null ? condDir.getArgument(ARG_OVERRIDE) : null;
                     boolean override = overrideArg != null && Boolean.TRUE.equals(overrideArg.getValue());
@@ -394,15 +378,14 @@ final class MutationInputResolver {
                         return new Resolved.Rejected(Rejection.structural(
                             "@mutation input '" + argTypeName + "' field '" + sdlField.getName()
                             + "': @condition on a mutation input field is not supported "
-                            + "(mutations write values; only @condition(override: true) is admitted "
-                            + "on UPDATE / DELETE to let the developer take over the WHERE half)"));
+                            + "(mutations write values; only @condition(override: true) is admitted)"));
                     }
                 }
             }
 
             var bindingErrors = new java.util.ArrayList<String>();
             List<InputColumnBindingGroup> bindings =
-                enumMapping.buildLookupBindings(tit, arg, fieldDef, argName, bindingErrors, valueMarkedNames);
+                enumMapping.buildLookupBindings(tit, arg, fieldDef, argName, bindingErrors);
             // INSERT walks tia.fields() directly for VALUES emission and never reads
             // tia.fieldBindings(); the binding set is structurally empty.
             if (kind == DmlKind.INSERT) {
@@ -420,7 +403,7 @@ final class MutationInputResolver {
             }
             var tia = ArgumentRef.InputTypeArg.TableInputArg.of(
                 argName, argTypeName, nonNull, list, tit.table(), bindings, argCondition,
-                tit.inputFields(), kind, valueMarkedNames);
+                tit.inputFields());
 
             if (foundTia != null) {
                 multipleArgsError = "@mutation field has more than one @table input argument";
@@ -506,39 +489,19 @@ final class MutationInputResolver {
                 + f.name() + "': " + reason));
         }
 
-        if (kind == DmlKind.UPDATE) {
-            // R246 + R258: every UPDATE is intercepted in FieldBuilder before this call — the
-            // direct-@table/ID-return shape by classifyUpdateTableField, the payload-returning shape
-            // by classifyUpdatePayloadField — and partitioned by the UpdateRowsWalker's PK-or-UK
-            // matched-key membership, never by @value. Reaching here means a future regression
-            // routed an UPDATE back onto resolveInput; fail the build loudly rather than silently
-            // re-demanding @value (R188 retires the directive and this whole arm). Same
-            // "classifier guarantee made loud" pattern as FieldBuilder's final-switch UPDATE arm.
+        if (kind == DmlKind.UPDATE || kind == DmlKind.DELETE) {
+            // R246 / R258 / R266: every UPDATE and DELETE is intercepted in FieldBuilder before this
+            // call — UPDATE by classifyUpdateTableField / classifyUpdatePayloadField, DELETE by
+            // classifyDeleteTableField / classifyDeletePayloadField — and identified by the
+            // UpdateRowsWalker / DeleteRowsWalker's PK-or-UK matched-key membership, never by @value
+            // or a resolveInput PK-coverage check. Reaching here means a future regression routed one
+            // back onto resolveInput; fail the build loudly. With both intercepted, INSERT is the
+            // lone verb that completes resolveInput, so the legacy PK-coverage block (which only ever
+            // fired for UPDATE / DELETE) is gone and @value is fully retired (R188).
             throw new IllegalStateException(
-                "MutationInputResolver.resolveInput reached with DmlKind.UPDATE — UPDATE is "
-                + "intercepted in FieldBuilder by classifyUpdateTableField / classifyUpdatePayloadField "
-                + "before resolveInput and never reaches the @value partition (R246 / R258).");
-        }
-
-        if (kind.requiresPkCoverage() && !multiRow) {
-            var pkColumns = ctx.catalog.findPkColumns(foundTia.inputTable().tableName());
-            if (!pkColumns.isEmpty()) {
-                var boundSqlNames = foundTia.fieldBindings().stream()
-                    .flatMap(g -> g.targetColumns().stream())
-                    .map(c -> c.sqlName())
-                    .collect(Collectors.toSet());
-                var missing = pkColumns.stream()
-                    .map(JooqCatalog.ColumnEntry::sqlName)
-                    .filter(c -> !boundSqlNames.contains(c))
-                    .toList();
-                if (!missing.isEmpty()) {
-                    return new Resolved.Rejected(Rejection.structural("@mutation(typeName: " + kind
-                            + ") filter columns do not cover all PK column(s); missing: "
-                            + String.join(", ", missing)
-                            + ". Add the missing column(s) to the @table input, or opt into "
-                            + "broadcast semantics with multiRow: true on the @mutation directive."));
-                }
-            }
+                "MutationInputResolver.resolveInput reached with DmlKind." + kind + " — UPDATE and "
+                + "DELETE are intercepted in FieldBuilder by their walker classifiers before "
+                + "resolveInput and never reach the @value / PK-coverage machinery (R246 / R258 / R266).");
         }
 
         return new Resolved.Ok(foundTia);

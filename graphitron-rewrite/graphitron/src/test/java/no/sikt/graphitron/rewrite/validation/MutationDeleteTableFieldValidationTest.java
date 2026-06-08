@@ -1,15 +1,16 @@
 package no.sikt.graphitron.rewrite.validation;
 
-import no.sikt.graphitron.rewrite.ArgumentRef;
 import no.sikt.graphitron.rewrite.ValidationError;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
+import no.sikt.graphitron.rewrite.model.DeleteRows;
 import no.sikt.graphitron.rewrite.model.DmlReturnExpression;
 import no.sikt.graphitron.rewrite.model.HelperRef;
-import no.sikt.graphitron.rewrite.model.InputColumnBinding;
+import no.sikt.graphitron.rewrite.model.InputArgRef;
+import no.sikt.graphitron.rewrite.model.KeyColumn;
+import no.sikt.graphitron.rewrite.model.MatchedKey;
 import no.sikt.graphitron.rewrite.model.MutationField.MutationDeleteTableField;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
-import no.sikt.graphitron.rewrite.model.TableRef;
 import no.sikt.graphitron.javapoet.ClassName;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
@@ -35,19 +36,17 @@ class MutationDeleteTableFieldValidationTest {
                         ClassName.get("fake.code.generated", "NodeIdEncoder"),
                         "encodeFilm",
                         List.of(new ColumnRef("film_id", "FILM_ID", "java.lang.Long")))),
-                ArgumentRef.InputTypeArg.TableInputArg.of(
-                    "in", "FilmKey", true, false,
-                    TestFixtures.tableRef("film", "FILM", "Film", List.of()),
-                    List.<no.sikt.graphitron.rewrite.model.InputColumnBindingGroup>of(
-                        new no.sikt.graphitron.rewrite.model.InputColumnBindingGroup.MapGroup(List.of(
-                            new InputColumnBinding.MapBinding(
-                                "filmId",
-                                new ColumnRef("film_id", "FILM_ID", "java.lang.Long"),
-                                new CallSiteExtraction.Direct())))),
-                    Optional.empty(),
-                    List.of(),
-                    no.sikt.graphitron.rewrite.model.DmlKind.DELETE,
-                    java.util.Set.of()),
+                // R266: DELETE carries the slim InputArgRef + the DeleteRows walker carrier (no
+                // TableInputArg). filmId covers the PK, so this is an Identified single-row delete.
+                new InputArgRef("in", "FilmKey",
+                    TestFixtures.tableRef("film", "FILM", "Film", List.of()), false),
+                new DeleteRows.Identified(
+                    new MatchedKey.PrimaryKey(
+                        List.of(new ColumnRef("film_id", "FILM_ID", "java.lang.Long")), "film_pkey"),
+                    List.of(new KeyColumn(
+                        "filmId",
+                        new ColumnRef("film_id", "FILM_ID", "java.lang.Long"),
+                        new CallSiteExtraction.Direct()))),
                 Optional.empty()),
             List.of());
 

@@ -962,11 +962,10 @@ class FieldBuilder {
             // When it doesn't, no bindings are produced (filter-only flow handled via
             // walkInputFieldConditions).
             List<InputColumnBindingGroup> bindings = arg.hasAppliedDirective(DIR_LOOKUP_KEY)
-                ? enumMappingResolver.buildLookupBindings(tit, arg, fieldDef, name, errors, java.util.Set.of())
+                ? enumMappingResolver.buildLookupBindings(tit, arg, fieldDef, name, errors)
                 : List.of();
             return ArgumentRef.InputTypeArg.TableInputArg.of(
-                name, typeName, nonNull, list, tit.table(), bindings, argCondition, tit.inputFields(),
-                null, java.util.Set.of());
+                name, typeName, nonNull, list, tit.table(), bindings, argCondition, tit.inputFields());
         }
         boolean isInputLike = resolvedType instanceof GraphitronType.InputType
             || (resolvedType instanceof GraphitronType.UnclassifiedType
@@ -993,9 +992,10 @@ class FieldBuilder {
                     return new ArgumentRef.UnclassifiedArg(name, typeName, nonNull, list,
                         Rejection.structural("input field '" + retiredLookupKey.get().getName()
                         + "': @lookupKey on a mutation input field is no longer supported (R144); "
-                        + "remove it (the field is a filter by default), or replace it with "
-                        + "@value on UPDATE value fields. On Query-side @table input args, move "
-                        + "@lookupKey to the surrounding ARGUMENT_DEFINITION instead."));
+                        + "remove it (the field is a filter by default; the UPDATE SET/WHERE "
+                        + "partition is derived from the catalog by the walker). On Query-side "
+                        + "@table input args, move @lookupKey to the surrounding ARGUMENT_DEFINITION "
+                        + "instead."));
                 }
             }
             // R215: thread the call site's cascade override flag into the classifier. The
@@ -3290,11 +3290,33 @@ class FieldBuilder {
                 // resolveInput keeps that resolver's retired UPDATE-specific @value-partition /
                 // PK-coverage rules from firing on either path.
                 if (kind == DmlKind.UPDATE) {
+                    // multiRow: true on UPDATE is rejected outright; the broadcast semantics has no
+                    // replacement path under R246 (cover a PK or UK to express an UPDATE). DELETE,
+                    // by contrast, admits multiRow as the DeleteRows.Broadcast arm (see below).
+                    if (MutationInputResolver.parseMultiRow(fieldDef)) {
+                        return new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                            Rejection.deferred("@mutation(typeName: UPDATE) with multiRow: true is not yet supported", ""));
+                    }
                     ReturnTypeRef updateReturnType = ctx.resolveReturnType(baseTypeName(fieldDef), buildWrapper(fieldDef));
                     if (updateReturnType instanceof ReturnTypeRef.ResultReturnType rrt) {
                         return classifyUpdatePayloadField(fieldDef, parentTypeName, name, location, rrt);
                     }
                     return classifyUpdateTableField(fieldDef, parentTypeName, name, location, updateReturnType);
+                }
+
+                // R266: every @mutation(typeName: DELETE) classifies through the DeleteRowsWalker,
+                // mirroring R246/R258 for UPDATE. Branch on leaf identity before resolveInput: the
+                // payload-returning shape (ResultReturnType) to classifyDeletePayloadField, the
+                // direct-@table/ID-return shape to classifyDeleteTableField. Both forks build the
+                // slim InputArgRef + DeleteRows carrier; carving DELETE off resolveInput retires the
+                // last live @value consumer (R188). Unlike UPDATE, DELETE does not reject multiRow
+                // here — the walker turns it into the DeleteRows.Broadcast arm.
+                if (kind == DmlKind.DELETE) {
+                    ReturnTypeRef deleteReturnType = ctx.resolveReturnType(baseTypeName(fieldDef), buildWrapper(fieldDef));
+                    if (deleteReturnType instanceof ReturnTypeRef.ResultReturnType rrt) {
+                        return classifyDeletePayloadField(fieldDef, parentTypeName, name, location, rrt);
+                    }
+                    return classifyDeleteTableField(fieldDef, parentTypeName, name, location, deleteReturnType);
                 }
 
                 ArgumentRef.InputTypeArg.TableInputArg tia;
@@ -3315,83 +3337,24 @@ class FieldBuilder {
 
                 // R178 Phase 4: payload-returning DML mutations classify through structural
                 // detection of the payload SDL (single non-errors-shaped data field; element
-                // kind: @table / @record / ID). Both DELETE and non-DELETE arms share the
-                // same detectStructural* helpers and dispatch on the DmlElementKind permit
-                // returned by scanStructuralDmlPayload.
-                //
-                // DELETE-specific permit construction (SingleRecordIdFieldFromReturning,
-                // SingleRecordTableFieldFromReturning) is inlined here; the supporting helpers
-                // (classifyDeleteIdEncoderError, resolveDeleteIdEncoder, classifyDeleteTableProjection)
-                // operate on structural inputs.
+                // kind: @table / @record / ID), dispatching on the DmlElementKind permit returned
+                // by scanStructuralDmlPayload. Only INSERT / UPSERT reach here: UPDATE (R246/R258)
+                // and DELETE (R266) are intercepted before resolveInput and classify through their
+                // walker-driven payload classifiers (classifyUpdatePayloadField /
+                // classifyDeletePayloadField), which own the DELETE-specific IdElement / Table
+                // reclassify the walkers cannot re-derive.
                 if (returnType instanceof ReturnTypeRef.ResultReturnType rrt) {
                     var scan = ctx.scanStructuralDmlPayload(rrt.returnTypeName());
                     if (scan instanceof BuildContext.DmlPayloadScan.Reject scanReject) {
                         return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(scanReject.reason()));
                     }
                     if (scan instanceof BuildContext.DmlPayloadScan.Admit admit) {
-                        var dataField = admit.dataField();
-                        var element = admit.element();
-                        var wrapper = ctx.buildWrapper(dataField);
-                        var dataFieldLocation = locationOf(dataField);
-                        if (kind == DmlKind.DELETE) {
-                            switch (element) {
-                                case BuildContext.DmlElementKind.IdElement ignored -> {
-                                    String encoderError = classifyDeleteIdEncoderError(ctx, dataField, tia.inputTable(), name);
-                                    if (encoderError != null) {
-                                        return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(encoderError));
-                                    }
-                                    var encoder = resolveDeleteIdEncoder(ctx, dataField, tia.inputTable()).orElseThrow();
-                                    var returnType_id = new ReturnTypeRef.ScalarReturnType("ID", wrapper);
-                                    var coords = graphql.schema.FieldCoordinates.coordinates(rrt.returnTypeName(), dataField.getName());
-                                    var carrier = new ChildField.SingleRecordIdFieldFromReturning(
-                                        rrt.returnTypeName(), dataField.getName(), dataFieldLocation, returnType_id,
-                                        new no.sikt.graphitron.rewrite.model.CallSiteCompaction.NodeIdEncodeKeys(encoder));
-                                    // R276: the DELETE carrier now binds to the deleted table's JooqTableRecordType, so
-                                    // the per-field pass classifies this ID field as a PropertyField/ColumnField
-                                    // provisional (not the old unbacked-path SingleRecordIdFieldFromReturning). Accept any
-                                    // provisional — the @mutation DELETE classifier owns the final carrier, mirroring the
-                                    // Table arm below which already passes null.
-                                    ctx.fieldRegistry.reclassify(coords, carrier, null);
-                                }
-                                case BuildContext.DmlElementKind.Table tbl -> {
-                                    String tableMismatch = requireDmlDataTableMatchesInputTable(
-                                        tia.inputTable(), tbl, kind, name, rrt.returnTypeName());
-                                    if (tableMismatch != null) {
-                                        return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(tableMismatch));
-                                    }
-                                    var projection = ctx.classifyDeleteTableProjection(rrt.returnTypeName(), tbl.elementTypeName(), tbl.table());
-                                    if (projection instanceof BuildContext.DeleteTableProjection.Rejected rejected) {
-                                        return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(rejected.reason()));
-                                    }
-                                    var admitted = (BuildContext.DeleteTableProjection.Admitted) projection;
-                                    var returnType_tb = new ReturnTypeRef.TableBoundReturnType(tbl.elementTypeName(), tbl.table(), wrapper);
-                                    var coords = graphql.schema.FieldCoordinates.coordinates(rrt.returnTypeName(), dataField.getName());
-                                    var carrier = new ChildField.SingleRecordTableFieldFromReturning(
-                                        rrt.returnTypeName(), dataField.getName(), dataFieldLocation, returnType_tb, admitted.projection());
-                                    ctx.fieldRegistry.reclassify(coords, carrier, null);
-                                }
-                                case BuildContext.DmlElementKind.RecordElement ignored -> {
-                                    return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(
-                                        "R156: record-element data field on DELETE is not supported; use @service for "
-                                        + "record-element carriers or an @table-element / ID-scalar data field for DML carriers"));
-                                }
-                            }
-                            var dmlChannelResult = detectStructuralDmlErrorChannel(rrt.returnTypeName());
-                            if (dmlChannelResult instanceof StructuralDmlErrorChannel.RuleViolation rv) {
-                                return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(rv.reason()));
-                            }
-                            Optional<ErrorChannel> dmlChannel = (dmlChannelResult instanceof StructuralDmlErrorChannel.Present p)
-                                ? Optional.of(p.channel()) : Optional.empty();
-                            boolean dataFieldIsList = wrapper.isList();
-                            if (tia.list() && dataFieldIsList) {
-                                return new MutationField.MutationBulkDmlRecordField(
-                                    parentTypeName, name, location, rrt, tia, kind, dmlChannel);
-                            }
-                            return new MutationField.MutationDmlRecordField(
-                                parentTypeName, name, location, rrt, tia, kind, dmlChannel);
-                        } else {
-                            // INSERT / UPDATE / UPSERT
-                            switch (element) {
+                        // INSERT / UPSERT. UPDATE (R246/R258) and DELETE (R266) are intercepted
+                        // before resolveInput, so the only kinds reaching this scan are INSERT and
+                        // UPSERT, whose payload data field must be @table-element (the ID-element
+                        // PK-echo permit is DELETE-only; record-element needs @service).
+                        {
+                            switch (admit.element()) {
                                 case BuildContext.DmlElementKind.Table tbl -> {
                                     String tableMismatch = requireDmlDataTableMatchesInputTable(
                                         tia.inputTable(), tbl, kind, name, rrt.returnTypeName());
@@ -3464,9 +3427,11 @@ class FieldBuilder {
                         + "direct-@table/ID-return shape by classifyUpdateTableField, the payload-"
                         + "returning shape by classifyUpdatePayloadField; the final-switch UPDATE arm "
                         + "is unreachable for field '" + name + "'");
-                    case DELETE -> buildDmlField(returnType, parentTypeName, name, location, fieldDef,
-                        (rex, ch) -> new MutationField.MutationDeleteTableField(parentTypeName, name, location, rex, tia, ch),
-                        enc);
+                    case DELETE -> throw new IllegalStateException(
+                        "R266: every DELETE is intercepted before resolveInput — the "
+                        + "direct-@table/ID-return shape by classifyDeleteTableField, the payload-"
+                        + "returning shape by classifyDeletePayloadField; the final-switch DELETE arm "
+                        + "is unreachable for field '" + name + "'");
                     case UPSERT -> buildDmlField(returnType, parentTypeName, name, location, fieldDef,
                         (rex, ch) -> new MutationField.MutationUpsertTableField(parentTypeName, name, location, rex, tia, ch),
                         enc);
@@ -3493,9 +3458,9 @@ class FieldBuilder {
             SourceLocation location, ReturnTypeRef returnType) {
         GraphitronType.TableInputType foundTit;
         no.sikt.graphitron.rewrite.model.InputArgRef inputArg;
-        switch (resolveUpdateInputArg(fieldDef, parentTypeName, name, location)) {
-            case UpdateInputArgResolution.Rejected r -> { return r.field(); }
-            case UpdateInputArgResolution.Resolved ok -> { foundTit = ok.tit(); inputArg = ok.inputArg(); }
+        switch (resolveDmlWalkerInputArg(fieldDef, parentTypeName, name, location)) {
+            case DmlWalkerInputArgResolution.Rejected r -> { return r.field(); }
+            case DmlWalkerInputArgResolution.Resolved ok -> { foundTit = ok.tit(); inputArg = ok.inputArg(); }
         }
         boolean list = inputArg.list();
 
@@ -3536,31 +3501,28 @@ class FieldBuilder {
         };
     }
 
-    /** Outcome of {@link #resolveUpdateInputArg}: the resolved arg surface or a typed rejection. */
-    private sealed interface UpdateInputArgResolution {
+    /** Outcome of {@link #resolveDmlWalkerInputArg}: the resolved arg surface or a typed rejection. */
+    private sealed interface DmlWalkerInputArgResolution {
         record Resolved(GraphitronType.TableInputType tit,
-                        no.sikt.graphitron.rewrite.model.InputArgRef inputArg) implements UpdateInputArgResolution {}
-        record Rejected(GraphitronField field) implements UpdateInputArgResolution {}
+                        no.sikt.graphitron.rewrite.model.InputArgRef inputArg) implements DmlWalkerInputArgResolution {}
+        record Rejected(GraphitronField field) implements DmlWalkerInputArgResolution {}
     }
 
     /**
-     * R246 / R258 — shared pre-walker resolution for the two walker-driven UPDATE classifiers
-     * ({@link #classifyUpdateTableField}, {@link #classifyUpdatePayloadField}). Runs the
-     * {@code multiRow: true} deferral pre-check and resolves the single {@code @table} input
-     * argument into the slim {@link no.sikt.graphitron.rewrite.model.InputArgRef} arg surface,
-     * applying the arg-shape rejections (more-than-one-arg, non-{@code @table} arg,
+     * R246 / R258 / R266 — shared pre-walker resolution for the four walker-driven UPDATE / DELETE
+     * classifiers ({@link #classifyUpdateTableField}, {@link #classifyUpdatePayloadField},
+     * {@link #classifyDeleteTableField}, {@link #classifyDeletePayloadField}). Resolves the single
+     * {@code @table} input argument into the slim {@link no.sikt.graphitron.rewrite.model.InputArgRef}
+     * arg surface, applying the arg-shape rejections (more-than-one-arg, non-{@code @table} arg,
      * {@code @condition}-on-arg). These are the argument's property rather than per-field
-     * admissibility; neither classifier calls {@code MutationInputResolver.resolveInput}.
+     * admissibility; none of these classifiers calls {@code MutationInputResolver.resolveInput}.
+     *
+     * <p>{@code multiRow} handling is the caller's concern, since it diverges by verb: UPDATE
+     * rejects it outright (the dispatch does so before calling this), DELETE turns it into the
+     * {@link no.sikt.graphitron.rewrite.model.DeleteRows.Broadcast} arm (the walker does so).
      */
-    private UpdateInputArgResolution resolveUpdateInputArg(
+    private DmlWalkerInputArgResolution resolveDmlWalkerInputArg(
             GraphQLFieldDefinition fieldDef, String parentTypeName, String name, SourceLocation location) {
-        // Pre-check: multiRow: true on UPDATE is rejected outright; the broadcast semantics has no
-        // replacement path under R246 (cover a PK or UK to express an UPDATE).
-        if (MutationInputResolver.parseMultiRow(fieldDef)) {
-            return new UpdateInputArgResolution.Rejected(new UnclassifiedField(parentTypeName, name, location, fieldDef,
-                Rejection.deferred("@mutation(typeName: UPDATE) with multiRow: true is not yet supported", "")));
-        }
-
         // Resolve the single @table input argument's slim surface, rejecting the shape constraints
         // that are the arg's property rather than per-field admissibility.
         GraphitronType.TableInputType foundTit = null;
@@ -3573,16 +3535,16 @@ class FieldBuilder {
             String typeName = ((GraphQLNamedType) GraphQLTypeUtil.unwrapAll(argType)).getName();
             var resolvedType = ctx.types.get(typeName);
             if (!(resolvedType instanceof GraphitronType.TableInputType tit)) {
-                return new UpdateInputArgResolution.Rejected(new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(
+                return new DmlWalkerInputArgResolution.Rejected(new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(
                     "@mutation fields only accept @table input arguments; found '" + arg.getName()
                     + "' of type '" + typeName + "'")));
             }
             if (arg.hasAppliedDirective(BuildContext.DIR_CONDITION)) {
-                return new UpdateInputArgResolution.Rejected(new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(
+                return new DmlWalkerInputArgResolution.Rejected(new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(
                     "@condition on a @mutation field argument is not supported")));
             }
             if (foundTit != null) {
-                return new UpdateInputArgResolution.Rejected(new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(
+                return new DmlWalkerInputArgResolution.Rejected(new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(
                     "@mutation field has more than one @table input argument")));
             }
             foundTit = tit;
@@ -3591,12 +3553,12 @@ class FieldBuilder {
             list = argList;
         }
         if (foundTit == null) {
-            return new UpdateInputArgResolution.Rejected(new UnclassifiedField(parentTypeName, name, location, fieldDef,
+            return new DmlWalkerInputArgResolution.Rejected(new UnclassifiedField(parentTypeName, name, location, fieldDef,
                 Rejection.structural("no @table input argument found on @mutation field")));
         }
         var inputArg = new no.sikt.graphitron.rewrite.model.InputArgRef(
             argName, argTypeName, foundTit.table(), list);
-        return new UpdateInputArgResolution.Resolved(foundTit, inputArg);
+        return new DmlWalkerInputArgResolution.Resolved(foundTit, inputArg);
     }
 
     /**
@@ -3617,9 +3579,9 @@ class FieldBuilder {
             SourceLocation location, ReturnTypeRef.ResultReturnType returnType) {
         GraphitronType.TableInputType foundTit;
         no.sikt.graphitron.rewrite.model.InputArgRef inputArg;
-        switch (resolveUpdateInputArg(fieldDef, parentTypeName, name, location)) {
-            case UpdateInputArgResolution.Rejected r -> { return r.field(); }
-            case UpdateInputArgResolution.Resolved ok -> { foundTit = ok.tit(); inputArg = ok.inputArg(); }
+        switch (resolveDmlWalkerInputArg(fieldDef, parentTypeName, name, location)) {
+            case DmlWalkerInputArgResolution.Rejected r -> { return r.field(); }
+            case DmlWalkerInputArgResolution.Resolved ok -> { foundTit = ok.tit(); inputArg = ok.inputArg(); }
         }
 
         // Invariant #14/#15 return-type validation (shared with the resolveInput path).
@@ -3686,6 +3648,171 @@ class FieldBuilder {
             case no.sikt.graphitron.rewrite.model.WalkerResult.Err<no.sikt.graphitron.rewrite.model.UpdateRows> err ->
                 new UnclassifiedField(parentTypeName, name, location, fieldDef, err.errors().getFirst());
         };
+    }
+
+    /**
+     * R266 — classifies a direct-@table/ID-return {@code @mutation(typeName: DELETE)} field into a
+     * {@link MutationField.MutationDeleteTableField}. The DELETE analogue of
+     * {@link #classifyUpdateTableField}: resolves the slim {@link InputArgRef} arg surface, validates
+     * the return type, resolves the ID-return encoder, then runs {@code DeleteRowsWalker} for the
+     * PK-or-UK identification. Unlike UPDATE, {@code multiRow: true} is admitted (the walker turns it
+     * into the {@link no.sikt.graphitron.rewrite.model.DeleteRows.Broadcast} arm). A pre-check
+     * failure or a walker {@code Err} surfaces as an {@link UnclassifiedField} carrying the typed
+     * {@code DeleteRowsError} arm verbatim for the LSP projector.
+     */
+    private GraphitronField classifyDeleteTableField(
+            GraphQLFieldDefinition fieldDef, String parentTypeName, String name,
+            SourceLocation location, ReturnTypeRef returnType) {
+        GraphitronType.TableInputType foundTit;
+        no.sikt.graphitron.rewrite.model.InputArgRef inputArg;
+        switch (resolveDmlWalkerInputArg(fieldDef, parentTypeName, name, location)) {
+            case DmlWalkerInputArgResolution.Rejected r -> { return r.field(); }
+            case DmlWalkerInputArgResolution.Resolved ok -> { foundTit = ok.tit(); inputArg = ok.inputArg(); }
+        }
+        boolean list = inputArg.list();
+
+        // Invariant #14/#15 return-type validation (shared with the resolveInput path).
+        String returnTypeError = MutationInputResolver.validateReturnType(returnType, DmlKind.DELETE, list, ctx);
+        if (returnTypeError != null) {
+            return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(returnTypeError));
+        }
+
+        // ID-return encode resolution (mirrors the shared DML path at the @mutation classifier).
+        Optional<HelperRef.Encode> encodeReturn = Optional.empty();
+        if (returnType instanceof ReturnTypeRef.ScalarReturnType s && "ID".equals(s.returnTypeName())) {
+            String tableSqlName = foundTit.table().tableName();
+            encodeReturn = ctx.types.values().stream()
+                .filter(t -> t instanceof NodeType nt && nt.table().tableName().equals(tableSqlName))
+                .map(t -> ((NodeType) t).encodeMethod())
+                .findFirst();
+            if (encodeReturn.isEmpty()) {
+                return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(
+                    "@mutation field '" + name + "' returns ID but no @node type is declared for table '"
+                    + tableSqlName + "'; annotate the type with @node or use a @table return type"));
+            }
+        }
+
+        // R266 walker: PK-or-UK identification over the already-classified input fields, with
+        // multiRow opting into the Broadcast arm (the translator concession; see DeleteRowsWalker).
+        boolean multiRow = MutationInputResolver.parseMultiRow(fieldDef);
+        var walkerResult = new no.sikt.graphitron.rewrite.walker.DeleteRowsWalker()
+            .walk(fieldDef, foundTit.table(), foundTit.inputFields(), ctx.catalog, multiRow);
+        var enc = encodeReturn;
+        return switch (walkerResult) {
+            case no.sikt.graphitron.rewrite.model.WalkerResult.Ok<no.sikt.graphitron.rewrite.model.DeleteRows> ok ->
+                buildDmlField(returnType, parentTypeName, name, location, fieldDef,
+                    (rex, ch) -> new MutationField.MutationDeleteTableField(
+                        parentTypeName, name, location, rex, inputArg, ok.carrier(), ch),
+                    enc);
+            case no.sikt.graphitron.rewrite.model.WalkerResult.Err<no.sikt.graphitron.rewrite.model.DeleteRows> err ->
+                new UnclassifiedField(parentTypeName, name, location, fieldDef, err.errors().getFirst());
+        };
+    }
+
+    /**
+     * R266 — classifies a payload-returning {@code @mutation(typeName: DELETE)} field into a
+     * {@link MutationField.MutationDeletePayloadField} (single) or
+     * {@link MutationField.MutationBulkDeletePayloadField} (bulk). The DELETE analogue of
+     * {@link #classifyUpdatePayloadField}, but it retains DELETE's structural-payload reclassify
+     * (the IdElement PK-echo and Table PK-only RETURNING projection the walkers cannot re-derive),
+     * which the inline shared-path DELETE arm used to own. Only the input-side WHERE source moved to
+     * the {@code DeleteRowsWalker}; the data-field carrier projection is unchanged. A pre-check
+     * failure or a walker {@code Err} surfaces as an {@link UnclassifiedField}; the walker's typed
+     * {@code DeleteRowsError} arm is preserved verbatim for the LSP projector.
+     */
+    private GraphitronField classifyDeletePayloadField(
+            GraphQLFieldDefinition fieldDef, String parentTypeName, String name,
+            SourceLocation location, ReturnTypeRef.ResultReturnType returnType) {
+        GraphitronType.TableInputType foundTit;
+        no.sikt.graphitron.rewrite.model.InputArgRef inputArg;
+        switch (resolveDmlWalkerInputArg(fieldDef, parentTypeName, name, location)) {
+            case DmlWalkerInputArgResolution.Rejected r -> { return r.field(); }
+            case DmlWalkerInputArgResolution.Resolved ok -> { foundTit = ok.tit(); inputArg = ok.inputArg(); }
+        }
+
+        // Invariant #14/#15 return-type validation (shared with the resolveInput path).
+        String returnTypeError = MutationInputResolver.validateReturnType(returnType, DmlKind.DELETE, inputArg.list(), ctx);
+        if (returnTypeError != null) {
+            return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(returnTypeError));
+        }
+
+        // Structural DML-payload scan, then the DELETE-specific per-field reclassify (IdElement PK-
+        // echo / Table PK-only RETURNING). This is the inline shared-path DELETE arm, ported here
+        // and re-sourced to inputArg.table(); only the WHERE source moves to the DeleteRows carrier.
+        var scan = ctx.scanStructuralDmlPayload(returnType.returnTypeName());
+        if (scan instanceof BuildContext.DmlPayloadScan.Reject scanReject) {
+            return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(scanReject.reason()));
+        }
+        var admit = (BuildContext.DmlPayloadScan.Admit) scan;
+        var dataField = admit.dataField();
+        var element = admit.element();
+        var wrapper = ctx.buildWrapper(dataField);
+        var dataFieldLocation = locationOf(dataField);
+
+        // R266 walker: PK-or-UK identification over the already-classified input fields, multiRow
+        // opting into the Broadcast arm. Run it before the per-field reclassify so an under-keyed
+        // input rejects without leaving an orphaned data-field carrier in the registry — matching the
+        // legacy ordering where resolveInput's PK-coverage check rejected before the reclassify ran.
+        boolean multiRow = MutationInputResolver.parseMultiRow(fieldDef);
+        var walkerResult = new no.sikt.graphitron.rewrite.walker.DeleteRowsWalker()
+            .walk(fieldDef, foundTit.table(), foundTit.inputFields(), ctx.catalog, multiRow);
+        if (walkerResult instanceof no.sikt.graphitron.rewrite.model.WalkerResult.Err<no.sikt.graphitron.rewrite.model.DeleteRows> err) {
+            return new UnclassifiedField(parentTypeName, name, location, fieldDef, err.errors().getFirst());
+        }
+        var deleteRows = ((no.sikt.graphitron.rewrite.model.WalkerResult.Ok<no.sikt.graphitron.rewrite.model.DeleteRows>) walkerResult).carrier();
+
+        switch (element) {
+            case BuildContext.DmlElementKind.IdElement ignored -> {
+                String encoderError = classifyDeleteIdEncoderError(ctx, dataField, inputArg.table(), name);
+                if (encoderError != null) {
+                    return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(encoderError));
+                }
+                var encoder = resolveDeleteIdEncoder(ctx, dataField, inputArg.table()).orElseThrow();
+                var returnType_id = new ReturnTypeRef.ScalarReturnType("ID", wrapper);
+                var coords = graphql.schema.FieldCoordinates.coordinates(returnType.returnTypeName(), dataField.getName());
+                var carrier = new ChildField.SingleRecordIdFieldFromReturning(
+                    returnType.returnTypeName(), dataField.getName(), dataFieldLocation, returnType_id,
+                    new no.sikt.graphitron.rewrite.model.CallSiteCompaction.NodeIdEncodeKeys(encoder));
+                // R276: the @mutation DELETE classifier owns the final carrier; accept any provisional.
+                ctx.fieldRegistry.reclassify(coords, carrier, null);
+            }
+            case BuildContext.DmlElementKind.Table tbl -> {
+                String tableMismatch = requireDmlDataTableMatchesInputTable(
+                    inputArg.table(), tbl, DmlKind.DELETE, name, returnType.returnTypeName());
+                if (tableMismatch != null) {
+                    return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(tableMismatch));
+                }
+                var projection = ctx.classifyDeleteTableProjection(returnType.returnTypeName(), tbl.elementTypeName(), tbl.table());
+                if (projection instanceof BuildContext.DeleteTableProjection.Rejected rejected) {
+                    return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(rejected.reason()));
+                }
+                var admitted = (BuildContext.DeleteTableProjection.Admitted) projection;
+                var returnType_tb = new ReturnTypeRef.TableBoundReturnType(tbl.elementTypeName(), tbl.table(), wrapper);
+                var coords = graphql.schema.FieldCoordinates.coordinates(returnType.returnTypeName(), dataField.getName());
+                var carrier = new ChildField.SingleRecordTableFieldFromReturning(
+                    returnType.returnTypeName(), dataField.getName(), dataFieldLocation, returnType_tb, admitted.projection());
+                ctx.fieldRegistry.reclassify(coords, carrier, null);
+            }
+            case BuildContext.DmlElementKind.RecordElement ignored -> {
+                return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(
+                    "R156: record-element data field on DELETE is not supported; use @service for "
+                    + "record-element carriers or an @table-element / ID-scalar data field for DML carriers"));
+            }
+        }
+
+        var dmlChannelResult = detectStructuralDmlErrorChannel(returnType.returnTypeName());
+        if (dmlChannelResult instanceof StructuralDmlErrorChannel.RuleViolation rv) {
+            return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(rv.reason()));
+        }
+        Optional<ErrorChannel> dmlChannel = (dmlChannelResult instanceof StructuralDmlErrorChannel.Present p)
+            ? Optional.of(p.channel()) : Optional.empty();
+
+        if (inputArg.list()) {
+            return new MutationField.MutationBulkDeletePayloadField(
+                parentTypeName, name, location, returnType, inputArg, deleteRows, dmlChannel);
+        }
+        return new MutationField.MutationDeletePayloadField(
+            parentTypeName, name, location, returnType, inputArg, deleteRows, dmlChannel);
     }
 
     /**

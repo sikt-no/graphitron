@@ -16,7 +16,6 @@ import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.stream.Collectors;
 
 import static no.sikt.graphitron.rewrite.BuildContext.candidateHint;
@@ -171,18 +170,18 @@ final class EnumMappingResolver {
 
     /**
      * Walks a {@link GraphitronType.TableInputType} argument's fields and builds one
-     * {@link InputColumnBindingGroup} per admissible non-excluded input field. R144 retired
-     * {@code @lookupKey} on {@code INPUT_FIELD_DEFINITION}; the directive no longer gates this
-     * walk. The caller decides which fields to admit:
+     * {@link InputColumnBindingGroup} per admissible input field. R144 retired {@code @lookupKey}
+     * on {@code INPUT_FIELD_DEFINITION}; the directive no longer gates this walk. After R246 / R258
+     * / R266 routed UPDATE and DELETE through their walker carriers, the only callers are:
      *
      * <ul>
-     *   <li>Mutation-side (DELETE / UPDATE): every admissible input field is a WHERE-binding,
-     *       modulo {@code excludeFieldNames} which carries the {@code @value}-marked names on
-     *       UPDATE. INSERT passes an empty caller-side and skips the call (no WHERE clause).</li>
+     *   <li>Mutation-side: INSERT (via {@code MutationInputResolver.resolveInput}, which then
+     *       discards the bindings — INSERT walks {@code fields()} directly for VALUES emit). UPDATE
+     *       and DELETE no longer call this; their walkers build the WHERE columns directly. R266
+     *       retired the {@code @value} marker, so there is no longer an exclude set.</li>
      *   <li>Query-side ({@code @lookupKey} on {@code ARGUMENT_DEFINITION}, with a {@code @table}
-     *       input arg): every admissible input field of the input type is a lookup-key binding;
-     *       {@code excludeFieldNames} is empty. The Query-side derivation reads the binding set
-     *       as the VALUES-join column list.</li>
+     *       input arg): every admissible input field of the input type is a lookup-key binding.
+     *       The Query-side derivation reads the binding set as the VALUES-join column list.</li>
      * </ul>
      *
      * Each admitted carrier produces one group:
@@ -210,7 +209,7 @@ final class EnumMappingResolver {
      */
     List<InputColumnBindingGroup> buildLookupBindings(GraphitronType.TableInputType tit,
             GraphQLArgument arg, GraphQLFieldDefinition fieldDef, String argName,
-            List<String> errors, Set<String> excludeFieldNames) {
+            List<String> errors) {
         var sdlType = ctx.schema.getType(tit.name());
         if (!(sdlType instanceof GraphQLInputObjectType iot)) {
             return List.of();
@@ -219,7 +218,6 @@ final class EnumMappingResolver {
             .collect(Collectors.toMap(InputField::name, f -> f));
         var groups = new ArrayList<InputColumnBindingGroup>();
         for (var sdlField : iot.getFieldDefinitions()) {
-            if (excludeFieldNames.contains(sdlField.getName())) continue;
             var resolved = byName.get(sdlField.getName());
             switch (resolved) {
                 case InputField.ColumnField cf -> {

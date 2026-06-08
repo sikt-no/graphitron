@@ -329,7 +329,14 @@ public final class CatalogBuilder {
                     f.inputArg().inputTypeName(),
                     no.sikt.graphitron.rewrite.model.DmlKind.UPDATE,
                     errorChannelName(f.errorChannel()));
-            case MutationField.MutationDeleteTableField f -> dmlMutation(f.tableInputArg(), no.sikt.graphitron.rewrite.model.DmlKind.DELETE, f.errorChannel());
+            case MutationField.MutationDeleteTableField f ->
+                // R266: DELETE carries InputArgRef instead of TableInputArg; the table name and
+                // input type name come off the slim arg surface (both non-Optional by construction).
+                new FieldClassification.DmlMutation(
+                    f.inputArg().table().tableName(),
+                    f.inputArg().inputTypeName(),
+                    no.sikt.graphitron.rewrite.model.DmlKind.DELETE,
+                    errorChannelName(f.errorChannel()));
             case MutationField.MutationUpsertTableField f -> dmlMutation(f.tableInputArg(), no.sikt.graphitron.rewrite.model.DmlKind.UPSERT, f.errorChannel());
             case MutationField.MutationServiceTableField f ->
                 new FieldClassification.MutationService(
@@ -376,6 +383,22 @@ public final class CatalogBuilder {
                     f.inputArg().table().tableName(),
                     f.inputArg().inputTypeName(),
                     no.sikt.graphitron.rewrite.model.DmlKind.UPDATE,
+                    true,
+                    errorChannelName(f.errorChannel()));
+            // R266: payload-returning DELETE carries InputArgRef (not TableInputArg); the table /
+            // input-type name come off the slim arg surface, and the kind is always DELETE.
+            case MutationField.MutationDeletePayloadField f ->
+                new FieldClassification.DmlRecord(
+                    f.inputArg().table().tableName(),
+                    f.inputArg().inputTypeName(),
+                    no.sikt.graphitron.rewrite.model.DmlKind.DELETE,
+                    false,
+                    errorChannelName(f.errorChannel()));
+            case MutationField.MutationBulkDeletePayloadField f ->
+                new FieldClassification.DmlRecord(
+                    f.inputArg().table().tableName(),
+                    f.inputArg().inputTypeName(),
+                    no.sikt.graphitron.rewrite.model.DmlKind.DELETE,
                     true,
                     errorChannelName(f.errorChannel()));
 

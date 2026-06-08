@@ -13,21 +13,8 @@ package no.sikt.graphitron.rewrite.model;
 public enum DmlKind {
     INSERT, UPDATE, DELETE, UPSERT;
 
-    /**
-     * UPDATE / DELETE require all WHERE-side filter columns to cover the input
-     * {@code @table}'s primary key (R144). UPSERT is refused upstream by
-     * {@code MutationInputResolver}; INSERT has no WHERE clause to cover.
-     */
-    public boolean requiresPkCoverage() {
-        return this == UPDATE || this == DELETE;
-    }
-
-    /**
-     * UPDATE accepts {@code @value} on input fields to partition them from the WHERE-side
-     * filters. DELETE / INSERT reject {@code @value} as a structural error (DELETE has no
-     * assignment clause; INSERT does not partition).
-     */
-    public boolean acceptsValueMarker() {
-        return this == UPDATE;
-    }
+    // R266 retired both the @value partition (acceptsValueMarker) and the resolveInput PK-coverage
+    // check (requiresPkCoverage): UPDATE (R246/R258) and DELETE (R266) now identify rows through the
+    // UpdateRowsWalker / DeleteRowsWalker's catalog-derived PK-or-UK match, so neither predicate has
+    // a caller. INSERT (the lone verb still completing resolveInput) has no WHERE clause to cover.
 }
