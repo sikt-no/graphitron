@@ -1,13 +1,13 @@
 ---
 id: R266
-title: "DELETE mutations onto the DeleteRows walker carrier, retiring @value (R222 DELETE slice)"
-status: Backlog
+title: DELETE mutations onto the DeleteRows walker carrier, retiring @value (R222 DELETE slice)
+status: Spec
 bucket: structural
 priority: 3
 theme: structural-refactor
 depends-on: []
 created: 2026-06-01
-last-updated: 2026-06-01
+last-updated: 2026-06-08
 ---
 
 # DELETE mutations onto the DeleteRows walker carrier, retiring @value (R222 DELETE slice)
@@ -22,17 +22,19 @@ The structural difference is in what the matched key means.
 * **DELETE** has no SET destination. *Every* admitted input column is a WHERE filter. The matched key is a cardinality *guard* (it proves the WHERE reduces to at most one row), not a partition boundary; non-key filter columns are legitimate extra predicates rather than orphans with nowhere to go.
 * **`multiRow: true`** is a real DELETE shape (`deleteFilmsByReleaseYear` filters on the non-PK `release_year`). R246 refused broadcast UPDATE because "covering a PK/UK is *the* single-row UPDATE shape"; broadcast DELETE has a clear meaning and is already supported, so the carrier needs an arm for it.
 
-Sketch (names pin at Spec):
+Carrier shape:
 
 ```
 sealed interface DeleteRows permits Identified, Broadcast {
     List<KeyColumn> whereColumns();        // all admitted columns; reuses R246's KeyColumn
-    record Identified(MatchedKey matchedKey, List<KeyColumn> whereColumns) implements DeleteRows {}  // !multiRow: covers a PK/UK -> single-row guard
-    record Broadcast(List<KeyColumn> whereColumns) implements DeleteRows {}                          // multiRow: true: no coverage required
+    record Identified(MatchedKey matchedKey, List<KeyColumn> whereColumns) implements DeleteRows {}  // input covers a PK/UK -> single-row (multiRow flag moot)
+    record Broadcast(List<KeyColumn> whereColumns) implements DeleteRows {}                          // multiRow: true AND no PK/UK covered
 }
 ```
 
-`MatchedKey`, `KeyColumn`, `JooqCatalog.candidateKeys`, `WalkerResult`, and the WHERE emitters (`buildLookupWhereSingleRow`, `buildBulkLookupRowIn`) are all reusable from R246 as-is.
+`whereColumns` is *every* admitted input column for both arms (a DELETE has no SET partition; the matched key on `Identified` is the single-row guard, not a column subset). `Broadcast`'s compact constructor rejects an empty `whereColumns`, so an empty input cannot degenerate into an unfiltered `DELETE`.
+
+`MatchedKey`, `KeyColumn`, `JooqCatalog.candidateKeys`, `WalkerResult`, and the WHERE emitters (`buildLookupWhereSingleRow`, `buildBulkLookupRowIn`) are all reused from R246. The PK-or-UK match itself (`UpdateRowsWalker` Stages 4-5) is **extracted into a shared helper** both walkers call (see Implementation), so the identification logic is not duplicated. `KeyColumn`'s javadoc (today "WHERE side of an UPDATE") is generalised to cover both verbs.
 
 ## Surface to migrate
 
@@ -42,11 +44,11 @@ Three DELETE shapes exist today, spanning three `MutationField` leaves (file: `m
 * **Payload single**: DELETE rides the shared `MutationDmlRecordField` (line 207, live `DmlKind` range `{INSERT, UPSERT, DELETE}`). Carve DELETE into a `MutationDeletePayloadField` and narrow the shared leaf to `{INSERT, UPSERT}`, exactly as R258 carved UPDATE out. Covers `deleteFilmsIdCarrier`.
 * **Payload bulk**: DELETE rides the shared `MutationBulkDmlRecordField` (line 306, live range `{INSERT, DELETE}`). Carve into `MutationBulkDeletePayloadField`, narrow the shared leaf to `{INSERT}`. Covers `deleteFilmsTableCarrier`.
 
-Producers: add `DeleteRowsWalker` (translator over the already-classified `InputField` permits + `JooqCatalog`, the same R238/R246/R257 substrate concession) and `FieldBuilder.classifyDeleteTableField` / `classifyDeletePayloadField` (parallel to `classifyUpdateTableField` line 3376 / `classifyUpdatePayloadField` line 3500).
+Producers: add `DeleteRowsWalker` (translator over the already-classified `InputField` permits + `JooqCatalog`, the same R238/R246/R257 substrate concession) and `FieldBuilder.classifyDeleteTableField` / `classifyDeletePayloadField` (parallel to `classifyUpdateTableField` line 3376 / `classifyUpdatePayloadField` line 3500). The payload classifier keeps DELETE's existing inline `reclassify` + `classifyDeleteTableProjection` (PK-only RETURNING, no follow-up SELECT); only the input-side WHERE source moves to the carrier.
 
 Emit cutover (carrier-driven in place, no new emitter class, per R246's precedent): `buildMutationDeleteFetcher` (line 1746), `buildRecordDeleteChain` (line 4051), and `buildBulkRecordPerRowDeleteBody` (line 4413) source their WHERE from `deleteRows().whereColumns()` instead of `tableInputArg.fieldBindings()`, feeding the existing `buildLookupWhereSingleRow` / `buildBulkLookupRowIn` helpers unchanged.
 
-Error taxonomy + LSP: a `DeleteRowsError implements Rejection.AuthorError` sub-seal (one `permits` row added to `Rejection.AuthorError`, `lspCode()` under `graphitron.delete-rows.*`), wired into the LSP `Diagnostic` projector, `typed-rejection.adoc`, and `RejectionSeverityCoverageTest`, mirroring `UpdateRowsError`. The arm set differs: **no `NoSetFields`** (there is no SET to be empty); `NoUniqueKeyCoverage` fires only on the non-`multiRow` path; `UnsupportedInputFieldShape` carries over.
+Error taxonomy + LSP: a `DeleteRowsError implements Rejection.AuthorError` sub-seal (one `permits` row added to `Rejection.AuthorError`, `lspCode()` under `graphitron.delete-rows.*`), wired into the LSP `Diagnostic` projector, `typed-rejection.adoc`, and `RejectionSeverityCoverageTest`, mirroring `UpdateRowsError`. Three arms: `NoUniqueKeyCoverage` (non-`multiRow` input covers no PK/UK; subsumes R188's `table-has-no-pk`), `UnsupportedInputFieldShape`, and `OverrideConditionNotSupported`. **No `NoSetFields`** (no SET to be empty) and **no `MixedCarrierKeyMembership`** (no SET boundary for a composite carrier to straddle).
 
 ## Retires @value entirely (absorbs R188)
 
@@ -66,19 +68,57 @@ R246 absorbed R188's UPDATE-side partition scope; R258 the payload-UPDATE equiva
 
 **Schema, test, and doc sweep (absorbed).** Strip `@value` from the Sakila schema (2 sites) and the embedded test SDL (`GraphitronSchemaBuilderTest` ~18, `MutationDmlNodeIdClassificationTest` ~7, `FetcherPipelineTest` ~6, `SingleRecordPayloadPipelineTest` ~6) and rephrase the now-stale `@value` javadoc across `MutationField`, `TypeFetcherGenerator`, `UpdateRowsWalker`, `FieldBuilder`, `DmlKind`. Delete `docs/manual/reference/directives/value.adoc` and rewrite the `@value`-referencing partition prose in `docs/manual/reference/directives/mutation.adoc` to name the catalog-derived PK-or-UK inference rule (R188 carried the replacement prose; lift it from R188's "User documentation" section in git history when drafting).
 
-**Coordination kept from R188.** R145 (UPSERT) must take its conflict-target / SET partition from PK / conflict-key membership rather than re-introducing `@value`; with the directive removed, R145 has no `@value` to fall back to. R245 owns `@condition`-on-mutations *emit*; this item leaves `@condition` in its current state except for the DELETE override-condition decision in fork 4 below.
+**Coordination kept from R188.** R145 (UPSERT) must take its conflict-target / SET partition from PK / conflict-key membership rather than re-introducing `@value`; with the directive removed, R145 has no `@value` to fall back to. R245 owns `@condition`-on-mutations *emit*; this item leaves `@condition` in its current state except for the DELETE override-condition, which this item rejects (see Decisions).
 
-## Design forks to pin at Spec (consult principles-architect)
+## Decisions
 
-1. **Carrier arms.** `Identified` + `Broadcast` (recommended; impossible combinations excluded at production time per R222) versus a single arm carrying a `multiRow` flag.
-2. **PK-or-UK vs PK-only.** Adopt PK-or-UK to match R246 and close R188's open question (recommended), versus keeping DELETE PK-only.
-3. **WHERE = all admitted columns** (DELETE has no SET home for extras; recommended) versus matched-key-only with a reject-on-extra-columns rule.
-4. **`@condition(override: true)`.** DELETE currently *admits* it (`MutationInputResolver` ~477-491, the developer-owned WHERE override hatch); R246 *inverted* R215's admit to a typed `OverrideConditionNotSupported` rejection for UPDATE because the emit half never landed. Spec must check whether DELETE's override-condition actually emits today: if yes, carry it onto the carrier; if no, mirror UPDATE's rejection pending R245.
-5. **Slice granularity.** One slice (carrier + walker + all three DELETE shapes) versus two (R246-style direct-return first, then an R258-style payload follow-up). The machinery is proven, so one slice is the default; split only if review wants a tighter blast radius.
+Settled with the requester (and, for the carrier-shape fork, with `principles-architect`):
+
+1. **PK-or-UK identification**, matching R246. No PK and no covered UK without `multiRow` is a typed rejection (`NoUniqueKeyCoverage`), closing R188's silent PK-less gap. Admitting a UK-covering DELETE is a deliberate behavior change (see Behavior changes).
+2. **WHERE = every admitted input column.** The matched key is the single-row guard, not a column subset; extra non-key columns remain as additional ANDed predicates (preserves today's behavior).
+3. **`Identified | Broadcast` arms.** `Broadcast` is the `multiRow: true` shape (no key coverage required); its compact constructor rejects empty `whereColumns`.
+4. **Reject `@condition(override: true)`** with `DeleteRowsError.OverrideConditionNotSupported`, mirroring R246. Verified in code that DELETE's override-condition is admit-but-no-emit today (the `UnboundField` never becomes a binding, so no `.where(...)` is produced); rejecting turns a silent no-op into a build error. Real support is R245's.
+5. **One slice, all six DELETE shapes** (direct ID-return single/bulk, `multiRow` broadcast, composite-PK NodeId single/bulk, payload ID-carrier + table-carrier). Direct and payload DELETE are the same operation ("match by key, delete, return the PKs"), so one carrier serves both.
+6. **Parallel `DeleteRows`, not R222's shared `PredicateCarrier.LookupRows`.** `principles-architect` weighed the fork: a shared `LookupRows` is the principled *end-state* (the PK-or-UK match genuinely is one concern), but introducing it now is the weakest moment, because (a) `Broadcast` has no matched key at all, a shape UPDATE never has, so even a "shared" carrier would need a DELETE-only arm; (b) doing it coherently means re-homing the shipped `UpdateRows` (four leaves, the error arms, UPDATE's whole test tier), which is larger than this slice and churns working code with no forcing function yet; (c) the staged alternative ships two live WHERE representations at once, against R222's "additive cutover, short window" rule. Parallel `DeleteRows` *defers* `LookupRows` cheaply (the shared matcher helper + verb-neutral `MatchedKey` / `KeyColumn` leave a clean seam) without foreclosing it. The `LookupRows` extraction is a future item to be filed when a third consumer (`InsertRows`, or a cross-verb predicate reader) makes the shared contract clearest.
+
+## Implementation
+
+Mirror R246/R258 commit-by-commit (additive cutover, then destructive retirement):
+
+1. **Model.** New `DeleteRows` (sealed `Identified | Broadcast`), `DeleteRowsField` interface (`inputArg()` + `deleteRows()`), and `DeleteRowsError` sub-seal (the three arms above) added to `Rejection.AuthorError`'s `permits`. Generalise the `KeyColumn` javadoc to name both verbs.
+2. **Shared matcher.** Extract `UpdateRowsWalker` Stages 4-5 (candidate-key enumeration + PK-first subset match + `MatchedKey` lift) into a shared helper (e.g. `MatchedKeys.firstCovered(JooqCatalog, TableRef, Set<String> coveredSqlNames) -> Optional<MatchedKey>`); call it from both `UpdateRowsWalker` and the new `DeleteRowsWalker`. No carrier-shape change to `UpdateRows`.
+3. **Walker.** `DeleteRowsWalker` reshapes the classified `InputField` permits into `whereColumns` (all admitted column carriers), runs the shared matcher: key covered → `Identified`; else `multiRow` → `Broadcast`; else `NoUniqueKeyCoverage`. Reject `@condition(override: true)` (`OverrideConditionNotSupported`) and non-admitted carrier shapes (`UnsupportedInputFieldShape`).
+4. **Leaves.** Migrate `MutationDeleteTableField` to `DeleteRowsField` (drop `tableInputArg`, gain `InputArgRef` + `DeleteRows`). Add `MutationDeletePayloadField` / `MutationBulkDeletePayloadField` (both `DeleteRowsField`); narrow `MutationDmlRecordField` to `{INSERT, UPSERT}` and `MutationBulkDmlRecordField` to `{INSERT}` (compact-ctor range checks, as R258 did for UPDATE).
+5. **Classifier.** `FieldBuilder.classifyDeleteTableField` (direct) + `classifyDeletePayloadField` (payload), intercepting DELETE before `resolveInput` the way R246/R258 intercept UPDATE. The payload classifier retains the inline `reclassify` + `classifyDeleteTableProjection`.
+6. **Emit.** Point `buildMutationDeleteFetcher` / `buildRecordDeleteChain` / `buildBulkRecordPerRowDeleteBody` at `deleteRows().whereColumns()`; reuse the WHERE emitters unchanged.
+7. **`@value` retirement, LSP wiring, doc sweep** per the sections above.
+
+## Behavior changes
+
+Three deliberate changes; all surface as build-time diagnostics, none silent:
+
+* A DELETE input covering a **UK but not the PK** now admits (single-row by the UK); today it rejects for not covering the PK.
+* A DELETE on a table with **no PK and no covered UK**, without `multiRow`, is now a typed rejection; today the PK-coverage check is skipped and the delete runs unguarded.
+* **`@condition(override: true)`** on a DELETE input is now a build error; today it is silently dropped (admit-but-no-emit).
+
+## Tests
+
+Mirror R246/R258's tiering (`rewrite-design-principles.adoc`):
+
+* **Unit** `DeleteRowsWalkerTest`: PK match, UK match, composite-PK (NodeId) match, `multiRow` → `Broadcast`, no-coverage → `NoUniqueKeyCoverage`, empty-`Broadcast` rejection, override-condition → `OverrideConditionNotSupported`, non-admitted shapes.
+* **Pipeline** `GraphitronSchemaBuilderTest`: the leaf migrations (direct + both payload leaves carry `DeleteRows`), the `DmlKind`-range narrowing on the shared leaves, the new PK-less / UK-only / override-reject cases, and shared-matcher parity (a UK-covering DELETE and the equivalent UPDATE select the same key).
+* **Execution**: round-trip the six Sakila DELETE mutations, including a UK-covering single-row delete (new coverage; R246 deferred the UK execution case for UPDATE) and the `multiRow` broadcast asserting `|affected| > 1`.
+* **Compilation**: `graphitron-sakila-example` compiles after the `@value` strip.
+
+## User documentation
+
+* Delete `docs/manual/reference/directives/value.adoc`; rewrite the `@value`-referencing partition prose in `mutation.adoc` to name the catalog-derived PK-or-UK inference rule (lift R188's replacement prose from git history).
+* Note in `mutation.adoc` that DELETE identifies rows by PK-or-UK coverage, that extra input columns add ANDed filters, and that `multiRow: true` opts into a broadcast (non-key) delete.
 
 ## Out of scope
 
+* The shared `PredicateCarrier.LookupRows` extraction (Decision 6). Deferred to a future item, unfiled by request; the shared matcher helper is the seam it grows from.
 * INSERT onto a carrier (the `InsertRows` slice, R122 partner). INSERT remains the last `tableInputArg`-bearing DML after this lands.
 * UPSERT (R145).
+* `@condition` *emit* wiring on mutations (R245). This item retires `@value` and rejects DELETE override-condition; it does not make `@condition` emit.
 * Raw-SDL walker substrate. This item takes the same translator concession R246 took; a `deleterows-walker-sdl-substrate` follow-up mirrors R257 if wanted.
-* `@condition` *emit* wiring on mutations (R245). This item retires `@value` but leaves `@condition` half-functional, except for the DELETE override-condition admit/reject decision (fork 4).
