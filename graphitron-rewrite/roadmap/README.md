@@ -24,7 +24,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R279` | Field-first reachability-driven classification driver <sub>blocked by: [dimensional-model-pivot](dimensional-model-pivot.md)</sub> | Ready | 2026-06-07 <sub>created 2026-06-05</sub> | [plan](field-first-classification-driver.md) |
 | `R45` | Multi-tenant routing on top of the schema-driven ExecutionInput factory | Spec | 2026-05-20 | [plan](tenant-routing-and-execution-input.md) |
 | `R273` | Source NodeId metadata from @node + catalog PK (inferred from `implements Node`), and settle wrong-type/malformed mismatch semantics, retiring the legacy __NODE bare-ID arm | Spec | 2026-06-02 | [plan](nodeid-skip-mismatch-error-surfacing.md) |
-| `R149` | End-to-end LSP publish-diagnostics test and buildOutput report-population test for R147 | In Review | 2026-06-08 <sub>created 2026-05-12</sub> | [plan](r147-followup-end-to-end-publish-diagnostics-tests.md) |
 | `R23` | Multi-parent `NestingField` sharing: `TableField` arm | Spec |  | [plan](nestingfield-multiparent-tablefield.md) |
 | `R186` | Nested input types in @mutation fields | Ready | 2026-06-08 <sub>created 2026-05-20</sub> | [plan](nested-input-types-in-mutation-fields.md) |
 | `R13` | Faceted search on `@asConnection` | Spec |  | [plan](faceted-search.md) |
@@ -260,7 +259,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 ### lsp
 
 - `R148` [**Advance SourceLocation past description so diagnostics point at the field, not the doc block**](source-location-skips-description.md) — Backlog, bug
-- `R149` [**End-to-end LSP publish-diagnostics test and buildOutput report-population test for R147**](r147-followup-end-to-end-publish-diagnostics-tests.md) — In Review, test
 - `R123` [**Parent-context-aware schema coordinates for per-directive Behavior policy**](parent-context-aware-schema-coordinates.md) — Backlog, architecture
 - `R121` [**LSP diagnostic for redundant @splitQuery on @record-parent fields**](lsp-diagnostic-redundant-splitquery-on-record.md) — Backlog, feature
 - `R90` [**LSP Javadoc surfacing + per-line definitions + @externalField + argMapping**](lsp-javaparser-javadoc-and-definitions.md) — Backlog, Backlog
