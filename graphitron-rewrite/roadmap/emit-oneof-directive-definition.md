@@ -1,7 +1,7 @@
 ---
 id: R283
 title: Emit the @oneOf directive definition into generated SDL outputs
-status: Ready
+status: In Review
 bucket: feature
 priority: 3
 depends-on: []

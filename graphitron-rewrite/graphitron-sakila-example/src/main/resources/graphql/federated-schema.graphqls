@@ -15,6 +15,20 @@ interface Node { id: ID! }
 type Query {
     customers: [Customer!]!
     films: [Film!]!
+    # R283 fixture: a @oneOf input on a federated schema. graphitron emits the @oneOf
+    # *application* into the runtime _Service.sdl but ServiceSDLPrinter.generateServiceSDLV2
+    # strips the spec-built-in *definition*; the runtime OneOfDirectiveSdl helper must
+    # reinstate `directive @oneOf on INPUT_OBJECT` so Apollo composition does not reject the
+    # subgraph with "Unknown directive @oneOf". The implicit-condition @table shape mirrors the
+    # shared fixture's Query.filmsWithImplicitInput, so codegen routes through a proven path.
+    filmsByOneOf(filter: FilmOneOfFilter): [Film!]!
+}
+
+# @oneOf demands all-nullable fields; graphql-java enforces this at schema build, so a non-null
+# field here would fail the assembled-schema build with a clear error.
+input FilmOneOfFilter @table(name: "film") @oneOf {
+    filmId: Int    @field(name: "film_id")
+    title:  String @field(name: "title")
 }
 
 type Customer implements Node @table(name: "customer") @node {

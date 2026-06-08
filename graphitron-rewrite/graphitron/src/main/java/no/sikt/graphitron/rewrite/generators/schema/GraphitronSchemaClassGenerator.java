@@ -288,7 +288,19 @@ public final class GraphitronSchemaClassGenerator {
                     .unindent();
             }
             twoArgBody.addStatement("federationCustomizer.accept(fb)");
-            twoArgBody.addStatement("return fb.build()");
+            // R283: SchemaTransformer.build bakes the _Service.sdl value via
+            // ServiceSDLPrinter.generateServiceSDLV2, which strips the spec-built-in @oneOf
+            // definition. When the schema uses @oneOf, route the returned schema through the
+            // generated OneOfDirectiveSdl helper to reinstate the definition on the served SDL;
+            // otherwise emit the plain return verbatim (byte-identical to before).
+            if (OneOfDirectiveSdl.usesOneOf(assembled)) {
+                var ONE_OF_SDL = ClassName.get(outputPackage + ".util",
+                    no.sikt.graphitron.rewrite.generators.util.OneOfDirectiveSdlGenerator.CLASS_NAME);
+                twoArgBody.addStatement("return $T.$L(fb.build())", ONE_OF_SDL,
+                    no.sikt.graphitron.rewrite.generators.util.OneOfDirectiveSdlGenerator.WITH_ONE_OF_DEFINITION_METHOD);
+            } else {
+                twoArgBody.addStatement("return fb.build()");
+            }
 
             var twoArgMethod = MethodSpec.methodBuilder("build")
                 .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
