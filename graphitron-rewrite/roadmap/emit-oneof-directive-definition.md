@@ -118,22 +118,39 @@ release that starts printing it).
 ## Implementation approach
 
 The bug is confined to one printer (`generateServiceSDLV2`) feeding two
-call sites: the federation file arm and the runtime `_Service.sdl` bake.
-Both take the same fix, so the design is one augmentation helper invoked at
-two sites, not a per-arm split. The plain arm is untouched. The canonical
+call sites: the federation file arm (codegen time, in `SchemaSdlEmitter`)
+and the runtime `_Service.sdl` bake (consumer load time, in the generated
+`GraphitronSchema.build`). The plain arm is untouched. The canonical
 definition to make present is `directive @oneOf on INPUT_OBJECT` (no
-arguments, single `INPUT_OBJECT` location). Both sites are gated on the
-schema actually containing a oneOf input (`GraphQLInputObjectType.isOneOf()`),
-so schemas that never use `@oneOf` keep byte-identical output.
+arguments, single `INPUT_OBJECT` location). Both arms are gated on the
+schema actually containing a oneOf input (`GraphQLInputObjectType.isOneOf()`,
+present in graphql-java 25), so schemas that never use `@oneOf` keep
+byte-identical output.
 
-A single detection-and-augmentation helper holds the "does this schema use
-`@oneOf`, and what definition string do we add" decision so the two sites
-cannot drift:
+The two arms run in different JVMs, so they cannot share one compiled
+runtime class. The consumer compiles the generated `GraphitronSchema`
+against graphql-java + federation-jvm only; the `graphitron` codegen module
+is deliberately off the consumer classpath (test-scoped in the example, and
+`GenerateMojo` emits to `GENERATE_SOURCES`, so the federated build is
+main-compiled without it). The no-drift guarantee therefore comes from a
+single **codegen-side** source of truth that both arms consume, mirroring
+how `ConnectionHelper` and the other runtime helpers are emitted into the
+consumer tree rather than shipped from `graphitron`.
+
+That source of truth is a codegen-side `OneOfDirectiveSdl` in
+`no.sikt.graphitron.rewrite.generators.schema`:
 
 ```
+String  OneOfDirectiveSdl.DEFINITION = "directive @oneOf on INPUT_OBJECT"
 boolean OneOfDirectiveSdl.usesOneOf(GraphQLSchema schema)
-String  OneOfDirectiveSdl.augment(GraphQLSchema schema, String sdl)  // no-op when already defined / unused
+String  OneOfDirectiveSdl.augment(GraphQLSchema schema, String sdl)  // no-op when unused / already present
 ```
+
+The file arm calls it directly. The runtime arm is served by a small helper
+class **generated into `<outputPackage>.util`** (the `ConnectionHelper`
+precedent) whose definition literal is emitted from `DEFINITION`, so the one
+thing that could semantically drift, the exact definition string, lives in a
+single Java constant.
 
 **File, federation arm (`SchemaSdlEmitter.printFederationServiceSdl`).**
 Wrap the `generateServiceSDLV2` output in
@@ -144,18 +161,26 @@ non-oneOf schemas keep byte-identical output.
 **Runtime arm (`_Service.sdl`).** `SchemaTransformer.build` bakes
 `generateServiceSDLV2(...)` into a static fetcher and exposes no `setSdl`,
 so the served value can only be corrected by overriding the `_Service.sdl`
-data fetcher after `fb.build()`. The emitted statements live in
-`GraphitronSchemaClassGenerator`'s two-arg `build`, after
-`federationCustomizer.accept(fb)` / `return fb.build()`, gated on
-`OneOfDirectiveSdl.usesOneOf(...)` so non-oneOf schemas keep the current
-codegen output verbatim. The body collapses to a single call into the
-shared helper: read the already-baked SDL off the existing `_Service.sdl`
-fetcher, run it through `OneOfDirectiveSdl.augment`, and reinstall a
-`StaticDataFetcher` via `builtSchema.transform(b -> b.codeRegistry(...))`.
+data fetcher after `fb.build()`. `GraphitronSchemaClassGenerator` emits this
+as a one-line tail change in the two-arg `build`, gated at codegen time on
+`OneOfDirectiveSdl.usesOneOf(assembled)`: when the schema uses `@oneOf`, the
+final `return fb.build()` becomes
+`return <outputPackage>.util.OneOfDirectiveSdl.withOneOfDefinition(fb.build())`;
+otherwise the current `return fb.build()` is emitted verbatim. Folding the
+override into the returned expression sidesteps the dead end of emitting
+statements after a `return`. The generated `withOneOfDefinition(GraphQLSchema)`
+helper does the work in legible statement form: return the schema unchanged
+unless an input object reports `isOneOf()`; otherwise re-print the served SDL
+via `ServiceSDLPrinter.generateServiceSDLV2(schema)`, append `DEFINITION` if
+absent, reinstall a `StaticDataFetcher` carrying the augmented string on
+`_Service.sdl` through `schema.transform(b -> b.codeRegistry(...))`, and
+return the transformed schema. `ServiceSDLPrinter` and `StaticDataFetcher`
+are federation-jvm / graphql-java types already on the consumer's compile
+classpath, so the generated helper needs no `graphitron` dependency.
 
-Both sites pass the same SDL string through the same `augment` call, which
-is what keeps the on-disk federation SDL and the runtime `_Service.sdl` in
-lockstep (the invariant R253's parity test pins; see below).
+Both arms append the same `DEFINITION` to the same `generateServiceSDLV2`
+output, which is what keeps the on-disk federation SDL and the runtime
+`_Service.sdl` in lockstep (the invariant R253's parity test pins; see below).
 
 ### Why not a controlled `SchemaPrinter` instead of string augmentation
 
@@ -167,24 +192,43 @@ exactly the seam R253 reshapes (see below). Until R253 lands, string
 augmentation of the `generateServiceSDLV2` output is the contained fix, and
 the helper boundary makes it easy to retarget later.
 
-### Runtime fork: read the baked value, not a second print
+### Runtime base string: re-print inside the generated helper
 
-The override needs the base SDL string. Prefer **reading the value the
-`_Service.sdl` fetcher already holds** (one fetcher touched, no re-derive)
-over re-running `generateServiceSDLV2(builtSchema)` a second time at
-consumer load. The earlier draft recommended re-printing on cost grounds;
-the principles read corrected this: both are cheap, and the deciding factor
-is keeping the generated `build` body narrow. Re-printing duplicates the
-whole SDL-derivation path to change one line and makes the emitted body
-read as print/splice/transform; reading the baked value keeps it to one
-helper call. Whichever path is chosen, the inline logic stays behind the
-named `OneOfDirectiveSdl` method so the emitted `build` reads as a single
-statement, not an expression chain.
+The runtime override needs the base SDL string. With the override living in
+the generated `withOneOfDefinition` helper rather than inline in `build`, the
+"keep the emitted `build` body narrow" concern an earlier draft weighed is
+already satisfied: `build`'s change is one returned call either way. Inside
+the helper, re-printing via `ServiceSDLPrinter.generateServiceSDLV2(schema)`
+is the cleaner base-string source than reading the value off the existing
+`_Service.sdl` fetcher: it is the exact call `FederationBuildSmokeTest`
+already uses to read the runtime-published SDL, and it avoids depending on
+`StaticDataFetcher` exposing its baked value (it does not; the value is only
+reachable by invoking the fetcher). The helper body stays explicit statement
+form per the emitted-code conventions, named locals, no expression chain.
 
-The shared helper belongs in the generated-output runtime support surface
-(reachable from both the codegen JVM, where `SchemaSdlEmitter` runs, and
-the consumer JVM, where `GraphitronSchema.build` runs) rather than being
-duplicated; pick the existing support package during implementation.
+### Helper placement: codegen-side source, generated runtime helper
+
+A single compiled `OneOfDirectiveSdl` reachable from both JVMs is not
+available: the file arm runs in `graphitron`, and the runtime arm compiles on
+the consumer classpath, which excludes the `graphitron` codegen module by
+design. The placement splits along that boundary, anchored on one constant:
+
+- **Codegen-side** `no.sikt.graphitron.rewrite.generators.schema.OneOfDirectiveSdl`
+  holds `DEFINITION`, `usesOneOf`, and `augment`; the file arm calls it
+  directly.
+- **Generated** `<outputPackage>.util.OneOfDirectiveSdl` is emitted by a new
+  `OneOfDirectiveSdlGenerator` (in `generators/util`, beside
+  `ConnectionHelperClassGenerator`), wired into `GraphQLRewriteGenerator`'s
+  per-run `write(..., "util", ...)` under the `usesOneOf(assembled)` gate. Its
+  `DEFINITION` literal is emitted from the codegen-side constant, so the exact
+  definition string is single-sourced; the writer's orphan sweep removes the
+  generated helper if a schema later drops `@oneOf`.
+
+This is the same codegen/runtime division the rest of the runtime support
+surface already uses (`ConnectionHelper`, the generated `ConstraintViolations`
+helper): canonical knowledge lives codegen-side, the runtime body is emitted
+into the consumer tree, and no consumer takes a runtime dependency on the
+generator.
 
 ## Relationship to R253 (no dependency, mutual non-regression)
 
@@ -251,11 +295,12 @@ No current fixture applies `@oneOf` (confirmed: no `@oneOf` in any
 
 ## Files touched (anticipated)
 
-- `graphitron-rewrite/graphitron/src/main/java/no/sikt/graphitron/rewrite/generators/schema/SchemaSdlEmitter.java` — `OneOfDirectiveSdl.augment(...)` over the `generateServiceSDLV2` output on the federation arm. The plain arm (`printPlain`) is not touched; it already emits the definition.
-- `graphitron-rewrite/graphitron/src/main/java/no/sikt/graphitron/rewrite/generators/schema/GraphitronSchemaClassGenerator.java` — emit the runtime `_Service.sdl` override in the federation `build`.
-- A new `OneOfDirectiveSdl` (shared augmentation helper) in the runtime-support surface reachable from both JVMs.
-- `graphitron-rewrite/graphitron/src/test/java/no/sikt/graphitron/rewrite/generators/schema/SchemaSdlEmitterTest.java` — unit assertions + no-op guard.
-- `graphitron-rewrite/graphitron-sakila-example/src/test/java/no/sikt/graphitron/rewrite/test/querydb/FederationBuildSmokeTest.java` — runtime `_service.sdl` assertion.
+- `graphitron-rewrite/graphitron/src/main/java/no/sikt/graphitron/rewrite/generators/schema/SchemaSdlEmitter.java`: `OneOfDirectiveSdl.augment(...)` over the `generateServiceSDLV2` output on the federation arm. The plain arm (`printPlain`) is not touched; it already emits the definition.
+- `graphitron-rewrite/graphitron/src/main/java/no/sikt/graphitron/rewrite/generators/schema/GraphitronSchemaClassGenerator.java`: one-line tail change in the two-arg federation `build`: `return <outputPackage>.util.OneOfDirectiveSdl.withOneOfDefinition(fb.build())` under the `usesOneOf` gate, else `return fb.build()` verbatim.
+- A new codegen-side `graphitron-rewrite/graphitron/src/main/java/no/sikt/graphitron/rewrite/generators/schema/OneOfDirectiveSdl.java` (source of truth: `DEFINITION`, `usesOneOf`, `augment`), called directly by the file arm.
+- A new `graphitron-rewrite/graphitron/src/main/java/no/sikt/graphitron/rewrite/generators/util/OneOfDirectiveSdlGenerator.java` emitting the consumer-side `<outputPackage>.util.OneOfDirectiveSdl` runtime helper (`withOneOfDefinition`), plus its `usesOneOf`-gated wiring into `GraphQLRewriteGenerator`. The generated helper has no checked-in source file.
+- `graphitron-rewrite/graphitron/src/test/java/no/sikt/graphitron/rewrite/generators/schema/SchemaSdlEmitterTest.java`: unit assertions + no-op guard.
+- `graphitron-rewrite/graphitron-sakila-example/src/test/java/no/sikt/graphitron/rewrite/test/querydb/FederationBuildSmokeTest.java`: runtime `_service.sdl` assertion.
 - A `@oneOf` test fixture (unit-tier schema + pipeline-tier federated fixture input).
 
 ## Out of scope
@@ -267,75 +312,3 @@ No current fixture applies `@oneOf` (confirmed: no `@oneOf` in any
   graphql-java already validates this; this item is SDL emission only.
 - Re-enabling R253's parity test. That stays R253's deliverable; this item
   only commits to not breaking it.
-
-## Spec review round 2: open blocker before Ready
-
-One material finding; the rest of the plan is sound and unusually well
-grounded (every cited graphitron symbol and line number verified, and the
-R253-vs-R247 attribution is correct: R247 deferred
-`emittedSdlMatchesRuntimeSchema`, R253 is the dedicated re-enable item).
-
-**The shared helper cannot be a single class reachable from both JVMs.**
-The "Implementation approach" section places `OneOfDirectiveSdl` in "the
-generated-output runtime support surface (reachable from both the codegen
-JVM ... and the consumer JVM ...) ... pick the existing support package
-during implementation." That dual-reachable surface does not exist in the
-current module layout, so the placement is an unresolved design fork, not a
-deferrable package choice. Evidence:
-
-- The file arm (`SchemaSdlEmitter`) runs in the `graphitron` codegen module.
-- The runtime arm (federated `GraphitronSchema.build`) is generated to
-  `target/generated-sources` and **main-compiled** in `graphitron-sakila-example`
-  (`GenerateMojo` defaults to `GENERATE_SOURCES`; pom execution
-  `rewrite-generate-federated`). Its compile-scope deps are graphql-java +
-  federation-jvm + jakarta-validation only; the `graphitron` module is
-  **test**-scoped there, and the pom comment that enumerates the federated
-  generated code's compile needs lists Federation / graphql-java, not
-  `graphitron`.
-- The runtime-helper precedent (`ConnectionHelper`) is **generated into the
-  consumer's `outputPackage + ".util"`** (`GraphQLRewriteGenerator` write,
-  referenced via `ClassName.get(outputPackage + ".util", ...)`), not shipped
-  from `graphitron`. No generator emits a `no.sikt.graphitron.rewrite.*`
-  class reference into consumer code.
-
-So a single compiled `OneOfDirectiveSdl` referenced by the generated
-`GraphitronSchema.build` would fail the example's main compile (the very
-`-Plocal-db` compile tier this plan relies on), unless federation consumers
-are made to depend on the whole codegen module at runtime, which contradicts
-the test-scope design and the "contained fix" framing.
-
-Recommended resolution (please pick one explicitly before requesting Ready;
-redirect if you have context I'm missing):
-
-- **Generate the runtime helper; share the codegen-side source of truth.**
-  Keep one helper in `graphitron` holding the definition string and
-  `usesOneOf`. The file arm calls it directly. The runtime arm is served by
-  an `OneOfDirectiveSdl` *generated into `<outputPackage>.util`* (the
-  ConnectionHelper pattern) whose body the codegen helper emits. Both call
-  paths execute in the codegen JVM, so "the two sites cannot drift" is
-  preserved by the single codegen-side source, with no consumer-to-codegen
-  coupling. The runtime helper keeps the `String augment(GraphQLSchema, String)`
-  shape; only its home moves.
-- **Introduce a consumer-facing runtime module** (or make `graphitron` a
-  runtime dep of federation consumers). Larger blast radius; choose only if
-  the generated-helper route cannot carry it.
-
-Whichever is chosen, rewrite the helper-signature block and the "shared
-helper belongs in ..." paragraph to name the home and stop describing one
-class on both classpaths. The two-tier tests already pin each side
-independently (unit = file arm contains the definition; pipeline
-`_service.sdl` = runtime arm contains it), so the fix stays fully testable
-once placement is settled.
-
-Minor, fold in while revising:
-
-- The runtime-arm paragraph says the override lands "after
-  `federationCustomizer.accept(fb)` / `return fb.build()`." Nothing can be
-  emitted after a `return`; the current `return fb.build()`
-  (`GraphitronSchemaClassGenerator:291`) has to become
-  capture-transform-return. The follow-on sentence already implies this;
-  phrase it as replacing the bare return.
-- "Read the baked SDL off the existing `_Service.sdl` fetcher" assumes the
-  fetcher exposes its value; `StaticDataFetcher` has no value getter (you
-  invoke `get(env)`). The re-print fallback the spec already documents
-  de-risks this, so keep the recommendation, just do not assume a getter.
