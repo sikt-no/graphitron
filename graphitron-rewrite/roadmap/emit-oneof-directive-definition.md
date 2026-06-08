@@ -267,3 +267,75 @@ No current fixture applies `@oneOf` (confirmed: no `@oneOf` in any
   graphql-java already validates this; this item is SDL emission only.
 - Re-enabling R253's parity test. That stays R253's deliverable; this item
   only commits to not breaking it.
+
+## Spec review round 2: open blocker before Ready
+
+One material finding; the rest of the plan is sound and unusually well
+grounded (every cited graphitron symbol and line number verified, and the
+R253-vs-R247 attribution is correct: R247 deferred
+`emittedSdlMatchesRuntimeSchema`, R253 is the dedicated re-enable item).
+
+**The shared helper cannot be a single class reachable from both JVMs.**
+The "Implementation approach" section places `OneOfDirectiveSdl` in "the
+generated-output runtime support surface (reachable from both the codegen
+JVM ... and the consumer JVM ...) ... pick the existing support package
+during implementation." That dual-reachable surface does not exist in the
+current module layout, so the placement is an unresolved design fork, not a
+deferrable package choice. Evidence:
+
+- The file arm (`SchemaSdlEmitter`) runs in the `graphitron` codegen module.
+- The runtime arm (federated `GraphitronSchema.build`) is generated to
+  `target/generated-sources` and **main-compiled** in `graphitron-sakila-example`
+  (`GenerateMojo` defaults to `GENERATE_SOURCES`; pom execution
+  `rewrite-generate-federated`). Its compile-scope deps are graphql-java +
+  federation-jvm + jakarta-validation only; the `graphitron` module is
+  **test**-scoped there, and the pom comment that enumerates the federated
+  generated code's compile needs lists Federation / graphql-java, not
+  `graphitron`.
+- The runtime-helper precedent (`ConnectionHelper`) is **generated into the
+  consumer's `outputPackage + ".util"`** (`GraphQLRewriteGenerator` write,
+  referenced via `ClassName.get(outputPackage + ".util", ...)`), not shipped
+  from `graphitron`. No generator emits a `no.sikt.graphitron.rewrite.*`
+  class reference into consumer code.
+
+So a single compiled `OneOfDirectiveSdl` referenced by the generated
+`GraphitronSchema.build` would fail the example's main compile (the very
+`-Plocal-db` compile tier this plan relies on), unless federation consumers
+are made to depend on the whole codegen module at runtime, which contradicts
+the test-scope design and the "contained fix" framing.
+
+Recommended resolution (please pick one explicitly before requesting Ready;
+redirect if you have context I'm missing):
+
+- **Generate the runtime helper; share the codegen-side source of truth.**
+  Keep one helper in `graphitron` holding the definition string and
+  `usesOneOf`. The file arm calls it directly. The runtime arm is served by
+  an `OneOfDirectiveSdl` *generated into `<outputPackage>.util`* (the
+  ConnectionHelper pattern) whose body the codegen helper emits. Both call
+  paths execute in the codegen JVM, so "the two sites cannot drift" is
+  preserved by the single codegen-side source, with no consumer-to-codegen
+  coupling. The runtime helper keeps the `String augment(GraphQLSchema, String)`
+  shape; only its home moves.
+- **Introduce a consumer-facing runtime module** (or make `graphitron` a
+  runtime dep of federation consumers). Larger blast radius; choose only if
+  the generated-helper route cannot carry it.
+
+Whichever is chosen, rewrite the helper-signature block and the "shared
+helper belongs in ..." paragraph to name the home and stop describing one
+class on both classpaths. The two-tier tests already pin each side
+independently (unit = file arm contains the definition; pipeline
+`_service.sdl` = runtime arm contains it), so the fix stays fully testable
+once placement is settled.
+
+Minor, fold in while revising:
+
+- The runtime-arm paragraph says the override lands "after
+  `federationCustomizer.accept(fb)` / `return fb.build()`." Nothing can be
+  emitted after a `return`; the current `return fb.build()`
+  (`GraphitronSchemaClassGenerator:291`) has to become
+  capture-transform-return. The follow-on sentence already implies this;
+  phrase it as replacing the bare return.
+- "Read the baked SDL off the existing `_Service.sdl` fetcher" assumes the
+  fetcher exposes its value; `StaticDataFetcher` has no value getter (you
+  invoke `get(env)`). The re-print fallback the spec already documents
+  de-risks this, so keep the recommendation, just do not assume a getter.
