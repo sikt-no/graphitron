@@ -1,7 +1,7 @@
 ---
 id: R266
 title: DELETE mutations onto the DeleteRows walker carrier, retiring @value (R222 DELETE slice)
-status: In Review
+status: Ready
 bucket: structural
 priority: 3
 theme: structural-refactor
@@ -13,6 +13,21 @@ last-updated: 2026-06-08
 # DELETE mutations onto the DeleteRows walker carrier, retiring @value (R222 DELETE slice)
 
 DELETE is the last partition-bearing DML verb still classified through the legacy `MutationInputResolver` + `TableInputArg` path. R246 moved the direct-`@table`/ID-return UPDATE onto `UpdateRowsWalker` + the `UpdateRows` carrier; R258 moved the payload-returning UPDATE shapes onto the same carrier. Both shipped. The `UpdateRowsField` javadoc already names the `DeleteRowsField` sibling this item lands, and `UpdateRows`'s own javadoc records the design hole DELETE forces: `UpdateRows.Identified`'s compact constructor enforces non-empty `setColumns`, and the family deliberately has no `Broadcast` arm because R246 rejects `multiRow: true` outright. DELETE has no SET clause and *does* support `multiRow: true` broadcast, so it cannot reuse `UpdateRows`; it needs its own carrier. This item is the R222 Stage 2 `DeleteRows` walker-carrier slice, mirroring R246/R258 for the DELETE verb. DELETE is also the last verb whose classification touches the `@value` partition machinery in `MutationInputResolver`, so carving it off retires the `@value` directive outright; this item therefore absorbs and discards R188 (see ["Retires @value entirely"](#retires-value-entirely-absorbs-r188) below).
+
+## Review feedback (In Review → Ready, 2026-06-08)
+
+Implementation landed at `57cb7b0`. The carrier, shared `MatchedKeys` matcher, walker, classifier interception, leaf migrations / `DmlKind` narrowing, the `@value` directive/`DIR_VALUE`/`acceptsValueMarker`/`requiresPkCoverage`/`valueMarkedNames` retirement, the LSP `Diagnostics` + `RejectionSeverityCoverageTest` wiring, `typed-rejection.adoc`, the `directives.graphqls` sweep, and the unit (`DeleteRowsWalkerTest`) + pipeline (`GraphitronSchemaBuilderTest`, `MutationDmlNodeIdClassificationTest`, `SingleRecordPayloadPipelineTest`) tiers all reviewed sound, and the full `mvn install -Plocal-db` (incl. docs render) is green. Two items must close before re-handoff; both are narrow.
+
+1. **Stale `@value` recommendation in a live user-facing rejection message.** `BuildContext.java:1758-1762` (`classifyInputFieldInternal`, the `@lookupKey`-on-input-field guard, reachable for every `@table` input type via `TypeBuilder`/`InputFieldResolver`) still tells authors to "replace it with `@value` on UPDATE value fields", a directive this slice deletes from `directives.graphqls`. An author who follows it hits an unknown-directive error. The twin copy of this same message in `FieldBuilder.java:~994` *was* correctly rewritten to the catalog-derived phrasing in this commit, so this is a half-completed sweep, not a deliberate scope call. This is squarely in the "Schema, test, and doc sweep (absorbed)" scope below. Fix: drop the `@value` clause and align with the FieldBuilder twin ("…the field is a filter by default; the UPDATE SET/WHERE partition is derived from the catalog by the walker"). Re-grep `@value` across non-roadmap, non-comment sites once more after the edit.
+
+2. **Execution-tier UK-covering single-row delete did not ship.** The Tests § Execution bullet promised "a UK-covering single-row delete (new coverage; R246 deferred the UK execution case for UPDATE)" round-tripped against Postgres. The UK case landed only at unit (`DeleteRowsWalkerTest.ukMatch_pkNotCovered_succeedsWithUniqueKey`) and pipeline (`MutationDmlNodeIdClassificationTest.ukCoveringDelete_admitsByUniqueKey_andMatchesUpdateKeyChoice`, a classify-tier assertion on a `parent_node`/`alt_key` fixture, not a round-trip) tiers. The example schema has no UK-covering (non-PK) DELETE mutation and the commit added no execution test, so the net-new behavior (Behavior changes #1, delete-by-UK actually deleting the right row at runtime) is unproven at execution tier. Fix: add a UK-covering DELETE mutation over an executable catalog table that has a UNIQUE distinct from its PK, and an execution round-trip asserting the row is deleted by the UK. If a real UK-covering fixture is genuinely infeasible in the Sakila catalog, surface that here with rationale and an explicit descope rather than substituting the pipeline assertion silently.
+
+Minor (fold into the same pass):
+
+* **Plan housekeeping.** Collapse the shipped Implementation phases to one-line `shipped at 57cb7b0` notes per workflow.adoc; the body still reads as forward-looking.
+* **Stale tense, `graphitron-sakila-example/.../schema.graphqls:1330`.** The R258 fixture comment says the `@value` directive "could be retired entirely (R266 …)"; R266 has now retired it, so the conditional reads stale. Trivial.
+
+The reviewer-session ≠ implementer-session rule applies again next cycle.
 
 ## Why DELETE is not UpdateRows-minus-SET
 
