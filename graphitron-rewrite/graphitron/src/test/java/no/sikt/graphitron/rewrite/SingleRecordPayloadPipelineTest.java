@@ -127,20 +127,20 @@ class SingleRecordPayloadPipelineTest {
             .isInstanceOf(expectedSingleLeaf(kind));
     }
 
-    // ===== DELETE-with-carrier admission (R156) =====
+    // ===== DELETE-with-carrier admission (R156 / R266) =====
 
     @Test
-    void payload_withDeleteAndProjectableElement_admitsAsMutationDmlRecordField() {
+    void payload_withDeleteAndProjectableElement_admitsAsMutationDeletePayloadField() {
         // R156: DELETE-with-carrier admits when the element type's fields all classify into
         // admissible PerFieldOutcome arms. `Film @table { title: String }` has only one field,
         // nullable non-PK, which classifies into PerFieldOutcome.NonPkNullable → admits.
-        // The mutation classifies as MutationDmlRecordField with kind=DELETE; the per-field
-        // data carrier on `FilmPayload.film` is registered as SingleRecordTableFieldFromReturning
-        // (the DELETE classifier re-registers over the prior SingleRecordTableField entry).
+        // R266: the payload-returning DELETE classifies as MutationDeletePayloadField (carved off
+        // MutationDmlRecordField onto the DeleteRows walker carrier; the leaf identity is the kind,
+        // so there is no kind() slot). The per-field data carrier on `FilmPayload.film` is still
+        // registered as SingleRecordTableFieldFromReturning by the DELETE classifier's reclassify.
         var schema = TestSchemaHelper.buildSchema(payloadDmlSingleInput(DmlKind.DELETE, "type FilmPayload { film: Film }"));
         var mutField = schema.field("Mutation", mutationName(DmlKind.DELETE));
-        assertThat(mutField).isInstanceOf(MutationField.MutationDmlRecordField.class);
-        assertThat(((MutationField.MutationDmlRecordField) mutField).kind()).isEqualTo(DmlKind.DELETE);
+        assertThat(mutField).isInstanceOf(MutationField.MutationDeletePayloadField.class);
         var dataFieldClassification = schema.field("FilmPayload", "film");
         assertThat(dataFieldClassification)
             .isInstanceOf(no.sikt.graphitron.rewrite.model.ChildField.SingleRecordTableFieldFromReturning.class);
@@ -395,12 +395,13 @@ class SingleRecordPayloadPipelineTest {
     }
 
     private static String directReturnInputBody(DmlKind kind) {
-        // R144: filter-by-default for DELETE/UPDATE; @value marks SET-clause columns on UPDATE.
+        // Filter-by-default. UPDATE's SET/WHERE partition is derived by the UpdateRowsWalker
+        // (PK-or-UK), not @value (retired R266); filmId covers the PK → WHERE, title → SET.
         return switch (kind) {
             case INSERT -> "title: String";
-            case UPDATE -> "filmId: Int! @field(name: \"film_id\"), title: String @value";
+            case UPDATE -> "filmId: Int! @field(name: \"film_id\"), title: String";
             case DELETE -> "filmId: Int! @field(name: \"film_id\")";
-            case UPSERT -> "filmId: Int! @field(name: \"film_id\"), title: String @value";
+            case UPSERT -> "filmId: Int! @field(name: \"film_id\"), title: String";
         };
     }
 
@@ -634,14 +635,14 @@ class SingleRecordPayloadPipelineTest {
     }
 
     private static String inputBody(DmlKind kind) {
-        // R258: UPDATE no longer marks SET columns with @value — the UpdateRowsWalker partitions
-        // filmId (PK) into WHERE and title into SET by PK-or-UK matched-key membership. UPSERT keeps
-        // @value until R188 retires the directive.
+        // R258 / R266: UPDATE's SET/WHERE partition is derived by the UpdateRowsWalker (PK-or-UK
+        // matched-key membership) — filmId (PK) into WHERE, title into SET — not from @value, which
+        // R266 retired entirely. UPSERT is refused upstream before any partition runs.
         return switch (kind) {
             case INSERT -> "title: String";
             case UPDATE -> "filmId: Int! @field(name: \"film_id\"), title: String";
             case DELETE -> "filmId: Int! @field(name: \"film_id\")";
-            case UPSERT -> "filmId: Int! @field(name: \"film_id\"), title: String @value";
+            case UPSERT -> "filmId: Int! @field(name: \"film_id\"), title: String";
         };
     }
 

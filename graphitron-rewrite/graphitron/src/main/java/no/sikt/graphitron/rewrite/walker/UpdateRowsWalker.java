@@ -111,20 +111,13 @@ public final class UpdateRowsWalker {
             }
         }
 
-        // Stage 4-5: enumerate candidate keys (PK first), find the first whose column set is a
-        // subset of the input-covered columns.
-        var candidates = catalog.candidateKeys(table.tableName()).stream().map(this::toMatchedKey).toList();
-        MatchedKey matchedKey = null;
-        for (var key : candidates) {
-            var keySqlNames = sqlNameSet(key.columns());
-            if (inputColumnSqlNames.containsAll(keySqlNames)) {
-                matchedKey = key;
-                break;
-            }
-        }
+        // Stage 4-5: PK-or-UK identification via the shared matcher (R266 extraction). Find the
+        // first candidate key (PK preferred) whose column set the input covers.
+        MatchedKey matchedKey = MatchedKeys.firstCovered(catalog, table, inputColumnSqlNames).orElse(null);
         if (matchedKey == null) {
             return new WalkerResult.Err<>(List.of(
-                new UpdateRowsError.NoUniqueKeyCoverage(table.tableName(), inputColumns, candidates)));
+                new UpdateRowsError.NoUniqueKeyCoverage(
+                    table.tableName(), inputColumns, MatchedKeys.candidates(catalog, table))));
         }
 
         // Stage 6: partition each admitted field into the WHERE (matched-key) or SET (everything
@@ -171,8 +164,7 @@ public final class UpdateRowsWalker {
      * field-level {@code @condition}. R246 does not emit input-field conditions on UPDATE, so a
      * condition would be silently dropped, the same footgun {@link UpdateRowsError.OverrideConditionNotSupported}
      * makes honest; reject rather than admit. An {@code override: true} condition reports through
-     * that arm; any other condition (e.g. {@code override: false}, or {@code @value} + {@code @condition})
-     * reports as an unsupported shape.
+     * that arm; any other condition (e.g. {@code override: false}) reports as an unsupported shape.
      */
     private void classifyColumnCarrier(
         String name, boolean list, List<ColumnRef> columns, CallSiteExtraction extraction,
@@ -198,15 +190,6 @@ public final class UpdateRowsWalker {
             return;
         }
         contributions.add(new Contribution(name, columns, extraction));
-    }
-
-    private MatchedKey toMatchedKey(JooqCatalog.KeyEntry key) {
-        var columns = key.columns().stream()
-            .map(e -> new ColumnRef(e.sqlName(), e.javaName(), e.columnClass()))
-            .toList();
-        return key.primary()
-            ? new MatchedKey.PrimaryKey(columns, key.keyName())
-            : new MatchedKey.UniqueKey(columns, key.keyName());
     }
 
     private static Set<String> sqlNameSet(List<ColumnRef> columns) {

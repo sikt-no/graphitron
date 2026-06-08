@@ -212,6 +212,25 @@ class RejectionSeverityCoverageTest {
             return new no.sikt.graphitron.rewrite.model.UpdateRowsError.OverrideConditionNotSupported(
                 "syntheticName", new SourceLocation(1, 1));
         }
+        // R266: DeleteRowsError sub-seal of AuthorError. One sample per arm; Diagnostics.compute's
+        // switch on Rejection.AuthorError catches the whole sub-family uniformly (Error severity),
+        // and lspCodeOf forwards each arm's stable graphitron.delete-rows.* code.
+        if (permit == no.sikt.graphitron.rewrite.model.DeleteRowsError.NoUniqueKeyCoverage.class) {
+            return new no.sikt.graphitron.rewrite.model.DeleteRowsError.NoUniqueKeyCoverage(
+                "film",
+                List.of(new no.sikt.graphitron.rewrite.model.ColumnRef("title", "TITLE", "java.lang.String")),
+                List.of(new no.sikt.graphitron.rewrite.model.MatchedKey.PrimaryKey(
+                    List.of(new no.sikt.graphitron.rewrite.model.ColumnRef("film_id", "FILM_ID", "java.lang.Integer")),
+                    "film_pkey")));
+        }
+        if (permit == no.sikt.graphitron.rewrite.model.DeleteRowsError.UnsupportedInputFieldShape.class) {
+            return new no.sikt.graphitron.rewrite.model.DeleteRowsError.UnsupportedInputFieldShape(
+                "nested", "NestingField", "nested input types in @mutation(typeName: DELETE) fields are not yet supported");
+        }
+        if (permit == no.sikt.graphitron.rewrite.model.DeleteRowsError.OverrideConditionNotSupported.class) {
+            return new no.sikt.graphitron.rewrite.model.DeleteRowsError.OverrideConditionNotSupported(
+                "syntheticName", new SourceLocation(1, 1));
+        }
         // R244: ErrorChannelWalkerError sub-seal of AuthorError. One sample per arm; Diagnostics.compute's
         // switch on Rejection.AuthorError catches the whole sub-family uniformly (Error severity), and
         // lspCodeOf forwards each arm's stable graphitron.error-channel.* code.

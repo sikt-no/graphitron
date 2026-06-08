@@ -1323,11 +1323,11 @@ input FilmCreateInput @table(name: "film") {
 }
 
 # R258 fixture: minimal UPDATE input, partitioned by the UpdateRowsWalker's PK-or-UK
-# matched-key membership (no `@value`). `filmId` covers the single-column PK, so it lands in
-# the WHERE clause; the non-key columns `title` and `description` land in the SET clause. This
-# input type is shared by the direct-return UPDATEs (`updateFilm` / `updateFilms`, R246) and the
-# payload-returning UPDATEs (`updateFilmPayload` / `updateFilmsPayload`, R258); both ignore
-# `@value`, which is why the directive could leave this fixture (the precondition for R188).
+# matched-key membership. `filmId` covers the single-column PK, so it lands in the WHERE clause;
+# the non-key columns `title` and `description` land in the SET clause. This input type is shared
+# by the direct-return UPDATEs (`updateFilm` / `updateFilms`, R246) and the payload-returning
+# UPDATEs (`updateFilmPayload` / `updateFilmsPayload`, R258); the catalog-derived partition is why
+# the `@value` directive could be retired entirely (R266, absorbing R188).
 input FilmUpdateInput @table(name: "film") {
     filmId:      Int!    @field(name: "film_id")
     title:       String! @field(name: "title")

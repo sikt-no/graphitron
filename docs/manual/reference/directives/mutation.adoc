@@ -8,7 +8,7 @@ Marks a mutation field as fully generated, picks the SQL shape (`INSERT`, `UPDAT
 
 [source,graphql]
 ----
-directive @mutation(typeName: MutationType!) on FIELD_DEFINITION
+directive @mutation(typeName: MutationType!, multiRow: Boolean = false) on FIELD_DEFINITION
 
 enum MutationType { UPDATE, DELETE, INSERT, UPSERT }
 ----
@@ -18,7 +18,8 @@ enum MutationType { UPDATE, DELETE, INSERT, UPSERT }
 [cols="1,1,1,3",options="header"]
 |===
 | Name | Type | Default | Description
-| `typeName` | `MutationType!` | (required) | The SQL shape to emit. `INSERT` writes a row; `UPDATE` modifies the row identified by `@lookupKey`; `DELETE` removes the row identified by `@lookupKey`; `UPSERT` emits `INSERT … ON CONFLICT … DO UPDATE`.
+| `typeName` | `MutationType!` | (required) | The SQL shape to emit. `INSERT` writes a row; `UPDATE` modifies the row identified by the input's primary-key-or-unique-key coverage; `DELETE` removes the row(s) identified the same way; `UPSERT` emits `INSERT … ON CONFLICT … DO UPDATE`.
+| `multiRow` | `Boolean` | `false` | On `DELETE`, opts into a broadcast delete when the input covers no primary key or unique key (the filter may match more than one row). Rejected on `INSERT` (no `WHERE` clause), `UPDATE` (no broadcast shape; cover a key), and `UPSERT`.
 |===
 
 == Canonical example
@@ -33,12 +34,12 @@ input FilmCreateInput @table(name: "film") {
 }
 
 input FilmUpdateInput @table(name: "film") {
-    filmId: Int!    @field(name: "film_id") @lookupKey
+    filmId: Int!    @field(name: "film_id")
     title:  String! @field(name: "title")
 }
 
 input FilmUpsertInput @table(name: "film") {
-    filmId:     Int!    @field(name: "film_id") @lookupKey
+    filmId:     Int!    @field(name: "film_id")
     title:      String! @field(name: "title")
     languageId: Int!    @field(name: "language_id")
 }
@@ -62,7 +63,9 @@ INSERT INTO film (title, language_id)
 
 The `RETURNING` projection narrows to the response selection set: a mutation that asks for `{ filmId title }` retrieves only those columns; asking for `{ filmId title language { name } }` adds a JOIN through `@reference` and the `RETURNING` is wrapped in a `WITH` clause so the round-trip count stays at one.
 
-`UPDATE` uses `@lookupKey` on the input field to identify the target row; the remaining input fields populate the `SET` clause. `UPSERT` adds `ON CONFLICT` keyed on the `@lookupKey` columns. `DELETE` uses `@lookupKey` and returns the deleted row's columns through `RETURNING`.
+`UPDATE` identifies the target row by which input columns cover a primary key or unique key of the `@table` (inferred from the jOOQ catalog, no directive needed): the matched key's columns become the `WHERE` clause and the remaining input fields populate the `SET` clause. `UPSERT` adds `ON CONFLICT` keyed on the matched key's columns.
+
+`DELETE` identifies rows the same way (primary-key-or-unique-key coverage), but has no `SET` clause: *every* admitted input column is a `WHERE` filter, and the deleted row's primary key is returned through `RETURNING`. Extra input columns beyond the matched key add further `AND`ed predicates (they narrow the match, they don't move to a `SET` side). When the input covers no primary key or unique key, the DELETE is rejected at build time so a non-unique filter cannot silently broadcast; set `multiRow: true` on the `@mutation` directive to opt into a deliberate broadcast (non-key) delete that may remove more than one row.
 
 == Payload-returning DELETE
 
@@ -117,15 +120,15 @@ Both shapes work with single and bulk DELETE; cardinality follows the carrier fi
 == Constraints
 
 * The mutation's input type must carry `@table`. The generator fails the build with a "@mutation requires a @table-bound input type" error otherwise; without `@table` it has no way to know which table the operation targets.
-* `UPDATE` and `DELETE` require at least one `@lookupKey` field on the input type. `INSERT` rejects `@lookupKey` (no row exists yet to identify). `UPSERT` requires `@lookupKey` on the conflict columns.
-* `UPDATE` requires at least one non-`@lookupKey` field on the input type (otherwise the `SET` clause is empty). `UPSERT` is exempt: an upsert with no SET-clause fields is `INSERT … ON CONFLICT DO NOTHING`, which is a legitimate shape.
+* `UPDATE` and `DELETE` require the input columns to cover a primary key or unique key of the `@table` (inferred from the catalog, no directive needed); otherwise the build fails so a non-unique filter cannot silently broadcast. `DELETE` can opt out with `multiRow: true` for a deliberate broadcast; `UPDATE` has no broadcast shape (cover a key). `@lookupKey` on a mutation input field is no longer supported (it identified rows in the pre-catalog model); remove it.
+* `UPDATE` requires at least one input field outside the matched key (otherwise the `SET` clause is empty). `DELETE` has no such requirement — a key-only DELETE is the canonical single-row delete. `UPSERT` is exempt on the SET side: an upsert with no SET-clause fields is `INSERT … ON CONFLICT DO NOTHING`, which is a legitimate shape.
 * `@mutation` and xref:service.adoc[`@service`] are mutually exclusive on the same field. Pick one: `@mutation` for fully-generated DB operations, `@service` for handing the operation to custom Java.
 * Optional input fields participate in the operation only when the client provides them; absent optional fields are omitted from the column list (`INSERT`) or the `SET` clause (`UPDATE`/`UPSERT`).
 
 == See also
 
 * xref:../../tutorial/05-mutations.adoc[Tutorial page 5: A first mutation] walks the `INSERT`/`UPDATE`/`UPSERT` flow against a running database.
-* xref:lookupKey.adoc[`@lookupKey`] identifies the target row on `UPDATE`, `DELETE`, and `UPSERT`.
+* xref:lookupKey.adoc[`@lookupKey`] is a Query-side lookup-key marker on `ARGUMENT_DEFINITION`; it no longer participates in mutation row identification (that is catalog-derived).
 * xref:table.adoc[`@table`] establishes the input-type binding `@mutation` requires.
 * xref:service.adoc[`@service`] for custom-Java mutations.
 

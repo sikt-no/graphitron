@@ -2,15 +2,12 @@ package no.sikt.graphitron.rewrite;
 
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
-import no.sikt.graphitron.rewrite.model.DmlKind;
 import no.sikt.graphitron.rewrite.model.InputColumnBinding;
 import no.sikt.graphitron.rewrite.model.InputColumnBindingGroup;
 import no.sikt.graphitron.rewrite.model.InputField;
 import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.Rejection;
 import no.sikt.graphitron.rewrite.model.TableRef;
-
-import java.util.Set;
 
 import static java.util.Objects.requireNonNull;
 
@@ -220,13 +217,13 @@ public sealed interface ArgumentRef {
          * Input type with {@code @table}; fields resolve to columns on {@code inputTable}.
          * Used by composite-key lookups and by mutations.
          *
-         * <p>{@code lookupKeyFields} / {@code setFields} are the typed partition of {@code fields}
-         * sourced from {@code DmlKind}-aware logic (R144): on UPDATE, {@code setFields} is exactly
-         * the input fields carrying {@code @value} (in SDL declaration order) and
-         * {@code lookupKeyFields} is the complement; on DELETE / INSERT, {@code setFields} is empty
-         * by classifier guarantee and every admissible input field flows into {@code lookupKeyFields}.
-         * Both lists are sealed on {@link InputField.LookupKeyField} / {@link InputField.SetField}
-         * respectively (R130 admitted-carrier set: {@code ColumnField},
+         * <p>{@code lookupKeyFields} / {@code setFields} are the typed partition of {@code fields}.
+         * After R246 / R258 / R266 routed UPDATE and DELETE through their walker carriers, the only
+         * verbs constructing a {@code TableInputArg} are INSERT and the query-side composite-key
+         * lookup; for both, {@code setFields} is empty and every admissible input field flows into
+         * {@code lookupKeyFields} (R266 retired the {@code @value} marker that was UPDATE's old SET
+         * partition source). Both lists are sealed on {@link InputField.LookupKeyField} /
+         * {@link InputField.SetField} respectively (R130 admitted-carrier set: {@code ColumnField},
          * {@code CompositeColumnField}); reference carriers stay outside the permits set. Construct
          * via {@link #of} so the partition has a single derivation path.
          *
@@ -257,22 +254,12 @@ public sealed interface ArgumentRef {
             }
 
             /**
-             * Factory: partitions {@code fields} into WHERE-side {@code lookupKeyFields} and
-             * assignment-side {@code setFields} from the verb {@code kind} and the set of
-             * {@code @value}-marked field names (R144).
-             *
-             * <ul>
-             *   <li>UPDATE: {@code setFields} is exactly the {@code @value}-marked admissible
-             *       carriers (in SDL declaration order); {@code lookupKeyFields} is the complement
-             *       (admissible carriers without {@code @value}).</li>
-             *   <li>DELETE / INSERT: {@code setFields} is empty; {@code lookupKeyFields} is every
-             *       admissible carrier. INSERT walks {@code fields()} directly for VALUES emit, so
-             *       an empty {@code setFields} is correct.</li>
-             *   <li>UPSERT: refused upstream by {@code MutationInputResolver} under R144; the
-             *       factory is unreachable with this kind. Query-side ({@code kind == null}) takes
-             *       the same shape as DELETE: every admissible carrier in {@code lookupKeyFields},
-             *       empty {@code setFields}.</li>
-             * </ul>
+             * Factory: every admissible carrier goes to {@code lookupKeyFields}, with an empty
+             * {@code setFields}. After R246 / R258 intercept UPDATE and R266 intercepts DELETE,
+             * the only callers are INSERT and the query-side composite-key lookup; neither has a
+             * SET partition. INSERT walks {@code fields()} directly for VALUES emit, so an empty
+             * {@code setFields} is correct. R266 retired the {@code @value} marker (the old
+             * UPDATE-only SET partition source), so there is no per-verb branch left.
              */
             public static TableInputArg of(
                 String name,
@@ -282,30 +269,13 @@ public sealed interface ArgumentRef {
                 TableRef inputTable,
                 List<InputColumnBindingGroup> fieldBindings,
                 Optional<ArgConditionRef> argCondition,
-                List<InputField> fields,
-                DmlKind kind,
-                Set<String> valueMarkedNames
+                List<InputField> fields
             ) {
-                List<InputField.LookupKeyField> lookupKeyFields;
-                List<InputField.SetField> setFields;
-                if (kind == DmlKind.UPDATE) {
-                    lookupKeyFields = fields.stream()
-                        .filter(f -> f instanceof InputField.LookupKeyField)
-                        .map(f -> (InputField.LookupKeyField) f)
-                        .filter(lk -> !valueMarkedNames.contains(((InputField) lk).name()))
-                        .toList();
-                    setFields = fields.stream()
-                        .filter(f -> f instanceof InputField.SetField)
-                        .map(f -> (InputField.SetField) f)
-                        .filter(sf -> valueMarkedNames.contains(((InputField) sf).name()))
-                        .toList();
-                } else {
-                    lookupKeyFields = fields.stream()
-                        .filter(f -> f instanceof InputField.LookupKeyField)
-                        .map(f -> (InputField.LookupKeyField) f)
-                        .toList();
-                    setFields = List.of();
-                }
+                var lookupKeyFields = fields.stream()
+                    .filter(f -> f instanceof InputField.LookupKeyField)
+                    .map(f -> (InputField.LookupKeyField) f)
+                    .toList();
+                List<InputField.SetField> setFields = List.of();
                 return new TableInputArg(
                     name, typeName, nonNull, list, inputTable, fieldBindings,
                     argCondition, fields, lookupKeyFields, setFields);

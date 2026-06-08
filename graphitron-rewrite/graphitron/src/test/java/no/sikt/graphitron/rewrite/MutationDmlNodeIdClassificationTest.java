@@ -104,9 +104,10 @@ class MutationDmlNodeIdClassificationTest {
 
     @Test
     void compositePkNodeIdLookupKey_delete_admitted() {
-        // R130 forcing function: composite-PK @lookupKey via @nodeId-decoded carrier admits a
-        // DELETE. The carrier classifies as InputField.CompositeColumnField; buildLookupBindings
-        // produces one InputColumnBindingGroup.DecodedRecordGroup with N RecordBinding slots.
+        // R130 forcing function: composite-PK via @nodeId-decoded carrier admits a DELETE. R266:
+        // the carrier classifies as InputField.CompositeColumnField, and the DeleteRowsWalker
+        // projects it to two whereColumns (id_1, id_2) sharing the SDL field name "id"; since they
+        // cover the composite PK, the walker yields a DeleteRows.Identified.
         var schema = TestSchemaHelper.buildSchema("""
             type Bar implements Node @table(name: "bar") @node(keyColumns: ["id_1", "id_2"]) {
                 id: ID! @nodeId
@@ -120,19 +121,50 @@ class MutationDmlNodeIdClassificationTest {
             """, NODEID_CTX);
 
         var f = (MutationField.MutationDeleteTableField) schema.field("Mutation", "deleteBar");
-        assertThat(f.tableInputArg().fieldBindings()).hasSize(1);
-        var group = f.tableInputArg().fieldBindings().get(0);
-        assertThat(group).isInstanceOf(
-            no.sikt.graphitron.rewrite.model.InputColumnBindingGroup.DecodedRecordGroup.class);
-        var drg = (no.sikt.graphitron.rewrite.model.InputColumnBindingGroup.DecodedRecordGroup) group;
-        assertThat(drg.sourceFieldName()).isEqualTo("id");
-        assertThat(drg.bindings()).hasSize(2);
-        assertThat(drg.bindings().get(0).targetColumn().sqlName()).isEqualTo("id_1");
-        assertThat(drg.bindings().get(1).targetColumn().sqlName()).isEqualTo("id_2");
-        // The LookupKeyField partition admits the CompositeColumnField carrier.
-        assertThat(f.tableInputArg().lookupKeyFields()).hasSize(1);
-        assertThat(f.tableInputArg().lookupKeyFields().get(0))
-            .isInstanceOf(no.sikt.graphitron.rewrite.model.InputField.CompositeColumnField.class);
+        var deleteRows = (no.sikt.graphitron.rewrite.model.DeleteRows.Identified) f.deleteRows();
+        assertThat(deleteRows.matchedKey()).isInstanceOf(
+            no.sikt.graphitron.rewrite.model.MatchedKey.PrimaryKey.class);
+        assertThat(deleteRows.whereColumns()).hasSize(2);
+        assertThat(deleteRows.whereColumns()).extracting(k -> k.sdlFieldName()).containsOnly("id");
+        assertThat(deleteRows.whereColumns()).extracting(k -> k.targetColumn().sqlName())
+            .containsExactly("id_1", "id_2");
+    }
+
+    @Test
+    void ukCoveringDelete_admitsByUniqueKey_andMatchesUpdateKeyChoice() {
+        // R266 + shared-matcher parity: a DELETE whose input covers a UNIQUE key (not the PK) admits
+        // as a single-row delete identified by that UK, and the DeleteRowsWalker / UpdateRowsWalker
+        // pick the *same* key for the equivalent inputs (both route through MatchedKeys.firstCovered).
+        // parent_node has PK pk_id and a separate UNIQUE on alt_key. This is the UK execution case
+        // R246 deferred for UPDATE, proven here at the classification tier for DELETE.
+        var deleteSchema = TestSchemaHelper.buildSchema("""
+            type ParentNode @table(name: "parent_node") { pkId: String! @field(name: "pk_id") }
+            input DeleteParentNodeInput @table(name: "parent_node") { altKey: String! @field(name: "alt_key") }
+            type Query { x: String }
+            type Mutation { deleteParentNode(in: DeleteParentNodeInput!): ParentNode @mutation(typeName: DELETE) }
+            """, NODEID_CTX);
+        var del = (MutationField.MutationDeleteTableField) deleteSchema.field("Mutation", "deleteParentNode");
+        var deleteRows = (no.sikt.graphitron.rewrite.model.DeleteRows.Identified) del.deleteRows();
+        assertThat(deleteRows.matchedKey()).isInstanceOf(no.sikt.graphitron.rewrite.model.MatchedKey.UniqueKey.class);
+        assertThat(deleteRows.matchedKey().columns()).extracting(c -> c.sqlName()).containsExactly("alt_key");
+        assertThat(deleteRows.whereColumns()).extracting(k -> k.targetColumn().sqlName()).containsExactly("alt_key");
+
+        var updateSchema = TestSchemaHelper.buildSchema("""
+            type ParentNode @table(name: "parent_node") { pkId: String! @field(name: "pk_id") }
+            input UpdateParentNodeInput @table(name: "parent_node") {
+                altKey: String! @field(name: "alt_key")
+                name: String @field(name: "name")
+            }
+            type Query { x: String }
+            type Mutation { updateParentNode(in: UpdateParentNodeInput!): ParentNode @mutation(typeName: UPDATE) }
+            """, NODEID_CTX);
+        var upd = (MutationField.MutationUpdateTableField) updateSchema.field("Mutation", "updateParentNode");
+        var updateRows = (no.sikt.graphitron.rewrite.model.UpdateRows.Identified) upd.updateRows();
+        assertThat(updateRows.matchedKey()).isInstanceOf(no.sikt.graphitron.rewrite.model.MatchedKey.UniqueKey.class);
+        assertThat(updateRows.matchedKey().columns()).extracting(c -> c.sqlName()).containsExactly("alt_key");
+
+        // Parity: the equivalent UK-covering DELETE and UPDATE select the same catalog key.
+        assertThat(deleteRows.matchedKey().keyName()).isEqualTo(updateRows.matchedKey().keyName());
     }
 
     @Test
@@ -144,14 +176,15 @@ class MutationDmlNodeIdClassificationTest {
             }
             input UpdateBarInput @table(name: "bar") {
                 id: ID! @nodeId
-                name: String @value
+                name: String
             }
             type Query { x: String }
             type Mutation { updateBar(in: UpdateBarInput!): ID @mutation(typeName: UPDATE) }
             """, NODEID_CTX);
 
         // R246: the composite-NodeId key field projects to two KeyColumn entries sharing the SDL
-        // field name "id"; the @value marker is ignored, name partitions to SET as a non-key column.
+        // field name "id"; name partitions to SET as a non-key column (PK-or-UK membership, R266
+        // retired the @value marker).
         var f = (MutationField.MutationUpdateTableField) schema.field("Mutation", "updateBar");
         var updateRows = (no.sikt.graphitron.rewrite.model.UpdateRows.Identified) f.updateRows();
         assertThat(updateRows.matchedKey()).isInstanceOf(
@@ -177,7 +210,7 @@ class MutationDmlNodeIdClassificationTest {
             }
             input UpsertBarInput @table(name: "bar") {
                 id: ID! @nodeId
-                name: String @value
+                name: String
             }
             type Query { x: String }
             type Mutation { upsertBar(in: UpsertBarInput!): ID @mutation(typeName: UPSERT) }
@@ -227,17 +260,16 @@ class MutationDmlNodeIdClassificationTest {
             """, NODEID_CTX);
 
         var f = (MutationField.MutationDeleteTableField) schema.field("Mutation", "deleteBaz");
-        var group = f.tableInputArg().fieldBindings().get(0);
-        assertThat(group).isInstanceOf(
-            no.sikt.graphitron.rewrite.model.InputColumnBindingGroup.MapGroup.class);
-        var mg = (no.sikt.graphitron.rewrite.model.InputColumnBindingGroup.MapGroup) group;
-        assertThat(mg.bindings()).hasSize(1);
-        var binding = mg.bindings().get(0);
-        assertThat(binding.fieldName()).isEqualTo("id");
-        assertThat(binding.targetColumn().sqlName()).isEqualTo("id");
-        // The load-bearing fix: the binding carries the carrier's NodeIdDecodeKeys, not a
+        // R266: the arity-1 NodeId-decoded carrier projects to one whereColumn on baz.id (the PK),
+        // so the walker yields Identified; keyGroupsOf later regroups it into a MapGroup at emit.
+        var deleteRows = (no.sikt.graphitron.rewrite.model.DeleteRows.Identified) f.deleteRows();
+        assertThat(deleteRows.whereColumns()).hasSize(1);
+        var keyColumn = deleteRows.whereColumns().get(0);
+        assertThat(keyColumn.sdlFieldName()).isEqualTo("id");
+        assertThat(keyColumn.targetColumn().sqlName()).isEqualTo("id");
+        // The load-bearing fix: the column carries the carrier's NodeIdDecodeKeys extraction, not a
         // re-derived JooqConvert (which the pre-R130 path produced from the raw column metadata).
-        assertThat(binding.extraction())
+        assertThat(keyColumn.extraction())
             .isInstanceOf(no.sikt.graphitron.rewrite.model.CallSiteExtraction.NodeIdDecodeKeys.class);
     }
 
@@ -279,8 +311,7 @@ class MutationDmlNodeIdClassificationTest {
             type Mutation { deleteBars(in: [DeleteBarInput!]!): DeletedBarsPayload @mutation(typeName: DELETE) }
             """, NODEID_CTX);
 
-        var mut = (MutationField.MutationBulkDmlRecordField) schema.field("Mutation", "deleteBars");
-        assertThat(mut.kind()).isEqualTo(no.sikt.graphitron.rewrite.model.DmlKind.DELETE);
+        var mut = (MutationField.MutationBulkDeletePayloadField) schema.field("Mutation", "deleteBars");
         var dataField = (no.sikt.graphitron.rewrite.model.ChildField.SingleRecordIdFieldFromReturning)
             schema.field("DeletedBarsPayload", "deletedIds");
         assertThat(dataField.encode().encodeMethod().methodName()).isEqualTo("encodeBar");
@@ -302,8 +333,7 @@ class MutationDmlNodeIdClassificationTest {
             type Mutation { deleteBars(in: [DeleteBarInput!]!): DeletedBarsPayload @mutation(typeName: DELETE) }
             """, NODEID_CTX);
 
-        var mut = (MutationField.MutationBulkDmlRecordField) schema.field("Mutation", "deleteBars");
-        assertThat(mut.kind()).isEqualTo(no.sikt.graphitron.rewrite.model.DmlKind.DELETE);
+        var mut = (MutationField.MutationBulkDeletePayloadField) schema.field("Mutation", "deleteBars");
         var dataField = (no.sikt.graphitron.rewrite.model.ChildField.SingleRecordIdFieldFromReturning)
             schema.field("DeletedBarsPayload", "deletedIds");
         assertThat(dataField.encode().encodeMethod().methodName()).isEqualTo("encodeBar");
@@ -321,8 +351,7 @@ class MutationDmlNodeIdClassificationTest {
             type Mutation { deleteBaz(in: DeleteBazInput!): DeletedBazPayload @mutation(typeName: DELETE) }
             """, NODEID_CTX);
 
-        var mut = (MutationField.MutationDmlRecordField) schema.field("Mutation", "deleteBaz");
-        assertThat(mut.kind()).isEqualTo(no.sikt.graphitron.rewrite.model.DmlKind.DELETE);
+        var mut = (MutationField.MutationDeletePayloadField) schema.field("Mutation", "deleteBaz");
         var dataField = (no.sikt.graphitron.rewrite.model.ChildField.SingleRecordIdFieldFromReturning)
             schema.field("DeletedBazPayload", "deletedId");
         assertThat(dataField.encode().encodeMethod().methodName()).isEqualTo("encodeBaz");
@@ -343,8 +372,7 @@ class MutationDmlNodeIdClassificationTest {
             type Mutation { deleteBaz(in: DeleteBazInput!): DeletedBazPayload @mutation(typeName: DELETE) }
             """, NODEID_CTX);
 
-        var mut = (MutationField.MutationDmlRecordField) schema.field("Mutation", "deleteBaz");
-        assertThat(mut.kind()).isEqualTo(no.sikt.graphitron.rewrite.model.DmlKind.DELETE);
+        var mut = (MutationField.MutationDeletePayloadField) schema.field("Mutation", "deleteBaz");
         var dataField = (no.sikt.graphitron.rewrite.model.ChildField.SingleRecordIdFieldFromReturning)
             schema.field("DeletedBazPayload", "deletedId");
         assertThat(dataField.encode().encodeMethod().methodName()).isEqualTo("encodeBaz");
@@ -442,27 +470,28 @@ class MutationDmlNodeIdClassificationTest {
             """, NODEID_CTX);
 
         var f = (MutationField.MutationDeleteTableField) schema.field("Mutation", "deleteBar");
-        var groups = f.tableInputArg().fieldBindings();
-        assertThat(groups).hasSize(2);
-        // The reference carrier produces a MapGroup whose target column is on the input's own
-        // table (the FK column id_1), not the joined-table column id (baz.id).
-        var refGroup = (no.sikt.graphitron.rewrite.model.InputColumnBindingGroup.MapGroup) groups.stream()
-            .filter(g -> g instanceof no.sikt.graphitron.rewrite.model.InputColumnBindingGroup.MapGroup mg
-                && mg.bindings().get(0).fieldName().equals("bazRef"))
-            .findFirst().orElseThrow();
-        assertThat(refGroup.bindings()).hasSize(1);
-        var refBinding = refGroup.bindings().get(0);
-        assertThat(refBinding.targetColumn().sqlName()).isEqualTo("id_1");
-        assertThat(refBinding.extraction())
+        // R266: every admitted column is a WHERE filter. bazRef lifts id_1 and id2 contributes id_2;
+        // together they cover the PK (id_1, id_2) → Identified. (Pre-R189 the validator dropped the
+        // reference contribution and this exact shape hit a false "missing PK column id_1".)
+        var deleteRows = (no.sikt.graphitron.rewrite.model.DeleteRows.Identified) f.deleteRows();
+        assertThat(deleteRows.matchedKey().columns()).extracting(c -> c.sqlName())
+            .containsExactlyInAnyOrder("id_1", "id_2");
+        assertThat(deleteRows.whereColumns()).extracting(k -> k.targetColumn().sqlName())
+            .containsExactlyInAnyOrder("id_1", "id_2");
+        // The reference carrier's column is on the input's own table (FK column id_1), not the
+        // joined-table column baz.id, and carries the NodeId decode extraction.
+        var refCol = deleteRows.whereColumns().stream()
+            .filter(k -> k.sdlFieldName().equals("bazRef")).findFirst().orElseThrow();
+        assertThat(refCol.targetColumn().sqlName()).isEqualTo("id_1");
+        assertThat(refCol.extraction())
             .isInstanceOf(no.sikt.graphitron.rewrite.model.CallSiteExtraction.NodeIdDecodeKeys.class);
     }
 
     @Test
     void fkTargetNodeIdRef_arity1_update_admitted() {
-        // UPDATE on `bar`: bazRef is a filter (@lookupKey-by-default); id2 is also a filter;
-        // name is the @value-marked SET field. fieldBindings carries both filter contributions;
-        // PK-coverage check passes because id_1 (from bazRef.liftedSourceColumns) + id_2 cover
-        // the PK.
+        // UPDATE on `bar`: bazRef is a filter; id2 is also a filter; name is the non-key SET column.
+        // The UpdateRowsWalker covers the PK because id_1 (from bazRef.liftedSourceColumns) + id_2
+        // cover (id_1, id_2); name falls outside the matched key, so it partitions to SET.
         var schema = TestSchemaHelper.buildSchema("""
             type Baz implements Node @table(name: "baz") @node(keyColumns: ["id"]) {
                 id: ID! @nodeId
@@ -474,14 +503,14 @@ class MutationDmlNodeIdClassificationTest {
             input UpdateBarInput @table(name: "bar") {
                 bazRef: ID! @nodeId(typeName: "Baz")
                 id2: String! @field(name: "id_2")
-                name: String @value
+                name: String
             }
             type Query { x: String }
             type Mutation { updateBar(in: UpdateBarInput!): ID @mutation(typeName: UPDATE) }
             """, NODEID_CTX);
 
         // R246: bazRef (FK-target NodeId ref, lifts id_1) and id2 both partition to the matched PK
-        // (id_1, id_2); name partitions to SET. The @value marker is ignored.
+        // (id_1, id_2); name partitions to SET (PK-or-UK membership, R266 retired @value).
         var f = (MutationField.MutationUpdateTableField) schema.field("Mutation", "updateBar");
         var updateRows = (no.sikt.graphitron.rewrite.model.UpdateRows.Identified) f.updateRows();
         assertThat(updateRows.keyColumns()).extracting(k -> k.targetColumn().sqlName())
@@ -513,17 +542,17 @@ class MutationDmlNodeIdClassificationTest {
             """, NODEID_CTX);
 
         var f = (MutationField.MutationDeleteTableField) schema.field("Mutation", "deleteReorderedChild");
-        // Both filter contributions land in fieldBindings — childId as MapGroup, parentRef as
-        // DecodedRecordGroup over the 3 lifted source columns.
-        var groups = f.tableInputArg().fieldBindings();
-        assertThat(groups).hasSize(2);
-        var drg = (no.sikt.graphitron.rewrite.model.InputColumnBindingGroup.DecodedRecordGroup) groups.stream()
-            .filter(g -> g instanceof no.sikt.graphitron.rewrite.model.InputColumnBindingGroup.DecodedRecordGroup)
-            .findFirst().orElseThrow();
-        assertThat(drg.sourceFieldName()).isEqualTo("parentRef");
-        assertThat(drg.bindings()).hasSize(3);
-        // Lifted source columns are on reordered_fk_child (permuted into NodeType key order).
-        assertThat(drg.bindings()).extracting(b -> b.targetColumn().sqlName())
+        // R266: every admitted input column is a WHERE filter (DELETE has no SET partition). childId
+        // covers the single-column PK (child_id) → Identified; parentRef (composite FK-target NodeId
+        // ref) contributes its 3 lifted source columns fk_a/fk_b/fk_c as extra ANDed predicates,
+        // sharing the SDL field name "parentRef".
+        var deleteRows = (no.sikt.graphitron.rewrite.model.DeleteRows.Identified) f.deleteRows();
+        assertThat(deleteRows.matchedKey().columns()).extracting(c -> c.sqlName()).containsExactly("child_id");
+        assertThat(deleteRows.whereColumns()).extracting(k -> k.targetColumn().sqlName())
+            .containsExactlyInAnyOrder("child_id", "fk_a", "fk_b", "fk_c");
+        var parentRefCols = deleteRows.whereColumns().stream()
+            .filter(k -> k.sdlFieldName().equals("parentRef")).toList();
+        assertThat(parentRefCols).extracting(k -> k.targetColumn().sqlName())
             .containsExactly("fk_a", "fk_b", "fk_c");
     }
 
@@ -591,7 +620,7 @@ class MutationDmlNodeIdClassificationTest {
     @Test
     void fkTargetNodeIdRef_pkCoverage_genuinelyMissing_rejected() {
         // Contrast fixture: bazRef contributes id_1 but no field contributes id_2. PK coverage
-        // legitimately fails; the resolver produces the canonical "missing PK column" rejection.
+        // legitimately fails; R266's DeleteRowsWalker produces the NoUniqueKeyCoverage rejection.
         // Pairs with the under-count fixture above to bracket the load-bearing widening: with
         // the widening, the under-count case admits and this case still rejects.
         var schema = TestSchemaHelper.buildSchema("""
@@ -611,8 +640,10 @@ class MutationDmlNodeIdClassificationTest {
             """, NODEID_CTX);
 
         var f = (UnclassifiedField) schema.field("Mutation", "deleteBarMissingPk");
+        assertThat(f.rejection())
+            .isInstanceOf(no.sikt.graphitron.rewrite.model.DeleteRowsError.NoUniqueKeyCoverage.class);
         assertThat(f.reason())
-            .contains("filter columns do not cover all PK column(s)")
+            .contains("covers no primary key or unique key")
             .contains("id_2");
     }
 

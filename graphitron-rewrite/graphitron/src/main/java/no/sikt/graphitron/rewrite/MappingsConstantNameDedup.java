@@ -185,7 +185,7 @@ public final class MappingsConstantNameDedup {
                 f.parentTypeName(), f.name(), f.location(), f.returnExpression(), f.inputArg(), f.updateRows(),
                 present);
             case MutationField.MutationDeleteTableField f -> new MutationField.MutationDeleteTableField(
-                f.parentTypeName(), f.name(), f.location(), f.returnExpression(), f.tableInputArg(),
+                f.parentTypeName(), f.name(), f.location(), f.returnExpression(), f.inputArg(), f.deleteRows(),
                 present);
             case MutationField.MutationUpsertTableField f -> new MutationField.MutationUpsertTableField(
                 f.parentTypeName(), f.name(), f.location(), f.returnExpression(), f.tableInputArg(),
@@ -223,6 +223,12 @@ public final class MappingsConstantNameDedup {
                 present);
             case MutationField.MutationBulkUpdatePayloadField f -> new MutationField.MutationBulkUpdatePayloadField(
                 f.parentTypeName(), f.name(), f.location(), f.returnType(), f.inputArg(), f.updateRows(),
+                present);
+            case MutationField.MutationDeletePayloadField f -> new MutationField.MutationDeletePayloadField(
+                f.parentTypeName(), f.name(), f.location(), f.returnType(), f.inputArg(), f.deleteRows(),
+                present);
+            case MutationField.MutationBulkDeletePayloadField f -> new MutationField.MutationBulkDeletePayloadField(
+                f.parentTypeName(), f.name(), f.location(), f.returnType(), f.inputArg(), f.deleteRows(),
                 present);
             default -> throw new IllegalStateException(
                 "MappingsConstantNameDedup: unhandled WithErrorChannel variant "

@@ -193,6 +193,8 @@ public class TypeFetcherGenerator {
         MutationField.MutationBulkDmlRecordField.class,
         MutationField.MutationUpdatePayloadField.class,
         MutationField.MutationBulkUpdatePayloadField.class,
+        MutationField.MutationDeletePayloadField.class,
+        MutationField.MutationBulkDeletePayloadField.class,
         MutationField.MutationServiceTableField.class,
         MutationField.MutationServiceRecordField.class,
         ChildField.ServiceTableField.class,
@@ -444,6 +446,8 @@ public class TypeFetcherGenerator {
                 case MutationField.MutationBulkDmlRecordField f -> builder.addMethod(buildMutationBulkDmlRecordFetcher(ctx, f, outputPackage));
                 case MutationField.MutationUpdatePayloadField f -> builder.addMethod(buildMutationUpdatePayloadFetcher(ctx, f, outputPackage));
                 case MutationField.MutationBulkUpdatePayloadField f -> builder.addMethod(buildMutationBulkUpdatePayloadFetcher(ctx, f, outputPackage));
+                case MutationField.MutationDeletePayloadField f -> builder.addMethod(buildMutationDeletePayloadFetcher(ctx, f, outputPackage));
+                case MutationField.MutationBulkDeletePayloadField f -> builder.addMethod(buildMutationBulkDeletePayloadFetcher(ctx, f, outputPackage));
                 // ColumnReferenceField has no fetcher method — inline projection via
                 // TypeClassGenerator.$fields (Direct compaction) and a ColumnFetcher value emitted
                 // by FetcherEmitter. The validator rejects the NodeIdEncodeKeys and ConditionJoin
@@ -1728,25 +1732,31 @@ public class TypeFetcherGenerator {
      */
     private static MethodSpec buildMutationDeleteFetcher(TypeFetcherEmissionContext ctx, MutationField.MutationDeleteTableField f,
                                                           String outputPackage) {
-        var tia = f.tableInputArg();
-        var tableRef = tia.inputTable();
+        // R266: the WHERE columns come off the DeleteRows carrier (deleteRows().whereColumns()) and
+        // the slim arg surface (inputArg) instead of a TableInputArg. The emitted SQL is structurally
+        // identical to the legacy shape; only the source of the WHERE columns changed. The carrier's
+        // KeyColumn list projects back into the InputColumnBindingGroup shape the shared lookup-WHERE
+        // emitters consume via keyGroupsOf.
+        var inputArg = f.inputArg();
+        var tableRef = inputArg.table();
         var tablesOnly = GeneratorUtils.ResolvedTableNames.ofTable(tableRef);
         String tableLocal = tablesOnly.tableLocalName();
+        var whereGroups = keyGroupsOf(f.deleteRows().whereColumns());
 
         var dmlChain = CodeBlock.builder().add(".deleteFrom($L)\n", tableLocal);
         var postInGuard = CodeBlock.builder();
-        if (tia.list()) {
-            dmlChain.add(".where(").add(buildBulkLookupRowIn(tia, tablesOnly, tableRef)).add(")\n");
+        if (inputArg.list()) {
+            dmlChain.add(".where(").add(buildBulkLookupRowIn(whereGroups, tablesOnly, tableRef)).add(")\n");
         } else {
-            var chunk = buildLookupWhereSingleRow(tia, tablesOnly, tableRef);
+            var chunk = buildLookupWhereSingleRow(whereGroups, tablesOnly, tableRef, "in");
             postInGuard.add(chunk.decodeLocals());
             dmlChain.add(".where(").add(chunk.whereExpr()).add(")\n");
         }
 
         return buildDmlFetcher(ctx, f.name(), f.returnExpression(), f.errorChannel(),
-            tia.name(), tableRef, tablesOnly, tableLocal,
+            inputArg.name(), tableRef, tablesOnly, tableLocal,
             outputPackage, dmlChain.build(),
-            /*postDslGuard=*/ CodeBlock.of(""), postInGuard.build(), tia.list());
+            /*postDslGuard=*/ CodeBlock.of(""), postInGuard.build(), inputArg.list());
     }
 
     /**
@@ -2891,18 +2901,21 @@ public class TypeFetcherGenerator {
     }
 
     /**
-     * Builds a bulk lookup-key row-tuple {@code IN} predicate from the TIA's
-     * {@code @lookupKey} groups: emits
+     * Builds a bulk lookup-key row-tuple {@code IN} predicate from already-projected
+     * {@link InputColumnBindingGroup}s: emits
      * {@code DSL.row(t.k1, ...).in(in.stream().map(row -> DSL.row(<per-slot value expr>)).toList())}.
      * Per-row decode for {@link InputColumnBindingGroup.DecodedRecordGroup} and
      * NodeIdDecodeKeys-extracted {@link InputColumnBinding.MapBinding} lives inside the stream
      * lambda (one decode call per arg per row). One shape regardless of key arity (PostgreSQL
      * renders 1-key {@code (col) IN ((v))} identically to {@code col IN (v)}).
+     *
+     * <p>R266: the direct-return bulk DELETE projects its {@link DeleteRows} carrier's
+     * {@code whereColumns()} into these groups via {@link #keyGroupsOf} and calls this directly,
+     * so there is no longer a {@code TableInputArg}-taking overload.
      */
     private static CodeBlock buildBulkLookupRowIn(
-            no.sikt.graphitron.rewrite.ArgumentRef.InputTypeArg.TableInputArg tia,
+            List<InputColumnBindingGroup> groups,
             GeneratorUtils.ResolvedTableNames tablesOnly, TableRef tableRef) {
-        var groups = tia.fieldBindings();
         var b = CodeBlock.builder().add("$T.row(", DSL);
         boolean first = true;
         for (var g : groups) {
@@ -3930,6 +3943,25 @@ public class TypeFetcherGenerator {
     }
 
     /**
+     * R266: emits the fetcher for a {@link MutationField.MutationDeletePayloadField} — the
+     * payload-returning single DELETE. Reuses {@link #buildSingleRecordTwoStepFetcher}'s skeleton;
+     * the WHERE columns are sourced from the {@link DeleteRows} carrier via {@link #keyGroupsOf}
+     * (never from {@code tia.fieldBindings()}) and fed to the carrier-driven
+     * {@link #buildRecordDeleteChain}. The enclosing skeleton appends
+     * {@code .returningResult(pkCols).fetchOne()} inside {@code transactionResult}.
+     */
+    private static MethodSpec buildMutationDeletePayloadFetcher(
+            TypeFetcherEmissionContext ctx, MutationField.MutationDeletePayloadField f, String outputPackage) {
+        var inputArg = f.inputArg();
+        var whereGroups = keyGroupsOf(f.deleteRows().whereColumns());
+        return buildSingleRecordTwoStepFetcher(
+            ctx, f.name(), inputArg.name(), inputArg.table(), f.errorChannel(), f.qualifiedName(),
+            (tablesOnly, tableLocal) -> buildRecordDeleteChain(
+                whereGroups, inputArg.table(), tablesOnly, tableLocal),
+            outputPackage);
+    }
+
+    /**
      * R258: the carrier-driven single-row UPDATE chain for the payload-returning UPDATE fetcher.
      * Mirrors {@link #buildMutationUpdateFetcher}'s single-row body (the direct-return path): a
      * dynamic SET map built from the carrier's {@code setColumns()} so absent fields drop out
@@ -4017,24 +4049,31 @@ public class TypeFetcherGenerator {
             case INSERT -> buildRecordInsertChain(tia, tableRef, tablesOnly, tableLocal);
             case UPDATE -> buildRecordUpdateChain(tia, tableRef, tablesOnly, tableLocal);
             case UPSERT -> buildRecordUpsertChain(tia, tableRef, tablesOnly, tableLocal);
-            case DELETE -> buildRecordDeleteChain(tia, tableRef, tablesOnly, tableLocal);
+            // R266: DELETE is carved off onto MutationDeletePayloadField (its own fetcher calls
+            // buildRecordDeleteChain with the carrier's WHERE groups); the compact-constructor on
+            // MutationDmlRecordField rejects DELETE, so this arm is unreachable.
+            case DELETE -> throw new IllegalStateException(
+                "MutationDmlRecordField cannot carry DmlKind.DELETE — R266 routes the payload-"
+                + "returning DELETE onto MutationDeletePayloadField; this leaf carries {INSERT, UPSERT}");
         };
     }
 
     /**
-     * R156 — DELETE chain for a single-input {@link MutationField.MutationDmlRecordField} carrier.
-     * Mirrors the direct-return DELETE chain ({@link #buildMutationDeleteFetcher}): same WHERE
-     * shape from the input @table's PK / @lookupKey columns, no SET clause. The enclosing
-     * {@link #buildMutationDmlRecordFetcher} adds {@code .returningResult(pkCols)} so the
-     * fetcher's value (consumed by the per-field
+     * R266 — single-row DELETE chain for the payload-returning {@link MutationField.MutationDeletePayloadField}
+     * carrier. Mirrors the direct-return DELETE chain ({@link #buildMutationDeleteFetcher}): same
+     * WHERE shape, no SET clause. The WHERE columns are sourced from the {@link DeleteRows} carrier's
+     * {@code whereColumns()} (projected to {@link InputColumnBindingGroup}s via {@link #keyGroupsOf}),
+     * not {@code tia.fieldBindings()}, so the payload DELETE no longer depends on a {@code TableInputArg}.
+     * The enclosing {@link #buildMutationDeletePayloadFetcher} adds {@code .returningResult(pkCols)} so
+     * the fetcher's value (consumed by the per-field
      * {@link no.sikt.graphitron.rewrite.model.ChildField.SingleRecordIdFieldFromReturning}
      * or {@link no.sikt.graphitron.rewrite.model.ChildField.SingleRecordTableFieldFromReturning}
      * carrier) is a PK-only RETURNING Record.
      */
     private static DmlChainAndGuards buildRecordDeleteChain(
-            no.sikt.graphitron.rewrite.ArgumentRef.InputTypeArg.TableInputArg tia,
+            List<InputColumnBindingGroup> whereGroups,
             TableRef tableRef, GeneratorUtils.ResolvedTableNames tablesOnly, String tableLocal) {
-        var whereChunk = buildLookupWhereSingleRow(tia, tablesOnly, tableRef);
+        var whereChunk = buildLookupWhereSingleRow(whereGroups, tablesOnly, tableRef, "in");
         var preGuard = CodeBlock.builder().add(whereChunk.decodeLocals());
         var chain = CodeBlock.builder()
             .add(".deleteFrom($L)\n", tableLocal)
@@ -4307,6 +4346,25 @@ public class TypeFetcherGenerator {
     }
 
     /**
+     * R266: emits the fetcher for a {@link MutationField.MutationBulkDeletePayloadField} — the
+     * payload-returning bulk DELETE. Reuses {@link #buildBulkRecordTwoStepFetcher}'s skeleton; the
+     * per-row WHERE columns are sourced from the {@link DeleteRows} carrier ({@link #keyGroupsOf}),
+     * not {@code tia.fieldBindings()}, and fed to the carrier-driven
+     * {@link #buildBulkRecordPerRowDeleteBody}. The order-preservation invariant the skeleton's
+     * input-order loop provides is audited at the execution tier.
+     */
+    private static MethodSpec buildMutationBulkDeletePayloadFetcher(
+            TypeFetcherEmissionContext ctx, MutationField.MutationBulkDeletePayloadField f, String outputPackage) {
+        var inputArg = f.inputArg();
+        var whereGroups = keyGroupsOf(f.deleteRows().whereColumns());
+        return buildBulkRecordTwoStepFetcher(
+            ctx, f.name(), inputArg.name(), inputArg.table(), f.errorChannel(), f.qualifiedName(),
+            (tablesOnly, tableLocal, pkCols, recordRowType) -> buildBulkRecordPerRowDeleteBody(
+                whereGroups, inputArg.table(), tablesOnly, tableLocal, pkCols, recordRowType),
+            outputPackage);
+    }
+
+    /**
      * R258: the carrier-driven per-row UPDATE body for the bulk payload-returning UPDATE. Mirrors
      * {@link #buildBulkRecordPerRowUpdateBody} but sources the SET map from the carrier's
      * {@code setColumns()} ({@link #setGroupsOf}) and the WHERE from the carrier's {@code keyColumns()}
@@ -4361,8 +4419,9 @@ public class TypeFetcherGenerator {
      * <p>{@code UPDATE} no-match (zero rows updated) throws {@link IllegalStateException} to
      * preserve the order-preservation invariant: a silent no-match would skew {@code output.data[i]}
      * away from {@code input[i]}. Authors get a typed exception that flows through the catch arm.
-     * The {@code DELETE} / {@code UPSERT} cases are rejected at the compact-constructor and never
-     * reach this dispatch; the {@code default} arm guards against a future widening accident.
+     * The {@code UPSERT} / {@code DELETE} cases are rejected at the compact-constructor and never
+     * reach this dispatch (DELETE is carved off onto {@link MutationField.MutationBulkDeletePayloadField}
+     * by R266); both arms throw to guard against a future widening accident.
      */
     private static CodeBlock buildBulkRecordPerRowBody(
             MutationField.MutationBulkDmlRecordField f,
@@ -4380,27 +4439,33 @@ public class TypeFetcherGenerator {
                 "MutationBulkDmlRecordField with DmlKind.UPSERT — compact-constructor should "
                 + "have rejected this; UPSERT is deferred to R145 under R144's cardinality-"
                 + "safety regime");
-            case DELETE -> buildBulkRecordPerRowDeleteBody(
-                tia, tableRef, tablesOnly, tableLocal, pkCols, recordRowType);
+            // R266: DELETE is carved off onto MutationBulkDeletePayloadField (its own fetcher calls
+            // buildBulkRecordPerRowDeleteBody with the carrier's WHERE groups); the compact-
+            // constructor on MutationBulkDmlRecordField rejects DELETE, so this arm is unreachable.
+            case DELETE -> throw new IllegalStateException(
+                "MutationBulkDmlRecordField cannot carry DmlKind.DELETE — R266 routes the payload-"
+                + "returning bulk DELETE onto MutationBulkDeletePayloadField; this leaf carries {INSERT}");
         };
     }
 
     /**
-     * R156 — per-row DELETE body for {@link #buildBulkRecordPerRowBody}. Each input row builds a
+     * R266 — per-row DELETE body for the payload-returning {@link MutationField.MutationBulkDeletePayloadField}
+     * (driven from {@link #buildMutationBulkDeletePayloadFetcher}). Each input row builds a
      * {@code deleteFrom(table).where(<lookup>).returningResult(PK).fetchOne()} statement; the
-     * returned PK-only {@code RecordN} is appended to the bulk accumulator in input order. A
-     * row that matches no target raises {@link IllegalStateException} with the same shape as the
-     * UPDATE no-match path — input-order preservation is a contract of the bulk-DML emit, and
-     * silent skipping would break it.
+     * returned PK-only {@code RecordN} is appended to the bulk accumulator in input order. A row that
+     * matches no target raises {@link IllegalStateException} with the same shape as the UPDATE
+     * no-match path — input-order preservation is a contract of the bulk-DML emit, and silent
+     * skipping would break it. The per-row WHERE columns are sourced from the {@link DeleteRows}
+     * carrier ({@link #keyGroupsOf}) rather than {@code tia.fieldBindings()}.
      */
     private static CodeBlock buildBulkRecordPerRowDeleteBody(
-            no.sikt.graphitron.rewrite.ArgumentRef.InputTypeArg.TableInputArg tia,
+            List<InputColumnBindingGroup> whereGroups,
             TableRef tableRef, GeneratorUtils.ResolvedTableNames tablesOnly,
             String tableLocal,
             List<no.sikt.graphitron.rewrite.model.ColumnRef> pkCols,
             TypeName recordRowType) {
         var body = CodeBlock.builder();
-        var whereChunk = buildLookupWhereSingleRow(tia, tablesOnly, tableRef, "row");
+        var whereChunk = buildLookupWhereSingleRow(whereGroups, tablesOnly, tableRef, "row");
         body.add(whereChunk.decodeLocals());
         body.add("$T rec = txd.deleteFrom($L)\n", recordRowType, tableLocal)
             .add("    .where(").add(whereChunk.whereExpr()).add(")\n")
