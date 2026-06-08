@@ -1001,15 +1001,26 @@ class BuildContext {
     /**
      * Builds the {@link Rejection} for an FK-name lookup that did not produce a
      * {@link JooqCatalog.ForeignKeyResolution.Resolved} variant. Sibling of
-     * {@link #unknownTableRejection}; surfaces a Levenshtein-ranked candidate hint over every
-     * FK constraint name in the catalog so a typo in {@code @reference(key: "...")} (or in the
-     * inferred FK name picked up by the {@code IdReference} synthesis shim) reaches the schema
-     * author with a fix-it suggestion rather than just a "not in catalog" string.
+     * {@link #unknownTableRejection}; surfaces a Levenshtein-ranked candidate hint over the
+     * catalog's FK names so a typo in {@code @reference(key: "...")} (or in the inferred FK name
+     * picked up by the {@code IdReference} synthesis shim) reaches the schema author with a fix-it
+     * suggestion rather than just a "not in catalog" string.
+     *
+     * <p><b>Namespace.</b> {@link JooqCatalog#findForeignKey} resolves a key in either the SQL
+     * constraint namespace or the jOOQ Java-constant {@code TABLE__CONSTRAINT} namespace, so the
+     * candidate hint mirrors whichever the author used (detected by the {@code __} separator in
+     * {@code fkName}); a suggestion never reads as a different namespace than the one they typed.
+     * This matches {@link #fkCandidateNames} on the path-element hint surface. The candidate set
+     * here is still the whole catalog rather than scoped to the structurally relevant FKs; scoping
+     * this sibling needs a source table threaded through its call sites and is tracked as a
+     * follow-up (see {@code fk-key-hint-sibling-scope}).
      */
     Rejection unknownForeignKeyRejection(String fkName) {
+        boolean constantNamespace = fkName.contains("__");
         return Rejection.unknownForeignKey(
             "foreign key '" + fkName + "' could not be resolved in the jOOQ catalog",
-            fkName, catalog.allForeignKeySqlNames());
+            fkName,
+            constantNamespace ? catalog.allForeignKeyConstantNames() : catalog.allForeignKeySqlNames());
     }
 
     /**

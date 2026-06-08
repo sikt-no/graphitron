@@ -351,6 +351,35 @@ class JooqCatalogMultiSchemaTest {
             .startsWith("foreign key 'not_a_fk' could not be resolved in the jOOQ catalog");
     }
 
+    @Test
+    void unknownForeignKeyRejection_mirrorsAuthorFkNamespace_inCandidateHint() {
+        // R259: the candidate hint must read in the same FK namespace the author typed, since
+        // findForeignKey resolves both the SQL constraint name and the jOOQ Java-constant
+        // (TABLE__CONSTRAINT) name. The nodeid fixture carries a real FK whose constant name holds
+        // the `__` separator and whose SQL name does not, so the two namespaces are distinguishable
+        // in the (unranked) candidate list the rejection carries.
+        var ctx = new BuildContext(null,
+            new JooqCatalog("no.sikt.graphitron.rewrite.nodeidfixture"), stubRewriteContext());
+
+        // Bare SQL-form attempt -> SQL-namespace candidates (no TABLE__CONSTRAINT separator).
+        var sqlForm = (no.sikt.graphitron.rewrite.model.Rejection.AuthorError.UnknownName)
+            ctx.unknownForeignKeyRejection("reordered_fk_child_parent_fkez");
+        assertThat(sqlForm.candidates())
+            .as("bare SQL-form attempt gets SQL-namespace candidates")
+            .isNotEmpty()
+            .noneMatch(c -> c.contains("__"));
+
+        // jOOQ-constant-form attempt (contains `__`) -> Java-constant-namespace candidates, which
+        // carry the `__` separator. Fails under the pre-R259 behaviour (candidates were always the
+        // SQL names regardless of the namespace the author typed).
+        var constForm = (no.sikt.graphitron.rewrite.model.Rejection.AuthorError.UnknownName)
+            ctx.unknownForeignKeyRejection("reordered_fk_child__bogus_fk");
+        assertThat(constForm.candidates())
+            .as("__-form attempt gets jOOQ-constant-namespace candidates")
+            .isNotEmpty()
+            .anyMatch(c -> c.contains("__"));
+    }
+
     // ---- Catalog-construction precondition ----
 
     @Test
