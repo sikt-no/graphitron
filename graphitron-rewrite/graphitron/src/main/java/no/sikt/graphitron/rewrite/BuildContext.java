@@ -1757,9 +1757,10 @@ class BuildContext {
         if (field.hasAppliedDirective(DIR_LOOKUP_KEY)) {
             return new InputFieldResolution.Unresolved(name, null,
                 "@lookupKey on a mutation input field is no longer supported (R144); "
-                + "remove it (the field is a filter by default), or replace it with "
-                + "@value on UPDATE value fields. On Query-side @table input args, "
-                + "move @lookupKey to the surrounding ARGUMENT_DEFINITION instead.");
+                + "remove it (the field is a filter by default; the UPDATE SET/WHERE "
+                + "partition is derived from the catalog by the walker). On Query-side "
+                + "@table input args, move @lookupKey to the surrounding ARGUMENT_DEFINITION "
+                + "instead.");
         }
         GraphQLType type = field.getType();
         boolean nonNull = type instanceof GraphQLNonNull;

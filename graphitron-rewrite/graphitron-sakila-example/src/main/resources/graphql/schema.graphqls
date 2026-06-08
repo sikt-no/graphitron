@@ -1327,7 +1327,7 @@ input FilmCreateInput @table(name: "film") {
 # the non-key columns `title` and `description` land in the SET clause. This input type is shared
 # by the direct-return UPDATEs (`updateFilm` / `updateFilms`, R246) and the payload-returning
 # UPDATEs (`updateFilmPayload` / `updateFilmsPayload`, R258); the catalog-derived partition is why
-# the `@value` directive could be retired entirely (R266, absorbing R188).
+# the `@value` directive was retired entirely (R266, absorbing R188).
 input FilmUpdateInput @table(name: "film") {
     filmId:      Int!    @field(name: "film_id")
     title:       String! @field(name: "title")
@@ -1383,6 +1383,25 @@ type KeyedNode implements Node @table(name: "keyed_node") @node {
 input CreateKeyedNodeInput @table(name: "keyed_node") {
     id:    ID!     @nodeId(typeName: "KeyedNode")
     label: String! @field(name: "label")
+}
+
+# R266 execution-tier fixture: single-PK @node type over storage_bin, whose UNIQUE `code`
+# column is distinct from the `bin_id` primary key. deleteStorageBinByCode (in Mutation) keys
+# the DELETE on `code`, so the DeleteRowsWalker's PK-or-UK match lands on the UniqueKey arm —
+# the UK-covering single-row delete the other Sakila DELETE fixtures (all PK-keyed) never
+# exercise at execution tier. The `: ID` return projects bin_id through RETURNING and the @node
+# encoder, independent of the UK the WHERE clause filters on.
+type StorageBin implements Node @table(name: "storage_bin") @node {
+    id:    ID!     @nodeId
+    code:  String! @field(name: "code")
+    label: String! @field(name: "label")
+}
+
+# DELETE input covering the UNIQUE `code` column (not the PK). R266 admits a UK-covering input
+# as a single-row delete via the UniqueKey arm; the matched key is the single-row guard and
+# `code` is the lone WHERE filter.
+input StorageBinDeleteByCodeInput @table(name: "storage_bin") {
+    code: String! @field(name: "code")
 }
 
 # R75 Phase 1: single-record DML carrier payload type. The SDL author authors no Java class —
@@ -1505,6 +1524,12 @@ type Mutation {
     # arm regardless of verb.
     deleteFilmActorByNodeId(in: DeleteFilmActorByNodeIdInput!): ID @mutation(typeName: DELETE)
     deleteFilmActorsByNodeId(in: [DeleteFilmActorByNodeIdInput!]!): [ID!]! @mutation(typeName: DELETE)
+
+    # R266 execution-tier proof of the UK-covering single-row delete. The input covers the
+    # UNIQUE `code` (not the PK), so the DeleteRowsWalker matches the UniqueKey arm; the emitted
+    # WHERE filters on `code` while RETURNING projects bin_id for the @node `: ID` encode. See
+    # StorageBin / StorageBinDeleteByCodeInput above.
+    deleteStorageBinByCode(in: StorageBinDeleteByCodeInput!): ID @mutation(typeName: DELETE)
 
     # R130 single-PK NodeId-decoded INSERT: client supplies the PK as an opaque NodeId.
     # Drives buildInsertDecodeLocals (one decode local per NodeId-bearing carrier)
