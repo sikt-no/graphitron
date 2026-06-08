@@ -1,7 +1,7 @@
 ---
 id: R186
 title: Nested input types in @mutation fields
-status: Spec
+status: Ready
 bucket: architecture
 priority: 6
 theme: mutations-errors

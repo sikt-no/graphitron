@@ -25,7 +25,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R45` | Multi-tenant routing on top of the schema-driven ExecutionInput factory | Spec | 2026-05-20 | [plan](tenant-routing-and-execution-input.md) |
 | `R273` | Source NodeId metadata from @node + catalog PK (inferred from `implements Node`), and settle wrong-type/malformed mismatch semantics, retiring the legacy __NODE bare-ID arm | Spec | 2026-06-02 | [plan](nodeid-skip-mismatch-error-surfacing.md) |
 | `R23` | Multi-parent `NestingField` sharing: `TableField` arm | Spec |  | [plan](nestingfield-multiparent-tablefield.md) |
-| `R186` | Nested input types in @mutation fields | Spec | 2026-06-08 <sub>created 2026-05-20</sub> | [plan](nested-input-types-in-mutation-fields.md) |
+| `R186` | Nested input types in @mutation fields | Ready | 2026-06-08 <sub>created 2026-05-20</sub> | [plan](nested-input-types-in-mutation-fields.md) |
 | `R13` | Faceted search on `@asConnection` | Spec |  | [plan](faceted-search.md) |
 | `R63` | Type UPSERT dialect requirement on the model | Spec |  | [plan](dml-dialect-requirement-on-model.md) |
 | `R92` | Surface database CHECK constraints as Jakarta validation rules | Spec |  | [plan](catalog-check-constraint-validation.md) |
@@ -174,7 +174,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R275` [**Error channel and data projection for source-record-carrier @service mutations**](source-record-carrier-service-error-channel.md) — In Progress, structural
 - `R262` [**Reject @nodeId on non-ID coordinates and federation encoded @key fields at validate time**](reject-nodeid-on-non-id-coordinates.md) — Backlog, validation
 - `R170` [**Sakila execute-tier fixture for the Jakarta ValidationHandler channel (R94-blocked)**](validator-integration-execute-coverage.md) — Backlog, testing
-- `R186` [**Nested input types in @mutation fields**](nested-input-types-in-mutation-fields.md) — Spec, architecture
+- `R186` [**Nested input types in @mutation fields**](nested-input-types-in-mutation-fields.md) — Ready, architecture
 - `R98` [**Multi-source input validation: SDL directives + DB CHECK + Jakarta on a unified rendered schema**](multi-source-input-validation.md) — Backlog, architecture, blocked by [catalog-check-constraint-validation](catalog-check-constraint-validation.md)
 - `R63` [**Type UPSERT dialect requirement on the model**](dml-dialect-requirement-on-model.md) — Spec, architecture
 - `R172` [**Audit: forbid service-side references to <outputPackage>.inputs.***](inputs-package-internal-use-audit.md) — Backlog, architecture
