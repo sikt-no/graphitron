@@ -828,6 +828,20 @@ type Film implements Node & Searchable @table(name: "film") @node {
             method: "filmActorsViaCondition"
         }
     }]) @defaultOrder(primaryKey: true)
+    # Bridging-hop ConditionJoin regression (mirrors opptak's samordnaOrganisasjoner): an FK first
+    # hop to the film_actor junction, then a terminal @condition hop to actor. Unlike
+    # actorsByCondition above (condition at the first hop), the condition here is a BRIDGING hop, so
+    # the split-rows emitter joins it via .on(filmActorJunctionToActor(film_actor_alias,
+    # actor_alias)). The fixture's parameters are the concrete, incompatible jOOQ types FilmActor
+    # and Actor, so reversing the two aliases fails to compile in compile-spec. No first-hop
+    # condition fixture exercises the bridging-hop argument order; this one does.
+    actorsViaJunctionCondition: [Actor!]! @splitQuery @reference(path: [
+        {key: "film_actor_film_id_fkey"},
+        {condition: {
+            className: "no.sikt.graphitron.rewrite.test.conditions.ReferencePathConditionFixtures",
+            method: "filmActorJunctionToActor"
+        }}
+    ]) @defaultOrder(primaryKey: true)
     # plan-split-query-connection.md §1: @splitQuery + @asConnection. Per-parent Relay pagination
     # via a ROW_NUMBER() OVER (PARTITION BY parentInput.idx) envelope. Each Film gets its own
     # paginated actor slice via the same junction-path, wrapped in a ConnectionResult per key.

@@ -1466,6 +1466,35 @@ class GraphQLQueryTest {
 
     @SuppressWarnings("unchecked")
     @Test
+    void splitTableField_bridgingConditionJoin_returnsActorsPerFilm() {
+        // Bridging-hop ConditionJoin regression (mirrors opptak's samordnaOrganisasjoner):
+        // Film.actorsViaJunctionCondition navigates an FK first hop (film -> film_actor) then a
+        // terminal @condition hop (film_actor -> actor) via filmActorJunctionToActor(FilmActor,
+        // Actor). The split-rows emitter joins the junction with .on(filmActorJunctionToActor(
+        // film_actor_alias, actor_alias)) -- source first. The concrete incompatible parameter
+        // types make a reversed-argument emit a compile error in compile-spec; this test adds the
+        // runtime check that the bridging join selects the same actors as the FK / condition-only
+        // navigations. Same seeded film->actors mapping and same 1 + 1 = 2 round-trip shape as
+        // splitTableField_conditionJoin_returnsActorsPerFilm above.
+        QUERY_COUNT.set(0);
+        Map<String, Object> data = execute(
+            "{ films { filmId actorsViaJunctionCondition { actorId } } }");
+        assertThat(QUERY_COUNT.get())
+            .as("1 root films query + 1 batched DataLoader call for actorsViaJunctionCondition")
+            .isEqualTo(2);
+        List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("films");
+        var byId = films.stream().collect(java.util.stream.Collectors.toMap(
+            f -> (Integer) f.get("filmId"),
+            f -> (List<Map<String, Object>>) f.get("actorsViaJunctionCondition")));
+        assertThat(byId.get(1)).extracting(a -> a.get("actorId")).containsExactlyInAnyOrder(1, 2);
+        assertThat(byId.get(2)).extracting(a -> a.get("actorId")).containsExactlyInAnyOrder(1, 3);
+        assertThat(byId.get(3)).extracting(a -> a.get("actorId")).containsExactly(1);
+        assertThat(byId.get(4)).extracting(a -> a.get("actorId")).containsExactly(2);
+        assertThat(byId.get(5)).extracting(a -> a.get("actorId")).containsExactly(3);
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
     void splitTableField_singleCardinality_dedupesSharedFk_oneBatchRoundTrip() {
         // Five customers hit the addressSplit DataLoader; caching-enabled dedup collapses the
         // 5 loads to 3 distinct keys (addresses 1, 2, 3). Total round-trips: 1 (customers root)

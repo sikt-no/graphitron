@@ -1,5 +1,6 @@
 package no.sikt.graphitron.rewrite.test.conditions;
 
+import no.sikt.graphitron.rewrite.test.jooq.tables.Actor;
 import no.sikt.graphitron.rewrite.test.jooq.tables.FilmActor;
 import org.jooq.Condition;
 import org.jooq.Table;
@@ -46,5 +47,24 @@ public final class ReferencePathConditionFixtures {
                 .and(FilmActor.FILM_ACTOR.ACTOR_ID
                     .eq(actorTable.field("actor_id", Integer.class)))
         );
+    }
+
+    /**
+     * Bridging-hop fixture: the terminal {@code @condition} of an FK-then-condition path
+     * ({@code [{key: "film_actor_film_id_fkey"}, {condition: filmActorJunctionToActor}]}), used by
+     * {@code Film.actorsViaJunctionCondition}. The first hop is an FK to the {@code film_actor}
+     * junction; this method is the second (terminal) hop joining the junction to {@code actor}, so
+     * its parameters are the junction (source) and the leaf (target).
+     *
+     * <p>Unlike the {@code Table<?>}-typed fixtures above, the parameters are the concrete jOOQ
+     * table types {@link FilmActor} and {@link Actor}. These are mutually incompatible, so the
+     * argument order is type-checked at compile time: if the split-rows emitter reverses the two
+     * aliases on this bridging hop (calling {@code filmActorJunctionToActor(actorAlias,
+     * filmActorAlias)}), the generated resolver fails to compile in {@code compile-spec}. That is
+     * the regression guard for the opptak {@code samordnaOrganisasjoner} incompatible-types defect,
+     * which the {@code Table<?>}-typed first-hop fixtures could not catch.
+     */
+    public static Condition filmActorJunctionToActor(FilmActor filmActor, Actor actor) {
+        return filmActor.ACTOR_ID.eq(actor.ACTOR_ID);
     }
 }
