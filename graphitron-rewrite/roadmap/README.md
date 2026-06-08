@@ -18,6 +18,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R275` | Error channel and data projection for source-record-carrier @service mutations | In Progress | 2026-06-05 <sub>created 2026-06-02</sub> | [plan](source-record-carrier-service-error-channel.md) |
 | `R266` | DELETE mutations onto the DeleteRows walker carrier, retiring @value (R222 DELETE slice) | Spec | 2026-06-08 <sub>created 2026-06-01</sub> | [plan](deleterows-walker-carrier.md) |
 | `R222` | Dimensional model pivot: slots over cross-product permits | Spec | 2026-06-05 <sub>created 2026-05-21</sub> | [plan](dimensional-model-pivot.md) |
+| `R283` | Emit the @oneOf directive definition into generated SDL outputs | Spec | 2026-06-08 | [plan](emit-oneof-directive-definition.md) |
 | `R256` | Absorb the service walker substrate: typed per-arm errors + multi-arg ctors | Ready | 2026-05-30 <sub>created 2026-05-29</sub> | [plan](service-walker-substrate-absorption.md) |
 | `R281` | Classification test DSL: @classified spec-by-example | Spec | 2026-06-07 | [plan](classification-test-dsl.md) |
 | `R279` | Field-first reachability-driven classification driver <sub>blocked by: [dimensional-model-pivot](dimensional-model-pivot.md)</sub> | Ready | 2026-06-07 <sub>created 2026-06-05</sub> | [plan](field-first-classification-driver.md) |
@@ -273,6 +274,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R220` [**Consolidate looksLikeSourcesShape, couldBeSourcesShape, and classifySourcesType into one predicate**](consolidate-sources-shape-predicates.md)
 - `R242` [**DML payload positional input/output alignment**](dml-payload-positional-alignment.md)
 - `R85` [**Emit graphitronContext helper into Conditions and Type classes**](helper-emission-non-fetcher-hosts.md)
+- `R283` [**Emit the @oneOf directive definition into generated SDL outputs**](emit-oneof-directive-definition.md)
 - `R209` [**FieldRegistry classify-input trace loses typed Rejection payload**](field-registry-typed-rejection-trace.md)
 - `R109` [**How-to recipe and Sakila fixture for grouped collections via Field<Result<R>> @externalField + multiset**](list-valued-external-field-multiset.md)
 - `R52` [**Lift lookup-vs-query operation taxonomy into the model**](lift-operation-taxonomy.md)
