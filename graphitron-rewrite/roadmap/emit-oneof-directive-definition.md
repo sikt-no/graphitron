@@ -1,7 +1,7 @@
 ---
 id: R283
 title: Emit the @oneOf directive definition into generated SDL outputs
-status: Spec
+status: Ready
 bucket: feature
 priority: 3
 depends-on: []
@@ -282,6 +282,10 @@ No current fixture applies `@oneOf` (confirmed: no `@oneOf` in any
   `{ _service { sdl } }` against generated runtime code. Adding it to the
   existing federated fixture also gives R253's parity test oneOf coverage
   for free.
+- Pipeline-tier (non-federation): a `@oneOf` input on a non-federation
+  fixture (existing or dedicated) to exercise the `federationLink=false,
+  usesOneOf=true` branch, which the gate guard above pins by asserting no
+  runtime helper is emitted there.
 
 ## Tests
 
@@ -296,6 +300,17 @@ No current fixture applies `@oneOf` (confirmed: no `@oneOf` in any
   against `Graphitron.buildSchema(...)` for a fixture with a `@oneOf` input
   returns an `sdl` string containing the `@oneOf` definition, and the result
   carries no GraphQL errors.
+- **Pipeline (gate guard, non-federation `@oneOf`)**: the `federationLink`
+  conjunct on the runtime-helper gate is otherwise untested; the
+  federation-only cases above would still pass if it were dropped. A
+  non-federation schema that uses `@oneOf` (a `@oneOf` input on a
+  non-federation pipeline fixture, or a small dedicated one) must emit
+  **no** `<outputPackage>.util.OneOfDirectiveSdl.java`, the dead-helper case
+  the gate prevents, while its on-disk plain SDL still carries the `@oneOf`
+  definition (`printPlain` already emits it). This pins the fix the
+  Spec-review round that added `federationLink && usesOneOf` introduced, a
+  hole the spec itself flags above as one the federation-only plan would not
+  catch.
 - **Composition smoke (optional, if cheaply expressible)**: parse the
   emitted federation SDL through graphql-java's `SchemaParser` and assert it
   resolves `@oneOf` (i.e. the definition and application agree), the local
