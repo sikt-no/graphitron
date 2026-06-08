@@ -671,7 +671,7 @@ public final class SplitRowsMethodEmitter {
                 case JoinStep.FkJoin fk -> sel.add(".join($L).onKey($T.$L)\n",
                     prevAlias, fk.fk().keysClass(), fk.fk().constantName());
                 case JoinStep.ConditionJoin cj -> sel.add(".join($L).on($L)\n",
-                    prevAlias, JoinPathEmitter.emitTwoArgMethodCall(cj.condition(), aliases.get(i), prevAlias));
+                    prevAlias, JoinPathEmitter.emitTwoArgMethodCall(cj.condition(), prevAlias, aliases.get(i)));
                 case JoinStep.LiftedHop ignored -> throw new IllegalStateException(
                     "LiftedHop should not appear at bridging position; @reference-composed paths "
                     + "are FkJoin / ConditionJoin chains, lifter shapes are single-hop");
@@ -1009,7 +1009,7 @@ public final class SplitRowsMethodEmitter {
                 case JoinStep.FkJoin fk -> inner.add(".join($L).onKey($T.$L)\n",
                     prevAlias, fk.fk().keysClass(), fk.fk().constantName());
                 case JoinStep.ConditionJoin cj -> inner.add(".join($L).on($L)\n",
-                    prevAlias, JoinPathEmitter.emitTwoArgMethodCall(cj.condition(), aliases.get(i), prevAlias));
+                    prevAlias, JoinPathEmitter.emitTwoArgMethodCall(cj.condition(), prevAlias, aliases.get(i)));
                 case JoinStep.LiftedHop ignored -> throw new IllegalStateException(
                     "LiftedHop should not appear at bridging position in a connection rows-method");
             }

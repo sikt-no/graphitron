@@ -121,7 +121,7 @@ public final class InlineTableFieldEmitter {
                 case JoinStep.FkJoin fk -> sel.add("\n        .join($L).onKey($T.$L)",
                     prevAlias, fk.fk().keysClass(), fk.fk().constantName());
                 case JoinStep.ConditionJoin cj -> sel.add("\n        .join($L).on($L)",
-                    prevAlias, JoinPathEmitter.emitTwoArgMethodCall(cj.condition(), aliases.get(i), prevAlias));
+                    prevAlias, JoinPathEmitter.emitTwoArgMethodCall(cj.condition(), prevAlias, aliases.get(i)));
                 case JoinStep.LiftedHop ignored -> throw new IllegalStateException(
                     "LiftedHop should not appear in an @reference-composed path; this path is "
                     + "reserved for the single-hop @sourceRow shape consumed by SplitRowsMethodEmitter");
