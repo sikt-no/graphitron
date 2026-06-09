@@ -22,6 +22,13 @@ type Query {
     # subgraph with "Unknown directive @oneOf". The implicit-condition @table shape mirrors the
     # shared fixture's Query.filmsWithImplicitInput, so codegen routes through a proven path.
     filmsByOneOf(filter: FilmOneOfFilter): [Film!]!
+    # R286 fixture: producer for FilmRefStub, a non-table-bound record-carrier type carrying
+    # @key(resolvable: false). Binds the carrier to FilmRecord via the shared service so the
+    # reference-only stub is reachable (classified, not orphan) and its @key reaches the SDL.
+    filmRefStubs(ids: [Int!]!): [FilmRefStub!]! @service(service: {
+        className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService",
+        method: "filmsByIds"
+    })
 }
 
 # @oneOf demands all-nullable fields; graphql-java enforces this at schema build, so a non-null
@@ -69,4 +76,13 @@ type FilmActor @table(name: "film_actor") @key(fields: "filmId actorId") {
 type Language @table(name: "language") @key(fields: "languageId", resolvable: false) {
     languageId: Int!    @field(name: "LANGUAGE_ID")
     name:       String! @field(name: "NAME")
+}
+
+# R286 (second-loop / non-table-bound branch): a reference-only entity stub on a type that is
+# NOT table-bound — a service-bound record carrier (no @table, no @node). EntityResolutionBuilder
+# must accept it (every @key is resolvable: false → no backing table required, no EntityResolution),
+# and the @key(resolvable: false) must still reach the served SDL so the supergraph composer sees
+# the reference. Bound to FilmRecord via Query.filmRefStubs.
+type FilmRefStub @key(fields: "filmId", resolvable: false) {
+    filmId: Int @field(name: "film_id")
 }
