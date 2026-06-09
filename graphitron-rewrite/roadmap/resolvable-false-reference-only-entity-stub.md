@@ -1,7 +1,7 @@
 ---
 id: R286
 title: "Allow @key(resolvable: false) on non-table-bound types (reference-only federation entity stubs)"
-status: Backlog
+status: In Review
 bucket: bug
 depends-on: []
 created: 2026-06-09
