@@ -12,7 +12,6 @@ import static no.sikt.graphitron.rewrite.classifieddsl.DimensionTuple.inline;
 import static no.sikt.graphitron.rewrite.classifieddsl.DimensionTuple.of;
 import static no.sikt.graphitron.rewrite.classifieddsl.Mapping.Column;
 import static no.sikt.graphitron.rewrite.classifieddsl.Mapping.Field;
-import static no.sikt.graphitron.rewrite.classifieddsl.Mapping.Polymorphic;
 import static no.sikt.graphitron.rewrite.classifieddsl.Mapping.Record;
 import static no.sikt.graphitron.rewrite.classifieddsl.Mapping.Table;
 import static no.sikt.graphitron.rewrite.classifieddsl.Mapping.TableConnection;
@@ -56,12 +55,13 @@ public final class LeafTupleAdapter {
             // the catalog to project the @table; [Service] terminal when the result is a record.
             case QueryField.QueryServiceTableField f -> of(Service, Query, tableMapping(f.returnType()));
             case QueryField.QueryServiceRecordField f -> of(Service, Record);
-            // FORK (polymorphic mapping): multi-table interface/union/node roots resolve over
-            // participant tables, not a single Table. Provisional Mapping.Polymorphic.
-            case QueryField.QueryInterfaceField f -> of(Query, Polymorphic);
-            case QueryField.QueryUnionField f -> of(Query, Polymorphic);
-            case QueryField.QueryNodeField f -> of(Query, Polymorphic);
-            case QueryField.QueryNodesField f -> of(Query, Polymorphic);
+            // Polymorphic roots are catalog-bound (every participant is a @table/NodeType): mapping
+            // is Table, with the participant set as a derived slot. The trailing [Query] is the root
+            // query; polymorphic resolution does not add a producer step.
+            case QueryField.QueryInterfaceField f -> of(Query, polyMapping(f.returnType()));
+            case QueryField.QueryUnionField f -> of(Query, polyMapping(f.returnType()));
+            case QueryField.QueryNodeField f -> of(Query, polyMapping(f.returnType()));
+            case QueryField.QueryNodesField f -> of(Query, polyMapping(f.returnType()));
 
             // ---- MutationField (root) ----------------------------------------------------------
             // DML write. The return-shape slot (DmlReturnExpression) decides [Dml] (encoded ID) vs
@@ -111,36 +111,55 @@ public final class LeafTupleAdapter {
             case ChildField.ServiceRecordField f -> of(Service, Record);
             case ChildField.RecordField f -> inline(Field);
             case ChildField.PropertyField f -> inline(Field);
-            // FORK (computed scalar): @externalField inlines a jOOQ Field<X> into the parent SELECT,
-            // a catalog-side computed column. Provisional inline Column.
+            // @externalField inlines a jOOQ Field<X> into the parent SELECT: a catalog-side computed
+            // column (mirror-side), so Column rather than Field.
             case ChildField.ComputedField f -> inline(Column);
 
             // ---- ChildField: nesting / constructor passthroughs --------------------------------
             case ChildField.NestingField f -> inline(tableMapping(f.returnType()));
-            // FORK (constructor passthrough): builds a @record child from the parent record. The
-            // tuple follows the constructed shape; provisional inline Record.
+            // Constructor passthrough: builds a @record child from the parent record. Maps to Record.
             case ChildField.ConstructorField f -> inline(Record);
 
             // ---- ChildField: polymorphic children ----------------------------------------------
-            // FORK (polymorphic mapping + producer): multi-table UNION ALL keyed off the parent.
-            // Provisional [Query], Polymorphic.
-            case ChildField.InterfaceField f -> of(Query, Polymorphic);
-            case ChildField.UnionField f -> of(Query, Polymorphic);
+            // Catalog-bound multi-table UNION ALL keyed off the parent: a new keyed query ([Query]),
+            // mapping Table with the participant set as a slot (see polymorphic roots above).
+            case ChildField.InterfaceField f -> of(Query, polyMapping(f.returnType()));
+            case ChildField.UnionField f -> of(Query, polyMapping(f.returnType()));
 
             // ---- ChildField: DELETE/payload returning carriers ---------------------------------
-            // FORK (returning-record reads): the source IS the RETURNING record; no new query, the
-            // field reads/encodes off the source row. Provisional inline.
-            case ChildField.SingleRecordTableFieldFromReturning f -> inline(Table);
+            // The encoded-PK scalar reads off the PK-only RETURNING record: no new query, inline Column.
             case ChildField.SingleRecordIdFieldFromReturning f -> inline(Column);
+            // SingleRecordTableFieldFromReturning projects a full @table off a DELETE's PK-only
+            // RETURNING record. That has no valid verdict: the row is gone, so the only producer that
+            // could project the @table is a follow-up [Query] against a row that no longer exists. The
+            // construct is illegal and is slated for removal (R287, "Remove DELETE -> @table return
+            // path"); the corpus refuses it rather than blessing a happy-path tuple. When R287 deletes
+            // the leaf, this arm goes with it.
+            case ChildField.SingleRecordTableFieldFromReturning f ->
+                throw new UnsupportedOperationException(
+                    "SingleRecordTableFieldFromReturning has no valid (producer, mapping) verdict: a "
+                    + "full @table projection off a DELETE's PK-only RETURNING record cannot be "
+                    + "produced (the row is deleted). This construct is illegal and tracked for "
+                    + "removal by R287.");
 
-            // FORK (errors channel): the errors field reads off localContext / a payload property /
-            // an outcome wrapper arm; no catalog or service mapping fits cleanly. Provisional inline Field.
-            case ChildField.ErrorsField f -> inline(Field);
+            // The errors field reads an Outcome wrapper arm off env.getSource(): no new query (inline),
+            // and the @error element types are object types, so Record. (A scalar-error shape would be
+            // Field, but ErrorsField.errorTypes is always object @error types today.)
+            case ChildField.ErrorsField f -> inline(Record);
         };
     }
 
     /** {@code mapping = TableConnection} when the return wrapper is a Relay connection, else {@code Table}. */
     private static Mapping tableMapping(ReturnTypeRef.TableBoundReturnType returnType) {
+        return returnType.wrapper() instanceof FieldWrapper.Connection ? TableConnection : Table;
+    }
+
+    /**
+     * Polymorphic (interface/union/node) results are catalog-bound over participant tables, so they
+     * map to {@link Mapping#Table} ({@link Mapping#TableConnection} when paginated) with the
+     * participant set carried in a derived slot rather than as a distinct mapping value.
+     */
+    private static Mapping polyMapping(ReturnTypeRef.PolymorphicReturnType returnType) {
         return returnType.wrapper() instanceof FieldWrapper.Connection ? TableConnection : Table;
     }
 
