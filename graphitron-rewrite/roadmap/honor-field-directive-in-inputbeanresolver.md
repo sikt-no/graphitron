@@ -122,9 +122,12 @@ default (`InputBeanInstantiationEmitter.java:129-146`) is intentionally unaffect
     time rather than emit a malformed N-1-arg call. *(direction A, the under-arity drop
     that is live today)*
   - **Every SDL field must be consumed.** An SDL field whose binding key names no
-    component is a hard `Built.Fail` naming the field and its key; for a record an
-    unconsumed field is silent data loss, the same correspondence violation in the
-    other direction. *(direction B, the intent of the dead `:264-268`)*
+    component is a hard `Built.Fail` naming the field and its key. The justification is
+    the **total-mirror-by-contract** invariant, not "silent data loss": the JavaBean arm
+    is lossy in exactly the same way (an unconsumed SDL field is skipped at `:270`) yet
+    deliberately tolerated because beans are partial by design, so a data-loss framing
+    would wrongly indict it too. *(direction B, the intent of the dead `:264-268`; it is
+    also a behavioural flip with a weaker safety net than direction A, see Tests)*
   **Delete the dead `:264-268` branch.** Its "has no component named" message is
   unreachable on the record arm (the loop drives `recordOrder` against a
   component-keyed index, so `member == null` never fires for a record), and direction B
@@ -159,13 +162,21 @@ concerns stay orthogonal.
 ## Directive documentation
 
 `@field`'s docstring (`directives.graphqls:30-39`) enumerates the column / argument /
-enum-value axes but omits the Java-member axis that R191 (output) and R200 (input) add
-on free-form `@record`/bean parents. After this item the docstring is false by
-omission — an author reading it concludes `@field` on a bean-backed `@service` input
-field is inert. Add the axis in the same change: on `INPUT_FIELD_DEFINITION` of a
-free-form `@record`/POJO/Java-record-backed `@service` parameter, the directive value
-names the Java member (record component / JavaBean setter base) to bind. Keep the prose
-free of roadmap markers (the `Spec → Done` user-facing-doc check applies).
+enum-value axes but omits the **Java-member axis** that R191 (output) and R200 (input)
+add on free-form `@record`/bean parents. As it stands (absent this update) the docstring
+is false by omission: an author reading it concludes `@field` on a bean-backed
+`@service` input field is inert. Close the whole omission in this change, covering both
+sites the axis spans rather than only R200's:
+- `FIELD_DEFINITION` of a free-form `@record`/bean **output** parent (R191, which
+  shipped without documenting its axis): the value names the Java accessor to read.
+- `INPUT_FIELD_DEFINITION` of a free-form `@record`/POJO/Java-record-backed `@service`
+  **input** parameter (R200): the value names the Java member (record component /
+  JavaBean setter base) to bind.
+
+R200 lands first among the symmetry items, so it pays off R191's pre-existing
+output-axis doc debt here rather than leaving it ownerless (R201/R202 cover other output
+sub-axes, not the base accessor axis). Keep the prose free of roadmap markers (the
+`Spec → Done` user-facing-doc check applies).
 
 ## Tests
 
@@ -185,21 +196,33 @@ at every tier).
   SDL field, the direction-A under-arity Fail; (b) SDL field whose binding key names no
   component, the direction-B consume Fail; (c) two SDL fields resolving to one binding
   key, the ambiguity Fail. Assert on `Rejection.message()`.
-- **Regression floor:**
+- **Regression floor (two behavioural flips, asymmetric risk):**
   - A divergent-name JavaBean with **no** `@field` still rejects with
     `has no fields matching the SDL input type`; the directive is the only bridge, and
     its absence must not start matching by coincidence.
-  - A **record** whose component/SDL names mismatch with no `@field` now rejects
-    (direction A) where it previously emitted a silent under-arity call. Guard the
-    behavioural flip explicitly so a future reader does not misread it as new breakage.
+  - **Direction A flip** (record component with no SDL field): now a classify-time Fail
+    where it previously emitted a silent under-arity call. Lower risk, because the old
+    behaviour already broke downstream (the under-arity canonical-ctor call is a sakila
+    javac error), so the flip only moves the failure earlier and clearer. Guard it so a
+    future reader does not misread the earlier rejection as new breakage.
+  - **Direction B flip** (record SDL field consumed by no component, rejection case (b)
+    above): the **riskier** flip and the one needing the stronger guard. A subset record
+    (`R(a, b)` against input `{a, b, c}`) constructs fine **today** and silently drops
+    `c` with no error at any tier, so there is no javac backstop, today or against a
+    future change that re-loosens direction B. The rejection-case fixture is therefore a
+    forward-looking guard, not a fix for a broken test; no existing fixture exercises a
+    subset record (the `TestInputBean` cases are all exact mirrors).
 - **Compile-tier backstop** (`graphitron-sakila-example`): add an input type whose
   consumer-authored record uses a `@field`-renamed component and round-trip it through a
-  mutation. The cross-module `-Plocal-db` compile is the real guard against the record
-  under-arity case; an under-arity canonical-constructor call surfaces there as a javac
-  error.
+  mutation. The cross-module `-Plocal-db` compile verifies the happy path emits a
+  well-formed canonical-constructor call; it is also a belt-and-suspenders net for the
+  direction-A arity invariant, since an under-arity call (were the classify-time Fail
+  ever to regress) surfaces here as a javac error.
 - **Fixtures:** a `TestInputBean`-style record and a JavaBean with member names
   diverging from their SDL field names (sibling to `TestInputBean` /
-  `TestInputJavaBeanWithBoolean`).
+  `TestInputJavaBeanWithBoolean`), plus a **subset record** (fewer components than its
+  SDL input has fields) for the direction-B flip; the existing `TestInputBean` cases are
+  all exact mirrors, so this shape is new.
 
 ## Interaction with other items
 
@@ -208,8 +231,9 @@ at every tier).
   carried on the binding so emit is selection-agnostic" property.
 - **R201 / R202 (Backlog)** — the other two `@field`-symmetry items (output payload
   construction; `@error` extra-field accessors). The directive docstring update is
-  shared across the three; whichever lands first adds the Java-member axis and the
-  others reference it.
+  shared across the three; R200 lands first and documents the full Java-member axis
+  (both the input site and R191's output `FIELD_DEFINITION` site, see Directive
+  documentation), so R201/R202 reference it rather than re-adding.
 - **R97 (Backlog)** — owns the `@table`-on-input column axis and the jOOQ-`TableRecord`-
   as-param case carved out above. R200 does not touch `looksLikeBeanCandidate`'s
   `org.jooq.*` rejection, which is the seam between the two.
