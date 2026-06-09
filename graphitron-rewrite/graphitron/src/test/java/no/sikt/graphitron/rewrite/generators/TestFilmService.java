@@ -4,6 +4,8 @@ import no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord;
 import org.jooq.Row1;
 
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 /**
  * Minimal service stub used by {@link FetcherPipelineTest} to verify that the
@@ -18,6 +20,17 @@ import java.util.List;
 public class TestFilmService {
 
     public static List<List<FilmRecord>> getFilms(List<Row1<Integer>> languageKeys, String filter, String tenantId) {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
+     * Mapped-container sibling of {@link #getFilms}: {@code Set} keys + {@code Map} return
+     * classify the field's loader as {@code MAPPED_SET}. Used by the R285 pipeline test to
+     * assert that a mapped {@code ServiceTableField} routes through the lift (rows method returns
+     * {@code Map<Row1<Integer>, List<Record>>} — the projected Record, not the developer-returned
+     * {@code FilmRecord}).
+     */
+    public static Map<Row1<Integer>, List<FilmRecord>> getFilmsMapped(Set<Row1<Integer>> languageKeys) {
         throw new UnsupportedOperationException();
     }
 }

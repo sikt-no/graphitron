@@ -725,6 +725,32 @@ class FetcherPipelineTest {
             """);
         assertThat(method(languageFetchers, "films").returnType().toString())
             .isEqualTo("java.util.concurrent.CompletableFuture<graphql.execution.DataFetcherResult<java.util.List<org.jooq.Record>>>");
+        // Positional container: the lifted rows method returns List<List<Record>> (idx-scattered
+        // per-parent lists of the projected Record), confirming lift routing for POSITIONAL_LIST.
+        assertThat(method(languageFetchers, "loadFilms").returnType().toString())
+            .isEqualTo("java.util.List<java.util.List<org.jooq.Record>>");
+    }
+
+    @Test
+    void serviceField_mappedContainer_rowsMethodReturnsMapOfProjectedRecord() {
+        // R285: mapped-container sibling of the positional case above. Set keys + Map return
+        // classify the loader as MAPPED_SET; the lifted rows method returns
+        // Map<Row1<Integer>, List<Record>> — the projected Record (lift routing), keyed back to
+        // each parent. Together the two tests cover both loader containers through the lift.
+        var languageFetchers = findSpec("LanguageFetchers", """
+            type Language @table(name: "language") { languageId: Int @field(name: "language_id") }
+            type Film @table(name: "film") { title: String }
+            type Query { dummy: String }
+            extend type Language {
+                films: [Film!]! @service(
+                    service: {className: "no.sikt.graphitron.rewrite.generators.TestFilmService", method: "getFilmsMapped"}
+                )
+            }
+            """);
+        assertThat(method(languageFetchers, "films").returnType().toString())
+            .isEqualTo("java.util.concurrent.CompletableFuture<graphql.execution.DataFetcherResult<java.util.List<org.jooq.Record>>>");
+        assertThat(method(languageFetchers, "loadFilms").returnType().toString())
+            .isEqualTo("java.util.Map<org.jooq.Row1<java.lang.Integer>, java.util.List<org.jooq.Record>>");
     }
 
     @Test
