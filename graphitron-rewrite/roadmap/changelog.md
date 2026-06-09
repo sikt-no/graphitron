@@ -10,6 +10,25 @@ The `next-id:` front-matter field is the canonical counter for `R<n>` allocation
 
 ---
 
+- `57cb7b0` + `f1ee7a6` — R266 (`deleterows-walker-carrier`): DELETE mutations onto the
+  `DeleteRows` walker carrier (sealed `Identified | Broadcast`), mirroring R246/R258's UPDATE
+  work for the DELETE verb. Row identification is catalog-derived PK-or-UK coverage via the
+  shared `MatchedKeys.firstCovered` matcher both walkers call (the seam a future `LookupRows`
+  carrier grows from); `Identified`'s matched key is a single-row guard, `multiRow: true` opts
+  into the `Broadcast` arm. New `DeleteRowsField` worn by the migrated `MutationDeleteTableField`
+  (drops `tableInputArg`) plus the new `MutationDeletePayloadField` / `MutationBulkDeletePayloadField`;
+  `MutationDmlRecordField` narrowed to `{INSERT, UPSERT}` and `MutationBulkDmlRecordField` to
+  `{INSERT}` (compact-ctors reject DELETE). New `DeleteRowsError` sub-seal (`NoUniqueKeyCoverage`,
+  `UnsupportedInputFieldShape`, `OverrideConditionNotSupported`) under `graphitron.delete-rows.*`.
+  Carving DELETE off `MutationInputResolver.resolveInput` retired the `@value` directive entirely
+  (absorbing R188): the declaration, `DIR_VALUE`, `DmlKind.acceptsValueMarker` / `requiresPkCoverage`,
+  the `valueMarkedNames` partition machinery, and `value.adoc` are all deleted; `mutation.adoc`
+  rewritten to the catalog-derived rule. Rework (`f1ee7a6`) closed the In Review feedback: aligned
+  the `BuildContext` `@lookupKey` rejection message with the `FieldBuilder` twin, and shipped the
+  execution-tier UK-covering single-row delete over a dedicated public-schema `storage_bin` fixture
+  (`deleteStorageBinByCode`, WHERE on the UNIQUE `code` / RETURNING the `bin_id` PK, round-tripped
+  against Postgres).
+
 - R8 (`docs-as-index-into-tests`, superseded by R279): closed as superseded wholesale rather
   than shipped independently. Steps 1-2 (re-sectioning groundwork, description normalisation)
   shipped earlier on `claude/review-docs-plan-adYJW`; step 5 was already retired by the
