@@ -19,6 +19,11 @@ type URegOrganisasjon @key(fields: "id", resolvable: false)
 }
 ```
 
-**Fix.** In the non-table-bound branch of `EntityResolutionBuilder.build()`, when **every** `@key` directive on the type is `resolvable: false`, skip the type (no demote, no `EntityResolution` entry) rather than rejecting: there is nothing to resolve and no table to require. When at least one key is resolvable, the table requirement stays as-is (the existing R176 diagnostic still fires). This naturally covers both the reported `@record` case and the canonical bare-object reference stub, both of which reach that branch already classified.
+**Fix.** `EntityResolutionBuilder.build()` rejects the stub in *two* places, and both need the guard. The decision turns on the federation `resolvable` flag alone, never on `@record` (or any other) classification:
 
-**Out of scope.** Reference-only stubs that are *absent from the registry* entirely (the R276 first-loop case) — those are a rarer shape and keep their current diagnostic. Runtime `_Entity` union membership and federation-composition behaviour are owned by federation-jvm's `Federation.transform`, which honours `resolvable: false`; no change needed there.
+1. **Second loop** (the type is classified, e.g. a `@record` type or a bare `NestingField` plain object): in the non-table-bound branch, when **every** `@key` is `resolvable: false`, skip the type (no demote, no `EntityResolution`). When at least one key is resolvable, the table requirement stays and the R176 diagnostic still fires.
+2. **First loop** (R276; the type is *absent from the registry* — the common case for a federation reference stub, which is an orphan in this subgraph: referenced by the supergraph, not by any local field): when every `@key` is `resolvable: false`, leave it untouched rather than demoting to `UnclassifiedType`. graphql-java still carries the type in the assembled schema, so it is emitted to the subgraph SDL for the composer.
+
+The two arms cover the reachable-classified stub and the orphan stub respectively; the reported `URegOrganisasjon` (an explicit-`@record` orphan) lands in the first loop.
+
+**Out of scope.** Runtime `_Entity` union membership and federation-composition behaviour are owned by federation-jvm's `Federation.transform`, which honours `resolvable: false`; no change needed there.

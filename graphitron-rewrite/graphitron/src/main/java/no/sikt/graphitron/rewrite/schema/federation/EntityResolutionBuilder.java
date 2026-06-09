@@ -99,11 +99,24 @@ public final class EntityResolutionBuilder {
         // never sees it. Reject it here with the federation diagnostic rather than letting it slip
         // through as a generic unclassified field. (Once classified it rides the UnclassifiedType
         // skip in the loop below.)
+        //
+        // R286: a reference-only entity stub (every @key is resolvable: false) is the exception.
+        // It is declared for the supergraph composer but this subgraph does not own its resolution
+        // and emits no _entities handler, so it needs no @table. Such a stub is commonly an orphan
+        // in the subgraph — referenced by the supergraph, not by any local field — so the type pass
+        // leaves it absent from the registry and it lands here. Leave it untouched: not a table-bound
+        // type, but not an error either; it is emitted to SDL as-is for the composer. The decision
+        // turns on the federation resolvable flag alone, never on @record (or any) classification.
         for (var named : assembled.getAllTypesAsList()) {
             if (named instanceof GraphQLObjectType keyObj
                     && !keyObj.getName().startsWith("__")
                     && !keyObj.getAppliedDirectives(KEY_DIRECTIVE).isEmpty()
                     && !registry.contains(keyObj.getName())) {
+                boolean anyResolvable = keyObj.getAppliedDirectives(KEY_DIRECTIVE).stream()
+                    .anyMatch(EntityResolutionBuilder::readResolvableArg);
+                if (!anyResolvable) {
+                    continue;
+                }
                 var loc = keyObj.getDefinition() != null ? keyObj.getDefinition().getSourceLocation() : null;
                 registry.classify(keyObj.getName(), new UnclassifiedType(keyObj.getName(), loc, Rejection.structural(
                     "@key on type '" + keyObj.getName() + "' requires a table-bound type, but '" + keyObj.getName()

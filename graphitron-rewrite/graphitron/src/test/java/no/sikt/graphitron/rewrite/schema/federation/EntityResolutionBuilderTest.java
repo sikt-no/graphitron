@@ -337,4 +337,27 @@ class EntityResolutionBuilderTest {
             .contains("is classified as a @record type")
             .contains("federation entities need a @table directive");
     }
+
+    @Test
+    void resolvableFalseKeyViaExplicitRecordDirective_isAcceptedAsReferenceOnlyStub() {
+        // R286 repro of the reported case: an explicit @record(record:{className:...}) directive
+        // (not a service-bound record) carrying @key(resolvable: false), referenced only as a
+        // federation stub (no operation returns it). Must survive classification, no demote.
+        var schema = TestSchemaHelper.buildSchema(FEDERATION_DIRECTIVES + """
+            type Query { ping: String }
+            type URegOrganisasjon @key(fields: "sakId", resolvable: false)
+                @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.R88AccessorFixtures$BareNameRecord"}) {
+                sakId: String @field(name: "sakId")
+            }
+            """);
+        // An orphan stub (no local field returns it) is left absent from the registry: not a
+        // table-bound type, but crucially not demoted to an UnclassifiedType (which would surface
+        // the author error). graphql-java still carries it in the assembled schema, so it is
+        // emitted to the subgraph SDL for the supergraph composer.
+        var stub = schema.type("URegOrganisasjon");
+        assertThat(stub == null || !(stub instanceof UnclassifiedType))
+            .as("orphan reference-only stub is left unclassified, not rejected (was: %s)", stub)
+            .isTrue();
+        assertThat(schema.entityResolution("URegOrganisasjon")).isNull();
+    }
 }
