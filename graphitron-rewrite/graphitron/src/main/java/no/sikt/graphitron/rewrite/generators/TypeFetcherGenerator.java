@@ -1837,7 +1837,9 @@ public class TypeFetcherGenerator {
      * lambda shape choice (single-expression vs block-with-decode-locals).
      */
     private static boolean anyNodeIdCarrier(List<InputField> fields) {
-        for (var f : fields) {
+        // R186: descend nested grouping inputs; a NodeId leaf anywhere drives the block-lambda shape.
+        for (var leaf : flattenInsertLeaves(fields, List.of())) {
+            var f = leaf.field();
             if (f instanceof InputField.ColumnField cf
                 && cf.extraction() instanceof CallSiteExtraction.NodeIdDecodeKeys) return true;
             if (f instanceof InputField.CompositeColumnField) return true;
@@ -1874,24 +1876,32 @@ public class TypeFetcherGenerator {
             String localPrefix) {
         var b = CodeBlock.builder();
         boolean first = true;
-        for (int fi = 0; fi < fields.size(); fi++) {
-            var f = fields.get(fi);
+        // R186: descend nested grouping inputs to a flat leaf list; each leaf carries its wire access
+        // path (a single name for a top-level field, byte-identical to before R186). The presence
+        // test and value read use the path, honoring the absent-vs-null contract: an absent leaf (or
+        // an absent / non-Map outer level) resolves to DEFAULT; a present leaf (including explicit
+        // null) binds the typed value.
+        var leaves = flattenInsertLeaves(fields, List.of());
+        for (int fi = 0; fi < leaves.size(); fi++) {
+            var f = leaves.get(fi).field();
+            var path = leaves.get(fi).path();
+            var presence = nestedContainsKeyExpr(mapLocal, path, "ic" + fi);
             switch (f) {
                 case InputField.ColumnField cf -> {
                     if (!first) b.add(",\n");
                     first = false;
                     if (cf.extraction() instanceof CallSiteExtraction.NodeIdDecodeKeys) {
                         String recLocal = localPrefix + "_" + fi;
-                        b.add("$L.containsKey($S) ? $T.val($L.value1(), $T.$L.$L.getDataType()) : $T.defaultValue($T.$L.$L.getDataType())",
-                            mapLocal, cf.name(),
+                        b.add("$L ? $T.val($L.value1(), $T.$L.$L.getDataType()) : $T.defaultValue($T.$L.$L.getDataType())",
+                            presence,
                             DSL, recLocal,
                             tablesOnly.tablesClass(), tableRef.javaFieldName(), cf.column().javaName(),
                             DSL,
                             tablesOnly.tablesClass(), tableRef.javaFieldName(), cf.column().javaName());
                     } else {
-                        b.add("$L.containsKey($S) ? $T.val($L.get($S), $T.$L.$L.getDataType()) : $T.defaultValue($T.$L.$L.getDataType())",
-                            mapLocal, cf.name(),
-                            DSL, mapLocal, cf.name(),
+                        b.add("$L ? $T.val($L, $T.$L.$L.getDataType()) : $T.defaultValue($T.$L.$L.getDataType())",
+                            presence,
+                            DSL, ArgCallEmitter.nestedMapValueExpr(mapLocal, path),
                             tablesOnly.tablesClass(), tableRef.javaFieldName(), cf.column().javaName(),
                             DSL,
                             tablesOnly.tablesClass(), tableRef.javaFieldName(), cf.column().javaName());
@@ -1903,8 +1913,8 @@ public class TypeFetcherGenerator {
                         var col = ccf.columns().get(ci);
                         if (!first) b.add(",\n");
                         first = false;
-                        b.add("$L.containsKey($S) ? $T.val($L.value$L(), $T.$L.$L.getDataType()) : $T.defaultValue($T.$L.$L.getDataType())",
-                            mapLocal, ccf.name(),
+                        b.add("$L ? $T.val($L.value$L(), $T.$L.$L.getDataType()) : $T.defaultValue($T.$L.$L.getDataType())",
+                            presence,
                             DSL, recLocal, ci + 1,
                             tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName(),
                             DSL,
@@ -1919,8 +1929,8 @@ public class TypeFetcherGenerator {
                     first = false;
                     String recLocal = localPrefix + "_" + fi;
                     var col = crf.liftedSourceColumns().get(0);
-                    b.add("$L.containsKey($S) ? $T.val($L.value1(), $T.$L.$L.getDataType()) : $T.defaultValue($T.$L.$L.getDataType())",
-                        mapLocal, crf.name(),
+                    b.add("$L ? $T.val($L.value1(), $T.$L.$L.getDataType()) : $T.defaultValue($T.$L.$L.getDataType())",
+                        presence,
                         DSL, recLocal,
                         tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName(),
                         DSL,
@@ -1935,8 +1945,8 @@ public class TypeFetcherGenerator {
                         var col = ccrf.liftedSourceColumns().get(ci);
                         if (!first) b.add(",\n");
                         first = false;
-                        b.add("$L.containsKey($S) ? $T.val($L.value$L(), $T.$L.$L.getDataType()) : $T.defaultValue($T.$L.$L.getDataType())",
-                            mapLocal, ccrf.name(),
+                        b.add("$L ? $T.val($L.value$L(), $T.$L.$L.getDataType()) : $T.defaultValue($T.$L.$L.getDataType())",
+                            presence,
                             DSL, recLocal, ci + 1,
                             tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName(),
                             DSL,
@@ -1961,7 +1971,10 @@ public class TypeFetcherGenerator {
             GeneratorUtils.ResolvedTableNames tablesOnly, TableRef tableRef) {
         var b = CodeBlock.builder();
         boolean first = true;
-        for (var f : fields) {
+        // R186: nested grouping inputs flatten in place; the column order matches the flattened
+        // VALUES cell order in buildPerCellValueList by construction (both walk flattenInsertLeaves).
+        for (var leaf : flattenInsertLeaves(fields, List.of())) {
+            var f = leaf.field();
             switch (f) {
                 case InputField.ColumnField cf -> {
                     if (!first) b.add(", ");
@@ -2015,8 +2028,12 @@ public class TypeFetcherGenerator {
             String localPrefix) {
         var locals = CodeBlock.builder();
         ClassName graphqlErr = ClassName.get("graphql", "GraphqlErrorException");
-        for (int fi = 0; fi < fields.size(); fi++) {
-            var f = fields.get(fi);
+        // R186: flat leaf order matches buildPerCellValueList so the decode-local index lines up; a
+        // nested NodeId leaf reads its wire value via the null-safe descent over its access path.
+        var leaves = flattenInsertLeaves(fields, List.of());
+        for (int fi = 0; fi < leaves.size(); fi++) {
+            var f = leaves.get(fi).field();
+            var path = leaves.get(fi).path();
             CallSiteExtraction.NodeIdDecodeKeys nidk = switch (f) {
                 case InputField.ColumnField cf when cf.extraction() instanceof CallSiteExtraction.NodeIdDecodeKeys n -> n;
                 case InputField.CompositeColumnField ccf -> ccf.extraction();
@@ -2030,9 +2047,11 @@ public class TypeFetcherGenerator {
             ClassName encoderClass = nidk.decodeMethod().encoderClass();
             String methodName = nidk.decodeMethod().methodName();
             TypeName recordType = nidk.decodeMethod().returnType();
-            locals.addStatement("$T $L = ($L.get($S) instanceof $T _s$L) ? $T.$L(_s$L) : null",
-                recordType, recLocal, mapLocal, sourceField, String.class, recLocal, encoderClass, methodName, recLocal);
-            locals.beginControlFlow("if ($L.containsKey($S) && $L == null)", mapLocal, sourceField, recLocal)
+            locals.addStatement("$T $L = ($L instanceof $T _s$L) ? $T.$L(_s$L) : null",
+                recordType, recLocal, ArgCallEmitter.nestedMapValueExpr(mapLocal, path),
+                String.class, recLocal, encoderClass, methodName, recLocal);
+            locals.beginControlFlow("if ($L && $L == null)",
+                    nestedContainsKeyExpr(mapLocal, path, "id" + fi), recLocal)
                 .addStatement("throw $T.newErrorException().message($S).build()", graphqlErr,
                     "Decoded NodeId did not match the expected type for input field '" + sourceField + "'")
                 .endControlFlow();
@@ -2074,64 +2093,198 @@ public class TypeFetcherGenerator {
 
     /**
      * R246: a SET-side input field reduced to what the SET emitter needs — the SDL field name (the
-     * Map presence key), its target columns on the input's own table, and the NodeId decode
-     * extraction (or {@code null} for a raw map read). This is the carrier-driven analogue of an
-     * {@code InputField.SetField}; the UPDATE walker carrier names the partition directly, so the
-     * SET emitters consume these groups rather than re-deriving columns from {@code InputField}.
+     * leaf Map key), its target columns on the input's own table, the NodeId decode extraction (or
+     * {@code null} for a raw map read), and the R186 wire access path. This is the carrier-driven
+     * analogue of an {@code InputField.SetField}; the UPDATE walker carrier names the partition
+     * directly, so the SET emitters consume these groups rather than re-deriving columns from
+     * {@code InputField}.
+     *
+     * <p>{@code accessPath} is the SDL key chain from the argument-value root map to the leaf:
+     * {@code [name]} for a top-level field (the emit reads / presence-checks {@code map.get(name)},
+     * byte-identical to before R186) or a multi-segment path for a leaf in a nested grouping input
+     * (the emit descends the wire map, honoring absent-vs-null at every layer).
      */
-    private record SetGroup(String name, List<ColumnRef> columns, CallSiteExtraction.NodeIdDecodeKeys nidk) {}
+    private record SetGroup(String name, List<ColumnRef> columns,
+                            CallSiteExtraction.NodeIdDecodeKeys nidk, List<String> accessPath) {}
 
     /**
      * R246: adapt a legacy {@code List<InputField.SetField>} (the payload-returning DML record
      * fetchers, which still carry a {@code TableInputArg}) into the {@link SetGroup} shape the SET
      * emitters now consume. The carrier-driven UPDATE path uses {@link #setGroupsOf} instead.
+     * {@code tia.setFields()} is always empty post-R266, so this never sees nested input.
      */
     private static List<SetGroup> setGroupsOfFields(List<InputField.SetField> setFields) {
         var out = new ArrayList<SetGroup>();
         for (var sf : setFields) {
-            out.add(new SetGroup(sf.name(), setFieldColumns(sf), setFieldNodeIdExtraction(sf)));
+            out.add(new SetGroup(sf.name(), setFieldColumns(sf), setFieldNodeIdExtraction(sf), List.of(sf.name())));
+        }
+        return out;
+    }
+
+    // ---- R186 nested-input wire-access helpers ----------------------------------------------
+    //
+    // A leaf flattened out of a NestingField carries a CallSiteExtraction.NestedInputField whose
+    // path() is the SDL key chain from the @table argument root to the leaf. A top-level leaf
+    // carries its plain extraction (Direct / NodeIdDecodeKeys) and the access path is just its own
+    // SDL field name, so every emit site below collapses to byte-identical pre-R186 output for the
+    // non-nested case.
+
+    /** The wire access path for a leaf carrier: a nested leaf's {@code NestedInputField.path()},
+     *  or {@code [sdlName]} for a top-level leaf. */
+    private static List<String> accessPathOf(String sdlName, CallSiteExtraction extraction) {
+        return extraction instanceof CallSiteExtraction.NestedInputField nif
+            ? nif.path() : List.of(sdlName);
+    }
+
+    /** The real leaf extraction behind a (possibly nested) carrier extraction — {@code Direct} /
+     *  {@code NodeIdDecodeKeys} once the {@code NestedInputField} envelope is peeled. */
+    private static CallSiteExtraction leafExtractionOf(CallSiteExtraction extraction) {
+        return extraction instanceof CallSiteExtraction.NestedInputField nif
+            ? nif.leaf() : extraction;
+    }
+
+    /**
+     * Null-safe presence test for a leaf at {@code accessPath} under a map-typed local. Single
+     * segment → {@code mapLocal.containsKey(key)} (byte-identical). Deeper → an {@code instanceof
+     * Map<?, ?>} chain over the prefix levels ending in {@code containsKey} on the leaf's parent
+     * map, so an absent key or a non-{@code Map} (including {@code null}) at any layer reads as
+     * absent. {@code salt} uniquifies the pattern variables across peer expressions.
+     */
+    private static CodeBlock nestedContainsKeyExpr(String mapLocal, List<String> accessPath, String salt) {
+        if (accessPath.size() == 1) {
+            return CodeBlock.of("$L.containsKey($S)", mapLocal, accessPath.get(0));
+        }
+        var b = CodeBlock.builder();
+        int last = accessPath.size() - 1;
+        String cur = mapLocal;
+        for (int d = 0; d < last; d++) {
+            String inner = "cm" + salt + "_" + d;
+            b.add("$L.get($S) instanceof $T<?, ?> $L && ", cur, accessPath.get(d), Map.class, inner);
+            cur = inner;
+        }
+        b.add("$L.containsKey($S)", cur, accessPath.get(last));
+        return b.build();
+    }
+
+    /** Leaf body for {@link #emitNestedPresenceGuardedLeaf}: emits the write(s) for the leaf, given
+     *  the innermost descended map local and the leaf's own SDL key. */
+    @FunctionalInterface
+    private interface NestedLeafBody {
+        void emit(String innerMapLocal, String leafKey);
+    }
+
+    /**
+     * Emit a presence-guarded leaf write, descending {@code accessPath} from {@code rootMapLocal}.
+     * Single segment → {@code if (root.containsKey(key)) { body(root, key) }} (byte-identical to the
+     * pre-R186 SET put). Deeper → nested {@code if (containsKey) { var o = get; if (o instanceof
+     * Map<?, ?> m) { ... } }} guards honoring the absent-vs-null contract: an absent key or a
+     * non-{@code Map} outer value (including an explicit {@code null}) skips the whole subtree; at
+     * the leaf, {@code containsKey} decides whether the column is written and the value (which may
+     * be {@code null}) decides what it is written to. {@code uid} uniquifies the descent locals.
+     */
+    private static void emitNestedPresenceGuardedLeaf(
+            CodeBlock.Builder block, String rootMapLocal, List<String> accessPath,
+            String uid, NestedLeafBody body) {
+        emitNestedDescend(block, rootMapLocal, accessPath, 0, uid, body);
+    }
+
+    private static void emitNestedDescend(
+            CodeBlock.Builder block, String mapLocal, List<String> path, int depth,
+            String uid, NestedLeafBody body) {
+        String key = path.get(depth);
+        block.beginControlFlow("if ($L.containsKey($S))", mapLocal, key);
+        if (depth == path.size() - 1) {
+            body.emit(mapLocal, key);
+        } else {
+            String obj = "outerVal_" + uid + "_" + depth;
+            String inner = "grpMap_" + uid + "_" + depth;
+            block.addStatement("Object $L = $L.get($S)", obj, mapLocal, key);
+            block.beginControlFlow("if ($L instanceof $T<?, ?> $L)", obj, Map.class, inner);
+            emitNestedDescend(block, inner, path, depth + 1, uid, body);
+            block.endControlFlow();
+        }
+        block.endControlFlow();
+    }
+
+    /** R186: a leaf carrier flattened out of (possibly) a {@link InputField.NestingField}, paired
+     *  with its wire access path. Produced by {@link #flattenInsertLeaves} so the INSERT emitters
+     *  walk a flat leaf list (never a {@code NestingField}) with a per-leaf descent path. */
+    private record InsertLeaf(InputField field, List<String> path) {}
+
+    /**
+     * Flatten {@code fields} into leaf carriers in declaration order, descending into any
+     * {@link InputField.NestingField} grouping input (R186) and accumulating the SDL access path.
+     * A top-level leaf gets path {@code [name]}; a nested leaf gets the full key chain. The INSERT
+     * column-list / VALUES / decode-local emitters all walk this one flat list so a leaf's index
+     * (used to name its decode local) is consistent across them.
+     */
+    private static List<InsertLeaf> flattenInsertLeaves(List<InputField> fields, List<String> prefix) {
+        var out = new ArrayList<InsertLeaf>();
+        for (var f : fields) {
+            if (f instanceof InputField.NestingField nf) {
+                var child = new ArrayList<>(prefix);
+                child.add(nf.name());
+                out.addAll(flattenInsertLeaves(nf.fields(), child));
+            } else {
+                var path = new ArrayList<>(prefix);
+                path.add(f.name());
+                out.add(new InsertLeaf(f, path));
+            }
         }
         return out;
     }
 
     /**
      * R246: project the UPDATE carrier's flat {@link SetColumn} list back into per-field
-     * {@link SetGroup}s, grouping by {@code sdlFieldName} in encounter order. A composite-NodeId
-     * field contributes several {@code SetColumn}s sharing one name; they regroup into one
+     * {@link SetGroup}s, grouping by wire access path in encounter order. A composite-NodeId field
+     * contributes several {@code SetColumn}s sharing one path; they regroup into one
      * {@code SetGroup} whose columns line up positionally with the decode {@code Record<N>} slots.
+     *
+     * <p>R186: grouping is by access path (the leaf's {@code NestedInputField.path()} or
+     * {@code [sdlFieldName]} for a top-level leaf) rather than by SDL field name, so two leaves with
+     * the same local name under different nested groups stay distinct; the leaf extraction is peeled
+     * out of the {@code NestedInputField} envelope before the NodeId check. For top-level leaves the
+     * path is {@code [name]}, so the grouping and the resulting {@code SetGroup}s are byte-identical
+     * to the pre-R186 by-name grouping.
      */
     private static List<SetGroup> setGroupsOf(List<SetColumn> setColumns) {
-        var byName = new java.util.LinkedHashMap<String, List<SetColumn>>();
+        var byPath = new java.util.LinkedHashMap<List<String>, List<SetColumn>>();
         for (var sc : setColumns) {
-            byName.computeIfAbsent(sc.sdlFieldName(), k -> new ArrayList<>()).add(sc);
+            byPath.computeIfAbsent(accessPathOf(sc.sdlFieldName(), sc.extraction()), k -> new ArrayList<>()).add(sc);
         }
         var out = new ArrayList<SetGroup>();
-        for (var e : byName.entrySet()) {
+        for (var e : byPath.entrySet()) {
+            var path = e.getKey();
             var cols = e.getValue().stream().map(SetColumn::targetColumn).toList();
-            var extraction = e.getValue().get(0).extraction();
-            var nidk = extraction instanceof CallSiteExtraction.NodeIdDecodeKeys n ? n : null;
-            out.add(new SetGroup(e.getKey(), cols, nidk));
+            var leafExtraction = leafExtractionOf(e.getValue().get(0).extraction());
+            var nidk = leafExtraction instanceof CallSiteExtraction.NodeIdDecodeKeys n ? n : null;
+            out.add(new SetGroup(path.get(path.size() - 1), cols, nidk, path));
         }
         return out;
     }
 
     /**
      * R246: project the UPDATE carrier's flat {@link KeyColumn} list into the
-     * {@link InputColumnBindingGroup}s the lookup-WHERE emitters consume, grouping by
-     * {@code sdlFieldName} in encounter order. A single-column field becomes a {@code MapGroup}
-     * (carrying its extraction so an arity-1 NodeId still routes through the decode local); a
-     * multi-column field becomes a {@code DecodedRecordGroup} whose positional
-     * {@code RecordBinding}s mirror the decode {@code Record<N>} slots. This reconstructs exactly
-     * the {@code fieldBindings()} shape the legacy {@code TableInputArg} produced for the WHERE
-     * half.
+     * {@link InputColumnBindingGroup}s the lookup-WHERE emitters consume, grouping by wire access
+     * path in encounter order. A single-column field becomes a {@code MapGroup} (carrying its
+     * extraction so an arity-1 NodeId still routes through the decode local); a multi-column field
+     * becomes a {@code DecodedRecordGroup} whose positional {@code RecordBinding}s mirror the decode
+     * {@code Record<N>} slots. This reconstructs exactly the {@code fieldBindings()} shape the legacy
+     * {@code TableInputArg} produced for the WHERE half.
+     *
+     * <p>R186: grouping is by access path (same rationale as {@link #setGroupsOf}). A
+     * {@code MapGroup}'s binding keeps the full extraction (the value-read emitter peels the path);
+     * a {@code DecodedRecordGroup} peels the leaf {@code NodeIdDecodeKeys} for the decode call and
+     * carries the access path explicitly so the decode-local read descends a nested composite key.
      */
     private static List<InputColumnBindingGroup> keyGroupsOf(List<KeyColumn> keyColumns) {
-        var byName = new java.util.LinkedHashMap<String, List<KeyColumn>>();
+        var byPath = new java.util.LinkedHashMap<List<String>, List<KeyColumn>>();
         for (var kc : keyColumns) {
-            byName.computeIfAbsent(kc.sdlFieldName(), k -> new ArrayList<>()).add(kc);
+            byPath.computeIfAbsent(accessPathOf(kc.sdlFieldName(), kc.extraction()), k -> new ArrayList<>()).add(kc);
         }
         var out = new ArrayList<InputColumnBindingGroup>();
-        for (var e : byName.entrySet()) {
+        for (var e : byPath.entrySet()) {
+            var path = e.getKey();
             var group = e.getValue();
             if (group.size() == 1) {
                 var kc = group.get(0);
@@ -2143,7 +2296,9 @@ public class TypeFetcherGenerator {
                     bindings.add(new InputColumnBinding.RecordBinding(i, group.get(i).targetColumn()));
                 }
                 out.add(new InputColumnBindingGroup.DecodedRecordGroup(
-                    e.getKey(), (CallSiteExtraction.NodeIdDecodeKeys) group.get(0).extraction(), bindings));
+                    path.get(path.size() - 1),
+                    (CallSiteExtraction.NodeIdDecodeKeys) leafExtractionOf(group.get(0).extraction()),
+                    bindings, path));
             }
         }
         return out;
@@ -2181,37 +2336,39 @@ public class TypeFetcherGenerator {
             String decodeLocalPrefix,
             GeneratorUtils.ResolvedTableNames tablesOnly,
             TableRef tableRef) {
-        boolean useContainsKey = presenceLocal.equals(valueMapLocal);
-        String presenceCall = useContainsKey ? "containsKey" : "contains";
+        // emitSetMapPuts is always called with presenceLocal == valueMapLocal (single-row "in" or
+        // per-row "row" Map); the R186 nested-descent walk uses that one Map local as both the
+        // presence and value root, honoring absent-vs-null at every nesting layer.
+        String root = valueMapLocal;
         for (int sfi = 0; sfi < setFields.size(); sfi++) {
             var sf = setFields.get(sfi);
             var cols = sf.columns();
             var nidk = sf.nidk();
-            block.beginControlFlow("if ($L.$L($S))", presenceLocal, presenceCall, sf.name());
-            String recLocal = null;
-            if (nidk != null) {
-                recLocal = decodeLocalPrefix + "_" + sfi;
-                appendDecodeLocal(block, recLocal, nidk, valueMapLocal, sf.name());
-            }
-            for (int ci = 0; ci < cols.size(); ci++) {
-                var col = cols.get(ci);
-                if (nidk != null) {
-                    block.addStatement(
-                        "$L.put($T.$L.$L, $T.val($L.value$L(), $T.$L.$L.getDataType()))",
-                        setsLocal,
-                        tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName(),
-                        DSL, recLocal, ci + 1,
-                        tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName());
-                } else {
-                    block.addStatement(
-                        "$L.put($T.$L.$L, $T.val($L.get($S), $T.$L.$L.getDataType()))",
-                        setsLocal,
-                        tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName(),
-                        DSL, valueMapLocal, sf.name(),
-                        tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName());
-                }
-            }
-            block.endControlFlow();
+            String recLocal = nidk != null ? decodeLocalPrefix + "_" + sfi : null;
+            emitNestedPresenceGuardedLeaf(block, root, sf.accessPath(), decodeLocalPrefix + sfi,
+                (innerMap, leafKey) -> {
+                    if (nidk != null) {
+                        appendDecodeLocal(block, recLocal, nidk, innerMap, leafKey);
+                    }
+                    for (int ci = 0; ci < cols.size(); ci++) {
+                        var col = cols.get(ci);
+                        if (nidk != null) {
+                            block.addStatement(
+                                "$L.put($T.$L.$L, $T.val($L.value$L(), $T.$L.$L.getDataType()))",
+                                setsLocal,
+                                tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName(),
+                                DSL, recLocal, ci + 1,
+                                tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName());
+                        } else {
+                            block.addStatement(
+                                "$L.put($T.$L.$L, $T.val($L.get($S), $T.$L.$L.getDataType()))",
+                                setsLocal,
+                                tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName(),
+                                DSL, innerMap, leafKey,
+                                tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName());
+                        }
+                    }
+                });
         }
     }
 
@@ -2254,10 +2411,10 @@ public class TypeFetcherGenerator {
             List<SetGroup> setFields,
             GeneratorUtils.ResolvedTableNames tablesOnly,
             TableRef tableRef) {
-        for (var sf : setFields) {
-            var cols = sf.columns();
-            block.beginControlFlow("if (firstKeys.contains($S))", sf.name());
-            for (var col : cols) {
+        for (int sfi = 0; sfi < setFields.size(); sfi++) {
+            var sf = setFields.get(sfi);
+            block.beginControlFlow("if ($L)", firstRowSetPresenceExpr(sf.accessPath(), "vc" + sfi));
+            for (var col : sf.columns()) {
                 block.addStatement("vColNames.add($T.$L.$L.getName())",
                     tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName());
             }
@@ -2266,11 +2423,26 @@ public class TypeFetcherGenerator {
     }
 
     /**
+     * The bulk-UPDATE uniform-shape gate for one SET group: is the leaf present in the first input
+     * row? Single segment → {@code firstKeys.contains(name)} (byte-identical). Nested (R186) →
+     * a null-safe descent of {@code in.get(0)} ending in {@code containsKey} on the leaf's parent.
+     * The {@link #buildUniformShapeGuard} keySet checks ensure every row agrees with the first row's
+     * shape (top-level and nested), so gating the column list on the first row is safe.
+     */
+    private static CodeBlock firstRowSetPresenceExpr(List<String> accessPath, String salt) {
+        if (accessPath.size() == 1) {
+            return CodeBlock.of("firstKeys.contains($S)", accessPath.get(0));
+        }
+        return nestedContainsKeyExpr("in.get(0)", accessPath, salt);
+    }
+
+    /**
      * R189: emits {@code cells.add(DSL.val(value, t.col.getDataType()))} statements for each
-     * {@code SetField} on the bulk-UPDATE per-row {@code cells} list, guarded by
-     * {@code firstKeys.contains(name)}. NodeId-decoded carriers declare a per-row decode local
-     * inside the conditional and read {@code decodeLocal.value<i+1>()} per slot; direct carriers
-     * read {@code row.get(name)} verbatim.
+     * {@code SetField} on the bulk-UPDATE per-row {@code cells} list, guarded by the first-row
+     * presence gate ({@link #firstRowSetPresenceExpr}). NodeId-decoded carriers declare a per-row
+     * decode local inside the conditional and read {@code decodeLocal.value<i+1>()} per slot; direct
+     * carriers read the per-row value (R186: a null-safe nested descent for a nested leaf, plain
+     * {@code row.get(name)} for a top-level one).
      */
     private static void emitSetBulkCellAdds(
             CodeBlock.Builder block,
@@ -2282,11 +2454,13 @@ public class TypeFetcherGenerator {
             var sf = setFields.get(sfi);
             var cols = sf.columns();
             var nidk = sf.nidk();
-            block.beginControlFlow("if (firstKeys.contains($S))", sf.name());
+            var path = sf.accessPath();
+            block.beginControlFlow("if ($L)", firstRowSetPresenceExpr(path, "bc" + sfi));
             String recLocal = null;
             if (nidk != null) {
                 recLocal = decodeLocalPrefix + "_" + sfi;
-                appendDecodeLocal(block, recLocal, nidk, "row", sf.name());
+                appendDecodeLocal(block, recLocal, nidk, ArgCallEmitter.nestedMapValueExpr("row", path),
+                    path.get(path.size() - 1));
             }
             for (int ci = 0; ci < cols.size(); ci++) {
                 var col = cols.get(ci);
@@ -2295,8 +2469,8 @@ public class TypeFetcherGenerator {
                         DSL, recLocal, ci + 1,
                         tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName());
                 } else {
-                    block.addStatement("cells.add($T.val(row.get($S), $T.$L.$L.getDataType()))",
-                        DSL, sf.name(),
+                    block.addStatement("cells.add($T.val($L, $T.$L.$L.getDataType()))",
+                        DSL, ArgCallEmitter.nestedMapValueExpr("row", path),
                         tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName());
                 }
             }
@@ -2306,18 +2480,18 @@ public class TypeFetcherGenerator {
 
     /**
      * R189: emits {@code sets.put(t.col, v.field(t.col))} statements for each {@code SetField}
-     * on the bulk-UPDATE join-on-v-column SET map, guarded by {@code firstKeys.contains(name)}.
-     * One entry per target column on {@link #setFieldColumns}.
+     * on the bulk-UPDATE join-on-v-column SET map, guarded by the first-row presence gate
+     * ({@link #firstRowSetPresenceExpr}). One entry per target column on {@link #setFieldColumns}.
      */
     private static void emitSetVFieldPuts(
             CodeBlock.Builder block,
             List<SetGroup> setFields,
             GeneratorUtils.ResolvedTableNames tablesOnly,
             TableRef tableRef) {
-        for (var sf : setFields) {
-            var cols = sf.columns();
-            block.beginControlFlow("if (firstKeys.contains($S))", sf.name());
-            for (var col : cols) {
+        for (int sfi = 0; sfi < setFields.size(); sfi++) {
+            var sf = setFields.get(sfi);
+            block.beginControlFlow("if ($L)", firstRowSetPresenceExpr(sf.accessPath(), "vf" + sfi));
+            for (var col : sf.columns()) {
                 block.addStatement("sets.put($T.$L.$L, v.field($T.$L.$L))",
                     tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName(),
                     tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName());
@@ -2432,6 +2606,10 @@ public class TypeFetcherGenerator {
         var postInGuard = CodeBlock.builder();
         postInGuard.addStatement("$T<?> firstKeys = in.get(0).keySet()", SET);
         postInGuard.add(buildUniformShapeGuard("UPDATE"));
+        // R186: a nested SET leaf is in the column list iff present in the first row; every row must
+        // then agree with the first row's nested shape (the top-level keySet guard above only checks
+        // the outer keys), else per-row cells would misalign with the column list.
+        postInGuard.add(buildNestedShapeGuards(setGroups));
 
         // Build v-table column-name list: lookup-key columns (unconditional) + set-field columns
         // present in firstKeys, in declaration order. Strings come from each Field's getName()
@@ -2492,13 +2670,14 @@ public class TypeFetcherGenerator {
                     for (var binding : mg.bindings()) {
                         if (!firstTupleSlot) lookupKeyTuple.add(", ");
                         firstTupleSlot = false;
-                        lookupKeyTuple.add("row.get($S)", binding.fieldName());
+                        lookupKeyTuple.add("$L", ArgCallEmitter.nestedMapValueExpr(
+                            "row", accessPathOf(binding.fieldName(), binding.extraction())));
                     }
                 }
                 case InputColumnBindingGroup.DecodedRecordGroup drg -> {
                     if (!firstTupleSlot) lookupKeyTuple.add(", ");
                     firstTupleSlot = false;
-                    lookupKeyTuple.add("row.get($S)", drg.sourceFieldName());
+                    lookupKeyTuple.add("$L", ArgCallEmitter.nestedMapValueExpr("row", drg.accessPath()));
                 }
             }
         }
@@ -2698,6 +2877,66 @@ public class TypeFetcherGenerator {
     }
 
     /**
+     * R186: per-nesting-node shape guards for bulk UPDATE. For each distinct nesting prefix that a
+     * SET leaf descends through (e.g. {@code [lokalisering]} for a leaf at
+     * {@code [lokalisering, landkode]}), assert every input row's map at that prefix has the same
+     * keySet as the first row's — comparing {@code null} (prefix absent or not a {@code Map}) for
+     * {@code null}. This complements {@link #buildUniformShapeGuard}'s top-level keySet check: the
+     * SET column list is built from the first row's present nested leaves, so a row diverging in its
+     * nested shape would misalign the per-row cells. Empty when no SET leaf is nested.
+     *
+     * <p>Only the {@code UPDATE … FROM (VALUES …)} bulk shape needs this: it is the one bulk DML form
+     * that shares a single column list across all rows. Bulk DELETE (per-row WHERE) and bulk INSERT
+     * (per-row VALUES via {@link #buildPerCellValueList}) read each {@code row} independently, so each
+     * row stands alone and no cross-row nested-shape agreement is required.
+     */
+    private static CodeBlock buildNestedShapeGuards(List<SetGroup> setGroups) {
+        var prefixes = new LinkedHashSet<List<String>>();
+        for (var sg : setGroups) {
+            var p = sg.accessPath();
+            for (int k = 1; k < p.size(); k++) {
+                prefixes.add(List.copyOf(p.subList(0, k)));
+            }
+        }
+        if (prefixes.isEmpty()) {
+            return CodeBlock.of("");
+        }
+        var objects = ClassName.get("java.util", "Objects");
+        var b = CodeBlock.builder();
+        int idx = 0;
+        for (var prefix : prefixes) {
+            b.beginControlFlow("for (int rowIdx = 1; rowIdx < in.size(); rowIdx++)");
+            b.addStatement("$T<?> firstShape$L = $L", SET, idx, nestedKeySetOrNull("in.get(0)", prefix, "f" + idx));
+            b.addStatement("$T<?> rowShape$L = $L", SET, idx, nestedKeySetOrNull("in.get(rowIdx)", prefix, "r" + idx));
+            b.beginControlFlow("if (!$T.equals(firstShape$L, rowShape$L))", objects, idx, idx);
+            b.addStatement("throw new $T($S + rowIdx + $S)", IllegalArgumentException.class,
+                "@mutation(typeName: UPDATE) bulk input rows must share the same nested-input shape; row ",
+                " differs from row 0 under nested group '" + String.join(".", prefix) + "'");
+            b.endControlFlow();
+            b.endControlFlow();
+            idx++;
+        }
+        return b.build();
+    }
+
+    /**
+     * Expression yielding the keySet of the {@code Map} reached by descending {@code prefix} under
+     * {@code rowExpr}, or {@code null} if any level is absent or not a {@code Map}. Used by
+     * {@link #buildNestedShapeGuards}.
+     */
+    private static CodeBlock nestedKeySetOrNull(String rowExpr, List<String> prefix, String salt) {
+        var cond = CodeBlock.builder();
+        String cur = rowExpr;
+        for (int d = 0; d < prefix.size(); d++) {
+            if (d > 0) cond.add(" && ");
+            String inner = "sm" + salt + "_" + d;
+            cond.add("$L.get($S) instanceof $T<?, ?> $L", cur, prefix.get(d), Map.class, inner);
+            cur = inner;
+        }
+        return CodeBlock.of("($L) ? $L.keySet() : null", cond.build(), cur);
+    }
+
+    /**
      * Single-row lookup-WHERE chunk: a CodeBlock to drop into {@code postInGuard} declaring any
      * per-NodeId decode locals (for {@link InputColumnBindingGroup.DecodedRecordGroup} and for
      * arity-1 NodeId-decoded {@link InputColumnBinding.MapBinding}), plus the WHERE expression
@@ -2772,7 +3011,8 @@ public class TypeFetcherGenerator {
                 }
                 case InputColumnBindingGroup.DecodedRecordGroup drg -> {
                     String recLocal = "lookupKey" + gi;
-                    appendDecodeLocal(locals, recLocal, drg.extraction(), mapLocal, drg.sourceFieldName());
+                    appendDecodeLocal(locals, recLocal, drg.extraction(),
+                        ArgCallEmitter.nestedMapValueExpr(mapLocal, drg.accessPath()), drg.sourceFieldName());
                     for (var binding : drg.bindings()) {
                         if (slotIndex > 0) whereExpr.add(".and(");
                         whereExpr.add("$T.$L.$L.eq($L.value$L())",
@@ -2788,11 +3028,14 @@ public class TypeFetcherGenerator {
     }
 
     /**
-     * Emits a value expression for one {@link InputColumnBinding.MapBinding} reading
-     * {@code mapLocal.get(fieldName)}. For {@link CallSiteExtraction.NodeIdDecodeKeys} extractions,
-     * lifts the per-binding decode call to a local (declared into {@code locals}) and emits
-     * {@code DSL.val(decoded.value1(), t.col.getDataType())}. For all other extractions, emits
-     * {@code DSL.val(mapLocal.get(name), t.col.getDataType())} verbatim.
+     * Emits a value expression for one {@link InputColumnBinding.MapBinding}. The wire value is read
+     * via {@link ArgCallEmitter#nestedMapValueExpr} from the binding's R186 access path (peeled from
+     * its extraction): a plain {@code mapLocal.get(fieldName)} for a top-level binding, a null-safe
+     * nested descent for a binding buried in a grouping input. For a
+     * {@link CallSiteExtraction.NodeIdDecodeKeys} leaf extraction, lifts the per-binding decode call
+     * to a local (declared into {@code locals}) reading that wire value and emits
+     * {@code DSL.val(decoded.value1(), t.col.getDataType())}; otherwise emits
+     * {@code DSL.val(<wire value>, t.col.getDataType())}.
      */
     private static void appendMapBindingValueExpr(
             CodeBlock.Builder whereExpr,
@@ -2801,15 +3044,17 @@ public class TypeFetcherGenerator {
             String mapLocal,
             GeneratorUtils.ResolvedTableNames tablesOnly, TableRef tableRef,
             int groupIndex) {
-        if (binding.extraction() instanceof CallSiteExtraction.NodeIdDecodeKeys nidk) {
+        var path = accessPathOf(binding.fieldName(), binding.extraction());
+        var wireValue = ArgCallEmitter.nestedMapValueExpr(mapLocal, path);
+        if (leafExtractionOf(binding.extraction()) instanceof CallSiteExtraction.NodeIdDecodeKeys nidk) {
             String recLocal = "lookupKey" + groupIndex;
-            appendDecodeLocal(locals, recLocal, nidk, mapLocal, binding.fieldName());
+            appendDecodeLocal(locals, recLocal, nidk, wireValue, binding.fieldName());
             whereExpr.add("$T.val($L.value1(), $T.$L.$L.getDataType())",
                 DSL, recLocal,
                 tablesOnly.tablesClass(), tableRef.javaFieldName(), binding.targetColumn().javaName());
         } else {
-            whereExpr.add("$T.val($L.get($S), $T.$L.$L.getDataType())",
-                DSL, mapLocal, binding.fieldName(),
+            whereExpr.add("$T.val($L, $T.$L.$L.getDataType())",
+                DSL, wireValue,
                 tablesOnly.tablesClass(), tableRef.javaFieldName(), binding.targetColumn().javaName());
         }
     }
@@ -2828,12 +3073,28 @@ public class TypeFetcherGenerator {
             CallSiteExtraction.NodeIdDecodeKeys nidk,
             String mapLocal,
             String sourceField) {
+        appendDecodeLocal(locals, recLocal, nidk, CodeBlock.of("$L.get($S)", mapLocal, sourceField), sourceField);
+    }
+
+    /**
+     * R186 overload: declare the decode local from an arbitrary wire-value expression rather than a
+     * plain {@code mapLocal.get(sourceField)}, so a NodeId leaf buried in a nested grouping input
+     * reads via the null-safe descent ({@link ArgCallEmitter#nestedMapValueExpr}). {@code sourceField}
+     * names the leaf for the error message only. For a top-level leaf the convenience overload above
+     * passes {@code mapLocal.get(sourceField)}, byte-identical to before R186.
+     */
+    private static void appendDecodeLocal(
+            CodeBlock.Builder locals,
+            String recLocal,
+            CallSiteExtraction.NodeIdDecodeKeys nidk,
+            CodeBlock wireValueExpr,
+            String sourceField) {
         ClassName encoderClass = nidk.decodeMethod().encoderClass();
         String methodName = nidk.decodeMethod().methodName();
         TypeName recordType = nidk.decodeMethod().returnType();
         ClassName graphqlErr = ClassName.get("graphql", "GraphqlErrorException");
-        locals.addStatement("$T $L = ($L.get($S) instanceof $T _s$L) ? $T.$L(_s$L) : null",
-            recordType, recLocal, mapLocal, sourceField, String.class, recLocal, encoderClass, methodName, recLocal);
+        locals.addStatement("$T $L = ($L instanceof $T _s$L) ? $T.$L(_s$L) : null",
+            recordType, recLocal, wireValueExpr, String.class, recLocal, encoderClass, methodName, recLocal);
         locals.beginControlFlow("if ($L == null)", recLocal)
             .addStatement("throw $T.newErrorException().message($S).build()", graphqlErr,
                 "Decoded NodeId did not match the expected type for input field '" + sourceField + "'")
@@ -2859,13 +3120,16 @@ public class TypeFetcherGenerator {
                 case InputColumnBindingGroup.MapGroup mg -> {
                     for (int bi = 0; bi < mg.bindings().size(); bi++) {
                         var binding = mg.bindings().get(bi);
-                        if (binding.extraction() instanceof CallSiteExtraction.NodeIdDecodeKeys nidk) {
-                            appendDecodeLocal(block, "bulkKey" + gi + "_" + bi, nidk, mapLocal, binding.fieldName());
+                        if (leafExtractionOf(binding.extraction()) instanceof CallSiteExtraction.NodeIdDecodeKeys nidk) {
+                            var path = accessPathOf(binding.fieldName(), binding.extraction());
+                            appendDecodeLocal(block, "bulkKey" + gi + "_" + bi, nidk,
+                                ArgCallEmitter.nestedMapValueExpr(mapLocal, path), binding.fieldName());
                         }
                     }
                 }
                 case InputColumnBindingGroup.DecodedRecordGroup drg ->
-                    appendDecodeLocal(block, "bulkKey" + gi, drg.extraction(), mapLocal, drg.sourceFieldName());
+                    appendDecodeLocal(block, "bulkKey" + gi, drg.extraction(),
+                        ArgCallEmitter.nestedMapValueExpr(mapLocal, drg.accessPath()), drg.sourceFieldName());
             }
         }
     }
@@ -2887,14 +3151,15 @@ public class TypeFetcherGenerator {
             case InputColumnBindingGroup.MapGroup mg -> {
                 for (int bi = 0; bi < mg.bindings().size(); bi++) {
                     var binding = mg.bindings().get(bi);
-                    if (binding.extraction() instanceof CallSiteExtraction.NodeIdDecodeKeys) {
+                    if (leafExtractionOf(binding.extraction()) instanceof CallSiteExtraction.NodeIdDecodeKeys) {
                         String recLocal = "bulkKey" + groupIndex + "_" + bi;
                         block.addStatement("cells.add($T.val($L.value1(), $T.$L.$L.getDataType()))",
                             DSL, recLocal,
                             tablesOnly.tablesClass(), tableRef.javaFieldName(), binding.targetColumn().javaName());
                     } else {
-                        block.addStatement("cells.add($T.val($L.get($S), $T.$L.$L.getDataType()))",
-                            DSL, mapLocal, binding.fieldName(),
+                        var path = accessPathOf(binding.fieldName(), binding.extraction());
+                        block.addStatement("cells.add($T.val($L, $T.$L.$L.getDataType()))",
+                            DSL, ArgCallEmitter.nestedMapValueExpr(mapLocal, path),
                             tablesOnly.tablesClass(), tableRef.javaFieldName(), binding.targetColumn().javaName());
                     }
                 }
@@ -2948,15 +3213,18 @@ public class TypeFetcherGenerator {
                     case InputColumnBindingGroup.MapGroup mg -> {
                         for (int bi = 0; bi < mg.bindings().size(); bi++) {
                             var binding = mg.bindings().get(bi);
-                            if (binding.extraction() instanceof CallSiteExtraction.NodeIdDecodeKeys nidk) {
+                            if (leafExtractionOf(binding.extraction()) instanceof CallSiteExtraction.NodeIdDecodeKeys nidk) {
                                 String recLocal = "bulkKey" + gi + "_" + bi;
-                                appendDecodeLocal(lambdaLocals, recLocal, nidk, "row", binding.fieldName());
+                                var path = accessPathOf(binding.fieldName(), binding.extraction());
+                                appendDecodeLocal(lambdaLocals, recLocal, nidk,
+                                    ArgCallEmitter.nestedMapValueExpr("row", path), binding.fieldName());
                             }
                         }
                     }
                     case InputColumnBindingGroup.DecodedRecordGroup drg -> {
                         String recLocal = "bulkKey" + gi;
-                        appendDecodeLocal(lambdaLocals, recLocal, drg.extraction(), "row", drg.sourceFieldName());
+                        appendDecodeLocal(lambdaLocals, recLocal, drg.extraction(),
+                            ArgCallEmitter.nestedMapValueExpr("row", drg.accessPath()), drg.sourceFieldName());
                     }
                 }
             }
@@ -2978,8 +3246,9 @@ public class TypeFetcherGenerator {
                         for (var binding : mg.bindings()) {
                             if (!first) b.add(", ");
                             first = false;
-                            b.add("$T.val(row.get($S), $T.$L.$L.getDataType())",
-                                DSL, binding.fieldName(),
+                            var path = accessPathOf(binding.fieldName(), binding.extraction());
+                            b.add("$T.val($L, $T.$L.$L.getDataType())",
+                                DSL, ArgCallEmitter.nestedMapValueExpr("row", path),
                                 tablesOnly.tablesClass(), tableRef.javaFieldName(), binding.targetColumn().javaName());
                         }
                     }
@@ -2998,7 +3267,7 @@ public class TypeFetcherGenerator {
             switch (g) {
                 case InputColumnBindingGroup.MapGroup mg -> {
                     for (var binding : mg.bindings()) {
-                        if (binding.extraction() instanceof CallSiteExtraction.NodeIdDecodeKeys) return true;
+                        if (leafExtractionOf(binding.extraction()) instanceof CallSiteExtraction.NodeIdDecodeKeys) return true;
                     }
                 }
                 case InputColumnBindingGroup.DecodedRecordGroup drg -> { return true; }
@@ -3018,14 +3287,15 @@ public class TypeFetcherGenerator {
                     var binding = mg.bindings().get(bi);
                     if (!first) b.add(", ");
                     first = false;
-                    if (binding.extraction() instanceof CallSiteExtraction.NodeIdDecodeKeys) {
+                    if (leafExtractionOf(binding.extraction()) instanceof CallSiteExtraction.NodeIdDecodeKeys) {
                         String recLocal = "bulkKey" + groupIndex + "_" + bi;
                         b.add("$T.val($L.value1(), $T.$L.$L.getDataType())",
                             DSL, recLocal,
                             tablesOnly.tablesClass(), tableRef.javaFieldName(), binding.targetColumn().javaName());
                     } else {
-                        b.add("$T.val(row.get($S), $T.$L.$L.getDataType())",
-                            DSL, binding.fieldName(),
+                        var path = accessPathOf(binding.fieldName(), binding.extraction());
+                        b.add("$T.val($L, $T.$L.$L.getDataType())",
+                            DSL, ArgCallEmitter.nestedMapValueExpr("row", path),
                             tablesOnly.tablesClass(), tableRef.javaFieldName(), binding.targetColumn().javaName());
                     }
                 }

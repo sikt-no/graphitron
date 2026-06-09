@@ -46,6 +46,13 @@ import java.util.Optional;
  * mirrors R257 (tracked as {@code deleterows-walker-sdl-substrate}). The {@code field} parameter is
  * reserved for that future substrate; the current translator does not read it. Errors are collected
  * across stages without short-circuiting so the LSP surfaces every per-field issue at once.
+ *
+ * <p><b>Nested grouping inputs (R186).</b> Mirrors {@code UpdateRowsWalker}: a plain
+ * (non-{@code @table}) {@link InputField.NestingField} grouping columns of the outer table is
+ * flattened in place ({@link #classifyInto}) into its leaf carriers, each nested leaf's
+ * {@code extraction} rewrapped as a {@link CallSiteExtraction.NestedInputField} that records the SDL
+ * access path. Every flattened leaf's column becomes a WHERE filter and counts toward the single-row
+ * PK-or-UK guard unchanged. A list-typed nesting is rejected.
  */
 public final class DeleteRowsWalker {
 
@@ -58,43 +65,16 @@ public final class DeleteRowsWalker {
         TableRef table,
         List<InputField> inputFields,
         JooqCatalog catalog,
-        boolean multiRow
+        boolean multiRow,
+        String outerArgName
     ) {
         var errors = new ArrayList<Rejection.AuthorError>();
 
-        // Stage 2: classify each input field into a walker-local column contribution, collecting
+        // Stage 2: classify each input field into a walker-local column contribution, flattening
+        // any nested (non-@table) grouping input into its leaf carriers in place (R186); collect
         // per-field admissibility rejections across the loop (no short-circuit).
         var contributions = new ArrayList<Contribution>();
-        for (var f : inputFields) {
-            switch (f) {
-                case InputField.ColumnField c -> classifyColumnCarrier(
-                    c.name(), c.list(), List.of(c.column()), c.extraction(), c.condition(), c.location(), errors, contributions);
-                case InputField.CompositeColumnField c -> classifyColumnCarrier(
-                    c.name(), c.list(), c.columns(), c.extraction(), c.condition(), c.location(), errors, contributions);
-                case InputField.ColumnReferenceField c -> classifyColumnCarrier(
-                    c.name(), c.list(), c.liftedSourceColumns(), c.extraction(), c.condition(), c.location(), errors, contributions);
-                case InputField.CompositeColumnReferenceField c -> classifyColumnCarrier(
-                    c.name(), c.list(), c.liftedSourceColumns(), c.extraction(), c.condition(), c.location(), errors, contributions);
-                case InputField.UnboundField u -> {
-                    if (u.condition().isPresent() && u.condition().get().override()) {
-                        errors.add(new DeleteRowsError.OverrideConditionNotSupported(u.name(), u.location()));
-                    } else {
-                        errors.add(new DeleteRowsError.UnsupportedInputFieldShape(
-                            u.name(), "UnboundField",
-                            "the field binds no column and carries no @condition(override: true); "
-                            + "DELETE input fields must bind a column"));
-                    }
-                }
-                case InputField.NestingField n ->
-                    errors.add(new DeleteRowsError.UnsupportedInputFieldShape(
-                        n.name(), "NestingField",
-                        "nested input types in @mutation(typeName: DELETE) fields are not yet supported"));
-                default ->
-                    errors.add(new DeleteRowsError.UnsupportedInputFieldShape(
-                        f.name(), f.getClass().getSimpleName(),
-                        "input field shape is not a supported DELETE input carrier"));
-            }
-        }
+        classifyInto(inputFields, List.of(), outerArgName, errors, contributions);
         if (!errors.isEmpty()) {
             // Unadmitted fields make the covered-column set unreliable; surface every per-field
             // issue without muddying the result with a spurious key-coverage error.
@@ -130,6 +110,80 @@ public final class DeleteRowsWalker {
         return new WalkerResult.Err<>(List.of(
             new DeleteRowsError.NoUniqueKeyCoverage(
                 table.tableName(), inputColumns, MatchedKeys.candidates(catalog, table))));
+    }
+
+    /**
+     * Flatten {@code fields} into {@link Contribution}s, descending into any
+     * {@link InputField.NestingField} grouping input (R186), the DELETE analogue of
+     * {@code UpdateRowsWalker.classifyInto}. A nested leaf's {@code extraction} is rewrapped as a
+     * {@link CallSiteExtraction.NestedInputField} carrying the full SDL access path; a top-level
+     * leaf keeps its extraction unchanged (byte-identical emit). Every flattened leaf's column
+     * becomes a WHERE filter and counts toward the single-row PK-or-UK guard exactly as a root
+     * leaf's does.
+     */
+    private void classifyInto(
+        List<InputField> fields, List<String> prefix, String outerArgName,
+        List<Rejection.AuthorError> errors, List<Contribution> contributions
+    ) {
+        for (var f : fields) {
+            switch (f) {
+                case InputField.ColumnField c -> classifyColumnCarrier(
+                    c.name(), c.list(), List.of(c.column()), wrap(c.extraction(), prefix, c.name(), outerArgName), c.condition(), c.location(), errors, contributions);
+                case InputField.CompositeColumnField c -> classifyColumnCarrier(
+                    c.name(), c.list(), c.columns(), wrap(c.extraction(), prefix, c.name(), outerArgName), c.condition(), c.location(), errors, contributions);
+                case InputField.ColumnReferenceField c -> classifyColumnCarrier(
+                    c.name(), c.list(), c.liftedSourceColumns(), wrap(c.extraction(), prefix, c.name(), outerArgName), c.condition(), c.location(), errors, contributions);
+                case InputField.CompositeColumnReferenceField c -> classifyColumnCarrier(
+                    c.name(), c.list(), c.liftedSourceColumns(), wrap(c.extraction(), prefix, c.name(), outerArgName), c.condition(), c.location(), errors, contributions);
+                case InputField.UnboundField u -> {
+                    if (u.condition().isPresent() && u.condition().get().override()) {
+                        errors.add(new DeleteRowsError.OverrideConditionNotSupported(u.name(), u.location()));
+                    } else {
+                        errors.add(new DeleteRowsError.UnsupportedInputFieldShape(
+                            u.name(), "UnboundField",
+                            "the field binds no column and carries no @condition(override: true); "
+                            + "DELETE input fields must bind a column"));
+                    }
+                }
+                case InputField.NestingField n -> {
+                    if (n.list()) {
+                        errors.add(new DeleteRowsError.UnsupportedInputFieldShape(
+                            n.name(), "list-typed NestingField",
+                            "list-typed nested input types (e.g. '" + n.name() + ": [" + n.typeName()
+                            + "!]') on @mutation(typeName: DELETE) fields are not yet supported (R186); "
+                            + "a list grouping has no obvious meaning when flattening onto one outer row."));
+                    } else if (n.condition().isPresent()) {
+                        errors.add(new DeleteRowsError.UnsupportedInputFieldShape(
+                            n.name(), "NestingField with @condition",
+                            "@condition on a nested grouping input is not supported on "
+                            + "@mutation(typeName: DELETE); the filter would not be applied. Remove the directive."));
+                    } else {
+                        var childPrefix = new ArrayList<>(prefix);
+                        childPrefix.add(n.name());
+                        classifyInto(n.fields(), childPrefix, outerArgName, errors, contributions);
+                    }
+                }
+                default ->
+                    errors.add(new DeleteRowsError.UnsupportedInputFieldShape(
+                        f.name(), f.getClass().getSimpleName(),
+                        "input field shape is not a supported DELETE input carrier"));
+            }
+        }
+    }
+
+    /**
+     * Rewrap a leaf's call-site extraction so a nested leaf descends the wire map; top-level leaves
+     * ({@code prefix} empty) keep their extraction unchanged. Mirrors {@code UpdateRowsWalker.wrap}.
+     */
+    private static CallSiteExtraction wrap(
+        CallSiteExtraction leaf, List<String> prefix, String leafName, String outerArgName
+    ) {
+        if (prefix.isEmpty()) {
+            return leaf;
+        }
+        var path = new ArrayList<>(prefix);
+        path.add(leafName);
+        return new CallSiteExtraction.NestedInputField(outerArgName, path, leaf);
     }
 
     /**

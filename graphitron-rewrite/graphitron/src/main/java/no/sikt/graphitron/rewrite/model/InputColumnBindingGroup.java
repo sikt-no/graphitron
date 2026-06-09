@@ -57,13 +57,20 @@ public sealed interface InputColumnBindingGroup permits InputColumnBindingGroup.
      * {@link InputColumnBinding.RecordBinding} slots indexed {@code 0..N-1}.
      *
      * <p>{@code sourceFieldName} is the GraphQL input-field name carrying the encoded id
-     * (e.g. {@code "id"}); the emitter reads {@code in.get(sourceFieldName)} once per row and
-     * passes the result through {@code decodeMethod} to obtain the typed record.
+     * (e.g. {@code "id"}); the emitter reads the wire value once per row and passes the result
+     * through {@code decodeMethod} to obtain the typed record.
+     *
+     * <p>{@code accessPath} (R186) is the SDL key chain from the argument-value root map to the
+     * source field: {@code [sourceFieldName]} for a top-level composite key (the emit reads
+     * {@code map.get(sourceFieldName)}, byte-identical to before R186), or a multi-segment path
+     * for a composite key buried in a nested grouping input (the emit descends the wire map). The
+     * path always ends in {@code sourceFieldName}.
      */
     record DecodedRecordGroup(
         String sourceFieldName,
         CallSiteExtraction.NodeIdDecodeKeys extraction,
-        List<InputColumnBinding.RecordBinding> bindings
+        List<InputColumnBinding.RecordBinding> bindings,
+        List<String> accessPath
     ) implements InputColumnBindingGroup {
         public DecodedRecordGroup {
             if (bindings.isEmpty()) {
@@ -71,6 +78,15 @@ public sealed interface InputColumnBindingGroup permits InputColumnBindingGroup.
                     "DecodedRecordGroup '" + sourceFieldName + "' must carry at least one binding");
             }
             bindings = List.copyOf(bindings);
+            accessPath = accessPath == null || accessPath.isEmpty()
+                ? List.of(sourceFieldName) : List.copyOf(accessPath);
+        }
+
+        /** Top-level convenience: the access path is just {@code [sourceFieldName]}. */
+        public DecodedRecordGroup(String sourceFieldName,
+                                  CallSiteExtraction.NodeIdDecodeKeys extraction,
+                                  List<InputColumnBinding.RecordBinding> bindings) {
+            this(sourceFieldName, extraction, bindings, List.of(sourceFieldName));
         }
 
         @Override public List<ColumnRef> targetColumns() {

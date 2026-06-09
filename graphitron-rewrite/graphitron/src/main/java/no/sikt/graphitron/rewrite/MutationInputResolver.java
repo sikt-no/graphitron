@@ -24,6 +24,7 @@ import static no.sikt.graphitron.rewrite.BuildContext.ARG_TYPE_NAME;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_CONDITION;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_LOOKUP_KEY;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_MUTATION;
+import static no.sikt.graphitron.rewrite.BuildContext.DIR_TABLE;
 
 /**
  * Resolves the DML {@code @mutation} concern: walks a mutation field's arguments to find the
@@ -290,11 +291,14 @@ final class MutationInputResolver {
      * <ul>
      *   <li>UPSERT is refused outright (deferred to R145).</li>
      *   <li>{@code multiRow: true} is rejected on INSERT (no WHERE clause to multiply over).</li>
-     *   <li>Per-input-field structural checks: only {@link InputField.ColumnField} and
-     *       {@link InputField.CompositeColumnField} are admitted; reference carriers and nesting
-     *       fields stay deferred. {@code @lookupKey} on input fields rejects via the classifier's
-     *       retirement diagnostic (R144). {@code @condition} without {@code override: true} rejects
-     *       (R215).</li>
+     *   <li>Per-input-field structural checks: value carriers ({@link InputField.ColumnField} /
+     *       {@link InputField.CompositeColumnField}) and FK-target reference carriers (R189) are
+     *       admitted. A non-{@code @table} {@link InputField.NestingField} grouping is admitted by
+     *       recursing on its leaves under the same rules (R186); a list-typed nesting and a nested
+     *       {@code @table} input (R122's compound-entity territory) are not. {@code @lookupKey} on
+     *       input fields rejects via the classifier's retirement diagnostic (R144).
+     *       {@code @condition} without {@code override: true} rejects (R215), at every nesting
+     *       depth.</li>
      * </ul>
      *
      * <p>UPDATE and DELETE never reach the body: their walker classifiers in {@link FieldBuilder}
@@ -357,30 +361,9 @@ final class MutationInputResolver {
             // @value (UPDATE and DELETE both classify through their walkers now; INSERT is the lone
             // verb reaching here and never partitioned its input fields), so there is no @value
             // marker to accumulate or reject.
-            for (var sdlField : iot.getFieldDefinitions()) {
-                boolean hasLookupKey = sdlField.hasAppliedDirective(DIR_LOOKUP_KEY);
-                boolean hasCondition = sdlField.hasAppliedDirective(DIR_CONDITION);
-                if (hasLookupKey) {
-                    return new Resolved.Rejected(Rejection.structural(
-                        "@mutation input '" + argTypeName + "' field '" + sdlField.getName()
-                        + "': @lookupKey on a mutation input field is no longer supported (R144); "
-                        + "remove it (the field is a filter by default)"));
-                }
-                // R215: @condition(override: false) on a mutation input field is filter-shape that
-                // would compete with the mutation's verb-specific WHERE shape; reject at classify
-                // time. The @condition(override: true) case routes through the classifier's
-                // UnboundField collapse and is handled by the per-field admission loop below.
-                if (hasCondition) {
-                    var condDir = sdlField.getAppliedDirective(DIR_CONDITION);
-                    var overrideArg = condDir != null ? condDir.getArgument(ARG_OVERRIDE) : null;
-                    boolean override = overrideArg != null && Boolean.TRUE.equals(overrideArg.getValue());
-                    if (!override) {
-                        return new Resolved.Rejected(Rejection.structural(
-                            "@mutation input '" + argTypeName + "' field '" + sdlField.getName()
-                            + "': @condition on a mutation input field is not supported "
-                            + "(mutations write values; only @condition(override: true) is admitted)"));
-                    }
-                }
+            var directiveRejection = rejectInputFieldDirectives(iot, argTypeName);
+            if (directiveRejection != null) {
+                return directiveRejection;
             }
 
             var bindingErrors = new java.util.ArrayList<String>();
@@ -422,7 +405,83 @@ final class MutationInputResolver {
             return new Resolved.Rejected(Rejection.structural("@condition on a @mutation field argument is not supported"));
         }
 
-        for (var f : foundTia.fields()) {
+        var admissionRejection = admitMutationInputFields(foundTia.fields(), foundTia.typeName(), kind);
+        if (admissionRejection != null) {
+            return admissionRejection;
+        }
+
+        if (kind == DmlKind.UPDATE || kind == DmlKind.DELETE) {
+            // R246 / R258 / R266: every UPDATE and DELETE is intercepted in FieldBuilder before this
+            // call — UPDATE by classifyUpdateTableField / classifyUpdatePayloadField, DELETE by
+            // classifyDeleteTableField / classifyDeletePayloadField — and identified by the
+            // UpdateRowsWalker / DeleteRowsWalker's PK-or-UK matched-key membership, never by @value
+            // or a resolveInput PK-coverage check. Reaching here means a future regression routed one
+            // back onto resolveInput; fail the build loudly. With both intercepted, INSERT is the
+            // lone verb that completes resolveInput, so the legacy PK-coverage block (which only ever
+            // fired for UPDATE / DELETE) is gone and @value is fully retired (R188).
+            throw new IllegalStateException(
+                "MutationInputResolver.resolveInput reached with DmlKind." + kind + " — UPDATE and "
+                + "DELETE are intercepted in FieldBuilder by their walker classifiers before "
+                + "resolveInput and never reach the @value / PK-coverage machinery (R246 / R258 / R266).");
+        }
+
+        return new Resolved.Ok(foundTia);
+    }
+
+    /**
+     * R215 + R186: reject {@code @lookupKey} (retired by R144) and non-override {@code @condition}
+     * (filter-shape that competes with the verb's WHERE) on any mutation input field, recursing into
+     * nested non-{@code @table} grouping inputs so a buried leaf is held to the same rule as a
+     * top-level field. The {@code @condition(override: true)} case is left to the per-field admission
+     * walk ({@link #admitMutationInputFields}), which routes it through the classifier's
+     * {@code UnboundField} collapse. Returns the first rejection, or {@code null} when every field
+     * (at every nesting depth) carries an admissible directive set.
+     */
+    private Resolved.Rejected rejectInputFieldDirectives(
+            graphql.schema.GraphQLInputObjectType iot, String argTypeName) {
+        for (var sdlField : iot.getFieldDefinitions()) {
+            if (sdlField.hasAppliedDirective(DIR_LOOKUP_KEY)) {
+                return new Resolved.Rejected(Rejection.structural(
+                    "@mutation input '" + argTypeName + "' field '" + sdlField.getName()
+                    + "': @lookupKey on a mutation input field is no longer supported (R144); "
+                    + "remove it (the field is a filter by default)"));
+            }
+            if (sdlField.hasAppliedDirective(DIR_CONDITION)) {
+                var condDir = sdlField.getAppliedDirective(DIR_CONDITION);
+                var overrideArg = condDir != null ? condDir.getArgument(ARG_OVERRIDE) : null;
+                boolean override = overrideArg != null && Boolean.TRUE.equals(overrideArg.getValue());
+                if (!override) {
+                    return new Resolved.Rejected(Rejection.structural(
+                        "@mutation input '" + argTypeName + "' field '" + sdlField.getName()
+                        + "': @condition on a mutation input field is not supported "
+                        + "(mutations write values; only @condition(override: true) is admitted)"));
+                }
+            }
+            // R186: recurse into nested non-@table grouping inputs so a nested-leaf @lookupKey /
+            // @condition is rejected with the same diagnostic as a top-level field. A nested @table
+            // input is R122's territory and is not descended here.
+            var base = GraphQLTypeUtil.unwrapAll(sdlField.getType());
+            if (base instanceof graphql.schema.GraphQLInputObjectType nested
+                    && !nested.hasAppliedDirective(DIR_TABLE)) {
+                var nestedRejection = rejectInputFieldDirectives(nested, argTypeName);
+                if (nestedRejection != null) {
+                    return nestedRejection;
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Per-field admission for the INSERT path (UPDATE / DELETE are intercepted upstream by their
+     * walkers; UPSERT is refused at the top of {@link #resolveInput}). Recurses into
+     * {@link InputField.NestingField} grouping inputs (R186): a nested leaf is admitted under the
+     * same rules as a root leaf, so a buried {@link InputField.CompositeColumnField} still trips the
+     * R130 INSERT carve-out. A list-typed nesting or a nested group carrying {@code @condition}
+     * rejects naming R186. Returns the first inadmissible field's rejection, or {@code null}.
+     */
+    private Resolved.Rejected admitMutationInputFields(List<InputField> fields, String typeName, DmlKind kind) {
+        for (var f : fields) {
             // ColumnField admission rule:
             //   Direct extraction  → always admitted (canonical mutation-input shape).
             //   NodeIdDecodeKeys   → admitted (R130): single-PK NodeId-decoded column write.
@@ -430,14 +489,13 @@ final class MutationInputResolver {
                 continue;
             }
             // R144 lifts the R130 carve-out: CompositeColumnField is now admissible on every
-            // non-UPSERT verb regardless of @value position. The directive question "filter or
-            // value?" is answered by @value presence, not by carrier shape. R130's INSERT carve-
-            // out stays in place (composite-PK INSERT shape is architecturally rare; lifting
-            // waits for a forcing-function schema).
+            // non-UPSERT verb. R130's INSERT carve-out stays in place (composite-PK INSERT shape is
+            // architecturally rare; lifting waits for a forcing-function schema). The carve-out fires
+            // for a nested leaf too, since the recursion reaches it.
             if (f instanceof InputField.CompositeColumnField) {
                 if (kind == DmlKind.INSERT) {
                     return new Resolved.Rejected(Rejection.deferred(
-                        "@mutation input '" + foundTia.typeName() + "' field '" + f.name()
+                        "@mutation input '" + typeName + "' field '" + f.name()
                         + "': CompositeColumnField on @mutation(typeName: INSERT) is not"
                         + " supported; the composite-PK INSERT shape is structurally valid"
                         + " but architecturally rare. Route through individual @field columns"
@@ -466,7 +524,7 @@ final class MutationInputResolver {
                 if (uf.condition().isPresent() && uf.condition().get().override()) {
                     if (kind == DmlKind.INSERT) {
                         return new Resolved.Rejected(Rejection.structural(
-                            "@mutation input '" + foundTia.typeName() + "' field '" + uf.name()
+                            "@mutation input '" + typeName + "' field '" + uf.name()
                             + "': @condition(override: true) on a @mutation(typeName: INSERT) "
                             + "input field is not supported; INSERT has no WHERE clause for the "
                             + "override condition to bind into"));
@@ -474,36 +532,36 @@ final class MutationInputResolver {
                     continue;
                 }
                 return new Resolved.Rejected(Rejection.structural(
-                    "@mutation input '" + foundTia.typeName() + "' field '" + uf.name()
+                    "@mutation input '" + typeName + "' field '" + uf.name()
                     + "': field has no column binding and no @condition(override: true); "
                     + "mutation input fields must bind a column or carry an override condition"));
             }
-            // NestingField stays deferred: nested-input is R128's compound-entity-mutations
-            // territory.
-            String reason = switch (f) {
-                case InputField.NestingField nf -> "nested input types in @mutation fields are not yet supported";
-                default -> "input field shape " + f.getClass().getSimpleName() + " is not yet supported";
-            };
+            // R186: a non-@table nested grouping input flattens onto the outer table's columns.
+            // Admit it by recursing on its leaves under the same rules; reject a list-typed nesting
+            // (no meaning when flattening onto one outer row) and a group-level @condition (R245).
+            if (f instanceof InputField.NestingField nf) {
+                if (nf.list()) {
+                    return new Resolved.Rejected(Rejection.structural(
+                        "@mutation input '" + typeName + "' field '" + nf.name()
+                        + "': list-typed nested input types (e.g. '" + nf.name() + ": ["
+                        + nf.typeName() + "!]') are not yet supported (R186); a list grouping has no "
+                        + "obvious meaning when flattening onto one outer row."));
+                }
+                if (nf.condition().isPresent()) {
+                    return new Resolved.Rejected(Rejection.structural(
+                        "@mutation input '" + typeName + "' field '" + nf.name()
+                        + "': @condition on a nested grouping input is not supported (R245)."));
+                }
+                var nestedRejection = admitMutationInputFields(nf.fields(), typeName, kind);
+                if (nestedRejection != null) {
+                    return nestedRejection;
+                }
+                continue;
+            }
             return new Resolved.Rejected(Rejection.structural(
-                "@mutation input '" + foundTia.typeName() + "' field '"
-                + f.name() + "': " + reason));
+                "@mutation input '" + typeName + "' field '" + f.name()
+                + "': input field shape " + f.getClass().getSimpleName() + " is not yet supported"));
         }
-
-        if (kind == DmlKind.UPDATE || kind == DmlKind.DELETE) {
-            // R246 / R258 / R266: every UPDATE and DELETE is intercepted in FieldBuilder before this
-            // call — UPDATE by classifyUpdateTableField / classifyUpdatePayloadField, DELETE by
-            // classifyDeleteTableField / classifyDeletePayloadField — and identified by the
-            // UpdateRowsWalker / DeleteRowsWalker's PK-or-UK matched-key membership, never by @value
-            // or a resolveInput PK-coverage check. Reaching here means a future regression routed one
-            // back onto resolveInput; fail the build loudly. With both intercepted, INSERT is the
-            // lone verb that completes resolveInput, so the legacy PK-coverage block (which only ever
-            // fired for UPDATE / DELETE) is gone and @value is fully retired (R188).
-            throw new IllegalStateException(
-                "MutationInputResolver.resolveInput reached with DmlKind." + kind + " — UPDATE and "
-                + "DELETE are intercepted in FieldBuilder by their walker classifiers before "
-                + "resolveInput and never reach the @value / PK-coverage machinery (R246 / R258 / R266).");
-        }
-
-        return new Resolved.Ok(foundTia);
+        return null;
     }
 }

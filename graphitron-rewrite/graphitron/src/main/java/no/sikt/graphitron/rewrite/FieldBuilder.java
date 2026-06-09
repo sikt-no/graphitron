@@ -3488,7 +3488,7 @@ class FieldBuilder {
         // R246 walker: PK-or-UK identification + SET/WHERE partition over the already-classified
         // input fields (the translator concession; see UpdateRowsWalker).
         var walkerResult = new no.sikt.graphitron.rewrite.walker.UpdateRowsWalker()
-            .walk(fieldDef, foundTit.table(), foundTit.inputFields(), ctx.catalog);
+            .walk(fieldDef, foundTit.table(), foundTit.inputFields(), ctx.catalog, inputArg.name());
         var enc = encodeReturn;
         return switch (walkerResult) {
             case no.sikt.graphitron.rewrite.model.WalkerResult.Ok<no.sikt.graphitron.rewrite.model.UpdateRows> ok ->
@@ -3634,7 +3634,7 @@ class FieldBuilder {
         // R246 walker: PK-or-UK identification + SET/WHERE partition over the already-classified
         // input fields. On Err, preserve the typed UpdateRowsError arm verbatim.
         var walkerResult = new no.sikt.graphitron.rewrite.walker.UpdateRowsWalker()
-            .walk(fieldDef, foundTit.table(), foundTit.inputFields(), ctx.catalog);
+            .walk(fieldDef, foundTit.table(), foundTit.inputFields(), ctx.catalog, inputArg.name());
         var channel = dmlChannel;
         return switch (walkerResult) {
             case no.sikt.graphitron.rewrite.model.WalkerResult.Ok<no.sikt.graphitron.rewrite.model.UpdateRows> ok -> {
@@ -3696,7 +3696,7 @@ class FieldBuilder {
         // multiRow opting into the Broadcast arm (the translator concession; see DeleteRowsWalker).
         boolean multiRow = MutationInputResolver.parseMultiRow(fieldDef);
         var walkerResult = new no.sikt.graphitron.rewrite.walker.DeleteRowsWalker()
-            .walk(fieldDef, foundTit.table(), foundTit.inputFields(), ctx.catalog, multiRow);
+            .walk(fieldDef, foundTit.table(), foundTit.inputFields(), ctx.catalog, multiRow, inputArg.name());
         var enc = encodeReturn;
         return switch (walkerResult) {
             case no.sikt.graphitron.rewrite.model.WalkerResult.Ok<no.sikt.graphitron.rewrite.model.DeleteRows> ok ->
@@ -3755,7 +3755,7 @@ class FieldBuilder {
         // legacy ordering where resolveInput's PK-coverage check rejected before the reclassify ran.
         boolean multiRow = MutationInputResolver.parseMultiRow(fieldDef);
         var walkerResult = new no.sikt.graphitron.rewrite.walker.DeleteRowsWalker()
-            .walk(fieldDef, foundTit.table(), foundTit.inputFields(), ctx.catalog, multiRow);
+            .walk(fieldDef, foundTit.table(), foundTit.inputFields(), ctx.catalog, multiRow, inputArg.name());
         if (walkerResult instanceof no.sikt.graphitron.rewrite.model.WalkerResult.Err<no.sikt.graphitron.rewrite.model.DeleteRows> err) {
             return new UnclassifiedField(parentTypeName, name, location, fieldDef, err.errors().getFirst());
         }

@@ -60,7 +60,7 @@ class DeleteRowsWalkerTest {
             columnField("filmId", col(PUBLIC, "film", "film_id")),
             columnField("title", col(PUBLIC, "film", "title")),
             columnField("description", col(PUBLIC, "film", "description"))
-        ), PUBLIC, false);
+        ), PUBLIC, false, "input");
 
         var carrier = (DeleteRows.Identified) ok(result);
         assertThat(carrier.matchedKey()).isInstanceOf(MatchedKey.PrimaryKey.class);
@@ -77,7 +77,7 @@ class DeleteRowsWalkerTest {
         // NoSetFields, but DELETE has no SET clause so it admits with the PK as the only filter.
         var result = walker.walk(null, table("film"), List.of(
             columnField("filmId", col(PUBLIC, "film", "film_id"))
-        ), PUBLIC, false);
+        ), PUBLIC, false, "input");
 
         var carrier = (DeleteRows.Identified) ok(result);
         assertThat(carrier.matchedKey()).isInstanceOf(MatchedKey.PrimaryKey.class);
@@ -88,7 +88,7 @@ class DeleteRowsWalkerTest {
     void ukMatch_pkNotCovered_succeedsWithUniqueKey() {
         var result = walker.walk(null, table("parent_node"), List.of(
             columnField("altKey", col(NODE_FIXTURE_CATALOG, "parent_node", "alt_key"))
-        ), NODE_FIXTURE_CATALOG, false);
+        ), NODE_FIXTURE_CATALOG, false, "input");
 
         var carrier = (DeleteRows.Identified) ok(result);
         assertThat(carrier.matchedKey()).isInstanceOf(MatchedKey.UniqueKey.class);
@@ -101,7 +101,7 @@ class DeleteRowsWalkerTest {
         var result = walker.walk(null, table("parent_node"), List.of(
             columnField("pkId", col(NODE_FIXTURE_CATALOG, "parent_node", "pk_id")),
             columnField("altKey", col(NODE_FIXTURE_CATALOG, "parent_node", "alt_key"))
-        ), NODE_FIXTURE_CATALOG, false);
+        ), NODE_FIXTURE_CATALOG, false, "input");
 
         var carrier = (DeleteRows.Identified) ok(result);
         assertThat(carrier.matchedKey()).isInstanceOf(MatchedKey.PrimaryKey.class);
@@ -117,7 +117,7 @@ class DeleteRowsWalkerTest {
             compositeColumnField("ref", List.of(
                 col(NODE_FIXTURE_CATALOG, "bar", "id_1"),
                 col(NODE_FIXTURE_CATALOG, "bar", "id_2")))
-        ), NODE_FIXTURE_CATALOG, false);
+        ), NODE_FIXTURE_CATALOG, false, "input");
 
         var carrier = (DeleteRows.Identified) ok(result);
         assertThat(carrier.matchedKey()).isInstanceOf(MatchedKey.PrimaryKey.class);
@@ -132,7 +132,7 @@ class DeleteRowsWalkerTest {
         var result = walker.walk(null, table("film"), List.of(
             columnField("title", col(PUBLIC, "film", "title")),
             columnField("description", col(PUBLIC, "film", "description"))
-        ), PUBLIC, false);
+        ), PUBLIC, false, "input");
 
         var err = only(result);
         assertThat(err).isInstanceOf(DeleteRowsError.NoUniqueKeyCoverage.class);
@@ -146,7 +146,7 @@ class DeleteRowsWalkerTest {
     void noKeyCovered_multiRow_succeedsWithBroadcast() {
         var result = walker.walk(null, table("film"), List.of(
             columnField("releaseYear", col(PUBLIC, "film", "release_year"))
-        ), PUBLIC, true);
+        ), PUBLIC, true, "input");
 
         var carrier = ok(result);
         assertThat(carrier).isInstanceOf(DeleteRows.Broadcast.class);
@@ -159,7 +159,7 @@ class DeleteRowsWalkerTest {
         // walker prefers Identified regardless of the flag.
         var result = walker.walk(null, table("film"), List.of(
             columnField("filmId", col(PUBLIC, "film", "film_id"))
-        ), PUBLIC, true);
+        ), PUBLIC, true, "input");
 
         assertThat(ok(result)).isInstanceOf(DeleteRows.Identified.class);
     }
@@ -169,7 +169,7 @@ class DeleteRowsWalkerTest {
         var result = walker.walk(null, table("film_list"), List.of(
             columnField("title", col(PUBLIC, "film_list", "title")),
             columnField("category", col(PUBLIC, "film_list", "category"))
-        ), PUBLIC, false);
+        ), PUBLIC, false, "input");
 
         var err = only(result);
         assertThat(err).isInstanceOf(DeleteRowsError.NoUniqueKeyCoverage.class);
@@ -180,7 +180,7 @@ class DeleteRowsWalkerTest {
     void tableWithNoKeys_multiRow_succeedsWithBroadcast() {
         var result = walker.walk(null, table("film_list"), List.of(
             columnField("title", col(PUBLIC, "film_list", "title"))
-        ), PUBLIC, true);
+        ), PUBLIC, true, "input");
 
         assertThat(ok(result)).isInstanceOf(DeleteRows.Broadcast.class);
     }
@@ -190,7 +190,7 @@ class DeleteRowsWalkerTest {
         var loc = new SourceLocation(7, 3);
         var result = walker.walk(null, table("film"), List.of(
             unboundFieldAt("syntheticName", true, loc)
-        ), PUBLIC, false);
+        ), PUBLIC, false, "input");
 
         var err = only(result);
         assertThat(err).isInstanceOf(DeleteRowsError.OverrideConditionNotSupported.class);
@@ -202,9 +202,9 @@ class DeleteRowsWalkerTest {
     @Test
     void unsupportedShapes_collectedAcrossLoopWithoutShortCircuit() {
         var result = walker.walk(null, table("film"), List.of(
-            nestingField("nested"),
+            listNestingField("nested"),
             unboundField("orphan", false)
-        ), PUBLIC, false);
+        ), PUBLIC, false, "input");
 
         var errors = errors(result);
         assertThat(errors).hasSize(2);
@@ -267,8 +267,10 @@ class DeleteRowsWalkerTest {
             columns, Optional.empty(), dummyDecode(columns));
     }
 
-    private static InputField.NestingField nestingField(String name) {
-        return new InputField.NestingField("In", name, loc(), "Nested", true, false, List.of(), Optional.empty());
+    // R186 admits a plain (non-list) NestingField by flattening it; a list-typed nesting stays
+    // unsupported, so this helper builds the list-typed shape for the unsupported-shape coverage.
+    private static InputField.NestingField listNestingField(String name) {
+        return new InputField.NestingField("In", name, loc(), "Nested", false, true, List.of(), Optional.empty());
     }
 
     private static InputField.UnboundField unboundField(String name, boolean override) {

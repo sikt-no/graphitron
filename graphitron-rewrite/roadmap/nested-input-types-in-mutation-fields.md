@@ -1,7 +1,7 @@
 ---
 id: R186
 title: Nested input types in @mutation fields
-status: Ready
+status: In Review
 bucket: architecture
 priority: 6
 theme: mutations-errors
@@ -118,6 +118,8 @@ The partition lists (the `UpdateRows` carrier's `setColumns()` / `keyColumns()`,
    * The factory's unconditional partition (`:274-278`) then runs over the flat-leaf list, putting every admissible leaf into `lookupKeyFields` with an empty `setFields`. R266 removed the `valueMarkedNames` parameter and the `@value`-driven partition entirely, so there is no per-verb branch and nothing to thread; the flatten simply feeds more leaves into the one surviving arm. Retaining the `NestingField` envelope on `fields()` preserves the SDL shape for validation / LSP consumers (choice B); the INSERT VALUES emit consumes the flat-leaf partition, not the envelope (step 5).
 
    *(The earlier draft carried two further steps, an `EnumMappingResolver.buildLookupBindings` descent and an `InputColumnBindingGroup` access-path field, both for the DELETE PK-coverage check. R266 made them moot for mutations: DELETE now sources its WHERE from `DeleteRows.whereColumns()` via the walker, and INSERT discards the binding set (`MutationInputResolver.java:391-393`), so neither mutation verb consumes `InputColumnBindingGroup` anymore. The binding-group access-path work, if ever needed, is query-side only and out of R186's scope.)*
+
+   **Fork resolution (implementation):** `lookupKeyFields` was *not* turned into a flattened path-bearing view as this step first sketched. Reusing `List<InputField.LookupKeyField>` as the flat partition is only half-honest: the composite arms (`CompositeColumnField` / `CompositeColumnReferenceField`) narrow their `extraction` slot to `NodeIdDecodeKeys`, so a nested composite leaf cannot carry a `NestedInputField` and would pass through path-less while the type claims a uniform path-bearing flat view. A principles self-check flagged this; throwing on the composite arm would over-reject a structurally valid shape (nested composite-*reference* INSERT, which the VALUES emit handles correctly via `fields()` recursion). So `lookupKeyFields` stays the truthful top-level carrier filter (a `NestingField` is not a `LookupKeyField`, so it does not appear there). The nested wire access path lives only where it is consumed and can be carried honestly: on the `SetColumn` / `KeyColumn` walker carriers (broad `extraction` slot) for UPDATE / DELETE, and recomputed at emit from the `fields()` envelope for INSERT VALUES. A dedicated flat-leaf record carrying `accessPath` as a first-class component on *every* leaf is the clean unification, deferred to R222 (which retires the `InputField` family anyway). `DML_INSERT_NESTING_OK` accordingly asserts the `fields()` envelope + the nested leaf's outer-table resolution rather than a `lookupKeyFields` path; the emit-side access path is pinned by the compilation and execution tiers.
 
 5. **Emit-site refactor** (three carrier-sourced paths, one shared access-path helper):
    * **UPDATE (all shapes)**: emit already sources SET/WHERE from the `UpdateRows` carrier. `TypeFetcherGenerator.setGroupsOf(f.updateRows().setColumns())` / `keyGroupsOf(f.updateRows().keyColumns())` feed `emitSetMapPuts` and the WHERE emitters. Since each `SetColumn` / `KeyColumn` now carries a `NestedInputField` extraction for a nested leaf, the access-path walk lands in `emitSetMapPuts` and its bulk sibling.

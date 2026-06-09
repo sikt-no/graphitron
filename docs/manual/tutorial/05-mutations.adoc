@@ -97,6 +97,74 @@ curl -s -X POST http://localhost:8080/graphql \
   -d '{"query":"mutation { updateFilm(in: { filmId: 6, title: \"RENAMED FILM\" }) { filmId title } }"}'
 ----
 
+== Grouping fields with nested input types
+
+A `@mutation` input field can itself be an input object with no `@table` directive: a plain grouping type whose own fields map onto columns of the *same* table as the surrounding `@table` input. This tidies a large input into named clusters on the client side without introducing a second table. Suppose a schema like:
+
+[source,graphql]
+----
+input EndreOrganisasjonInput @table(name: "ORGANISASJON") {
+  id: ID! @nodeId(typeName: "URegOrganisasjon")
+  originalnavn: String! @field(name: "NAVN_ORIGINAL")
+  lokalisering: LokaliseringInput!
+}
+
+input LokaliseringInput {
+  landkode: String!
+  bynavn: String
+  regionnavn: String
+}
+
+type Mutation {
+  endreOrganisasjon(input: [EndreOrganisasjonInput!]!): EndreOrganisasjonPayload
+    @mutation(typeName: UPDATE)
+}
+----
+
+`LokaliseringInput` has no `@table`, so its fields are not a separate row: `landkode`, `bynavn`, and `regionnavn` are columns of `ORGANISASJON`, reached on the wire as `input.lokalisering.landkode`. The mutation call nests the same way:
+
+[source,graphql]
+----
+mutation {
+  endreOrganisasjon(input: [{ id: "...", originalnavn: "Sikt", lokalisering: { landkode: "NO", bynavn: "Oslo" } }]) {
+    # ...
+  }
+}
+----
+
+Three things to keep in mind:
+
+* *The grouping has no DML semantics.* It is purely a wire-format ergonomics shape. The generated `UPDATE` writes flat columns on `ORGANISASJON` exactly as if the nested leaves had been declared at the top level of `EndreOrganisasjonInput`.
+* *`@field(name:)` on a nested leaf targets the outer table.* The resolution context is the surrounding `@table`, so a nested leaf names a column of that table (here, of `ORGANISASJON`); the SDL-name-defaults-to-column-name fallback resolves against the outer table too.
+* *Absent-vs-null is honored at every nesting layer*, matching the way top-level mutation inputs already behave:
++
+[cols="1,3"]
+|===
+| Wire shape | Effect
+
+| outer key absent (`lokalisering` not sent)
+| no claim about the group; every leaf under it is skipped
+
+| outer key present with `null` (`lokalisering: null`)
+| no claim about the group; every leaf under it is skipped
+
+| outer key present with a Map
+| descend; each leaf is decided independently by the rows below
+
+| leaf key absent
+| the column is left untouched (PATCH semantics)
+
+| leaf key present with `null`
+| the column is written `NULL`
+
+| leaf key present with a value
+| the column is written to that value
+|===
+
+So sending `lokalisering: { landkode: "NO", bynavn: null }` writes `landkode = 'NO'`, `bynavn = NULL`, and leaves `regionnavn` untouched.
+
+This works for every DML verb (`INSERT`, `UPDATE`, `DELETE`). A nested grouping that introduces a *second* table (a nested input that is itself `@table`-backed) is a different, compound-mutation shape and is not covered here.
+
 == You have just learned
 
 How `@mutation(typeName: ...)` flips a resolver into an `INSERT`, `UPDATE`, or `UPSERT`; how `@table` and `@field` on an input type wire the operation to a target table and its columns; and how `RETURNING` keeps the round-trip count to one, even when the response asks for more than the inserted row provides.
