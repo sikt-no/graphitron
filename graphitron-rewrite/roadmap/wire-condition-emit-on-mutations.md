@@ -3,7 +3,7 @@ id: R245
 title: "Wire @condition through to mutation WHERE (emit half + new placements)"
 status: Backlog
 bucket: cleanup
-depends-on: [deleterows-walker-carrier]
+depends-on: []
 created: 2026-05-27
 last-updated: 2026-05-27
 ---
