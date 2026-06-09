@@ -709,7 +709,9 @@ class FetcherPipelineTest {
     // ===== @service fields =====
 
     @Test
-    void serviceField_dataFetcherReturnsCompletableFutureListSpecificRecord() {
+    void serviceField_dataFetcherReturnsCompletableFutureListProjectedRecord() {
+        // R285: ServiceTableField lifts the service result back through a $fields re-projection,
+        // so the loader value is the projected org.jooq.Record, not the developer-returned XRecord.
         var languageFetchers = findSpec("LanguageFetchers", """
             type Language @table(name: "language") { languageId: Int @field(name: "language_id") }
             type Film @table(name: "film") { title: String }
@@ -722,7 +724,7 @@ class FetcherPipelineTest {
             }
             """);
         assertThat(method(languageFetchers, "films").returnType().toString())
-            .isEqualTo("java.util.concurrent.CompletableFuture<graphql.execution.DataFetcherResult<java.util.List<no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord>>>");
+            .isEqualTo("java.util.concurrent.CompletableFuture<graphql.execution.DataFetcherResult<java.util.List<org.jooq.Record>>>");
     }
 
     @Test

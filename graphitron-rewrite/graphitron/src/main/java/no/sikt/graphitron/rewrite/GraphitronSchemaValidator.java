@@ -867,6 +867,19 @@ public class GraphitronSchemaValidator {
             return;
         }
 
+        // The lift re-projects the service result by joining the returned table on its own primary
+        // key (identity re-projection); a PK-less returned table gives the emitter no key to extract.
+        // Mirrors the parent-PK invariant below: a classifier guarantee the lifted emitter relies on,
+        // not a transient stopgap. See R285.
+        TableRef returnTable = field.returnType().table();
+        if (!returnTable.hasPrimaryKey()) {
+            errors.add(new ValidationError(
+                field.qualifiedName(),
+            Rejection.structural("Field '" + field.qualifiedName() + "': @service on a table-bound return type requires the returned table '" + returnTable.tableName() + "' to have a primary key for identity re-projection"),
+                field.location()
+            ));
+        }
+
         var parentType = types.get(field.parentTypeName());
         if (!(parentType instanceof TableBackedType tbt)) {
             return; // non-table parent; no DataLoader key needed
