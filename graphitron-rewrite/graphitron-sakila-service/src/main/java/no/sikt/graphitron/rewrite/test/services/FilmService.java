@@ -1,7 +1,9 @@
 package no.sikt.graphitron.rewrite.test.services;
 
+import no.sikt.graphitron.rewrite.test.jooq.Tables;
 import no.sikt.graphitron.rewrite.test.jooq.tables.Film;
 import no.sikt.graphitron.rewrite.test.jooq.tables.Language;
+import no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmActorRecord;
 import no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord;
 import no.sikt.graphitron.rewrite.test.jooq.tables.records.LanguageRecord;
 import org.jooq.DSLContext;
@@ -9,6 +11,7 @@ import org.jooq.Record1;
 import org.jooq.Row1;
 import org.jooq.impl.DSL;
 
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -158,5 +161,36 @@ public final class FilmService {
             }
         }
         return out.toString();
+    }
+
+    /**
+     * R285 lift-back fixture: a list-cardinality child {@code @service} whose mapped batch returns
+     * the {@code film_actor} junction rows per film. The element type {@code FilmActor} carries an
+     * {@code actor: Actor @reference} sub-field, which is a correlated multiset, not a stored
+     * column. Pre-R285 the rows-method returned these {@code FilmActorRecord}s verbatim and the
+     * {@code actor} fetcher threw {@code "Field \"actor\" is not contained in row type"}; the lift
+     * re-projects each returned record's PK through {@code FilmActor.$fields(...)} so the multiset
+     * column is present. This is the in-tree analogue of opptak's
+     * {@code Sak.saksdokumenter -> Saksdokument.dokument}.
+     *
+     * <p>Mapped container (Set keys, Map return) + list cardinality. Returns only films present in
+     * the batch; a film with no cast simply maps to an empty list.
+     */
+    public static Map<Record1<Integer>, List<FilmActorRecord>> castMembersByFilm(
+        Set<Record1<Integer>> filmIds, DSLContext dsl
+    ) {
+        List<Integer> ids = filmIds.stream().map(Record1::value1).toList();
+        Map<Integer, List<FilmActorRecord>> byFilmId = new LinkedHashMap<>();
+        for (FilmActorRecord r : dsl.selectFrom(Tables.FILM_ACTOR)
+                .where(Tables.FILM_ACTOR.FILM_ID.in(ids))
+                .orderBy(Tables.FILM_ACTOR.ACTOR_ID)
+                .fetch()) {
+            byFilmId.computeIfAbsent(r.getFilmId(), k -> new ArrayList<>()).add(r);
+        }
+        Map<Record1<Integer>, List<FilmActorRecord>> result = new LinkedHashMap<>();
+        for (Record1<Integer> key : filmIds) {
+            result.put(key, byFilmId.getOrDefault(key.value1(), List.of()));
+        }
+        return result;
     }
 }

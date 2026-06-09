@@ -378,9 +378,19 @@ public class TypeFetcherGenerator {
                     }
                 }
                 case ChildField.ServiceTableField stf -> {
-                    TypeName servicePerKeyType = stf.returnType().table().recordClass();
-                    builder.addMethod(buildServiceDataFetcher(ctx, stf.name(), stf, stf.method(), stf.returnType(), parentTable, servicePerKeyType, className, outputPackage, stf.errorChannel()));
-                    builder.addMethod(buildServiceRowsMethod(ctx, stf, stf.method(), stf.returnType(), servicePerKeyType, stf.parentTypeName(), outputPackage));
+                    // R285: lift-back projection. The loader value is the projected Record (carrying
+                    // the multiset @reference columns), not the developer-returned XRecord; the lift
+                    // rows-method calls the service, then re-projects the returned records by identity
+                    // through Type.$fields(...). See SplitRowsMethodEmitter.buildServiceTableLift.
+                    var stfService = (MethodRef.Service) stf.method();
+                    String stfConditionsClass = outputPackage + ".conditions."
+                        + stf.parentTypeName() + QueryConditionsGenerator.CLASS_NAME_SUFFIX;
+                    CodeBlock stfServiceCall = CodeBlock.of("$L.$L($L)",
+                        serviceCallTarget(stfService, ClassName.bestGuess(stf.method().className())),
+                        stf.method().methodName(),
+                        ArgCallEmitter.buildMethodBackedCallArgs(ctx, stf.method(), null, CodeBlock.of("keys"), stfConditionsClass));
+                    builder.addMethod(buildServiceDataFetcher(ctx, stf.name(), stf, stf.method(), stf.returnType(), parentTable, RECORD, className, outputPackage, stf.errorChannel()));
+                    builder.addMethod(SplitRowsMethodEmitter.buildServiceTableLift(ctx, stf, stfServiceCall, outputPackage));
                 }
                 case ChildField.ServiceRecordField srf -> {
                     builder.addMethod(buildServiceDataFetcher(ctx, srf.name(), srf, srf.method(), srf.returnType(), parentTable, srf.elementType(), className, outputPackage, srf.errorChannel()));

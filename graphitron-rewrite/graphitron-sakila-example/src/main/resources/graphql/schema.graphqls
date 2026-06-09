@@ -788,6 +788,16 @@ type Film implements Node & Searchable @table(name: "film") @node {
         className: "no.sikt.graphitron.rewrite.test.services.FilmService",
         method: "languageByService"
     })
+    # R285 lift-back fixture: a list-cardinality child @service whose @table-bound element type
+    # (FilmActor) carries a non-column @reference sub-field (actor). The service returns
+    # Map<Record1<Integer>, List<FilmActorRecord>> (mapped, list); the lift re-projects each
+    # returned film_actor PK through FilmActor.$fields so `actor { ... }` resolves to the joined
+    # row rather than throwing "Field actor is not contained in row type". In-tree analogue of
+    # opptak's Sak.saksdokumenter -> Saksdokument.dokument.
+    castMembers: [FilmActor!]! @service(service: {
+        className: "no.sikt.graphitron.rewrite.test.services.FilmService",
+        method: "castMembersByFilm"
+    })
     # NestingField fixture: plain-object summary type nested inside Film. Fields resolve
     # against the outer Film table via $fields recursion (Film.summary.title → FILM.TITLE).
     summary:     FilmSummary
@@ -951,6 +961,11 @@ type FilmActor implements Node @table(name: "film_actor") @node {
     id:      ID!  @nodeId
     filmId:  Int! @field(name: "film_id")
     actorId: Int! @field(name: "actor_id")
+    # R285 lift-back fixture: a @reference sub-field (correlated multiset, not a stored column)
+    # on the element type of the Film.castMembers child @service field. Pre-R285 the verbatim
+    # service return carried no multiset column here and the actor fetcher threw "Field actor is
+    # not contained in row type"; the lift re-projects through FilmActor.$fields so it resolves.
+    actor:   Actor @reference(path: [{key: "film_actor_actor_id_fkey"}])
 }
 
 # R79 fixture (paired with `filmActorsByCompositeNodeIds`). The implicit-condition path

@@ -271,6 +271,43 @@ class GraphQLQueryTest {
     }
 
     @Test
+    void films_castMembers_referenceSubfieldResolvesViaServiceTableFieldLift() {
+        // R285 lift-back execution-tier primary net. Film.castMembers is a list-cardinality child
+        // @service (mapped container) returning film_actor rows; FilmActor.actor is a @reference
+        // (correlated multiset, not a stored column). Pre-R285 the verbatim service return carried
+        // no `actor` column and the reference fetcher threw
+        // 'Field "actor" is not contained in row type'; the lift re-projects each returned PK through
+        // FilmActor.$fields so the multiset is present. The execute() helper asserts zero GraphQL
+        // errors, so reaching the assertions already proves the reference no longer throws.
+        // In-tree analogue of opptak's Sak.saksdokumenter -> Saksdokument.dokument.
+        Map<String, Object> data = execute("""
+            { films { filmId castMembers { actorId actor { firstName } } } }
+            """);
+        List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("films");
+
+        // Seeded film_actor: film 1 -> actors {1=PENELOPE, 2=NICK}; film 2 -> {1=PENELOPE, 3=ED}.
+        // Asserting the exact per-film cast proves (a) the @reference resolves to the joined actor
+        // row, (b) the mapped re-wrap keys each parent to its own records (no cross-parent leakage),
+        // and (c) the lift re-projects exactly the service-returned PKs (film 1 has precisely two
+        // cast members, no widening to the whole film_actor table).
+        Map<String, Object> film1 = films.stream()
+            .filter(f -> f.get("filmId").equals(1)).findFirst().orElseThrow();
+        assertThat(film1).extractingByKey("castMembers", as(list(Map.class)))
+            .extracting(
+                cm -> cm.get("actorId"),
+                cm -> ((Map<String, Object>) cm.get("actor")).get("firstName"))
+            .containsExactlyInAnyOrder(
+                org.assertj.core.groups.Tuple.tuple(1, "PENELOPE"),
+                org.assertj.core.groups.Tuple.tuple(2, "NICK"));
+
+        Map<String, Object> film2 = films.stream()
+            .filter(f -> f.get("filmId").equals(2)).findFirst().orElseThrow();
+        assertThat(film2).extractingByKey("castMembers", as(list(Map.class)))
+            .extracting(cm -> ((Map<String, Object>) cm.get("actor")).get("firstName"))
+            .containsExactlyInAnyOrder("PENELOPE", "ED");
+    }
+
+    @Test
     void inventoryById_filmRef_resolvesViaExternalFieldReturningFieldOfTableRecord() {
         // R61 execution-tier fixture: @externalField returning Field<TableRecord<?>>.
         // InventoryExtensions.filmRef(table) projects inventory.film_id via DSL.row(...).

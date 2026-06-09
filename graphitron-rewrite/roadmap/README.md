@@ -14,9 +14,9 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 | ID | Item | Status | Updated | Plan |
 |---|---|---|---|---|
-| `R285` | Lift-back projection for child @service fields returning a table-bound type (ServiceTableField) | Ready | 2026-06-09 <sub>created 2026-06-08</sub> | [plan](service-table-field-reference-subfield-projection.md) |
 | `R19` | Rebase and squash rewrite branch onto main | Ready |  | [plan](history-squash.md) |
 | `R275` | Error channel and data projection for source-record-carrier @service mutations | In Progress | 2026-06-05 <sub>created 2026-06-02</sub> | [plan](source-record-carrier-service-error-channel.md) |
+| `R285` | Lift-back projection for child @service fields returning a table-bound type (ServiceTableField) | In Progress | 2026-06-09 <sub>created 2026-06-08</sub> | [plan](service-table-field-reference-subfield-projection.md) |
 | `R284` | Reversed source/target alias order in bridging-hop @reference ConditionJoin emission | In Review | 2026-06-08 | [plan](bridging-hop-conditionjoin-alias-order.md) |
 | `R222` | Dimensional model pivot: slots over cross-product permits | Spec | 2026-06-05 <sub>created 2026-05-21</sub> | [plan](dimensional-model-pivot.md) |
 | `R256` | Absorb the service walker substrate: typed per-arm errors + multi-arg ctors | Ready | 2026-05-30 <sub>created 2026-05-29</sub> | [plan](service-walker-substrate-absorption.md) |
@@ -156,7 +156,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### service
 
-- `R285` [**Lift-back projection for child @service fields returning a table-bound type (ServiceTableField)**](service-table-field-reference-subfield-projection.md) — Ready, bug
+- `R285` [**Lift-back projection for child @service fields returning a table-bound type (ServiceTableField)**](service-table-field-reference-subfield-projection.md) — In Progress, bug
 - `R201` [**Honor @field(name:) in @error payload construction shape resolution**](honor-field-directive-in-payload-construction-shape.md) — Backlog, bug
 - `R202` [**Honor @field(name:) in @error type extra-field accessor matching against handler source class**](honor-field-directive-in-error-type-source-accessors.md) — Backlog, bug
 - `R200` [**Honor @field(name:) in InputBeanResolver for SDL input bean/record member binding**](honor-field-directive-in-inputbeanresolver.md) — Backlog, bug

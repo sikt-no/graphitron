@@ -329,6 +329,9 @@ class TypeFetcherGeneratorTest {
     }
 
     // ===== @service field with TableBoundReturnType =====
+    // R285: ChildField.ServiceTableField lifts the service result back through a $fields-projecting
+    // identity re-projection, so the DataLoader value (and rows-method per-key value) is the
+    // projected org.jooq.Record carrying the multiset columns, not the developer-returned XRecord.
 
     private static GraphitronField serviceField(String parentType, String name, boolean isList) {
         var returnWrapper = isList ? (FieldWrapper) listWrapper() : single();
@@ -357,15 +360,15 @@ class TypeFetcherGeneratorTest {
     }
 
     @Test
-    void serviceField_list_dataFetcherReturnsCompletableFutureListSpecificRecord() {
+    void serviceField_list_dataFetcherReturnsCompletableFutureListProjectedRecord() {
         assertThat(method(specWithServiceField("Language", "films", true), "films").returnType().toString())
-            .isEqualTo("java.util.concurrent.CompletableFuture<graphql.execution.DataFetcherResult<java.util.List<no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord>>>");
+            .isEqualTo("java.util.concurrent.CompletableFuture<graphql.execution.DataFetcherResult<java.util.List<org.jooq.Record>>>");
     }
 
     @Test
-    void serviceField_single_dataFetcherReturnsCompletableFutureSpecificRecord() {
+    void serviceField_single_dataFetcherReturnsCompletableFutureProjectedRecord() {
         assertThat(method(specWithServiceField("Language", "film", false), "film").returnType().toString())
-            .isEqualTo("java.util.concurrent.CompletableFuture<graphql.execution.DataFetcherResult<no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord>>");
+            .isEqualTo("java.util.concurrent.CompletableFuture<graphql.execution.DataFetcherResult<org.jooq.Record>>");
     }
 
     @Test
@@ -439,19 +442,19 @@ class TypeFetcherGeneratorTest {
     }
 
     @Test
-    void serviceField_mappedRow_list_dataFetcherReturnsCompletableFutureListSpecificRecord() {
+    void serviceField_mappedRow_list_dataFetcherReturnsCompletableFutureListProjectedRecord() {
         assertThat(method(specWithMappedServiceField("Language", "films", true, mappedRowKey()), "films").returnType().toString())
-            .isEqualTo("java.util.concurrent.CompletableFuture<graphql.execution.DataFetcherResult<java.util.List<no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord>>>");
+            .isEqualTo("java.util.concurrent.CompletableFuture<graphql.execution.DataFetcherResult<java.util.List<org.jooq.Record>>>");
     }
 
     @Test
-    void serviceField_mappedRow_single_dataFetcherReturnsCompletableFutureSpecificRecord() {
+    void serviceField_mappedRow_single_dataFetcherReturnsCompletableFutureProjectedRecord() {
         // Mapped vs positional only changes the rows-method return shape (Map vs List); the
         // data fetcher's return is always CompletableFuture<DataFetcherResult<V>> (R12 §3) because
         // loader.load(key, env) returns a per-key promise that the wrapper lifts into the
         // DataFetcherResult envelope.
         assertThat(method(specWithMappedServiceField("Language", "film", false, mappedRowKey()), "film").returnType().toString())
-            .isEqualTo("java.util.concurrent.CompletableFuture<graphql.execution.DataFetcherResult<no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord>>");
+            .isEqualTo("java.util.concurrent.CompletableFuture<graphql.execution.DataFetcherResult<org.jooq.Record>>");
     }
 
     @Test
@@ -462,14 +465,14 @@ class TypeFetcherGeneratorTest {
                 "java.util.Set<org.jooq.Row1<java.lang.Integer>>",
                 "graphql.schema.DataFetchingEnvironment");
         assertThat(m.returnType().toString())
-            .isEqualTo("java.util.Map<org.jooq.Row1<java.lang.Integer>, java.util.List<no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord>>");
+            .isEqualTo("java.util.Map<org.jooq.Row1<java.lang.Integer>, java.util.List<org.jooq.Record>>");
     }
 
     @Test
-    void serviceField_mappedRow_single_rowsMethodReturnsScalarMap() {
+    void serviceField_mappedRow_single_rowsMethodReturnsSingleRecordMap() {
         var m = method(specWithMappedServiceField("Language", "film", false, mappedRowKey()), "loadFilm");
         assertThat(m.returnType().toString())
-            .isEqualTo("java.util.Map<org.jooq.Row1<java.lang.Integer>, no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord>");
+            .isEqualTo("java.util.Map<org.jooq.Row1<java.lang.Integer>, org.jooq.Record>");
     }
 
     @Test
