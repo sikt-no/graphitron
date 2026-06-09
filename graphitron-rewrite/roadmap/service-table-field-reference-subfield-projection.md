@@ -1,13 +1,13 @@
 ---
-id: R283
-title: "Lift-back projection for child @service fields returning a table-bound type (ServiceTableField)"
-status: Backlog
+id: R285
+title: Lift-back projection for child @service fields returning a table-bound type (ServiceTableField)
+status: Spec
 bucket: bug
 priority: 2
 theme: service
 depends-on: []
 created: 2026-06-08
-last-updated: 2026-06-08
+last-updated: 2026-06-09
 ---
 
 # Lift-back projection for child @service fields returning a table-bound type (ServiceTableField)
@@ -71,6 +71,14 @@ Two properties fall out, both desired:
 ## Validator follow-up
 
 Add a guard so this cannot regress silently. Until the lift-back lands, a `ServiceTableField` (or any service field over a table-bound return type) whose return type carries a non-column sub-field should be a generation-time error rather than a runtime `IllegalArgumentException`. Once the lift-back lands, the guard becomes a safety net for future shapes rather than a rejection.
+
+## Tests
+
+* **Execution (`@ExecutionTier`), primary net.** Add a sakila fixture: a `@service` child field whose method returns `List<XRecord>` (or `Map<key, List<XRecord>>` for the `MAPPED_SET` container) into a `@table`-bound element type that carries a non-column sub-field, the canonical case being an object-typed `@reference` relation (the in-tree analogue of `Saksdokument.dokument`). Query the field selecting both a stored-column sub-field and the `@reference` sub-field's own sub-selection; assert the reference resolves to the joined rows rather than throwing `Field "<name>" is not contained in row type`. This reproduces the `opptak-subgraph` `SakSaksdokumenterShapeTest` failures in-tree. Cover both list cardinality (the `saksdokumenter` shape) and, if a single-cardinality `ServiceTableField` fixture is cheap, the single-row scatter.
+* **Execution, lift semantics.** Two assertions that fall out of re-projecting only the returned keys: a service that returns a filtered/authorized subset re-projects exactly those rows (no widening to the whole table), and a returned key with no matching row drops out of the join (no synthesized phantom node, no special-casing).
+* **Pipeline (`@PipelineTier`).** A model/registry assertion (not a fetcher-body string, per `rewrite-design-principles.adoc`): a `ServiceTableField` over a return type with a non-column sub-field routes through the `$fields`-projecting lift, and the `@reference` sub-field resolves through a graphitron-emitted fetcher backed by the projected multiset column rather than reading a missing column off the verbatim service record. Assert the `idx`/scatter carry is present for both `MAPPED_SET` and `POSITIONAL_LIST` containers.
+* **Unit (`@UnitTier`).** The validator guard: a `ServiceTableField` whose return type carries a non-column sub-field is accepted once the lift lands (and was a generation-time error before it), while the residual unsupported shape (e.g. a `ServiceRecordField` over a non-table `@record` type with a multiset sub-field, which has no bound table to re-project) stays a typed rejection with a matching LSP diagnostic code. Lands alongside the existing service-field validation coverage (`QueryServiceTableFieldValidationTest` / `ServiceFieldValidationTest`).
+* **Compilation (`@CompilationTier`).** `mvn -f graphitron-rewrite/pom.xml install -Plocal-db` green end-to-end, exercising the lifted rows method's `VALUES`-join SELECT and scatter over the erased service-result source seam.
 
 ## References
 
