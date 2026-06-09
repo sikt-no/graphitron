@@ -1,7 +1,7 @@
 ---
 id: R285
 title: Lift-back projection for child @service fields returning a table-bound type (ServiceTableField)
-status: Spec
+status: Ready
 bucket: bug
 priority: 2
 theme: service
