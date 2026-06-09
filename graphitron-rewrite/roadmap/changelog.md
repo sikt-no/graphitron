@@ -10,6 +10,23 @@ The `next-id:` front-matter field is the canonical counter for `R<n>` allocation
 
 ---
 
+- `ecdc7c4` — R186 (`nested-input-types-in-mutation-fields`): a plain (non-`@table`) input object
+  grouping columns of the surrounding `@table` input is now admitted on `@mutation` fields,
+  flattening onto that one table instead of being structurally rejected. The grouping is a
+  wire-format ergonomics shape with no DML semantics; the three structural rejections it replaced
+  (`UpdateRowsWalker` / `DeleteRowsWalker` `UnsupportedInputFieldShape`, `MutationInputResolver`'s
+  R128-attributed `NestingField` arm) are gone. Both walkers flatten a `NestingField` into its leaf
+  carriers in place and the INSERT resolver recurses its leaves under the same per-field rules;
+  each nested leaf's wire concern rides on a `CallSiteExtraction.NestedInputField` access path so the
+  flat-leaf partition (`UpdateRows.setColumns`/`keyColumns`, `DeleteRows.whereColumns`,
+  `TableInputArg.lookupKeyFields`) stays flat and the emitters descend the wire map. The emit honors
+  the same absent-vs-null contract at every nesting layer that top-level mutation inputs do (absent /
+  null group skips its subtree; a present group descends per leaf), proved on real PostgreSQL across
+  INSERT, single + bulk UPDATE, and DELETE. List-typed nestings and nested-group `@condition` are
+  rejected naming R186; nested `@nodeId` FK-targets (R189) compose; nested `@table` inputs that
+  introduce a second DML target remain R122's territory. New `DML_INSERT_NESTING_OK` flips the former
+  `DML_NESTING_FIELD_DEFERRED`. Single-segment access paths emit byte-identically to pre-R186.
+
 - `57cb7b0` + `f1ee7a6` — R266 (`deleterows-walker-carrier`): DELETE mutations onto the
   `DeleteRows` walker carrier (sealed `Identified | Broadcast`), mirroring R246/R258's UPDATE
   work for the DELETE verb. Row identification is catalog-derived PK-or-UK coverage via the
