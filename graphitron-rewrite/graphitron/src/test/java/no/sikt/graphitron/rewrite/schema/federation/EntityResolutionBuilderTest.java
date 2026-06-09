@@ -294,4 +294,47 @@ class EntityResolutionBuilderTest {
             .contains("is classified as a @record type")
             .doesNotContain("has no @table directive");
     }
+
+    @Test
+    void resolvableFalseKeyOnRecordType_isAcceptedAsReferenceOnlyStub() {
+        // R286: a @key(resolvable: false) declares a reference-only entity stub — this subgraph
+        // does not own its resolution and emits no _entities handler, so it needs no backing
+        // table. The @record type must survive classification (not demote to UnclassifiedType)
+        // and produce no EntityResolution (the dispatcher never sees it).
+        var schema = TestSchemaHelper.buildSchema(FEDERATION_DIRECTIVES + """
+            type Query {
+                x: FooRec @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeDummyRecord"})
+            }
+            type FooRec @key(fields: "fooId", resolvable: false) {
+                fooId: Int
+            }
+            """);
+        assertThat(schema.type("FooRec"))
+            .as("reference-only stub stays classified, not demoted")
+            .isNotInstanceOf(UnclassifiedType.class);
+        assertThat(schema.entityResolution("FooRec"))
+            .as("no entity resolution is built for a reference-only stub")
+            .isNull();
+    }
+
+    @Test
+    void mixedResolvableAndNonResolvableKeysOnRecordType_stillRejects() {
+        // R286: the relaxation only applies when ALL keys are resolvable: false. A type with at
+        // least one resolvable @key still needs a backing table for the SELECT path, so the
+        // R176 diagnostic stays.
+        var schema = TestSchemaHelper.buildSchema(FEDERATION_DIRECTIVES + """
+            type Query {
+                x: FooRec @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeDummyRecord"})
+            }
+            type FooRec @key(fields: "fooId", resolvable: false) @key(fields: "barId") {
+                fooId: Int
+                barId: Int
+            }
+            """);
+        assertThat(schema.type("FooRec")).isInstanceOf(UnclassifiedType.class);
+        var unclassified = (UnclassifiedType) schema.type("FooRec");
+        assertThat(unclassified.reason())
+            .contains("is classified as a @record type")
+            .contains("federation entities need a @table directive");
+    }
 }

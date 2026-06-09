@@ -60,7 +60,10 @@ import java.util.function.Consumer;
  * {@code @table}s). Causes:
  * <ul>
  *   <li>Malformed {@code fields:} string — caught by {@link FederationKeyFieldsParser}</li>
- *   <li>{@code @key} on a non-table-bound type, or on {@link TableInterfaceType}</li>
+ *   <li>A <em>resolvable</em> {@code @key} on a non-table-bound type, or {@code @key} on
+ *       {@link TableInterfaceType}. A type whose {@code @key} directives are all
+ *       {@code resolvable: false} is a reference-only entity stub: it is skipped (no entity
+ *       entry, no rejection) since this subgraph emits no {@code _entities} handler for it.</li>
  *   <li>{@code @key(fields:)} references a field that is not a column</li>
  * </ul>
  */
@@ -133,8 +136,21 @@ public final class EntityResolutionBuilder {
             if (gType instanceof UnclassifiedType) {
                 continue;
             }
-            // Federation entities require a backing table (the dispatcher SELECTs from it).
+            // Federation entities require a backing table (the dispatcher SELECTs from it) —
+            // but only when a key is resolvable. A type whose @key directives are all
+            // resolvable: false is a reference-only entity stub: it is declared for the
+            // supergraph composer, but this subgraph does not own its resolution, emits no
+            // _entities handler for it, and so needs no backing table. Skip it without an
+            // entity entry (the dispatcher never sees it; the type stays classified as
+            // whatever it is, e.g. a @record type). Demote only when at least one key is
+            // resolvable and thus needs a SELECT path. (keys is non-empty here: NodeType is
+            // excluded by the branch condition, and the keys.isEmpty() && !isNodeType case
+            // already continued above.)
             if (!(gType instanceof TableType || gType instanceof NodeType)) {
+                boolean anyResolvable = keys.stream().anyMatch(EntityResolutionBuilder::readResolvableArg);
+                if (!anyResolvable) {
+                    continue;
+                }
                 registry.demote(typeName, new UnclassifiedType(typeName, gType.location(), Rejection.structural(
                     "@key on type '" + typeName + "' requires a table-bound type, but '" + typeName
                     + "' is classified as " + kindLabel(gType)
