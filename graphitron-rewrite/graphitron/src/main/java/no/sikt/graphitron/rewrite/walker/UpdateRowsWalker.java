@@ -46,6 +46,15 @@ import java.util.Set;
  * the classified permits plus the jOOQ keys, so the concession costs nothing in this slice's scope.
  * Errors are collected across stages without short-circuiting so the LSP surfaces every per-field
  * issue at once.
+ *
+ * <p><b>Nested grouping inputs (R186).</b> A plain (non-{@code @table}) input object grouping
+ * columns of the outer table classifies as an {@link InputField.NestingField}; the walker flattens
+ * it in place ({@link #classifyInto}) into the same flat leaf carriers it would admit at the input
+ * root, rewrapping each nested leaf's {@code extraction} as a
+ * {@link CallSiteExtraction.NestedInputField} that records the SDL access path. The SET/WHERE
+ * partition and the PK-or-UK match are column-identity-driven, so they run over the flattened
+ * leaves unchanged; the access path rides on the leaf's {@link SetColumn} / {@link KeyColumn}
+ * {@code extraction} for the emitter to descend the wire map. A list-typed nesting is rejected.
  */
 public final class UpdateRowsWalker {
 
@@ -57,43 +66,16 @@ public final class UpdateRowsWalker {
         GraphQLFieldDefinition field,
         TableRef table,
         List<InputField> inputFields,
-        JooqCatalog catalog
+        JooqCatalog catalog,
+        String outerArgName
     ) {
         var errors = new ArrayList<Rejection.AuthorError>();
 
-        // Stage 2: classify each input field into a walker-local column contribution, collecting
+        // Stage 2: classify each input field into a walker-local column contribution, flattening
+        // any nested (non-@table) grouping input into its leaf carriers in place (R186); collect
         // per-field admissibility rejections across the loop (no short-circuit).
         var contributions = new ArrayList<Contribution>();
-        for (var f : inputFields) {
-            switch (f) {
-                case InputField.ColumnField c -> classifyColumnCarrier(
-                    c.name(), c.list(), List.of(c.column()), c.extraction(), c.condition(), c.location(), errors, contributions);
-                case InputField.CompositeColumnField c -> classifyColumnCarrier(
-                    c.name(), c.list(), c.columns(), c.extraction(), c.condition(), c.location(), errors, contributions);
-                case InputField.ColumnReferenceField c -> classifyColumnCarrier(
-                    c.name(), c.list(), c.liftedSourceColumns(), c.extraction(), c.condition(), c.location(), errors, contributions);
-                case InputField.CompositeColumnReferenceField c -> classifyColumnCarrier(
-                    c.name(), c.list(), c.liftedSourceColumns(), c.extraction(), c.condition(), c.location(), errors, contributions);
-                case InputField.UnboundField u -> {
-                    if (u.condition().isPresent() && u.condition().get().override()) {
-                        errors.add(new UpdateRowsError.OverrideConditionNotSupported(u.name(), u.location()));
-                    } else {
-                        errors.add(new UpdateRowsError.UnsupportedInputFieldShape(
-                            u.name(), "UnboundField",
-                            "the field binds no column and carries no @condition(override: true); "
-                            + "UPDATE input fields must bind a column"));
-                    }
-                }
-                case InputField.NestingField n ->
-                    errors.add(new UpdateRowsError.UnsupportedInputFieldShape(
-                        n.name(), "NestingField",
-                        "nested input types in @mutation(typeName: UPDATE) fields are not yet supported"));
-                default ->
-                    errors.add(new UpdateRowsError.UnsupportedInputFieldShape(
-                        f.name(), f.getClass().getSimpleName(),
-                        "input field shape is not a supported UPDATE input carrier"));
-            }
-        }
+        classifyInto(inputFields, List.of(), outerArgName, errors, contributions);
         if (!errors.isEmpty()) {
             // Unadmitted fields make the covered-column set unreliable; surface every per-field
             // issue without muddying the result with a spurious key-coverage error.
@@ -157,6 +139,86 @@ public final class UpdateRowsWalker {
 
         // Stage 8: success.
         return new WalkerResult.Ok<>(new UpdateRows.Identified(matchedKey, setColumns, keyColumns));
+    }
+
+    /**
+     * Flatten {@code fields} into {@link Contribution}s, descending into any
+     * {@link InputField.NestingField} grouping input (R186) so a plain non-{@code @table} input that
+     * groups columns of the outer table contributes the same flat leaf carriers it would at the
+     * input root. A nested leaf's {@code extraction} is rewrapped as a
+     * {@link CallSiteExtraction.NestedInputField} carrying the full SDL access path from the
+     * {@code @table} argument root to the leaf, so the emitter descends the wire map; a top-level
+     * leaf keeps its extraction unchanged (the access path is the single field name and the emit
+     * stays byte-identical). The PK-or-UK match downstream runs over the flattened leaves' resolved
+     * columns unchanged: a nested leaf's column counts toward key coverage exactly as a root leaf's.
+     */
+    private void classifyInto(
+        List<InputField> fields, List<String> prefix, String outerArgName,
+        List<Rejection.AuthorError> errors, List<Contribution> contributions
+    ) {
+        for (var f : fields) {
+            switch (f) {
+                case InputField.ColumnField c -> classifyColumnCarrier(
+                    c.name(), c.list(), List.of(c.column()), wrap(c.extraction(), prefix, c.name(), outerArgName), c.condition(), c.location(), errors, contributions);
+                case InputField.CompositeColumnField c -> classifyColumnCarrier(
+                    c.name(), c.list(), c.columns(), wrap(c.extraction(), prefix, c.name(), outerArgName), c.condition(), c.location(), errors, contributions);
+                case InputField.ColumnReferenceField c -> classifyColumnCarrier(
+                    c.name(), c.list(), c.liftedSourceColumns(), wrap(c.extraction(), prefix, c.name(), outerArgName), c.condition(), c.location(), errors, contributions);
+                case InputField.CompositeColumnReferenceField c -> classifyColumnCarrier(
+                    c.name(), c.list(), c.liftedSourceColumns(), wrap(c.extraction(), prefix, c.name(), outerArgName), c.condition(), c.location(), errors, contributions);
+                case InputField.UnboundField u -> {
+                    if (u.condition().isPresent() && u.condition().get().override()) {
+                        errors.add(new UpdateRowsError.OverrideConditionNotSupported(u.name(), u.location()));
+                    } else {
+                        errors.add(new UpdateRowsError.UnsupportedInputFieldShape(
+                            u.name(), "UnboundField",
+                            "the field binds no column and carries no @condition(override: true); "
+                            + "UPDATE input fields must bind a column"));
+                    }
+                }
+                case InputField.NestingField n -> {
+                    if (n.list()) {
+                        errors.add(new UpdateRowsError.UnsupportedInputFieldShape(
+                            n.name(), "list-typed NestingField",
+                            "list-typed nested input types (e.g. '" + n.name() + ": [" + n.typeName()
+                            + "!]') on @mutation(typeName: UPDATE) fields are not yet supported (R186); "
+                            + "a list grouping has no obvious meaning when flattening onto one outer row."));
+                    } else if (n.condition().isPresent()) {
+                        errors.add(new UpdateRowsError.UnsupportedInputFieldShape(
+                            n.name(), "NestingField with @condition",
+                            "@condition on a nested grouping input is not supported on "
+                            + "@mutation(typeName: UPDATE); the filter would not be applied. Remove the directive."));
+                    } else {
+                        var childPrefix = new ArrayList<>(prefix);
+                        childPrefix.add(n.name());
+                        classifyInto(n.fields(), childPrefix, outerArgName, errors, contributions);
+                    }
+                }
+                default ->
+                    errors.add(new UpdateRowsError.UnsupportedInputFieldShape(
+                        f.name(), f.getClass().getSimpleName(),
+                        "input field shape is not a supported UPDATE input carrier"));
+            }
+        }
+    }
+
+    /**
+     * Rewrap a leaf's call-site extraction so a nested leaf descends the wire map. Top-level leaves
+     * ({@code prefix} empty) keep their extraction unchanged so the emit is byte-identical; nested
+     * leaves get a {@link CallSiteExtraction.NestedInputField} with the full access path. The leaf
+     * extraction (never itself a {@code NestedInputField}, since the classifier produces only
+     * {@code Direct} / {@code NodeIdDecodeKeys} leaves) rides through as the {@code NestedInputField}
+     * leaf, so deep nesting collapses to one carrier with a multi-segment path.
+     */
+    private static CallSiteExtraction wrap(
+        CallSiteExtraction leaf, List<String> prefix, String leafName, String outerArgName
+    ) {
+        if (prefix.isEmpty()) {
+            return leaf;
+        }
+        var path = new ArrayList<>(prefix);
+        path.add(leafName);
+        return new CallSiteExtraction.NestedInputField(outerArgName, path, leaf);
     }
 
     /**

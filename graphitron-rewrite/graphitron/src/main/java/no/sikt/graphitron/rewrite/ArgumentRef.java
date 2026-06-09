@@ -254,12 +254,24 @@ public sealed interface ArgumentRef {
             }
 
             /**
-             * Factory: every admissible carrier goes to {@code lookupKeyFields}, with an empty
-             * {@code setFields}. After R246 / R258 intercept UPDATE and R266 intercepts DELETE,
+             * Factory: every top-level admissible carrier goes to {@code lookupKeyFields}, with an
+             * empty {@code setFields}. After R246 / R258 intercept UPDATE and R266 intercepts DELETE,
              * the only callers are INSERT and the query-side composite-key lookup; neither has a
              * SET partition. INSERT walks {@code fields()} directly for VALUES emit, so an empty
              * {@code setFields} is correct. R266 retired the {@code @value} marker (the old
              * UPDATE-only SET partition source), so there is no per-verb branch left.
+             *
+             * <p>R186: a nested non-{@code @table} grouping input ({@link InputField.NestingField})
+             * is admitted by flattening onto the outer table, but {@code lookupKeyFields} is left as
+             * the top-level carrier filter (a {@code NestingField} is not a {@code LookupKeyField}, so
+             * it does not appear here). The flat leaf partition that carries the nested wire access
+             * path lives where it is actually consumed: on the {@code UpdateRows} / {@code DeleteRows}
+             * walker carriers ({@code SetColumn} / {@code KeyColumn}, whose broad {@code extraction}
+             * slot holds the {@link CallSiteExtraction.NestedInputField}) for UPDATE / DELETE, and
+             * recomputed at emit from the {@code fields()} envelope for INSERT VALUES. Reusing
+             * {@code List<LookupKeyField>} as a path-bearing flat view would be only half-honest: the
+             * composite arms narrow their {@code extraction} to {@code NodeIdDecodeKeys} and cannot
+             * carry a {@code NestedInputField}, so the path is parked on the truthful carriers instead.
              */
             public static TableInputArg of(
                 String name,

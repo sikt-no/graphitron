@@ -32,8 +32,11 @@ public sealed interface InputField extends GraphitronField
      * from {@link ColumnReferenceField#liftedSourceColumns()} /
      * {@link CompositeColumnReferenceField#liftedSourceColumns()}.
      *
-     * <p>{@link NestingField} stays outside the permits set; nested-input is R128's
-     * compound-entity-mutations territory.
+     * <p>{@link NestingField} stays outside the permits set: it never admits as a carrier itself.
+     * A non-{@code @table} nested grouping flattens to its leaf carriers at the gate (R186), each
+     * leaf rewrapped with a {@link CallSiteExtraction.NestedInputField} access path; a nested
+     * {@code @table} input that introduces a second DML target remains R122's compound-entity-
+     * mutations territory.
      */
     sealed interface LookupKeyField extends InputField permits ColumnField, CompositeColumnField,
             ColumnReferenceField, CompositeColumnReferenceField {}

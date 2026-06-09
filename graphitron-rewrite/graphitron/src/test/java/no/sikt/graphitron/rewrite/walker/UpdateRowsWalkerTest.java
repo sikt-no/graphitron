@@ -51,7 +51,7 @@ class UpdateRowsWalkerTest {
             columnField("filmId", col(PUBLIC, "film", "film_id")),
             columnField("title", col(PUBLIC, "film", "title")),
             columnField("description", col(PUBLIC, "film", "description"))
-        ), PUBLIC);
+        ), PUBLIC, "input");
 
         var carrier = ok(result);
         assertThat(carrier.matchedKey()).isInstanceOf(MatchedKey.PrimaryKey.class);
@@ -65,7 +65,7 @@ class UpdateRowsWalkerTest {
     void pkOnlyMatch_noExtraColumns_rejectsWithNoSetFields() {
         var result = walker.walk(null, table("film"), List.of(
             columnField("filmId", col(PUBLIC, "film", "film_id"))
-        ), PUBLIC);
+        ), PUBLIC, "input");
 
         assertThat(only(result)).isInstanceOf(UpdateRowsError.NoSetFields.class);
     }
@@ -75,7 +75,7 @@ class UpdateRowsWalkerTest {
         var result = walker.walk(null, table("parent_node"), List.of(
             columnField("altKey", col(NODE_FIXTURE_CATALOG, "parent_node", "alt_key")),
             columnField("name", col(NODE_FIXTURE_CATALOG, "parent_node", "name"))
-        ), NODE_FIXTURE_CATALOG);
+        ), NODE_FIXTURE_CATALOG, "input");
 
         var carrier = ok(result);
         assertThat(carrier.matchedKey()).isInstanceOf(MatchedKey.UniqueKey.class);
@@ -89,7 +89,7 @@ class UpdateRowsWalkerTest {
             columnField("pkId", col(NODE_FIXTURE_CATALOG, "parent_node", "pk_id")),
             columnField("altKey", col(NODE_FIXTURE_CATALOG, "parent_node", "alt_key")),
             columnField("name", col(NODE_FIXTURE_CATALOG, "parent_node", "name"))
-        ), NODE_FIXTURE_CATALOG);
+        ), NODE_FIXTURE_CATALOG, "input");
 
         var carrier = ok(result);
         assertThat(carrier.matchedKey()).isInstanceOf(MatchedKey.PrimaryKey.class);
@@ -104,7 +104,7 @@ class UpdateRowsWalkerTest {
         var result = walker.walk(null, table("film"), List.of(
             columnField("title", col(PUBLIC, "film", "title")),
             columnField("description", col(PUBLIC, "film", "description"))
-        ), PUBLIC);
+        ), PUBLIC, "input");
 
         var err = only(result);
         assertThat(err).isInstanceOf(UpdateRowsError.NoUniqueKeyCoverage.class);
@@ -122,7 +122,7 @@ class UpdateRowsWalkerTest {
                 col(PUBLIC, "film_actor", "actor_id"),
                 col(PUBLIC, "film_actor", "last_update"))),
             columnField("filmId", col(PUBLIC, "film_actor", "film_id"))
-        ), PUBLIC);
+        ), PUBLIC, "input");
 
         var err = only(result);
         assertThat(err).isInstanceOf(UpdateRowsError.MixedCarrierKeyMembership.class);
@@ -135,9 +135,9 @@ class UpdateRowsWalkerTest {
     @Test
     void unsupportedShapes_collectedAcrossLoopWithoutShortCircuit() {
         var result = walker.walk(null, table("film"), List.of(
-            nestingField("nested"),
+            listNestingField("nested"),
             unboundField("orphan", false)
-        ), PUBLIC);
+        ), PUBLIC, "input");
 
         var errors = errors(result);
         assertThat(errors).hasSize(2);
@@ -151,7 +151,7 @@ class UpdateRowsWalkerTest {
         var loc = new SourceLocation(7, 3);
         var result = walker.walk(null, table("film"), List.of(
             unboundFieldAt("syntheticName", true, loc)
-        ), PUBLIC);
+        ), PUBLIC, "input");
 
         var err = only(result);
         assertThat(err).isInstanceOf(UpdateRowsError.OverrideConditionNotSupported.class);
@@ -165,7 +165,7 @@ class UpdateRowsWalkerTest {
         var result = walker.walk(null, table("film_list"), List.of(
             columnField("title", col(PUBLIC, "film_list", "title")),
             columnField("category", col(PUBLIC, "film_list", "category"))
-        ), PUBLIC);
+        ), PUBLIC, "input");
 
         var err = only(result);
         assertThat(err).isInstanceOf(UpdateRowsError.NoUniqueKeyCoverage.class);
@@ -179,7 +179,7 @@ class UpdateRowsWalkerTest {
                 col(NODE_FIXTURE_CATALOG, "bar", "id_1"),
                 col(NODE_FIXTURE_CATALOG, "bar", "id_2"))),
             columnField("name", col(NODE_FIXTURE_CATALOG, "bar", "name"))
-        ), NODE_FIXTURE_CATALOG);
+        ), NODE_FIXTURE_CATALOG, "input");
 
         var carrier = ok(result);
         assertThat(carrier.matchedKey()).isInstanceOf(MatchedKey.PrimaryKey.class);
@@ -197,7 +197,7 @@ class UpdateRowsWalkerTest {
             columnReferenceField("filmRef", List.of(col(PUBLIC, "film", "film_id"))),
             // ... and a reference carrier on a non-key column lands in the SET half.
             columnReferenceField("languageRef", List.of(col(PUBLIC, "film", "language_id")))
-        ), PUBLIC);
+        ), PUBLIC, "input");
 
         var carrier = ok(result);
         assertThat(carrier.keyColumns()).extracting(k -> k.targetColumn().sqlName()).containsExactly("film_id");
@@ -259,8 +259,10 @@ class UpdateRowsWalkerTest {
             lifted, List.of(), lifted, Optional.empty(), dummyDecode(lifted));
     }
 
-    private static InputField.NestingField nestingField(String name) {
-        return new InputField.NestingField("In", name, loc(), "Nested", true, false, List.of(), Optional.empty());
+    // R186 admits a plain (non-list) NestingField by flattening it; a list-typed nesting stays
+    // unsupported, so this helper builds the list-typed shape for the unsupported-shape coverage.
+    private static InputField.NestingField listNestingField(String name) {
+        return new InputField.NestingField("In", name, loc(), "Nested", false, true, List.of(), Optional.empty());
     }
 
     private static InputField.UnboundField unboundField(String name, boolean override) {

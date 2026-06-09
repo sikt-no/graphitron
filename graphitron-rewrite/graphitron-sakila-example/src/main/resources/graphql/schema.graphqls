@@ -1374,6 +1374,42 @@ input FilmDeleteInput @table(name: "film") {
     filmId: Int! @field(name: "film_id")
 }
 
+# R186 execution-tier fixtures: nested non-@table grouping inputs that flatten onto the outer
+# table's columns. The grouping carries no DML semantics — it is purely a wire-format ergonomics
+# shape — and @field(name:) on a nested leaf still targets the outer @table. The emitter descends
+# the wire map (e.g. in.get("details").get("title")), honoring the same absent-vs-null contract at
+# every nesting layer that top-level mutation inputs honor.
+input FilmCreateNestedDetails {
+    title:          String! @field(name: "title")
+    # Nullable, no trailing `!`: omitted lets rental_duration's column DEFAULT land (DSL.defaultValue);
+    # the nested-INSERT absent-vs-default execution test turns on this.
+    rentalDuration: Int     @field(name: "rental_duration")
+}
+input FilmCreateNestedInput @table(name: "film") {
+    languageId: Int!                    @field(name: "language_id")
+    details:    FilmCreateNestedDetails!
+}
+
+input FilmUpdateNestedDetails {
+    title:       String @field(name: "title")
+    description: String @field(name: "description")
+}
+input FilmUpdateNestedInput @table(name: "film") {
+    filmId:  Int! @field(name: "film_id")
+    # Nullable nested group: an absent (or explicit-null) `details` claims nothing about the group,
+    # so every leaf under it is skipped — the UPDATE then has no settable fields and the runtime
+    # empty-SET guard fires. A present `details` Map descends, each leaf's absent-vs-null deciding
+    # whether its column is written and whether the write is NULL or a value.
+    details: FilmUpdateNestedDetails
+}
+
+input FilmDeleteNestedKeys {
+    filmId: Int! @field(name: "film_id")
+}
+input FilmDeleteNestedInput @table(name: "film") {
+    keys: FilmDeleteNestedKeys!
+}
+
 # R144 execution-tier fixture: a multiRow DELETE that broadcasts across films sharing
 # a release_year. The filter column is non-PK; without `multiRow: true` on the
 # surrounding @mutation directive, R144's PK-coverage check would reject the schema.
@@ -1579,6 +1615,23 @@ type Mutation {
     createFilmPayload(in: FilmCreateInput!): FilmPayload @mutation(typeName: INSERT)
     updateFilmPayload(in: FilmUpdateInput!): FilmPayload @mutation(typeName: UPDATE)
     # upsertFilmPayload retired under R144 (UPSERT lifts via R145).
+
+    # R186: nested non-@table grouping inputs on @mutation fields, one per classifying verb plus
+    # both UPDATE walker paths (direct-@table return + payload return, single + bulk). The leaves
+    # flatten onto the outer `film` table; the emitter descends the wire map and honors the
+    # absent-vs-null contract at every nesting layer. These drive the compilation tier (the
+    # access-path walk must produce code that compiles under Java 17) and the execution tier
+    # (SingleRecordPayloadDmlTest / DmlBulkMutationsExecutionTest assert the SQL on a real PG).
+    createFilmNested(in: FilmCreateNestedInput!): Film @mutation(typeName: INSERT)
+    updateFilmNested(in: FilmUpdateNestedInput!): Film @mutation(typeName: UPDATE)
+    updateFilmNestedPayload(in: FilmUpdateNestedInput!): FilmPayload @mutation(typeName: UPDATE)
+    # Direct-@table-return bulk UPDATE → the Postgres UPDATE ... FROM (VALUES ...) join form, whose
+    # column list is gated on the first row's present nested leaves and guarded by a per-nesting-node
+    # uniform-shape check (every row must agree on its nested keySet). Exercises the bulk SET emitters
+    # (emitSetVColNameAdds / emitSetBulkCellAdds / emitSetVFieldPuts) with nested access paths.
+    updateFilmsNested(in: [FilmUpdateNestedInput!]!): [Film!]! @mutation(typeName: UPDATE)
+    updateFilmsNestedPayload(in: [FilmUpdateNestedInput!]!): FilmsPayload @mutation(typeName: UPDATE)
+    deleteFilmNested(in: FilmDeleteNestedInput!): ID @mutation(typeName: DELETE)
 
     # R141: bulk-input single-carrier list-data-field DML mutations. The classifier routes the
     # bulk-input + list-shaped @table-element data field case to MutationBulkDmlRecordField; the

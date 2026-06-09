@@ -7379,8 +7379,71 @@ class GraphitronSchemaBuilderTest {
             @Override public Set<Class<?>> variants() { return Set.of(MutationField.MutationUpdateTableField.class); }
         },
 
-        DML_NESTING_FIELD_DEFERRED(
-            "DML mutation with NestingField in input → UnclassifiedField (Invariant #7)",
+        DML_NESTING_UPDATE_TABLE_RETURN_ADMITTED(
+            "R186: direct-@table-return UPDATE with a nested non-@table grouping over outer-table columns "
+                + "→ MutationUpdateTableField; the nested leaves flatten across keyColumns / setColumns "
+                + "with NestedInputField access paths",
+            """
+            type Film @table(name: "film") { title: String }
+            input FilmDetails { title: String, description: String }
+            input FilmUpdateInput @table(name: "film") { filmId: Int! @field(name: "film_id"), details: FilmDetails }
+            type Query { x: String }
+            type Mutation { updateFilm(in: FilmUpdateInput!): Film @mutation(typeName: UPDATE) }
+            """,
+            schema -> {
+                var f = (MutationField.MutationUpdateTableField) schema.field("Mutation", "updateFilm");
+                var ur = (no.sikt.graphitron.rewrite.model.UpdateRows.Identified) f.updateRows();
+                // The top-level PK column stays a plain (non-nested) extraction.
+                assertThat(ur.keyColumns()).singleElement().satisfies(k -> {
+                    assertThat(k.targetColumn().sqlName()).isEqualTo("film_id");
+                    assertThat(k.extraction())
+                        .isNotInstanceOf(no.sikt.graphitron.rewrite.model.CallSiteExtraction.NestedInputField.class);
+                });
+                // The nested leaves flatten into setColumns, each carrying its descent path.
+                assertThat(ur.setColumns()).extracting(s -> s.targetColumn().sqlName())
+                    .containsExactly("title", "description");
+                assertThat(ur.setColumns().get(0).extraction())
+                    .isInstanceOfSatisfying(no.sikt.graphitron.rewrite.model.CallSiteExtraction.NestedInputField.class,
+                        n -> assertThat(n.path()).containsExactly("details", "title"));
+                assertThat(ur.setColumns().get(1).extraction())
+                    .isInstanceOfSatisfying(no.sikt.graphitron.rewrite.model.CallSiteExtraction.NestedInputField.class,
+                        n -> assertThat(n.path()).containsExactly("details", "description"));
+            }) {
+            @Override public Set<Class<?>> variants() { return Set.of(MutationField.MutationUpdateTableField.class); }
+        },
+
+        DML_NESTING_UPDATE_PAYLOAD_RETURN_ADMITTED(
+            "R186: the canonical bulk + payload-returning UPDATE forcing-function shape classifies through "
+                + "the UpdateRowsWalker to MutationBulkUpdatePayloadField; nested leaves flatten into the "
+                + "UpdateRows carrier with their access paths",
+            """
+            type Film @table(name: "film") { title: String }
+            type FilmsPayload { films: [Film!] }
+            input FilmDetails { title: String, description: String }
+            input FilmUpdateInput @table(name: "film") { filmId: Int! @field(name: "film_id"), details: FilmDetails }
+            type Query { x: String }
+            type Mutation { updateFilmsPayload(in: [FilmUpdateInput!]!): FilmsPayload @mutation(typeName: UPDATE) }
+            """,
+            schema -> {
+                var f = (MutationField.MutationBulkUpdatePayloadField) schema.field("Mutation", "updateFilmsPayload");
+                var ur = (no.sikt.graphitron.rewrite.model.UpdateRows.Identified) f.updateRows();
+                assertThat(ur.keyColumns()).extracting(k -> k.targetColumn().sqlName()).containsExactly("film_id");
+                assertThat(ur.setColumns()).extracting(s -> s.targetColumn().sqlName())
+                    .containsExactly("title", "description");
+                assertThat(ur.setColumns()).allSatisfy(s ->
+                    assertThat(s.extraction())
+                        .isInstanceOfSatisfying(no.sikt.graphitron.rewrite.model.CallSiteExtraction.NestedInputField.class,
+                            n -> assertThat(n.path()).first().isEqualTo("details")));
+            }) {
+            @Override public Set<Class<?>> variants() { return Set.of(MutationField.MutationBulkUpdatePayloadField.class); }
+        },
+
+        DML_INSERT_NESTING_OK(
+            "R186 (flips DML_NESTING_FIELD_DEFERRED): INSERT with a nested non-@table grouping → "
+                + "MutationInsertTableField; fields() retains the NestingField envelope and the nested "
+                + "leaf resolves against the outer @table. The flat leaf's wire access path is asserted "
+                + "by the compilation / execution tiers (the INSERT VALUES emit walks fields()); "
+                + "lookupKeyFields stays the top-level carrier filter (a NestingField is not one).",
             """
             type Film @table(name: "film") { title: String }
             input FilmTitleInput { title: String }
@@ -7389,8 +7452,165 @@ class GraphitronSchemaBuilderTest {
             type Mutation { createFilm(in: FilmInput!): Film @mutation(typeName: INSERT) }
             """,
             schema -> {
+                var f = (MutationField.MutationInsertTableField) schema.field("Mutation", "createFilm");
+                // fields() retains the SDL grouping envelope, and its nested leaf resolved to the
+                // outer film.title column (proving admission + outer-table resolution context).
+                assertThat(f.tableInputArg().fields()).singleElement()
+                    .isInstanceOfSatisfying(no.sikt.graphitron.rewrite.model.InputField.NestingField.class,
+                        nf -> assertThat(nf.fields()).singleElement().satisfies(leaf -> {
+                            var cf = (no.sikt.graphitron.rewrite.model.InputField.ColumnField) leaf;
+                            assertThat(cf.column().sqlName()).isEqualTo("title");
+                        }));
+                // A NestingField is not a LookupKeyField, so the top-level carrier filter is empty;
+                // the nested wire access path lives on the walker carriers (UPDATE/DELETE) and is
+                // recomputed at emit from fields() for INSERT, never on this view.
+                assertThat(f.tableInputArg().lookupKeyFields()).isEmpty();
+            }) {
+            @Override public Set<Class<?>> variants() { return Set.of(MutationField.MutationInsertTableField.class); }
+        },
+
+        DML_DELETE_NESTING_OK(
+            "R186: DELETE with a nested grouping holding the PK column → MutationDeleteTableField; the "
+                + "nested leaf lands in DeleteRows.whereColumns with its access path and counts toward the "
+                + "single-row PK guard",
+            """
+            type Film @table(name: "film") { title: String }
+            input FilmKeyGroup { filmId: Int! @field(name: "film_id") }
+            input FilmDeleteInput @table(name: "film") { keys: FilmKeyGroup }
+            type Query { x: String }
+            type Mutation { deleteFilm(in: FilmDeleteInput!): Film @mutation(typeName: DELETE) }
+            """,
+            schema -> {
+                var f = (MutationField.MutationDeleteTableField) schema.field("Mutation", "deleteFilm");
+                var dr = (no.sikt.graphitron.rewrite.model.DeleteRows.Identified) f.deleteRows();
+                assertThat(dr.matchedKey()).isInstanceOf(no.sikt.graphitron.rewrite.model.MatchedKey.PrimaryKey.class);
+                assertThat(dr.whereColumns()).singleElement().satisfies(w -> {
+                    assertThat(w.targetColumn().sqlName()).isEqualTo("film_id");
+                    assertThat(w.extraction())
+                        .isInstanceOfSatisfying(no.sikt.graphitron.rewrite.model.CallSiteExtraction.NestedInputField.class,
+                            n -> assertThat(n.path()).containsExactly("keys", "filmId"));
+                });
+            }) {
+            @Override public Set<Class<?>> variants() { return Set.of(MutationField.MutationDeleteTableField.class); }
+        },
+
+        DML_NESTING_DEEP(
+            "R186: two layers of nesting flatten to a single NestedInputField carrier with the full "
+                + "multi-segment access path (never a wrapped chain)",
+            """
+            type Film @table(name: "film") { title: String }
+            input FilmInner { title: String }
+            input FilmMid { inner: FilmInner }
+            input FilmUpdateInput @table(name: "film") { filmId: Int! @field(name: "film_id"), mid: FilmMid }
+            type Query { x: String }
+            type Mutation { updateFilm(in: FilmUpdateInput!): Film @mutation(typeName: UPDATE) }
+            """,
+            schema -> {
+                var f = (MutationField.MutationUpdateTableField) schema.field("Mutation", "updateFilm");
+                var ur = (no.sikt.graphitron.rewrite.model.UpdateRows.Identified) f.updateRows();
+                assertThat(ur.setColumns()).singleElement().satisfies(s -> {
+                    assertThat(s.targetColumn().sqlName()).isEqualTo("title");
+                    assertThat(s.extraction())
+                        .isInstanceOfSatisfying(no.sikt.graphitron.rewrite.model.CallSiteExtraction.NestedInputField.class,
+                            n -> {
+                                assertThat(n.path()).containsExactly("mid", "inner", "title");
+                                assertThat(n.leaf())
+                                    .isNotInstanceOf(no.sikt.graphitron.rewrite.model.CallSiteExtraction.NestedInputField.class);
+                            });
+                });
+            }) {
+            @Override public Set<Class<?>> variants() { return Set.of(MutationField.MutationUpdateTableField.class); }
+        },
+
+        DML_NESTING_WITH_NODEID_FK_TARGET(
+            "R186 composes with R189: a nested @nodeId(typeName:) FK-target leaf produces a "
+                + "ColumnReferenceField under the nesting whose lifted FK column lands in setColumns with a "
+                + "NestedInputField path wrapping the NodeId decode",
+            """
+            type Country implements Node @table(name: "country") @node(keyColumns: ["country_id"]) { id: ID! @nodeId }
+            type City @table(name: "city") { x: String }
+            input CityRefs { countryId: ID! @nodeId(typeName: "Country") }
+            input CityUpdateInput @table(name: "city") { cityId: Int! @field(name: "city_id"), refs: CityRefs }
+            type Query { x: String }
+            type Mutation { updateCity(in: CityUpdateInput!): City @mutation(typeName: UPDATE) }
+            """,
+            schema -> {
+                var f = (MutationField.MutationUpdateTableField) schema.field("Mutation", "updateCity");
+                var ur = (no.sikt.graphitron.rewrite.model.UpdateRows.Identified) f.updateRows();
+                assertThat(ur.setColumns()).singleElement().satisfies(s -> {
+                    assertThat(s.targetColumn().sqlName()).isEqualTo("country_id");
+                    assertThat(s.extraction())
+                        .isInstanceOfSatisfying(no.sikt.graphitron.rewrite.model.CallSiteExtraction.NestedInputField.class,
+                            n -> {
+                                assertThat(n.path()).containsExactly("refs", "countryId");
+                                assertThat(n.leaf())
+                                    .isInstanceOf(no.sikt.graphitron.rewrite.model.CallSiteExtraction.NodeIdDecodeKeys.class);
+                            });
+                });
+            }) {
+            @Override public Set<Class<?>> variants() { return Set.of(MutationField.MutationUpdateTableField.class); }
+        },
+
+        DML_NESTING_UNRESOLVABLE_LEAF(
+            "R186: an unresolvable nested leaf (here a @nodeId to a non-existent type) propagates through "
+                + "the NestingField as an unresolvable-fields rejection on the containing @table input → "
+                + "UnclassifiedType (the nesting error path is unchanged by R186)",
+            """
+            type Film @table(name: "film") { title: String }
+            input FilmDetails { ref: ID! @nodeId(typeName: "NoSuchType") }
+            input FilmInput @table(name: "film") { filmId: Int! @field(name: "film_id"), details: FilmDetails }
+            type Query { x: String }
+            type Mutation { createFilm(in: FilmInput!): Film @mutation(typeName: INSERT) }
+            """,
+            schema -> {
+                var t = (no.sikt.graphitron.rewrite.model.GraphitronType.UnclassifiedType) schema.type("FilmInput");
+                assertThat(t.reason()).contains("nested input type 'FilmDetails' has unresolvable fields");
+            }),
+
+        DML_NESTING_LIST_REJECTED_UPDATE(
+            "R186: a list-typed nested input on an UPDATE field is rejected with UpdateRowsError.UnsupportedInputFieldShape naming R186",
+            """
+            type Film @table(name: "film") { title: String }
+            input FilmDetails { title: String }
+            input FilmUpdateInput @table(name: "film") { filmId: Int! @field(name: "film_id"), details: [FilmDetails!] }
+            type Query { x: String }
+            type Mutation { updateFilm(in: FilmUpdateInput!): Film @mutation(typeName: UPDATE) }
+            """,
+            schema -> {
+                var f = (UnclassifiedField) schema.field("Mutation", "updateFilm");
+                assertThat(f.rejection())
+                    .isInstanceOf(no.sikt.graphitron.rewrite.model.UpdateRowsError.UnsupportedInputFieldShape.class);
+                assertThat(f.reason()).contains("list-typed nested input types").contains("R186");
+            }),
+
+        DML_NESTING_LIST_REJECTED_DELETE(
+            "R186: a list-typed nested input on a DELETE field is rejected with DeleteRowsError.UnsupportedInputFieldShape naming R186",
+            """
+            type Film @table(name: "film") { title: String }
+            input FilmKeyGroup { filmId: Int! @field(name: "film_id") }
+            input FilmDeleteInput @table(name: "film") { keys: [FilmKeyGroup!] }
+            type Query { x: String }
+            type Mutation { deleteFilm(in: FilmDeleteInput!): Film @mutation(typeName: DELETE) }
+            """,
+            schema -> {
+                var f = (UnclassifiedField) schema.field("Mutation", "deleteFilm");
+                assertThat(f.rejection())
+                    .isInstanceOf(no.sikt.graphitron.rewrite.model.DeleteRowsError.UnsupportedInputFieldShape.class);
+                assertThat(f.reason()).contains("list-typed nested input types").contains("R186");
+            }),
+
+        DML_NESTING_LIST_REJECTED_INSERT(
+            "R186: a list-typed nested input on an INSERT field is rejected with a structural Rejection naming R186",
+            """
+            type Film @table(name: "film") { title: String }
+            input FilmTitleInput { title: String }
+            input FilmInput @table(name: "film") { details: [FilmTitleInput!] }
+            type Query { x: String }
+            type Mutation { createFilm(in: FilmInput!): Film @mutation(typeName: INSERT) }
+            """,
+            schema -> {
                 var f = (UnclassifiedField) schema.field("Mutation", "createFilm");
-                assertThat(f.reason()).contains("nested input types in @mutation fields are not yet supported");
+                assertThat(f.reason()).contains("list-typed nested input types").contains("R186");
             }),
 
         DML_TWO_TABLE_INPUT_ARGS_REJECTED(

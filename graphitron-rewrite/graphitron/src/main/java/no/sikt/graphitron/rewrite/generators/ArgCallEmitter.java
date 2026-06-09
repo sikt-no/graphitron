@@ -389,6 +389,23 @@ public final class ArgCallEmitter {
     }
 
     /**
+     * R186: a null-safe nested-Map value descent reading from a local that already holds a
+     * {@code Map<?, ?>} (the mutation emitters' {@code in} / {@code row} argument-value maps). For a
+     * single-segment {@code path} the result is the byte-identical {@code mapLocal.get(key)}; for a
+     * deeper path it is the {@code instanceof Map<?, ?>} ternary chain {@link #buildMapChain}
+     * produces, yielding {@code null} if any intermediate level is absent or not a {@code Map}. The
+     * descent applies no leaf cast (the value flows into {@code DSL.val(value, dataType)} / a decode
+     * helper that takes {@code Object}), so it is shared by the SET-value, WHERE-value, INSERT-cell
+     * and NodeId-decode-source reads alike.
+     */
+    public static CodeBlock nestedMapValueExpr(String mapLocal, List<String> path) {
+        if (path.size() == 1) {
+            return CodeBlock.of("$L.get($S)", mapLocal, path.get(0));
+        }
+        return buildMapChain(CodeBlock.of("$L", mapLocal), path, 0, /* leafType= */ null, mapLocal);
+    }
+
+    /**
      * Emits a null-safe nested-Map traversal expression for
      * {@link CallSiteExtraction.NestedInputField}. For {@code path = [k1, k2, ..., kN]} the
      * generated expression is a chain of {@code instanceof Map<?,?>} ternaries:

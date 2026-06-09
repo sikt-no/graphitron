@@ -22,6 +22,12 @@ enum MutationType { UPDATE, DELETE, INSERT, UPSERT }
 | `multiRow` | `Boolean` | `false` | On `DELETE`, opts into a broadcast delete when the input covers no primary key or unique key (the filter may match more than one row). Rejected on `INSERT` (no `WHERE` clause), `UPDATE` (no broadcast shape; cover a key), and `UPSERT`.
 |===
 
+== Input shape
+
+A `@mutation` field takes exactly one `@table` input argument. Its fields bind to columns of that table (`@field(name:)`, or the SDL name by default).
+
+An input field may also be a plain input object with *no* `@table` directive: a grouping shape whose own fields map onto columns of the *same* table. The grouping carries no DML semantics; the leaves flatten onto the outer table as if declared at the top level, and absent-vs-null is honored independently at every nesting layer (an absent or `null` group skips its whole subtree; a present group descends per leaf). The tutorial's xref:../../tutorial/05-mutations.adoc#_grouping_fields_with_nested_input_types[Grouping fields with nested input types] walks a worked example. A nested input that is itself `@table`-backed (introducing a second DML target) is a separate compound-mutation shape and is not admitted here.
+
 == Canonical example
 
 The tutorial's three film mutations cover the three most common shapes:
