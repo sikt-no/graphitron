@@ -54,12 +54,29 @@ Bring `ServiceTableField` to `SplitTableField` parity: treat the service result 
 3. JOIN the bound table on that key by identity and project `Type.$fields(selectionSet, table, env)`.
 4. Scatter back to parents, reusing `TypeFetcherGenerator.buildScatterByIdxHelper` / `SplitRowsMethodEmitter.IDX_COLUMN`.
 
-The reusable shape is the `$fields` projection, the `__idx__` carry, and the scatter helper. The key/join shape is **not** the FK-hop `SplitTableField` path: that one builds a VALUES of `(idx, parent_pk…)` and joins parent→child by foreign key (`SplitRowsMethodEmitter.emitParentInputAndFkChain`), which presumes a catalog FK the service may have bypassed. The lift instead keys on the *returned* record's own PK and joins the bound table by identity. The live prior art for that identity shape is the element-PK-keyed `RecordTableField` / `AccessorKeyedMany` path (`SplitRowsMethodEmitter.java:352`, where "the DataLoader key tuple IS the target-column tuple"; `joinOnCols == joinOnParentCols`), not the FK hop. Decide at implementation time whether the lift reuses that element-PK `SourceKey`/`JoinStep` shape directly or introduces a new sealed variant for "identity re-projection of a service-returned record set"; per generation-thinking the FK-hop-vs-identity fork should be resolved in the model, not branched inside the emitter. The R268 payload data field is the precedent that `$fields`-over-a-deposited-record works at all, not for the key shape.
+The reusable shape is the `$fields` projection, the `__idx__` carry, and the scatter helper. The key/join shape is **not** the FK-hop `SplitTableField` path: that one builds a VALUES of `(idx, parent_pk…)` and joins parent→child by foreign key (`SplitRowsMethodEmitter.emitParentInputAndFkChain`), which presumes a catalog FK the service may have bypassed. The lift instead keys on the *returned* record's own PK and joins the bound table by identity. The live prior art for that identity shape is the element-PK-keyed `RecordTableField` / `AccessorKeyedMany` path (the lifter-path note at `SplitRowsMethodEmitter.java:132`, "the DataLoader key tuple IS the target-column tuple", where `joinOnCols == joinOnParentCols`), not the FK hop. This fork is resolved below ("Fork resolution"): reuse the element-PK re-projection, no new sealed variant; per generation-thinking the FK-hop-vs-identity distinction already lives in the source/key axis (`SourceKey.Reader.ServiceTableRecord`), so nothing new is branched inside the emitter or added to the model. The R268 payload data field is the precedent that `$fields`-over-a-deposited-record works at all, not for the key shape.
 
 Two properties fall out, both desired:
 
 * Re-querying only the returned primary keys preserves any filtering or authorization the service applied; Graphitron re-projects exactly the rows the service selected, it does not re-select the whole table.
 * A returned key with no matching row drops out of the join. This is the agreed semantics for opptak after the schema is corrected to stop synthesizing rows for entities that do not exist (virtual nodes are being removed): the synthesized saksdokument simply does not appear, with no special-casing.
+
+## Fork resolution (recorded at Spec -> Ready sign-off)
+
+The "reuse vs new sealed variant" fork is resolved: **reuse the element-PK re-projection, no new variant, no model change.** A `ServiceTableField` is a condensed `ServiceRecordField -> RecordTableField`. The service-call half produces the records (the `ServiceRecordField` mechanism, `Service.method(keys)` in `TypeFetcherGenerator.buildServiceRowsMethod`); the element-PK re-projection half lifts them back (the `RecordTableField` / `AccessorKeyedMany` mechanism). Both halves already exist:
+
+* Element-PK-from-records extraction: `GeneratorUtils.buildAccessorKeyMany` (`GeneratorUtils.java:293`) emits `for (Element e : <records>) { RecordN<...> key = e.into(T.PK...); keys.add(key); }`.
+* VALUES build + `__idx__` carry: `SplitRowsMethodEmitter.emitParentInputAndFkChain` (`SplitRowsMethodEmitter.java:163`), already reader-forked (`isAccessor`, `SplitRowsMethodEmitter.java:250`).
+* Identity join + `Type.$fields(...)` + `scatterSingleByIdx`: the `RecordTableField` loadMany path (`SplitRowsMethodEmitter.buildForRecordTable`).
+
+The only difference from `RecordTableField` is **timing**, and that is the whole of it. `RecordTableField` has its records in hand at fetch time (`env.getSource()`), so extraction runs data-fetcher-side and the DataLoader key *is* the element PK. `ServiceTableField` gets its records from the service call inside the loader body, so the same `e.into(pkCols)` extraction runs rows-method-side over the service result, and the DataLoader key stays the *parent* key (Sources). The source/key axis already carries this difference via `SourceKey.Reader.ServiceTableRecord` (`SourceKey.java:296`); that is why no new model variant is warranted.
+
+Concrete emitter work (the seam is pre-marked, not green-field):
+
+1. Implement the `ServiceTableRecord` arm of `GeneratorUtils.buildRecordParentKeyExtraction` (`GeneratorUtils.java:218`), today a deliberate `throw`, to extract element PKs over the service result: the `buildAccessorKeyMany` shape with the source expression bound to the fetched records and no accessor hop.
+2. Parameterise `emitParentInputAndFkChain` to iterate a supplied element-key list rather than the literal `keys` method parameter (it currently hardcodes `keys.get(i)` / `keys.size()`), so the rows method can feed it the keys extracted from the service result, with `idx` assigned from the `MAPPED_SET` `Map<key, List<record>>` / `POSITIONAL_LIST` association. This reuses `IDX_COLUMN` and the scatter helper rather than reinventing them.
+
+This resolution narrows the deferred fork in the direction the Fix direction already preferred (identity, not FK hop); it removes a degree of freedom rather than changing the approved shape, so the item stays `Ready`.
 
 ## Scope and edge cases
 
