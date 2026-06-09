@@ -9,14 +9,14 @@ package no.sikt.graphitron.rewrite.classifieddsl;
  * distinction: catalog mappings mirror a query result, service mappings reflect a Java object.
  * {@code Table : Column :: Record : Field}.
  *
- * <p>{@link #Polymorphic} is the open value-set question slice 1 surfaces: the multi-table
- * interface/union and node leaves resolve to a UNION ALL over participant tables, not a single
- * {@code Table} projection, so folding them into {@link #Table} would misstate the verdict. Whether
- * this stays a distinct value or collapses is a slice-1 decision; see
- * {@code roadmap/classification-test-dsl.md} §"Open value-set questions".
+ * <p>Polymorphic (interface/union/node) results are <em>not</em> a distinct mapping value: every
+ * participant is a {@code @table}/NodeType, so the value is catalog-bound and maps to {@link #Table}
+ * ({@link #TableConnection} when paginated), with the polymorphic participant set living in a derived
+ * slot. This matches the spec's grounding of "polymorphic resolution" as a slot, not an asserted axis
+ * (R281 §"Grounding in the model's traits").
  */
 public enum Mapping {
-    /** A catalog table-bound result (single or list). */
+    /** A catalog table-bound result (single or list), including polymorphic results over participant tables. */
     Table,
     /** A catalog table-bound result wrapped in a Relay connection (pagination). */
     TableConnection,
@@ -25,8 +25,5 @@ public enum Mapping {
     /** A service {@code @record}/pojo object. */
     Record,
     /** A scalar reflected off a service {@code @record}/pojo parent. */
-    Field,
-    /** A polymorphic (interface/union/node) result resolved across multiple participant tables.
-     *  Provisional value pending the slice-1 value-set decision. */
-    Polymorphic
+    Field
 }
