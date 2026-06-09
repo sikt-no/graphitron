@@ -42,6 +42,14 @@ written. (Direct corroboration that the instrument is needed: R279 notes the leg
 target type) pair", and gets it subtly wrong, which R8 flagged as the doc's actual defect. The corpus
 is what corrects it.)
 
+**Update (working revision, 2026-06-09).** Through design dialogue the two-dimension cut described
+across this document has been superseded by a *three*-dimension model, `producer × mapping × wiring`,
+over a `domain := { catalog, service }`. See
+[Dimensional model (working revision)](#dimensional-model-working-revision-2026-06-09) for the captured
+state. This intermediate commit is a deliberate rollback point ahead of a full rewrite; the directive,
+adapter, minimal-pair, and slicing sections below still describe the two-dimension form and have not
+yet been reconciled.
+
 The bridge from today's classifier to those dimensional assertions is a **throwaway leaf→tuple
 adapter** (see [The leaf→tuple adapter](#the-leaftuple-adapter-the-driver-mechanism) below). R281
 leads; the field dimensional-slot slices (R282 and its siblings) consume the vocabulary this corpus
@@ -106,7 +114,96 @@ Input-field classification is out of scope (see [Out of scope](#out-of-scope)): 
 interpreted relative to the output field it feeds, a different game. So `@classified` sits only on
 output `FIELD_DEFINITION` coordinates.
 
+### Dimensional model (working revision, 2026-06-09)
+
+This subsection captures the model arrived at through design dialogue and **supersedes the two-axis
+`queryBuilder × wiring` cut described in [The axes](#the-axes) below**. It is committed as an
+intermediate checkpoint, a deliberate rollback point, ahead of a full rewrite that will fold it through
+the directive, adapter, minimal-pair, and slicing sections (which still describe the two-axis form).
+
+A field's classification factors into **three** dimensions, mapping onto how a field is resolved. The
+**domain** they reach into has two halves: `domain := { catalog, service }`, the jOOQ catalog (tables,
+columns) and the developer's service layer (Java pojos, records, and fields on them, returned from
+`@service` / `@externalField`).
+
+| Dimension | Answers | SQL/runtime analogue | Total? |
+|---|---|---|---|
+| `producer` | how is the value produced? | the `FROM` (+ non-SQL row sources) | **partial** |
+| `mapping` | what domain thing *is* the value? | the `SELECT` (projection) | total |
+| `wiring` | how does graphql-java get it? | the `DataFetcher` | total |
+
+`producer` is the one partial axis (absent when a field rides an existing scope); `mapping` and `wiring`
+are total.
+
+**`producer` (partial) ; a pipeline over `{ Query, Service, Dml }`.** `Query` produces a *query*
+(composable SQL that both reaches the rows and projects them); `Service` and `Dml` produce *rows*
+(opaque records). A no-producer field rides the parent's scope (`ColumnField`, `NestingField`).
+Row-producers *compose* a trailing `Query` exactly when the output is catalog-bound, that trailing
+`Query` is "re-enter the catalog domain":
+
+| pipeline | leaf |
+|---|---|
+| `[Query]` | root/child read, column term, lookup, union |
+| `[Service]` | `@service` → pojo/record (terminal) |
+| `[Service, Query]` | `@service` → `@table` (re-query the row) |
+| `[Dml]` | write → id/scalar |
+| `[Dml, Query]` | write → `@table` (commit, then project) |
+
+Seed/correlation (root vs parent-keyed), `@tableMethod`'s dev table, `splitQuery`, `lookup`, polymorphic
+resolution, and the record-parent lift are **slots** on a producer, not producer values.
+
+**`mapping` (total) ; what domain object the value is.** Both halves, whole-object vs leaf in each:
+
+| | object | leaf |
+|---|---|---|
+| **catalog** | `Table` (+ `TableConnection`) | `Column` |
+| **service** | `Record` / `Pojo` | `Field` |
+
+`Table : Column :: Record : Field`. The catalog-vs-service split *is* the mirror/reflect distinction
+(catalog mappings mirror a query result; service mappings reflect a Java object), so mirror/reflect is
+not a separate axis. `mapping` is tightly coupled to `@classifiedType` but lives at *field* granularity
+(a scalar is `Column` under a table-backed parent, `Field` under a pojo-backed parent); the duplication
+is **accepted for now**. Invariant: `mapping = Table ⟺ table-bound`, `Record/Pojo ⟺ @record`,
+`Column/Field ⟺ scalar`. Open value-set questions for the rewrite: collapse `Table`/`Record` (and
+`Column`/`Field`) to one value plus a catalog/service backing slot?; `ReferencedColumn` as a value or
+`Column` + join-path slot (lean: slot); keep `TableConnection` (lean: yes, the connection envelope is a
+distinct projection).
+
+**`wiring` (total) ; the `DataFetcher`.** `Extract` (read off the parent record/result) vs `Generated`
+(a generated fetcher/loader), × `{ SingleDispatch, GroupedDispatch }` (derived from source: root →
+single, list-child → grouped). Kept the name `wiring` over `consumer` because the fetcher does more than
+consume, it registers and drives the `DataLoader` for batching.
+
+**Generating set (`producer` × `mapping`).** The ~27 `OutputField` leaves fall out of the cross:
+
+| producer | mapping | leaf(s) |
+|---|---|---|
+| ∅ | `Column` | `ColumnField` (+ NodeId-encode slot) |
+| ∅ | `Table` | `NestingField` (passthrough) |
+| ∅ | `Field` | `RecordField`, `PropertyField`, `ComputedField` (`@externalField`) |
+| `[Query]` | `Table` | `QueryTableField`, `TableField`, `SplitTableField`, lookups, polymorphic |
+| `[Query]` | `TableConnection` | paginated query field |
+| `[Service]` | `Record`/`Pojo` | `ServiceRecordField` |
+| `[Service, Query]` | `Table` | `ServiceTableField` |
+| `[Dml]` | `Column`/`Field` | `delete: ID` / `delete: Boolean` |
+| `[Dml, Query]` | `Table` | `createFilm: Film` |
+
+**Directive (to settle in the rewrite).** `@classified(queryBuilder:, wiring:)` becomes three arguments,
+`producer`, `mapping`, `wiring`, with `producer` partial; slot detail (seed, lookup, splitQuery,
+NodeId-encode, dev-table) rides below. The adapter maps each leaf to a `(producer, mapping, wiring)`
+triple instead of a pair.
+
+**Still to verify (full leaf sweep, deferred to the rewrite):** that `mapping` is total with at most the
+one honest ∅ (the boolean-ack edge); that the old `From*` value is recovered from `(producer × mapping)`
+with nothing left over; that `producer`'s ∅/`Query`/`Service`/`Dml` partition is clean; and that
+`mapping` carries real content beyond `@classifiedType × producer-domain`.
+
 ### The axes
+
+> **Superseded.** The two-axis `queryBuilder × wiring` cut in this subsection is kept for reference and
+> link stability; it is replaced by the
+> [Dimensional model (working revision)](#dimensional-model-working-revision-2026-06-09) above and will
+> be reconciled by the full rewrite.
 
 The dimensions are not a fresh invention; they are the **mixin interfaces the model already carries**,
 promoted to first-class. `SqlGeneratingField` (own SELECT), `ServiceField` / `MethodBackedField`
