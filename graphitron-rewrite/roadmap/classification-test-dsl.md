@@ -42,13 +42,16 @@ written. (Direct corroboration that the instrument is needed: R279 notes the leg
 target type) pair", and gets it subtly wrong, which R8 flagged as the doc's actual defect. The corpus
 is what corrects it.)
 
-**Update (working revision, 2026-06-09).** Through design dialogue the two-dimension cut described
-across this document has been superseded by a *three*-dimension model, `producer × mapping × wiring`,
-over a `domain := { catalog, service }`. See
-[Dimensional model (working revision)](#dimensional-model-working-revision-2026-06-09) for the captured
-state. This intermediate commit is a deliberate rollback point ahead of a full rewrite; the directive,
-adapter, minimal-pair, and slicing sections below still describe the two-dimension form and have not
-yet been reconciled.
+**Update (working revision, 2026-06-09).** Through sustained design dialogue the original cut has been
+reworked. An intermediate three-dimension model (`producer × mapping × wiring`) was explored and then
+collapsed: `wiring` proved fully derivable, and the source-dependence facet it was rescued into
+(`context`) proved trivially positional. The pivot **lands on two asserted dimensions,
+`producer × mapping`**, with everything else (context, the fetcher/loader mechanism) computed and only
+validated. See [Dimensional model (two-axis landing)](#dimensional-model-two-axis-landing-2026-06-09)
+for the captured state; the superseded three-dimension exploration is retained just below it for
+rollback history. This is a deliberate checkpoint ahead of the full rewrite; the directive, adapter,
+minimal-pair, and slicing sections below still describe the original two-axis (`queryBuilder × wiring`)
+form and have not yet been reconciled.
 
 The bridge from today's classifier to those dimensional assertions is a **throwaway leaf→tuple
 adapter** (see [The leaf→tuple adapter](#the-leaftuple-adapter-the-driver-mechanism) below). R281
@@ -114,7 +117,93 @@ Input-field classification is out of scope (see [Out of scope](#out-of-scope)): 
 interpreted relative to the output field it feeds, a different game. So `@classified` sits only on
 output `FIELD_DEFINITION` coordinates.
 
-### Dimensional model (working revision, 2026-06-09)
+### Dimensional model (two-axis landing, 2026-06-09)
+
+This is the model the pivot lands on, and what the full rewrite will fold through the directive,
+adapter, minimal-pair, and slicing sections. A field's classification is asserted on **two** dimensions;
+a third positional fact (`context`) and the runtime fetcher/loader mechanism are **derived, not
+asserted**.
+
+| Dimension | Answers | SQL/runtime analogue | Total? | Asserted? |
+|---|---|---|---|---|
+| `producer` | how is the value produced? | the `FROM` (new query) vs inlining into an existing one | partial (`∅`) | **yes** |
+| `mapping` | what domain thing *is* the value? | the `SELECT` (projection) | total | **yes** |
+| `context` | does the field resolve within a source? | root vs `env.getSource()` | total | no (positional) |
+
+**`producer` (partial); a pipeline of length ≤ 2, each step `∅` or one of `{ Query, Service, Dml }`.**
+The defining question is *does the field start a new SQL query, or inline into an existing one?*
+
+- **`producer = ∅` means the field inlines into the existing query and correlates.** No new execution;
+  it folds into the parent's query. `∅` does not mean "no SQL", a correlated subquery has its own
+  `WHERE` / `ORDER BY` / `LIMIT`; it means "no *new* query." This is where correlation lives. The
+  non-split table children (`TableField`, `LookupTableField`, `TableInterfaceField`, `TableMethodField`)
+  inline, as do the column/nesting/passthrough carriers.
+- **A step of `Query` starts a new SQL query.** A separate execution: the root query, a `@splitQuery`
+  batch, a record-parent keyed load, a service re-query, a DML follow-up SELECT.
+- **`Service` and `Dml` produce *rows* from outside the catalog** (a developer method, a write). They
+  are row-sources, not queries.
+
+**Why the pipeline, and why length ≤ 2.** A contiguous SQL query context inlines freely. `@service` and
+`@externalField` (and a DML write) **terminate the current query context**, the value is now a Java
+record / pojo / computed value, not SQL. To project a table-bound result below such a boundary you must
+**re-enter SQL with a new `Query`**. So the second step is always `Query` ("get back into the catalog"),
+and it appears exactly when a row-source feeds a table-bound output. The realized pipelines:
+
+| pipeline | one DataFetcher | same composition, split parent → child |
+|---|---|---|
+| `[Query]` | `QueryTableField`, `SplitTableField`, record/lookup/poly new-query children | — |
+| `∅` | inline table children, `ColumnField`, `NestingField`, `ConstructorField` | — |
+| `[Service]` | `QueryServiceRecordField`, `ServiceRecordField` (terminal record/pojo) | — |
+| `[Service, Query]` | `ServiceTableField`, `QueryServiceTableField`, `MutationServiceTableField` | `ServiceRecordField` → `RecordTableField` |
+| `[Dml]` | DML → encoded ID (`DmlTableField` `Encoded*`) | — |
+| `[Dml, Query]` | `DmlTableField` `Projected*` (write, then in-fetcher follow-up SELECT) | `MutationDmlRecordField` → `SingleRecordTableField` |
+
+`@splitQuery`, the record-parent lift, `@tableMethod`'s dev table, lookup, polymorphic resolution, and
+the seed source (root args vs parent key) are **slots** on a producer step, not producer values. The
+fold-vs-batch and keyed-vs-correlated mechanism reads off these slots plus `context`; it is never an
+asserted choice.
+
+**`mapping` (total); what domain object the value is.** Over `domain := { catalog, service }`:
+
+| | object | leaf |
+|---|---|---|
+| **catalog** | `Table` (+ `TableConnection` for pagination) | `Column` |
+| **service** | `Record` / `Pojo` | `Field` |
+
+`Table : Column :: Record : Field`. The catalog-vs-service split *is* the mirror/reflect distinction
+(catalog mappings mirror a query result; service mappings reflect a Java object). `mapping` is tightly
+coupled to `@classifiedType` but lives at *field* granularity (a scalar is `Column` under a table-backed
+parent, `Field` under a pojo-backed parent); the duplication is **accepted for now**. Invariants:
+`mapping = Table ⟺ table-bound`; `Record/Pojo ⟺ @record`; `Column/Field ⟺ scalar`. Cross-cutting:
+**a `producer` step of `Query` (re-entering the catalog) co-occurs with `mapping = Table`** (a row-source
+re-enters the catalog exactly when its output is table-bound), which is why the old `From*` family is
+recovered as `(producer ends in Query) × (mapping = Table)` with its subtypes demoted to slots.
+
+**`context` is derived, not asserted.** `context = None ⟺ root field`; everything else resolves within
+`env.getSource()`. This is pure schema position, so verbalizing it in `@classified` would only restate
+where the field sits. With `producer` redefined around new-query-vs-inline, `producer` already separates
+the root/child twins that motivated a third axis (`QueryTableField = [Query]` vs `TableField = ∅`); the
+only `(producer, mapping)`-equal root/child pairs that remain (the `[Service, Query] × Table` and
+`[Service] × Record` twins) differ *only* by position, so deriving `context` recovers them with no loss.
+
+**Derived runtime mechanism (validated, not asserted).** From `(producer, context, slots)`:
+`Extract` (read off source) `⟺ producer = ∅`; a sync `GraphitronFetcher` `⟺` a root `Query`; a batched
+`GraphitronLoader` `⟺` a `Query` child (keyed); dispatch `Grouped ⟺` keyed, else `Single`. The whole of
+the old `wiring` axis is this projection.
+
+**Open value-set questions for the rewrite:** collapse `Table`/`Record` (and `Column`/`Field`) to one
+value plus a catalog/service backing slot?; `ReferencedColumn` as a value or `Column` + join-path slot
+(lean: slot); keep `TableConnection` as a distinct value (lean: yes). And the one fact to confirm
+against `TypeFetcherGenerator`: that non-split table children are genuinely emitted inline (correlated /
+MULTISET) rather than as a separate per-parent sync query, if any run a separate query they are
+`producer = Query`, not `∅`.
+
+### Dimensional model (three-dimension exploration, superseded 2026-06-09)
+
+> **Superseded.** This three-dimension `producer × mapping × wiring` model was an intermediate step. It
+> is replaced by the [two-axis landing](#dimensional-model-two-axis-landing-2026-06-09) above (`wiring`
+> collapsed to a derived projection; the rescued `context` facet proved positional and is derived too).
+> Retained for rollback history only.
 
 This subsection captures the model arrived at through design dialogue and **supersedes the two-axis
 `queryBuilder × wiring` cut described in [The axes](#the-axes) below**. It is committed as an
@@ -200,9 +289,9 @@ with nothing left over; that `producer`'s ∅/`Query`/`Service`/`Dml` partition 
 
 ### The axes
 
-> **Superseded.** The two-axis `queryBuilder × wiring` cut in this subsection is kept for reference and
-> link stability; it is replaced by the
-> [Dimensional model (working revision)](#dimensional-model-working-revision-2026-06-09) above and will
+> **Superseded.** The original two-axis `queryBuilder × wiring` cut in this subsection is kept for
+> reference and link stability; it is replaced by the
+> [Dimensional model (two-axis landing)](#dimensional-model-two-axis-landing-2026-06-09) above and will
 > be reconciled by the full rewrite.
 
 The dimensions are not a fresh invention; they are the **mixin interfaces the model already carries**,
