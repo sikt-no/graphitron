@@ -1,7 +1,7 @@
 ---
 id: R281
 title: "Classification test DSL: @classified spec-by-example"
-status: Spec
+status: Ready
 bucket: testing
 priority: 4
 theme: testing
