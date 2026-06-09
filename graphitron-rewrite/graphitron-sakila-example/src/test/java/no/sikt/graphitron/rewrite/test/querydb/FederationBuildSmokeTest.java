@@ -68,10 +68,13 @@ class FederationBuildSmokeTest {
 
     /**
      * The {@code _Entity} union must list every type Graphitron classifies as a federation entity:
-     * three {@code @node} types (Customer, Address, Film), the compound-key FilmActor, plus
-     * Language ({@code @key(resolvable: false)} types are reference-only but federation still
-     * includes them in the union). Catches the case where {@code @key} parsing or
-     * {@code KeyNodeSynthesiser} silently drops a type from the entity union.
+     * three {@code @node} types (Customer, Address, Film), the compound-key FilmActor, plus the two
+     * {@code @key(resolvable: false)} reference-only stubs — table-bound Language and non-table-bound
+     * FilmRefStub (R286). {@code Federation.transform} includes every {@code @key} type in the union
+     * regardless of resolvability; {@code resolvable: false} in the served SDL is what tells the
+     * composer not to route entity queries to this subgraph for them, so their presence here is
+     * benign. Catches the case where {@code @key} parsing or {@code KeyNodeSynthesiser} silently
+     * drops a type from the entity union.
      */
     @Test
     void resultEntityUnionContainsAllFixtureEntities() {
@@ -85,7 +88,7 @@ class FederationBuildSmokeTest {
             .toList();
         assertThat(memberNames)
             .as("_Entity union must contain every classified federation entity")
-            .containsExactlyInAnyOrder("Customer", "Address", "Film", "FilmActor", "Language");
+            .containsExactlyInAnyOrder("Customer", "Address", "Film", "FilmActor", "Language", "FilmRefStub");
     }
 
     /**
@@ -248,6 +251,35 @@ class FederationBuildSmokeTest {
             .containsPattern("input\\s+FilmOneOfFilter\\b[^{]*@oneOf")
             .as("the @oneOf directive definition must be reinstated on the served SDL")
             .contains("directive @oneOf on INPUT_OBJECT");
+    }
+
+    /**
+     * R286: a {@code @key(resolvable: false)} on a non-table-bound type (here {@code FilmRefStub},
+     * a service-bound record carrier with no {@code @table} / {@code @node}) is a reference-only
+     * entity stub. {@code EntityResolutionBuilder} accepts it without demoting and without an
+     * {@code EntityResolution} (no backing table, no {@code _entities} handler), and the stub plus
+     * its {@code @key(... resolvable: false)} must still reach the served {@code _service.sdl} so
+     * the supergraph composer sees the reference. Pins the non-table-bound accept path end-to-end;
+     * the boundary (mixed resolvable/non-resolvable keys still rejects) is unit-covered in
+     * {@code EntityResolutionBuilderTest}.
+     */
+    @Test
+    void serviceSdlExposesNonTableBoundResolvableFalseStub() {
+        GraphQLSchema schema = Graphitron.buildSchema(b -> {}, fed -> {});
+        var graphql = GraphQL.newGraphQL(schema).build();
+        var input = ExecutionInput.newExecutionInput()
+            .query("{ _service { sdl } }")
+            .build();
+        var result = graphql.execute(input);
+        assertThat(result.getErrors()).isEmpty();
+        @SuppressWarnings("unchecked")
+        var service = (Map<String, Object>) ((Map<String, Object>) result.getData()).get("_service");
+        var sdl = (String) service.get("sdl");
+        assertThat(sdl)
+            .as("non-table-bound reference-only stub must appear in the served SDL")
+            .containsPattern("type\\s+FilmRefStub\\b")
+            .as("its @key(... resolvable: false) must reach the composer's SDL")
+            .containsPattern("type\\s+FilmRefStub\\b[^{]*@key\\s*\\([^)]*resolvable\\s*:\\s*false");
     }
 
     @Test
