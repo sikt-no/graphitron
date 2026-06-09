@@ -7,7 +7,7 @@ priority: 4
 theme: testing
 depends-on: []
 created: 2026-06-07
-last-updated: 2026-06-07
+last-updated: 2026-06-09
 ---
 
 # Classification test DSL: @classified spec-by-example
@@ -25,12 +25,14 @@ directive.
 pivot (Stage 3, the former R164).** The corpus does not assert today's cross-product permit names
 (`QueryServiceTableField`, `RecordLookupTableField`, the ~45 of them R222 line 27 enumerates). It
 asserts the *dimensions* those names fuse. A field's classification factors into two
-orthogonal-but-co-occurring dimensions, a **query** dimension (what SQL scope the field contributes to
-or opens) and a **fetcher** dimension (how the field's value is produced at runtime). Other
-classification inputs, source-context, result-target, cardinality, error channel, end up captured in
-slots *within* those two dimensions, not asserted as separate axes (see [The axes](#the-axes)). The
-legacy permit names weld these together: `QueryServiceTableField` packs a fetcher action (`Service`) and a query
-consequence (`Table`, the result hands off into a new query scope) into one token. Authoring the
+orthogonal-but-co-occurring dimensions, a **queryBuilder** dimension (what query the field builds into
+our jOOQ domain, the SQL scope it contributes to or opens) and a **wiring** dimension (where the value
+comes from and how it is delivered to graphql-java, its runtime provenance). Other classification
+inputs, source-context, result-target, cardinality, error channel, dispatch batching, end up captured
+in slots *within* those two dimensions, not asserted as separate axes (see [The axes](#the-axes)). The
+legacy permit names weld these together: `QueryServiceTableField` packs a wiring provenance (`Service`,
+a developer method delivers the value) and a query consequence (`Table`, the result hands off into a
+new query scope) into one token. Authoring the
 corpus in terms of the separated dimensions is dimensional discovery from the reader's angle, the
 cheapest possible first-client check on R164's decomposition, run in prose plus tests before any
 model surgery. If the rendered dimensional doc reads as clean orthogonal rules, the axes are right;
@@ -58,13 +60,13 @@ naming its *dimensions*; the description states the rule:
 
 ```graphql
 type Query {
-  """A @service returning a @table-bound type does a service fetch AND hands the result off into a
-     new query scope: its query dimension is the handoff, its fetcher dimension is the service call."""
-  films(...): [Film] @classified(query: Handoff, fetcher: Service)
+  """A @service returning a @table-bound type is wired to a developer method AND hands the result off
+     into a new query scope: its queryBuilder dimension is the handoff, its wiring is the service call."""
+  films(...): [Film] @classified(queryBuilder: Handoff, wiring: Service)
 
-  """A field returning a @table-bound type by default generates its own SELECT, fetched by the
-     generated jOOQ fetcher."""
-  allFilms: [Film] @classified(query: OwnSelect, fetcher: Generated)
+  """A field returning a @table-bound type by default builds its own SELECT, delivered by a
+     Graphitron-generated fetcher."""
+  allFilms: [Film] @classified(queryBuilder: OwnSelect, wiring: Graphitron)
 }
 
 type Film @table(name: "Film") @classifiedType(as: TableType) { ... }
@@ -72,7 +74,7 @@ type Film @table(name: "Film") @classifiedType(as: TableType) { ... }
 
 The harness parses each schema, runs today's classifier, maps the resulting sealed leaf (and its
 slots) to its dimension tuple via the [leaf→tuple adapter](#the-leaftuple-adapter-the-driver-mechanism),
-and asserts that tuple equals the directive's `(query, fetcher)`. The SDL is the example, the
+and asserts that tuple equals the directive's `(queryBuilder, wiring)`. The SDL is the example, the
 directive is the assertion, the description is the spec sentence: the declarative form of R222's
 unit-test claim, stated in the dimensional vocabulary R164 will adopt rather than in the fused leaf
 name R164 will dissolve. Classifying a schema in one run keeps its examples mutually consistent (FKs
@@ -87,13 +89,14 @@ Two test-only directives, split by what they classify, each carrying GraphQL enu
 is validated SDL-side (a typo is a parse error graphql-java rejects before the harness runs) and
 autocompletes in an editor:
 
-- `@classified(query: QueryShape!, fetcher: FetcherShape!) on FIELD_DEFINITION` asserts the two
-  dimensions an output-field coordinate classifies to: `query` (the SQL scope the field contributes to
-  or opens) and `fetcher` (how its value is produced at runtime). These two are the assertable axes;
-  finer classification detail (source-context, result-target, cardinality, error channel) is captured
-  in slots *within* them, not as further directive arguments (see [The axes](#the-axes)). This is the
-  prevalent directive (most annotated coordinates are output fields), so it is short and its argument
-  names are the dimension names a reader reaches for when stating the rule.
+- `@classified(queryBuilder: QueryBuilderShape!, wiring: WiringShape!) on FIELD_DEFINITION` asserts the
+  two dimensions an output-field coordinate classifies to: `queryBuilder` (the query the field builds,
+  the SQL scope it contributes to or opens) and `wiring` (where its value comes from and how it is
+  delivered to graphql-java). These two are the assertable axes; finer classification detail
+  (source-context, result-target, cardinality, error channel, dispatch batching) is captured in slots
+  *within* them, not as further directive arguments (see [The axes](#the-axes)). This is the prevalent
+  directive (most annotated coordinates are output fields), so it is short and its argument names are
+  the dimension names a reader reaches for when stating the rule.
 - `@classifiedType(as: TypeVerdict!) on OBJECT | INTERFACE | UNION | INPUT_OBJECT | ENUM | SCALAR`
   asserts the `GraphitronType` sealed leaf a type classifies to. Type classification is not yet
   dimensional (and may never need to be), so the type directive keeps the single-verdict `as:`
@@ -114,41 +117,76 @@ the ~45 permits are their cross-product, and each permit name fuses several (R22
 
 Two dimensions carry most of the conflation and are the headline cut. Each is a small GraphQL enum:
 
-| Dimension | What it answers | Provisional values |
+| Dimension | What it answers | Values |
 |---|---|---|
-| `query` | what SQL scope does the field contribute to or open? | `None`, `InlinedTerm` (a column/expression in the parent's SELECT), `OwnSelect`, `Handoff` (a new managed scope opens on a produced record, the "record handoff"), `Union`, `Dml` |
-| `fetcher` | how is the field's value produced at runtime? | `Projected` (no per-field fetcher; read off the parent record), `Generated` (a generated jOOQ fetcher / DataLoader), `Service` (a `@service` call), `Method` (a `@tableMethod` / `@externalField`), `Node`, `Passthrough` |
+| `queryBuilder` | what query does the field build into our domain? (the SQL scope it contributes to or opens) | *provisional, settled in slice 1:* `None`, `InlinedTerm` (a column/expression in the parent's SELECT), `OwnSelect`, `Handoff` (a new managed scope opens on a produced record, the "record handoff"), `Union`, `Dml` |
+| `wiring` | where does the value come from, and how is it delivered to graphql-java? | *settled:* `Extract` (already on the parent record, read it off), `Graphitron` (a query we generated drives the fetch), `Service` (a developer method drives the fetch) |
 
-The decisive finding is that **query and fetcher co-occur on a single field; they are not a pick-one
-choice.** The root `films` field above (leaf `QueryServiceTableField`) is the worked example: a
-`@service` returning a `@table` type does a service fetch *and* triggers a record handoff (a new
+The decisive finding is that **queryBuilder and wiring co-occur on a single field; they are not a
+pick-one choice.** The root `films` field above (leaf `QueryServiceTableField`) is the worked example:
+a `@service` returning a `@table` type calls a developer method *and* triggers a record handoff (a new
 Graphitron-managed query scope on the result, per `code-generation-triggers.adoc`'s scope-state
-machine). So it is `query: Handoff, fetcher: Service` at once; the fused name welds the fetcher action
-(`Service`) to the query consequence (`Table` → handoff). Its sibling `QueryServiceRecordField` is
-`query: None, fetcher: Service`: same fetch, no handoff, the result terminates as a POJO. That pair
-isolates the query axis at constant fetcher, exactly the distinction the single-token names hide.
+machine). So it is `queryBuilder: Handoff, wiring: Service` at once; the fused name welds the wiring
+provenance (`Service`) to the query consequence (`Table` → handoff). Its sibling
+`QueryServiceRecordField` is `queryBuilder: None, wiring: Service`: same call, no handoff, the result
+terminates as a POJO. That pair isolates the queryBuilder axis at constant wiring, exactly the
+distinction the single-token names hide.
+
+**The `wiring` value set is settled: three provenance values.** `wiring` answers where the value comes
+from, and the three answers are exhaustive: `Extract` (already materialized on the parent record, just
+read it off), `Graphitron` (a query we generated drives the fetch, read or write), `Service` (a
+developer method drives it). This collapses what an action-shaped reading would have split into six:
+`@tableMethod` and `@externalField` are not their own provenance (the former is a `Graphitron` query
+built around a developer-supplied table; the latter is an `Extract` of an expression spliced into our
+SELECT), and `node` dispatch is a `Graphitron` query behind a routing prologue. `wiring` is *mostly
+plumbing*: once the `queryBuilder` is known, the wiring is almost pure consequence, which is exactly
+why it is worth separating out. Two facets ride *within* `wiring` as derived slots, not as further
+values:
+
+- **Dispatch (`SingleDispatch` / `GroupedDispatch`)** is derived from `source`: a root field with its
+  own IO is always `SingleDispatch` (one resolution, nothing to batch); a child field with its own IO
+  is always `GroupedDispatch` (under a parent list, so it must DataLoader-batch or it is N+1). Crossed
+  with the wiring value it reproduces the generator's actual emit helpers exactly:
+
+  | wiring × dispatch | emit helper |
+  |---|---|
+  | `Graphitron` × `SingleDispatch` | `GraphitronFetcher` (e.g. `buildQueryTableFetcher`) |
+  | `Graphitron` × `GroupedDispatch` | `GraphitronLoader` (`buildSplitQueryDataFetcher`) |
+  | `Service` × `SingleDispatch` | root passthrough (`buildServiceFetcherCommon`) |
+  | `Service` × `GroupedDispatch` | `buildServiceDataFetcher` + `buildServiceRowsMethod` |
+  | `Extract` | LightDataFetcher / property read |
+
+- **Extract mode (mirror / reflect)** is derived from the producer: a value carried by a SELECT we
+  emit is read by *mirroring* the `queryBuilder`'s projection (a real column, or a spliced
+  `@externalField` expression); a value that is a property of a service return is read by *reflection*;
+  a passthrough is the degenerate identity (the whole parent record, no field-read).
+
+Input cardinality (single-row vs bulk-row, the `BulkDmlRecord` case) is *not* a `wiring` facet, it is a
+`queryBuilder` slot on the DML step (single VALUES vs multi VALUES); a bulk DML is `SingleDispatch`
+with a bulk input, not a grouped dispatch.
 
 `target` (the result shape: table-record / record / scalar / polymorphic) and `source` (the parent
 context: root / single-parent-keyed / list child) are real classification *inputs*, but neither is an
-assertable axis. `target` is what often *triggers* a `query` value (a `@table` result triggers the
-handoff) and is captured in slots on both dimensions; `source` is carried by the `fetcher` dimension's
-`SourceKey` slot. Cardinality and the error channel are the same: slot detail, not directive
-arguments. So the directive names exactly two axes, and the finer dimensions ride in slots beneath
-them. Batching is one such slot: the root `QueryServiceTableField` (synchronous direct call) and the
-child `ChildField.ServiceTableField` (DataLoader-backed) share `fetcher: Service`, differing in the
-`BatchKeyField` / `SourceKey` slot, not the verdict; whether that batched-vs-direct difference stays a
-slot or earns a distinct `fetcher` value is a slice-1 confirmation.
+assertable axis. `target` is what often *triggers* a `queryBuilder` value (a `@table` result triggers
+the handoff) and is captured in slots on both dimensions; `source` drives the dispatch facet (root →
+`SingleDispatch`, list child → `GroupedDispatch`) and the `SourceKey` slot beneath `wiring`.
+Cardinality and the error channel are the same: slot detail, not directive arguments. So the directive
+names exactly two axes, and the finer dimensions ride in slots beneath them. The root
+`QueryServiceTableField` (synchronous direct call) and the child `ChildField.ServiceTableField`
+(DataLoader-backed) share `wiring: Service`, differing only in the derived dispatch facet
+(`SingleDispatch` vs `GroupedDispatch`) and the `SourceKey` slot, not the verdict.
 
-**The two axes are fixed; their value sets are the slice-1 deliverable.** What this Spec settles is
-the *mechanism* (a two-axis directive, the `QueryShape` / `FetcherShape` enums, the adapter, its
-totality check) and the *cut* (query × fetcher, primary and co-occurring). What slice 1 closes is the
-exact value set of each enum: the leaves dictate which `QueryShape` / `FetcherShape` values are real,
-surfaced by driving the adapter to totality across `OutputField` (see
-[Validating the axis set](#validating-the-axis-set)). Renaming or merging a value is then a cheap
-assertion-value edit, far cheaper than the alternative the old leaf-name framing forced (rewriting
-every assertion when R164 collapses the leaves). Downstream items bind only after slice 1 closes the
-value sets: R279's merge gate adopts the corpus at phase-3 completion; R282 and its siblings consume
-the vocabulary slice 1 settled.
+**The two axes and the `wiring` value set are fixed; the `queryBuilder` value set is the slice-1
+deliverable.** What this Spec settles is the *mechanism* (a two-axis directive, the `QueryBuilderShape`
+/ `WiringShape` enums, the adapter, its totality check), the *cut* (queryBuilder × wiring, primary and
+co-occurring), and the *whole `wiring` axis* (three provenance values plus the derived dispatch and
+extract-mode facets above). What slice 1 closes is the exact value set of `QueryBuilderShape`: the
+leaves dictate which `queryBuilder` values are real, surfaced by driving the adapter to totality across
+`OutputField` (see [Validating the axis set](#validating-the-axis-set)). Renaming or merging a value is
+then a cheap assertion-value edit, far cheaper than the alternative the old leaf-name framing forced
+(rewriting every assertion when R164 collapses the leaves). Downstream items bind only after slice 1
+closes the value sets: R279's merge gate adopts the corpus at phase-3 completion; R282 and its siblings
+consume the vocabulary slice 1 settled.
 
 R281 *discovers and proposes* the dimensional vocabulary; R164 makes its model the source of truth
 once it lands, and is likely to adopt these names because this corpus drove their discovery.
@@ -174,32 +212,32 @@ deliberately throwaway component bridges them: an adapter that maps each classif
 (its leaf, plus the slots where a dimension lives below the leaf name) to its dimension tuple.
 
 ```
-QueryServiceTableField             -> (query: Handoff,   fetcher: Service)
-QueryServiceRecordField            -> (query: None,      fetcher: Service)
-ChildField.TableField              -> (query: OwnSelect, fetcher: Projected)
-ChildField.SplitTableField         -> (query: OwnSelect, fetcher: Generated)
-ChildField.RecordLookupTableField  -> (query: OwnSelect, fetcher: Generated)   // + source / lookup slots
+QueryServiceTableField             -> (queryBuilder: Handoff,   wiring: Service)
+QueryServiceRecordField            -> (queryBuilder: None,      wiring: Service)
+ChildField.TableField              -> (queryBuilder: OwnSelect, wiring: Extract)      // inlined correlated subquery
+ChildField.SplitTableField         -> (queryBuilder: OwnSelect, wiring: Graphitron)   // + GroupedDispatch (DataLoader)
+ChildField.RecordLookupTableField  -> (queryBuilder: OwnSelect, wiring: Graphitron)   // + source / lookup slots
 ...
 ```
 
 The harness classifies a coordinate, applies the adapter, and compares the tuple to the directive.
 **Built to full coverage, this adapter *is* R164's leaf↔dimension truth table**, written in
 prose-and-tests before R164 touches the model. That is the whole point: the *enumeration* half of the
-pivot (which `query` / `fetcher` values are real, and a total leaf→tuple map across the leaf set)
-gets done and checked here, cheaply.
+pivot (which `queryBuilder` values are real, given the settled `wiring` set, and a total leaf→tuple map
+across the leaf set) gets done and checked here, cheaply.
 
 Be precise about what this validates and what it defers. The adapter is checked against every leaf the
-classifier *produces*; the verdict-correctness check below anchors each leaf's `(query, fetcher)` on
-the existing `TypeFetcherGenerator` dispatch partition (the implemented / projected / ... leaf
+classifier *produces*; the verdict-correctness check below anchors each leaf's `(queryBuilder, wiring)`
+on the existing `TypeFetcherGenerator` dispatch partition (the implemented / projected / ... leaf
 groups), not on an author's hunch. Grounding each dimension value in a generator branch is R164 /
 R282's burden; this item settles the *decomposition*, R282 settles the *grounding*.
 
 The tuple is the primary fingerprint, not the complete emit key. The finer classification dimensions,
-source-context, result-target, cardinality, the error channel, live in slots within the two
-dimensions (R222 models several as their own carriers: `SourceKey`, `Pagination`, the `ErrorChannel`
-family). The corpus reads them as slots rather than folding them into the `query` / `fetcher` enums,
-so two leaves that differ only in a slot share one tuple; the assertion is the two-axis verdict, not
-the full slot payload.
+source-context, result-target, cardinality, the error channel, dispatch batching, live in slots within
+the two dimensions (R222 models several as their own carriers: `SourceKey`, `Pagination`, the
+`ErrorChannel` family). The corpus reads them as slots rather than folding them into the
+`queryBuilder` / `wiring` enums, so two leaves that differ only in a slot share one tuple; the
+assertion is the two-axis verdict, not the full slot payload.
 
 When R164 lands, the field carries its dimensions as slots directly (R222's `QueryBuilder` /
 `DataFetcherBuilder`). The adapter is deleted, the harness reads the slots instead of mapping a leaf,
@@ -218,33 +256,33 @@ value-exercise; see [Design forks](#design-forks-to-settle-at-spec)):
   narrower than the `GraphitronField`-wide `TypeFetcherGenerator` dispatch partition, which also covers
   `InputField` and the `UnclassifiedField` sibling; both are outside `OutputField` and out of scope, so
   there is no failure leaf to exclude.
-- **Verdict correctness.** Each leaf's `(query, fetcher)` matches how the generator actually treats
-  it, cross-checked against the existing capability memberships (`SqlGeneratingField` ⇒ a SQL-scope
-  `query`; `ServiceField` ⇒ `fetcher: Service`; `BatchKeyField` / `MethodBackedField`) and the
-  `TypeFetcherGenerator` dispatch partition, not on an author's hunch. Two leaves *sharing* a tuple is
-  expected when they differ only in slot detail: the four root sync service permits share
+- **Verdict correctness.** Each leaf's `(queryBuilder, wiring)` matches how the generator actually
+  treats it, cross-checked against the existing capability memberships (`SqlGeneratingField` ⇒ a
+  SQL-scope `queryBuilder`; `ServiceField` ⇒ `wiring: Service`; `BatchKeyField` / `MethodBackedField`)
+  and the `TypeFetcherGenerator` dispatch partition, not on an author's hunch. Two leaves *sharing* a
+  tuple is expected when they differ only in slot detail: the four root sync service permits share
   `buildServiceFetcherCommon`, so `QueryServiceTableField` and `MutationServiceTableField` legitimately
   collapse; `ChildField.SplitTableField` and `ChildField.RecordTableField` share `(OwnSelect,
-  Generated)` and differ only in the `SourceKey` slot.
+  Graphitron)` and differ only in the `SourceKey` slot.
 
 The instrument for stating both the axes and the slots is the **minimal pair**: two leaves differing
 in exactly one dimension. They double as the corpus's canonical documentation examples (isolating one
 variable is how you both prove a dimension and teach it):
 
-| Dimension | Minimal pair | `(query, fetcher)` | Differs in |
+| Dimension | Minimal pair | `(queryBuilder, wiring)` | Differs in |
 |---|---|---|---|
-| `query` (asserted) | `QueryServiceTableField` vs `QueryServiceRecordField` | `(Handoff, Service)` vs `(None, Service)` | the asserted `query` verdict: `@table` hands off into a new scope vs terminates as a POJO |
-| `fetcher` (asserted) | `ChildField.TableField` vs `ChildField.SplitTableField` | `(OwnSelect, Projected)` vs `(OwnSelect, Generated)` | the asserted `fetcher` verdict; `@splitQuery` is a fetcher *value*, not a "modifier" |
-| source (slot) | `ChildField.SplitTableField` vs `ChildField.RecordTableField` | `(OwnSelect, Generated)` for both | the `SourceKey` slot only, same asserted verdict |
-| lookup (slot) | `ChildField.TableField` vs `ChildField.LookupTableField` | `(OwnSelect, Projected)` for both | the lookup slot only, same asserted verdict |
+| `queryBuilder` (asserted) | `QueryServiceTableField` vs `QueryServiceRecordField` | `(Handoff, Service)` vs `(None, Service)` | the asserted `queryBuilder` verdict: `@table` hands off into a new scope vs terminates as a POJO |
+| `wiring` (asserted) | `ChildField.TableField` vs `ChildField.SplitTableField` | `(OwnSelect, Extract)` vs `(OwnSelect, Graphitron)` | the asserted `wiring` verdict; `@splitQuery` is what flips the provenance from inlined-`Extract` to a generated `Graphitron` fetch, not a "modifier" |
+| source (slot) | `ChildField.SplitTableField` vs `ChildField.RecordTableField` | `(OwnSelect, Graphitron)` for both | the `SourceKey` slot only, same asserted verdict |
+| lookup (slot) | `ChildField.TableField` vs `ChildField.LookupTableField` | `(OwnSelect, Extract)` for both | the lookup slot only, same asserted verdict |
 
-The first two pairs prove query and fetcher are independent (`ChildField.TableField` /
-`ChildField.SplitTableField` share a query, split on fetcher) and co-occurring
-(`QueryServiceTableField` / `QueryServiceRecordField` share a fetcher, split on query). The last two,
-sharing their asserted verdict, are the converse evidence: source and lookup live in slots the
+The first two pairs prove queryBuilder and wiring are independent (`ChildField.TableField` /
+`ChildField.SplitTableField` share a queryBuilder, split on wiring) and co-occurring
+(`QueryServiceTableField` / `QueryServiceRecordField` share a wiring, split on queryBuilder). The last
+two, sharing their asserted verdict, are the converse evidence: source and lookup live in slots the
 directive does not assert. The matrix study behind this Spec found no leaf
-pair the generator forks on that shares both its `(query, fetcher)` verdict and every slot, which is
-what makes two axes sufficient; if slice 1 ever surfaces one, that is the signal to revisit the cut.
+pair the generator forks on that shares both its `(queryBuilder, wiring)` verdict and every slot, which
+is what makes two axes sufficient; if slice 1 ever surfaces one, that is the signal to revisit the cut.
 
 ## Rendering: queries as views over the corpus
 
@@ -287,7 +325,7 @@ necessarily a standalone repro; honouring the closure rule is what keeps the exc
   `GraphitronType` roots today. The corpus-backed coverage generalises to three obligations the
   meta-test enforces together (see [Validating the axis set](#validating-the-axis-set)): (1) the
   leaf→tuple adapter is *total* over `OutputField` (every leaf maps to a tuple); (2) every value of
-  both enums (`QueryShape`, `FetcherShape`) is exercised by some fixture; (3) `TypeVerdict`'s constants
+  both enums (`QueryBuilderShape`, `WiringShape`) is exercised by some fixture; (3) `TypeVerdict`'s constants
   equal `GraphitronType`'s non-failure leaf set, asserted by some fixture. So the unit of coverage on
   the field side shifts from "every leaf has a case" to "every dimension value has a case and every
   leaf has an adapter row", which is strictly stronger: it forces the dimensional decomposition to be
@@ -357,16 +395,17 @@ corpus (you cannot reference examples that do not exist). But the test side shou
 single big-bang conversion:
 
 1. **Thin vertical slice, end to end, that nails the value sets.** The `@classified` /
-   `@classifiedType` directives (with the `QueryShape` / `FetcherShape` and `TypeVerdict` enums) +
+   `@classifiedType` directives (with the `QueryBuilderShape` / `WiringShape` and `TypeVerdict` enums) +
    the leaf→tuple adapter + harness + the coverage/validation meta-test (adapter totality, verdict
    correctness, value exercise, `TypeVerdict` mirror) + a handful of exemplar examples in a small
    corpus,
    running *alongside* the existing enum truth table (transitional coexistence, not the permanent
    duplication the fork above rejects), plus a prototype of the query-as-view renderer
    (query/fragment -> projected SDL, internal directives stripped) over those few examples. This
-   slice's primary deliverable is the *validated value sets*: it drives the adapter to totality across
+   slice's primary deliverable is the *validated `queryBuilder` value set* (`wiring` is already
+   settled): it drives the adapter to totality across
    `OutputField` (see [Validating the axis set](#validating-the-axis-set)), which settles which
-   `QueryShape` / `FetcherShape` values are real, the vocabulary R164 inherits. Secondarily it surfaces
+   `queryBuilder` values are real, the vocabulary R164 inherits. Secondarily it surfaces
    the authoring
    constraints (real names must read well since they render verbatim; an example must be selectable
    via a query/fragment) *before* the expensive grind. The closure rule already pins most of what
@@ -411,14 +450,14 @@ R281 is not a downstream consumer of that work waiting for the walker to land. I
   leaves decompose into before it can build slots. R281's corpus + adapter answer that empirically:
   the adapter, driven to totality, *is* the leaf↔dimension truth table
   (see [The leaf→tuple adapter](#the-leaftuple-adapter-the-driver-mechanism)), and the dimension enums
-  are the proposed slot vocabulary, including the load-bearing discovery that query and fetcher are
-  separate co-occurring dimensions (the `QueryServiceTableField` handoff). R164 is likely to adopt these
-  names because this corpus is where they were found and stress-tested.
+  are the proposed slot vocabulary, including the load-bearing discovery that queryBuilder and wiring
+  are separate co-occurring dimensions (the `QueryServiceTableField` handoff). R164 is likely to adopt
+  these names because this corpus is where they were found and stress-tested.
 - **R281 is Stage 3's executable acceptance spec for the *decomposition*.** The corpus asserts the
   two-axis verdict, not leaf names. When the pivot lands and the field carries its dimensions as slots
   directly (`QueryBuilder` / `DataFetcherBuilder`), the adapter is deleted and the harness reads the
-  slots; **every corpus assertion stays byte-identical, proving the `(query, fetcher)` decomposition
-  was preserved.** It does *not* prove slot-level emit, a `SourceKey`-arm change would keep the corpus
+  slots; **every corpus assertion stays byte-identical, proving the `(queryBuilder, wiring)`
+  decomposition was preserved.** It does *not* prove slot-level emit, a `SourceKey`-arm change would keep the corpus
   green, so that stays the pipeline / `TypeSpec` tier's job. R282's merge gate is therefore *both*
   tiers green: this corpus for the decomposition, the pipeline tier for the emit.
 - **R281 keeps the field-taxonomy docs pivot-proof.** Because the rendered `code-generation-triggers`
@@ -440,9 +479,9 @@ seam where the future `WalkerResult.Err` test type takes over.
 
 The field-side pivot itself is filed separately as **R282** (`datafetcher-field-dimensional-slots`),
 R222's Stage 3 spin-out. R282 *consumes* this corpus as its acceptance spec; the dependency edge runs
-R281 → R282, driver to consumer. Its scope is the field's **fetcher** dimension and the
-`DataFetcherBuilder` that reads it, co-modelling the `query` slot where the two fuse on one field (the
-service→`@table` handoff), collapsing `QueryServiceTableField` / `MutationServiceTableField` /
+R281 → R282, driver to consumer. Its scope is the field's **wiring** dimension and the
+`DataFetcherBuilder` that reads it, co-modelling the `queryBuilder` slot where the two fuse on one field
+(the service→`@table` handoff), collapsing `QueryServiceTableField` / `MutationServiceTableField` /
 `MutationServiceRecordField` / `ChildField.ServiceTableField` / `ChildField.ServiceRecordField` and
 the wider `QueryField` / `MutationField` / `ChildField` permit set (R222 line 27) into dimensional
 slots per emit-relevant identity. The `QueryBuilder` and `ValidationBuilder` consumers are sibling
