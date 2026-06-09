@@ -1,7 +1,7 @@
 ---
 id: R285
 title: Lift-back projection for child @service fields returning a table-bound type (ServiceTableField)
-status: In Progress
+status: In Review
 bucket: bug
 priority: 2
 theme: service
@@ -13,6 +13,40 @@ last-updated: 2026-06-09
 # Lift-back projection for child @service fields returning a table-bound type (ServiceTableField)
 
 A child field carrying `@service` whose method returns a jOOQ table `Record` (a `ChildField.ServiceTableField`) is emitted as a terminal record producer: the generated rows method returns the service result verbatim and never re-projects it through a Graphitron query. Scalar `@field` sub-fields resolve, because a `ColumnFetcher` reads them straight off the returned `XRecord`; but any non-column sub-field on the returned type fails at query time. The first such sub-field to ship is a `@reference` relation.
+
+## Implementation status (In Review)
+
+Shipped. `ChildField.ServiceTableField` now routes through
+`SplitRowsMethodEmitter.buildServiceTableLift` (the new rows-method emitter) instead of the
+verbatim `buildServiceRowsMethod`; the dispatch in `TypeFetcherGenerator` assembles the service
+call and sets the loader value type to `org.jooq.Record`. The lift calls the service, normalises
+the returned container to a parent-indexed `List<List<XRecord>>`, flattens to `(parentIdx, seq,
+pk…)` VALUES rows, identity-joins the bound table and projects `Type.$fields(...)`, then re-wraps
+into the loader container. `seq` + `ORDER BY` preserves the service's intra-parent order; `idx`
+drives the scatter (parent re-association). The fork resolved to no model change, as recorded
+below.
+
+Validator: `validateServiceTableField` gained the return-table-PK guard (`GraphitronSchemaValidator`).
+
+Coverage: execution (`GraphQLQueryTest.films_castMembers_referenceSubfieldResolvesViaServiceTableFieldLift`,
+mapped + list + `actor: Actor @reference`); pipeline, both containers
+(`FetcherPipelineTest.serviceField_dataFetcherReturnsCompletableFutureListProjectedRecord` +
+`serviceField_mappedContainer_rowsMethodReturnsMapOfProjectedRecord`); unit
+(`ServiceFieldValidationTest.RETURN_TABLE_NO_PK`); structural pins updated to the projected-Record
+loader value (`TypeFetcherGeneratorTest`, `UnifiedEmissionPinsTest` skeleton count 6 -> 7);
+compilation via the full `-Plocal-db` build.
+
+Two notes for the reviewer:
+
+* *Uniform lift (behaviour change beyond the bug).* All `ServiceTableField`s now lift, including
+  scalar-only ones (e.g. the existing `Film.languageByService`), which adds a re-projection SELECT
+  keyed by the returned PK. This is the `SplitTableField`-parity the Fix direction calls for and the
+  re-query preserves any service-applied filtering, but it is a wider change than the `@reference`
+  case alone; the existing scalar fixtures pass under it.
+* *Drop-out semantics not execution-tested.* The "returned key with no matching row drops out" arm
+  falls out of the identity JOIN, but the sakila `film_actor` rows are real FK rows, so no synthetic
+  no-match exists to exercise it end-to-end; the filtered-subset / no-widening property is asserted
+  (film 1 has exactly its two cast members). Left as a follow-up if a synthetic fixture is wanted.
 
 ## Symptom
 

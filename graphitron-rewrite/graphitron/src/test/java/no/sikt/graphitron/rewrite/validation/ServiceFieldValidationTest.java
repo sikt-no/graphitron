@@ -255,7 +255,19 @@ class ServiceFieldValidationTest {
             "two RowKeyed SOURCES params — no errors when parent has PK",
             filmTableType(FILM_TABLE_SINGLE_PK),
             multipleSourcesField(),
-            List.of());
+            List.of()),
+
+        RETURN_TABLE_NO_PK(
+            "R285 — returned table has no PK — lift has no identity key — missing return-table PK error",
+            // Parent has a PK (so the parent-PK guard passes), isolating the return-table-PK guard:
+            // identity re-projection joins the returned table on its own PK, so a PK-less return
+            // table is a build-time error rather than an emitter-side failure.
+            filmTableType(FILM_TABLE_SINGLE_PK),
+            buildServiceTableField(
+                new ReturnTypeRef.TableBoundReturnType("Film", FILM_TABLE_NO_PK, new FieldWrapper.Single(true)),
+                new SourceKey.Wrap.Row(), FILM_TABLE_SINGLE_PK.primaryKeyColumns(), false),
+            List.of("Field 'Film.externalChild': @service on a table-bound return type requires the " +
+                "returned table 'film' to have a primary key for identity re-projection"));
 
         private final String description;
         private final GraphitronType parentType;
