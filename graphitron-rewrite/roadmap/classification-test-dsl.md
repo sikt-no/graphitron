@@ -53,8 +53,8 @@ fetcher/loader mechanism and `context` computed and only validated. See
 
 The bridge from today's classifier to those dimensional assertions is a **throwaway leaf→tuple
 adapter** (see [The leaf→tuple adapter](#the-leaftuple-adapter-the-driver-mechanism) below). R281
-leads; the field dimensional-slot slices (R282 and its siblings) consume the vocabulary this corpus
-discovers. The dependency runs driver → consumer, not the other way around: nothing here waits on
+leads; the field dimensional-slot slices (R222's Stage 3 field-side pivot and its siblings, to be
+filed) consume the vocabulary this corpus discovers. The dependency runs driver → consumer, not the other way around: nothing here waits on
 R222.
 
 ## The shape
@@ -259,8 +259,8 @@ R281 *discovers and proposes* the dimensional vocabulary; R164 makes its model t
 once it lands, and is likely to adopt these names because this corpus drove their discovery. Renaming
 or merging a value is a cheap assertion-value edit, far cheaper than the alternative the old leaf-name
 framing forced (rewriting every assertion when R164 collapses the leaves). Downstream items bind only
-after slice 1 closes the value sets: R279's merge gate adopts the corpus at phase-3 completion; R282
-and its siblings consume the vocabulary slice 1 settled.
+after slice 1 closes the value sets: R279's merge gate adopts the corpus at phase-3 completion; the
+field-side pivot slice and its siblings consume the vocabulary slice 1 settled.
 
 **On distinguishing the two directives by capitalization (`@classified` vs `@Classified`): recommend
 against.** Two directives differing only in the case of their first letter is a scan-and-typo footgun,
@@ -302,7 +302,7 @@ Be precise about what this validates and what it defers. The adapter is checked 
 classifier *produces*; the verdict-correctness check below anchors each leaf's `(producer, mapping)`
 on the existing `TypeFetcherGenerator` dispatch partition (the implemented / projected / ... leaf
 groups), not on an author's hunch. Grounding each dimension value in a generator branch is R164 /
-R282's burden; this item settles the *decomposition*, R282 settles the *grounding*.
+the field-side pivot slice's burden; this item settles the *decomposition*, that slice settles the *grounding*.
 
 The tuple is the primary fingerprint, not the complete emit key. The derived facts, source-context,
 the fetcher/loader mechanism, dispatch batching, the error channel, live in slots beside the two
@@ -388,7 +388,7 @@ necessarily a standalone repro; honouring the closure rule is what keeps the exc
   directive asserts dimensions derived (via the adapter) from verdicts that exist now, so this depends
   on neither R279's inversion nor R222's pivot; it *drives* the latter. Landing it first makes it the
   readable behavioural net both ride, which *strengthens* R279's merge-gate posture (its primary tier
-  becomes this corpus) and hands R164 its acceptance spec. R279 is a consumer, R282 is a consumer,
+  becomes this corpus) and hands R164 its acceptance spec. R279 is a consumer, the field-side pivot slice is a consumer,
   R281 is the owner.
 - **Replace the enum truth table, do not run beside it.** Adding the DSL on top of the ~398 enum
   rows recreates the exact duplication R8 fought; the value lands only when the fixture corpus
@@ -537,7 +537,7 @@ R281 is not a downstream consumer of that work waiting for the walker to land. I
   directly (`QueryBuilder` / `DataFetcherBuilder`), the adapter is deleted and the harness reads the
   slots; **every corpus assertion stays byte-identical, proving the `(producer, mapping)`
   decomposition was preserved.** It does *not* prove slot-level emit, a `SourceKey`-arm change would keep the corpus
-  green, so that stays the pipeline / `TypeSpec` tier's job. R282's merge gate is therefore *both*
+  green, so that stays the pipeline / `TypeSpec` tier's job. The field-side pivot slice's merge gate is therefore *both*
   tiers green: this corpus for the decomposition, the pipeline tier for the emit.
 - **R281 keeps the field-taxonomy docs pivot-proof.** Because the rendered `code-generation-triggers`
   *field* taxonomy is expressed in axes and never in cross-product leaf names, that half of the
@@ -554,11 +554,11 @@ successful classification, so anchoring failure here would couple it to exactly 
 the `TypeVerdict` meta-test excludes the failure leaf for the same reason, and that exclusion is the
 seam where the future `WalkerResult.Err` test type takes over.
 
-### The consuming slice (R282)
+### The consuming slice (R222 Stage 3, to be filed)
 
-The field-side pivot itself is filed separately as **R282** (`datafetcher-field-dimensional-slots`),
-R222's Stage 3 spin-out. R282 *consumes* this corpus as its acceptance spec; the dependency edge runs
-R281 → R282, driver to consumer. Its scope is the field's **producer** dimension (the row-source /
+The field-side pivot itself is R222's Stage 3 spin-out (`datafetcher-field-dimensional-slots`), to be
+filed separately as its own Backlog item. It *consumes* this corpus as its acceptance spec; the
+dependency edge runs R281 → that slice, driver to consumer. Its scope is the field's **producer** dimension (the row-source /
 re-query pipeline) and the `DataFetcherBuilder` the derived fetcher mechanism drives off it, modelling
 the `SourceKey` and dispatch slots where `producer` meets schema position (the service→`@table`
 re-query is the load-bearing case: a `[Service, Query]` pipeline), collapsing `QueryServiceTableField`
@@ -566,7 +566,7 @@ re-query is the load-bearing case: a `[Service, Query]` pipeline), collapsing `Q
 `ChildField.ServiceRecordField` and the wider `QueryField` / `MutationField` / `ChildField` permit set
 (R222 line 27) into dimensional slots per emit-relevant identity. The `QueryBuilder` and `ValidationBuilder` consumers are sibling
 Stage 3 slices the same corpus drives; the Stage 1 foundation (`ServiceField` / `ServiceMethodCall`)
-has already landed. R282 is to be filed as a Backlog item via the roadmap tool; this item does not
+has already landed. That slice is to be filed via the roadmap tool; this item does not
 block on it.
 
 ## Relationship to R279
