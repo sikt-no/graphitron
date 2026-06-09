@@ -137,10 +137,14 @@ The defining question is *does the field start a new SQL query, or inline into a
 - **`producer = ∅` means the field inlines into the existing query and correlates.** No new execution;
   it folds into the parent's query. `∅` does not mean "no SQL", a correlated subquery has its own
   `WHERE` / `ORDER BY` / `LIMIT`; it means "no *new* query." This is where correlation lives. The
-  non-split table children (`TableField`, `LookupTableField`, `TableInterfaceField`, `TableMethodField`)
-  inline, as do the column/nesting/passthrough carriers.
+  genuinely inline table children `TableField` and `LookupTableField` (each folded into the parent
+  SELECT as a `DSL.multiset(...)` correlated subquery) classify here, as do the column/nesting/
+  passthrough carriers. (`TableInterfaceField` and `TableMethodField` look like non-split table
+  children but are *not* `∅`; each runs its own per-parent SELECT, see `[Query]` below.)
 - **A step of `Query` starts a new SQL query.** A separate execution: the root query, a `@splitQuery`
-  batch, a record-parent keyed load, a service re-query, a DML follow-up SELECT.
+  batch, a record-parent keyed load, a service re-query, a DML follow-up SELECT, or a per-parent SELECT
+  for a child that *cannot* inline (`TableInterfaceField`'s polymorphic conditional-join shape,
+  `TableMethodField`'s runtime-supplied jOOQ table).
 - **`Service` and `Dml` produce *rows* from outside the catalog** (a developer method, a write). They
   are row-sources, not queries.
 
@@ -152,8 +156,8 @@ and it appears exactly when a row-source feeds a table-bound output. The realize
 
 | pipeline | one DataFetcher | same composition, split parent → child |
 |---|---|---|
-| `[Query]` | `QueryTableField`, `SplitTableField`, record/lookup/poly new-query children | — |
-| `∅` | inline table children, `ColumnField`, `NestingField`, `ConstructorField` | — |
+| `[Query]` | `QueryTableField`, `SplitTableField`, record/lookup/poly new-query children, `TableInterfaceField` / `TableMethodField` (per-parent sync) | — |
+| `∅` | `TableField`, `LookupTableField` (inline multiset), `ColumnField`, `NestingField`, `ConstructorField` | — |
 | `[Service]` | `QueryServiceRecordField`, `ServiceRecordField` (terminal record/pojo) | — |
 | `[Service, Query]` | `ServiceTableField`, `QueryServiceTableField`, `MutationServiceTableField` | `ServiceRecordField` → `RecordTableField` |
 | `[Dml]` | DML → encoded ID (`DmlTableField` `Encoded*`) | — |
@@ -162,7 +166,10 @@ and it appears exactly when a row-source feeds a table-bound output. The realize
 `@splitQuery`, the record-parent lift, `@tableMethod`'s dev table, lookup, polymorphic resolution, and
 the seed source (root args vs parent key) are **slots** on a producer step, not producer values. The
 fold-vs-batch and keyed-vs-correlated mechanism reads off these slots plus `context`; it is never an
-asserted choice.
+asserted choice. In particular a child `[Query]` batches through a DataLoader only when it is keyed
+(carries a `BatchKeyField`, e.g. `SplitTableField` / `RecordTableField`); an *unkeyed* child `[Query]`
+(`TableInterfaceField`, `TableMethodField`) is a per-parent sync fetcher (N+1), a `Single`-dispatch
+slot, not a separate producer value.
 
 **`mapping` (total); what domain object the value is.** Over `domain := { catalog, service }`:
 
@@ -197,6 +204,7 @@ actual emit helpers exactly:
 |---|---|
 | root `[Query]` | `GraphitronFetcher` (e.g. `buildQueryTableFetcher`) |
 | child `[Query]` (keyed) | `GraphitronLoader` (`buildSplitQueryDataFetcher`) |
+| child `[Query]` (unkeyed) | per-parent sync fetcher (`buildTableInterfaceFieldFetcher`, `buildChildTableMethodFetcher`) |
 | root `[Service…]` | service passthrough (`buildServiceFetcherCommon`) |
 | child `[Service…]` | `buildServiceDataFetcher` + `buildServiceRowsMethod` |
 | `∅` (any context) | `Extract` (LightDataFetcher / property read) |
@@ -206,10 +214,21 @@ service return) is itself derived from `mapping` (`Column` vs `Field`), not a se
 
 **Open value-set questions (slice 1 closes these):** collapse `Table`/`Record` (and `Column`/`Field`)
 to one value plus a catalog/service backing slot?; `ReferencedColumn` as a value or `Column` +
-join-path slot (lean: slot); keep `TableConnection` as a distinct value (lean: yes). And the one fact
-to confirm against `TypeFetcherGenerator`: that non-split table children are genuinely emitted inline
-(correlated / MULTISET) rather than as a separate per-parent sync query, if any run a separate query
-they are `producer = [Query]`, not `∅`.
+join-path slot (lean: slot); keep `TableConnection` as a distinct value (lean: yes).
+
+**Confirmed against `TypeFetcherGenerator` (2026-06-09); no longer a slice-1 unknown.** The
+inline-vs-separate-query question for the table children is settled by reading the generator. Only
+`TableField` and `LookupTableField` inline: each is folded into the parent SELECT as a
+`DSL.multiset(...)` correlated subquery (`InlineTableFieldEmitter` / `InlineLookupTableFieldEmitter`;
+the dispatch in `TypeFetcherGenerator` emits *no* fetcher method for them), so they are `producer = ∅`.
+`TableInterfaceField` and `TableMethodField` each emit their own per-parent
+`dsl.select(...).from(...).where(parent-correlation).fetch()` (`buildTableInterfaceFieldFetcher` /
+`buildChildTableMethodFetcher`), the interface case because a polymorphic conditional-join target
+cannot be a single multiset, the table-method case because the developer's method supplies the jOOQ
+table at runtime; both are therefore `producer = [Query]` even though neither carries a `BatchKeyField`,
+and their dispatch is per-parent sync (N+1), not a batched DataLoader. This both removes the open item
+from slice 1 and sharpens the dispatch derivation above (a child `[Query]` is a DataLoader only when
+keyed, otherwise a per-parent sync fetcher).
 
 ### Grounding in the model's traits
 
