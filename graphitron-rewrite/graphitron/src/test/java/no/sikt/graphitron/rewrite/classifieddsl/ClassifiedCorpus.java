@@ -177,6 +177,24 @@ public final class ClassifiedCorpus {
             type Query { film: Film }
             """),
 
+        /*
+         * Constructor passthrough: a @record child type under a @table parent. Film.details builds the
+         * record-backed FilmDetails from the parent's row in the parent SELECT (ConstructorField), so it
+         * is producer [] (no new query) and maps to Record (it materializes a record, not a catalog
+         * projection). FilmDetails is record-bound as makeFilmDetailsRating's return type. Corpus-only.
+         */
+        new Example("constructor", """
+            type FilmDetails { rating: String }
+            type Film @table(name: "film") {
+              details: FilmDetails @classified(producer: [], mapping: Record)
+            }
+            type Query {
+              film: Film
+              prodFilmDetails: FilmDetails
+                @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeFilmDetailsRating"})
+            }
+            """),
+
         /* DML side: an INSERT that writes then projects the inserted row (a [Dml, Query] pipeline). */
         new Example("dml", """
             type Film @table(name: "film") { title: String }

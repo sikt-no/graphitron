@@ -2304,19 +2304,11 @@ class GraphitronSchemaBuilderTest {
         // corpus and by the slot-asserting service cases above (e.g. TABLE_TYPE_RETURN, the @reference
         // origin-defaulting cases).
 
-        CONSTRUCTOR_FIELD(
-            "@table parent + @record child type → ConstructorField",
-            """
-            type FilmDetails { rating: String }
-            type Film @table(name: "film") { details: FilmDetails }
-            type Query {
-                film: Film
-                prodFilmDetails: FilmDetails @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeFilmDetailsRating"})
-            }
-            """,
-            schema -> assertThat(schema.field("Film", "details")).isInstanceOf(ChildField.ConstructorField.class)) {
-            @Override public Set<Class<?>> variants() { return Set.of(ChildField.ConstructorField.class); }
-        },
+        // R281 slice 2: the plain `@table parent + @record child type -> ConstructorField` verdict (a
+        // pure isInstanceOf assertion, no slot detail) migrated to the spec-by-example corpus as the
+        // `constructor` ClassifiedCorpus example (Film.details, asserted via @classified(producer: [],
+        // mapping: Record); the parent SELECT builds the record-backed child from its own row).
+        // Corpus-only. The ConstructorField leaf is now covered by the corpus.
 
         // R3: @splitQuery on a @record-parent field is a structural no-op (the record handoff
         // already opens a new DataLoader-backed scope) and should surface as a build warning so
