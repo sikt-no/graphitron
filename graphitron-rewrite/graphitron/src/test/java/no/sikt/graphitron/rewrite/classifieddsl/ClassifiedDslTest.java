@@ -1,11 +1,13 @@
 package no.sikt.graphitron.rewrite.classifieddsl;
 
+import no.sikt.graphitron.rewrite.classifieddsl.ClassifiedCorpus.Example;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.MethodSource;
 
 import java.util.EnumSet;
+import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -32,73 +34,17 @@ import static org.assertj.core.api.Assertions.assertThat;
 @PipelineTier
 class ClassifiedDslTest {
 
-    /**
-     * The value-covering exemplar corpus. Three fixtures, between them exercising every
-     * {@link ProducerStep} and {@link Mapping} value plus the inline producer. SDL is mined from the
-     * working {@code GraphitronSchemaBuilderTest} cases so it classifies against the standard Sakila
-     * catalog.
-     */
-    enum Fixture {
-        /** Catalog side: a root query, a Relay connection, an inline column, and a {@code TableType}. */
-        CATALOG("""
-            type Query {
-              film: Film @classified(producer: [Query], mapping: Table)
-              films: [Film!]! @asConnection @classified(producer: [Query], mapping: TableConnection)
-            }
-
-            type Film @table(name: "film") @classifiedType(as: TableType) {
-              title: String @classified(producer: [], mapping: Column)
-            }
-            """),
-
-        /** Service side: a terminal record, a service re-query into a {@code @table}, and a pojo field. */
-        SERVICE("""
-            type Language @table(name: "language") { name: String }
-
-            type FilmDetails {
-              title: String @classified(producer: [], mapping: Field)
-            }
-
-            type Film @table(name: "film") {
-              details: FilmDetails
-              rating: String
-                @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "get"})
-                @classified(producer: [Service], mapping: Record)
-              language: Language
-                @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getLanguage"})
-                @classified(producer: [Service, Query], mapping: Table)
-            }
-
-            type Query {
-              film: Film
-              prodFilmDetails: FilmDetails
-                @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeDetailsProps"})
-            }
-            """),
-
-        /** DML side: an INSERT that writes then projects the inserted row (a {@code [Dml, Query]} pipeline). */
-        DML("""
-            type Film @table(name: "film") { title: String }
-            input FilmInput @table(name: "film") { title: String }
-            type Query { x: String }
-            type Mutation {
-              createFilm(in: FilmInput!): Film
-                @mutation(typeName: INSERT)
-                @classified(producer: [Dml, Query], mapping: Table)
-            }
-            """);
-
-        final String sdl;
-        Fixture(String sdl) { this.sdl = sdl; }
+    static Stream<Example> corpus() {
+        return ClassifiedCorpus.examples().stream();
     }
 
     @ParameterizedTest(name = "{0}")
-    @EnumSource(Fixture.class)
-    void corpusClassifiesToDeclaredDimensions(Fixture fixture) {
-        var result = ClassifiedHarness.classify(fixture.sdl);
+    @MethodSource("corpus")
+    void corpusClassifiesToDeclaredDimensions(Example example) {
+        var result = ClassifiedHarness.classify(example.sdl());
 
         assertThat(result.fields())
-            .as("fixture %s must annotate at least one output field", fixture)
+            .as("fixture %s must annotate at least one output field", example)
             .isNotEmpty();
 
         for (var fc : result.fields()) {
@@ -119,8 +65,8 @@ class ClassifiedDslTest {
         var mappings = EnumSet.noneOf(Mapping.class);
         boolean inlineSeen = false;
 
-        for (var fixture : Fixture.values()) {
-            for (var fc : ClassifiedHarness.classify(fixture.sdl).fields()) {
+        for (var example : ClassifiedCorpus.examples()) {
+            for (var fc : ClassifiedHarness.classify(example.sdl()).fields()) {
                 producers.addAll(fc.actual().producer());
                 mappings.add(fc.actual().mapping());
                 inlineSeen |= fc.actual().producer().isEmpty();

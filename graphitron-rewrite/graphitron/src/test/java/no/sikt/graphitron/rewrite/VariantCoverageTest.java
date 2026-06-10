@@ -1,5 +1,6 @@
 package no.sikt.graphitron.rewrite;
 
+import no.sikt.graphitron.rewrite.classifieddsl.ClassifiedCorpus;
 import no.sikt.graphitron.rewrite.generators.GeneratorCoverageTest;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
@@ -9,24 +10,32 @@ import no.sikt.graphitron.rewrite.model.MutationField;
 import org.junit.jupiter.api.Test;
 
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
 import static java.util.stream.Collectors.toSet;
 import static org.assertj.core.api.Assertions.assertThat;
-import no.sikt.graphitron.rewrite.test.tier.UnitTier;
+import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 
 /**
  * Meta-test: every sealed leaf of {@link GraphitronField} and {@link GraphitronType}
  * must have at least one classification case whose {@link ClassificationCase#variants()}
- * includes it, or a documented entry in {@link #NO_CASE_REQUIRED}.
+ * includes it, <em>or</em> a leaf the R281 spec-by-example corpus demonstrates
+ * ({@link ClassifiedCorpus#coveredLeaves()}), or a documented entry in {@link #NO_CASE_REQUIRED}.
  *
  * <p>Phase 2 of {@code plan-variant-coverage-meta-test.md}. Complements
  * {@link GeneratorCoverageTest#everyGraphitronFieldLeafHasAKnownDispatchStatus} (generator
  * dispatch coverage) by asserting that classification itself is demonstrated for every leaf.
+ *
+ * <p>R281 slice 2 unions the corpus into the coverage source: a leaf demonstrated by a corpus fixture
+ * counts as covered, so the legacy {@code GraphitronSchemaBuilderTest} enum row for that leaf can retire
+ * as the documentation migration pulls the example in, without this meta-test regressing. The corpus is
+ * classified to compute its covered leaves, so this test is now pipeline tier (slice 3 completes the
+ * rewire onto the corpus; this is the bridge that keeps deletions safe meanwhile).
  */
-@UnitTier
+@PipelineTier
 class VariantCoverageTest {
 
     /**
@@ -102,9 +111,10 @@ class VariantCoverageTest {
         var leaves = ROOTS.stream()
             .flatMap(r -> GeneratorCoverageTest.sealedLeaves(r).stream())
             .collect(toSet());
-        var covered = allClassificationCases().stream()
+        var covered = new HashSet<Class<?>>(ClassifiedCorpus.coveredLeaves());
+        allClassificationCases().stream()
             .flatMap(c -> c.variants().stream())
-            .collect(toSet());
+            .forEach(covered::add);
         var missing = leaves.stream()
             .filter(l -> !covered.contains(l))
             .filter(l -> !NO_CASE_REQUIRED.containsKey(l))
