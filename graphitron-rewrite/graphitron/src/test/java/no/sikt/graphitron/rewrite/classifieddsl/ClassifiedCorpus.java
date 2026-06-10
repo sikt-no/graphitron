@@ -213,6 +213,31 @@ public final class ClassifiedCorpus {
             """),
 
         /*
+         * Result-type backing (a type-verdict cluster). A non-@table result type acquires its backing
+         * class by reflection on the @service producer's return type (R276), never from a directive, and
+         * the GraphitronType leaf reflects what that class is: a plain Java class is PojoResultType.Backed
+         * (`as: Backed`), a Java record is JavaRecordType, a jOOQ TableRecord is JooqTableRecordType.
+         * Corpus-only: the @classifiedType axis is asserted directly; there is no field-side dimensional
+         * lesson here. The `name` field on the Java-record-backed type (a record component of TestRecordDto)
+         * doubles as the fixture's required field coordinate, classifying inline / Field off the backing.
+         */
+        new Example("result-backing", """
+            type PojoBacked @classifiedType(as: Backed) { id: ID }
+            type JavaRecordBacked @classifiedType(as: JavaRecordType) {
+              name: String @classified(producer: [], mapping: Field)
+            }
+            type JooqTableRecordBacked @classifiedType(as: JooqTableRecordType) { id: ID }
+            type Query {
+              pojo: PojoBacked
+                @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeDummyRecord"})
+              javaRecord: JavaRecordBacked
+                @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeTestRecordDto"})
+              jooqRecord: JooqTableRecordBacked
+                @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getFilm"})
+            }
+            """),
+
+        /*
          * Fields on an @error parent. The @error contract restricts the field set to exactly
          * `path: [String!]!` and `message: String!`; both resolve off the developer-supplied error
          * class via graphql-java's default PropertyDataFetcher, so both classify as PropertyField
