@@ -1,5 +1,5 @@
 ---
-id: R295
+id: R296
 title: "Emit BuildWarnings when a schema uses deprecated directives or arguments"
 status: Backlog
 bucket: validation
