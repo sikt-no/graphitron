@@ -1,6 +1,10 @@
 package no.sikt.graphitron.rewrite.test.querydb;
 
+import graphql.language.EnumTypeDefinition;
+import graphql.language.ObjectTypeDefinition;
 import graphql.schema.idl.SchemaParser;
+import no.sikt.graphitron.rewrite.generators.util.SchemaDirectiveRegistry;
+import no.sikt.graphitron.rewrite.schema.DirectiveSupportTypes;
 import no.sikt.graphitron.rewrite.schema.federation.FederationSpec;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
@@ -9,6 +13,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -81,5 +86,79 @@ class SchemaSdlEmissionTest {
         assertThat(cl.getResource("no/sikt/graphitron/generated/federated/schema.graphqls"))
             .as("federated SDL must be available as a classpath resource under outputPackage")
             .isNotNull();
+    }
+
+    /**
+     * R291: the published SDL carries no Graphitron-internal surface, for every plugin
+     * execution in this module. Strictly internal support types never print; directive
+     * definitions and applications are survivor-only ({@link SchemaDirectiveRegistry});
+     * assertions are structural (re-parse, then walk), not substring matches.
+     */
+    @Test
+    void emittedSdlCarriesNoGraphitronInternalSurface() throws IOException {
+        for (String outputPackage : List.of(
+                "no.sikt.graphitron.generated",
+                "no.sikt.graphitron.generated.federated",
+                "no.sikt.graphitron.generated.multischema")) {
+            var registry = new SchemaParser().parse(
+                Files.readString(sdlFor(outputPackage), StandardCharsets.UTF_8));
+
+            DirectiveSupportTypes.strictlyInternal().forEach(name ->
+                assertThat(registry.getType(name))
+                    .as("strictly internal type %s must not reach %s", name, outputPackage)
+                    .isEmpty());
+
+            registry.getDirectiveDefinitions().keySet().forEach(name ->
+                assertThat(SchemaDirectiveRegistry.isSurvivor(name))
+                    .as("directive definition @%s in %s must be a survivor", name, outputPackage)
+                    .isTrue());
+
+            registry.types().values().forEach(type -> {
+                ((graphql.language.DirectivesContainer<?>) type).getDirectives().forEach(applied ->
+                    assertThat(SchemaDirectiveRegistry.isSurvivor(applied.getName()))
+                        .as("application @%s on type %s in %s must be a survivor",
+                            applied.getName(), type.getName(), outputPackage)
+                        .isTrue());
+                if (type instanceof ObjectTypeDefinition object) {
+                    object.getFieldDefinitions().forEach(field ->
+                        field.getDirectives().forEach(applied ->
+                            assertThat(SchemaDirectiveRegistry.isSurvivor(applied.getName()))
+                                .as("application @%s on %s.%s in %s must be a survivor",
+                                    applied.getName(), type.getName(), field.getName(), outputPackage)
+                                .isTrue()));
+                }
+            });
+        }
+    }
+
+    /**
+     * R291 retention split across the fixtures: the shared fixture references
+     * {@code SortDirection} from {@code FilmOrderBy} / {@code ActorOrderBy}, so the published
+     * support type prints with its description; the federated and multischema fixtures
+     * reference no support type, demonstrating the all-dropped case.
+     */
+    @Test
+    void publishedSupportTypeRetainedOnlyWhereReferenced() throws IOException {
+        var shared = new SchemaParser().parse(
+            Files.readString(sdlFor("no.sikt.graphitron.generated"), StandardCharsets.UTF_8));
+        var sortDirection = (EnumTypeDefinition) shared.getType("SortDirection").orElseThrow();
+        assertThat(sortDirection.getDescription())
+            .as("retained SortDirection carries its description")
+            .isNotNull();
+        assertThat(sortDirection.getEnumValueDefinitions())
+            .allSatisfy(value -> assertThat(value.getDescription())
+                .as("enum value %s carries its description", value.getName())
+                .isNotNull());
+
+        for (String unreferencing : List.of(
+                "no.sikt.graphitron.generated.federated",
+                "no.sikt.graphitron.generated.multischema")) {
+            var registry = new SchemaParser().parse(
+                Files.readString(sdlFor(unreferencing), StandardCharsets.UTF_8));
+            DirectiveSupportTypes.all().forEach(name ->
+                assertThat(registry.getType(name))
+                    .as("unreferenced support type %s must not reach %s", name, unreferencing)
+                    .isEmpty());
+        }
     }
 }

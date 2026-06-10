@@ -26,10 +26,10 @@ import java.util.List;
  * <p>Second of the Commit B leaf-type emitters. Introspection (names starting with {@code __})
  * and federation-injected (names starting with {@code _}) types are skipped. Directive-
  * declaration input-object types (those declared directly in {@code directives.graphqls} such
- * as {@code ErrorHandler}, {@code ReferenceElement}, {@code ExternalCodeReference}) are also
- * skipped: they exist only to give Graphitron's own build-time directives argument shapes and
- * must not reach the user-facing schema. The set is derived from
- * {@link InputDirectiveInputTypes#NAMES}.
+ * as {@code ErrorHandler}, {@code ReferenceElement}, {@code ExternalCodeReference}) never
+ * appear in {@link GraphitronSchema#types()}: they exist only to give Graphitron's own
+ * build-time directives argument shapes, and the classifier skips them per
+ * {@link no.sikt.graphitron.rewrite.schema.DirectiveSupportTypes}.
  *
  * <p>Cross-type references are emitted as {@code GraphQLTypeReference.typeRef(name)} so the
  * generator can emit types in any order and trust graphql-java's {@code .build()} call to

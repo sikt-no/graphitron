@@ -6,7 +6,6 @@ import graphql.GraphQL;
 import graphql.schema.GraphQLSchema;
 import graphql.schema.GraphQLUnionType;
 import no.sikt.graphitron.generated.federated.Graphitron;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 import java.nio.charset.StandardCharsets;
@@ -165,38 +164,27 @@ class FederationBuildSmokeTest {
      * {@code resolvable}).
      */
     /**
-     * Pipeline ↔ runtime parity (R247): the on-classpath
+     * Pipeline ↔ runtime parity (R247, closed by R291): the on-classpath
      * {@code schema.graphqls} emitted by {@code SchemaSdlEmitter} must
      * describe the same schema a consumer rebuilding via
-     * {@link Graphitron#buildSchema} sees, modulo the federation runtime
-     * types ({@code _Service}, {@code _entities}, {@code _Entity},
-     * {@code sdl}) that {@code Federation.transform} bolts onto the
-     * runtime schema and {@code ServiceSDLPrinter.generateServiceSDLV2}
-     * strips out when printing for subgraph publication.
+     * {@link Graphitron#buildSchema} sees.
      *
      * <p>Compared through graphql-java's {@code SchemaDiffing}, which
      * walks both schemas as type-element graphs and reports the edit
      * operations required to turn one into the other. The runtime side is
      * round-tripped through {@code ServiceSDLPrinter.generateServiceSDLV2}
      * and back through {@code SchemaParser} +
-     * {@code UnExecutableSchemaGenerator} so the federation-runtime types
-     * are dropped, matching what a subgraph composer would see when
-     * reading the emitted file artifact.
+     * {@code UnExecutableSchemaGenerator}, matching what a subgraph
+     * composer would see when reading the served {@code _service.sdl}.
      *
      * <p>Locks: any directive-definition / directive-application drift
      * between codegen-time emission and runtime build (which would show
-     * up as a non-empty edit list); the {@code schema @link(...)}
-     * round-trip pinned by R250 (a missing schema-applied directive on
-     * either side appears as a deletion on the schema vertex).
+     * up as a non-empty edit list); the R291 support-type retention
+     * decision feeding both arms from {@code schema.types()}; the
+     * {@code schema @link(...)} round-trip pinned by R250 (a missing
+     * schema-applied directive on either side appears as a deletion on
+     * the schema vertex).
      */
-    @Disabled("R247: deferred. After running Federation.transform on the file "
-        + "side so the federation runtime types match, the remaining diff is "
-        + "non-survivor directive definitions (@asConnection, @table, @node, "
-        + "...) that the runtime build strips via its survivor-only "
-        + "additionalDirective(...) loop but the emitter still prints from "
-        + "assembled. Closing this means either filtering directive "
-        + "definitions/applications in SchemaSdlEmitter or rendering from "
-        + "the runtime build in the codegen JVM; both are follow-up work.")
     @Test
     void emittedSdlMatchesRuntimeSchema() throws Exception {
         String emitted;
