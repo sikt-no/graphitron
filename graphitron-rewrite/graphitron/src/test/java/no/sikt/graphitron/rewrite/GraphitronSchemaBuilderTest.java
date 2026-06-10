@@ -5945,42 +5945,14 @@ class GraphitronSchemaBuilderTest {
 
     // ===== Fields on @error parents =====
 
-    /**
-     * Child fields on an {@code @error} type. The {@code @error} contract restricts the field
-     * set to exactly {@code path: [String!]!} and {@code message: String!} (enforced at type
-     * classification time); both classify as {@link PropertyField} so graphql-java's default
-     * {@code PropertyDataFetcher} resolves them off the developer-supplied @error class.
-     */
-    enum ErrorFieldCase implements ClassificationCase {
-        PATH_AND_MESSAGE_CLASSIFY_AS_PROPERTY_FIELDS(
-            "@error parent — path and message both classify as PropertyField",
-            """
-            type MyError @error(handlers: [{handler: GENERIC, className: "java.lang.IllegalArgumentException"}]) {
-                path: [String!]!
-                message: String!
-            }
-            type Query { x: String }
-            """,
-            schema -> {
-                assertThat(schema.field("MyError", "path")).isInstanceOf(PropertyField.class);
-                assertThat(schema.field("MyError", "message")).isInstanceOf(PropertyField.class);
-            });
-
-        final String sdl;
-        final Consumer<GraphitronSchema> assertions;
-        ErrorFieldCase(String description, String sdl, Consumer<GraphitronSchema> assertions) {
-            this.sdl = sdl;
-            this.assertions = assertions;
-        }
-        @Override public Set<Class<?>> variants() { return Set.of(PropertyField.class); }
-        @Override public String toString() { return name().toLowerCase().replace('_', ' '); }
-    }
-
-    @ParameterizedTest(name = "{0}")
-    @EnumSource(ErrorFieldCase.class)
-    void errorFieldClassification(ErrorFieldCase tc) {
-        tc.assertions.accept(build(tc.sdl));
-    }
+    // R281 slice 2: the sole `@error parent path/message -> PropertyField` verdict (a pair of bare
+    // isInstanceOf assertions, no slot detail) migrated to the spec-by-example corpus as the
+    // `error-field` ClassifiedCorpus example (MyError.path / MyError.message, both asserted via
+    // @classified(producer: [], mapping: Field)). Corpus-only: it lands on the already-taught inline /
+    // Field coordinate; both fields resolve off the developer-supplied @error class via graphql-java's
+    // default PropertyDataFetcher. Since this was the only ErrorFieldCase constant, the whole enum and
+    // its errorFieldClassification @EnumSource test retired with it. The PropertyField leaf stays
+    // covered by the corpus and by the slot-asserting RecordPropertyFieldCase rows.
 
     // ===== Errors-shaped fields lifting from PolymorphicReturnType to ErrorsField =====
 
