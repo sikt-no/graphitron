@@ -1,5 +1,6 @@
 package no.sikt.graphitron.rewrite;
 
+import graphql.schema.GraphQLObjectType;
 import graphql.schema.idl.SchemaParser;
 import graphql.schema.idl.TypeDefinitionRegistry;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
@@ -249,6 +250,150 @@ class ConnectionPromoterTest {
             bctx.schema, bctx.types, List.of());
 
         assertThat(rebuilt).isSameAs(bctx.schema);
+    }
+
+    // ---- R295: federation @tag inheritance on synthesised connection types ----
+
+    private static final String TAG_DIRECTIVE_DECL =
+        "directive @tag(name: String!) repeatable on FIELD_DEFINITION | OBJECT\n";
+
+    @Test
+    void directiveDrivenWithTag_synthesisedConnectionEdgePageInfoInheritTag() {
+        String sdl = TAG_DIRECTIVE_DECL + """
+            type Customer { id: ID! }
+            type Query {
+                customers: [Customer!]! @asConnection @tag(name: "x")
+            }
+            """;
+        var bctx = buildBuildContext(sdl);
+
+        ConnectionPromoter.promote(bctx);
+
+        assertThat(tagNames(connSchema(bctx, "QueryCustomersConnection"))).containsExactly("x");
+        assertThat(tagNames(edgeSchema(bctx, "QueryCustomersEdge"))).containsExactly("x");
+        assertThat(tagNames(pageInfoSchema(bctx))).containsExactly("x");
+        // The carrier field on the original schema keeps its own @tag (promotion does not strip it).
+        var carrier = ((GraphQLObjectType) bctx.schema.getType("Query")).getFieldDefinition("customers");
+        assertThat(carrier.getAppliedDirectives("tag")).hasSize(1);
+    }
+
+    @Test
+    void repeatableTags_allValuesAppearOnSynthesisedTypes() {
+        String sdl = TAG_DIRECTIVE_DECL + """
+            type Customer { id: ID! }
+            type Query {
+                customers: [Customer!]! @asConnection @tag(name: "a") @tag(name: "b")
+            }
+            """;
+        var bctx = buildBuildContext(sdl);
+
+        ConnectionPromoter.promote(bctx);
+
+        assertThat(tagNames(connSchema(bctx, "QueryCustomersConnection"))).containsExactlyInAnyOrder("a", "b");
+        assertThat(tagNames(edgeSchema(bctx, "QueryCustomersEdge"))).containsExactlyInAnyOrder("a", "b");
+        assertThat(tagNames(pageInfoSchema(bctx))).containsExactlyInAnyOrder("a", "b");
+    }
+
+    @Test
+    void sharedConnectionName_synthesisedTypesCarryTagUnion() {
+        String sdl = TAG_DIRECTIVE_DECL + """
+            type Customer { id: ID! }
+            type Query {
+                first: [Customer!]! @asConnection(connectionName: "CustomerConnection") @tag(name: "a")
+                second: [Customer!]! @asConnection(connectionName: "CustomerConnection") @tag(name: "b")
+            }
+            """;
+        var bctx = buildBuildContext(sdl);
+
+        ConnectionPromoter.promote(bctx);
+
+        assertThat(tagNames(connSchema(bctx, "CustomerConnection"))).containsExactlyInAnyOrder("a", "b");
+        assertThat(tagNames(edgeSchema(bctx, "CustomerEdge"))).containsExactlyInAnyOrder("a", "b");
+        assertThat(tagNames(pageInfoSchema(bctx))).containsExactlyInAnyOrder("a", "b");
+    }
+
+    @Test
+    void structuralTaggedConnectionWithNoSdlPageInfo_synthesisedPageInfoCarriesTag() {
+        // isConnectionType only requires edges -> node; a structural Connection without a
+        // pageInfo field builds (no unresolved PageInfo reference) and still triggers PageInfo
+        // synthesis. The structural arm reads the Connection type's own @tag and feeds it into
+        // the synthesised PageInfo union.
+        String sdl = TAG_DIRECTIVE_DECL + """
+            type Customer { id: ID! }
+            type CustomerEdge {
+                cursor: String!
+                node: Customer
+            }
+            type CustomerConnection @tag(name: "x") {
+                edges: [CustomerEdge!]!
+                nodes: [Customer]!
+                totalCount: Int
+            }
+            type Query {
+                customers: CustomerConnection!
+            }
+            """;
+        var bctx = buildBuildContext(sdl);
+
+        ConnectionPromoter.promote(bctx);
+
+        // The author-declared Connection keeps its own tag; the synthesised PageInfo inherits it.
+        assertThat(tagNames(connSchema(bctx, "CustomerConnection"))).containsExactly("x");
+        assertThat(tagNames(pageInfoSchema(bctx))).containsExactly("x");
+    }
+
+    @Test
+    void sdlDeclaredPageInfo_isNeverTaggedByPromotion() {
+        // Negative pin: an author-declared PageInfo is "not touched". Even though the structural
+        // Connection is tagged @tag(name: "conn"), that tag does not leak onto the SDL-declared
+        // PageInfo — the author owns it.
+        String sdl = TAG_DIRECTIVE_DECL + """
+            type Customer { id: ID! }
+            type CustomerEdge {
+                cursor: String!
+                node: Customer
+            }
+            type CustomerConnection @tag(name: "conn") {
+                edges: [CustomerEdge!]!
+                nodes: [Customer]!
+                pageInfo: PageInfo!
+                totalCount: Int
+            }
+            type PageInfo @tag(name: "author") {
+                hasNextPage: Boolean!
+                hasPreviousPage: Boolean!
+                startCursor: String
+                endCursor: String
+            }
+            type Query {
+                customers: CustomerConnection!
+            }
+            """;
+        var bctx = buildBuildContext(sdl);
+
+        ConnectionPromoter.promote(bctx);
+
+        // The Connection keeps its author tag; the SDL PageInfo keeps only its own, unchanged.
+        assertThat(tagNames(connSchema(bctx, "CustomerConnection"))).containsExactly("conn");
+        assertThat(tagNames(pageInfoSchema(bctx))).containsExactly("author");
+    }
+
+    private static GraphQLObjectType connSchema(BuildContext bctx, String name) {
+        return ((ConnectionType) bctx.types.get(name)).schemaType();
+    }
+
+    private static GraphQLObjectType edgeSchema(BuildContext bctx, String name) {
+        return ((EdgeType) bctx.types.get(name)).schemaType();
+    }
+
+    private static GraphQLObjectType pageInfoSchema(BuildContext bctx) {
+        return ((PageInfoType) bctx.types.get("PageInfo")).schemaType();
+    }
+
+    private static List<String> tagNames(GraphQLObjectType type) {
+        return type.getAppliedDirectives("tag").stream()
+            .map(d -> (String) d.getArgument("name").getValue())
+            .toList();
     }
 
     private static BuildContext buildBuildContext(String sdl) {
