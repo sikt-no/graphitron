@@ -73,6 +73,24 @@ public final class ClassifiedCorpus {
             "{ city { country { name } countrySplit { name } } }"),
 
         /*
+         * Keyed split lookup: a list child whose @lookupKey argument establishes a positional
+         * input-list <-> output-list correspondence, fetched by a @splitQuery keyed batch
+         * (SplitLookupTableField). Like the @splitQuery split above it opens a new keyed query
+         * (producer [Query]) and lands on participant @table rows (mapping Table); the @lookupKey
+         * shape only changes how the batch is keyed, not the dimensional verdict. Corpus-only: it is
+         * another leaf on the already-taught [Query] / Table coordinate, and its @lookupKey argument
+         * needs the argument rendering the QueryViewRenderer does not yet support (hardening item 3).
+         */
+        new Example("split-lookup", """
+            type Customer @table(name: "customer") { firstName: String @field(name: "FIRST_NAME") }
+            type Store @table(name: "store") {
+              customers(customer_id: ID! @lookupKey): [Customer!]! @splitQuery
+                @classified(producer: [Query], mapping: Table)
+            }
+            type Query { store: Store }
+            """),
+
+        /*
          * Mapping minimal pair: Column vs Field. A scalar under the @table parent Film maps to Column
          * (`title` is a real DB column); a scalar under a record-backed parent maps to Field
          * (`FilmStats.count` is a POJO property, the record having no @table). The non-table object

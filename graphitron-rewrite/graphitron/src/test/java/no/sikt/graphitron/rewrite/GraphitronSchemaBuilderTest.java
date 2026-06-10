@@ -853,18 +853,13 @@ class GraphitronSchemaBuilderTest {
         // rendered into the Field Classification section of code-generation-triggers.adoc). The
         // SplitTableField leaf stays covered by the corpus and by the slot-asserting split cases below.
 
-        SPLIT_LOOKUP_TABLE_FIELD(
-            "@splitQuery + @lookupKey on @table parent → SplitLookupTableField",
-            """
-            type Customer @table(name: "customer") { firstName: String }
-            type Store @table(name: "store") {
-                customers(customer_id: ID! @lookupKey): [Customer!]! @splitQuery
-            }
-            type Query { store: Store }
-            """,
-            schema -> assertThat(schema.field("Store", "customers")).isInstanceOf(SplitLookupTableField.class)) {
-            @Override public Set<Class<?>> variants() { return Set.of(SplitLookupTableField.class); }
-        },
+        // R281 slice 2: the pure `@splitQuery + @lookupKey -> SplitLookupTableField` verdict (a bare
+        // isInstanceOf assertion, no slot detail) migrated to the spec-by-example corpus, where it is
+        // the `split-lookup` ClassifiedCorpus example (Store.customers, asserted via
+        // @classified(producer: [Query], mapping: Table)). Corpus-only: it lands on the already-taught
+        // [Query] / Table coordinate (the producer minimal pair). The SplitLookupTableField leaf stays
+        // covered by the corpus and by the slot-asserting / rejection cases below
+        // (IMPLICIT_REFERENCE_SPLIT_LOOKUP_TABLE, SPLIT_LOOKUP_TABLE_SINGLE_CARDINALITY_REJECTED).
 
         SPLIT_TABLE_SINGLE_CARDINALITY(
             "@splitQuery with single-cardinality parent-holds-FK reference → SplitTableField with FK-column SourceKey",

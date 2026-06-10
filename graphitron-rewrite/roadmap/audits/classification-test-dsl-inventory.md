@@ -59,7 +59,7 @@ coordinate.
 ## Field-side checklist (doc example allowed now)
 
 - [ ] `ColumnFieldCase.ENUM_RETURN_TYPE` (L131) -> `ChildField.ColumnField` | enum-typed scalar on a `@table` parent is still a column. *Nuance: edge of the Column verdict (return type is a GraphQL enum), not the bare Column case.*
-- [ ] `TableFieldCase.SPLIT_LOOKUP_TABLE_FIELD` (L856) -> `ChildField.SplitLookupTableField` | `@splitQuery` + `@lookupKey` list child on a `@table` parent
+- [x] `TableFieldCase.SPLIT_LOOKUP_TABLE_FIELD` (L856) -> `ChildField.SplitLookupTableField` | `@splitQuery` + `@lookupKey` list child on a `@table` parent | migrated: `split-lookup` corpus example (Store.customers), corpus-only on the already-taught [Query]/Table coordinate
 - [x] `NestingFieldCase.PLAIN_OBJECT_TYPE` (L1561) -> `ChildField.NestingField` | field returning a plain (no-`@table`/`@record`) object on a `@table` parent | migrated to the `nesting` corpus example (`Film.details`), corpus-only (inline-Table already taught by the producer minimal pair)
 - [x] `NestingFieldCase.LIST_OF_PLAIN_OBJECT_TYPE` (L1570) -> `ChildField.NestingField` | list-wrapped plain object on a `@table` parent | same `NestingField` leaf, retired alongside `PLAIN_OBJECT_TYPE` via the `nesting` corpus example
 - [x] `ServiceFieldCase.ON_TABLE_TYPE_SCALAR_RETURN` (L1721) -> `ChildField.ServiceRecordField` | `@service` on a `@table` parent returning a scalar | already covered by the `service` corpus example (`Film.rating`, producer [Service], mapping Record); corpus-only
