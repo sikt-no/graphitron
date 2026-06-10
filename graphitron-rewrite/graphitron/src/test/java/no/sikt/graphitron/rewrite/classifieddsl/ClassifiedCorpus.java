@@ -106,6 +106,37 @@ public final class ClassifiedCorpus {
             """,
             "{ film { title details { stats { count } } } }"),
 
+        /*
+         * Producer minimal pair across the record-handoff boundary. The same FK-reached @table child
+         * (`language` via film_language_id_fkey) inlines into the parent SELECT under the @table parent
+         * Film (producer [], a correlated subquery, TableField) but becomes a keyed re-query under the
+         * record-backed parent FilmDetails (producer [Query], RecordTableField), because the record
+         * handoff has already opened a new DataLoader-backed scope; it cannot fold back into the parent
+         * SELECT. Both hold mapping = Table. FilmDetails is record-bound as makeDummyRecord's return
+         * type; the explicit @reference disambiguates film's two FKs to language.
+         */
+        new Example("record-table", """
+            type Language @table(name: "language") { name: String }
+
+            type FilmDetails {
+              language: Language @reference(path: [{key: "film_language_id_fkey"}])
+                @classified(producer: [Query], mapping: Table)
+            }
+
+            type Film @table(name: "film") {
+              language: Language @reference(path: [{key: "film_language_id_fkey"}])
+                @classified(producer: [], mapping: Table)
+              details: FilmDetails
+            }
+
+            type Query {
+              film: Film
+              prodFilmDetails: FilmDetails
+                @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeDummyRecord"})
+            }
+            """,
+            "{ film { language { name } details { language { name } } } }"),
+
         /* Service side: a terminal record, a service re-query into a @table, and a pojo field. */
         new Example("service", """
             type Language @table(name: "language") { name: String }

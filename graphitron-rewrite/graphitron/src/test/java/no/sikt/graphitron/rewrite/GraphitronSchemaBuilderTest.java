@@ -2206,22 +2206,14 @@ class GraphitronSchemaBuilderTest {
             @Override public Set<Class<?>> variants() { return Set.of(no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField.class); }
         },
 
-        RECORD_TABLE_FIELD(
-            "@record parent (typed POJO) + @table return type (no @lookupKey) → RecordTableField",
-            """
-            type Language @table(name: "language") { name: String }
-            type FilmDetails {
-              language: Language @reference(path: [{key: "film_language_id_fkey"}])
-            }
-            type Film @table(name: "film") { details: FilmDetails }
-            type Query {
-                film: Film
-                prodFilmDetails: FilmDetails @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeDummyRecord"})
-            }
-            """,
-            schema -> assertThat(schema.field("FilmDetails", "language")).isInstanceOf(RecordTableField.class)) {
-            @Override public Set<Class<?>> variants() { return Set.of(RecordTableField.class); }
-        },
+        // R281 slice 2: the plain `@record parent + @table return (no @lookupKey) -> RecordTableField`
+        // verdict (a pure isInstanceOf assertion, no slot detail) migrated to the spec-by-example
+        // corpus, where FilmDetails.language is the [Query] half of the record-handoff producer minimal
+        // pair against the inline TableField Film.language (the `record-table` ClassifiedCorpus example,
+        // asserted via @classified(producer: [Query], mapping: Table) and rendered into the Field
+        // Classification section of code-generation-triggers.adoc). The RecordTableField leaf stays
+        // covered by the corpus and by the many slot-asserting record-table cases below (FK inference,
+        // single cardinality, @splitQuery warning, @sourceRow lifters).
 
         RECORD_LOOKUP_TABLE_FIELD(
             "@record parent (typed POJO) + @table return type + @lookupKey → RecordLookupTableField with populated SourceKey",

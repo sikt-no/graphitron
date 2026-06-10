@@ -66,7 +66,7 @@ coordinate.
 - [ ] `InterfaceUnionFieldCase.TABLE_INTERFACE_FIELD` (L1971) -> `ChildField.TableInterfaceField` | child returning a `@table`+`@discriminate` interface
 - [ ] `InterfaceUnionFieldCase.INTERFACE_FIELD` (L1983) -> `ChildField.InterfaceField` | child returning a plain (no-`@table`) interface
 - [ ] `InterfaceUnionFieldCase.UNION_FIELD` (L2023) -> `ChildField.UnionField` | child returning a union
-- [ ] `NonTableParentCase.RECORD_TABLE_FIELD` (L2209) -> `ChildField.RecordTableField` | `@record` parent + `@table` return, no `@lookupKey`
+- [x] `NonTableParentCase.RECORD_TABLE_FIELD` (L2209) -> `ChildField.RecordTableField` | `@record` parent + `@table` return, no `@lookupKey` | migrated to the `record-table` corpus example (`FilmDetails.language`), rendered in code-generation-triggers.adoc §"The record-handoff boundary"
 - [x] `NonTableParentCase.RECORD_FIELD` (L2290) -> `ChildField.RecordField` | `@record` parent + non-table object return | migrated to the `mapping` corpus example (`FilmDetails.stats`), rendered in code-generation-triggers.adoc §"`mapping`: Column vs. Field"
 - [ ] `NonTableParentCase.SERVICE_TABLE_FIELD_ON_RECORD_PARENT` (L2328) -> `ChildField.ServiceTableField` | `@record` parent + `@service` + `@table` return
 - [ ] `NonTableParentCase.CONSTRUCTOR_FIELD` (L2343) -> `ChildField.ConstructorField` | `@table` parent + `@record` child type (constructor passthrough)

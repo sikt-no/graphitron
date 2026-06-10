@@ -232,6 +232,39 @@ same `Country` return over the same `city -> country` foreign key, classifies wi
 because `@splitQuery` opens a new keyed query. Both hold `mapping = Table`. Asserted by the
 `child-table` corpus example.
 
+==== The record-handoff boundary
+
+`@splitQuery` is not the only trigger that moves a field across the `producer` boundary. A `@table`
+child reached by a foreign key inlines (producer `[]`) under a `@table` parent, but the *same* FK-reached
+child re-queries (producer `[Query]`) under a record-backed parent, because the record handoff has
+already opened a new DataLoader-backed scope that the correlated subquery cannot fold back into. The
+parent's table-ness, not a directive, moves the axis here. Both hold `mapping = Table`.
+
+[source,graphql]
+----
+type Query {
+  film: Film
+}
+
+type Film @table(name: "film") {
+  language: Language @reference(path: [{key : "film_language_id_fkey"}])
+  details: FilmDetails
+}
+
+type Language @table(name: "language") {
+  name: String
+}
+
+type FilmDetails {
+  language: Language @reference(path: [{key : "film_language_id_fkey"}])
+}
+----
+
+`Film.language` classifies with producer `[]` (an inline correlated subquery, `TableField`).
+`FilmDetails.language`, the same `Language` return over the same `film_language_id_fkey` foreign key but
+under the record-backed parent `FilmDetails`, classifies with producer `[Query]` (`RecordTableField`):
+the record handoff forces a keyed re-query. Asserted by the `record-table` corpus example.
+
 === `mapping`: Column vs. Field
 
 The `mapping` dimension records what domain object the value is. Two flavors hinge on one thing, the
