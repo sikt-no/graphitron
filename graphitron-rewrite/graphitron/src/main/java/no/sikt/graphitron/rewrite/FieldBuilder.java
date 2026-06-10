@@ -136,14 +136,6 @@ import static no.sikt.graphitron.rewrite.BuildContext.locationOf;
 class FieldBuilder {
 
     private static final Logger LOG = LoggerFactory.getLogger(FieldBuilder.class);
-    /**
-     * Category-named logger for the {@code @asConnection} + required same-table {@code @nodeId}
-     * hygiene warn (see {@link #resolveTableFieldComponents}). Stable address for log
-     * consumers (filters, migration tooling) independent of the {@link FieldBuilder} class
-     * organisation; mirrors the {@code BuildContext.idRefShim} precedent.
-     */
-    private static final Logger ASCONNECTION_HYGIENE_LOG =
-        LoggerFactory.getLogger(FieldBuilder.class.getName() + ".asConnectionSameTableHygiene");
 
     private final BuildContext ctx;
     private final ServiceCatalog svc;
@@ -325,7 +317,7 @@ class FieldBuilder {
      *                                   wrapper). Hygiene-only: read solely by the
      *                                   {@code @asConnection} advisory at
      *                                   {@link #resolveTableFieldComponents}, where its presence
-     *                                   triggers a {@code LOG.warn} on the always-bounded shape
+     *                                   adds a {@link BuildWarning} on the always-bounded shape
      *                                   and classification continues normally. {@code null}
      *                                   otherwise — including the "all hits are optional" case.
      */
@@ -641,8 +633,9 @@ class FieldBuilder {
         // are all non-null. ∃-required across all hits, not first-hit-wins.
         if (fieldDef.hasAppliedDirective(DIR_AS_CONNECTION)
                 && plan.firstRequiredSameTableHit() != null) {
-            ASCONNECTION_HYGIENE_LOG.warn(
-                formatAsConnectionSameTableWarning(plan.firstRequiredSameTableHit(), fieldDef.getName()));
+            ctx.addWarning(new BuildWarning(
+                formatAsConnectionSameTableWarning(plan.firstRequiredSameTableHit(), fieldDef.getName()),
+                locationOf(fieldDef)));
         }
         var classifyErrors = new ArrayList<String>();
         var refs = classifyArguments(fieldDef, table, plan, classifyErrors);

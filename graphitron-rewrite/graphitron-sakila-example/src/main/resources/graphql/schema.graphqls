@@ -360,11 +360,11 @@ type Query {
     filmsByOneOf(filter: FilmOneOfFilter): [Film!]!
 }
 
-# R110 fixture: free-form (non-table-backed) @record payload. The backing class is a
-# Java record with a single Integer languageId field. The child `language` field uses
-# @sourceRow to supply the key extraction the catalog cannot infer (no FK metadata on a
-# DTO parent). See docs/manual/how-to/source-row.adoc.
-type CreateFilmPayload @record(record: {className: "no.sikt.graphitron.rewrite.test.services.CreateFilmPayload"}) {
+# R110 fixture: free-form (non-table-backed) record-backed payload. The backing class is a
+# Java record with a single Integer languageId field, reflection-bound under R276. The child
+# `language` field uses @sourceRow to supply the key extraction the catalog cannot infer (no
+# FK metadata on a DTO parent). See docs/manual/how-to/source-row.adoc.
+type CreateFilmPayload {
     languageId: Int!
     # @sourceRow leaf-PK case (RecordTableField + LifterLeafKeyed): the lifter's Row1<Integer>
     # matches Language's PK directly, no @reference needed. Per-parent Row1<Integer> lift of
@@ -377,10 +377,10 @@ type CreateFilmPayload @record(record: {className: "no.sikt.graphitron.rewrite.t
         )
 }
 
-# R60 fixture: free-form @record with a typed List<FilmRecord> accessor. No batching directive
-# on `films` — the classifier auto-derives BatchKey.AccessorKeyedMany from the canonical
-# record-component accessor, and the generator emits loader.loadMany dispatch.
-type CreateFilmsPayload @record(record: {className: "no.sikt.graphitron.rewrite.test.services.CreateFilmsPayload"}) {
+# R60 fixture: free-form record-backed payload with a typed List<FilmRecord> accessor. No
+# batching directive on `films` — the classifier auto-derives BatchKey.AccessorKeyedMany from
+# the canonical record-component accessor, and the generator emits loader.loadMany dispatch.
+type CreateFilmsPayload {
     # AccessorKeyedMany(LIST). Each parent contributes N keys (one per FilmRecord); loadMany
     # supplies one record per element-PK key, returned as List<Record> matching the field shape.
     films: [Film!]!
@@ -392,7 +392,7 @@ type CreateFilmsPayload @record(record: {className: "no.sikt.graphitron.rewrite.
 # customer.address_id, on customer_address_id_fkey), and @reference walks the FK chain to the
 # leaf table `address`. This is the canonical path-keyed shape (BatchKey.LifterPathKeyed);
 # end-to-end compile-spec coverage flows through Query.customerAddressSummary below.
-type CustomerAddressSummary @record(record: {className: "no.sikt.graphitron.rewrite.test.services.CustomerAddressSummary"}) {
+type CustomerAddressSummary {
     customerId: Int!
     address: [Address!]!
         @sourceRow(
@@ -427,7 +427,7 @@ type FilmLookupInvalid @error(handlers: [{
 
 union FilmLookupError = FilmLookupNotFound | FilmLookupInvalid
 
-type FilmLookupPayload @record(record: {className: "no.sikt.graphitron.rewrite.test.services.FilmLookupPayload"}) {
+type FilmLookupPayload {
     title: String
     errors: [FilmLookupError]
 }
@@ -455,7 +455,7 @@ type FilmReviewMissingFilm @error(handlers: [{
 
 union FilmReviewError = FilmReviewBadRating | FilmReviewMissingFilm
 
-type FilmReviewPayload @record(record: {className: "no.sikt.graphitron.rewrite.test.services.FilmReviewPayload"}) {
+type FilmReviewPayload {
     reviewId: Int
     errors: [FilmReviewError]
 }
@@ -463,7 +463,7 @@ type FilmReviewPayload @record(record: {className: "no.sikt.graphitron.rewrite.t
 # R154 fixture: setter-shape sibling of FilmReviewPayload. The backing class is a hand-rolled
 # POJO with a public no-arg constructor and Java-bean setters; the carrier classifier resolves
 # R154's MutableBean construction shape against it.
-type SetterShapeFilmReviewPayload @record(record: {className: "no.sikt.graphitron.rewrite.test.services.SetterShapeFilmReviewPayload"}) {
+type SetterShapeFilmReviewPayload {
     reviewId: Int
     errors: [FilmReviewError]
 }
@@ -477,7 +477,7 @@ type SetterShapeFilmReviewPayload @record(record: {className: "no.sikt.graphitro
 # Outcome.Success, sees the error arm, and returns completedFuture(null) before key extraction
 # (no NPE on a missing key), so the field renders null while the sibling errors field stays
 # reachable. reviewId is the inline-read arm-switch (record accessor off success.value()).
-type FilmReviewWithFilmPayload @record(record: {className: "no.sikt.graphitron.rewrite.test.services.FilmReviewWithFilmPayload"}) {
+type FilmReviewWithFilmPayload {
     reviewId: Int
     film: [Film!]
         @sourceRow(
@@ -624,7 +624,7 @@ type Inventory @table(name: "inventory") {
     )
 }
 
-type FilmCard @record(record: {className: "no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord"}) {
+type FilmCard {
     filmId: Int @field(name: "film_id")
 }
 
@@ -639,7 +639,7 @@ type FilmDetailsForMethod {
     languageId: Int @field(name: "language_id")
 }
 
-type FilmCardWrapper @record(record: {className: "no.sikt.graphitron.rewrite.test.services.FilmCardData"}) {
+type FilmCardWrapper {
     # AccessorKeyedSingle: the canonical Java-record accessor `film()` on FilmCardData returns
     # FilmRecord (typed accessor matching this field's @table return). The framework
     # auto-derives the BatchKey, batches dispatch via `loader.load(key, env)` keyed on the
@@ -653,7 +653,7 @@ type FilmCardWrapper @record(record: {className: "no.sikt.graphitron.rewrite.tes
     example: RecordExample
 }
 
-type RecordExample @record(record: {className: "no.sikt.graphitron.rewrite.test.services.RecordExampleType"}) {
+type RecordExample {
     # BareName: matches the canonical Java record component accessor `fieldA()`.
     fieldA: String
     # GetterPrefixed: matches the bean-style getter `getFieldB()`.
@@ -672,15 +672,15 @@ type Category @table(name: "category") {
 }
 
 """
-FilmDetails is a @record type backed by jOOQ's FilmRecord (JooqTableRecordType).
+FilmDetails is backed by jOOQ's FilmRecord (JooqTableRecordType), reflection-bound under R276.
 It is reached via Film.filmDetails (ConstructorField — the Film Record is passed through
 as the FilmDetails source), and has a RecordTableField child (language: Language) that
 DataLoader-batches language lookups keyed by the Film's language_id column.
 """
-type FilmDetails @record(record: {className: "no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord"}) {
+type FilmDetails {
     title:    String!     @field(name: "title")
     language: [Language!]! @reference(path: [{key: "film_language_id_fkey"}])
-    # record-fields Phase 2 fixture: @record parent + @lookupKey. Classifies as
+    # record-fields Phase 2 fixture: record-backed parent + @lookupKey. Classifies as
     # RecordLookupTableField — DataLoader-batches actor lookups keyed by the Film record's
     # film_id, with the lookup-input VALUES join narrowing by the caller-provided actor_id list.
     # @splitQuery is not needed on record-parent fields; classifyChildFieldOnResultType never
@@ -1514,16 +1514,17 @@ type FilmCarrierWithErrorsPayload {
     errors: [FilmReviewError]
 }
 
-# R275 reopened-scope execution-tier fixture: the @splitQuery-list source-record carrier — the
-# opptak leggTilTagger -> LeggTilTaggerPayload { saker: [Sak!] @splitQuery, errors } shape. The
-# @service producer returns List<FilmRecord>; the payload pairs the list data field with an errors
-# union. @splitQuery on the data field is tolerated by the @service-carrier scan (redundant: the
-# carrier emit already runs a PK-keyed follow-up SELECT off the producer's records; a build-time
-# advisory fires) — pre-R275 the forbidden-directive check dropped this payload type entirely,
-# producing an invalid assembled schema (dangling typeRef). `films` classifies as
-# SingleRecordTableField, MANY cardinality, ResultRowWalk envelope OUTCOME_SUCCESS.
+# R275 reopened-scope execution-tier fixture: a @service list-data-field source-record carrier —
+# the opptak leggTilTagger -> LeggTilTaggerPayload { saker: [Sak!], errors } shape. The @service
+# producer returns List<FilmRecord>; the payload pairs the list data field with an errors union,
+# and the carrier emit runs a PK-keyed follow-up SELECT off the producer's records. `films`
+# classifies as SingleRecordTableField, MANY cardinality, ResultRowWalk envelope OUTCOME_SUCCESS.
+# R294: a redundant @splitQuery on this carrier field used to ride along here purely to fire the
+# tolerated-redundant advisory; that path is pinned on minimal SDL at pipeline tier by
+# SingleRecordTableFieldServiceProducerPipelineTest.serviceProducer_splitQueryListCarrier_withErrors_admitsAndWarnsRedundantDirective,
+# so the directive is dropped from this broad fixture.
 type FilmsCarrierWithErrorsPayload {
-    films: [Film!] @splitQuery
+    films: [Film!]
     errors: [FilmReviewError]
 }
 
@@ -1739,7 +1740,7 @@ type Mutation {
             method: "filmById"
         })
 
-    # R275 reopened-scope list sibling: List<FilmRecord> producer into the @splitQuery-list +
+    # R275 reopened-scope list sibling: List<FilmRecord> producer into the list-data-field +
     # errors carrier (see FilmsCarrierWithErrorsPayload above). Any unknown id throws the mapped
     # @error (ErrorList arm -> films null, typed error); otherwise the films project off
     # Outcome.Success.value() in input order and errors resolves null on the success arm.
