@@ -169,7 +169,7 @@ enters the scope; `Film.title` projects an inline column. Asserted by the `catal
 | Input type with `@table` + `@record` | `InputType`* (via `@record`) | On input types, `@record` dominates `@table`. When both are present, `@table` is ignored and the input classifies as if only `@record` were declared; a build warning names the shadowed directive. Clean up by removing `@table` from the input declaration ; the warning disappears naturally.
 | Input type without `@table` | `InputType`* | No generation (developer-provided class)
 | Input type with `@table` used on fields with conflicting return tables | `PojoInputType` (unbound) | No generation ; column binding resolved per field-usage
-| Object type with no `@table` and no `@record` | `PlainObjectType` | No generation; nested under a parent table-bound or result-bound scope via `NestingField`
+| Object type with no `@table` and no `@record` | `NestingType` | No generation; nested under a parent table-bound or result-bound scope via `NestingField`
 | GraphQL `enum` type | `EnumType` | No generation; enum values map to DB strings/ints at column-bind time
 | GraphQL `scalar` type with `@scalarType(scalar:)` | `ScalarType` | No generation; the consumer's `public static final GraphQLScalarType` constant is registered on the synthesized schema via `.additionalType(...)`. Graphitron reflects on the constant's `Coercing<I, O>` to recover the Java type used for input-record components, service params, and `Field<X>` projections.
 | GraphQL `scalar` type matching the extended-scalars convention table (no directive, `graphql-java-extended-scalars` on the classpath) | `ScalarType` | Same as above, but the constant FQN is read from `ScalarTypeResolver`'s 30-entry convention table (`scalar BigDecimal` → `ExtendedScalars.GraphQLBigDecimal`, etc.).
@@ -183,7 +183,7 @@ enters the scope; `Film.title` projects an inline column. Asserted by the `catal
 
 *Intermediate sealed interfaces* (not shown in the table ; grouping nodes in the hierarchy):
 - `TableBackedType` ; groups `TableType`, `NodeType`, `TableInterfaceType`. Builders switch on this to detect table-mapped types.
-- `ResultType` is itself a sealed sub-interface with four concrete variants: `JavaRecordType`, `PojoResultType`, `JooqRecordType`, `JooqTableRecordType` ; reflecting how the result class is represented in Java.
+- `ResultType` is itself a sealed sub-interface with four concrete variants: `JavaRecordType`, `Backed` (the sole concrete leaf of the intermediate `PojoResultType`), `JooqRecordType`, `JooqTableRecordType` ; reflecting how the result class is represented in Java.
 - `InputType` is itself a sealed sub-interface with four concrete variants: `JavaRecordInputType`, `PojoInputType`, `JooqRecordInputType`, `JooqTableRecordInputType` ; same split by Java representation. `PojoInputType` is also used when an input type appears as an argument on fields with different return tables ; it is classified as unbound rather than failing.
 
 '''
@@ -318,7 +318,7 @@ The four `Mutation*TableField` permits are guaranteed never to carry a `@record`
 | Scalar/enum with `@field` | `PropertyField` | Column method in `wiring()`
 | Return `@table`, `@lookupKey` (catalog FK from parent's jOOQ TableRecord) | `RecordLookupTableField` (`SourceKey.Reader.ColumnRead`) | Async DataLoader fetcher + `rows*()` method
 | Return `@table` (default; catalog FK from parent's jOOQ TableRecord) | `RecordTableField` (`SourceKey.Reader.ColumnRead`) | Async DataLoader fetcher + `rows*()` method
-| Return `@table` with `@sourceRow` (parent is `PojoResultType` or `JavaRecordType`; no catalog FK required) | `RecordTableField` / `RecordLookupTableField` (`SourceKey.Reader.SourceRowsCall`) | Async DataLoader fetcher + `rows*()` method; the developer-supplied static lifter populates the batched VALUES rows
+| Return `@table` with `@sourceRow` (parent is `Backed` or `JavaRecordType`; no catalog FK required) | `RecordTableField` / `RecordLookupTableField` (`SourceKey.Reader.SourceRowsCall`) | Async DataLoader fetcher + `rows*()` method; the developer-supplied static lifter populates the batched VALUES rows
 | Return non-table type | `RecordField` | Column method in `wiring()`
 | `errors:` slot on a service payload (one entry per `@error` mapping) | `ErrorsField` | Passthrough; graphql-java's default `PropertyDataFetcher` reads the list the carrier's try/catch wrapper or the service-method body produced
 | `@service`, return `@table` | `ServiceTableField` | Async DataLoader fetcher + `rows*()` method

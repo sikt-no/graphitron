@@ -27,7 +27,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  *   <li><b>Value exercise</b>, {@link #everyDimensionValueIsExercised()}: every {@link ProducerStep}
  *       and {@link Mapping} value (and the inline empty producer) is produced by some fixture.</li>
  *   <li><b>TypeVerdict mirror</b>, {@link #typeVerdictMirrorsGraphitronTypeLeaves()}: the SDL
- *       {@code TypeVerdict} enum equals the non-failure {@code GraphitronType} leaf set.</li>
+ *       {@code TypeVerdict} enum equals the non-failure {@code GraphitronType} leaf set. Its
+ *       soundness rests on {@link #graphitronTypeLeafSimpleNamesAreUnique()}, since the mirror
+ *       compares by simple name.</li>
  * </ul>
  * Per-leaf corpus coverage (the fourth obligation) is slice 3's sweep, not slice 1's.
  */
@@ -90,5 +92,15 @@ class ClassifiedDslTest {
             .as("the SDL TypeVerdict enum must mirror GraphitronType's non-failure sealed leaves; "
                 + "adding a type leaf without a matching TypeVerdict constant (or vice versa) fails here")
             .containsExactlyInAnyOrderElementsOf(ClassifiedHarness.graphitronTypeNonFailureLeafNames());
+    }
+
+    @Test
+    void graphitronTypeLeafSimpleNamesAreUnique() {
+        assertThat(ClassifiedHarness.graphitronTypeNonFailureLeafSimpleNames())
+            .as("GraphitronType's sealed leaves must have unique simple names: the TypeVerdict mirror "
+                + "compares by simple name, so a future nested leaf reusing a name (e.g. a second "
+                + "`Backed`) would silently conflate two leaves and let the mirror pass while a real "
+                + "leaf goes unmirrored")
+            .doesNotHaveDuplicates();
     }
 }
