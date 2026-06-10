@@ -7,13 +7,13 @@ priority: 4
 theme: testing
 depends-on: []
 created: 2026-06-07
-last-updated: 2026-06-09
+last-updated: 2026-06-10
 ---
 
 # Classification test DSL: @classified spec-by-example
 
 Classification behaviour today is specified twice: as prose in `code-generation-triggers.adoc`
-(the variant tables) and as ~398 enum rows in `GraphitronSchemaBuilderTest` (the executable truth
+(the variant tables) and as ~405 enum rows in `GraphitronSchemaBuilderTest` (the executable truth
 table). The two drift, and neither reads as a *specification by example*: you cannot look at one
 artifact and see "this schema shape produces this verdict, and here is the rule in a sentence."
 R8 (`docs-as-index-into-tests`, discarded as superseded; its doc-as-index intent now lives here)
@@ -390,12 +390,14 @@ necessarily a standalone repro; honouring the closure rule is what keeps the exc
   readable behavioural net both ride, which *strengthens* R279's merge-gate posture (its primary tier
   becomes this corpus) and hands R164 its acceptance spec. R279 is a consumer, the field-side pivot slice is a consumer,
   R281 is the owner.
-- **Replace the enum truth table, do not run beside it.** Adding the DSL on top of the ~398 enum
+- **Replace the enum truth table, do not run beside it.** Adding the DSL on top of the ~405 enum
   rows recreates the exact duplication R8 fought; the value lands only when the fixture corpus
   *becomes* the truth table and the migrated enum rows retire. Scope note: the output-field and type
   rows migrate; input-field classification rows stay in the enum table as their own game (out of
-  scope here). That migration (plus rewiring `VariantCoverageTest`) is the bulk of the cost. Slice
-  accordingly (see Slicing below).
+  scope here). Slice accordingly (see Slicing below). (2026-06-10 recalibration: the rows eligible
+  for retirement are the ~42 pure-verdict rows, not the full table; the slot-asserting and rejection
+  rows stay by design, so the table shrinks modestly rather than emptying. See
+  [Pre-migration hardening](#pre-migration-hardening).)
 - **Coverage derived from the corpus, against the adapter not the leaf set.**
   `VariantCoverageTest.everySealedLeafHasAClassificationCase` walks the `GraphitronField` /
   `GraphitronType` roots today. The corpus-backed coverage generalises to three obligations the
@@ -498,7 +500,7 @@ single big-bang conversion:
    `code-generation-triggers.md` -> `.adoc` Javadoc-reference cleanup in `GraphitronSchemaBuilderTest`
    / `LookupMapping` that the staleness audit flagged, which rode with the old slice 0.
 3. **Coverage sweep, then enum retirement.** Documentation is curated: it covers the explainable
-   majority, not necessarily every one of the ~398 enum cases in the truth table. The coverage
+   majority, not necessarily every one of the ~405 enum cases in the truth table. The coverage
    meta-test surfaces
    the untested long tail; migrate those as corpus entries (tested, not necessarily prose-featured),
    then rewire `VariantCoverageTest`'s output-field and type coverage onto the corpus and delete the
@@ -514,6 +516,53 @@ single big-bang conversion:
    rejection rows stay in the enum table alongside the input-field residue.
    Completion here (full successful output-field and type corpus coverage) is the milestone that lets
    R279's merge gate adopt the corpus as its primary tier for the acceptance direction.
+
+<a id="pre-migration-hardening"></a>
+### Pre-migration hardening (gate before the slice-2/3 grind, added 2026-06-10)
+
+A review of slice 1 plus the first two slice-2 migrations recalibrated the migration's size and
+surfaced gaps to close before grinding the remaining verdicts. These land first, as their own
+commits; no further enum row retires until items 1 and 2 are done, and no mutation- or type-side
+*doc* example lands until item 3 is done.
+
+**Recalibration: the retirement pool is ~42 rows, not ~405.** Of the 405 enum constants in
+`GraphitronSchemaBuilderTest`, roughly 176 involve rejection outcomes (out of scope, stay), roughly
+187 assert slot detail (stay; slots are the pipeline tier's job), and only roughly 42 are pure
+`isInstanceOf` verdicts eligible for retirement (some of those are input-field rows, which also
+stay; the inventory below settles the exact list). Consequence for the endgame: the enum table does
+not shrink to a thin residue. It remains the slot/rejection/input truth table, while the corpus
+becomes the verdict truth table and the doc's source. The item's value is unchanged (the dimensional
+vocabulary, the pivot's acceptance spec, the rendered doc); the deletion count is just smaller than
+the original framing suggested.
+
+1. **Commit the retirement inventory.** Enumerate the pure-verdict candidate rows (by enum,
+   constant, and leaf) as a checklist in `roadmap/classification-test-dsl-inventory.md`. The grind
+   spans sessions; the checklist is what makes over-deletion and under-coverage reviewable instead
+   of trusted, fixes the pedagogical order up front, and bounds what may delete at all (a row not on
+   the list does not retire). Each migration commit ticks its row off.
+2. **Close the corpus-pickup gap in the retirement loop.** `VariantCoverageTest`'s union net is
+   one-way: it never fails when a deleted row's leaf is still covered by a *different* enum row, so
+   a green run is not evidence the corpus picked the verdict up; and nothing automated detects
+   deleting a slot-asserting row whose leaf happens to be corpus-covered. Mitigation, encoded in the
+   `classified-corpus` skill: the row being retired must name a leaf the new corpus example's
+   coordinate demonstrably classifies to (the harness records the leaf per coordinate), and the
+   inventory checklist is the deletion whitelist.
+3. **Extend the renderer for the mutation and type halves.** Two gaps block honest doc rendering
+   beyond the field/catalog side: (a) input types reachable from a kept field's arguments are not
+   expanded, so a rendered `createFilm(in: FilmInput!)` would reference a `FilmInput` the excerpt
+   never shows, violating the closure-honesty rule; (b) the fragment (`on Type`) selection form this
+   Spec promises for type display is unimplemented and untested (the lone type example rode a query
+   that happens to touch `Film`; `ErrorType`, `EnumType`, and the input-type family have no query
+   path to them). Until both land, mutation and type verdicts migrate corpus-only (no `query`, no
+   doc block), an explicit outcome of the per-verdict loop.
+4. **Minor sweeps (ride along with items 1-3).** Fix the stale `ClassifiedDsl` Javadoc reference
+   (`ClassifiedHarness#typeVerdictMirrorMismatch()` does not exist; the real pair is
+   `typeVerdictEnumConstants()` plus the mirror test in `ClassifiedDslTest`). Assert simple-name
+   uniqueness across `GraphitronType`'s sealed leaves: the `TypeVerdict` mirror compares simple
+   names, so a future nested leaf reusing a name like `Backed` would silently conflate. Correct the
+   page's stale transitional-table names (`PlainObjectType` is now `NestingType`; `PojoResultType`'s
+   sole concrete leaf is `Backed`). Memoizing `ClassifiedHarness.classify` per example is noted but
+   deferred until the corpus is large enough for the rebuild-per-test cost to matter.
 
 ## R281 as the pivot's driver and acceptance spec
 

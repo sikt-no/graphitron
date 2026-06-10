@@ -20,13 +20,16 @@ All under `graphitron-rewrite/`:
 - **Dimensional vocabulary**: `ClassifiedDsl.java` (the `@classified`/`@classifiedType` + `ProducerStep`/`Mapping`/`TypeVerdict` SDL prelude, declared test-only, ignored by the classifier), `DimensionTuple` / `ProducerStep` / `Mapping` / `LeafTupleAdapter`.
 - **The page**: `docs/code-generation-triggers.adoc`.
 - **Legacy truth table**: `graphitron/src/test/java/no/sikt/graphitron/rewrite/GraphitronSchemaBuilderTest.java` (the `*Case implements ClassificationCase` enums).
-- **Coverage bridge**: `graphitron/src/test/java/no/sikt/graphitron/rewrite/VariantCoverageTest.java` (unions corpus-covered leaves with enum-case leaves; the safety net for retirement).
+- **Coverage bridge**: `graphitron/src/test/java/no/sikt/graphitron/rewrite/VariantCoverageTest.java` (unions corpus-covered leaves with enum-case leaves; the safety net for retirement). Its `NO_CASE_REQUIRED` allowlist documents leaves unreachable from the standard Sakila catalog; the slice-3 sweep interacts with it, and those leaves stay allowlisted rather than swept.
+- **Retirement inventory** (the deletion whitelist): `roadmap/classification-test-dsl-inventory.md`. The committed checklist of pure-verdict candidate rows; only rows listed there may retire, and each migration commit ticks its row off.
 
 ## The loop
 
 ### 1. Find the verdict's current home
-Grep `GraphitronSchemaBuilderTest.java` for the leaf (e.g. `ServiceTableField`, `ColumnField`). For each
-matching enum case, read its assertion lambda and classify it:
+Start from the retirement inventory (`roadmap/classification-test-dsl-inventory.md`): it names the
+candidate rows and their leaves; pick the next unticked row. Then grep `GraphitronSchemaBuilderTest.java`
+for the leaf (e.g. `ServiceTableField`, `ColumnField`). For each matching enum case, read its assertion
+lambda and confirm its classification:
 - **pure-verdict** = the lambda only asserts `isInstanceOf(<Leaf>.class)` (optionally `.reason()`-free). These are retirement candidates.
 - **slot-asserting** = the lambda also asserts `joinPath()`, `returnType().wrapper()`, `filters()`, `sourceKey()`, `compaction`, key columns, etc. **Keep these** — the corpus asserts the two-axis verdict, not slots; those assertions are the pipeline tier's job.
 
@@ -35,6 +38,7 @@ Add an `Example` to `ClassifiedCorpus.EXAMPLES`. Rules:
 - Fixtures classify against the **standard Sakila catalog**. Use real tables/columns/FKs. Prefer unambiguous single FKs (e.g. `city -> country`; **avoid** `film -> language`, which has two FKs and is ambiguous). Mine working SDL from the `GraphitronSchemaBuilderTest` case you're migrating.
 - Annotate each coordinate: output fields with `@classified(producer: [...], mapping: ...)`, types with `@classifiedType(as: ...)`. Empty `producer: []` is the inline/correlate (no new query) case.
 - For a doc example, add a `query` selecting exactly the coordinates to show. **Minimal pairs teach best**: vary one dimension, hold the rest constant (e.g. the same return type with/without `@splitQuery` for `producer`; a scalar under a `@table` vs a `@record` parent for `mapping`).
+- **Doc examples are field/catalog-side only for now.** The renderer does not yet expand input types reachable from a kept field's arguments, and fragment-only (`on Type`) selection is unimplemented, so a mutation or type verdict cannot render an honest excerpt. Migrate those **corpus-only** (omit `query`, skip steps 4-5) until the R281 pre-migration-hardening renderer extensions land.
 
 ### 3. Validate the dimensions (discover the true verdict)
 ```bash
@@ -61,8 +65,13 @@ a closing "Asserted by the `<id>` corpus example." Condense the superseded leaf-
 worked example as you go (the tables are the transitional reference and shrink as the doc grows).
 
 ### 6. Retire the enum row(s)
-Delete **only** the pure-verdict cases from step 1 that the corpus now covers. Replace each with a
-one-line comment noting the migration (corpus example id + where it renders). **Never retire**:
+Delete **only** the pure-verdict cases from step 1 that are listed in the retirement inventory and that
+the corpus now covers. **Verify corpus pickup directly, not via `VariantCoverageTest`**: the union net
+is one-way (a deleted row's leaf may still be covered by a *different* enum row, so a green run proves
+nothing about pickup). The step-3 harness run records the sealed leaf per `@classified` coordinate;
+confirm your new example's coordinate lands on the exact leaf the row asserts before deleting. Replace
+each deleted case with a one-line comment noting the migration (corpus example id + where it renders),
+and tick the row off in the inventory in the same commit. **Never retire**:
 - slot-asserting cases (keep them),
 - rejection / `UnclassifiedField` / `UnclassifiedType` rows (failure path is out of scope; a separate mechanism replaces them),
 - input-field rows (`InputField.*`; a different game, out of scope).
@@ -84,6 +93,11 @@ skill (push feature branch + fast-forward trunk).
 
 ## Guardrails
 
+- **The inventory is the deletion whitelist.** A row not listed in
+  `roadmap/classification-test-dsl-inventory.md` does not retire, full stop. The pool is ~42 pure-verdict
+  rows of the 405; the slot-asserting (~187) and rejection (~176) rows stay by design.
+- **Green `VariantCoverageTest` is not proof of corpus pickup.** Its union also counts the remaining
+  enum rows; verify the leaf lands in the corpus per step 6.
 - **Success-only.** The corpus asserts the happy path. Rejection and input-field rows stay in the enum table.
 - **Verdict, not slots.** Migrate the `(producer, mapping)` / `TypeVerdict` verdict. Slot detail stays in the pipeline tier (the slot-asserting enum cases).
 - **Drift is exact.** The page must contain the rendered block byte-for-byte; re-capture after any fixture change.
