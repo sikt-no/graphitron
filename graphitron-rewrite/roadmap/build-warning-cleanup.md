@@ -1,7 +1,7 @@
 ---
 id: R293
-title: "Clean up build-time warnings in the full rewrite build"
-status: Backlog
+title: Clean up build-time warnings in the full rewrite build
+status: Spec
 bucket: cleanup
 priority: 7
 depends-on: []
@@ -11,16 +11,66 @@ last-updated: 2026-06-10
 
 # Clean up build-time warnings in the full rewrite build
 
-A full `mvn install -Plocal-db` build of the rewrite emits roughly 130 `[WARNING]` lines (plus a handful of raw JVM `WARNING:` lines). None of them fail the build, but the volume buries any new, meaningful warning; a warning-clean build would let regressions surface immediately. Inventory from a clean build on 2026-06-10, grouped by likely fix:
+## Motivation
 
-**Generated code is not warning-clean (~45 lines, graphitron-sakila-example).** The generator emits Java that javac flags: ~30 `unchecked cast` warnings (concentrated in `MutationFetchers`, `QueryFetchers`, and the `*PayloadType` classes), ~10 `found raw type: java.util.List` in generated `inputs/*Input.java` filter classes, and one `redundant cast to org.jooq.Field<Integer>` in `DeletedFilmsIdPayloadType`. Fix belongs in the generator: emit properly parameterised types, or emit targeted `@SuppressWarnings` where the cast is inherently unchecked.
+A full `mvn install -Plocal-db` build of the rewrite emits roughly 130 `[WARNING]` lines (plus a handful of raw JVM `WARNING:` lines). None of them fail the build, but the volume buries any new, meaningful warning; a warning-clean build lets regressions surface immediately. This item covers every category except the generator's own `BuildWarning` channel, which is R294 (fixture-warnings-as-errors). Inventory from a clean build on 2026-06-10, with the fix per category below.
 
-**Duplicate `junit-platform.properties` (36 lines, the single largest source).** Every surefire launch in graphitron-sakila-example warns that both `graphitron-10-SNAPSHOT-tests.jar` and `quarkus-junit-3.34.5.jar` bundle a `junit-platform.properties`; only the first is used. Decide which configuration should win and stop shipping (or stop seeing) the other, for example by excluding the file from the test-jar or relocating the shared config.
+The endgame is a guard, not just a one-time sweep: the parent pom (graphitron-rewrite/pom.xml:216) already sets `-Xlint:all` globally, and graphitron-sakila-example/pom.xml:243-257 carries a ratchet comment that deliberately omits `-Werror` because "existing generated code has raw-type warnings that are a separate concern". This item is that separate concern; once each module is clean, `-Werror` flips on and the comment comes out.
 
-**Handwritten source warnings (~20 lines).** `graphitron`: raw `graphql.language.Value` in `CatalogBuilder.java:798`, dangling javadoc in `BuildContext.java:1166`, plus raw-type/unchecked/deprecated-`getType` warnings in the test-side `classifieddsl` harness. `graphitron-sakila-service`: four exceptions missing `serialVersionUID`, a raw `org.jooq.Row2` in `FilmActorCarrierService`, a dangling javadoc in `FilmService`. `graphitron-sakila-example`: two dangling javadoc comments in `FederationBuildSmokeTest`. `graphitron-javapoet`: deprecated `Charsets.UTF_8` in `TypesEclipseTest`. All are straightforward local fixes.
+## Design
 
-**Build infrastructure (~15 lines).** The maven-plugin's javadoc processing warns 8 times about an unresolvable `{@link String#endsWith}` in `AbstractRewriteMojo`. jOOQ codegen on sakila warns 3 times about ambiguous inbound key method names (`store`/`staff` mutual FKs, `category` self-reference) and once about the PostgreSQL version being older than the dialect expects. `graphitron-lsp` triggers `java.lang.foreign.SymbolLookup::libraryLookup is a restricted method` at compile time and a JVM native-access warning at test time; the test-time warning wants `--enable-native-access=ALL-UNNAMED` in the surefire argLine, the compile-time one a deliberate suppression. (JVM `sun.misc.Unsafe` warnings from Maven's own Guice are environmental noise we cannot fix in this repo.)
+### Generated code compiles warning-free (~45 lines, the design-relevant part)
 
-**Intentional fixture warnings: split out to R294 (fixture-warnings-as-errors).** The sakila-example fixture schema emits 13 generator warnings per generator run (redundant `@record`/`@splitQuery`, `asConnectionSameTableHygiene`). R294 establishes the policy that fixture builds treat generator warnings as errors unless a test asserts the warning, and audits the current set. Not in scope here.
+The generator emits Java that javac flags: ~30 `unchecked cast` warnings (concentrated in generated `MutationFetchers`, `QueryFetchers`, the `*PayloadType` classes, and `QueryConditions`), ~10 `found raw type: java.util.List` in generated `inputs/*Input.java`, and one `redundant cast to org.jooq.Field<Integer>` in `DeletedFilmsIdPayloadType`.
 
-The goal state is a build whose warning output is empty or near-empty, so CI/local logs make new warnings visible. Consider finishing with a guard (for example `-Werror` on selected modules, or a log-scan check) once the count reaches zero, so the cleanup does not erode.
+Two-step preference order, per "Classifier guarantees shape emitter assumptions":
+
+1. **Emit correctly-typed code where the type is expressible.** The raw `List` cast emitted at `InputRecordGenerator.java:245` (`$T $L = ($T) in.get($S)` with raw `LIST`) becomes `(List<?>)`; the wildcard is honest there because the element type genuinely arrives erased off the graphql-java argument map, a wire boundary the principles accept. The redundant `Field<Integer>` cast is dropped at its payload-type emission site.
+2. **Where the cast is inherently unchecked** (e.g. `(List<Map<?, ?>>) env.getArgument("in")` in the fetcher emitters, `(List<Integer>) map.get(...)` in `QueryConditionsGenerator`), stamp `@SuppressWarnings("unchecked")` on the narrowest enclosing emitted member, exactly as `InputRecordGenerator.java:222-224` already does for `fromMap`. **Narrowest-scope suppression is an invariant, not an example:** method-level or tighter, never class-level. A class-level annotation would silence the next emitter regression invisibly and defeat the `-Werror` guard this item ends with.
+
+Verification is the `-Werror` compile itself (see Guard below); no golden-file or code-string assertion on the emitted spelling, which the testing principles ban.
+
+### Duplicate `junit-platform.properties` (36 lines, the largest single source)
+
+Every surefire launch in sakila-example warns that both `graphitron-10-SNAPSHOT-tests.jar` and `io.quarkus:quarkus-junit:3.34.5` bundle a `junit-platform.properties`; only the first is used. graphitron's copy (`graphitron/src/test/resources/junit-platform.properties`) contains a single line, `junit.jupiter.extensions.autodetection.enabled=true`, which configures graphitron's own test runs, not its consumers'.
+
+Fix: exclude `junit-platform.properties` from the test-jar packaging (the `test-jar` execution at graphitron/pom.xml:93-103). sakila-example is the only reactor consumer of the test-jar (graphitron-sakila-example/pom.xml:72-79); before landing, confirm whether any of its tests rely on transitively-inherited extension autodetection, and if so declare the property in sakila-example's own test resources. Quarkus-junit's copy then stands alone and the warning disappears.
+
+### Handwritten-source warnings (~20 lines, mechanical)
+
+- `graphitron`: raw `graphql.language.Value` (`CatalogBuilder.java:798`), dangling javadoc (`BuildContext.java:1166`); test-side `classifieddsl` harness: raw types and unchecked invocation (`ClassifiedHarness.java:74,85`), deprecated `TypeDefinitionRegistry.getType(String)` (`ClassifiedHarness.java:146`, `QueryViewRenderer.java:78`); migrate to the non-deprecated lookup.
+- `graphitron-sakila-service`: `serialVersionUID` on the four exception classes (`FilmReviewBadRatingException`, `FilmReviewMissingFilmException`, `FilmLookupNotFoundException`, `FilmLookupInvalidIdException`), raw `org.jooq.Row2` (`FilmActorCarrierService.java:51`), dangling javadoc (`FilmService.java:94`).
+- `graphitron-sakila-example`: dangling javadoc (`FederationBuildSmokeTest.java:94,159`).
+- `graphitron-javapoet`: deprecated `Charsets.UTF_8` to `StandardCharsets.UTF_8` (`TypesEclipseTest.java:136`).
+
+### Build infrastructure (~15 lines)
+
+- **Javadoc link (8 warnings):** `{@link String#endsWith}` at `AbstractRewriteMojo.java:47` lacks the parameter signature; `{@link String#endsWith(String)}` resolves. Sweep the mojo for other parameterless method links.
+- **jOOQ ambiguous key names (3 warnings):** sakila's `store`/`staff` mutual FKs and the `category` self-FK generate colliding inbound-key method names. Follow the warning's own advice; implementer decides between a custom generator strategy that disambiguates the names and disabling the inbound-key feature, after checking whether any generated catalog consumer uses those methods. Config lives in `graphitron-sakila-db/pom.xml`.
+- **graphitron-lsp FFM restricted-method warnings (3 compile + 1 JVM):** runtime access is already declared (`--enable-native-access=ALL-UNNAMED` argLine, graphitron-lsp/pom.xml:75-90). Add `@SuppressWarnings("restricted")` at the three call sites (`BundledLibraryLookup.java:66,86`, `GraphqlLanguage.java:121`) with a comment pointing at the argLine declaration. Verify every JVM that loads the lsp jar declares native access so the runtime warning also disappears.
+- **Environment-only, declared out of scope:** the jOOQ "database version is older than the dialect supports" warning only fires in the web sandbox (native PostgreSQL 16; CI runs `postgres:18` per .github/workflows/rewrite-build.yml:27), and the `sun.misc.Unsafe` JVM warnings come from Maven's own bundled Guice, not this repo.
+
+### Guard: per-module `-Werror`
+
+Once a module is warning-clean, set maven-compiler-plugin `failOnWarning` for it. The decisive one is **graphitron-sakila-example**: with `-Werror` on the release-17 compile of generated sources, a generator change that emits warning-producing code fails the cross-module compile that the principles already designate as the backstop ("Compilation against real jOOQ is a test tier"). Remove the `-Werror is deliberately omitted` paragraph from the ratchet comment at graphitron-sakila-example/pom.xml:243-257 when flipping it on.
+
+`-Xlint:all` + `-Werror` may force noise-suppressions in categories like `serial` or `processing`. The lint set under `-Werror` is an explicit per-category decision: enumerate which categories are enforced, and record the rationale for each excluded category in a pom comment (the existing ratchet comment is the model). No silent curation.
+
+## Verification
+
+- Full `mvn -f graphitron-rewrite/pom.xml install -Plocal-db` log contains no `[WARNING]` lines from javac, surefire properties discovery, javadoc descriptor generation, or jOOQ codegen key resolution (the environment-only PG-version line excepted in the sandbox).
+- `-Werror` active on every cleaned module, including sakila-example's generated-source compile; the build proves generated code stays warning-free thereafter.
+- Existing test tiers stay green; the junit-platform change is verified by sakila-example's surefire run still autodetecting (or explicitly declaring) the extensions it needs.
+
+## Phasing
+
+1. **Mechanical sweep:** handwritten-source fixes, javadoc link, FFM suppressions, test-jar exclusion (with the consumer check).
+2. **Emitter fixes:** parameterize the raw `List` emission, drop the redundant cast, add narrowest-scope suppressions at the inherently-unchecked emission sites.
+3. **jOOQ codegen decision** for the ambiguous key names.
+4. **Guard:** flip `failOnWarning` per module with the curated, documented lint set; update the sakila-example ratchet comment.
+
+## Out of scope
+
+- **Generator `BuildWarning` channel and fixture warnings:** R294 (fixture-warnings-as-errors) establishes warnings-as-errors for fixture schemas; R296 (deprecated-usage-warnings) extends it to deprecated functionality.
+- **Environment-only warnings:** the sandbox PG-version mismatch and Maven's own Guice/Unsafe JVM warnings; not fixable in this repo.
+- **jOOQ/PostgreSQL version bumps:** version alignment is its own decision, not warning hygiene.
