@@ -17,8 +17,8 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R19` | Rebase and squash rewrite branch onto main | Ready |  | [plan](history-squash.md) |
 | `R284` | Reversed source/target alias order in bridging-hop @reference ConditionJoin emission | In Review | 2026-06-08 | [plan](bridging-hop-conditionjoin-alias-order.md) |
 | `R222` | Dimensional model pivot: slots over cross-product permits | Spec | 2026-06-05 <sub>created 2026-05-21</sub> | [plan](dimensional-model-pivot.md) |
-| `R295` | Synthesised connection/edge types must inherit the federation tags of the @asConnection carrier field | Spec | 2026-06-10 | [plan](connection-synthesis-inherits-federation-tags.md) |
 | `R256` | Absorb the service walker substrate: typed per-arm errors + multi-arg ctors | Ready | 2026-05-30 <sub>created 2026-05-29</sub> | [plan](service-walker-substrate-absorption.md) |
+| `R295` | Synthesised connection/edge types must inherit the federation tags of the @asConnection carrier field | Ready | 2026-06-10 | [plan](connection-synthesis-inherits-federation-tags.md) |
 | `R279` | Field-first reachability-driven classification driver <sub>blocked by: [dimensional-model-pivot](dimensional-model-pivot.md)</sub> | Ready | 2026-06-07 <sub>created 2026-06-05</sub> | [plan](field-first-classification-driver.md) |
 | `R281` | Classification test DSL: @classified spec-by-example | In Progress | 2026-06-10 <sub>created 2026-06-07</sub> | [plan](classification-test-dsl.md) |
 | `R292` | Descriptions on generated Connection/Edge boilerplate types | Spec | 2026-06-10 | [plan](descriptions-on-generated-relay-types.md) |
@@ -187,7 +187,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### pagination
 
-- `R295` [**Synthesised connection/edge types must inherit the federation tags of the @asConnection carrier field**](connection-synthesis-inherits-federation-tags.md) — Spec, bug
+- `R295` [**Synthesised connection/edge types must inherit the federation tags of the @asConnection carrier field**](connection-synthesis-inherits-federation-tags.md) — Ready, bug
 - `R13` [**Faceted search on `@asConnection`**](faceted-search.md) — Spec
 - `R10` [**Drop the assembled-schema rebuild in favour of per-variant graphql-java forms**](drop-assembled-schema-rebuild.md) — Backlog, cleanup
 - `R208` [**Retire the @asConnection(connectionName:) deprecated argument**](retire-connection-name-override.md) — Backlog, cleanup

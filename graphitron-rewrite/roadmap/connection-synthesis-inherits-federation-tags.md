@@ -1,7 +1,7 @@
 ---
 id: R295
 title: Synthesised connection/edge types must inherit the federation tags of the @asConnection carrier field
-status: Spec
+status: Ready
 bucket: bug
 priority: 3
 theme: pagination
@@ -28,9 +28,11 @@ Legacy note: legacy `MakeConnections` stamped the carrier's source location onto
 * Structural Connection/Edge types themselves stay untouched; the author owns the tags there.
 * Carriers sharing one connection name through `@asConnection(connectionName:)` (possible until R208 retires the override): the synthesised type carries the union of the carriers' tags. This is pinned, not open: a missing tag is a composition break, and the union is cheap. At the dedupe site the existing registry entry is already in hand and `ctx.typeRegistry.enrich` exists, so the union is a transform of `existing.schemaType()` adding the missing `@tag` applications (plus the matching Edge); no pre-pass needed.
 
-## Open question for review
+## Resolved: type-level tags now, field-level is a contingent follow-up
 
-Type-level `@tag` on the synthesised types is the minimal shape that satisfies contract composition, and matches how the bug is framed. The legacy flow effectively tagged the synthesised types' fields instead; note that `TagApplier`'s emission scope (see its class javadoc: type declarations are never tagged, only fields, input fields, enum values, args, and unions) means that under `<schemaInput tag>` the synthesised types would carry the only type-level tags in the graph, while field-level is what legacy contracts were validated against. Decide whether type-level tags alone are sufficient for the contract configurations our subgraphs use (verify against a real contract build, per the first-client check), or whether the synthesised types' fields (`edges`, `nodes`, `pageInfo`, `totalCount`, `cursor`, `node`) need the tags too.
+Decision (Spec → Ready review): the implementation tags the synthesised types at the **type level** only. That is the minimal shape that satisfies contract composition and matches how the bug is framed; the Expected behaviour, Implementation, Tests, and Docs sections all commit to it.
+
+The field-level branch is deferred, not built. `TagApplier`'s emission scope (see its class javadoc: type declarations are never tagged, only fields, input fields, enum values, args, and unions) means that under `<schemaInput tag>` the synthesised types would carry the only type-level tags in the graph, while field-level is what legacy contracts were validated against. Whether type-level tags alone suffice for the contract configurations our subgraphs use cannot be decided at spec time; it needs a real contract build (the first-client check). The verification step belongs in In Review: build a real contract that includes the carrier's tag and confirm composition succeeds against the type-level tags. If, and only if, that build shows type-level tags are insufficient, file a follow-up (or extend in-scope if discovered during implementation) to tag the synthesised types' fields (`edges`, `nodes`, `pageInfo`, `totalCount`, `cursor`, `node`) as well. The implementer does not need to resolve this before starting.
 
 ## Implementation
 
