@@ -110,6 +110,9 @@ public final class GraphqlLanguage {
      * case (a libtree-sitter installed somewhere we don't probe and not on
      * the JVM's default loader path).
      */
+    // SymbolLookup.libraryLookup is a restricted FFM method; native access declared via
+    // --enable-native-access=ALL-UNNAMED (graphitron-lsp/pom.xml surefire argLine).
+    @SuppressWarnings("restricted")
     static RuntimeStatus classifyInstalledRuntime() {
         RuntimeStatus best = RuntimeStatus.MISSING;
         try (Arena arena = Arena.ofConfined()) {

@@ -6,6 +6,8 @@ package no.sikt.graphitron.rewrite.test.services;
  * (mirroring the query-side {@code FilmLookupError} fixture).
  */
 public class FilmReviewMissingFilmException extends RuntimeException {
+    private static final long serialVersionUID = 1L;
+
     public FilmReviewMissingFilmException(String message) {
         super(message);
     }

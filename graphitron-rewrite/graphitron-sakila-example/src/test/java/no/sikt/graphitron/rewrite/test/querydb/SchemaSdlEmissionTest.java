@@ -15,6 +15,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 
+import static java.util.Objects.requireNonNull;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
@@ -104,9 +105,9 @@ class SchemaSdlEmissionTest {
                 Files.readString(sdlFor(outputPackage), StandardCharsets.UTF_8));
 
             DirectiveSupportTypes.strictlyInternal().forEach(name ->
-                assertThat(registry.getType(name))
+                assertThat(registry.getTypeOrNull(name))
                     .as("strictly internal type %s must not reach %s", name, outputPackage)
-                    .isEmpty());
+                    .isNull());
 
             registry.getDirectiveDefinitions().keySet().forEach(name ->
                 assertThat(SchemaDirectiveRegistry.isSurvivor(name))
@@ -151,7 +152,7 @@ class SchemaSdlEmissionTest {
         var registry = new SchemaParser().parse(
             Files.readString(sdlFor("no.sikt.graphitron.generated"), StandardCharsets.UTF_8));
 
-        var connection = (ObjectTypeDefinition) registry.getType("QueryStoresConnection").orElseThrow();
+        var connection = requireNonNull(registry.getTypeOrNull("QueryStoresConnection", ObjectTypeDefinition.class));
         assertThat(descriptionOf(connection)).isEqualTo("A connection to a list of items.");
         assertThat(fieldDescription(connection, "edges")).isEqualTo("A list of edges.");
         assertThat(fieldDescription(connection, "nodes")).isEqualTo("A list of nodes.");
@@ -159,7 +160,7 @@ class SchemaSdlEmissionTest {
         assertThat(fieldDescription(connection, "totalCount"))
             .isEqualTo("Identifies the total count of items in the connection.");
 
-        var edge = (ObjectTypeDefinition) registry.getType("QueryStoresEdge").orElseThrow();
+        var edge = requireNonNull(registry.getTypeOrNull("QueryStoresEdge", ObjectTypeDefinition.class));
         assertThat(descriptionOf(edge)).isEqualTo("An edge in a connection.");
         assertThat(fieldDescription(edge, "cursor")).isEqualTo("A cursor for use in pagination.");
         assertThat(fieldDescription(edge, "node")).isEqualTo("The item at the end of the edge.");
@@ -186,7 +187,7 @@ class SchemaSdlEmissionTest {
     void publishedSupportTypeRetainedOnlyWhereReferenced() throws IOException {
         var shared = new SchemaParser().parse(
             Files.readString(sdlFor("no.sikt.graphitron.generated"), StandardCharsets.UTF_8));
-        var sortDirection = (EnumTypeDefinition) shared.getType("SortDirection").orElseThrow();
+        var sortDirection = requireNonNull(shared.getTypeOrNull("SortDirection", EnumTypeDefinition.class));
         assertThat(sortDirection.getDescription())
             .as("retained SortDirection carries its description")
             .isNotNull();
@@ -201,9 +202,9 @@ class SchemaSdlEmissionTest {
             var registry = new SchemaParser().parse(
                 Files.readString(sdlFor(unreferencing), StandardCharsets.UTF_8));
             DirectiveSupportTypes.all().forEach(name ->
-                assertThat(registry.getType(name))
+                assertThat(registry.getTypeOrNull(name))
                     .as("unreferenced support type %s must not reach %s", name, unreferencing)
-                    .isEmpty());
+                    .isNull());
         }
     }
 }

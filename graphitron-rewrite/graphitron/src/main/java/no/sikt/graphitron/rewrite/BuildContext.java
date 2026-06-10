@@ -1037,8 +1037,7 @@ class BuildContext {
      * </ul>
      * Callers switch over this result and route each failure shape through the matching diagnostic
      * builder ({@link #unknownTableRejection} / {@link #unknownForeignKeyRejection}).
-     */
-    /**
+     *
      * @param selfRefFkOnSource for self-referential FKs (where {@code f.getTable()} equals
      *     {@code f.getKey().getTable()}), the table-name comparison is ambiguous. The caller
      *     supplies this hint: {@code true} when the parent holds the FK (single-cardinality

@@ -98,6 +98,19 @@
                         <goals>
                             <goal>test-jar</goal>
                         </goals>
+                        <configuration>
+                            <!-- junit-platform.properties configures this module's own test runs
+                                 (autodetection of ClassificationTraceContextExtension). It must not
+                                 ride along in the test-jar: consumers (graphitron-sakila-example)
+                                 that only want the tier-annotation vocabulary would otherwise get a
+                                 second junit-platform.properties on their classpath, producing the
+                                 "Discovered 2 'junit-platform.properties'" launcher warning on every
+                                 surefire run. The extension itself is graphitron-internal and no
+                                 consumer relies on it being auto-registered. -->
+                            <excludes>
+                                <exclude>junit-platform.properties</exclude>
+                            </excludes>
+                        </configuration>
                     </execution>
                 </executions>
             </plugin>

@@ -9,6 +9,7 @@ import graphql.language.EnumValueDefinition;
 import graphql.language.FieldDefinition;
 import graphql.language.InterfaceTypeDefinition;
 import graphql.language.ObjectTypeDefinition;
+import graphql.language.TypeDefinition;
 import graphql.language.Value;
 import graphql.schema.idl.SchemaParser;
 import graphql.schema.idl.TypeDefinitionRegistry;
@@ -71,7 +72,7 @@ public final class ClassifiedHarness {
         var fields = new ArrayList<FieldCase>();
         var types = new ArrayList<TypeCase>();
 
-        for (var def : registry.types().values()) {
+        for (TypeDefinition<?> def : registry.types().values()) {
             List<FieldDefinition> fieldDefs = switch (def) {
                 case ObjectTypeDefinition o -> o.getFieldDefinitions();
                 case InterfaceTypeDefinition i -> i.getFieldDefinitions();
@@ -151,8 +152,10 @@ public final class ClassifiedHarness {
     /** The {@code TypeVerdict} enum constants as declared in {@link ClassifiedDsl#PRELUDE}. */
     public static Set<String> typeVerdictEnumConstants() {
         TypeDefinitionRegistry registry = new SchemaParser().parse(ClassifiedDsl.PRELUDE);
-        EnumTypeDefinition verdict = (EnumTypeDefinition) registry.getType("TypeVerdict")
-            .orElseThrow(() -> new AssertionError("TypeVerdict enum missing from the DSL prelude"));
+        EnumTypeDefinition verdict = registry.getTypeOrNull("TypeVerdict", EnumTypeDefinition.class);
+        if (verdict == null) {
+            throw new AssertionError("TypeVerdict enum missing from the DSL prelude");
+        }
         var names = new LinkedHashSet<String>();
         for (EnumValueDefinition v : verdict.getEnumValueDefinitions()) {
             names.add(v.getName());
