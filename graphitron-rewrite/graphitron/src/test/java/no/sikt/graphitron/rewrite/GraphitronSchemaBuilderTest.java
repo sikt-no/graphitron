@@ -846,16 +846,12 @@ class GraphitronSchemaBuilderTest {
                 assertThat(rejected.kind()).isEqualTo(RejectionKind.INVALID_SCHEMA);
             }),
 
-        SPLIT_QUERY(
-            "@splitQuery (no @lookupKey) on @table parent → SplitTableField",
-            """
-            type Customer @table(name: "customer") { firstName: String }
-            type Store @table(name: "store") { customers: [Customer!]! @splitQuery }
-            type Query { store: Store }
-            """,
-            schema -> assertThat(schema.field("Store", "customers")).isInstanceOf(SplitTableField.class)) {
-            @Override public Set<Class<?>> variants() { return Set.of(SplitTableField.class); }
-        },
+        // R281 slice 2: the plain `@splitQuery -> SplitTableField` verdict (a pure isInstanceOf
+        // assertion, no slot detail) migrated to the spec-by-example corpus, where it is the
+        // producer minimal pair against the inline TableField (the `child-table` ClassifiedCorpus
+        // example, City.countrySplit, asserted via @classified(producer: [Query], mapping: Table) and
+        // rendered into the Field Classification section of code-generation-triggers.adoc). The
+        // SplitTableField leaf stays covered by the corpus and by the slot-asserting split cases below.
 
         SPLIT_LOOKUP_TABLE_FIELD(
             "@splitQuery + @lookupKey on @table parent → SplitLookupTableField",

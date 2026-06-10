@@ -50,6 +50,28 @@ public final class ClassifiedCorpus {
             """,
             "{ film { title } }"),
 
+        /*
+         * Child table fields: the producer minimal pair. Both fields return the same @table type over
+         * the same city -> country FK and hold mapping = Table; they differ only on producer.
+         * `country` inlines (producer []), a correlated subquery folded into city's SELECT; `@splitQuery`
+         * flips `countrySplit` to a new keyed query (producer [Query]).
+         */
+        new Example("child-table", """
+            type Country @table(name: "country") @classifiedType(as: TableType) {
+              name: String @field(name: "country") @classified(producer: [], mapping: Column)
+            }
+
+            type City @table(name: "city") @classifiedType(as: TableType) {
+              country: Country @classified(producer: [], mapping: Table)
+              countrySplit: Country @splitQuery @classified(producer: [Query], mapping: Table)
+            }
+
+            type Query {
+              city: City @classified(producer: [Query], mapping: Table)
+            }
+            """,
+            "{ city { country { name } countrySplit { name } } }"),
+
         /* Service side: a terminal record, a service re-query into a @table, and a pojo field. */
         new Example("service", """
             type Language @table(name: "language") { name: String }
