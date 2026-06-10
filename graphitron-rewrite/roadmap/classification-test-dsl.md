@@ -554,7 +554,16 @@ the original framing suggested.
    Spec promises for type display is unimplemented and untested (the lone type example rode a query
    that happens to touch `Film`; `ErrorType`, `EnumType`, and the input-type family have no query
    path to them). Until both land, mutation and type verdicts migrate corpus-only (no `query`, no
-   doc block), an explicit outcome of the per-verdict loop.
+   doc block), an explicit outcome of the per-verdict loop. **(Landed 2026-06-10.)** The renderer's
+   `QueryTraverser` walk was replaced with a schema-resolving selection walk that handles all three
+   selection forms (fields, inline fragments, named-fragment spreads) and bare top-level
+   `fragment on Type` documents, and grew two closure expansions: the input-object closure from a kept
+   field's argument types (recursing nested input objects) and abstract-output-type emission for
+   unions / interfaces. `QueryViewRendererTest` pins both over the real corpus-only fixtures (`dml`,
+   `mutation-roots`, `union`, `relay-node`, `error-type`, `split-lookup`), with the field/catalog-side
+   output preserved byte-for-byte (the slice-1 `ClassifiedDocTest` page blocks are unchanged). Scalars
+   and enums stay unexpanded by design. Graduating specific corpus-only verdicts to rendered doc
+   examples is now unblocked but remains a separate, deliberately sparing pedagogical call.
 4. **Minor sweeps (ride along with items 1-3).** Fix the stale `ClassifiedDsl` Javadoc reference
    (`ClassifiedHarness#typeVerdictMirrorMismatch()` does not exist; the real pair is
    `typeVerdictEnumConstants()` plus the mirror test in `ClassifiedDslTest`). Assert simple-name
