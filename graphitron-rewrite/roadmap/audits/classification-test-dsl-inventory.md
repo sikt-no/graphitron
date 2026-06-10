@@ -58,7 +58,7 @@ coordinate.
 
 ## Field-side checklist (doc example allowed now)
 
-- [ ] `ColumnFieldCase.ENUM_RETURN_TYPE` (L131) -> `ChildField.ColumnField` | enum-typed scalar on a `@table` parent is still a column. *Nuance: edge of the Column verdict (return type is a GraphQL enum), not the bare Column case.*
+- [x] `ColumnFieldCase.ENUM_RETURN_TYPE` (L131) -> `ChildField.ColumnField` | enum-typed scalar on a `@table` parent is still a column. *Nuance: edge of the Column verdict (return type is a GraphQL enum), not the bare Column case.* | migrated: `enum-column` corpus example (Film.rating: Rating), corpus-only, pins the enum-return edge on the inline/Column coordinate
 - [x] `TableFieldCase.SPLIT_LOOKUP_TABLE_FIELD` (L856) -> `ChildField.SplitLookupTableField` | `@splitQuery` + `@lookupKey` list child on a `@table` parent | migrated: `split-lookup` corpus example (Store.customers), corpus-only on the already-taught [Query]/Table coordinate
 - [x] `NestingFieldCase.PLAIN_OBJECT_TYPE` (L1561) -> `ChildField.NestingField` | field returning a plain (no-`@table`/`@record`) object on a `@table` parent | migrated to the `nesting` corpus example (`Film.details`), corpus-only (inline-Table already taught by the producer minimal pair)
 - [x] `NestingFieldCase.LIST_OF_PLAIN_OBJECT_TYPE` (L1570) -> `ChildField.NestingField` | list-wrapped plain object on a `@table` parent | same `NestingField` leaf, retired alongside `PLAIN_OBJECT_TYPE` via the `nesting` corpus example

@@ -51,6 +51,21 @@ public final class ClassifiedCorpus {
             "{ film { title } }"),
 
         /*
+         * Enum-typed scalar: a field whose GraphQL return type is an enum still resolves to a real DB
+         * column on the @table parent, so it classifies exactly like any other inline scalar (producer
+         * [], mapping Column, ColumnField). The enum-ness lives in the GraphQL-to-Java mapping, not the
+         * classification. Corpus-only: it lands on the already-taught inline / Column coordinate; this
+         * pins the "enum returns are columns" edge that the retired ENUM_RETURN_TYPE enum row asserted.
+         */
+        new Example("enum-column", """
+            enum Rating { G PG PG13 R NC17 }
+            type Film @table(name: "film") {
+              rating: Rating @classified(producer: [], mapping: Column)
+            }
+            type Query { film: Film }
+            """),
+
+        /*
          * Child table fields: the producer minimal pair. Both fields return the same @table type over
          * the same city -> country FK and hold mapping = Table; they differ only on producer.
          * `country` inlines (producer []), a correlated subquery folded into city's SELECT; `@splitQuery`
