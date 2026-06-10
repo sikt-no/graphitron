@@ -190,7 +190,47 @@ enters the scope; `Film.title` projects an inline column. Asserted by the `catal
 
 == Field Classification
 
-Fields are classified separately for root types (Query/Mutation) and nested types.
+A field's classification factors into two asserted dimensions. The worked example below renders this
+dimensional form from the corpus; the leaf-name tables that follow are the transitional reference until
+the field taxonomy is fully migrated.
+
+* *`producer`*, how the value is produced: a pipeline of up to two steps over `{ Query, Service, Dml }`,
+  or empty (`[]`) meaning the field inlines into the existing query and correlates rather than starting
+  a new one.
+* *`mapping`*, what domain object the value is: `Table` / `TableConnection` / `Column` for the catalog,
+  or `Record` / `Field` for a service return.
+
+Everything finer (the source context, the fetcher/loader mechanism, dispatch batching, the error
+channel) is derived from those two dimensions plus the field's schema position, not asserted separately.
+
+=== `producer`: inline vs. new query
+
+The defining `producer` question is whether a field starts a new SQL query or inlines into the existing
+one. A `@table` child reachable by a foreign key from a `@table` parent inlines by default (producer
+`[]`), a correlated subquery folded into the parent's SELECT. Adding `@splitQuery` flips it to a new
+keyed query (producer `[Query]`) dispatched through a DataLoader: the minimal change that moves a field
+across the `producer` boundary while holding `mapping = Table` constant.
+
+[source,graphql]
+----
+type Query {
+  city: City
+}
+
+type City @table(name: "city") {
+  country: Country
+  countrySplit: Country @splitQuery
+}
+
+type Country @table(name: "country") {
+  name: String @field(name: "country")
+}
+----
+
+`City.country` classifies with producer `[]` (an inline correlated subquery); `City.countrySplit`, the
+same `Country` return over the same `city -> country` foreign key, classifies with producer `[Query]`
+because `@splitQuery` opens a new keyed query. Both hold `mapping = Table`. Asserted by the
+`child-table` corpus example.
 
 === Query Fields
 
