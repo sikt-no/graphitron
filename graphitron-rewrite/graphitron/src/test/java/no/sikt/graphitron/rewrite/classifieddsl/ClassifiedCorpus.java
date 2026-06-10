@@ -196,6 +196,23 @@ public final class ClassifiedCorpus {
             """),
 
         /*
+         * Root @service into a @record: a root query field whose @service resolver returns a non-table
+         * @record type (QueryServiceRecordField). The service call produces the record, which is then
+         * materialized rather than projected from the catalog, so it is producer [Service], mapping
+         * Record, the root analog of the ServiceRecordField child field above (Film.rating). Corpus-only:
+         * it lands on the already-taught Service / Record coordinate. The @record directive on the return
+         * type is load-bearing; without it the root @service payload-carrier validation rejects the field.
+         */
+        new Example("query-service-record", """
+            type FilmDetails @record { title: String }
+            type Query {
+              filmDetails: FilmDetails
+                @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getDetails"})
+                @classified(producer: [Service], mapping: Record)
+            }
+            """),
+
+        /*
          * Fields on an @error parent. The @error contract restricts the field set to exactly
          * `path: [String!]!` and `message: String!`; both resolve off the developer-supplied error
          * class via graphql-java's default PropertyDataFetcher, so both classify as PropertyField

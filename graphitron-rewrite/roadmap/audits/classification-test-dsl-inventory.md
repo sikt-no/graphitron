@@ -78,7 +78,7 @@ coordinate.
 - [x] `RootFieldCase.TABLE_INTERFACE_QUERY_FIELD` (L6547) -> `QueryField.QueryTableInterfaceField` | root field returning a table-interface type | migrated to the `table-interface` corpus example (`Query.topMedia`, producer [Query], mapping Table); corpus-only
 - [x] `RootFieldCase.INTERFACE_QUERY_FIELD` (L6558) -> `QueryField.QueryInterfaceField` | root field returning a plain interface | migrated to the `interface` corpus example (`Query.anyNamed`, producer [Query], mapping Table)
 - [x] `RootFieldCase.UNION_QUERY_FIELD` (L6569) -> `QueryField.QueryUnionField` | root field returning a union | migrated to the `union` corpus example (`Query.search`, producer [Query], mapping Table); corpus-only
-- [ ] `RootFieldCase.QUERY_SERVICE_RECORD_FIELD` (L6598) -> `QueryField.QueryServiceRecordField` | `@service` root field, non-table return
+- [x] `RootFieldCase.QUERY_SERVICE_RECORD_FIELD` (L6598) -> `QueryField.QueryServiceRecordField` | `@service` root field, non-table return | migrated: `query-service-record` corpus example (Query.filmDetails into a `@record` type), corpus-only on the Service/Record coordinate (root analog of the SERVICE_RECORD child verdict)
 
 ## Type-side and mutation-side checklist (corpus-only until renderer item 3)
 

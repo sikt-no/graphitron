@@ -6439,17 +6439,13 @@ class GraphitronSchemaBuilderTest {
             @Override public Set<Class<?>> variants() { return Set.of(QueryField.QueryServiceTableField.class); }
         },
 
-        QUERY_SERVICE_RECORD_FIELD(
-            "@service on root query field, non-table return type → QueryServiceRecordField",
-            """
-            type FilmDetails @record { title: String }
-            type Query {
-                filmDetails: FilmDetails @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getDetails"})
-            }
-            """,
-            schema -> assertThat(schema.field("Query", "filmDetails")).isInstanceOf(QueryField.QueryServiceRecordField.class)) {
-            @Override public Set<Class<?>> variants() { return Set.of(QueryField.QueryServiceRecordField.class); }
-        },
+        // R281 slice 2: the pure `root @service into a non-table @record -> QueryServiceRecordField`
+        // verdict (a bare isInstanceOf assertion, no slot detail) migrated to the spec-by-example
+        // corpus as the `query-service-record` ClassifiedCorpus example (Query.filmDetails, asserted
+        // via @classified(producer: [Service], mapping: Record)). Corpus-only: it lands on the
+        // already-taught Service / Record coordinate, the root analog of the SERVICE_RECORD child
+        // verdict (Film.rating in the `service` example). The QueryServiceRecordField leaf stays
+        // covered by the corpus and by the @ProjectionFor projection test below.
 
         INSERT_MUTATION_FIELD(
             "@mutation(typeName: INSERT) → MutationInsertTableField",
