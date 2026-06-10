@@ -14,8 +14,8 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 | ID | Item | Status | Updated | Plan |
 |---|---|---|---|---|
-| `R291` | Strip Graphitron-internal directives and their supporting types from the published SDL | Spec | 2026-06-10 | [plan](strip-internal-directives-from-published-sdl.md) |
 | `R19` | Rebase and squash rewrite branch onto main | Ready |  | [plan](history-squash.md) |
+| `R291` | Strip Graphitron-internal directives and their supporting types from the published SDL | Ready | 2026-06-10 | [plan](strip-internal-directives-from-published-sdl.md) |
 | `R275` | Error channel and data projection for source-record-carrier @service mutations | In Progress | 2026-06-10 <sub>created 2026-06-02</sub> | [plan](source-record-carrier-service-error-channel.md) |
 | `R284` | Reversed source/target alias order in bridging-hop @reference ConditionJoin emission | In Review | 2026-06-08 | [plan](bridging-hop-conditionjoin-alias-order.md) |
 | `R222` | Dimensional model pivot: slots over cross-product permits | Spec | 2026-06-05 <sub>created 2026-05-21</sub> | [plan](dimensional-model-pivot.md) |
