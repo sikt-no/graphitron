@@ -2934,11 +2934,12 @@ class FieldBuilder {
             + "dropped from the schema and the field's type reference would dangle. ";
         if (admit.element() instanceof BuildContext.DmlElementKind.IdElement) {
             return base + "The payload's data field ('" + admit.dataField().getName()
-                + "') is an ID-element carrier, which is admitted only on "
-                + "@mutation(typeName: DELETE) payloads; @service support for encoding node ids "
-                + "off the service result without a re-fetch is tracked in roadmap item R275. "
-                + "Use a @table-element data field matching the service method's returned record "
-                + "type instead.";
+                + "') is an ID-element carrier, but no @service producer binding grounds it. "
+                + "An ID-element @service carrier requires @nodeId(typeName: T) on the data "
+                + "field, where T is a @node @table type whose jOOQ record class matches the "
+                + "service method's return (the record for a single ID, List<record> for a "
+                + "list) — the node id is then encoded straight off the returned record(s) "
+                + "with no re-fetch.";
         }
         return base + "The payload scans as a single-record carrier over data field '"
             + admit.dataField().getName() + "', but no @service producer binding grounds it; "
@@ -2983,86 +2984,121 @@ class FieldBuilder {
     }
 
     /**
-     * R156 — resolve the NodeId encoder for an ID-element carrier field on a DELETE mutation.
-     * Two recognition forms:
-     * <ul>
-     *   <li><b>Implicit</b>: no {@code @nodeId} directive on the carrier field, or {@code @nodeId}
-     *       without {@code typeName}. The encoder is the input {@code @table}'s {@code @node}
-     *       registration.</li>
-     *   <li><b>Explicit</b>: {@code @nodeId(typeName: "<NodeType>")}. The named NodeType's table
-     *       must equal the input {@code @table} — an {@code @nodeId} that pins to a different
-     *       table rejects (returning IDs of a different entity than the DML acted on would be
-     *       a silent contract break).</li>
-     * </ul>
-     *
-     * <p>Returns the resolved encoder on success, or a {@link Rejection} on failure (no
-     * {@code @node}-backed input table, {@code @nodeId(typeName:)} resolves to an unknown type,
-     * or the named NodeType's table doesn't match the input table). The diagnostic family
-     * matches today's bare-ID DELETE return path at {@code FieldBuilder.java:3002-3013}.
+     * R156 / R275 — sealed result of resolving the NodeId encoder for an ID-element carrier
+     * data field against the table the carrier acts on (the DELETE input {@code @table} or the
+     * {@code @service} producer's record table). One resolver, two consumers: the rejection
+     * arms carry the typed failure so each call site derives its own diagnostic wording from
+     * the arm instead of re-walking the predicates (the pre-R275 shape was an
+     * {@code Optional}-returning resolver plus a parallel string-returning validator that had
+     * to stay in lockstep).
      */
-    private static java.util.Optional<HelperRef.Encode> resolveDeleteIdEncoder(
-            BuildContext ctx, GraphQLFieldDefinition dataField, TableRef inputTable) {
-        String inputTableSqlName = inputTable.tableName();
-        if (dataField.hasAppliedDirective(DIR_NODE_ID)) {
-            Optional<String> explicitTypeName = argString(dataField, DIR_NODE_ID, ARG_TYPE_NAME);
-            if (explicitTypeName.isPresent()) {
-                var targetGType = ctx.types.get(explicitTypeName.get());
-                if (!(targetGType instanceof NodeType targetNodeType)) {
-                    return java.util.Optional.empty();
-                }
-                if (!targetNodeType.table().tableName().equals(inputTableSqlName)) {
-                    return java.util.Optional.empty();
-                }
-                return java.util.Optional.of(targetNodeType.encodeMethod());
-            }
-        }
-        return ctx.types.values().stream()
-            .filter(t -> t instanceof NodeType nt && nt.table().tableName().equals(inputTableSqlName))
-            .map(t -> ((NodeType) t).encodeMethod())
-            .findFirst();
+    private sealed interface IdEncoderResolution {
+        /** Encoder resolved; {@code nodeType} is the registration it came from. */
+        record Resolved(NodeType nodeType) implements IdEncoderResolution {}
+        /** {@code @nodeId(typeName:)} names a type that is not a registered {@code @node}. */
+        record UnknownNodeType(String typeName) implements IdEncoderResolution {}
+        /** The named NodeType's table differs from the table the carrier acts on. */
+        record TableMismatch(NodeType nodeType) implements IdEncoderResolution {}
+        /** Implicit form (no {@code @nodeId(typeName:)}) and no {@code @node} covers the table. */
+        record NoNodeForTable() implements IdEncoderResolution {}
     }
 
     /**
-     * R156 — classify the carrier-field encoder error for an ID-element DELETE carrier.
-     * Returns a non-null diagnostic when the encoder cannot be resolved (no {@code @node}-backed
-     * input table, {@code @nodeId(typeName:)} resolves to an unknown type, or the named
-     * NodeType's table doesn't match the input table). Returns {@code null} when the encoder is
-     * fine.
+     * R156 / R275 — resolve the NodeId encoder for an ID-element carrier field. Two recognition
+     * forms:
+     * <ul>
+     *   <li><b>Implicit</b>: no {@code @nodeId} directive on the carrier field, or {@code @nodeId}
+     *       without {@code typeName}. The encoder is {@code tableToMatch}'s {@code @node}
+     *       registration.</li>
+     *   <li><b>Explicit</b>: {@code @nodeId(typeName: "<NodeType>")}. The named NodeType's table
+     *       must equal {@code tableToMatch} — an {@code @nodeId} that pins to a different table
+     *       rejects (returning IDs of a different entity than the carrier acted on would be a
+     *       silent contract break).</li>
+     * </ul>
      */
-    private static String classifyDeleteIdEncoderError(
-            BuildContext ctx, GraphQLFieldDefinition dataField, TableRef inputTable, String mutationName) {
-        String inputTableSqlName = inputTable.tableName();
+    private static IdEncoderResolution resolveCarrierIdEncoder(
+            BuildContext ctx, GraphQLFieldDefinition dataField, TableRef tableToMatch) {
+        String tableSqlName = tableToMatch.tableName();
         if (dataField.hasAppliedDirective(DIR_NODE_ID)) {
             Optional<String> explicitTypeName = argString(dataField, DIR_NODE_ID, ARG_TYPE_NAME);
             if (explicitTypeName.isPresent()) {
                 var targetGType = ctx.types.get(explicitTypeName.get());
                 if (!(targetGType instanceof NodeType targetNodeType)) {
-                    return "@mutation(typeName: DELETE) field '" + mutationName
-                        + "' carrier data field carries @nodeId(typeName: \"" + explicitTypeName.get()
-                        + "\") but no @node type by that name exists in the schema";
+                    return new IdEncoderResolution.UnknownNodeType(explicitTypeName.get());
                 }
-                if (!targetNodeType.table().tableName().equals(inputTableSqlName)) {
-                    return "@mutation(typeName: DELETE) field '" + mutationName
-                        + "' carrier data field's @nodeId encoder pins to table '"
-                        + targetNodeType.table().tableName()
-                        + "', which does not match the @table input table '" + inputTableSqlName
-                        + "'; returning IDs of a different entity than the DML acted on is not "
-                        + "supported (drop the @nodeId(typeName:) argument to use the input "
-                        + "@table's @node encoder implicitly, or move the carrier field to a "
-                        + "mutation whose input @table matches the encoder's table)";
+                if (!targetNodeType.table().tableName().equals(tableSqlName)) {
+                    return new IdEncoderResolution.TableMismatch(targetNodeType);
                 }
-                return null;
+                return new IdEncoderResolution.Resolved(targetNodeType);
             }
         }
-        boolean hasNodeBackedInput = ctx.types.values().stream()
-            .anyMatch(t -> t instanceof NodeType nt && nt.table().tableName().equals(inputTableSqlName));
-        if (!hasNodeBackedInput) {
-            return "@mutation(typeName: DELETE) field '" + mutationName
-                + "' returns ID-element data on a carrier but no @node type is declared for "
-                + "table '" + inputTableSqlName + "'; annotate the input @table's SDL type with "
-                + "@node, or use a @table-element data field";
-        }
-        return null;
+        return ctx.types.values().stream()
+            .filter(t -> t instanceof NodeType nt && nt.table().tableName().equals(tableSqlName))
+            .findFirst()
+            .<IdEncoderResolution>map(t -> new IdEncoderResolution.Resolved((NodeType) t))
+            .orElseGet(IdEncoderResolution.NoNodeForTable::new);
+    }
+
+    /**
+     * R156 — DELETE-carrier diagnostic wording for the {@link IdEncoderResolution} rejection
+     * arms (test fixtures pin these messages). Returns {@code null} for {@code Resolved}.
+     */
+    private static String deleteIdEncoderError(
+            IdEncoderResolution resolution, TableRef inputTable, String mutationName) {
+        String inputTableSqlName = inputTable.tableName();
+        return switch (resolution) {
+            case IdEncoderResolution.Resolved ignored -> null;
+            case IdEncoderResolution.UnknownNodeType u ->
+                "@mutation(typeName: DELETE) field '" + mutationName
+                    + "' carrier data field carries @nodeId(typeName: \"" + u.typeName()
+                    + "\") but no @node type by that name exists in the schema";
+            case IdEncoderResolution.TableMismatch m ->
+                "@mutation(typeName: DELETE) field '" + mutationName
+                    + "' carrier data field's @nodeId encoder pins to table '"
+                    + m.nodeType().table().tableName()
+                    + "', which does not match the @table input table '" + inputTableSqlName
+                    + "'; returning IDs of a different entity than the DML acted on is not "
+                    + "supported (drop the @nodeId(typeName:) argument to use the input "
+                    + "@table's @node encoder implicitly, or move the carrier field to a "
+                    + "mutation whose input @table matches the encoder's table)";
+            case IdEncoderResolution.NoNodeForTable ignored ->
+                "@mutation(typeName: DELETE) field '" + mutationName
+                    + "' returns ID-element data on a carrier but no @node type is declared for "
+                    + "table '" + inputTableSqlName + "'; annotate the input @table's SDL type with "
+                    + "@node, or use a @table-element data field";
+        };
+    }
+
+    /**
+     * R275 — {@code @service}-carrier diagnostic wording for the {@link IdEncoderResolution}
+     * rejection arms; the sibling of {@link #deleteIdEncoderError} with the input-{@code @table}
+     * vocabulary replaced by the producer-record vocabulary. Returns {@code null} for
+     * {@code Resolved}.
+     */
+    private static String serviceIdEncoderError(
+            IdEncoderResolution resolution, TableRef producerTable, String payloadTypeName, String fieldName) {
+        String producerTableSqlName = producerTable.tableName();
+        return switch (resolution) {
+            case IdEncoderResolution.Resolved ignored -> null;
+            case IdEncoderResolution.UnknownNodeType u ->
+                "@service-carrier payload field '" + payloadTypeName + "." + fieldName
+                    + "' carries @nodeId(typeName: \"" + u.typeName()
+                    + "\") but no @node type by that name exists in the schema";
+            case IdEncoderResolution.TableMismatch m ->
+                "@service-carrier payload field '" + payloadTypeName + "." + fieldName
+                    + "'s @nodeId encoder pins to table '" + m.nodeType().table().tableName()
+                    + "', which does not match the @service producer's record table '"
+                    + producerTableSqlName
+                    + "'; returning IDs of a different entity than the service produced is not "
+                    + "supported (point @nodeId(typeName:) at the @node type backed by the "
+                    + "producer's record table)";
+            case IdEncoderResolution.NoNodeForTable ignored ->
+                "@service-carrier payload field '" + payloadTypeName + "." + fieldName
+                    + "' is an ID-element data field but no @node type is declared for the "
+                    + "producer's record table '" + producerTableSqlName
+                    + "'; annotate that table's SDL type with @node and point "
+                    + "@nodeId(typeName:) at it";
+        };
     }
 
     /**
@@ -3809,11 +3845,12 @@ class FieldBuilder {
 
         switch (element) {
             case BuildContext.DmlElementKind.IdElement ignored -> {
-                String encoderError = classifyDeleteIdEncoderError(ctx, dataField, inputArg.table(), name);
+                var encoderResolution = resolveCarrierIdEncoder(ctx, dataField, inputArg.table());
+                String encoderError = deleteIdEncoderError(encoderResolution, inputArg.table(), name);
                 if (encoderError != null) {
                     return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(encoderError));
                 }
-                var encoder = resolveDeleteIdEncoder(ctx, dataField, inputArg.table()).orElseThrow();
+                var encoder = ((IdEncoderResolution.Resolved) encoderResolution).nodeType().encodeMethod();
                 var returnType_id = new ReturnTypeRef.ScalarReturnType("ID", wrapper);
                 var coords = graphql.schema.FieldCoordinates.coordinates(returnType.returnTypeName(), dataField.getName());
                 var carrier = new ChildField.SingleRecordIdFieldFromReturning(
@@ -4090,6 +4127,43 @@ class FieldBuilder {
                     new SourceKey.Reader.ResultRowWalk(envelope));
                 return new ChildField.SingleRecordTableField(
                     parentTypeName, name, location, tb, sourceKey);
+            }
+            // R275 requirement 2: ID-element data field on an @service carrier — the opptak
+            // fjernSakTagg/fjernSakTagger @nodeId-from-record shape. The encoder resolution
+            // re-asserts that @nodeId(typeName:)'s NodeType pins to the producer's table
+            // (the binding grounded the table from the same typeName's SDL @table, so a
+            // mismatch here means T carries @table but registered under a different table,
+            // or is not @node at all). The node-key columns are read straight off the
+            // producer's in-memory record(s) and encoded — no follow-up SELECT, so the shape
+            // is deletion-safe by construction.
+            if (resolvedReturnType instanceof ReturnTypeRef.ScalarReturnType scalarReturn
+                    && "ID".equals(elementTypeName1)
+                    && fieldDef.hasAppliedDirective(DIR_NODE_ID)) {
+                var encoderResolution = resolveCarrierIdEncoder(ctx, fieldDef, binding.tableRef());
+                String encoderError = serviceIdEncoderError(encoderResolution, binding.tableRef(), parentTypeName, name);
+                if (encoderError != null) {
+                    return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(encoderError));
+                }
+                var nodeType = ((IdEncoderResolution.Resolved) encoderResolution).nodeType();
+                var idCardinality = scalarReturn.wrapper().isList()
+                    ? SourceKey.Cardinality.MANY
+                    : SourceKey.Cardinality.ONE;
+                // Same envelope signal as the @table-element sibling above: an errors-bearing
+                // carrier routes the producer through the typed Outcome wrapper, so the id
+                // fetcher narrows Outcome.Success before encoding.
+                var idEnvelope = carrierPayloadHasErrorsField(parentTypeName)
+                    ? SourceKey.Reader.SourceEnvelope.OUTCOME_SUCCESS
+                    : SourceKey.Reader.SourceEnvelope.DIRECT;
+                var idSourceKey = new SourceKey(
+                    binding.tableRef(),
+                    nodeType.nodeKeyColumns(),
+                    List.of(),
+                    new SourceKey.Wrap.TableRecord(binding.tableRef().recordClass()),
+                    idCardinality,
+                    new SourceKey.Reader.ResultRowWalk(idEnvelope));
+                return new ChildField.SingleRecordIdField(parentTypeName, name, location,
+                    scalarReturn, idSourceKey,
+                    new no.sikt.graphitron.rewrite.model.CallSiteCompaction.NodeIdEncodeKeys(nodeType.encodeMethod()));
             }
         }
 

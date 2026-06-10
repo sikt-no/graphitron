@@ -148,16 +148,17 @@ class SingleRecordTableFieldServiceProducerPipelineTest {
     }
 
     /**
-     * R275 reopened scope: an {@code [ID!] @nodeId} data field is the DELETE-only PK-echo permit;
-     * on an {@code @service} mutation no producer binding grounds it, so the payload cannot
-     * classify. The orphan-carrier guard rejects the mutation field loudly at classification
-     * time. Pre-fix the field classified as {@code MutationServiceRecordField} over the dropped
-     * payload type, producing an invalid assembled schema (dangling {@code typeRef}). When
-     * {@code @service} support for encoding node ids off the service result lands (R275's
-     * follow-up slice), this rejection flips to classification.
+     * R275 requirement 2 (formerly {@code serviceProducer_idElementCarrier_rejectsLoudly},
+     * which pinned the interim loud rejection): the {@code [ID] @nodeId} data field on an
+     * errors-bearing {@code @service} carrier classifies as {@code SingleRecordIdField} —
+     * MANY cardinality, {@code OUTCOME_SUCCESS} envelope, the Film node encoder on the
+     * compaction — encoding node ids straight off the producer's in-memory records with no
+     * re-fetch. Note the list-of-nullable {@code [ID]} wrapper (the real opptak
+     * {@code fjernSakTagger} contract): the DML DELETE scan rejects it, the @service-carrier
+     * scan admits it.
      */
     @Test
-    void serviceProducer_idElementCarrier_rejectsLoudly() {
+    void serviceProducer_idElementCarrier_list_encodesFromRecords() {
         var schema = TestSchemaHelper.buildSchema("""
             type Film implements Node @node @table(name: "film") { id: ID! @nodeId  title: String }
             type DbErr @error(handlers: [{handler: DATABASE}]) {
@@ -166,7 +167,7 @@ class SingleRecordTableFieldServiceProducerPipelineTest {
             }
             union FilmError = DbErr
             type FilmIdsPayload {
-                filmIds: [ID!] @nodeId(typeName: "Film")
+                filmIds: [ID] @nodeId(typeName: "Film")
                 errors: [FilmError]
             }
             type Query { x: String }
@@ -176,10 +177,147 @@ class SingleRecordTableFieldServiceProducerPipelineTest {
             }
             """);
 
+        assertThat(schema.field("Mutation", "deleteFilms"))
+            .isInstanceOf(MutationField.MutationServiceRecordField.class);
+        var dataField = schema.field("FilmIdsPayload", "filmIds");
+        assertThat(dataField).isInstanceOf(ChildField.SingleRecordIdField.class);
+        var idField = (ChildField.SingleRecordIdField) dataField;
+        var sk = idField.sourceKey();
+        assertThat(sk.cardinality()).isEqualTo(SourceKey.Cardinality.MANY);
+        assertThat(sk.wrap()).isInstanceOf(SourceKey.Wrap.TableRecord.class);
+        assertThat(((SourceKey.Reader.ResultRowWalk) sk.reader()).envelope())
+            .isEqualTo(SourceKey.Reader.SourceEnvelope.OUTCOME_SUCCESS);
+        assertThat(sk.target().tableName()).isEqualTo("film");
+        assertThat(idField.encode().encodeMethod()).isNotNull();
+        var errorsField = schema.field("FilmIdsPayload", "errors");
+        assertThat(errorsField).isInstanceOf(ChildField.ErrorsField.class);
+        assertThat(((ChildField.ErrorsField) errorsField).transport())
+            .isInstanceOf(ChildField.Transport.WrapperArm.class);
+    }
+
+    /**
+     * R275 requirement 2, single arm (the opptak {@code fjernSakTagg -> { taggId: ID @nodeId,
+     * errors }} shape): a single-record producer into an {@code ID @nodeId} data field
+     * classifies with ONE cardinality and the {@code OUTCOME_SUCCESS} envelope.
+     */
+    @Test
+    void serviceProducer_idElementCarrier_single_encodesFromRecord() {
+        var schema = TestSchemaHelper.buildSchema("""
+            type Film implements Node @node @table(name: "film") { id: ID! @nodeId  title: String }
+            type DbErr @error(handlers: [{handler: DATABASE}]) {
+                path: [String!]!
+                message: String!
+            }
+            union FilmError = DbErr
+            type FilmIdPayload {
+                filmId: ID @nodeId(typeName: "Film")
+                errors: [FilmError]
+            }
+            type Query { x: String }
+            type Mutation {
+                deleteFilm: FilmIdPayload
+                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getFilm"})
+            }
+            """);
+
+        assertThat(schema.field("Mutation", "deleteFilm"))
+            .isInstanceOf(MutationField.MutationServiceRecordField.class);
+        var dataField = schema.field("FilmIdPayload", "filmId");
+        assertThat(dataField).isInstanceOf(ChildField.SingleRecordIdField.class);
+        var sk = ((ChildField.SingleRecordIdField) dataField).sourceKey();
+        assertThat(sk.cardinality()).isEqualTo(SourceKey.Cardinality.ONE);
+        assertThat(((SourceKey.Reader.ResultRowWalk) sk.reader()).envelope())
+            .isEqualTo(SourceKey.Reader.SourceEnvelope.OUTCOME_SUCCESS);
+    }
+
+    /**
+     * R275 requirement 2, errors-less sibling: with no errors field the producer returns the
+     * record bare, so the envelope is {@code DIRECT} — the same envelope split the
+     * {@code @table}-element sibling carries.
+     */
+    @Test
+    void serviceProducer_idElementCarrier_noErrors_recordsDirectEnvelope() {
+        var schema = TestSchemaHelper.buildSchema("""
+            type Film implements Node @node @table(name: "film") { id: ID! @nodeId  title: String }
+            type FilmIdPayload {
+                filmId: ID @nodeId(typeName: "Film")
+            }
+            type Query { x: String }
+            type Mutation {
+                deleteFilm: FilmIdPayload
+                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getFilm"})
+            }
+            """);
+
+        var dataField = schema.field("FilmIdPayload", "filmId");
+        assertThat(dataField).isInstanceOf(ChildField.SingleRecordIdField.class);
+        var sk = ((ChildField.SingleRecordIdField) dataField).sourceKey();
+        assertThat(((SourceKey.Reader.ResultRowWalk) sk.reader()).envelope())
+            .isEqualTo(SourceKey.Reader.SourceEnvelope.DIRECT);
+    }
+
+    /**
+     * R275 requirement 2, grounding failure stays a loud author error: the producer's record
+     * class ({@code LanguageRecord}) does not match {@code @nodeId(typeName: "Film")}'s table
+     * record, so no {@code ServiceEmitted} binding grounds, the payload never promotes, and
+     * the orphan-carrier guard rejects the mutation field with the ID-element guidance.
+     */
+    @Test
+    void serviceProducer_idElementCarrier_recordClassMismatch_rejectsLoudly() {
+        var schema = TestSchemaHelper.buildSchema("""
+            type Film implements Node @node @table(name: "film") { id: ID! @nodeId  title: String }
+            type DbErr @error(handlers: [{handler: DATABASE}]) {
+                path: [String!]!
+                message: String!
+            }
+            union FilmError = DbErr
+            type FilmIdsPayload {
+                filmIds: [ID] @nodeId(typeName: "Film")
+                errors: [FilmError]
+            }
+            type Query { x: String }
+            type Mutation {
+                deleteFilms: FilmIdsPayload
+                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getLanguagesAsList"})
+            }
+            """);
+
         var mutField = schema.field("Mutation", "deleteFilms");
         assertThat(mutField).isInstanceOf(UnclassifiedField.class);
         assertThat(((UnclassifiedField) mutField).rejection().message())
-            .contains("FilmIdsPayload", "ID-element", "DELETE", "R275");
+            .contains("FilmIdsPayload", "ID-element", "@nodeId(typeName: T)");
+    }
+
+    /**
+     * R275 requirement 2, encoder failure at the field edge: {@code @nodeId(typeName:)} names
+     * a type that is {@code @table}-bound (so the binding grounds and the payload promotes)
+     * but not {@code @node}-registered; the data field rejects with the unknown-node
+     * diagnostic while the payload type itself survives (no dangling {@code typeRef}).
+     */
+    @Test
+    void serviceProducer_idElementCarrier_targetNotNode_rejectsDataField() {
+        var schema = TestSchemaHelper.buildSchema("""
+            type Film @table(name: "film") { title: String }
+            type DbErr @error(handlers: [{handler: DATABASE}]) {
+                path: [String!]!
+                message: String!
+            }
+            union FilmError = DbErr
+            type FilmIdsPayload {
+                filmIds: [ID] @nodeId(typeName: "Film")
+                errors: [FilmError]
+            }
+            type Query { x: String }
+            type Mutation {
+                deleteFilms: FilmIdsPayload
+                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getFilmsAsList"})
+            }
+            """);
+
+        var dataField = schema.field("FilmIdsPayload", "filmIds");
+        assertThat(dataField).isInstanceOf(UnclassifiedField.class);
+        assertThat(((UnclassifiedField) dataField).rejection().message())
+            .contains("FilmIdsPayload.filmIds", "no @node type");
     }
 
     /** MANY / single-PK admission: @service returning {@code List<FilmRecord>}. */

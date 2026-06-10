@@ -6780,23 +6780,22 @@ class GraphitronSchemaBuilderTest {
             @Override public Set<Class<?>> variants() { return Set.of(MutationField.MutationServiceRecordField.class); }
         },
 
-        // R275 regression (was red, drove the fix): an @service mutation returning a payload whose
-        // single data field is an ID-encoding field ([ID!] @nodeId), paired with an errors field —
-        // the opptak fjernSakTagger -> FjernSakTaggerPayload { tagger: [ID] @nodeId, errors } shape
-        // (the delete-then-echo-ids reframing of the delete-then-re-fetch defect). The ID-element
-        // carrier (DmlElementKind.IdElement) is admitted by the structural scan only as a
-        // @mutation(typeName: DELETE) shape; on an @service mutation it grounds no producer binding
-        // (groundServicePayloadBinding requires a @table data field), so the payload never registers
-        // (schema.type("FilmIdsPayload") == null). Pre-fix the mutation field still classified as
-        // MutationServiceRecordField over the unregistered payload and emitted
+        // R275 regression (was red, drove the fix; formerly SERVICE_MUTATION_ID_CARRIER_SILENTLY_
+        // DROPS_PAYLOAD, which pinned the interim loud rejection): an @service mutation returning
+        // a payload whose single data field is an ID-encoding field ([ID] @nodeId), paired with an
+        // errors field — the opptak fjernSakTagger -> FjernSakTaggerPayload { tagger: [ID]
+        // @nodeId, errors } shape (the delete-then-echo-ids reframing of the delete-then-re-fetch
+        // defect). Note the list-of-nullable [ID] wrapper: the DML DELETE scan rejects it, the
+        // @service-carrier scan admits it (the real opptak schema declares [ID]). Pre-R275 the
+        // payload never registered while the mutation field still classified and emitted
         // typeRef("FilmIdsPayload") -> dangling reference -> graphql-java assembly failed with
-        // "type FilmIdsPayload not found in schema". Post-fix the Scalar arm rejects the orphan
-        // carrier loudly at classification time. @service support for encoding node ids off the
-        // service result without a re-fetch (requirement 2 of the reopened R275 scope) is the
-        // follow-up slice; when it lands, this row flips from rejection to classification.
-        SERVICE_MUTATION_ID_CARRIER_SILENTLY_DROPS_PAYLOAD(
-            "@service mutation returning an [ID!] @nodeId carrier (a DELETE-only shape) is rejected "
-                + "at classification (author error), not silently accepted into a dangling payload typeRef",
+        // "type FilmIdsPayload not found in schema". Now the ServiceEmitted binding grounds from
+        // @nodeId(typeName:)'s @table, the payload promotes to JooqTableRecordType, and the data
+        // field classifies as SingleRecordIdField encoding node ids straight off the producer's
+        // in-memory records (no re-fetch, deletion-safe by construction).
+        SERVICE_MUTATION_ID_CARRIER_ENCODES_FROM_RECORD(
+            "@service mutation returning an [ID] @nodeId carrier classifies; the data field encodes "
+                + "node ids off the producer's records with no re-fetch",
             """
             type Film implements Node @node @table(name: "film") { id: ID! @nodeId  title: String }
             type FilmErr @error(handlers: [{handler: GENERIC, className: "java.lang.IllegalArgumentException"}]) {
@@ -6805,7 +6804,7 @@ class GraphitronSchemaBuilderTest {
             }
             union DeleteFilmsError = FilmErr
             type FilmIdsPayload {
-                filmIds: [ID!] @nodeId(typeName: "Film")
+                filmIds: [ID] @nodeId(typeName: "Film")
                 errors: [DeleteFilmsError]
             }
             type Query { x: String }
@@ -6814,14 +6813,26 @@ class GraphitronSchemaBuilderTest {
             }
             """,
             schema -> {
-                var field = schema.field("Mutation", "deleteFilms");
-                assertThat(field)
-                    .as("@service ID-carrier must be a rejected author error, not accepted with a dropped payload type")
-                    .isInstanceOf(no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField.class);
-                assertThat(((no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField) field).reason())
-                    .contains("FilmIdsPayload", "ID-element", "DELETE");
+                assertThat(schema.type("FilmIdsPayload"))
+                    .as("FilmIdsPayload must register as a producer-backed carrier, not be dropped")
+                    .isNotNull()
+                    .isNotInstanceOf(no.sikt.graphitron.rewrite.model.GraphitronType.UnclassifiedType.class);
+                assertThat(schema.field("Mutation", "deleteFilms"))
+                    .isInstanceOf(MutationField.MutationServiceRecordField.class);
+                // The data field encodes off Outcome.Success.value()'s records: SingleRecordIdField,
+                // MANY cardinality, OUTCOME_SUCCESS envelope, the producer's table on the SourceKey.
+                var dataField = schema.field("FilmIdsPayload", "filmIds");
+                assertThat(dataField).isInstanceOf(no.sikt.graphitron.rewrite.model.ChildField.SingleRecordIdField.class);
+                var idField = (no.sikt.graphitron.rewrite.model.ChildField.SingleRecordIdField) dataField;
+                assertThat(idField.sourceKey().cardinality()).isEqualTo(no.sikt.graphitron.rewrite.model.SourceKey.Cardinality.MANY);
+                assertThat(((no.sikt.graphitron.rewrite.model.SourceKey.Reader.ResultRowWalk) idField.sourceKey().reader()).envelope())
+                    .isEqualTo(no.sikt.graphitron.rewrite.model.SourceKey.Reader.SourceEnvelope.OUTCOME_SUCCESS);
+                assertThat(idField.sourceKey().target().tableName()).isEqualTo("film");
             }) {
-            @Override public Set<Class<?>> variants() { return Set.of(no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField.class); }
+            @Override public Set<Class<?>> variants() {
+                return Set.of(MutationField.MutationServiceRecordField.class,
+                    no.sikt.graphitron.rewrite.model.ChildField.SingleRecordIdField.class);
+            }
         },
 
         MUTATION_DML_RECORD_FIELD(
@@ -8484,7 +8495,8 @@ class GraphitronSchemaBuilderTest {
 
     @Test
     @ProjectionFor({
-        ChildField.SingleRecordTableField.class, ChildField.SingleRecordTableFieldFromReturning.class
+        ChildField.SingleRecordTableField.class, ChildField.SingleRecordTableFieldFromReturning.class,
+        ChildField.SingleRecordIdField.class
     })
     void singleRecordCarrierProjectionsCarryTablePayload() {
         // SingleRecordTableField — single-record DML carrier data field on a @table-element
@@ -8516,6 +8528,28 @@ class GraphitronSchemaBuilderTest {
         var deleted = (FieldClassification.SingleRecordTableFromReturning)
             s2.fieldClassificationsByCoord().get("DeletedFilmsPayload.films");
         assertThat(deleted.tableName()).isEqualToIgnoringCase("film");
+
+        // SingleRecordIdField — R275 @service carrier's @nodeId-from-record data field,
+        // encoding node ids off the producer's in-memory records (no re-fetch).
+        var s3 = buildSnapshot("""
+            type Film implements Node @node @table(name: "film") { id: ID! @nodeId  title: String }
+            type FilmErr @error(handlers: [{handler: GENERIC, className: "java.lang.IllegalArgumentException"}]) {
+                path: [String!]!
+                message: String!
+            }
+            union DeleteFilmsError = FilmErr
+            type FilmIdsPayload {
+                filmIds: [ID] @nodeId(typeName: "Film")
+                errors: [DeleteFilmsError]
+            }
+            type Query { x: String }
+            type Mutation {
+                deleteFilms: FilmIdsPayload @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getFilmsAsList"})
+            }
+            """);
+        var serviceId = (FieldClassification.SingleRecordId)
+            s3.fieldClassificationsByCoord().get("FilmIdsPayload.filmIds");
+        assertThat(serviceId.tableName()).isEqualToIgnoringCase("film");
     }
 
     // ===== UnclassifiedField =====

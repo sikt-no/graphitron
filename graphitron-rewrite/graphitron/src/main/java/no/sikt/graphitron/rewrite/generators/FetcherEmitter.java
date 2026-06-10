@@ -242,6 +242,14 @@ public final class FetcherEmitter {
             // through the resolved NodeId encoder. No follow-up SELECT — the row is gone.
             return buildSingleRecordIdFromReturningFetcherValue(idCarrier);
         }
+        if (field instanceof ChildField.SingleRecordIdField serviceIdCarrier) {
+            // R275: ID-element data field on an @service source-record carrier. The producer
+            // returned the typed XRecord (ONE) or List<XRecord> (MANY) verbatim, optionally
+            // wrapped in Outcome (errors-bearing payload); this fetcher reads the node-key
+            // column(s) off each in-memory record and runs them through the resolved NodeId
+            // encoder. No follow-up SELECT — the records may be deleted rows.
+            return buildSingleRecordIdFetcherValue(serviceIdCarrier, outputPackage);
+        }
         if (field instanceof ChildField.SingleRecordTableFieldFromReturning tableCarrier) {
             // R156: data field on a payload-returning DELETE carrier with an @table-element data
             // field. Synthesizes per source row a new jOOQ Record over the element @table with PK
@@ -734,6 +742,74 @@ public final class FetcherEmitter {
             }
             body.add(")\n");
             body.add("        .fetchOne();\n");
+        }
+        body.add("}");
+        return body.build();
+    }
+
+    /**
+     * R275 — data-fetcher value for a {@link ChildField.SingleRecordIdField}, the ID-element
+     * data field on an {@code @service} source-record carrier. Mirrors
+     * {@link #buildSingleRecordTableFetcherValueTableRecordWrap}'s source handling — the same
+     * {@code SourceEnvelope} fork (narrow {@code Outcome.Success} under {@code OUTCOME_SUCCESS},
+     * read {@code env.getSource()} verbatim under {@code DIRECT}) and the same typed
+     * {@code XRecord} / {@code List<XRecord>} casts — but instead of a follow-up SELECT it maps
+     * each record through the pre-resolved NodeId encoder, reading the node-key column(s) via
+     * the typed {@code Tables.X.COL} constants. No database access: the producer's records may
+     * be deleted rows (the opptak {@code fjernSakTagg}/{@code fjernSakTagger} shape), and the
+     * encode is total over the in-memory record.
+     */
+    private static CodeBlock buildSingleRecordIdFetcherValue(
+            ChildField.SingleRecordIdField carrier, String outputPackage) {
+        var sk = carrier.sourceKey();
+        var table = sk.target();
+        var recordType = ((SourceKey.Wrap.TableRecord) sk.wrap()).className();
+        var keyColumns = sk.columns();
+        var encoder = carrier.encode().encodeMethod();
+        boolean many = sk.cardinality() == SourceKey.Cardinality.MANY;
+        boolean outcomeWrapped = ((SourceKey.Reader.ResultRowWalk) sk.reader()).envelope()
+            == SourceKey.Reader.SourceEnvelope.OUTCOME_SUCCESS;
+        CodeBlock sourceExpr = outcomeWrapped
+            ? CodeBlock.of("success.value()")
+            : CodeBlock.of("env.getSource()");
+
+        var body = CodeBlock.builder().add("($T env) -> {\n", DATA_FETCHING_ENV);
+        if (outcomeWrapped) {
+            body.add("    if (!(env.getSource() instanceof $T<?> success)) return null;\n",
+                successClass(outputPackage));
+        }
+        if (many) {
+            var javaUtilList = ClassName.get("java.util", "List");
+            var stringClass = ClassName.get("java.lang", "String");
+            var listOfRecord = ParameterizedTypeName.get(javaUtilList, recordType);
+            var listOfString = ParameterizedTypeName.get(javaUtilList, stringClass);
+            var arrayListOfString = ParameterizedTypeName.get(
+                ClassName.get("java.util", "ArrayList"), stringClass);
+            body.add("    $T source = ($T) $L;\n", listOfRecord, listOfRecord, sourceExpr);
+            body.add("    if (source == null) return null;\n");
+            body.add("    $T ids = new $T(source.size());\n", listOfString, arrayListOfString);
+            body.add("    for ($T row : source) {\n", recordType);
+            body.add("        ids.add($T.$L(", encoder.encoderClass(), encoder.methodName());
+            for (int i = 0; i < keyColumns.size(); i++) {
+                if (i > 0) body.add(", ");
+                var col = keyColumns.get(i);
+                body.add("row.get($T.$L.$L)",
+                    table.constantsClass(), table.javaFieldName(), col.javaName());
+            }
+            body.add("));\n");
+            body.add("    }\n");
+            body.add("    return ids;\n");
+        } else {
+            body.add("    $T source = ($T) $L;\n", recordType, recordType, sourceExpr);
+            body.add("    if (source == null) return null;\n");
+            body.add("    return $T.$L(", encoder.encoderClass(), encoder.methodName());
+            for (int i = 0; i < keyColumns.size(); i++) {
+                if (i > 0) body.add(", ");
+                var col = keyColumns.get(i);
+                body.add("source.get($T.$L.$L)",
+                    table.constantsClass(), table.javaFieldName(), col.javaName());
+            }
+            body.add(");\n");
         }
         body.add("}");
         return body.build();

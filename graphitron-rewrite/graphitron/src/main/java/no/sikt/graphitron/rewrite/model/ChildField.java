@@ -22,6 +22,7 @@ public sealed interface ChildField extends OutputField
             ChildField.ServiceRecordField,
             ChildField.RecordField,
             ChildField.ComputedField, ChildField.PropertyField,
+            ChildField.SingleRecordIdField,
             ChildField.SingleRecordIdFieldFromReturning,
             ChildField.SingleRecordTableFieldFromReturning,
             ChildField.ErrorsField {
@@ -110,6 +111,61 @@ public sealed interface ChildField extends OutputField
         ReturnTypeRef.ScalarReturnType returnType,
         CallSiteCompaction.NodeIdEncodeKeys encode
     ) implements ChildField {
+        @Override public DomainReturnType domainReturnType() {
+            return new DomainReturnType.Plain(STRING_CLASS);
+        }
+    }
+
+    /**
+     * R275 — the single data field on an {@code @service} source-record carrier whose data
+     * field is an ID-typed scalar encoding the producer record's node-key column(s). The
+     * parent classifies as {@code MutationField.MutationServiceRecordField}; the {@code @service}
+     * method returns the typed jOOQ {@code XRecord} (single) or {@code List<XRecord>} (bulk)
+     * verbatim, optionally wrapped in the typed {@code Outcome} when the payload carries an
+     * errors field. This data field's fetcher reads the key column(s) straight off the
+     * in-memory record(s) and runs them through {@link #encode} — no follow-up SELECT, so the
+     * shape is deletion-safe by construction (the opptak {@code fjernSakTagg} /
+     * {@code fjernSakTagger} delete-then-echo mutations are the driving case: the record the
+     * service returns is already deleted from the database).
+     *
+     * <p>Fourth sibling of {@link SingleRecordTableField} ("follow-up SELECT off the producer's
+     * record"), {@link SingleRecordIdFieldFromReturning} ("encoded PK scalar off the DML
+     * RETURNING {@code Record}, read by SQL name"), and
+     * {@link SingleRecordTableFieldFromReturning} ("PK-only synthesized projection"). It differs
+     * from {@code SingleRecordIdFieldFromReturning} on the source shape, not just the envelope:
+     * the source is the developer-declared {@code TableRecord} subclass (read through typed
+     * {@code Tables.X.COL} constants), it may arrive wrapped in {@code Outcome}, and the bulk
+     * cardinality is a {@code List<XRecord>}, not a jOOQ {@code Result}.
+     *
+     * <p>The {@link #sourceKey()} carries the producer's table, the node-key columns the encode
+     * reads, {@link SourceKey.Wrap.TableRecord}, the producer cardinality, and
+     * {@link SourceKey.Reader.ResultRowWalk} whose {@link SourceKey.Reader.SourceEnvelope}
+     * ({@code DIRECT} / {@code OUTCOME_SUCCESS}) is the same axis the table-field sibling's
+     * emitter forks on; the compact constructor narrows the reader/wrap pairing. The
+     * {@link #encode} compaction mirrors the slot every other NodeId-encoded projection uses.
+     * Declines {@link TableTargetField} (element is the {@code ID} scalar) and
+     * {@link BatchKeyField} (no DataLoader).
+     */
+    record SingleRecordIdField(
+        String parentTypeName,
+        String name,
+        SourceLocation location,
+        ReturnTypeRef.ScalarReturnType returnType,
+        SourceKey sourceKey,
+        CallSiteCompaction.NodeIdEncodeKeys encode
+    ) implements ChildField {
+        public SingleRecordIdField {
+            if (!(sourceKey.reader() instanceof SourceKey.Reader.ResultRowWalk)) {
+                throw new IllegalArgumentException(
+                    "SingleRecordIdField requires SourceKey with Reader.ResultRowWalk; got "
+                    + sourceKey.reader().getClass().getSimpleName());
+            }
+            if (!(sourceKey.wrap() instanceof SourceKey.Wrap.TableRecord)) {
+                throw new IllegalArgumentException(
+                    "SingleRecordIdField requires SourceKey.Wrap.TableRecord (the @service "
+                    + "producer returns the typed record subclass); got " + sourceKey.wrap());
+            }
+        }
         @Override public DomainReturnType domainReturnType() {
             return new DomainReturnType.Plain(STRING_CLASS);
         }

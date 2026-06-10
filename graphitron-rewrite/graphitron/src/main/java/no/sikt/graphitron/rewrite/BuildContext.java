@@ -636,25 +636,46 @@ class BuildContext {
             .filter(d -> !d.equals(DIR_SPLIT_QUERY))
             .collect(java.util.stream.Collectors.toUnmodifiableSet());
 
+    /**
+     * R275 — the carrier family the structural scan is run for. A named axis (not a flag set)
+     * because the families differ on two coupled policies: the forbidden-directive set on the
+     * data field and the ID-element wrapper admission. DML (DELETE) carriers reject the
+     * list-of-nullable {@code [ID]} and Connection wrappers (every element of a successful
+     * DELETE response is the encoded PK of an actually-deleted row, so the slot cannot be
+     * null); {@code @service} carriers admit {@code [ID]} (the data field projects whatever
+     * record list the service returned, and the opptak schemas declare the weaker {@code [ID]}
+     * contract) while still rejecting Connection. A third family extends the enum and gets
+     * exhaustiveness prompts at both policy sites.
+     */
+    private enum CarrierFamily {
+        DML(FORBIDDEN_CARRIER_DATA_FIELD_DIRECTIVES),
+        SERVICE(FORBIDDEN_SERVICE_CARRIER_DATA_FIELD_DIRECTIVES);
+
+        final java.util.Set<String> forbiddenDataFieldDirectives;
+        CarrierFamily(java.util.Set<String> forbiddenDataFieldDirectives) {
+            this.forbiddenDataFieldDirectives = forbiddenDataFieldDirectives;
+        }
+    }
+
     public DmlPayloadScan scanStructuralDmlPayload(String payloadSdlName) {
-        return scanStructuralPayload(payloadSdlName, FORBIDDEN_CARRIER_DATA_FIELD_DIRECTIVES);
+        return scanStructuralPayload(payloadSdlName, CarrierFamily.DML);
     }
 
     /**
      * R275 — the {@code @service}-carrier variant of {@link #scanStructuralDmlPayload}. Identical
      * structural walk, but {@code @splitQuery} on the data field does not route the type away from
-     * the carrier mold: on a producer-backed carrier the data field's fetcher already runs a
+     * the carrier mold (on a producer-backed carrier the data field's fetcher already runs a
      * PK-keyed follow-up SELECT off the producer's record, so the directive is redundant rather
-     * than a different fetcher contract. Consulted by {@code TypeBuilder.promoteSingleRecordPayloads}
-     * for {@code ServiceEmitted}-bound candidates and by the {@code @service} classifier's
-     * orphan-payload diagnostics.
+     * than a different fetcher contract), and an ID-element data field admits the list-of-nullable
+     * {@code [ID]} wrapper (see {@link CarrierFamily}). Consulted by
+     * {@code TypeBuilder.promoteSingleRecordPayloads} for {@code ServiceEmitted}-bound candidates
+     * and by the {@code @service} classifier's orphan-payload diagnostics.
      */
     public DmlPayloadScan scanStructuralServiceCarrierPayload(String payloadSdlName) {
-        return scanStructuralPayload(payloadSdlName, FORBIDDEN_SERVICE_CARRIER_DATA_FIELD_DIRECTIVES);
+        return scanStructuralPayload(payloadSdlName, CarrierFamily.SERVICE);
     }
 
-    private DmlPayloadScan scanStructuralPayload(String payloadSdlName,
-            java.util.Set<String> forbiddenDataFieldDirectives) {
+    private DmlPayloadScan scanStructuralPayload(String payloadSdlName, CarrierFamily family) {
         if (payloadSdlName == null) return new DmlPayloadScan.NotApplicable();
         var payloadType = schema.getType(payloadSdlName);
         if (!(payloadType instanceof GraphQLObjectType payloadObj)) {
@@ -694,7 +715,7 @@ class BuildContext {
             // list (R178 retires the @field-on-non-$source HardReject — the SettKvotesporsmal
             // bug fix). Pure-metadata directives (@deprecated, custom directives without
             // execution semantics) pass through.
-            for (String forbidden : forbiddenDataFieldDirectives) {
+            for (String forbidden : family.forbiddenDataFieldDirectives) {
                 if (f.hasAppliedDirective(forbidden)) {
                     return new DmlPayloadScan.NotApplicable();
                 }
@@ -707,11 +728,15 @@ class BuildContext {
             } else if (elementType instanceof GraphitronType.ResultType rt && rt.fqClassName() != null) {
                 kind = new DmlElementKind.RecordElement(f.getName());
             } else if ("ID".equals(elementTypeName)) {
-                // R156 wrapper-shape rule: list-of-nullable ([ID]) and Connection wrappers
-                // are rejected on payload-returning DELETE. Test fixtures pin these diagnostic
-                // wordings; preserve the same family.
+                // ID-element wrapper-shape rules, per carrier family (see CarrierFamily). DML
+                // (R156): list-of-nullable ([ID]) and Connection wrappers reject on
+                // payload-returning DELETE; test fixtures pin these diagnostic wordings.
+                // SERVICE (R275): [ID] admits (the opptak fjernSakTagger shape); Connection
+                // still rejects.
                 var wrapper = buildWrapper(f);
-                if (wrapper instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.List list && list.itemNullable()) {
+                if (family == CarrierFamily.DML
+                        && wrapper instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.List list
+                        && list.itemNullable()) {
                     return new DmlPayloadScan.Reject(
                         "single-record carrier field '" + f.getName() + "' has element type 'ID' "
                         + "with a list-of-nullable wrapper '[ID]'; payload-returning DELETE requires "
@@ -720,10 +745,14 @@ class BuildContext {
                         + "actually-deleted row, so the slot cannot be null");
                 }
                 if (wrapper instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.Connection) {
-                    return new DmlPayloadScan.Reject(
-                        "single-record carrier field '" + f.getName() + "' has element type 'ID' "
-                        + "with a Connection wrapper; payload-returning DELETE requires either "
-                        + "singleton (ID / ID!) or list-of-non-null ([ID!] / [ID!]!)");
+                    return new DmlPayloadScan.Reject(switch (family) {
+                        case DML -> "single-record carrier field '" + f.getName() + "' has element type 'ID' "
+                            + "with a Connection wrapper; payload-returning DELETE requires either "
+                            + "singleton (ID / ID!) or list-of-non-null ([ID!] / [ID!]!)";
+                        case SERVICE -> "single-record carrier field '" + f.getName() + "' has element type 'ID' "
+                            + "with a Connection wrapper; an @service-carrier ID data field requires "
+                            + "a singleton (ID / ID!) or plain list ([ID] / [ID!] / [ID!]!) wrapper";
+                    });
                 }
                 kind = new DmlElementKind.IdElement();
             } else {

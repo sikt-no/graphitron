@@ -51,6 +51,45 @@ public final class FilmCarrierWithErrorsService {
      * {@code Outcome.Success}, casts {@code success.value()} to {@code List<FilmRecord>}, and
      * re-selects the requested columns by PK preserving input order.
      */
+    /**
+     * R275 requirement-2 fixture, single arm (the opptak {@code fjernSakTagg -> { taggId: ID
+     * @nodeId, errors }} shape): a delete-shaped service whose payload data field is an
+     * {@code ID @nodeId(typeName: "Film")} scalar encoded straight off the returned record's
+     * key columns, with no follow-up SELECT. The method deliberately synthesizes the
+     * {@code FilmRecord} in memory without touching the database, so ids that do not exist in
+     * any table (e.g. 9001) still encode; a generated re-fetch would resolve null and fail the
+     * execution test. id 999 throws the mapped "missing film" {@code @error} (the
+     * {@code Outcome.ErrorList} arm).
+     */
+    public static FilmRecord deleteFilmById(Integer id, DSLContext dsl) {
+        if (id == null || id < 1) {
+            throw new FilmReviewBadRatingException("id must be >= 1; got " + id);
+        }
+        if (id == 999) {
+            throw new FilmReviewMissingFilmException("film " + id + " not found");
+        }
+        FilmRecord deleted = new FilmRecord();
+        deleted.set(Tables.FILM.FILM_ID, id);
+        return deleted;
+    }
+
+    /**
+     * R275 requirement-2 fixture, list arm (the opptak {@code fjernSakTagger -> { tagger: [ID]
+     * @nodeId, errors }} shape): the MANY-cardinality sibling of {@link #deleteFilmById}.
+     * Returns synthesized records in input order; id 999 anywhere in the list throws the mapped
+     * "missing film" {@code @error}.
+     */
+    public static java.util.List<FilmRecord> deleteFilmsByIds(java.util.List<Integer> ids, DSLContext dsl) {
+        if (ids == null || ids.isEmpty()) {
+            throw new FilmReviewBadRatingException("ids must be non-empty");
+        }
+        java.util.List<FilmRecord> deleted = new java.util.ArrayList<>(ids.size());
+        for (Integer id : ids) {
+            deleted.add(deleteFilmById(id, dsl));
+        }
+        return deleted;
+    }
+
     public static java.util.List<FilmRecord> filmsByIds(java.util.List<Integer> ids, DSLContext dsl) {
         if (ids == null || ids.isEmpty()) {
             throw new FilmReviewBadRatingException("ids must be non-empty");

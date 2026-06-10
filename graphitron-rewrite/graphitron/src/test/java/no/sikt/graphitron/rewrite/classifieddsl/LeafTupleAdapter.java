@@ -129,6 +129,9 @@ public final class LeafTupleAdapter {
             // ---- ChildField: DELETE/payload returning carriers ---------------------------------
             // The encoded-PK scalar reads off the PK-only RETURNING record: no new query, inline Column.
             case ChildField.SingleRecordIdFieldFromReturning f -> inline(Column);
+            // R275: the @service-carrier sibling encodes node-key columns off the producer's
+            // in-memory record(s) (optionally Outcome-narrowed): no new query, inline Column.
+            case ChildField.SingleRecordIdField f -> inline(Column);
             // SingleRecordTableFieldFromReturning projects a full @table off a DELETE's PK-only
             // RETURNING record. That has no valid verdict: the row is gone, so the only producer that
             // could project the @table is a follow-up [Query] against a row that no longer exists. The
