@@ -2287,21 +2287,12 @@ class GraphitronSchemaBuilderTest {
             @Override public Set<Class<?>> variants() { return Set.of(RecordLookupTableField.class); }
         },
 
-        RECORD_FIELD(
-            "@record parent + non-table object return type → RecordField",
-            """
-            type FilmStats { count: Int }
-            type FilmDetails { stats: FilmStats }
-            type Film @table(name: "film") { details: FilmDetails }
-            type Query {
-                film: Film
-                prodFilmDetails: FilmDetails @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeFilmDetailsRecord"})
-                prodFilmStats: FilmStats @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeFilmStatsRecord"})
-            }
-            """,
-            schema -> assertThat(schema.field("FilmDetails", "stats")).isInstanceOf(RecordField.class)) {
-            @Override public Set<Class<?>> variants() { return Set.of(RecordField.class); }
-        },
+        // R281 slice 2: the plain `@record parent + non-table object return -> RecordField` verdict
+        // (a pure isInstanceOf assertion, no slot detail) migrated to the spec-by-example corpus, where
+        // FilmDetails.stats is the record-object flavor of the Column-vs-Field mapping minimal pair (the
+        // `mapping` ClassifiedCorpus example, asserted via @classified(producer: [], mapping: Field) and
+        // rendered into the Field Classification section of code-generation-triggers.adoc). The
+        // RecordField leaf stays covered by the corpus and by the slot-asserting record cases above.
 
         RECORD_TABLE_FIELD_SINGLE_CARDINALITY(
             "@record parent + @table return + single cardinality → RecordTableField (R61 lifted Invariant #10)",

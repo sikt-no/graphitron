@@ -72,6 +72,40 @@ public final class ClassifiedCorpus {
             """,
             "{ city { country { name } countrySplit { name } } }"),
 
+        /*
+         * Mapping minimal pair: Column vs Field. A scalar under the @table parent Film maps to Column
+         * (`title` is a real DB column); a scalar under a record-backed parent maps to Field
+         * (`FilmStats.count` is a POJO property, the record having no @table). The non-table object
+         * field `FilmDetails.stats` is the object flavor of Field (RecordField). All three are inline
+         * (producer []); only the parent's table-ness moves the mapping axis. The two parents are
+         * record-bound by being service producers' return types (`makeFilmDetailsRecord` ->
+         * FilmDetailsRecord, whose sole component is `stats`; `makeFilmStatsRecord` -> FilmStatsRecord,
+         * whose sole component is `count`).
+         */
+        new Example("mapping", """
+            type FilmStats {
+              count: Int @classified(producer: [], mapping: Field)
+            }
+
+            type FilmDetails {
+              stats: FilmStats @classified(producer: [], mapping: Field)
+            }
+
+            type Film @table(name: "film") {
+              title: String @classified(producer: [], mapping: Column)
+              details: FilmDetails
+            }
+
+            type Query {
+              film: Film
+              prodFilmDetails: FilmDetails
+                @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeFilmDetailsRecord"})
+              prodFilmStats: FilmStats
+                @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeFilmStatsRecord"})
+            }
+            """,
+            "{ film { title details { stats { count } } } }"),
+
         /* Service side: a terminal record, a service re-query into a @table, and a pojo field. */
         new Example("service", """
             type Language @table(name: "language") { name: String }
