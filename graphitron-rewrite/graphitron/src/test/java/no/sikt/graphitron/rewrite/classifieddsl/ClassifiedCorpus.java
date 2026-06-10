@@ -162,6 +162,21 @@ public final class ClassifiedCorpus {
             }
             """),
 
+        /*
+         * Nesting: a plain object child (no @table, no @record) on a @table parent inlines into the
+         * parent's projection, inheriting the parent's table context (NestingField). Its scalars resolve
+         * against the parent table, so the field is producer [] (no new query) and maps to Table.
+         * Corpus-only (the inline-Table verdict is already taught by the producer minimal pair); this
+         * adds the NestingField leaf to the corpus's covered set.
+         */
+        new Example("nesting", """
+            type FilmDetails { title: String description: String }
+            type Film @table(name: "film") {
+              details: FilmDetails @classified(producer: [], mapping: Table)
+            }
+            type Query { film: Film }
+            """),
+
         /* DML side: an INSERT that writes then projects the inserted row (a [Dml, Query] pipeline). */
         new Example("dml", """
             type Film @table(name: "film") { title: String }

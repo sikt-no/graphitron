@@ -1558,23 +1558,14 @@ class GraphitronSchemaBuilderTest {
     // ===== NestingField =====
 
     enum NestingFieldCase implements ClassificationCase {
-        PLAIN_OBJECT_TYPE(
-            "a field returning a plain object type (no @table) on a @table parent → NestingField",
-            """
-            type FilmDetails { title: String description: String }
-            type Film @table(name: "film") { details: FilmDetails }
-            type Query { film: Film }
-            """,
-            schema -> assertThat(schema.field("Film", "details")).isInstanceOf(NestingField.class)),
-
-        LIST_OF_PLAIN_OBJECT_TYPE(
-            "a list-wrapped plain object type on a @table parent → NestingField (validator rejects at list cardinality)",
-            """
-            type Tag { title: String }
-            type Film @table(name: "film") { tags: [Tag!]! }
-            type Query { film: Film }
-            """,
-            schema -> assertThat(schema.field("Film", "tags")).isInstanceOf(NestingField.class)),
+        // R281 slice 2: the plain `plain-object child on a @table parent -> NestingField` verdict
+        // (PLAIN_OBJECT_TYPE and its list-wrapped twin LIST_OF_PLAIN_OBJECT_TYPE, both pure isInstanceOf
+        // assertions with no slot detail) migrated to the spec-by-example corpus as the `nesting`
+        // ClassifiedCorpus example (Film.details, asserted via @classified(producer: [], mapping:
+        // Table)). The verdict's inline-Table reading is already taught by the producer minimal pair, so
+        // the example is corpus-only (no doc render). The NestingField leaf stays covered by the corpus
+        // and by the slot-asserting nested-projection cases below (nestedFields() shape, remap,
+        // roll-up, multi-level).
 
         NESTED_SCALAR_RESOLVES_TO_PARENT_COLUMN(
             "nested scalar resolves to the outer parent's column",

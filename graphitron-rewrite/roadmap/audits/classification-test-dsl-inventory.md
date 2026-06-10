@@ -60,8 +60,8 @@ coordinate.
 
 - [ ] `ColumnFieldCase.ENUM_RETURN_TYPE` (L131) -> `ChildField.ColumnField` | enum-typed scalar on a `@table` parent is still a column. *Nuance: edge of the Column verdict (return type is a GraphQL enum), not the bare Column case.*
 - [ ] `TableFieldCase.SPLIT_LOOKUP_TABLE_FIELD` (L856) -> `ChildField.SplitLookupTableField` | `@splitQuery` + `@lookupKey` list child on a `@table` parent
-- [ ] `NestingFieldCase.PLAIN_OBJECT_TYPE` (L1561) -> `ChildField.NestingField` | field returning a plain (no-`@table`/`@record`) object on a `@table` parent
-- [ ] `NestingFieldCase.LIST_OF_PLAIN_OBJECT_TYPE` (L1570) -> `ChildField.NestingField` | list-wrapped plain object on a `@table` parent
+- [x] `NestingFieldCase.PLAIN_OBJECT_TYPE` (L1561) -> `ChildField.NestingField` | field returning a plain (no-`@table`/`@record`) object on a `@table` parent | migrated to the `nesting` corpus example (`Film.details`), corpus-only (inline-Table already taught by the producer minimal pair)
+- [x] `NestingFieldCase.LIST_OF_PLAIN_OBJECT_TYPE` (L1570) -> `ChildField.NestingField` | list-wrapped plain object on a `@table` parent | same `NestingField` leaf, retired alongside `PLAIN_OBJECT_TYPE` via the `nesting` corpus example
 - [ ] `ServiceFieldCase.ON_TABLE_TYPE_SCALAR_RETURN` (L1721) -> `ChildField.ServiceRecordField` | `@service` on a `@table` parent returning a scalar
 - [ ] `InterfaceUnionFieldCase.TABLE_INTERFACE_FIELD` (L1971) -> `ChildField.TableInterfaceField` | child returning a `@table`+`@discriminate` interface
 - [ ] `InterfaceUnionFieldCase.INTERFACE_FIELD` (L1983) -> `ChildField.InterfaceField` | child returning a plain (no-`@table`) interface
