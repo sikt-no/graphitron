@@ -154,12 +154,23 @@ public final class ClassifiedHarness {
 
     /**
      * The simple names of every concrete {@code GraphitronType} sealed leaf except the failure leaf
-     * {@code UnclassifiedType}. This is the set {@code TypeVerdict} must mirror.
+     * {@code UnclassifiedType}, in discovery order and <em>preserving duplicates</em>. The mirror
+     * compares {@code TypeVerdict} against these by simple name, so two leaves sharing a simple name
+     * would silently collapse in the set form below; {@code ClassifiedDslTest} asserts this list has
+     * no duplicates to keep the name-based comparison sound.
      */
-    public static Set<String> graphitronTypeNonFailureLeafNames() {
+    public static List<String> graphitronTypeNonFailureLeafSimpleNames() {
         return GeneratorCoverageTest.sealedLeaves(GraphitronType.class).stream()
             .map(Class::getSimpleName)
             .filter(n -> !n.equals("UnclassifiedType"))
-            .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
+            .toList();
+    }
+
+    /**
+     * The simple names of every concrete {@code GraphitronType} sealed leaf except the failure leaf
+     * {@code UnclassifiedType}. This is the set {@code TypeVerdict} must mirror.
+     */
+    public static Set<String> graphitronTypeNonFailureLeafNames() {
+        return new LinkedHashSet<>(graphitronTypeNonFailureLeafSimpleNames());
     }
 }

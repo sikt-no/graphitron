@@ -35,8 +35,11 @@ public final class ClassifiedDsl {
     /**
      * The test-only directive and enum declarations, prepended to every corpus fixture before the
      * classifier runs. The {@code TypeVerdict} value list mirrors the non-failure leaves of
-     * {@code GraphitronType}; {@link ClassifiedHarness#typeVerdictMirrorMismatch()} fails the build if
-     * the two ever drift, the validator-mirrors-classifier discipline applied to the type half of the DSL.
+     * {@code GraphitronType}: {@link ClassifiedHarness#typeVerdictEnumConstants()} (this list) is
+     * checked against {@link ClassifiedHarness#graphitronTypeNonFailureLeafNames()} (the live leaf
+     * set) by {@code ClassifiedDslTest#typeVerdictMirrorsGraphitronTypeLeaves()}, which fails the
+     * build if the two ever drift, the validator-mirrors-classifier discipline applied to the type
+     * half of the DSL.
      */
     public static final String PRELUDE = """
         enum ProducerStep { Query Service Dml }
