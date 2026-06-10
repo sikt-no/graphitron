@@ -1,7 +1,7 @@
 ---
 id: R294
 title: Treat generator warnings in test fixtures as errors unless asserted
-status: Ready
+status: In Progress
 bucket: testing
 priority: 7
 depends-on: []

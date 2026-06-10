@@ -1,13 +1,6 @@
 package no.sikt.graphitron.rewrite;
 
-import ch.qos.logback.classic.Level;
-import ch.qos.logback.classic.Logger;
-import ch.qos.logback.classic.spi.ILoggingEvent;
-import ch.qos.logback.core.read.ListAppender;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.slf4j.LoggerFactory;
 
 import java.nio.file.Path;
 import java.util.List;
@@ -21,12 +14,17 @@ import no.sikt.graphitron.rewrite.test.tier.UnitTier;
  * Pins the user-facing warn-message format for {@code @asConnection} + required same-table
  * {@code @nodeId} leaf.
  *
- * <p>R113 demoted the classifier rejection on this shape to a {@code LOG.warn}; production
+ * <p>R113 demoted the classifier rejection on this shape to an advisory; production
  * schemas (e.g. opptak-subgraph's {@code Query.kompetanseregelverkGittIdV2}) deliberately
  * compose required same-table {@code @nodeId} args with {@code @asConnection} to ship a
  * paginated WHERE-IN connection to consumers, and a build break on that shape would be a
- * wire-format-incompatible change. The warn still fires (the always-bounded shape is worth
+ * wire-format-incompatible change. The advisory still fires (the always-bounded shape is worth
  * flagging for authors who didn't mean to compose them), but classification continues.
+ *
+ * <p>R294 routed the advisory through the unified {@link BuildWarning} channel
+ * ({@code ctx.addWarning} → {@link GraphitronSchema#warnings()}), retiring the dedicated
+ * {@code asConnectionSameTableHygiene} logger; this test asserts the {@link BuildWarning} on
+ * {@code schema.warnings()} rather than capturing logger output.
  *
  * <p>This test only pins the message format on the firing case — predicate coverage (when
  * the warn fires vs. stays silent) lives at pipeline tier in
@@ -36,9 +34,6 @@ import no.sikt.graphitron.rewrite.test.tier.UnitTier;
  */
 @UnitTier
 class AsConnectionSameTableWarnFormatTest {
-
-    private static final String LOGGER_NAME =
-        FieldBuilder.class.getName() + ".asConnectionSameTableHygiene";
 
     private static final RewriteContext NODEID_CTX = new RewriteContext(
         List.of(),
@@ -55,24 +50,6 @@ class AsConnectionSameTableWarnFormatTest {
         type PageInfo { hasNextPage: Boolean! hasPreviousPage: Boolean! startCursor: String endCursor: String }
         """;
 
-    private ListAppender<ILoggingEvent> appender;
-    private Logger hygieneLogger;
-
-    @BeforeEach
-    void attachAppender() {
-        hygieneLogger = (Logger) LoggerFactory.getLogger(LOGGER_NAME);
-        appender = new ListAppender<>();
-        appender.start();
-        hygieneLogger.addAppender(appender);
-        hygieneLogger.setLevel(Level.WARN);
-    }
-
-    @AfterEach
-    void detachAppender() {
-        hygieneLogger.detachAppender(appender);
-        appender.stop();
-    }
-
     @Test
     void requiredLeaf_emitsWarn_namingFieldLeafAndType() {
         // Mirrors the production shape (required outer wrapper on a same-table @nodeId list arg
@@ -80,7 +57,7 @@ class AsConnectionSameTableWarnFormatTest {
         // produces a working QueryTableField + Connection wrapper at runtime. Pins the stable
         // bits migration tooling can grep for: field name, leaf name, typeName, headline
         // diagnostic, advisory hint.
-        buildSchema("""
+        var schema = buildSchema("""
             type Baz implements Node @table(name: "baz") @node { id: ID! }
             """ + CONNECTION_DECLS + """
             type Query {
@@ -88,12 +65,14 @@ class AsConnectionSameTableWarnFormatTest {
             }
             """, NODEID_CTX);
 
-        assertThat(appender.list).hasSize(1);
-        var msg = appender.list.get(0).getFormattedMessage();
-        assertThat(msg).contains("field 'bazByIds'");
-        assertThat(msg).contains("@nodeId(typeName: 'Baz')");
-        assertThat(msg).contains("'ids'");
-        assertThat(msg).contains("every page of @asConnection would equal the input set");
-        assertThat(msg).contains("make 'ids' nullable");
+        assertThat(schema.warnings())
+            .extracting(BuildWarning::message)
+            .filteredOn(msg -> msg.contains("field 'bazByIds'"))
+            .singleElement()
+            .satisfies(msg -> assertThat(msg)
+                .contains("@nodeId(typeName: 'Baz')")
+                .contains("'ids'")
+                .contains("every page of @asConnection would equal the input set")
+                .contains("make 'ids' nullable"));
     }
 }
