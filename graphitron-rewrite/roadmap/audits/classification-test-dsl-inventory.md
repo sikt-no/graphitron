@@ -62,13 +62,13 @@ coordinate.
 - [ ] `TableFieldCase.SPLIT_LOOKUP_TABLE_FIELD` (L856) -> `ChildField.SplitLookupTableField` | `@splitQuery` + `@lookupKey` list child on a `@table` parent
 - [x] `NestingFieldCase.PLAIN_OBJECT_TYPE` (L1561) -> `ChildField.NestingField` | field returning a plain (no-`@table`/`@record`) object on a `@table` parent | migrated to the `nesting` corpus example (`Film.details`), corpus-only (inline-Table already taught by the producer minimal pair)
 - [x] `NestingFieldCase.LIST_OF_PLAIN_OBJECT_TYPE` (L1570) -> `ChildField.NestingField` | list-wrapped plain object on a `@table` parent | same `NestingField` leaf, retired alongside `PLAIN_OBJECT_TYPE` via the `nesting` corpus example
-- [ ] `ServiceFieldCase.ON_TABLE_TYPE_SCALAR_RETURN` (L1721) -> `ChildField.ServiceRecordField` | `@service` on a `@table` parent returning a scalar
+- [x] `ServiceFieldCase.ON_TABLE_TYPE_SCALAR_RETURN` (L1721) -> `ChildField.ServiceRecordField` | `@service` on a `@table` parent returning a scalar | already covered by the `service` corpus example (`Film.rating`, producer [Service], mapping Record); corpus-only
 - [ ] `InterfaceUnionFieldCase.TABLE_INTERFACE_FIELD` (L1971) -> `ChildField.TableInterfaceField` | child returning a `@table`+`@discriminate` interface
 - [ ] `InterfaceUnionFieldCase.INTERFACE_FIELD` (L1983) -> `ChildField.InterfaceField` | child returning a plain (no-`@table`) interface
 - [ ] `InterfaceUnionFieldCase.UNION_FIELD` (L2023) -> `ChildField.UnionField` | child returning a union
 - [x] `NonTableParentCase.RECORD_TABLE_FIELD` (L2209) -> `ChildField.RecordTableField` | `@record` parent + `@table` return, no `@lookupKey` | migrated to the `record-table` corpus example (`FilmDetails.language`), rendered in code-generation-triggers.adoc §"The record-handoff boundary"
 - [x] `NonTableParentCase.RECORD_FIELD` (L2290) -> `ChildField.RecordField` | `@record` parent + non-table object return | migrated to the `mapping` corpus example (`FilmDetails.stats`), rendered in code-generation-triggers.adoc §"`mapping`: Column vs. Field"
-- [ ] `NonTableParentCase.SERVICE_TABLE_FIELD_ON_RECORD_PARENT` (L2328) -> `ChildField.ServiceTableField` | `@record` parent + `@service` + `@table` return
+- [x] `NonTableParentCase.SERVICE_TABLE_FIELD_ON_RECORD_PARENT` (L2328) -> `ChildField.ServiceTableField` | `@record` parent + `@service` + `@table` return | already covered by the `service` corpus example (`Film.language`, producer [Service, Query], mapping Table); corpus-only
 - [ ] `NonTableParentCase.CONSTRUCTOR_FIELD` (L2343) -> `ChildField.ConstructorField` | `@table` parent + `@record` child type (constructor passthrough)
 - [ ] `ErrorFieldCase.PATH_AND_MESSAGE_CLASSIFY_AS_PROPERTY_FIELDS` (L6031) -> `ChildField.PropertyField` | `path`/`message` fields on an `@error` parent
 - [ ] `RootFieldCase.TABLE_QUERY_FIELD` (L6453) -> `QueryField.QueryTableField` | root query field returning a `@table` type

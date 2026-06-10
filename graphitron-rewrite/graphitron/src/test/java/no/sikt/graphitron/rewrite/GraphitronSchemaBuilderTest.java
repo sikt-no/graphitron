@@ -1709,15 +1709,12 @@ class GraphitronSchemaBuilderTest {
     // ===== ServiceTableField / ServiceRecordField =====
 
     enum ServiceFieldCase implements ClassificationCase {
-        ON_TABLE_TYPE_SCALAR_RETURN(
-            "@service on a @table parent returning scalar → ServiceRecordField",
-            """
-            type Film @table(name: "film") {
-                rating: String @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "get"})
-            }
-            type Query { film: Film }
-            """,
-            schema -> assertThat(schema.field("Film", "rating")).isInstanceOf(ServiceRecordField.class)),
+        // R281 slice 2: the plain `@service on a @table parent returning a scalar -> ServiceRecordField`
+        // verdict (a pure isInstanceOf assertion, no slot detail) migrated to the spec-by-example
+        // corpus, where Film.rating in the `service` ClassifiedCorpus example is exactly this shape,
+        // asserted via @classified(producer: [Service], mapping: Record). Corpus-only (the `service`
+        // example carries no doc query). The ServiceRecordField leaf stays covered by the corpus and by
+        // the slot-asserting service cases below.
 
         TABLE_TYPE_RETURN(
             "@service on @table parent returning another @table type → ServiceTableField",
@@ -2299,20 +2296,13 @@ class GraphitronSchemaBuilderTest {
             @Override public Set<Class<?>> variants() { return Set.of(RecordTableField.class); }
         },
 
-        SERVICE_TABLE_FIELD_ON_RECORD_PARENT(
-            "@record parent + @service + @table return type → ServiceTableField",
-            """
-            type Language @table(name: "language") { name: String }
-            type FilmDetails { language: Language @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getLanguage"}) }
-            type Film @table(name: "film") { details: FilmDetails }
-            type Query {
-                film: Film
-                prodFilmDetails: FilmDetails @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeDummyRecord"})
-            }
-            """,
-            schema -> assertThat(schema.field("FilmDetails", "language")).isInstanceOf(ServiceTableField.class)) {
-            @Override public Set<Class<?>> variants() { return Set.of(ServiceTableField.class); }
-        },
+        // R281 slice 2: the plain `@service + @table return -> ServiceTableField` verdict (a pure
+        // isInstanceOf assertion, no slot detail) migrated to the spec-by-example corpus, where
+        // Film.language in the `service` ClassifiedCorpus example classifies to ServiceTableField,
+        // asserted via @classified(producer: [Service, Query], mapping: Table). Corpus-only (the
+        // `service` example carries no doc query). The ServiceTableField leaf stays covered by the
+        // corpus and by the slot-asserting service cases above (e.g. TABLE_TYPE_RETURN, the @reference
+        // origin-defaulting cases).
 
         CONSTRUCTOR_FIELD(
             "@table parent + @record child type → ConstructorField",
