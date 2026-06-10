@@ -45,7 +45,7 @@ public final class FilmActorCarrierService {
         for (int i = 0; i < actorIds.size(); i++) {
             pairs.add(DSL.row(actorIds.get(i), filmIds.get(i)));
         }
-        @SuppressWarnings("unchecked")
+        @SuppressWarnings({"unchecked", "rawtypes"})
         var fetched = dsl.selectFrom(Tables.FILM_ACTOR)
             .where(DSL.row(Tables.FILM_ACTOR.ACTOR_ID, Tables.FILM_ACTOR.FILM_ID)
                 .in(pairs.toArray(new org.jooq.Row2[0])))

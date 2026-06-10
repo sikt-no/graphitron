@@ -22,6 +22,7 @@ import java.util.Optional;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_JOOQ_PACKAGE;
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_OUTPUT_PACKAGE;
+import static java.util.Objects.requireNonNull;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
@@ -111,7 +112,7 @@ class ConnectionFederationTagPipelineTest {
     }
 
     private static List<String> reparsedTagNames(TypeDefinitionRegistry reg, String typeName) {
-        var def = reg.getType(typeName, ObjectTypeDefinition.class).orElseThrow();
+        var def = requireNonNull(reg.getTypeOrNull(typeName, ObjectTypeDefinition.class));
         return def.getDirectives("tag").stream()
             .map(d -> ((StringValue) d.getArgument("name").getValue()).getValue())
             .toList();

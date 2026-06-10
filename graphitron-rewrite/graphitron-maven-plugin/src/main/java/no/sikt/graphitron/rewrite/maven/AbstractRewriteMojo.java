@@ -44,7 +44,7 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
      * File-name suffixes that count as GraphQL schema files. Drives the
      * {@code <schemaInputs>} post-scan filter, the {@code graphitron:dev} watcher's trigger
      * filter, and the {@code SchemaProblemDiagnostic} orphan scan. Suffixes are matched with
-     * {@link String#endsWith} on the file-name component; leading dots are optional (both
+     * {@code String.endsWith(String)} on the file-name component; leading dots are optional (both
      * {@code .graphqls} and {@code graphqls} normalise to {@code .graphqls}). Case-sensitive
      * on case-sensitive filesystems; Graphitron does not lower-case.
      *

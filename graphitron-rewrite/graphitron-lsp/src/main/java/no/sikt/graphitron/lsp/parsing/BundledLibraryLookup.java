@@ -61,6 +61,9 @@ public final class BundledLibraryLookup implements NativeLibraryLookup {
 
     private static volatile Path extractedLibrary;
 
+    // SymbolLookup.libraryLookup is a restricted FFM method; runtime native access is declared
+    // via --enable-native-access=ALL-UNNAMED (graphitron-lsp/pom.xml surefire argLine).
+    @SuppressWarnings("restricted")
     @Override
     public SymbolLookup get(Arena arena) {
         SymbolLookup grammar = SymbolLookup.libraryLookup(extractOnce(), arena);
@@ -77,6 +80,9 @@ public final class BundledLibraryLookup implements NativeLibraryLookup {
      * jtreesitter still gets to run, and {@link GraphqlLanguage} surfaces
      * a clean missing-runtime message if nothing finds the library.
      */
+    // SymbolLookup.libraryLookup is a restricted FFM method; native access declared via
+    // --enable-native-access=ALL-UNNAMED (graphitron-lsp/pom.xml surefire argLine).
+    @SuppressWarnings("restricted")
     private static Optional<SymbolLookup> probeSystemTreeSitter(Arena arena) {
         for (Path candidate : candidateRuntimePaths()) {
             if (!Files.isRegularFile(candidate)) {

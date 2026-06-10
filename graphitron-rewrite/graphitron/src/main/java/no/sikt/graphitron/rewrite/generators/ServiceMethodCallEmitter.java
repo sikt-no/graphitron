@@ -270,13 +270,12 @@ public final class ServiceMethodCallEmitter {
             case ValueShape.JavaBeanInput bean ->
                 CodeBlock.of("$L(env.getArgument($S))",
                     pluralHelperName(bean.javaClass()), outerArg);
-            case ValueShape.Scalar s ->
+            case ValueShape.Scalar ignored ->
                 // List of scalars at a top-level path: the walker produces a Scalar directly
-                // for {@code List<X>} args, so this arm is defensive. Cast the raw List<?> to
-                // the declared element type via the leaf transform-equivalent expression.
-                CodeBlock.of("($T) env.getArgument($S)",
-                    ParameterizedTypeName.get(ClassName.get(List.class), s.javaType()),
-                    outerArg);
+                // for {@code List<X>} args, so this arm is defensive. getArgument is <T> T, so the
+                // typed call-site local / method parameter drives inference; no cast is needed
+                // (and an explicit one to List<element> would be an unchecked cast).
+                CodeBlock.of("env.getArgument($S)", outerArg);
             case ValueShape.ListOf nested ->
                 // Nested ListOf (list of lists) is not produced by the current walker. Defensive
                 // fallback so the switch is exhaustive without inventing a syntax.

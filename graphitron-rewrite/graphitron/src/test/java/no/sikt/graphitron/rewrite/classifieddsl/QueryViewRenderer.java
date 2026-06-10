@@ -1,6 +1,7 @@
 package no.sikt.graphitron.rewrite.classifieddsl;
 
 import graphql.language.AstPrinter;
+import graphql.language.Definition;
 import graphql.language.Directive;
 import graphql.language.Document;
 import graphql.language.EnumTypeDefinition;
@@ -113,17 +114,26 @@ public final class QueryViewRenderer {
         var sb = new StringBuilder();
         // 1. Output field containers, pruned to the selected fields (the field/catalog side; preserved verbatim).
         for (var entry : touched.fieldsByParent.entrySet()) {
-            registry.getType(entry.getKey()).ifPresent(def -> append(sb, prune(def, entry.getValue())));
+            TypeDefinition<?> def = registry.getTypeOrNull(entry.getKey());
+            if (def != null) {
+                append(sb, prune(def, entry.getValue()));
+            }
         }
         // 2. Abstract output types referenced but not field-selected (unions; interfaces reached only via fragments).
         for (String name : touched.abstractTypes) {
             if (!touched.fieldsByParent.containsKey(name)) {
-                registry.getType(name).ifPresent(def -> append(sb, stripInternalDirectives(def)));
+                TypeDefinition<?> def = registry.getTypeOrNull(name);
+                if (def != null) {
+                    append(sb, stripInternalDirectives(def));
+                }
             }
         }
         // 3. Input-object closure reached from the kept fields' arguments.
         for (String name : touched.inputTypes) {
-            registry.getType(name).ifPresent(def -> append(sb, stripInternalDirectives(def)));
+            TypeDefinition<?> def = registry.getTypeOrNull(name);
+            if (def != null) {
+                append(sb, stripInternalDirectives(def));
+            }
         }
         return sb.toString().strip();
     }
@@ -135,7 +145,7 @@ public final class QueryViewRenderer {
 
     private static Map<String, FragmentDefinition> indexFragments(Document doc) {
         Map<String, FragmentDefinition> fragments = new HashMap<>();
-        for (var def : doc.getDefinitions()) {
+        for (Definition<?> def : doc.getDefinitions()) {
             if (def instanceof FragmentDefinition frag) {
                 fragments.put(frag.getName(), frag);
             }
@@ -164,7 +174,7 @@ public final class QueryViewRenderer {
         }
 
         void fromDocument(Document doc) {
-            for (var def : doc.getDefinitions()) {
+            for (Definition<?> def : doc.getDefinitions()) {
                 if (def instanceof OperationDefinition op) {
                     walk(op.getSelectionSet(), rootType(op));
                 } else if (def instanceof FragmentDefinition frag) {

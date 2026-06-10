@@ -92,18 +92,6 @@ public final class FilmService {
     }
 
     /**
-     * R70 sibling fixture exercising the typed-{@link FilmRecord} source-shape arm. The
-     * developer signs {@code Set<FilmRecord>} on the parameter and {@code Map<FilmRecord, String>}
-     * on the return, which classifies as {@link no.sikt.graphitron.rewrite.model.BatchKey.MappedTableRecordKeyed}
-     * (the variant carries the typed record class). The framework's emitted lambda extracts the
-     * parent's {@code FilmRecord} via {@code env.getSource().into(Tables.FILM)} and calls this
-     * method directly with the typed-record set.
-     *
-     * <p>Reads each {@code FilmRecord}'s {@code title} via {@link FilmRecord#getTitle()} and
-     * returns the title-case rendition. No SQL fetch is required because the typed record
-     * already carries every column on the parent table.
-     */
-    /**
      * R177 fixture: child {@code @service} with a {@link no.sikt.graphitron.rewrite.model.ReturnTypeRef.TableBoundReturnType}
      * return ({@code Language}). Post-R177 the rows-method's {@code V} is
      * {@code tb.table().recordClass()} (here {@link LanguageRecord}), so the structurally-
@@ -136,6 +124,18 @@ public final class FilmService {
         return result;
     }
 
+    /**
+     * R70 sibling fixture exercising the typed-{@link FilmRecord} source-shape arm. The
+     * developer signs {@code Set<FilmRecord>} on the parameter and {@code Map<FilmRecord, String>}
+     * on the return, which classifies as {@link no.sikt.graphitron.rewrite.model.BatchKey.MappedTableRecordKeyed}
+     * (the variant carries the typed record class). The framework's emitted lambda extracts the
+     * parent's {@code FilmRecord} via {@code env.getSource().into(Tables.FILM)} and calls this
+     * method directly with the typed-record set.
+     *
+     * <p>Reads each {@code FilmRecord}'s {@code title} via {@link FilmRecord#getTitle()} and
+     * returns the title-case rendition. No SQL fetch is required because the typed record
+     * already carries every column on the parent table.
+     */
     public static Map<FilmRecord, String> titleTitlecase(Set<FilmRecord> films) {
         Map<FilmRecord, String> result = new LinkedHashMap<>();
         for (FilmRecord film : films) {

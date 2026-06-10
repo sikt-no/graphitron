@@ -9,6 +9,8 @@ package no.sikt.graphitron.rewrite.test.services;
  * path/message {@code DataFetcher}s for every {@code @error} type.
  */
 public class FilmLookupInvalidIdException extends RuntimeException {
+    private static final long serialVersionUID = 1L;
+
     public FilmLookupInvalidIdException(String message) {
         super(message);
     }

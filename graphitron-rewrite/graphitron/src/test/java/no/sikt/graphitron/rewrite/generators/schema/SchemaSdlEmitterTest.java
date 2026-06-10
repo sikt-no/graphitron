@@ -23,6 +23,7 @@ import java.nio.file.Path;
 import java.util.Map;
 
 import static graphql.Scalars.GraphQLString;
+import static java.util.Objects.requireNonNull;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
@@ -148,11 +149,11 @@ class SchemaSdlEmitterTest {
                 .as("consumer-declared survivor directive definition must print (federation=%s)", federationLink)
                 .isPresent();
 
-            var film = (ObjectTypeDefinition) reparsed.getType("Film").orElseThrow();
+            var film = requireNonNull(reparsed.getTypeOrNull("Film", ObjectTypeDefinition.class));
             assertThat(film.getDirectives("table"))
                 .as("generator-only directive application must not print (federation=%s)", federationLink)
                 .isEmpty();
-            var query = (ObjectTypeDefinition) reparsed.getType("Query").orElseThrow();
+            var query = requireNonNull(reparsed.getTypeOrNull("Query", ObjectTypeDefinition.class));
             var films = query.getFieldDefinitions().stream()
                 .filter(f -> f.getName().equals("films"))
                 .findFirst().orElseThrow();
@@ -175,19 +176,19 @@ class SchemaSdlEmitterTest {
             var withoutReference = emitAndReparse(unreferenced, federationLink, root.resolve("unref-" + federationLink));
 
             DirectiveSupportTypes.strictlyInternal().forEach(name ->
-                assertThat(withReference.getType(name))
+                assertThat(withReference.getTypeOrNull(name))
                     .as("strictly internal type %s must never print (federation=%s)", name, federationLink)
-                    .isEmpty());
+                    .isNull());
 
-            var sortDirection = (EnumTypeDefinition) withReference.getType("SortDirection").orElseThrow();
+            var sortDirection = requireNonNull(withReference.getTypeOrNull("SortDirection", EnumTypeDefinition.class));
             assertThat(sortDirection.getDescription())
                 .as("retained SortDirection carries its description (federation=%s)", federationLink)
                 .isNotNull();
 
             DirectiveSupportTypes.all().forEach(name ->
-                assertThat(withoutReference.getType(name))
+                assertThat(withoutReference.getTypeOrNull(name))
                     .as("unreferenced support type %s must not print (federation=%s)", name, federationLink)
-                    .isEmpty());
+                    .isNull());
         }
     }
 

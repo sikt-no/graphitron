@@ -91,13 +91,6 @@ class FederationBuildSmokeTest {
     }
 
     /**
-     * Build-time {@code @key(fields: "id")} synthesis on {@code @node} types is visible in the
-     * runtime-reconstructed {@code _Service.sdl}. {@code KeyNodeSynthesiser} attaches the
-     * directive at the registry level (so the supergraph composer sees it); this test asserts
-     * the emitted SDL carries it for every {@code @node} type, even ones that did not write the
-     * directive themselves (Customer, Address). Locks the synthesis path against silent removal.
-     */
-    /**
      * R250: the consumer's {@code extend schema @link(url:..., import:[...])}
      * must round-trip through codegen ({@code AppliedDirectiveEmitter.
      * applicationsForSchema} → {@code .withSchemaAppliedDirectives(...)} on
@@ -135,6 +128,13 @@ class FederationBuildSmokeTest {
             .containsPattern("schema\\s+@link[^{]*import\\s*:\\s*\\[\\s*\"@key\"\\s*\\]");
     }
 
+    /**
+     * Build-time {@code @key(fields: "id")} synthesis on {@code @node} types is visible in the
+     * runtime-reconstructed {@code _Service.sdl}. {@code KeyNodeSynthesiser} attaches the
+     * directive at the registry level (so the supergraph composer sees it); this test asserts
+     * the emitted SDL carries it for every {@code @node} type, even ones that did not write the
+     * directive themselves (Customer, Address). Locks the synthesis path against silent removal.
+     */
     @Test
     void serviceSdlExposesSynthesisedKeyOnNodeTypes() {
         GraphQLSchema schema = Graphitron.buildSchema(b -> {}, fed -> {});
@@ -155,14 +155,6 @@ class FederationBuildSmokeTest {
             .containsPattern("type\\s+Film\\b[^{]*@key\\s*\\(\\s*fields\\s*:\\s*\"id\"");
     }
 
-    /**
-     * The printed Service SDL must carry the canonical {@code @key} directive shape:
-     * {@code fields: federation__FieldSet!} (the post-rename form when {@code @link} imports
-     * {@code @key} without importing {@code FieldSet}) and {@code resolvable: Boolean = true}
-     * (the spec-defined default value). Subgraph composition tooling rejects the placeholder
-     * shape that the previous emitter produced ({@code fields: String!} with no default on
-     * {@code resolvable}).
-     */
     /**
      * Pipeline ↔ runtime parity (R247, closed by R291): the on-classpath
      * {@code schema.graphqls} emitted by {@code SchemaSdlEmitter} must
@@ -270,6 +262,14 @@ class FederationBuildSmokeTest {
             .containsPattern("type\\s+FilmRefStub\\b[^{]*@key\\s*\\([^)]*resolvable\\s*:\\s*false");
     }
 
+    /**
+     * The printed Service SDL must carry the canonical {@code @key} directive shape:
+     * {@code fields: federation__FieldSet!} (the post-rename form when {@code @link} imports
+     * {@code @key} without importing {@code FieldSet}) and {@code resolvable: Boolean = true}
+     * (the spec-defined default value). Subgraph composition tooling rejects the placeholder
+     * shape that the previous emitter produced ({@code fields: String!} with no default on
+     * {@code resolvable}).
+     */
     @Test
     void serviceSdlExposesCanonicalKeyDirectiveShape() {
         GraphQLSchema schema = Graphitron.buildSchema(b -> {}, fed -> {});

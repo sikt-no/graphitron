@@ -15,6 +15,7 @@ import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.javapoet.TypeSpec;
+import no.sikt.graphitron.javapoet.WildcardTypeName;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.HasInputRecordShape;
@@ -55,6 +56,12 @@ public final class InputRecordGenerator {
 
     private static final ClassName MAP        = ClassName.get(Map.class);
     private static final ClassName LIST       = ClassName.get(List.class);
+    // List<?> for the intermediate `_raw` local: the element type genuinely arrives erased off
+    // the graphql-java argument map (a wire boundary), so the honest decl is the wildcard, not a
+    // raw List. The per-element coercion below stays unchecked and is covered by fromMap's
+    // method-level @SuppressWarnings("unchecked").
+    private static final ParameterizedTypeName LIST_WILDCARD =
+        ParameterizedTypeName.get(LIST, WildcardTypeName.subtypeOf(Object.class));
     private static final ClassName STRING     = ClassName.get(String.class);
     private static final ClassName OBJECT     = ClassName.get(Object.class);
     private static final ParameterizedTypeName MAP_STRING_OBJECT =
@@ -242,7 +249,7 @@ public final class InputRecordGenerator {
             // contract). The intermediate `_raw` local lives only at codegen scope.
             TypeName element = pt.typeArguments().get(0);
             String rawLocal = local + "_raw";
-            b.addStatement("$T $L = ($T) in.get($S)", LIST, rawLocal, LIST, sdlName);
+            b.addStatement("$T $L = ($T) in.get($S)", LIST_WILDCARD, rawLocal, LIST_WILDCARD, sdlName);
             if (isInputClass(element, outputPackage)) {
                 ClassName elemClass = (ClassName) element;
                 b.addStatement(

@@ -1,5 +1,6 @@
 package no.sikt.graphitron.rewrite.generators;
 
+import no.sikt.graphitron.javapoet.AnnotationSpec;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
@@ -122,6 +123,20 @@ public class QueryConditionsGenerator {
             .returns(CONDITION)
             .addParameter(jooqTableClass, "table")
             .addParameter(ENV, "env");
+
+        // A list-typed nested-input filter arg extracts as `(List<X>) map.get(key)`, where the
+        // map value is statically Object, so the cast is inherently unchecked (unlike the
+        // `<T> T env.getArgument(...)` sites, which carry their type through inference). Stamp the
+        // suppression at this method, the narrowest enclosing member, only when such a param is
+        // present.
+        boolean needsUncheckedSuppression = filters.stream()
+            .flatMap(f -> f.callParams().stream())
+            .anyMatch(p -> p.list() && p.extraction() instanceof CallSiteExtraction.NestedInputField);
+        if (needsUncheckedSuppression) {
+            builder.addAnnotation(AnnotationSpec.builder(SuppressWarnings.class)
+                .addMember("value", "$S", "unchecked")
+                .build());
+        }
 
         // Pre-lift any JooqConvert+list arg into a local before the (possibly reduced) body —
         // the extraction expression references it as `<name>Keys` when building call args.

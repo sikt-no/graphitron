@@ -8,6 +8,8 @@ package no.sikt.graphitron.rewrite.test.services;
  * union slot.
  */
 public class FilmReviewBadRatingException extends RuntimeException {
+    private static final long serialVersionUID = 1L;
+
     public FilmReviewBadRatingException(String message) {
         super(message);
     }

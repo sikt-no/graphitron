@@ -449,10 +449,10 @@ public final class FetcherEmitter {
         if (many) {
             var resultClass = ClassName.get("org.jooq", "Result");
             var resultOfRow = ParameterizedTypeName.get(resultClass, rowType);
-            body.add("    $T source = ($T) env.getSource();\n", resultOfRow, resultOfRow);
+            body.add("    $T source = env.getSource();\n", resultOfRow);
             body.add("    if (source.isEmpty()) return source;\n");
         } else {
-            body.add("    $T source = ($T) env.getSource();\n", rowType, rowType);
+            body.add("    $T source = env.getSource();\n", rowType);
             body.add("    if (source == null) return null;\n");
         }
         body.add("    $T dsl = (($T) env.getGraphQlContext().get($T.class)).getDslContext(env);\n",
@@ -836,16 +836,14 @@ public final class FetcherEmitter {
                 ClassName.get("java.util", "ArrayList"), stringClass);
             var listOfString = ParameterizedTypeName.get(
                 ClassName.get("java.util", "List"), stringClass);
-            body.add("    $T source = ($T) env.getSource();\n", resultOfRecord, resultOfRecord);
+            body.add("    $T source = env.getSource();\n", resultOfRecord);
             body.add("    if (source == null) return null;\n");
             body.add("    $T ids = new $T(source.size());\n", listOfString, arrayListOfString);
             body.add("    for ($T row : source) {\n", jooqRecord);
             body.add("        ids.add($T.$L(", encoderClass, encoderMethod);
             for (int i = 0; i < pkColumns.size(); i++) {
                 if (i > 0) body.add(", ");
-                body.add("row.get(($T<$T>) $T.field($S, $T.class))",
-                    ClassName.get("org.jooq", "Field"),
-                    ClassName.bestGuess(pkColumns.get(i).columnClass()),
+                body.add("row.get($T.field($S, $T.class))",
                     DSL, pkColumns.get(i).sqlName(),
                     ClassName.bestGuess(pkColumns.get(i).columnClass()));
             }
@@ -853,14 +851,12 @@ public final class FetcherEmitter {
             body.add("    }\n");
             body.add("    return ids;\n");
         } else {
-            body.add("    $T source = ($T) env.getSource();\n", jooqRecord, jooqRecord);
+            body.add("    $T source = env.getSource();\n", jooqRecord);
             body.add("    if (source == null) return null;\n");
             body.add("    return $T.$L(", encoderClass, encoderMethod);
             for (int i = 0; i < pkColumns.size(); i++) {
                 if (i > 0) body.add(", ");
-                body.add("source.get(($T<$T>) $T.field($S, $T.class))",
-                    ClassName.get("org.jooq", "Field"),
-                    ClassName.bestGuess(pkColumns.get(i).columnClass()),
+                body.add("source.get($T.field($S, $T.class))",
                     DSL, pkColumns.get(i).sqlName(),
                     ClassName.bestGuess(pkColumns.get(i).columnClass()));
             }

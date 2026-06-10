@@ -1549,8 +1549,8 @@ public class TypeFetcherGenerator {
                 // and walk the typed instance. The local is the validator's target (typed),
                 // not the raw Map. The class goes out of scope after the pre-step; downstream
                 // value reads route through R150's bean path or the existing Map.get pattern.
-                b.addStatement("$T $L_raw = ($T) env.getArgument($S)",
-                    mapStringObject, local, mapStringObject, argName);
+                b.addStatement("$T $L_raw = env.getArgument($S)",
+                    mapStringObject, local, argName);
                 b.addStatement("$T $L = $L_raw == null ? null : $T.fromMap($L_raw)",
                     inputClass, local, local, inputClass, local);
             } else {
@@ -3412,8 +3412,8 @@ public class TypeFetcherGenerator {
             builder.addCode(postDslGuard);
         }
         if (listInput) {
-            builder.addStatement("$T<$T<?, ?>> in = ($T<$T<?, ?>>) env.getArgument($S)",
-                ClassName.get(List.class), MAP, ClassName.get(List.class), MAP, inputArgName);
+            builder.addStatement("$T<$T<?, ?>> in = env.getArgument($S)",
+                ClassName.get(List.class), MAP, inputArgName);
             // Empty-list contract: no round-trip, return typed empty list. Bypasses the
             // projection terminator entirely; jOOQ rejects empty VALUES on every verb, so the
             // short-circuit is mandatory, not just an optimisation.
@@ -4566,8 +4566,8 @@ public class TypeFetcherGenerator {
             .addParameter(ENV, "env");
         builder.beginControlFlow("try");
         builder.addStatement("$T dsl = $L.getDslContext(env)", dslContextClass, ctx.graphitronContextCall());
-        builder.addStatement("$T<$T<?, ?>> in = ($T<$T<?, ?>>) env.getArgument($S)",
-            LIST, MAP, LIST, MAP, argName);
+        builder.addStatement("$T<$T<?, ?>> in = env.getArgument($S)",
+            LIST, MAP, argName);
         builder.addStatement("$T $L = $T.$L",
             tablesOnly.jooqTableClass(), tableLocal, tablesOnly.tablesClass(), tableRef.javaFieldName());
 

@@ -8,6 +8,8 @@ package no.sikt.graphitron.rewrite.test.services;
  * unchecked keeps the fixture orthogonal to the §4 declared-exception check).
  */
 public class FilmLookupNotFoundException extends RuntimeException {
+    private static final long serialVersionUID = 1L;
+
     public FilmLookupNotFoundException(String message) {
         super(message);
     }

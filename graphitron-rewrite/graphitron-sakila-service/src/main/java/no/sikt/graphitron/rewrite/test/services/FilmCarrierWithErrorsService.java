@@ -42,16 +42,6 @@ public final class FilmCarrierWithErrorsService {
     }
 
     /**
-     * R275 reopened-scope list arm (the opptak {@code leggTilTagger -> { saker: [Sak!]
-     * @splitQuery, errors }} shape): returns the films with the given ids in input order, or
-     * throws the mapped "missing film" {@code @error} when any id is unknown (exercises the
-     * {@code Outcome.ErrorList} arm over a MANY-cardinality carrier: the data field renders
-     * null, the typed error lands in the errors union). The happy path exercises the
-     * {@code OUTCOME_SUCCESS} MANY arm: the data field's fetcher narrows
-     * {@code Outcome.Success}, casts {@code success.value()} to {@code List<FilmRecord>}, and
-     * re-selects the requested columns by PK preserving input order.
-     */
-    /**
      * R275 requirement-2 fixture, single arm (the opptak {@code fjernSakTagg -> { taggId: ID
      * @nodeId, errors }} shape): a delete-shaped service whose payload data field is an
      * {@code ID @nodeId(typeName: "Film")} scalar encoded straight off the returned record's
@@ -90,6 +80,16 @@ public final class FilmCarrierWithErrorsService {
         return deleted;
     }
 
+    /**
+     * R275 reopened-scope list arm (the opptak {@code leggTilTagger -> { saker: [Sak!]
+     * @splitQuery, errors }} shape): returns the films with the given ids in input order, or
+     * throws the mapped "missing film" {@code @error} when any id is unknown (exercises the
+     * {@code Outcome.ErrorList} arm over a MANY-cardinality carrier: the data field renders
+     * null, the typed error lands in the errors union). The happy path exercises the
+     * {@code OUTCOME_SUCCESS} MANY arm: the data field's fetcher narrows
+     * {@code Outcome.Success}, casts {@code success.value()} to {@code List<FilmRecord>}, and
+     * re-selects the requested columns by PK preserving input order.
+     */
     public static java.util.List<FilmRecord> filmsByIds(java.util.List<Integer> ids, DSLContext dsl) {
         if (ids == null || ids.isEmpty()) {
             throw new FilmReviewBadRatingException("ids must be non-empty");

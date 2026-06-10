@@ -9,6 +9,7 @@ import graphql.language.NullValue;
 import graphql.language.StringValue;
 import graphql.language.Type;
 import graphql.language.TypeName;
+import graphql.language.Value;
 import graphql.schema.GraphQLAppliedDirective;
 import graphql.schema.GraphQLAppliedDirectiveArgument;
 import graphql.schema.GraphQLObjectType;
@@ -795,7 +796,7 @@ public final class CatalogBuilder {
         Object value = arg.getValue();
         if (value instanceof ArrayValue av) {
             var list = new ArrayList<String>(av.getValues().size());
-            for (var v : av.getValues()) {
+            for (Value<?> v : av.getValues()) {
                 if (v instanceof NullValue) {
                     list.add(null);
                 } else if (v instanceof StringValue sv) {
