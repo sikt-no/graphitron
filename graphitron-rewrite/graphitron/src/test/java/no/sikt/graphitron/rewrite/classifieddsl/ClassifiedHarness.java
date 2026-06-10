@@ -1,0 +1,156 @@
+package no.sikt.graphitron.rewrite.classifieddsl;
+
+import graphql.language.Argument;
+import graphql.language.ArrayValue;
+import graphql.language.Directive;
+import graphql.language.EnumTypeDefinition;
+import graphql.language.EnumValue;
+import graphql.language.EnumValueDefinition;
+import graphql.language.FieldDefinition;
+import graphql.language.InterfaceTypeDefinition;
+import graphql.language.ObjectTypeDefinition;
+import graphql.language.Value;
+import graphql.schema.idl.SchemaParser;
+import graphql.schema.idl.TypeDefinitionRegistry;
+import no.sikt.graphitron.common.configuration.TestConfiguration;
+import no.sikt.graphitron.rewrite.GraphitronSchema;
+import no.sikt.graphitron.rewrite.GraphitronSchemaBuilder;
+import no.sikt.graphitron.rewrite.TestSchemaHelper;
+import no.sikt.graphitron.rewrite.generators.GeneratorCoverageTest;
+import no.sikt.graphitron.rewrite.model.GraphitronField;
+import no.sikt.graphitron.rewrite.model.GraphitronType;
+import no.sikt.graphitron.rewrite.model.OutputField;
+
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Set;
+
+/**
+ * Drives R281's spec-by-example corpus: parses an annotated fixture schema, runs <em>today's</em>
+ * classifier, and for each {@code @classified} / {@code @classifiedType} coordinate compares the
+ * directive's declared verdict against what the classifier produces (mapped through
+ * {@link LeafTupleAdapter} for fields, read off the sealed leaf's simple name for types).
+ *
+ * <p>The fixture's test-only directives ({@link ClassifiedDsl#PRELUDE}) are prepended before the
+ * classifier runs; the classifier ignores them, and this harness reads them straight off the parsed
+ * AST. The SDL is the example, the directive is the assertion. See
+ * {@code roadmap/classification-test-dsl.md} §"The shape".
+ */
+public final class ClassifiedHarness {
+
+    private ClassifiedHarness() {}
+
+    /** One {@code @classified} output-field coordinate: its declared tuple vs. the adapter's. */
+    public record FieldCase(String parentType, String fieldName, DimensionTuple expected, DimensionTuple actual) {}
+
+    /** One {@code @classifiedType} coordinate: its declared verdict vs. the classified leaf's simple name. */
+    public record TypeCase(String typeName, String expectedVerdict, String actualVerdict) {}
+
+    /** The full outcome of classifying one fixture: every annotated coordinate, plus the schema. */
+    public record Result(List<FieldCase> fields, List<TypeCase> types, GraphitronSchema schema) {}
+
+    /**
+     * Classifies {@code fixtureSdl} (the {@link ClassifiedDsl#PRELUDE} prepended automatically) and
+     * resolves every {@code @classified} / {@code @classifiedType} coordinate it carries.
+     */
+    public static Result classify(String fixtureSdl) {
+        String full = ClassifiedDsl.PRELUDE + "\n" + fixtureSdl;
+        TypeDefinitionRegistry registry = TestSchemaHelper.parseRegistryWithPrelude(full);
+        GraphitronSchema schema = GraphitronSchemaBuilder.build(registry, TestConfiguration.testContext());
+
+        var fields = new ArrayList<FieldCase>();
+        var types = new ArrayList<TypeCase>();
+
+        for (var def : registry.types().values()) {
+            List<FieldDefinition> fieldDefs = switch (def) {
+                case ObjectTypeDefinition o -> o.getFieldDefinitions();
+                case InterfaceTypeDefinition i -> i.getFieldDefinitions();
+                default -> List.of();
+            };
+            for (var fd : fieldDefs) {
+                Directive d = directive(fd.getDirectives(), ClassifiedDsl.CLASSIFIED);
+                if (d == null) continue;
+                fields.add(fieldCase(schema, def.getName(), fd.getName(), d));
+            }
+            Directive dt = directive(def.getDirectives(), ClassifiedDsl.CLASSIFIED_TYPE);
+            if (dt != null) {
+                types.add(typeCase(schema, def.getName(), dt));
+            }
+        }
+        return new Result(fields, types, schema);
+    }
+
+    private static FieldCase fieldCase(GraphitronSchema schema, String parentType, String fieldName, Directive d) {
+        GraphitronField field = schema.field(parentType, fieldName);
+        if (!(field instanceof OutputField out)) {
+            throw new AssertionError(
+                "@classified coordinate " + parentType + "." + fieldName + " did not classify to an "
+                + "OutputField (got " + (field == null ? "null" : field.getClass().getSimpleName())
+                + "); the corpus asserts successful classification only.");
+        }
+        DimensionTuple expected = new DimensionTuple(producerArg(d), mappingArg(d));
+        DimensionTuple actual = LeafTupleAdapter.toTuple(out);
+        return new FieldCase(parentType, fieldName, expected, actual);
+    }
+
+    private static TypeCase typeCase(GraphitronSchema schema, String typeName, Directive d) {
+        GraphitronType type = schema.type(typeName);
+        String actual = type == null ? "<absent>" : type.getClass().getSimpleName();
+        return new TypeCase(typeName, enumArg(d, "as"), actual);
+    }
+
+    private static List<ProducerStep> producerArg(Directive d) {
+        var arr = (ArrayValue) argValue(d, "producer");
+        var steps = new ArrayList<ProducerStep>();
+        for (Value<?> v : arr.getValues()) {
+            steps.add(ProducerStep.valueOf(((EnumValue) v).getName()));
+        }
+        return steps;
+    }
+
+    private static Mapping mappingArg(Directive d) {
+        return Mapping.valueOf(enumArg(d, "mapping"));
+    }
+
+    private static String enumArg(Directive d, String argName) {
+        return ((EnumValue) argValue(d, argName)).getName();
+    }
+
+    private static Value<?> argValue(Directive d, String argName) {
+        Argument a = d.getArgument(argName);
+        if (a == null) {
+            throw new AssertionError("@" + d.getName() + " is missing required argument '" + argName + "'");
+        }
+        return a.getValue();
+    }
+
+    private static Directive directive(List<Directive> directives, String name) {
+        return directives.stream().filter(x -> x.getName().equals(name)).findFirst().orElse(null);
+    }
+
+    // ----- meta-test support: the TypeVerdict mirror -----
+
+    /** The {@code TypeVerdict} enum constants as declared in {@link ClassifiedDsl#PRELUDE}. */
+    public static Set<String> typeVerdictEnumConstants() {
+        TypeDefinitionRegistry registry = new SchemaParser().parse(ClassifiedDsl.PRELUDE);
+        EnumTypeDefinition verdict = (EnumTypeDefinition) registry.getType("TypeVerdict")
+            .orElseThrow(() -> new AssertionError("TypeVerdict enum missing from the DSL prelude"));
+        var names = new LinkedHashSet<String>();
+        for (EnumValueDefinition v : verdict.getEnumValueDefinitions()) {
+            names.add(v.getName());
+        }
+        return names;
+    }
+
+    /**
+     * The simple names of every concrete {@code GraphitronType} sealed leaf except the failure leaf
+     * {@code UnclassifiedType}. This is the set {@code TypeVerdict} must mirror.
+     */
+    public static Set<String> graphitronTypeNonFailureLeafNames() {
+        return GeneratorCoverageTest.sealedLeaves(GraphitronType.class).stream()
+            .map(Class::getSimpleName)
+            .filter(n -> !n.equals("UnclassifiedType"))
+            .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
+    }
+}
