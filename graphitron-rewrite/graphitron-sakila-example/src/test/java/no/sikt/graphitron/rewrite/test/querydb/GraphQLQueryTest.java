@@ -312,7 +312,7 @@ class GraphQLQueryTest {
         // R61 execution-tier fixture: @externalField returning Field<TableRecord<?>>.
         // InventoryExtensions.filmRef(table) projects inventory.film_id via DSL.row(...).
         // convertFrom(...), constructing a FilmRecord with only the PK populated. The
-        // GraphQL FilmCard type is @record-backed by FilmRecord; FilmCard.filmId is read
+        // GraphQL FilmCard type is record-backed by FilmRecord; FilmCard.filmId is read
         // from the lifted FilmRecord at request time. Confirms a Field<X> where X is a
         // jOOQ TableRecord round-trips end-to-end through the existing @externalField
         // resolver (no production change in R61) and the convertFrom trick lifts a typed
@@ -4583,14 +4583,15 @@ class GraphQLQueryTest {
         only.containsEntry("message", "film 999 not found");
     }
 
-    // ===== R275 reopened scope: @splitQuery-list source-record carrier end-to-end =====
+    // ===== R275 reopened scope: @service list-data-field source-record carrier end-to-end =====
     //
-    // serviceFilmsByIdsWithErrors returns List<FilmRecord> into { films: [Film!] @splitQuery,
-    // errors: [...] } — the opptak leggTilTagger shape. @splitQuery on the carrier data field is
-    // tolerated as redundant (the fetcher already re-selects by PK); pre-R275 the forbidden-
-    // directive check dropped the payload type and schema assembly failed with a dangling
-    // typeRef. The films fetcher exercises the MANY + OUTCOME_SUCCESS combination: narrow
-    // Outcome.Success, cast success.value() to List<FilmRecord>, re-select by PK in input order.
+    // serviceFilmsByIdsWithErrors returns List<FilmRecord> into { films: [Film!], errors: [...] }
+    // — the opptak leggTilTagger shape. The films fetcher exercises the MANY + OUTCOME_SUCCESS
+    // combination: narrow Outcome.Success, cast success.value() to List<FilmRecord>, re-select by
+    // PK in input order. (R294: the carrier used to also carry a redundant @splitQuery on the data
+    // field purely to fire the tolerated-redundant advisory; that path is now pinned on minimal
+    // SDL at pipeline tier by SingleRecordTableFieldServiceProducerPipelineTest, so the directive
+    // was dropped from this fixture and the carrier re-selects by PK regardless.)
 
     @Test
     @SuppressWarnings("unchecked")
