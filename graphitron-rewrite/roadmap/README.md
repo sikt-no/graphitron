@@ -17,7 +17,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R19` | Rebase and squash rewrite branch onto main | Ready |  | [plan](history-squash.md) |
 | `R275` | Error channel and data projection for source-record-carrier @service mutations | In Review | 2026-06-10 <sub>created 2026-06-02</sub> | [plan](source-record-carrier-service-error-channel.md) |
 | `R284` | Reversed source/target alias order in bridging-hop @reference ConditionJoin emission | In Review | 2026-06-08 | [plan](bridging-hop-conditionjoin-alias-order.md) |
-| `R291` | Strip Graphitron-internal directives and their supporting types from the published SDL | In Review | 2026-06-10 | [plan](strip-internal-directives-from-published-sdl.md) |
 | `R222` | Dimensional model pivot: slots over cross-product permits | Spec | 2026-06-05 <sub>created 2026-05-21</sub> | [plan](dimensional-model-pivot.md) |
 | `R256` | Absorb the service walker substrate: typed per-arm errors + multi-arg ctors | Ready | 2026-05-30 <sub>created 2026-05-29</sub> | [plan](service-walker-substrate-absorption.md) |
 | `R279` | Field-first reachability-driven classification driver <sub>blocked by: [dimensional-model-pivot](dimensional-model-pivot.md)</sub> | Ready | 2026-06-07 <sub>created 2026-06-05</sub> | [plan](field-first-classification-driver.md) |
@@ -289,7 +288,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R287` [**Remove DELETE -> @table return path**](delete-rejects-table-return.md)
 - `R284` [**Reversed source/target alias order in bridging-hop @reference ConditionJoin emission**](bridging-hop-conditionjoin-alias-order.md)
 - `R51` [**Split PropertyField/RecordField on parent-kind instead of nullable column**](propertyfield-recordfield-nullable-column.md)
-- `R291` [**Strip Graphitron-internal directives and their supporting types from the published SDL**](strip-internal-directives-from-published-sdl.md)
 - `R219` [**Unify arity-unique and type-unique inference under a single JavaTypeKey-counted rule**](unify-inference-rule-by-javatypekey.md)
 - `R221` [**Validator walks PlainInputArg.fields() for UnboundField rejection**](validator-walks-plain-input-unbound-fields.md)
 - `R245` [**Wire @condition through to mutation WHERE (emit half + new placements)**](wire-condition-emit-on-mutations.md)
