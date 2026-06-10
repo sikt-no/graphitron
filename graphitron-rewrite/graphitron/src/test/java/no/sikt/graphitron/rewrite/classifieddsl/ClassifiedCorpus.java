@@ -58,7 +58,7 @@ public final class ClassifiedCorpus {
          * pins the "enum returns are columns" edge that the retired ENUM_RETURN_TYPE enum row asserted.
          */
         new Example("enum-column", """
-            enum Rating { G PG PG13 R NC17 }
+            enum Rating @classifiedType(as: EnumType) { G PG PG13 R NC17 }
             type Film @table(name: "film") {
               rating: Rating @classified(producer: [], mapping: Column)
             }
@@ -192,6 +192,9 @@ public final class ClassifiedCorpus {
               film: Film
               prodFilmDetails: FilmDetails
                 @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeDetailsProps"})
+              externalFilm: Film
+                @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getFilm"})
+                @classified(producer: [Service, Query], mapping: Table)
             }
             """),
 
@@ -287,7 +290,7 @@ public final class ClassifiedCorpus {
          * adds the NestingField leaf to the corpus's covered set.
          */
         new Example("nesting", """
-            type FilmDetails { title: String description: String }
+            type FilmDetails @classifiedType(as: NestingType) { title: String description: String }
             type Film @table(name: "film") {
               details: FilmDetails @classified(producer: [], mapping: Table)
             }
@@ -327,7 +330,7 @@ public final class ClassifiedCorpus {
          * already-taught polymorphic principle rather than new dimensional lessons.
          */
         new Example("interface", """
-            interface Named { name: String }
+            interface Named @classifiedType(as: InterfaceType) { name: String }
             type Address implements Named @table(name: "address") { name: String @field(name: "ADDRESS") }
             type Customer @table(name: "customer") {
               address: Named @classified(producer: [Query], mapping: Table)
@@ -342,7 +345,7 @@ public final class ClassifiedCorpus {
         new Example("union", """
             type Film @table(name: "film") { title: String }
             type Actor @table(name: "actor") { firstName: String @field(name: "FIRST_NAME") }
-            union FilmOrActor = Film | Actor
+            union FilmOrActor @classifiedType(as: UnionType) = Film | Actor
             type FilmActor @table(name: "film_actor") {
               related: FilmOrActor @classified(producer: [Query], mapping: Table)
             }
@@ -354,7 +357,7 @@ public final class ClassifiedCorpus {
             "{ filmActor { related { ... on Film { title } ... on Actor { firstName } } } }"),
 
         new Example("table-interface", """
-            interface MediaItem @table(name: "film") @discriminate(on: "kind") { title: String }
+            interface MediaItem @table(name: "film") @discriminate(on: "kind") @classifiedType(as: TableInterfaceType) { title: String }
             type Film implements MediaItem @table(name: "film") @discriminator(value: "film") { title: String }
             type Inventory @table(name: "inventory") {
               media: MediaItem @classified(producer: [], mapping: Table)
@@ -376,6 +379,249 @@ public final class ClassifiedCorpus {
             """),
 
         /*
+         * Slice-3 coverage sweep. The fixtures from here to the end of the list are the swept long
+         * tail: corpus entries authored to bring every output-field and (non-failure) type leaf under
+         * the corpus as single source of truth (VariantCoverageTest), tested but not necessarily
+         * prose-featured. Each ports the SDL shape of the GraphitronSchemaBuilderTest case that used to
+         * own the leaf, annotated with its dimensional verdict (the LeafTupleAdapter tuple) or its
+         * @classifiedType verdict.
+         */
+
+        /*
+         * Scalar @reference and @externalField on a @table parent: both are inline catalog-column
+         * carriers (producer [], mapping Column). `languageName` resolves a FK and projects the joined
+         * column (ColumnReferenceField); `computedRating` inlines a developer-supplied jOOQ Field<X>
+         * into the parent SELECT (ComputedField, a mirror-side computed column).
+         */
+        new Example("reference-and-computed", """
+            type Film @table(name: "film") {
+              languageName: String @field(name: "name") @reference(path: [{key: "film_language_id_fkey"}])
+                @classified(producer: [], mapping: Column)
+              computedRating: String
+                @externalField(reference: {className: "no.sikt.graphitron.rewrite.TestExternalFieldStub", method: "rating"})
+                @classified(producer: [], mapping: Column)
+            }
+            type Query { film: Film }
+            """),
+
+        /*
+         * @lookupKey without @splitQuery, on a child and on a root. The child `FilmActor.actors` stays
+         * an inline correlated subquery keyed by the lookup args (LookupTableField, producer [], mapping
+         * Table); the root `Query.filmById` is a new query keyed by the lookup args (QueryLookupTableField,
+         * producer [Query], mapping Table). @lookupKey shapes the batch key, not the producer verdict.
+         */
+        new Example("lookup", """
+            type Actor @table(name: "actor") { name: String }
+            type Film @table(name: "film") { filmId: Int! @field(name: "film_id") }
+            type FilmActor @table(name: "film_actor") {
+              actors(actor_id: [Int!]! @lookupKey): [Actor!]!
+                @classified(producer: [], mapping: Table)
+            }
+            type Query {
+              filmActor: FilmActor
+              filmById(film_id: [ID] @lookupKey): [Film!]!
+                @classified(producer: [Query], mapping: Table)
+            }
+            """),
+
+        /*
+         * @tableMethod (a developer-supplied table source FK-correlatable from the parent) on a child
+         * and on a root. The child `Film.language` is inline-correlatable (TableMethodField, producer [],
+         * mapping Table; the generator's current per-parent query is the R288 defect, the corpus asserts
+         * the correct inline verdict). The root `Query.filteredFilms` starts a new query
+         * (QueryTableMethodTableField, producer [Query], mapping Table).
+         */
+        new Example("table-method", """
+            type Language @table(name: "language") { name: String }
+            type Film @table(name: "film") {
+              title: String
+              language: Language
+                @tableMethod(className: "no.sikt.graphitron.rewrite.TestTableMethodStub", method: "getLanguage")
+                @reference(path: [{key: "film_language_id_fkey"}])
+                @classified(producer: [], mapping: Table)
+            }
+            type Query {
+              film: Film
+              filteredFilms: [Film!]!
+                @tableMethod(className: "no.sikt.graphitron.rewrite.TestTableMethodStub", method: "getFilmWithContext", contextArguments: ["tenantId"])
+                @classified(producer: [Query], mapping: Table)
+            }
+            """),
+
+        /*
+         * @table children under a jOOQ-TableRecord-backed @record parent, reached by @lookupKey and by
+         * @tableMethod. The record handoff has already opened a new keyed scope, so both re-query
+         * (producer [Query], mapping Table): `FilmDetails.language` is a RecordLookupTableField and
+         * `FilmDetails.inventories` a RecordTableMethodField. FilmDetails is record-bound as getFilm's
+         * jOOQ-TableRecord return type, which supplies the FK source key for both.
+         */
+        new Example("record-method", """
+            type Language @table(name: "language") { name: String }
+            type Inventory @table(name: "inventory") { inventoryId: Int! @field(name: "inventory_id") }
+            type FilmDetails {
+              language(language_id: ID! @lookupKey): Language @reference(path: [{key: "film_language_id_fkey"}])
+                @classified(producer: [Query], mapping: Table)
+              inventories: [Inventory!]!
+                @tableMethod(className: "no.sikt.graphitron.rewrite.TestTableMethodStub", method: "getInventory")
+                @classified(producer: [Query], mapping: Table)
+            }
+            type Film @table(name: "film") { details: FilmDetails }
+            type Query {
+              film: Film
+              prodFilmDetails: FilmDetails
+                @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getFilm"})
+            }
+            """),
+
+        /*
+         * A scalar @reference on a @table+@discriminate interface participant whose FK targets a
+         * different table: ParticipantColumnReferenceField (producer [], mapping Column). It gets its
+         * own leaf so the interface fetcher's conditional LEFT JOIN wires the cross-table projection and
+         * the per-field DataFetcher reads it back by alias.
+         */
+        new Example("participant-reference", """
+            interface Content @table(name: "content") @discriminate(on: "CONTENT_TYPE") {
+              contentId: Int! @field(name: "CONTENT_ID")
+            }
+            type FilmContent implements Content @table(name: "content") @discriminator(value: "FILM") {
+              contentId: Int! @field(name: "CONTENT_ID")
+              rating: String @reference(path: [{key: "content_film_id_fkey"}]) @field(name: "RATING")
+                @classified(producer: [], mapping: Column)
+            }
+            type ShortContent implements Content @table(name: "content") @discriminator(value: "SHORT") {
+              contentId: Int! @field(name: "CONTENT_ID")
+            }
+            type Query { content: Content }
+            """),
+
+        /*
+         * A custom @scalarType scalar classifies as ScalarType (the consumer's Coercing constant is
+         * registered; Graphitron reflects its Java type). @classifiedType asserts the type verdict
+         * directly; there is no field-side dimensional lesson.
+         */
+        new Example("scalar-type", """
+            scalar Money @scalarType(scalar: "no.sikt.graphitron.rewrite.scalarfixture.ScalarConstants.MONEY")
+                @classifiedType(as: ScalarType)
+            type Query { x: Money }
+            """),
+
+        /*
+         * The Relay pagination wrapper triad, written structurally (a hand-written Connection / Edge /
+         * PageInfo shape, the form the classifier promotes without the @asConnection transform, so the
+         * types exist in source SDL to carry @classifiedType). ConnectionType / EdgeType / PageInfoType
+         * are pagination wrappers, asserted directly; no field-side lesson.
+         */
+        new Example("connection", """
+            type Film @table(name: "film") { id: ID }
+            type FilmsConnection @classifiedType(as: ConnectionType) {
+              edges: [FilmsEdge!]! nodes: [Film!]! pageInfo: PageInfo!
+            }
+            type FilmsEdge @classifiedType(as: EdgeType) { cursor: String! node: Film! }
+            type PageInfo @classifiedType(as: PageInfoType) {
+              hasNextPage: Boolean! hasPreviousPage: Boolean! startCursor: String endCursor: String
+            }
+            type Query { films: FilmsConnection }
+            """),
+
+        /*
+         * Input-type backing (the input-side type-verdict cluster, mirroring `result-backing` on the
+         * output side). An input type acquires its leaf by reflection on the @service consumer's
+         * parameter class: a plain Java class is PojoInputType, a Java record is JavaRecordInputType, a
+         * jOOQ TableRecord is JooqTableRecordInputType. @classifiedType asserts each directly; input-field
+         * classification stays out of scope (the enum truth table's game), so no @classified here.
+         */
+        new Example("input-backing", """
+            input PojoBackedInput @classifiedType(as: PojoInputType) { id: ID }
+            input JavaRecordBackedInput @classifiedType(as: JavaRecordInputType) { id: ID }
+            input JooqTableRecordBackedInput @classifiedType(as: JooqTableRecordInputType) { id: ID }
+            type Query {
+              pojo(in: PojoBackedInput): String
+                @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "consumeDummyRecord"})
+              javaRecord(in: JavaRecordBackedInput): String
+                @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "consumeTestRecordDto"})
+              jooqRecord(in: JooqTableRecordBackedInput): String
+                @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "consumeFilmRecord"})
+            }
+            """),
+
+        /*
+         * A @table+@node type classifies as NodeType (the Relay-identified table, key columns resolved).
+         * @classifiedType asserts it directly; `id` carries the @nodeId encode but is the type's own key,
+         * not a separate dimensional lesson.
+         */
+        new Example("node-type", """
+            interface Node { id: ID! }
+            type Film implements Node @table(name: "film") @node(keyColumns: ["film_id"])
+                @classifiedType(as: NodeType) {
+              id: ID! @nodeId
+            }
+            type Query { film: Film }
+            """),
+
+        /*
+         * The @service ID-carrier: a mutation whose @service producer returns rows and whose payload
+         * exposes an [ID] @nodeId(typeName:) data field. That data field encodes node ids straight off
+         * the producer's in-memory records (no re-fetch), an inline catalog-column carrier
+         * (SingleRecordIdField, producer [], mapping Column). The @nodeId(typeName: "Film") grounds the
+         * encode on Film's @table; the errors field is the payload's error channel.
+         */
+        new Example("node-id-carrier", """
+            interface Node { id: ID! }
+            type Film implements Node @node @table(name: "film") { id: ID! @nodeId  title: String }
+            type FilmErr @error(handlers: [{handler: GENERIC, className: "java.lang.IllegalArgumentException"}]) {
+              path: [String!]!
+              message: String!
+            }
+            union DeleteFilmsError = FilmErr
+            type FilmIdsPayload {
+              filmIds: [ID] @nodeId(typeName: "Film") @classified(producer: [], mapping: Column)
+              errors: [DeleteFilmsError]
+            }
+            type Query { x: String }
+            type Mutation {
+              deleteFilms: FilmIdsPayload
+                @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getFilmsAsList"})
+            }
+            """),
+
+        /*
+         * DML payload-carrier mutations (UPDATE / DELETE and their bulk siblings, plus the bulk INSERT
+         * carrier). Each returns a plain object wrapping one @table data field and exposes the affected
+         * rows as a record, so the mutation field is producer [Dml], mapping Record
+         * (Mutation{Update,Delete}PayloadField, their MutationBulk* siblings, and MutationBulkDmlRecordField
+         * for the bulk INSERT carrier). Distinct payload types keep the per-kind carrier scans isolated.
+         */
+        new Example("dml-payloads", """
+            type Film @table(name: "film") { title: String }
+            type FilmInsertBulkPayload { films: [Film!] }
+            type FilmUpdatePayload { film: Film }
+            type FilmUpdateBulkPayload { films: [Film!] }
+            type FilmDeletePayload { film: Film }
+            type FilmDeleteBulkPayload { films: [Film!] }
+            input FilmCreateInput @table(name: "film") { title: String }
+            input FilmUpdateInput @table(name: "film") { filmId: Int! @field(name: "film_id") title: String }
+            input FilmDeleteInput @table(name: "film") { filmId: Int! @field(name: "film_id") }
+            type Query { x: String }
+            type Mutation {
+              createFilmsPayload(in: [FilmCreateInput!]!): FilmInsertBulkPayload
+                @mutation(typeName: INSERT)
+                @classified(producer: [Dml], mapping: Record)
+              updateFilmPayload(in: FilmUpdateInput!): FilmUpdatePayload
+                @mutation(typeName: UPDATE)
+                @classified(producer: [Dml], mapping: Record)
+              updateFilmsPayload(in: [FilmUpdateInput!]!): FilmUpdateBulkPayload
+                @mutation(typeName: UPDATE)
+                @classified(producer: [Dml], mapping: Record)
+              deleteFilmPayload(in: FilmDeleteInput!): FilmDeletePayload
+                @mutation(typeName: DELETE)
+                @classified(producer: [Dml], mapping: Record)
+              deleteFilmsPayload(in: [FilmDeleteInput!]!): FilmDeleteBulkPayload
+                @mutation(typeName: DELETE)
+                @classified(producer: [Dml], mapping: Record)
+            }
+            """),
+
+        /*
          * DML side: an INSERT that writes then projects the inserted row (a [Dml, Query] pipeline). The
          * write produces the row (the Dml step), then a follow-up SELECT projects the @table return (the
          * trailing Query step), so the field is producer [Dml, Query], mapping Table. Doc example: the
@@ -384,7 +630,7 @@ public final class ClassifiedCorpus {
          */
         new Example("dml", """
             type Film @table(name: "film") { title: String }
-            input FilmInput @table(name: "film") { title: String }
+            input FilmInput @table(name: "film") @classifiedType(as: TableInputType) { title: String }
             type Query { x: String }
             type Mutation {
               createFilm(in: FilmInput!): Film
@@ -412,7 +658,7 @@ public final class ClassifiedCorpus {
         new Example("mutation-roots", """
             type Film @table(name: "film") { title: String }
             type FilmDetails @record { title: String }
-            type FilmPayload { film: Film }
+            type FilmPayload { film: Film @classified(producer: [Query], mapping: Table) }
             input FilmKeyInput @table(name: "film") { filmId: Int! @field(name: "film_id") }
             input FilmUpdateInput @table(name: "film") { filmId: Int! @field(name: "film_id") title: String }
             input FilmTitleInput @table(name: "film") { title: String @field(name: "title") }

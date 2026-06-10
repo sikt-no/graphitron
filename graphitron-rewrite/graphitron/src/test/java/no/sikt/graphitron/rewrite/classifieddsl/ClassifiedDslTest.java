@@ -45,9 +45,10 @@ class ClassifiedDslTest {
     void corpusClassifiesToDeclaredDimensions(Example example) {
         var result = ClassifiedHarness.classify(example.sdl());
 
-        assertThat(result.fields())
-            .as("fixture %s must annotate at least one output field", example)
-            .isNotEmpty();
+        assertThat(result.fields().isEmpty() && result.types().isEmpty())
+            .as("fixture %s must annotate at least one coordinate (@classified field or "
+                + "@classifiedType type); some slice-3 coverage fixtures assert only a type verdict", example)
+            .isFalse();
 
         for (var fc : result.fields()) {
             assertThat(fc.actual())

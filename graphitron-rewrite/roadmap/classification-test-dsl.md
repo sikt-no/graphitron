@@ -516,6 +516,18 @@ single big-bang conversion:
    rejection rows stay in the enum table alongside the input-field residue.
    Completion here (full successful output-field and type corpus coverage) is the milestone that lets
    R279's merge gate adopt the corpus as its primary tier for the acceptance direction.
+   **(Landed 2026-06-10.)** `VariantCoverageTest`'s slice-2 union net was retired and split into two
+   partitioned obligations: output-field leaves and every non-failure `GraphitronType` leaf are now
+   covered by `ClassifiedCorpus.coveredLeaves()` *alone* (the single source of truth), while
+   input-field leaves stay on the enum truth table. The long tail that had retired under the union net
+   without a corpus fixture was swept in (the swept fixtures run from the `reference-and-computed`
+   example onward in `ClassifiedCorpus`, tested but mostly not prose-featured), the harness grew to read
+   `@classifiedType` off `scalar` definitions, and `SingleRecordTableFieldFromReturning` is carried in
+   `NO_CASE_REQUIRED` (the adapter refuses it; illegal, tracked for removal by R287). See
+   [the inventory's slice-3 closeout](audits/classification-test-dsl-inventory.md). The remaining
+   slice-3-adjacent work, the wholesale leaf-name-table -> worked-example rebuild of
+   `code-generation-triggers.adoc`'s field/mutation reference tables (and the stale "G5 pending"
+   generator-output column), is a separate doc-quality pass.
 
 <a id="pre-migration-hardening"></a>
 ### Pre-migration hardening (gate before the slice-2/3 grind, added 2026-06-10)

@@ -87,6 +87,14 @@ public final class ClassifiedHarness {
                 types.add(typeCase(schema, def.getName(), dt));
             }
         }
+        // Scalars live in their own registry map (graphql-java keeps them out of types()), so a
+        // @classifiedType on a `scalar` definition is picked up here rather than in the loop above.
+        for (var scalarDef : registry.scalars().values()) {
+            Directive dt = directive(scalarDef.getDirectives(), ClassifiedDsl.CLASSIFIED_TYPE);
+            if (dt != null) {
+                types.add(typeCase(schema, scalarDef.getName(), dt));
+            }
+        }
         return new Result(fields, types, schema);
     }
 
