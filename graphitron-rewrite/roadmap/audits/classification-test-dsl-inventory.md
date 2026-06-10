@@ -112,3 +112,38 @@ per-coordinate leaf record (the `FieldCase.leaf()` / `TypeCase.leaf()` the step-
 that the new corpus example's coordinate classifies to **exactly** the leaf this row names. A green
 `VariantCoverageTest` is necessary but not sufficient: its union net also counts the remaining enum
 rows, so it never proves the corpus picked the verdict up.
+
+## Slice 3 closeout: coverage sweep + rewire (landed 2026-06-10)
+
+The 35 whitelisted rows above retired during slice 2 while `VariantCoverageTest` still ran its
+slice-2 **union net** (corpus leaves ∪ enum-case variants), which kept coverage green but, as the
+gate warns, never proved the corpus alone carried each verdict. Slice 3 closes that loop:
+
+- **The union net is retired.** `VariantCoverageTest.everySealedLeafHasAClassificationCase` was
+  split into two partitioned obligations: `everyOutputFieldAndTypeLeafIsDemonstratedByTheCorpus`
+  (output-field leaves + every non-failure `GraphitronType` leaf must be covered by
+  `ClassifiedCorpus.coveredLeaves()` **alone**, the single source of truth) and
+  `everyInputFieldLeafHasAnEnumClassificationCase` (input-field leaves stay on the enum table).
+  Output-field/type coverage no longer counts a single enum row, so a green run now *is* proof the
+  corpus picked the verdict up.
+- **The long tail was swept into the corpus.** The leaves that retired under the union net but had
+  no corpus fixture (the field leaves `ColumnReferenceField`, `ComputedField`, `LookupTableField`,
+  `ParticipantColumnReferenceField`, `QueryLookupTableField`, `QueryServiceTableField`,
+  `QueryTableMethodTableField`, `RecordLookupTableField`, `RecordTableMethodField`, `TableMethodField`,
+  `SingleRecordIdField`, `SingleRecordTableField`, the five DML payload/bulk leaves; the type leaves
+  `ConnectionType`, `EdgeType`, `PageInfoType`, `EnumType`, `InterfaceType`, `UnionType`, `NestingType`,
+  `NodeType`, `ScalarType`, `TableInterfaceType`, `TableInputType`, `JavaRecordInputType`,
+  `PojoInputType`, `JooqTableRecordInputType`) gained corpus fixtures (tested, mostly not
+  prose-featured), several by annotating types already present in existing fixtures. The harness
+  grew to read `@classifiedType` off `scalar` definitions (graphql-java keeps scalars out of
+  `registry.types()`), and `ClassifiedDslTest` now admits type-only fixtures (a `@classifiedType`
+  with no `@classified` field).
+- **One owned leaf is `NO_CASE_REQUIRED`, not corpus-covered:**
+  `ChildField.SingleRecordTableFieldFromReturning`. `LeafTupleAdapter` *refuses* it (a full `@table`
+  projection off a DELETE's PK-only RETURNING record has no valid `(producer, mapping)` verdict, the
+  row is gone), so no `@classified` coordinate can land on it. It is illegal and tracked for removal
+  by R287; the allowlist entry and the leaf go together when R287 lands.
+
+This is the milestone the spec's slice 3 names (full successful output-field and type corpus
+coverage), and the point at which R279's merge gate may adopt the corpus as its primary tier for the
+acceptance direction.

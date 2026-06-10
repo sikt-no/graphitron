@@ -7,6 +7,7 @@ import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.InputField;
 import no.sikt.graphitron.rewrite.model.MutationField;
+import no.sikt.graphitron.rewrite.model.OutputField;
 import org.junit.jupiter.api.Test;
 
 import java.util.Arrays;
@@ -29,11 +30,24 @@ import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
  * {@link GeneratorCoverageTest#everyGraphitronFieldLeafHasAKnownDispatchStatus} (generator
  * dispatch coverage) by asserting that classification itself is demonstrated for every leaf.
  *
- * <p>R281 slice 2 unions the corpus into the coverage source: a leaf demonstrated by a corpus fixture
- * counts as covered, so the legacy {@code GraphitronSchemaBuilderTest} enum row for that leaf can retire
- * as the documentation migration pulls the example in, without this meta-test regressing. The corpus is
- * classified to compute its covered leaves, so this test is now pipeline tier (slice 3 completes the
- * rewire onto the corpus; this is the bridge that keeps deletions safe meanwhile).
+ * <p>R281 slice 3 splits coverage by who owns the verdict truth, retiring the slice-2 union net:
+ *
+ * <ul>
+ *   <li><b>Output-field and type leaves</b> ({@link OutputField} leaves and every non-failure
+ *       {@link GraphitronType} leaf) are owned by the spec-by-example corpus as the
+ *       <em>single source of truth</em>; {@link #everyOutputFieldAndTypeLeafIsDemonstratedByTheCorpus()}
+ *       requires each to be demonstrated by a {@link ClassifiedCorpus} fixture (the corpus is classified
+ *       and its per-coordinate leaves collected), not by an enum row. This is the milestone the spec's
+ *       slice 3 names: full successful output-field and type corpus coverage.</li>
+ *   <li><b>Input-field leaves</b> ({@link InputField}) stay covered by the
+ *       {@code GraphitronSchemaBuilderTest} enum truth table, their own game and out of scope for the
+ *       corpus; {@link #everyInputFieldLeafHasAnEnumClassificationCase()} keeps that obligation.</li>
+ *   <li>The failure leaves ({@code UnclassifiedField} / {@code UnclassifiedType}) are out of scope for
+ *       both: the corpus asserts successful classification only, and the failure path gets a separate
+ *       mechanism post-R222.</li>
+ * </ul>
+ *
+ * <p>{@link #NO_CASE_REQUIRED} remains the documented escape hatch shared by both obligations.
  */
 @PipelineTier
 class VariantCoverageTest {
@@ -43,55 +57,60 @@ class VariantCoverageTest {
      * one-line reason. The goal is for this map to stay small — every schema-reachable
      * leaf should have a case showing the classifier lands there.
      */
-    private static final Map<Class<?>, String> NO_CASE_REQUIRED = Map.of(
-        no.sikt.graphitron.rewrite.model.MutationField.MutationUpsertTableField.class,
+    private static final Map<Class<?>, String> NO_CASE_REQUIRED = Map.ofEntries(
+        Map.entry(no.sikt.graphitron.rewrite.model.MutationField.MutationUpsertTableField.class,
             "R144 retires UPSERT generation pending R145 (mutation-cardinality-safety-upsert); "
             + "the classifier rejects every UPSERT mutation at MutationInputResolver, so no "
             + "schema-reachable case lands on this leaf. Add a fresh case when R145 lifts the "
-            + "upstream rejection.",
-        GraphitronType.JooqRecordType.class,
+            + "upstream rejection."),
+        Map.entry(GraphitronType.JooqRecordType.class,
             "No plain jOOQ Record<?> (non-TableRecord) fixture class in the test classpath; "
-            + "add a case when a suitable fixture is introduced.",
-        GraphitronType.JooqRecordInputType.class,
+            + "add a corpus example when a suitable fixture is introduced."),
+        Map.entry(GraphitronType.JooqRecordInputType.class,
             "No plain jOOQ Record<?> (non-TableRecord) input fixture class in the test classpath; "
-            + "add a case when a suitable fixture is introduced.",
-        ChildField.ErrorsField.class,
+            + "add a corpus example when a suitable fixture is introduced."),
+        Map.entry(ChildField.ErrorsField.class,
             "Permit added in R12 (error-handling-parity) C2 alongside the ErrorChannel slot; "
             + "the classifier doesn't produce it until C3 lifts the five PolymorphicReturnType "
-            + "rejection sites in FieldBuilder. Add a GraphitronSchemaBuilderTest case when "
-            + "that lift lands.",
-        ChildField.CompositeColumnField.class,
+            + "rejection sites in FieldBuilder. Add a corpus example when that lift lands."),
+        Map.entry(ChildField.SingleRecordTableFieldFromReturning.class,
+            "Has no valid (producer, mapping) verdict: a full @table projection off a DELETE's "
+            + "PK-only RETURNING record cannot be produced (the row is deleted), so "
+            + "LeafTupleAdapter refuses it rather than blessing a happy-path tuple, and no corpus "
+            + "@classified coordinate can land on it. The construct is illegal and tracked for "
+            + "removal by R287 (Remove DELETE -> @table return path); this entry and the leaf go "
+            + "together when R287 lands."),
+        Map.entry(ChildField.CompositeColumnField.class,
             "Covered by NodeIdPipelineTest.OutputCase (the composite-PK NodeId path requires the "
             + "nodeid fixture's `bar` table with two key columns, not available in the standard "
             + "sakila catalog); add a GraphitronSchemaBuilderTest case when a composite-PK "
-            + "fixture is made available there.",
-        ChildField.CompositeColumnReferenceField.class,
+            + "fixture is made available there."),
+        Map.entry(ChildField.CompositeColumnReferenceField.class,
             "Composite-key NodeId reference (rooted-at-parent or non-FK-mirror): the only schema "
             + "shape that produces it is a child table whose FK references a parent NodeType "
             + "with multiple key columns AND the FK's target columns differ from those keys. The "
             + "standard sakila catalog has no such shape; add a GraphitronSchemaBuilderTest case "
-            + "when a composite-PK rooted-at-parent fixture exists.",
-        InputField.CompositeColumnField.class,
+            + "when a composite-PK rooted-at-parent fixture exists."),
+        Map.entry(InputField.CompositeColumnField.class,
             "Covered by NodeIdPipelineTest.InputCase (composite-PK same-table NodeId filter, "
             + "arity > 1) and the synthesized-shim composite path. Lives in NodeIdPipelineTest "
-            + "because the standard sakila catalog has no composite-PK NodeType.",
-        InputField.CompositeColumnReferenceField.class,
+            + "because the standard sakila catalog has no composite-PK NodeType."),
+        Map.entry(InputField.CompositeColumnReferenceField.class,
             "Composite-key input reference (arity > 1 FK target). The canonical and synthesis-"
             + "shim cases land via the same buildInputNodeIdReference helper for the "
             + "[ID!] @nodeId(typeName: T) branch, but no test fixture exercises an arity > 1 FK "
             + "target yet (the fixtures use `bar` (composite PK) only for same-table NodeId "
-            + "paths). Add a NodeIdPipelineTest case when a composite-PK FK target lands.",
-        ChildField.SingleRecordIdFieldFromReturning.class,
+            + "paths). Add a NodeIdPipelineTest case when a composite-PK FK target lands."),
+        Map.entry(ChildField.SingleRecordIdFieldFromReturning.class,
             "R156: produced by the @mutation classifier for @mutation(typeName: DELETE) carriers "
             + "with an ID-typed data field. Covered structurally by the four "
             + "MutationDmlNodeIdClassificationTest admission cells (bulk/single × implicit/"
             + "explicit @nodeId on the nodeidfixture catalog) and end-to-end by "
             + "DmlBulkMutationsExecutionTest#deleteFilmsIdCarrier_returnsEncodedNodeIdsOfDeletedRows. "
-            + "The GraphitronSchemaBuilderTest classification-case enum runs against the default "
-            + "Sakila catalog (no synthesized __NODE_TYPE_ID metadata), so the Id admission case "
-            + "lives in the pipeline-tier test that can swap to the nodeidfixture RewriteContext "
-            + "rather than in this enum.",
-        InputField.UnboundField.class,
+            + "The corpus runs against the default Sakila catalog (no synthesized "
+            + "__NODE_TYPE_ID metadata), so the Id admission case lives in the pipeline-tier "
+            + "test that can swap to the nodeidfixture RewriteContext."),
+        Map.entry(InputField.UnboundField.class,
             "R215: input field with no column binding. Covers @condition(override: true) "
             + "with or without a matching column (the §5 collapse of R210's ConditionOnlyField "
             + "plus ColumnField + override:true), and the cascade-admitted bare-field case where "
@@ -100,30 +119,57 @@ class VariantCoverageTest {
             + "plainInput_overrideTrueWithoutMatchingColumn_classifiesAsUnboundField "
             + "and tableInput_overrideTrueWithoutMatchingColumn_classifiesAsUnboundField "
             + "@Test methods (one carries @ProjectionFor(UnboundField.class)), which "
-            + "land outside the enum-style ClassificationCase shape this coverage walker reads."
+            + "land outside the enum-style ClassificationCase shape this coverage walker reads.")
     );
 
     private static final List<Class<?>> ROOTS = List.of(
         GraphitronField.class, GraphitronType.class);
 
+    /**
+     * The leaves the corpus owns as single source of truth: every {@link OutputField} leaf and every
+     * {@link GraphitronType} leaf except the failure leaf {@code UnclassifiedType}. Input-field leaves
+     * and {@code UnclassifiedField} are deliberately excluded (see the class Javadoc).
+     */
+    private static Set<Class<?>> corpusOwnedLeaves() {
+        var leaves = new HashSet<>(GeneratorCoverageTest.sealedLeaves(OutputField.class));
+        GeneratorCoverageTest.sealedLeaves(GraphitronType.class).stream()
+            .filter(l -> l != GraphitronType.UnclassifiedType.class)
+            .forEach(leaves::add);
+        return leaves;
+    }
+
     @Test
-    void everySealedLeafHasAClassificationCase() {
-        var leaves = ROOTS.stream()
-            .flatMap(r -> GeneratorCoverageTest.sealedLeaves(r).stream())
-            .collect(toSet());
-        var covered = new HashSet<Class<?>>(ClassifiedCorpus.coveredLeaves());
-        allClassificationCases().stream()
-            .flatMap(c -> c.variants().stream())
-            .forEach(covered::add);
-        var missing = leaves.stream()
+    void everyOutputFieldAndTypeLeafIsDemonstratedByTheCorpus() {
+        var covered = ClassifiedCorpus.coveredLeaves();
+        var missing = corpusOwnedLeaves().stream()
             .filter(l -> !covered.contains(l))
             .filter(l -> !NO_CASE_REQUIRED.containsKey(l))
-            .map(c -> c.getSimpleName())
+            .map(Class::getSimpleName)
             .sorted()
             .toList();
         assertThat(missing)
-            .as("every sealed leaf must have at least one classification case "
-                + "(or a documented entry in NO_CASE_REQUIRED)")
+            .as("every output-field and type leaf must be demonstrated by a ClassifiedCorpus fixture "
+                + "(the corpus is the single source of truth for these verdicts), or carry a documented "
+                + "entry in NO_CASE_REQUIRED")
+            .isEmpty();
+    }
+
+    @Test
+    void everyInputFieldLeafHasAnEnumClassificationCase() {
+        var covered = new HashSet<Class<?>>();
+        allClassificationCases().stream()
+            .flatMap(c -> c.variants().stream())
+            .forEach(covered::add);
+        var missing = GeneratorCoverageTest.sealedLeaves(InputField.class).stream()
+            .filter(l -> !covered.contains(l))
+            .filter(l -> !NO_CASE_REQUIRED.containsKey(l))
+            .map(Class::getSimpleName)
+            .sorted()
+            .toList();
+        assertThat(missing)
+            .as("every input-field leaf must have at least one GraphitronSchemaBuilderTest "
+                + "classification case (input-side classification stays on the enum truth table), "
+                + "or a documented entry in NO_CASE_REQUIRED")
             .isEmpty();
     }
 
