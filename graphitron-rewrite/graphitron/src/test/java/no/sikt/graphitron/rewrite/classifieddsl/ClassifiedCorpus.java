@@ -196,6 +196,21 @@ public final class ClassifiedCorpus {
             """),
 
         /*
+         * Fields on an @error parent. The @error contract restricts the field set to exactly
+         * `path: [String!]!` and `message: String!`; both resolve off the developer-supplied error
+         * class via graphql-java's default PropertyDataFetcher, so both classify as PropertyField
+         * (producer [], mapping Field). Corpus-only: it lands on the already-taught inline / Field
+         * coordinate, and the @error type itself is not a documentation-query selection shape.
+         */
+        new Example("error-field", """
+            type MyError @error(handlers: [{handler: GENERIC, className: "java.lang.IllegalArgumentException"}]) {
+              path: [String!]! @classified(producer: [], mapping: Field)
+              message: String! @classified(producer: [], mapping: Field)
+            }
+            type Query { x: String }
+            """),
+
+        /*
          * Nesting: a plain object child (no @table, no @record) on a @table parent inlines into the
          * parent's projection, inheriting the parent's table context (NestingField). Its scalars resolve
          * against the parent table, so the field is producer [] (no new query) and maps to Table.
