@@ -1,5 +1,5 @@
 ---
-next-id: R298
+next-id: R299
 ---
 
 # Rewrite Changelog
@@ -9,6 +9,25 @@ Historical record of completed rewrite work. Entries are roughly reverse-chronol
 The `next-id:` front-matter field is the canonical counter for `R<n>` allocation, maintained by `roadmap-tool create`. Numbers are never reused (see [`workflow.adoc`](../docs/workflow.adoc)); the counter advances past every `Done` so the gaps left by deleted item files don't collide with future allocations.
 
 ---
+
+- `fae7c6f` + `1fdcf18` — R295 (`connection-synthesis-inherits-federation-tags`): synthesised
+  Connection / Edge / PageInfo types now inherit the federation `@tag` applications of their
+  `@asConnection` carrier field, closing the contract-composition break where a tag-filtered
+  contract kept the carrier field but dropped its untagged return type. `ConnectionPromoter`
+  collects the arm-appropriate tags (carrier field on the directive arm, SDL Connection type on
+  the structural arm), applies them to the synthesised Connection/Edge schema forms beside the
+  existing `shareable` arm, and folds a tag union across all promoted carriers into the
+  synthesised PageInfo exactly as `pageInfoShareable` folds `shareable`; an author-declared
+  PageInfo is left untouched. Carriers sharing one `connectionName:` union their tags into the
+  already-registered entry via `typeRegistry.enrich` on a transformed `schemaType()` (no parallel
+  `tags` record component, per *Model metadata over parallel type systems*). Tests:
+  `ConnectionPromoterTest` (explicit, repeatable, shared-name union, structural arm, SDL-PageInfo
+  negative pin) + `ConnectionFederationTagPipelineTest` (`<schemaInput tag>` via
+  `loadAttributedRegistry` and a federation-SDL emission round-trip). The deferred `shareable`
+  boolean collapse is filed as R297. **Tags land at the type level only**; whether type-level-only
+  tags satisfy a real Apollo contract build (vs. the field-level tags legacy contracts validated
+  against) is the outstanding first-client check, tracked as R298 — it could not run in the
+  implementation/review sandbox, and the green SDL round-trip proves emission, not composition.
 
 - `5fa830e` + `32d7e0d` + `77573c4` (red tests `24387b2`, comment refresh `905f9ef`) — R275
   (`source-record-carrier-service-error-channel`): error channel and data projection for
