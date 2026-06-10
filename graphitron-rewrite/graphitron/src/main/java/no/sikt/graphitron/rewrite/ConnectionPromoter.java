@@ -52,6 +52,26 @@ final class ConnectionPromoter {
     private ConnectionPromoter() {
     }
 
+    // Canonical graphql-relay-js descriptions for the synthesised Connection/Edge/PageInfo
+    // boilerplate. Generic (not parameterised by element type): the wording is true for every
+    // synthesised type, and weaving in the element name would make the generator responsible for
+    // phrasing that stays sensible across every name and pluralisation. SDL authors who want
+    // different wording declare the Connection/Edge/PageInfo types structurally; the structural
+    // path references those SDL descriptions directly and this synthesis path never runs.
+    private static final String DESC_CONNECTION = "A connection to a list of items.";
+    private static final String DESC_EDGES = "A list of edges.";
+    private static final String DESC_NODES = "A list of nodes.";
+    private static final String DESC_PAGE_INFO_FIELD = "Information to aid in pagination.";
+    private static final String DESC_TOTAL_COUNT = "Identifies the total count of items in the connection.";
+    private static final String DESC_EDGE = "An edge in a connection.";
+    private static final String DESC_CURSOR = "A cursor for use in pagination.";
+    private static final String DESC_NODE = "The item at the end of the edge.";
+    private static final String DESC_PAGE_INFO = "Information about pagination in a connection.";
+    private static final String DESC_HAS_NEXT_PAGE = "When paginating forwards, are there more items?";
+    private static final String DESC_HAS_PREVIOUS_PAGE = "When paginating backwards, are there more items?";
+    private static final String DESC_START_CURSOR = "When paginating backwards, the cursor to continue.";
+    private static final String DESC_END_CURSOR = "When paginating forwards, the cursor to continue.";
+
     /**
      * Per-carrier info collected during connection-type promotion so the schema-rebuild pass can
      * find and rewrite each directive-driven carrier field.
@@ -378,6 +398,7 @@ final class ConnectionPromoter {
             List<GraphQLAppliedDirective> tags) {
         var edgesField = GraphQLFieldDefinition.newFieldDefinition()
             .name("edges")
+            .description(DESC_EDGES)
             .type(GraphQLNonNull.nonNull(GraphQLList.list(GraphQLNonNull.nonNull(
                 GraphQLTypeReference.typeRef(edgeName)))))
             .build();
@@ -386,19 +407,23 @@ final class ConnectionPromoter {
             : GraphQLNonNull.nonNull(GraphQLTypeReference.typeRef(elementTypeName));
         var nodesField = GraphQLFieldDefinition.newFieldDefinition()
             .name("nodes")
+            .description(DESC_NODES)
             .type(GraphQLNonNull.nonNull(GraphQLList.list(nodeInnerRef)))
             .build();
         var pageInfoField = GraphQLFieldDefinition.newFieldDefinition()
             .name("pageInfo")
+            .description(DESC_PAGE_INFO_FIELD)
             .type(GraphQLNonNull.nonNull(GraphQLTypeReference.typeRef("PageInfo")))
             .build();
         // Nullable matches legacy and survives the count-skipped path on Split-Connection naturally.
         var totalCountField = GraphQLFieldDefinition.newFieldDefinition()
             .name("totalCount")
+            .description(DESC_TOTAL_COUNT)
             .type(GraphQLTypeReference.typeRef("Int"))
             .build();
         var builder = GraphQLObjectType.newObject()
             .name(connName)
+            .description(DESC_CONNECTION)
             .field(edgesField)
             .field(nodesField)
             .field(pageInfoField)
@@ -412,6 +437,7 @@ final class ConnectionPromoter {
             boolean itemNullable, boolean shareable, List<GraphQLAppliedDirective> tags) {
         var cursorField = GraphQLFieldDefinition.newFieldDefinition()
             .name("cursor")
+            .description(DESC_CURSOR)
             .type(GraphQLNonNull.nonNull(GraphQLTypeReference.typeRef("String")))
             .build();
         GraphQLOutputType nodeType = itemNullable
@@ -419,10 +445,12 @@ final class ConnectionPromoter {
             : GraphQLNonNull.nonNull(GraphQLTypeReference.typeRef(elementTypeName));
         var nodeField = GraphQLFieldDefinition.newFieldDefinition()
             .name("node")
+            .description(DESC_NODE)
             .type(nodeType)
             .build();
         var builder = GraphQLObjectType.newObject()
             .name(edgeName)
+            .description(DESC_EDGE)
             .field(cursorField)
             .field(nodeField);
         if (shareable) builder.withAppliedDirective(GraphQLAppliedDirective.newDirective().name("shareable").build());
@@ -434,20 +462,25 @@ final class ConnectionPromoter {
             List<GraphQLAppliedDirective> tags) {
         var builder = GraphQLObjectType.newObject()
             .name("PageInfo")
+            .description(DESC_PAGE_INFO)
             .field(GraphQLFieldDefinition.newFieldDefinition()
                 .name("hasNextPage")
+                .description(DESC_HAS_NEXT_PAGE)
                 .type(GraphQLNonNull.nonNull(GraphQLTypeReference.typeRef("Boolean")))
                 .build())
             .field(GraphQLFieldDefinition.newFieldDefinition()
                 .name("hasPreviousPage")
+                .description(DESC_HAS_PREVIOUS_PAGE)
                 .type(GraphQLNonNull.nonNull(GraphQLTypeReference.typeRef("Boolean")))
                 .build())
             .field(GraphQLFieldDefinition.newFieldDefinition()
                 .name("startCursor")
+                .description(DESC_START_CURSOR)
                 .type(GraphQLTypeReference.typeRef("String"))
                 .build())
             .field(GraphQLFieldDefinition.newFieldDefinition()
                 .name("endCursor")
+                .description(DESC_END_CURSOR)
                 .type(GraphQLTypeReference.typeRef("String"))
                 .build());
         if (shareable) builder.withAppliedDirective(GraphQLAppliedDirective.newDirective().name("shareable").build());

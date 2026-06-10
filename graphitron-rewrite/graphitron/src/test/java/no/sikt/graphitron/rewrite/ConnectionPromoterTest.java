@@ -67,6 +67,43 @@ class ConnectionPromoterTest {
     }
 
     @Test
+    void directiveDrivenSynthesis_carriesRelayDescriptionsOnTypesAndFields() {
+        String sdl = """
+            type Customer { id: ID! }
+            type Query {
+                customers: [Customer!]! @asConnection
+            }
+            """;
+        var bctx = buildBuildContext(sdl);
+
+        ConnectionPromoter.promote(bctx);
+
+        var connection = ((ConnectionType) bctx.types.get("QueryCustomersConnection")).schemaType();
+        assertThat(connection.getDescription()).isEqualTo("A connection to a list of items.");
+        assertThat(connection.getFieldDefinition("edges").getDescription()).isEqualTo("A list of edges.");
+        assertThat(connection.getFieldDefinition("nodes").getDescription()).isEqualTo("A list of nodes.");
+        assertThat(connection.getFieldDefinition("pageInfo").getDescription()).isEqualTo("Information to aid in pagination.");
+        assertThat(connection.getFieldDefinition("totalCount").getDescription())
+            .isEqualTo("Identifies the total count of items in the connection.");
+
+        var edge = ((EdgeType) bctx.types.get("QueryCustomersEdge")).schemaType();
+        assertThat(edge.getDescription()).isEqualTo("An edge in a connection.");
+        assertThat(edge.getFieldDefinition("cursor").getDescription()).isEqualTo("A cursor for use in pagination.");
+        assertThat(edge.getFieldDefinition("node").getDescription()).isEqualTo("The item at the end of the edge.");
+
+        var pageInfo = ((PageInfoType) bctx.types.get("PageInfo")).schemaType();
+        assertThat(pageInfo.getDescription()).isEqualTo("Information about pagination in a connection.");
+        assertThat(pageInfo.getFieldDefinition("hasNextPage").getDescription())
+            .isEqualTo("When paginating forwards, are there more items?");
+        assertThat(pageInfo.getFieldDefinition("hasPreviousPage").getDescription())
+            .isEqualTo("When paginating backwards, are there more items?");
+        assertThat(pageInfo.getFieldDefinition("startCursor").getDescription())
+            .isEqualTo("When paginating backwards, the cursor to continue.");
+        assertThat(pageInfo.getFieldDefinition("endCursor").getDescription())
+            .isEqualTo("When paginating forwards, the cursor to continue.");
+    }
+
+    @Test
     void directiveDrivenWithExplicitConnectionName_overridesAutoDerivedName() {
         String sdl = """
             type Customer { id: ID! }
