@@ -21,9 +21,9 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R256` | Absorb the service walker substrate: typed per-arm errors + multi-arg ctors | Ready | 2026-05-30 <sub>created 2026-05-29</sub> | [plan](service-walker-substrate-absorption.md) |
 | `R279` | Field-first reachability-driven classification driver <sub>blocked by: [dimensional-model-pivot](dimensional-model-pivot.md)</sub> | Ready | 2026-06-07 <sub>created 2026-06-05</sub> | [plan](field-first-classification-driver.md) |
 | `R281` | Classification test DSL: @classified spec-by-example | In Progress | 2026-06-09 <sub>created 2026-06-07</sub> | [plan](classification-test-dsl.md) |
-| `R200` | Honor @field(name:) in InputBeanResolver for SDL input bean/record member binding | Spec | 2026-06-09 <sub>created 2026-05-20</sub> | [plan](honor-field-directive-in-inputbeanresolver.md) |
 | `R45` | Multi-tenant routing on top of the schema-driven ExecutionInput factory | Spec | 2026-05-20 | [plan](tenant-routing-and-execution-input.md) |
 | `R273` | Source NodeId metadata from @node + catalog PK (inferred from `implements Node`), and settle wrong-type/malformed mismatch semantics, retiring the legacy __NODE bare-ID arm | Spec | 2026-06-02 | [plan](nodeid-skip-mismatch-error-surfacing.md) |
+| `R200` | Honor @field(name:) in InputBeanResolver for SDL input bean/record member binding | Ready | 2026-06-10 <sub>created 2026-05-20</sub> | [plan](honor-field-directive-in-inputbeanresolver.md) |
 | `R23` | Multi-parent `NestingField` sharing: `TableField` arm | Spec |  | [plan](nestingfield-multiparent-tablefield.md) |
 | `R13` | Faceted search on `@asConnection` | Spec |  | [plan](faceted-search.md) |
 | `R63` | Type UPSERT dialect requirement on the model | Spec |  | [plan](dml-dialect-requirement-on-model.md) |
@@ -159,7 +159,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 - `R201` [**Honor @field(name:) in @error payload construction shape resolution**](honor-field-directive-in-payload-construction-shape.md) — Backlog, bug
 - `R202` [**Honor @field(name:) in @error type extra-field accessor matching against handler source class**](honor-field-directive-in-error-type-source-accessors.md) — Backlog, bug
-- `R200` [**Honor @field(name:) in InputBeanResolver for SDL input bean/record member binding**](honor-field-directive-in-inputbeanresolver.md) — Spec, bug
+- `R200` [**Honor @field(name:) in InputBeanResolver for SDL input bean/record member binding**](honor-field-directive-in-inputbeanresolver.md) — Ready, bug
 - `R45` [**Multi-tenant routing on top of the schema-driven ExecutionInput factory**](tenant-routing-and-execution-input.md) — Spec, architecture
 - `R54` [**Rename @externalField (parallel-support, deprecation, migration)**](rename-externalfield-directive.md) — Backlog, cleanup
 - `R192` [**Mojo-configured custom Bean Validation factory**](custom-validator-factory.md) — Backlog, architecture
