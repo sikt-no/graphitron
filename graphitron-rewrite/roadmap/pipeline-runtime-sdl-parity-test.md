@@ -4,11 +4,18 @@ title: "Make pipeline<->runtime SDL parity test pass"
 status: Backlog
 bucket: feature
 depends-on: []
+notes: "subsumed by R291; closes when R291 lands as specced"
 created: 2026-05-27
 last-updated: 2026-06-08
 ---
 
 # Make pipeline<->runtime SDL parity test pass
+
+> **Subsumed by R291** (`strip-internal-directives-from-published-sdl`, currently Spec):
+> R291 implements this item's Route 3 at the same print seam, extends it with
+> support-type filtering, and re-enables the parity test as its pinning assertion.
+> If R291 lands as specced, this item closes with it (one changelog line records
+> both IDs). Pick this item up independently only if R291 is descoped.
 
 `FederationBuildSmokeTest.emittedSdlMatchesRuntimeSchema` is currently
 `@Disabled` (landed alongside R247). The test asserts, through graphql-java's
