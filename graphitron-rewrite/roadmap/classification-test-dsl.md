@@ -536,7 +536,7 @@ vocabulary, the pivot's acceptance spec, the rendered doc); the deletion count i
 the original framing suggested.
 
 1. **Commit the retirement inventory.** Enumerate the pure-verdict candidate rows (by enum,
-   constant, and leaf) as a checklist in `roadmap/classification-test-dsl-inventory.md`. The grind
+   constant, and leaf) as a checklist in `roadmap/audits/classification-test-dsl-inventory.md`. The grind
    spans sessions; the checklist is what makes over-deletion and under-coverage reviewable instead
    of trusted, fixes the pedagogical order up front, and bounds what may delete at all (a row not on
    the list does not retire). Each migration commit ticks its row off.
