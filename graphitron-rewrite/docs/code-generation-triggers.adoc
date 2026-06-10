@@ -299,6 +299,40 @@ a scalar under the record-backed `FilmStats`, classifies with `mapping = Field`.
 nested non-table object under the record-backed `FilmDetails`, also classifies with `mapping = Field` (its
 object flavor). All hold producer `[]`. Asserted by the `mapping` corpus example.
 
+=== Polymorphic fields: interfaces, unions, and Relay nodes
+
+A field returning an interface, a union, or a Relay `Node` is *catalog-bound* over the participant
+types: classification resolves the polymorphic type to its participant `@table` rows and projects each
+branch from the catalog. The `mapping` is therefore `Table` (the projection lands on participant table
+rows, `TableConnection` when paginated), with the participant set carried as a *derived slot* rather
+than as a distinct mapping value. A plain-interface or union child opens a new keyed query (producer
+`[Query]`, `InterfaceField` / `UnionField`), as does every polymorphic root (`QueryInterfaceField`,
+`QueryUnionField`, `QueryNodeField`, `QueryNodesField`). The one exception is a `@table`+`@discriminate`
+interface child (`TableInterfaceField`): it is foreign-key-correlatable from the parent and classifies
+inline (producer `[]`).
+
+[source,graphql]
+----
+type Query {
+  customer: Customer
+}
+
+type Customer @table(name: "customer") {
+  address: Named
+}
+
+interface Named {
+  name: String
+}
+----
+
+`Customer.address` returns the plain interface `Named` (implemented by the `@table` type `Address`),
+so it classifies with producer `[Query]` and `mapping = Table` (`InterfaceField`): a new keyed query
+projects the participant table, with `Address` recorded as the participant slot. Asserted by the
+`interface` corpus example. The union and Relay-`Node` shapes follow the same dimensional rule and are
+asserted corpus-only (`union`, `table-interface`, `relay-node`); rendering their selections as doc
+excerpts needs the fragment and argument support tracked in R281's pre-migration hardening.
+
 === Query Fields
 
 |===
