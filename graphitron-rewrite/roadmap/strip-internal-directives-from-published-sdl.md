@@ -1,7 +1,7 @@
 ---
 id: R291
 title: Strip Graphitron-internal directives and their supporting types from the published SDL
-status: Spec
+status: Ready
 bucket: feature
 priority: 2
 depends-on: []
