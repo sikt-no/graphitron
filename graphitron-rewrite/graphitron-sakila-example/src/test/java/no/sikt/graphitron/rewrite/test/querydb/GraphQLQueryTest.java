@@ -4583,6 +4583,61 @@ class GraphQLQueryTest {
         only.containsEntry("message", "film 999 not found");
     }
 
+    // ===== R275 reopened scope: @splitQuery-list source-record carrier end-to-end =====
+    //
+    // serviceFilmsByIdsWithErrors returns List<FilmRecord> into { films: [Film!] @splitQuery,
+    // errors: [...] } — the opptak leggTilTagger shape. @splitQuery on the carrier data field is
+    // tolerated as redundant (the fetcher already re-selects by PK); pre-R275 the forbidden-
+    // directive check dropped the payload type and schema assembly failed with a dangling
+    // typeRef. The films fetcher exercises the MANY + OUTCOME_SUCCESS combination: narrow
+    // Outcome.Success, cast success.value() to List<FilmRecord>, re-select by PK in input order.
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void serviceFilmsByIdsWithErrors_validIds_projectsFilmsInInputOrder() {
+        // Success arm: the producer emits Outcome.Success(List<FilmRecord>); the films fetcher
+        // projects the rows by PK preserving input order; errors resolves null on the success arm.
+        Map<String, Object> data = execute("""
+            mutation {
+                serviceFilmsByIdsWithErrors(ids: [2, 1]) {
+                    films { filmId title }
+                    errors { __typename }
+                }
+            }
+            """);
+        var payload = assertThat(data).extractingByKey("serviceFilmsByIdsWithErrors", as(MAP));
+        payload.containsEntry("errors", null);
+        var films = payload.extractingByKey("films", as(list(Map.class))).hasSize(2);
+        films.element(0, as(MAP)).containsEntry("filmId", 2).containsEntry("title", "ACE GOLDFINGER");
+        films.element(1, as(MAP)).containsEntry("filmId", 1).containsEntry("title", "ACADEMY DINOSAUR");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void serviceFilmsByIdsWithErrors_missingFilm_armSwitchRendersFilmsNull() {
+        // Error arm: an unknown id throws the mapped @error; the producer routes it onto
+        // Outcome.ErrorList. The films fetcher narrows Success, sees the error arm, and resolves
+        // null before any key read; the typed error lands in the errors union.
+        Map<String, Object> data = execute("""
+            mutation {
+                serviceFilmsByIdsWithErrors(ids: [1, 999]) {
+                    films { filmId }
+                    errors {
+                        __typename
+                        ... on FilmReviewMissingFilm { message }
+                    }
+                }
+            }
+            """);
+        var payload = assertThat(data).extractingByKey("serviceFilmsByIdsWithErrors", as(MAP));
+        payload.containsEntry("films", null);
+        var only = payload.extractingByKey("errors", as(list(Map.class)))
+            .hasSize(1)
+            .element(0, as(MAP));
+        only.containsEntry("__typename", "FilmReviewMissingFilm");
+        only.containsEntry("message", "film 999 not found");
+    }
+
     // ===== R12 DML LocalContext error channel end-to-end =====
     //
     // Mirrors the @service-backed submitFilmReview tests on the DML pillar. The
