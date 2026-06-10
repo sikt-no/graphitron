@@ -499,6 +499,10 @@ final class ConnectionPromoter {
                 existing.name(), existing.location(), existing.elementTypeName(),
                 existing.edgeTypeName(), existing.itemNullable(), existing.shareable(), enrichedConn));
         }
+        // The matching Edge is co-registered with every Connection (the synthesise arm registers
+        // both in the same iteration, lines ~138-146), so whenever a ConnectionType exists its
+        // EdgeType does too: this guard never falsely skips and a Connection-tagged/Edge-untagged
+        // partial union (itself a composition break) is unreachable.
         if (ctx.types.get(edgeName) instanceof EdgeType existingEdge) {
             var missingEdge = missingTags(existingEdge.schemaType(), carrierTags);
             if (!missingEdge.isEmpty()) {

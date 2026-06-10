@@ -1,7 +1,7 @@
 ---
 id: R295
 title: Synthesised connection/edge types must inherit the federation tags of the @asConnection carrier field
-status: In Progress
+status: In Review
 bucket: bug
 priority: 3
 theme: pagination
