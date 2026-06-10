@@ -10,6 +10,44 @@ The `next-id:` front-matter field is the canonical counter for `R<n>` allocation
 
 ---
 
+- `5fa830e` + `32d7e0d` + `77573c4` (red tests `24387b2`, comment refresh `905f9ef`) — R275
+  (`source-record-carrier-service-error-channel`): error channel and data projection for
+  source-record-carrier `@service` mutations, reopened-scope completion. The earlier as-built
+  slice (2026-06-05) closed only the to-one, non-`@splitQuery` carrier (`{ entity: Table, errors }`
+  projected off `Outcome.Success.value()`, bucket C `errors: null` on the success arm, the
+  `NonNullableErrorsField` rejection); this completion covers the two data-field shapes the
+  `opptak-subgraph` saksbehandling mutations actually use, both of which previously emitted an
+  *invalid assembled schema* (a `typeRef` to a dropped payload type, `graphql.AssertException:
+  type X not found in schema`). Slice 1 (`5fa830e`): `@splitQuery`-list carriers
+  (`{ saker: [Sak!] @splitQuery, errors }`) are admitted via the tolerant
+  `BuildContext.scanStructuralServiceCarrierPayload` (the data field's PK-keyed follow-up SELECT
+  makes `@splitQuery` redundant, fired as the established `warnIfSplitQueryOnRecordParent`
+  advisory), classifying `SingleRecordTableField` MANY over the `OUTCOME_SUCCESS` envelope; and a
+  recognized-but-unbound orphan carrier becomes a loud `UnclassifiedField` at the mutation-field
+  edge. Slice 2 (`32d7e0d`, requirement 2): `@nodeId`-from-record support
+  (`{ taggId: ID @nodeId, errors }` / `{ tagger: [ID] @nodeId, errors }` over a service returning
+  the deleted record(s)) encodes node ids straight off `Outcome.Success.value()`'s in-memory
+  record(s) with no follow-up SELECT, deletion-safe by construction; structural scan grew a named
+  `CarrierFamily` axis (DML vs SERVICE) carrying the forbidden-directive set and the ID-wrapper
+  policy (SERVICE admits the `[ID]` list-of-nullable the opptak schema declares), the lockstep
+  `resolveDeleteIdEncoder` + `classifyDeleteIdEncoderError` pair collapsed into one sealed
+  `IdEncoderResolution` resolver feeding both DELETE and SERVICE diagnostics, and a new sealed leaf
+  `ChildField.SingleRecordIdField` (wired through every sealed-coverage site: validator,
+  `TypeFetcherGenerator.IMPLEMENTED_LEAVES`, `FieldClassification.SingleRecordId`, `LeafTupleAdapter`,
+  LSP hover/label). Slice 3 (`77573c4`, requirement 1): the shape-agnostic
+  `GraphitronSchemaBuilder.rejectDanglingTypeReferences` builder pass demotes any classified field
+  whose SDL Object return element never registered to `UnclassifiedField` (fails the build *and*
+  removes the field from emission), closing the residual hole for errors-only and scan-`Reject`
+  orphans that the per-shape guard left open; the seven historically-lax arg-mapping fixtures were
+  fixed (not allowlisted) by backing `FilmDetails` with a real `TestFilmDetailsDto`. Coverage:
+  pipeline `SingleRecordTableFieldServiceProducerPipelineTest`, schema-builder
+  `GraphitronSchemaBuilderTest` `RootFieldCase` + `UnclassifiedFieldCase` rows, execution
+  `GraphQLQueryTest` delete-shaped fixtures whose producers synthesize records with ids absent from
+  the DB (9001/9002) so the encoded node ids prove the no-re-fetch contract structurally; no
+  generated-body string assertions. In Review → Done gate (reviewer session ≠ implementer session
+  `017DpiWem9o8HCVkgDf7ae5a`): full `mvn -f graphitron-rewrite/pom.xml install -Plocal-db` green on
+  JDK 25 across all modules.
+
 - `b2c0895` — R291 (`strip-internal-directives-from-published-sdl`): the published SDL
   (`schema.graphqls`, both federation and plain arms) no longer carries Graphitron-internal
   directive definitions/applications or their supporting types. Two-tier support-type model
