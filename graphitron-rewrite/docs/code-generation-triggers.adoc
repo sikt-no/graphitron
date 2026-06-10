@@ -124,10 +124,40 @@ Two kinds of `VALUES(…)` derived tables built by Graphitron when batching:
 
 == Type Classification
 
+The worked examples in this section render directly from the classification test corpus
+(`ClassifiedCorpus` in `graphitron`'s test sources): the SDL shown is the live fixture the classifier
+runs against, projected through a documented query by the query-as-view renderer, with the test-only
+`@classified` / `@classifiedType` assertion directives stripped. The `ClassifiedDocTest` build guard
+fails if this page ever drifts from what the corpus renders, so a displayed example is always one the
+classifier actually produces the stated verdict for. The reference table that follows enumerates the
+verdicts not yet migrated to a worked example.
+
+=== `@table` type → `TableType`
+
+A type carrying `@table(name:)` (without `@node` or `@discriminate`) classifies as `TableType`, the
+pivot for SQL generation. A root field returning it enters a new query scope rooted in that table, and
+a scalar child whose name matches a column projects inline.
+
+[source,graphql]
+----
+type Query {
+  film: Film
+}
+
+type Film @table(name: "film") {
+  title: String
+}
+----
+
+`Film` classifies as `TableType` (full SQL generation: queries, joins, projections); `Query.film`
+enters the scope; `Film.title` projects an inline column. Asserted by the `catalog` corpus example via
+`@classifiedType(as: TableType)`.
+
+=== Reference table
+
 |===
 | Directive Pattern on Type | `GraphitronType` Variant | Generator Output
 
-| `@table` (no `@node`, no `@discriminate`) | `TableType` | `*Fetchers` class + `*` class
 | `@table` + `@node` | `NodeType` | `*Fetchers` class + `*` class (with Relay ID handling)
 | `@record` | `ResultType`* | `*Fetchers` class only (no SQL scope of its own)
 | `Query` or `Mutation` root type | `RootType` | `*Fetchers` class only
