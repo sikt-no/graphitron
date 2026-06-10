@@ -66,6 +66,6 @@ Default mode logging is unchanged. In strict mode, a warning that matched an exp
 
 ## Out of scope
 
-- **Deprecated-usage warnings.** Making use of `@deprecated`-marked directives or arguments emit a `BuildWarning` (a new `WarningKind` variant), so strict mode automatically keeps fixtures off deprecated functionality. That is a generator behavior change with its own classifier arm and audit; filed separately as R295 (deprecated-usage-warnings), which depends on this item's channel and kind work.
+- **Deprecated-usage warnings.** Making use of `@deprecated`-marked directives or arguments emit a `BuildWarning` (a new `WarningKind` variant), so strict mode automatically keeps fixtures off deprecated functionality. That is a generator behavior change with its own classifier arm and audit; filed separately as R296 (deprecated-usage-warnings), which depends on this item's channel and kind work.
 - **`@expectWarning` schema directive.** An author-facing schema-level expectation declaration would ship into the consumer directive vocabulary; only worth its own item if expectations should become a schema-author feature.
 - **R293's remaining categories.** Generated-code javac warnings, duplicate `junit-platform.properties`, handwritten-source warnings, and build-infrastructure warnings stay in R293.
