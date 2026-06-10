@@ -2923,9 +2923,10 @@ class FieldBuilder {
      * SDL-Object return type never registered (no {@code @record}/reflection binding, no
      * producer-backed carrier promotion). Classifying such a field would emit a type reference to
      * a type the model dropped, producing an invalid assembled schema. The ID-element arm is the
-     * {@code fjernSakTagg}-family shape: {@code [ID] @nodeId} data fields are the DELETE-only
-     * PK-echo permit, and {@code @service} support for encoding node ids off the service result
-     * without a re-fetch is R275's follow-up slice.
+     * {@code fjernSakTagg}-family shape: {@code @nodeId}-from-record encoding is supported on
+     * {@code @service} carriers, so reaching this arm means the producer binding failed to
+     * ground (typically a record-class or cardinality mismatch against the
+     * {@code @nodeId(typeName:)} target's table); the reason restates the grounding contract.
      */
     private String orphanServiceCarrierReason(String payloadTypeName, String fieldName,
             BuildContext.DmlPayloadScan.Admit admit) {
@@ -3333,8 +3334,9 @@ class FieldBuilder {
                     // assembly fails with "type X not found in schema"). The field edge owns the
                     // orphan rejection (see GraphitronSchemaBuilder.registerNestingTypes); reject
                     // loudly instead of classifying over a dropped type. Non-carrier orphan shapes
-                    // (scan Reject / NotApplicable) keep the pre-R275 laxity; closing those is a
-                    // model-level soundness-pass follow-up.
+                    // (scan Reject / NotApplicable) are caught by the shape-agnostic backstop
+                    // (GraphitronSchemaBuilder.rejectDanglingTypeReferences); this arm runs first
+                    // so recognized carriers get the richer, shape-specific guidance.
                     String payloadName = s.returnType().returnTypeName();
                     if (ctx.schema.getType(payloadName) instanceof graphql.schema.GraphQLObjectType
                             && ctx.types.get(payloadName) == null
