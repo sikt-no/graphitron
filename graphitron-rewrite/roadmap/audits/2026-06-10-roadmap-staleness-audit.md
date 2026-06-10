@@ -50,7 +50,9 @@ follows:
   the DELETE carriers can still carry a `Projected*` `DmlReturnExpression` arm.
   Targets verified live (`DmlReturnExpression.ProjectedSingle`/`ProjectedList` at
   `MutationField.java:62-63`). Surfaced by the R281 dimensional-model design and
-  the R266 landing. Authored 2026-06-09 — current, not flagged.
+  the R266 landing. Authored 2026-06-09 — current, not flagged. (Resolved: R287
+  removed the carrier and the DELETE -> `@table` classifier paths; the
+  `Projected*` arms stay for INSERT/UPDATE/UPSERT.)
 - **R288 added (current).** New Backlog **bug**: `inline-interface-and-tablemethod-children`
   — a child `@table` field backed by `ChildField.TableInterfaceField` or
   `ChildField.TableMethodField` gets a synchronous per-parent fetcher

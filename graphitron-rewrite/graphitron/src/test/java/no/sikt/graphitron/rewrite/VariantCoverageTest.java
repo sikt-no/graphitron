@@ -63,6 +63,14 @@ class VariantCoverageTest {
             + "the classifier rejects every UPSERT mutation at MutationInputResolver, so no "
             + "schema-reachable case lands on this leaf. Add a fresh case when R145 lifts the "
             + "upstream rejection."),
+        Map.entry(no.sikt.graphitron.rewrite.model.MutationField.MutationDeletePayloadField.class,
+            "R287: a payload-returning DELETE's only admissible data field is an ID-element (the "
+            + "@table-element projection is rejected — the row is gone, RETURNING carries only the "
+            + "PK), which requires the synthesised __NODE_TYPE_ID metadata absent from the corpus "
+            + "catalog. Covered by MutationDmlNodeIdClassificationTest under the nodeidfixture."),
+        Map.entry(no.sikt.graphitron.rewrite.model.MutationField.MutationBulkDeletePayloadField.class,
+            "R287: bulk sibling of MutationDeletePayloadField — same ID-element-only constraint and "
+            + "same nodeidfixture coverage (MutationDmlNodeIdClassificationTest)."),
         Map.entry(GraphitronType.JooqRecordType.class,
             "No plain jOOQ Record<?> (non-TableRecord) fixture class in the test classpath; "
             + "add a corpus example when a suitable fixture is introduced."),
@@ -73,13 +81,6 @@ class VariantCoverageTest {
             "Permit added in R12 (error-handling-parity) C2 alongside the ErrorChannel slot; "
             + "the classifier doesn't produce it until C3 lifts the five PolymorphicReturnType "
             + "rejection sites in FieldBuilder. Add a corpus example when that lift lands."),
-        Map.entry(ChildField.SingleRecordTableFieldFromReturning.class,
-            "Has no valid (producer, mapping) verdict: a full @table projection off a DELETE's "
-            + "PK-only RETURNING record cannot be produced (the row is deleted), so "
-            + "LeafTupleAdapter refuses it rather than blessing a happy-path tuple, and no corpus "
-            + "@classified coordinate can land on it. The construct is illegal and tracked for "
-            + "removal by R287 (Remove DELETE -> @table return path); this entry and the leaf go "
-            + "together when R287 lands."),
         Map.entry(ChildField.CompositeColumnField.class,
             "Covered by NodeIdPipelineTest.OutputCase (the composite-PK NodeId path requires the "
             + "nodeid fixture's `bar` table with two key columns, not available in the standard "

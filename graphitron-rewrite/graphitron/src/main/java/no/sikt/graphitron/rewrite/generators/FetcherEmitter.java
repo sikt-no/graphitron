@@ -250,17 +250,6 @@ public final class FetcherEmitter {
             // encoder. No follow-up SELECT — the records may be deleted rows.
             return buildSingleRecordIdFetcherValue(serviceIdCarrier, outputPackage);
         }
-        if (field instanceof ChildField.SingleRecordTableFieldFromReturning tableCarrier) {
-            // R156: data field on a payload-returning DELETE carrier with an @table-element data
-            // field. Synthesizes per source row a new jOOQ Record over the element @table with PK
-            // columns copied from the RETURNING Record; non-PK column slots remain null so
-            // the per-field ColumnFetcher on the element type returns null for NonPkNullable
-            // arms. The PkResolution projection list on the carrier pinpoints which columns to
-            // copy; no other field shape (FK reference, @service, child collection) reaches
-            // this emitter — BuildContext.classifyDeleteTableProjection rejects them before the
-            // carrier is constructed.
-            return buildSingleRecordTableFromReturningFetcherValue(tableCarrier);
-        }
         if (field instanceof ChildField.ErrorsField ef) {
             // Switch on the field's resolved Transport: PayloadAccessor reads the errors list
             // off the parent payload via graphql-java's PropertyDataFetcher (record accessor /
@@ -876,90 +865,6 @@ public final class FetcherEmitter {
                     ClassName.bestGuess(pkColumns.get(i).columnClass()));
             }
             body.add(");\n");
-        }
-        body.add("}");
-        return body.build();
-    }
-
-    /**
-     * R156 — data-fetcher value for a {@link ChildField.SingleRecordTableFieldFromReturning}.
-     * Synthesizes per source row a new jOOQ {@code Record} keyed to the element {@code @table}'s
-     * column shape, populated with PK column values copied from the RETURNING source row.
-     * Non-PK column slots remain null on the synthesized Record, so the per-field
-     * {@code ColumnFetcher} on the element type returns null for {@code NonPkNullable} arms of
-     * the projection. No follow-up SELECT runs — the row is gone.
-     *
-     * <p>The synthesis approach relies on
-     * {@code BuildContext.classifyDeleteTableProjection} rejecting any element-type field that
-     * cannot resolve from a PK-only synthesized Record (FK references, child collections,
-     * computed fields, {@code @service}-resolved fields). Relaxing the rejection rule (e.g.
-     * admitting a {@code ColumnReferenceField} as nullable) would surface here as a runtime
-     * error when the per-field fetcher tries to read an aliased joined column off a synthesized
-     * Record that doesn't carry it.
-     *
-     * <p>The encoder reference for PK-encoded scalar (the SDL {@code id} alias) is NOT needed in
-     * this emitter — the existing per-field {@link ChildField.ColumnField} /
-     * {@link ChildField.CompositeColumnField} fetcher consumes the
-     * {@link no.sikt.graphitron.rewrite.model.CallSiteCompaction.NodeIdEncodeKeys} compaction
-     * off its own slot and runs the encoder at fetch time. The synthesized Record carries the
-     * raw PK column value; the encoder runs downstream.
-     *
-     * <p><b>Same-Field-instance round-trip.</b> The PK copy emits
-     * {@code row.set(Tables.FILM.FILM_ID, sourceRow.get(Tables.FILM.FILM_ID))}: the same
-     * {@code Field<T>} instance reads the source and writes the synthesized Record. This is
-     * what makes the copy type-erasure-free in the generated code — jOOQ's
-     * {@code Field<T>}-typed accessor returns and accepts the same {@code T}, so no cast or
-     * boxing widening is generated. The load-bearing assumption is therefore not only "the
-     * projection rejects FK / service / non-PK-non-null fields" (which lets the synthesis
-     * succeed) but also "source and target Records resolve to the same generated table class"
-     * (which lets the per-column copy compile). The @mutation classifier pins the input
-     * {@code @table} on both sides; a future change that synthesizes a Record over a different
-     * jOOQ-generated class than the source RETURNING reads from would need to revisit this.
-     */
-    private static CodeBlock buildSingleRecordTableFromReturningFetcherValue(
-            ChildField.SingleRecordTableFieldFromReturning carrier) {
-        var table = carrier.returnType().table();
-        var jooqRecord = ClassName.get("org.jooq", "Record");
-        var jooqResult = ClassName.get("org.jooq", "Result");
-        boolean isList = carrier.returnType().wrapper().isList();
-        // PK column set, in declaration order (declaration-order matches the synthesized Record's
-        // expected column ordering — jOOQ stores by index but is also addressable by Field<T>).
-        var pkColumns = table.primaryKeyColumns();
-        var body = CodeBlock.builder().add("($T env) -> {\n", DATA_FETCHING_ENV);
-        // Synthesize via the table's per-instance newRecord(). The static Tables.<TABLE> field
-        // is typed to the table's class (e.g. `Film`), which exposes the per-column accessors
-        // (`FILM.FILM_ID`) and the newRecord() factory.
-        var arrayListOfRecord = ParameterizedTypeName.get(
-            ClassName.get("java.util", "ArrayList"), jooqRecord);
-        var listOfRecord = ParameterizedTypeName.get(
-            ClassName.get("java.util", "List"), jooqRecord);
-        if (isList) {
-            var resultOfRecord = ParameterizedTypeName.get(jooqResult, jooqRecord);
-            body.add("    $T source = ($T) env.getSource();\n", resultOfRecord, resultOfRecord);
-            body.add("    if (source == null) return null;\n");
-            body.add("    $T out = new $T(source.size());\n", listOfRecord, arrayListOfRecord);
-            body.add("    for ($T sourceRow : source) {\n", jooqRecord);
-            body.add("        $T row = $T.$L.newRecord();\n",
-                jooqRecord, table.constantsClass(), table.javaFieldName());
-            for (var pk : pkColumns) {
-                body.add("        row.set($T.$L.$L, sourceRow.get($T.$L.$L));\n",
-                    table.constantsClass(), table.javaFieldName(), pk.javaName(),
-                    table.constantsClass(), table.javaFieldName(), pk.javaName());
-            }
-            body.add("        out.add(row);\n");
-            body.add("    }\n");
-            body.add("    return out;\n");
-        } else {
-            body.add("    $T sourceRow = ($T) env.getSource();\n", jooqRecord, jooqRecord);
-            body.add("    if (sourceRow == null) return null;\n");
-            body.add("    $T row = $T.$L.newRecord();\n",
-                jooqRecord, table.constantsClass(), table.javaFieldName());
-            for (var pk : pkColumns) {
-                body.add("    row.set($T.$L.$L, sourceRow.get($T.$L.$L));\n",
-                    table.constantsClass(), table.javaFieldName(), pk.javaName(),
-                    table.constantsClass(), table.javaFieldName(), pk.javaName());
-            }
-            body.add("    return row;\n");
         }
         body.add("}");
         return body.build();

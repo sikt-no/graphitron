@@ -24,7 +24,6 @@ public sealed interface ChildField extends OutputField
             ChildField.ComputedField, ChildField.PropertyField,
             ChildField.SingleRecordIdField,
             ChildField.SingleRecordIdFieldFromReturning,
-            ChildField.SingleRecordTableFieldFromReturning,
             ChildField.ErrorsField {
 
     /**
@@ -90,12 +89,11 @@ public sealed interface ChildField extends OutputField
      * and runs them through {@link #encode} to produce the encoded NodeId.
      *
      * <p>Sibling of {@link SingleRecordTableField} ("follow-up SELECT outside the tx,"
-     * load-bearing for INSERT / UPDATE / UPSERT carriers) and
-     * {@link SingleRecordTableFieldFromReturning} ("no follow-up read; source IS the RETURNING
-     * record; per-field projection via {@link PkResolution}," load-bearing for DELETE +
-     * {@code @table}-element data field). The three encode genuinely different invariants —
-     * follow-up SELECT vs no-follow-up vs no-follow-up-encoded-PK — not different values of one
-     * knob; the sealed split pushes the per-carrier emission story into the type system.
+     * load-bearing for INSERT / UPDATE / UPSERT carriers) and {@link SingleRecordIdField} ("encoded
+     * key off an {@code @service} producer's in-memory record"). The three encode genuinely
+     * different invariants — follow-up SELECT vs no-follow-up-encoded-PK-off-RETURNING vs
+     * no-follow-up-encoded-key-off-record — not different values of one knob; the sealed split
+     * pushes the per-carrier emission story into the type system.
      *
      * <p>Declines {@link TableTargetField} (element is the {@code ID} scalar, not a table-bound
      * type) and {@link BatchKeyField} (no DataLoader). The {@link #encode} compaction carries
@@ -128,10 +126,9 @@ public sealed interface ChildField extends OutputField
      * {@code fjernSakTagger} delete-then-echo mutations are the driving case: the record the
      * service returns is already deleted from the database).
      *
-     * <p>Fourth sibling of {@link SingleRecordTableField} ("follow-up SELECT off the producer's
-     * record"), {@link SingleRecordIdFieldFromReturning} ("encoded PK scalar off the DML
-     * RETURNING {@code Record}, read by SQL name"), and
-     * {@link SingleRecordTableFieldFromReturning} ("PK-only synthesized projection"). It differs
+     * <p>Sibling of {@link SingleRecordTableField} ("follow-up SELECT off the producer's
+     * record") and {@link SingleRecordIdFieldFromReturning} ("encoded PK scalar off the DML
+     * RETURNING {@code Record}, read by SQL name"). It differs
      * from {@code SingleRecordIdFieldFromReturning} on the source shape, not just the envelope:
      * the source is the developer-declared {@code TableRecord} subclass (read through typed
      * {@code Tables.X.COL} constants), it may arrive wrapped in {@code Outcome}, and the bulk
@@ -168,46 +165,6 @@ public sealed interface ChildField extends OutputField
         }
         @Override public DomainReturnType domainReturnType() {
             return new DomainReturnType.Plain(STRING_CLASS);
-        }
-    }
-
-    /**
-     * R156 — the single data field on a payload-returning DELETE carrier whose data field is a
-     * {@code @table}-element. The element type projects the PK-only RETURNING record onto the
-     * {@code @table}-backed SDL type. The parent classifies as
-     * {@code MutationField.MutationDmlRecordField} (single DELETE) or
-     * {@code MutationField.MutationBulkDmlRecordField} (bulk DELETE); the fetcher reads each
-     * per-field arm of {@link #projection} off the source {@code Record} (no follow-up SELECT —
-     * the row is gone).
-     *
-     * <p>{@link #projection} is the narrow two-arm {@link PkResolution} list, produced by
-     * {@code BuildContext.classifyDeleteTableProjection}, which rejects the carrier before
-     * constructing any element if the classification surfaces a {@code NonPkNonNullable},
-     * {@code ServiceField}, or {@code UnsupportedField} arm. The emitter's sealed switch on
-     * {@link PkResolution} is therefore exhaustive over its two arms with no defensive default
-     * — the rejection arms cannot reach this carrier by type.
-     *
-     * <p>Sibling of {@link SingleRecordTableField} (which carries the "follow-up SELECT outside
-     * the tx" invariant for INSERT / UPDATE / UPSERT) and {@link SingleRecordIdFieldFromReturning}
-     * (which carries the "encoded PK scalar" invariant for DELETE with an ID-typed data field).
-     * The three are genuinely different invariants, not discriminator variants of one knob; the
-     * sealed split pushes the per-carrier emission story into the type system.
-     *
-     * <p>Declines {@link TableTargetField} (no SQL is generated for this carrier — the fetcher
-     * reads off the RETURNING record) and {@link BatchKeyField} (no DataLoader).
-     */
-    record SingleRecordTableFieldFromReturning(
-        String parentTypeName,
-        String name,
-        SourceLocation location,
-        ReturnTypeRef.TableBoundReturnType returnType,
-        List<PkResolution> projection
-    ) implements ChildField {
-        public SingleRecordTableFieldFromReturning {
-            projection = List.copyOf(projection);
-        }
-        @Override public DomainReturnType domainReturnType() {
-            return new DomainReturnType.Record(returnType.table());
         }
     }
 

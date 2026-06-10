@@ -1565,25 +1565,11 @@ type FilmActorsServicePayload {
     filmActors: [FilmActor!]
 }
 
-# R156 compilation-tier fixture (@table-element carrier on DELETE): @table-backed element type
-# whose fields are PK-only or nullable non-PK. The DELETE projection step
-# (BuildContext.classifyDeleteTableProjection) admits `DeletedFilmInfo` because film_id
-# resolves to a PkRead (the SDL `filmId` field), and `title` would be a NonPkNullable... but
-# `title` in the sakila film table is NOT NULL. Restrict to PK-only fields here so the
-# projection admits cleanly.
-type DeletedFilmInfo @table(name: "film") {
-    filmId: Int! @field(name: "FILM_ID")
-}
-
 # R156 compilation-tier fixture (ID-typed carrier on DELETE): the carrier's data field is the
 # encoded NodeId of each deleted film. Film is @node-backed (see line 623), so the implicit
 # encoder lookup against the input @table's @node registration resolves to encodeFilm.
 type DeletedFilmsIdPayload {
     deletedIds: [ID!]
-}
-
-type DeletedFilmsTablePayload {
-    deleted: [DeletedFilmInfo!]
 }
 
 type Mutation {
@@ -1646,9 +1632,9 @@ type Mutation {
     # (Reader.ResultRowWalk, Wrap.Record, PK columns). The fetcher runs PK-only RETURNING
     # inside a tight transaction; the data field's fetcher runs the response SELECT outside
     # it, so read errors during graphql-java's traversal cannot undo the DML. R156 lifts
-    # DELETE-with-carrier via two element-shape arms — the ID-typed PK-echo and the
-    # @table-element with PK-only RETURNING projection; see deleteFilmsIdCarrier /
-    # deleteFilmsTableCarrier below.
+    # DELETE-with-carrier via the ID-typed PK-echo element-shape arm; see deleteFilmsIdCarrier
+    # below. (R287 removed the @table-element DELETE carrier: the row is gone after the
+    # statement and RETURNING carries only the PK, so a full @table projection is impossible.)
     createFilmPayload(in: FilmCreateInput!): FilmPayload @mutation(typeName: INSERT)
     updateFilmPayload(in: FilmUpdateInput!): FilmPayload @mutation(typeName: UPDATE)
     # upsertFilmPayload retired under R144 (UPSERT lifts via R145).
@@ -1690,25 +1676,15 @@ type Mutation {
     # reads it back. See R12LocalContextDmlExecutionTest in the execution tier.
     createFilmWithErrors(in: FilmCreateInput!): FilmCreateLocalContextPayload @mutation(typeName: INSERT)
 
-    # R156 compilation-tier fixtures: payload-returning DELETE carriers. Two element-shape
-    # arms:
-    #   - ID-typed carrier: bulk DELETE returning [ID!] of encoded NodeIds. Classifies as
-    #     MutationBulkDmlRecordField with kind=DELETE; the carrier's `deletedIds` field
-    #     classifies as ChildField.SingleRecordIdFieldFromReturning with CallSiteCompaction.
-    #     NodeIdEncodeKeys carrying the Film encoder. Emitter: per-row deleteFrom(film).where(
-    #     row(film_id).in(...)).returningResult(film_id) inside transactionResult; data-field
-    #     fetcher reads film_id from each RETURNING Record and runs through encodeFilm.
-    #   - @table-element carrier: bulk DELETE returning a @table-backed element projection
-    #     with PK-only fields. Classifies as MutationBulkDmlRecordField + ChildField.
-    #     SingleRecordTableFieldFromReturning carrying List<PkResolution>. Emitter: same DML
-    #     chain; data-field fetcher synthesizes a Result<Record> over the film table with the
-    #     RETURNING PK columns set and non-PK slots null (the per-field ColumnFetcher on the
-    #     element type returns null for non-PK columns).
-    # Both lift R75 Phase 1's "DELETE-with-carrier rejected at classify time" rule (the
-    # FetcherEmitter cases for the new ChildField siblings consume PK columns directly off the
-    # RETURNING Record; no follow-up SELECT runs after the row is gone).
+    # R156 compilation-tier fixture: payload-returning DELETE carrier, ID-typed element-shape arm.
+    # Bulk DELETE returning [ID!] of encoded NodeIds. Classifies as MutationBulkDeletePayloadField
+    # with the carrier's `deletedIds` field as ChildField.SingleRecordIdFieldFromReturning with
+    # CallSiteCompaction.NodeIdEncodeKeys carrying the Film encoder. Emitter: per-row
+    # deleteFrom(film).where(row(film_id).in(...)).returningResult(film_id) inside transactionResult;
+    # data-field fetcher reads film_id from each RETURNING Record and runs through encodeFilm. No
+    # follow-up SELECT runs after the row is gone. (R287 removed the @table-element DELETE carrier:
+    # a full @table projection off a deleted row is impossible — RETURNING carries only the PK.)
     deleteFilmsIdCarrier(in: [FilmDeleteInput!]!): DeletedFilmsIdPayload @mutation(typeName: DELETE)
-    deleteFilmsTableCarrier(in: [FilmDeleteInput!]!): DeletedFilmsTablePayload @mutation(typeName: DELETE)
 
     # R158 execution-tier surfaces: @service-backed mutations returning carrier-payload
     # types whose data field is the @service producer's typed jOOQ record (List<FilmRecord>

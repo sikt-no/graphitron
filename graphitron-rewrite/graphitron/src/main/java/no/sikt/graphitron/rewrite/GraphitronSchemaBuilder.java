@@ -247,7 +247,7 @@ public class GraphitronSchemaBuilder {
                     || nService.isPresent();
                 var scan = ctx.scanStructuralDmlPayload(objType.getName());
                 // A DELETE carrier's data field is owned by the @mutation DELETE classifier
-                // (SingleRecordIdFieldFromReturning / SingleRecordTableFieldFromReturning, set via
+                // (SingleRecordIdFieldFromReturning, set via
                 // reclassify). R276 binds the carrier to a JooqTableRecordType, so the standard
                 // per-type pass below would classify that same data field a second time and collide;
                 // skip it here, classifying only the errors field. (Orphan carriers are no longer

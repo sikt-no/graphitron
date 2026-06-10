@@ -189,9 +189,6 @@ public final class DeclarationHovers {
                 sb.append("\n\nEncoded node id off the @service producer's record")
                   .append(s.tableName() != null ? " (table `" + s.tableName() + "`)" : "")
                   .append("; no re-fetch.");
-            case FieldClassification.SingleRecordTableFromReturning s ->
-                sb.append("\n\nElement table: `").append(nullSafe(s.tableName()))
-                  .append("` (from RETURNING)");
             case FieldClassification.QueryTable q ->
                 sb.append("\n\nQuery table: `").append(nullSafe(q.tableName())).append("`")
                   .append(q.isLookup() ? "\n\nLookup helper." : "");

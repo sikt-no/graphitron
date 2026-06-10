@@ -132,18 +132,6 @@ public final class LeafTupleAdapter {
             // R275: the @service-carrier sibling encodes node-key columns off the producer's
             // in-memory record(s) (optionally Outcome-narrowed): no new query, inline Column.
             case ChildField.SingleRecordIdField f -> inline(Column);
-            // SingleRecordTableFieldFromReturning projects a full @table off a DELETE's PK-only
-            // RETURNING record. That has no valid verdict: the row is gone, so the only producer that
-            // could project the @table is a follow-up [Query] against a row that no longer exists. The
-            // construct is illegal and is slated for removal (R287, "Remove DELETE -> @table return
-            // path"); the corpus refuses it rather than blessing a happy-path tuple. When R287 deletes
-            // the leaf, this arm goes with it.
-            case ChildField.SingleRecordTableFieldFromReturning f ->
-                throw new UnsupportedOperationException(
-                    "SingleRecordTableFieldFromReturning has no valid (producer, mapping) verdict: a "
-                    + "full @table projection off a DELETE's PK-only RETURNING record cannot be "
-                    + "produced (the row is deleted). This construct is illegal and tracked for "
-                    + "removal by R287.");
 
             // The errors field reads an Outcome wrapper arm off env.getSource(): no new query (inline),
             // and the @error element types are object types, so Record. (A scalar-error shape would be

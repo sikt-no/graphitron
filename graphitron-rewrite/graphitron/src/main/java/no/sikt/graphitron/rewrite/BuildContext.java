@@ -28,7 +28,6 @@ import no.sikt.graphitron.rewrite.model.ErrorChannel;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.HelperRef;
-import no.sikt.graphitron.rewrite.model.PkResolution;
 import no.sikt.graphitron.rewrite.model.InputField;
 import no.sikt.graphitron.rewrite.model.JoinSlot;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
@@ -464,125 +463,6 @@ class BuildContext {
     }
 
     /**
-     * Outcome of the per-field DELETE carrier projection step over a {@code @table}-element data
-     * field (R156). Builder-internal sealed type, used by {@link FieldBuilder} to construct the
-     * per-field {@link ChildField.SingleRecordTableFieldFromReturning} carrier's projection list.
-     *
-     * <p>Two arms:
-     * <ul>
-     *   <li>{@link Admitted} — every element-type field classified into an admissible
-     *       {@link PerFieldOutcome} arm; the projection list contains the
-     *       per-field {@link PkResolution} carrier the emitter consumes.</li>
-     *   <li>{@link Rejected} — at least one element-type field classified into a rejection arm
-     *       ({@link PerFieldOutcome.NonPkNonNullable}, {@link PerFieldOutcome.ServiceField},
-     *       or {@link PerFieldOutcome.UnsupportedField}); the reason names the offending
-     *       fields and points authors at the ID-typed carrier shape as the recommended pattern.</li>
-     * </ul>
-     */
-    sealed interface DeleteTableProjection {
-        record Admitted(List<PkResolution> projection) implements DeleteTableProjection {}
-        record Rejected(String reason) implements DeleteTableProjection {}
-    }
-
-    /**
-     * R156 — DELETE carrier projection step. Walks the element SDL type's fields, classifies
-     * each into a {@link PerFieldOutcome} arm, and either rejects the whole carrier (any
-     * {@code NonPkNonNullable}, {@code ServiceField}, or {@code UnsupportedField} arm present)
-     * or projects the surviving outcomes to a narrow {@link PkResolution} list that rides on
-     * {@link ChildField.SingleRecordTableFieldFromReturning} to the emitter.
-     *
-     * <p>Single producer of {@code List<PkResolution>} by construction; consumers of the
-     * projection list rely on the rejection rule (any {@code NonPkNonNullable},
-     * {@code ServiceField}, or {@code UnsupportedField} arm rejects the whole carrier) being a
-     * hard reject and not a silent drop. Relaxing the rejection would break the emitter's
-     * exhaustive sealed switch over {@link PkResolution}'s two arms — the rejection arms cannot
-     * reach the emitter by type.
-     *
-     * <p>Consumes already-classified {@link ChildField} values from {@link #fieldRegistry};
-     * called from {@link FieldBuilder} during mutation classification, where every type's
-     * fields are guaranteed to be classified ahead of the Mutation root's field-classification
-     * pass.
-     */
-    DeleteTableProjection classifyDeleteTableProjection(String carrierTypeName, String elementTypeName, TableRef elementTable) {
-        var raw = schema.getType(elementTypeName);
-        if (!(raw instanceof GraphQLObjectType elementObj)) {
-            return new DeleteTableProjection.Rejected(
-                "DELETE carrier '" + carrierTypeName + "' element type '" + elementTypeName
-                + "' is not a GraphQL Object type; only @table-backed Object types can be projected");
-        }
-        var pkColumns = elementTable.primaryKeyColumns();
-        var pkSqlNames = pkColumns.stream().map(ColumnRef::sqlName).collect(Collectors.toSet());
-
-        var outcomes = new ArrayList<PerFieldOutcome>();
-        for (var fieldDef : elementObj.getFieldDefinitions()) {
-            var coords = FieldCoordinates.coordinates(elementTypeName, fieldDef.getName());
-            var classified = fieldRegistry.get(coords);
-            outcomes.add(classifyElementFieldForDeleteProjection(fieldDef, classified, pkSqlNames));
-        }
-
-        var nonPkNonNull = outcomes.stream()
-            .filter(o -> o instanceof PerFieldOutcome.NonPkNonNullable)
-            .map(PerFieldOutcome::fieldName)
-            .toList();
-        var serviceFields = outcomes.stream()
-            .filter(o -> o instanceof PerFieldOutcome.ServiceField)
-            .map(PerFieldOutcome::fieldName)
-            .toList();
-        var unsupported = outcomes.stream()
-            .filter(o -> o instanceof PerFieldOutcome.UnsupportedField)
-            .map(o -> {
-                var u = (PerFieldOutcome.UnsupportedField) o;
-                return u.fieldName() + " (" + u.leafKind() + ")";
-            })
-            .toList();
-
-        if (!nonPkNonNull.isEmpty() || !serviceFields.isEmpty() || !unsupported.isEmpty()) {
-            var msg = new StringBuilder();
-            msg.append("@mutation(typeName: DELETE) carrier '").append(carrierTypeName)
-                .append("': data field element type '").append(elementTypeName).append("' has field(s):");
-            if (!nonPkNonNull.isEmpty()) {
-                msg.append(" - ").append(String.join(", ", nonPkNonNull))
-                    .append(" resolving to non-primary-key columns and declared non-nullable "
-                        + "(after DELETE only the table's primary key can carry data; either make "
-                        + "them nullable or move them off the type);");
-            }
-            if (!serviceFields.isEmpty()) {
-                msg.append(" - ").append(String.join(", ", serviceFields))
-                    .append(" are @service-resolved (projecting a deleted SDL type through a "
-                        + "@service field is not supported on DELETE carriers — the service "
-                        + "would receive a PK-only Record at runtime and any non-PK source "
-                        + "param would silently produce null);");
-            }
-            if (!unsupported.isEmpty()) {
-                msg.append(" - ").append(String.join(", ", unsupported))
-                    .append(" are not resolvable from the PK-only RETURNING record (no follow-up "
-                        + "query runs against the deleted row);");
-            }
-            msg.append(" Prefer an ID-typed carrier field (type ID or [ID!] "
-                + "with @nodeId either implicit by the input @table's @node registration or "
-                + "explicit on the field), which echoes the deleted primary keys without "
-                + "requiring a @table-element projection.");
-            return new DeleteTableProjection.Rejected(msg.toString());
-        }
-
-        var projection = outcomes.stream()
-            .map(o -> switch (o) {
-                case PerFieldOutcome.PkRead p ->
-                    (PkResolution) new PkResolution.PkRead(p.fieldName(), p.columns(), p.encode());
-                case PerFieldOutcome.NonPkNullable n ->
-                    (PkResolution) new PkResolution.NonPkNullable(n.fieldName());
-                case PerFieldOutcome.NonPkNonNullable ignored ->
-                    throw new AssertionError("rejected above");
-                case PerFieldOutcome.ServiceField ignored ->
-                    throw new AssertionError("rejected above");
-                case PerFieldOutcome.UnsupportedField ignored ->
-                    throw new AssertionError("rejected above");
-            })
-            .toList();
-        return new DeleteTableProjection.Admitted(projection);
-    }
-
-    /**
      * R178 Phase 4 — sealed result of a payload's structural carrier-shape scan, used by the
      * @mutation classifier and MutationInputResolver paths to decide whether a payload type
      * admits as a single-record DML payload. Three arms:
@@ -776,66 +656,6 @@ class BuildContext {
                 + "admit multi-data carriers)");
         }
         return new DmlPayloadScan.Admit(admittedDataField, admittedElement);
-    }
-
-    /**
-     * Classify a single element-SDL-type field for the DELETE projection. Switches on the
-     * already-classified {@link ChildField} from {@link #fieldRegistry}; the four
-     * non-rejecting arms ({@code PkRead}, {@code NonPkNullable}) map to admissible projection
-     * cases, the two rejection arms ({@code NonPkNonNullable}, {@code ServiceField}) capture
-     * the offending shape, and {@code UnsupportedField} is the catch-all for any
-     * {@link GraphitronField} leaf the projection cannot resolve from a PK-only RETURNING
-     * record (table-bound child collections, computed fields, record-bound nested fields, etc.).
-     */
-    private PerFieldOutcome classifyElementFieldForDeleteProjection(
-            GraphQLFieldDefinition fieldDef, GraphitronField classified, Set<String> pkSqlNames) {
-        String fieldName = fieldDef.getName();
-        boolean fieldNullable = !(fieldDef.getType() instanceof graphql.schema.GraphQLNonNull);
-        if (classified == null) {
-            // No classification — treat as unsupported. Could happen if the element type is a
-            // NestingType whose fields the schema walk left unclassified. Rejecting the
-            // projection is honest: it cannot resolve a field the classifier never typed.
-            return new PerFieldOutcome.UnsupportedField(fieldName, "unclassified");
-        }
-        return switch (classified) {
-            case ChildField.ColumnField cf -> {
-                boolean pkColumn = pkSqlNames.contains(cf.column().sqlName());
-                if (pkColumn) {
-                    Optional<HelperRef.Encode> encode = cf.compaction() instanceof CallSiteCompaction.NodeIdEncodeKeys nek
-                        ? Optional.of(nek.encodeMethod())
-                        : Optional.empty();
-                    yield new PerFieldOutcome.PkRead(fieldName, List.of(cf.column()), encode);
-                }
-                yield fieldNullable
-                    ? new PerFieldOutcome.NonPkNullable(fieldName)
-                    : new PerFieldOutcome.NonPkNonNullable(fieldName);
-            }
-            case ChildField.CompositeColumnField ccf -> {
-                boolean allPk = ccf.columns().stream().map(ColumnRef::sqlName).allMatch(pkSqlNames::contains);
-                if (allPk) {
-                    yield new PerFieldOutcome.PkRead(fieldName, ccf.columns(),
-                        Optional.of(ccf.compaction().encodeMethod()));
-                }
-                yield fieldNullable
-                    ? new PerFieldOutcome.NonPkNullable(fieldName)
-                    : new PerFieldOutcome.NonPkNonNullable(fieldName);
-            }
-            case ChildField.ColumnReferenceField crf ->
-                // Terminal column lives on a joined target table; after DELETE no follow-up join
-                // can run. The runtime fetcher reads aliased joined columns off the source Record,
-                // which the DELETE carrier's synthesized PK-only Record cannot supply — even on
-                // nullable SDL fields the per-field ColumnFetcher would throw at runtime. Reject
-                // the carrier rather than silently breaking the SDL field at fetch time.
-                new PerFieldOutcome.UnsupportedField(fieldName, "ColumnReferenceField (FK reference; resolving requires a follow-up join that DELETE cannot run)");
-            case ChildField.CompositeColumnReferenceField ignored ->
-                new PerFieldOutcome.UnsupportedField(fieldName, "CompositeColumnReferenceField (composite FK reference; resolving requires a follow-up join that DELETE cannot run)");
-            case ChildField.ServiceTableField ignored -> new PerFieldOutcome.ServiceField(fieldName);
-            case ChildField.ServiceRecordField ignored -> new PerFieldOutcome.ServiceField(fieldName);
-            case GraphitronField.UnclassifiedField ignored ->
-                new PerFieldOutcome.UnsupportedField(fieldName, "unclassified");
-            default ->
-                new PerFieldOutcome.UnsupportedField(fieldName, classified.getClass().getSimpleName());
-        };
     }
 
     /**

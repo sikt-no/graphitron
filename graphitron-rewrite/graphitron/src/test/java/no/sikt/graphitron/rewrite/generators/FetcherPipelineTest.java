@@ -391,27 +391,11 @@ class FetcherPipelineTest {
     // the ChannelCatchArmEmitter unit test plus the execution-tier round-trip; the construction-shape
     // admission itself stays covered by PayloadConstructionShapeTest and retires in commit 4.
 
-    @Test
-    void dmlDeleteField_tableReturn_keepsExistingRawRowEmissionAndRedacts() {
-        // Regression check for the existing @table-return path: payloadAssembly empty, raw row
-        // returned, catch arm uses redact. The valueType lift narrows the payload local from
-        // Object to org.jooq.Record on the ProjectedSingle arm.
-        var sdl = """
-            type Film @table(name: "film") { title: String }
-            input FilmInput @table(name: "film") { filmId: Int! @field(name: "film_id") }
-            type Query { dummy: String }
-            type Mutation { deleteFilm(in: FilmInput!): Film @mutation(typeName: DELETE) }
-            """;
-        var deleteFilm = method(findSpec("MutationFetchers", sdl), "deleteFilm");
-        var body = deleteFilm.code().toString();
-        assertThat(body)
-            .contains("Record payload = dsl")
-            .contains(".returningResult(")
-            .contains("ErrorRouter.redact(e, env)")
-            .doesNotContain("ErrorRouter.dispatch");
-        assertThat(deleteFilm.returnType().toString())
-            .isEqualTo("graphql.execution.DataFetcherResult<org.jooq.Record>");
-    }
+    // R287: the @table-return DELETE path is removed (the row is gone after the statement; RETURNING
+    // carries only the PK, so a full @table projection is impossible). The former
+    // dmlDeleteField_tableReturn_keepsExistingRawRowEmissionAndRedacts pipeline proof of that path
+    // retires with it; the ID-return DELETE emission is covered by the encoded-arm pipeline/execution
+    // tests, and the @table-return ProjectedSingle emission stays covered by the INSERT/UPDATE roots.
 
     // ===== Bulk DML mutations (R77 Phase E) =====
     //
@@ -484,21 +468,20 @@ class FetcherPipelineTest {
 
     @Test
     void dmlDeleteField_bulkInput_emitsRowTupleInWithStreamMap() {
-        // Returns [Film!]! (ProjectedList) rather than [ID!]! to avoid the encoded-arm's
-        // @node-type-on-table requirement; the bulk DELETE shape is identical regardless of
-        // terminator, so ProjectedList is the right vehicle for the structural pin.
+        // R287: a bulk DELETE returns [ID!]! (the encoded-PK arm); the @table-return ([Film!]!) path
+        // is removed. Film is @node so the encoder resolves. The bulk DELETE SQL chain (row-tuple IN
+        // over the stream-mapped input) is the structural subject here, independent of the terminator.
         var sdl = """
-            type Film @table(name: "film") { title: String }
+            type Film implements Node @table(name: "film") @node { id: ID! @nodeId filmId: Int! @field(name: "film_id") }
             input FilmDeleteInput @table(name: "film") { filmId: Int! @field(name: "film_id") }
             type Query { dummy: String }
-            type Mutation { deleteFilms(in: [FilmDeleteInput!]!): [Film!]! @mutation(typeName: DELETE) }
+            type Mutation { deleteFilms(in: [FilmDeleteInput!]!): [ID!]! @mutation(typeName: DELETE) }
             """;
         var deleteFilms = method(findSpec("MutationFetchers", sdl), "deleteFilms");
         var body = deleteFilms.code().toString();
         assertThat(body)
             .contains("java.util.List<java.util.Map<?, ?>> in = (java.util.List<java.util.Map<?, ?>>) env.getArgument")
             .contains("if (in.isEmpty())")
-            .contains("graphql.execution.DataFetcherResult.<java.util.List<org.jooq.Record>>newResult().data(java.util.List.of()).build()")
             .as("row-tuple IN form, regardless of key arity")
             .contains(".deleteFrom")
             .contains("org.jooq.impl.DSL.row(")
@@ -507,8 +490,6 @@ class FetcherPipelineTest {
             .contains(".toList())")
             .contains(".returningResult(")
             .contains(".fetch(");
-        assertThat(deleteFilms.returnType().toString())
-            .isEqualTo("graphql.execution.DataFetcherResult<java.util.List<org.jooq.Record>>");
     }
 
     @Test

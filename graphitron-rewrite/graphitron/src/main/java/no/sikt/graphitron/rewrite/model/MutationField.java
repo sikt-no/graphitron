@@ -25,7 +25,11 @@ public sealed interface MutationField extends RootField, WithErrorChannel
      * Sealed common supertype of the four direct-return DML mutation variants. Carries the per-field
      * data the INSERT / UPDATE / DELETE / UPSERT emitters share: a pre-resolved
      * {@link DmlReturnExpression} arm that captures the entire return-shape dispatch (encoded ID,
-     * projected {@code @table}, or {@code @record} payload).
+     * projected {@code @table}, or {@code @record} payload). The {@code Projected*} (@table) arms
+     * are legitimate only for INSERT / UPDATE / UPSERT, whose rows survive the statement and can be
+     * read back by a follow-up SELECT; DELETE is excluded from them (the row is gone after the
+     * statement, RETURNING carries only the primary key), and {@link MutationDeleteTableField}'s
+     * compact constructor rejects a {@code Projected*} arm.
      *
      * <p>The input surface varies by verb. INSERT / UPSERT carry the {@code @table}
      * {@link ArgumentRef.InputTypeArg.TableInputArg} that drives the statement directly. UPDATE
@@ -100,15 +104,26 @@ public sealed interface MutationField extends RootField, WithErrorChannel
     }
 
     /**
-     * R266: the {@code @mutation(typeName: DELETE)} field that returns its {@code @table} type
-     * directly or returns an encoded ID. Like its UPDATE sibling {@link MutationUpdateTableField}
-     * (and unlike INSERT / UPSERT) it carries no {@code TableInputArg}: its input semantics are
-     * dissolved into the {@code DeleteRowsWalker}-produced {@link DeleteRows} carrier plus the slim
-     * {@link InputArgRef} arg surface (per R222: input fields have no semantics independent of the
-     * consuming field). DELETE's carrier has no SET partition — every admitted input column is a
-     * WHERE filter ({@link DeleteRows#whereColumns()}) — and supports the {@code multiRow: true}
-     * {@link DeleteRows.Broadcast} arm UPDATE rejects. Both slots are non-Optional; the field is
-     * only constructed when the FieldBuilder pre-checks and the {@code DeleteRowsWalker} both pass.
+     * R266 / R287: the {@code @mutation(typeName: DELETE)} field that returns an encoded ID. Unlike
+     * its INSERT / UPDATE / UPSERT siblings, DELETE cannot return a projected {@code @table}: the row
+     * is gone after the statement, and RETURNING carries only the primary key, so a full {@code @table}
+     * projection is impossible. The {@code @mutation} classifier rejects DELETE -> {@code @table} at
+     * authoring time (R287), so {@link #returnExpression} only ever holds an {@code Encoded*} arm; the
+     * compact constructor backstops that invariant by rejecting a {@code Projected*} arm.
+     *
+     * <p>Like its UPDATE sibling {@link MutationUpdateTableField} (and unlike INSERT / UPSERT) it
+     * carries no {@code TableInputArg}: its input semantics are dissolved into the
+     * {@code DeleteRowsWalker}-produced {@link DeleteRows} carrier plus the slim {@link InputArgRef}
+     * arg surface (per R222: input fields have no semantics independent of the consuming field).
+     * DELETE's carrier has no SET partition — every admitted input column is a WHERE filter
+     * ({@link DeleteRows#whereColumns()}) — and supports the {@code multiRow: true}
+     * {@link DeleteRows.Broadcast} arm UPDATE rejects. The non-return slots are non-Optional; the
+     * field is only constructed when the FieldBuilder pre-checks and the {@code DeleteRowsWalker}
+     * both pass.
+     *
+     * <p>The name encodes the family axis (direct-return DML on a {@code @table}, as opposed to the
+     * {@code *DmlRecordField} / {@code *PayloadField} carriers), not the return shape, which
+     * {@link #returnExpression} carries.
      */
     record MutationDeleteTableField(
         String parentTypeName,
@@ -119,6 +134,17 @@ public sealed interface MutationField extends RootField, WithErrorChannel
         DeleteRows deleteRows,
         Optional<ErrorChannel> errorChannel
     ) implements DmlTableField, DeleteRowsField {
+        public MutationDeleteTableField {
+            if (returnExpression instanceof DmlReturnExpression.ProjectedSingle
+                    || returnExpression instanceof DmlReturnExpression.ProjectedList) {
+                throw new IllegalArgumentException(
+                    "MutationDeleteTableField cannot carry a projected @table return ("
+                    + returnExpression.getClass().getSimpleName() + "): DELETE removes the row, and "
+                    + "RETURNING carries only the primary key, so a full @table projection is "
+                    + "impossible. The @mutation classifier rejects DELETE -> @table at authoring "
+                    + "time (R287); this carrier only ever holds an encoded-ID return.");
+            }
+        }
         @Override public DomainReturnType domainReturnType() {
             return dmlDomainReturnType(returnExpression, inputArg.table());
         }
@@ -317,12 +343,10 @@ public sealed interface MutationField extends RootField, WithErrorChannel
      * <p><b>DELETE carved off (R266).</b> The payload-returning bulk DELETE now lands on
      * {@link MutationBulkDeletePayloadField}, sourcing its per-row WHERE columns from the
      * {@link DeleteRows} walker carrier rather than the {@code TableInputArg}'s
-     * {@code @lookupKey} / PK-coverage bindings. The data-field carrier projection is unchanged
-     * ({@link ChildField.SingleRecordIdFieldFromReturning} or
-     * {@link ChildField.SingleRecordTableFieldFromReturning}, no follow-up SELECT — the row is
-     * gone, the encoded PK or PkResolution projection is consumed directly off the RETURNING
-     * record); only the input-side WHERE source moved to the carrier. The compact constructor here
-     * rejects DELETE.
+     * {@code @lookupKey} / PK-coverage bindings. The data-field carrier is
+     * {@link ChildField.SingleRecordIdFieldFromReturning} (no follow-up SELECT — the row is gone,
+     * the encoded PK is consumed directly off the RETURNING record); only the input-side WHERE
+     * source moved to the carrier. The compact constructor here rejects DELETE.
      *
      * @see no.sikt.graphitron.rewrite.generators.TypeFetcherGenerator
      */

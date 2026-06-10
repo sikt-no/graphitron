@@ -3764,8 +3764,8 @@ class FieldBuilder {
                 .findFirst();
             if (encodeReturn.isEmpty()) {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(
-                    "@mutation field '" + name + "' returns ID but no @node type is declared for table '"
-                    + tableSqlName + "'; annotate the type with @node or use a @table return type"));
+                    "@mutation(typeName: DELETE) field '" + name + "' returns ID but no @node type is "
+                    + "declared for table '" + tableSqlName + "'; annotate the type with @node"));
             }
         }
 
@@ -3855,21 +3855,14 @@ class FieldBuilder {
                 ctx.fieldRegistry.reclassify(coords, carrier, null);
             }
             case BuildContext.DmlElementKind.Table tbl -> {
-                String tableMismatch = requireDmlDataTableMatchesInputTable(
-                    inputArg.table(), tbl, DmlKind.DELETE, name, returnType.returnTypeName());
-                if (tableMismatch != null) {
-                    return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(tableMismatch));
-                }
-                var projection = ctx.classifyDeleteTableProjection(returnType.returnTypeName(), tbl.elementTypeName(), tbl.table());
-                if (projection instanceof BuildContext.DeleteTableProjection.Rejected rejected) {
-                    return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(rejected.reason()));
-                }
-                var admitted = (BuildContext.DeleteTableProjection.Admitted) projection;
-                var returnType_tb = new ReturnTypeRef.TableBoundReturnType(tbl.elementTypeName(), tbl.table(), wrapper);
-                var coords = graphql.schema.FieldCoordinates.coordinates(returnType.returnTypeName(), dataField.getName());
-                var carrier = new ChildField.SingleRecordTableFieldFromReturning(
-                    returnType.returnTypeName(), dataField.getName(), dataFieldLocation, returnType_tb, admitted.projection());
-                ctx.fieldRegistry.reclassify(coords, carrier, null);
+                return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(
+                    "@mutation(typeName: DELETE) carrier '" + returnType.returnTypeName()
+                    + "': @table-element data field '" + dataField.getName() + "' (element type '"
+                    + tbl.elementTypeName() + "') is not supported. The row is gone after the statement, "
+                    + "and RETURNING carries only the primary key, so a full @table projection is "
+                    + "impossible. Use an ID-typed data field (type ID or [ID!] with @nodeId either "
+                    + "implicit by the input @table's @node registration or explicit on the field), "
+                    + "which echoes the deleted primary keys."));
             }
             case BuildContext.DmlElementKind.RecordElement ignored -> {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(

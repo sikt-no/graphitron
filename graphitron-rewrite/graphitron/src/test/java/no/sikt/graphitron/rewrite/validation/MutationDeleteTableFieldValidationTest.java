@@ -72,4 +72,42 @@ class MutationDeleteTableFieldValidationTest {
             .extracting(ValidationError::message)
             .containsExactlyInAnyOrderElementsOf(tc.errors());
     }
+
+    // R287 — author-facing contract: DELETE -> @table is rejected at classify time (producing an
+    // UnclassifiedField), so the validator surfaces a build-time ValidationError with the new
+    // message. The model can no longer represent the wrong shape (MutationDeleteTableField's compact
+    // constructor rejects a Projected* arm), so these contracts are pinned SDL-driven rather than by
+    // hand-building an illegal field object.
+
+    @org.junit.jupiter.api.Test
+    void directReturnTableType_yieldsValidationError() {
+        var schema = no.sikt.graphitron.rewrite.TestSchemaHelper.buildSchema("""
+            type Film @table(name: "film") { title: String }
+            input FilmInput @table(name: "film") { filmId: Int! @field(name: "film_id") }
+            type Query { x: String }
+            type Mutation { deleteFilm(in: FilmInput!): Film @mutation(typeName: DELETE) }
+            """);
+        assertThat(validate(schema))
+            .extracting(ValidationError::message)
+            .anyMatch(m -> m.contains("@mutation(typeName: DELETE) return type")
+                        && m.contains("(@table)")
+                        && m.contains("RETURNING carries only the primary key")
+                        && m.contains("return ID"));
+    }
+
+    @org.junit.jupiter.api.Test
+    void payloadCarrierWithTableElement_yieldsValidationError() {
+        var schema = no.sikt.graphitron.rewrite.TestSchemaHelper.buildSchema("""
+            type Film @table(name: "film") { title: String }
+            input FilmInput @table(name: "film") { filmId: Int! @field(name: "film_id") }
+            type DeletedFilmsPayload { deleted: [Film!] }
+            type Query { x: String }
+            type Mutation { deleteFilms(in: [FilmInput!]!): DeletedFilmsPayload @mutation(typeName: DELETE) }
+            """);
+        assertThat(validate(schema))
+            .extracting(ValidationError::message)
+            .anyMatch(m -> m.contains("@table-element data field")
+                        && m.contains("RETURNING carries only the primary key")
+                        && m.contains("ID-typed data field"));
+    }
 }
