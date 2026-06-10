@@ -19,8 +19,17 @@ public final class ClassifiedCorpus {
 
     private ClassifiedCorpus() {}
 
-    /** One corpus entry: a stable id (used as the test display name) and its annotated fixture SDL. */
-    public record Example(String id, String sdl) {
+    /**
+     * One corpus entry: a stable id (used as the test display name), its annotated fixture SDL, and an
+     * optional documentation projection {@code query}. When {@code query} is non-null the entry is also
+     * a documentation example, the query selects the coordinates the {@code code-generation-triggers}
+     * page renders for it (via {@link QueryViewRenderer}); see {@link #docExamples()}.
+     */
+    public record Example(String id, String sdl, String query) {
+        public Example(String id, String sdl) {
+            this(id, sdl, null);
+        }
+
         @Override
         public String toString() {
             return id;
@@ -38,7 +47,8 @@ public final class ClassifiedCorpus {
             type Film @table(name: "film") @classifiedType(as: TableType) {
               title: String @classified(producer: [], mapping: Column)
             }
-            """),
+            """,
+            "{ film { title } }"),
 
         /* Service side: a terminal record, a service re-query into a @table, and a pojo field. */
         new Example("service", """
@@ -80,6 +90,11 @@ public final class ClassifiedCorpus {
     /** The corpus entries, in declaration order. */
     public static List<Example> examples() {
         return EXAMPLES;
+    }
+
+    /** The corpus entries that carry a documentation projection query, in declaration order. */
+    public static List<Example> docExamples() {
+        return EXAMPLES.stream().filter(e -> e.query() != null).toList();
     }
 
     /**

@@ -5391,17 +5391,11 @@ class GraphitronSchemaBuilderTest {
     // ===== Type classification =====
 
     enum TypeClassificationCase implements ClassificationCase {
-        RESOLVED_TABLE(
-            "@table(name:) with a real DB table → TableType with ResolvedTable",
-            """
-            type Film @table(name: "film") { title: String }
-            type Query { film: Film }
-            """,
-            schema -> {
-                assertThat(schema.type("Film")).isInstanceOf(TableType.class);
-                assertThat(((TableType) schema.type("Film")).table()).isInstanceOf(TableRef.class);
-            }),
-
+        // R281 slice 2: the plain `@table → TableType` case migrated to the spec-by-example corpus
+        // (the `catalog` ClassifiedCorpus example, asserted via @classifiedType(as: TableType) and
+        // rendered into the Type Classification section of code-generation-triggers.adoc). The
+        // TableType leaf stays covered by the corpus, by TABLE_NAME_DEFAULTS_TO_LOWERCASE_TYPE_NAME
+        // (which also asserts the resolved table()), and by the projection test below.
         TABLE_NAME_DEFAULTS_TO_LOWERCASE_TYPE_NAME(
             "@table without name attribute uses the lower-cased GraphQL type name as the table name",
             """
