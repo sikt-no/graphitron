@@ -93,8 +93,8 @@ public final class ClassifiedCorpus {
          * (SplitLookupTableField). Like the @splitQuery split above it opens a new keyed query
          * (producer [Query]) and lands on participant @table rows (mapping Table); the @lookupKey
          * shape only changes how the batch is keyed, not the dimensional verdict. Corpus-only: it is
-         * another leaf on the already-taught [Query] / Table coordinate, and its @lookupKey argument
-         * needs the argument rendering the QueryViewRenderer does not yet support (hardening item 3).
+         * another leaf on the already-taught [Query] / Table coordinate (its @lookupKey scalar argument
+         * renders fine since hardening item 3, but it teaches no new dimensional lesson).
          */
         new Example("split-lookup", """
             type Customer @table(name: "customer") { firstName: String @field(name: "FIRST_NAME") }
@@ -320,10 +320,11 @@ public final class ClassifiedCorpus {
          * (QueryInterfaceField / QueryUnionField). The exception is a @table+@discriminate interface child
          * (TableInterfaceField): it is FK-correlatable from the parent and classifies inline (producer
          * []), though the generator currently emits a per-parent query (the R288 defect; the corpus
-         * asserts the correct verdict). The four shapes below (plain interface, union, table-interface,
-         * Relay Node) are corpus-only except the interface, which renders a doc example over the shared
-         * interface-level field; union and Relay selections need fragment / argument rendering the
-         * QueryViewRenderer does not yet support (R281 pre-migration-hardening item 3).
+         * asserts the correct verdict). Of the four shapes below (plain interface, union, table-interface,
+         * Relay Node) the interface and the union render doc examples, the interface over its shared
+         * interface-level field and the union through inline fragments on its participants (renderer
+         * hardening item 3); table-interface and Relay Node stay corpus-only, additional leaves on the
+         * already-taught polymorphic principle rather than new dimensional lessons.
          */
         new Example("interface", """
             interface Named { name: String }
@@ -349,7 +350,8 @@ public final class ClassifiedCorpus {
               filmActor: FilmActor
               search: FilmOrActor @classified(producer: [Query], mapping: Table)
             }
-            """),
+            """,
+            "{ filmActor { related { ... on Film { title } ... on Actor { firstName } } } }"),
 
         new Example("table-interface", """
             interface MediaItem @table(name: "film") @discriminate(on: "kind") { title: String }
@@ -373,7 +375,13 @@ public final class ClassifiedCorpus {
             }
             """),
 
-        /* DML side: an INSERT that writes then projects the inserted row (a [Dml, Query] pipeline). */
+        /*
+         * DML side: an INSERT that writes then projects the inserted row (a [Dml, Query] pipeline). The
+         * write produces the row (the Dml step), then a follow-up SELECT projects the @table return (the
+         * trailing Query step), so the field is producer [Dml, Query], mapping Table. Doc example: the
+         * projection query pulls in the FilmInput argument's input-object closure (renderer hardening
+         * item 3), so the rendered excerpt shows the input the mutation consumes rather than dangling.
+         */
         new Example("dml", """
             type Film @table(name: "film") { title: String }
             input FilmInput @table(name: "film") { title: String }
@@ -383,7 +391,8 @@ public final class ClassifiedCorpus {
                 @mutation(typeName: INSERT)
                 @classified(producer: [Dml, Query], mapping: Table)
             }
-            """),
+            """,
+            "mutation { createFilm { title } }"),
 
         /*
          * The remaining root mutation forms (INSERT is the `dml` example above). UPDATE and DELETE are
@@ -396,8 +405,9 @@ public final class ClassifiedCorpus {
          * non-table @record (MutationServiceRecordField, [Service] / Record). A DML payload carrier (a
          * plain object wrapping one @table data field) exposes the RETURNING rows as a record, so the
          * carrier itself is [Dml] / Record (MutationDmlRecordField), the follow-up projection being the
-         * data field's own [Query]. Corpus-only: mutation roots are not documentation-query selections,
-         * and their input objects need the argument rendering the QueryViewRenderer does not yet support.
+         * data field's own [Query]. Corpus-only: the [Dml, Query] / Table principle is taught by the
+         * `dml` doc example above, so these remaining root forms are additional leaves on it rather than
+         * new dimensional lessons (their input objects render fine since hardening item 3).
          */
         new Example("mutation-roots", """
             type Film @table(name: "film") { title: String }

@@ -329,9 +329,40 @@ interface Named {
 `Customer.address` returns the plain interface `Named` (implemented by the `@table` type `Address`),
 so it classifies with producer `[Query]` and `mapping = Table` (`InterfaceField`): a new keyed query
 projects the participant table, with `Address` recorded as the participant slot. Asserted by the
-`interface` corpus example. The union and Relay-`Node` shapes follow the same dimensional rule and are
-asserted corpus-only (`union`, `table-interface`, `relay-node`); rendering their selections as doc
-excerpts needs the fragment and argument support tracked in R281's pre-migration hardening.
+`interface` corpus example.
+
+A union child follows the same dimensional rule. The selection descends into each participant through an
+inline fragment (`... on Film`, `... on Actor`), and classification resolves the union to its participant
+`@table` rows:
+
+[source,graphql]
+----
+type Query {
+  filmActor: FilmActor
+}
+
+type FilmActor @table(name: "film_actor") {
+  related: FilmOrActor
+}
+
+type Film @table(name: "film") {
+  title: String
+}
+
+type Actor @table(name: "actor") {
+  firstName: String @field(name: "FIRST_NAME")
+}
+
+union FilmOrActor = Film | Actor
+----
+
+`FilmActor.related` returns the union `FilmOrActor`, so it classifies with producer `[Query]` and
+`mapping = Table` (`UnionField`): a new keyed query projects whichever participant table a row resolves
+to, with `Film` and `Actor` recorded as the participant slots. Asserted by the `union` corpus example.
+
+The `@table`+`@discriminate` interface child (`TableInterfaceField`, inline producer `[]`) and the Relay
+`Node` root (`QueryNodeField`, producer `[Query]`) are further leaves on this same polymorphic rule, each
+holding `mapping = Table`; they are asserted corpus-only (`table-interface`, `relay-node`).
 
 === Query Fields
 
@@ -354,6 +385,31 @@ excerpts needs the fragment and argument support tracked in R281's pre-migration
 The federation `_entities` field is *not* modelled as a `QueryField` permit; it is resolved by `federation-graphql-java-support` directly and dispatched through the generated `EntityFetcherDispatch` runtime helper. The corresponding entity-resolution metadata is carried in `GraphitronSchema.entitiesByType`.
 
 === Mutation Fields
+
+A mutation whose `@mutation(typeName:)` writes the catalog and returns a `@table` type runs a two-step
+producer pipeline: the write produces the affected row (a `Dml` step), then a follow-up `SELECT` projects
+that row back through the catalog (a trailing `Query` step). So the field is producer `[Dml, Query]`,
+`mapping = Table`, the shape INSERT, UPDATE, and DELETE share. The mutation's input object is part of the
+rendered closure, so the excerpt shows the `@table`-bound input the write consumes:
+
+[source,graphql]
+----
+type Mutation {
+  createFilm(in: FilmInput!): Film @mutation(typeName: INSERT)
+}
+
+type Film @table(name: "film") {
+  title: String
+}
+
+input FilmInput @table(name: "film") {
+  title: String
+}
+----
+
+`Mutation.createFilm` inserts a `film` row from `FilmInput` and projects the inserted row as the `@table`
+type `Film`: producer `[Dml, Query]`, `mapping = Table` (`MutationInsertTableField`). Asserted by the
+`dml` corpus example.
 
 |===
 | Schema Pattern | `MutationField` Variant | `*Fetchers` Generates
