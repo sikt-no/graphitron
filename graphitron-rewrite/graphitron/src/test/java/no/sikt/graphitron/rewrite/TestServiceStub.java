@@ -32,6 +32,16 @@ class TestServiceStub {
     public static String get() { throw new UnsupportedOperationException(); }
 
     /**
+     * R275 — no-arg query-side producer for the {@code FilmDetails @record} fixture payload,
+     * returning the {@link TestFilmDetailsDto} backing so the payload grounds via R96 reflection
+     * (the dangling-type-reference soundness pass rejects unbacked payload returns).
+     */
+    public static TestFilmDetailsDto getDetails() { throw new UnsupportedOperationException(); }
+
+    /** R275 — mutation-side sibling of {@link #getDetails}. */
+    public static TestFilmDetailsDto runDetails() { throw new UnsupportedOperationException(); }
+
+    /**
      * R190 fixture: {@code @service} with one {@code String userId} contextArgument; pairs with
      * {@link #getRatingByFnr} on the cross-site factory pipeline test (different name, different
      * type, so the factory's parameter list reflects both alphabetically).
@@ -235,7 +245,7 @@ class TestServiceStub {
      * the GraphQL mutation declares {@code @service(service: {..., argMapping: "inputs: input"})}
      * so the Java parameter name binds to a differently-named GraphQL argument.
      */
-    public static String runWithRenamedInputs(java.util.List<TestDtoStub> inputs, Boolean dryRun) {
+    public static TestFilmDetailsDto runWithRenamedInputs(java.util.List<TestDtoStub> inputs, Boolean dryRun) {
         throw new UnsupportedOperationException();
     }
 
@@ -245,7 +255,7 @@ class TestServiceStub {
      * to the Java parameter {@code mode}, exercising both the override and the text-enum
      * mapping enrichment in {@code FieldBuilder.enrichArgExtractions}.
      */
-    public static String runWithEnumOverride(String mode) {
+    public static TestFilmDetailsDto runWithEnumOverride(String mode) {
         throw new UnsupportedOperationException();
     }
 
@@ -256,7 +266,7 @@ class TestServiceStub {
      * scalar bean-typed parameter paired with an SDL input-object argument resolves to
      * {@link no.sikt.graphitron.rewrite.model.CallSiteExtraction.InputBean}.
      */
-    public static String runWithInputBean(TestInputBean input) {
+    public static TestFilmDetailsDto runWithInputBean(TestInputBean input) {
         throw new UnsupportedOperationException();
     }
 
@@ -313,7 +323,7 @@ class TestServiceStub {
      * plural arg shape resolves to a single InputBean extraction (the list-shape is read from
      * the Java type at emit time).
      */
-    public static String runWithInputBeans(java.util.List<TestInputBean> inputs) {
+    public static TestFilmDetailsDto runWithInputBeans(java.util.List<TestInputBean> inputs) {
         throw new UnsupportedOperationException();
     }
 
@@ -323,7 +333,7 @@ class TestServiceStub {
      * {@code FieldBinding} must carry {@code javaElementTypeName == "java.lang.Integer"}, not
      * {@code "int"}.
      */
-    public static String runWithInputBeanPrimitive(TestInputBeanWithPrimitive input) {
+    public static TestFilmDetailsDto runWithInputBeanPrimitive(TestInputBeanWithPrimitive input) {
         throw new UnsupportedOperationException();
     }
 
@@ -333,7 +343,7 @@ class TestServiceStub {
      * the {@code active} field's {@code FieldBinding} must carry {@code javaElementTypeName ==
      * "java.lang.Boolean"}, not {@code "boolean"}.
      */
-    public static String runWithInputJavaBeanBoolean(TestInputJavaBeanWithBoolean input) {
+    public static TestFilmDetailsDto runWithInputJavaBeanBoolean(TestInputJavaBeanWithBoolean input) {
         throw new UnsupportedOperationException();
     }
 

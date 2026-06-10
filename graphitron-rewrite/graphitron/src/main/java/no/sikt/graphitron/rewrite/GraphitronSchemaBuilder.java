@@ -277,6 +277,7 @@ public class GraphitronSchemaBuilder {
         registerNestingTypes(ctx);
         validateUniformDomainReturnType(ctx);
         var rewrites = ConnectionPromoter.promote(ctx);
+        rejectDanglingTypeReferences(ctx);
         var rebuiltAssembled = ConnectionPromoter.rebuildAssembledForConnections(ctx.schema, ctx.types, rewrites);
         // R194: reject case-insensitive type-name collisions. Graphitron emits one Java file per
         // type-name stem; on case-insensitive filesystems two case-equivalent names would clobber
@@ -324,6 +325,56 @@ public class GraphitronSchemaBuilder {
                 name, BuildContext.locationOf(objType), objType));
         }
         nf.nestedFields().forEach(child -> registerNestingTypesIn(ctx, child));
+    }
+
+    /**
+     * R275 — model-level soundness backstop: no classified field may reference a type the model
+     * dropped. A classified {@link OutputField} whose SDL return element is an Object type with
+     * no registry entry would emit {@code typeRef("X")} while the type itself is never emitted;
+     * graphql-java assembly then fails with {@code AssertException: type X not found in schema}
+     * — an invalid schema discovered by the consumer at runtime instead of an author error at
+     * build time. SDL Object types are the only kind the type pass can leave entirely absent
+     * (directiveless objects with no producer binding, no carrier promotion, and no
+     * {@code NestingField} embedding); every other SDL kind either registers or demotes to a
+     * registered {@link UnclassifiedType} that carries its own diagnostic.
+     *
+     * <p>Demotes the referencing field to {@link GraphitronField.UnclassifiedField} (the same
+     * shape as {@link #validateUniformDomainReturnType}), which both fails the build through
+     * the validator's UnclassifiedField pass <em>and</em> removes the field from emission, so
+     * the dangling reference is structurally impossible rather than merely checked. This is the
+     * shape-agnostic closure of the per-shape classifier guards (the {@code @service}
+     * orphan-carrier guard rejects recognized carrier shapes with richer, shape-specific
+     * guidance before this pass runs; anything that slips past every classifier-level guard —
+     * errors-only payloads, scan-{@code Reject} shapes, future holes — lands here). Runs after
+     * {@link #registerNestingTypes} (nesting projections registered) and after
+     * {@code ConnectionPromoter.promote} (SDL-declared Connection / Edge / PageInfo types are
+     * registered by the promoter, not the type pass; running earlier would demote every
+     * Connection-returning field).
+     */
+    private static void rejectDanglingTypeReferences(BuildContext ctx) {
+        for (var entry : List.copyOf(ctx.fieldRegistry.entries().entrySet())) {
+            if (!(entry.getValue() instanceof OutputField existing)) continue;
+            String sdlReturn = sdlReturnTypeName(ctx.schema, entry.getKey());
+            if (sdlReturn == null) continue;
+            if (ctx.typeRegistry.contains(sdlReturn)) continue;
+            var parentObj = ctx.schema.getObjectType(existing.parentTypeName());
+            ctx.fieldRegistry.reclassify(
+                entry.getKey(),
+                new GraphitronField.UnclassifiedField(
+                    existing.parentTypeName(), existing.name(), existing.location(),
+                    parentObj == null ? null : parentObj.getFieldDefinition(existing.name()),
+                    Rejection.structural(
+                        "field '" + existing.parentTypeName() + "." + existing.name()
+                        + "' returns SDL Object type '" + sdlReturn + "', which did not classify "
+                        + "into the model (no @table/@record binding, no producer-backed carrier "
+                        + "promotion, not embedded as a nesting projection of a table-backed "
+                        + "parent). Emitting the field would reference a type absent from the "
+                        + "generated schema and assembly would fail with \"type " + sdlReturn
+                        + " not found in schema\". Give '" + sdlReturn + "' a binding (e.g. a "
+                        + "@table data field or an [ID] @nodeId(typeName:) data field matching a "
+                        + "producer's returned record), or remove the field.")),
+                existing.getClass());
+        }
     }
 
     /**
