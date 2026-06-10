@@ -22,8 +22,8 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R281` | Classification test DSL: @classified spec-by-example | In Progress | 2026-06-10 <sub>created 2026-06-07</sub> | [plan](classification-test-dsl.md) |
 | `R45` | Multi-tenant routing on top of the schema-driven ExecutionInput factory | Spec | 2026-05-20 | [plan](tenant-routing-and-execution-input.md) |
 | `R273` | Source NodeId metadata from @node + catalog PK (inferred from `implements Node`), and settle wrong-type/malformed mismatch semantics, retiring the legacy __NODE bare-ID arm | Spec | 2026-06-02 | [plan](nodeid-skip-mismatch-error-surfacing.md) |
-| `R292` | Descriptions on generated Connection/Edge boilerplate types | Ready | 2026-06-10 | [plan](descriptions-on-generated-relay-types.md) |
 | `R200` | Honor @field(name:) in InputBeanResolver for SDL input bean/record member binding | Ready | 2026-06-10 <sub>created 2026-05-20</sub> | [plan](honor-field-directive-in-inputbeanresolver.md) |
+| `R292` | Descriptions on generated Connection/Edge boilerplate types | In Review | 2026-06-10 | [plan](descriptions-on-generated-relay-types.md) |
 | `R23` | Multi-parent `NestingField` sharing: `TableField` arm | Spec |  | [plan](nestingfield-multiparent-tablefield.md) |
 | `R293` | Clean up build-time warnings in the full rewrite build | Spec | 2026-06-10 | [plan](build-warning-cleanup.md) |
 | `R13` | Faceted search on `@asConnection` | Spec |  | [plan](faceted-search.md) |

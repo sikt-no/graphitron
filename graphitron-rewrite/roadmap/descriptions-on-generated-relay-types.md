@@ -1,7 +1,7 @@
 ---
 id: R292
 title: Descriptions on generated Connection/Edge boilerplate types
-status: Ready
+status: In Review
 bucket: feature
 priority: 5
 depends-on: []

@@ -132,6 +132,51 @@ class SchemaSdlEmissionTest {
     }
 
     /**
+     * R292: the synthesised relay boilerplate for the directive-driven {@code stores: [Store!]!
+     * @asConnection} carrier carries the canonical graphql-relay-js descriptions, and they survive
+     * the {@code SchemaPrinter} seam end to end onto the emitted {@code schema.graphqls}. Parsed
+     * structurally (re-parse, then read the description off each type/field), not by substring
+     * match, so a printer that dropped descriptions would fail here.
+     *
+     * <p>Asserts only the genuinely-synthesised types ({@code QueryStoresConnection} /
+     * {@code QueryStoresEdge}). This fixture declares {@code PageInfo} structurally in SDL (shared
+     * by the hand-written {@code FilmsConnection} / {@code ActorsConnection}), so the synthesis
+     * path reuses the consumer-owned object and does not stamp a description on it; that is the
+     * R292 scope boundary. Synthesised-{@code PageInfo} descriptions are covered at the unit tier
+     * by {@code ConnectionPromoterTest.directiveDrivenSynthesis_carriesRelayDescriptionsOnTypesAndFields},
+     * whose fixture declares no PageInfo.
+     */
+    @Test
+    void synthesisedConnectionBoilerplateCarriesRelayDescriptions() throws IOException {
+        var registry = new SchemaParser().parse(
+            Files.readString(sdlFor("no.sikt.graphitron.generated"), StandardCharsets.UTF_8));
+
+        var connection = (ObjectTypeDefinition) registry.getType("QueryStoresConnection").orElseThrow();
+        assertThat(descriptionOf(connection)).isEqualTo("A connection to a list of items.");
+        assertThat(fieldDescription(connection, "edges")).isEqualTo("A list of edges.");
+        assertThat(fieldDescription(connection, "nodes")).isEqualTo("A list of nodes.");
+        assertThat(fieldDescription(connection, "pageInfo")).isEqualTo("Information to aid in pagination.");
+        assertThat(fieldDescription(connection, "totalCount"))
+            .isEqualTo("Identifies the total count of items in the connection.");
+
+        var edge = (ObjectTypeDefinition) registry.getType("QueryStoresEdge").orElseThrow();
+        assertThat(descriptionOf(edge)).isEqualTo("An edge in a connection.");
+        assertThat(fieldDescription(edge, "cursor")).isEqualTo("A cursor for use in pagination.");
+        assertThat(fieldDescription(edge, "node")).isEqualTo("The item at the end of the edge.");
+    }
+
+    private static String descriptionOf(ObjectTypeDefinition type) {
+        return type.getDescription() == null ? null : type.getDescription().getContent();
+    }
+
+    private static String fieldDescription(ObjectTypeDefinition type, String fieldName) {
+        var field = type.getFieldDefinitions().stream()
+            .filter(f -> f.getName().equals(fieldName))
+            .findFirst().orElseThrow();
+        return field.getDescription() == null ? null : field.getDescription().getContent();
+    }
+
+    /**
      * R291 retention split across the fixtures: the shared fixture references
      * {@code SortDirection} from {@code FilmOrderBy} / {@code ActorOrderBy}, so the published
      * support type prints with its description; the federated and multischema fixtures
