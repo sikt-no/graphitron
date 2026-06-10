@@ -64,6 +64,8 @@ type Film @table(name: "film") {
 
 When the schema declares the connection type explicitly (the `ActorsConnection!` shape above), the rewrite reuses it instead of synthesising a fresh one. Otherwise, a `*Connection`, `*Edge`, and `PageInfo` are generated alongside the field.
 
+Federation directives on the field (`@shareable`, `@tag`) propagate onto the synthesised Connection, Edge, and PageInfo types, so federation contracts that include the field's tags also include its pagination types. An author-declared `PageInfo` is left untouched; a synthesised one carries the union of the tags from every connection-promoted field.
+
 Dynamic order via xref:orderBy.adoc[`@orderBy`] composes naturally:
 
 [source,graphql]

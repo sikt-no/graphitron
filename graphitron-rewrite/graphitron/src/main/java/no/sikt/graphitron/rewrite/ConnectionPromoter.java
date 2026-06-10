@@ -24,6 +24,7 @@ import no.sikt.graphitron.rewrite.model.GraphitronType.EdgeType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.PageInfoType;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -91,6 +92,9 @@ final class ConnectionPromoter {
     static List<CarrierRewrite> promote(BuildContext ctx) {
         var rewrites = new ArrayList<CarrierRewrite>();
         boolean pageInfoShareable = false;
+        // Union of every connection-promoted carrier's @tag, keyed by tag name, feeding the
+        // synthesised PageInfo exactly as pageInfoShareable folds shareable (R295).
+        var pageInfoTags = new LinkedHashMap<Object, GraphQLAppliedDirective>();
         boolean anyConnectionSynthesised = false;
         for (var t : ctx.schema.getAllTypesAsList()) {
             if (t.getName().startsWith("_")) continue;
@@ -113,12 +117,15 @@ final class ConnectionPromoter {
                         fieldDef.getType() instanceof GraphQLNonNull));
                 }
                 if (ctx.types.get(promotion.connectionName()) instanceof ConnectionType existing) {
+                    unionTagsIntoExisting(ctx, existing, promotion.edgeName(), promotion.tags());
                     pageInfoShareable |= existing.shareable();
+                    addTags(pageInfoTags, promotion.tags());
                     anyConnectionSynthesised = true;
                     continue;
                 }
                 anyConnectionSynthesised = true;
                 pageInfoShareable |= promotion.shareable();
+                addTags(pageInfoTags, promotion.tags());
                 var connSchema = promotion.connectionSchemaType();
                 var edgeSchema = promotion.edgeSchemaType();
                 // Directive-driven connections: name does not exist in the SDL → synthesize.
@@ -150,14 +157,17 @@ final class ConnectionPromoter {
                 && ctx.schema.getType("PageInfo") == null
                 && !(ctx.types.get("PageInfo") instanceof PageInfoType)) {
             ctx.typeRegistry.synthesize("PageInfo", new PageInfoType(
-                "PageInfo", null, pageInfoShareable, buildSynthesisedPageInfo(pageInfoShareable)));
+                "PageInfo", null, pageInfoShareable,
+                buildSynthesisedPageInfo(pageInfoShareable, List.copyOf(pageInfoTags.values()))));
         } else if (ctx.schema.getType("PageInfo") instanceof GraphQLObjectType pageInfoObj
                 && !(ctx.types.get("PageInfo") instanceof PageInfoType)) {
             boolean shareable = pageInfoObj.hasAppliedDirective("shareable");
             // SDL-declared PageInfo: the type pass left it unclassified (a directiveless object), so
-            // it is absent from the registry. Connection promotion registers it as a PageInfoType so
-            // the connection-emitter picks up the shareable flag and SDL-derived schema form. Use
-            // synthesize when absent (the common case now) and enrich only if some earlier pass
+            // it is absent from the registry. Connection promotion registers it as a PageInfoType
+            // carrying the SDL-derived schema form (which the connection-emitter emits from via
+            // schemaType(); the shareable flag is recorded on the record but not read at emission).
+            // An author-declared PageInfo is never tagged by promotion — the author owns it (R295).
+            // Use synthesize when absent (the common case now) and enrich only if some earlier pass
             // already registered it; the synthesise arm above handles the no-SDL case.
             var pageInfoType = new PageInfoType("PageInfo", null, shareable, pageInfoObj);
             if (ctx.typeRegistry.contains("PageInfo")) {
@@ -279,6 +289,7 @@ final class ConnectionPromoter {
         String elementTypeName,
         boolean itemNullable,
         boolean shareable,
+        List<GraphQLAppliedDirective> tags,
         GraphQLObjectType connectionSchemaType,
         GraphQLObjectType edgeSchemaType
     ) {}
@@ -305,10 +316,13 @@ final class ConnectionPromoter {
             String connName = resolveConnectionName(parent.getName(), fieldDef);
             String edgeName = connName.replace("Connection", "Edge");
             boolean shareable = fieldDef.hasAppliedDirective("shareable");
-            var connSchema = buildSynthesisedConnection(connName, edgeName, elementTypeName, itemNullable, shareable);
-            var edgeSchema = buildSynthesisedEdge(edgeName, elementTypeName, itemNullable, shareable);
+            // Directive arm: the carrier field is the tag source (R295). TagApplier tags fields
+            // (never type declarations), so a <schemaInput tag> source surfaces here too.
+            var tags = fieldDef.getAppliedDirectives(TAG_DIRECTIVE);
+            var connSchema = buildSynthesisedConnection(connName, edgeName, elementTypeName, itemNullable, shareable, tags);
+            var edgeSchema = buildSynthesisedEdge(edgeName, elementTypeName, itemNullable, shareable, tags);
             return new ConnectionPromotion(connName, edgeName, elementTypeName,
-                itemNullable, shareable, connSchema, edgeSchema);
+                itemNullable, shareable, tags, connSchema, edgeSchema);
         }
 
         // Structural: the return type shape is a declared Connection — reference the assembled type.
@@ -320,8 +334,12 @@ final class ConnectionPromoter {
             String edgeName = typeName.replace("Connection", "Edge");
             var edgeSchema = (GraphQLObjectType) ctx.schema.getType(edgeName);
             boolean shareable = connSchema.hasAppliedDirective("shareable");
+            // Structural arm: the SDL-declared Connection type is the tag source (R295). Its own
+            // @tag applications already ride on connSchema (the referenced SDL type), so they are
+            // not re-applied here; they feed the synthesised PageInfo union below.
+            var tags = connSchema.getAppliedDirectives(TAG_DIRECTIVE);
             return new ConnectionPromotion(typeName, edgeName, elementTypeName,
-                itemNullable, shareable, connSchema, edgeSchema);
+                itemNullable, shareable, tags, connSchema, edgeSchema);
         }
         return null;
     }
@@ -356,7 +374,8 @@ final class ConnectionPromoter {
     }
 
     private static GraphQLObjectType buildSynthesisedConnection(String connName, String edgeName,
-            String elementTypeName, boolean itemNullable, boolean shareable) {
+            String elementTypeName, boolean itemNullable, boolean shareable,
+            List<GraphQLAppliedDirective> tags) {
         var edgesField = GraphQLFieldDefinition.newFieldDefinition()
             .name("edges")
             .type(GraphQLNonNull.nonNull(GraphQLList.list(GraphQLNonNull.nonNull(
@@ -385,11 +404,12 @@ final class ConnectionPromoter {
             .field(pageInfoField)
             .field(totalCountField);
         if (shareable) builder.withAppliedDirective(GraphQLAppliedDirective.newDirective().name("shareable").build());
+        for (var tag : tags) builder.withAppliedDirective(tag);
         return builder.build();
     }
 
     private static GraphQLObjectType buildSynthesisedEdge(String edgeName, String elementTypeName,
-            boolean itemNullable, boolean shareable) {
+            boolean itemNullable, boolean shareable, List<GraphQLAppliedDirective> tags) {
         var cursorField = GraphQLFieldDefinition.newFieldDefinition()
             .name("cursor")
             .type(GraphQLNonNull.nonNull(GraphQLTypeReference.typeRef("String")))
@@ -406,10 +426,12 @@ final class ConnectionPromoter {
             .field(cursorField)
             .field(nodeField);
         if (shareable) builder.withAppliedDirective(GraphQLAppliedDirective.newDirective().name("shareable").build());
+        for (var tag : tags) builder.withAppliedDirective(tag);
         return builder.build();
     }
 
-    private static GraphQLObjectType buildSynthesisedPageInfo(boolean shareable) {
+    private static GraphQLObjectType buildSynthesisedPageInfo(boolean shareable,
+            List<GraphQLAppliedDirective> tags) {
         var builder = GraphQLObjectType.newObject()
             .name("PageInfo")
             .field(GraphQLFieldDefinition.newFieldDefinition()
@@ -429,6 +451,62 @@ final class ConnectionPromoter {
                 .type(GraphQLTypeReference.typeRef("String"))
                 .build());
         if (shareable) builder.withAppliedDirective(GraphQLAppliedDirective.newDirective().name("shareable").build());
+        for (var tag : tags) builder.withAppliedDirective(tag);
         return builder.build();
+    }
+
+    /** The federation {@code @tag} directive name; matches {@code TagApplier.TAG_DIRECTIVE_NAME}. */
+    private static final String TAG_DIRECTIVE = "tag";
+
+    /** The tag's identity for de-duplication is its {@code name} argument value. */
+    private static Object tagKey(GraphQLAppliedDirective tag) {
+        var arg = tag.getArgument("name");
+        return arg == null ? null : arg.getValue();
+    }
+
+    /** Adds each tag to the union keyed by {@link #tagKey}, first-write-wins on collision. */
+    private static void addTags(Map<Object, GraphQLAppliedDirective> union,
+            List<GraphQLAppliedDirective> tags) {
+        for (var tag : tags) union.putIfAbsent(tagKey(tag), tag);
+    }
+
+    /** The carrier's tags whose {@code name} the existing schema form does not already carry. */
+    private static List<GraphQLAppliedDirective> missingTags(GraphQLObjectType existing,
+            List<GraphQLAppliedDirective> carrierTags) {
+        var present = new HashSet<>();
+        for (var t : existing.getAppliedDirectives(TAG_DIRECTIVE)) present.add(tagKey(t));
+        var missing = new ArrayList<GraphQLAppliedDirective>();
+        for (var t : carrierTags) {
+            if (present.add(tagKey(t))) missing.add(t);
+        }
+        return missing;
+    }
+
+    /**
+     * Unions a later carrier's {@code @tag} applications into the already-registered
+     * {@link ConnectionType} (and its matching {@link EdgeType}) when the carrier brings tags the
+     * existing synthesised entry lacks. Carriers sharing one {@code connectionName} must produce a
+     * single synthesised type carrying the union of their tags: a missing tag is a federation
+     * contract-composition break. Transforms {@code existing.schemaType()} rather than adding a
+     * second tag representation, then {@code enrich}es the registry entry in place.
+     */
+    private static void unionTagsIntoExisting(BuildContext ctx, ConnectionType existing,
+            String edgeName, List<GraphQLAppliedDirective> carrierTags) {
+        var missingConn = missingTags(existing.schemaType(), carrierTags);
+        if (!missingConn.isEmpty()) {
+            var enrichedConn = existing.schemaType().transform(b -> missingConn.forEach(b::withAppliedDirective));
+            ctx.typeRegistry.enrich(existing.name(), new ConnectionType(
+                existing.name(), existing.location(), existing.elementTypeName(),
+                existing.edgeTypeName(), existing.itemNullable(), existing.shareable(), enrichedConn));
+        }
+        if (ctx.types.get(edgeName) instanceof EdgeType existingEdge) {
+            var missingEdge = missingTags(existingEdge.schemaType(), carrierTags);
+            if (!missingEdge.isEmpty()) {
+                var enrichedEdge = existingEdge.schemaType().transform(b -> missingEdge.forEach(b::withAppliedDirective));
+                ctx.typeRegistry.enrich(existingEdge.name(), new EdgeType(
+                    existingEdge.name(), existingEdge.location(), existingEdge.elementTypeName(),
+                    existingEdge.itemNullable(), existingEdge.shareable(), enrichedEdge));
+            }
+        }
     }
 }
