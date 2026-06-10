@@ -207,6 +207,7 @@ public class TypeFetcherGenerator {
         ChildField.RecordLookupTableField.class,
         ChildField.ConstructorField.class,
         ChildField.SingleRecordTableField.class,
+        ChildField.SingleRecordIdField.class,
         ChildField.SingleRecordIdFieldFromReturning.class,
         ChildField.SingleRecordTableFieldFromReturning.class,
         ChildField.TableMethodField.class,
@@ -507,6 +508,10 @@ public class TypeFetcherGenerator {
                 // No per-field fetcher method is emitted here; wiring lands in
                 // FetcherRegistrationsEmitter.
                 case ChildField.SingleRecordIdFieldFromReturning ignored -> { }
+                // R275 — the @service-carrier ID sibling: same inline FetcherEmitter emission
+                // (Outcome/source narrowing + node-key read + NodeId encode), no per-field
+                // fetcher method.
+                case ChildField.SingleRecordIdField ignored -> { }
                 case ChildField.SingleRecordTableFieldFromReturning ignored -> { }
                 case ChildField.InterfaceField f -> {
                     if (f.returnType().wrapper() instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.Connection conn) {

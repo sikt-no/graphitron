@@ -41,6 +41,7 @@ import static no.sikt.graphitron.rewrite.BuildContext.ARG_TYPE_NAME;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_EXTERNAL_FIELD_REF;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_EXTERNAL_FIELD;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_MUTATION;
+import static no.sikt.graphitron.rewrite.BuildContext.DIR_NODE_ID;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_SERVICE;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_TABLE;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_TABLE_METHOD;
@@ -387,6 +388,27 @@ final class RecordBindingResolver {
             dataField = f;
             dataFieldTableName = argString(fieldObj, DIR_TABLE, ARG_NAME)
                 .orElse(unwrappedFieldType.toLowerCase());
+        }
+        // R275: ID-element carrier (the opptak fjernSakTagg/fjernSakTagger shape). With no
+        // @table-typed data field, recognize exactly one ID-scalar field carrying
+        // @nodeId(typeName: T); the SDL-side table comes from T's own @table directive. R96
+        // runs before per-type classification, so T's @node-ness cannot be checked here; the
+        // classifier's encoder resolution closes that loop (and re-asserts the table match
+        // against this binding's tableRef) at FieldBuilder's serviceEmitted ID branch.
+        if (dataField == null) {
+            for (var f : payloadObj.getFieldDefinitions()) {
+                String unwrappedFieldType = unwrappedTypeName(f.getType());
+                if (!"ID".equals(unwrappedFieldType)) continue;
+                if (!f.hasAppliedDirective(DIR_NODE_ID)) continue;
+                Optional<String> nodeTypeName = argString(f, DIR_NODE_ID, ARG_TYPE_NAME);
+                if (nodeTypeName.isEmpty()) continue;
+                if (!(ctx.schema.getType(nodeTypeName.get()) instanceof GraphQLObjectType nodeObj)) continue;
+                if (!nodeObj.hasAppliedDirective(DIR_TABLE)) continue;
+                if (dataField != null) return;
+                dataField = f;
+                dataFieldTableName = argString(nodeObj, DIR_TABLE, ARG_NAME)
+                    .orElse(nodeTypeName.get().toLowerCase());
+            }
         }
         if (dataField == null) return;
 

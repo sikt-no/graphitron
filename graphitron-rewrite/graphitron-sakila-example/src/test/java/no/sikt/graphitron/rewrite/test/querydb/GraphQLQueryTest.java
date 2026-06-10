@@ -4638,6 +4638,100 @@ class GraphQLQueryTest {
         only.containsEntry("message", "film 999 not found");
     }
 
+    // ===== R275 requirement 2: @nodeId-from-record source-record carrier end-to-end =====
+    //
+    // serviceDeleteFilmByIdWithErrors / serviceDeleteFilmsByIdsWithErrors return bare
+    // FilmRecord(s) into { filmId: ID @nodeId, errors } / { filmIds: [ID] @nodeId, errors } —
+    // the opptak fjernSakTagg / fjernSakTagger shapes. The data field is a SingleRecordIdField
+    // with the OUTCOME_SUCCESS envelope: it narrows Outcome.Success and encodes the node-key
+    // column(s) straight off the in-memory record(s) through the Film @node encoder, with no
+    // follow-up SELECT. The producer synthesizes records whose ids (9001, 9002) exist in no
+    // table, so a regression that reintroduces a re-fetch resolves null/empty here and fails.
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void serviceDeleteFilmByIdWithErrors_validId_encodesNodeIdOffInMemoryRecord() {
+        Map<String, Object> data = execute("""
+            mutation {
+                serviceDeleteFilmByIdWithErrors(id: 9001) {
+                    filmId
+                    errors { __typename }
+                }
+            }
+            """);
+        var payload = assertThat(data).extractingByKey("serviceDeleteFilmByIdWithErrors", as(MAP));
+        payload.containsEntry("errors", null);
+        payload.containsEntry("filmId",
+            no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Film", 9001));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void serviceDeleteFilmByIdWithErrors_missingFilm_armSwitchRendersIdNull() {
+        // Error arm: id 999 throws the mapped @error; the producer routes it onto
+        // Outcome.ErrorList. The id fetcher narrows Success, sees the error arm, and resolves
+        // null before any encode; the typed error lands in the errors union.
+        Map<String, Object> data = execute("""
+            mutation {
+                serviceDeleteFilmByIdWithErrors(id: 999) {
+                    filmId
+                    errors {
+                        __typename
+                        ... on FilmReviewMissingFilm { message }
+                    }
+                }
+            }
+            """);
+        var payload = assertThat(data).extractingByKey("serviceDeleteFilmByIdWithErrors", as(MAP));
+        payload.containsEntry("filmId", null);
+        var only = payload.extractingByKey("errors", as(list(Map.class)))
+            .hasSize(1)
+            .element(0, as(MAP));
+        only.containsEntry("__typename", "FilmReviewMissingFilm");
+        only.containsEntry("message", "film 999 not found");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void serviceDeleteFilmsByIdsWithErrors_validIds_encodesNodeIdsInProducerOrder() {
+        Map<String, Object> data = execute("""
+            mutation {
+                serviceDeleteFilmsByIdsWithErrors(ids: [9002, 9001]) {
+                    filmIds
+                    errors { __typename }
+                }
+            }
+            """);
+        var payload = assertThat(data).extractingByKey("serviceDeleteFilmsByIdsWithErrors", as(MAP));
+        payload.containsEntry("errors", null);
+        payload.extractingByKey("filmIds", as(LIST)).containsExactly(
+            no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Film", 9002),
+            no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Film", 9001));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void serviceDeleteFilmsByIdsWithErrors_missingFilm_armSwitchRendersIdsNull() {
+        Map<String, Object> data = execute("""
+            mutation {
+                serviceDeleteFilmsByIdsWithErrors(ids: [9001, 999]) {
+                    filmIds
+                    errors {
+                        __typename
+                        ... on FilmReviewMissingFilm { message }
+                    }
+                }
+            }
+            """);
+        var payload = assertThat(data).extractingByKey("serviceDeleteFilmsByIdsWithErrors", as(MAP));
+        payload.containsEntry("filmIds", null);
+        var only = payload.extractingByKey("errors", as(list(Map.class)))
+            .hasSize(1)
+            .element(0, as(MAP));
+        only.containsEntry("__typename", "FilmReviewMissingFilm");
+        only.containsEntry("message", "film 999 not found");
+    }
+
     // ===== R12 DML LocalContext error channel end-to-end =====
     //
     // Mirrors the @service-backed submitFilmReview tests on the DML pillar. The

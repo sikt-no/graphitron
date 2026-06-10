@@ -185,6 +185,10 @@ public final class DeclarationHovers {
                 sb.append("\n\nElement table: `").append(nullSafe(s.tableName())).append("`");
             case FieldClassification.SingleRecordIdFromReturning ignored ->
                 sb.append("\n\nEncoded PK echo from RETURNING.");
+            case FieldClassification.SingleRecordId s ->
+                sb.append("\n\nEncoded node id off the @service producer's record")
+                  .append(s.tableName() != null ? " (table `" + s.tableName() + "`)" : "")
+                  .append("; no re-fetch.");
             case FieldClassification.SingleRecordTableFromReturning s ->
                 sb.append("\n\nElement table: `").append(nullSafe(s.tableName()))
                   .append("` (from RETURNING)");

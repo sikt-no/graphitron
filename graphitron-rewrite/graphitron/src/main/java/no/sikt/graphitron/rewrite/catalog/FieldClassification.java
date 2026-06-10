@@ -58,6 +58,7 @@ public sealed interface FieldClassification
             FieldClassification.InputUnbound,
             FieldClassification.Errors,
             FieldClassification.SingleRecordTable,
+            FieldClassification.SingleRecordId,
             FieldClassification.SingleRecordIdFromReturning,
             FieldClassification.SingleRecordTableFromReturning,
             FieldClassification.QueryTable,
@@ -143,6 +144,7 @@ public sealed interface FieldClassification
                  Computed _,
                  Errors _,
                  SingleRecordTable _,
+                 SingleRecordId _,
                  SingleRecordIdFromReturning _,
                  SingleRecordTableFromReturning _,
                  QueryTable _,
@@ -360,6 +362,13 @@ public sealed interface FieldClassification
      * {@code ChildField.SingleRecordIdFieldFromReturning}.
      */
     record SingleRecordIdFromReturning() implements FieldClassification {}
+
+    /**
+     * The single data field on an {@code @service} source-record carrier where the data field
+     * is an ID-typed scalar encoding the producer record's node-key column(s), with no
+     * follow-up SELECT. Covers {@code ChildField.SingleRecordIdField}.
+     */
+    record SingleRecordId(String tableName) implements FieldClassification {}
 
     /**
      * The single data field on a payload-returning DELETE carrier where the data field

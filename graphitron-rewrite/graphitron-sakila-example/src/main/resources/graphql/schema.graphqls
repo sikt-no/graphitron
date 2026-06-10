@@ -1527,6 +1527,29 @@ type FilmsCarrierWithErrorsPayload {
     errors: [FilmReviewError]
 }
 
+# R275 requirement-2 execution-tier fixture, single arm: the @nodeId-from-record source-record
+# carrier — the opptak fjernSakTagg -> SakTaggPayload { taggId: ID @nodeId(typeName: "Tagg"),
+# errors } shape. The @service producer returns a bare FilmRecord; the data field encodes the
+# node-key column(s) straight off Outcome.Success.value()'s in-memory record through the Film
+# @node encoder, with NO follow-up SELECT (the producer synthesizes records whose ids do not
+# exist in the database — deletion-safe by construction; a re-fetch would resolve null and fail
+# the execution test). `filmId` classifies as SingleRecordIdField, ONE cardinality, ResultRowWalk
+# envelope OUTCOME_SUCCESS.
+type FilmIdCarrierWithErrorsPayload {
+    filmId: ID @nodeId(typeName: "Film")
+    errors: [FilmReviewError]
+}
+
+# R275 requirement-2 execution-tier fixture, list arm: the opptak fjernSakTagger ->
+# FjernSakTaggerPayload { tagger: [ID] @nodeId(typeName: "Tagg"), errors } shape, including the
+# list-of-nullable [ID] wrapper the real schema uses (rejected on DML DELETE carriers, admitted
+# on @service carriers). `filmIds` classifies as SingleRecordIdField, MANY cardinality,
+# ResultRowWalk envelope OUTCOME_SUCCESS; ids encode in producer order.
+type FilmIdsCarrierWithErrorsPayload {
+    filmIds: [ID] @nodeId(typeName: "Film")
+    errors: [FilmReviewError]
+}
+
 type FilmsServicePayload {
     films: [Film!]
 }
@@ -1724,6 +1747,25 @@ type Mutation {
         @service(service: {
             className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierWithErrorsService",
             method: "filmsByIds"
+        })
+
+    # R275 requirement-2 single arm: delete-shaped @service producer returning a synthesized
+    # FilmRecord (id not in the database) into the ID @nodeId carrier. The data field encodes
+    # the node id off the in-memory record (no re-fetch); id 999 throws the mapped @error
+    # (ErrorList arm -> filmId null, typed error).
+    serviceDeleteFilmByIdWithErrors(id: Int!): FilmIdCarrierWithErrorsPayload
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierWithErrorsService",
+            method: "deleteFilmById"
+        })
+
+    # R275 requirement-2 list sibling: List<FilmRecord> producer into the [ID] @nodeId carrier.
+    # Ids encode in producer (input) order off the in-memory records; id 999 anywhere throws
+    # the mapped @error (ErrorList arm -> filmIds null, typed error).
+    serviceDeleteFilmsByIdsWithErrors(ids: [Int!]!): FilmIdsCarrierWithErrorsPayload
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierWithErrorsService",
+            method: "deleteFilmsByIds"
         })
 
     # R158 composite-PK MANY-arm execution-tier surface: @service-backed mutation whose
