@@ -22,7 +22,7 @@ public sealed interface LookupMapping permits LookupMapping.ColumnMapping {
 
     /**
      * Standard column-based lookup mapping. Represents the N × M positional contract described in
-     * {@code docs/code-generation-triggers.md}: given M input rows (each row being a tuple of the
+     * {@code docs/code-generation-triggers.adoc}: given M input rows (each row being a tuple of the
      * declared lookup keys), the field returns N results per input row, preserving input order.
      *
      * <p>The generator materialises this as a {@code VALUES(idx, col1, col2, …)} derived table

@@ -750,7 +750,7 @@ class GraphitronSchemaBuilderTest {
     /**
      * Child field on a {@code @table} parent returning a {@code @table}-mapped type. One case per
      * variant the builder can produce from this shape. Covers the
-     * <em>Child Fields (on {@code @table} parent)</em> table in {@code code-generation-triggers.md}.
+     * <em>Child Fields (on {@code @table} parent)</em> table in {@code code-generation-triggers.adoc}.
      */
     enum TableFieldCase implements ClassificationCase {
         SINGLE_RETURN_TYPE(
@@ -2155,7 +2155,7 @@ class GraphitronSchemaBuilderTest {
     /**
      * Child field on a {@code @record} parent. One case per variant the builder can produce from
      * this shape. Covers the <em>Child Fields (on {@code @record} parent)</em> table in
-     * {@code code-generation-triggers.md}.
+     * {@code code-generation-triggers.adoc}.
      */
     enum NonTableParentCase implements ClassificationCase {
         PROPERTY_FIELD_ON_RESULT_TYPE(
@@ -6293,7 +6293,7 @@ class GraphitronSchemaBuilderTest {
     /**
      * Root field classification. One case per {@code QueryField} / {@code MutationField} variant
      * the builder can produce. Covers the <em>Query Fields</em> and <em>Mutation Fields</em>
-     * tables in {@code code-generation-triggers.md}.
+     * tables in {@code code-generation-triggers.adoc}.
      */
     enum RootFieldCase implements ClassificationCase {
 
