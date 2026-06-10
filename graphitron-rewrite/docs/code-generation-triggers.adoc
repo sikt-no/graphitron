@@ -232,6 +232,40 @@ same `Country` return over the same `city -> country` foreign key, classifies wi
 because `@splitQuery` opens a new keyed query. Both hold `mapping = Table`. Asserted by the
 `child-table` corpus example.
 
+=== `mapping`: Column vs. Field
+
+The `mapping` dimension records what domain object the value is. Two flavors hinge on one thing, the
+parent's table-ness: a scalar under a `@table` parent maps to `Column` (a real database column), while
+under a record-backed parent (a plain object with no `@table`, here produced as a service method's
+return type) a scalar maps to `Field` (a POJO property read off the record). A nested non-table object
+under a record parent is the object flavor of the same `Field` mapping. All three inline into the
+parent's projection (producer `[]`); only the parent's table-ness moves the `mapping` axis.
+
+[source,graphql]
+----
+type Query {
+  film: Film
+}
+
+type Film @table(name: "film") {
+  title: String
+  details: FilmDetails
+}
+
+type FilmDetails {
+  stats: FilmStats
+}
+
+type FilmStats {
+  count: Int
+}
+----
+
+`Film.title` classifies with `mapping = Column` (`title` is a column of the `film` table). `FilmStats.count`,
+a scalar under the record-backed `FilmStats`, classifies with `mapping = Field`. `FilmDetails.stats`, a
+nested non-table object under the record-backed `FilmDetails`, also classifies with `mapping = Field` (its
+object flavor). All hold producer `[]`. Asserted by the `mapping` corpus example.
+
 === Query Fields
 
 |===
