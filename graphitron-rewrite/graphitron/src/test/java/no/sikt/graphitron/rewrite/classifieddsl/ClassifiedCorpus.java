@@ -195,6 +195,67 @@ public final class ClassifiedCorpus {
             }
             """),
 
+        /*
+         * Polymorphic children and roots are catalog-bound over their participant tables: the mapping is
+         * Table (the projection lands on participant @table rows), with the participant set carried as a
+         * derived slot rather than a distinct mapping value. A plain-interface or union child opens a new
+         * keyed query (producer [Query], InterfaceField / UnionField), as does any polymorphic root
+         * (QueryInterfaceField / QueryUnionField). The exception is a @table+@discriminate interface child
+         * (TableInterfaceField): it is FK-correlatable from the parent and classifies inline (producer
+         * []), though the generator currently emits a per-parent query (the R288 defect; the corpus
+         * asserts the correct verdict). The four shapes below (plain interface, union, table-interface,
+         * Relay Node) are corpus-only except the interface, which renders a doc example over the shared
+         * interface-level field; union and Relay selections need fragment / argument rendering the
+         * QueryViewRenderer does not yet support (R281 pre-migration-hardening item 3).
+         */
+        new Example("interface", """
+            interface Named { name: String }
+            type Address implements Named @table(name: "address") { name: String @field(name: "ADDRESS") }
+            type Customer @table(name: "customer") {
+              address: Named @classified(producer: [Query], mapping: Table)
+            }
+            type Query {
+              customer: Customer
+              anyNamed: Named @classified(producer: [Query], mapping: Table)
+            }
+            """,
+            "{ customer { address { name } } }"),
+
+        new Example("union", """
+            type Film @table(name: "film") { title: String }
+            type Actor @table(name: "actor") { firstName: String @field(name: "FIRST_NAME") }
+            union FilmOrActor = Film | Actor
+            type FilmActor @table(name: "film_actor") {
+              related: FilmOrActor @classified(producer: [Query], mapping: Table)
+            }
+            type Query {
+              filmActor: FilmActor
+              search: FilmOrActor @classified(producer: [Query], mapping: Table)
+            }
+            """),
+
+        new Example("table-interface", """
+            interface MediaItem @table(name: "film") @discriminate(on: "kind") { title: String }
+            type Film implements MediaItem @table(name: "film") @discriminator(value: "film") { title: String }
+            type Inventory @table(name: "inventory") {
+              media: MediaItem @classified(producer: [], mapping: Table)
+            }
+            type Query {
+              inventory: Inventory
+              topMedia: MediaItem @classified(producer: [Query], mapping: Table)
+            }
+            """),
+
+        new Example("relay-node", """
+            interface Node { id: ID! }
+            type Film implements Node @table(name: "film") { id: ID! title: String }
+            type Query {
+              node(id: ID!): Node @classified(producer: [Query], mapping: Table)
+              nodes(ids: [ID!]!): [Node] @classified(producer: [Query], mapping: Table)
+              internalFilmNode(id: ID): Node @classified(producer: [Query], mapping: Table)
+            }
+            """),
+
         /* DML side: an INSERT that writes then projects the inserted row (a [Dml, Query] pipeline). */
         new Example("dml", """
             type Film @table(name: "film") { title: String }

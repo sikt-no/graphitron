@@ -63,21 +63,21 @@ coordinate.
 - [x] `NestingFieldCase.PLAIN_OBJECT_TYPE` (L1561) -> `ChildField.NestingField` | field returning a plain (no-`@table`/`@record`) object on a `@table` parent | migrated to the `nesting` corpus example (`Film.details`), corpus-only (inline-Table already taught by the producer minimal pair)
 - [x] `NestingFieldCase.LIST_OF_PLAIN_OBJECT_TYPE` (L1570) -> `ChildField.NestingField` | list-wrapped plain object on a `@table` parent | same `NestingField` leaf, retired alongside `PLAIN_OBJECT_TYPE` via the `nesting` corpus example
 - [x] `ServiceFieldCase.ON_TABLE_TYPE_SCALAR_RETURN` (L1721) -> `ChildField.ServiceRecordField` | `@service` on a `@table` parent returning a scalar | already covered by the `service` corpus example (`Film.rating`, producer [Service], mapping Record); corpus-only
-- [ ] `InterfaceUnionFieldCase.TABLE_INTERFACE_FIELD` (L1971) -> `ChildField.TableInterfaceField` | child returning a `@table`+`@discriminate` interface
-- [ ] `InterfaceUnionFieldCase.INTERFACE_FIELD` (L1983) -> `ChildField.InterfaceField` | child returning a plain (no-`@table`) interface
-- [ ] `InterfaceUnionFieldCase.UNION_FIELD` (L2023) -> `ChildField.UnionField` | child returning a union
+- [x] `InterfaceUnionFieldCase.TABLE_INTERFACE_FIELD` (L1971) -> `ChildField.TableInterfaceField` | child returning a `@table`+`@discriminate` interface | migrated to the `table-interface` corpus example (`Inventory.media`, producer [], mapping Table; the inline R288-nuance verdict)
+- [x] `InterfaceUnionFieldCase.INTERFACE_FIELD` (L1983) -> `ChildField.InterfaceField` | child returning a plain (no-`@table`) interface | migrated to the `interface` corpus example (`Customer.address`, producer [Query], mapping Table), rendered in code-generation-triggers.adoc §"Polymorphic fields"
+- [x] `InterfaceUnionFieldCase.UNION_FIELD` (L2023) -> `ChildField.UnionField` | child returning a union | migrated to the `union` corpus example (`FilmActor.related`, producer [Query], mapping Table); corpus-only (fragment rendering pending item 3)
 - [x] `NonTableParentCase.RECORD_TABLE_FIELD` (L2209) -> `ChildField.RecordTableField` | `@record` parent + `@table` return, no `@lookupKey` | migrated to the `record-table` corpus example (`FilmDetails.language`), rendered in code-generation-triggers.adoc §"The record-handoff boundary"
 - [x] `NonTableParentCase.RECORD_FIELD` (L2290) -> `ChildField.RecordField` | `@record` parent + non-table object return | migrated to the `mapping` corpus example (`FilmDetails.stats`), rendered in code-generation-triggers.adoc §"`mapping`: Column vs. Field"
 - [x] `NonTableParentCase.SERVICE_TABLE_FIELD_ON_RECORD_PARENT` (L2328) -> `ChildField.ServiceTableField` | `@record` parent + `@service` + `@table` return | already covered by the `service` corpus example (`Film.language`, producer [Service, Query], mapping Table); corpus-only
 - [x] `NonTableParentCase.CONSTRUCTOR_FIELD` (L2343) -> `ChildField.ConstructorField` | `@table` parent + `@record` child type (constructor passthrough) | migrated to the `constructor` corpus example (`Film.details`, producer [], mapping Record); corpus-only
 - [ ] `ErrorFieldCase.PATH_AND_MESSAGE_CLASSIFY_AS_PROPERTY_FIELDS` (L6031) -> `ChildField.PropertyField` | `path`/`message` fields on an `@error` parent
 - [x] `RootFieldCase.TABLE_QUERY_FIELD` (L6453) -> `QueryField.QueryTableField` | root query field returning a `@table` type | already covered by the `catalog` (`Query.film`, `Query.films`) and `child-table` (`Query.city`) corpus examples, producer [Query], mapping Table/TableConnection; rendered in code-generation-triggers.adoc
-- [ ] `RootFieldCase.NODE_QUERY_FIELD` (L6502) -> `QueryField.QueryNodeField` | root field returning a single `Node`
-- [ ] `RootFieldCase.NODES_QUERY_FIELD` (L6513) -> `QueryField.QueryNodesField` | root field returning `[Node]`
-- [ ] `RootFieldCase.ALIASED_NODE_QUERY_FIELD` (L6524) -> `QueryField.QueryNodeField` | non-`node`-named root field returning `Node`
-- [ ] `RootFieldCase.TABLE_INTERFACE_QUERY_FIELD` (L6547) -> `QueryField.QueryTableInterfaceField` | root field returning a table-interface type
-- [ ] `RootFieldCase.INTERFACE_QUERY_FIELD` (L6558) -> `QueryField.QueryInterfaceField` | root field returning a plain interface
-- [ ] `RootFieldCase.UNION_QUERY_FIELD` (L6569) -> `QueryField.QueryUnionField` | root field returning a union
+- [x] `RootFieldCase.NODE_QUERY_FIELD` (L6502) -> `QueryField.QueryNodeField` | root field returning a single `Node` | migrated to the `relay-node` corpus example (`Query.node`, producer [Query], mapping Table); corpus-only (argument rendering pending item 3)
+- [x] `RootFieldCase.NODES_QUERY_FIELD` (L6513) -> `QueryField.QueryNodesField` | root field returning `[Node]` | migrated to the `relay-node` corpus example (`Query.nodes`, producer [Query], mapping Table); corpus-only
+- [x] `RootFieldCase.ALIASED_NODE_QUERY_FIELD` (L6524) -> `QueryField.QueryNodeField` | non-`node`-named root field returning `Node` | migrated to the `relay-node` corpus example (`Query.internalFilmNode`, same `QueryNodeField` leaf); corpus-only
+- [x] `RootFieldCase.TABLE_INTERFACE_QUERY_FIELD` (L6547) -> `QueryField.QueryTableInterfaceField` | root field returning a table-interface type | migrated to the `table-interface` corpus example (`Query.topMedia`, producer [Query], mapping Table); corpus-only
+- [x] `RootFieldCase.INTERFACE_QUERY_FIELD` (L6558) -> `QueryField.QueryInterfaceField` | root field returning a plain interface | migrated to the `interface` corpus example (`Query.anyNamed`, producer [Query], mapping Table)
+- [x] `RootFieldCase.UNION_QUERY_FIELD` (L6569) -> `QueryField.QueryUnionField` | root field returning a union | migrated to the `union` corpus example (`Query.search`, producer [Query], mapping Table); corpus-only
 - [ ] `RootFieldCase.QUERY_SERVICE_RECORD_FIELD` (L6598) -> `QueryField.QueryServiceRecordField` | `@service` root field, non-table return
 
 ## Type-side and mutation-side checklist (corpus-only until renderer item 3)

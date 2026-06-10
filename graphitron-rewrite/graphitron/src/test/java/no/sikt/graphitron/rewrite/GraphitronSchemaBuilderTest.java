@@ -1956,32 +1956,15 @@ class GraphitronSchemaBuilderTest {
     // ===== TableInterfaceField / InterfaceField / UnionField =====
 
     enum InterfaceUnionFieldCase implements ClassificationCase {
-        TABLE_INTERFACE_FIELD(
-            "field returning a @table+@discriminate interface → TableInterfaceField",
-            """
-            interface MediaItem @table(name: "film") @discriminate(on: "kind") { title: String }
-            type Film implements MediaItem @table(name: "film") @discriminator(value: "film") { title: String }
-            type Inventory @table(name: "inventory") { media: MediaItem }
-            type Query { inventory: Inventory }
-            """,
-            schema -> assertThat(schema.field("Inventory", "media")).isInstanceOf(TableInterfaceField.class)) {
-            @Override public Set<Class<?>> variants() { return Set.of(TableInterfaceField.class); }
-        },
-
-        INTERFACE_FIELD(
-            "field returning a plain interface (no @table) → InterfaceField",
-            // R36 Track B3 requires per-participant FK auto-discovery from the parent table
-            // to each participant's table. Customer has a single FK to address
-            // (customer.address_id), so the auto-discovery resolves cleanly.
-            """
-            interface Named { name: String }
-            type Address implements Named @table(name: "address") { name: String @field(name: "ADDRESS") }
-            type Customer @table(name: "customer") { address: Named }
-            type Query { customer: Customer }
-            """,
-            schema -> assertThat(schema.field("Customer", "address")).isInstanceOf(InterfaceField.class)) {
-            @Override public Set<Class<?>> variants() { return Set.of(InterfaceField.class); }
-        },
+        // R281 slice 2: the plain polymorphic child verdicts (TABLE_INTERFACE_FIELD ->
+        // TableInterfaceField, INTERFACE_FIELD -> InterfaceField, both pure isInstanceOf assertions)
+        // migrated to the spec-by-example corpus. Inventory.media (the `table-interface` example)
+        // classifies to TableInterfaceField, asserted via @classified(producer: [], mapping: Table)
+        // (inline: FK-correlatable, the inline verdict the adapter documents against the R288 generator
+        // defect). Customer.address (the `interface` example) classifies to InterfaceField, asserted via
+        // @classified(producer: [Query], mapping: Table) and rendered into the Polymorphic fields
+        // section of code-generation-triggers.adoc. Both leaves stay covered by the corpus; the
+        // InterfaceType / participant-shape cases below stay (they assert type-level slots).
 
         INTERFACE_WITH_NESTING_IMPLEMENTORS(
             "interface whose implementing types are nesting types (no @table) → InterfaceType with Unbound participants, no error",
@@ -2008,21 +1991,12 @@ class GraphitronSchemaBuilderTest {
             @Override public Set<Class<?>> variants() { return Set.of(InterfaceType.class); }
         },
 
-        UNION_FIELD(
-            "field returning a union → UnionField",
-            // FilmActor has a single FK to film (film_actor_film_id_fkey) and a single FK to
-            // actor (film_actor_actor_id_fkey); the per-participant auto-discovery resolves
-            // each branch's FK independently.
-            """
-            type Film @table(name: "film") { title: String }
-            type Actor @table(name: "actor") { firstName: String @field(name: "FIRST_NAME") }
-            union FilmOrActor = Film | Actor
-            type FilmActor @table(name: "film_actor") { related: FilmOrActor }
-            type Query { filmActor: FilmActor }
-            """,
-            schema -> assertThat(schema.field("FilmActor", "related")).isInstanceOf(UnionField.class)) {
-            @Override public Set<Class<?>> variants() { return Set.of(UnionField.class); }
-        },
+        // R281 slice 2: the plain `field returning a union -> UnionField` verdict (a pure isInstanceOf
+        // assertion) migrated to the spec-by-example corpus, where FilmActor.related (the `union`
+        // example) classifies to UnionField, asserted via @classified(producer: [Query], mapping:
+        // Table). Corpus-only (union selections need fragment rendering the QueryViewRenderer does not
+        // yet support; R281 pre-migration-hardening item 3). The UnionField leaf stays covered by the
+        // corpus; the union-with-nesting rejection case below stays.
 
         UNION_WITH_NESTING_MEMBER(
             "union with a nesting-type member (no @table) → union classified as UnclassifiedType",
@@ -6453,38 +6427,13 @@ class GraphitronSchemaBuilderTest {
             @Override public Set<Class<?>> variants() { return Set.of(QueryField.QueryTableMethodTableField.class); }
         },
 
-        NODE_QUERY_FIELD(
-            "field returning Node (single) → QueryNodeField",
-            """
-            interface Node { id: ID! }
-            type Film implements Node @table(name: "film") { id: ID! title: String }
-            type Query { node(id: ID!): Node }
-            """,
-            schema -> assertThat(schema.field("Query", "node")).isInstanceOf(QueryField.QueryNodeField.class)) {
-            @Override public Set<Class<?>> variants() { return Set.of(QueryField.QueryNodeField.class); }
-        },
-
-        NODES_QUERY_FIELD(
-            "field returning [Node] → QueryNodesField",
-            """
-            interface Node { id: ID! }
-            type Film implements Node @table(name: "film") { id: ID! title: String }
-            type Query { node(id: ID!): Node nodes(ids: [ID!]!): [Node] }
-            """,
-            schema -> assertThat(schema.field("Query", "nodes")).isInstanceOf(QueryField.QueryNodesField.class)) {
-            @Override public Set<Class<?>> variants() { return Set.of(QueryField.QueryNodesField.class); }
-        },
-
-        ALIASED_NODE_QUERY_FIELD(
-            "non-'node' field returning Node → QueryNodeField (federation-style alias)",
-            """
-            interface Node { id: ID! }
-            type Film implements Node @table(name: "film") { id: ID! title: String }
-            type Query { node(id: ID!): Node internalFilmNode(id: ID): Node }
-            """,
-            schema -> assertThat(schema.field("Query", "internalFilmNode")).isInstanceOf(QueryField.QueryNodeField.class)) {
-            @Override public Set<Class<?>> variants() { return Set.of(QueryField.QueryNodeField.class); }
-        },
+        // R281 slice 2: the plain Relay-root verdicts (NODE_QUERY_FIELD and ALIASED_NODE_QUERY_FIELD ->
+        // QueryNodeField, NODES_QUERY_FIELD -> QueryNodesField, all pure isInstanceOf assertions)
+        // migrated to the spec-by-example corpus. The `relay-node` example carries Query.node and
+        // Query.internalFilmNode (both QueryNodeField, the canonical and federation-style-alias forms)
+        // and Query.nodes (QueryNodesField), each asserted via @classified(producer: [Query], mapping:
+        // Table). Corpus-only (Relay selections carry id arguments the QueryViewRenderer does not yet
+        // render; R281 pre-migration-hardening item 3). Both leaves stay covered by the corpus.
 
         ENTITY_QUERY_FIELD(
             "field named '_entities' has no special handling; classifies as UnclassifiedField (underscore-prefixed return type not in ctx.types)",
@@ -6498,39 +6447,14 @@ class GraphitronSchemaBuilderTest {
             @Override public Set<Class<?>> variants() { return Set.of(); }
         },
 
-        TABLE_INTERFACE_QUERY_FIELD(
-            "field returning table-interface type → QueryTableInterfaceField",
-            """
-            interface MediaItem @table(name: "film") @discriminate(on: "kind") { title: String }
-            type Film implements MediaItem @table(name: "film") @discriminator(value: "film") { title: String }
-            type Query { media: MediaItem }
-            """,
-            schema -> assertThat(schema.field("Query", "media")).isInstanceOf(QueryField.QueryTableInterfaceField.class)) {
-            @Override public Set<Class<?>> variants() { return Set.of(QueryField.QueryTableInterfaceField.class); }
-        },
-
-        INTERFACE_QUERY_FIELD(
-            "field returning plain interface → QueryInterfaceField",
-            """
-            interface Named { name: String }
-            type Film implements Named @table(name: "film") { name: String }
-            type Query { named: Named }
-            """,
-            schema -> assertThat(schema.field("Query", "named")).isInstanceOf(QueryField.QueryInterfaceField.class)) {
-            @Override public Set<Class<?>> variants() { return Set.of(QueryField.QueryInterfaceField.class); }
-        },
-
-        UNION_QUERY_FIELD(
-            "field returning union → QueryUnionField",
-            """
-            type Film @table(name: "film") { title: String }
-            type Actor @table(name: "actor") { name: String }
-            union SearchResult = Film | Actor
-            type Query { search: SearchResult }
-            """,
-            schema -> assertThat(schema.field("Query", "search")).isInstanceOf(QueryField.QueryUnionField.class)) {
-            @Override public Set<Class<?>> variants() { return Set.of(QueryField.QueryUnionField.class); }
-        },
+        // R281 slice 2: the plain polymorphic-root verdicts (TABLE_INTERFACE_QUERY_FIELD ->
+        // QueryTableInterfaceField, INTERFACE_QUERY_FIELD -> QueryInterfaceField, UNION_QUERY_FIELD ->
+        // QueryUnionField, all pure isInstanceOf assertions) migrated to the spec-by-example corpus:
+        // Query.topMedia (the `table-interface` example), Query.anyNamed (the `interface` example), and
+        // Query.search (the `union` example), each asserted via @classified(producer: [Query], mapping:
+        // Table). All three leaves stay covered by the corpus. Corpus-only except the interface, whose
+        // child form renders the Polymorphic fields doc example; union/table-interface root selections
+        // need the fragment rendering tracked in R281 pre-migration-hardening item 3.
 
         SERVICE_QUERY_FIELD(
             "@service on root query field, @table return type → QueryServiceTableField",
