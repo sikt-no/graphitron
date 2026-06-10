@@ -277,7 +277,13 @@ directive @defaultOrder(
   direction: SortDirection = ASC
 ) on FIELD_DEFINITION
 
-enum SortDirection { ASC, DESC }
+"""Direction to sort results in."""
+enum SortDirection {
+  """Ascending, smallest value first."""
+  ASC
+  """Descending, largest value first."""
+  DESC
+}
 
 """Wrap type in the given Java record. Currently, this can only be used with services."""
 directive @record(record: ExternalCodeReference) on OBJECT | INPUT_OBJECT

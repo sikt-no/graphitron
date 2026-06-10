@@ -11,6 +11,38 @@ last-updated: 2026-06-10
 
 # Strip Graphitron-internal directives and their supporting types from the published SDL
 
+## Implementation status
+
+Shipped in full as specced; the sections below are the reviewed plan, kept for the In Review
+pass. Implementation choices and observations:
+
+- **Derivation 1** (parse `RewriteSchemaLoader.directivesSdl()`) chosen; lives in
+  `no.sikt.graphitron.rewrite.schema.DirectiveSupportTypes` with `all()` / `published()` /
+  `strictlyInternal()` tiers, pinned by `DirectiveSupportTypesTest` (8 names).
+  `InputDirectiveInputTypes` is deleted.
+- **Retention + rejection** live in `TypeBuilder`: the support-set gate runs before the enum
+  branch in `classifyType`; `retainedSupportTypes()` does the single scan over non-support
+  coordinates; `rejectStrictlyInternalReferences` demotes a consumer type referencing a
+  strictly internal type to `UnclassifiedType` carrying a `Rejection.AuthorError` (the
+  `Structural` variant; no new sub-taxonomy, the message carries coordinate + type + hint),
+  which the validator surfaces through the existing `validateUnclassifiedType` mirror.
+- **Print seam**: `SchemaSdlEmitter.emit` takes the `GraphitronSchema`; both arms use
+  survivor-filtered `SchemaPrinter` options; the shared named predicate is
+  `SchemaSdlEmitter.includeSchemaElement(element, dropSpecBuiltInDirectiveDefinitions,
+  droppedTypeNames)`. The federation arm mirrors `generateServiceSDLV2` (verified against the
+  v6.0.0 source, not just bytecode) and stays byte-identical to it on schemas with no
+  generator-only surface, pinned by
+  `SchemaSdlEmitterTest.federationArmMatchesServiceSdlPrinterOnUnfilteredSchema`.
+- **Parity test** re-enabled and green: the `@oneOf` definition asymmetry flagged below
+  resolved as a non-diff (graphql-java supplies the built-in on the side that lacks the
+  explicit declaration), so no rerouting of the test's runtime side was needed.
+- **Count correction**: the "26" generator-only directive definitions below is 27
+  (`SchemaDirectiveRegistry.GENERATOR_ONLY_DIRECTIVES` has 27 entries, all declared in
+  `directives.graphqls`); observational only, nothing keys on the count.
+- Two pre-existing red tests in `GraphitronSchemaBuilderTest.rootFieldClassification` (the
+  R275 `@service` payload-carrier regression rows landed red on trunk in `24387b2`) fail
+  before and after this change; they are R275's to fix.
+
 ## Problem
 
 The SDL that `SchemaSdlEmitter` writes to `schema.graphqls` (the artefact a consumer publishes as its subgraph) still contains Graphitron's generate-time directive definitions, their applications, and the supporting input/enum types they reference. These exist only so directive arguments type-check during classification; they are fully consumed at generate time and mean nothing to clients or to supergraph composition. Their presence currently **blocks subgraph publishing**: Apollo Studio linting flags them under `ENUM_USED_AS_INPUT_WITHOUT_SUFFIX`, `INPUT_TYPE_SUFFIX`, `TYPE_SUFFIX`, `ALL_ELEMENTS_REQUIRE_DESCRIPTION`, and `DEFINED_TYPES_ARE_UNUSED` (40+ violations observed against a real consumer schema).

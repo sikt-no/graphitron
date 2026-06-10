@@ -215,7 +215,7 @@ public class GraphQLRewriteGenerator {
         write(QueryConditionsGenerator.generate(schema, outputPackage),                           "conditions", emittedThisRun);
         write(fetcherClasses,                                                                      "fetchers",   emittedThisRun);
         write(QueryNodeFetcherClassGenerator.generate(schema, outputPackage),                      "fetchers",   emittedThisRun);
-        emittedThisRun.add(SchemaSdlEmitter.emit(assembled, federationLink, ctx.outputResourcesDirectory(), outputPackage));
+        emittedThisRun.add(SchemaSdlEmitter.emit(assembled, schema, federationLink, ctx.outputResourcesDirectory(), outputPackage));
         sweepOrphans(emittedThisRun);
     }
 

@@ -85,12 +85,21 @@ class GraphitronSchemaClassGeneratorTest {
     }
 
     @Test
-    void build_skipsDirectiveSupportInputTypes() {
+    void build_skipsAllDirectiveSupportTypesWhenUnreferenced() {
         var body = buildBody("type Query { x: String }");
-        InputDirectiveInputTypes.NAMES.forEach(name ->
+        no.sikt.graphitron.rewrite.schema.DirectiveSupportTypes.all().forEach(name ->
             assertThat(body)
-                .as("internal directive input %s must not be added", name)
+                .as("support type %s must not be added when no consumer coordinate references it", name)
                 .doesNotContain(name + "Type.type()"));
+    }
+
+    @Test
+    void build_registersPublishedSupportTypeWhenReferenced() {
+        var body = buildBody("""
+            type Query { films(order: FilmOrderBy): String }
+            input FilmOrderBy { direction: SortDirection }
+            """);
+        assertThat(body).contains(".additionalType(com.example.schema.SortDirectionType.type())");
     }
 
     @Test

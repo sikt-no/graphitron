@@ -83,12 +83,12 @@ class InputTypeGeneratorTest {
     }
 
     @Test
-    void generate_skipsDirectiveSupportInputTypes() {
+    void generate_skipsDirectiveSupportTypes() {
         var names = generateFor(INPUT_SCHEMA).stream().map(TypeSpec::name).toList();
-        InputDirectiveInputTypes.NAMES.forEach(directiveInput ->
+        no.sikt.graphitron.rewrite.schema.DirectiveSupportTypes.all().forEach(supportType ->
             assertThat(names)
-                .as("internal directive input %s must not reach emitted schema", directiveInput)
-                .doesNotContain(directiveInput + "Type"));
+                .as("support type %s must not reach emitted schema", supportType)
+                .doesNotContain(supportType + "Type"));
     }
 
     @Test

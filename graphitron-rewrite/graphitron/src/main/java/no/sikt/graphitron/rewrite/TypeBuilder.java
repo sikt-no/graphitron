@@ -119,6 +119,9 @@ class TypeBuilder {
      */
     private RecordBindingResolver bindings;
 
+    /** Lazily computed by {@link #retainedSupportTypes()}; null until the first support-type gate runs. */
+    private Set<String> retainedSupportTypes;
+
     TypeBuilder(BuildContext ctx, ServiceCatalog svc) {
         this.ctx = ctx;
         this.svc = svc;
@@ -574,6 +577,26 @@ class TypeBuilder {
         if (namedType.getName().startsWith("_")) {
             return null;
         }
+        // Graphitron's own directive-argument support types (declared in directives.graphqls)
+        // exist only to shape build-time directive arguments. Strictly internal ones never
+        // classify; published ones (SortDirection) classify only when a non-support coordinate
+        // references them. Must run before the enum branch so the support enums are gated too.
+        // schema.types() membership is the single retention decision both the runtime arm
+        // (GraphitronSchemaClassGenerator.planFor) and the print seam (SchemaSdlEmitter) consume.
+        if (no.sikt.graphitron.rewrite.schema.DirectiveSupportTypes.isStrictlyInternal(namedType.getName())) {
+            return null;
+        }
+        if (no.sikt.graphitron.rewrite.schema.DirectiveSupportTypes.isPublished(namedType.getName())
+                && !retainedSupportTypes().contains(namedType.getName())) {
+            return null;
+        }
+        // A consumer coordinate referencing a strictly internal support type is an authoring
+        // mistake; reject it here (typed, validate-time) rather than letting the skip above
+        // leave a dangling GraphQLTypeReference that fails at consumer schema-build time.
+        var internalReferenceRejection = rejectStrictlyInternalReferences(namedType);
+        if (internalReferenceRejection != null) {
+            return internalReferenceRejection;
+        }
         if (namedType instanceof graphql.schema.GraphQLEnumType enumType) {
             String inertness = checkEnumArgMappingInert(enumType);
             if (inertness != null) {
@@ -590,14 +613,6 @@ class TypeBuilder {
             }
             return new no.sikt.graphitron.rewrite.model.GraphitronType.EnumType(
                 enumType.getName(), locationOf(enumType), List.copyOf(specs), enumType);
-        }
-        // Directive-argument input types (ErrorHandler, ReferencesForType, etc.) exist only to
-        // shape Graphitron's own build-time directives. They must not reach emission, so the
-        // classifier skips them entirely — they never enter schema.types().
-        if (namedType instanceof GraphQLInputObjectType
-                && no.sikt.graphitron.rewrite.generators.schema.InputDirectiveInputTypes.NAMES
-                    .contains(namedType.getName())) {
-            return null;
         }
         if (namedType instanceof GraphQLInputObjectType inputType) {
             return buildInputType(inputType);
@@ -645,6 +660,82 @@ class TypeBuilder {
             return new UnionType(name, location, List.of());
         }
         return null;
+    }
+
+    /**
+     * Published support types ({@link no.sikt.graphitron.rewrite.schema.DirectiveSupportTypes#published()})
+     * referenced from at least one coordinate of a non-support type: field return types, argument
+     * types, and input field types. Computed once per build over the assembled schema. No
+     * transitive closure is needed: the only support types referencing another support type are
+     * never retained themselves, so a single scan over non-support coordinates suffices.
+     */
+    private Set<String> retainedSupportTypes() {
+        if (retainedSupportTypes != null) {
+            return retainedSupportTypes;
+        }
+        var retained = new java.util.HashSet<String>();
+        for (var named : ctx.schema.getAllTypesAsList()) {
+            if (named.getName().startsWith("__")) continue;
+            if (no.sikt.graphitron.rewrite.schema.DirectiveSupportTypes.isSupportType(named.getName())) continue;
+            forEachReferencedType(named, (coordinate, referencedName) -> {
+                if (no.sikt.graphitron.rewrite.schema.DirectiveSupportTypes.isPublished(referencedName)) {
+                    retained.add(referencedName);
+                }
+            });
+        }
+        retainedSupportTypes = Set.copyOf(retained);
+        return retainedSupportTypes;
+    }
+
+    /**
+     * Rejects {@code namedType} when one of its coordinates references a strictly internal
+     * support type. The skip of those types above would otherwise leave a dangling
+     * {@code GraphQLTypeReference} in generated code that fails late and untyped at consumer
+     * schema-build time; this surfaces the mistake as a typed {@link Rejection.AuthorError}
+     * the validator reports with the offending coordinate.
+     */
+    private GraphitronType rejectStrictlyInternalReferences(GraphQLNamedType namedType) {
+        if (no.sikt.graphitron.rewrite.schema.DirectiveSupportTypes.isSupportType(namedType.getName())) {
+            return null;  // support types may reference each other (FieldSort.direction)
+        }
+        var offenses = new ArrayList<String>();
+        forEachReferencedType(namedType, (coordinate, referencedName) -> {
+            if (no.sikt.graphitron.rewrite.schema.DirectiveSupportTypes.isStrictlyInternal(referencedName)) {
+                offenses.add("'" + coordinate + "' references graphitron-internal type '" + referencedName + "'");
+            }
+        });
+        if (offenses.isEmpty()) {
+            return null;
+        }
+        String message = String.join("; ", offenses)
+            + ". These types exist only to shape Graphitron's build-time directive arguments and never reach"
+            + " the published schema; declare a consumer-owned type instead.";
+        return new UnclassifiedType(namedType.getName(), locationOf(namedType), Rejection.structural(message));
+    }
+
+    /**
+     * Walks every type-referencing coordinate of {@code type}: field return types and argument
+     * types on objects and interfaces, input field types on input objects. The consumer receives
+     * the coordinate as {@code Type.field} / {@code Type.field(arg:)} prose and the unwrapped
+     * (non-null / list stripped) referenced type name.
+     */
+    private static void forEachReferencedType(GraphQLNamedType type,
+                                              java.util.function.BiConsumer<String, String> consumer) {
+        if (type instanceof graphql.schema.GraphQLFieldsContainer container) {
+            for (var field : container.getFieldDefinitions()) {
+                consumer.accept(container.getName() + "." + field.getName(),
+                    GraphQLTypeUtil.unwrapAll(field.getType()).getName());
+                for (var arg : field.getArguments()) {
+                    consumer.accept(container.getName() + "." + field.getName() + "(" + arg.getName() + ":)",
+                        GraphQLTypeUtil.unwrapAll(arg.getType()).getName());
+                }
+            }
+        } else if (type instanceof GraphQLInputObjectType inputObject) {
+            for (var field : inputObject.getFieldDefinitions()) {
+                consumer.accept(inputObject.getName() + "." + field.getName(),
+                    GraphQLTypeUtil.unwrapAll(field.getType()).getName());
+            }
+        }
     }
 
     /**
