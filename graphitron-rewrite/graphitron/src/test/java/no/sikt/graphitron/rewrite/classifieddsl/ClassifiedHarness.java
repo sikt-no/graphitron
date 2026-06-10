@@ -41,11 +41,20 @@ public final class ClassifiedHarness {
 
     private ClassifiedHarness() {}
 
-    /** One {@code @classified} output-field coordinate: its declared tuple vs. the adapter's. */
-    public record FieldCase(String parentType, String fieldName, DimensionTuple expected, DimensionTuple actual) {}
+    /**
+     * One {@code @classified} output-field coordinate: its declared tuple vs. the adapter's, plus the
+     * sealed {@code OutputField} leaf the classifier landed on (the corpus's contribution to leaf
+     * coverage, see {@link ClassifiedCorpus#coveredLeaves()}).
+     */
+    public record FieldCase(String parentType, String fieldName, DimensionTuple expected,
+                            DimensionTuple actual, Class<? extends GraphitronField> leaf) {}
 
-    /** One {@code @classifiedType} coordinate: its declared verdict vs. the classified leaf's simple name. */
-    public record TypeCase(String typeName, String expectedVerdict, String actualVerdict) {}
+    /**
+     * One {@code @classifiedType} coordinate: its declared verdict vs. the classified leaf's simple
+     * name, plus the {@code GraphitronType} leaf itself ({@code null} if the type did not classify).
+     */
+    public record TypeCase(String typeName, String expectedVerdict, String actualVerdict,
+                           Class<? extends GraphitronType> leaf) {}
 
     /** The full outcome of classifying one fixture: every annotated coordinate, plus the schema. */
     public record Result(List<FieldCase> fields, List<TypeCase> types, GraphitronSchema schema) {}
@@ -91,13 +100,13 @@ public final class ClassifiedHarness {
         }
         DimensionTuple expected = new DimensionTuple(producerArg(d), mappingArg(d));
         DimensionTuple actual = LeafTupleAdapter.toTuple(out);
-        return new FieldCase(parentType, fieldName, expected, actual);
+        return new FieldCase(parentType, fieldName, expected, actual, out.getClass());
     }
 
     private static TypeCase typeCase(GraphitronSchema schema, String typeName, Directive d) {
         GraphitronType type = schema.type(typeName);
         String actual = type == null ? "<absent>" : type.getClass().getSimpleName();
-        return new TypeCase(typeName, enumArg(d, "as"), actual);
+        return new TypeCase(typeName, enumArg(d, "as"), actual, type == null ? null : type.getClass());
     }
 
     private static List<ProducerStep> producerArg(Directive d) {
