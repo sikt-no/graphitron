@@ -55,9 +55,10 @@ final class ConnectionPromoter {
     // Canonical graphql-relay-js descriptions for the synthesised Connection/Edge/PageInfo
     // boilerplate. Generic (not parameterised by element type): the wording is true for every
     // synthesised type, and weaving in the element name would make the generator responsible for
-    // phrasing that stays sensible across every name and pluralisation. SDL authors who want
-    // different wording declare the Connection/Edge/PageInfo types structurally; the structural
-    // path references those SDL descriptions directly and this synthesis path never runs.
+    // phrasing that stays sensible across every name and pluralisation. These apply only on the
+    // synthesis path below; an SDL author who wants different wording declares the
+    // Connection/Edge/PageInfo types structurally, which routes through promotionFor's structural
+    // branch instead and never reaches these builders.
     private static final String DESC_CONNECTION = "A connection to a list of items.";
     private static final String DESC_EDGES = "A list of edges.";
     private static final String DESC_NODES = "A list of nodes.";
