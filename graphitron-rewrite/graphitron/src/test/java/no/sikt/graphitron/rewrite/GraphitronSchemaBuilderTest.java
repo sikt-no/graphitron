@@ -6554,7 +6554,7 @@ class GraphitronSchemaBuilderTest {
             """
             type FilmDetails @record { title: String }
             type Query {
-                filmDetails: FilmDetails @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "get"})
+                filmDetails: FilmDetails @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getDetails"})
             }
             """,
             schema -> assertThat(schema.field("Query", "filmDetails")).isInstanceOf(QueryField.QueryServiceRecordField.class)) {
@@ -6678,7 +6678,7 @@ class GraphitronSchemaBuilderTest {
             type FilmDetails @record { title: String }
             type Query { x: String }
             type Mutation {
-                externalMutation: FilmDetails @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "run"})
+                externalMutation: FilmDetails @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "runDetails"})
             }
             """,
             schema -> assertThat(schema.field("Mutation", "externalMutation")).isInstanceOf(MutationField.MutationServiceRecordField.class)) {
@@ -8547,6 +8547,61 @@ class GraphitronSchemaBuilderTest {
     // ===== UnclassifiedField =====
 
     enum UnclassifiedFieldCase implements ClassificationCase {
+
+        // R275 requirement 1 backstop (drove the rejectDanglingTypeReferences pass): an @service
+        // mutation returning a payload whose ONLY field is the errors union — the opptak
+        // FjernSakTaggerPayload with the data field commented out. The structural carrier scan
+        // sees zero data fields (NotApplicable), no producer binding grounds, the type never
+        // registers, and pre-fix the mutation field still classified MutationServiceRecordField
+        // and emitted typeRef("FjernPayload") -> graphql-java assembly failed with "type
+        // FjernPayload not found in schema". The shape-agnostic dangling-reference pass now
+        // demotes the field at build time.
+        SERVICE_MUTATION_ERRORS_ONLY_ORPHAN_PAYLOAD_REJECTED(
+            "@service mutation returning an errors-only payload (no data field) is a build-time "
+                + "author error, never a dangling typeRef in the assembled schema",
+            """
+            type SakErr @error(handlers: [{handler: GENERIC, className: "java.lang.IllegalArgumentException"}]) {
+                path: [String!]!
+                message: String!
+            }
+            union FjernError = SakErr
+            type FjernPayload {
+                errors: [FjernError]
+            }
+            type Query { x: String }
+            type Mutation {
+                fjern: FjernPayload @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "get"})
+            }
+            """,
+            schema -> {
+                var f = schema.field("Mutation", "fjern");
+                assertThat(f).isInstanceOf(UnclassifiedField.class);
+                assertThat(((UnclassifiedField) f).reason())
+                    .contains("FjernPayload", "did not classify", "not found in schema");
+            }),
+
+        // R275 requirement 1 backstop, generic arm: a @service mutation returning a directiveless
+        // SDL Object that is not carrier-shaped at all (scalar-only fields scan Reject). Pre-fix
+        // this also classified over the dropped type and emitted the dangling typeRef; the
+        // dangling-reference pass demotes it regardless of shape.
+        SERVICE_MUTATION_UNRECOGNIZED_ORPHAN_PAYLOAD_REJECTED(
+            "@service mutation returning an unrecognized directiveless SDL Object is a build-time "
+                + "author error, never a dangling typeRef in the assembled schema",
+            """
+            type LoosePayload {
+                note: String
+            }
+            type Query { x: String }
+            type Mutation {
+                doIt: LoosePayload @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "get"})
+            }
+            """,
+            schema -> {
+                var f = schema.field("Mutation", "doIt");
+                assertThat(f).isInstanceOf(UnclassifiedField.class);
+                assertThat(((UnclassifiedField) f).reason())
+                    .contains("LoosePayload", "did not classify", "not found in schema");
+            }),
 
         QUERY_FIELD_RETURNING_UNCLASSIFIED_TYPE(
             "query field returning a type with no Graphitron directive → UnclassifiedField",
