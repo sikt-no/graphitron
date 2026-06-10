@@ -89,9 +89,9 @@ coordinate.
 - [ ] `RootFieldCase.MUTATION_DML_RECORD_FIELD` (L6734) -> `MutationField.MutationDmlRecordField` | INSERT single `@table` input + single-record DML payload
 - [ ] `MutationDmlCase.R144_DELETE_PK_COVERED_ADMIT` (L7966) -> `MutationField.MutationDeleteTableField` | DELETE with a PK-covering filter input
 - [ ] `MutationDmlCase.R144_DELETE_MULTIROW_ADMIT` (L7976) -> `MutationField.MutationDeleteTableField` | DELETE without a PK filter but `multiRow: true`
-- [ ] `ResultTypeBackingCase.BACKED_POJO` (L3459) -> `GraphitronType.PojoResultType.Backed` | `@service` producing a plain Java class
-- [ ] `ResultTypeBackingCase.JAVA_RECORD` (L3471) -> `GraphitronType.JavaRecordType` | `@service` producing a Java record
-- [ ] `ResultTypeBackingCase.JOOQ_TABLE_RECORD` (L3483) -> `GraphitronType.JooqTableRecordType` | `@service` producing a jOOQ TableRecord
+- [x] `ResultTypeBackingCase.BACKED_POJO` (L3459) -> `GraphitronType.PojoResultType.Backed` | `@service` producing a plain Java class | migrated: `result-backing` corpus example (PojoBacked, `@classifiedType(as: Backed)`), corpus-only; whole `ResultTypeBackingCase` enum + `resultTypeBackingClassification` test retired together
+- [x] `ResultTypeBackingCase.JAVA_RECORD` (L3471) -> `GraphitronType.JavaRecordType` | `@service` producing a Java record | migrated: `result-backing` corpus example (JavaRecordBacked, `@classifiedType(as: JavaRecordType)`), corpus-only
+- [x] `ResultTypeBackingCase.JOOQ_TABLE_RECORD` (L3483) -> `GraphitronType.JooqTableRecordType` | `@service` producing a jOOQ TableRecord | migrated: `result-backing` corpus example (JooqTableRecordBacked, `@classifiedType(as: JooqTableRecordType)`), corpus-only
 - [ ] `TypeClassificationCase.ROOT_TYPE` (L5419) -> `GraphitronType.RootType` | the `Query` / `Mutation` root type
 - [ ] `ErrorTypeCase.ADMIT_EXTRA_FIELD` (L5904) -> `GraphitronType.ErrorType` | `@error` type carrying a field beyond `path`/`message`
 - [ ] `ErrorTypeCase.ERROR_PLUS_RECORD_IGNORES_RECORD` (L5979) -> `GraphitronType.ErrorType` | `@error` co-located with an (ignored) `@record`

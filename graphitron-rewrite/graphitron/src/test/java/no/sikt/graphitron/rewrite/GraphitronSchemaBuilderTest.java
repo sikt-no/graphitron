@@ -3379,58 +3379,14 @@ class GraphitronSchemaBuilderTest {
     // R276: a result type's backing comes from the producing @service field's reflected return
     // type, or, for a DML carrier, a DML RETURNING payload, never the @record directive.
     // One case per ResultType sealed leaf so VariantCoverageTest sees each classified.
-    enum ResultTypeBackingCase implements ClassificationCase {
-        BACKED_POJO(
-            "@service producing a plain Java class → PojoResultType.Backed",
-            """
-            type FilmDetails { id: ID }
-            type Query {
-                foo: FilmDetails @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeDummyRecord"})
-            }
-            """,
-            schema -> assertThat(schema.type("FilmDetails")).isInstanceOf(PojoResultType.Backed.class)) {
-            @Override public Set<Class<?>> variants() { return Set.of(PojoResultType.Backed.class); }
-        },
-
-        JAVA_RECORD(
-            "@service producing a Java record → JavaRecordType",
-            """
-            type FilmDetails { id: ID }
-            type Query {
-                foo: FilmDetails @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeTestRecordDto"})
-            }
-            """,
-            schema -> assertThat(schema.type("FilmDetails")).isInstanceOf(JavaRecordType.class)) {
-            @Override public Set<Class<?>> variants() { return Set.of(JavaRecordType.class); }
-        },
-
-        JOOQ_TABLE_RECORD(
-            "@service producing a jOOQ TableRecord → JooqTableRecordType",
-            """
-            type FilmDetails { id: ID }
-            type Query {
-                foo: FilmDetails @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getFilm"})
-            }
-            """,
-            schema -> assertThat(schema.type("FilmDetails")).isInstanceOf(JooqTableRecordType.class)) {
-            @Override public Set<Class<?>> variants() { return Set.of(JooqTableRecordType.class); }
-        };
-
-        final String sdl;
-        final Consumer<GraphitronSchema> assertions;
-        ResultTypeBackingCase(String description, String sdl, Consumer<GraphitronSchema> assertions) {
-            this.sdl = sdl;
-            this.assertions = assertions;
-        }
-        @Override public Set<Class<?>> variants() { return Set.of(); }
-        @Override public String toString() { return name().toLowerCase().replace('_', ' '); }
-    }
-
-    @ParameterizedTest(name = "{0}")
-    @EnumSource(ResultTypeBackingCase.class)
-    void resultTypeBackingClassification(ResultTypeBackingCase tc) {
-        tc.assertions.accept(build(tc.sdl));
-    }
+    // R281 slice 2: the three pure result-type backing verdicts (PojoResultType.Backed, JavaRecordType,
+    // JooqTableRecordType, each a bare isInstanceOf assertion, no slot detail) migrated to the
+    // spec-by-example corpus as the `result-backing` ClassifiedCorpus example (PojoBacked,
+    // JavaRecordBacked, JooqTableRecordBacked, each asserted via @classifiedType(as: ...)). Corpus-only:
+    // the @classifiedType axis is asserted directly and there is no field-side dimensional lesson here.
+    // The three leaves stay covered by the corpus (which VariantCoverageTest confirms) and the
+    // slot-asserting resultTypeBackingProjectionsCarryClassNameAndTablePayloads projection test below
+    // keeps the backing-class / table-payload detail under test.
 
     @Test
     @ProjectionFor({
