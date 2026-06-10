@@ -4,7 +4,7 @@ title: "Emit BuildWarnings when a schema uses deprecated directives or arguments
 status: Backlog
 bucket: validation
 priority: 7
-depends-on: [fixture-warnings-as-errors]
+depends-on: []
 created: 2026-06-10
 last-updated: 2026-06-10
 ---
