@@ -1,7 +1,7 @@
 ---
 id: R287
 title: Remove DELETE -> @table return path
-status: Spec
+status: Ready
 bucket: bug
 priority: 4
 depends-on: []
