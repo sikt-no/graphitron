@@ -10,6 +10,13 @@ The `next-id:` front-matter field is the canonical counter for `R<n>` allocation
 
 ---
 
+- `b2c0895` — R253 (`pipeline-runtime-sdl-parity-test`): closed as subsumed by R291
+  (`strip-internal-directives-from-published-sdl`), which implemented R253's Route 3 at the
+  `SchemaSdlEmitter` print seam (survivor-filtered directive definitions/applications on both
+  arms, `generateServiceSDLV2`-mirroring federation printer) and re-enabled
+  `FederationBuildSmokeTest.emittedSdlMatchesRuntimeSchema` as the pinning parity assertion.
+  One changelog line records both IDs; R291's own entry lands when it reaches Done.
+
 - `ecdc7c4` — R186 (`nested-input-types-in-mutation-fields`): a plain (non-`@table`) input object
   grouping columns of the surrounding `@table` input is now admitted on `@mutation` fields,
   flattening onto that one table instead of being structurally rejected. The grouping is a
