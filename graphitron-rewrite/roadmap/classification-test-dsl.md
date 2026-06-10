@@ -524,10 +524,22 @@ single big-bang conversion:
    example onward in `ClassifiedCorpus`, tested but mostly not prose-featured), the harness grew to read
    `@classifiedType` off `scalar` definitions, and `SingleRecordTableFieldFromReturning` is carried in
    `NO_CASE_REQUIRED` (the adapter refuses it; illegal, tracked for removal by R287). See
-   [the inventory's slice-3 closeout](audits/classification-test-dsl-inventory.md). The remaining
-   slice-3-adjacent work, the wholesale leaf-name-table -> worked-example rebuild of
-   `code-generation-triggers.adoc`'s field/mutation reference tables (and the stale "G5 pending"
-   generator-output column), is a separate doc-quality pass.
+   [the inventory's slice-3 closeout](audits/classification-test-dsl-inventory.md).
+
+   **Doc-quality pass (landed 2026-06-10).** The slice-3-adjacent cleanup of
+   `code-generation-triggers.adoc`'s field-variant reference tables landed as a docs-only pass. It is
+   *not* a wholesale leaf-name-table -> worked-example rebuild: the spec's documentation is curated
+   (it covers the explainable majority, not every leaf), so the reference tables stay as a curated
+   enumeration alongside the worked examples; they were corrected rather than converted. The pass
+   reframed the over-promising "transitional reference until fully migrated" prose, added a
+   generator-output legend anchored to the four-way emission partition that
+   `GeneratorCoverageTest.everyGraphitronFieldLeafHasAKnownDispatchStatus` enforces
+   (`IMPLEMENTED_LEAVES` / `PROJECTED_LEAVES` / wiring value / `STUBBED_VARIANTS`), and rewrote the
+   stale `*Fetchers Generates` cells: the "G5 pending" markers on `TableField` / `LookupTableField`
+   (now inline `$fields` correlated subqueries via `DSL.multiset`, G5 done) and the ~15 "Field method
+   stub" cells that now name implemented leaves. The only genuinely deferred leaf,
+   `CompositeColumnReferenceField`, is labelled as such. `ClassifiedDocTest` stays green (no rendered
+   SDL block was touched).
 
 <a id="pre-migration-hardening"></a>
 ### Pre-migration hardening (gate before the slice-2/3 grind, added 2026-06-10)

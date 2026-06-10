@@ -190,9 +190,11 @@ enters the scope; `Film.title` projects an inline column. Asserted by the `catal
 
 == Field Classification
 
-A field's classification factors into two asserted dimensions. The worked example below renders this
-dimensional form from the corpus; the leaf-name tables that follow are the transitional reference until
-the field taxonomy is fully migrated.
+A field's classification factors into two asserted dimensions. The worked examples below render this
+dimensional form from the corpus; the leaf-name tables that follow are a curated reference, enumerating
+each sealed variant and the generator output it drives. The corpus, not these tables, is the coverage
+source of truth: `VariantCoverageTest` guarantees every output-field leaf is demonstrated by a corpus
+fixture, so a variant absent from a table below is still tested, just not featured here in prose.
 
 * *`producer`*, how the value is produced: a pipeline of up to two steps over `{ Query, Service, Dml }`,
   or empty (`[]`) meaning the field inlines into the existing query and correlates rather than starting
@@ -364,20 +366,38 @@ The `@table`+`@discriminate` interface child (`TableInterfaceField`, inline prod
 `Node` root (`QueryNodeField`, producer `[Query]`) are further leaves on this same polymorphic rule, each
 holding `mapping = Table`; they are asserted corpus-only (`table-interface`, `relay-node`).
 
+=== Reading the generator-output column
+
+The "`*Fetchers` Generates" column in the tables below names which of four emission paths a variant
+drives. The four are an exhaustive, disjoint partition of every field leaf, enforced by
+`GeneratorCoverageTest.everyGraphitronFieldLeafHasAKnownDispatchStatus`, so a new leaf cannot be added
+without declaring its path:
+
+* *Fetcher method* ; a real method on the generated `*Fetchers` class: a synchronous field fetcher, or
+  an asynchronous DataLoader fetcher paired with a `rows*()` batch method (called out as DataLoader-backed
+  where it matters). These are the `IMPLEMENTED_LEAVES`.
+* *Inline projection* ; no per-field method ; the value is projected straight into the parent's SELECT by
+  `TypeClassGenerator.$fields`. These are the `PROJECTED_LEAVES`.
+* *Wiring value* ; no generated method either ; the field is registered as a `DataFetcher` / `ColumnFetcher`
+  value through `FetcherEmitter` / `FetcherRegistrationsEmitter`. These are `IMPLEMENTED_LEAVES` leaves with
+  an empty dispatch arm.
+* *Deferred stub* ; a throwing stub method standing in for generation that is not built yet, paired with a
+  build-time validator rejection. Only `CompositeColumnReferenceField` is deferred today (`STUBBED_VARIANTS`).
+
 === Query Fields
 
 |===
 | Schema Pattern | `QueryField` Variant | `*Fetchers` Generates
 
-| Any argument has `@lookupKey` | `QueryLookupTableField` | Async DataLoader fetcher + sync `lookup*()` rows method
-| `@tableMethod` | `QueryTableMethodTableField` | Field method stub
-| Field named `node` (Relay) | `QueryNodeField` | Field method stub
+| Any argument has `@lookupKey` | `QueryLookupTableField` | Synchronous fetcher + `lookup*()` rows method (+ VALUES input-rows helper)
+| `@tableMethod` | `QueryTableMethodTableField` | Fetcher method
+| Field named `node` (Relay) | `QueryNodeField` | Fetcher method
 | Field named `nodes` (Relay; auto-emitted, batched-by-id) | `QueryNodesField` | Async DataLoader fetcher dispatching by NodeId
-| Return: `@table`+`@discriminate` interface | `QueryTableInterfaceField` | Field method stub
-| Return: multi-table interface | `QueryInterfaceField` | Field method stub
-| Return: union | `QueryUnionField` | Field method stub
+| Return: `@table`+`@discriminate` interface | `QueryTableInterfaceField` | Fetcher method
+| Return: multi-table interface | `QueryInterfaceField` | Fetcher method(s) ; per-participant polymorphic projection
+| Return: union | `QueryUnionField` | Fetcher method(s) ; per-participant polymorphic projection
 | `@service`, return `@table` type | `QueryServiceTableField` | Async DataLoader fetcher + `rows*()` method
-| `@service`, return non-table type | `QueryServiceRecordField` | Field method stub
+| `@service`, return non-table type | `QueryServiceRecordField` | Fetcher method
 | Return: `@table` type (default) | `QueryTableField` | Full fetcher ; condition call + orderBy build + inline DSL chain (`dsl.select(Type.$fields(...)).from(table)...`)
 | Anything else | `UnclassifiedField`** | Validation error ; build fails
 |===
@@ -414,14 +434,14 @@ type `Film`: producer `[Dml, Query]`, `mapping = Table` (`MutationInsertTableFie
 |===
 | Schema Pattern | `MutationField` Variant | `*Fetchers` Generates
 
-| `@mutation(typeName: INSERT)`, returning `ID` or a `@table` type | `MutationInsertTableField` | Field method stub
-| `@mutation(typeName: UPDATE)`, returning `ID` or a `@table` type | `MutationUpdateTableField` | Field method stub
-| `@mutation(typeName: DELETE)`, returning `ID` or a `@table` type | `MutationDeleteTableField` | Field method stub
-| `@mutation(typeName: UPSERT)`, returning `ID` or a `@table` type | `MutationUpsertTableField` | Field method stub
+| `@mutation(typeName: INSERT)`, returning `ID` or a `@table` type | `MutationInsertTableField` | Fetcher method ; `[Dml, Query]` write + read-back SELECT
+| `@mutation(typeName: UPDATE)`, returning `ID` or a `@table` type | `MutationUpdateTableField` | Fetcher method ; `[Dml, Query]` write + read-back SELECT
+| `@mutation(typeName: DELETE)`, returning `ID` or a `@table` type | `MutationDeleteTableField` | Fetcher method ; `[Dml, Query]` write + read-back SELECT
+| `@mutation(typeName: UPSERT)`, returning `ID` or a `@table` type | `MutationUpsertTableField` | Rejected at classification ; UPSERT generation gated pending R145
 | `@mutation(typeName: INSERT\|UPDATE\|DELETE\|UPSERT)`, returning a single-record `@record(record:{className:...})`-or-bare-SDL carrier (one recognized data field, optional errors-shaped field) | `MutationDmlRecordField` | Two-step fetcher: per-kind DML chain inside `transactionResult` with PK-only `RETURNING`, plus a follow-up data-field SELECT outside the transaction
 | `@mutation(typeName: INSERT\|UPDATE)` with bulk `@table` input, returning a single-record carrier with a list-shaped `@table`-element data field | `MutationBulkDmlRecordField` | Per-row DML inside one `transactionResult`, accumulating a typed `Result<RecordN<PK>>` in input order
 | `@service`, return `@table` type | `MutationServiceTableField` | Async DataLoader fetcher + `rows*()` method
-| `@service`, return non-table type | `MutationServiceRecordField` | Field method stub
+| `@service`, return non-table type | `MutationServiceRecordField` | Fetcher method
 | Neither `@service` nor `@mutation` | `UnclassifiedField`** | Validation error ; build fails
 | Both `@service` and `@mutation` | `UnclassifiedField`** | Validation error ; build fails
 |===
@@ -435,13 +455,13 @@ The four `Mutation*TableField` permits are guaranteed never to carry a `@record`
 |===
 | Schema Pattern | `ChildField` Variant | `*Fetchers` Generates
 
-| `@field(name:)` or matching column name | `ColumnField` (`compaction = Direct`) | Column method in `wiring()`
-| `@reference` on scalar | `ColumnReferenceField` (`compaction = Direct`) | Column method in `wiring()`
-| `@reference` on scalar declared on a `TableInterfaceType` participant | `ParticipantColumnReferenceField` | Column method in `wiring()`; picks up the participant-side FK rather than the interface-side resolver
-| `@nodeId` (single-column PK), no typeName | `ColumnField` (`compaction = NodeIdEncodeKeys`) | Column method in `wiring()`; the projected column is wrapped in the per-Node `encode<TypeName>` helper
-| `@nodeId(typeName:)`, single-column PK target | `ColumnReferenceField` (`compaction = NodeIdEncodeKeys`) | As above, against the FK-resolved target column
-| `@nodeId` (composite PK), no typeName | `CompositeColumnField` | Column method in `wiring()`; projects `RowN<...>` of the parent's PK columns and wraps in `encode<TypeName>`
-| `@nodeId(typeName:)`, composite PK target | `CompositeColumnReferenceField` | As above, against the FK-resolved target columns
+| `@field(name:)` or matching column name | `ColumnField` (`compaction = Direct`) | Wiring value (`ColumnFetcher`)
+| `@reference` on scalar | `ColumnReferenceField` (`compaction = Direct`) | Inline projection in `$fields` + `ColumnFetcher` wiring value
+| `@reference` on scalar declared on a `TableInterfaceType` participant | `ParticipantColumnReferenceField` | Wiring value ; materialised by the enclosing `TableInterfaceField` fetcher's conditional LEFT JOIN and read back via `FetcherEmitter` (participant-side FK, not the interface-side resolver)
+| `@nodeId` (single-column PK), no typeName | `ColumnField` (`compaction = NodeIdEncodeKeys`) | Wiring value (`ColumnFetcher`); the projected column is wrapped in the per-Node `encode<TypeName>` helper
+| `@nodeId(typeName:)`, single-column PK target | `ColumnReferenceField` (`compaction = NodeIdEncodeKeys`) | Inline `$fields` projection against the FK-resolved target column, wrapped in `encode<TypeName>`
+| `@nodeId` (composite PK), no typeName | `CompositeColumnField` | Inline `$fields` projection of `RowN<...>` of the parent's PK columns, wrapped in `encode<TypeName>`
+| `@nodeId(typeName:)`, composite PK target | `CompositeColumnReferenceField` | Deferred stub ; rooted-at-parent composite NodeId reference, pending `nodeidreferencefield-join-projection-form`
 |===
 
 ==== Object return type
@@ -450,18 +470,18 @@ The four `Mutation*TableField` permits are guaranteed never to carry a `@record`
 | Schema Pattern | `ChildField` Variant | `*Fetchers` Generates
 
 | `@externalField(reference: {className, method})` | `ComputedField` | Inlined call in `$fields()` (`<Class>.<method>(table).as("<name>")`) + `ColumnFetcher` registered by alias in `wiring()`. Method must be `public static Field<X> name(<ParentTable> table)`.
-| `@tableMethod` | `TableMethodField` | Field method stub
+| `@tableMethod` | `TableMethodField` | Fetcher method
 | `@service`, return `@table` | `ServiceTableField` | Async DataLoader fetcher + `rows*()` method
-| `@service`, return non-table | `ServiceRecordField` | Field method stub
+| `@service`, return non-table | `ServiceRecordField` | Fetcher method
 | Return `@table`, `@splitQuery` + `@lookupKey` | `SplitLookupTableField` | Async DataLoader fetcher + `rows*()` method
-| Return `@table`, `@lookupKey` (no split) | `LookupTableField` | Field method stub (correlated subquery ; G5 pending)
+| Return `@table`, `@lookupKey` (no split) | `LookupTableField` | Inline projection in `$fields` ; correlated subquery via `DSL.multiset` + VALUES/JOIN lookup keyset
 | Return `@table`, `@splitQuery` | `SplitTableField` | Async DataLoader fetcher + `rows*()` method
-| Return `@table` (default) | `TableField` | Field method stub (correlated subquery ; G5 pending)
-| Return `@table`+`@discriminate` interface | `TableInterfaceField` | Field method stub
-| Return multi-table interface | `InterfaceField` | Field method stub
-| Return union | `UnionField` | Field method stub
-| Return plain object (no `@table`) | `NestingField` | Field method stub (inherits parent table context)
-| Constructor-mapped field | `ConstructorField` | Field method stub
+| Return `@table` (default) | `TableField` | Inline projection in `$fields` ; correlated subquery via `DSL.multiset` (single cardinality adds `.limit(1)` + a read-side unwrap lambda)
+| Return `@table`+`@discriminate` interface | `TableInterfaceField` | Fetcher method
+| Return multi-table interface | `InterfaceField` | Fetcher method(s) ; per-participant polymorphic projection
+| Return union | `UnionField` | Fetcher method(s) ; per-participant polymorphic projection
+| Return plain object (no `@table`) | `NestingField` | Inline projection ; nested fields fold into the parent SELECT, the object itself wired as an `env.getSource()` passthrough (inherits parent table context)
+| Constructor-mapped field | `ConstructorField` | Wiring value ; `env.getSource()` passthrough
 | Conflicting directives | `UnclassifiedField`** | Validation error; build fails
 | `@notGenerated` | `UnclassifiedField`** | Validation error; the directive is no longer supported (`INVALID_SCHEMA` rejection). Remove it; fields must be fully described by the schema.
 | `@multitableReference` | `UnclassifiedField`** | Validation error; the directive is no longer supported (`INVALID_SCHEMA` rejection). Remove it; the rewrite generates multi-table interface dispatch from `@discriminate` / `@discriminator`.
@@ -472,14 +492,14 @@ The four `Mutation*TableField` permits are guaranteed never to carry a `@record`
 |===
 | Schema Pattern | `ChildField` Variant | `*Fetchers` Generates
 
-| Scalar/enum with `@field` | `PropertyField` | Column method in `wiring()`
+| Scalar/enum with `@field` | `PropertyField` | Wiring value ; property read off the parent record
 | Return `@table`, `@lookupKey` (catalog FK from parent's jOOQ TableRecord) | `RecordLookupTableField` (`SourceKey.Reader.ColumnRead`) | Async DataLoader fetcher + `rows*()` method
 | Return `@table` (default; catalog FK from parent's jOOQ TableRecord) | `RecordTableField` (`SourceKey.Reader.ColumnRead`) | Async DataLoader fetcher + `rows*()` method
 | Return `@table` with `@sourceRow` (parent is `Backed` or `JavaRecordType`; no catalog FK required) | `RecordTableField` / `RecordLookupTableField` (`SourceKey.Reader.SourceRowsCall`) | Async DataLoader fetcher + `rows*()` method; the developer-supplied static lifter populates the batched VALUES rows
-| Return non-table type | `RecordField` | Column method in `wiring()`
+| Return non-table type | `RecordField` | Wiring value ; read off the parent record
 | `errors:` slot on a service payload (one entry per `@error` mapping) | `ErrorsField` | Passthrough; graphql-java's default `PropertyDataFetcher` reads the list the carrier's try/catch wrapper or the service-method body produced
 | `@service`, return `@table` | `ServiceTableField` | Async DataLoader fetcher + `rows*()` method
-| `@service`, return non-table | `ServiceRecordField` | Field method stub
+| `@service`, return non-table | `ServiceRecordField` | Fetcher method
 |===
 
 === Input Fields (on `@table` input parent)
