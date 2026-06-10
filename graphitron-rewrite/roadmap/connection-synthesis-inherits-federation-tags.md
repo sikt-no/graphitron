@@ -23,8 +23,9 @@ Legacy note: legacy `MakeConnections` stamped the carrier's source location onto
 ## Expected behaviour
 
 * Synthesised Connection and Edge object types inherit every `@tag` applied to the carrier field, value for value (the directive is repeatable; copy all of them).
-* The tag source is per promotion arm, mirroring how `shareable` is already read: the directive-driven arm reads the carrier field's tags; the structural arm reads the SDL-declared Connection type's own tags. Both arms feed the synthesised `PageInfo`, which carries the union of tags across all promoted connections, exactly as the `pageInfoShareable |=` fold does. An SDL-declared Connection tagged `@tag(name: "x")` with no SDL `PageInfo` hits the same composition break this item fixes, so the structural arm cannot be excluded from the union.
-* Structural Connection/Edge types themselves and an SDL-declared `PageInfo` stay untouched; the author owns the tags there. Their tags still feed the synthesised PageInfo union per the previous bullet.
+* `PageInfo` follows one rule: if Graphitron synthesises it, it carries the union of the tags from all connection-promoted fields; if the schema declares `PageInfo`, it is not touched.
+* The tag source per promotion arm mirrors how `shareable` is already read: the directive-driven arm reads the carrier field's tags; the structural arm reads the SDL-declared Connection type's own tags (an SDL-declared Connection tagged `@tag(name: "x")` with no SDL `PageInfo` hits the same composition break this item fixes). Both arms feed the synthesised PageInfo union, exactly as the `pageInfoShareable |=` fold does.
+* Structural Connection/Edge types themselves stay untouched; the author owns the tags there.
 * Carriers sharing one connection name through `@asConnection(connectionName:)` (possible until R208 retires the override): the synthesised type carries the union of the carriers' tags. This is pinned, not open: a missing tag is a composition break, and the union is cheap. At the dedupe site the existing registry entry is already in hand and `ctx.typeRegistry.enrich` exists, so the union is a transform of `existing.schemaType()` adding the missing `@tag` applications (plus the matching Edge); no pre-pass needed.
 
 ## Open question for review
