@@ -21,12 +21,12 @@ All under `graphitron-rewrite/`:
 - **The page**: `docs/code-generation-triggers.adoc`.
 - **Legacy truth table**: `graphitron/src/test/java/no/sikt/graphitron/rewrite/GraphitronSchemaBuilderTest.java` (the `*Case implements ClassificationCase` enums).
 - **Coverage bridge**: `graphitron/src/test/java/no/sikt/graphitron/rewrite/VariantCoverageTest.java` (unions corpus-covered leaves with enum-case leaves; the safety net for retirement). Its `NO_CASE_REQUIRED` allowlist documents leaves unreachable from the standard Sakila catalog; the slice-3 sweep interacts with it, and those leaves stay allowlisted rather than swept.
-- **Retirement inventory** (the deletion whitelist): `roadmap/classification-test-dsl-inventory.md`. The committed checklist of pure-verdict candidate rows; only rows listed there may retire, and each migration commit ticks its row off.
+- **Retirement inventory** (the deletion whitelist): `roadmap/audits/classification-test-dsl-inventory.md`. The committed checklist of pure-verdict candidate rows; only rows listed there may retire, and each migration commit ticks its row off.
 
 ## The loop
 
 ### 1. Find the verdict's current home
-Start from the retirement inventory (`roadmap/classification-test-dsl-inventory.md`): it names the
+Start from the retirement inventory (`roadmap/audits/classification-test-dsl-inventory.md`): it names the
 candidate rows and their leaves; pick the next unticked row. Then grep `GraphitronSchemaBuilderTest.java`
 for the leaf (e.g. `ServiceTableField`, `ColumnField`). For each matching enum case, read its assertion
 lambda and confirm its classification:
@@ -94,8 +94,9 @@ skill (push feature branch + fast-forward trunk).
 ## Guardrails
 
 - **The inventory is the deletion whitelist.** A row not listed in
-  `roadmap/classification-test-dsl-inventory.md` does not retire, full stop. The pool is ~42 pure-verdict
-  rows of the 405; the slot-asserting (~187) and rejection (~176) rows stay by design.
+  `roadmap/audits/classification-test-dsl-inventory.md` does not retire, full stop. The inventory
+  settled the pool at 35 pure-verdict eligible rows of 407; the slot-asserting (170), rejection (178),
+  and input-side (24) rows stay by design.
 - **Green `VariantCoverageTest` is not proof of corpus pickup.** Its union also counts the remaining
   enum rows; verify the leaf lands in the corpus per step 6.
 - **Success-only.** The corpus asserts the happy path. Rejection and input-field rows stay in the enum table.
