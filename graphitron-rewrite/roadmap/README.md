@@ -25,10 +25,10 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R200` | Honor @field(name:) in InputBeanResolver for SDL input bean/record member binding | Ready | 2026-06-10 <sub>created 2026-05-20</sub> | [plan](honor-field-directive-in-inputbeanresolver.md) |
 | `R292` | Descriptions on generated Connection/Edge boilerplate types | In Review | 2026-06-10 | [plan](descriptions-on-generated-relay-types.md) |
 | `R23` | Multi-parent `NestingField` sharing: `TableField` arm | Spec |  | [plan](nestingfield-multiparent-tablefield.md) |
-| `R293` | Clean up build-time warnings in the full rewrite build | Spec | 2026-06-10 | [plan](build-warning-cleanup.md) |
 | `R13` | Faceted search on `@asConnection` | Spec |  | [plan](faceted-search.md) |
 | `R294` | Treat generator warnings in test fixtures as errors unless asserted | Spec | 2026-06-10 | [plan](fixture-warnings-as-errors.md) |
 | `R63` | Type UPSERT dialect requirement on the model | Spec |  | [plan](dml-dialect-requirement-on-model.md) |
+| `R293` | Clean up build-time warnings in the full rewrite build | Ready | 2026-06-10 | [plan](build-warning-cleanup.md) |
 | `R92` | Surface database CHECK constraints as Jakarta validation rules | Spec |  | [plan](catalog-check-constraint-validation.md) |
 | `R26` | Retire `graphitron-maven-plugin` + `graphitron-schema-transform` | In Progress |  | [plan](retire-maven-plugin.md) |
 | `R180` | Centralize ResultType column-read emission for @record parents | Spec | 2026-05-19 | [plan](record-parent-column-read-helper.md) |

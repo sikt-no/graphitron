@@ -1,7 +1,7 @@
 ---
 id: R293
 title: Clean up build-time warnings in the full rewrite build
-status: Spec
+status: Ready
 bucket: cleanup
 priority: 7
 depends-on: []
