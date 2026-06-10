@@ -40,4 +40,34 @@ public final class FilmCarrierWithErrorsService {
             .where(Tables.FILM.FILM_ID.eq(id))
             .fetchOne();
     }
+
+    /**
+     * R275 reopened-scope list arm (the opptak {@code leggTilTagger -> { saker: [Sak!]
+     * @splitQuery, errors }} shape): returns the films with the given ids in input order, or
+     * throws the mapped "missing film" {@code @error} when any id is unknown (exercises the
+     * {@code Outcome.ErrorList} arm over a MANY-cardinality carrier: the data field renders
+     * null, the typed error lands in the errors union). The happy path exercises the
+     * {@code OUTCOME_SUCCESS} MANY arm: the data field's fetcher narrows
+     * {@code Outcome.Success}, casts {@code success.value()} to {@code List<FilmRecord>}, and
+     * re-selects the requested columns by PK preserving input order.
+     */
+    public static java.util.List<FilmRecord> filmsByIds(java.util.List<Integer> ids, DSLContext dsl) {
+        if (ids == null || ids.isEmpty()) {
+            throw new FilmReviewBadRatingException("ids must be non-empty");
+        }
+        var fetched = dsl.selectFrom(Tables.FILM)
+            .where(Tables.FILM.FILM_ID.in(ids))
+            .fetch();
+        java.util.Map<Integer, FilmRecord> byPk = new java.util.HashMap<>(fetched.size());
+        for (FilmRecord r : fetched) byPk.put(r.get(Tables.FILM.FILM_ID), r);
+        java.util.List<FilmRecord> ordered = new java.util.ArrayList<>(ids.size());
+        for (Integer id : ids) {
+            FilmRecord r = byPk.get(id);
+            if (r == null) {
+                throw new FilmReviewMissingFilmException("film " + id + " not found");
+            }
+            ordered.add(r);
+        }
+        return ordered;
+    }
 }

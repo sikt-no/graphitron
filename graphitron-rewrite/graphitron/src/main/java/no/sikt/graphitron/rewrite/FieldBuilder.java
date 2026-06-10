@@ -2919,6 +2919,34 @@ class FieldBuilder {
     }
 
     /**
+     * R275 — composes the rejection reason for an {@code @service} mutation whose carrier-shaped
+     * SDL-Object return type never registered (no {@code @record}/reflection binding, no
+     * producer-backed carrier promotion). Classifying such a field would emit a type reference to
+     * a type the model dropped, producing an invalid assembled schema. The ID-element arm is the
+     * {@code fjernSakTagg}-family shape: {@code [ID] @nodeId} data fields are the DELETE-only
+     * PK-echo permit, and {@code @service} support for encoding node ids off the service result
+     * without a re-fetch is R275's follow-up slice.
+     */
+    private String orphanServiceCarrierReason(String payloadTypeName, String fieldName,
+            BuildContext.DmlPayloadScan.Admit admit) {
+        String base = "@service mutation field '" + fieldName + "' returns '" + payloadTypeName
+            + "', a carrier-shaped SDL Object type that did not classify; the type would be "
+            + "dropped from the schema and the field's type reference would dangle. ";
+        if (admit.element() instanceof BuildContext.DmlElementKind.IdElement) {
+            return base + "The payload's data field ('" + admit.dataField().getName()
+                + "') is an ID-element carrier, which is admitted only on "
+                + "@mutation(typeName: DELETE) payloads; @service support for encoding node ids "
+                + "off the service result without a re-fetch is tracked in roadmap item R275. "
+                + "Use a @table-element data field matching the service method's returned record "
+                + "type instead.";
+        }
+        return base + "The payload scans as a single-record carrier over data field '"
+            + admit.dataField().getName() + "', but no @service producer binding grounds it; "
+            + "check that the service method's return type matches the data field's "
+            + "record class and cardinality.";
+    }
+
+    /**
      * R178 step 3: structural detection for an {@code @service}-carrier shape on an unbacked
      * SDL payload. Mirrors {@code RecordBindingResolver.groundServicePayloadBinding}'s payload
      * SDL walk: scans the payload object's field definitions, looks for exactly one
@@ -3260,6 +3288,24 @@ class FieldBuilder {
                     if (carrierError != null) {
                         yield new UnclassifiedField(parentTypeName, name, location, fieldDef,
                             Rejection.structural(carrierError));
+                    }
+                    // R275: a carrier-shaped SDL-Object return reaching the Scalar arm with no
+                    // registry entry is an orphan carrier — the structural scan recognizes it as a
+                    // single-data-field carrier, but it neither bound (@record / producer
+                    // reflection) nor promoted as a producer-backed carrier, so the type is dropped
+                    // from the model and the field's emitted typeRef would dangle (graphql-java
+                    // assembly fails with "type X not found in schema"). The field edge owns the
+                    // orphan rejection (see GraphitronSchemaBuilder.registerNestingTypes); reject
+                    // loudly instead of classifying over a dropped type. Non-carrier orphan shapes
+                    // (scan Reject / NotApplicable) keep the pre-R275 laxity; closing those is a
+                    // model-level soundness-pass follow-up.
+                    String payloadName = s.returnType().returnTypeName();
+                    if (ctx.schema.getType(payloadName) instanceof graphql.schema.GraphQLObjectType
+                            && ctx.types.get(payloadName) == null
+                            && ctx.scanStructuralServiceCarrierPayload(payloadName)
+                                instanceof BuildContext.DmlPayloadScan.Admit admit) {
+                        yield new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                            Rejection.structural(orphanServiceCarrierReason(payloadName, name, admit)));
                     }
                     yield buildServiceField(s.returnType(), s.method(), parentTypeName, name, location, fieldDef, (ch, smc) ->
                         new MutationField.MutationServiceRecordField(parentTypeName, name, location, s.returnType(), smc, ch));
@@ -4018,6 +4064,10 @@ class FieldBuilder {
                         + "'; payload-returning @service-carrier mutations require the data field's "
                         + "@table to equal the producer's reflected return-element record class's table"));
                 }
+                // R275: @splitQuery on the carrier data field is structurally redundant — the
+                // emit below already resolves the field through a PK-keyed follow-up SELECT off
+                // the producer's record. Same advisory family as the @record-parent redundancy.
+                warnIfSplitQueryOnRecordParent(fieldDef, parentTypeName, name, location);
                 var pkColumns = binding.tableRef().primaryKeyColumns();
                 var cardinality = tb.wrapper().isList()
                     ? SourceKey.Cardinality.MANY

@@ -258,9 +258,6 @@ class TypeBuilder {
             .filter(name -> !ctx.typeRegistry.contains(name))
             .toList();
         for (var name : candidates) {
-            if (!(ctx.scanStructuralDmlPayload(name) instanceof BuildContext.DmlPayloadScan.Admit)) {
-                continue;
-            }
             // A producer-backed carrier binds its wrapper to the producer's table record: a DML
             // RETURNING or an @service method yields a Record (single) or Result<Record> (multi),
             // so the carrier IS that record, single or multi cardinality alike. Both DML
@@ -270,9 +267,18 @@ class TypeBuilder {
             // payload with no matching producer (orphan, or a return whose element/cardinality does
             // not match the carrier so neither RootService nor *Emitted grounds) is left unclassified
             // here; the field that returns it surfaces the rejection.
-            var table = dmlEmittedBinding(name).map(b -> b.tableRef())
-                .or(() -> serviceEmittedBinding(name).map(b -> b.tableRef()))
-                .orElse(null);
+            //
+            // R275: each producer family gates on its own scan. DML carriers keep the strict
+            // forbidden-directive set; @service carriers tolerate @splitQuery on the data field
+            // (redundant there; see BuildContext.scanStructuralServiceCarrierPayload).
+            TableRef table = null;
+            if (ctx.scanStructuralDmlPayload(name) instanceof BuildContext.DmlPayloadScan.Admit) {
+                table = dmlEmittedBinding(name).map(b -> b.tableRef()).orElse(null);
+            }
+            if (table == null
+                    && ctx.scanStructuralServiceCarrierPayload(name) instanceof BuildContext.DmlPayloadScan.Admit) {
+                table = serviceEmittedBinding(name).map(b -> b.tableRef()).orElse(null);
+            }
             if (table == null) {
                 continue;
             }

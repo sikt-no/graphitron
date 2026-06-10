@@ -1514,6 +1514,19 @@ type FilmCarrierWithErrorsPayload {
     errors: [FilmReviewError]
 }
 
+# R275 reopened-scope execution-tier fixture: the @splitQuery-list source-record carrier — the
+# opptak leggTilTagger -> LeggTilTaggerPayload { saker: [Sak!] @splitQuery, errors } shape. The
+# @service producer returns List<FilmRecord>; the payload pairs the list data field with an errors
+# union. @splitQuery on the data field is tolerated by the @service-carrier scan (redundant: the
+# carrier emit already runs a PK-keyed follow-up SELECT off the producer's records; a build-time
+# advisory fires) — pre-R275 the forbidden-directive check dropped this payload type entirely,
+# producing an invalid assembled schema (dangling typeRef). `films` classifies as
+# SingleRecordTableField, MANY cardinality, ResultRowWalk envelope OUTCOME_SUCCESS.
+type FilmsCarrierWithErrorsPayload {
+    films: [Film!] @splitQuery
+    errors: [FilmReviewError]
+}
+
 type FilmsServicePayload {
     films: [Film!]
 }
@@ -1701,6 +1714,16 @@ type Mutation {
         @service(service: {
             className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierWithErrorsService",
             method: "filmById"
+        })
+
+    # R275 reopened-scope list sibling: List<FilmRecord> producer into the @splitQuery-list +
+    # errors carrier (see FilmsCarrierWithErrorsPayload above). Any unknown id throws the mapped
+    # @error (ErrorList arm -> films null, typed error); otherwise the films project off
+    # Outcome.Success.value() in input order and errors resolves null on the success arm.
+    serviceFilmsByIdsWithErrors(ids: [Int!]!): FilmsCarrierWithErrorsPayload
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierWithErrorsService",
+            method: "filmsByIds"
         })
 
     # R158 composite-PK MANY-arm execution-tier surface: @service-backed mutation whose

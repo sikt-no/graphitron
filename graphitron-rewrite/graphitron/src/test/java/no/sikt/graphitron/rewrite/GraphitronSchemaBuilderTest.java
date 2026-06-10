@@ -6768,24 +6768,32 @@ class GraphitronSchemaBuilderTest {
             @Override public Set<Class<?>> variants() { return Set.of(MutationField.MutationServiceRecordField.class); }
         },
 
-        // REGRESSION (currently failing -> drives the fix): the same @service-carrier shape, but the
-        // single @table data field carries @splitQuery. @splitQuery is in
-        // BuildContext.FORBIDDEN_CARRIER_DATA_FIELD_DIRECTIVES, so scanStructuralDmlPayload returns
-        // NotApplicable: the payload is never recognized as a carrier, is not promoted/classified,
-        // and is dropped from the schema model entirely (schema.type("FilmsPayload") == null). The
-        // mutation field still emits a typeRef("FilmsPayload"), so graphql-java assembly fails with
-        // "type FilmsPayload not found in schema". This is the opptak leggTilTagger ->
-        // LeggTilTaggerPayload { saker: [Sak!] @splitQuery } breakage; removing @splitQuery there
-        // makes it work, exactly as the no-@splitQuery baseline cases above demonstrate. The fix
-        // must keep the payload a carrier (data field resolved as a split query) instead of
-        // dropping it; this test asserts the carrier survives and classifies as
-        // MutationServiceRecordField.
+        // R275 regression (was red, drove the fix): the same @service-carrier shape, but the single
+        // @table data field carries @splitQuery, and the payload pairs it with an errors field —
+        // the opptak leggTilTagger -> LeggTilTaggerPayload { saker: [Sak!] @splitQuery, errors }
+        // shape. Pre-fix, @splitQuery sat in BuildContext.FORBIDDEN_CARRIER_DATA_FIELD_DIRECTIVES,
+        // so the carrier scan returned NotApplicable, the payload never promoted, and the type was
+        // dropped from the model (schema.type("FilmsPayload") == null) while the mutation field
+        // still classified and emitted typeRef("FilmsPayload") — graphql-java assembly failed with
+        // "type FilmsPayload not found in schema". Post-fix, the @service-carrier scan tolerates
+        // @splitQuery (redundant there: the carrier data field's emit already runs a PK-keyed
+        // follow-up SELECT off the producer's record; an advisory warning fires), so the payload
+        // promotes, the mutation field classifies, and the errors field gives the producer the
+        // typed Outcome channel.
         SERVICE_MUTATION_SPLITQUERY_CARRIER_DROPS_PAYLOAD_TYPE(
-            "@service mutation returning a payload carrier whose @table data field carries @splitQuery "
-                + "-> payload type must survive (carrier path), not be dropped from the schema",
+            "@service mutation returning an errors-bearing payload carrier whose @table data field "
+                + "carries @splitQuery -> payload type survives (carrier path), not dropped",
             """
             type Film @table(name: "film") { title: String }
-            type FilmsPayload { films: [Film!] @splitQuery }
+            type FilmErr @error(handlers: [{handler: GENERIC, className: "java.lang.IllegalArgumentException"}]) {
+                path: [String!]!
+                message: String!
+            }
+            union CreateFilmsError = FilmErr
+            type FilmsPayload {
+                films: [Film!] @splitQuery
+                errors: [CreateFilmsError]
+            }
             type Query { x: String }
             type Mutation {
                 createFilms: FilmsPayload @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getFilmsAsList"})
@@ -6798,37 +6806,59 @@ class GraphitronSchemaBuilderTest {
                     .isNotInstanceOf(no.sikt.graphitron.rewrite.model.GraphitronType.UnclassifiedType.class);
                 assertThat(schema.field("Mutation", "createFilms"))
                     .isInstanceOf(MutationField.MutationServiceRecordField.class);
+                // The data field projects over the OUTCOME_SUCCESS list path: SingleRecordTableField,
+                // MANY cardinality, reading the records off Outcome.Success.value().
+                var dataField = schema.field("FilmsPayload", "films");
+                assertThat(dataField).isInstanceOf(no.sikt.graphitron.rewrite.model.ChildField.SingleRecordTableField.class);
+                var sk = ((no.sikt.graphitron.rewrite.model.ChildField.SingleRecordTableField) dataField).sourceKey();
+                assertThat(sk.cardinality()).isEqualTo(no.sikt.graphitron.rewrite.model.SourceKey.Cardinality.MANY);
+                assertThat(((no.sikt.graphitron.rewrite.model.SourceKey.Reader.ResultRowWalk) sk.reader()).envelope())
+                    .isEqualTo(no.sikt.graphitron.rewrite.model.SourceKey.Reader.SourceEnvelope.OUTCOME_SUCCESS);
             }) {
             @Override public Set<Class<?>> variants() { return Set.of(MutationField.MutationServiceRecordField.class); }
         },
 
-        // REGRESSION (currently failing -> drives the fix): an @service mutation returning a payload
-        // whose single data field is an ID-encoding field ([ID!] @nodeId). The ID-element carrier
-        // (DmlElementKind.IdElement) is admitted by scanStructuralDmlPayload only as a
+        // R275 regression (was red, drove the fix): an @service mutation returning a payload whose
+        // single data field is an ID-encoding field ([ID!] @nodeId), paired with an errors field —
+        // the opptak fjernSakTagger -> FjernSakTaggerPayload { tagger: [ID] @nodeId, errors } shape
+        // (the delete-then-echo-ids reframing of the delete-then-re-fetch defect). The ID-element
+        // carrier (DmlElementKind.IdElement) is admitted by the structural scan only as a
         // @mutation(typeName: DELETE) shape; on an @service mutation it grounds no producer binding
-        // (groundServicePayloadBinding requires a @table data field), so the payload is never
-        // classified or registered -- schema.type("FilmIdsPayload") == null. Yet the mutation field
-        // is still happily classified as MutationServiceRecordField with a ScalarReturnType over the
-        // unregistered FilmIdsPayload, emitting typeRef("FilmIdsPayload") -> dangling reference ->
-        // graphql-java assembly fails with "type FilmIdsPayload not found in schema". This is the
-        // same silently-dropped-carrier family as the @splitQuery case above (the scan's
-        // NotApplicable/Reject is swallowed on the @service path). The shape is not supported on
-        // @service, so it should be rejected loudly at classification time (UnclassifiedField with a
-        // clear reason), not accepted into a dangling typeRef. This test asserts that loud rejection.
+        // (groundServicePayloadBinding requires a @table data field), so the payload never registers
+        // (schema.type("FilmIdsPayload") == null). Pre-fix the mutation field still classified as
+        // MutationServiceRecordField over the unregistered payload and emitted
+        // typeRef("FilmIdsPayload") -> dangling reference -> graphql-java assembly failed with
+        // "type FilmIdsPayload not found in schema". Post-fix the Scalar arm rejects the orphan
+        // carrier loudly at classification time. @service support for encoding node ids off the
+        // service result without a re-fetch (requirement 2 of the reopened R275 scope) is the
+        // follow-up slice; when it lands, this row flips from rejection to classification.
         SERVICE_MUTATION_ID_CARRIER_SILENTLY_DROPS_PAYLOAD(
-            "@service mutation returning an [ID] @nodeId carrier (a DELETE-only shape) must be rejected "
+            "@service mutation returning an [ID!] @nodeId carrier (a DELETE-only shape) is rejected "
                 + "at classification (author error), not silently accepted into a dangling payload typeRef",
             """
             type Film implements Node @node @table(name: "film") { id: ID! @nodeId  title: String }
-            type FilmIdsPayload { filmIds: [ID!] @nodeId(typeName: "Film") }
+            type FilmErr @error(handlers: [{handler: GENERIC, className: "java.lang.IllegalArgumentException"}]) {
+                path: [String!]!
+                message: String!
+            }
+            union DeleteFilmsError = FilmErr
+            type FilmIdsPayload {
+                filmIds: [ID!] @nodeId(typeName: "Film")
+                errors: [DeleteFilmsError]
+            }
             type Query { x: String }
             type Mutation {
                 deleteFilms: FilmIdsPayload @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getFilmsAsList"})
             }
             """,
-            schema -> assertThat(schema.field("Mutation", "deleteFilms"))
-                .as("@service ID-carrier must be a rejected author error, not accepted with a dropped payload type")
-                .isInstanceOf(no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField.class)) {
+            schema -> {
+                var field = schema.field("Mutation", "deleteFilms");
+                assertThat(field)
+                    .as("@service ID-carrier must be a rejected author error, not accepted with a dropped payload type")
+                    .isInstanceOf(no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField.class);
+                assertThat(((no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField) field).reason())
+                    .contains("FilmIdsPayload", "ID-element", "DELETE");
+            }) {
             @Override public Set<Class<?>> variants() { return Set.of(no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField.class); }
         },
 

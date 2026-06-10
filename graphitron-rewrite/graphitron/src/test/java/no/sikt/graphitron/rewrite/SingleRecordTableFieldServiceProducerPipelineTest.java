@@ -99,6 +99,89 @@ class SingleRecordTableFieldServiceProducerPipelineTest {
             .isInstanceOf(ChildField.Transport.WrapperArm.class);
     }
 
+    /**
+     * R275 reopened scope: the {@code @splitQuery}-list source-record carrier (the opptak
+     * {@code leggTilTagger -> { saker: [Sak!] @splitQuery, errors }} shape). {@code @splitQuery}
+     * on the carrier data field is tolerated by the {@code @service}-carrier scan (redundant:
+     * the carrier emit already runs a PK-keyed follow-up SELECT off the producer's records), so
+     * the payload promotes and the data field projects over the {@code OUTCOME_SUCCESS} list
+     * path. A redundancy advisory fires for the ignored directive. Pre-fix the forbidden-
+     * directive check dropped the payload type entirely, producing an invalid assembled schema
+     * (dangling {@code typeRef}).
+     */
+    @Test
+    void serviceProducer_splitQueryListCarrier_withErrors_admitsAndWarnsRedundantDirective() {
+        var schema = TestSchemaHelper.buildSchema("""
+            type Film @table(name: "film") { title: String }
+            type DbErr @error(handlers: [{handler: DATABASE}]) {
+                path: [String!]!
+                message: String!
+            }
+            union FilmError = DbErr
+            type FilmListPayload {
+                films: [Film!] @splitQuery
+                errors: [FilmError]
+            }
+            type Query { x: String }
+            type Mutation {
+                runFilms: FilmListPayload
+                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getFilmsAsList"})
+            }
+            """);
+
+        assertThat(schema.field("Mutation", "runFilms"))
+            .isInstanceOf(MutationField.MutationServiceRecordField.class);
+        var dataField = schema.field("FilmListPayload", "films");
+        assertThat(dataField).isInstanceOf(ChildField.SingleRecordTableField.class);
+        var sk = ((ChildField.SingleRecordTableField) dataField).sourceKey();
+        assertThat(sk.cardinality()).isEqualTo(SourceKey.Cardinality.MANY);
+        assertThat(((SourceKey.Reader.ResultRowWalk) sk.reader()).envelope())
+            .isEqualTo(SourceKey.Reader.SourceEnvelope.OUTCOME_SUCCESS);
+        var errorsField = schema.field("FilmListPayload", "errors");
+        assertThat(errorsField).isInstanceOf(ChildField.ErrorsField.class);
+        assertThat(((ChildField.ErrorsField) errorsField).transport())
+            .isInstanceOf(ChildField.Transport.WrapperArm.class);
+        assertThat(schema.warnings())
+            .extracting(BuildWarning::message)
+            .anyMatch(m -> m.contains("FilmListPayload.films")
+                && m.contains("@splitQuery is redundant on a @record-parent field"));
+    }
+
+    /**
+     * R275 reopened scope: an {@code [ID!] @nodeId} data field is the DELETE-only PK-echo permit;
+     * on an {@code @service} mutation no producer binding grounds it, so the payload cannot
+     * classify. The orphan-carrier guard rejects the mutation field loudly at classification
+     * time. Pre-fix the field classified as {@code MutationServiceRecordField} over the dropped
+     * payload type, producing an invalid assembled schema (dangling {@code typeRef}). When
+     * {@code @service} support for encoding node ids off the service result lands (R275's
+     * follow-up slice), this rejection flips to classification.
+     */
+    @Test
+    void serviceProducer_idElementCarrier_rejectsLoudly() {
+        var schema = TestSchemaHelper.buildSchema("""
+            type Film implements Node @node @table(name: "film") { id: ID! @nodeId  title: String }
+            type DbErr @error(handlers: [{handler: DATABASE}]) {
+                path: [String!]!
+                message: String!
+            }
+            union FilmError = DbErr
+            type FilmIdsPayload {
+                filmIds: [ID!] @nodeId(typeName: "Film")
+                errors: [FilmError]
+            }
+            type Query { x: String }
+            type Mutation {
+                deleteFilms: FilmIdsPayload
+                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getFilmsAsList"})
+            }
+            """);
+
+        var mutField = schema.field("Mutation", "deleteFilms");
+        assertThat(mutField).isInstanceOf(UnclassifiedField.class);
+        assertThat(((UnclassifiedField) mutField).rejection().message())
+            .contains("FilmIdsPayload", "ID-element", "DELETE", "R275");
+    }
+
     /** MANY / single-PK admission: @service returning {@code List<FilmRecord>}. */
     @Test
     void serviceProducer_many_singlePk_admitsAsWrapTableRecord() {

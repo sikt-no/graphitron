@@ -624,7 +624,37 @@ class BuildContext {
         DIR_EXTERNAL_FIELD, DIR_CONDITION, DIR_LOOKUP_KEY, DIR_NOT_GENERATED,
         DIR_TABLE_METHOD, DIR_DEFAULT_ORDER, DIR_ORDER_BY, DIR_MULTITABLE_REFERENCE);
 
+    // R275: the @service-carrier scan tolerates @splitQuery on the data field. The carrier's
+    // data-field emit already resolves through a PK-keyed follow-up SELECT off the producer's
+    // record (FetcherEmitter's Wrap.TableRecord arm), so @splitQuery adds nothing there; the
+    // opptak schemas carry it on their `sak`/`saker` data fields, and dropping the whole carrier
+    // over a redundant directive produced an invalid assembled schema (dangling payload typeRef).
+    // The classifier fires a redundancy advisory instead (FieldBuilder's
+    // warnIfSplitQueryOnRecordParent family). DML carriers keep the strict set.
+    private static final java.util.Set<String> FORBIDDEN_SERVICE_CARRIER_DATA_FIELD_DIRECTIVES =
+        FORBIDDEN_CARRIER_DATA_FIELD_DIRECTIVES.stream()
+            .filter(d -> !d.equals(DIR_SPLIT_QUERY))
+            .collect(java.util.stream.Collectors.toUnmodifiableSet());
+
     public DmlPayloadScan scanStructuralDmlPayload(String payloadSdlName) {
+        return scanStructuralPayload(payloadSdlName, FORBIDDEN_CARRIER_DATA_FIELD_DIRECTIVES);
+    }
+
+    /**
+     * R275 — the {@code @service}-carrier variant of {@link #scanStructuralDmlPayload}. Identical
+     * structural walk, but {@code @splitQuery} on the data field does not route the type away from
+     * the carrier mold: on a producer-backed carrier the data field's fetcher already runs a
+     * PK-keyed follow-up SELECT off the producer's record, so the directive is redundant rather
+     * than a different fetcher contract. Consulted by {@code TypeBuilder.promoteSingleRecordPayloads}
+     * for {@code ServiceEmitted}-bound candidates and by the {@code @service} classifier's
+     * orphan-payload diagnostics.
+     */
+    public DmlPayloadScan scanStructuralServiceCarrierPayload(String payloadSdlName) {
+        return scanStructuralPayload(payloadSdlName, FORBIDDEN_SERVICE_CARRIER_DATA_FIELD_DIRECTIVES);
+    }
+
+    private DmlPayloadScan scanStructuralPayload(String payloadSdlName,
+            java.util.Set<String> forbiddenDataFieldDirectives) {
         if (payloadSdlName == null) return new DmlPayloadScan.NotApplicable();
         var payloadType = schema.getType(payloadSdlName);
         if (!(payloadType instanceof GraphQLObjectType payloadObj)) {
@@ -664,7 +694,7 @@ class BuildContext {
             // list (R178 retires the @field-on-non-$source HardReject — the SettKvotesporsmal
             // bug fix). Pure-metadata directives (@deprecated, custom directives without
             // execution semantics) pass through.
-            for (String forbidden : FORBIDDEN_CARRIER_DATA_FIELD_DIRECTIVES) {
+            for (String forbidden : forbiddenDataFieldDirectives) {
                 if (f.hasAppliedDirective(forbidden)) {
                     return new DmlPayloadScan.NotApplicable();
                 }
