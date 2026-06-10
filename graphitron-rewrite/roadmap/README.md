@@ -20,7 +20,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R256` | Absorb the service walker substrate: typed per-arm errors + multi-arg ctors | Ready | 2026-05-30 <sub>created 2026-05-29</sub> | [plan](service-walker-substrate-absorption.md) |
 | `R279` | Field-first reachability-driven classification driver <sub>blocked by: [dimensional-model-pivot](dimensional-model-pivot.md)</sub> | Ready | 2026-06-07 <sub>created 2026-06-05</sub> | [plan](field-first-classification-driver.md) |
 | `R287` | Remove DELETE -> @table return path | Ready | 2026-06-10 <sub>created 2026-06-09</sub> | [plan](delete-rejects-table-return.md) |
-| `R281` | Classification test DSL: @classified spec-by-example | In Progress | 2026-06-10 <sub>created 2026-06-07</sub> | [plan](classification-test-dsl.md) |
+| `R281` | Classification test DSL: @classified spec-by-example | In Review | 2026-06-10 <sub>created 2026-06-07</sub> | [plan](classification-test-dsl.md) |
 | `R45` | Multi-tenant routing on top of the schema-driven ExecutionInput factory | Spec | 2026-05-20 | [plan](tenant-routing-and-execution-input.md) |
 | `R273` | Source NodeId metadata from @node + catalog PK (inferred from `implements Node`), and settle wrong-type/malformed mismatch semantics, retiring the legacy __NODE bare-ID arm | Spec | 2026-06-02 | [plan](nodeid-skip-mismatch-error-surfacing.md) |
 | `R200` | Honor @field(name:) in InputBeanResolver for SDL input bean/record member binding | Ready | 2026-06-10 <sub>created 2026-05-20</sub> | [plan](honor-field-directive-in-inputbeanresolver.md) |
@@ -246,7 +246,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### testing
 
-- `R281` [**Classification test DSL: @classified spec-by-example**](classification-test-dsl.md) — In Progress, testing
+- `R281` [**Classification test DSL: @classified spec-by-example**](classification-test-dsl.md) — In Review, testing
 - `R25` [**Rebalance test pyramid**](rebalance-test-pyramid.md) — Backlog, architecture
 
 ### legacy-migration
