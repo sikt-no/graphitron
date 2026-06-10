@@ -71,7 +71,7 @@ coordinate.
 - [x] `NonTableParentCase.SERVICE_TABLE_FIELD_ON_RECORD_PARENT` (L2328) -> `ChildField.ServiceTableField` | `@record` parent + `@service` + `@table` return | already covered by the `service` corpus example (`Film.language`, producer [Service, Query], mapping Table); corpus-only
 - [ ] `NonTableParentCase.CONSTRUCTOR_FIELD` (L2343) -> `ChildField.ConstructorField` | `@table` parent + `@record` child type (constructor passthrough)
 - [ ] `ErrorFieldCase.PATH_AND_MESSAGE_CLASSIFY_AS_PROPERTY_FIELDS` (L6031) -> `ChildField.PropertyField` | `path`/`message` fields on an `@error` parent
-- [ ] `RootFieldCase.TABLE_QUERY_FIELD` (L6453) -> `QueryField.QueryTableField` | root query field returning a `@table` type
+- [x] `RootFieldCase.TABLE_QUERY_FIELD` (L6453) -> `QueryField.QueryTableField` | root query field returning a `@table` type | already covered by the `catalog` (`Query.film`, `Query.films`) and `child-table` (`Query.city`) corpus examples, producer [Query], mapping Table/TableConnection; rendered in code-generation-triggers.adoc
 - [ ] `RootFieldCase.NODE_QUERY_FIELD` (L6502) -> `QueryField.QueryNodeField` | root field returning a single `Node`
 - [ ] `RootFieldCase.NODES_QUERY_FIELD` (L6513) -> `QueryField.QueryNodesField` | root field returning `[Node]`
 - [ ] `RootFieldCase.ALIASED_NODE_QUERY_FIELD` (L6524) -> `QueryField.QueryNodeField` | non-`node`-named root field returning `Node`

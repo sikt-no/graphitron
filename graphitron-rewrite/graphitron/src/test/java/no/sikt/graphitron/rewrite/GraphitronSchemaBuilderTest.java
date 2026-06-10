@@ -6414,15 +6414,13 @@ class GraphitronSchemaBuilderTest {
                 assertThat(uf.reason()).contains("not an input type");
             }),
 
-        TABLE_QUERY_FIELD(
-            "field returning @table type → QueryTableField",
-            """
-            type Film @table(name: "film") { title: String }
-            type Query { films: [Film!]! }
-            """,
-            schema -> assertThat(schema.field("Query", "films")).isInstanceOf(QueryField.QueryTableField.class)) {
-            @Override public Set<Class<?>> variants() { return Set.of(QueryField.QueryTableField.class); }
-        },
+        // R281 slice 2: the plain `root field returning a @table type -> QueryTableField` verdict (a
+        // pure isInstanceOf assertion, no slot detail) migrated to the spec-by-example corpus, where
+        // Query.film and Query.films (the `catalog` example) and Query.city (the `child-table` example)
+        // all classify to QueryTableField, asserted via @classified(producer: [Query], mapping: Table /
+        // TableConnection) and rendered into code-generation-triggers.adoc. The QueryTableField leaf
+        // stays covered by the corpus and by the many slot-asserting root cases below (orderBy, filters,
+        // ordering defaults, the languages projection cases).
 
         TABLE_QUERY_FIELD_WITH_ARGS(
             "table query field with @orderBy argument → OrderBySpec.Argument on orderBy(); filters empty",
