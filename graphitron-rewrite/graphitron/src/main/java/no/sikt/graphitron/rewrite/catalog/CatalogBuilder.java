@@ -122,8 +122,8 @@ public final class CatalogBuilder {
     /**
      * R159 — projects the carrier-data-field coordinates onto the LSP snapshot. Walks
      * {@link GraphitronSchema#fields()} for fields classified as
-     * {@code ChildField.SingleRecordTableField}, {@code SingleRecordIdField}, {@code SingleRecordIdFieldFromReturning}, or
-     * {@code SingleRecordTableFieldFromReturning}; each marks its parent type as a single-record
+     * {@code ChildField.SingleRecordTableField}, {@code SingleRecordIdField}, or
+     * {@code SingleRecordIdFieldFromReturning}; each marks its parent type as a single-record
      * carrier whose data field name is the field's own name.
      */
     private static Map<String, String> projectPayloadDataFields(GraphitronSchema schema) {
@@ -133,8 +133,7 @@ public final class CatalogBuilder {
             boolean isPayloadData =
                 field instanceof no.sikt.graphitron.rewrite.model.ChildField.SingleRecordTableField
                 || field instanceof no.sikt.graphitron.rewrite.model.ChildField.SingleRecordIdField
-                || field instanceof no.sikt.graphitron.rewrite.model.ChildField.SingleRecordIdFieldFromReturning
-                || field instanceof no.sikt.graphitron.rewrite.model.ChildField.SingleRecordTableFieldFromReturning;
+                || field instanceof no.sikt.graphitron.rewrite.model.ChildField.SingleRecordIdFieldFromReturning;
             if (isPayloadData) {
                 out.put(field.parentTypeName(), field.name());
             }
@@ -209,10 +208,6 @@ public final class CatalogBuilder {
                 new FieldClassification.SingleRecordId(
                     f.sourceKey() != null && f.sourceKey().target() != null
                         ? f.sourceKey().target().tableName() : null);
-            case ChildField.SingleRecordTableFieldFromReturning f ->
-                new FieldClassification.SingleRecordTableFromReturning(
-                    f.returnType() != null && f.returnType().table() != null
-                        ? f.returnType().table().tableName() : null);
             case ChildField.TableField f ->
                 new FieldClassification.TableTarget(
                     targetTableName(f.returnType()), fkSteps(f.joinPath()), false, false);

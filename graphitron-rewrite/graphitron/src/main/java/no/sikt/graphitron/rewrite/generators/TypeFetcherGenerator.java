@@ -209,7 +209,6 @@ public class TypeFetcherGenerator {
         ChildField.SingleRecordTableField.class,
         ChildField.SingleRecordIdField.class,
         ChildField.SingleRecordIdFieldFromReturning.class,
-        ChildField.SingleRecordTableFieldFromReturning.class,
         ChildField.TableMethodField.class,
         ChildField.RecordTableMethodField.class,
         QueryField.QueryTableInterfaceField.class,
@@ -502,17 +501,14 @@ public class TypeFetcherGenerator {
                 // response SELECT outside the DML transaction). The wiring happens in
                 // FetcherRegistrationsEmitter.registrationEntry.
                 case ChildField.SingleRecordTableField ignored  -> { }
-                // R156 — both SingleRecordIdFieldFromReturning and SingleRecordTableFieldFromReturning
-                // emit their DataFetcher value inline through FetcherEmitter (PK column read +
-                // optional NodeId encode for Id; sealed switch over PkResolution arms for Table).
-                // No per-field fetcher method is emitted here; wiring lands in
-                // FetcherRegistrationsEmitter.
+                // R156 — SingleRecordIdFieldFromReturning emits its DataFetcher value inline through
+                // FetcherEmitter (PK column read + optional NodeId encode). No per-field fetcher
+                // method is emitted here; wiring lands in FetcherRegistrationsEmitter.
                 case ChildField.SingleRecordIdFieldFromReturning ignored -> { }
                 // R275 — the @service-carrier ID sibling: same inline FetcherEmitter emission
                 // (Outcome/source narrowing + node-key read + NodeId encode), no per-field
                 // fetcher method.
                 case ChildField.SingleRecordIdField ignored -> { }
-                case ChildField.SingleRecordTableFieldFromReturning ignored -> { }
                 case ChildField.InterfaceField f -> {
                     if (f.returnType().wrapper() instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.Connection conn) {
                         MultiTablePolymorphicEmitter
@@ -4352,7 +4348,6 @@ public class TypeFetcherGenerator {
      * The enclosing {@link #buildMutationDeletePayloadFetcher} adds {@code .returningResult(pkCols)} so
      * the fetcher's value (consumed by the per-field
      * {@link no.sikt.graphitron.rewrite.model.ChildField.SingleRecordIdFieldFromReturning}
-     * or {@link no.sikt.graphitron.rewrite.model.ChildField.SingleRecordTableFieldFromReturning}
      * carrier) is a PK-only RETURNING Record.
      */
     private static DmlChainAndGuards buildRecordDeleteChain(

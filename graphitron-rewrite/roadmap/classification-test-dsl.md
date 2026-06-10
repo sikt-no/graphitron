@@ -522,8 +522,8 @@ single big-bang conversion:
    input-field leaves stay on the enum truth table. The long tail that had retired under the union net
    without a corpus fixture was swept in (the swept fixtures run from the `reference-and-computed`
    example onward in `ClassifiedCorpus`, tested but mostly not prose-featured), the harness grew to read
-   `@classifiedType` off `scalar` definitions, and `SingleRecordTableFieldFromReturning` is carried in
-   `NO_CASE_REQUIRED` (the adapter refuses it; illegal, tracked for removal by R287). See
+   `@classifiedType` off `scalar` definitions, and `SingleRecordTableFieldFromReturning` was carried in
+   `NO_CASE_REQUIRED` (the adapter refused it; illegal, since removed with the leaf by R287). See
    [the inventory's slice-3 closeout](audits/classification-test-dsl-inventory.md).
 
    **Doc-quality pass (landed 2026-06-10).** The slice-3-adjacent cleanup of

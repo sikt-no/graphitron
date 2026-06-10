@@ -436,7 +436,7 @@ type `Film`: producer `[Dml, Query]`, `mapping = Table` (`MutationInsertTableFie
 
 | `@mutation(typeName: INSERT)`, returning `ID` or a `@table` type | `MutationInsertTableField` | Fetcher method ; `[Dml, Query]` write + read-back SELECT
 | `@mutation(typeName: UPDATE)`, returning `ID` or a `@table` type | `MutationUpdateTableField` | Fetcher method ; `[Dml, Query]` write + read-back SELECT
-| `@mutation(typeName: DELETE)`, returning `ID` or a `@table` type | `MutationDeleteTableField` | Fetcher method ; `[Dml, Query]` write + read-back SELECT
+| `@mutation(typeName: DELETE)`, returning `ID` | `MutationDeleteTableField` | Fetcher method ; `[Dml]` write + encoded-PK off `RETURNING` (no read-back ; the row is gone)
 | `@mutation(typeName: UPSERT)`, returning `ID` or a `@table` type | `MutationUpsertTableField` | Rejected at classification ; UPSERT generation gated pending R145
 | `@mutation(typeName: INSERT\|UPDATE\|DELETE\|UPSERT)`, returning a single-record `@record(record:{className:...})`-or-bare-SDL carrier (one recognized data field, optional errors-shaped field) | `MutationDmlRecordField` | Two-step fetcher: per-kind DML chain inside `transactionResult` with PK-only `RETURNING`, plus a follow-up data-field SELECT outside the transaction
 | `@mutation(typeName: INSERT\|UPDATE)` with bulk `@table` input, returning a single-record carrier with a list-shaped `@table`-element data field | `MutationBulkDmlRecordField` | Per-row DML inside one `transactionResult`, accumulating a typed `Result<RecordN<PK>>` in input order

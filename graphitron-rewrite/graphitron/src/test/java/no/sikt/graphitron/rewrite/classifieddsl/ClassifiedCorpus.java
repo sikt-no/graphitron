@@ -585,22 +585,24 @@ public final class ClassifiedCorpus {
             """),
 
         /*
-         * DML payload-carrier mutations (UPDATE / DELETE and their bulk siblings, plus the bulk INSERT
-         * carrier). Each returns a plain object wrapping one @table data field and exposes the affected
-         * rows as a record, so the mutation field is producer [Dml], mapping Record
-         * (Mutation{Update,Delete}PayloadField, their MutationBulk* siblings, and MutationBulkDmlRecordField
-         * for the bulk INSERT carrier). Distinct payload types keep the per-kind carrier scans isolated.
+         * DML payload-carrier mutations (UPDATE and its bulk sibling, plus the bulk INSERT carrier).
+         * Each returns a plain object wrapping one @table data field and exposes the affected rows as a
+         * record, so the mutation field is producer [Dml], mapping Record (MutationUpdatePayloadField,
+         * MutationBulkUpdatePayloadField, and MutationBulkDmlRecordField for the bulk INSERT carrier).
+         * Distinct payload types keep the per-kind carrier scans isolated. The DELETE payload siblings
+         * (MutationDeletePayloadField / MutationBulkDeletePayloadField) are not corpus-covered: post-R287
+         * their only admissible data field is an ID-element (a @table-element projection off a deleted
+         * row is impossible), which needs the synthesised __NODE_TYPE_ID metadata absent from the corpus
+         * catalog; they are covered by MutationDmlNodeIdClassificationTest under the nodeidfixture and
+         * carried in VariantCoverageTest's NO_CASE_REQUIRED.
          */
         new Example("dml-payloads", """
             type Film @table(name: "film") { title: String }
             type FilmInsertBulkPayload { films: [Film!] }
             type FilmUpdatePayload { film: Film }
             type FilmUpdateBulkPayload { films: [Film!] }
-            type FilmDeletePayload { film: Film }
-            type FilmDeleteBulkPayload { films: [Film!] }
             input FilmCreateInput @table(name: "film") { title: String }
             input FilmUpdateInput @table(name: "film") { filmId: Int! @field(name: "film_id") title: String }
-            input FilmDeleteInput @table(name: "film") { filmId: Int! @field(name: "film_id") }
             type Query { x: String }
             type Mutation {
               createFilmsPayload(in: [FilmCreateInput!]!): FilmInsertBulkPayload
@@ -611,12 +613,6 @@ public final class ClassifiedCorpus {
                 @classified(producer: [Dml], mapping: Record)
               updateFilmsPayload(in: [FilmUpdateInput!]!): FilmUpdateBulkPayload
                 @mutation(typeName: UPDATE)
-                @classified(producer: [Dml], mapping: Record)
-              deleteFilmPayload(in: FilmDeleteInput!): FilmDeletePayload
-                @mutation(typeName: DELETE)
-                @classified(producer: [Dml], mapping: Record)
-              deleteFilmsPayload(in: [FilmDeleteInput!]!): FilmDeleteBulkPayload
-                @mutation(typeName: DELETE)
                 @classified(producer: [Dml], mapping: Record)
             }
             """),
@@ -641,12 +637,14 @@ public final class ClassifiedCorpus {
             "mutation { createFilm { title } }"),
 
         /*
-         * The remaining root mutation forms (INSERT is the `dml` example above). UPDATE and DELETE are
-         * DML writes that project the affected @table row back, so they share the INSERT's [Dml, Query]
-         * / Table verdict (MutationUpdateTableField / MutationDeleteTableField, both DmlTableField leaves
-         * whose tuple is read off the return-expression shape). DELETE admits two ways onto the same
-         * verdict: a PK-covering filter input (`deleteFilm`) or an explicit `multiRow: true` broadcast
-         * over a non-PK filter (`deleteFilmsBroadcast`). An @service mutation re-queries the catalog for
+         * The remaining root mutation forms (INSERT is the `dml` example above). UPDATE is a DML write
+         * that projects the affected @table row back, so it shares the INSERT's [Dml, Query] / Table
+         * verdict (MutationUpdateTableField). DELETE (R287) cannot project a @table (the row is gone;
+         * RETURNING carries only the PK), so it tops out at an encoded-ID return: producer [Dml],
+         * mapping Column (MutationDeleteTableField with an Encoded* return-expression arm, no follow-up
+         * Query). DELETE admits two ways onto the same verdict: a PK-covering filter input (`deleteFilm`)
+         * or an explicit `multiRow: true` broadcast over a non-PK filter (`deleteFilmsBroadcast`). An
+         * @service mutation re-queries the catalog for
          * its @table return (MutationServiceTableField, [Service, Query] / Table) or materializes a
          * non-table @record (MutationServiceRecordField, [Service] / Record). A DML payload carrier (a
          * plain object wrapping one @table data field) exposes the RETURNING rows as a record, so the
@@ -656,7 +654,8 @@ public final class ClassifiedCorpus {
          * new dimensional lessons (their input objects render fine since hardening item 3).
          */
         new Example("mutation-roots", """
-            type Film @table(name: "film") { title: String }
+            interface Node { id: ID! }
+            type Film implements Node @table(name: "film") @node { id: ID! @nodeId title: String }
             type FilmDetails @record { title: String }
             type FilmPayload { film: Film @classified(producer: [Query], mapping: Table) }
             input FilmKeyInput @table(name: "film") { filmId: Int! @field(name: "film_id") }
@@ -668,12 +667,12 @@ public final class ClassifiedCorpus {
               updateFilm(in: FilmUpdateInput!): Film
                 @mutation(typeName: UPDATE)
                 @classified(producer: [Dml, Query], mapping: Table)
-              deleteFilm(in: FilmKeyInput!): Film
+              deleteFilm(in: FilmKeyInput!): ID
                 @mutation(typeName: DELETE)
-                @classified(producer: [Dml, Query], mapping: Table)
-              deleteFilmsBroadcast(in: FilmTitleInput!): Film
+                @classified(producer: [Dml], mapping: Column)
+              deleteFilmsBroadcast(in: FilmTitleInput!): ID
                 @mutation(typeName: DELETE, multiRow: true)
-                @classified(producer: [Dml, Query], mapping: Table)
+                @classified(producer: [Dml], mapping: Column)
               externalMutation: Film
                 @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "runFilm"})
                 @classified(producer: [Service, Query], mapping: Table)

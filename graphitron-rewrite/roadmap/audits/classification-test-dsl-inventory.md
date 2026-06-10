@@ -138,11 +138,11 @@ gate warns, never proved the corpus alone carried each verdict. Slice 3 closes t
   grew to read `@classifiedType` off `scalar` definitions (graphql-java keeps scalars out of
   `registry.types()`), and `ClassifiedDslTest` now admits type-only fixtures (a `@classifiedType`
   with no `@classified` field).
-- **One owned leaf is `NO_CASE_REQUIRED`, not corpus-covered:**
-  `ChildField.SingleRecordTableFieldFromReturning`. `LeafTupleAdapter` *refuses* it (a full `@table`
+- **One owned leaf was `NO_CASE_REQUIRED`, not corpus-covered (resolved by R287):**
+  `ChildField.SingleRecordTableFieldFromReturning`. `LeafTupleAdapter` *refused* it (a full `@table`
   projection off a DELETE's PK-only RETURNING record has no valid `(producer, mapping)` verdict, the
-  row is gone), so no `@classified` coordinate can land on it. It is illegal and tracked for removal
-  by R287; the allowlist entry and the leaf go together when R287 lands.
+  row is gone), so no `@classified` coordinate could land on it. R287 removed the leaf, its adapter
+  refusal arm, and the allowlist entry together.
 
 This is the milestone the spec's slice 3 names (full successful output-field and type corpus
 coverage), and the point at which R279's merge gate may adopt the corpus as its primary tier for the

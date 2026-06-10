@@ -138,10 +138,10 @@ class MutationDmlNodeIdClassificationTest {
         // parent_node has PK pk_id and a separate UNIQUE on alt_key. This is the UK execution case
         // R246 deferred for UPDATE, proven here at the classification tier for DELETE.
         var deleteSchema = TestSchemaHelper.buildSchema("""
-            type ParentNode @table(name: "parent_node") { pkId: String! @field(name: "pk_id") }
+            type ParentNode implements Node @table(name: "parent_node") @node { id: ID! @nodeId pkId: String! @field(name: "pk_id") }
             input DeleteParentNodeInput @table(name: "parent_node") { altKey: String! @field(name: "alt_key") }
             type Query { x: String }
-            type Mutation { deleteParentNode(in: DeleteParentNodeInput!): ParentNode @mutation(typeName: DELETE) }
+            type Mutation { deleteParentNode(in: DeleteParentNodeInput!): ID @mutation(typeName: DELETE) }
             """, NODEID_CTX);
         var del = (MutationField.MutationDeleteTableField) deleteSchema.field("Mutation", "deleteParentNode");
         var deleteRows = (no.sikt.graphitron.rewrite.model.DeleteRows.Identified) del.deleteRows();
@@ -528,7 +528,8 @@ class MutationDmlNodeIdClassificationTest {
         // resolver builds one DecodedRecordGroup with 3 RecordBinding slots.
         var schema = TestSchemaHelper.buildSchema("""
             type ReorderedPkParent implements Node @table(name: "reordered_pk_parent") @node { id: ID! }
-            type ReorderedChild @table(name: "reordered_fk_child") {
+            type ReorderedChild implements Node @table(name: "reordered_fk_child") @node {
+                id: ID! @nodeId
                 childId: String! @field(name: "child_id")
             }
             input DeleteReorderedChildInput @table(name: "reordered_fk_child") {
@@ -537,7 +538,7 @@ class MutationDmlNodeIdClassificationTest {
             }
             type Query { x: String }
             type Mutation {
-                deleteReorderedChild(in: DeleteReorderedChildInput!): ReorderedChild @mutation(typeName: DELETE)
+                deleteReorderedChild(in: DeleteReorderedChildInput!): ID @mutation(typeName: DELETE)
             }
             """, NODEID_CTX);
 

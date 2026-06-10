@@ -139,7 +139,6 @@ public class GraphitronSchemaValidator {
             case no.sikt.graphitron.rewrite.model.ChildField.SingleRecordTableField f  -> {} // R75 Phase 1 — narrow TableBoundReturnType component + SourceKey compact-constructor invariant pin the structural shape; admission-time checks (table-equality, DELETE rejection) live in the mutation-field classifier
             case no.sikt.graphitron.rewrite.model.ChildField.SingleRecordIdField f -> {} // R275 — narrow ScalarReturnType + SourceKey compact-constructor invariants (ResultRowWalk, Wrap.TableRecord) pin the structural shape; admission-time checks (encoder-pins-to-producer-table, @node resolution) live in the serviceEmitted classifier branch
             case no.sikt.graphitron.rewrite.model.ChildField.SingleRecordIdFieldFromReturning f -> {} // R156 — narrow ScalarReturnType component + NodeIdEncodeKeys compaction; admission-time checks (wrapper shape, encoder-pins-to-input-@table, DELETE-only) live in the @mutation classifier
-            case no.sikt.graphitron.rewrite.model.ChildField.SingleRecordTableFieldFromReturning f -> {} // R156 — narrow TableBoundReturnType + List<PkResolution> projection from BuildContext.classifyDeleteTableProjection; admission-time checks (no NonPkNonNullable/ServiceField/UnsupportedField arms, DELETE-only) live in the @mutation classifier
             case no.sikt.graphitron.rewrite.model.ChildField.RecordField f             -> validateRecordField(f, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.ComputedField f           -> validateComputedField(f, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.PropertyField f           -> validatePropertyField(f, errors);
@@ -1058,8 +1057,6 @@ public class GraphitronSchemaValidator {
      *       {@code source.value1()} / {@code record.get(<PK>)} read).</li>
      *   <li>{@code SingleRecordIdFieldFromReturning} → {@code buildSingleRecordIdFromReturningFetcherValue}
      *       (explicit guard before encoder dispatch).</li>
-     *   <li>{@code SingleRecordTableFieldFromReturning} → {@code buildSingleRecordTableFromReturningFetcherValue}
-     *       (explicit guard before PK copy onto the synthesised Record).</li>
      * </ul>
      *
      * <p>Adding a variant to this set requires the matching emitter site to honor the guard;
@@ -1067,8 +1064,7 @@ public class GraphitronSchemaValidator {
      */
     private static final java.util.Set<Class<? extends GraphitronField>> LOCAL_CONTEXT_GUARDED_DATA_CHANNEL_VARIANTS = java.util.Set.of(
         ChildField.SingleRecordTableField.class,
-        ChildField.SingleRecordIdFieldFromReturning.class,
-        ChildField.SingleRecordTableFieldFromReturning.class
+        ChildField.SingleRecordIdFieldFromReturning.class
     );
 
     /**

@@ -188,6 +188,12 @@ final class MutationInputResolver {
                     + s.returnTypeName() + "' is not yet supported; use ID or a @table type";
             }
             case ReturnTypeRef.TableBoundReturnType tb -> {
+                if (kind == DmlKind.DELETE) {
+                    yield "@mutation(typeName: DELETE) return type '" + tb.returnTypeName()
+                        + "' (@table) is not supported: the row is gone after the statement, and "
+                        + "RETURNING carries only the primary key, so a full @table projection is "
+                        + "impossible; return ID";
+                }
                 if (tb.wrapper() instanceof FieldWrapper.Connection) {
                     yield "@mutation(typeName: " + kind + ") return type '"
                         + tb.returnTypeName() + "' (Connection) is not yet supported; use ID or a @table type";

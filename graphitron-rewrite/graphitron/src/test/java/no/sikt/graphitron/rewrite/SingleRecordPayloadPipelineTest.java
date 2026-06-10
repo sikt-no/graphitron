@@ -127,23 +127,20 @@ class SingleRecordPayloadPipelineTest {
             .isInstanceOf(expectedSingleLeaf(kind));
     }
 
-    // ===== DELETE-with-carrier admission (R156 / R266) =====
+    // ===== DELETE-with-carrier admission (R156 / R266 / R287) =====
 
     @Test
-    void payload_withDeleteAndProjectableElement_admitsAsMutationDeletePayloadField() {
-        // R156: DELETE-with-carrier admits when the element type's fields all classify into
-        // admissible PerFieldOutcome arms. `Film @table { title: String }` has only one field,
-        // nullable non-PK, which classifies into PerFieldOutcome.NonPkNullable → admits.
-        // R266: the payload-returning DELETE classifies as MutationDeletePayloadField (carved off
-        // MutationDmlRecordField onto the DeleteRows walker carrier; the leaf identity is the kind,
-        // so there is no kind() slot). The per-field data carrier on `FilmPayload.film` is still
-        // registered as SingleRecordTableFieldFromReturning by the DELETE classifier's reclassify.
+    void payload_withDeleteAndTableElement_returnsRejected() {
+        // R287: a payload-returning DELETE whose data field is a @table-element is rejected. The
+        // row is gone after the statement and RETURNING carries only the primary key, so a full
+        // @table projection is impossible; the classifier rejects DELETE -> @table at authoring
+        // time and points the author at the ID-typed carrier shape (which echoes the deleted PKs).
         var schema = TestSchemaHelper.buildSchema(payloadDmlSingleInput(DmlKind.DELETE, "type FilmPayload { film: Film }"));
         var mutField = schema.field("Mutation", mutationName(DmlKind.DELETE));
-        assertThat(mutField).isInstanceOf(MutationField.MutationDeletePayloadField.class);
-        var dataFieldClassification = schema.field("FilmPayload", "film");
-        assertThat(dataFieldClassification)
-            .isInstanceOf(no.sikt.graphitron.rewrite.model.ChildField.SingleRecordTableFieldFromReturning.class);
+        assertThat(mutField).isInstanceOf(UnclassifiedField.class);
+        var reason = ((UnclassifiedField) mutField).rejection().message();
+        assertThat(reason).contains(
+            "@table-element data field", "RETURNING carries only the primary key", "ID-typed data field");
     }
 
     // ===== Structural carrier-shape rejection (R141: unrecognized carrier-field shape) =====

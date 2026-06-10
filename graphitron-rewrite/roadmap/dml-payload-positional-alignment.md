@@ -132,11 +132,14 @@ was produced must be `null`."
    row carries idx + encoded PK columns or all-nulls for misses); the
    fetcher reads PK columns nullable and emits `null` at any all-null
    slot. Encoder is invoked only on non-null slots.
-3. **DELETE Table arm emit rewrite.** Same `VALUES`-JOIN substrate for
+3. **DELETE Table arm emit rewrite.** ~~Same `VALUES`-JOIN substrate for
    `buildSingleRecordTableFromReturningFetcherValue`; the synthesized
    per-row `Record` is `null` at miss positions; per-field
    `ColumnFetcher`s already null-propagate, so no per-field changes are
-   needed beyond admitting `null` source rows.
+   needed beyond admitting `null` source rows.~~ **Obsolete (R287):** the
+   DELETE -> `@table` carrier and `buildSingleRecordTableFromReturningFetcherValue`
+   were removed (DELETE cannot project a `@table`, the row is gone); only
+   the Id arm (step 2) remains for DELETE.
 4. **UPDATE / UPSERT verb-arm admission.** Lift the carrier-shape permits
    from `MutationUpdateTableField` / `MutationUpsertTableField` (and their
    bulk siblings) to admit payload-returning carriers symmetric to the
@@ -198,18 +201,19 @@ was produced must be `null`."
 - Dialect-capability gating for `RETURNING`. The existing
   `dml-dialect-requirement-on-model` (R63) work owns that surface; the
   per-row INSERT fallback in step 5 is dialect-neutral.
-- Cross-arm consolidation of the `SingleRecordTableFieldFromReturning`
-  and `SingleRecordIdFieldFromReturning` permits. R242 reshapes both
-  emitters but does not collapse them; that's a separable cleanup.
+- Cross-arm consolidation of the `SingleRecordIdFieldFromReturning`
+  permit. (R287 removed the sibling `SingleRecordTableFieldFromReturning`:
+  DELETE cannot project a `@table`, the row is gone after the statement.)
 
 ---
 
 ## Cross-references
 
 - **R156** introduced the DELETE payload-returning carrier and the
-  PK-echo-of-actually-deleted-rows semantics that R242 revises. Both
-  emitter methods this Spec rewrites (`buildSingleRecordIdFromReturningFetcherValue`,
-  `buildSingleRecordTableFromReturningFetcherValue`) were introduced there.
+  PK-echo-of-actually-deleted-rows semantics that R242 revises.
+  `buildSingleRecordIdFromReturningFetcherValue` was introduced there.
+  (R287 removed the sibling `buildSingleRecordTableFromReturningFetcherValue`
+  and the DELETE -> `@table` carrier; only the Id arm survives for DELETE.)
 - **R141** is the closest existing input-order-preservation pattern
   (PK-keyed-map walk); R242 generalizes to `VALUES`-JOIN so all four
   verbs can share one mechanism, and so `idx` can be the scatter key on

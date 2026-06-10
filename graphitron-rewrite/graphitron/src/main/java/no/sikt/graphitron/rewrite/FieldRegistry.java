@@ -68,8 +68,7 @@ public final class FieldRegistry {
      * DELETE-carrier's data field may already be classified by the standard per-field classifier
      * (e.g. as a ColumnField on the payload SDL) by the time the @mutation classifier visits the
      * parent; this method swaps in the DELETE-specific carrier
-     * ({@link no.sikt.graphitron.rewrite.model.ChildField.SingleRecordIdFieldFromReturning} or
-     * {@link no.sikt.graphitron.rewrite.model.ChildField.SingleRecordTableFieldFromReturning}).
+     * ({@link no.sikt.graphitron.rewrite.model.ChildField.SingleRecordIdFieldFromReturning}).
      *
      * <p>{@code expectedExistingClass} optionally pins a structural guard: when non-null and an
      * existing entry is present, the reclassification fails fast if the existing entry is not an

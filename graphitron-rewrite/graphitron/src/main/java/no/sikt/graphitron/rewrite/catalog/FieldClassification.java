@@ -60,7 +60,6 @@ public sealed interface FieldClassification
             FieldClassification.SingleRecordTable,
             FieldClassification.SingleRecordId,
             FieldClassification.SingleRecordIdFromReturning,
-            FieldClassification.SingleRecordTableFromReturning,
             FieldClassification.QueryTable,
             FieldClassification.QueryTableMethod,
             FieldClassification.QueryNode,
@@ -146,7 +145,6 @@ public sealed interface FieldClassification
                  SingleRecordTable _,
                  SingleRecordId _,
                  SingleRecordIdFromReturning _,
-                 SingleRecordTableFromReturning _,
                  QueryTable _,
                  QueryTableMethod _,
                  QueryNode _,
@@ -369,13 +367,6 @@ public sealed interface FieldClassification
      * follow-up SELECT. Covers {@code ChildField.SingleRecordIdField}.
      */
     record SingleRecordId(String tableName) implements FieldClassification {}
-
-    /**
-     * The single data field on a payload-returning DELETE carrier where the data field
-     * is a {@code @table}-element projected from the PK-only RETURNING record. Covers
-     * {@code ChildField.SingleRecordTableFieldFromReturning}.
-     */
-    record SingleRecordTableFromReturning(String tableName) implements FieldClassification {}
 
     // ===== Query fields =====
 
