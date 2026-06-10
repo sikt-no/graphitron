@@ -5296,15 +5296,12 @@ class GraphitronSchemaBuilderTest {
             @Override public Set<Class<?>> variants() { return Set.of(NodeType.class); }
         },
 
-        ROOT_TYPE(
-            "Query and Mutation root types → RootType",
-            """
-            type Film @table(name: "film") { title: String }
-            type Query { film: Film }
-            """,
-            schema -> assertThat(schema.type("Query")).isInstanceOf(RootType.class)) {
-            @Override public Set<Class<?>> variants() { return Set.of(RootType.class); }
-        },
+        // R281 slice 2: the pure `Query / Mutation root -> RootType` verdict (a bare isInstanceOf
+        // assertion, no slot detail) migrated to the spec-by-example corpus, where the `catalog`
+        // ClassifiedCorpus example's Query is asserted via @classifiedType(as: RootType). Corpus-only
+        // (the @classifiedType axis is asserted directly; the renderer strips it, so the catalog doc
+        // example is unchanged). The RootType leaf stays covered by the corpus and the
+        // typeClassificationProjectionsCarryTableNodeAndRootShapes projection test below.
 
         ARG_MAPPING_INERT_ON_ENUM(
             "R53: argMapping on @enum → UnclassifiedType (structural-inertness rejection)",
@@ -5781,19 +5778,12 @@ class GraphitronSchemaBuilderTest {
             schema -> assertThat(((UnclassifiedType) schema.type("BadError")).reason())
                 .contains("message")),
 
-        ADMIT_EXTRA_FIELD(
-            "@error type with field beyond path/message → ErrorType (per-handler accessor check fires on the carrier, not the type)",
-            """
-            enum Severity { LOW HIGH }
-            type SomeError @error(handlers: [{handler: GENERIC, className: "java.lang.IllegalArgumentException"}]) {
-                path: [String!]!
-                message: String!
-                severity: Severity!
-            }
-            type Query { x: String }
-            """,
-            schema -> assertThat(schema.type("SomeError"))
-                .isInstanceOf(no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.class)),
+        // R281 slice 2: the pure `@error with a field beyond path/message -> ErrorType` admission
+        // nuance (a bare isInstanceOf assertion) migrated to the spec-by-example corpus as the
+        // `error-type` ClassifiedCorpus example's ExtraFieldError (a `severity` field beyond the
+        // mandatory pair), asserted via @classifiedType(as: ErrorType). Corpus-only. The ErrorType leaf
+        // stays covered by the corpus, the many slot-asserting ErrorTypeCase rows, and the projection
+        // test below.
 
         REJECT_WRONG_PATH_SHAPE(
             "@error type with path: String (not [String!]!) → UnclassifiedType",
@@ -5849,25 +5839,14 @@ class GraphitronSchemaBuilderTest {
                 assertThat(t.reason())
                     .contains("java.lang.String")
                     .contains("Throwable");
-            }),
+            });
 
-        // R12 source-direct dispatch: @error has no developer-supplied data class. @record and
-        // R276/D1: @record is deprecated and ignored, so co-locating it on an @error type is no
-        // longer a conflict — @error wins and @record is dropped. (The matched throwable is the
-        // runtime source for an @error type's fields; @record would name a class the classifier
-        // never instantiates and the runtime never reads, so it is simply ignored.)
-        ERROR_PLUS_RECORD_IGNORES_RECORD(
-            "@error co-located with @record → ErrorType; @record ignored (D1), not a conflict",
-            """
-            type ValidationError
-                @error(handlers: [{handler: VALIDATION}])
-                @record(record: {className: "java.lang.Object"}) {
-                path: [String!]!
-                message: String!
-            }
-            type Query { x: String }
-            """,
-            schema -> assertThat(schema.type("ValidationError")).isInstanceOf(ErrorType.class));
+        // R281 slice 2: the pure `@error co-located with @record -> ErrorType` admission nuance (the
+        // R276/D1 precedence rule: @record is deprecated and silently ignored on an @error type,
+        // @error wins; a bare isInstanceOf assertion) migrated to the spec-by-example corpus as the
+        // `error-type` ClassifiedCorpus example's RecordIgnoredError (an @error + @record type),
+        // asserted via @classifiedType(as: ErrorType). Corpus-only. The ErrorType leaf stays covered
+        // by the corpus, the slot-asserting ErrorTypeCase rows, and the projection test below.
 
         final String sdl;
         final Consumer<GraphitronSchema> assertions;
@@ -9597,19 +9576,14 @@ class GraphitronSchemaBuilderTest {
                 assertThat(t.schemaType()).isNotNull();
                 assertThat(t.schemaType().getName()).isEqualTo("Inner");
                 assertThat(t.schemaType().getFieldDefinition("title")).isNotNull();
-            }),
-
-        DOES_NOT_OVERRIDE_DIRECTIVE_CLASSIFICATION(
-            "@table-annotated types still classify as TableType, not NestingType",
-            """
-            type Film @table(name: "film") { id: ID! }
-            type Query { f: Film }
-            """,
-            schema -> {
-                assertThat(schema.type("Film"))
-                    .isInstanceOf(TableType.class)
-                    .isNotInstanceOf(no.sikt.graphitron.rewrite.model.GraphitronType.NestingType.class);
             });
+
+        // R281 slice 2: the `@table type classifies as TableType, not NestingType` robustness verdict
+        // migrated to the spec-by-example corpus. A type's classification is a single exclusive
+        // verdict, so the corpus's positive @classifiedType(as: TableType) on the `catalog` example's
+        // @table Film subsumes the bare isNotInstanceOf(NestingType) negative this row carried. The
+        // TableType leaf stays covered by the corpus, by TABLE_NAME_DEFAULTS_TO_LOWERCASE_TYPE_NAME,
+        // and by the projection test; NestingType stays covered by NESTED_UNDER_TABLE_PARENT above.
 
         final String sdl;
         final Consumer<GraphitronSchema> assertions;

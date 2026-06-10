@@ -39,7 +39,7 @@ public final class ClassifiedCorpus {
     private static final List<Example> EXAMPLES = List.of(
         /* Catalog side: a root query, a Relay connection, an inline column, and a TableType. */
         new Example("catalog", """
-            type Query {
+            type Query @classifiedType(as: RootType) {
               film: Film @classified(producer: [Query], mapping: Table)
               films: [Film!]! @asConnection @classified(producer: [Query], mapping: TableConnection)
             }
@@ -248,6 +248,33 @@ public final class ClassifiedCorpus {
             type MyError @error(handlers: [{handler: GENERIC, className: "java.lang.IllegalArgumentException"}]) {
               path: [String!]! @classified(producer: [], mapping: Field)
               message: String! @classified(producer: [], mapping: Field)
+            }
+            type Query { x: String }
+            """),
+
+        /*
+         * @error type-verdict admission nuances. An @error type classifies as ErrorType (the GraphQL
+         * type whose @error contract carries the handler set); two admission edges are pinned here. A
+         * field beyond the mandatory path/message (`severity`) does not break the verdict: the
+         * per-handler accessor check fires on the carrier, not the @error type, so the type stays
+         * ErrorType. And an @error co-located with @record stays ErrorType with the @record silently
+         * ignored (the D1 precedence rule), not a conflict. Corpus-only: the @classifiedType axis is
+         * asserted directly; `path` doubles as the fixtures' required field coordinate (inline / Field).
+         */
+        new Example("error-type", """
+            enum Severity { LOW HIGH }
+            type ExtraFieldError @error(handlers: [{handler: GENERIC, className: "java.lang.IllegalArgumentException"}])
+                @classifiedType(as: ErrorType) {
+              path: [String!]! @classified(producer: [], mapping: Field)
+              message: String!
+              severity: Severity!
+            }
+            type RecordIgnoredError
+                @error(handlers: [{handler: VALIDATION}])
+                @record(record: {className: "java.lang.Object"})
+                @classifiedType(as: ErrorType) {
+              path: [String!]!
+              message: String!
             }
             type Query { x: String }
             """),
