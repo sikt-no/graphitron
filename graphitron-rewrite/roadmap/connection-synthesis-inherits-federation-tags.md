@@ -1,7 +1,7 @@
 ---
 id: R295
-title: "Synthesised connection/edge types must inherit the federation tags of the @asConnection carrier field"
-status: Backlog
+title: Synthesised connection/edge types must inherit the federation tags of the @asConnection carrier field
+status: Spec
 bucket: bug
 priority: 3
 theme: pagination
@@ -23,26 +23,30 @@ Legacy note: legacy `MakeConnections` stamped the carrier's source location onto
 ## Expected behaviour
 
 * Synthesised Connection and Edge object types inherit every `@tag` applied to the carrier field, value for value (the directive is repeatable; copy all of them).
-* The synthesised `PageInfo` carries the union of tags across all promoted carriers, mirroring the existing `pageInfoShareable |=` fold: one `PageInfo` serves every connection, so a contract that keeps any tagged connection needs it in scope.
-* Structural connections (SDL-declared Connection/Edge types) and an SDL-declared `PageInfo` stay untouched; the author owns the tags there.
-* Carriers sharing one connection name through `@asConnection(connectionName:)` (possible until R208 retires the override): the synthesised type should carry the union of the carriers' tags. The `shareable` flag currently resolves first-write-wins on the type and only folds for `PageInfo`; for tags, prefer the union, since a missing tag is a composition break rather than a redundancy hint. If the union requires a pre-pass that feels disproportionate ahead of R208, first-write-wins consistent with `shareable` is an acceptable interim, recorded as a known gap.
+* The tag source is per promotion arm, mirroring how `shareable` is already read: the directive-driven arm reads the carrier field's tags; the structural arm reads the SDL-declared Connection type's own tags. Both arms feed the synthesised `PageInfo`, which carries the union of tags across all promoted connections, exactly as the `pageInfoShareable |=` fold does. An SDL-declared Connection tagged `@tag(name: "x")` with no SDL `PageInfo` hits the same composition break this item fixes, so the structural arm cannot be excluded from the union.
+* Structural Connection/Edge types themselves and an SDL-declared `PageInfo` stay untouched; the author owns the tags there. Their tags still feed the synthesised PageInfo union per the previous bullet.
+* Carriers sharing one connection name through `@asConnection(connectionName:)` (possible until R208 retires the override): the synthesised type carries the union of the carriers' tags. This is pinned, not open: a missing tag is a composition break, and the union is cheap. At the dedupe site the existing registry entry is already in hand and `ctx.typeRegistry.enrich` exists, so the union is a transform of `existing.schemaType()` adding the missing `@tag` applications (plus the matching Edge); no pre-pass needed.
 
 ## Open question for review
 
-Type-level `@tag` on the synthesised types is the minimal shape that satisfies contract composition, and matches how the bug is framed. The legacy flow effectively tagged the synthesised types' fields instead. Decide whether type-level tags alone are sufficient for the contract configurations our subgraphs use, or whether fields (`edges`, `nodes`, `pageInfo`, `totalCount`, `cursor`, `node`) need the tags too.
+Type-level `@tag` on the synthesised types is the minimal shape that satisfies contract composition, and matches how the bug is framed. The legacy flow effectively tagged the synthesised types' fields instead; note that `TagApplier`'s emission scope (see its class javadoc: type declarations are never tagged, only fields, input fields, enum values, args, and unions) means that under `<schemaInput tag>` the synthesised types would carry the only type-level tags in the graph, while field-level is what legacy contracts were validated against. Decide whether type-level tags alone are sufficient for the contract configurations our subgraphs use (verify against a real contract build, per the first-client check), or whether the synthesised types' fields (`edges`, `nodes`, `pageInfo`, `totalCount`, `cursor`, `node`) need the tags too.
 
 ## Implementation
 
-* `ConnectionPromoter.promotionFor`: collect the carrier's `@tag` applied directives and carry them on `ConnectionPromotion` next to `shareable`.
+* `ConnectionPromoter.promotionFor`: collect the arm-appropriate `@tag` applied directives (carrier field on the directive arm, Connection type declaration on the structural arm) and carry them on `ConnectionPromotion` next to `shareable`.
 * `buildSynthesisedConnection` / `buildSynthesisedEdge` / `buildSynthesisedPageInfo`: apply the collected tags beside the existing `shareable` arm.
-* No model-record changes expected: nothing reads `shareable()` off `GraphitronType.ConnectionType` / `EdgeType` / `PageInfoType` today; emission goes through `schemaType()`. The tagged schema forms flow into both output surfaces: the assembled schema (`rebuildAssembledForConnections` registers them via `additionalType`, which is what the federation SDL emission prints) and the generated runtime schema (`ObjectTypeGenerator` emits from `schemaType()` and `AppliedDirectiveEmitter` walks applied directives generically). Thread tags onto the records only if a consumer turns up.
+* Dedupe site (`promote`, the early-`continue` on an existing `ConnectionType`): instead of skipping, union the new carrier's tags into the existing entry via `ctx.typeRegistry.enrich` with a transformed `schemaType()` (and the matching Edge) when the new carrier brings tags the entry lacks.
+* No model-record changes: nothing reads `shareable()` off `GraphitronType.ConnectionType` / `EdgeType` / `PageInfoType` today; emission goes through `schemaType()`. The tagged schema forms flow into both output surfaces: the assembled schema (`rebuildAssembledForConnections` registers them via `additionalType`, which is what the federation SDL emission prints) and the generated runtime schema (`ObjectTypeGenerator` emits from `schemaType()` and `AppliedDirectiveEmitter` walks applied directives generically). A `tags` record component would be a second representation of the same information that can diverge from `schemaType()`; do not add one.
+* While in the file: the javadoc near the SDL-declared-PageInfo branch claims "the connection-emitter picks up the shareable flag", but the emitter reads `schemaType()`, never the flag; fix the stale claim. The `shareable` boolean on the three records is a collapse-audit candidate for the same reason (the PageInfo fold can read both shareable and tags uniformly off the schema forms, which also makes the dedupe-arm union symmetric); collapsing it is in scope if it falls out naturally, otherwise note it for a cleanup item.
 
 ## Tests
 
 * Pipeline tier, explicit tag: fixture with a carrier `field: [Item] @asConnection @tag(name: "x")`; assert the built schema's synthesised Connection, Edge, and PageInfo types carry `@tag(name: "x")` and the carrier keeps its own.
 * Pipeline tier, schemaInput tag: drive `<schemaInput tag>` through `loadAttributedRegistry()` in the `TaggedInputsPipelineTest` shape with `@asConnection` on a field in the tagged source; assert the synthesised types inherit the tag.
 * Repeatable tags: carrier with two `@tag` values; both appear on the synthesised types.
-* Shared connection name: two carriers with the same `connectionName:` and different tags; assert whichever union/first-write semantics the review settles on.
+* Shared connection name: two carriers with the same `connectionName:` and different tags; assert the synthesised Connection and Edge carry the union.
+* Structural arm: SDL-declared tagged Connection with no SDL `PageInfo`; assert the synthesised PageInfo carries the Connection's tag.
+* Negative pin: SDL-declared Connection/Edge and SDL-declared `PageInfo` pass through with their author-written tags unchanged (no synthesised additions).
 * Emission: assert the federation SDL round-trip (the `FederationBuildSmokeTest` shape; see also R252) prints the tags on the synthesised types.
 
 ## Docs
