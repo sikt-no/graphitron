@@ -10,6 +10,16 @@ The `next-id:` front-matter field is the canonical counter for `R<n>` allocation
 
 ---
 
+- `b2c0895` — R291 (`strip-internal-directives-from-published-sdl`): the published SDL
+  (`schema.graphqls`, both federation and plain arms) no longer carries Graphitron-internal
+  directive definitions/applications or their supporting types. Two-tier support-type model
+  derived from `directives.graphqls` (`DirectiveSupportTypes`): the published tier
+  (`SortDirection`, now with SDL descriptions) classifies iff a non-support coordinate references
+  it; the strictly internal tier never classifies, and a consumer reference to one rejects the
+  referencing type with a typed `AuthorError`. The retention decision is `schema.types()`
+  membership, consumed by both the runtime registration and the `SchemaSdlEmitter` print seam.
+  Status flip and R253 closure at `80623b0`.
+
 - `b2c0895` — R253 (`pipeline-runtime-sdl-parity-test`): closed as subsumed by R291
   (`strip-internal-directives-from-published-sdl`), which implemented R253's Route 3 at the
   `SchemaSdlEmitter` print seam (survivor-filtered directive definitions/applications on both
