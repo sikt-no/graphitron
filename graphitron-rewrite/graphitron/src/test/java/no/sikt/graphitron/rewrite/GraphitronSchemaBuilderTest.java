@@ -128,14 +128,13 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> assertThat(schema.field("Film", "doesNotExist")).isInstanceOf(UnclassifiedField.class)),
 
-        ENUM_RETURN_TYPE(
-            "a field whose return type is a GraphQL enum is still classified as a ColumnField",
-            """
-            enum Rating { G PG PG13 R NC17 }
-            type Film @table(name: "film") { rating: Rating }
-            type Query { film: Film }
-            """,
-            schema -> assertThat(schema.field("Film", "rating")).isInstanceOf(ColumnField.class)),
+        // R281 slice 2: the pure `enum return type -> ColumnField` verdict (a bare isInstanceOf
+        // assertion, no slot detail) migrated to the spec-by-example corpus, where it is the
+        // `enum-column` ClassifiedCorpus example (Film.rating: Rating, asserted via
+        // @classified(producer: [], mapping: Column)). Corpus-only: it lands on the already-taught
+        // inline / Column coordinate; the enum-ness lives in the GraphQL-to-Java mapping, not the
+        // classification. The ColumnField leaf stays covered by the corpus and the slot-asserting
+        // ColumnFieldCase rows above.
 
         UNRESOLVED_TABLE(
             "when the parent table does not exist in the DB, the type becomes UnclassifiedType",
