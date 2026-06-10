@@ -383,6 +383,51 @@ public final class ClassifiedCorpus {
                 @mutation(typeName: INSERT)
                 @classified(producer: [Dml, Query], mapping: Table)
             }
+            """),
+
+        /*
+         * The remaining root mutation forms (INSERT is the `dml` example above). UPDATE and DELETE are
+         * DML writes that project the affected @table row back, so they share the INSERT's [Dml, Query]
+         * / Table verdict (MutationUpdateTableField / MutationDeleteTableField, both DmlTableField leaves
+         * whose tuple is read off the return-expression shape). DELETE admits two ways onto the same
+         * verdict: a PK-covering filter input (`deleteFilm`) or an explicit `multiRow: true` broadcast
+         * over a non-PK filter (`deleteFilmsBroadcast`). An @service mutation re-queries the catalog for
+         * its @table return (MutationServiceTableField, [Service, Query] / Table) or materializes a
+         * non-table @record (MutationServiceRecordField, [Service] / Record). A DML payload carrier (a
+         * plain object wrapping one @table data field) exposes the RETURNING rows as a record, so the
+         * carrier itself is [Dml] / Record (MutationDmlRecordField), the follow-up projection being the
+         * data field's own [Query]. Corpus-only: mutation roots are not documentation-query selections,
+         * and their input objects need the argument rendering the QueryViewRenderer does not yet support.
+         */
+        new Example("mutation-roots", """
+            type Film @table(name: "film") { title: String }
+            type FilmDetails @record { title: String }
+            type FilmPayload { film: Film }
+            input FilmKeyInput @table(name: "film") { filmId: Int! @field(name: "film_id") }
+            input FilmUpdateInput @table(name: "film") { filmId: Int! @field(name: "film_id") title: String }
+            input FilmTitleInput @table(name: "film") { title: String @field(name: "title") }
+            input FilmCreateInput @table(name: "film") { title: String }
+            type Query { x: String }
+            type Mutation {
+              updateFilm(in: FilmUpdateInput!): Film
+                @mutation(typeName: UPDATE)
+                @classified(producer: [Dml, Query], mapping: Table)
+              deleteFilm(in: FilmKeyInput!): Film
+                @mutation(typeName: DELETE)
+                @classified(producer: [Dml, Query], mapping: Table)
+              deleteFilmsBroadcast(in: FilmTitleInput!): Film
+                @mutation(typeName: DELETE, multiRow: true)
+                @classified(producer: [Dml, Query], mapping: Table)
+              externalMutation: Film
+                @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "runFilm"})
+                @classified(producer: [Service, Query], mapping: Table)
+              externalRecord: FilmDetails
+                @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "runDetails"})
+                @classified(producer: [Service], mapping: Record)
+              createFilmPayload(in: FilmCreateInput!): FilmPayload
+                @mutation(typeName: INSERT)
+                @classified(producer: [Dml], mapping: Record)
+            }
             """));
 
     /** The corpus entries, in declaration order. */
