@@ -6382,29 +6382,12 @@ class GraphitronSchemaBuilderTest {
         // verdict (Film.rating in the `service` example). The QueryServiceRecordField leaf stays
         // covered by the corpus and by the @ProjectionFor projection test below.
 
-        INSERT_MUTATION_FIELD(
-            "@mutation(typeName: INSERT) → MutationInsertTableField",
-            """
-            type Film @table(name: "film") { title: String }
-            input FilmInput @table(name: "film") { title: String }
-            type Query { x: String }
-            type Mutation { createFilm(in: FilmInput!): Film @mutation(typeName: INSERT) }
-            """,
-            schema -> assertThat(schema.field("Mutation", "createFilm")).isInstanceOf(MutationField.MutationInsertTableField.class)) {
-            @Override public Set<Class<?>> variants() { return Set.of(MutationField.MutationInsertTableField.class); }
-        },
-
-        UPDATE_MUTATION_FIELD(
-            "@mutation(typeName: UPDATE) → MutationUpdateTableField",
-            """
-            type Film @table(name: "film") { title: String }
-            input FilmInput @table(name: "film") { filmId: Int! @field(name: "film_id"), title: String }
-            type Query { x: String }
-            type Mutation { updateFilm(in: FilmInput!): Film @mutation(typeName: UPDATE) }
-            """,
-            schema -> assertThat(schema.field("Mutation", "updateFilm")).isInstanceOf(MutationField.MutationUpdateTableField.class)) {
-            @Override public Set<Class<?>> variants() { return Set.of(MutationField.MutationUpdateTableField.class); }
-        },
+        // R281 slice 2: the pure DML write-then-project verdicts (a bare isInstanceOf assertion each,
+        // no slot detail) migrated to the spec-by-example corpus. INSERT -> MutationInsertTableField is
+        // the `dml` ClassifiedCorpus example (createFilm, asserted via @classified(producer: [Dml,
+        // Query], mapping: Table)); UPDATE -> MutationUpdateTableField is the `mutation-roots` example
+        // (updateFilm, same verdict, the affected @table row projected back). Corpus-only. Both leaves
+        // stay covered by the corpus and by the slot-asserting DmlReturnExpression / payload cases.
 
         DELETE_MUTATION_FIELD(
             "R266: @mutation(typeName: DELETE) → MutationDeleteTableField carrying the DeleteRows "
@@ -6480,31 +6463,13 @@ class GraphitronSchemaBuilderTest {
             @Override public Set<Class<?>> variants() { return Set.of(UnclassifiedField.class); }
         },
 
-        SERVICE_MUTATION_FIELD(
-            "@service on mutation field, @table return type → MutationServiceTableField",
-            """
-            type Film @table(name: "film") { title: String }
-            type Query { x: String }
-            type Mutation {
-                externalMutation: Film @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "runFilm"})
-            }
-            """,
-            schema -> assertThat(schema.field("Mutation", "externalMutation")).isInstanceOf(MutationField.MutationServiceTableField.class)) {
-            @Override public Set<Class<?>> variants() { return Set.of(MutationField.MutationServiceTableField.class); }
-        },
-
-        MUTATION_SERVICE_RECORD_FIELD(
-            "@service on mutation field, non-table return type → MutationServiceRecordField",
-            """
-            type FilmDetails @record { title: String }
-            type Query { x: String }
-            type Mutation {
-                externalMutation: FilmDetails @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "runDetails"})
-            }
-            """,
-            schema -> assertThat(schema.field("Mutation", "externalMutation")).isInstanceOf(MutationField.MutationServiceRecordField.class)) {
-            @Override public Set<Class<?>> variants() { return Set.of(MutationField.MutationServiceRecordField.class); }
-        },
+        // R281 slice 2: the pure @service-mutation verdicts (a bare isInstanceOf assertion each, no
+        // slot detail) migrated to the spec-by-example corpus as the `mutation-roots` example. An
+        // @service mutation returning a @table re-queries the catalog (externalMutation ->
+        // MutationServiceTableField, asserted via @classified(producer: [Service, Query], mapping:
+        // Table)); one returning a non-table @record materializes it (externalRecord ->
+        // MutationServiceRecordField, @classified(producer: [Service], mapping: Record)). Corpus-only.
+        // Both leaves stay covered by the corpus and by the slot-asserting carrier cases below.
 
         // Positive baseline: an @service mutation whose SDL return is a payload CARRIER with a
         // single @table data field (resolving to a real catalog table) and NO forbidden directive
@@ -6648,23 +6613,13 @@ class GraphitronSchemaBuilderTest {
             }
         },
 
-        MUTATION_DML_RECORD_FIELD(
-            "R75 / Phase 1: @mutation(typeName: INSERT) with single @table input and a single-"
-                + "record DML payload (plain SDL Object wrapping one @table-element data field) "
-                + "→ MutationDmlRecordField. R141 pairs the input cardinality to the data field's "
-                + "wrapper, so this row's single + single shape stays on the original sealed leaf.",
-            """
-            type Film @table(name: "film") { title: String }
-            type FilmPayload { film: Film }
-            input FilmCreateInput @table(name: "film") { title: String }
-            type Query { x: String }
-            type Mutation {
-                createFilm(in: FilmCreateInput!): FilmPayload @mutation(typeName: INSERT)
-            }
-            """,
-            schema -> assertThat(schema.field("Mutation", "createFilm")).isInstanceOf(MutationField.MutationDmlRecordField.class)) {
-            @Override public Set<Class<?>> variants() { return Set.of(MutationField.MutationDmlRecordField.class); }
-        },
+        // R281 slice 2: the pure single-record DML payload verdict (a bare isInstanceOf assertion, no
+        // slot detail) migrated to the spec-by-example corpus as the `mutation-roots` example
+        // (createFilmPayload: an INSERT returning a plain object carrier wrapping one @table data
+        // field, asserted via @classified(producer: [Dml], mapping: Record)). The carrier exposes the
+        // RETURNING rows as a record, the follow-up projection being the data field's own [Query].
+        // Corpus-only. The MutationDmlRecordField leaf stays covered by the corpus and the bulk /
+        // cardinality-pairing cases (MUTATION_BULK_DML_RECORD_FIELD below) that assert slot detail.
 
         MUTATION_BULK_DML_RECORD_FIELD(
             "R141: @mutation(typeName: INSERT) with bulk @table input and a single-record DML "
@@ -7880,25 +7835,13 @@ class GraphitronSchemaBuilderTest {
 
         // ===== R144 new admission and rejection cases =====
 
-        R144_DELETE_PK_COVERED_ADMIT(
-            "R144: DELETE with PK-covering filter input → MutationDeleteTableField",
-            """
-            type Film @table(name: "film") { title: String }
-            input FilmInput @table(name: "film") { filmId: Int! @field(name: "film_id") }
-            type Query { x: String }
-            type Mutation { deleteFilm(in: FilmInput!): Film @mutation(typeName: DELETE) }
-            """,
-            schema -> assertThat(schema.field("Mutation", "deleteFilm")).isInstanceOf(MutationField.MutationDeleteTableField.class)),
-
-        R144_DELETE_MULTIROW_ADMIT(
-            "R144: DELETE without PK-covering filter but with multiRow: true → MutationDeleteTableField (broadcast opt-in)",
-            """
-            type Film @table(name: "film") { title: String }
-            input FilmInput @table(name: "film") { title: String @field(name: "title") }
-            type Query { x: String }
-            type Mutation { deleteFilms(in: FilmInput!): Film @mutation(typeName: DELETE, multiRow: true) }
-            """,
-            schema -> assertThat(schema.field("Mutation", "deleteFilms")).isInstanceOf(MutationField.MutationDeleteTableField.class)),
+        // R281 slice 2: the two pure DELETE-admission verdicts (a bare isInstanceOf assertion each, no
+        // slot detail) migrated to the spec-by-example corpus as the `mutation-roots` example. DELETE
+        // admits onto MutationDeleteTableField two ways: a PK-covering filter input (deleteFilm) or an
+        // explicit multiRow: true broadcast over a non-PK filter (deleteFilmsBroadcast); both are
+        // asserted via @classified(producer: [Dml, Query], mapping: Table). Corpus-only. The
+        // MutationDeleteTableField leaf stays covered by the corpus and by DELETE_MUTATION_FIELD, which
+        // asserts the DeleteRows slot detail.
 
         R144_INSERT_MULTIROW_REJECTED(
             "R144: multiRow: true on @mutation(typeName: INSERT) → UnclassifiedField",

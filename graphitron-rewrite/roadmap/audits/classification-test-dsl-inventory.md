@@ -82,13 +82,13 @@ coordinate.
 
 ## Type-side and mutation-side checklist (corpus-only until renderer item 3)
 
-- [ ] `RootFieldCase.INSERT_MUTATION_FIELD` (L6610) -> `MutationField.MutationInsertTableField` | `@mutation(typeName: INSERT)`
-- [ ] `RootFieldCase.UPDATE_MUTATION_FIELD` (L6622) -> `MutationField.MutationUpdateTableField` | `@mutation(typeName: UPDATE)`
-- [ ] `RootFieldCase.SERVICE_MUTATION_FIELD` (L6708) -> `MutationField.MutationServiceTableField` | `@service` mutation, `@table` return
-- [ ] `RootFieldCase.MUTATION_SERVICE_RECORD_FIELD` (L6721) -> `MutationField.MutationServiceRecordField` | `@service` mutation, non-table return
-- [ ] `RootFieldCase.MUTATION_DML_RECORD_FIELD` (L6734) -> `MutationField.MutationDmlRecordField` | INSERT single `@table` input + single-record DML payload
-- [ ] `MutationDmlCase.R144_DELETE_PK_COVERED_ADMIT` (L7966) -> `MutationField.MutationDeleteTableField` | DELETE with a PK-covering filter input
-- [ ] `MutationDmlCase.R144_DELETE_MULTIROW_ADMIT` (L7976) -> `MutationField.MutationDeleteTableField` | DELETE without a PK filter but `multiRow: true`
+- [x] `RootFieldCase.INSERT_MUTATION_FIELD` (L6610) -> `MutationField.MutationInsertTableField` | `@mutation(typeName: INSERT)` | migrated: `dml` corpus example (createFilm, `@classified(producer: [Dml, Query], mapping: Table)`), corpus-only
+- [x] `RootFieldCase.UPDATE_MUTATION_FIELD` (L6622) -> `MutationField.MutationUpdateTableField` | `@mutation(typeName: UPDATE)` | migrated: `mutation-roots` corpus example (updateFilm, `[Dml, Query]/Table`), corpus-only
+- [x] `RootFieldCase.SERVICE_MUTATION_FIELD` (L6708) -> `MutationField.MutationServiceTableField` | `@service` mutation, `@table` return | migrated: `mutation-roots` corpus example (externalMutation, `[Service, Query]/Table`), corpus-only
+- [x] `RootFieldCase.MUTATION_SERVICE_RECORD_FIELD` (L6721) -> `MutationField.MutationServiceRecordField` | `@service` mutation, non-table return | migrated: `mutation-roots` corpus example (externalRecord, `[Service]/Record`), corpus-only
+- [x] `RootFieldCase.MUTATION_DML_RECORD_FIELD` (L6734) -> `MutationField.MutationDmlRecordField` | INSERT single `@table` input + single-record DML payload | migrated: `mutation-roots` corpus example (createFilmPayload, `[Dml]/Record`), corpus-only
+- [x] `MutationDmlCase.R144_DELETE_PK_COVERED_ADMIT` (L7966) -> `MutationField.MutationDeleteTableField` | DELETE with a PK-covering filter input | migrated: `mutation-roots` corpus example (deleteFilm, `[Dml, Query]/Table`), corpus-only; leaf slot detail kept by `DELETE_MUTATION_FIELD`
+- [x] `MutationDmlCase.R144_DELETE_MULTIROW_ADMIT` (L7976) -> `MutationField.MutationDeleteTableField` | DELETE without a PK filter but `multiRow: true` | migrated: `mutation-roots` corpus example (deleteFilmsBroadcast, `[Dml, Query]/Table`), corpus-only
 - [x] `ResultTypeBackingCase.BACKED_POJO` (L3459) -> `GraphitronType.PojoResultType.Backed` | `@service` producing a plain Java class | migrated: `result-backing` corpus example (PojoBacked, `@classifiedType(as: Backed)`), corpus-only; whole `ResultTypeBackingCase` enum + `resultTypeBackingClassification` test retired together
 - [x] `ResultTypeBackingCase.JAVA_RECORD` (L3471) -> `GraphitronType.JavaRecordType` | `@service` producing a Java record | migrated: `result-backing` corpus example (JavaRecordBacked, `@classifiedType(as: JavaRecordType)`), corpus-only
 - [x] `ResultTypeBackingCase.JOOQ_TABLE_RECORD` (L3483) -> `GraphitronType.JooqTableRecordType` | `@service` producing a jOOQ TableRecord | migrated: `result-backing` corpus example (JooqTableRecordBacked, `@classifiedType(as: JooqTableRecordType)`), corpus-only
