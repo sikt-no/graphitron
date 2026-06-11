@@ -214,6 +214,23 @@
                     <release>25</release>
                     <compilerArgs>
                         <arg>-Xlint:all</arg>
+                        <!--
+                            Warning ratchet (R293). Every -Xlint:all category is enforced as an
+                            error across every module's main and test compile, including
+                            graphitron-sakila-example's release-17 compile of generated sources
+                            (config inherited here), which is the cross-module backstop: a generator
+                            change that emits warning-producing Java fails the build instead of
+                            shipping to consumers. No category is excluded: the full
+                            `mvn install -Plocal-db` build is clean across all of them. If a future
+                            category proves genuinely noisy (e.g. `serial` on a new exception type,
+                            `processing` from a newly-added annotation processor, `this-escape`),
+                            exclude it explicitly with `-Xlint:all,-<category>` here and record why,
+                            rather than scattering @SuppressWarnings across sites or silently
+                            dropping -Werror. Non-javac warnings (jOOQ codegen, the launcher's
+                            FFM/native-access notes) are out of -Werror's scope and handled at their
+                            own sites.
+                        -->
+                        <arg>-Werror</arg>
                     </compilerArgs>
                 </configuration>
             </plugin>

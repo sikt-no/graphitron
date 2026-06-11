@@ -423,8 +423,8 @@ class FetcherPipelineTest {
         // JavaPoet writes fully-qualified type names; assertions track the canonical FQN so a
         // change in import resolution would surface here, not as a brittle short-name regex.
         assertThat(body)
-            .as("bulk arm casts in to List<Map<?,?>>")
-            .contains("java.util.List<java.util.Map<?, ?>> in = (java.util.List<java.util.Map<?, ?>>) env.getArgument")
+            .as("bulk arm binds in as List<Map<?,?>> (getArgument inference, no cast)")
+            .contains("java.util.List<java.util.Map<?, ?>> in = env.getArgument")
             .as("empty-list short-circuit returns typed empty without round-trip")
             .contains("if (in.isEmpty())")
             .contains("graphql.execution.DataFetcherResult.<java.util.List<org.jooq.Record>>newResult().data(java.util.List.of()).build()")
@@ -480,7 +480,7 @@ class FetcherPipelineTest {
         var deleteFilms = method(findSpec("MutationFetchers", sdl), "deleteFilms");
         var body = deleteFilms.code().toString();
         assertThat(body)
-            .contains("java.util.List<java.util.Map<?, ?>> in = (java.util.List<java.util.Map<?, ?>>) env.getArgument")
+            .contains("java.util.List<java.util.Map<?, ?>> in = env.getArgument")
             .contains("if (in.isEmpty())")
             .as("row-tuple IN form, regardless of key arity")
             .contains(".deleteFrom")
@@ -507,10 +507,10 @@ class FetcherPipelineTest {
         var updateFilms = method(findSpec("MutationFetchers", sdl), "updateFilms");
         var body = updateFilms.code().toString();
         assertThat(body)
-            .as("Postgres dialect guard rides postDslGuard, before the in cast")
+            .as("Postgres dialect guard rides postDslGuard, before the in binding")
             .contains("if (!\"POSTGRES\".equals(dsl.dialect().family().name()))")
-            .as("bulk arm casts in to List<Map<?,?>>")
-            .contains("java.util.List<java.util.Map<?, ?>> in = (java.util.List<java.util.Map<?, ?>>) env.getArgument")
+            .as("bulk arm binds in as List<Map<?,?>> (getArgument inference, no cast)")
+            .contains("java.util.List<java.util.Map<?, ?>> in = env.getArgument")
             .contains("if (in.isEmpty())")
             .as("uniform-shape guard runs before the SET map is built")
             .contains("java.util.Set<?> firstKeys = in.get(0).keySet()")

@@ -70,6 +70,18 @@ Once a module is warning-clean, set maven-compiler-plugin `failOnWarning` for it
 3. **jOOQ codegen decision** for the ambiguous key names.
 4. **Guard:** flip `failOnWarning` per module with the curated, documented lint set; update the sakila-example ratchet comment.
 
+## Implementation (In Review)
+
+All four phases shipped. A full `mvn install -Plocal-db` is warning-free under `-Xlint:all -Werror`; the only surviving log lines are the declared-out-of-scope environment ones (sandbox jOOQ PG-version mismatch; Maven's own Guice/`Unsafe` JVM notes).
+
+Deviations from the plan, for the reviewer:
+
+- **Generated-code casts: dropped, not suppressed.** The plan slotted the `(List<…>) env.getArgument(…)` and `(T) env.getSource()` fetcher/payload casts into step-2 (narrowest-scope `@SuppressWarnings`). They are not inherently unchecked: `getArgument` / `getSource` are `<T> T`, so the explicit cast at a typed-LHS statement is removable via inference (the plan's preferred step-1), producing identical erased bytecode. Precedent: `QueryConditionsGenerator` already emitted cast-free `env.getArgument`. The `principles-architect` confirmed this follows the plan's stated preference *order* over its mis-categorised *example*. `@SuppressWarnings("unchecked")` is reserved for the genuinely-unchecked residuals only: `(List<X>) map.get(key)` off a `Map<?,?>` (nested-input args; stamped on the narrowest enclosing member, a local declaration or the condition adapter method) and `(List<X>) success.value()` off `Outcome.Success<?>`.
+- **Javadoc link.** The `AbstractRewriteMojo` `{@link String#endsWith}` warning comes from `maven-plugin-plugin`'s descriptor generator (not javadoc); its resolver cannot resolve a JDK-class `{@link}` regardless of signature, so it became `{@code String.endsWith(String)}`.
+- **FFM runtime warning.** Beyond the three compile-site suppressions, the runtime restricted-method warning fired in `graphitron-maven-plugin`'s `DevServerTest` (loads the lsp jar); added `--enable-native-access=ALL-UNNAMED` to that module's surefire.
+- **jOOQ ambiguous keys.** Disabled `<implicitJoinPathsToMany>` on the `public.*` codegen (the warning's own first remedy); no catalog consumer navigates those to-many path methods.
+- **Guard.** `-Werror` added to the parent pom's global `compilerArgs` (every `-Xlint:all` category enforced across every module, none excluded, with a documented escape hatch); inherited by sakila-example's release-17 generated-source compile. Ratchet comment updated.
+
 ## Out of scope
 
 - **Generator `BuildWarning` channel and fixture warnings:** R294 (fixture-warnings-as-errors) establishes warnings-as-errors for fixture schemas; R296 (deprecated-usage-warnings) extends it to deprecated functionality.
