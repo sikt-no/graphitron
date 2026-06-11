@@ -3,6 +3,7 @@ package no.sikt.graphitron.rewrite.generators;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
+import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.javapoet.WildcardTypeName;
 import no.sikt.graphitron.rewrite.generators.util.ColumnFetcherClassGenerator;
 import no.sikt.graphitron.rewrite.generators.util.NodeIdEncoderClassGenerator;
@@ -218,6 +219,35 @@ public final class FetcherEmitter {
 
     private static ClassName errorListClass(String outputPackage) {
         return ClassName.get(outputPackage + ".schema", "Outcome").nestedClass("ErrorList");
+    }
+
+    private static ClassName outcomeClass(String outputPackage) {
+        return ClassName.get(outputPackage + ".schema", "Outcome");
+    }
+
+    /**
+     * Emit the {@code source} local for a record-carrier fetcher body, narrowing the R244
+     * {@code Outcome} wrapper when the producer flipped to it ({@code OUTCOME_SUCCESS}).
+     *
+     * <p>Both paths are cast-free and warning-free. {@code env.getSource()} is {@code <T> T}, so
+     * the typed local drives inference: under DIRECT we bind {@code env.getSource()} straight to
+     * {@code elementType}. Under the wrapper we bind it to the typed {@code Outcome<elementType>}
+     * first, then pattern-match the <em>concrete</em> {@code Success<elementType>}. Because
+     * {@code Success<T> implements Outcome<T>} with the same argument, that type test is checked
+     * (not a {@code Success<?>} capture), so {@code success.value()} is already {@code elementType}
+     * and needs no cast. The {@code ErrorList} arm falls through to {@code return null}.
+     */
+    private static void emitRecordSourceLocal(
+            CodeBlock.Builder body, TypeName elementType, boolean outcomeWrapped, String outputPackage) {
+        if (outcomeWrapped) {
+            body.add("    $T outcome = env.getSource();\n",
+                ParameterizedTypeName.get(outcomeClass(outputPackage), elementType));
+            body.add("    if (!(outcome instanceof $T success)) return null;\n",
+                ParameterizedTypeName.get(successClass(outputPackage), elementType));
+            body.add("    $T source = success.value();\n", elementType);
+        } else {
+            body.add("    $T source = env.getSource();\n", elementType);
+        }
     }
 
     private static CodeBlock dataFetcherValueRaw(
@@ -603,29 +633,14 @@ public final class FetcherEmitter {
         // needs no envelope branch.
         boolean outcomeWrapped = ((SourceKey.Reader.ResultRowWalk) srtf.sourceKey().reader()).envelope()
             == SourceKey.Reader.SourceEnvelope.OUTCOME_SUCCESS;
-        CodeBlock sourceExpr = outcomeWrapped
-            ? CodeBlock.of("success.value()")
-            : CodeBlock.of("env.getSource()");
 
         var body = CodeBlock.builder().add("($T env) -> {\n", DATA_FETCHING_ENV);
-        if (outcomeWrapped) {
-            body.add("    if (!(env.getSource() instanceof $T<?> success)) return null;\n",
-                successClass(outputPackage));
-        }
         if (many) {
             var listOfRecord = ParameterizedTypeName.get(javaUtilList, recordType);
-            // env.getSource() is <T> T, so the typed local drives inference (no cast). The
-            // Outcome.Success<?> path can only yield a capture from value(), so that arm keeps an
-            // inherently-unchecked cast; suppress it at the narrowest scope, the local declaration.
-            if (outcomeWrapped) {
-                body.add("    @$T($S) $T source = ($T) $L;\n",
-                    SuppressWarnings.class, "unchecked", listOfRecord, listOfRecord, sourceExpr);
-            } else {
-                body.add("    $T source = $L;\n", listOfRecord, sourceExpr);
-            }
+            emitRecordSourceLocal(body, listOfRecord, outcomeWrapped, outputPackage);
             body.add("    if (source.isEmpty()) return source;\n");
         } else {
-            body.add("    $T source = ($T) $L;\n", recordType, recordType, sourceExpr);
+            emitRecordSourceLocal(body, recordType, outcomeWrapped, outputPackage);
             body.add("    if (source == null) return null;\n");
         }
         body.add("    $T dsl = (($T) env.getGraphQlContext().get($T.class)).getDslContext(env);\n",
@@ -749,8 +764,9 @@ public final class FetcherEmitter {
      * data field on an {@code @service} source-record carrier. Mirrors
      * {@link #buildSingleRecordTableFetcherValueTableRecordWrap}'s source handling — the same
      * {@code SourceEnvelope} fork (narrow {@code Outcome.Success} under {@code OUTCOME_SUCCESS},
-     * read {@code env.getSource()} verbatim under {@code DIRECT}) and the same typed
-     * {@code XRecord} / {@code List<XRecord>} casts — but instead of a follow-up SELECT it maps
+     * read {@code env.getSource()} verbatim under {@code DIRECT}) via the shared
+     * {@link #emitRecordSourceLocal}, binding the same typed {@code XRecord} / {@code List<XRecord>}
+     * {@code source} local — but instead of a follow-up SELECT it maps
      * each record through the pre-resolved NodeId encoder, reading the node-key column(s) via
      * the typed {@code Tables.X.COL} constants. No database access: the producer's records may
      * be deleted rows (the opptak {@code fjernSakTagg}/{@code fjernSakTagger} shape), and the
@@ -766,15 +782,8 @@ public final class FetcherEmitter {
         boolean many = sk.cardinality() == SourceKey.Cardinality.MANY;
         boolean outcomeWrapped = ((SourceKey.Reader.ResultRowWalk) sk.reader()).envelope()
             == SourceKey.Reader.SourceEnvelope.OUTCOME_SUCCESS;
-        CodeBlock sourceExpr = outcomeWrapped
-            ? CodeBlock.of("success.value()")
-            : CodeBlock.of("env.getSource()");
 
         var body = CodeBlock.builder().add("($T env) -> {\n", DATA_FETCHING_ENV);
-        if (outcomeWrapped) {
-            body.add("    if (!(env.getSource() instanceof $T<?> success)) return null;\n",
-                successClass(outputPackage));
-        }
         if (many) {
             var javaUtilList = ClassName.get("java.util", "List");
             var stringClass = ClassName.get("java.lang", "String");
@@ -782,15 +791,7 @@ public final class FetcherEmitter {
             var listOfString = ParameterizedTypeName.get(javaUtilList, stringClass);
             var arrayListOfString = ParameterizedTypeName.get(
                 ClassName.get("java.util", "ArrayList"), stringClass);
-            // env.getSource() is <T> T, so the typed local drives inference (no cast). The
-            // Outcome.Success<?> path can only yield a capture from value(), so that arm keeps an
-            // inherently-unchecked cast; suppress it at the narrowest scope, the local declaration.
-            if (outcomeWrapped) {
-                body.add("    @$T($S) $T source = ($T) $L;\n",
-                    SuppressWarnings.class, "unchecked", listOfRecord, listOfRecord, sourceExpr);
-            } else {
-                body.add("    $T source = $L;\n", listOfRecord, sourceExpr);
-            }
+            emitRecordSourceLocal(body, listOfRecord, outcomeWrapped, outputPackage);
             body.add("    if (source == null) return null;\n");
             body.add("    $T ids = new $T(source.size());\n", listOfString, arrayListOfString);
             body.add("    for ($T row : source) {\n", recordType);
@@ -805,7 +806,7 @@ public final class FetcherEmitter {
             body.add("    }\n");
             body.add("    return ids;\n");
         } else {
-            body.add("    $T source = ($T) $L;\n", recordType, recordType, sourceExpr);
+            emitRecordSourceLocal(body, recordType, outcomeWrapped, outputPackage);
             body.add("    if (source == null) return null;\n");
             body.add("    return $T.$L(", encoder.encoderClass(), encoder.methodName());
             for (int i = 0; i < keyColumns.size(); i++) {

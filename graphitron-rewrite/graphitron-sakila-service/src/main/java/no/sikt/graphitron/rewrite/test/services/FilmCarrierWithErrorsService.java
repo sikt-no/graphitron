@@ -86,8 +86,8 @@ public final class FilmCarrierWithErrorsService {
      * throws the mapped "missing film" {@code @error} when any id is unknown (exercises the
      * {@code Outcome.ErrorList} arm over a MANY-cardinality carrier: the data field renders
      * null, the typed error lands in the errors union). The happy path exercises the
-     * {@code OUTCOME_SUCCESS} MANY arm: the data field's fetcher narrows
-     * {@code Outcome.Success}, casts {@code success.value()} to {@code List<FilmRecord>}, and
+     * {@code OUTCOME_SUCCESS} MANY arm: the data field's fetcher narrows the concrete
+     * {@code Outcome.Success<List<FilmRecord>>}, reads {@code success.value()}, and
      * re-selects the requested columns by PK preserving input order.
      */
     public static java.util.List<FilmRecord> filmsByIds(java.util.List<Integer> ids, DSLContext dsl) {
