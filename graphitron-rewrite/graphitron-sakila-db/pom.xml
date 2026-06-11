@@ -76,6 +76,19 @@
                                     <schemaVersionProvider>${jooq.codegen.schema.version}</schemaVersionProvider>
                                     <includeIndexes>true</includeIndexes>
                                 </database>
+                                <generate>
+                                    <!-- Turn off to-many implicit-join-path methods. Sakila's
+                                         store/staff mutual FKs and the category self-FK generate
+                                         colliding inbound-key method names (store/staff/category),
+                                         which jOOQ flags as "Ambiguous key name" on every codegen
+                                         run. No catalog consumer (the rewrite generator, sakila
+                                         service/example) navigates via these to-many path methods;
+                                         the rewrite reads ForeignKey metadata off the Keys class
+                                         directly. Disabling the feature is the warning's own first
+                                         remedy and is cheaper than a disambiguating
+                                         GeneratorStrategy nothing would exercise. -->
+                                    <implicitJoinPathsToMany>false</implicitJoinPathsToMany>
+                                </generate>
                                 <target>
                                     <packageName>${jooqPackage}</packageName>
                                     <directory>${project.build.directory}/generated-sources/jooq</directory>

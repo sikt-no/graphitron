@@ -114,7 +114,16 @@ public final class ServiceMethodCallEmitter {
                     ctx.javaType(), ctx.javaName(), ctx.javaType(), ctx.contextKey()));
             case MappingEntry.FromArg arg -> {
                 CodeBlock expr = valueShapeExpression(arg.shape());
-                out.add(CodeBlock.of("$T $L = $L", arg.shape().javaType(), arg.javaName(), expr));
+                // A nested-input arg of generic type extracts as `(List<X>) map.get(key)`, where the
+                // map value is statically Object, so the cast is inherently unchecked (top-level args
+                // ride `<T> T env.getArgument` inference and need no cast). Suppress at the narrowest
+                // scope, this local declaration.
+                if (castsUncheckedOffMap(arg.shape())) {
+                    out.add(CodeBlock.of("@$T($S) $T $L = $L",
+                        SuppressWarnings.class, "unchecked", arg.shape().javaType(), arg.javaName(), expr));
+                } else {
+                    out.add(CodeBlock.of("$T $L = $L", arg.shape().javaType(), arg.javaName(), expr));
+                }
             }
         }
     }
@@ -140,11 +149,28 @@ public final class ServiceMethodCallEmitter {
         };
     }
 
+    /**
+     * True when the arg's value expression casts a generic type off a {@code Map.get(...)} (a
+     * multi-segment nested-input scalar of parameterised Java type). Such casts are inherently
+     * unchecked; top-level args bind through {@code <T> T env.getArgument} inference and do not.
+     */
+    private static boolean castsUncheckedOffMap(ValueShape shape) {
+        return shape instanceof ValueShape.Scalar s
+            && !s.sdlPath().deeperSegments().isEmpty()
+            && s.javaType() instanceof ParameterizedTypeName;
+    }
+
     private static CodeBlock scalarExpression(ValueShape.Scalar scalar) {
         ArgPath path = scalar.sdlPath();
         if (path.deeperSegments().isEmpty()) {
-            return scalarLeaf(scalar.leafTransform(), scalar.javaType(),
-                CodeBlock.of("env.getArgument($S)", path.outerArgName()));
+            CodeBlock rawValue = CodeBlock.of("env.getArgument($S)", path.outerArgName());
+            // Top-level arg off the <T> T env.getArgument: the typed local declared at the call
+            // site (addVarDecl) drives inference, so no cast is needed and a cast to a generic
+            // type (e.g. List<Integer>) would be an unchecked cast. EnumValueOf is the exception:
+            // graphql-java delivers the enum as a String, so it still needs its valueOf coercion.
+            return scalar.leafTransform() instanceof CallSiteExtraction.EnumValueOf
+                ? scalarLeaf(scalar.leafTransform(), scalar.javaType(), rawValue)
+                : rawValue;
         }
         // Multi-segment path: null-safe traversal from the outer-arg Map through nested keys.
         return mapTraversal(scalar.leafTransform(), scalar.javaType(), path);

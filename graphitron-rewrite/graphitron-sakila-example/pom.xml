@@ -249,10 +249,12 @@
                 emitter fails this module's build rather than the consumer's.
 
                 Tests stay at the parent's release 25 (they may use 25 features freely).
-                -Werror is deliberately omitted: the parent pom sets -Xlint:all, and existing
-                generated code has raw-type warnings that are a separate concern; -Werror would
-                conflate "post-17 syntax leaked through" (what this ratchet is for) with
-                "raw-type cleanup in the emitter" (a larger refactor).
+
+                The parent pom's -Xlint:all -Werror applies to this release-17 compile too (the
+                <release> override here merges with the inherited compilerArgs). That makes this
+                module the cross-module warning backstop (R293): generated sources must compile
+                both as valid Java 17 (this ratchet) and warning-free under -Werror, so a generator
+                emitting warning-producing code fails here rather than in a consumer's build.
             -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>

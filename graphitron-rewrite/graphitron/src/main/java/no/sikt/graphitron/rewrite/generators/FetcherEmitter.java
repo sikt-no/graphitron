@@ -614,7 +614,15 @@ public final class FetcherEmitter {
         }
         if (many) {
             var listOfRecord = ParameterizedTypeName.get(javaUtilList, recordType);
-            body.add("    $T source = ($T) $L;\n", listOfRecord, listOfRecord, sourceExpr);
+            // env.getSource() is <T> T, so the typed local drives inference (no cast). The
+            // Outcome.Success<?> path can only yield a capture from value(), so that arm keeps an
+            // inherently-unchecked cast; suppress it at the narrowest scope, the local declaration.
+            if (outcomeWrapped) {
+                body.add("    @$T($S) $T source = ($T) $L;\n",
+                    SuppressWarnings.class, "unchecked", listOfRecord, listOfRecord, sourceExpr);
+            } else {
+                body.add("    $T source = $L;\n", listOfRecord, sourceExpr);
+            }
             body.add("    if (source.isEmpty()) return source;\n");
         } else {
             body.add("    $T source = ($T) $L;\n", recordType, recordType, sourceExpr);
@@ -774,7 +782,15 @@ public final class FetcherEmitter {
             var listOfString = ParameterizedTypeName.get(javaUtilList, stringClass);
             var arrayListOfString = ParameterizedTypeName.get(
                 ClassName.get("java.util", "ArrayList"), stringClass);
-            body.add("    $T source = ($T) $L;\n", listOfRecord, listOfRecord, sourceExpr);
+            // env.getSource() is <T> T, so the typed local drives inference (no cast). The
+            // Outcome.Success<?> path can only yield a capture from value(), so that arm keeps an
+            // inherently-unchecked cast; suppress it at the narrowest scope, the local declaration.
+            if (outcomeWrapped) {
+                body.add("    @$T($S) $T source = ($T) $L;\n",
+                    SuppressWarnings.class, "unchecked", listOfRecord, listOfRecord, sourceExpr);
+            } else {
+                body.add("    $T source = $L;\n", listOfRecord, sourceExpr);
+            }
             body.add("    if (source == null) return null;\n");
             body.add("    $T ids = new $T(source.size());\n", listOfString, arrayListOfString);
             body.add("    for ($T row : source) {\n", recordType);
