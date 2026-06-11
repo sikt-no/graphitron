@@ -1,12 +1,12 @@
 ---
 id: R293
 title: Clean up build-time warnings in the full rewrite build
-status: In Progress
+status: In Review
 bucket: cleanup
 priority: 7
 depends-on: []
 created: 2026-06-10
-last-updated: 2026-06-10
+last-updated: 2026-06-11
 ---
 
 # Clean up build-time warnings in the full rewrite build
