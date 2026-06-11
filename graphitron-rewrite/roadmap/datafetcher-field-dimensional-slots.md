@@ -5,7 +5,7 @@ status: Backlog
 bucket: structural
 priority: 4
 theme: structural-refactor
-depends-on: [classification-test-dsl, dimensional-model-pivot]
+depends-on: [dimensional-model-pivot]
 created: 2026-06-10
 last-updated: 2026-06-10
 ---
@@ -27,15 +27,14 @@ trailing `Query` re-enters the catalog to project the table. Concretely this col
 keyed by emit-relevant identity, deleting R281's throwaway `LeafTupleAdapter` once the field exposes
 the same `(producer, mapping)` it currently reconstructs.
 
-R281 (`classification-test-dsl`, In Progress) is this item's **executable acceptance spec**: its corpus
+R281 (`classification-test-dsl`, shipped) is this item's **executable acceptance spec**: its corpus
 asserts the two-axis `(producer, mapping)` verdict, not leaf names, so when this slice lands the adapter
 is deleted, the harness reads the slots directly, and **every corpus assertion must stay byte-identical**
-&mdash; their continued green proves the decomposition was behaviour-preserving. The dependency edge runs
+&mdash; their continued green proves the decomposition was behaviour-preserving. The dependency edge ran
 R281 &rarr; this item (driver to consumer). The merge gate is therefore both tiers green: the R281
 corpus for the decomposition, the pipeline / `TypeSpec` tier for the slot-level emit (a `SourceKey`-arm
 change keeps the corpus green, so that stays the pipeline tier's job). The `QueryBuilder` and
 `ValidationBuilder` consumers are sibling Stage 3 slices the same corpus drives; the Stage 1 foundation
-(`ServiceField` / `ServiceMethodCall`) has already landed. Blocked on R281 closing its value sets
-(slice 1, done) and ideally its full successful-coordinate corpus coverage (slice 3) before the merge
-gate can adopt the corpus as primary tier. See `roadmap/classification-test-dsl.md`
-§"R281 as the pivot's driver and acceptance spec".
+(`ServiceField` / `ServiceMethodCall`) has already landed. R281 closed its value sets (slice 1) and its
+full successful-coordinate corpus coverage (slice 3), so the corpus is available as this item's primary
+acceptance tier. See the R281 entry in `roadmap/changelog.md`.

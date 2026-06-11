@@ -10,6 +10,34 @@ The `next-id:` front-matter field is the canonical counter for `R<n>` allocation
 
 ---
 
+- `2228b67`…`aa7a45e` — R281 (`classification-test-dsl`): classification test DSL, `@classified`
+  spec-by-example. Replaces the doc-prose-plus-405-enum-row double specification of classification
+  behaviour with an annotated SDL corpus that *is* the readable spec. Two test-only directives,
+  `@classified(producer: [ProducerStep!]!, mapping: Mapping!)` on output fields and
+  `@classifiedType(as: TypeVerdict!)` on types (enums `ProducerStep` / `Mapping` / `TypeVerdict`
+  validated SDL-side via `ClassifiedDsl.PRELUDE`, never leaked into the production
+  `directives.graphqls`), assert the two-axis dimensional verdict R222's field pivot will adopt:
+  `producer` (a pipeline of length ≤ 2: `∅` inline-correlate, or steps `Query` / `Service` / `Dml`)
+  × `mapping` (`Table` / `TableConnection` / `Column` / `Record` / `Field`). The throwaway
+  `LeafTupleAdapter` bridges today's fused sealed leaves to those tuples via a compiler-exhaustive
+  switch over `OutputField` that *is* R164's leaf↔dimension truth table. `ClassifiedHarness`
+  classifies each fixture with today's classifier and compares; `ClassifiedDslTest` pins three
+  coverage obligations (adapter totality compiler-enforced, every dimension value exercised,
+  `TypeVerdict` mirrors `GraphitronType`'s non-failure leaves with a simple-name-uniqueness guard).
+  `VariantCoverageTest` was rewired so output-field and non-failure `GraphitronType` leaves are owned
+  by `ClassifiedCorpus.coveredLeaves()` as the single source of truth, while input-field leaves stay
+  on the `GraphitronSchemaBuilderTest` enum table and the failure leaves stay out of scope.
+  `QueryViewRenderer` renders doc examples as query/fragment-as-view projections (real SDL
+  regenerated, test directives stripped) with input-object and abstract-output-type closure
+  expansion (pre-migration hardening item 3, `QueryViewRendererTest`); `code-generation-triggers.adoc`
+  renders its worked examples from the corpus (`ClassifiedDocTest`) with reference tables corrected
+  against `TypeFetcherGenerator`'s four-way emission partition (only `CompositeColumnReferenceField`
+  deferred). Retirement inventory committed at `roadmap/audits/classification-test-dsl-inventory.md`
+  (35 pure-verdict rows, all retired against a corpus coordinate). Drives R222 Stage 3 (field-side
+  pivot) as its executable acceptance spec; the `TableInterfaceField` / `TableMethodField`
+  per-parent-query N+1 defect was filed as R288 rather than blessed as a `[Query]` verdict. Full
+  reactor green.
+
 - `fae7c6f` + `1fdcf18` — R295 (`connection-synthesis-inherits-federation-tags`): synthesised
   Connection / Edge / PageInfo types now inherit the federation `@tag` applications of their
   `@asConnection` carrier field, closing the contract-composition break where a tag-filtered
