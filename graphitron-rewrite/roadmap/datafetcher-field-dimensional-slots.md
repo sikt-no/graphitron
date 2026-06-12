@@ -5,7 +5,7 @@ status: Backlog
 bucket: structural
 priority: 4
 theme: structural-refactor
-depends-on: [dimensional-model-pivot]
+depends-on: [dimensional-model-pivot, intention-classification-dimension]
 created: 2026-06-10
 last-updated: 2026-06-10
 ---
