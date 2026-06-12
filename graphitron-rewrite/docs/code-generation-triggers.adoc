@@ -34,6 +34,11 @@ directive-pattern → variant → generator output chain.
 
 == Classification Vocabulary
 
+[NOTE]
+====
+*Pre-pivot vocabulary.* This section describes the field axes (source context, target type, scope) in their original form. They are being folded into the two-dimensional `(producer, mapping)` model in <<field-classification,Field Classification>> as part of R290 (`datafetcher-field-dimensional-slots`), under the R222 dimensional-model umbrella. Until that delivery lands, treat <<field-classification,Field Classification>> as canonical for how a field classifies; the terms below survive as the historical framing and as properties derived from the two dimensions, not as independent axes.
+====
+
 Two independent classifications describe every field: the *source context* it is defined on (parent type), and the *target type* it returns. Both matter because scope transitions are determined by the pair, not by either alone.
 
 === Source context
@@ -188,6 +193,7 @@ enters the scope; `Film.title` projects an inline column. Asserted by the `catal
 
 '''
 
+[#field-classification]
 == Field Classification
 
 A field's classification factors into two asserted dimensions. The worked examples below render this
