@@ -25,7 +25,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R23` | Multi-parent `NestingField` sharing: `TableField` arm | Spec |  | [plan](nestingfield-multiparent-tablefield.md) |
 | `R13` | Faceted search on `@asConnection` | Spec |  | [plan](faceted-search.md) |
 | `R63` | Type UPSERT dialect requirement on the model | Spec |  | [plan](dml-dialect-requirement-on-model.md) |
-| `R293` | Clean up build-time warnings in the full rewrite build | In Review | 2026-06-11 <sub>created 2026-06-10</sub> | [plan](build-warning-cleanup.md) |
 | `R92` | Surface database CHECK constraints as Jakarta validation rules | Spec |  | [plan](catalog-check-constraint-validation.md) |
 | `R26` | Retire `graphitron-maven-plugin` + `graphitron-schema-transform` | In Progress |  | [plan](retire-maven-plugin.md) |
 | `R180` | Centralize ResultType column-read emission for @record parents | Spec | 2026-05-19 | [plan](record-parent-column-read-helper.md) |
@@ -270,7 +269,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R207` [**Audit design-doc claims for implementation conformance**](design-doc-implementation-conformance-audit.md)
 - `R218` [**Carry inference provenance on ParamSource.Arg so resolved bindings audit cleanly**](binding-provenance-on-paramsource-arg.md)
 - `R180` [**Centralize ResultType column-read emission for @record parents**](record-parent-column-read-helper.md)
-- `R293` [**Clean up build-time warnings in the full rewrite build**](build-warning-cleanup.md)
 - `R220` [**Consolidate looksLikeSourcesShape, couldBeSourcesShape, and classifySourcesType into one predicate**](consolidate-sources-shape-predicates.md)
 - `R289` [**Correct KeyNodeSynthesiser opt-out javadoc: @key(resolvable: false) does not keep a type out of _Entity**](keynodesynthesiser-resolvable-false-entity-doc.md)
 - `R242` [**DML payload positional input/output alignment**](dml-payload-positional-alignment.md)

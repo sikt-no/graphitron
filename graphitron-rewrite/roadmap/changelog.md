@@ -10,6 +10,27 @@ The `next-id:` front-matter field is the canonical counter for `R<n>` allocation
 
 ---
 
+- `fc03387` + `6ab5127` + `cf8262e` (impl) → `97fbc02` (In Review) — R293 (`build-warning-cleanup`):
+  clean up build-time warnings so a full `mvn install -Plocal-db` is warning-free under
+  `-Xlint:all -Werror`, leaving only declared-out-of-scope environment lines (sandbox jOOQ
+  PG-version mismatch, Maven's own Guice/`Unsafe` JVM notes, the R294 `BuildWarning`-channel
+  fixture advisory). Mechanical sweep (handwritten-source raw types / dangling javadoc /
+  `serialVersionUID` / `getType`→`getTypeOrNull` / `Charsets`→`StandardCharsets`, lsp FFM
+  `@SuppressWarnings("restricted")` + surefire `--enable-native-access`, maven-plugin descriptor
+  link, `junit-platform.properties` test-jar exclusion) plus emitter fixes. The generated-code
+  casts the spec slotted for narrowest-scope `@SuppressWarnings` were instead *dropped*:
+  `env.getArgument` / `env.getSource` are `<T> T`, so a typed-LHS statement removes the cast via
+  inference (the spec's preferred step-1 over its mis-categorised example); `@SuppressWarnings`
+  reserved for the genuinely-unchecked residuals (`(List<X>) map.get(key)` off `Map<?,?>`).
+  `cf8262e` further replaced the record-carrier `Outcome.Success<?>` capture + unchecked
+  `success.value()` cast with a checked `instanceof Outcome.Success<element>` pattern-match
+  (`Success<T> implements Outcome<T>`), via a shared `emitRecordSourceLocal` helper. Guard: `-Werror`
+  added to the parent pom's global `compilerArgs` (every `-Xlint:all` category enforced, none
+  excluded, documented escape hatch), inherited by sakila-example's release-17 generated-source
+  compile (the cross-module backstop); ratchet comment updated. jOOQ ambiguous keys resolved by
+  disabling `<implicitJoinPathsToMany>` on the `public.*` codegen (no catalog consumer navigates
+  those to-many path methods).
+
 - `2228b67`…`aa7a45e` — R281 (`classification-test-dsl`): classification test DSL, `@classified`
   spec-by-example. Replaces the doc-prose-plus-405-enum-row double specification of classification
   behaviour with an annotated SDL corpus that *is* the readable spec. Two test-only directives,
