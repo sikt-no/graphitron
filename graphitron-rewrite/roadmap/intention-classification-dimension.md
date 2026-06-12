@@ -27,34 +27,44 @@ reconstructable from leaf identity and the `DmlKind` slot.
 ## Direction, not contract
 
 This item realizes one stage of the R222 dimensional pivot (`dimensional-model-pivot`); the umbrella's
-"Direction, not contract" caveat applies. R299 lands the intention values reconstructable from the leaf
-set today and defers the rest. Specifically deferred: the `Count` and `Facet` read intents (no
-`OutputField` leaf exists for them, connection `totalCount`/facets are emitted by the connection
-generators, not classified as leaves), the `LookupService` finer service intent (divined from method
-signature, see the extension path), and the `Inherited.Query` / `Inherited.Service` placement split. The
-full producer-step intention model sounded out in design is recorded in the extension path; only its
-reconstructable core ships here.
+"Direction, not contract" caveat applies, with a sharpened reading: the `Intention` *model* shipped here
+is complete, the sealed hierarchy covers the full operation-kind vocabulary, but the current classifier
+can only *populate* the subset reconstructable from the leaf set. That gap is deliberate; the model
+leads the classifier. `Count` and `Facet` are modeled but unpopulated, no `OutputField` leaf exists for
+them yet (connection `totalCount`/facets are generator-only emit, not classified leaves), so they stay
+in the type as declared coverage gaps rather than being pruned from it. `LookupService` and the
+`Inherited.Query` / `Inherited.Service` placement split are the parts genuinely left *out of the model*
+for now, recorded on the extension path.
 
-## What ships now: operation kind across the three producers
+## The Intention model, and what the classifier populates
 
-`intention` is the *operation kind* a producer step performs. It is a total coordinate, every leaf
-carries a value, drawn from a closed `Intention` enum whose legal subset is fixed by the producer-step
-family:
+`intention` is the *operation kind* a producer step performs, modeled as a sealed hierarchy whose
+sub-interface is fixed by the producer-step family, so the producer structurally constrains which
+intentions are legal:
 
-- **`Query` producers, and inline catalog reads,** carry a *read intent*: `Fetch` (the default catalog
-  read) or `Lookup` (the `@lookupKey` N x M leaves: `LookupTableField`, `SplitLookupTableField`,
-  `RecordLookupTableField`, `QueryLookupTableField`). `Fetch` is the read floor and absorbs plain
-  column/record projections and structural passthroughs, so the coordinate stays total rather than
-  optional. `Count` and `Facet` are designed read intents but have no leaf to classify today, so they
-  are deferred, not enumerated.
-- **`Dml` producers** carry a *write intent*, the existing `DmlKind`: `Insert` / `Update` / `Delete` /
-  `Upsert`, read straight off the mutation field's `DmlKind` discriminator (which already drives
-  per-verb emit), so no new inference is needed.
-- **`Service` producers** carry *polarity*: `QueryService` (non-mutating) or `MutationService` (may
-  mutate). This is the deliberately coarse pair; `LookupService` is dropped from this slice. The
-  coarseness is observability-bound: graphitron generates the SQL for `Query` / `Dml` and could name
-  fine kinds there, but a `Service` is opaque user code, so the most graphitron can both know and must
-  know is whether it mutates.
+- **`ReadIntent`** (for `Query` producers and inline catalog reads): `Fetch` (the default catalog read),
+  `Lookup` (the `@lookupKey` N x M case), `Count`, `Facet`.
+- **`WriteIntent`** (for `Dml` producers): `Insert`, `Update`, `Delete`, `Upsert`, the existing
+  `DmlKind`.
+- **`ServiceIntent`** / polarity (for `Service` producers): `QueryService` (non-mutating),
+  `MutationService` (may mutate).
+
+The sealed type covers the model in full, including where the current classifier cannot complete it:
+
+- `Count` and `Facet` are real read operations (connection `totalCount`/facets) with no classified
+  `OutputField` leaf yet, so the adapter cannot produce them. They remain in the model, unpopulated, as
+  declared known gaps, not pruned from the type.
+- `LookupService` is *not* a model value. A lookup-service classifies as `QueryService`; its lookup
+  shape is a signature-derived refinement deferred to a later capability (see the extension path), not a
+  distinct intention.
+
+What the classifier *populates* today, reconstructed from leaf identity and the `DmlKind` slot, is
+`Fetch` / `Lookup` (`Fetch` the read floor that absorbs plain column/record projections and structural
+passthroughs, so the coordinate is total over the leaves it classifies), `Insert` / `Update` / `Delete`
+/ `Upsert` (off `DmlKind`), and `QueryService` / `MutationService`. The service polarity stays coarse for
+an observability reason: graphitron generates the SQL for `Query` / `Dml` and could name fine kinds
+there, but a `Service` is opaque user code, so the most it can both know and must know is whether it
+mutates.
 
 The service values are spelled `QueryService` / `MutationService` to name the parent context that fixes
 the polarity (a service under a `Query` root is non-mutating; under a `Mutation` root it may mutate).
@@ -75,37 +85,42 @@ asserted axis recording it.
 
 **Documentation first.** Extend the `Field Classification` section of `code-generation-triggers.adoc`
 with the `intention` axis: its purpose (operation kind, the third dimension beside producer and
-mapping), the closed value set, and the rule that the legal value is fixed by the producer-step family
-(read intent for `Query`/inline, `DmlKind` for `Dml`, polarity for `Service`). Note the two deferrals
-(`Count`/`Facet` lack a leaf; `LookupService` dropped) and that the service polarity's derivations
-(transaction handling, mutation-permission validation) are future work, not rules R299 enforces, per the
-"documentation names only live tests/code" discipline. Authoring the vocabulary first is the point of
+mapping), the complete sealed value set, and the rule that the legal sub-interface is fixed by the
+producer-step family (`ReadIntent` for `Query`/inline, `WriteIntent` for `Dml`, polarity for `Service`).
+Mark the coverage gaps explicitly (`Count`/`Facet` modeled but not yet reconstructable; `LookupService`
+not a model value) and note that the service polarity's derivations (transaction handling,
+mutation-permission validation) are future work, not rules R299 enforces, per the "documentation names
+only live tests/code" discipline. Authoring the vocabulary first is the point of
 this slice; reading it back is how we confirm the intention language flows before any code adopts it.
 The pre-pivot banner already added at the head of `Classification Vocabulary` stays; this extends the
 canonical dimensional section.
 
-**Then the corpus and adapter.** `DimensionTuple` gains a total `intention` coordinate. `LeafTupleAdapter`
-yields it for every leaf: a read intent (`Fetch`, or `Lookup` for the `@lookupKey` leaves) for catalog
-reads whether `[Query]` or inline, the leaf's `DmlKind` (`Insert` / `Update` / `Delete` / `Upsert`) for
-`Dml` leaves, and `QueryService` / `MutationService` for service leaves, with `Fetch` as the read floor
-for plain projections and passthroughs. The `@classified` directive gains a flat `intention: Intention`
-enum argument (a single typed enum, not a nested wrapper), mirrored by an `Intention` enum added to
-`ClassifiedDsl.PRELUDE`; every fixture sets it. No generator, validator, or model change: intention is
-reconstructed from leaf identity and the `DmlKind` slot exactly as `(producer, mapping)` already is, so
-this slice is corpus-and-docs only.
+**Then the corpus and adapter.** `DimensionTuple` gains an `intention` coordinate typed as the complete
+sealed `Intention` hierarchy above. `LeafTupleAdapter` populates it for every leaf from the
+reconstructable subset: a `ReadIntent` (`Fetch`, or `Lookup` for the `@lookupKey` leaves) for catalog
+reads whether `[Query]` or inline, the leaf's `DmlKind` as a `WriteIntent` for `Dml` leaves, and
+`QueryService` / `MutationService` for service leaves, with `Fetch` the floor for plain projections and
+passthroughs. `Count` and `Facet` exist in the type but are produced by no leaf. The `@classified`
+directive gains an `intention` argument over a single typed `Intention` enum surface (not a nested
+wrapper), mirrored against the model in `ClassifiedDsl.PRELUDE`; every fixture sets it. No generator,
+validator, or field-model change: intention is reconstructed from leaf identity and the `DmlKind` slot
+exactly as `(producer, mapping)` already is, so this slice is corpus-and-docs only.
 
 ## Invariants pinned here
 
-- **Intention is total and fixed by the producer-step family.** Every leaf carries an operation kind
-  from the closed `Intention` enum; the producer step determines the legal subset (read intents for
-  `Query`/inline, `DmlKind` for `Dml`, polarity for `Service`). There is no absent/unclassified value,
-  `Fetch` is the read floor.
-- **Mutation lives only at context-owning steps.** `Dml` leaves and `MutationService` are the only
-  mutating intentions; every read intent and `QueryService` is non-mutating. (The corollary that
-  inheritance is read-only is recorded for the extension path but not exercised, since no `Inherited.*`
-  step exists yet.)
-- **`QueryService` never mutates.** This is the contract the value names; the validation rule that
-  *enforces* it is later-slice work, not part of R299.
+- **The `Intention` model is complete; the classifier's coverage is a partial projection.** The sealed
+  `Intention` hierarchy covers the full operation-kind vocabulary, and the producer-step family fixes
+  the legal sub-interface (`ReadIntent` for `Query`/inline, `WriteIntent` for `Dml`, polarity for
+  `Service`). The classifier populates only what the leaf set permits; values it cannot yet produce
+  (`Count`, `Facet`) stay in the model as declared gaps, never silently absent or pruned.
+- **The populated coordinate is total over leaves.** Every leaf the adapter classifies carries a value;
+  `Fetch` is the read floor for plain projections and passthroughs, so no classified leaf lacks an
+  intention.
+- **Mutation lives only at context-owning steps.** `WriteIntent` and `MutationService` are the only
+  mutating intentions; every `ReadIntent` and `QueryService` is non-mutating. (Inheritance-is-read-only
+  is recorded for the extension path, not exercised, since no `Inherited.*` step exists yet.)
+- **`QueryService` never mutates.** The contract the value names; the enforcing validation rule is
+  later-slice work, not part of R299.
 
 ## Sequencing and acceptance
 
@@ -120,13 +135,13 @@ intention)` and to *materialize* intention as a slot rather than drop it when th
 
 Acceptance is the unit/corpus tier:
 
-- the extended `LeafTupleAdapter` switch stays exhaustive (compiler-enforced over the sealed
-  `OutputField`);
-- a live guard mirroring R281's `everyDimensionValueIsExercised` pins that every enumerated `Intention`
-  value (`Fetch`, `Lookup`, `Insert`, `Update`, `Delete`, `Upsert`, `QueryService`, `MutationService`)
-  is exercised by at least one fixture, so no value sits present-but-unasserted;
-- the `Intention` enum in `ClassifiedDsl.PRELUDE` is mirrored against the adapter's value set, the
-  analog of R281's leaf-mirror guard;
+- model completeness is structural: the sealed `Intention` hierarchy is exhaustive by construction, and
+  the `LeafTupleAdapter` switch stays exhaustive over `OutputField` (both compiler-enforced);
+- a guard adapts R281's `everyDimensionValueIsExercised` so every `Intention` value is *either* exercised
+  by a fixture *or* on an explicit known-gap list with a stated reason (`Count`, `Facet`: no classified
+  leaf), following the `NO_CASE_REQUIRED` precedent in `VariantCoverageTest`, a gap is declared, never
+  silent;
+- the `Intention` surface in `ClassifiedDsl.PRELUDE` is mirrored against the model;
 - the `@classified` fixtures assert their intention, `VariantCoverageTest` stays green, and the doc
   renders.
 
@@ -136,11 +151,11 @@ There is no pipeline or execution change to gate, because there is no emit chang
 
 Recorded so the axis grows additively, none of this ships in R299:
 
-- `Count` and `Facet` read intents, once connection `totalCount`/facets are modeled as classified leaves
-  rather than generator-only emit.
-- `LookupService`, the finer non-mutating service intent, divined from method signature (the
-  batch/positional N x M contract), inferred not declared, with ambiguous signatures rejected rather
-  than guessed.
+- Populate `Count` and `Facet` (already in the model) once connection `totalCount`/facets become
+  classified `OutputField` leaves rather than generator-only emit.
+- `LookupService`, a signature-derived refinement of `QueryService` (the batch/positional N x M
+  contract), inferred not declared, ambiguous signatures rejected; added to the model when that
+  inference exists.
 - The `Inherited.Query` / `Inherited.Service` placement split and the inheritance-is-read-only
   invariant, which materialize when the producer step model gains inline placements (R290 territory).
 - `Filter` is intentionally *not* a peer intent: a filtered read is `Fetch`-with-conditions, conditions
