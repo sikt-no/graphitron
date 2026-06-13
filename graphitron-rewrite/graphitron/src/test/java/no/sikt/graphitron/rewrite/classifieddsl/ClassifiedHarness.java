@@ -1,7 +1,6 @@
 package no.sikt.graphitron.rewrite.classifieddsl;
 
 import graphql.language.Argument;
-import graphql.language.ArrayValue;
 import graphql.language.Directive;
 import graphql.language.EnumTypeDefinition;
 import graphql.language.EnumValue;
@@ -107,7 +106,7 @@ public final class ClassifiedHarness {
                 + "OutputField (got " + (field == null ? "null" : field.getClass().getSimpleName())
                 + "); the corpus asserts successful classification only.");
         }
-        DimensionTuple expected = new DimensionTuple(producerArg(d), mappingArg(d));
+        DimensionTuple expected = new DimensionTuple(carrierArg(d), intentArg(d), mappingArg(d));
         DimensionTuple actual = LeafTupleAdapter.toTuple(out);
         return new FieldCase(parentType, fieldName, expected, actual, out.getClass());
     }
@@ -118,13 +117,12 @@ public final class ClassifiedHarness {
         return new TypeCase(typeName, enumArg(d, "as"), actual, type == null ? null : type.getClass());
     }
 
-    private static List<ProducerStep> producerArg(Directive d) {
-        var arr = (ArrayValue) argValue(d, "producer");
-        var steps = new ArrayList<ProducerStep>();
-        for (Value<?> v : arr.getValues()) {
-            steps.add(ProducerStep.valueOf(((EnumValue) v).getName()));
-        }
-        return steps;
+    private static Carrier carrierArg(Directive d) {
+        return Carrier.valueOf(enumArg(d, "carrier"));
+    }
+
+    private static Intent intentArg(Directive d) {
+        return Intent.valueOf(enumArg(d, "intent"));
     }
 
     private static Mapping mappingArg(Directive d) {
@@ -147,17 +145,32 @@ public final class ClassifiedHarness {
         return directives.stream().filter(x -> x.getName().equals(name)).findFirst().orElse(null);
     }
 
-    // ----- meta-test support: the TypeVerdict mirror -----
+    // ----- meta-test support: the SDL-vs-Java enum mirrors -----
 
     /** The {@code TypeVerdict} enum constants as declared in {@link ClassifiedDsl#PRELUDE}. */
     public static Set<String> typeVerdictEnumConstants() {
+        return preludeEnumConstants("TypeVerdict");
+    }
+
+    /** The {@code Carrier} enum constants as declared in {@link ClassifiedDsl#PRELUDE}. */
+    public static Set<String> carrierEnumConstants() {
+        return preludeEnumConstants("Carrier");
+    }
+
+    /** The {@code Intent} enum constants as declared in {@link ClassifiedDsl#PRELUDE}. */
+    public static Set<String> intentEnumConstants() {
+        return preludeEnumConstants("Intent");
+    }
+
+    /** The constant names of an enum declared in {@link ClassifiedDsl#PRELUDE}, in declaration order. */
+    private static Set<String> preludeEnumConstants(String enumName) {
         TypeDefinitionRegistry registry = new SchemaParser().parse(ClassifiedDsl.PRELUDE);
-        EnumTypeDefinition verdict = registry.getTypeOrNull("TypeVerdict", EnumTypeDefinition.class);
-        if (verdict == null) {
-            throw new AssertionError("TypeVerdict enum missing from the DSL prelude");
+        EnumTypeDefinition def = registry.getTypeOrNull(enumName, EnumTypeDefinition.class);
+        if (def == null) {
+            throw new AssertionError(enumName + " enum missing from the DSL prelude");
         }
         var names = new LinkedHashSet<String>();
-        for (EnumValueDefinition v : verdict.getEnumValueDefinitions()) {
+        for (EnumValueDefinition v : def.getEnumValueDefinitions()) {
             names.add(v.getName());
         }
         return names;

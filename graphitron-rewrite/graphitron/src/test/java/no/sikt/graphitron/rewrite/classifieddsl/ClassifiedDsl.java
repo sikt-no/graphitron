@@ -8,14 +8,15 @@ package no.sikt.graphitron.rewrite.classifieddsl;
  * exist in the schema document only so graphql-java's {@code SchemaGenerator.makeExecutableSchema}
  * accepts the applications (an undeclared directive application fails schema assembly).
  *
- * <p>The enums make the assertion validated SDL-side: a typo in a {@code producer} step or a
+ * <p>The enums make the assertion validated SDL-side: a typo in a {@code carrier}, {@code intent}, or
  * {@code mapping} value is a parse/assembly error graphql-java rejects before the harness runs, and
  * the values autocomplete in a schema-aware editor.
  *
  * <ul>
- *   <li>{@code @classified(producer: [ProducerStep!]!, mapping: Mapping!)} on output
- *       {@code FIELD_DEFINITION}s asserts the two-axis {@link DimensionTuple} the field classifies to.
- *       The empty list {@code []} is the inline (no-new-execution) producer.</li>
+ *   <li>{@code @classified(carrier: Carrier!, intent: Intent!, mapping: Mapping!)} on output
+ *       {@code FIELD_DEFINITION}s asserts the three-axis {@link DimensionTuple} the field classifies
+ *       to (R299). The {@link Carrier} and {@link Intent} enums mirror {@link LeafTupleAdapter}'s value
+ *       sets.</li>
  *   <li>{@code @classifiedType(as: TypeVerdict!)} asserts the {@code GraphitronType} sealed leaf a
  *       type classifies to. {@code TypeVerdict} enumerates those leaves minus the failure leaf
  *       {@code UnclassifiedType}; {@link ClassifiedHarness} mirrors the enum against the live leaf set.</li>
@@ -42,7 +43,13 @@ public final class ClassifiedDsl {
      * half of the DSL.
      */
     public static final String PRELUDE = """
-        enum ProducerStep { Query Service Dml }
+        enum Carrier { Query Mutation Source }
+
+        enum Intent {
+          Fetch Lookup NodeResolve EntityResolve Count Facet Nesting
+          Insert Upsert Update UpdateMatching Delete DeleteMatching
+          QueryService MutationService
+        }
 
         enum Mapping { Table TableConnection Column Record Field }
 
@@ -55,7 +62,7 @@ public final class ClassifiedDsl {
           ConnectionType EdgeType PageInfoType
         }
 
-        directive @classified(producer: [ProducerStep!]!, mapping: Mapping!) on FIELD_DEFINITION
+        directive @classified(carrier: Carrier!, intent: Intent!, mapping: Mapping!) on FIELD_DEFINITION
 
         directive @classifiedType(as: TypeVerdict!) on
           OBJECT | INTERFACE | UNION | INPUT_OBJECT | ENUM | SCALAR

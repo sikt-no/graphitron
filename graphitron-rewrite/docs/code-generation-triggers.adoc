@@ -36,7 +36,7 @@ directive-pattern → variant → generator output chain.
 
 [NOTE]
 ====
-*Pre-pivot vocabulary.* This section describes the field axes (source context, target type, scope) in their original form. They are being folded into the two-dimensional `(producer, mapping)` model in <<field-classification,Field Classification>> as part of R290 (`datafetcher-field-dimensional-slots`), under the R222 dimensional-model umbrella. Until that delivery lands, treat <<field-classification,Field Classification>> as canonical for how a field classifies; the terms below survive as the historical framing and as properties derived from the two dimensions, not as independent axes.
+*Pre-pivot vocabulary.* This section describes the field axes (source context, target type, scope) in their original form. They fold into the three-axis `carrier x intent x mapping` model in <<field-classification,Field Classification>>, under the R222 dimensional-model umbrella; materialising those axes as slots on the field itself is R290 (`datafetcher-field-dimensional-slots`). Treat <<field-classification,Field Classification>> as canonical for how a field classifies; the terms below survive as the historical framing and as properties derived from the three axes, not as independent axes.
 ====
 
 Two independent classifications describe every field: the *source context* it is defined on (parent type), and the *target type* it returns. Both matter because scope transitions are determined by the pair, not by either alone.
@@ -196,28 +196,41 @@ enters the scope; `Film.title` projects an inline column. Asserted by the `catal
 [#field-classification]
 == Field Classification
 
-A field's classification factors into two asserted dimensions. The worked examples below render this
-dimensional form from the corpus; the leaf-name tables that follow are a curated reference, enumerating
-each sealed variant and the generator output it drives. The corpus, not these tables, is the coverage
-source of truth: `VariantCoverageTest` guarantees every output-field leaf is demonstrated by a corpus
-fixture, so a variant absent from a table below is still tested, just not featured here in prose.
+A field's classification factors into three asserted axes plus a derived layer. The worked examples below
+render the dimensional form from the corpus; the leaf-name tables that follow are a curated reference,
+enumerating each sealed variant and the generator output it drives. The corpus, not these tables, is the
+coverage source of truth: `VariantCoverageTest` guarantees every output-field leaf is demonstrated by a
+corpus fixture, so a variant absent from a table below is still tested, just not featured here in prose.
 
-* *`producer`*, how the value is produced: a pipeline of up to two steps over `{ Query, Service, Dml }`,
-  or empty (`[]`) meaning the field inlines into the existing query and correlates rather than starting
-  a new one.
-* *`mapping`*, what domain object the value is: `Table` / `TableConnection` / `Column` for the catalog,
-  or `Record` / `Field` for a service return.
+The three asserted axes are:
 
-Everything finer (the source context, the fetcher/loader mechanism, dispatch batching, the error
-channel) is derived from those two dimensions plus the field's schema position, not asserted separately.
+* *`carrier`*, the GraphQL parent-type category, which *is* the field type: `Query` (the root query),
+  `Mutation` (the root mutation), or `Source` (every other, non-Subscription type). The carrier is
+  position, and it is also the legality gate: write intents only on `Mutation`, `NodeResolve` only on
+  `Query`, `Nesting` only on `Source`.
+* *`intent`*, the operation kind: reads (`Fetch`, `Lookup`, `NodeResolve`, `Nesting`, and the
+  modeled-but-unpopulated `EntityResolve` / `Count` / `Facet`), writes (`Insert`, `Upsert`, `Update`,
+  `Delete`, and the unpopulated `UpdateMatching` / `DeleteMatching`), and the coarse service polarity
+  (`QueryService`, `MutationService`).
+* *`mapping`*, what domain object the value is, carrying *build-vs-consume*: `Table` / `TableConnection` /
+  `Column` are catalog shapes graphitron *builds* the SQL for; `Record` / `Field` are domain shapes
+  graphitron *consumes* without having built. `Table:Column :: Record:Field` (mirror : reflect).
 
-=== `producer`: inline vs. new query
+The *derived layer* is computed from those three plus the field's slots and schema position, never
+asserted: `FetchRelated` (a `Fetch` reaching a related entity over a join-path), *re-fetch* (a
+service/DML producer yielding a `Table` shape, forcing a re-projection), *new-query* (`@splitQuery` /
+polymorphic / record-handoff opening a fresh keyed query), and *polarity* (mutating-or-not, from the
+intent family). The governing principle is *assert what nothing else carries; derive what another axis or
+slot already forces*. The subsections below sound out the derived layer and each axis in turn.
 
-The defining `producer` question is whether a field starts a new SQL query or inlines into the existing
-one. A `@table` child reachable by a foreign key from a `@table` parent inlines by default (producer
-`[]`), a correlated subquery folded into the parent's SELECT. Adding `@splitQuery` flips it to a new
-keyed query (producer `[Query]`) dispatched through a DataLoader: the minimal change that moves a field
-across the `producer` boundary while holding `mapping = Table` constant.
+=== The derived layer: same verdict, different mechanism
+
+Two fields can share an identical `(carrier, intent, mapping)` verdict yet emit different SQL, because
+the fetcher/loader mechanism is *derived*, not asserted. The cleanest illustration is the new-query
+derivation: a `@table` child reachable by a foreign key from a `@table` parent inlines as a correlated
+subquery folded into the parent's SELECT, while adding `@splitQuery` opens a new keyed query dispatched
+through a DataLoader. Both classify identically (`carrier = Source`, `intent = Fetch`, `mapping = Table`);
+only the derived new-query layer differs, forced by the `@splitQuery` slot.
 
 [source,graphql]
 ----
@@ -235,18 +248,17 @@ type Country @table(name: "country") {
 }
 ----
 
-`City.country` classifies with producer `[]` (an inline correlated subquery); `City.countrySplit`, the
-same `Country` return over the same `city -> country` foreign key, classifies with producer `[Query]`
-because `@splitQuery` opens a new keyed query. Both hold `mapping = Table`. Asserted by the
-`child-table` corpus example.
+`City.country` and `City.countrySplit` return the same `Country` over the same `city -> country` foreign
+key and carry the same `Source` / `Fetch` / `Table` verdict; `@splitQuery` flips only the derived
+new-query layer, not an asserted axis. Asserted by the `child-table` corpus example.
 
 ==== The record-handoff boundary
 
-`@splitQuery` is not the only trigger that moves a field across the `producer` boundary. A `@table`
-child reached by a foreign key inlines (producer `[]`) under a `@table` parent, but the *same* FK-reached
-child re-queries (producer `[Query]`) under a record-backed parent, because the record handoff has
-already opened a new DataLoader-backed scope that the correlated subquery cannot fold back into. The
-parent's table-ness, not a directive, moves the axis here. Both hold `mapping = Table`.
+`@splitQuery` is not the only trigger for the new-query derivation. A `@table` child reached by a foreign
+key inlines under a `@table` parent, but the *same* FK-reached child re-queries under a record-backed
+parent, because the record handoff has already opened a new DataLoader-backed scope that the correlated
+subquery cannot fold back into. The parent's table-ness, not a directive, forces the derived re-query
+here; the asserted verdict is unchanged.
 
 [source,graphql]
 ----
@@ -268,19 +280,21 @@ type FilmDetails {
 }
 ----
 
-`Film.language` classifies with producer `[]` (an inline correlated subquery, `TableField`).
-`FilmDetails.language`, the same `Language` return over the same `film_language_id_fkey` foreign key but
-under the record-backed parent `FilmDetails`, classifies with producer `[Query]` (`RecordTableField`):
-the record handoff forces a keyed re-query. Asserted by the `record-table` corpus example.
+`Film.language` (`TableField`) and `FilmDetails.language` (`RecordTableField`) return the same `Language`
+over the same `film_language_id_fkey` foreign key and carry the same `Source` / `Fetch` / `Table` verdict;
+the record handoff forces a derived keyed re-query under `FilmDetails`, not a different asserted axis.
+Asserted by the `record-table` corpus example.
 
-=== `mapping`: Column vs. Field
+=== `mapping`: build-vs-consume (Column vs. Field)
 
-The `mapping` dimension records what domain object the value is. Two flavors hinge on one thing, the
-parent's table-ness: a scalar under a `@table` parent maps to `Column` (a real database column), while
-under a record-backed parent (a plain object with no `@table`, here produced as a service method's
-return type) a scalar maps to `Field` (a POJO property read off the record). A nested non-table object
-under a record parent is the object flavor of the same `Field` mapping. All three inline into the
-parent's projection (producer `[]`); only the parent's table-ness moves the `mapping` axis.
+The `mapping` axis records what domain object the value is, and with it whether graphitron *builds* the
+SQL (catalog: `Table` / `Column`) or *consumes* a value it did not build (domain: `Record` / `Field`).
+Two scalar flavors hinge on the parent's table-ness: a scalar under a `@table` parent maps to `Column`
+(a real database column graphitron projects), while under a record-backed parent (a plain object with no
+`@table`, here produced as a service method's return type) a scalar maps to `Field` (a POJO property read
+off a record graphitron only reflects). A nested non-table object under a record parent is the object
+flavor of the same `Field` mapping. All three are `Source` / `Fetch`; only the parent's table-ness moves
+the `mapping` axis across the build-vs-consume line.
 
 [source,graphql]
 ----
@@ -302,10 +316,11 @@ type FilmStats {
 }
 ----
 
-`Film.title` classifies with `mapping = Column` (`title` is a column of the `film` table). `FilmStats.count`,
-a scalar under the record-backed `FilmStats`, classifies with `mapping = Field`. `FilmDetails.stats`, a
-nested non-table object under the record-backed `FilmDetails`, also classifies with `mapping = Field` (its
-object flavor). All hold producer `[]`. Asserted by the `mapping` corpus example.
+`Film.title` classifies with `mapping = Column` (`title` is a column of the `film` table graphitron
+builds the projection for). `FilmStats.count`, a scalar under the record-backed `FilmStats`, classifies
+with `mapping = Field` (a property graphitron reflects). `FilmDetails.stats`, a nested non-table object
+under the record-backed `FilmDetails`, also classifies with `mapping = Field` (its object flavor). All
+hold `carrier = Source`, `intent = Fetch`. Asserted by the `mapping` corpus example.
 
 === Polymorphic fields: interfaces, unions, and Relay nodes
 
@@ -313,11 +328,13 @@ A field returning an interface, a union, or a Relay `Node` is *catalog-bound* ov
 types: classification resolves the polymorphic type to its participant `@table` rows and projects each
 branch from the catalog. The `mapping` is therefore `Table` (the projection lands on participant table
 rows, `TableConnection` when paginated), with the participant set carried as a *derived slot* rather
-than as a distinct mapping value. A plain-interface or union child opens a new keyed query (producer
-`[Query]`, `InterfaceField` / `UnionField`), as does every polymorphic root (`QueryInterfaceField`,
-`QueryUnionField`, `QueryNodeField`, `QueryNodesField`). The one exception is a `@table`+`@discriminate`
-interface child (`TableInterfaceField`): it is foreign-key-correlatable from the parent and classifies
-inline (producer `[]`).
+than as a distinct mapping value. The intent is `Fetch` for interface and union fields (root or child)
+and `NodeResolve` for the Relay `node` / `nodes` roots; the new keyed query a plain-interface or union
+field opens (`InterfaceField` / `UnionField`, and the polymorphic roots `QueryInterfaceField` /
+`QueryUnionField` / `QueryNodeField` / `QueryNodesField`) is a *derived* new-query, not an asserted axis.
+The one structural difference is a `@table`+`@discriminate` interface child (`TableInterfaceField`): it
+is foreign-key-correlatable from the parent, so it inlines rather than opening a new query, but its
+asserted `Source` / `Fetch` / `Table` verdict is the same.
 
 [source,graphql]
 ----
@@ -335,9 +352,9 @@ interface Named {
 ----
 
 `Customer.address` returns the plain interface `Named` (implemented by the `@table` type `Address`),
-so it classifies with producer `[Query]` and `mapping = Table` (`InterfaceField`): a new keyed query
-projects the participant table, with `Address` recorded as the participant slot. Asserted by the
-`interface` corpus example.
+so it classifies with `carrier = Source`, `intent = Fetch`, `mapping = Table` (`InterfaceField`): a
+derived new keyed query projects the participant table, with `Address` recorded as the participant slot.
+Asserted by the `interface` corpus example.
 
 A union child follows the same dimensional rule. The selection descends into each participant through an
 inline fragment (`... on Film`, `... on Actor`), and classification resolves the union to its participant
@@ -364,13 +381,14 @@ type Actor @table(name: "actor") {
 union FilmOrActor = Film | Actor
 ----
 
-`FilmActor.related` returns the union `FilmOrActor`, so it classifies with producer `[Query]` and
-`mapping = Table` (`UnionField`): a new keyed query projects whichever participant table a row resolves
-to, with `Film` and `Actor` recorded as the participant slots. Asserted by the `union` corpus example.
+`FilmActor.related` returns the union `FilmOrActor`, so it classifies with `carrier = Source`,
+`intent = Fetch`, `mapping = Table` (`UnionField`): a derived new keyed query projects whichever
+participant table a row resolves to, with `Film` and `Actor` recorded as the participant slots. Asserted
+by the `union` corpus example.
 
-The `@table`+`@discriminate` interface child (`TableInterfaceField`, inline producer `[]`) and the Relay
-`Node` root (`QueryNodeField`, producer `[Query]`) are further leaves on this same polymorphic rule, each
-holding `mapping = Table`; they are asserted corpus-only (`table-interface`, `relay-node`).
+The `@table`+`@discriminate` interface child (`TableInterfaceField`, inline) and the Relay `Node` root
+(`QueryNodeField`, `intent = NodeResolve`) are further leaves on this same polymorphic rule, each holding
+`mapping = Table`; they are asserted corpus-only (`table-interface`, `relay-node`).
 
 === Reading the generator-output column
 
@@ -412,11 +430,12 @@ The federation `_entities` field is *not* modelled as a `QueryField` permit; it 
 
 === Mutation Fields
 
-A mutation whose `@mutation(typeName:)` writes the catalog and returns a `@table` type runs a two-step
-producer pipeline: the write produces the affected row (a `Dml` step), then a follow-up `SELECT` projects
-that row back through the catalog (a trailing `Query` step). So the field is producer `[Dml, Query]`,
-`mapping = Table`, the shape INSERT, UPDATE, and DELETE share. The mutation's input object is part of the
-rendered closure, so the excerpt shows the `@table`-bound input the write consumes:
+A mutation whose `@mutation(typeName:)` writes the catalog and returns a `@table` type classifies with
+`carrier = Mutation`, the write verb as its `intent` (`Insert` / `Update` / `Delete`), and
+`mapping = Table`. The write produces the affected row, then a follow-up `SELECT` re-projects it through
+the catalog; that read-back is the *derived re-fetch* (a write producer yielding a `Table` shape), not a
+separate asserted axis. The mutation's input object is part of the rendered closure, so the excerpt
+shows the `@table`-bound input the write consumes:
 
 [source,graphql]
 ----
@@ -434,15 +453,15 @@ input FilmInput @table(name: "film") {
 ----
 
 `Mutation.createFilm` inserts a `film` row from `FilmInput` and projects the inserted row as the `@table`
-type `Film`: producer `[Dml, Query]`, `mapping = Table` (`MutationInsertTableField`). Asserted by the
-`dml` corpus example.
+type `Film`: `carrier = Mutation`, `intent = Insert`, `mapping = Table` (`MutationInsertTableField`), the
+read-back being the derived re-fetch. Asserted by the `dml` corpus example.
 
 |===
 | Schema Pattern | `MutationField` Variant | `*Fetchers` Generates
 
-| `@mutation(typeName: INSERT)`, returning `ID` or a `@table` type | `MutationInsertTableField` | Fetcher method ; `[Dml, Query]` write + read-back SELECT
-| `@mutation(typeName: UPDATE)`, returning `ID` or a `@table` type | `MutationUpdateTableField` | Fetcher method ; `[Dml, Query]` write + read-back SELECT
-| `@mutation(typeName: DELETE)`, returning `ID` | `MutationDeleteTableField` | Fetcher method ; `[Dml]` write + encoded-PK off `RETURNING` (no read-back ; the row is gone)
+| `@mutation(typeName: INSERT)`, returning `ID` or a `@table` type | `MutationInsertTableField` | Fetcher method ; write + read-back SELECT (the derived re-fetch)
+| `@mutation(typeName: UPDATE)`, returning `ID` or a `@table` type | `MutationUpdateTableField` | Fetcher method ; write + read-back SELECT (the derived re-fetch)
+| `@mutation(typeName: DELETE)`, returning `ID` | `MutationDeleteTableField` | Fetcher method ; write + encoded-PK off `RETURNING` (no read-back ; the row is gone, `mapping = Column`)
 | `@mutation(typeName: UPSERT)`, returning `ID` or a `@table` type | `MutationUpsertTableField` | Rejected at classification ; UPSERT generation gated pending R145
 | `@mutation(typeName: INSERT\|UPDATE\|DELETE\|UPSERT)`, returning a single-record `@record(record:{className:...})`-or-bare-SDL carrier (one recognized data field, optional errors-shaped field) | `MutationDmlRecordField` | Two-step fetcher: per-kind DML chain inside `transactionResult` with PK-only `RETURNING`, plus a follow-up data-field SELECT outside the transaction
 | `@mutation(typeName: INSERT\|UPDATE)` with bulk `@table` input, returning a single-record carrier with a list-shaped `@table`-element data field | `MutationBulkDmlRecordField` | Per-row DML inside one `transactionResult`, accumulating a typed `Result<RecordN<PK>>` in input order
