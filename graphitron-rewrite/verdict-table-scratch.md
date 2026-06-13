@@ -1,163 +1,161 @@
-# Verdict table (scratch) — provider / intent / mapping over the current OutputField leaves
+# Verdict table v2 (scratch) — carrier × intent × mapping, producer dissolved
 
-NOT a spec. A throwaway test of the candidate vocabulary against every current `OutputField`
-leaf, to see what closes and what wobbles. Leaf set taken from `LeafTupleAdapter` (exhaustive
-switch) + the `DmlTableField` sealed-on-kind expansion.
+NOT a spec. Re-table of every current `OutputField` leaf after the producer dimension collapsed
+into carrier + derived slots. Compare against v1 (the `{QueryPart, Query, ReturnedValue}` cut) to
+see what the collapse bought.
 
-Candidate vocabulary under test:
+## Model under test
 
-- **provider** = how the value reaches the resolver: `QueryPart` (a jOOQ part spliced into the
-  enclosing statement) | `Query` (its own statement) | `ReturnedValue` (read a value handed back).
-  Write side currently has **no provider** — that is finding A.
-- **intent** = the operation: `Fetch` `Lookup` `Count` `Facet` `LookupResult` (reads) |
-  `Insert` `Update` `Delete` `Upsert` (writes) | `QueryService` `MutationService` (service polarity).
-- **mapping** = value shape: `Table` `Column` `Record` `Field` (poly rendered `Table[poly]`).
-- Orthogonal capability slots (not axes): method-backed, batch-key/source, join-path, bulk,
-  inherits-parent-context. These already exist as marker interfaces; the triple was never meant to
-  be a unique key, but the collisions below show where they're load-bearing.
+- **carrier** (GraphQL parent-type category, the field type): `Query` (root) | `Mutation` (root) |
+  `Source` (every other non-Subscription type). Carrier is *position*, and it gates legality.
+- **intent** (asserted):
+  - read: `Fetch`, `Lookup`, `NodeResolve`, `EntityResolve`, `Count`, `Facet`, `Nesting`
+  - write: `Insert`, `Upsert`, `Update`, `UpdateMatching`, `Delete`, `DeleteMatching`
+  - service: `QueryService`, `MutationService`
+- **mapping**: `Table` / `Column` (catalog, graphitron builds) | `Record` / `Field` (domain, graphitron
+  consumes). Mapping *is* the build-vs-consume axis; there is no separate provider.
+- **derived** (shown in the table, never asserted):
+  - `FR` = `FetchRelated`, derived from a non-empty **join-path** slot
+  - `RF` = **re-fetch**, derived from a (`Service`|`DML` intent) × `Table` mapping mismatch
+  - `NQ` = **new-query**, a `SourceField` slot forced by `@splitQuery` / polymorphic / record-handoff
+  - polarity (mutating?) derived from the intent family; not shown
+- orthogonal capability slots (method-backed, batch-key, join-path, bulk, composite, participants)
+  carry per-leaf detail; the triple is the classification, not the whole emit-determinant.
 
-`⚠` marks a cell the candidate vocabulary cannot fill.
+## Query carrier
 
-## Root query
-
-| Leaf | provider | intent | mapping | note |
+| Leaf | intent | mapping | derived | slot |
 |---|---|---|---|---|
-| QueryTableField | Query | Fetch | Table | |
-| QueryLookupTableField | Query | Lookup | Table | |
-| QueryTableMethodTableField | Query | Fetch | Table | method-backed |
-| QueryTableInterfaceField | Query | Fetch | Table[poly] | |
-| QueryInterfaceField | Query | Fetch | Table[poly] | |
-| QueryUnionField | Query | Fetch | Table[poly] | |
-| QueryNodeField | Query | Lookup | Table[poly] | node(id) = by-id (judgment call) |
-| QueryNodesField | Query | Lookup | Table[poly] | nodes(ids) (judgment call) |
-| QueryServiceTableField | ReturnedValue.QueryService → Query.LookupResult | composite | Table | two-part (D) |
-| QueryServiceRecordField | ReturnedValue | QueryService | Record | |
+| QueryTableField | Fetch | Table | | |
+| QueryLookupTableField | Lookup | Table | | |
+| QueryTableMethodTableField | Fetch | Table | | method |
+| QueryTableInterfaceField | Fetch | Table[poly] | | participants |
+| QueryInterfaceField | Fetch | Table[poly] | | participants |
+| QueryUnionField | Fetch | Table[poly] | | participants |
+| QueryNodeField | NodeResolve | Table[poly] | | |
+| QueryNodesField | NodeResolve | Table[poly] | | (list) |
+| QueryServiceTableField | QueryService | Table | **RF** | |
+| QueryServiceRecordField | QueryService | Record | | |
 
-## Root mutation — the write side
+## Mutation carrier
 
-| Leaf | provider | intent | mapping | note |
+| Leaf | intent | mapping | derived | slot |
 |---|---|---|---|---|
-| MutationInsertTableField | ⚠ | Insert | Column (encoded) / Table (projected) | projected → + LookupResult |
-| MutationUpdateTableField | ⚠ | Update | Column / Table | |
-| MutationDeleteTableField | ⚠ | Delete | Column | encoded-id only (R287) |
-| MutationUpsertTableField | ⚠ | Upsert | Column / Table | |
-| MutationServiceTableField | ReturnedValue.MutationService → Query.LookupResult | composite | Table | two-part (D) |
-| MutationServiceRecordField | ReturnedValue | MutationService | Record | |
-| MutationDmlRecordField | ⚠ → ReturnedValue | DmlKind | Record | write then read RETURNING |
-| MutationBulkDmlRecordField | ⚠ → ReturnedValue | DmlKind | Record | bulk |
-| MutationUpdatePayloadField | ⚠ → ReturnedValue | Update | Record | |
-| MutationBulkUpdatePayloadField | ⚠ → ReturnedValue | Update | Record | bulk |
-| MutationDeletePayloadField | ⚠ → ReturnedValue | Delete | Record | |
-| MutationBulkDeletePayloadField | ⚠ → ReturnedValue | Delete | Record | bulk |
+| MutationInsertTableField | Insert | Column / Table | **RF** (when Table) | |
+| MutationUpsertTableField | Upsert | Column / Table | **RF** (when Table) | |
+| MutationUpdateTableField | Update | Column / Table | **RF** (when Table) | |
+| MutationDeleteTableField | Delete | Column | | encoded-id only (R287) |
+| MutationServiceTableField | MutationService | Table | **RF** | |
+| MutationServiceRecordField | MutationService | Record | | |
+| MutationDmlRecordField | Insert/Update/Upsert | Record | | |
+| MutationBulkDmlRecordField | Insert/Update/Upsert | Record | | bulk |
+| MutationUpdatePayloadField | Update | Record | | |
+| MutationBulkUpdatePayloadField | Update | Record | | bulk |
+| MutationDeletePayloadField | Delete | Record | | |
+| MutationBulkDeletePayloadField | Delete | Record | | bulk |
 
-## Child — column carriers (QueryPart)
+## Source carrier (all ChildField leaves)
 
-| Leaf | provider | intent | mapping | note |
+| Leaf | intent | mapping | derived | slot |
 |---|---|---|---|---|
-| ColumnField | QueryPart | Fetch | Column | |
-| ColumnReferenceField | QueryPart | Fetch | Column | join-path |
-| ParticipantColumnReferenceField | QueryPart | Fetch | Column | poly join |
-| CompositeColumnField | QueryPart | Fetch | Column | composite |
-| CompositeColumnReferenceField | QueryPart | Fetch | Column | composite, deferred-stub |
+| ColumnField | Fetch | Column | | |
+| ColumnReferenceField | Fetch | Column | **FR** | join-path |
+| ParticipantColumnReferenceField | Fetch | Column[poly] | **FR** | join-path, participant |
+| CompositeColumnField | Fetch | Column | | composite |
+| CompositeColumnReferenceField | Fetch | Column | **FR** | composite, deferred-stub |
+| TableField | Fetch | Table | **FR** | (inline) |
+| LookupTableField | Lookup | Table | | (inline) |
+| TableInterfaceField | Fetch | Table[poly] | **FR** | participants (R288) |
+| TableMethodField | Fetch | Table | **FR** | method |
+| SplitTableField | Fetch | Table | **FR**, **NQ** | batch-key |
+| SplitLookupTableField | Lookup | Table | **NQ** | batch-key |
+| RecordTableField | Fetch | Table | **FR**, **NQ** | record-key |
+| RecordLookupTableField | Lookup | Table | **NQ** | record-key |
+| RecordTableMethodField | Fetch | Table | **FR**, **NQ** | method, record-key |
+| ServiceTableField | QueryService | Table | **RF** | |
+| SingleRecordTableField | Fetch | Table | **NQ** | (re-projection continuation) |
+| ServiceRecordField | QueryService | Record | | |
+| RecordField | Fetch | Field | | |
+| PropertyField | Fetch | Field | | |
+| ComputedField (ExternalField) | Fetch | Field / Record | | reflection (was Column!) |
+| NestingField | **Nesting** | Table | | (was Fetch — collision fixed) |
+| ConstructorField | Fetch | Record | | assemble-from-parent (Nesting?) |
+| InterfaceField | Fetch | Table[poly] | **FR**, **NQ** | participants |
+| UnionField | Fetch | Table[poly] | **FR**, **NQ** | participants |
+| SingleRecordIdFieldFromReturning | Fetch | Column | | reads RETURNING |
+| SingleRecordIdField | Fetch | Column | | encode-from-record |
+| ErrorsField | Fetch | Record | | reads Outcome |
 
-## Child — table targets
+## Connection protocol roles (Source carrier; not current leaves)
 
-| Leaf | provider | intent | mapping | note |
-|---|---|---|---|---|
-| TableField | QueryPart | Fetch | Table | correlated multiset |
-| LookupTableField | QueryPart | Lookup | Table | |
-| TableInterfaceField | QueryPart | Fetch | Table[poly] | R288 emit divergence |
-| TableMethodField | QueryPart | Fetch | Table | method-backed |
-| SplitTableField | Query | Fetch | Table | batch-key |
-| SplitLookupTableField | Query | Lookup | Table | batch-key |
-| RecordTableField | Query | Fetch | Table | record-parent key |
-| RecordLookupTableField | Query | Lookup | Table | record-parent key |
-| RecordTableMethodField | Query | Fetch | Table | method + record-parent |
-| ServiceTableField | ReturnedValue.QueryService → Query.LookupResult | composite | Table | two-part (D) |
-| SingleRecordTableField | Query | LookupResult | Table | the materialized re-projection continuation |
-
-## Child — service record / passthrough scalars
-
-| Leaf | provider | intent | mapping | note |
-|---|---|---|---|---|
-| ServiceRecordField | ReturnedValue | QueryService | Record | |
-| RecordField | ReturnedValue | ⚠ | Field | pure read off parent record (B) |
-| PropertyField | ReturnedValue | ⚠ | Field | pure read (B) |
-| ComputedField | QueryPart | Fetch | Column | @externalField inline jOOQ Field, method-backed |
-
-## Child — nesting / constructor / polymorphic / returning
-
-| Leaf | provider | intent | mapping | note |
-|---|---|---|---|---|
-| NestingField | QueryPart | Fetch | Table | structural passthrough (collides w/ TableField — C) |
-| ConstructorField | ReturnedValue | ⚠ | Record | pure construction from parent record (B) |
-| InterfaceField | Query | Fetch | Table[poly] | |
-| UnionField | Query | Fetch | Table[poly] | |
-| SingleRecordIdFieldFromReturning | ReturnedValue | ⚠ | Column | reads encoded PK off RETURNING (B) |
-| SingleRecordIdField | ReturnedValue | ⚠ | Column | encodes node-key off in-mem record (B) |
-| ErrorsField | ReturnedValue | ⚠ | Record | reads Outcome arm off source (B) |
-
-## Connection protocol roles (not current leaves)
-
-| Role | provider | intent | mapping | note |
-|---|---|---|---|---|
-| edges | Query | Fetch | Table | the establishing page query |
-| totalCount | QueryPart | Count | Column | correlated count (emit currently standalone) |
-| facets | QueryPart | Facet | Record? | grouped aggregate (mapping unclear) |
-| nodes | ReturnedValue | ⚠ | Table | read off ConnectionResult (B) |
-| pageInfo | ReturnedValue | ⚠ | Record | read off ConnectionResult (B) |
+| Role | intent | mapping | derived |
+|---|---|---|---|
+| edges | Fetch | Table | NQ |
+| totalCount | Count | Column | |
+| facets | Facet | Record | |
+| nodes | Fetch | Table | |
+| pageInfo | Fetch | Record | |
 
 ---
 
 ## Mechanical tests
 
-**1. Totality (every leaf gets a verdict): FAILS, on two fronts.**
-- (A) Every write leaf (12 mutation rows) has `⚠` in the provider column. `{QueryPart, Query, ReturnedValue}` has no value for "the resolver executed a write statement." A DML is the resolver's own SQL (so not `ReturnedValue`), but it is not a query (so not `Query`).
-- (B) Every pure read off an in-hand value (`RecordField`, `PropertyField`, `ConstructorField`, `ErrorsField`, `SingleRecordIdField`, `SingleRecordIdFieldFromReturning`, + `nodes`/`pageInfo` roles) has `⚠` in the intent column. The intent set is query-side; reading a property off a returned record performs no operation.
+**1. Totality — PASSES. No `⚠` anywhere.** This is the headline. The two v1 holes are closed:
+- *Write provider hole (A)* — gone. Writes are `Mutation` carrier + a write intent + a mapping; the
+  producer that had nowhere to put them no longer exists. The carrier *is* the write gate.
+- *Pure-read intent hole (B)* — gone. `RecordField`, `PropertyField`, `ErrorsField`, the
+  `SingleRecordId*` leaves, `nodes`/`pageInfo` are all `Fetch` + a domain mapping (`Field`/`Record`).
+  `Fetch` is the plain read *relative to the source the mapping names* (consume a field), not a
+  query-only intent.
 
-**2. Distinguishing (verdict carries enough to drive emit): FALSE as stated, by design.**
-The triple is not a unique key. Collisions with different codegen:
-- `TableField` vs `NestingField` (both `QueryPart.Fetch/Table`): multiset vs structural passthrough.
-- `QueryTableField` vs `QueryTableMethodTableField` (both `Query.Fetch/Table`): generated vs method-backed.
-- `SplitTableField` vs `RecordTableField` vs `RecordTableMethodField` (all `Query.Fetch/Table`): distinguished only by batch-key/method slots.
-These resolve through the orthogonal slots (method-backed, batch-key, inherits-context), which is consistent with R281, but it means the three axes are the *classification*, not the full emit-determinant. Worth stating outright rather than implying the triple is a key.
+Every leaf carries `(carrier, intent, mapping)`. The model closes over the leaf set.
 
-**3. Every axis value is used: mostly, with the known gaps.**
-- provider: `QueryPart`, `Query`, `ReturnedValue` all used. Write provider (if added) used by 12 leaves.
-- intent: `Fetch`, `Lookup`, `LookupResult`, `Insert`/`Update`/`Delete`/`Upsert`, `QueryService`/`MutationService` all used. `Count`/`Facet` used only by connection roles (not current leaves) — the declared R299 gaps, confirmed.
-- mapping: `Table`, `Column`, `Record`, `Field` all used.
+**2. Distinguishing — same as v1 (triple is not a unique key, by design).** Same-triple leaves
+separate on orthogonal slots:
+- `QueryTableField` vs `QueryTableMethodTableField` → method slot.
+- `SplitTableField` vs `RecordTableField` → batch-key vs record-key slot (both `Fetch`/`Table`/`FR`/`NQ`).
+- `ColumnField` vs `ColumnReferenceField` → join-path (which derives `FR`).
+The derived columns (`FR` from join-path) now do some of this separating that v1 needed slots for. The
+`NestingField`/`TableField` collision that flagged in v1 is **fixed**: `Nesting` vs `Fetch`.
 
-**4. Illegal combos unspellable (provider gates intent): holds where the providers exist.**
-- `QueryPart`/`Query` (SQL) → read intents only. ✓
-- `ReturnedValue` → `{QueryService, MutationService}` for service-backed, but pure reads want a value it does not have (B again).
-- `LookupResult` correctly appears only on the service-requery continuation and `SingleRecordTableField`. ✓
-- Write intents have nowhere legal to sit until a write provider exists (A).
+**3. Every asserted intent used — five modeled-but-unpopulated gaps.** Exercised: `Fetch`, `Lookup`,
+`NodeResolve`, `Nesting`, `Insert`, `Upsert`, `Update`, `Delete`, `QueryService`, `MutationService`.
+No current leaf: **`EntityResolve`** (Federation `_entities`), **`Count`**, **`Facet`**,
+**`UpdateMatching`**, **`DeleteMatching`**. These are declared gaps (model leads classifier), same
+status as before — the model carries them, no leaf populates them yet.
+
+**4. Carrier gates intent; intent×mapping derives re-fetch — holds.**
+- write intents only on `Mutation`; `NodeResolve`/`EntityResolve` only on `Query`; `Nesting` only on
+  `Source`. The carrier is the gate the producer used to be.
+- `RF` fires exactly on (`Service`|`DML`) × `Table`, and nowhere else; `Service`/`DML` × `Record`/`Column`
+  consume the returned value directly (no re-fetch). Clean.
 
 ---
 
-## What the table says about our ideas
+## What changed from v1, and where it still wobbles
 
-- **`QueryPart` earns its place.** Every inline catalog read (columns, multiset, computed, nesting,
-  totalCount) sits cleanly under it, including the bare column that broke `SubQuery`/`CorrelatedQuery`.
-  No `⚠` on the read-via-SQL side.
-- **`Query` and `ReturnedValue` hold** for standalone reads and service returns respectively.
-- **The triad does not close over writes (A)** or over pure in-hand reads (B). These are the two real
-  holes, and they are structural, not naming.
-- **The service-requery composite (D)** is genuinely two-part (`ReturnedValue.<polarity>` →
-  `Query.LookupResult`); 4 leaves need a composite verdict or a collapse decision. This is R290's
-  central case.
+**Closed:** both `⚠` holes (A write provider, B pure reads). The composite (old D) dissolved into
+`QueryService`/`MutationService` + `Table` mapping with `RF` derived — no two-part shape, polarity
+preserved as the intent.
 
-### Candidate resolutions (to argue about, not adopt)
+**Reclassifications forced by the new model:**
+- `ComputedField` (`@externalField`): `QueryPart`/`Column` (catalog) → `Fetch`/`Field`|`Record` (domain,
+  reflection-typed). Biggest single change; rests on "provider classifies epistemic role, not SQL
+  location."
+- `NestingField`: `Fetch`/`Table` → `Nesting`/`Table`.
+- producer column deleted entirely; carrier + `NQ` slot replace it.
 
-- **A — write provider.** Either add a fourth provider (`Statement`? `Mutation`? `Write`?) for
-  resolver-run writes, or broaden `Query` from "SELECT statement" to "resolver-run statement"
-  covering DML. The latter keeps three providers but makes `Query` mean "any statement the resolver
-  issues," with the read/write split living entirely in intent.
-- **B — pure-read intent.** Either add a degenerate `Read`/`Project` intent for `ReturnedValue`
-  reads, or declare intent **not total** — it is a property of query/service/write operations, and a
-  bare projection off an in-hand value simply has none. (This reopens the totality question R299
-  just closed for intent; the honest answer may be "intent is total over *operations*, and a
-  ReturnedValue pure-read is not an operation.")
-- **D — composite verdict.** Either the verdict for service-requery leaves is an explicit
-  two-step pipeline, or `LookupResult` absorbs the upstream polarity into one value
-  (`QueryServiceLookup` / `MutationServiceLookup`), trading a clean intent enum for a flat verdict.
+**Still wobbling (3 spots):**
+1. **`ConstructorField`** — `Fetch`/`Record` or `Nesting`/`Record`? It assembles a `@record` from the
+   parent record's fields, structurally a regroup (Nesting-like) but it does construct a new object
+   rather than pure passthrough. Domain-side `Nesting`, or a plain domain `Fetch`?
+2. **`SingleRecordTableField`** — it's the explicit re-projection continuation, but the re-fetch is now
+   *derived* from (`Service`/`DML`) × `Table`. So is this leaf redundant with the `RF` derivation, i.e.
+   does it survive the dimensional collapse or fold into `ServiceTableField`'s `RF`?
+3. **`UpdateMatching`/`DeleteMatching` vs the `Bulk` payload leaves** — the `Bulk` variants source
+   per-row WHERE columns (bulk-by-identity), so I mapped them to `Update`/`Delete` + bulk slot, leaving
+   `UpdateMatching`/`DeleteMatching` (condition-matched) unpopulated. Confirm the `Bulk` leaves are
+   identity-bulk, not condition-matched, or these gaps are wrong.
+
+Net: the model lands — totality holds, both structural holes closed, carrier-gates-intent works, and
+the only unexercised intents are the declared model-completeness gaps.
