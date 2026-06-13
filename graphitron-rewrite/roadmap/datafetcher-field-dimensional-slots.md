@@ -66,3 +66,95 @@ The merge gate is both tiers green: the R281/R299 corpus for the decomposition, 
 pipeline tier's job). `QueryBuilder` and `ValidationBuilder` are sibling Stage 3 consumers the same
 corpus drives; the Stage 1 foundation (`ServiceField` / `ServiceMethodCall`) has landed. See the R281
 entry in `roadmap/changelog.md`.
+
+## Appendix: leaf inventory (the verdicts R290 materialises)
+
+Every current `OutputField` leaf under the `carrier × intent × mapping` model, with the derived columns
+shown. This is the worked target R290 implements; **totality holds, no leaf has an unfilled cell.**
+`ConstructorField` (dissolved) and `SingleRecordTableField` (collapsed into the `(Service`/`DML) × Table`
+re-fetch) are absent by design, the leaf set is 47. Derived legend: `FR` = `FetchRelated` (from a
+non-empty join-path), `RF` = re-fetch (from a `(Service`|`DML`) × `Table` mismatch), `NQ` = new-query
+(`SourceField` slot, forced by `@splitQuery` / polymorphic / record-handoff). The orthogonal slot column
+(method, batch-key, join-path, bulk, composite, participants) carries per-leaf detail; the triple is the
+classification, not the whole emit-determinant.
+
+### Query carrier (`QueryField`)
+
+| Leaf | intent | mapping | derived | slot |
+|---|---|---|---|---|
+| QueryTableField | Fetch | Table | | |
+| QueryLookupTableField | Lookup | Table | | |
+| QueryTableMethodTableField | Fetch | Table | | method |
+| QueryTableInterfaceField | Fetch | Table[poly] | | participants |
+| QueryInterfaceField | Fetch | Table[poly] | | participants |
+| QueryUnionField | Fetch | Table[poly] | | participants |
+| QueryNodeField | NodeResolve | Table[poly] | | |
+| QueryNodesField | NodeResolve | Table[poly] | | (list) |
+| QueryServiceTableField | QueryService | Table | RF | |
+| QueryServiceRecordField | QueryService | Record | | |
+
+### Mutation carrier (`MutationField`)
+
+| Leaf | intent | mapping | derived | slot |
+|---|---|---|---|---|
+| MutationInsertTableField | Insert | Column / Table | RF (when Table) | |
+| MutationUpsertTableField | Upsert | Column / Table | RF (when Table) | |
+| MutationUpdateTableField | Update | Column / Table | RF (when Table) | |
+| MutationDeleteTableField | Delete | Column | | encoded-id only (R287) |
+| MutationServiceTableField | MutationService | Table | RF | |
+| MutationServiceRecordField | MutationService | Record | | |
+| MutationDmlRecordField | Insert/Update/Upsert | Record | | |
+| MutationBulkDmlRecordField | Insert/Update/Upsert | Record | | bulk |
+| MutationUpdatePayloadField | Update | Record | | |
+| MutationBulkUpdatePayloadField | Update | Record | | bulk |
+| MutationDeletePayloadField | Delete | Record | | |
+| MutationBulkDeletePayloadField | Delete | Record | | bulk |
+
+### Source carrier (`SourceField`, currently `ChildField`)
+
+| Leaf | intent | mapping | derived | slot |
+|---|---|---|---|---|
+| ColumnField | Fetch | Column | | |
+| ColumnReferenceField | Fetch | Column | FR | join-path |
+| ParticipantColumnReferenceField | Fetch | Column[poly] | FR | join-path, participant |
+| CompositeColumnField | Fetch | Column | | composite |
+| CompositeColumnReferenceField | Fetch | Column | FR | composite, deferred-stub |
+| TableField | Fetch | Table | FR | (inline) |
+| LookupTableField | Lookup | Table | | (inline) |
+| TableInterfaceField | Fetch | Table[poly] | FR | participants (R288) |
+| TableMethodField | Fetch | Table | FR | method |
+| SplitTableField | Fetch | Table | FR, NQ | batch-key |
+| SplitLookupTableField | Lookup | Table | NQ | batch-key |
+| RecordTableField | Fetch | Table | FR, NQ | record-key |
+| RecordLookupTableField | Lookup | Table | NQ | record-key |
+| RecordTableMethodField | Fetch | Table | FR, NQ | method, record-key |
+| ServiceTableField | QueryService | Table | RF | |
+| ServiceRecordField | QueryService | Record | | |
+| RecordField | Fetch | Field | | |
+| PropertyField | Fetch | Field | | |
+| ComputedField (`@externalField`) | Fetch | Field / Record | | reflection (reclassified from `Column`) |
+| NestingField | Nesting | Table | | (reclassified from `Fetch`) |
+| InterfaceField | Fetch | Table[poly] | FR, NQ | participants |
+| UnionField | Fetch | Table[poly] | FR, NQ | participants |
+| SingleRecordIdFieldFromReturning | Fetch | Column | | reads RETURNING |
+| SingleRecordIdField | Fetch | Column | | encode-from-record |
+| ErrorsField | Fetch | Record | | reads Outcome |
+
+### Connection protocol roles (Source carrier; not current leaves)
+
+Behind the ConnectionType quarantine; classifying them is a separate item. Their intents (`Count`,
+`Facet`) are among the declared model-completeness gaps.
+
+| Role | intent | mapping | derived |
+|---|---|---|---|
+| edges | Fetch | Table | NQ |
+| totalCount | Count | Column | |
+| facets | Facet | Record | |
+| nodes | Fetch | Table | |
+| pageInfo | Fetch | Record | |
+
+Two reclassifications this materialisation forces, called out because they change live leaves:
+`ComputedField` (`@externalField`) moves catalog `Column` → domain `Field`/`Record` (provider/mapping
+classifies epistemic role, not SQL location), and `NestingField` moves `Fetch` → `Nesting`. Five intents
+are modeled-but-unpopulated by the current leaf set (declared gaps): `EntityResolve`, `Count`, `Facet`,
+`UpdateMatching`, `DeleteMatching`.
