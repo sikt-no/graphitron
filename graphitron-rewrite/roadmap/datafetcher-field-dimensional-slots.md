@@ -42,8 +42,13 @@ throwaway `LeafTupleAdapter`** once the field exposes `(carrier, intent, mapping
 
 ## Leaf changes carried by this slice
 
-- **Rename `ChildField` -> `SourceField`** (carrier-named, per R222's refined model). `QueryField` /
-  `MutationField` already match their carriers.
+The `ChildField` -> `SourceField` carrier rename is **split out to R302**
+(`rename-childfield-to-sourcefield`): it is ~940 references of pure mechanical churn with no
+behavioural change, and folding it into this slice's diff would bury the architectural change under
+rename noise. R302 and this slice are independent (no ordering edge); whichever lands second rebases
+trivially. The two leaf-set changes below stay here, because they change the corpus and are coupled to
+the materialisation:
+
 - **Dissolve `ConstructorField`** — dead since the `@record`-on-types ban; its only path is an edge case
   not in use. Delete the leaf, its `LeafTupleAdapter` arm, and any generator dispatch, after verifying no
   live reference.
@@ -110,7 +115,7 @@ classification, not the whole emit-determinant.
 | MutationDeletePayloadField | Delete | Record | | |
 | MutationBulkDeletePayloadField | Delete | Record | | bulk |
 
-### Source carrier (`SourceField`, currently `ChildField`)
+### Source carrier (`SourceField`; rename from `ChildField` is R302)
 
 | Leaf | intent | mapping | derived | slot |
 |---|---|---|---|---|
