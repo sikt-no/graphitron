@@ -1,92 +1,58 @@
 = @record
-:description: Wrap a GraphQL type in a backing Java class — a jOOQ record or a plain Java record/POJO — so its instances flow through the resolver as that class.
+:description: Deprecated and ignored. The backing Java class is now inferred from the producing field's reflected return type; remove @record from the schema.
 :!toc:
 
-Binds a GraphQL `OBJECT` or `INPUT_OBJECT` to an existing Java class. The class supplies the runtime carrier: rows materialise into the class on the read path, and inputs deserialize into the class on the mutation path. The class shape determines the variant the rewrite picks: a jOOQ `TableRecord` produces a `JooqTableRecordType` (output) / `JooqTableRecordInputType` (input), a jOOQ `Record` produces a `JooqRecordType` / `JooqRecordInputType`, and a plain Java record or POJO produces `JavaRecordType` / `PojoResultType` / `JavaRecordInputType` / `PojoInputType`.
+[WARNING]
+====
+`@record` is *deprecated and ignored*. The rewrite no longer reads it to bind a type to a backing Java class. The directive is still declared in `directives.graphqls` so existing schemas keep parsing, but it drives no behaviour. Leaving it on a reachable type produces a build warning that tells you to remove it. *Remove `@record` from your schema.*
+====
 
-`@record` is also the seam between jOOQ-driven generation and developer-supplied containers. Service methods (xref:service.adoc[`@service`]) often return a Java record to combine multiple result shapes; child fields on a `@record` parent can reach back into the database via `@reference` (jOOQ-record parents) or via `@sourceRow` plus a typed accessor (plain-record parents).
+== What replaced it
 
-== SDL signature
+A GraphQL `OBJECT` or `INPUT_OBJECT` is still backed by a Java class when it carries one; the rewrite just derives the class differently. Instead of reading `@record(record: {className: ...})`, the rewrite *reflects on the field that produces the type* and takes the backing class from that field's Java signature:
 
-[source,graphql]
-----
-directive @record(record: ExternalCodeReference) on OBJECT | INPUT_OBJECT
-----
+* *Output / result types* take their backing from the producing field's *return* type: an xref:service.adoc[`@service`] method return, a xref:table.adoc[`@table`] resolution, a xref:tableMethod.adoc[`@tableMethod`] return, or a parent-accessor chain that threads the class down to child types.
+* *Input types* take their backing from the Java *parameter* type the input flows into (the xref:service.adoc[`@service`] / xref:condition.adoc[`@condition`] / xref:tableMethod.adoc[`@tableMethod`] method parameter), or from xref:table.adoc[`@table`].
 
-== Parameters
+The class shape still determines the variant the rewrite picks: a jOOQ `TableRecord` produces a `JooqTableRecordType` (output) / `JooqTableRecordInputType` (input), a jOOQ `Record` produces a `JooqRecordType` / `JooqRecordInputType`, and a plain Java record or POJO produces `JavaRecordType` / `PojoResultType` / `JavaRecordInputType` / `PojoInputType`. What changed is the *trigger*: reflection on the producing field, not the directive.
 
-[cols="1,1,1,3",options="header"]
-|===
-| Name | Type | Default | Description
-| `record` | `ExternalCodeReference` | (required in practice) | Points at the backing Java class. Only `className:` carries meaning; other `ExternalCodeReference` slots are structurally inert. `argMapping:` is rejected at parse time. The class can be a jOOQ-generated `TableRecord`, a jOOQ-generated `Record`, or a plain Java record/POJO.
-|===
+So a service method that returns a hand-written DTO binds the SDL payload type to that DTO automatically; you write the xref:service.adoc[`@service`] field and let its return type carry the class. No directive is needed, and none is consulted.
 
-== Canonical examples
+== Migration
 
-A jOOQ-backed `@record` (`JooqTableRecordType`): the type's instances are jOOQ `FilmRecord` values, and child fields can reach further tables via `@reference` because the catalog supplies FK metadata.
+Delete the directive. The type keeps the same backing class as long as a producing field still supplies it by reflection:
 
 [source,graphql]
 ----
-type FilmDetails @record(record: {className: "no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord"}) {
-    title:    String!     @field(name: "title")
-    language: [Language!]! @reference(path: [{key: "film_language_id_fkey"}])
-}
-----
-
-A plain-Java-record `@record` (`JavaRecordType`) backed by a service-returned DTO. The catalog has no FK metadata for a hand-written class, so a child `@table`-returning field needs an explicit batch-key path: either xref:reference.adoc[`@reference`] is unavailable here, or — when the parent only carries the FK column as a primitive field — `@sourceRow` extracts the key:
-
-[source,graphql]
-----
+# Before (the directive was read to bind the class):
 type CreateFilmPayload @record(record: {className: "no.sikt.graphitron.rewrite.test.services.CreateFilmPayload"}) {
-    languageId: Int!
-    language: [Language!]!
-        @sourceRow(
-            className: "no.sikt.graphitron.rewrite.test.services.CreateFilmPayloadLifter",
-            method: "liftLanguageId"
-        )
+    films: [Film!]!
 }
-----
 
-A plain-Java-record `@record` whose canonical Java accessor returns a typed list of jOOQ records. The classifier auto-derives the batch-key from the typed accessor; no `@sourceRow` is needed:
-
-[source,graphql]
-----
-type CreateFilmsPayload @record(record: {className: "no.sikt.graphitron.rewrite.test.services.CreateFilmsPayload"}) {
+# After (the @service method that returns CreateFilmPayload supplies the class):
+type CreateFilmPayload {
     films: [Film!]!
 }
 ----
 
-Input-side `@record` for service / mutation arguments. The Maven plugin can scaffold a Java record with the same field shape; on the input side the plugin uses the class's setters / canonical constructor to bind GraphQL input fields:
+Nothing else about the type changes: child fields still reach further tables through xref:reference.adoc[`@reference`] (jOOQ-record parents) or xref:sourceRow.adoc[`@sourceRow`] plus a typed accessor (plain-record parents), exactly as before. Those directives were never part of `@record`; only the parent's class binding moved to reflection.
 
-[source,graphql]
-----
-input EditCustomerInput @record(record: {className: "some.path.JavaCustomerRecord"}) {
-    id:        ID!
-    firstName: String @field(name: "FIRST_NAME")
-    email:     String
-}
-----
+== The build warning
 
-== Constraints
+When a reachable type still carries `@record`, the rewrite emits one of three warnings at the type's source location, all of which end "remove it":
 
-* The argument is required in practice. A bare `@record` (no `record:`) gives the rewrite no class to bind to and is rejected at classify time.
-* `argMapping:` on the `record` reference is structurally inert and is rejected at parse time with "argMapping is not supported on `@record`". `@record` does not consume GraphQL-argument-bound parameters.
-* On *input* types, `@record` dominates xref:table.adoc[`@table`]. When both are present, `@table` is ignored, the input classifies as a `@record`-only input, and a build warning names the shadowed directive. Remove the `@table` declaration to silence it.
-* On *object* types, `@record` and xref:table.adoc[`@table`] do not co-occur: the type is either jOOQ-table-bound (`TableType`) or backed by a Java class (`ResultType`). Mixing them is a classification error.
-* A child `@table`-returning field on a *plain-Java-record* parent (no jOOQ FK metadata) requires either:
-+
-** a typed accessor on the backing class returning the corresponding jOOQ table record (the classifier auto-derives an `AccessorKeyed` batch key), or
-** an explicit xref:sourceRow.adoc[`@sourceRow`] supplying the lift function and target columns.
-+
-A bare child reference on such a parent is rejected with `RecordTableField (or RecordLookupTableField) requires a FK join path and a typed backing class for batch key extraction`.
-* `@sourceRow` is rejected on jOOQ-record parents — the catalog already supplies the path. Use xref:reference.adoc[`@reference`] there instead.
-* When a `@record` type is reachable from xref:service.adoc[`@service`] and contains `@table`-returning fields, the rewrite emits the re-entry queries automatically; explicit `@splitQuery` is not required on those child fields.
+* *Redundant*: the directive's `className` (or a bare `@record` with none) matches the class the rewrite already derives from the producing field. The directive adds nothing.
+* *Shadowed by `@table`*: the type also carries xref:table.adoc[`@table`], which supplies the backing class; `@record` is ignored.
+* *Disagrees*: the directive's `className` names a different class from the one the producing field reflects to. The rewrite uses the reflected class and ignores the directive's claim.
+
+A bare `@record` with no `record:` was previously rejected at classify time; it now folds into the redundant case, because `className` was the only field that ever participated in binding.
 
 == See also
 
-* xref:table.adoc[`@table`] is the catalog-bound counterpart. Choose `@table` when jOOQ already represents the backing class; choose `@record` when the carrier is a hand-written Java record/POJO or you want a different jOOQ row type than `@table` would resolve.
-* xref:service.adoc[`@service`] is the most common upstream of `@record` output types: the service method returns the Java class, and the resolver projects through it.
-* xref:sourceRow.adoc[`@sourceRow`] supplies the missing FK path for child `@table` fields on plain-Java-record parents.
-* xref:../../how-to/result-types.adoc[How-to: Result-type variants] covers `JavaRecordType` / `PojoResultType` / `JooqRecordType` / `JooqTableRecordType` and how the rewrite picks among them.
+* xref:table.adoc[`@table`] is the catalog-bound counterpart: choose it when the type is a jOOQ table. A type that is neither `@table`-bound nor reached by a class-returning producer is a plain nesting type and generates no carrier of its own.
+* xref:service.adoc[`@service`] is the most common source of a class-backed output type: the method's return type now carries the binding the directive used to declare.
+* xref:sourceRow.adoc[`@sourceRow`] supplies the FK path for child `@table` fields on plain-Java-record parents.
+* xref:../../how-to/result-types.adoc[How-to: Result-type variants] covers `JavaRecordType` / `PojoResultType` / `JooqRecordType` / `JooqTableRecordType` and how the rewrite picks among them from the producer's reflected type.
+* xref:../deprecations.adoc[Deprecations] indexes every deprecated and ignored surface element.
 
 xref:../index.adoc[← Reference index]

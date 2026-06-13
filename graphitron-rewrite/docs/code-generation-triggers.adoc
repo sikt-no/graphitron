@@ -50,7 +50,7 @@ The type on which a field is defined.
 
 | *Unmapped* | *(none ; Query, Mutation)* | Entry point. No SQL yet.
 | *Table-mapped* | `@table` | Full SQL generation ; queries, joins, projections.
-| *Result-mapped* | `@record` | Runtime wiring only. Graphitron validates types and wires data fetchers, but generates no SQL until a new scope starts.
+| *Result-mapped* | producer's reflected return is a Java/jOOQ class | Runtime wiring only. The type's backing class is derived by reflection from its producing field (a `@service` return, a `@tableMethod` return, or a parent-accessor chain). Graphitron validates types and wires data fetchers, but generates no SQL until a new scope starts.
 |===
 
 === Target type
@@ -61,7 +61,7 @@ The classification of the field's return type (the element type ; looked through
 | Target type | `ReturnTypeRef` variant | When it appears
 
 | *Target table* | `TableBoundReturnType` | Return type has `@table` (or is a `@table` + `@discriminate` interface), or a `NestingField` inherits the parent's table context. Carries a fully resolved `TableRef`.
-| *Target record* | `ResultReturnType` | Return type has `@record`.
+| *Target record* | `ResultReturnType` | Return type is class-backed: its backing Java/jOOQ class is reflected from the producing field's return type, not from a directive.
 | *Target scalar* | `ScalarReturnType` | Scalar, enum, or an unclassified type name (e.g. `@nodeId(typeName:)` argument types).
 | *Target polymorphic* | `PolymorphicReturnType` | Interfaces/unions spanning multiple tables, and the Relay/Federation built-ins `node` / `_entities`.
 |===
@@ -161,20 +161,19 @@ enters the scope; `Film.title` projects an inline column. Asserted by the `catal
 === Reference table
 
 |===
-| Directive Pattern on Type | `GraphitronType` Variant | Generator Output
+| Classification Trigger on Type | `GraphitronType` Variant | Generator Output
 
 | `@table` + `@node` | `NodeType` | `*Fetchers` class + `*` class (with Relay ID handling)
-| `@record` | `ResultType`* | `*Fetchers` class only (no SQL scope of its own)
+| Producer's reflected return is a Java/jOOQ class (a `@service` return, a `@tableMethod` return, or a parent-accessor chain) | `ResultType`* | `*Fetchers` class only (no SQL scope of its own). The backing class is reflection-derived, not declared; a reachable type still carrying `@record` warns to remove it.
 | `Query` or `Mutation` root type | `RootType` | `*Fetchers` class only
 | Interface with `@table` + `@discriminate` | `TableInterfaceType` | `*Fetchers` class
 | Interface without `@table` (multi-table) | `InterfaceType` | `*Fetchers` class
 | Union type | `UnionType` | `*Fetchers` class
 | `@error` | `ErrorType` | No generation (error mapping config)
-| Input type with `@table` | `TableInputType` | Used in mutation generation
-| Input type with `@table` + `@record` | `InputType`* (via `@record`) | On input types, `@record` dominates `@table`. When both are present, `@table` is ignored and the input classifies as if only `@record` were declared; a build warning names the shadowed directive. Clean up by removing `@table` from the input declaration ; the warning disappears naturally.
-| Input type without `@table` | `InputType`* | No generation (developer-provided class)
+| Input type with `@table` | `TableInputType` | Used in mutation generation. If the declaration also carries `@record`, `@table` wins; `@record` is ignored and a build warning names it for removal (shadowed by `@table`).
+| Input type without `@table` (the `@service` / `@condition` / `@tableMethod` parameter the input flows into is reflected as a developer class) | `InputType`* | No generation (developer-provided class). The input's backing class is reflected from the parameter type it flows into; a residual `@record` is ignored and warned.
 | Input type with `@table` used on fields with conflicting return tables | `PojoInputType` (unbound) | No generation ; column binding resolved per field-usage
-| Object type with no `@table` and no `@record` | `NestingType` | No generation; nested under a parent table-bound or result-bound scope via `NestingField`
+| Object type with no `@table` and no producer binding | `NestingType` | No generation; nested under a parent table-bound or class-backed scope via `NestingField`
 | GraphQL `enum` type | `EnumType` | No generation; enum values map to DB strings/ints at column-bind time
 | GraphQL `scalar` type with `@scalarType(scalar:)` | `ScalarType` | No generation; the consumer's `public static final GraphQLScalarType` constant is registered on the synthesized schema via `.additionalType(...)`. Graphitron reflects on the constant's `Coercing<I, O>` to recover the Java type used for input-record components, service params, and `Field<X>` projections.
 | GraphQL `scalar` type matching the extended-scalars convention table (no directive, `graphql-java-extended-scalars` on the classpath) | `ScalarType` | Same as above, but the constant FQN is read from `ScalarTypeResolver`'s 30-entry convention table (`scalar BigDecimal` → `ExtendedScalars.GraphQLBigDecimal`, etc.).
@@ -463,7 +462,7 @@ read-back being the derived re-fetch. Asserted by the `dml` corpus example.
 | `@mutation(typeName: UPDATE)`, returning `ID` or a `@table` type | `MutationUpdateTableField` | Fetcher method ; write + read-back SELECT (the derived re-fetch)
 | `@mutation(typeName: DELETE)`, returning `ID` | `MutationDeleteTableField` | Fetcher method ; write + encoded-PK off `RETURNING` (no read-back ; the row is gone, `mapping = Column`)
 | `@mutation(typeName: UPSERT)`, returning `ID` or a `@table` type | `MutationUpsertTableField` | Rejected at classification ; UPSERT generation gated pending R145
-| `@mutation(typeName: INSERT\|UPDATE\|DELETE\|UPSERT)`, returning a single-record `@record(record:{className:...})`-or-bare-SDL carrier (one recognized data field, optional errors-shaped field) | `MutationDmlRecordField` | Two-step fetcher: per-kind DML chain inside `transactionResult` with PK-only `RETURNING`, plus a follow-up data-field SELECT outside the transaction
+| `@mutation(typeName: INSERT\|UPDATE\|DELETE\|UPSERT)`, returning a single-record class-backed carrier (one recognized data field, optional errors-shaped field; the carrier's backing class is reflected from the producing field, not declared) | `MutationDmlRecordField` | Two-step fetcher: per-kind DML chain inside `transactionResult` with PK-only `RETURNING`, plus a follow-up data-field SELECT outside the transaction
 | `@mutation(typeName: INSERT\|UPDATE)` with bulk `@table` input, returning a single-record carrier with a list-shaped `@table`-element data field | `MutationBulkDmlRecordField` | Per-row DML inside one `transactionResult`, accumulating a typed `Result<RecordN<PK>>` in input order
 | `@service`, return `@table` type | `MutationServiceTableField` | Async DataLoader fetcher + `rows*()` method
 | `@service`, return non-table type | `MutationServiceRecordField` | Fetcher method
@@ -471,7 +470,7 @@ read-back being the derived re-fetch. Asserted by the `dml` corpus example.
 | Both `@service` and `@mutation` | `UnclassifiedField`** | Validation error ; build fails
 |===
 
-The four `Mutation*TableField` permits are guaranteed never to carry a `@record` return: every `@record`-returning DML mutation routes through the DML-carrier permits (`MutationDmlRecordField` / `MutationBulkDmlRecordField`) via `BuildContext.scanStructuralDmlPayload`. The narrowness is enforced structurally by the routing in `FieldBuilder.classifyMutationField`, not by an Invariant the validator restates.
+The four `Mutation*TableField` permits are guaranteed never to carry a class-backed (record-shaped) return: every DML mutation whose return type reflects to a record carrier routes through the DML-carrier permits (`MutationDmlRecordField` / `MutationBulkDmlRecordField`) via `BuildContext.scanStructuralDmlPayload`. The narrowness is enforced structurally by the routing in `FieldBuilder.classifyMutationField`, not by an Invariant the validator restates.
 
 === Child Fields (on `@table` parent)
 
@@ -512,7 +511,9 @@ The four `Mutation*TableField` permits are guaranteed never to carry a `@record`
 | `@multitableReference` | `UnclassifiedField`** | Validation error; the directive is no longer supported (`INVALID_SCHEMA` rejection). Remove it; the rewrite generates multi-table interface dispatch from `@discriminate` / `@discriminator`.
 |===
 
-=== Child Fields (on `@record` parent)
+=== Child Fields (on a class-backed parent)
+
+The parent here is a type whose backing class is reflection-derived from its producer (a `@service` / `@tableMethod` return, or a parent-accessor chain), not declared via a directive. The `Record*` variant names below are reflection-derived classifications, kept stable from earlier naming.
 
 |===
 | Schema Pattern | `ChildField` Variant | `*Fetchers` Generates

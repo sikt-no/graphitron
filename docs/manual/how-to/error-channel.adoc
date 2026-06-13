@@ -10,7 +10,8 @@ The carrier is the `errors:` field on the payload type. Two shapes work:
 
 [source,graphql]
 ----
-type FilmPayload @record(record: {className: "com.example.FilmPayload"}) {
+# backed by com.example.FilmPayload via its @service producer's return type
+type FilmPayload {
     film:   Film
     errors: [FilmError]
 }
@@ -22,7 +23,8 @@ vs:
 
 [source,graphql]
 ----
-type FilmPayload @record(record: {className: "com.example.FilmPayload"}) {
+# backed by com.example.FilmPayload via its @service producer's return type
+type FilmPayload {
     film:   Film
     errors: [SimpleError]
 }
@@ -40,7 +42,7 @@ The choice is semantic, not structural:
 * *Union* fits when distinct error classes carry distinct *fields*. `YearOutOfRange` might want a `validRange: String` slot; `DbError` might want a `constraint: String`. Each member is its own object type with its own SDL field set, and graphql-java's type resolver dispatches on the runtime instance. Use a union when clients should branch on `__typename` to read shape-specific fields.
 * *Single type* fits when every error has the same shape and only the `message:` (and `path:`) varies. The handler list on the single `@error` type can still cover many distinct exception classes — the union pattern is for distinct *result shapes*, not distinct *handlers*.
 
-The rewrite doesn't pick a side: a `@record` payload whose canonical constructor declares a parameter typed `List<? super FilmError>` (or `List<SimpleError>`) is recognised either way. The classifier reflects on the canonical constructor and locates the unique parameterised `List`/`Iterable`/`Collection` slot whose element bound is compatible with every channel error type.
+The rewrite doesn't pick a side: a class-backed payload whose canonical constructor declares a parameter typed `List<? super FilmError>` (or `List<SimpleError>`) is recognised either way. The classifier reflects on the canonical constructor and locates the unique parameterised `List`/`Iterable`/`Collection` slot whose element bound is compatible with every channel error type.
 
 The Sakila example schema currently has no `@error` types; the canonical fixtures live in `/home/user/graphitron/graphitron-rewrite/graphitron/src/test/java/no/sikt/graphitron/rewrite/ErrorChannelClassificationTest.java` (alongside the synthetic `SakPayload` record at `no.sikt.graphitron.codereferences.dummyreferences.SakPayload`). When you wire your first error channel, that test class's setup is the right shape to copy.
 
@@ -143,7 +145,6 @@ Add a typed channel slot when an untyped fallthrough turns out to be a regular, 
 
 * xref:../reference/directives/error.adoc[`@error`] is the directive surface and the handler-tuple specification.
 * xref:../reference/directives/service.adoc[`@service`] is the upstream of the errors channel: only service-returned payloads carry one.
-* xref:../reference/directives/record.adoc[`@record`] backs the payload type that exposes the `errors:` field.
-* xref:result-types.adoc[How-to: Result-type variants] covers the payload's backing-class shape, which the channel classifier reflects on to find the errors slot.
+* xref:result-types.adoc[How-to: Result-type variants] covers the payload's backing-class shape (reflected from its `@service` producer's return type), which the channel classifier reflects on to find the errors slot.
 
 xref:index.adoc[← How-to index]

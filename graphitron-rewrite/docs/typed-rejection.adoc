@@ -22,7 +22,7 @@ Rejection
 ├─ AuthorError                  ← the schema author can correct this
 │   ├─ UnknownName              ← name that didn't resolve against a closed set
 │   ├─ Structural               ← rule violation carrying prose only
-│   ├─ AccessorMismatch         ← @record-Java-backed parent's class doesn't expose the accessor
+│   ├─ AccessorMismatch         ← record-backed parent's class doesn't expose the accessor
 │   ├─ RecordBindingMultiProducer ← multiple producers reach one SDL type with disagreeing classes
 │   ├─ TypeConflict             ← cross-site contextArgument type-agreement disagreement
 │   └─ MultiProducerDomainTypeDisagreement ← producers reach one SDL Object type with disagreeing env.getSource() Java domain types
@@ -37,7 +37,7 @@ Rejection
 
 `AuthorError.Structural` and `InvalidSchema.Structural` are the prose-majority arms. They carry one `String reason` and exist because most rule violations are not name-against-closed-set lookups; they're "this combination cannot work, period" or "this rule was broken." Two arms instead of one because the diagnostic surface treats `AUTHOR_ERROR` and `INVALID_SCHEMA` differently: the first prompts the author to edit; the second prompts the author to drop or replace a directive entirely.
 
-`AuthorError.AccessorMismatch` is the third `AuthorError` arm because the `@record`-Java-backed accessor-resolution surface produces uniform diagnostics with a uniform fix shape (`@field(name: "...")`); a single arm with the hint baked into `message()` lets the resolver hand the validator the same typed value every site produces.
+`AuthorError.AccessorMismatch` is the third `AuthorError` arm because the record-backed-parent accessor-resolution surface (resolving an SDL output field's accessor against the parent's reflection-derived backing class) produces uniform diagnostics with a uniform fix shape (`@field(name: "...")`); a single arm with the hint baked into `message()` lets the resolver hand the validator the same typed value every site produces.
 
 `AuthorError.RecordBindingMultiProducer` is the fourth `AuthorError` arm, surfacing R96's producer-agreement check: when two or more producers (root producers or parent-accessor chains) reach the same SDL type with disagreeing reflected backing classes, the validator halts with a typed payload naming the SDL type and every disagreeing `ProducerBinding` site. The arm sits under `AuthorError` because the fix is author-correctable (align the producers on a single backing class via the same rename / retype / split toolbox the rest of `AuthorError` supports); the typed `List<ProducerBinding>` payload follows the sub-data pattern that `UnknownName` established.
 

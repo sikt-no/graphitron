@@ -90,7 +90,7 @@ type Query {
 
 == Constraints
 
-* The field's return type must be `@table`-bound at every site (root and child). A non-`@table` return (scalar, enum, plain `@record`, polymorphic) is rejected with `@tableMethod requires a @table-annotated return type`. The directive's whole purpose is to bind a developer-authored jOOQ table method, which by construction returns a generated jOOQ table class; a scalar / enum return is malformed.
+* The field's return type must be `@table`-bound at every site (root and child). A non-`@table` return (scalar, enum, plain class-backed type, polymorphic) is rejected with `@tableMethod requires a @table-annotated return type`. The directive's whole purpose is to bind a developer-authored jOOQ table method, which by construction returns a generated jOOQ table class; a scalar / enum return is malformed.
 * At root sites, `Connection`-wrapped return types are rejected: `@tableMethod at the root does not support Connection return types — use [T] or T instead`. Use plain `[Film!]!` or `Film` at the field; the rewrite does not synthesise a Connection envelope around a developer-chosen table.
 * The reflected method's *exact* return type must equal the generated jOOQ table class for the field's element type, not a wider `Table<R>`. The strict invariant catches catalog-vs-method-signature drift at build time.
 * The method must not declare an `org.jooq.Table<?>` parameter. graphitron derives the target table from the return type; parent-table filtering is handled by `@reference`.

@@ -2,7 +2,9 @@
 :description: Plug a custom Java method into a directive that takes `ExternalCodeReference!`.
 :!toc:
 
-Six of the rewrite's directives (`@service`, `@externalField`, `@tableMethod`, `@condition`, `@enum`, `@record`) hand the resolution of a slot off to a developer-supplied Java target via the shared `ExternalCodeReference` input. The mechanics are uniform across all six: a fully-qualified class name on the rewrite plugin's classpath, an optional method name that defaults to the GraphQL field name, and an optional `argMapping:` for renaming Java parameters. This recipe walks through each piece once.
+Five of the rewrite's directives (`@service`, `@externalField`, `@tableMethod`, `@condition`, `@enum`) hand the resolution of a slot off to a developer-supplied Java target via the shared `ExternalCodeReference` input. The mechanics are uniform across all five: a fully-qualified class name on the rewrite plugin's classpath, an optional method name that defaults to the GraphQL field name, and an optional `argMapping:` for renaming Java parameters. This recipe walks through each piece once.
+
+(The deprecated `@record` directive still parses the same `ExternalCodeReference` shape, but it is ignored: a class-backed type's binding is reflected from its producer's return or parameter type, not from a directive. See xref:result-types.adoc[How-to: Result-type variants].)
 
 `@sourceRow` carries the same plugin-classpath requirement but exposes the lifter via flat `(className, method)` args rather than the `ExternalCodeReference` wrapper. See xref:source-row.adoc[Source-row directive] for the dedicated walk-through.
 
@@ -23,7 +25,8 @@ The rewrite's Maven plugin reflects on the named class at code-generation time (
     </executions>
     <dependencies>
         <!-- Carries the @service / @externalField / @tableMethod / @condition /
-             @sourceRow / @enum / @record target classes. -->
+             @sourceRow / @enum target classes, plus the Java classes that back
+             class-backed types (reflected from their producers). -->
         <dependency>
             <groupId>com.example</groupId>
             <artifactId>my-services</artifactId>
@@ -92,7 +95,7 @@ public final class SampleQueryService {
 
 The Java parameter `filmIds` receives the GraphQL argument `ids`. Unmentioned Java parameters bind to a GraphQL argument of the same name; an empty `argMapping:` is identity for every parameter. Whitespace around `:` and `,` is tolerated, and multi-line text-block input is accepted for long mappings.
 
-`argMapping:` is meaningful on `@service`, `@tableMethod`, and `@condition` (the directives whose Java targets receive GraphQL arguments). It is structurally inert on `@externalField`, `@enum`, and `@record`, where the Java target consumes no GraphQL-argument-bound parameters; applying it on those three is rejected at parse time.
+`argMapping:` is meaningful on `@service`, `@tableMethod`, and `@condition` (the directives whose Java targets receive GraphQL arguments). It is structurally inert on `@externalField` and `@enum`, where the Java target consumes no GraphQL-argument-bound parameters; applying it on those two is rejected at parse time.
 
 == Per-directive slot names
 
@@ -106,11 +109,12 @@ Each directive's `ExternalCodeReference!` parameter has its own name, but the co
 | `@tableMethod` | flat `className:` + `method:` + `argMapping:` | xref:../reference/directives/tableMethod.adoc[`@tableMethod`]
 | `@condition` | `condition:` (`ExternalCodeReference`) | xref:../reference/directives/condition.adoc[`@condition`]
 | `@enum` | `enumReference:` (`ExternalCodeReference`) | xref:../reference/directives/enum.adoc[`@enum`]
-| `@record` | `record:` (`ExternalCodeReference`) | xref:../reference/directives/record.adoc[`@record`]
 | `@sourceRow` | flat `className:` + `method:` | xref:../reference/directives/sourceRow.adoc[`@sourceRow`]
 |===
 
 The slot names are historical (each directive was named before the shape was unified). The two flat-form directives (`@tableMethod`, `@sourceRow`) carry `className:` and `method:` directly on the directive; the rest still wrap them in an `ExternalCodeReference` input object.
+
+The deprecated `@record` directive parses the same `record:` (`ExternalCodeReference`) shape, but the binding it once carried is ignored; a class-backed type's Java class is reflected from its producer instead. A reachable type still carrying `@record` triggers a build warning telling you to remove it.
 
 == Constraints
 
@@ -126,6 +130,6 @@ The slot names are historical (each directive was named before the shape was uni
 * xref:../reference/directives/externalField.adoc[`@externalField`] uses a static method that returns a jOOQ `Field<T>` plugged into the parent's `SELECT` projection.
 * xref:../reference/directives/tableMethod.adoc[`@tableMethod`] uses a static method that returns a jOOQ `Table<R>` chosen at request time.
 * xref:../reference/directives/condition.adoc[`@condition`] uses a static method that returns a jOOQ `Condition` to splice into a query's `WHERE` clause.
-* xref:source-row.adoc[Source-row directive] (`@sourceRow`) uses a static method that supplies the per-parent batch key for a `@record`-typed parent. Sibling pattern with flat `(className, method)` args instead of the `ExternalCodeReference` wrapper documented above.
+* xref:source-row.adoc[Source-row directive] (`@sourceRow`) uses a static method that supplies the per-parent batch key for a class-backed parent. Sibling pattern with flat `(className, method)` args instead of the `ExternalCodeReference` wrapper documented above.
 
 xref:index.adoc[← How-to index]

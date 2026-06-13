@@ -90,7 +90,7 @@ type Film @table(name: "film") {
 
 * Single-cardinality `@splitQuery` is restricted to a *single-hop* xref:reference.adoc[`@reference`] path. Multi-hop single-cardinality is rejected at build time with the offending path's hop count in the message.
 * List-cardinality `@splitQuery` supports any hop count, including junction-table chains (`@reference(path: [..., ...])`).
-* Implicit on `@table`-typed fields of a xref:record.adoc[`@record`] parent reachable from xref:service.adoc[`@service`]: re-entry queries are emitted automatically. Explicit `@splitQuery` on those fields is redundant but not rejected. (`classifyChildFieldOnResultType` never inspects `@splitQuery` on record-parent table-bound fields.)
+* Implicit on `@table`-typed fields of a class-backed parent reachable from xref:service.adoc[`@service`]: re-entry queries are emitted automatically. Explicit `@splitQuery` on those fields is redundant but not rejected. (`classifyChildFieldOnResultType` never inspects `@splitQuery` on class-backed-parent table-bound fields.)
 * Self-referencing FKs work *inline* in the rewrite. `InlineTableFieldEmitter` prefixes alias names with the parent alias's runtime name so recursive subselects don't collide; `Category.parent` and `Category.children` in the example schema cover this end-to-end. `@splitQuery` is available on self-FKs for the same fan-out-reduction reasons as any other reference, but is not required.
 * Required when xref:service.adoc[`@service`] is used on a non-root field (the service fetches the row independently of the parent's SELECT; the split is the contract).
 * Composes with xref:asConnection.adoc[`@asConnection`]: the per-parent partition envelope is added to the connection's pagination shape.
@@ -103,7 +103,7 @@ type Film @table(name: "film") {
 * xref:reference.adoc[`@reference`] supplies the FK chain; `@splitQuery` decides whether to inline or batch it.
 * xref:asConnection.adoc[`@asConnection`] adds per-parent Relay pagination on top of a split fetch.
 * xref:lookupKey.adoc[`@lookupKey`] narrows the per-parent batch to caller-provided keys.
-* xref:record.adoc[`@record`] parents reachable from xref:service.adoc[`@service`] get implicit `@splitQuery` on `@table`-typed children.
+* Class-backed parents reachable from xref:service.adoc[`@service`] get implicit `@splitQuery` on `@table`-typed children.
 * xref:../../how-to/split-vs-inline.adoc[How-to: When to split queries] covers the round-trip-vs-fan-out trade-off, self-FK rules, and DataLoader caching behaviour.
 
 xref:../index.adoc[← Reference index]

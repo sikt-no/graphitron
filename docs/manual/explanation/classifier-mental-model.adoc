@@ -8,8 +8,8 @@ The build doesn't blindly emit a fetcher for every field; it first sorts each fi
 
 Two independent properties decide what a field becomes:
 
-* *The parent context.* The type the field is defined on. Either the parent has xref:../reference/directives/table.adoc[`@table`] (table-bound, full SQL is fair game), or it has xref:../reference/directives/record.adoc[`@record`] (result-bound, a backing Java class carries the row), or it has neither (the field is on `Query` / `Mutation` / a plain output type, and the field's *return type* drives the binding instead).
-* *The return type.* What the field returns: another `@table`-bound type (a join is on the table), a `@record`-bound type (a backing class, no SQL until a new scope opens), a scalar/enum (a column or a service value), or a polymorphic interface/union (a runtime type-discrimination step).
+* *The parent context.* The type the field is defined on. Either the parent has xref:../reference/directives/table.adoc[`@table`] (table-bound, full SQL is fair game), or it is class-backed (its producer's reflected return type is a Java/jOOQ class that carries the row, so no SQL runs until a new scope opens), or it has neither (the field is on `Query` / `Mutation` / a plain output type, and the field's *return type* drives the binding instead).
+* *The return type.* What the field returns: another `@table`-bound type (a join is on the table), a class-backed type (a backing Java/jOOQ class derived by reflection from the producing field, no SQL until a new scope opens), a scalar/enum (a column or a service value), or a polymorphic interface/union (a runtime type-discrimination step).
 
 The pair `(parent context, return type)` plus the directives on the field decide which category the field falls into. The categories are the things you read about in the directive reference: a "scalar field on a `@table` parent" is one category, a "table-returning field on a `@table` parent" is another, a "field with `@lookupKey`" is yet another. The category determines what code the generator emits and what the validator demands of the field.
 

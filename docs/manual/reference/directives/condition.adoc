@@ -116,18 +116,18 @@ type Query {
 
 * Applies on `FIELD_DEFINITION`, `ARGUMENT_DEFINITION`, and `INPUT_FIELD_DEFINITION`. The element type fixes the predicate's scope: argument-level conditions can only see *their own* argument and any context arguments, field-level conditions see *all* of the field's arguments, input-field-level conditions see the input's enclosing argument map (the rewrite extracts the leaf value via the path from the outer argument).
 * `condition.className:` and `condition.method:` are both required for a meaningful directive. A `@condition` whose reference resolves to no method (missing `className:` or `method:`) surfaces as `field '<name>' @condition: ...` or `argument '<name>' @condition: ...`.
-* `argMapping:` is *supported* on `@condition` (unlike on `@externalField`, `@enum`, `@record`, `@sourceRow`). Use it to rebind a GraphQL argument name to a differently-named Java parameter, the rewrite carries the mapping into the reflected method's parameter list.
+* `argMapping:` is *supported* on `@condition` (unlike on `@externalField`, `@enum`, `@sourceRow`). Use it to rebind a GraphQL argument name to a differently-named Java parameter, the rewrite carries the mapping into the reflected method's parameter list.
 * `contextArguments:` values must already be wired into the runtime `GraphQLContext` map, the rewrite passes the listed keys through unmodified. A typo here surfaces as a `null` parameter at request time, not as a build error.
 * Field-level `override: true` suppresses the implicit predicates from the field's direct arguments *and* from any `@table`-bound input nested under those arguments. Inner explicit `@condition` annotations on the input's fields are *preserved*, override does not cascade through them. (Divergence from the legacy generator: legacy semantics dropped them. The rewrite's behaviour is the intended one and `filmsOuterOverrideTableInput` pins it as a regression-fence.)
 * Argument-level `override: true` is local: it suppresses the implicit `column = ?` for that one argument, nothing else.
-* Nested input types must be carrier-mapped to flow through `@condition`. A `@table` input maps to a jOOQ record (only at the leaf, jOOQ records can not contain other records), an xref:record.adoc[`@record`] input maps to the named Java record (and any input above it must also be a Java record). Leaving the input unmapped routes through the `PojoInputType` path, which still works for plain scalar paths.
+* Nested input types must be carrier-mapped to flow through `@condition`. A `@table` input maps to a jOOQ record (only at the leaf, jOOQ records can not contain other records); a class-backed input maps to its Java record (and any input above it must also be a Java record). An input is class-backed when the Java parameter it flows into is that record type; leaving it without a carrier routes through the `PojoInputType` path, which still works for plain scalar paths.
 * Listed nested input types (`[InnerInput]` inside an outer record) require a Java record carrier on the outer input, the rewrite needs a stable Java type for the list element.
 
 == See also
 
 * xref:reference.adoc[`@reference`] supplies catalog-driven joins that `@condition` can layer additional filtering on.
 * xref:field.adoc[`@field(name: ...)`] is the column-binding axis, `@condition` and `@field` coexist on the same slot, `@field` drives the implicit predicate, `@condition` adds (or replaces) the explicit one.
-* xref:record.adoc[`@record`] / xref:table.adoc[`@table`] on input types determine the carrier the condition method reads from.
+* An input type's backing class determines the carrier the condition method reads from: xref:table.adoc[`@table`] supplies a jOOQ record, otherwise the carrier is the Java record the method parameter is typed as (inferred, not declared).
 * xref:service.adoc[`@service`] is the alternative when a *whole* fetcher is custom code, `@condition` is for adjusting a single predicate inside an otherwise generated query.
 * xref:../../how-to/condition-cascade.adoc[How-to: Stacking and overriding conditions] covers the override cascade rules, nested-input record conventions, and the divergence from legacy semantics.
 

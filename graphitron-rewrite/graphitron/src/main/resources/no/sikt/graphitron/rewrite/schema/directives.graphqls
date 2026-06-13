@@ -150,13 +150,13 @@ directive @multitableReference(
 
 """
 Identifies the static Java method that extracts the parent-side join-key tuple
-when the parent is a @record-backed DTO with no jOOQ FK metadata in the catalog.
+when the parent is a class-backed DTO with no jOOQ FK metadata in the catalog.
 Applies when the parent's backing class is a plain POJO or a Java record (not a
-jOOQ Record / TableRecord). The parent's @record(record: {className: ...}) must
-declare a backing class; the directive is rejected on @record types with no
-class, on @table parents (use @reference there), and on jOOQ-backed @record
-parents (JooqTableRecordType / JooqRecordType, where the catalog record already
-drives batching).
+jOOQ Record / TableRecord). The parent's backing class is the one inferred from
+its producing field (typically an @service method's return type); the directive
+is rejected on parents that no producer binds to a class, on @table parents (use
+@reference there), and on jOOQ-backed parents (JooqTableRecordType /
+JooqRecordType, where the catalog record already drives batching).
 
 The method takes the parent's backing class and returns Row1..Row22<...>. The
 returned tuple must equal the columns the field's first JOIN ON predicate
@@ -285,7 +285,15 @@ enum SortDirection {
   DESC
 }
 
-"""Wrap type in the given Java record. Currently, this can only be used with services."""
+"""
+DEPRECATED and IGNORED. This directive no longer binds a type to a Java class
+and drives no behaviour; it is still declared so existing schemas keep parsing.
+The backing class is now inferred by reflection from the field that produces the
+type: an @service method's return type (or parameter type, for inputs), a @table
+resolution, a @tableMethod return, or a parent-accessor chain. A reachable type
+that still carries @record produces a build warning telling you to remove it.
+Remove @record from the schema.
+"""
 directive @record(record: ExternalCodeReference) on OBJECT | INPUT_OBJECT
 
 enum MutationType { UPDATE, DELETE, INSERT, UPSERT }
@@ -307,7 +315,7 @@ input ExternalCodeReference {
     argument-level, input-field-level, path-step). On `@condition` filter sites
     the same argument's `@field(name:)` continues to drive column binding for
     auto-equality; the two axes coexist on the same slot. Structurally inert
-    on `@externalField`, `@enum`, and `@record` (rejected at parse time).
+    on `@externalField` and `@enum` (rejected at parse time).
 
     Whitespace around `:` and `,` is permitted; multi-line text-block input is
     accepted. Empty string is identity for every parameter.

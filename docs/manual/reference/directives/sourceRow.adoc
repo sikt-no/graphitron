@@ -1,12 +1,12 @@
 = @sourceRow
-:description: Identify the static Java method that extracts a parent-side join-key tuple when the parent is a @record-backed DTO with no jOOQ FK metadata.
+:description: Identify the static Java method that extracts a parent-side join-key tuple when the parent is a class-backed DTO with no jOOQ FK metadata.
 :!toc:
 
-Identifies the static Java method that extracts the parent-side join-key tuple when the parent is a xref:record.adoc[`@record`]-backed DTO with no FK metadata in the jOOQ catalog. Applies when the parent's backing class is a plain Java record / POJO (not a jOOQ `Record` / `TableRecord`); the lifter extracts the key value(s) from the parent instance, the rewrite matches the lifted `RowN` against the columns the field's first JOIN ON predicate consumes on the parent side, and a column-keyed `DataLoader` drives the batch.
+Identifies the static Java method that extracts the parent-side join-key tuple when the parent is a class-backed DTO with no FK metadata in the jOOQ catalog. Applies when the parent's backing class is a plain Java record / POJO (not a jOOQ `Record` / `TableRecord`); the lifter extracts the key value(s) from the parent instance, the rewrite matches the lifted `RowN` against the columns the field's first JOIN ON predicate consumes on the parent side, and a column-keyed `DataLoader` drives the batch.
 
 `@sourceRow` composes with xref:reference.adoc[`@reference`] for multi-hop paths from a DTO parent. Without `@reference`, the lifter's `RowN` matches the leaf target table's primary key columns directly.
 
-Pairs with xref:record.adoc[`@record(record:)`] supplying the parent class. The directive is rejected on xref:table.adoc[`@table`] parents (use xref:reference.adoc[`@reference`] there) and on jOOQ-record parents (the catalog already supplies the path).
+The parent's backing class is the one the rewrite infers from the field that produces the parent (typically an xref:service.adoc[`@service`] method's return type); `@record` is not involved and is ignored if present. The directive is rejected on xref:table.adoc[`@table`] parents (use xref:reference.adoc[`@reference`] there) and on jOOQ-record parents (the catalog already supplies the path).
 
 == SDL signature
 
@@ -44,7 +44,9 @@ The arity / column-class match is checked at build time against the derived pare
 
 [source,graphql]
 ----
-type CreateFilmPayload @record(record: {className: "no.sikt.graphitron.rewrite.test.services.CreateFilmPayload"}) {
+# CreateFilmPayload is backed by no.sikt.graphitron.rewrite.test.services.CreateFilmPayload,
+# inferred from the @service method whose return type is that class.
+type CreateFilmPayload {
     languageId: Int!
     language: [Language!]!
         @sourceRow(
@@ -58,7 +60,9 @@ type CreateFilmPayload @record(record: {className: "no.sikt.graphitron.rewrite.t
 
 [source,graphql]
 ----
-type CustomerAddressSummary @record(record: {className: "no.sikt.graphitron.rewrite.test.services.CustomerAddressSummary"}) {
+# CustomerAddressSummary is backed by no.sikt.graphitron.rewrite.test.services.CustomerAddressSummary,
+# inferred from its @service producer's return type.
+type CustomerAddressSummary {
     customerId: Int!
     address: [Address!]!
         @sourceRow(
@@ -84,8 +88,8 @@ Per request the framework collects every parent, calls the lifter once per paren
 
 == Constraints
 
-* Required when a field on a non-table-backed `@record` parent returns a `@table` type and would otherwise be rejected as `RecordTableField (or RecordLookupTableField) requires a FK join path and a typed backing class for batch key extraction`.
-* The parent's `@record(record: {className: ...})` must declare a backing class. The directive is rejected on bare `@record` parents with no class.
+* Required when a field on a non-table-backed (plain Java record / POJO) parent returns a `@table` type and would otherwise be rejected as `RecordTableField (or RecordLookupTableField) requires a FK join path and a typed backing class for batch key extraction`.
+* The parent must resolve to a backing class through its producing field. A parent that no producer binds to a class has nothing to lift from.
 * Rejected on xref:table.adoc[`@table`] parents; there's no DTO to lift from. Use xref:reference.adoc[`@reference`] for catalog-driven joins instead.
 * Rejected on jOOQ-record parents (`JooqTableRecordType` / `JooqRecordType`); the catalog record already drives batching, and a typed accessor or jOOQ-record FK supplies the key.
 * The lifter's `RowN` arity must equal the derived parent-side tuple size: `path.first().sourceSideColumns()` when `@reference` is present, or `targetTable.primaryKeyColumns()` otherwise.
@@ -95,7 +99,7 @@ Per request the framework collects every parent, calls the lifter once per paren
 
 == See also
 
-* xref:record.adoc[`@record`] is the parent-side directive that decides whether `@sourceRow` is needed: jOOQ-backed `@record` types skip it; plain-Java-record / POJO types reach for it.
+* The parent's backing-class shape decides whether `@sourceRow` is needed: jOOQ-record parents skip it (the catalog drives the path); plain-Java-record / POJO parents reach for it.
 * xref:reference.adoc[`@reference`] is the catalog-driven counterpart on `@table` parents and the composition target for multi-hop `@sourceRow` paths.
 * xref:../../how-to/source-row.adoc[How-to: Source-row directive] walks two end-to-end examples.
 * xref:../../how-to/result-types.adoc[How-to: Result-type variants] covers `JavaRecordType` parents, accessor inference, and when to reach for `@sourceRow`.

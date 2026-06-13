@@ -51,7 +51,9 @@ A service payload with a typed errors channel:
 
 [source,graphql]
 ----
-type FilmPayload @record(record: {className: "com.example.FilmPayload"}) {
+# FilmPayload is backed by com.example.FilmPayload, the return type of the
+# createFilm @service method below; no directive declares the binding.
+type FilmPayload {
     film:   Film
     errors: [FilmError]
 }
@@ -111,7 +113,7 @@ type ValidationErr @error(handlers: [{handler: VALIDATION}]) {
 == See also
 
 * xref:service.adoc[`@service`] is the upstream of the errors channel: only service-returned payloads carry one.
-* xref:record.adoc[`@record`] backs the payload type that exposes the `errors:` field.
+* The payload type that exposes the `errors:` field is class-backed, its backing class inferred from the xref:service.adoc[`@service`] method's return type.
 * xref:../../how-to/error-channel.adoc[How-to: The errors channel] covers union vs single-type carriers, `description:` vs exception message, and the `path:` slot's contents.
 
 xref:../index.adoc[← Reference index]

@@ -29,7 +29,7 @@ a|
 * xref:notGenerated.adoc[`@notGenerated`] _(rejected, remove from the schema)_
 * xref:order.adoc[`@order`]
 * xref:orderBy.adoc[`@orderBy`]
-* xref:record.adoc[`@record`]
+* xref:record.adoc[`@record`] _(deprecated, ignored, remove from the schema)_
 * xref:reference.adoc[`@reference`]
 * xref:scalarType.adoc[`@scalarType`]
 * xref:service.adoc[`@service`]
@@ -41,7 +41,7 @@ a|
 == By category
 
 *Mapping* +
-xref:table.adoc[`@table`], xref:field.adoc[`@field`], xref:enum.adoc[`@enum`], xref:record.adoc[`@record`], xref:scalarType.adoc[`@scalarType`]
+xref:table.adoc[`@table`], xref:field.adoc[`@field`], xref:enum.adoc[`@enum`], xref:scalarType.adoc[`@scalarType`]
 
 *Joining* +
 xref:reference.adoc[`@reference`], xref:sourceRow.adoc[`@sourceRow`]

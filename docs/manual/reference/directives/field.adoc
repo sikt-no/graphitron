@@ -85,7 +85,7 @@ type Mutation {
 
 If `FilmService.getFilms` returns `List<FilmRecord>` (or `Result<FilmRecord>`), the `films` data field on the carrier payload is bound to that return value directly. The directive is a no-op confirmation of a binding the generator would otherwise infer implicitly; writing it makes the intent explicit and decouples the SDL slot name from the producer method's signature.
 
-The producer's reflected return type must match the SDL element's backing class. For a table-backed element, the producer must return the table's record class (or `List<RecordClass>` / `Result<RecordClass>` when the SDL field is list-shaped); for a `@record`-backed element, the producer must return the declared record class with the same list-shape discipline. Mismatches fail the build with a typed message naming the producer and both types.
+The producer's reflected return type must match the SDL element's backing class. For a table-backed element, the producer must return the table's record class (or `List<RecordClass>` / `Result<RecordClass>` when the SDL field is list-shaped); for a class-backed element, the producer must return that backing class with the same list-shape discipline. (The producer's reflected return type is itself what supplies the backing class; the match is between the element's already-bound class and the producer that bound it.) Mismatches fail the build with a typed message naming the producer and both types.
 
 Unknown sigils are rejected at parse time: `@field(name: "$foo")` fails with `Unknown sigil '$foo' on @field(name:); allowed: $source`. The sigil at a non-admitted site fails with a message naming the only valid site.
 
