@@ -103,13 +103,14 @@ The same composition applies at deeper nesting depths through plain-object `Nest
 
 `@splitQuery` + `@lookupKey` + `@asConnection` is *not* a valid composition. The `@asConnection` rejection mentioned above applies to any `@lookupKey` field, including `@splitQuery` ones; combine `@splitQuery` + `@asConnection` (covered in xref:connections.adoc[connections]) for per-parent paginated children, or `@splitQuery` + `@lookupKey` for per-parent narrowed batches, but not all three at once.
 
-== `@lookupKey` on `@record` parents
+== `@lookupKey` on class-backed parents
 
-A `@record` parent reachable from `@service` is implicitly DataLoader-batched on its `@table`-typed children (`classifyChildFieldOnResultType` never inspects `@splitQuery` on record-parent table-bound fields). That same pattern admits `@lookupKey`: a `RecordLookupTableField` batches keyed by the parent record's PK and narrowed by the caller-provided lookup keys. Explicit `@splitQuery` is redundant on these fields, not rejected.
+A class-backed parent reachable from `@service` is implicitly DataLoader-batched on its `@table`-typed children (`classifyChildFieldOnResultType` never inspects `@splitQuery` on record-parent table-bound fields). That same pattern admits `@lookupKey`: a `RecordLookupTableField` batches keyed by the parent record's PK and narrowed by the caller-provided lookup keys. Explicit `@splitQuery` is redundant on these fields, not rejected.
 
 [source,graphql]
 ----
-type FilmDetails @record(record: {className: "no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord"}) {
+# backed by no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord, reflected from its producing field's return type
+type FilmDetails {
     actorsByLookup(actor_id: [Int!] @lookupKey): [Actor!]! @reference(path: [
         {key: "film_actor_film_id_fkey"},
         {key: "film_actor_actor_id_fkey"}
@@ -117,7 +118,7 @@ type FilmDetails @record(record: {className: "no.sikt.graphitron.rewrite.test.jo
 }
 ----
 
-The same VALUES-pair join applies; the difference is purely on the parent side, where the key extraction reads from the jOOQ record's accessor rather than from a `@table` parent's projected `__idx__` column. xref:../reference/directives/sourceRow.adoc[`@sourceRow`] is the analogous escape hatch when the `@record` parent is a *plain* Java record (no FK metadata), but the lookup-key plumbing on the child side is the same.
+The same VALUES-pair join applies; the difference is purely on the parent side, where the key extraction reads from the jOOQ record's accessor rather than from a `@table` parent's projected `__idx__` column. xref:../reference/directives/sourceRow.adoc[`@sourceRow`] is the analogous escape hatch when the class-backed parent's backing class is a *plain* Java record (no FK metadata), but the lookup-key plumbing on the child side is the same.
 
 == Constraints and pitfalls
 

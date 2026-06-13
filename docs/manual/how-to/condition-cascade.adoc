@@ -127,21 +127,21 @@ The same fixture pattern mirrors the `@table` case: `filmsOuterOverridePlainInpu
 
 The `@condition` reference page lists the carrier rules in two lines; here's the operational shape, with the carriers spelled out.
 
-GraphQL input types classify into one of five carriers in the rewrite:
+GraphQL input types classify into one of five carriers in the rewrite. For class-backed carriers, the backing class is reflected from the `@service` / `@condition` / `@tableMethod` method parameter the input flows into:
 
 * *xref:../reference/directives/table.adoc[`@table`]-bound* (`TableInputType`): Graphitron owns the column projection and DML. Most `@condition` fixtures sit here.
-* *xref:../reference/directives/record.adoc[`@record`]-bound to a Java record* (`JavaRecordInputType`): the developer supplies a record class; the rewrite binds GraphQL fields to its components.
-* *`@record`-bound to a jOOQ record* (`JooqRecordInputType`) or a jOOQ `TableRecord` (`JooqTableRecordInputType`): the carrier is a jOOQ-generated row type.
-* *Plain* (`PojoInputType`): the fallback when no `@table` and no `@record` apply, or when `@record` is present without a `className:`. The carrier is `Map<String, Object>` at runtime.
+* *Class-backed by a Java record* (`JavaRecordInputType`): the producer's parameter is a record class; the rewrite binds GraphQL fields to its components.
+* *Class-backed by a jOOQ record* (`JooqRecordInputType`) or a jOOQ `TableRecord` (`JooqTableRecordInputType`): the reflected carrier is a jOOQ-generated row type.
+* *Plain* (`PojoInputType`): the fallback when the input is neither `@table`-bound nor reflected to a typed class. The carrier is `Map<String, Object>` at runtime.
 
 The non-obvious composition rules around `@condition`:
 
 * *jOOQ records can't contain other records.* A `@table` input or a jOOQ-record input can have a leaf-level `@condition`, but it cannot nest a child input that requires its own jOOQ-record carrier. That's a carrier-shape limitation, not a `@condition` one: there is no jOOQ class that carries a nested record.
-* *Java-record carriers cascade upward.* If a leaf input is `@record`-backed by a Java record, every input *above it* in the nesting chain must also be Java-record-backed. The rewrite needs a stable Java type to hold the nested record. Mixing carriers (e.g. `@table` outer with `@record` inner) does not compose: the outer `@table` input has no slot for the inner record.
+* *Java-record carriers cascade upward.* If a leaf input is class-backed by a Java record, every input *above it* in the nesting chain must also be Java-record-backed. The rewrite needs a stable Java type to hold the nested record. Mixing carriers (e.g. a `@table` outer with a class-backed inner) does not compose: the outer `@table` input has no slot for the inner record.
 * *Listed nested inputs require a Java record carrier.* `[InnerInput]` inside an outer input means the outer carrier must be a Java record (so the list element has a stable Java type to deserialise into). A `@table` outer with `[InnerInput]` inside is rejected at classify time.
 * *Plain `PojoInputType` works for shallow scalar paths.* The runtime `Map<String, Object>` traversal handles any depth of plain inputs whose leaves are scalars and `@condition`-annotated. The example schema's `NestedFilmInput @table` outer / `InnerFilmInput` plain inner / `filmId @condition` leaf composition exercises this; the multi-segment path `["inner", "filmId"]` is extracted at runtime via `NestedInputField`.
 
-The conservative default: when in doubt, use `@table` on the outermost input (so the rewrite can drive implicit predicates) and plain inputs on inner nesting layers (so the rewrite's `Map`-traversal handles the descent). Only reach for `@record` when a service method's input shape demands a typed Java carrier, or when listed nested inputs are involved.
+The conservative default: when in doubt, use `@table` on the outermost input (so the rewrite can drive implicit predicates) and plain inputs on inner nesting layers (so the rewrite's `Map`-traversal handles the descent). Only reach for a class-backed carrier (a service method whose parameter is a typed Java class) when the input shape demands a typed Java carrier, or when listed nested inputs are involved.
 
 == Lookup-key arguments are exempt
 
@@ -187,8 +187,8 @@ The supplying side of the context-argument story (tenant scoping, request-id pro
 * *Field-level `override: true` cascades through `@table` inputs.* Suppresses implicit predicates on direct args and inside `@table`-bound input arguments. Inner `@condition` annotations are *preserved*.
 * *Inner explicit `@condition` always runs.* The rewrite never drops a `@condition` annotation regardless of how many `override: true` layers sit above it. Migrators from the legacy generator should audit fields where outer `override: true` and inner `@condition` coexist; legacy semantics dropped the inner ones.
 * *Plain inputs have no implicit predicates.* Only explicit `@condition` annotations contribute. Without one, a plain input field is silently a no-op on the SQL side.
-* *jOOQ records cannot contain other records.* `@record`-backed-by-jOOQ inputs can have leaf `@condition`s but cannot nest a sibling jOOQ-record input.
-* *Java-record carriers cascade upward.* If any input in a nesting chain is `@record`-backed by a Java record, every input above it must also be Java-record-backed.
+* *jOOQ records cannot contain other records.* Inputs class-backed by a jOOQ record can have leaf `@condition`s but cannot nest a sibling jOOQ-record input.
+* *Java-record carriers cascade upward.* If any input in a nesting chain is class-backed by a Java record, every input above it must also be Java-record-backed.
 * *Listed nested inputs (`[InnerInput]`) require a Java record carrier on the outer input.*
 * *`contextArguments:` is unvalidated at build time.* Typos surface as `null` at request time.
 * *`@lookupKey` args bypass the implicit-predicate path.* `override:` has no effect on lookup-key dispatch; explicit `@condition` on a lookup-key arg runs alongside the `VALUES + JOIN`.
@@ -197,7 +197,7 @@ The supplying side of the context-argument story (tenant scoping, request-id pro
 
 * xref:../reference/directives/condition.adoc[`@condition`] is the directive's reference page.
 * xref:../reference/directives/field.adoc[`@field`] supplies the implicit predicate that `@condition` either stacks with or replaces.
-* xref:../reference/directives/record.adoc[`@record`] / xref:../reference/directives/table.adoc[`@table`] determine the input carrier the condition method reads from.
+* xref:../reference/directives/table.adoc[`@table`] (or, for class-backed inputs, the producer's reflected parameter type) determines the input carrier the condition method reads from.
 * xref:../reference/directives/lookupKey.adoc[`@lookupKey`] is exempt from the implicit-predicate path.
 * xref:../reference/directives/service.adoc[`@service`] is the alternative when an *entire* fetcher is custom code.
 * xref:external-code.adoc[How-to: Wire external Java code] covers the FQCN requirement, classpath setup, and `argMapping:` syntax shared with `@condition`.

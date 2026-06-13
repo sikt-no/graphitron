@@ -121,7 +121,7 @@ Both shapes work with single and bulk DELETE; cardinality follows the carrier fi
 === What you can't return
 
 * Arbitrary non-PK columns of the deleted row. The row is gone; `RETURNING` is narrowed to primary-key columns. If you need the full pre-delete state, snapshot it in your application code before issuing the mutation.
-* A bare `@record`-backed type. Use a NodeId echo or a `@table` projection.
+* A bare class-backed payload type. Use a NodeId echo or a `@table` projection.
 
 == Constraints
 

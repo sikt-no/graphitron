@@ -17,7 +17,7 @@ a|
 * xref:connections.adoc[Cursor-paginated connections]: synthesised vs declared connection types, `totalCount` cost, and what the rewrite caps (and doesn't).
 * xref:custom-scalars.adoc[Custom scalars]: declare a custom scalar in the SDL and bind it to a `GraphQLScalarType` constant via the `@scalarType(scalar:)` directive.
 * xref:error-channel.adoc[The errors channel]: route Java exceptions through a service payload's `errors:` field as typed data.
-* xref:external-code.adoc[Wire external Java code]: the shared mechanics for `@service`, `@externalField`, `@tableMethod`, `@condition`, `@sourceRow`, `@enum`, and `@record`.
+* xref:external-code.adoc[Wire external Java code]: the shared mechanics for `@service`, `@externalField`, `@tableMethod`, `@condition`, `@sourceRow`, and `@enum`.
 * xref:federation-keys.adoc[Federation key fields]: declare entity keys with `@key`, layer them onto `@node` types, and stub non-resolvable entities owned by another subgraph.
 * xref:global-id.adoc[Global object IDs]: Relay Global Object Identification end-to-end, including stable IDs, `keyColumns` migrations, and `Query.node` dispatch.
 * xref:handle-services.adoc[Handle services]: bind GraphQL arguments to Java parameters and pick a return shape the framework recognises.
@@ -26,7 +26,7 @@ a|
 * xref:migrating-from-legacy.adoc[Migrating from the legacy generator]: walk a schema authored against `graphitron-codegen-parent` to the rewrite.
 * xref:multi-hop-nodeid-filter.adoc[Multi-hop `@nodeId` filters]: reach a related node type through one or more intermediate tables when the FKs carry the target's keys positionally by SQL name.
 * xref:polymorphic-types.adoc[Polymorphic types]: choose between single-table and multi-table layouts for GraphQL interfaces and unions.
-* xref:result-types.adoc[Result-type variants]: pick a backing class for a `@record` parent (jOOQ `TableRecord`, jOOQ `Record`, Java record, plain POJO).
+* xref:result-types.adoc[Result-type variants]: understand the backing class reflected from a class-backed parent's producer (jOOQ `TableRecord`, jOOQ `Record`, Java record, plain POJO).
 * xref:source-row.adoc[Source-row directive]: bridge a non-jOOQ DTO parent to a `@table` child field with `@sourceRow`, optionally composed with `@reference` for multi-hop paths.
 * xref:sort-results.adoc[Sort results]: pick a column source, build stable keyset cursors with explicit tie-breakers, and avoid the collation pitfalls.
 * xref:split-vs-inline.adoc[When to split queries]: choose between inline correlated subqueries and `@splitQuery`-batched fetches.

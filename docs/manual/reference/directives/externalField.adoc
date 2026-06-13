@@ -43,7 +43,7 @@ public final class FilmExtensions {
 }
 ----
 
-A `Field<TableRecord<?>>` lift via `DSL.row(...).convertFrom(...)`. The lifted `FilmRecord` carries only the PK column, child fields on the resulting xref:record.adoc[`@record`] type read from the lifted record and the framework batch-fetches non-PK columns as needed:
+A `Field<TableRecord<?>>` lift via `DSL.row(...).convertFrom(...)`. The lifted `FilmRecord` carries only the PK column, child fields on the resulting class-backed type read from the lifted record and the framework batch-fetches non-PK columns as needed. The backing class is the `Field<X>` element type the lift method returns; no directive declares it:
 
 [source,graphql]
 ----
@@ -55,7 +55,9 @@ type Inventory @table(name: "inventory") {
     })
 }
 
-type FilmCard @record(record: {className: "com.example.jooq.tables.records.FilmRecord"}) {
+# FilmCard is backed by com.example.jooq.tables.records.FilmRecord, the element
+# type of the Field<TableRecord<?>> the filmRef lift returns.
+type FilmCard {
     filmId: Int @field(name: "film_id")
 }
 ----
@@ -71,7 +73,9 @@ type Inventory @table(name: "inventory") {
     })
 }
 
-type FilmCardWrapper @record(record: {className: "com.example.services.FilmCardData"}) {
+# FilmCardWrapper is backed by com.example.services.FilmCardData, the element
+# type of the Field<CustomJavaRecord> the filmCardData lift returns.
+type FilmCardWrapper {
     film: Film
 }
 ----
@@ -83,14 +87,14 @@ type FilmCardWrapper @record(record: {className: "com.example.services.FilmCardD
 * `className:` is required on the reference. A bare `@externalField` (no `reference:`, or a reference with no `className:`) surfaces as `external field reference could not be resolved — missing className`.
 * `method:` is optional. When omitted, the rewrite uses the GraphQL field name as the static-method name. Set `method:` only when the two diverge.
 * `argMapping:` on the `reference` is structurally inert and rejected at parse time. `@externalField` consumes no GraphQL-argument-bound parameters.
-* The static method must return `Field<T>` where `T` matches the GraphQL scalar, or one of the lift forms (`Field<TableRecord<?>>`, `Field<CustomJavaRecord>`) when the field's GraphQL type is an xref:record.adoc[`@record`].
+* The static method must return `Field<T>` where `T` matches the GraphQL scalar, or one of the lift forms (`Field<TableRecord<?>>`, `Field<CustomJavaRecord>`) when the field's GraphQL type is class-backed.
 * `className:` must be a fully-qualified class name reachable on the rewrite Maven plugin's classpath (declare the carrying artifact under `<dependencies>` of the plugin's `<plugin>` block). Reflection failures surface as `external field reference could not be resolved — <reflection error>`.
 * Combining `@externalField` with a `@reference` path (the condition-join lift form) is not yet supported; the build rejects this with a deferred-validation error.
 
 == See also
 
 * xref:reference.adoc[`@reference`] is the FK-driven counterpart, choose it when the value comes from a chain of catalog joins, choose `@externalField` when the value is a custom expression or a typed lift.
-* xref:record.adoc[`@record`] is the natural target type for `Field<TableRecord<?>>` and `Field<CustomJavaRecord>` lift forms.
+* A class-backed type is the natural target for the `Field<TableRecord<?>>` and `Field<CustomJavaRecord>` lift forms; the lift's element type supplies the backing class. See xref:record.adoc[`@record`] for why the directive that used to declare it is now ignored.
 * xref:field.adoc[`@field(name: ...)`] disambiguates the GraphQL-field-vs-SQL-column alias when names collide.
 * xref:../../how-to/computed-fields.adoc[How-to: Computed fields with `@externalField`] is the operational recipe; it walks the `(ParentTable) -> Field<T>` signature, the three return shapes (scalar, `Field<TableRecord<?>>`, `Field<CustomJavaRecord>`), and the canonical fixtures.
 * xref:../../how-to/external-code.adoc[How-to: Wire external Java code] covers the rewrite plugin's classpath setup, the FQCN requirement, and the method-name default shared with `@service`, `@condition`, and the other external-code directives.

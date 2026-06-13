@@ -57,8 +57,8 @@ The `TableRecord` arm carries the developer-declared subtype as a payload becaus
 ----
 Reader
 ├─ ColumnRead()                   ← FK columns on the parent record (catalog FK)
-├─ AccessorCall(AccessorRef)      ← typed zero-arg accessor on a @record parent
-├─ SourceRowsCall(LifterRef)      ← @sourceRow static lifter on a @record parent
+├─ AccessorCall(AccessorRef)      ← typed zero-arg accessor on a record-backed parent
+├─ SourceRowsCall(LifterRef)      ← @sourceRow static lifter on a record-backed parent
 ├─ ServiceTableRecord(ClassName)  ← @service returning a typed TableRecord subclass
 └─ ServiceUntypedRecord()         ← @service returning Record<> / scalar
 ----

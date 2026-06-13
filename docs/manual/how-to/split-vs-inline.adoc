@@ -13,7 +13,7 @@ The classifier picks between two emission shapes for an `@reference`-pathed `@ta
 
 The switch between shapes is purely directive-driven for `@table`-parent children: `@splitQuery` present → split; absent → inline. The classifier rejects the inline path's `@asConnection` composition (`@asConnection on inline (non-@splitQuery) TableField is not supported; add @splitQuery for batched connection semantics`, `FieldBuilder.classifyObjectReturnChildField:478`).
 
-For `@record`-parent children that return a `@table` type, the classifier batches via `DataLoader` *unconditionally* (the parent doesn't sit inside a SQL `JOIN`, so an inline correlated subquery has nothing to bind against). `@splitQuery` on those fields is redundant but not rejected; `classifyChildFieldOnResultType` never inspects the directive.
+For class-backed-parent children that return a `@table` type, the classifier batches via `DataLoader` *unconditionally* (the parent doesn't sit inside a SQL `JOIN`, so an inline correlated subquery has nothing to bind against). `@splitQuery` on those fields is redundant but not rejected; `classifyChildFieldOnResultType` never inspects the directive.
 
 == The round-trip vs fan-out trade-off
 

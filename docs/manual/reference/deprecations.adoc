@@ -32,7 +32,7 @@ The rewrite's `@deprecated(reason:)` markers do not carry a structured removal v
 | xref:directives/record.adoc[`ExternalCodeReference.name`]
 | Phased out
 | Rewrite v1
-| Use `className:` instead. `name:` was a Norwegian-language alias kept for backward compatibility with legacy schemas; `className:` is the canonical key on `ExternalCodeReference` (used by xref:directives/record.adoc[`@record`], xref:directives/service.adoc[`@service`], xref:directives/error.adoc[`@error`], and other directive sites that reference external Java code).
+| Use `className:` instead. `name:` was a Norwegian-language alias kept for backward compatibility with legacy schemas; `className:` is the canonical key on `ExternalCodeReference` (used by xref:directives/service.adoc[`@service`], xref:directives/error.adoc[`@error`], and other directive sites that reference external Java code).
 |===
 
 == Deprecated whole directives
@@ -47,6 +47,11 @@ The GraphQL spec does not allow `@deprecated` on a directive definition, so thes
 | Backward-compatibility alias
 | Rewrite v1
 | Replace `@index(name: "X")` with xref:directives/order.adoc[`@order(index: "X")`]. The two forms generate identical code; only the directive name and parameter key change. xref:directives/order.adoc[`@order`] also offers `fields:` and `primaryKey:` modes that `@index` cannot express.
+
+| xref:directives/record.adoc[`@record`]
+| Ignored (parsed, drives nothing)
+| Rewrite v1
+| Remove it. The backing Java class is now inferred from the producing field's reflected type: an xref:directives/service.adoc[`@service`] method return (or parameter, for inputs), a xref:directives/table.adoc[`@table`] resolution, a xref:directives/tableMethod.adoc[`@tableMethod`] return, or a parent-accessor chain. A reachable type still carrying `@record` emits a build warning (redundant, shadowed-by-`@table`, or disagrees-with-reflection). The directive stays declared so existing schemas keep parsing.
 |===
 
 == Rejected, not deprecated

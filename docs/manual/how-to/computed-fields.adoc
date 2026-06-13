@@ -31,7 +31,7 @@ public final class FilmExtensions {
 Three things matter:
 
 * *The sole parameter is the parent table's jOOQ class.* The rewrite passes the aliased parent table the field's fetcher is selecting from. Resolve column references through `table.LANGUAGE_ID` (the alias-bearing accessor) rather than the static `Film.FILM.LANGUAGE_ID` handle, the alias keeps the expression anchored in the caller's `FROM` and lets jOOQ render the projected column against the correct alias.
-* *The return type's `T` matches the GraphQL scalar.* The rewrite trusts the declared return type at the reflection site; the GraphQL field's runtime type must be readable from the projected `T`. A `Field<Boolean>` for a `Boolean` field, a `Field<String>` for a `String`, and so on, with the lift forms below for `@record`-typed fields.
+* *The return type's `T` matches the GraphQL scalar.* The rewrite trusts the declared return type at the reflection site; the GraphQL field's runtime type must be readable from the projected `T`. A `Field<Boolean>` for a `Boolean` field, a `Field<String>` for a `String`, and so on, with the lift forms below for class-backed (record-typed) fields.
 * *The method runs at code-generation time, not at request time.* The `Field<T>` you return is inlined into the SQL once and reused for every fetcher invocation. Don't capture per-request state in the method; reach for xref:handle-services.adoc[`@service`] when the value depends on the request.
 
 Add the carrying artifact to the rewrite plugin's `<dependencies>` block, not your consumer module's compile classpath; the plugin reflects on the class via `Class.forName(...)` at code-generation time. xref:external-code.adoc[How-to: Wire external Java code] covers the plugin-classpath setup in full.
@@ -63,7 +63,7 @@ The execution-tier test `films_isEnglish_resolvesViaExternalFieldExpression` in 
 
 == Return shapes
 
-A `@externalField` method returns one of three shapes. The first is a plain scalar; the other two lift a single column into a typed record so child fields on the resulting xref:../reference/directives/record.adoc[`@record`] type batch-fetch the rest.
+A `@externalField` method returns one of three shapes. The first is a plain scalar; the other two lift a single column into a typed record so child fields on the resulting class-backed type batch-fetch the rest. The method's return type *is* the binding for that class-backed type: the rewrite reflects the lifted record class straight off the `Field<...>` element type.
 
 === Scalar `Field<T>`
 
@@ -71,7 +71,7 @@ The default and the simplest case. `T` matches the GraphQL scalar (`Boolean`, `S
 
 === Lifted `Field<TableRecord<?>>`
 
-Use this shape when the GraphQL field returns a `@record`-typed wrapper backed by a jOOQ `TableRecord`. The static method projects a single column (typically a foreign-key value on the parent table), and `Field.convert(Converter.from(...))` converts the raw value into a `TableRecord` carrying that column as the PK:
+Use this shape when the GraphQL field returns a class-backed wrapper whose backing class is a jOOQ `TableRecord`. The static method projects a single column (typically a foreign-key value on the parent table), and `Field.convert(Converter.from(...))` converts the raw value into a `TableRecord` carrying that column as the PK:
 
 [source,graphql]
 ----
@@ -83,7 +83,8 @@ type Inventory @table(name: "inventory") {
     })
 }
 
-type FilmCard @record(record: {className: "no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord"}) {
+# backed by no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord, reflected from the filmRef @externalField method's Field<FilmRecord> return
+type FilmCard {
     filmId: Int @field(name: "film_id")
 }
 ----
@@ -99,7 +100,7 @@ public static Field<FilmRecord> filmRef(Inventory table) {
 }
 ----
 
-The lifted `FilmRecord` carries only the PK; the framework batch-fetches non-PK columns on demand through the standard `@record`-parent paths. The execution-tier test `inventoryById_filmRef_resolvesViaExternalFieldReturningFieldOfTableRecord` runs `{ inventoryById(inventory_id: [1, 2, 3]) { inventoryId filmRef { filmId } } }` and asserts each row's `filmRef.filmId` equals the seeded `inventory.film_id`.
+The lifted `FilmRecord` carries only the PK; the framework batch-fetches non-PK columns on demand through the standard class-backed-parent paths. The execution-tier test `inventoryById_filmRef_resolvesViaExternalFieldReturningFieldOfTableRecord` runs `{ inventoryById(inventory_id: [1, 2, 3]) { inventoryId filmRef { filmId } } }` and asserts each row's `filmRef.filmId` equals the seeded `inventory.film_id`.
 
 === Lifted `Field<CustomJavaRecord>`
 
@@ -114,7 +115,8 @@ type Inventory @table(name: "inventory") {
     })
 }
 
-type FilmCardWrapper @record(record: {className: "no.sikt.graphitron.rewrite.test.services.FilmCardData"}) {
+# backed by no.sikt.graphitron.rewrite.test.services.FilmCardData, reflected from the filmCardData @externalField method's Field<FilmCardData> return
+type FilmCardWrapper {
     film: Film
 }
 ----
@@ -136,9 +138,11 @@ The execution-tier test `inventoryById_filmCardData_firesAccessorKeyedSingleLift
 
 == Pick a shape
 
-The default is whichever shape is closest to the value. A scalar field wants a `Field<T>`. A wrapper that fronts a single jOOQ table wants `Field<TableRecord<?>>`. A wrapper that bundles a typed record alongside other fields wants `Field<CustomJavaRecord>` so the canonical-accessor inference can derive the batch key. The xref:result-types.adoc[How-to: Result-type variants] recipe covers the broader decision tree for `@record` parents and accessor-driven batching.
+The default is whichever shape is closest to the value. A scalar field wants a `Field<T>`. A wrapper that fronts a single jOOQ table wants `Field<TableRecord<?>>`. A wrapper that bundles a typed record alongside other fields wants `Field<CustomJavaRecord>` so the canonical-accessor inference can derive the batch key. The xref:result-types.adoc[How-to: Result-type variants] recipe covers the broader decision tree for class-backed parents and accessor-driven batching.
 
 When the value is not a column-shaped expression at all (a network call, request-scoped logic, multi-row payload), the right directive is xref:handle-services.adoc[`@service`], not `@externalField`. When the value comes from following an FK chain to another table, the right directive is xref:../reference/directives/reference.adoc[`@reference`].
+
+The wrapper types in the two lift forms above are class-backed: the `@externalField` method's `Field<...>` return type *is* the binding, so the wrapper type carries no directive of its own.
 
 == Constraints
 
@@ -147,7 +151,7 @@ When the value is not a column-shaped expression at all (a network call, request
 * `className:` is required on the reference. A bare `@externalField` (no `reference:`, or a reference with no `className:`) surfaces with the diagnostic `external field reference could not be resolved -- missing className`.
 * `method:` is optional. When omitted, the rewrite uses the GraphQL field name as the static-method name. Set `method:` only when the two diverge.
 * `argMapping:` on the reference is structurally inert and is rejected at parse time. `@externalField` consumes no GraphQL-argument-bound parameters, the method's only formal parameter is the parent table.
-* The static method must return `Field<T>` where `T` matches the GraphQL scalar, or one of the lift forms (`Field<TableRecord<?>>`, `Field<CustomJavaRecord>`) when the field's GraphQL type is a xref:../reference/directives/record.adoc[`@record`].
+* The static method must return `Field<T>` where `T` matches the GraphQL scalar, or one of the lift forms (`Field<TableRecord<?>>`, `Field<CustomJavaRecord>`) when the field's GraphQL type is class-backed (the method's `Field<...>` return type supplies the binding).
 * The carrying class must be on the rewrite Maven plugin's classpath, not the consumer module's compile classpath. Reflection failures surface as `external field reference could not be resolved -- <reflection error>`. xref:external-code.adoc[How-to: Wire external Java code] covers the plugin-classpath setup.
 * Combining `@externalField` with a `@reference` path (the condition-join lift form) is not yet supported; the build rejects this with a deferred-validation error.
 
@@ -155,9 +159,9 @@ When the value is not a column-shaped expression at all (a network call, request
 
 * xref:../reference/directives/externalField.adoc[`@externalField`] is the directive's reference page; the parameter list, the `ExternalCodeReference` shape, and the per-site rejection messages live there.
 * xref:external-code.adoc[How-to: Wire external Java code] covers the rewrite plugin's classpath setup, the FQCN requirement, and the method-name default.
-* xref:result-types.adoc[How-to: Result-type variants] covers the `@record` parent decision tree, including the canonical-accessor inference that auto-derives batch keys for `Field<CustomJavaRecord>` lifts.
+* xref:result-types.adoc[How-to: Result-type variants] covers the class-backed parent decision tree, including the canonical-accessor inference that auto-derives batch keys for `Field<CustomJavaRecord>` lifts.
 * xref:../reference/directives/reference.adoc[`@reference`] is the FK-driven counterpart; choose it when the value comes from a chain of catalog joins, choose `@externalField` when the value is a custom expression or a typed lift.
 * xref:handle-services.adoc[How-to: Handle services] covers the alternative when the field's value depends on the request rather than on a column expression.
-* xref:../reference/directives/record.adoc[`@record`] is the natural target type for the `Field<TableRecord<?>>` and `Field<CustomJavaRecord>` lift forms.
+* xref:result-types.adoc[How-to: Result-type variants] also covers the class-backed wrapper types that the `Field<TableRecord<?>>` and `Field<CustomJavaRecord>` lift forms produce; the wrapper's backing class is reflected from the method's `Field<...>` return type, so no directive is needed on the wrapper.
 
 xref:index.adoc[← How-to index]

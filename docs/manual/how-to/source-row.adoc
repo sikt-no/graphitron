@@ -2,16 +2,16 @@
 :description: Bridge a non-jOOQ DTO parent to a @table child field with @sourceRow, optionally composed with @reference for multi-hop paths.
 :!toc:
 
-`@sourceRow` lets a `@record` parent whose backing class has no jOOQ FK metadata reach a child `@table`-bound field through a developer-supplied lifter method. Two shapes:
+`@sourceRow` lets a class-backed parent whose backing class has no jOOQ FK metadata reach a child `@table`-bound field through a developer-supplied lifter method. Two shapes:
 
 * *Leaf-PK* (`@sourceRow` alone). The lifter returns the leaf table's primary-key value(s); the rewrite emits a single column-equality JOIN.
 * *Path-keyed* (`@sourceRow` composed with xref:join-with-references.adoc[`@reference`]). The lifter returns the first FK hop's source-side value(s); `@reference` walks the catalog FK chain to the leaf.
 
-The directive is rejected on `@table` parents (use xref:join-with-references.adoc[`@reference`] there) and on jOOQ-record parents (the catalog already drives batching). It applies only to plain Java records and POJOs whose backing class is declared via `@record(record: {className: "..."})`.
+The directive is rejected on `@table` parents (use xref:join-with-references.adoc[`@reference`] there) and on jOOQ-record parents (the catalog already drives batching). It applies only to class-backed parents backed by a plain Java record or POJO, where the backing class is reflected from the parent type's producer (the `@service` / `@tableMethod` return or accessor chain that yields it).
 
 == When to reach for `@sourceRow`
 
-The `@record` parent's backing class is not a jOOQ `Record` / `TableRecord`, and the child field returns a `@table`-bound type. The framework needs to extract a join key from the parent. The decision tree:
+The class-backed parent's backing class is not a jOOQ `Record` / `TableRecord`, and the child field returns a `@table`-bound type. The framework needs to extract a join key from the parent. The decision tree:
 
 * The parent class exposes a typed jOOQ accessor (e.g. `List<FilmRecord> films()`) → the classifier auto-derives the batch key. No directive needed; see xref:result-types.adoc[Result-type variants].
 * The parent class only carries the leaf table's primary-key value as a primitive → use `@sourceRow` alone (leaf-PK case).
@@ -23,7 +23,8 @@ The DTO carries the `language_id` value directly. The leaf table is `language`; 
 
 [source,graphql]
 ----
-type CreateFilmPayload @record(record: {className: "no.sikt.graphitron.rewrite.test.services.CreateFilmPayload"}) {
+# backed by no.sikt.graphitron.rewrite.test.services.CreateFilmPayload via its @service producer's return type
+type CreateFilmPayload {
     languageId: Int!
     language: [Language!]!
         @sourceRow(
@@ -52,7 +53,8 @@ The DTO carries the FK column's value (here, the customer's `address_id`). `@ref
 
 [source,graphql]
 ----
-type CustomerAddressSummary @record(record: {className: "no.sikt.graphitron.rewrite.test.services.CustomerAddressSummary"}) {
+# backed by no.sikt.graphitron.rewrite.test.services.CustomerAddressSummary via its @service producer's return type
+type CustomerAddressSummary {
     customerId: Int!
     address: [Address!]!
         @sourceRow(
@@ -88,7 +90,7 @@ Other rejections share the `@sourceRow on '<parent>.<field>'` prefix:
 * `lifter class '...' could not be loaded` — the `className:` argument did not resolve. Verify the FQCN and the rewrite plugin's classpath (see xref:external-code.adoc[Wire external Java code]).
 * `no static method named '...' on class '...'` — the `method:` argument did not match a static method. The diagnostic includes a candidate hint.
 * `lifter method '...' must return org.jooq.Row1..Row22` — the lifter's return type is not a `RowN`. `Long`, `Record1`, etc. fall here; declare the return as `Row1<Long>` instead.
-* `lifter method '...' parameter type '...' is not assignable from the parent's backing class '...'` — the single parameter does not accept the parent. Match the type to the `@record(record:)` class.
+* `lifter method '...' parameter type '...' is not assignable from the parent's backing class '...'`: the single parameter does not accept the parent. Match the type to the parent's reflected backing class (the producer's return type).
 * `is not supported on @asConnection fields` — connection fields route through pagination helpers that don't share the rows-method DataLoader path.
 * `has @reference parse error: ...` — `@reference`'s `path:` did not resolve (unknown FK key, broken connectivity). The parse error surfaces directly, without re-validating against the lifter.
 
@@ -104,6 +106,6 @@ Other rejections share the `@sourceRow on '<parent>.<field>'` prefix:
 * xref:../reference/directives/sourceRow.adoc[`@sourceRow` reference] for the full directive surface.
 * xref:join-with-references.adoc[Join with references] for the catalog-driven counterpart on `@table` parents and the `@reference` composition target.
 * xref:external-code.adoc[Wire external Java code] for the shared mechanics of plugging custom Java classes into the rewrite (classpath, error reporting).
-* xref:result-types.adoc[Result-type variants] covers the four `@record` backing-class shapes and when the classifier auto-derives a batch key from a typed accessor instead.
+* xref:result-types.adoc[Result-type variants] covers the four class-backed backing-class shapes and when the classifier auto-derives a batch key from a typed accessor instead.
 
 xref:index.adoc[← How-to index]

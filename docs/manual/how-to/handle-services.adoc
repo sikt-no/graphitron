@@ -61,9 +61,9 @@ binds to
 public static FilmRecord createFilm(DSLContext dsl, FilmCreateInput in) { ... }
 ----
 
-where `FilmCreateInput` is a Java class (or `@record`-bound record) whose components correspond to the input-type's fields. graphql-java does the input deserialisation; the framework just hands the resulting object to the method. The Java side reads `in.title()`, `in.languageId()`, etc.
+where `FilmCreateInput` is a Java class whose components correspond to the input-type's fields. The backing class is reflected from the `createFilm` method's parameter type; graphql-java does the input deserialisation; the framework just hands the resulting object to the method. The Java side reads `in.title()`, `in.languageId()`, etc.
 
-If the input type is `@record`-bound (i.e. `input FilmCreateInput @record(record: {className: "..."})`), the backing class is the canonical home for the input shape. Without `@record`, the framework's input projection produces an `ImmutableMap<String, Object>` that the Java method must read by key; the typed-record shape is strongly preferred.
+When the input type's producer (the service method parameter) is a typed Java class, the backing class is the canonical home for the input shape. When the input flows into no typed parameter, the framework's input projection produces an `ImmutableMap<String, Object>` that the Java method must read by key; the typed-class shape is strongly preferred, so declare the service method's parameter as the typed input class.
 
 `argMapping:` works for input arguments the same way it works for scalars: `argMapping: "input: in"` rebinds the Java parameter name. Field-level rebinding inside the input type is not part of `@service`'s surface; that's the input type's own concern (see xref:../reference/directives/field.adoc[`@field`] on input fields).
 
@@ -118,9 +118,9 @@ public static Integer filmCount(DSLContext dsl) {
 
 When the return type is a non-table GraphQL scalar (or list of scalars), the Java return must be a value graphql-java can coerce. The framework wraps the result in a `DataFetcherResult` and lets graphql-java apply scalar coercion (e.g. `Integer` → `Int!`, `BigDecimal` → `Float`). No projection or batching is involved.
 
-=== `@record`-bound payload: accessor-derived or lifter-driven
+=== Class-backed payload: accessor-derived or lifter-driven
 
-When the return type is a `@record` type (a custom payload), each row in the service's result has children that the framework still resolves. Two paths drive the child-fetch dispatch:
+When the return type is a class-backed type (a custom payload whose backing class is reflected from this `@service` method's return type), each row in the service's result has children that the framework still resolves. Two paths drive the child-fetch dispatch:
 
 * *Auto-derived from accessor.* If the payload's canonical record-component accessor returns the right shape (a `TableRecord` subclass, `List<TableRecord>`, or `Set<TableRecord>` whose element matches the child field's `@table`), the classifier auto-derives a `BatchKey.AccessorKeyedSingle`/`AccessorKeyedMany` for the field. No extra directive is needed.
 * *Explicit `@sourceRow`.* When the catalog cannot derive the key (e.g. the payload carries a raw FK column instead of a typed record), declare a lifter that takes the parent and returns a `RowN` of the FK column values.
@@ -129,7 +129,8 @@ The `recentlyCreatedFilms` example exercises the lifter path:
 
 [source,graphql]
 ----
-type CreateFilmPayload @record(record: {className: "...CreateFilmPayload"}) {
+# backed by ...CreateFilmPayload via the recentlyCreatedFilms @service producer's return type
+type CreateFilmPayload {
     languageId: Int!
     language: [Language!]!
         @sourceRow(
@@ -217,7 +218,7 @@ The performance shape: one `Set<Key>`-input call, one `Map<Key, Value>`-output r
 == Pitfalls
 
 * *Argument binding is by name.* GraphQL argument `ids` binds to Java parameter `ids` by default; rename via `argMapping:` when the Java method's parameter has a different name. Mismatches are caught at build time.
-* *Input types pass through whole.* A `FilmCreateInput!` argument becomes one Java parameter, not flattened into per-field parameters. Read the input's components on the Java side. Prefer `@record`-bound input types over the untyped `Map<String, Object>` projection.
+* *Input types pass through whole.* A `FilmCreateInput!` argument becomes one Java parameter, not flattened into per-field parameters. Read the input's components on the Java side. Prefer a typed input-class parameter (the binding the framework reflects) over the untyped `Map<String, Object>` projection.
 * *`contextArguments:` requires the request layer to set them.* The framework reads `env.getGraphQlContext().get(name)`; if the servlet/filter doesn't put the value there, the parameter is `null` at call time. The classifier doesn't validate the value is set; only that the Java parameter named to receive it exists.
 * *Non-root `@service` requires `@splitQuery`.* The classifier rejects a child `@service` without it. The shape on the child is `Set<Key>` → `Map<Key, Value>`, not `(Parent, Args) → Value`. Single-statement nested resolution is not supported on the service path.
 * *Map keys must round-trip.* The returned `Map` is read by `framework-supplied Set` element. If your body constructs new keys (not `Row<N>` instances backed by the same value-equals semantics), the lookup misses and the field returns `null` for every parent. Prefer to rebuild keys from the framework's `Set` rather than constructing fresh ones.
@@ -232,7 +233,7 @@ The performance shape: one `Set<Key>`-input call, one `Map<Key, Value>`-output r
 * xref:../reference/directives/mutation.adoc[`@mutation`] for the framework-generated alternative on root mutation fields.
 * xref:../reference/directives/tableMethod.adoc[`@tableMethod`] for the lighter-weight "developer returns a `Table`, framework projects" variant.
 * xref:../reference/directives/splitQuery.adoc[`@splitQuery`] is the per-parent batch wrapper non-root services require.
-* xref:result-types.adoc[How-to: Result-type variants] covers the `@record` payload backing-class shape that the classifier reflects on to find children.
+* xref:result-types.adoc[How-to: Result-type variants] covers the class-backed payload backing-class shape that the classifier reflects on to find children.
 * xref:split-vs-inline.adoc[How-to: When to split queries] covers the `DataLoader` cache-key shape and the aliased-uses-don't-share-batches consequence.
 * xref:error-channel.adoc[How-to: The errors channel] covers turning service-thrown exceptions into typed errors on a payload's `errors:` field.
 

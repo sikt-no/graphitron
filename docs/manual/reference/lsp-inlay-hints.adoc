@@ -47,7 +47,7 @@ Renders the projection's load-bearing payload as markdown when the cursor is on 
 
 * The friendly label (matching the inlay hint).
 * The qualified coordinate (`ParentType.fieldName` for fields; the type name for types).
-* Per-permit payload: target table, column name, FK chain, participant set, discriminator column, DML verb, error-channel constant, input type name, accessor / column duality for `@record`-parent fields, and so on.
+* Per-permit payload: target table, column name, FK chain, participant set, discriminator column, DML verb, error-channel constant, input type name, accessor / column duality for class-backed-parent fields, and so on.
 
 Hover stays distinct from the directive-argument-keyed dispatch (`@table(name:)`, `ExternalCodeReference.method`, ...): the existing directive-arg hovers keep firing when the cursor sits inside a directive, and the classification hover fires only as a fallback on declaration coordinates.
 
