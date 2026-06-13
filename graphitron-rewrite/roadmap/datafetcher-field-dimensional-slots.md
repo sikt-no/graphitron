@@ -1,7 +1,7 @@
 ---
 id: R290
 title: "Field-side dimensional slots: materialise carrier x intent x mapping on the field"
-status: Backlog
+status: Spec
 bucket: structural
 priority: 4
 theme: structural-refactor
@@ -35,10 +35,12 @@ is **derived** rather than switched on a leaf name:
   polymorphic UNION / record-handoff.
 - polarity (mutating?) derives from the intent family.
 
-Concretely this collapses the service/DML re-query permits (`QueryServiceTableField`,
-`MutationServiceTableField`, `ChildField.ServiceTableField`, and the record-carrier siblings) onto a
-service/DML intent + `Table`/`Record` mapping with the re-fetch derived, and it **deletes R281's
-throwaway `LeafTupleAdapter`** once the field exposes `(carrier, intent, mapping)` directly.
+Concretely the service/DML re-query family (`QueryServiceTableField`, `MutationServiceTableField`,
+`ChildField.ServiceTableField`, and the record-carrier siblings) stops deciding its re-fetch from leaf
+identity and reads it off `intent x mapping` instead, and the slice **deletes R281's throwaway
+`LeafTupleAdapter`** once the field exposes `(carrier, intent, mapping)` directly. Those service leaves
+*survive* this slice (their leaf-identity consolidation is Stage 5); see **Spec: implementation shape**
+below for the exact scope boundary and the two leaves R290 does retire.
 
 ## Leaf changes carried by this slice
 
@@ -55,22 +57,117 @@ the materialisation:
 - **Collapse `SingleRecordTableField`** — its verdict is the `(Service`/`DML) x Table` re-fetch; the
   single-source-object DataLoader-skip becomes a derived detail, not a distinct leaf.
 
+## Dependency status
+
+The model-side prerequisites have cleared: the Stage 1 foundation (R238, `ServiceField` /
+`ServiceMethodCall`) is in tree, and the executable acceptance corpus (R281 + R299) has shipped, so the
+corpus already asserts `(carrier, intent, mapping)` and `LeafTupleAdapter` (under
+`graphitron/src/test/.../classifieddsl/`) is a live artifact this slice deletes. The remaining
+`depends-on: [dimensional-model-pivot]` edge is umbrella provenance, not an open block: R222-the-umbrella
+stays in Spec while its slices land, and the refined field-side model this slice implements is settled.
+Read the edge as "this is R222 Stage 3," not "blocked."
+
+## Spec: implementation shape
+
+The decisions below are load-bearing for this slice; R222's "Direction, not contract" clause still
+licenses redrawing detail that surfaces in implementation, so long as the slot home, the derivation
+proof, and the corpus-invariance gate hold.
+
+### Slot home and shape
+
+`carrier`, `intent`, and `mapping` land as **three narrow accessors** on the field model
+(`carrier()`, `intent()`, `mapping()`), each returning its own typed value, **not** a single neutral
+`DimensionTuple` component. A tuple carries no information its three parts don't already carry and
+obscures which axis each consumer forks on (the legality gate reads `carrier`, polarity reads the
+`intent` family, build-vs-consume reads `mapping`, re-fetch reads `intent x mapping` jointly); three
+accessors keep each consumer reading exactly the axis it forks on, per "narrow component types" and
+"sub-taxonomies carry distinct information." The test-side `DimensionTuple` record (the corpus's
+assertion shape) stays as-is; the *field model* exposes the three axes directly, and the harness builds
+its `DimensionTuple` by reading the three accessors off the field.
+
+The home is the **field root that survives R222 Stage 6** — today `OutputField`, which Stage 6 renames
+to `GraphitronField` after the input/output split dissolves. The triple is universal across every output
+field (R299 proved total reconstruction from leaf identity), so the root is the narrowest interface that
+names the property. These three are a **total classification, not an optional signal**: every field has
+a carrier, an intent, and a mapping, with no "this field has no intent" state, so the `No<Family>`
+absence arm that R222's absence-encoding principle attaches to *field-universal optional* slots does not
+apply here, and neither does R238's interface-gated absence (that pattern is for *directive-gated* slots
+like `ServiceMethodCall`, which not every field carries). Stating this explicitly so the
+field-universal-slot-without-`No<>`-arm shape reads as deliberate, not as a missed absence arm.
+
+The **carrier x intent legality** (write intents only on `Mutation`; `NodeResolve` / `EntityResolve`
+only on `Query`; `Nesting` only on `Source`) is enforced where the field is constructed (the classifier
+in `FieldBuilder` / `CatalogBuilder`), and `GraphitronSchemaValidator` mirrors it, per "validator mirrors
+classifier invariants." (If implementation finds the per-construction-site checks want consolidating, a
+small validated holder whose compact constructor pins the legality is acceptable — but it would be named
+for that job, not as a neutral tuple.)
+
+### Scope boundary (Stage 3, not Stage 5)
+
+This slice **materialises the slots and makes one derived facet real**; it does **not** rip out the
+~5300-line `TypeFetcherGenerator` per-leaf switch or delete the broad cross-product permit set. That
+wholesale consumer migration and permit retirement is R222 **Stage 5** (the sync point on Stages 2+3).
+What R290 does:
+
+1. **Materialise** `carrier()` / `intent()` / `mapping()` on the field root, computed at classification
+   time, reproducing exactly what `LeafTupleAdapter` reconstructs today.
+2. **Delete `LeafTupleAdapter`**; the corpus harness reads the three accessors off the field.
+3. **Make the re-fetch derivation real** as the proof that the slot earns its keep: the service/DML ->
+   `@table` re-query, today decided by leaf identity in the consumer, derives instead from
+   `(QueryService | MutationService | DML-write intent) x Table mapping`. The consumer
+   (`TypeFetcherGenerator`, and `ValidationBuilder` as the mirror) computes the re-fetch step from the
+   `intent()` x `mapping()` slots once, rather than each service/DML arm re-deciding it from its leaf
+   type. Materialising the slots without landing a derivation would ship vocabulary no consumer pulls on
+   (the rejected "horizontal phase 1" smell) and leave the re-fetch predicate duplicated across consumers
+   (the "generation-thinking" smell); the derivation has to land here for the materialisation to mean
+   anything.
+4. **Retire exactly the two leaves the model removes outright** — **dissolve `ConstructorField`** (dead
+   since the `@record`-on-types ban) and **collapse `SingleRecordTableField`** (its single-source
+   DataLoader-skip becomes a derived detail). This brings the live leaf set from 49 to the appendix's
+   **47**, which is the post-R290 inventory. The service re-query leaves (`QueryServiceTableField`,
+   `MutationServiceTableField`, `ChildField.ServiceTableField`) **survive R290 as leaves** — the appendix
+   lists all three, with re-fetch shown as derived (`RF`). R290 makes their *mechanism* slot-derived;
+   their leaf-*identity* consolidation (merging the redundant permits onto a single service-backed field
+   record) needs a consolidation target this slice should not invent, so it stays with Stage 5's broad
+   permit merge.
+
+**Reconciliation with Stage 5.** R290's permit-set delta is exactly two leaves (`ConstructorField`,
+`SingleRecordTableField`); it does **not** pre-empt Stage 5's cross-product permit consolidation. What
+R290 hands Stage 5 is the slot-derived re-fetch (so the service leaves' dispatch already reads
+`intent x mapping`), leaving Stage 5 the narrower mechanical job of merging the now-behaviourally-identical
+service permits. A future Stage 5 author treats its retirement list as "the cross-product permits, minus
+the two R290 removed."
+
 ## Acceptance
 
 R281 (`classification-test-dsl`, shipped) plus R299 (`intention-classification-dimension`) are this
-item's **executable acceptance spec**, and R290 depends on R299 so the corpus already speaks the new
-model before the adapter is deleted. After R299 the corpus asserts `(carrier, intent, mapping)`, not leaf
-names, not the retired `producer`. When this slice lands the adapter is deleted, the harness reads the
-slots directly, and **every corpus assertion must stay byte-identical** — their continued green proves
-the decomposition was behaviour-preserving. (The dissolution of `ConstructorField` and collapse of
-`SingleRecordTableField` are the two corpus rows that legitimately change; everything else stays
-byte-identical.)
+item's **executable acceptance spec**: the corpus asserts `(carrier, intent, mapping)`, not leaf names,
+not the retired `producer`. When this slice lands the adapter is deleted and the harness reads the three
+accessors off the field. **Every corpus assertion stays byte-identical except the two rows for the
+retired leaves** (`ConstructorField`, `SingleRecordTableField`), whose removal is the intended corpus
+delta; the continued green of every other row — including all three surviving service re-query leaves,
+now classifying via slots with re-fetch derived — proves the decomposition was behaviour-preserving. The
+live leaf set moves from 49 to **47** (the appendix inventory); `LeafCoverageReportTest` and the appendix
+update in the same change.
 
-The merge gate is both tiers green: the R281/R299 corpus for the decomposition, and the pipeline /
-`TypeSpec` tier for the slot-level emit (a derived-slot change keeps the corpus green, so that stays the
-pipeline tier's job). `QueryBuilder` and `ValidationBuilder` are sibling Stage 3 consumers the same
-corpus drives; the Stage 1 foundation (`ServiceField` / `ServiceMethodCall`) has landed. See the R281
-entry in `roadmap/changelog.md`.
+The merge gate is both tiers green:
+
+- **Corpus tier** (R281/R299): the decomposition is behaviour-preserving (byte-identical modulo the two
+  retired rows).
+- **Dispatch partition + validator mirror.** Retiring the two leaves means the `TypeFetcherGenerator`
+  dispatch partition (`IMPLEMENTED_LEAVES` / `NOT_DISPATCHED_LEAVES` / `PROJECTED_LEAVES` /
+  `STUBBED_VARIANTS`) drops those two entries in the same commit, and the coverage test asserting that
+  partition is an exhaustive disjoint cover of every `GraphitronField` leaf stays green. The re-fetch
+  derivation reads off `intent x mapping` at the consumer; `GraphitronSchemaValidator` mirrors that
+  derivation so an unimplemented branch still fails at validate time, per "validator mirrors classifier
+  invariants."
+- **Pipeline / `TypeSpec` tier** for the slot-level emit: a derived-slot change keeps the corpus green,
+  so emit-shape assertions for the collapsed re-query family stay the pipeline tier's job (structural
+  `TypeSpec` assertions, no `code().toString()` body matches, per `rewrite-design-principles.adoc`).
+
+`QueryBuilder` and `ValidationBuilder` are sibling Stage 3 consumers the same corpus drives; the Stage 1
+foundation (`ServiceField` / `ServiceMethodCall`) has landed. See the R281 entry in
+`roadmap/changelog.md`.
 
 ## Appendix: leaf inventory (the verdicts R290 materialises)
 
