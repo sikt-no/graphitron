@@ -24,20 +24,23 @@ The governing principle: **every datafetcher is a named `public static` method o
 corresponding `<Type>Fetchers` class**, so the registration site is uniformly a
 `<Type>Fetchers::<field>` method reference, for every object type that owns fetchers (root,
 table, node, result, nested, connection, edge, and error types). A consumer debugging
-`FilmConnection.edges` looks for `FilmConnectionFetchers.edges`; there is no lambda, no bare
-`ColumnFetcher` instance, and no inline registration value left to hunt for. Triviality is not a
-reason to keep a fetcher off its class; a named method is debuggable and discoverable. This
+`FilmConnection.edges` looks for `FilmConnectionFetchers.edges`; no read logic is left inline in a
+lambda or buried in a bare `ColumnFetcher(column)` value. Where a `LightDataFetcher` wrapper is
+still needed at the registration site, it wraps a named `<Type>Fetchers` method
+(`new ColumnFetcher<>(FilmFetchers::title)`), so the read itself is always a findable symbol.
+Triviality is not a reason to keep a fetcher off its class; a named method is debuggable and
+discoverable. This
 aligns with the *"Generated code is read and debugged"* principle (`rewrite-design-principles.adoc`),
 which prefers a named helper method over an inline expression. The seam is `FetcherEmitter`
 (which produces the registration value today) plus `TypeFetcherGenerator.generateTypeSpec`
 (which already emits the heavy fetcher methods the method-backed variants reference), extended
 to cover the nested, connection, and edge classes.
 
-The one deliberate runtime trade is `ColumnFetcher`: reifying a column read into a plain
-`<Type>Fetchers::<field>` method forfeits the `LightDataFetcher` fast-path (see
-[Column reads and the light path](#column-reads-and-the-light-path)). This Spec accepts that
-trade for uniformity and per-field debuggability; it is reversible behind a measurement if a
-wide-table workload ever shows it.
+There is no runtime trade. `ColumnFetcher` stays a `LightDataFetcher`; rather than register a
+bare method reference (which could only be a plain `DataFetcher`), the column read becomes a named
+method on `<Type>Fetchers` that `ColumnFetcher` wraps, so the env-skipping fast-path is preserved
+while the read gains a per-field symbol (see
+[Light path: wrap the read, don't register the bare reference](#light-path-wrap-the-read-dont-register-the-bare-reference)).
 
 ## Audit findings
 
@@ -49,7 +52,7 @@ exactly one registration value per field, in one of these shapes:
 |---|---|---|
 | Single-expression lambda | `ConstructorField`, `NestingField` (`(env) -> env.getSource()`); single-`TableField` first-row read; `ErrorsField` LocalContext (`env -> env.getLocalContext()`) and WrapperArm (`env -> env.getSource() instanceof ErrorList<?> ...`); `PropertyField` / `RecordField` on a **class-backed** parent (accessor read off `env.getSource()`) | **Reify** |
 | Multi-line lambda block | `SingleRecordTableField`, `SingleRecordIdField`, `SingleRecordIdFieldFromReturning` (record walk + SELECT / NodeId encode); the `ColumnField` and `CompositeColumnField` NodeId-encode lambdas; the R244/R268 arm-switch ternary (`armSwitchedInlineDataFetcher`) | **Reify** |
-| `new ColumnFetcher<>(...)` | plain `ColumnField`, `LookupTableField`, `ComputedField`, `ColumnReferenceField` (Direct), `ParticipantColumnReferenceField`, `PropertyField` / `RecordField` on a **jOOQ-record** parent | **Reify** (light-path trade) |
+| `new ColumnFetcher<>(...)` | plain `ColumnField`, `LookupTableField`, `ComputedField`, `ColumnReferenceField` (Direct), `ParticipantColumnReferenceField`, `PropertyField` / `RecordField` on a **jOOQ-record** parent | **Reify** (light, wrapped read) |
 | `PropertyDataFetcher.fetching(name)` | `ErrorsField` PayloadAccessor transport | **Reify** (resolved accessor) |
 | `<Type>Fetchers::<field>` reference | every method-backed variant (`QueryTableField`, `ServiceTableField`, `RecordTableField`, the `Mutation*` carriers, ...) via the fall-through at `FetcherEmitter.java:416` | Already reified |
 
@@ -105,28 +108,55 @@ class, so registration is uniformly `<Type>Fetchers::<field>`. Concretely:
 * **`@error` types** get their `path` / `message` fetchers reified onto `<ErrorType>Fetchers`
   instead of inline in `GraphitronSchemaClassGenerator`.
 
-The only behavioural trade is the column light-path, recorded below; everything else is a pure
-relocation of identical logic to named methods.
+Every fetcher becomes a named method on its `<Type>Fetchers` class; the registration value is
+either the method reference directly or a `LightDataFetcher` wrapping it (see below). There is no
+behavioural trade: the change is a results-preserving relocation of identical logic to named
+methods, and it *extends* the light path rather than forfeiting it.
 
-### Column reads and the light path
+### Light path: wrap the read, don't register the bare reference
 
-`ColumnFetcher` (`ColumnFetcherClassGenerator.java`) implements graphql-java's two-method
-`LightDataFetcher`: besides `get(DataFetchingEnvironment)` it overrides
-`get(GraphQLFieldDefinition, Object source, Supplier<DataFetchingEnvironment>)` and reads the
-column off `source` **without invoking the supplier**, so graphql-java's executor skips
-constructing the per-field-per-row `DataFetchingEnvironment`. `LightDataFetcher` is not a
-functional interface (two abstract methods), so a method reference `<Type>Fetchers::<field>`
-(which can only bind the single-method `DataFetcher` SAM) cannot be a `LightDataFetcher`; the
-executor falls back to the heavy `get(env)` entry and constructs the environment. Reifying
-`new ColumnFetcher<>(FILM.TITLE)` to `static Object title(env) { return ((Record)
-env.getSource()).get(FILM.TITLE); }` therefore trades the env-skipping path for a per-field
-named, breakpointable method. We accept that: column reads are dominated by the jOOQ round-trip,
-the light path is already bypassed whenever instrumentation needs the environment, and the
-decision is reversible (a light-path carve-out for pure column reads can return as its own item
-if a profile ever justifies it). The light-preserving alternative, a factory
-`static DataFetcher<?> title() { return new ColumnFetcher<>(FILM.TITLE); }`, was rejected: it is
-findable but its breakpoint lands in the shared `ColumnFetcher.get`, not in a per-field body, so
-it serves the lookup goal weakly and the debugger goal not at all.
+A method reference `<Type>Fetchers::<field>` registered directly is a plain `DataFetcher`:
+`LightDataFetcher` is not a functional interface (it has two abstract methods, `get(env)` and
+`get(fieldDef, source, dfeSupplier)`), so the executor would fall back to the heavy `get(env)`
+entry and construct a per-field-per-row `DataFetchingEnvironment`. The fix is not to register the
+bare reference but to **wrap it in `ColumnFetcher`**, which stays the `LightDataFetcher`:
+
+```java
+// util.ColumnFetcher<T> implements LightDataFetcher<T>, holding a source-read function
+@FunctionalInterface public interface Read<T> { T apply(Object source); }
+public T get(DataFetchingEnvironment env) { return read.apply(env.getSource()); }            // heavy entry
+public T get(GraphQLFieldDefinition f, Object src, Supplier<DataFetchingEnvironment> s) {     // light entry
+    return read.apply(src);                                                                   // supplier untouched
+}
+
+// fetchers.FilmFetchers
+public static String title(Object source) { return ((Record) source).get(Tables.FILM.TITLE); }
+
+// schema.FilmType.registerFetchers
+.dataFetcher(coordinates("Film", "title"), new ColumnFetcher<>(FilmFetchers::title))
+```
+
+The read is a per-field named method on `<Type>Fetchers` (breakpointable, findable, in stack
+traces) and the registered value is still a `LightDataFetcher`, so the env-skipping path is kept.
+This replaces the old `new ColumnFetcher<>(Tables.FILM.TITLE)` (column-valued) with
+`new ColumnFetcher<>(FilmFetchers::title)` (read-function-valued); the jOOQ column constant moves
+from the registration site into the named method. `ColumnFetcher`'s constructor changes from a
+`Field<T>` to a `Read<T>`; its name may broaden (e.g. `SourceFetcher`), implementer's call.
+
+The dividing line is what the read needs:
+
+* **Source-only reads** (plain `ColumnField`, lookup / computed / reference columns, the
+  NodeId-encode columns, the single-`TableField` first-row read, the `Outcome` arm-switch, the
+  `WrapperArm` errors read, and zero-arg class-backed accessors): the read is a function of
+  `env.getSource()` alone, so it goes through the wrapper, `new ColumnFetcher<>(Fetchers::field)`,
+  and stays light. Several of these are heavy lambdas today; wrapping them is a (non-observable)
+  improvement, not a regression.
+* **Env-dependent reads** (the `SingleRecord*` response SELECTs that need the `DSLContext` and
+  selection set, env-injecting accessors that read `env.getArgument(...)` or take the full `env`,
+  and the `LocalContext` errors read): these genuinely need the environment, so they stay a
+  direct heavy `Fetchers::field` reference whose method takes `DataFetchingEnvironment env`.
+
+Both forms put a named method on `<Type>Fetchers`; only the registration wrapper differs.
 
 ## Implementation
 
@@ -141,12 +171,13 @@ public sealed interface FetcherBinding {
     /** The expression the {@code codeRegistry.dataFetcher(coords, ...)} call receives. */
     CodeBlock registrationValue();
 
-    /** Emitted inline at the registration site; no method on the Fetchers class.
-     *  Covers ColumnFetcher, PropertyDataFetcher, and the existing method-backed reference. */
+    /** No method emitted here; the method is owned by {@code TypeFetcherGenerator}'s switch
+     *  (the existing heavy method-backed variants) and {@code bind} carries the `::` reference. */
     record Inline(CodeBlock registrationValue) implements FetcherBinding {}
 
-    /** Reified into a named static method on {@code <Type>Fetchers}; the registration site
-     *  emits {@code registrationValue()} == the method reference. */
+    /** Reified into a named static method on {@code <Type>Fetchers}. {@code registrationValue}
+     *  is either the bare reference {@code Fetchers::field} (env-dependent read) or the light
+     *  wrapper {@code new ColumnFetcher<>(Fetchers::field)} (source-only read). */
     record Reified(MethodSpec method, CodeBlock registrationValue) implements FetcherBinding {}
 }
 
@@ -155,32 +186,43 @@ public static FetcherBinding bind(
         GraphitronType.ResultType resultType, String outputPackage, boolean sourceIsOutcome);
 ```
 
-`bind` subsumes today's `dataFetcherValue` (including the `sourceIsOutcome` arm-switch fork).
-For every shape that owns its body here it returns `Reified`, where `method` is named
-`field.name()`, declared `public static Object <field>(DataFetchingEnvironment env)`, and
-`registrationValue` is `CodeBlock.of("$T::$L", fetchersClass, field.name())`. It returns
-`Inline` only for the method-backed fall-through, where the method is owned by
+`bind` subsumes today's `dataFetcherValue` (including the `sourceIsOutcome` arm-switch fork). For
+every shape that owns its body here it returns `Reified` with a `method` named `field.name()`:
+
+* **source-only** reads get a `public static <T> <field>(Object source)` method (body reads off
+  `source`) and `registrationValue` `CodeBlock.of("new $T<>($T::$L)", columnFetcher, fetchersClass, field.name())`;
+* **env-dependent** reads get a `public static Object <field>(DataFetchingEnvironment env)` method
+  and `registrationValue` `CodeBlock.of("$T::$L", fetchersClass, field.name())`.
+
+It returns `Inline` only for the method-backed fall-through, where the method is owned by
 `TypeFetcherGenerator`'s switch and `bind` carries the `::` reference unchanged.
 
 Mechanically, every body-producing branch is refactored to emit a **method body** (statement
 form: `return <expr>;`, or the existing block with the `($T env) -> {` / `}` wrapper dropped)
-that `bind` wraps in the `MethodSpec`:
+that `bind` wraps in the `MethodSpec`. The source-only branches take `(Object source)`; the
+env-dependent branches take `(DataFetchingEnvironment env)`:
 
-* the lambda helpers: `armSwitchedInlineDataFetcher`, `buildSingleRecordTableFetcherValue` and
-  siblings, the NodeId-encode `ColumnField` / `CompositeColumnField` blocks, the `NestingField` /
-  `ConstructorField` passthrough, the single `TableField` read, the `ErrorsField` LocalContext /
-  WrapperArm arms, and the class-backed arm of `propertyOrRecordValue`;
-* the `ColumnFetcher` branches (plain `ColumnField`, `LookupTableField`, `ComputedField`,
-  `ColumnReferenceField` Direct, `ParticipantColumnReferenceField`, and the jOOQ-record arm of
-  `propertyOrRecordValue`): the method body is the heavy `get` of `ColumnFetcher` inlined,
-  `return ((Record) env.getSource()).get(<column-or-DSL.field>);`. `ColumnFetcher` is no longer
-  instantiated at a registration site, so the `ColumnFetcherClassGenerator` output (and its
-  `LightDataFetcher` machinery) is no longer emitted; remove that generator from the run;
+* **source-only, env-dependent → heavy method:** `buildSingleRecordTableFetcherValue` and
+  siblings (need the `DSLContext` / selection set) and the `LocalContext` errors read
+  (`env.getLocalContext()`) become `(DataFetchingEnvironment env)` methods referenced directly;
+  env-injecting accessors in `propertyOrRecordValue` / `methodCallValue` (the `name(env)` and
+  per-argument `env.getArgument(...)` forms) likewise stay env-typed;
+* **source-only → wrapped light method:** the `ColumnFetcher` branches (plain `ColumnField`,
+  `LookupTableField`, `ComputedField`, `ColumnReferenceField` Direct,
+  `ParticipantColumnReferenceField`, and the jOOQ-record arm of `propertyOrRecordValue`) become
+  `(Object source)` methods bodied `return ((Record) source).get(<column-or-DSL.field>);`; the
+  NodeId-encode `ColumnField` / `CompositeColumnField` blocks, the single `TableField` first-row
+  read, the `Outcome` arm-switch (`armSwitchedInlineDataFetcher`), the `WrapperArm` errors read,
+  the `NestingField` / `ConstructorField` passthrough, and zero-arg class-backed accessors all
+  become `(Object source)` methods too. `ColumnFetcher` is **kept**: its constructor changes from
+  `Field<T>` to `Read<T>` (a `T apply(Object source)` SAM), and `ColumnFetcherClassGenerator`
+  emits that shape. `bind` wraps each source-only method as `new ColumnFetcher<>(Fetchers::field)`;
 * the `ErrorsField` PayloadAccessor branch (today `PropertyDataFetcher.fetching(name)`): the
   method body performs the resolved-accessor read via the same `recordBackedAccessorRead`
   helper the class-backed `propertyOrRecordValue` path uses, so the errors list is read through a
-  generation-time-resolved accessor rather than graphql-java's runtime property reflection. This
-  also closes the R268 `PropertyDataFetcher`-escape hole (see Validator mirror).
+  generation-time-resolved accessor rather than graphql-java's runtime property reflection (a
+  source-only read, hence wrapped). This also closes the R268 `PropertyDataFetcher`-escape hole
+  (see Validator mirror).
 
 ### Registration site (`FetcherRegistrationsEmitter`)
 
@@ -271,27 +313,33 @@ to named methods. The signals it landed cleanly:
   it compiles the generated `<Type>Fetchers` classes and the `registerFetchers` method
   references against the sakila catalog, so a mis-named method or an unresolved reference fails
   the build. The **execute-spec** tier proves the reified methods behave identically at runtime.
-* Every registration value becomes a `METHOD_REFERENCE`. The `FetcherPipelineTest` wiring-shape
-  assertions that pin `LAMBDA`, `COLUMN_FETCHER`, or `PROPERTY_DATA_FETCHER` flip to
-  `METHOD_REFERENCE`, and the "no methods" assertions gain the reified method (these are the live
-  pins the change moves):
-  * `propertyField_onBackedRecord_usesAccessorLambda`: `wiringFor("Container", "value")`
-    becomes `METHOD_REFERENCE`; rename the test accordingly.
+* The registration value is now always either a `METHOD_REFERENCE` (env-dependent reads) or a
+  `COLUMN_FETCHER` wrapping a method reference (source-only reads); no `LAMBDA` or bare
+  `PropertyDataFetcher` survives. The `FetcherPipelineTest` wiring-shape assertions and the
+  "no methods" assertions move accordingly (these are the live pins the change touches):
   * `propertyField_onRecordType_fetchersHasNoMethods` and
-    `recordField_onRecordType_fetchersHasNoMethods`: `ContainerFetchers` /
-    `FilmDetailsFetchers` now carry the reified `value` / `stats` method; assert its presence
-    instead of `methodSpecs().isEmpty()`.
-  * the R268 arm-switch pin (`FilmRecordPayload.title`) becomes `METHOD_REFERENCE`, with the
-    reified `title` method present on `FilmRecordPayloadFetchers`.
-  * any `COLUMN_FETCHER` / `PROPERTY_DATA_FETCHER` wiring assertions flip likewise.
-* Since no registration value is a lambda, column-fetcher, or property-data-fetcher any more,
-  `DataFetcherKind.{LAMBDA, COLUMN_FETCHER, PROPERTY_DATA_FETCHER}` and their `wiringFor`
-  classifier arms become unreachable for registration values; remove the dead arms (and the
-  values if nothing else uses them) rather than leave a classifier the output can never produce.
+    `recordField_onRecordType_fetchersHasNoMethods`: `ContainerFetchers` / `FilmDetailsFetchers`
+    now carry the reified `value` / `stats` method; assert its presence instead of
+    `methodSpecs().isEmpty()`.
+  * `propertyField_onBackedRecord_usesAccessorLambda`: `wiringFor("Container", "value")` is a
+    `COLUMN_FETCHER` (source-only zero-arg accessor, wrapped) rather than a `LAMBDA`; rename and
+    re-assert, and check `ContainerFetchers` carries the `value(Object)` read method.
+  * the R268 arm-switch pin (`FilmRecordPayload.title`): a source-only read, so a
+    `COLUMN_FETCHER` wrapping `FilmRecordPayloadFetchers::title`; assert the method is present.
+  * `LAMBDA` wiring assertions flip to `METHOD_REFERENCE` (env-dependent) or `COLUMN_FETCHER`
+    (source-only) per the read; existing `COLUMN_FETCHER` column pins stay `COLUMN_FETCHER` and
+    additionally assert the wrapped read method now exists on the class.
+* `DataFetcherKind.LAMBDA` (and the `wiringFor` lambda arms) become unreachable for registration
+  values; remove the dead arms. `COLUMN_FETCHER` stays live (it now wraps a method reference) and
+  `METHOD_REFERENCE` stays live; `PROPERTY_DATA_FETCHER` becomes unreachable and is removed.
 * New per-type classes appear and are asserted by the existing "class is emitted" style
   (`FetcherPipelineTest` already does `assertThat(classes).contains("FilmFetchers", ...)`):
   `<Conn>Fetchers`, `<Edge>Fetchers`, `<ErrorType>Fetchers`, and a `<NestedType>Fetchers` for a
   nested type with no `BatchKeyField` (the case that produced no class before).
+* The light path is preserved: the wrapped reads register a `LightDataFetcher`. An optional unit
+  assertion can pin that a column wiring value is a `ColumnFetcher` (i.e. `instanceof
+  LightDataFetcher` at runtime) rather than a bare method reference, guarding the env-skip
+  property against an accidental flip to a direct `::` reference.
 
 Per `rewrite-design-principles.adoc`, no `CodeBlock`-string-equality unit assertion on the
 reified method bodies; the kind classification plus the compile/execute tiers carry the proof.
@@ -329,6 +377,6 @@ the predicate/rule reconciliation, after the mechanical relocations. `hasWrapper
 
 ## Roadmap entries
 
-None required. The column light-path is handled inline as an accepted, reversible trade (see
-[Column reads and the light path](#column-reads-and-the-light-path)); a light-path carve-out for
-pure column reads would be filed as its own Backlog item only if a profile later justifies it.
+None required. The light path is preserved by wrapping the named reads in `ColumnFetcher` (see
+[Light path: wrap the read, don't register the bare reference](#light-path-wrap-the-read-dont-register-the-bare-reference)),
+so there is no deferred optimization to track.
