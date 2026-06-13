@@ -51,15 +51,22 @@ rename noise. R302 and this slice are independent (no ordering edge); whichever 
 trivially. The two leaf-set changes below stay here, because they change the corpus and are coupled to
 the materialisation:
 
-- **Dissolve `ConstructorField`**: this leaf is a senseless classification, not a live feature. The
-  classifier produces it only when a type is reachable as both a `@table` child and a `@service` return
-  at once (the `ResultType` arm of `FieldBuilder.classifyChildFieldOnTableType`, today constructing
-  `new ConstructorField(...)`), a shape we do not support. The classifier stops producing it: that
-  `ResultType` arm becomes an `UnclassifiedField` rejection, and `GraphitronSchemaValidator` surfaces the
-  table-and-service clash as a build-time error. Delete the leaf, its `LeafTupleAdapter` arm, and its
-  generator dispatch (`FetcherEmitter`, `TypeFetcherGenerator`, `CatalogBuilder`). Re-enabling a
-  deliberate construct-from-table-row is deferred to a possible future `experimental_constructType`
-  directive and is out of scope here.
+- **Dissolve `ConstructorField` (a misfeature; it falls)**: this leaf is wrong by design, and its only
+  consumers are our own tests. "Not a live feature" is precise, not loose: no production schema depends on
+  the shape; the leaf is reachable only when a child type sits under a `@table` parent *and* is
+  independently record-backed by a `@service` return elsewhere (the `ResultType` arm of
+  `FieldBuilder.classifyChildFieldOnTableType`, today constructing `new ConstructorField(...)`), yielding a
+  `@table`-parent passthrough that materialises the child from the parent's own row. That the leaf carries a
+  real fetcher arm (it sits in `TypeFetcherGenerator.IMPLEMENTED_LEAVES` with an `env -> env.getSource()`
+  dispatch) and the execution coverage Record-fields Phase 1 shipped does **not** make it a feature we want
+  to keep; it makes that coverage self-referential, exercising a shape that should never have classified
+  cleanly. The classifier stops producing it: that `ResultType` arm becomes an `UnclassifiedField`
+  rejection, and `GraphitronSchemaValidator` surfaces the table-and-service clash as a build-time error.
+  Delete the leaf, its `LeafTupleAdapter` arm, its generator dispatch (`FetcherEmitter`,
+  `TypeFetcherGenerator`, `CatalogBuilder`), and the test surface that exists only to serve it (enumerated
+  under **Test surface that falls with `ConstructorField`** in Acceptance). Re-enabling a deliberate
+  construct-from-table-row is deferred to a possible future `experimental_constructType` directive and is
+  out of scope here.
 - **Collapse `SingleRecordTableField` into `RecordTableField`**: its `(Service`/`DML) x Table` follow-up
   re-fetch is the same Source/Fetch/Table shape `RecordTableField` already carries. Fields that classify
   as `SingleRecordTableField` today reclassify to `RecordTableField` with their `(carrier, intent,
@@ -131,8 +138,9 @@ What R290 does:
    (the "generation-thinking" smell); the derivation has to land here for the materialisation to mean
    anything.
 4. **Retire exactly the two leaves the model removes outright** — **dissolve `ConstructorField`**
-   (senseless table-and-service construction; the classifier rejects it via `UnclassifiedField` and
-   `GraphitronSchemaValidator`) and **collapse `SingleRecordTableField` into `RecordTableField`** (its
+   (a wrong-by-design table-and-service construction whose only consumers are tests; the classifier rejects
+   it via `UnclassifiedField` and `GraphitronSchemaValidator`) and **collapse `SingleRecordTableField` into
+   `RecordTableField`** (its
    single-source DataLoader-skip becomes a derived detail). This brings the live leaf set from 49 to the
    appendix's
    **47**, which is the post-R290 inventory. The service re-query leaves (`QueryServiceTableField`,
@@ -170,6 +178,25 @@ validator mirror** gate below) stays green with two fewer partition entries, and
 the same change. The generated `roadmap/inference-axis-coverage.adoc` enumerates the live leaves off the
 model but is a CI-regenerated, data-free stub (R132 dropped the local `mvn verify` gate; trunk push
 regenerates it), so it needs no manual edit here.
+
+**Test surface that falls with `ConstructorField`.** The leaf is wrong by design and its only consumers
+are tests, so retiring it deletes or retargets that whole cluster in the same change. This is the slice's
+**one deliberate behavioural change**, distinct from the behaviour-preserving reclassifications around it:
+
+- the `constructor` corpus fixture (`ClassifiedCorpus`, `Film.details`, today asserting Source/Fetch/
+  Record) leaves the classified corpus and moves to the validator tier as a rejection fixture;
+- `GraphitronSchemaBuilderTest.constructorField_tableParentRecordChild_classifiedAsConstructorField` and
+  its `@ProjectionFor` sibling `constructorFieldProjectionIsZeroPayload` are deleted — the verdict and the
+  `FieldClassification.Constructor` projection they assert no longer exist;
+- `ConstructorFieldValidationTest` is retargeted from asserting a clean construction to asserting the new
+  build-time rejection;
+- the `SingleRecordPayloadPipelineTest` arm asserting "ConstructorField has its own dispatch arm" and the
+  `DummyFetcherFixtures` constructor-child execution fixture (the self-referential coverage Record-fields
+  Phase 1 shipped) are removed.
+
+Every corpus assertion *other than* the `constructor` example stays byte-identical; the decomposition is
+behaviour-preserving for every shape that survives, and the `ConstructorField` removal is the one shape
+that does not.
 
 The merge gate is both tiers green:
 
