@@ -77,7 +77,7 @@ public sealed interface Rejection permits Rejection.AuthorError, Rejection.Inval
         }
 
         /**
-         * The {@code @record}-Java-backed parent's class doesn't expose an accessor matching the
+         * The class-backed parent's class doesn't expose an accessor matching the
          * SDL field's name, parameter shape, and return type. Produced by
          * {@link no.sikt.graphitron.rewrite.ClassAccessorResolver}; the {@code reason} carries the
          * resolver's enumeration of candidates tried with rejection cause for each. The
@@ -397,7 +397,7 @@ public sealed interface Rejection permits Rejection.AuthorError, Rejection.Inval
 
     /**
      * {@link AuthorError.AccessorMismatch} factory. Produced by
-     * {@link no.sikt.graphitron.rewrite.ClassAccessorResolver} when a {@code @record}-Java-backed
+     * {@link no.sikt.graphitron.rewrite.ClassAccessorResolver} when a class-backed
      * parent's class doesn't expose an accessor matching the SDL field's name, parameter shape,
      * and return type. {@code reason} is the resolver's enumeration of candidates tried; the
      * {@code @field(name:)} override hint is appended automatically by {@link #message()}.

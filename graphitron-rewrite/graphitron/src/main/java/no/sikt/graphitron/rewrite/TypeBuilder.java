@@ -128,7 +128,7 @@ class TypeBuilder {
     }
 
     /**
-     * Backing classes for {@code @record}-typed result types and input types, keyed by GraphQL
+     * Backing classes for reflection-bound result types and input types, keyed by GraphQL
      * type name. Populated by R96's {@link RecordBindingResolver} via the recursive reflection
      * walk before per-type classification runs. The schema builder threads each loaded class
      * through {@link FieldBuilder#classifyField} so the per-field accessor resolver does not

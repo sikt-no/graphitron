@@ -322,7 +322,7 @@ public class TypeFetcherGenerator {
      *
      * @param typeName    the GraphQL type name (e.g. {@code "Film"})
      * @param parentTable the resolved {@link TableRef} for the type, or {@code null} for root types
-     * @param resultType  the resolved {@link GraphitronType.ResultType} for {@code @record} parents,
+     * @param resultType  the resolved {@link GraphitronType.ResultType} for class-backed parents,
      *                    or {@code null} for table-backed and root types
      * @param fields      the classified fields belonging to this type
      */
@@ -1284,7 +1284,7 @@ public class TypeFetcherGenerator {
      * sub-shapes:
      *
      * <ul>
-     *   <li>{@code ResultReturnType} with non-null {@code fqClassName} (a Java {@code @record}
+     *   <li>{@code ResultReturnType} with non-null {@code fqClassName} (a reflected Java
      *       backing class): declare the specific class for Single, or
      *       {@code java.util.List<className>} for List. Validated strictly at classifier time.</li>
      *   <li>{@code ResultReturnType} with null {@code fqClassName} (PojoResultType) or
@@ -1340,7 +1340,7 @@ public class TypeFetcherGenerator {
     /**
      * Emits the fetcher for a {@link MutationField.MutationServiceRecordField}: identical body
      * shape to {@link #buildQueryServiceRecordFetcher}. Both {@code ResultReturnType} (with or
-     * without a {@code @record} backing class) and {@code ScalarReturnType} return shapes are
+     * without a backing class) and {@code ScalarReturnType} return shapes are
      * handled by {@link #computeMutationServiceRecordReturnType}, mirroring the query side.
      */
     private static MethodSpec buildMutationServiceRecordFetcher(TypeFetcherEmissionContext ctx, MutationField.MutationServiceRecordField msrf,

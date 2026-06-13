@@ -84,7 +84,7 @@ public record LoaderRegistration(
          * {@code loader.loadMany(keys, Collections.nCopies(keys.size(), env))}. The fetch
          * site's key-extraction supplies a {@code keys} list local; the loader returns one
          * record per element-PK key. Today only the accessor-many arm reaches this dispatch
-         * (a {@code @record} parent's typed list-accessor fans out per-element).
+         * (a class-backed parent's typed list-accessor fans out per-element).
          */
         LOAD_MANY
     }

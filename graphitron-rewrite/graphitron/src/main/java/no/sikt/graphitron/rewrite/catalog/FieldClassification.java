@@ -237,7 +237,7 @@ public sealed interface FieldClassification
     }
 
     /**
-     * A child field on a {@code @record} parent that resolves to a table-bound target
+     * A child field on a class-backed parent that resolves to a table-bound target
      * via a DataLoader. Covers {@code ChildField.RecordTableField} and
      * {@code ChildField.RecordLookupTableField}.
      */
@@ -297,8 +297,8 @@ public sealed interface FieldClassification
     record Nesting() implements FieldClassification {}
 
     /**
-     * The field's value is the parent itself, propagated through to a {@code @record}-
-     * typed child. Covers {@code ChildField.ConstructorField}.
+     * The field's value is the parent itself, propagated through to a class-backed
+     * child. Covers {@code ChildField.ConstructorField}.
      */
     record Constructor() implements FieldClassification {}
 
@@ -313,7 +313,7 @@ public sealed interface FieldClassification
     ) implements FieldClassification {}
 
     /**
-     * A {@code @record}-parent field whose value reaches the field through a parent
+     * A class-backed-parent field whose value reaches the field through a parent
      * column or accessor. Covers {@code ChildField.RecordField} and
      * {@code ChildField.PropertyField}; either component may be null when the parent
      * shape doesn't carry that resolution kind.

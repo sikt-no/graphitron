@@ -59,14 +59,14 @@ public sealed interface RowsMethodBody {
         }
     }
 
-    /** SQL body for {@code RecordTableField} — flat join keyed off the parent {@code @record}. */
+    /** SQL body for {@code RecordTableField} — flat join keyed off the class-backed parent. */
     record SqlRecordTable(CodeBlock content) implements RowsMethodBody {
         public SqlRecordTable {
             Objects.requireNonNull(content, "content");
         }
     }
 
-    /** SQL body for {@code RecordLookupTableField} — {@code @record} parent + lookupKey. */
+    /** SQL body for {@code RecordLookupTableField} — class-backed parent + lookupKey. */
     record SqlRecordLookupTable(CodeBlock content) implements RowsMethodBody {
         public SqlRecordLookupTable {
             Objects.requireNonNull(content, "content");
@@ -74,7 +74,7 @@ public sealed interface RowsMethodBody {
     }
 
     /**
-     * SQL body for {@code RecordTableMethodField} — {@code @record} parent + child
+     * SQL body for {@code RecordTableMethodField} — class-backed parent + child
      * {@code @tableMethod}. Identical SQL framing to {@link SqlRecordTable} (parent VALUES
      * join, scatter by idx) with the developer's static {@code @tableMethod} call substituted
      * for the {@code Tables.X.as("alias")} terminal table declaration.

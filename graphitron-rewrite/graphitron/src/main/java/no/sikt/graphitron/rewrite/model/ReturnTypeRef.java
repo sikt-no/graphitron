@@ -14,7 +14,7 @@ package no.sikt.graphitron.rewrite.model;
  * {@code @table} cannot be found in the jOOQ catalog the builder classifies the containing
  * field as {@link UnclassifiedField} instead of emitting a {@link TableBoundReturnType}.
  *
- * <p>{@link ResultReturnType} — the return type is a {@code @record}-annotated type. No SQL is
+ * <p>{@link ResultReturnType} — the return type is a result-mapped, class-backed type whose backing comes from its producer's reflected return. No SQL is
  * generated; the generator accesses properties on the parent result object. The specific backing
  * Java representation is known from the parent
  * {@link no.sikt.graphitron.rewrite.model.GraphitronType.ResultType} sub-type.
@@ -44,13 +44,13 @@ public sealed interface ReturnTypeRef
     record TableBoundReturnType(String returnTypeName, TableRef table, FieldWrapper wrapper) implements ReturnTypeRef {}
 
     /**
-     * The return type is a {@code @record}-annotated type — a result-mapped Java class provided
-     * by the developer. No SQL is generated; the generator accesses properties on the parent
-     * result object.
+     * The return type is a result-mapped, class-backed type: a Java class derived by reflection
+     * from its producer's return type. No SQL is generated; the generator accesses properties on the
+     * parent result object.
      *
      * <p>{@code fqClassName} is the binary class name of the backing Java class, taken directly
      * from the corresponding {@link no.sikt.graphitron.rewrite.model.GraphitronType.ResultType}
-     * at build time. May be {@code null} when the backing class was not specified in the directive.
+     * at build time. May be {@code null} when no backing class could be resolved.
      */
     record ResultReturnType(String returnTypeName, FieldWrapper wrapper, String fqClassName) implements ReturnTypeRef {}
 

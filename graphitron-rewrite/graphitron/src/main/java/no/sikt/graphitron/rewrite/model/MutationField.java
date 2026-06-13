@@ -25,7 +25,7 @@ public sealed interface MutationField extends RootField, WithErrorChannel
      * Sealed common supertype of the four direct-return DML mutation variants. Carries the per-field
      * data the INSERT / UPDATE / DELETE / UPSERT emitters share: a pre-resolved
      * {@link DmlReturnExpression} arm that captures the entire return-shape dispatch (encoded ID,
-     * projected {@code @table}, or {@code @record} payload). The {@code Projected*} (@table) arms
+     * projected {@code @table}, or class-backed payload). The {@code Projected*} (@table) arms
      * are legitimate only for INSERT / UPDATE / UPSERT, whose rows survive the statement and can be
      * read back by a follow-up SELECT; DELETE is excluded from them (the row is gone after the
      * statement, RETURNING carries only the primary key), and {@link MutationDeleteTableField}'s

@@ -140,7 +140,7 @@ public record CompletionData(
      * {@code Record} attribute is present (i.e., a Java {@code record} class);
      * an empty list otherwise. The LSP's snapshot projection consumes this to
      * back {@code @field(name:)} completions / diagnostics / hovers under
-     * {@code @record}-declared SDL types whose backing class is a Java
+     * reflection-bound SDL types whose backing class is a Java
      * record.
      */
     public record ExternalReference(

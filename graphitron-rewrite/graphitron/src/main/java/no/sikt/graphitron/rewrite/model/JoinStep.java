@@ -16,7 +16,7 @@ import java.util.List;
  *   <li>{@link ConditionJoin} — navigate via a user-supplied condition method (no FK constraint);
  *       the condition becomes the ON clause of an explicit JOIN.</li>
  *   <li>{@link LiftedHop} — single-hop terminal pre-keyed by a {@code @sourceRows} lifter or
- *       a {@code @record}-parent accessor; no FK, no source-side columns, the DataLoader key
+ *       a class-backed-parent accessor; no FK, no source-side columns, the DataLoader key
  *       tuple <em>is</em> the target-column tuple.</li>
  * </ul>
  *
@@ -230,7 +230,7 @@ public sealed interface JoinStep permits JoinStep.FkJoin, JoinStep.ConditionJoin
     }
 
     /**
-     * One hop pre-keyed by a {@code @sourceRows} lifter or a {@code @record}-parent accessor —
+     * One hop pre-keyed by a {@code @sourceRows} lifter or a class-backed-parent accessor —
      * no foreign key, no traversal direction, no source-side-distinct-from-target columns. The
      * DataLoader key tuple <em>is</em> the target-column tuple, encoded as a type fact: each
      * slot is a {@link JoinSlot.LifterSlot} whose single {@code column} component answers both

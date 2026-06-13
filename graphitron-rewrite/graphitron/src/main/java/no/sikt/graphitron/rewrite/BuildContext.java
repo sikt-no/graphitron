@@ -1327,7 +1327,7 @@ class BuildContext {
      * this case as "empty joinPath → null correlation".
      *
      * <p>The condition-join arm requires a non-null {@code parentTable}; pass it when the
-     * carrier sits on a table-backed parent. For {@code @record}-backed parents the
+     * carrier sits on a table-backed parent. For class-backed parents the
      * classifier should never produce a condition-join first hop (no parent table to anchor
      * the ON clause to); pass {@code null} and the helper routes the case to
      * {@link ParentCorrelationResolution.AuthorError}.

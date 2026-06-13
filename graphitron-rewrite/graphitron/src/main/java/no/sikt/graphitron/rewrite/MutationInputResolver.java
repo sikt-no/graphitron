@@ -152,7 +152,7 @@ final class MutationInputResolver {
 
     /**
      * Validates Invariant #14 — DML {@code @mutation} return type must be {@code ID},
-     * {@code [ID]}, {@code T}, {@code [T]}, or a single {@code @record} payload (where
+     * {@code [ID]}, {@code T}, {@code [T]}, or a single class-backed payload (where
      * {@code T} is a {@code @table} type) — and Invariant #15 — when the {@code @table}
      * input is list-shaped ({@code in: [FilmInput!]!}), the return type must also be
      * list-shaped. The cardinality check is sealed-root-uniform across all three admitted
@@ -201,7 +201,7 @@ final class MutationInputResolver {
                 yield null;
             }
             case ReturnTypeRef.ResultReturnType r -> {
-                // R178 step 3: DML accepts a @record carrier return; the validator screens only
+                // R178 step 3: DML accepts a class-backed carrier return; the validator screens only
                 // for the wrapper shape (single, not list/connection). Payload-shape rejections
                 // surface from the unified path's per-child classification (the legacy-equality
                 // check inside FieldBuilder.buildServiceField on @service mutations; the

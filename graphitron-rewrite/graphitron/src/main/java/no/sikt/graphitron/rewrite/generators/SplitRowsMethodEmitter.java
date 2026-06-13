@@ -385,7 +385,7 @@ public final class SplitRowsMethodEmitter {
      * multi-hop FK paths and empty joinPaths surface a runtime
      * {@link UnsupportedOperationException}. {@link JoinStep.ConditionJoin} first-hops are
      * caught at parse time by {@link no.sikt.graphitron.rewrite.FieldBuilder}'s
-     * {@code buildParentCorrelation} call (the {@code @record}-parent has no {@code @table} to
+     * {@code buildParentCorrelation} call (the class-backed parent has no {@code @table} to
      * anchor the condition method's source argument, so the path AUTHOR_ERRORs upstream and
      * never reaches this emitter).
      */
@@ -399,7 +399,7 @@ public final class SplitRowsMethodEmitter {
         TypeName outerReturn = singleRecordPerKey ? listOfRecord : listOfListOfRecord;
 
         List<JoinStep> path = rtmf.joinPath();
-        // ConditionJoin first-hop on @record-parent is caught upstream by FieldBuilder's
+        // ConditionJoin first-hop on class-backed parent is caught upstream by FieldBuilder's
         // parentCorrelation synthesis (no parent @table to anchor); the predicate below only
         // covers the pre-existing R43 limits on RecordTableMethodField (empty + multi-hop).
         boolean unsupportedPath = path.isEmpty() || path.size() > 1;

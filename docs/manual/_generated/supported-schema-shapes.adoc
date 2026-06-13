@@ -9,12 +9,18 @@ Supported schema shapes are enumerated below by output sealed-leaf class. Each s
 
 === RootField
 
-* *MutationDeleteTableField*
+* *MutationBulkDeletePayloadField*: R266 — the payload-returning `@mutation(typeName: DELETE)` field with bulk
+* *MutationBulkDmlRecordField*: R141 — a record-returning DML mutation with bulk `@table` input and a list-shaped
+* *MutationBulkUpdatePayloadField*: R258 — the payload-returning `@mutation(typeName: UPDATE)` field with bulk
+* *MutationDeletePayloadField*: R266 — the payload-returning `@mutation(typeName: DELETE)` field with single
+* *MutationDeleteTableField*: R266 / R287: the `@mutation(typeName: DELETE)` field that returns an encoded ID. Unlike
+* *MutationDmlRecordField*: R75 / Phase 1 — a record-returning DML mutation: the schema field carries
 * *MutationInsertTableField*
 * *MutationServiceRecordField*: A mutation field backed by a developer-provided service method, returning a non-table type
 * *MutationServiceTableField*: A mutation field backed by a developer-provided service method, returning a table-mapped type
-* *MutationUpdateTableField*
-* *MutationUpsertTableField*
+* *MutationUpdatePayloadField*: R258 — the payload-returning `@mutation(typeName: UPDATE)` field with single
+* *MutationUpdateTableField*: R246: the `@mutation(typeName: UPDATE)` field that returns its `@table` type
+* _(not yet supported)_ *MutationUpsertTableField*
 * *QueryInterfaceField*: A root query field returning a multi-table `GraphitronType.InterfaceType`
 * *QueryLookupTableField*
 * *QueryNodeField*
@@ -33,19 +39,22 @@ Supported schema shapes are enumerated below by output sealed-leaf class. Each s
 * *CompositeColumnField*: Composite-key output carrier on a table-backed parent. Carries `columns` of arity
 * _(not yet supported)_ *CompositeColumnReferenceField*: Composite-key output carrier on a table-backed parent reached through a `@reference`
 * *ComputedField*: A child field using `@externalField` — the developer provides a static method
-* *ConstructorField*
+* *ConstructorField*: A child field whose value is the parent itself, propagated through to a
 * *ErrorsField*: The `errors` field on a payload type. Lift target for the payload-side of a
 * *InterfaceField*: A child field on a `GraphitronType.TableBackedType` parent returning a multi-table
 * *LookupTableField*
-* *NestingField*
+* *NestingField*: A nesting child field whose value is a fragment of the parent's table-bound projection
 * *ParticipantColumnReferenceField*: A scalar field on a `GraphitronType.TableInterfaceType` participant that
-* *PassthroughDataField*: A passthrough payload's data field — the unique `@table`-element field on
 * *PropertyField*
 * *RecordField*
 * *RecordLookupTableField*
 * *RecordTableField*
+* *RecordTableMethodField*: DTO-parent sibling of `TableMethodField`: a child field on a class-backed (non-table)
 * *ServiceRecordField*: A child field backed by a developer-provided service method (`@service`), where the
 * *ServiceTableField*: A child field backed by a developer-provided service method (`@service`), where the
+* *SingleRecordIdField*: R275 — the single data field on an `@service` source-record carrier whose data
+* *SingleRecordIdFieldFromReturning*: R156 — the single data field on a payload-returning DELETE carrier whose data field is an
+* *SingleRecordTableField*: R75 / Phase 1 — the single data field on a single-record DML carrier (an SDL Object admitted
 * *SplitLookupTableField*
 * *SplitTableField*
 * *TableField*
@@ -60,26 +69,28 @@ Supported schema shapes are enumerated below by output sealed-leaf class. Each s
 * *CompositeColumnField*: Composite-key input carrier on a `@table`-annotated input type. Carries
 * *CompositeColumnReferenceField*: Composite-key input reference carrier on a `@table`-annotated input type whose
 * *NestingField*: A field in a `@table`-annotated input type whose GraphQL type is itself an input
+* *UnboundField*: Input field that does not bind to a SQL column. The defining property is the absence of a
 
 === GraphitronType
 
+* *Backed*: R75 Phase 1: a payload carrier whose backing class was reflected from its
 * _(not yet supported)_ *ConnectionType*: A Relay connection object type — the outer wrapper whose fields are
 * _(not yet supported)_ *EdgeType*: A Relay edge object type — the inner wrapper whose fields are `cursor: String!` and
 * *EnumType*: A GraphQL enum type. Classifier records it so `schema.types()` is complete for
 * *ErrorType*: An object type annotated with `@error`. Maps Java exceptions to GraphQL error responses
 * *InterfaceType*: An interface with no directives. Participating types may be table-bound (`ParticipantRef.TableBound`)
 * *JavaRecordInputType*: A non-table input type backed by a Java `record` class
-* *JavaRecordType*: A `@record` type backed by a Java `record` class
+* *JavaRecordType*: A result type whose producer's reflected return is a Java `record` class
 * _(not yet supported)_ *JooqRecordInputType*: A non-table input type backed by a jOOQ `Record<?>` (not table-bound)
-* _(not yet supported)_ *JooqRecordType*: A `@record` type backed by a jOOQ `Record<?>` (not table-bound)
+* _(not yet supported)_ *JooqRecordType*: A result type whose producer's reflected return is a jOOQ `Record<?>` (not table-bound)
 * *JooqTableRecordInputType*: A non-table input type backed by a jOOQ `TableRecord<?>`
-* *JooqTableRecordType*: A `@record` type backed by a jOOQ `TableRecord<?>`
+* *JooqTableRecordType*: A result type whose producer's reflected return is a jOOQ `TableRecord<?>`
+* *NestingType*: A nesting projection: a directiveless SDL object type embedded under a `@table`-bound
 * *NodeType*: A GraphQL object type annotated with both `@table` and `@node`
 * _(not yet supported)_ *PageInfoType*: The Relay `PageInfo` object type. Exactly one instance per schema; the classifier
-* *PlainObjectType*: A plain SDL object type — no `@table`, `@record`, `@error`, or other
 * *PojoInputType*: A non-table input type backed by a plain Java class (POJO), or one whose backing class
-* *PojoResultType*: A `@record` type backed by a plain Java class (POJO), or one whose backing class
 * *RootType*: A root operation type (Query or Mutation). Unmapped — no source context, no SQL until
+* *ScalarType*: A GraphQL scalar type whose Java type and `GraphQLScalarType` constant (or inline
 * *TableInputType*: A GraphQL input object type annotated with `@table`
 * *TableInterfaceType*: An interface annotated with `@table` and `@discriminate`, where implementing
 * *TableType*: A GraphQL object type annotated with `@table`, without `@node`

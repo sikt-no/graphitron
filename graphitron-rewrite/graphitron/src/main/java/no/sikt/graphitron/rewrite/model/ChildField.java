@@ -458,7 +458,7 @@ public sealed interface ChildField extends OutputField
     }
 
     /**
-     * DTO-parent sibling of {@link TableMethodField}: a child field on a {@code @record} (non-table)
+     * DTO-parent sibling of {@link TableMethodField}: a child field on a class-backed (non-table)
      * parent that uses {@code @tableMethod} to bind a developer-authored static jOOQ table method.
      * The parent has no parent-table alias to join from, so the developer's table is joined against
      * a DataLoader-keyed batch lifted out of the parent DTO via {@link #sourceKey}, mirroring the
@@ -526,7 +526,7 @@ public sealed interface ChildField extends OutputField
      * <p>{@code parentSourceKey} and {@code parentResultType} are the parent-object key-extraction
      * strategy and shape, threaded into {@code GeneratorUtils.buildRecordParentKeyExtraction}.
      * Through R102 the classifier produces only catalog-FK / {@code ColumnRead}-reader parent
-     * source-keys (table-backed parents); R105 wires the {@code @record}-parent classifier arm
+     * source-keys (table-backed parents); R105 wires the class-backed-parent classifier arm
      * to reach the lifter and accessor reader permits.
      */
     record InterfaceField(
@@ -608,7 +608,7 @@ public sealed interface ChildField extends OutputField
 
     /**
      * A child field whose value is the parent itself, propagated through to a
-     * {@code @record}-typed child whose constructor populates from that same parent record.
+     * class-backed child whose constructor populates from that same parent record.
      * The fetcher emit is {@code env -> env.getSource()}; the constructor wiring runs at the
      * child level through graphql-java's accessor projection.
      */
@@ -812,7 +812,7 @@ public sealed interface ChildField extends OutputField
      *     {@code DSL.field("col_name")} or a bean/record accessor depending on the parent.
      * @param accessor the resolved accessor when the parent is a
      *     {@link GraphitronType.JavaRecordType} or a {@link GraphitronType.PojoResultType}
-     *     with non-null {@code fqClassName} (i.e. a {@code @record}-Java-backed parent);
+     *     with non-null {@code fqClassName} (i.e. a class-backed parent: Java record or POJO);
      *     {@code null} otherwise. The slot is statically typed
      *     {@link AccessorResolution.Resolved}: classifier-side rejection is routed through
      *     {@link GraphitronField.UnclassifiedField} instead of riding on this slot, so the
@@ -912,7 +912,7 @@ public sealed interface ChildField extends OutputField
      * {@link Transport}. The {@link Transport.LocalContext} arm fires when the parent payload has
      * a producer binding ({@code DmlEmitted} or {@code ServiceEmitted}), routed through
      * {@code FieldBuilder.transportForParent}; the {@link Transport.PayloadAccessor} arm fires
-     * for plain {@code @record} parents whose errors-shaped field is a developer-owned slot.
+     * for plain class-backed parents whose errors-shaped field is a developer-owned slot.
      */
     record ErrorsField(
         String parentTypeName,

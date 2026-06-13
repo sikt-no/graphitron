@@ -4,7 +4,7 @@ import no.sikt.graphitron.javapoet.ClassName;
 
 /**
  * A resolved reference to a developer-supplied static lifter method that extracts a
- * batch-key {@code RowN<...>} value from an {@code @record} parent's backing class.
+ * batch-key {@code RowN<...>} value from a class-backed parent's backing class.
  *
  * <p>Sibling of {@link MethodRef} and {@link HelperRef}. {@code MethodRef} models user-authored
  * methods reached via the {@code ParamSource} indirection ({@code @service}, {@code @condition},

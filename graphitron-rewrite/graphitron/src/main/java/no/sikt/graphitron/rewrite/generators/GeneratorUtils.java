@@ -148,13 +148,13 @@ class GeneratorUtils {
 
     /**
      * Emits the {@code RowN<...> key = ...} or {@code RecordN<...> key = ...} (or list-shaped
-     * variants) statement for a {@code @record}-parent batched DataFetcher, extracting the
+     * variants) statement for a class-backed-parent batched DataFetcher, extracting the
      * batch-key value(s) from the parent. Switches on {@link SourceKey#reader()} (with the
      * {@code AccessorCall} arm forking on {@link SourceKey#cardinality()}); the
      * {@code @service}-only readers are unreachable here and rejected eagerly.
      *
      * <ul>
-     *   <li>{@link SourceKey.Reader.ColumnRead} (catalog FK on a {@code @record} parent's
+     *   <li>{@link SourceKey.Reader.ColumnRead} (catalog FK on a class-backed parent's
      *       backing class) — emits {@code RowN<...>} via {@code DSL.row(...)} over per-column
      *       accessors derived from the {@link GraphitronType.ResultType} variant:
      *       <ul>
