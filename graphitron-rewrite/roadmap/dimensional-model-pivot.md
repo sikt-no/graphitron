@@ -7,7 +7,7 @@ priority: 3
 theme: structural-refactor
 depends-on: []
 created: 2026-05-21
-last-updated: 2026-06-05
+last-updated: 2026-06-13
 ---
 
 # Dimensional model pivot: slots over cross-product permits
@@ -74,7 +74,97 @@ After the pivot, `GraphitronField`'s sealed parent and the `UnclassifiedField` p
 - `InputField` (and its sub-permits) retires as input-side carriers move to slots on the unified field.
 - `UnclassifiedField` retires as classification failure moves to `WalkerResult.Err`.
 - `OutputField` and `RootField` retire as redundant intermediate sub-seals — there is no "Input" half left to contrast with, and the `RootField` between `OutputField` and `QueryField` / `MutationField` carries nothing distinctive.
-- The surviving permits live directly under `GraphitronField`: `QueryField`, `MutationField`, `ChildField`.
+- The surviving permits live directly under `GraphitronField`: `QueryField`, `MutationField`, `ChildField` (the latter renamed `SourceField`; see the refined field-side model below).
+
+## Field-side dimensional model (refined 2026-06-13)
+
+The field-side pivot (Stage 3, R164's content) resolved, through the R299 design work, into a sharper
+shape than the "`DataFetcherBuilder` source-cardinality + action + field-cardinality axes" the earlier
+draft sketched. The load-bearing finding: **the producer dimension dissolves entirely.** A field's
+classification is three asserted axes plus a derived layer, and what "producer" used to carry
+redistributes across them.
+
+**`carrier`** — the GraphQL parent-type category, which *is* the field type:
+
+- `Query` (root Query type) → `QueryField`
+- `Mutation` (root Mutation type) → `MutationField`
+- `Source` (every other, non-Subscription, type) → `SourceField` (the renamed `ChildField`)
+
+The carrier is *position* and also the **legality gate** the producer used to imply: write intents only
+on `Mutation`, `NodeResolve`/`EntityResolve` only on `Query`, `Nesting` only on `Source`.
+
+**`intent`** — the operation kind (asserted):
+
+- read: `Fetch`, `Lookup`, `NodeResolve`, `EntityResolve`, `Count`, `Facet`, `Nesting`
+- write: `Insert`, `Upsert`, `Update`, `UpdateMatching`, `Delete`, `DeleteMatching`
+- service: `QueryService`, `MutationService`
+
+**`mapping`** — the value shape, which also carries **build-vs-consume**:
+
+- `Table`, `Column` — catalog: graphitron *builds* the SQL.
+- `Record`, `Field` — domain: graphitron *consumes* a value it did not build.
+
+`Table:Column :: Record:Field` (mirror : reflect). There is no separate provider/producer axis;
+build-vs-consume *is* the mapping. The mapping classifies graphitron's epistemic role, not the runtime
+SQL location: `@externalField` emits a jOOQ `Field<X>` that runs in the query, but graphitron only
+reflects its (user-authored) result, so it is **domain** (`Field`/`Record`), not catalog. "In the SQL
+≠ catalog."
+
+**derived layer** (computed from the axes + slots; never asserted):
+
+- `FetchRelated` ← a non-empty **join-path** slot (a `Fetch` reaching a related entity via FK/`@reference`).
+- **re-fetch** ← `(Service | DML intent) × Table mapping` — a domain/write producer yielding a
+  catalog-table shape forces re-projecting the table from the produced keys. This is the old
+  service/DML → `@table` two-step, now *derived* rather than a distinct leaf.
+- **new-query** ← a `SourceField` slot, forced by `@splitQuery` / polymorphic UNION / record-handoff.
+- **polarity** (mutating?) ← the intent family (`Write` ∪ `{MutationService}` = mutating).
+
+### Why the producer dimension dissolves
+
+Its information redistributes with no residual: position → `carrier`; build-vs-consume → `mapping`;
+operation → `intent`; new-query → a derived slot. The governing principle is **assert what nothing else
+carries; derive what another axis or slot already forces.** So `FetchRelated` (forced by the join-path
+slot), re-fetch (forced by the intent×mapping cross-side mismatch), new-query (forced by
+`@splitQuery`/limitations), and polarity (forced by the intent family) are all derived, not asserted.
+`Query`/`Mutation` are *not* providers because they double-encode (intent × root-position); read-vs-write
+is the intent and root-ness is the carrier.
+
+`Nesting` is asserted (not derived from "empty join-path") specifically to avoid the
+absence-as-domain-state shape this umbrella rejects elsewhere: deriving nesting from the *absence* of a
+join-path would reintroduce a `No<Family>`-style negative signal. It is a distinct structural operation
+(produces nothing, inherits the parent's scope, regroups children) and sits outside read/write/service.
+
+node/entity resolvers stay protocol-specific intents (`NodeResolve` for Relay `node`/`nodes`, cardinality
+is a slot not a second intent; `EntityResolve` for Federation `_entities`) rather than generalising into
+`Lookup` — framework-defined operations resist generalisation, the same instinct as "ConnectionType is
+the special thing." The service intent stays the coarse polarity `{QueryService, MutationService}` only:
+graphitron can't know more than mutate-or-not about opaque user code (`LookupService` would need
+method-signature inference; deferred). Write intents enumerate the legal cells of verb × targeting
+(create has no matching variant, so no `InsertMatching`); **bulk is a slot** (cardinality), not an intent.
+
+### Leaf dissolution and collapse
+
+- **`ConstructorField` dissolves.** Dead since the `@record`-on-types ban; its only path is an
+  edge case not in use. The leaf, its `LeafTupleAdapter` arm, and any generator dispatch delete as part
+  of the R290 reshape, after verifying no live reference.
+- **`SingleRecordTableField` collapses.** It is only an optimisation to skip the DataLoader for a
+  `Source` field guaranteed a single source object; that skip is a derived detail, its verdict is the
+  `(Service`/`DML) × Table` re-fetch. No distinct leaf survives.
+
+### Model complete, classifier coverage partial
+
+The intent set is the full model; the classifier populates what the current leaf set permits. The
+modeled-but-unpopulated intents (declared gaps, never silently absent): `EntityResolve` (Federation
+`_entities`), `Count`, `Facet` (connection roles, behind the ConnectionType quarantine),
+`UpdateMatching`, `DeleteMatching` (condition-matched writes, unimplemented). Model leads classifier.
+
+### Where this lands across the stages
+
+This refines **Stage 3**. The dimensional-slot consumers (`DataFetcherBuilder`, `QueryBuilder`,
+`ValidationBuilder`) compose these three axes plus the Stage-2 walker carriers into emit. **R290** is the
+field-side spin-out that materialises `carrier × intent × mapping` on the field and deletes
+`LeafTupleAdapter`. **R299** is the slice that first asserts `intent` (and `carrier`) in the R281 corpus,
+migrating it off the producer/mapping reconstruction.
 
 ## Architectural principle this codifies
 
@@ -109,7 +199,7 @@ Each remaining walker-output carrier ships as an independent slice: its sealed f
 
 ### Stage 3 — Field dimensional slots
 
-R164's content. `DataFetcherBuilder`, `QueryBuilder`, `ValidationBuilder` dimensional slots land per sub-seal, composing walker carriers and reflection-driven information into emit-ready form. Each dimension's sealed family lands once; the sub-seal's cross-product permits flatten under it. Each dimension is a spin-out slice; runs in parallel with Stage 2 once the foundation lands.
+R164's content. `DataFetcherBuilder`, `QueryBuilder`, `ValidationBuilder` dimensional slots land per sub-seal, composing walker carriers and reflection-driven information into emit-ready form. Each dimension's sealed family lands once; the sub-seal's cross-product permits flatten under it. Each dimension is a spin-out slice; runs in parallel with Stage 2 once the foundation lands. See **Field-side dimensional model (refined 2026-06-13)** above for the sharpened target this stage implements: the field axes are `carrier × intent × mapping` with the producer dimension dissolved, and the builders here are the consumers that compose them.
 
 ### Stage 4 — Failure at the wrapper everywhere
 
