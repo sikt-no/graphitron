@@ -27,7 +27,7 @@ table, node, result, nested, connection, edge, and error types). A consumer debu
 `FilmConnection.edges` looks for `FilmConnectionFetchers.edges`; no read logic is left inline in a
 lambda or buried in a bare `ColumnFetcher(column)` value. Where a `LightDataFetcher` wrapper is
 still needed at the registration site, it wraps a named `<Type>Fetchers` method
-(`new ColumnFetcher<>(FilmFetchers::title)`), so the read itself is always a findable symbol.
+(`new LightFetcher<>(FilmFetchers::title)`), so the read itself is always a findable symbol.
 Triviality is not a reason to keep a fetcher off its class; a named method is debuggable and
 discoverable. This
 aligns with the *"Generated code is read and debugged"* principle (`rewrite-design-principles.adoc`),
@@ -36,9 +36,10 @@ which prefers a named helper method over an inline expression. The seam is `Fetc
 (which already emits the heavy fetcher methods the method-backed variants reference), extended
 to cover the nested, connection, and edge classes.
 
-There is no runtime trade. `ColumnFetcher` stays a `LightDataFetcher`; rather than register a
-bare method reference (which could only be a plain `DataFetcher`), the column read becomes a named
-method on `<Type>Fetchers` that `ColumnFetcher` wraps, so the env-skipping fast-path is preserved
+There is no runtime trade. The light-fetcher class (renamed `ColumnFetcher` → `LightFetcher`, see
+below) stays a `LightDataFetcher`; rather than register a bare method reference (which could only
+be a plain `DataFetcher`), the column read becomes a named method on `<Type>Fetchers` that
+`LightFetcher` wraps, so the env-skipping fast-path is preserved
 while the read gains a per-field symbol (see
 [Light path: wrap the read, don't register the bare reference](#light-path-wrap-the-read-dont-register-the-bare-reference)).
 
@@ -119,10 +120,11 @@ A method reference `<Type>Fetchers::<field>` registered directly is a plain `Dat
 `LightDataFetcher` is not a functional interface (it has two abstract methods, `get(env)` and
 `get(fieldDef, source, dfeSupplier)`), so the executor would fall back to the heavy `get(env)`
 entry and construct a per-field-per-row `DataFetchingEnvironment`. The fix is not to register the
-bare reference but to **wrap it in `ColumnFetcher`**, which stays the `LightDataFetcher`:
+bare reference but to **wrap it in `LightFetcher`** (the renamed, generalised `ColumnFetcher`),
+which stays the `LightDataFetcher`:
 
 ```java
-// util.ColumnFetcher<T> implements LightDataFetcher<T>, holding a source-read function
+// util.LightFetcher<T> implements LightDataFetcher<T>, holding a source-read function
 @FunctionalInterface public interface Read<T> { T apply(Object source); }
 public T get(DataFetchingEnvironment env) { return read.apply(env.getSource()); }            // heavy entry
 public T get(GraphQLFieldDefinition f, Object src, Supplier<DataFetchingEnvironment> s) {     // light entry
@@ -133,22 +135,23 @@ public T get(GraphQLFieldDefinition f, Object src, Supplier<DataFetchingEnvironm
 public static String title(Object source) { return ((Record) source).get(Tables.FILM.TITLE); }
 
 // schema.FilmType.registerFetchers
-.dataFetcher(coordinates("Film", "title"), new ColumnFetcher<>(FilmFetchers::title))
+.dataFetcher(coordinates("Film", "title"), new LightFetcher<>(FilmFetchers::title))
 ```
 
 The read is a per-field named method on `<Type>Fetchers` (breakpointable, findable, in stack
 traces) and the registered value is still a `LightDataFetcher`, so the env-skipping path is kept.
 This replaces the old `new ColumnFetcher<>(Tables.FILM.TITLE)` (column-valued) with
-`new ColumnFetcher<>(FilmFetchers::title)` (read-function-valued); the jOOQ column constant moves
-from the registration site into the named method. `ColumnFetcher`'s constructor changes from a
-`Field<T>` to a `Read<T>`; its name may broaden (e.g. `SourceFetcher`), implementer's call.
+`new LightFetcher<>(FilmFetchers::title)` (read-function-valued); the jOOQ column constant moves
+from the registration site into the named method. The class is renamed `ColumnFetcher` →
+`LightFetcher` (it no longer holds a column, only a read function) and its constructor changes
+from a `Field<T>` to a `Read<T>`.
 
 The dividing line is what the read needs:
 
 * **Source-only reads** (plain `ColumnField`, lookup / computed / reference columns, the
   NodeId-encode columns, the single-`TableField` first-row read, the `Outcome` arm-switch, the
   `WrapperArm` errors read, and zero-arg class-backed accessors): the read is a function of
-  `env.getSource()` alone, so it goes through the wrapper, `new ColumnFetcher<>(Fetchers::field)`,
+  `env.getSource()` alone, so it goes through the wrapper, `new LightFetcher<>(Fetchers::field)`,
   and stays light. Several of these are heavy lambdas today; wrapping them is a (non-observable)
   improvement, not a regression.
 * **Env-dependent reads** (the `SingleRecord*` response SELECTs that need the `DSLContext` and
@@ -177,7 +180,7 @@ public sealed interface FetcherBinding {
 
     /** Reified into a named static method on {@code <Type>Fetchers}. {@code registrationValue}
      *  is either the bare reference {@code Fetchers::field} (env-dependent read) or the light
-     *  wrapper {@code new ColumnFetcher<>(Fetchers::field)} (source-only read). */
+     *  wrapper {@code new LightFetcher<>(Fetchers::field)} (source-only read). */
     record Reified(MethodSpec method, CodeBlock registrationValue) implements FetcherBinding {}
 }
 
@@ -207,16 +210,18 @@ env-dependent branches take `(DataFetchingEnvironment env)`:
   (`env.getLocalContext()`) become `(DataFetchingEnvironment env)` methods referenced directly;
   env-injecting accessors in `propertyOrRecordValue` / `methodCallValue` (the `name(env)` and
   per-argument `env.getArgument(...)` forms) likewise stay env-typed;
-* **source-only → wrapped light method:** the `ColumnFetcher` branches (plain `ColumnField`,
+* **source-only → wrapped light method:** the column-read branches (plain `ColumnField`,
   `LookupTableField`, `ComputedField`, `ColumnReferenceField` Direct,
   `ParticipantColumnReferenceField`, and the jOOQ-record arm of `propertyOrRecordValue`) become
   `(Object source)` methods bodied `return ((Record) source).get(<column-or-DSL.field>);`; the
   NodeId-encode `ColumnField` / `CompositeColumnField` blocks, the single `TableField` first-row
   read, the `Outcome` arm-switch (`armSwitchedInlineDataFetcher`), the `WrapperArm` errors read,
   the `NestingField` / `ConstructorField` passthrough, and zero-arg class-backed accessors all
-  become `(Object source)` methods too. `ColumnFetcher` is **kept**: its constructor changes from
-  `Field<T>` to `Read<T>` (a `T apply(Object source)` SAM), and `ColumnFetcherClassGenerator`
-  emits that shape. `bind` wraps each source-only method as `new ColumnFetcher<>(Fetchers::field)`;
+  become `(Object source)` methods too. The light-fetcher class is **kept but renamed**
+  `ColumnFetcher` → `LightFetcher`: its constructor changes from `Field<T>` to `Read<T>` (a
+  `T apply(Object source)` SAM), and `ColumnFetcherClassGenerator` is renamed
+  `LightFetcherClassGenerator` and emits that shape. `bind` wraps each source-only method as
+  `new LightFetcher<>(Fetchers::field)`;
 * the `ErrorsField` PayloadAccessor branch (today `PropertyDataFetcher.fetching(name)`): the
   method body performs the resolved-accessor read via the same `recordBackedAccessorRead`
   helper the class-backed `propertyOrRecordValue` path uses, so the errors list is read through a
@@ -337,7 +342,7 @@ to named methods. The signals it landed cleanly:
   `<Conn>Fetchers`, `<Edge>Fetchers`, `<ErrorType>Fetchers`, and a `<NestedType>Fetchers` for a
   nested type with no `BatchKeyField` (the case that produced no class before).
 * The light path is preserved: the wrapped reads register a `LightDataFetcher`. An optional unit
-  assertion can pin that a column wiring value is a `ColumnFetcher` (i.e. `instanceof
+  assertion can pin that a column wiring value is a `LightFetcher` (i.e. `instanceof
   LightDataFetcher` at runtime) rather than a bare method reference, guarding the env-skip
   property against an accidental flip to a direct `::` reference.
 
@@ -377,6 +382,6 @@ the predicate/rule reconciliation, after the mechanical relocations. `hasWrapper
 
 ## Roadmap entries
 
-None required. The light path is preserved by wrapping the named reads in `ColumnFetcher` (see
+None required. The light path is preserved by wrapping the named reads in `LightFetcher` (see
 [Light path: wrap the read, don't register the bare reference](#light-path-wrap-the-read-dont-register-the-bare-reference)),
 so there is no deferred optimization to track.
