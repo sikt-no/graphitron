@@ -7,7 +7,7 @@ If context compacts, resume from here + the verdict table.
 ## Cleanup todolist & status
 
 - [x] Re-table all 49→47 leaves on `carrier × intent × mapping` (see `verdict-table-scratch.md`); totality holds, no `⚠`.
-- [ ] **R222** (`dimensional-model-pivot.md`): replace the "producer pipeline over `{Query, Service, Dml}`" target with the `carrier × intent × mapping` + derived-layer model. Capture the decisions ledger below. Reference the verdict table.
+- [x] **R222** (`dimensional-model-pivot.md`): added "Field-side dimensional model (refined 2026-06-13)" section (carrier × intent × mapping + derived layer + dissolution facts + declared gaps), Stage 3 pointer, last-updated bump. Self-contained in trunk (not dependent on scratch files).
 - [ ] **R290** (`datafetcher-field-dimensional-slots.md`): reshape from "producer pipeline in DataFetcherBuilder" to materialising `carrier × intent × mapping` + derived slots. State that `ConstructorField` dissolves and `SingleRecordTableField` collapses as part of R290.
 - [ ] **R299** (`intention-classification-dimension.md`): reframe as "move the R281 corpus forward into the new model" — assert `intent` (+ `carrier`) in the corpus, migrating off the producer/mapping `LeafTupleAdapter`. Drop the "intention on top of producer" premise.
 - [ ] Make `ConstructorField` dissolution + `SingleRecordTableField` collapse explicit in the tables (verdict table done; ensure R290 says it).
