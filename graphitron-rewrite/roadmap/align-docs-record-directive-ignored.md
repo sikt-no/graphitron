@@ -1,7 +1,7 @@
 ---
 id: R301
 title: Align docs and javadoc with @record removal
-status: In Progress
+status: In Review
 bucket: cleanup
 depends-on: []
 created: 2026-06-13
