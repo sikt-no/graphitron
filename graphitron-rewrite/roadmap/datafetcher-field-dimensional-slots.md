@@ -164,8 +164,12 @@ edit. The continued green of every other row, including all three surviving serv
 classifying via slots with re-fetch derived, proves the decomposition was behaviour-preserving.
 `everyDimensionValueIsExercised` stays green: `Mapping.Record` is still exercised after the `constructor`
 example leaves (e.g. `ErrorsField`, `ServiceRecordField`, the DML record carriers). The live leaf set
-moves from 49 to **47** (the appendix inventory); `LeafCoverageReportTest` and the appendix update in the
-same change.
+moves from 49 to **47** (the appendix inventory): the dispatch-partition coverage test
+(`GeneratorCoverageTest.everyGraphitronFieldLeafHasAKnownDispatchStatus`, see the **Dispatch partition +
+validator mirror** gate below) stays green with two fewer partition entries, and this appendix updates in
+the same change. The generated `roadmap/inference-axis-coverage.adoc` enumerates the live leaves off the
+model but is a CI-regenerated, data-free stub (R132 dropped the local `mvn verify` gate; trunk push
+regenerates it), so it needs no manual edit here.
 
 The merge gate is both tiers green:
 
