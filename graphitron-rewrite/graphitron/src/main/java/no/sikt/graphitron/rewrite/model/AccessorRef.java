@@ -3,13 +3,13 @@ package no.sikt.graphitron.rewrite.model;
 import no.sikt.graphitron.javapoet.ClassName;
 
 /**
- * A resolved reference to a typed zero-arg instance accessor on an {@code @record} parent's
+ * A resolved reference to a typed zero-arg instance accessor on a class-backed parent's
  * backing class whose return type is a concrete jOOQ {@code TableRecord} (single, list, or set
  * cardinality, recorded by the surrounding {@link SourceKey#cardinality()} +
  * {@link LoaderRegistration#container()} rather than here).
  *
  * <p>Built by the auto-derivation pass in {@code FieldBuilder.classifyChildFieldOnResultType}
- * when a child field on a {@code @record}-typed parent returns a {@code @table}-bound type and
+ * when a child field on a class-backed parent returns a {@code @table}-bound type and
  * the parent's backing class exposes a single matching accessor (name-and-shape rule documented
  * in that classifier method). Carried by {@link SourceKey.Reader.AccessorCall} for both
  * single-cardinality and list / set fields.

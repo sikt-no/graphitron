@@ -4,7 +4,7 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 
 /**
- * Outcome of resolving a {@code @record}-backed SDL field's accessor against the parent's backing
+ * Outcome of resolving a class-backed SDL field's accessor against the parent's backing
  * Java class. Produced at classify time by {@link no.sikt.graphitron.rewrite.ClassAccessorResolver};
  * consumed by {@link no.sikt.graphitron.rewrite.GraphitronSchemaValidator} (to surface
  * {@link Rejected} as a {@code ValidationError}) and by the fetcher emitter (to read the

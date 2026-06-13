@@ -98,7 +98,7 @@ final class RecordBindingResolver {
      * {@code recordBackingClasses} pump in {@link TypeBuilder#buildTypes()} continue to ignore
      * the new arm. A future cutover commit may lift these observations into the result-axis
      * fold; until then the dedicated map keeps the DML-emitted shape isolated from
-     * developer-authored {@code @record} bindings.
+     * reflection-derived class bindings.
      */
     private final Map<String, ProducerBinding.DmlEmitted> dmlEmittedMemo = new LinkedHashMap<>();
 
@@ -246,7 +246,7 @@ final class RecordBindingResolver {
         // R178 step 2b: ServiceEmitted observation for @service-carrier candidates. The check
         // is structural: the payload SDL must be a GraphQL Object with exactly one @table-typed
         // field whose record class matches the method's reflected return-element. Both plain SDL
-        // Object and ClassBacked (@record-bound) carriers ground here; this map is
+        // Object and ClassBacked (reflection-bound) carriers ground here; this map is
         // independent of the main result-axis fold and the existing RootService observation
         // above. The classifier-side dispatch in FieldBuilder.classifyChildFieldOnResultType
         // reads through TypeBuilder.serviceEmittedBinding to construct

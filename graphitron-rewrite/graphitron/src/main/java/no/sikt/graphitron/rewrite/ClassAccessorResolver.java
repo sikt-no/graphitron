@@ -13,7 +13,7 @@ import java.util.List;
  * Resolves an SDL output field's accessor against its parent's backing Java class.
  *
  * <p>Mirrors graphql-java's {@code PropertyDataFetcher} candidate-name lookup so a consumer
- * migrating from {@code PropertyDataFetcher} to graphitron's {@code @record}-emitted fetcher gets
+ * migrating from {@code PropertyDataFetcher} to graphitron's class-backed fetcher gets
  * matching name resolution. Candidate order: {@code get<Camel>} (POJO bean getter), {@code
  * is<Camel>} (when the SDL field's resolved Java type is {@code boolean} / {@code Boolean}),
  * bare {@code <camel>} (Java record component / fluent accessor), and finally a public field

@@ -113,52 +113,55 @@ public sealed interface TypeClassification
     }
 
     /**
-     * A {@code @record}-declared output type backed by a Java {@code record} class. Covers
-     * {@code GraphitronType.JavaRecordType}.
+     * A reflection-bound output type backed by a Java {@code record} class (its producer's
+     * reflected return is a Java record). Covers {@code GraphitronType.JavaRecordType}.
      */
     record JavaRecord(String fqClassName) implements TypeClassification {}
 
     /**
-     * A {@code @record}-declared input type backed by a Java {@code record} class. Covers
-     * {@code GraphitronType.JavaRecordInputType}.
+     * A reflection-bound input type backed by a Java {@code record} class (the method
+     * parameter it flows into is a Java record). Covers {@code GraphitronType.JavaRecordInputType}.
      */
     record JavaRecordInput(String fqClassName) implements TypeClassification {}
 
     /**
-     * A {@code @record}-declared output type backed by a jOOQ {@code Record<?>} subclass
-     * (not table-bound). Covers {@code GraphitronType.JooqRecordType}.
+     * A reflection-bound output type backed by a jOOQ {@code Record<?>} subclass
+     * (not table-bound; its producer's reflected return is such a record). Covers
+     * {@code GraphitronType.JooqRecordType}.
      */
     record JooqRecord(String fqClassName) implements TypeClassification {}
 
     /**
-     * A {@code @record}-declared input type backed by a jOOQ {@code Record<?>} subclass
-     * (not table-bound). Covers {@code GraphitronType.JooqRecordInputType}.
+     * A reflection-bound input type backed by a jOOQ {@code Record<?>} subclass
+     * (not table-bound; the method parameter it flows into is such a record). Covers
+     * {@code GraphitronType.JooqRecordInputType}.
      */
     record JooqRecordInput(String fqClassName) implements TypeClassification {}
 
     /**
-     * A {@code @record}-declared output type backed by a jOOQ {@code TableRecord<?>}
-     * with a resolved table. Covers {@code GraphitronType.JooqTableRecordType}.
+     * A reflection-bound output type backed by a jOOQ {@code TableRecord<?>}
+     * with a resolved table (its producer's reflected return is such a record). Covers
+     * {@code GraphitronType.JooqTableRecordType}.
      * {@code tableName} may be null when the catalog is unavailable.
      */
     record JooqTableRecord(String fqClassName, String tableName) implements TypeClassification {}
 
     /**
-     * A {@code @record}-declared input type backed by a jOOQ {@code TableRecord<?>}.
-     * Covers {@code GraphitronType.JooqTableRecordInputType}.
+     * A reflection-bound input type backed by a jOOQ {@code TableRecord<?>} (the method
+     * parameter it flows into is such a record). Covers {@code GraphitronType.JooqTableRecordInputType}.
      */
     record JooqTableRecordInput(String fqClassName, String tableName) implements TypeClassification {}
 
     /**
-     * A {@code @record}-declared output type backed by a plain Java class. Covers
-     * {@code GraphitronType.PojoResultType.Backed}.
+     * A reflection-bound output type backed by a plain Java class (POJO; its producer's
+     * reflected return is such a class). Covers {@code GraphitronType.PojoResultType.Backed}.
      */
     record PojoResult(String fqClassName) implements TypeClassification {}
 
     /**
-     * A {@code @record}-declared input type backed by a plain Java class. Covers
-     * {@code GraphitronType.PojoInputType}; {@code fqClassName} is null when the directive
-     * omitted the class name.
+     * A reflection-bound input type backed by a plain Java class (POJO; the method parameter
+     * it flows into is such a class). Covers {@code GraphitronType.PojoInputType};
+     * {@code fqClassName} is null when no backing class could be resolved.
      */
     record PojoInput(String fqClassName) implements TypeClassification {}
 

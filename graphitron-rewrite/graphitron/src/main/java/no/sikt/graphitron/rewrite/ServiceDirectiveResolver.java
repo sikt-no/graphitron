@@ -41,10 +41,10 @@ import static no.sikt.graphitron.rewrite.BuildContext.baseTypeName;
  * <p>Each classify arm projects {@link Resolved.Success} into its specific {@code GraphitronField}
  * variant (the variant identity differs across parent contexts: query/mutation/result-parent/
  * table-parent) and handles parent-context-only concerns (e.g. join-path parse for child sites,
- * the @record-typed-parent DEFERRED rejection for result-parent's Result/Scalar arms).
+ * the class-backed-parent DEFERRED rejection for result-parent's Result/Scalar arms).
  *
  * <p>Root vs child is signalled by {@code parentPkColumns}: empty for root (Query / Mutation),
- * non-empty for child @service on a {@code TableType} parent. Child @service on a @record-typed
+ * non-empty for child @service on a {@code TableType} parent. Child @service on a class-backed
  * parent passes empty (the batch key derives elsewhere).
  *
  * <p>Implementation note: the helpers this resolver calls back into ({@code parseExternalRef},
@@ -102,7 +102,7 @@ final class ServiceDirectiveResolver {
 
     /**
      * Resolves {@code @service} on {@code fieldDef}. Pass {@link List#of()} for
-     * {@code parentPkColumns} at root sites (Query / Mutation) and on @record-typed parents;
+     * {@code parentPkColumns} at root sites (Query / Mutation) and on class-backed parents;
      * pass the parent table's primary-key columns for {@code @table}-parent child sites.
      *
      * <p>An empty {@code parentPkColumns} also gates two root-only concerns:
@@ -316,7 +316,7 @@ final class ServiceDirectiveResolver {
                 yield isList ? null : recordCls;
             }
             case ReturnTypeRef.ResultReturnType r -> {
-                // ResultReturnType with a backing class is the @record-payload shape. The service
+                // ResultReturnType with a backing class is the class-backed payload shape. The service
                 // method must return the SDL payload class directly (universal passthrough); the
                 // strict TypeName-equals check happens inside FieldBuilder.buildServiceField,
                 // which produces a payload-class-citing diagnostic on mismatch. Return null here

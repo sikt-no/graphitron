@@ -82,11 +82,13 @@ public sealed interface GraphitronType
     ) implements TableBackedType {}
 
     /**
-     * A type annotated with {@code @record}. Runtime wiring only — no SQL until a new scope starts.
+     * A class-backed, result-mapped type whose backing comes from its producer's reflected
+     * return type. Runtime wiring only; no SQL until a new scope starts.
      *
-     * <p>The sub-type identifies the backing Java representation. The builder reflects on the class
-     * named in {@code @record(record: {className: ...})} at build time. When no {@code className}
-     * is provided, the type is classified as {@link PojoResultType} with a {@code null} backing class.
+     * <p>The sub-type identifies the backing Java representation. The builder reflects on the
+     * producer's return type (a {@code @service} method return, {@code @tableMethod} return, or a
+     * parent-accessor chain) at build time. When no backing class can be resolved, the type is
+     * classified as {@link PojoResultType} with a {@code null} backing class.
      */
     sealed interface ResultType extends GraphitronType, EmitsPerTypeFile
         permits GraphitronType.JavaRecordType, GraphitronType.PojoResultType,
@@ -97,7 +99,7 @@ public sealed interface GraphitronType
     }
 
     /**
-     * A {@code @record} type backed by a Java {@code record} class.
+     * A result type whose producer's reflected return is a Java {@code record} class.
      * {@code fqClassName} is the binary class name, e.g. {@code "com.example.FilmDto"}.
      */
     record JavaRecordType(
@@ -107,10 +109,10 @@ public sealed interface GraphitronType
     ) implements ResultType {}
 
     /**
-     * A {@code @record} type backed by a plain Java class (POJO).
+     * A result type whose producer's reflected return is a plain Java class (POJO).
      *
-     * <p>The sole permitted sub-type is {@link Backed}: an authored payload carrier declared
-     * with {@code @record(record: {className: ...})}. The {@link ResultType#fqClassName()}
+     * <p>The sole permitted sub-type is {@link Backed}: a payload carrier whose backing class was
+     * reflected from its producer's return type. The {@link ResultType#fqClassName()}
      * method returns the non-null backing class name. Sites identify the case from the permit
      * identity ({@code instanceof PojoResultType.Backed}) rather than from a nullable.
      */
@@ -118,8 +120,8 @@ public sealed interface GraphitronType
         permits PojoResultType.Backed {
 
         /**
-         * R75 Phase 1: an authored payload carrier declared with
-         * {@code @record(record: {className: "..."})}. {@code fqClassName} is non-null.
+         * R75 Phase 1: a payload carrier whose backing class was reflected from its
+         * producer's return type. {@code fqClassName} is non-null.
          */
         record Backed(
             String name,
@@ -133,7 +135,7 @@ public sealed interface GraphitronType
     }
 
     /**
-     * A {@code @record} type backed by a jOOQ {@code Record<?>} (not table-bound).
+     * A result type whose producer's reflected return is a jOOQ {@code Record<?>} (not table-bound).
      * {@code fqClassName} is the binary class name of the jOOQ record class.
      */
     record JooqRecordType(
@@ -143,7 +145,7 @@ public sealed interface GraphitronType
     ) implements ResultType {}
 
     /**
-     * A {@code @record} type backed by a jOOQ {@code TableRecord<?>}.
+     * A result type whose producer's reflected return is a jOOQ {@code TableRecord<?>}.
      *
      * <p>{@code fqClassName} is the binary class name of the jOOQ table-record class.
      *
@@ -293,9 +295,9 @@ public sealed interface GraphitronType
      * This is the input-side counterpart of {@link ReturnTypeRef.ResultReturnType} and
      * {@link ReturnTypeRef.ScalarReturnType}.
      *
-     * <p>The sub-type identifies the backing Java representation. The builder reflects on the class
-     * named in {@code @record(record: {className: ...})} at build time. When no {@code className}
-     * is provided the type is classified as {@link PojoInputType} with a {@code null} backing class.
+     * <p>The sub-type identifies the backing Java representation. The builder reflects on the method
+     * parameter type the input flows into (or {@code @table}) at build time. When no backing class
+     * can be resolved the type is classified as {@link PojoInputType} with a {@code null} backing class.
      */
     sealed interface InputType extends GraphitronType, EmitsPerTypeFile
         permits GraphitronType.JavaRecordInputType, GraphitronType.PojoInputType,

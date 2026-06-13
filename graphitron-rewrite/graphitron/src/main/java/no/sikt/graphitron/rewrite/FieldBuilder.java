@@ -813,7 +813,7 @@ class FieldBuilder {
         // NestingField: a plain object type in the schema with no Graphitron domain classification.
         // Its fields are resolved from the same table context as the parent — classified
         // recursively so nested scalars reach the model as ColumnField (and future arms as
-        // their respective leaves). @record parents cannot reach here; this path is gated
+        // their respective leaves). class-backed parents cannot reach here; this path is gated
         // on TableBackedType by classifyChildFieldOnTableType's caller at line 1217.
         //
         // "No domain classification" includes both the pre-classifier-records-plain-types state
@@ -852,7 +852,7 @@ class FieldBuilder {
                 List.copyOf(nestedFields));
         }
 
-        // ConstructorField: @table parent with a @record child — pass the parent's Record through as
+        // ConstructorField: @table parent with a class-backed child — pass the parent's Record through as
         // the child's source. The child's own Fetchers class handles property/table-child resolution.
         if (elementType instanceof ResultType rt) {
             var wrapper = buildWrapper(fieldDef);
@@ -1874,7 +1874,7 @@ class FieldBuilder {
         // channel gate ahead of the rule firing reads the R96 producer-binding maps: a parent
         // is treated as having an active error channel iff a payload-returning producer
         // (DmlEmitted or ServiceEmitted) is bound to it. Non-producer-bound parents (plain
-        // @record types reachable as service / query returns whose errors-shaped field is a
+        // class-backed types reachable as service / query returns whose errors-shaped field is a
         // developer-owned slot) fall back to PayloadAccessor regardless of the rule's output.
         var transport = transportForParent(fieldDef, name, parentTypeName, parentBackingClass);
         return new ErrorsField(parentTypeName, name, location, errorTypes, transport);
@@ -1906,7 +1906,7 @@ class FieldBuilder {
             String errorsFieldName, String parentTypeName, Class<?> parentBackingClass) {
         // Active-channel gate: a parent qualifies as carrying an error channel iff a producer-
         // returning mutation is bound to it (DML or @service). Non-producer-bound parents (plain
-        // @record types reachable as service / query returns whose errors-shaped field is a
+        // class-backed types reachable as service / query returns whose errors-shaped field is a
         // developer-owned slot, or orphan carrier-shaped types unreachable through any producer)
         // fall back to PayloadAccessor.
         // R244: an @service-produced outcome type rides the typed Outcome wrapper, so its errors
@@ -1915,7 +1915,7 @@ class FieldBuilder {
         // ErrorChannel.Mapped on the producing @service field; the two flip together. The signal is
         // "this payload type is returned by a root @service field" (read straight off the schema,
         // order-independent), not the ServiceEmitted producer binding, which only grounds the
-        // @table-data-field carrier shape and is absent for the @record scalar payloads in scope.
+        // @table-data-field carrier shape and is absent for the class-backed scalar payloads in scope.
         // DML payloads keep their LocalContext/PayloadAccessor selection (out of scope this slice).
         if (isRootServiceProducedPayload(parentTypeName)) {
             return new ChildField.Transport.WrapperArm();
@@ -2141,7 +2141,7 @@ class FieldBuilder {
      * synthesized payload-factory lambda compiles.
      */
     private ErrorChannelResult resolveErrorChannel(ReturnTypeRef returnType) {
-        // Channel detection runs against @record payloads; @table payloads can in principle
+        // Channel detection runs against class-backed payloads; @table payloads can in principle
         // carry an errors field too, but synthesizing a payload-factory there requires shape
         // machinery (jOOQ Record → application record) that's outside §2c. Surfaces as
         // NoChannel until that lift is designed; the §3 redact arm is the fallback.
@@ -2205,7 +2205,7 @@ class FieldBuilder {
                 "payload class '" + result.fqClassName() + "' could not be loaded");
         }
 
-        // Records always declare a single canonical constructor; hand-rolled @record POJOs may
+        // Records always declare a single canonical constructor; hand-rolled class-backed POJOs may
         // declare extras (e.g. a no-arg constructor alongside the all-fields one). The helper
         // disambiguates by matching parameter count to the SDL field count, then falls back to
         // the mutable-bean predicate (no-arg ctor + per-SDL-field setters). AllFieldsCtor wins
@@ -2608,7 +2608,7 @@ class FieldBuilder {
      * {@code QueryServiceTableField}, {@code QueryServiceRecordField}); a rejection on any of
      * the three checks surfaces as {@code UnclassifiedField}.
      *
-     * <p>The strict-return check runs only when the field declares a {@code @record}-backed
+     * <p>The strict-return check runs only when the field resolves to a class-backed
      * payload ({@code ResultReturnType} with a non-null {@code fqClassName}); other return
      * shapes (table-bound, pojo-result, scalar) are screened upstream by
      * {@code ServiceCatalog.reflectServiceMethod} and {@code ServiceDirectiveResolver}.
@@ -2655,7 +2655,7 @@ class FieldBuilder {
 
     /**
      * Strict-equality check on the service method's return type against the SDL payload type
-     * for {@code @record}-backed payloads. Returns a rejection reason when the method's
+     * for class-backed payloads. Returns a rejection reason when the method's
      * reflected return type does not equal the SDL payload type (or {@code List<Payload>} for
      * list-cardinality fields); returns {@code null} otherwise.
      *
@@ -2712,7 +2712,7 @@ class FieldBuilder {
      * channel side surfaces as {@code UnclassifiedField}; {@code NoChannel} yields an empty
      * channel.
      *
-     * <p>Post-R161, the {@code DmlTableField} permits never carry a {@code @record} return — every
+     * <p>Post-R161, the {@code DmlTableField} permits never carry a class-backed return — every
      * {@code ResultReturnType} routes through the {@code Mutation*DmlRecordField} permits, or
      * rejects at {@code MutationInputResolver.validateReturnType} before reaching this builder.
      * {@code resolveErrorChannel} therefore returns {@code NoChannel} by construction here; the
@@ -2858,7 +2858,7 @@ class FieldBuilder {
 
     /**
      * R178 step 3: structural strict-return check for {@code @service} mutations whose payload
-     * has no {@code @record} class on the SDL payload type. Inspects the
+     * has no resolved backing class on the SDL payload type. Inspects the
      * payload SDL directly (single {@code @table}-typed data field) and compares the method's
      * reflected return type against the expected {@code XRecord} (Cardinality.ONE) /
      * {@code List<XRecord>} (Cardinality.MANY) shape.
@@ -2913,7 +2913,7 @@ class FieldBuilder {
 
     /**
      * R275 — composes the rejection reason for an {@code @service} mutation whose carrier-shaped
-     * SDL-Object return type never registered (no {@code @record}/reflection binding, no
+     * SDL-Object return type never registered (no reflection binding, no
      * producer-backed carrier promotion). Classifying such a field would emit a type reference to
      * a type the model dropped, producing an invalid assembled schema. The ID-element arm is the
      * {@code fjernSakTagg}-family shape: {@code @nodeId}-from-record encoding is supported on
@@ -3101,7 +3101,7 @@ class FieldBuilder {
      * arm the DML emitter pattern-matches on. Total over the post-R161 admitted return-type set
      * (Scalar-ID / TableBound, single or list); unreachable on anything else
      * ({@code MutationInputResolver.validateReturnType} already rejected list-payload returns
-     * and the @mutation classifier routes {@code @record} returns to {@code MutationDmlRecordField}).
+     * and the @mutation classifier routes class-backed returns to {@code MutationDmlRecordField}).
      */
     private static DmlReturnExpression buildDmlReturnExpression(
             ReturnTypeRef returnType,
@@ -3289,7 +3289,7 @@ class FieldBuilder {
                     }
                     // R178 step 3: @service-payload strict-return check detects the payload shape
                     // directly from the payload SDL. The check fires only for unbacked payloads
-                    // (no @record class); ClassBacked payloads route through the surviving
+                    // (no resolved backing class); ClassBacked payloads route through the surviving
                     // legacy-equality check inside buildServiceField, which produces the
                     // payload-class diagnostic. This split is the SettKvotesporsmal bug's
                     // structural fix: ClassBacked payloads get a diagnostic citing the payload
@@ -3321,7 +3321,7 @@ class FieldBuilder {
                     }
                     // R275: a carrier-shaped SDL-Object return reaching the Scalar arm with no
                     // registry entry is an orphan carrier — the structural scan recognizes it as a
-                    // single-data-field carrier, but it neither bound (@record / producer
+                    // single-data-field carrier, but it neither bound (by producer
                     // reflection) nor promoted as a producer-backed carrier, so the type is dropped
                     // from the model and the field's emitted typeRef would dangle (graphql-java
                     // assembly fails with "type X not found in schema"). The field edge owns the
@@ -4014,7 +4014,7 @@ class FieldBuilder {
         // Step 1 admits only @table-typed children on DML-emitted parents (the SettKvotesporsmal
         // bug fixture and FilmPayload / FilmsPayload / FilmCreateLocalContextPayload all have
         // this shape). Errors-shaped children fall through to the existing liftToErrorsField
-        // path; @record-typed and scalar children on DML payloads are deferred to step 2.
+        // path; class-backed and scalar children on DML payloads are deferred to step 2.
         var dmlEmitted = dmlEmittedBinding(parentTypeName);
         if (dmlEmitted.isPresent()) {
             var binding = dmlEmitted.get();
@@ -4091,7 +4091,7 @@ class FieldBuilder {
                 }
                 // R275: @splitQuery on the carrier data field is structurally redundant — the
                 // emit below already resolves the field through a PK-keyed follow-up SELECT off
-                // the producer's record. Same advisory family as the @record-parent redundancy.
+                // the producer's record. Same advisory family as the class-backed-parent redundancy.
                 warnIfSplitQueryOnRecordParent(fieldDef, parentTypeName, name, location);
                 var pkColumns = binding.tableRef().primaryKeyColumns();
                 var cardinality = tb.wrapper().isList()
@@ -4155,7 +4155,7 @@ class FieldBuilder {
             }
         }
 
-        // @tableMethod on a @record parent — DTO-parent shape, produces RecordTableMethodField.
+        // @tableMethod on a class-backed parent — DTO-parent shape, produces RecordTableMethodField.
         // Fires BEFORE the @sourceRow branch because both directives may coexist (their roles
         // are complementary: @sourceRow provides the batch-key lifter; @tableMethod provides the
         // developer's static jOOQ table method). When @sourceRow is absent, the parent must be
@@ -4215,7 +4215,7 @@ class FieldBuilder {
             var capturedJoinPath = joinPath;
             var capturedSourceKey = sourceKey;
             var capturedLoaderRegistration = loaderRegistration;
-            // @record-parent carrier: the surface SDL parent has no @table binding, so a
+            // class-backed-parent carrier: the surface SDL parent has no @table binding, so a
             // condition-join first hop has no parent table to anchor the condition method's source
             // argument. parentTable=null routes the OnConditionJoin arm to AuthorError, mirroring
             // RecordTableField / RecordLookupTableField. FkJoin / LiftedHop first hops produce
@@ -4237,7 +4237,7 @@ class FieldBuilder {
         // @reference composition; non-table returns surface a directive-specific rejection here
         // rather than being silently dropped by the PropertyField / RecordField branches below.
         if (fieldDef.hasAppliedDirective(DIR_SOURCE_ROW)) {
-            // @splitQuery on a @sourceRow @record-parent field is structurally redundant: the
+            // @splitQuery on a @sourceRow class-backed-parent field is structurally redundant: the
             // lifter-keyed DataLoader already opens a new scope. Fire the advisory before the
             // resolver's rejection guards so an unrelated invariant failure (bad lifter signature,
             // wrong arity, missing parent backing class, etc.) doesn't suppress it ; the developer
@@ -4261,7 +4261,7 @@ class FieldBuilder {
             // LifterPathKeyed (@reference present). The resolver already constructs the right
             // shape and surfaces it as ok.joinPath().
             List<JoinStep> joinPath = ok.joinPath();
-            // @record-parent carriers: the surface SDL parent type has no @table binding, so a
+            // class-backed-parent carriers: the surface SDL parent type has no @table binding, so a
             // condition-join first hop has no parent table to anchor against and routes to
             // AuthorError. The FkJoin / LiftedHop arms (the normal cases) produce
             // ParentCorrelation.OnFkSlots and don't consult parentTable.
@@ -4303,7 +4303,7 @@ class FieldBuilder {
                             servicePath.elements(), List.of(), new OrderBySpec.None(), null,
                             tb.method(), sk, lr, ch));
                 }
-                // @service on a @record-typed parent returning scalar/record is DEFERRED:
+                // @service on a class-backed parent returning scalar/record is DEFERRED:
                 // deriving the batch key would require lifting through the parent chain to the
                 // rooted @table whose PK provides the key columns, which is its own design
                 // problem (parallel to interface-union dispatch).
@@ -4346,14 +4346,14 @@ class FieldBuilder {
         String columnName = fieldDef.hasAppliedDirective(DIR_FIELD)
             ? argString(fieldDef, DIR_FIELD, ARG_NAME).orElse(name)
             : name;
-        // Typed @record parents backed by a jOOQ TableRecord anchor the path's starting table,
+        // Typed class-backed parents backed by a jOOQ TableRecord anchor the path's starting table,
         // which is how parsePath validates FK direction on each hop. Without it, multi-hop paths
         // through junction tables (e.g. film → film_actor → actor) flip the first hop's traversal
         // direction and spuriously fail to resolve.
         String parentSqlTableName = parentResultType instanceof GraphitronType.JooqTableRecordType jtr && jtr.table() != null
             ? jtr.table().tableName() : null;
         var resolvedReturnType = ctx.resolveReturnType(elementTypeName, buildWrapper(fieldDef));
-        // @splitQuery on a @record-parent field with a table-bound return is structurally
+        // @splitQuery on a class-backed-parent field with a table-bound return is structurally
         // redundant: the parent-record-keyed DataLoader already opens a new scope. Fire the
         // advisory as soon as we know the return type is table-bound, before the path-error /
         // table-field-components / batch-key rejection guards below; an unrelated rejection
@@ -4381,7 +4381,7 @@ class FieldBuilder {
                 }
                 var resolved = (RecordParentSourceResolution.Resolved) resolution;
                 var resolvedJoinPath = resolved.joinPath();
-                // @record-parent carriers: see the @sourceRow branch above for the parentTable
+                // class-backed-parent carriers: see the @sourceRow branch above for the parentTable
                 // null rationale. The condition-join first hop is the only arm that consults
                 // parentTable, and it routes to AuthorError without one.
                 var resolvedPcResolution = ctx.buildParentCorrelation(resolvedJoinPath, /* parentTable= */ null, resolved.sourceKey().columns());
@@ -4465,7 +4465,7 @@ class FieldBuilder {
     }
 
     /**
-     * Object-arm helper for the {@code @record}-Java-backed parent paths: resolves the accessor and
+     * Object-arm helper for the class-backed parent paths: resolves the accessor and
      * routes a {@link AccessorResolution.Rejected} through {@link UnclassifiedField} so the
      * {@link RecordField} accessor slot only ever carries a {@link AccessorResolution.Resolved} or
      * {@code null}. Mirrors the scalar-arm switch above.
@@ -4503,7 +4503,7 @@ class FieldBuilder {
      * resolver-side assignability checks. Scalars route through {@code ctx.types}'s
      * {@link GraphitronType.ScalarType} so the classifier's resolution is the single source of
      * truth (the {@code Object} fallback only fires for non-classified types or classes missing
-     * from the codegen classloader). {@code @record}-typed object types map to their backing
+     * from the codegen classloader). Class-backed object types map to their backing
      * class; everything else falls back to {@link Object} (assignability accepts any actual
      * type, so the resolver matches by name and parameter shape only — sufficient for the
      * user-facing-bug case which is the scalar return-type mismatch).
@@ -4656,13 +4656,13 @@ class FieldBuilder {
 
     /**
      * Builder-internal pair returned by {@link #deriveFkRecordParentSource}: the FK-arm or
-     * accessor-arm projection of a {@code @record}-parent table-bound field's source-side
+     * accessor-arm projection of a class-backed-parent table-bound field's source-side
      * metadata. Pairs the two values so the producer computes both in one place.
      */
     private record RecordParentSource(SourceKey sourceKey, LoaderRegistration loaderRegistration) {}
 
     /**
-     * Outcome of {@link #resolveRecordParentSource} for a {@code @record}-parent table-bound
+     * Outcome of {@link #resolveRecordParentSource} for a class-backed-parent table-bound
      * child field. Two arms; the caller exhausts them with a sealed switch and either projects
      * the resolved {@link SourceKey} + {@link LoaderRegistration} into {@link RecordTableField} /
      * {@link RecordLookupTableField}, or surfaces the rejection as
@@ -4681,7 +4681,7 @@ class FieldBuilder {
     }
 
     /**
-     * Resolves the {@link SourceKey} + {@link LoaderRegistration} for a {@code @record}-parent
+     * Resolves the {@link SourceKey} + {@link LoaderRegistration} for a class-backed-parent
      * table-bound child field. Tries the FK derivation first (via
      * {@link #deriveFkRecordParentSource}); on null, attempts the typed-accessor derivation; on
      * null again, returns the three-option AUTHOR_ERROR rejection. The helper is shared between
@@ -4906,8 +4906,8 @@ class FieldBuilder {
     }
 
     /**
-     * Classifies an interface- or union-typed child field on a {@code @record}-backed parent. The
-     * sole producer of {@link InterfaceField} / {@link UnionField} on the {@code @record}-parent
+     * Classifies an interface- or union-typed child field on a class-backed parent. The
+     * sole producer of {@link InterfaceField} / {@link UnionField} on the class-backed-parent
      * branch (the table-backed branch produces them in {@link #classifyObjectReturnChildField};
      * those two construction sites are the entirety of the multi-table polymorphic surface).
      *
@@ -4989,7 +4989,7 @@ class FieldBuilder {
 
     /**
      * Resolves the parent-side {@link SourceKey} and hub table for a polymorphic child
-     * field on a {@code @record}-backed parent. Three reachable shapes; all four
+     * field on a class-backed parent. Three reachable shapes; all four
      * {@link GraphitronType.ResultType} permits handled:
      *
      * <ul>

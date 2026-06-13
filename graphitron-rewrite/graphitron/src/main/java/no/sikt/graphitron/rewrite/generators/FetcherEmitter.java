@@ -75,7 +75,7 @@ public final class FetcherEmitter {
      * catch every non-arm-switching emit path: a {@code ComputedField} or other
      * {@code ColumnFetcher}-backed leaf would emit a (non-arm-switched) {@code LightDataFetcher}
      * rather than a {@code PropertyDataFetcher}, but such shapes are inventory-absent under a
-     * {@code @record}-backed {@code @service} payload (they need a SELECT-projected parent), which is
+     * class-backed {@code @service} payload (they need a SELECT-projected parent), which is
      * the scope boundary R268 chose.
      *
      * <p>An {@code UnclassifiedField} (which gets no registration at all, so graphql-java installs
@@ -97,7 +97,7 @@ public final class FetcherEmitter {
      *                      object types without their own fetchers class
      * @param parentTable   the parent type's resolved jOOQ table (for column-backed fields), or
      *                      {@code null} when the parent is not table-backed
-     * @param resultType    the parent type's {@code @record} backing, or {@code null}
+     * @param resultType    the parent type's class backing, or {@code null}
      * @param outputPackage the base output package (e.g. {@code no.sikt.graphql})
      * @param sourceIsOutcome {@code true} when this field is an immediate child of an outcome type
      *                        that has flipped to the {@code Outcome} wrapper transport (R244): its
@@ -134,7 +134,7 @@ public final class FetcherEmitter {
 
     /**
      * The inline-resolved data-channel shapes that can appear as an immediate child of a
-     * {@code @record}-backed {@code Outcome} payload. Each resolves to an inline value expression in
+     * class-backed {@code Outcome} payload. Each resolves to an inline value expression in
      * {@link #dataFetcherValueRaw} that reads {@code env.getSource()}; under the wrapper transport
      * that read is repointed at {@code success.value()} (see {@link #armSwitchedInlineDataFetcher}).
      *
@@ -170,7 +170,7 @@ public final class FetcherEmitter {
      * The read shape follows the field's backing, mirroring {@link #dataFetcherValueRaw} /
      * {@link #propertyOrRecordValue} so there is no parallel taxonomy: a jOOQ-record column
      * {@code get} (what {@code ColumnFetcher} does, inlined onto {@code success.value()}), a
-     * {@code @record}-Java accessor call, or the constructor/nesting source passthrough.
+     * class-backed accessor call, or the constructor/nesting source passthrough.
      *
      * <p>The final {@code throw} is a defensive backstop for any field/backing combination that
      * has neither a column nor a resolved accessor and so cannot be projected inline.
@@ -897,7 +897,7 @@ public final class FetcherEmitter {
                 || resultType instanceof GraphitronType.JooqRecordType) {
             return CodeBlock.of("new $T<>($T.field($S))", columnFetcherClass, DSL, columnName);
         }
-        // @record-Java-backed parent: read the pre-resolved accessor handle. The read itself is the
+        // class-backed parent: read the pre-resolved accessor handle. The read itself is the
         // shared recordBackedAccessorRead, source-bound to env.getSource(); the R268 arm-switch path
         // calls the same helper with success.value(), so the accessor switch lives in one place.
         String fqClassName = (resultType instanceof GraphitronType.JavaRecordType jrt)
@@ -909,7 +909,7 @@ public final class FetcherEmitter {
     }
 
     /**
-     * The value expression reading a {@code @record}-Java-backed accessor off a source object. The
+     * The value expression reading a class-backed accessor off a source object. The
      * source is supplied as a {@link CodeBlock} ({@code env.getSource()} on the normal path,
      * {@code success.value()} on the R268 outcome arm-switch), so this one helper serves both the
      * normal {@link #propertyOrRecordValue} lambda and the arm-switch ternary. Field reads emit

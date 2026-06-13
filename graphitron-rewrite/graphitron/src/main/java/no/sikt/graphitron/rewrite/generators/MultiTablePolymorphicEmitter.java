@@ -145,7 +145,7 @@ public final class MultiTablePolymorphicEmitter {
      * @param parentSourceKey       parent-object source-side key, projected from the field's
      *                              parent classification. Through R102 the classifier produces
      *                              only catalog-FK / {@code ColumnRead}-reader parent keys
-     *                              (table-backed parents); R105 wires the {@code @record}-parent
+     *                              (table-backed parents); R105 wires the class-backed-parent
      *                              classifier arm to reach the lifter and accessor reader permits.
      * @param parentResultType      the parent's classified {@link GraphitronType.ResultType};
      *                              threaded into {@link GeneratorUtils#buildRecordParentKeyExtraction}

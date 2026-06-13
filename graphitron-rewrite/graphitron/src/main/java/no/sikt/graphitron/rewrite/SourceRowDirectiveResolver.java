@@ -30,7 +30,7 @@ import static no.sikt.graphitron.rewrite.BuildContext.DIR_REFERENCE;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_SOURCE_ROW;
 
 /**
- * Resolves {@code @sourceRow} on a child field whose {@code @record} parent has no FK
+ * Resolves {@code @sourceRow} on a child field whose class-backed parent has no FK
  * metadata in the jOOQ catalog. The schema author supplies a static Java method that
  * extracts a {@code RowN} value out of the parent DTO; this resolver classifies the
  * directive, reflects on the lifter method, derives the expected parent-side column tuple
@@ -424,7 +424,7 @@ final class SourceRowDirectiveResolver {
 
     /**
      * Returns the parent's backing class FQ name, or {@code null} if the parent is not
-     * a {@code @record} shape that admits a {@code @sourceRow} (Invariant #1).
+     * a class-backed shape that admits a {@code @sourceRow} (Invariant #1).
      */
     private static String parentBackingClass(GraphitronType.ResultType parentResultType) {
         if (parentResultType instanceof GraphitronType.PojoResultType.Backed b) {

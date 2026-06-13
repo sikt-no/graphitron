@@ -46,7 +46,7 @@ import java.util.Objects;
  *   <li>{@link #cardinality()} — {@link Cardinality#ONE} (one source row per
  *       DataLoader key) or {@link Cardinality#MANY} (a list / accessor walk).</li>
  *   <li>{@link #reader()} — the rows-method body's input contract (where the body reads
- *       its data from): catalog-FK column, typed accessor on a {@code @record} parent,
+ *       its data from): catalog-FK column, typed accessor on a class-backed parent,
  *       {@code @sourceRows} static lifter, or {@code @service} return record.</li>
  * </ul>
  *
@@ -217,7 +217,7 @@ public record SourceKey(
      *
      * <ul>
      *   <li>{@link ColumnRead} — read FK columns from the parent record (catalog-FK arms on
-     *       non-{@code @record} parents, or {@code @record} parents whose backing class is a
+     *       table-backed parents, or class-backed parents whose backing class is a
      *       jOOQ {@code TableRecord}).</li>
      *   <li>{@link AccessorCall} — call a typed zero-arg instance accessor on the parent's
      *       backing class (single or list/set cardinality recorded by
@@ -266,7 +266,7 @@ public record SourceKey(
         record ColumnRead() implements Reader {}
 
         /**
-         * Typed zero-arg instance accessor on a {@code @record} parent's backing class
+         * Typed zero-arg instance accessor on a class-backed parent's backing class
          * whose return type is a concrete jOOQ {@code TableRecord} (single, list, or set
          * cardinality recorded by {@link SourceKey#cardinality()} +
          * {@link LoaderRegistration#container()}, not by the {@link Reader} permit).
@@ -279,7 +279,7 @@ public record SourceKey(
 
         /**
          * {@code @sourceRows} static lifter producing a {@code RowN<...>} batch key from a
-         * {@code @record} parent's backing class.
+         * class-backed parent's backing class.
          */
         record SourceRowsCall(LifterRef lifter) implements Reader {
             public SourceRowsCall {
