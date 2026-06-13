@@ -35,7 +35,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R212` | IntelliJ plugin wrapping graphitron:dev LSP | Spec | 2026-05-21 | [plan](intellij-lsp-plugin.md) |
 | `R269` | Null-guard split-query key extraction for nullable to-one records | Spec | 2026-06-02 <sub>created 2026-06-01</sub> | [plan](nullable-to-one-record-into-npe.md) |
 | `R112` | Operation-driven test corpus, capability catalog, and runtime trace <sub>blocked by: [capability-catalog](capability-catalog.md)</sub> | Spec |  | [plan](operation-driven-test-corpus.md) |
-| `R301` | Align docs and javadoc with @record removal | In Review | 2026-06-13 | [plan](align-docs-record-directive-ignored.md) |
 
 ---
 
@@ -272,7 +271,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### (untagged)
 
-- `R301` [**Align docs and javadoc with @record removal**](align-docs-record-directive-ignored.md)
 - `R207` [**Audit design-doc claims for implementation conformance**](design-doc-implementation-conformance-audit.md)
 - `R218` [**Carry inference provenance on ParamSource.Arg so resolved bindings audit cleanly**](binding-provenance-on-paramsource-arg.md)
 - `R180` [**Centralize ResultType column-read emission for @record parents**](record-parent-column-read-helper.md)
