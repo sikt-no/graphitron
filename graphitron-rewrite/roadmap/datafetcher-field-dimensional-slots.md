@@ -51,11 +51,20 @@ rename noise. R302 and this slice are independent (no ordering edge); whichever 
 trivially. The two leaf-set changes below stay here, because they change the corpus and are coupled to
 the materialisation:
 
-- **Dissolve `ConstructorField`** — dead since the `@record`-on-types ban; its only path is an edge case
-  not in use. Delete the leaf, its `LeafTupleAdapter` arm, and any generator dispatch, after verifying no
-  live reference.
-- **Collapse `SingleRecordTableField`** — its verdict is the `(Service`/`DML) x Table` re-fetch; the
-  single-source-object DataLoader-skip becomes a derived detail, not a distinct leaf.
+- **Dissolve `ConstructorField`**: this leaf is a senseless classification, not a live feature. The
+  classifier produces it only when a type is reachable as both a `@table` child and a `@service` return
+  at once (the `ResultType` arm of `FieldBuilder.classifyChildFieldOnTableType`, today constructing
+  `new ConstructorField(...)`), a shape we do not support. The classifier stops producing it: that
+  `ResultType` arm becomes an `UnclassifiedField` rejection, and `GraphitronSchemaValidator` surfaces the
+  table-and-service clash as a build-time error. Delete the leaf, its `LeafTupleAdapter` arm, and its
+  generator dispatch (`FetcherEmitter`, `TypeFetcherGenerator`, `CatalogBuilder`). Re-enabling a
+  deliberate construct-from-table-row is deferred to a possible future `experimental_constructType`
+  directive and is out of scope here.
+- **Collapse `SingleRecordTableField` into `RecordTableField`**: its `(Service`/`DML) x Table` follow-up
+  re-fetch is the same Source/Fetch/Table shape `RecordTableField` already carries. Fields that classify
+  as `SingleRecordTableField` today reclassify to `RecordTableField` with their `(carrier, intent,
+  mapping)` tuple unchanged; the single-source-object DataLoader-skip becomes a derived detail (computed
+  from single-source cardinality off the slot), not a distinct leaf.
 
 ## Dependency status
 
@@ -121,9 +130,11 @@ What R290 does:
    (the rejected "horizontal phase 1" smell) and leave the re-fetch predicate duplicated across consumers
    (the "generation-thinking" smell); the derivation has to land here for the materialisation to mean
    anything.
-4. **Retire exactly the two leaves the model removes outright** — **dissolve `ConstructorField`** (dead
-   since the `@record`-on-types ban) and **collapse `SingleRecordTableField`** (its single-source
-   DataLoader-skip becomes a derived detail). This brings the live leaf set from 49 to the appendix's
+4. **Retire exactly the two leaves the model removes outright** — **dissolve `ConstructorField`**
+   (senseless table-and-service construction; the classifier rejects it via `UnclassifiedField` and
+   `GraphitronSchemaValidator`) and **collapse `SingleRecordTableField` into `RecordTableField`** (its
+   single-source DataLoader-skip becomes a derived detail). This brings the live leaf set from 49 to the
+   appendix's
    **47**, which is the post-R290 inventory. The service re-query leaves (`QueryServiceTableField`,
    `MutationServiceTableField`, `ChildField.ServiceTableField`) **survive R290 as leaves** — the appendix
    lists all three, with re-fetch shown as derived (`RF`). R290 makes their *mechanism* slot-derived;
@@ -143,17 +154,24 @@ the two R290 removed."
 R281 (`classification-test-dsl`, shipped) plus R299 (`intention-classification-dimension`) are this
 item's **executable acceptance spec**: the corpus asserts `(carrier, intent, mapping)`, not leaf names,
 not the retired `producer`. When this slice lands the adapter is deleted and the harness reads the three
-accessors off the field. **Every corpus assertion stays byte-identical except the two rows for the
-retired leaves** (`ConstructorField`, `SingleRecordTableField`), whose removal is the intended corpus
-delta; the continued green of every other row — including all three surviving service re-query leaves,
-now classifying via slots with re-fetch derived — proves the decomposition was behaviour-preserving. The
-live leaf set moves from 49 to **47** (the appendix inventory); `LeafCoverageReportTest` and the appendix
-update in the same change.
+accessors off the field. The classified-corpus delta is exactly **one example**: the `constructor`
+fixture (`ClassifiedCorpus`, asserting `Film.details` as Source/Fetch/Record) leaves the classified
+corpus, because that table-and-service shape is now a validator rejection rather than a clean
+classification; it moves to the validator tier as a rejection fixture. **Every other corpus assertion
+stays byte-identical**, including `SingleRecordTableField`'s coverage (`FilmPayload.film`, Source/Fetch/
+Table), which reclassifies to `RecordTableField` with its tuple unchanged and so stays green without
+edit. The continued green of every other row, including all three surviving service re-query leaves now
+classifying via slots with re-fetch derived, proves the decomposition was behaviour-preserving.
+`everyDimensionValueIsExercised` stays green: `Mapping.Record` is still exercised after the `constructor`
+example leaves (e.g. `ErrorsField`, `ServiceRecordField`, the DML record carriers). The live leaf set
+moves from 49 to **47** (the appendix inventory); `LeafCoverageReportTest` and the appendix update in the
+same change.
 
 The merge gate is both tiers green:
 
-- **Corpus tier** (R281/R299): the decomposition is behaviour-preserving (byte-identical modulo the two
-  retired rows).
+- **Corpus tier** (R281/R299): the decomposition is behaviour-preserving (byte-identical modulo the one
+  removed `constructor` example, now a validator-rejection fixture; `SingleRecordTableField`'s coverage
+  reclassifies to `RecordTableField` with its tuple unchanged).
 - **Dispatch partition + validator mirror.** Retiring the two leaves means the `TypeFetcherGenerator`
   dispatch partition (`IMPLEMENTED_LEAVES` / `NOT_DISPATCHED_LEAVES` / `PROJECTED_LEAVES` /
   `STUBBED_VARIANTS`) drops those two entries in the same commit, and the coverage test asserting that
@@ -173,8 +191,8 @@ foundation (`ServiceField` / `ServiceMethodCall`) has landed. See the R281 entry
 
 Every current `OutputField` leaf under the `carrier × intent × mapping` model, with the derived columns
 shown. This is the worked target R290 implements; **totality holds, no leaf has an unfilled cell.**
-`ConstructorField` (dissolved) and `SingleRecordTableField` (collapsed into the `(Service`/`DML) × Table`
-re-fetch) are absent by design, the leaf set is 47. Derived legend: `FR` = `FetchRelated` (from a
+`ConstructorField` (dissolved; now a validator rejection) and `SingleRecordTableField` (collapsed into
+`RecordTableField`) are absent by design, the leaf set is 47. Derived legend: `FR` = `FetchRelated` (from a
 non-empty join-path), `RF` = re-fetch (from a `(Service`|`DML`) × `Table` mismatch), `NQ` = new-query
 (`SourceField` slot, forced by `@splitQuery` / polymorphic / record-handoff). The orthogonal slot column
 (method, batch-key, join-path, bulk, composite, participants) carries per-leaf detail; the triple is the
