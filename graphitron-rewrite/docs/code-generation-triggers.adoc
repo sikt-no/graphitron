@@ -46,7 +46,7 @@ Two independent classifications describe every field: the *source context* it is
 The type on which a field is defined.
 
 |===
-| Source context | Directive | What Graphitron generates
+| Source context | Trigger | What Graphitron generates
 
 | *Unmapped* | *(none ; Query, Mutation)* | Entry point. No SQL yet.
 | *Table-mapped* | `@table` | Full SQL generation ; queries, joins, projections.
@@ -164,14 +164,14 @@ enters the scope; `Film.title` projects an inline column. Asserted by the `catal
 | Classification Trigger on Type | `GraphitronType` Variant | Generator Output
 
 | `@table` + `@node` | `NodeType` | `*Fetchers` class + `*` class (with Relay ID handling)
-| Producer's reflected return is a Java/jOOQ class (a `@service` return, a `@tableMethod` return, or a parent-accessor chain) | `ResultType`* | `*Fetchers` class only (no SQL scope of its own). The backing class is reflection-derived, not declared; a reachable type still carrying `@record` warns to remove it.
+| Producer's reflected return is a Java/jOOQ class (a `@service` return, a `@tableMethod` return, or a parent-accessor chain) | `ResultType`* | `*Fetchers` class only (no SQL scope of its own). The backing class is reflection-derived, not declared.
 | `Query` or `Mutation` root type | `RootType` | `*Fetchers` class only
 | Interface with `@table` + `@discriminate` | `TableInterfaceType` | `*Fetchers` class
 | Interface without `@table` (multi-table) | `InterfaceType` | `*Fetchers` class
 | Union type | `UnionType` | `*Fetchers` class
 | `@error` | `ErrorType` | No generation (error mapping config)
-| Input type with `@table` | `TableInputType` | Used in mutation generation. If the declaration also carries `@record`, `@table` wins; `@record` is ignored and a build warning names it for removal (shadowed by `@table`).
-| Input type without `@table` (the `@service` / `@condition` / `@tableMethod` parameter the input flows into is reflected as a developer class) | `InputType`* | No generation (developer-provided class). The input's backing class is reflected from the parameter type it flows into; a residual `@record` is ignored and warned.
+| Input type with `@table` | `TableInputType` | Used in mutation generation.
+| Input type without `@table` (the `@service` / `@condition` / `@tableMethod` parameter the input flows into is reflected as a developer class) | `InputType`* | No generation (developer-provided class). The input's backing class is reflected from the parameter type it flows into.
 | Input type with `@table` used on fields with conflicting return tables | `PojoInputType` (unbound) | No generation ; column binding resolved per field-usage
 | Object type with no `@table` and no producer binding | `NestingType` | No generation; nested under a parent table-bound or class-backed scope via `NestingField`
 | GraphQL `enum` type | `EnumType` | No generation; enum values map to DB strings/ints at column-bind time
