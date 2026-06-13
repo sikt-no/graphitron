@@ -10,6 +10,23 @@ The `next-id:` front-matter field is the canonical counter for `R<n>` allocation
 
 ---
 
+- `e6d213d` (reframe) + `cc18815` (impl) → `5e34fb7` (Spec → Ready) — R299
+  (`intention-classification-dimension`): migrate the R281 corpus from the two-axis
+  `(producer, mapping)` verdict onto R222's refined `carrier x intent x mapping` model, while the
+  leaves are still intact and ahead of R290's field-side materialisation. `DimensionTuple` becomes
+  `(carrier, intent, mapping)`; `ProducerStep` retires; new `Carrier {Query, Mutation, Source}` and
+  the full-model `Intent` enum land, mirrored SDL-side in `ClassifiedDsl.PRELUDE` and checked by
+  `carrierMirrorsAdapterValues` / `intentMirrorsAdapterValues`. `LeafTupleAdapter` reconstructs all
+  three from leaf identity (carrier from the enclosing sealed type, intent from leaf + `DmlKind`,
+  mapping as before); the switch stays exhaustive over `OutputField`, and the derived layer
+  (`FetchRelated` / re-fetch / new-query / polarity) stays computed, never asserted. `@classified`
+  migrates to `(carrier:, intent:, mapping:)` across every corpus fixture; `everyDimensionValueIsExercised`
+  now covers `Carrier` + `Intent` with a known-gap allowlist (the five R222 model-completeness gaps plus
+  upstream-rejected `Upsert`, mirroring `NO_CASE_REQUIRED`). `code-generation-triggers.adoc`'s Field
+  Classification section is rewritten to the three axes + derived layer + assert-vs-derive, the
+  child-table / record-table examples now teaching the derived layer. Corpus-and-docs only: no generator,
+  validator, or field-model change (those are R290).
+
 - `fc03387` + `6ab5127` + `cf8262e` (impl) → `97fbc02` (In Review) — R293 (`build-warning-cleanup`):
   clean up build-time warnings so a full `mvn install -Plocal-db` is warning-free under
   `-Xlint:all -Werror`, leaving only declared-out-of-scope environment lines (sandbox jOOQ
