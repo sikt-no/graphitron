@@ -1,7 +1,7 @@
 ---
 id: R299
-title: "Migrate the R281 corpus into the carrier x intent x mapping model"
-status: Spec
+title: Migrate the R281 corpus into the carrier x intent x mapping model
+status: Ready
 bucket: structural
 priority: 3
 theme: structural-refactor
