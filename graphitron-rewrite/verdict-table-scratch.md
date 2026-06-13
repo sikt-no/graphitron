@@ -73,13 +73,11 @@ see what the collapse bought.
 | RecordLookupTableField | Lookup | Table | **NQ** | record-key |
 | RecordTableMethodField | Fetch | Table | **FR**, **NQ** | method, record-key |
 | ServiceTableField | QueryService | Table | **RF** | |
-| SingleRecordTableField | Fetch | Table | **NQ** | (re-projection continuation) |
 | ServiceRecordField | QueryService | Record | | |
 | RecordField | Fetch | Field | | |
 | PropertyField | Fetch | Field | | |
 | ComputedField (ExternalField) | Fetch | Field / Record | | reflection (was Column!) |
 | NestingField | **Nesting** | Table | | (was Fetch — collision fixed) |
-| ConstructorField | Fetch | Record | | assemble-from-parent (Nesting?) |
 | InterfaceField | Fetch | Table[poly] | **FR**, **NQ** | participants |
 | UnionField | Fetch | Table[poly] | **FR**, **NQ** | participants |
 | SingleRecordIdFieldFromReturning | Fetch | Column | | reads RETURNING |
@@ -145,17 +143,23 @@ preserved as the intent.
 - `NestingField`: `Fetch`/`Table` → `Nesting`/`Table`.
 - producer column deleted entirely; carrier + `NQ` slot replace it.
 
-**Still wobbling (3 spots):**
-1. **`ConstructorField`** — `Fetch`/`Record` or `Nesting`/`Record`? It assembles a `@record` from the
-   parent record's fields, structurally a regroup (Nesting-like) but it does construct a new object
-   rather than pure passthrough. Domain-side `Nesting`, or a plain domain `Fetch`?
-2. **`SingleRecordTableField`** — it's the explicit re-projection continuation, but the re-fetch is now
-   *derived* from (`Service`/`DML`) × `Table`. So is this leaf redundant with the `RF` derivation, i.e.
-   does it survive the dimensional collapse or fold into `ServiceTableField`'s `RF`?
-3. **`UpdateMatching`/`DeleteMatching` vs the `Bulk` payload leaves** — the `Bulk` variants source
-   per-row WHERE columns (bulk-by-identity), so I mapped them to `Update`/`Delete` + bulk slot, leaving
-   `UpdateMatching`/`DeleteMatching` (condition-matched) unpopulated. Confirm the `Bulk` leaves are
-   identity-bulk, not condition-matched, or these gaps are wrong.
+**Resolved (the 3 spots, settled):**
+1. **`ConstructorField` — dissolved.** With `@record`-on-types banned, the only path to it is an
+   edge case (a service/external field classifying an unadorned type, that type then used by a field
+   on a table-backed type) that is not useful and not in use. Removed from the leaf set. *Code follow-up:
+   actually delete the leaf + its `LeafTupleAdapter` arm, after verifying no live reference; needs a
+   covering roadmap item.*
+2. **`SingleRecordTableField` — collapsed.** It's only an optimization to skip the DataLoader for a
+   `Source` field guaranteed a single source object. Its `(carrier, intent, mapping)` verdict is the
+   general re-fetch case; the single-source-object skip is a derived detail, not a distinct leaf. Folds
+   into the `(Service`/`DML)` × `Table` → `RF` derivation.
+3. **`UpdateMatching`/`DeleteMatching` — confirmed declared gaps.** `Bulk` is handled by `Update` and
+   `Delete` (bulk slot, identity-bulk). The `*Matching` (condition-matched) intents are genuinely
+   different and not yet implemented, so they stay modeled-but-unpopulated.
 
-Net: the model lands — totality holds, both structural holes closed, carrier-gates-intent works, and
-the only unexercised intents are the declared model-completeness gaps.
+Leaf set drops from 49 to 47 (ConstructorField dissolved, SingleRecordTableField collapsed).
+
+Net: **the model lands.** Totality holds with no `⚠`, both v1 structural holes closed, the
+service/DML composite folds into intent×mapping, carrier-gates-intent works, and the only unexercised
+intents are the declared model-completeness gaps (`EntityResolve`, `Count`, `Facet`, `UpdateMatching`,
+`DeleteMatching`).
