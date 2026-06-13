@@ -1,40 +1,21 @@
 package no.sikt.graphitron.rewrite.classifieddsl;
 
-import java.util.List;
-
 /**
- * The two-axis classification verdict R281's corpus asserts: a {@code producer} pipeline (a list of
- * {@link ProducerStep}, length &le; 2, empty meaning "inline, no new execution") and a {@code mapping}
- * ({@link Mapping}). This is the dimensional fingerprint the {@code @classified} directive carries
- * and the {@link LeafTupleAdapter} produces from today's sealed leaves.
+ * The three-axis classification verdict R299's corpus asserts: a {@link Carrier} (the GraphQL
+ * parent-type category, which <em>is</em> the field type), an {@link Intent} (the operation kind), and
+ * a {@link Mapping} (the value shape, carrying build-vs-consume). This is the dimensional fingerprint
+ * the {@code @classified} directive carries and the {@link LeafTupleAdapter} produces from today's
+ * sealed leaves.
  *
- * <p>The tuple is the primary fingerprint, not the complete emit key: the derived facts
- * (source-context, fetcher/loader mechanism, dispatch batching, error channel) live in slots beside
- * these two axes, so two leaves differing only in a slot share one tuple. See
- * {@code roadmap/classification-test-dsl.md} §"The leaf-to-tuple adapter".
+ * <p>The R281 {@code (producer, mapping)} verdict retired here: the {@code producer} dimension
+ * dissolves, its information redistributing across {@code carrier} (position), {@code intent}
+ * (operation), {@code mapping} (build-vs-consume), and a <em>derived layer</em> (re-fetch, new-query,
+ * {@code FetchRelated}, polarity) that is computed from the axes and slots, never asserted as a
+ * coordinate. See R222's "Field-side dimensional model (refined 2026-06-13)".
+ *
+ * <p>The tuple is the primary fingerprint, not the complete emit key: the derived facts and the
+ * orthogonal slots (source-context, fetcher/loader mechanism, dispatch batching, error channel) live
+ * beside these three axes, so two leaves differing only in a slot share one tuple.
  */
-public record DimensionTuple(List<ProducerStep> producer, Mapping mapping) {
-
-    public DimensionTuple {
-        producer = List.copyOf(producer);
-        if (producer.size() > 2) {
-            throw new IllegalArgumentException(
-                "producer pipeline length must be <= 2; got " + producer);
-        }
-    }
-
-    /** The empty (inline, no new execution) pipeline with the given mapping. */
-    static DimensionTuple inline(Mapping mapping) {
-        return new DimensionTuple(List.of(), mapping);
-    }
-
-    /** A single-step pipeline. */
-    static DimensionTuple of(ProducerStep step, Mapping mapping) {
-        return new DimensionTuple(List.of(step), mapping);
-    }
-
-    /** A two-step pipeline. */
-    static DimensionTuple of(ProducerStep first, ProducerStep second, Mapping mapping) {
-        return new DimensionTuple(List.of(first, second), mapping);
-    }
+public record DimensionTuple(Carrier carrier, Intent intent, Mapping mapping) {
 }

@@ -6,7 +6,11 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 
+import java.util.Arrays;
 import java.util.EnumSet;
+import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -24,8 +28,12 @@ import static org.assertj.core.api.Assertions.assertThat;
  *   <li><b>Adapter totality</b> is compiler-enforced: {@link LeafTupleAdapter#toTuple} switches
  *       exhaustively over the sealed {@code OutputField} hierarchy, so a new leaf without a verdict
  *       fails the build. No runtime test can strengthen that, so none is written.</li>
- *   <li><b>Value exercise</b>, {@link #everyDimensionValueIsExercised()}: every {@link ProducerStep}
- *       and {@link Mapping} value (and the inline empty producer) is produced by some fixture.</li>
+ *   <li><b>Value exercise</b>, {@link #everyDimensionValueIsExercised()}: every {@link Carrier},
+ *       {@link Intent}, and {@link Mapping} value is either produced by some fixture or, for the
+ *       modeled-but-unpopulated intents, on an explicit known-gap list with a stated reason.</li>
+ *   <li><b>Carrier / Intent mirror</b>, {@link #carrierMirrorsAdapterValues()} /
+ *       {@link #intentMirrorsAdapterValues()}: the SDL {@code Carrier} / {@code Intent} enums equal
+ *       the Java {@link Carrier} / {@link Intent} value sets {@link LeafTupleAdapter} produces.</li>
  *   <li><b>TypeVerdict mirror</b>, {@link #typeVerdictMirrorsGraphitronTypeLeaves()}: the SDL
  *       {@code TypeVerdict} enum equals the non-failure {@code GraphitronType} leaf set. Its
  *       soundness rests on {@link #graphitronTypeLeafSimpleNamesAreUnique()}, since the mirror
@@ -52,7 +60,7 @@ class ClassifiedDslTest {
 
         for (var fc : result.fields()) {
             assertThat(fc.actual())
-                .as("%s.%s classifies to its declared (producer, mapping)", fc.parentType(), fc.fieldName())
+                .as("%s.%s classifies to its declared (carrier, intent, mapping)", fc.parentType(), fc.fieldName())
                 .isEqualTo(fc.expected());
         }
         for (var tc : result.types()) {
@@ -62,29 +70,76 @@ class ClassifiedDslTest {
         }
     }
 
+    /**
+     * Intents the model declares but the current leaf set cannot populate, each with the reason no
+     * fixture lands on it. Five are R222's model-completeness gaps (no classified leaf exists yet);
+     * {@code Upsert} is the sixth shape, a leaf that exists but is upstream-rejected, following the
+     * {@code VariantCoverageTest.NO_CASE_REQUIRED} precedent for {@code MutationUpsertTableField}. A
+     * value leaves this list the moment a fixture exercises it; an unexercised value not listed here
+     * fails {@link #everyDimensionValueIsExercised()}.
+     */
+    private static final Map<Intent, String> INTENT_KNOWN_GAPS = Map.of(
+        Intent.EntityResolve, "Federation _entities is not a classified leaf yet (separate item).",
+        Intent.Count, "Connection totalCount is generator-only emit behind the ConnectionType quarantine.",
+        Intent.Facet, "Connection facets are generator-only emit behind the ConnectionType quarantine.",
+        Intent.UpdateMatching, "Condition-matched UPDATE is unimplemented.",
+        Intent.DeleteMatching, "Condition-matched DELETE is unimplemented.",
+        Intent.Upsert, "R144 retires UPSERT generation pending R145; the classifier rejects every "
+            + "UPSERT mutation at MutationInputResolver, so no schema-reachable fixture lands on it "
+            + "(mirrors VariantCoverageTest.NO_CASE_REQUIRED for MutationUpsertTableField).");
+
     @Test
     void everyDimensionValueIsExercised() {
-        var producers = EnumSet.noneOf(ProducerStep.class);
+        var carriers = EnumSet.noneOf(Carrier.class);
+        var intents = EnumSet.noneOf(Intent.class);
         var mappings = EnumSet.noneOf(Mapping.class);
-        boolean inlineSeen = false;
 
         for (var example : ClassifiedCorpus.examples()) {
             for (var fc : ClassifiedHarness.classify(example.sdl()).fields()) {
-                producers.addAll(fc.actual().producer());
+                carriers.add(fc.actual().carrier());
+                intents.add(fc.actual().intent());
                 mappings.add(fc.actual().mapping());
-                inlineSeen |= fc.actual().producer().isEmpty();
             }
         }
 
-        assertThat(producers)
-            .as("every ProducerStep value must be exercised by the corpus")
-            .containsExactlyInAnyOrder(ProducerStep.values());
+        assertThat(carriers)
+            .as("every Carrier value must be exercised by the corpus")
+            .containsExactlyInAnyOrder(Carrier.values());
         assertThat(mappings)
             .as("every Mapping value must be exercised by the corpus")
             .containsExactlyInAnyOrder(Mapping.values());
-        assertThat(inlineSeen)
-            .as("the inline (empty) producer must be exercised by the corpus")
-            .isTrue();
+
+        var unexercisedAndUnexplained = EnumSet.allOf(Intent.class);
+        unexercisedAndUnexplained.removeAll(intents);
+        unexercisedAndUnexplained.removeAll(INTENT_KNOWN_GAPS.keySet());
+        assertThat(unexercisedAndUnexplained)
+            .as("every Intent value must be exercised by a fixture or listed in INTENT_KNOWN_GAPS "
+                + "with a stated reason; these are neither")
+            .isEmpty();
+
+        assertThat(EnumSet.copyOf(INTENT_KNOWN_GAPS.keySet()))
+            .as("a known-gap intent that a fixture now exercises must be removed from INTENT_KNOWN_GAPS")
+            .doesNotContainAnyElementsOf(intents);
+    }
+
+    @Test
+    void carrierMirrorsAdapterValues() {
+        assertThat(ClassifiedHarness.carrierEnumConstants())
+            .as("the SDL Carrier enum must mirror the Java Carrier value set the adapter produces; "
+                + "adding a value to one side without the other fails here")
+            .containsExactlyInAnyOrderElementsOf(enumNames(Carrier.values()));
+    }
+
+    @Test
+    void intentMirrorsAdapterValues() {
+        assertThat(ClassifiedHarness.intentEnumConstants())
+            .as("the SDL Intent enum must mirror the Java Intent value set the adapter produces; "
+                + "adding a value to one side without the other fails here")
+            .containsExactlyInAnyOrderElementsOf(enumNames(Intent.values()));
+    }
+
+    private static <E extends Enum<E>> Set<String> enumNames(E[] values) {
+        return Arrays.stream(values).map(Enum::name).collect(Collectors.toSet());
     }
 
     @Test

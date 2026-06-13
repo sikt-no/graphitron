@@ -10,10 +10,12 @@ import java.util.Set;
  * the corpus, the DSL assertions ({@link ClassifiedDslTest}), the leaf-coverage bridge
  * ({@code VariantCoverageTest}), and the query-as-view documentation renderer.
  *
- * <p>Slice 1 seeded this with a small value-covering set (every {@link ProducerStep} / {@link Mapping}
- * value exercised at least once). Slice 2 grows it example by example as the {@code code-generation-triggers}
- * documentation pulls each one in, retiring the matching {@code GraphitronSchemaBuilderTest} enum row as
- * the corpus picks up its leaf (see {@link #coveredLeaves()}).
+ * <p>Each {@code @classified} coordinate asserts the three-axis {@code (carrier, intent, mapping)}
+ * verdict R299 migrated the corpus onto (from R281's original {@code (producer, mapping)}); between
+ * them the fixtures exercise every {@link Carrier} and {@link Mapping} value and every populated
+ * {@link Intent}, with the modeled-but-unpopulated intents tracked as known gaps in
+ * {@link ClassifiedDslTest}. The set grows example by example as the {@code code-generation-triggers}
+ * documentation pulls each one in (see {@link #coveredLeaves()}).
  */
 public final class ClassifiedCorpus {
 
@@ -40,49 +42,51 @@ public final class ClassifiedCorpus {
         /* Catalog side: a root query, a Relay connection, an inline column, and a TableType. */
         new Example("catalog", """
             type Query @classifiedType(as: RootType) {
-              film: Film @classified(producer: [Query], mapping: Table)
-              films: [Film!]! @asConnection @classified(producer: [Query], mapping: TableConnection)
+              film: Film @classified(carrier: Query, intent: Fetch, mapping: Table)
+              films: [Film!]! @asConnection @classified(carrier: Query, intent: Fetch, mapping: TableConnection)
             }
 
             type Film @table(name: "film") @classifiedType(as: TableType) {
-              title: String @classified(producer: [], mapping: Column)
+              title: String @classified(carrier: Source, intent: Fetch, mapping: Column)
             }
             """,
             "{ film { title } }"),
 
         /*
          * Enum-typed scalar: a field whose GraphQL return type is an enum still resolves to a real DB
-         * column on the @table parent, so it classifies exactly like any other inline scalar (producer
-         * [], mapping Column, ColumnField). The enum-ness lives in the GraphQL-to-Java mapping, not the
-         * classification. Corpus-only: it lands on the already-taught inline / Column coordinate; this
-         * pins the "enum returns are columns" edge that the retired ENUM_RETURN_TYPE enum row asserted.
+         * column on the @table parent, so it classifies exactly like any other inline scalar (carrier
+         * Source, intent Fetch, mapping Column, ColumnField). The enum-ness lives in the GraphQL-to-Java
+         * mapping, not the classification. Corpus-only: it lands on the already-taught Source / Fetch /
+         * Column coordinate; this pins the "enum returns are columns" edge that the retired
+         * ENUM_RETURN_TYPE enum row asserted.
          */
         new Example("enum-column", """
             enum Rating @classifiedType(as: EnumType) { G PG PG13 R NC17 }
             type Film @table(name: "film") {
-              rating: Rating @classified(producer: [], mapping: Column)
+              rating: Rating @classified(carrier: Source, intent: Fetch, mapping: Column)
             }
             type Query { film: Film }
             """),
 
         /*
-         * Child table fields: the producer minimal pair. Both fields return the same @table type over
-         * the same city -> country FK and hold mapping = Table; they differ only on producer.
-         * `country` inlines (producer []), a correlated subquery folded into city's SELECT; `@splitQuery`
-         * flips `countrySplit` to a new keyed query (producer [Query]).
+         * Child table fields over the same city -> country FK. Both return the same @table type and hold
+         * mapping = Table, intent = Fetch. They differ only on the derived new-query layer (not a tuple
+         * axis): `country` inlines as a correlated subquery folded into city's SELECT; `@splitQuery`
+         * flips `countrySplit` to a new keyed query. The verdict is identical (Source / Fetch / Table);
+         * the split is a derived consequence of the @splitQuery slot.
          */
         new Example("child-table", """
             type Country @table(name: "country") @classifiedType(as: TableType) {
-              name: String @field(name: "country") @classified(producer: [], mapping: Column)
+              name: String @field(name: "country") @classified(carrier: Source, intent: Fetch, mapping: Column)
             }
 
             type City @table(name: "city") @classifiedType(as: TableType) {
-              country: Country @classified(producer: [], mapping: Table)
-              countrySplit: Country @splitQuery @classified(producer: [Query], mapping: Table)
+              country: Country @classified(carrier: Source, intent: Fetch, mapping: Table)
+              countrySplit: Country @splitQuery @classified(carrier: Source, intent: Fetch, mapping: Table)
             }
 
             type Query {
-              city: City @classified(producer: [Query], mapping: Table)
+              city: City @classified(carrier: Query, intent: Fetch, mapping: Table)
             }
             """,
             "{ city { country { name } countrySplit { name } } }"),
@@ -90,17 +94,15 @@ public final class ClassifiedCorpus {
         /*
          * Keyed split lookup: a list child whose @lookupKey argument establishes a positional
          * input-list <-> output-list correspondence, fetched by a @splitQuery keyed batch
-         * (SplitLookupTableField). Like the @splitQuery split above it opens a new keyed query
-         * (producer [Query]) and lands on participant @table rows (mapping Table); the @lookupKey
-         * shape only changes how the batch is keyed, not the dimensional verdict. Corpus-only: it is
-         * another leaf on the already-taught [Query] / Table coordinate (its @lookupKey scalar argument
-         * renders fine since hardening item 3, but it teaches no new dimensional lesson).
+         * (SplitLookupTableField). The @lookupKey makes its intent Lookup; it lands on participant @table
+         * rows (mapping Table); the new-query batch shape is derived, not a tuple axis. Corpus-only: it
+         * is another Source / Lookup / Table leaf.
          */
         new Example("split-lookup", """
             type Customer @table(name: "customer") { firstName: String @field(name: "FIRST_NAME") }
             type Store @table(name: "store") {
               customers(customer_id: ID! @lookupKey): [Customer!]! @splitQuery
-                @classified(producer: [Query], mapping: Table)
+                @classified(carrier: Source, intent: Lookup, mapping: Table)
             }
             type Query { store: Store }
             """),
@@ -110,22 +112,22 @@ public final class ClassifiedCorpus {
          * (`title` is a real DB column); a scalar under a record-backed parent maps to Field
          * (`FilmStats.count` is a POJO property, the record having no @table). The non-table object
          * field `FilmDetails.stats` is the object flavor of Field (RecordField). All three are inline
-         * (producer []); only the parent's table-ness moves the mapping axis. The two parents are
-         * record-bound by being service producers' return types (`makeFilmDetailsRecord` ->
+         * Fetch off the Source carrier; only the parent's table-ness moves the mapping axis. The two
+         * parents are record-bound by being service producers' return types (`makeFilmDetailsRecord` ->
          * FilmDetailsRecord, whose sole component is `stats`; `makeFilmStatsRecord` -> FilmStatsRecord,
          * whose sole component is `count`).
          */
         new Example("mapping", """
             type FilmStats {
-              count: Int @classified(producer: [], mapping: Field)
+              count: Int @classified(carrier: Source, intent: Fetch, mapping: Field)
             }
 
             type FilmDetails {
-              stats: FilmStats @classified(producer: [], mapping: Field)
+              stats: FilmStats @classified(carrier: Source, intent: Fetch, mapping: Field)
             }
 
             type Film @table(name: "film") {
-              title: String @classified(producer: [], mapping: Column)
+              title: String @classified(carrier: Source, intent: Fetch, mapping: Column)
               details: FilmDetails
             }
 
@@ -140,25 +142,26 @@ public final class ClassifiedCorpus {
             "{ film { title details { stats { count } } } }"),
 
         /*
-         * Producer minimal pair across the record-handoff boundary. The same FK-reached @table child
-         * (`language` via film_language_id_fkey) inlines into the parent SELECT under the @table parent
-         * Film (producer [], a correlated subquery, TableField) but becomes a keyed re-query under the
-         * record-backed parent FilmDetails (producer [Query], RecordTableField), because the record
-         * handoff has already opened a new DataLoader-backed scope; it cannot fold back into the parent
-         * SELECT. Both hold mapping = Table. FilmDetails is record-bound as makeDummyRecord's return
-         * type; the explicit @reference disambiguates film's two FKs to language.
+         * The record-handoff boundary. The same FK-reached @table child (`language` via
+         * film_language_id_fkey) inlines into the parent SELECT under the @table parent Film (TableField)
+         * but becomes a keyed re-query under the record-backed parent FilmDetails (RecordTableField),
+         * because the record handoff has already opened a new DataLoader-backed scope; it cannot fold
+         * back into the parent SELECT. Both hold the same verdict (Source / Fetch / Table): the new-query
+         * is a derived consequence of the record-handoff slot, not a distinct intent. FilmDetails is
+         * record-bound as makeDummyRecord's return type; the explicit @reference disambiguates film's two
+         * FKs to language.
          */
         new Example("record-table", """
             type Language @table(name: "language") { name: String }
 
             type FilmDetails {
               language: Language @reference(path: [{key: "film_language_id_fkey"}])
-                @classified(producer: [Query], mapping: Table)
+                @classified(carrier: Source, intent: Fetch, mapping: Table)
             }
 
             type Film @table(name: "film") {
               language: Language @reference(path: [{key: "film_language_id_fkey"}])
-                @classified(producer: [], mapping: Table)
+                @classified(carrier: Source, intent: Fetch, mapping: Table)
               details: FilmDetails
             }
 
@@ -175,17 +178,17 @@ public final class ClassifiedCorpus {
             type Language @table(name: "language") { name: String }
 
             type FilmDetails {
-              title: String @classified(producer: [], mapping: Field)
+              title: String @classified(carrier: Source, intent: Fetch, mapping: Field)
             }
 
             type Film @table(name: "film") {
               details: FilmDetails
               rating: String
                 @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "get"})
-                @classified(producer: [Service], mapping: Record)
+                @classified(carrier: Source, intent: QueryService, mapping: Record)
               language: Language
                 @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getLanguage"})
-                @classified(producer: [Service, Query], mapping: Table)
+                @classified(carrier: Source, intent: QueryService, mapping: Table)
             }
 
             type Query {
@@ -194,24 +197,25 @@ public final class ClassifiedCorpus {
                 @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeDetailsProps"})
               externalFilm: Film
                 @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getFilm"})
-                @classified(producer: [Service, Query], mapping: Table)
+                @classified(carrier: Query, intent: QueryService, mapping: Table)
             }
             """),
 
         /*
          * Root @service into a @record: a root query field whose @service resolver returns a non-table
          * @record type (QueryServiceRecordField). The service call produces the record, which is then
-         * materialized rather than projected from the catalog, so it is producer [Service], mapping
-         * Record, the root analog of the ServiceRecordField child field above (Film.rating). Corpus-only:
-         * it lands on the already-taught Service / Record coordinate. The @record directive on the return
-         * type is load-bearing; without it the root @service payload-carrier validation rejects the field.
+         * materialized rather than projected from the catalog, so it is carrier Query, intent
+         * QueryService, mapping Record, the root analog of the ServiceRecordField child field above
+         * (Film.rating). Corpus-only: it lands on the already-taught QueryService / Record coordinate. The
+         * @record directive on the return type is load-bearing; without it the root @service
+         * payload-carrier validation rejects the field.
          */
         new Example("query-service-record", """
             type FilmDetails @record { title: String }
             type Query {
               filmDetails: FilmDetails
                 @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getDetails"})
-                @classified(producer: [Service], mapping: Record)
+                @classified(carrier: Query, intent: QueryService, mapping: Record)
             }
             """),
 
@@ -222,12 +226,13 @@ public final class ClassifiedCorpus {
          * (`as: Backed`), a Java record is JavaRecordType, a jOOQ TableRecord is JooqTableRecordType.
          * Corpus-only: the @classifiedType axis is asserted directly; there is no field-side dimensional
          * lesson here. The `name` field on the Java-record-backed type (a record component of TestRecordDto)
-         * doubles as the fixture's required field coordinate, classifying inline / Field off the backing.
+         * doubles as the fixture's required field coordinate, classifying Source / Fetch / Field off the
+         * backing.
          */
         new Example("result-backing", """
             type PojoBacked @classifiedType(as: Backed) { id: ID }
             type JavaRecordBacked @classifiedType(as: JavaRecordType) {
-              name: String @classified(producer: [], mapping: Field)
+              name: String @classified(carrier: Source, intent: Fetch, mapping: Field)
             }
             type JooqTableRecordBacked @classifiedType(as: JooqTableRecordType) { id: ID }
             type Query {
@@ -244,13 +249,13 @@ public final class ClassifiedCorpus {
          * Fields on an @error parent. The @error contract restricts the field set to exactly
          * `path: [String!]!` and `message: String!`; both resolve off the developer-supplied error
          * class via graphql-java's default PropertyDataFetcher, so both classify as PropertyField
-         * (producer [], mapping Field). Corpus-only: it lands on the already-taught inline / Field
+         * (Source / Fetch / Field). Corpus-only: it lands on the already-taught Source / Fetch / Field
          * coordinate, and the @error type itself is not a documentation-query selection shape.
          */
         new Example("error-field", """
             type MyError @error(handlers: [{handler: GENERIC, className: "java.lang.IllegalArgumentException"}]) {
-              path: [String!]! @classified(producer: [], mapping: Field)
-              message: String! @classified(producer: [], mapping: Field)
+              path: [String!]! @classified(carrier: Source, intent: Fetch, mapping: Field)
+              message: String! @classified(carrier: Source, intent: Fetch, mapping: Field)
             }
             type Query { x: String }
             """),
@@ -262,13 +267,14 @@ public final class ClassifiedCorpus {
          * per-handler accessor check fires on the carrier, not the @error type, so the type stays
          * ErrorType. And an @error co-located with @record stays ErrorType with the @record silently
          * ignored (the D1 precedence rule), not a conflict. Corpus-only: the @classifiedType axis is
-         * asserted directly; `path` doubles as the fixtures' required field coordinate (inline / Field).
+         * asserted directly; `path` doubles as the fixtures' required field coordinate (Source / Fetch /
+         * Field).
          */
         new Example("error-type", """
             enum Severity { LOW HIGH }
             type ExtraFieldError @error(handlers: [{handler: GENERIC, className: "java.lang.IllegalArgumentException"}])
                 @classifiedType(as: ErrorType) {
-              path: [String!]! @classified(producer: [], mapping: Field)
+              path: [String!]! @classified(carrier: Source, intent: Fetch, mapping: Field)
               message: String!
               severity: Severity!
             }
@@ -285,14 +291,14 @@ public final class ClassifiedCorpus {
         /*
          * Nesting: a plain object child (no @table, no @record) on a @table parent inlines into the
          * parent's projection, inheriting the parent's table context (NestingField). Its scalars resolve
-         * against the parent table, so the field is producer [] (no new query) and maps to Table.
-         * Corpus-only (the inline-Table verdict is already taught by the producer minimal pair); this
-         * adds the NestingField leaf to the corpus's covered set.
+         * against the parent table, so the field maps to Table and its intent is Nesting (a distinct
+         * structural operation, asserted, not derived from an absent join-path). Corpus-only; this adds
+         * the NestingField leaf and the Nesting intent to the corpus's covered set.
          */
         new Example("nesting", """
             type FilmDetails @classifiedType(as: NestingType) { title: String description: String }
             type Film @table(name: "film") {
-              details: FilmDetails @classified(producer: [], mapping: Table)
+              details: FilmDetails @classified(carrier: Source, intent: Nesting, mapping: Table)
             }
             type Query { film: Film }
             """),
@@ -300,13 +306,13 @@ public final class ClassifiedCorpus {
         /*
          * Constructor passthrough: a @record child type under a @table parent. Film.details builds the
          * record-backed FilmDetails from the parent's row in the parent SELECT (ConstructorField), so it
-         * is producer [] (no new query) and maps to Record (it materializes a record, not a catalog
+         * is a Source-carrier Fetch that maps to Record (it materializes a record, not a catalog
          * projection). FilmDetails is record-bound as makeFilmDetailsRating's return type. Corpus-only.
          */
         new Example("constructor", """
             type FilmDetails { rating: String }
             type Film @table(name: "film") {
-              details: FilmDetails @classified(producer: [], mapping: Record)
+              details: FilmDetails @classified(carrier: Source, intent: Fetch, mapping: Record)
             }
             type Query {
               film: Film
@@ -318,26 +324,26 @@ public final class ClassifiedCorpus {
         /*
          * Polymorphic children and roots are catalog-bound over their participant tables: the mapping is
          * Table (the projection lands on participant @table rows), with the participant set carried as a
-         * derived slot rather than a distinct mapping value. A plain-interface or union child opens a new
-         * keyed query (producer [Query], InterfaceField / UnionField), as does any polymorphic root
-         * (QueryInterfaceField / QueryUnionField). The exception is a @table+@discriminate interface child
-         * (TableInterfaceField): it is FK-correlatable from the parent and classifies inline (producer
-         * []), though the generator currently emits a per-parent query (the R288 defect; the corpus
-         * asserts the correct verdict). Of the four shapes below (plain interface, union, table-interface,
-         * Relay Node) the interface and the union render doc examples, the interface over its shared
-         * interface-level field and the union through inline fragments on its participants (renderer
-         * hardening item 3); table-interface and Relay Node stay corpus-only, additional leaves on the
-         * already-taught polymorphic principle rather than new dimensional lessons.
+         * derived slot rather than a distinct mapping value, and the intent is Fetch. A plain-interface or
+         * union child (InterfaceField / UnionField) and any polymorphic root (QueryInterfaceField /
+         * QueryUnionField) share that Fetch / Table verdict; the new-query they open is derived, not an
+         * axis. The exception's verdict is the same: a @table+@discriminate interface child
+         * (TableInterfaceField) is FK-correlatable from the parent and classifies as a plain Fetch,
+         * though the generator currently emits a per-parent query (the R288 defect; the corpus asserts the
+         * correct verdict). Of the four shapes below (plain interface, union, table-interface, Relay Node)
+         * the interface and the union render doc examples, the interface over its shared interface-level
+         * field and the union through inline fragments on its participants (renderer hardening item 3);
+         * table-interface and Relay Node stay corpus-only.
          */
         new Example("interface", """
             interface Named @classifiedType(as: InterfaceType) { name: String }
             type Address implements Named @table(name: "address") { name: String @field(name: "ADDRESS") }
             type Customer @table(name: "customer") {
-              address: Named @classified(producer: [Query], mapping: Table)
+              address: Named @classified(carrier: Source, intent: Fetch, mapping: Table)
             }
             type Query {
               customer: Customer
-              anyNamed: Named @classified(producer: [Query], mapping: Table)
+              anyNamed: Named @classified(carrier: Query, intent: Fetch, mapping: Table)
             }
             """,
             "{ customer { address { name } } }"),
@@ -347,11 +353,11 @@ public final class ClassifiedCorpus {
             type Actor @table(name: "actor") { firstName: String @field(name: "FIRST_NAME") }
             union FilmOrActor @classifiedType(as: UnionType) = Film | Actor
             type FilmActor @table(name: "film_actor") {
-              related: FilmOrActor @classified(producer: [Query], mapping: Table)
+              related: FilmOrActor @classified(carrier: Source, intent: Fetch, mapping: Table)
             }
             type Query {
               filmActor: FilmActor
-              search: FilmOrActor @classified(producer: [Query], mapping: Table)
+              search: FilmOrActor @classified(carrier: Query, intent: Fetch, mapping: Table)
             }
             """,
             "{ filmActor { related { ... on Film { title } ... on Actor { firstName } } } }"),
@@ -360,11 +366,11 @@ public final class ClassifiedCorpus {
             interface MediaItem @table(name: "film") @discriminate(on: "kind") @classifiedType(as: TableInterfaceType) { title: String }
             type Film implements MediaItem @table(name: "film") @discriminator(value: "film") { title: String }
             type Inventory @table(name: "inventory") {
-              media: MediaItem @classified(producer: [], mapping: Table)
+              media: MediaItem @classified(carrier: Source, intent: Fetch, mapping: Table)
             }
             type Query {
               inventory: Inventory
-              topMedia: MediaItem @classified(producer: [Query], mapping: Table)
+              topMedia: MediaItem @classified(carrier: Query, intent: Fetch, mapping: Table)
             }
             """),
 
@@ -372,9 +378,9 @@ public final class ClassifiedCorpus {
             interface Node { id: ID! }
             type Film implements Node @table(name: "film") { id: ID! title: String }
             type Query {
-              node(id: ID!): Node @classified(producer: [Query], mapping: Table)
-              nodes(ids: [ID!]!): [Node] @classified(producer: [Query], mapping: Table)
-              internalFilmNode(id: ID): Node @classified(producer: [Query], mapping: Table)
+              node(id: ID!): Node @classified(carrier: Query, intent: NodeResolve, mapping: Table)
+              nodes(ids: [ID!]!): [Node] @classified(carrier: Query, intent: NodeResolve, mapping: Table)
+              internalFilmNode(id: ID): Node @classified(carrier: Query, intent: NodeResolve, mapping: Table)
             }
             """),
 
@@ -389,47 +395,48 @@ public final class ClassifiedCorpus {
 
         /*
          * Scalar @reference and @externalField on a @table parent: both are inline catalog-column
-         * carriers (producer [], mapping Column). `languageName` resolves a FK and projects the joined
-         * column (ColumnReferenceField); `computedRating` inlines a developer-supplied jOOQ Field<X>
-         * into the parent SELECT (ComputedField, a mirror-side computed column).
+         * carriers (Source / Fetch / Column). `languageName` resolves a FK and projects the joined
+         * column (ColumnReferenceField); `computedRating` inlines a developer-supplied jOOQ Field<X> into
+         * the parent SELECT (ComputedField; its mapping stays Column under R299, the refined model
+         * reclassifies it to a domain Field/Record in R290).
          */
         new Example("reference-and-computed", """
             type Film @table(name: "film") {
               languageName: String @field(name: "name") @reference(path: [{key: "film_language_id_fkey"}])
-                @classified(producer: [], mapping: Column)
+                @classified(carrier: Source, intent: Fetch, mapping: Column)
               computedRating: String
                 @externalField(reference: {className: "no.sikt.graphitron.rewrite.TestExternalFieldStub", method: "rating"})
-                @classified(producer: [], mapping: Column)
+                @classified(carrier: Source, intent: Fetch, mapping: Column)
             }
             type Query { film: Film }
             """),
 
         /*
          * @lookupKey without @splitQuery, on a child and on a root. The child `FilmActor.actors` stays
-         * an inline correlated subquery keyed by the lookup args (LookupTableField, producer [], mapping
+         * an inline correlated subquery keyed by the lookup args (LookupTableField, Source / Lookup /
          * Table); the root `Query.filmById` is a new query keyed by the lookup args (QueryLookupTableField,
-         * producer [Query], mapping Table). @lookupKey shapes the batch key, not the producer verdict.
+         * Query / Lookup / Table). @lookupKey makes the intent Lookup; the batch-key shape is a slot.
          */
         new Example("lookup", """
             type Actor @table(name: "actor") { name: String }
             type Film @table(name: "film") { filmId: Int! @field(name: "film_id") }
             type FilmActor @table(name: "film_actor") {
               actors(actor_id: [Int!]! @lookupKey): [Actor!]!
-                @classified(producer: [], mapping: Table)
+                @classified(carrier: Source, intent: Lookup, mapping: Table)
             }
             type Query {
               filmActor: FilmActor
               filmById(film_id: [ID] @lookupKey): [Film!]!
-                @classified(producer: [Query], mapping: Table)
+                @classified(carrier: Query, intent: Lookup, mapping: Table)
             }
             """),
 
         /*
          * @tableMethod (a developer-supplied table source FK-correlatable from the parent) on a child
-         * and on a root. The child `Film.language` is inline-correlatable (TableMethodField, producer [],
-         * mapping Table; the generator's current per-parent query is the R288 defect, the corpus asserts
-         * the correct inline verdict). The root `Query.filteredFilms` starts a new query
-         * (QueryTableMethodTableField, producer [Query], mapping Table).
+         * and on a root. The child `Film.language` is inline-correlatable (TableMethodField, Source /
+         * Fetch / Table; the generator's current per-parent query is the R288 defect, the corpus asserts
+         * the correct verdict). The root `Query.filteredFilms` starts a new query
+         * (QueryTableMethodTableField, Query / Fetch / Table).
          */
         new Example("table-method", """
             type Language @table(name: "language") { name: String }
@@ -438,32 +445,33 @@ public final class ClassifiedCorpus {
               language: Language
                 @tableMethod(className: "no.sikt.graphitron.rewrite.TestTableMethodStub", method: "getLanguage")
                 @reference(path: [{key: "film_language_id_fkey"}])
-                @classified(producer: [], mapping: Table)
+                @classified(carrier: Source, intent: Fetch, mapping: Table)
             }
             type Query {
               film: Film
               filteredFilms: [Film!]!
                 @tableMethod(className: "no.sikt.graphitron.rewrite.TestTableMethodStub", method: "getFilmWithContext", contextArguments: ["tenantId"])
-                @classified(producer: [Query], mapping: Table)
+                @classified(carrier: Query, intent: Fetch, mapping: Table)
             }
             """),
 
         /*
          * @table children under a jOOQ-TableRecord-backed @record parent, reached by @lookupKey and by
-         * @tableMethod. The record handoff has already opened a new keyed scope, so both re-query
-         * (producer [Query], mapping Table): `FilmDetails.language` is a RecordLookupTableField and
-         * `FilmDetails.inventories` a RecordTableMethodField. FilmDetails is record-bound as getFilm's
-         * jOOQ-TableRecord return type, which supplies the FK source key for both.
+         * @tableMethod. The record handoff has already opened a new keyed scope, so both re-query (the
+         * new-query is derived): `FilmDetails.language` is a RecordLookupTableField (its @lookupKey makes
+         * the intent Lookup, mapping Table) and `FilmDetails.inventories` a RecordTableMethodField (Fetch,
+         * Table). FilmDetails is record-bound as getFilm's jOOQ-TableRecord return type, which supplies
+         * the FK source key for both.
          */
         new Example("record-method", """
             type Language @table(name: "language") { name: String }
             type Inventory @table(name: "inventory") { inventoryId: Int! @field(name: "inventory_id") }
             type FilmDetails {
               language(language_id: ID! @lookupKey): Language @reference(path: [{key: "film_language_id_fkey"}])
-                @classified(producer: [Query], mapping: Table)
+                @classified(carrier: Source, intent: Lookup, mapping: Table)
               inventories: [Inventory!]!
                 @tableMethod(className: "no.sikt.graphitron.rewrite.TestTableMethodStub", method: "getInventory")
-                @classified(producer: [Query], mapping: Table)
+                @classified(carrier: Source, intent: Fetch, mapping: Table)
             }
             type Film @table(name: "film") { details: FilmDetails }
             type Query {
@@ -475,9 +483,9 @@ public final class ClassifiedCorpus {
 
         /*
          * A scalar @reference on a @table+@discriminate interface participant whose FK targets a
-         * different table: ParticipantColumnReferenceField (producer [], mapping Column). It gets its
-         * own leaf so the interface fetcher's conditional LEFT JOIN wires the cross-table projection and
-         * the per-field DataFetcher reads it back by alias.
+         * different table: ParticipantColumnReferenceField (Source / Fetch / Column). It gets its own
+         * leaf so the interface fetcher's conditional LEFT JOIN wires the cross-table projection and the
+         * per-field DataFetcher reads it back by alias.
          */
         new Example("participant-reference", """
             interface Content @table(name: "content") @discriminate(on: "CONTENT_TYPE") {
@@ -486,7 +494,7 @@ public final class ClassifiedCorpus {
             type FilmContent implements Content @table(name: "content") @discriminator(value: "FILM") {
               contentId: Int! @field(name: "CONTENT_ID")
               rating: String @reference(path: [{key: "content_film_id_fkey"}]) @field(name: "RATING")
-                @classified(producer: [], mapping: Column)
+                @classified(carrier: Source, intent: Fetch, mapping: Column)
             }
             type ShortContent implements Content @table(name: "content") @discriminator(value: "SHORT") {
               contentId: Int! @field(name: "CONTENT_ID")
@@ -562,8 +570,8 @@ public final class ClassifiedCorpus {
          * The @service ID-carrier: a mutation whose @service producer returns rows and whose payload
          * exposes an [ID] @nodeId(typeName:) data field. That data field encodes node ids straight off
          * the producer's in-memory records (no re-fetch), an inline catalog-column carrier
-         * (SingleRecordIdField, producer [], mapping Column). The @nodeId(typeName: "Film") grounds the
-         * encode on Film's @table; the errors field is the payload's error channel.
+         * (SingleRecordIdField, Source / Fetch / Column). The @nodeId(typeName: "Film") grounds the encode
+         * on Film's @table; the errors field is the payload's error channel.
          */
         new Example("node-id-carrier", """
             interface Node { id: ID! }
@@ -574,7 +582,7 @@ public final class ClassifiedCorpus {
             }
             union DeleteFilmsError = FilmErr
             type FilmIdsPayload {
-              filmIds: [ID] @nodeId(typeName: "Film") @classified(producer: [], mapping: Column)
+              filmIds: [ID] @nodeId(typeName: "Film") @classified(carrier: Source, intent: Fetch, mapping: Column)
               errors: [DeleteFilmsError]
             }
             type Query { x: String }
@@ -587,9 +595,10 @@ public final class ClassifiedCorpus {
         /*
          * DML payload-carrier mutations (UPDATE and its bulk sibling, plus the bulk INSERT carrier).
          * Each returns a plain object wrapping one @table data field and exposes the affected rows as a
-         * record, so the mutation field is producer [Dml], mapping Record (MutationUpdatePayloadField,
-         * MutationBulkUpdatePayloadField, and MutationBulkDmlRecordField for the bulk INSERT carrier).
-         * Distinct payload types keep the per-kind carrier scans isolated. The DELETE payload siblings
+         * record, so the mutation field is carrier Mutation, mapping Record, with the write verb as the
+         * intent: UPDATE for MutationUpdatePayloadField / MutationBulkUpdatePayloadField, and Insert for
+         * the bulk INSERT carrier (MutationBulkDmlRecordField, whose DmlKind reads INSERT). Distinct
+         * payload types keep the per-kind carrier scans isolated. The DELETE payload siblings
          * (MutationDeletePayloadField / MutationBulkDeletePayloadField) are not corpus-covered: post-R287
          * their only admissible data field is an ID-element (a @table-element projection off a deleted
          * row is impossible), which needs the synthesised __NODE_TYPE_ID metadata absent from the corpus
@@ -607,21 +616,21 @@ public final class ClassifiedCorpus {
             type Mutation {
               createFilmsPayload(in: [FilmCreateInput!]!): FilmInsertBulkPayload
                 @mutation(typeName: INSERT)
-                @classified(producer: [Dml], mapping: Record)
+                @classified(carrier: Mutation, intent: Insert, mapping: Record)
               updateFilmPayload(in: FilmUpdateInput!): FilmUpdatePayload
                 @mutation(typeName: UPDATE)
-                @classified(producer: [Dml], mapping: Record)
+                @classified(carrier: Mutation, intent: Update, mapping: Record)
               updateFilmsPayload(in: [FilmUpdateInput!]!): FilmUpdateBulkPayload
                 @mutation(typeName: UPDATE)
-                @classified(producer: [Dml], mapping: Record)
+                @classified(carrier: Mutation, intent: Update, mapping: Record)
             }
             """),
 
         /*
-         * DML side: an INSERT that writes then projects the inserted row (a [Dml, Query] pipeline). The
-         * write produces the row (the Dml step), then a follow-up SELECT projects the @table return (the
-         * trailing Query step), so the field is producer [Dml, Query], mapping Table. Doc example: the
-         * projection query pulls in the FilmInput argument's input-object closure (renderer hardening
+         * DML side: an INSERT that writes then projects the inserted row. The write produces the row,
+         * then a follow-up SELECT projects the @table return; the verdict is carrier Mutation, intent
+         * Insert, mapping Table, and the follow-up re-fetch is derived (not a tuple axis). Doc example:
+         * the projection query pulls in the FilmInput argument's input-object closure (renderer hardening
          * item 3), so the rendered excerpt shows the input the mutation consumes rather than dangling.
          */
         new Example("dml", """
@@ -631,33 +640,33 @@ public final class ClassifiedCorpus {
             type Mutation {
               createFilm(in: FilmInput!): Film
                 @mutation(typeName: INSERT)
-                @classified(producer: [Dml, Query], mapping: Table)
+                @classified(carrier: Mutation, intent: Insert, mapping: Table)
             }
             """,
             "mutation { createFilm { title } }"),
 
         /*
          * The remaining root mutation forms (INSERT is the `dml` example above). UPDATE is a DML write
-         * that projects the affected @table row back, so it shares the INSERT's [Dml, Query] / Table
-         * verdict (MutationUpdateTableField). DELETE (R287) cannot project a @table (the row is gone;
-         * RETURNING carries only the PK), so it tops out at an encoded-ID return: producer [Dml],
-         * mapping Column (MutationDeleteTableField with an Encoded* return-expression arm, no follow-up
-         * Query). DELETE admits two ways onto the same verdict: a PK-covering filter input (`deleteFilm`)
-         * or an explicit `multiRow: true` broadcast over a non-PK filter (`deleteFilmsBroadcast`). An
-         * @service mutation re-queries the catalog for
-         * its @table return (MutationServiceTableField, [Service, Query] / Table) or materializes a
-         * non-table @record (MutationServiceRecordField, [Service] / Record). A DML payload carrier (a
-         * plain object wrapping one @table data field) exposes the RETURNING rows as a record, so the
-         * carrier itself is [Dml] / Record (MutationDmlRecordField), the follow-up projection being the
-         * data field's own [Query]. Corpus-only: the [Dml, Query] / Table principle is taught by the
-         * `dml` doc example above, so these remaining root forms are additional leaves on it rather than
-         * new dimensional lessons (their input objects render fine since hardening item 3).
+         * that projects the affected @table row back, so it is Mutation / Update / Table
+         * (MutationUpdateTableField; the projection re-fetch is derived). DELETE (R287) cannot project a
+         * @table (the row is gone; RETURNING carries only the PK), so it tops out at an encoded-ID return:
+         * Mutation / Delete / Column (MutationDeleteTableField with an Encoded* return-expression arm).
+         * DELETE admits two ways onto the same verdict: a PK-covering filter input (`deleteFilm`) or an
+         * explicit `multiRow: true` broadcast over a non-PK filter (`deleteFilmsBroadcast`). An @service
+         * mutation re-queries the catalog for its @table return (MutationServiceTableField, Mutation /
+         * MutationService / Table) or materializes a non-table @record (MutationServiceRecordField,
+         * Mutation / MutationService / Record). A DML payload carrier (a plain object wrapping one @table
+         * data field) exposes the RETURNING rows as a record, so the carrier itself is Mutation / Insert /
+         * Record (MutationDmlRecordField, DmlKind INSERT), the follow-up projection being the data field's
+         * own concern (a Source / Fetch / Table SingleRecordTableField on the payload). Corpus-only: these
+         * remaining root forms are additional leaves on the principles the `dml` and `dml-payloads`
+         * examples teach (their input objects render fine since hardening item 3).
          */
         new Example("mutation-roots", """
             interface Node { id: ID! }
             type Film implements Node @table(name: "film") @node { id: ID! @nodeId title: String }
             type FilmDetails @record { title: String }
-            type FilmPayload { film: Film @classified(producer: [Query], mapping: Table) }
+            type FilmPayload { film: Film @classified(carrier: Source, intent: Fetch, mapping: Table) }
             input FilmKeyInput @table(name: "film") { filmId: Int! @field(name: "film_id") }
             input FilmUpdateInput @table(name: "film") { filmId: Int! @field(name: "film_id") title: String }
             input FilmTitleInput @table(name: "film") { title: String @field(name: "title") }
@@ -666,22 +675,22 @@ public final class ClassifiedCorpus {
             type Mutation {
               updateFilm(in: FilmUpdateInput!): Film
                 @mutation(typeName: UPDATE)
-                @classified(producer: [Dml, Query], mapping: Table)
+                @classified(carrier: Mutation, intent: Update, mapping: Table)
               deleteFilm(in: FilmKeyInput!): ID
                 @mutation(typeName: DELETE)
-                @classified(producer: [Dml], mapping: Column)
+                @classified(carrier: Mutation, intent: Delete, mapping: Column)
               deleteFilmsBroadcast(in: FilmTitleInput!): ID
                 @mutation(typeName: DELETE, multiRow: true)
-                @classified(producer: [Dml], mapping: Column)
+                @classified(carrier: Mutation, intent: Delete, mapping: Column)
               externalMutation: Film
                 @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "runFilm"})
-                @classified(producer: [Service, Query], mapping: Table)
+                @classified(carrier: Mutation, intent: MutationService, mapping: Table)
               externalRecord: FilmDetails
                 @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "runDetails"})
-                @classified(producer: [Service], mapping: Record)
+                @classified(carrier: Mutation, intent: MutationService, mapping: Record)
               createFilmPayload(in: FilmCreateInput!): FilmPayload
                 @mutation(typeName: INSERT)
-                @classified(producer: [Dml], mapping: Record)
+                @classified(carrier: Mutation, intent: Insert, mapping: Record)
             }
             """));
 

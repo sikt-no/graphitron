@@ -1,7 +1,7 @@
 ---
 id: R299
 title: Migrate the R281 corpus into the carrier x intent x mapping model
-status: Ready
+status: In Review
 bucket: structural
 priority: 3
 theme: structural-refactor
@@ -76,6 +76,10 @@ field and deleting the adapter is R290.
 - **Model complete, coverage partial.** The `Intent` enum is the full set; intents with no current leaf
   (`EntityResolve`, `Count`, `Facet`, `UpdateMatching`, `DeleteMatching`) stay in the enum as **declared
   gaps**, exercised-or-allowlisted (the `NO_CASE_REQUIRED` precedent), never silently absent or pruned.
+  Implementation note: `Upsert` joins them as a **sixth** allowlisted gap of a different kind, a leaf
+  that exists but is upstream-rejected (the classifier rejects every UPSERT mutation pending R145, the
+  reason `VariantCoverageTest.NO_CASE_REQUIRED` already carries for `MutationUpsertTableField`), so no
+  schema-reachable fixture can land on it.
 
 ## Sequencing and acceptance
 
@@ -88,8 +92,8 @@ Acceptance is the unit/corpus tier:
 
 - the `LeafTupleAdapter` switch stays exhaustive over `OutputField` (compiler-enforced);
 - a guard adapts `everyDimensionValueIsExercised` so every `Carrier` and `Intent` value is *either*
-  exercised by a fixture *or* on an explicit known-gap list with a stated reason (the five gap intents),
-  following `NO_CASE_REQUIRED`;
+  exercised by a fixture *or* on an explicit known-gap list with a stated reason (the five model gaps
+  plus the upstream-rejected `Upsert`), following `NO_CASE_REQUIRED`;
 - `Carrier`/`Intent` in `ClassifiedDsl.PRELUDE` are mirrored against the adapter's value sets;
 - the `@classified` fixtures assert `(carrier, intent, mapping)`, `VariantCoverageTest` stays green, and
   the doc renders.
