@@ -336,7 +336,7 @@ to named methods. The signals it landed cleanly:
     additionally assert the wrapped read method now exists on the class.
 * `DataFetcherKind.LAMBDA` (and the `wiringFor` lambda arms) become unreachable for registration
   values; remove the dead arms. `COLUMN_FETCHER` stays live (it now wraps a method reference) and
-  `METHOD_REFERENCE` stays live; `PROPERTY_DATA_FETCHER` becomes unreachable and is removed.
+  `METHOD_REFERENCE` stays live; `PROPERTY_FETCHER` becomes unreachable and is removed.
 * New per-type classes appear and are asserted by the existing "class is emitted" style
   (`FetcherPipelineTest` already does `assertThat(classes).contains("FilmFetchers", ...)`):
   `<Conn>Fetchers`, `<Edge>Fetchers`, `<ErrorType>Fetchers`, and a `<NestedType>Fetchers` for a
