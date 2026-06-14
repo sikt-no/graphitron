@@ -514,33 +514,30 @@ class GraphitronSchemaClassGeneratorTest {
 
     @Test
     void build_errorTypeFieldFetchers_pathSynthesisRoutesGraphQLErrorThroughGetPath() {
-        // GraphQLError sources route through GraphQLError.getPath() (preserving per-violation
-        // paths recorded by ConstraintViolations.toGraphQLError). Throwable sources fall back
-        // to env.getExecutionStepInfo().getPath().toList() so the SDL field's [String!]!
-        // non-null contract holds.
-        var body = buildBody(ERROR_UNION_SDL);
-        assertThat(body).contains("ge.getPath()");
-        assertThat(body).contains("env.getExecutionStepInfo().getPath().toList()");
+        // R303: the path read is reified onto <ErrorType>Fetchers. GraphQLError sources route
+        // through GraphQLError.getPath() (preserving per-violation paths recorded by
+        // ConstraintViolations.toGraphQLError); Throwable sources fall back to
+        // env.getExecutionStepInfo().getPath().toList() so the SDL field's [String!]! non-null
+        // contract holds.
+        var fetchers = errorFetcherSource(ERROR_UNION_SDL, "ValidationErr");
+        assertThat(fetchers).contains("ge.getPath()");
+        assertThat(fetchers).contains("env.getExecutionStepInfo().getPath().toList()");
     }
 
     @Test
-    void build_errorTypeFieldFetchers_castDisambiguatesDataFetcherOverloadAndUsesGetSource() {
-        // GraphQLCodeRegistry.Builder.dataFetcher(FieldCoordinates, ...) has two overloads
-        // (DataFetcher<?> and DataFetcherFactory<?>) that an implicitly-typed lambda can't
-        // pick between. The emitted lambdas must therefore carry an explicit DataFetcher<Object>
-        // cast, and read the source via DataFetchingEnvironment.getSource() (the canonical
-        // accessor on DataFetchingEnvironment in graphql-java 25; getObject() exists only
-        // on TypeResolutionEnvironment, used by typeResolver lambdas).
+    void build_errorTypeFieldFetchers_wiringIsMethodReferenceIntoReifiedClass() {
+        // R303: the schema build() body wires <ErrorType>Fetchers::path / ::message (method
+        // references, no DataFetcher<Object> cast lambda); the reads themselves are named methods
+        // on the reified class that read the source via DataFetchingEnvironment.getSource() (the
+        // canonical accessor in graphql-java 25; getObject() exists only on TypeResolutionEnvironment).
         var body = buildBody(ERROR_UNION_SDL);
-        // Cast appears at every dataFetcher call site (one per @error field fetcher).
-        assertThat(body).contains("(graphql.schema.DataFetcher<java.lang.Object>) env -> {");
-        // Each dataFetcher block reads the source via getSource() and not via the absent getObject().
-        var pathStart = body.indexOf("FieldCoordinates.coordinates(\"ValidationErr\", \"path\")");
-        var pathEnd = body.indexOf("});", pathStart);
-        assertThat(pathStart).isGreaterThanOrEqualTo(0);
-        var pathBlock = body.substring(pathStart, pathEnd);
-        assertThat(pathBlock).contains("env.getSource()");
-        assertThat(pathBlock).doesNotContain("env.getObject()");
+        assertThat(body).contains("ValidationErrFetchers::path");
+        assertThat(body).contains("ValidationErrFetchers::message");
+        assertThat(body).doesNotContain("(graphql.schema.DataFetcher<java.lang.Object>) env -> {");
+
+        var fetchers = errorFetcherSource(ERROR_UNION_SDL, "ValidationErr");
+        assertThat(fetchers).contains("env.getSource()");
+        assertThat(fetchers).doesNotContain("env.getObject()");
     }
 
     @Test
@@ -678,6 +675,17 @@ class GraphitronSchemaClassGeneratorTest {
      */
     private static String buildBody(String sdl) {
         return generate(sdl).toString();
+    }
+
+    /** Renders the reified {@code <typeName>Fetchers} class for an @error type (R303). */
+    private static String errorFetcherSource(String sdl, String typeName) {
+        var bundle = TestSchemaHelper.buildBundle(sdl);
+        return no.sikt.graphitron.rewrite.generators.util.ErrorTypeFetcherClassGenerator
+            .generate(bundle.model(), OUTPUT_PKG).stream()
+            .filter(t -> t.name().equals(typeName + "Fetchers"))
+            .findFirst()
+            .orElseThrow(() -> new AssertionError("no " + typeName + "Fetchers generated"))
+            .toString();
     }
 
     /**

@@ -30,7 +30,8 @@ class ConnectionRegistrationsTest {
         assertThat(body).contains("\"nodes\"");
         assertThat(body).contains("\"pageInfo\"");
         assertThat(body).contains("\"totalCount\"");
-        assertThat(body).contains("ConnectionHelper::totalCount");
+        // R303: wiring references the per-connection delegate class, which forwards to ConnectionHelper.
+        assertThat(body).contains("QueryFilmsConnectionFetchers::totalCount");
     }
 
     @Test
@@ -43,7 +44,7 @@ class ConnectionRegistrationsTest {
             type Query { films: FilmsConnection }
             """, "FilmsConnection");
         assertThat(body).contains("\"totalCount\"");
-        assertThat(body).contains("ConnectionHelper::totalCount");
+        assertThat(body).contains("FilmsConnectionFetchers::totalCount");
     }
 
     @Test

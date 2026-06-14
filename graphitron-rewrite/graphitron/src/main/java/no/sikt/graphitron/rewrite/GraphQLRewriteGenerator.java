@@ -30,6 +30,8 @@ import no.sikt.graphitron.rewrite.generators.schema.OneOfDirectiveSdl;
 import no.sikt.graphitron.rewrite.generators.schema.OutcomeClassGenerator;
 import no.sikt.graphitron.rewrite.generators.schema.SchemaSdlEmitter;
 import no.sikt.graphitron.rewrite.generators.util.LightFetcherClassGenerator;
+import no.sikt.graphitron.rewrite.generators.util.ConnectionFetcherClassGenerator;
+import no.sikt.graphitron.rewrite.generators.util.ErrorTypeFetcherClassGenerator;
 import no.sikt.graphitron.rewrite.generators.util.ConnectionHelperClassGenerator;
 import no.sikt.graphitron.rewrite.generators.util.ConnectionResultClassGenerator;
 import no.sikt.graphitron.rewrite.generators.util.EntityFetcherDispatchClassGenerator;
@@ -214,6 +216,8 @@ public class GraphQLRewriteGenerator {
         write(TypeConditionsGenerator.generate(schema, outputPackage),                            "conditions", emittedThisRun);
         write(QueryConditionsGenerator.generate(schema, outputPackage),                           "conditions", emittedThisRun);
         write(fetcherClasses,                                                                      "fetchers",   emittedThisRun);
+        write(ConnectionFetcherClassGenerator.generate(schema, outputPackage),                     "fetchers",   emittedThisRun);
+        write(ErrorTypeFetcherClassGenerator.generate(schema, outputPackage),                      "fetchers",   emittedThisRun);
         write(QueryNodeFetcherClassGenerator.generate(schema, outputPackage),                      "fetchers",   emittedThisRun);
         emittedThisRun.add(SchemaSdlEmitter.emit(assembled, schema, federationLink, ctx.outputResourcesDirectory(), outputPackage));
         sweepOrphans(emittedThisRun);
