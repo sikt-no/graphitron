@@ -30,6 +30,41 @@ public sealed interface QueryField extends RootField
             QueryField.QueryUnionField,
             QueryField.QueryServiceTableField, QueryField.QueryServiceRecordField {
 
+    /** Every {@code QueryField} leaf is on the {@code Query} root, so the carrier is {@link Carrier#Query}. */
+    @Override default Carrier carrier() { return Carrier.Query; }
+
+    @Override default Intent intent() {
+        return switch (this) {
+            case QueryTableField ignored -> Intent.Fetch;
+            case QueryTableMethodTableField ignored -> Intent.Fetch;
+            case QueryTableInterfaceField ignored -> Intent.Fetch;
+            case QueryInterfaceField ignored -> Intent.Fetch;
+            case QueryUnionField ignored -> Intent.Fetch;
+            case QueryLookupTableField ignored -> Intent.Lookup;
+            case QueryNodeField ignored -> Intent.NodeResolve;
+            case QueryNodesField ignored -> Intent.NodeResolve;
+            case QueryServiceTableField ignored -> Intent.QueryService;
+            case QueryServiceRecordField ignored -> Intent.QueryService;
+        };
+    }
+
+    @Override default Mapping mapping() {
+        return switch (this) {
+            case QueryTableField f -> OutputField.tableMapping(f.returnType());
+            case QueryLookupTableField f -> OutputField.tableMapping(f.returnType());
+            case QueryTableMethodTableField f -> OutputField.tableMapping(f.returnType());
+            case QueryTableInterfaceField f -> OutputField.tableMapping(f.returnType());
+            case QueryServiceTableField f -> OutputField.tableMapping(f.returnType());
+            case QueryServiceRecordField ignored -> Mapping.Record;
+            // Polymorphic roots are catalog-bound (every participant is a @table/NodeType): mapping is
+            // Table, with the participant set as a derived slot.
+            case QueryInterfaceField f -> OutputField.polyMapping(f.returnType());
+            case QueryUnionField f -> OutputField.polyMapping(f.returnType());
+            case QueryNodeField f -> OutputField.polyMapping(f.returnType());
+            case QueryNodesField f -> OutputField.polyMapping(f.returnType());
+        };
+    }
+
     record QueryLookupTableField(
         String parentTypeName,
         String name,

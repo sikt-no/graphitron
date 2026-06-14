@@ -1,11 +1,15 @@
 package no.sikt.graphitron.rewrite.classifieddsl;
 
+import no.sikt.graphitron.rewrite.model.Carrier;
+import no.sikt.graphitron.rewrite.model.Intent;
+import no.sikt.graphitron.rewrite.model.Mapping;
+
 /**
  * The three-axis classification verdict R299's corpus asserts: a {@link Carrier} (the GraphQL
  * parent-type category, which <em>is</em> the field type), an {@link Intent} (the operation kind), and
  * a {@link Mapping} (the value shape, carrying build-vs-consume). This is the dimensional fingerprint
- * the {@code @classified} directive carries and the {@link LeafTupleAdapter} produces from today's
- * sealed leaves.
+ * the {@code @classified} directive carries and the field model exposes directly through
+ * {@code OutputField.carrier()} / {@code intent()} / {@code mapping()} (R290 materialised these slots).
  *
  * <p>The R281 {@code (producer, mapping)} verdict retired here: the {@code producer} dimension
  * dissolves, its information redistributing across {@code carrier} (position), {@code intent}

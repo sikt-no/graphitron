@@ -389,7 +389,8 @@ public final class ClassifiedCorpus {
          * tail: corpus entries authored to bring every output-field and (non-failure) type leaf under
          * the corpus as single source of truth (VariantCoverageTest), tested but not necessarily
          * prose-featured. Each ports the SDL shape of the GraphitronSchemaBuilderTest case that used to
-         * own the leaf, annotated with its dimensional verdict (the LeafTupleAdapter tuple) or its
+         * own the leaf, annotated with its dimensional verdict (the field model's
+         * {@code carrier()}/{@code intent()}/{@code mapping()} tuple) or its
          * @classifiedType verdict.
          */
 

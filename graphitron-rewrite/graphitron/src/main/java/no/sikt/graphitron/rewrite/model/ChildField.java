@@ -26,6 +26,84 @@ public sealed interface ChildField extends OutputField
             ChildField.SingleRecordIdFieldFromReturning,
             ChildField.ErrorsField {
 
+    /** Every {@code ChildField} leaf is on a non-root parent type, so the carrier is {@link Carrier#Source}. */
+    @Override default Carrier carrier() { return Carrier.Source; }
+
+    @Override default Intent intent() {
+        return switch (this) {
+            // Catalog column carriers.
+            case ColumnField ignored -> Intent.Fetch;
+            case ColumnReferenceField ignored -> Intent.Fetch;
+            case ParticipantColumnReferenceField ignored -> Intent.Fetch;
+            case CompositeColumnField ignored -> Intent.Fetch;
+            case CompositeColumnReferenceField ignored -> Intent.Fetch;
+            // Table targets. Lookup-keyed reads are Lookup; the rest are plain Fetch. new-query
+            // (@splitQuery / record-handoff) is derived, not an axis.
+            case TableField ignored -> Intent.Fetch;
+            case SplitTableField ignored -> Intent.Fetch;
+            case LookupTableField ignored -> Intent.Lookup;
+            case SplitLookupTableField ignored -> Intent.Lookup;
+            case TableInterfaceField ignored -> Intent.Fetch;
+            case TableMethodField ignored -> Intent.Fetch;
+            case RecordTableField ignored -> Intent.Fetch;
+            case RecordLookupTableField ignored -> Intent.Lookup;
+            case RecordTableMethodField ignored -> Intent.Fetch;
+            case ServiceTableField ignored -> Intent.QueryService;
+            // The follow-up SELECT projecting a @table from a service/DML record parent: a plain Fetch.
+            case SingleRecordTableField ignored -> Intent.Fetch;
+            // Service record / passthrough scalars.
+            case ServiceRecordField ignored -> Intent.QueryService;
+            case RecordField ignored -> Intent.Fetch;
+            case PropertyField ignored -> Intent.Fetch;
+            case ComputedField ignored -> Intent.Fetch;
+            // Nesting (asserted, not derived from an absent join-path) and constructor passthrough.
+            case NestingField ignored -> Intent.Nesting;
+            case ConstructorField ignored -> Intent.Fetch;
+            // Polymorphic children: catalog-bound multi-table UNION keyed off the parent.
+            case InterfaceField ignored -> Intent.Fetch;
+            case UnionField ignored -> Intent.Fetch;
+            // Encoded-PK scalar carriers and the errors field.
+            case SingleRecordIdFieldFromReturning ignored -> Intent.Fetch;
+            case SingleRecordIdField ignored -> Intent.Fetch;
+            case ErrorsField ignored -> Intent.Fetch;
+        };
+    }
+
+    @Override default Mapping mapping() {
+        return switch (this) {
+            case ColumnField ignored -> Mapping.Column;
+            case ColumnReferenceField ignored -> Mapping.Column;
+            case ParticipantColumnReferenceField ignored -> Mapping.Column;
+            case CompositeColumnField ignored -> Mapping.Column;
+            case CompositeColumnReferenceField ignored -> Mapping.Column;
+            case TableField f -> OutputField.tableMapping(f.returnType());
+            case SplitTableField f -> OutputField.tableMapping(f.returnType());
+            case LookupTableField f -> OutputField.tableMapping(f.returnType());
+            case SplitLookupTableField f -> OutputField.tableMapping(f.returnType());
+            case TableInterfaceField f -> OutputField.tableMapping(f.returnType());
+            case TableMethodField f -> OutputField.tableMapping(f.returnType());
+            case RecordTableField f -> OutputField.tableMapping(f.returnType());
+            case RecordLookupTableField f -> OutputField.tableMapping(f.returnType());
+            case RecordTableMethodField f -> OutputField.tableMapping(f.returnType());
+            case ServiceTableField f -> OutputField.tableMapping(f.returnType());
+            case SingleRecordTableField ignored -> Mapping.Table;
+            case ServiceRecordField ignored -> Mapping.Record;
+            case RecordField ignored -> Mapping.Field;
+            case PropertyField ignored -> Mapping.Field;
+            // @externalField inlines a jOOQ Field<X> into the parent SELECT; mapping stays Column.
+            case ComputedField ignored -> Mapping.Column;
+            case NestingField f -> OutputField.tableMapping(f.returnType());
+            case ConstructorField ignored -> Mapping.Record;
+            case InterfaceField f -> OutputField.polyMapping(f.returnType());
+            case UnionField f -> OutputField.polyMapping(f.returnType());
+            case SingleRecordIdFieldFromReturning ignored -> Mapping.Column;
+            case SingleRecordIdField ignored -> Mapping.Column;
+            // The errors field reads an Outcome wrapper arm off env.getSource(); @error element types
+            // are object types, so Record.
+            case ErrorsField ignored -> Mapping.Record;
+        };
+    }
+
     /**
      * R75 / Phase 1 — the single data field on a single-record DML carrier (an SDL Object admitted
      * by {@code BuildContext.scanStructuralDmlPayload} as an {@code @table}-element carrier)

@@ -1,6 +1,9 @@
 package no.sikt.graphitron.rewrite.classifieddsl;
 
 import no.sikt.graphitron.rewrite.classifieddsl.ClassifiedCorpus.Example;
+import no.sikt.graphitron.rewrite.model.Carrier;
+import no.sikt.graphitron.rewrite.model.Intent;
+import no.sikt.graphitron.rewrite.model.Mapping;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -19,21 +22,23 @@ import static org.assertj.core.api.Assertions.assertThat;
  * R281 slice 1: the spec-by-example corpus running alongside the legacy enum truth table
  * ({@code GraphitronSchemaBuilderTest}). Each fixture is an annotated schema; the harness classifies
  * it with today's classifier and checks every {@code @classified} / {@code @classifiedType}
- * coordinate against its declared dimensional verdict (via {@link LeafTupleAdapter}).
+ * coordinate against its declared dimensional verdict (read off the field model's
+ * {@code carrier()} / {@code intent()} / {@code mapping()} accessors).
  *
  * <p>Slice 1's primary deliverable is the <em>validated value sets</em>, not full leaf coverage. The
  * meta-tests here pin three of the four coverage obligations from the Spec
  * (§"Validating the axis set"):
  * <ul>
- *   <li><b>Adapter totality</b> is compiler-enforced: {@link LeafTupleAdapter#toTuple} switches
- *       exhaustively over the sealed {@code OutputField} hierarchy, so a new leaf without a verdict
- *       fails the build. No runtime test can strengthen that, so none is written.</li>
+ *   <li><b>Verdict totality</b> is compiler-enforced: the {@code intent()} / {@code mapping()}
+ *       accessors on each carrier root ({@code QueryField} / {@code MutationField} / {@code ChildField})
+ *       switch exhaustively over that carrier's sealed leaves, so a new leaf without a verdict fails
+ *       the build. No runtime test can strengthen that, so none is written.</li>
  *   <li><b>Value exercise</b>, {@link #everyDimensionValueIsExercised()}: every {@link Carrier},
  *       {@link Intent}, and {@link Mapping} value is either produced by some fixture or, for the
  *       modeled-but-unpopulated intents, on an explicit known-gap list with a stated reason.</li>
  *   <li><b>Carrier / Intent mirror</b>, {@link #carrierMirrorsAdapterValues()} /
  *       {@link #intentMirrorsAdapterValues()}: the SDL {@code Carrier} / {@code Intent} enums equal
- *       the Java {@link Carrier} / {@link Intent} value sets {@link LeafTupleAdapter} produces.</li>
+ *       the Java {@link Carrier} / {@link Intent} value sets the field model produces.</li>
  *   <li><b>TypeVerdict mirror</b>, {@link #typeVerdictMirrorsGraphitronTypeLeaves()}: the SDL
  *       {@code TypeVerdict} enum equals the non-failure {@code GraphitronType} leaf set. Its
  *       soundness rests on {@link #graphitronTypeLeafSimpleNamesAreUnique()}, since the mirror
