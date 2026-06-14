@@ -35,15 +35,16 @@ class ColumnReferenceFieldPipelineTest {
         """;
 
     @Test
-    void directColumnReference_singleHop_fetchersClassHasNoMethod() {
+    void directColumnReference_singleHop_reifiesReadMethod() {
         var filmFetchers = TypeFetcherGenerator.generate(
                 TestSchemaHelper.buildSchema(SINGLE_HOP_SDL), DEFAULT_OUTPUT_PACKAGE).stream()
             .filter(t -> t.name().equals("FilmFetchers"))
             .findFirst()
             .orElseThrow();
         assertThat(filmFetchers.methodSpecs()).extracting(MethodSpec::name)
-            .as("Direct ColumnReferenceField projects inline via TypeClassGenerator.$fields — no fetcher method")
-            .doesNotContain("languageName");
+            .as("R303: Direct ColumnReferenceField projects inline via TypeClassGenerator.$fields; "
+                + "the read of the aliased projection is reified as a named source-only method")
+            .contains("languageName");
     }
 
     @Test

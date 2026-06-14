@@ -127,13 +127,16 @@ public class TypeFetcherGenerator {
             Set<String> seen, List<TypeSpec> out, graphql.schema.GraphQLSchema assembled, String outputPackage) {
         var nestedTypeName = nf.returnType().returnTypeName();
         if (seen.add(nestedTypeName)) {
-            var batchKeyFields = nf.nestedFields().stream()
-                .filter(f -> f instanceof BatchKeyField)
+            // R303: a nested type that owns any fetcher gets a <Type>Fetchers class carrying every
+            // field's method (the method-backed ones the switch emits, plus the reads bind()
+            // reifies). The gate is shared with FetcherRegistrationsEmitter.nestedBody via
+            // FetcherEmitter.nestedTypeOwnsFetchers so the reference site and the emit site agree.
+            var nestedFields = nf.nestedFields().stream()
                 .map(f -> (GraphitronField) f)
                 .sorted(Comparator.comparing(GraphitronField::name))
                 .toList();
-            if (!batchKeyFields.isEmpty()) {
-                out.add(generateTypeSpec(nestedTypeName, nf.returnType().table(), null, batchKeyFields, assembled, outputPackage));
+            if (FetcherEmitter.nestedTypeOwnsFetchers(nestedFields)) {
+                out.add(generateTypeSpec(nestedTypeName, nf.returnType().table(), null, nestedFields, assembled, outputPackage));
             }
         }
         for (var nested : nf.nestedFields()) {
@@ -333,6 +336,10 @@ public class TypeFetcherGenerator {
         var className = typeName + "Fetchers";
         var builder = TypeSpec.classBuilder(className)
             .addModifiers(Modifier.PUBLIC);
+        // R303: the class this type's reified fetcher reads are referenced through (e.g.
+        // FilmFetchers::title). Only the reified method is collected below; the registration value
+        // FetcherEmitter pairs with it is emitted by FetcherRegistrationsEmitter, not here.
+        var reifiedFetchersClass = ClassName.get(outputPackage + ".fetchers", className);
 
         // Per-class scratchpad for deferred helper-method emission. Every emitter that writes a
         // graphitronContext(env) call obtains the CodeBlock through ctx.graphitronContextCall(),
@@ -458,15 +465,15 @@ public class TypeFetcherGenerator {
                 case MutationField.MutationBulkUpdatePayloadField f -> builder.addMethod(buildMutationBulkUpdatePayloadFetcher(ctx, f, outputPackage));
                 case MutationField.MutationDeletePayloadField f -> builder.addMethod(buildMutationDeletePayloadFetcher(ctx, f, outputPackage));
                 case MutationField.MutationBulkDeletePayloadField f -> builder.addMethod(buildMutationBulkDeletePayloadFetcher(ctx, f, outputPackage));
-                // ColumnReferenceField has no fetcher method — inline projection via
-                // TypeClassGenerator.$fields (Direct compaction) and a ColumnFetcher value emitted
-                // by FetcherEmitter. The validator rejects the NodeIdEncodeKeys and ConditionJoin
+                // ColumnReferenceField: inline projection via TypeClassGenerator.$fields (Direct
+                // compaction); the read of that aliased projection is reified by FetcherEmitter.bind
+                // and collected below. The validator rejects the NodeIdEncodeKeys and ConditionJoin
                 // shapes ahead of generation; no per-shape carve-out is needed here.
                 case ChildField.ColumnReferenceField ignored    -> { }
                 case ChildField.CompositeColumnReferenceField f -> builder.addMethod(stub(f));
-                // ChildField.TableField / LookupTableField / CompositeColumnField have no fetcher
-                // — inline projection via TypeClassGenerator.$fields plus a DataFetcher value
-                // emitted by FetcherEmitter for the encode lambda (composite-key NodeId carriers).
+                // ChildField.TableField / LookupTableField / CompositeColumnField: inline projection
+                // via TypeClassGenerator.$fields; the read (alias pickup, or composite-key NodeId
+                // encode) is reified by FetcherEmitter.bind and collected below.
                 case ChildField.TableField ignored              -> { }
                 case ChildField.LookupTableField ignored        -> { }
                 case ChildField.CompositeColumnField ignored    -> { }
@@ -537,20 +544,28 @@ public class TypeFetcherGenerator {
                             .forEach(builder::addMethod);
                     }
                 }
-                case ChildField.NestingField ignored            -> { /* wired via FetcherRegistrationsEmitter: env -> env.getSource() */ }
-                case ChildField.ConstructorField ignored        -> { /* wired via FetcherRegistrationsEmitter: env -> env.getSource() */ }
+                case ChildField.NestingField ignored            -> { /* source passthrough reified by FetcherEmitter.bind, collected below */ }
+                case ChildField.ConstructorField ignored        -> { /* source passthrough reified by FetcherEmitter.bind, collected below */ }
                 // ServiceRecordField is dispatched alongside ServiceTableField above (shared
                 // emitters parameterised by perKeyType). The "no-op" arm here keeps the switch
                 // exhaustive without re-emitting; the variant has IMPLEMENTED_LEAVES membership.
-                case ChildField.RecordField ignored             -> { /* wired via FetcherRegistrationsEmitter.propertyOrRecordValue */ }
-                case ChildField.ComputedField ignored           -> { /* wired via FetcherEmitter (ColumnFetcher); projected via TypeClassGenerator.$fields() */ }
-                case ChildField.PropertyField ignored           -> { /* wired via FetcherRegistrationsEmitter.propertyOrRecordValue */ }
-                case ChildField.ErrorsField ignored             -> { /* wired via FetcherRegistrationsEmitter: PropertyDataFetcher.fetching(name) */ }
+                case ChildField.RecordField ignored             -> { /* accessor / column read reified by FetcherEmitter.bind, collected below */ }
+                case ChildField.ComputedField ignored           -> { /* alias-pickup read reified by FetcherEmitter.bind; projected via TypeClassGenerator.$fields() */ }
+                case ChildField.PropertyField ignored           -> { /* accessor / column read reified by FetcherEmitter.bind, collected below */ }
+                case ChildField.ErrorsField ignored             -> { /* LocalContext / WrapperArm reified by FetcherEmitter.bind; PayloadAccessor still PropertyDataFetcher.fetching */ }
                 // Cannot occur — filtered by generateForType before dispatch
                 case InputField ignored ->
                     throw new AssertionError("InputField in type dispatch: " + ignored.qualifiedName());
                 case GraphitronField.UnclassifiedField ignored ->
                     throw new AssertionError("UnclassifiedField in type dispatch: " + ignored.qualifiedName());
+            }
+            // R303: reify the inline / light reads onto this class. bind() returns Reified for
+            // exactly the variants the switch above handles with a no-method arm (column reads,
+            // source passthroughs, the errors transports, the single-record carriers); the
+            // method-backed variants return Inline, so there is no double-emission.
+            if (FetcherEmitter.bind(field, reifiedFetchersClass, parentTable, resultType, outputPackage, sourceIsOutcome)
+                    instanceof FetcherEmitter.FetcherBinding.Reified reified) {
+                builder.addMethod(reified.method());
             }
         }
 

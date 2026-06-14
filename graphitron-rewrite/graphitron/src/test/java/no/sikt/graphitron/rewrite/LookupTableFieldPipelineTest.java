@@ -64,8 +64,9 @@ class LookupTableFieldPipelineTest {
 
         var methodNames = filmFetchers.methodSpecs().stream().map(m -> m.name()).toList();
         assertThat(methodNames)
-            .as("LookupTableField projects inline via TypeClassGenerator.$fields — no fetcher method")
-            .doesNotContain("actors");
+            .as("R303: LookupTableField projects inline via TypeClassGenerator.$fields; the read of "
+                + "that projection is reified as a named source-only method")
+            .contains("actors");
     }
 
     @Test

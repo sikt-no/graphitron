@@ -607,16 +607,21 @@ class SingleRecordPayloadPipelineTest {
             .contains("SQLDialect.DEFAULT")
             .contains("newRecord");
 
-        // The payload's ErrorsField with Transport.LocalContext is wired through
-        // FetcherRegistrationsEmitter (the schema-level wiring layer), not as a per-Fetchers
-        // method. Assert the FilmPayload wiring registers a lambda whose body reads
-        // env.getLocalContext().
+        // R303: the payload's ErrorsField with Transport.LocalContext is now reified onto
+        // FilmPayloadFetchers as an env-dependent method (return env.getLocalContext()); the
+        // schema-level wiring registers a method reference into it rather than an inline lambda.
         var wirings = no.sikt.graphitron.rewrite.generators.schema.FetcherRegistrationsEmitter.emit(
             schema, DEFAULT_OUTPUT_PACKAGE);
         var filmPayloadWiring = wirings.get("FilmPayload");
         assertThat(filmPayloadWiring).as("FilmPayload wiring present").isNotNull();
         assertThat(filmPayloadWiring.toString())
-            .as("FilmPayload.errors fetcher wiring")
+            .as("FilmPayload.errors registers a method reference into FilmPayloadFetchers")
+            .contains("FilmPayloadFetchers::errors");
+        var filmPayloadFetchers = generated.stream()
+            .filter(t -> t.name().equals("FilmPayloadFetchers"))
+            .findFirst().orElseThrow().toString();
+        assertThat(filmPayloadFetchers)
+            .as("FilmPayloadFetchers.errors reads env.getLocalContext()")
             .contains("env.getLocalContext()");
     }
 

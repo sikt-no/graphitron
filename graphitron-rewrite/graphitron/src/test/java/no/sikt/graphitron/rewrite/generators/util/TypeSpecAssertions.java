@@ -24,7 +24,8 @@ public final class TypeSpecAssertions {
     /** Categories of {@code .dataFetcher(…)} second argument emitted into a
      *  {@code GraphQLCodeRegistry.Builder} by the fetcher-registration emitter. */
     public enum DataFetcherKind {
-        /** {@code new ColumnFetcher<>(…)} — scalar column projection. */
+        /** {@code new LightFetcher<>(Fetchers::field)} — a source-only read wrapped to keep the
+         *  env-skipping light path. */
         COLUMN_FETCHER,
         /** {@code ClassName::methodName} — delegates to a generated fetcher method. */
         METHOD_REFERENCE,
@@ -65,7 +66,7 @@ public final class TypeSpecAssertions {
         var m = p.matcher(body);
         if (!m.find()) return Optional.empty();
         String second = m.group(1).trim();
-        if (second.startsWith("new ") && second.contains("ColumnFetcher")) {
+        if (second.startsWith("new ") && second.contains("LightFetcher")) {
             return Optional.of(DataFetcherKind.COLUMN_FETCHER);
         }
         if (second.contains("PropertyDataFetcher")) {
