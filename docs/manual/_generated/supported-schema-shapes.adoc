@@ -39,7 +39,6 @@ Supported schema shapes are enumerated below by output sealed-leaf class. Each s
 * *CompositeColumnField*: Composite-key output carrier on a table-backed parent. Carries `columns` of arity
 * _(not yet supported)_ *CompositeColumnReferenceField*: Composite-key output carrier on a table-backed parent reached through a `@reference`
 * *ComputedField*: A child field using `@externalField` — the developer provides a static method
-* *ConstructorField*: A child field whose value is the parent itself, propagated through to a
 * *ErrorsField*: The `errors` field on a payload type. Lift target for the payload-side of a
 * *InterfaceField*: A child field on a `GraphitronType.TableBackedType` parent returning a multi-table
 * *LookupTableField*

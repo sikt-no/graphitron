@@ -144,12 +144,15 @@ method-signature inference; deferred). Write intents enumerate the legal cells o
 
 ### Leaf dissolution and collapse
 
-- **`ConstructorField` dissolves.** Dead since the `@record`-on-types ban; its only path is an
-  edge case not in use. The leaf, its `LeafTupleAdapter` arm, and any generator dispatch delete as part
-  of the R290 reshape, after verifying no live reference.
+- **`ConstructorField` dissolves.** Dead since the `@record`-on-types ban; its only path was an
+  edge case not in use. **Done in R290:** the leaf, its leaf-to-tuple adapter arm, and its generator
+  dispatch were deleted, and the table-and-service clash that used to classify it is now a build-time
+  rejection.
 - **`SingleRecordTableField` collapses.** It is only an optimisation to skip the DataLoader for a
-  `Source` field guaranteed a single source object; that skip is a derived detail, its verdict is the
-  `(Service`/`DML) × Table` re-fetch. No distinct leaf survives.
+  `Source` field guaranteed a single source object; that skip is a derived detail. **Split to R305**
+  (`collapse-singlerecordtablefield-into-recordtablefield`): on implementation the collapse proved to
+  be an emit-mechanism unification rather than a leaf merge, so it lands separately. No distinct leaf
+  survives once R305 lands.
 
 ### Model complete, classifier coverage partial
 

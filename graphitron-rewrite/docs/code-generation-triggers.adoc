@@ -505,7 +505,6 @@ The four `Mutation*TableField` permits are guaranteed never to carry a class-bac
 | Return multi-table interface | `InterfaceField` | Fetcher method(s) ; per-participant polymorphic projection
 | Return union | `UnionField` | Fetcher method(s) ; per-participant polymorphic projection
 | Return plain object (no `@table`) | `NestingField` | Inline projection ; nested fields fold into the parent SELECT, the object itself wired as an `env.getSource()` passthrough (inherits parent table context)
-| Constructor-mapped field | `ConstructorField` | Wiring value ; `env.getSource()` passthrough
 | Conflicting directives | `UnclassifiedField`** | Validation error; build fails
 | `@notGenerated` | `UnclassifiedField`** | Validation error; the directive is no longer supported (`INVALID_SCHEMA` rejection). Remove it; fields must be fully described by the schema.
 | `@multitableReference` | `UnclassifiedField`** | Validation error; the directive is no longer supported (`INVALID_SCHEMA` rejection). Remove it; the rewrite generates multi-table interface dispatch from `@discriminate` / `@discriminator`.

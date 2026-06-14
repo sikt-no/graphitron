@@ -200,15 +200,15 @@ redesign is R278, separate). The documentation deliverable that earlier sat here
 references) has been **eaten by R281 (`classification-test-dsl`)**, whose documentation-first
 phase produces that prose against its executable example corpus; R279 no longer owns a doc slice.
 Coupling that survives: when R279's inversion (slice 3) and orphan pruning (slice 6) land, the
-R281 classification doc must be updated to match. **Truth-table baseline note (R290):** R290
-(`datafetcher-field-dimensional-slots`) removes two `GraphitronSchemaBuilderTest` enum rows
-(the `ConstructorField` verdict + its `@ProjectionFor` sibling) and the `constructor` corpus
-fixture when it dissolves `ConstructorField` and collapses `SingleRecordTableField`. R279 leans on
-that truth table as its primary merge gate, so whichever item lands second re-baselines against the
-other's row delta; this is a rebase, not a semantic conflict (R279 is behaviour-preserving over
-whatever rows exist, and R290's two-leaf removal is independent of R279's orphan pruning). No
-ordering edge is declared; landing R290 first is the cleaner order. What remains here is the
-risk-isolated, gated code transformation, slices in landing order:
+R281 classification doc must be updated to match. **Truth-table baseline note (R290 / R305):** R290
+(`datafetcher-field-dimensional-slots`, now In Review) removed two `GraphitronSchemaBuilderTest`
+enum rows (the `ConstructorField` verdict + its `@ProjectionFor` sibling) and the `constructor`
+corpus fixture when it dissolved `ConstructorField`; R305 will remove the `SingleRecordTableField`
+coverage when it lands the collapse. R279 leans on that truth table as its primary merge gate, so
+whichever item lands second re-baselines against the other's row delta; this is a rebase, not a
+semantic conflict (R279 is behaviour-preserving over whatever rows exist, and the R290/R305 leaf
+removals are independent of R279's orphan pruning). No ordering edge is declared. What remains here
+is the risk-isolated, gated code transformation, slices in landing order:
 
 1. **Reachability observatory + differential bisect aid (additive, zero behaviour change).**
    Build the `SchemaTraverser` walk that computes the reachable set (seed: Query + Mutation +
