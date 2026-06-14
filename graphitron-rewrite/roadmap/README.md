@@ -34,7 +34,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R212` | IntelliJ plugin wrapping graphitron:dev LSP | Spec | 2026-05-21 | [plan](intellij-lsp-plugin.md) |
 | `R269` | Null-guard split-query key extraction for nullable to-one records | Spec | 2026-06-02 <sub>created 2026-06-01</sub> | [plan](nullable-to-one-record-into-npe.md) |
 | `R112` | Operation-driven test corpus, capability catalog, and runtime trace <sub>blocked by: [capability-catalog](capability-catalog.md)</sub> | Spec |  | [plan](operation-driven-test-corpus.md) |
-| `R303` | Reify inline datafetchers into named XFetchers methods | In Review | 2026-06-14 <sub>created 2026-06-13</sub> | [plan](reify-inline-datafetchers-to-methods.md) |
 
 ---
 
@@ -290,7 +289,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R274` [**OutcomeType carries its success projection so the nullability invariant lives on the carrier**](outcometype-carry-success-projection.md)
 - `R213` [**Plain-input field rejections attributed to consumer field, losing input-field source location**](input-field-rejection-attribution.md)
 - `R304` [**Reify @error PayloadAccessor errors fetcher into a named method**](reify-error-payload-accessor-fetcher.md)
-- `R303` [**Reify inline datafetchers into named XFetchers methods**](reify-inline-datafetchers-to-methods.md)
 - `R51` [**Split PropertyField/RecordField on parent-kind instead of nullable column**](propertyfield-recordfield-nullable-column.md)
 - `R219` [**Unify arity-unique and type-unique inference under a single JavaTypeKey-counted rule**](unify-inference-rule-by-javatypekey.md)
 - `R221` [**Validator walks PlainInputArg.fields() for UnboundField rejection**](validator-walks-plain-input-unbound-fields.md)
