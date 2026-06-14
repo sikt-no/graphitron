@@ -1,7 +1,7 @@
 ---
 id: R303
 title: Reify inline datafetchers into named XFetchers methods
-status: Ready
+status: In Review
 bucket: architecture
 depends-on: []
 created: 2026-06-13
@@ -434,3 +434,17 @@ re-request the In Review → Done handoff:
 * `ExternalFieldDirectiveResolver.java:80` — "the alias shadows it and `ColumnFetcher`".
 
 No other rework required; the fix is mechanical and comment-only.
+
+### Rework landed (In Review, 2026-06-14)
+
+All eight stale `ColumnFetcher` references fixed (the seven above plus
+`graphitron-sakila-service/.../FilmExtensions.java`, the `@externalField` fixture javadoc, found
+by a repo-wide sweep). The two false-invariant sites (`TypeFetcherGenerator` class javadoc and the
+`ColumnField` switch arm) now describe the reified `LightFetcher`-wrapped read; the
+`FetcherRegistrationsEmitter` class javadoc list was rewritten end-to-end (the `BatchKeyField`-leaf
+nested distinction is gone post-R303, and connection/edge now bind to the per-type
+`<Conn>Fetchers` / `<Edge>Fetchers` delegates rather than directly to `ConnectionHelper`), and its
+now-javadoc-only `BatchKeyField` import was dropped. A repo-wide `grep ColumnFetcher` over
+`src/main` is clean (the intentional `DataFetcherKind.COLUMN_FETCHER` test enum, documented in the
+Tests section, is the only surviving spelling and is in test code). Full pipeline re-run green
+end-to-end.

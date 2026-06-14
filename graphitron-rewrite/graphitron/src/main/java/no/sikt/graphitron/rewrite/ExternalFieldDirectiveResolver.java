@@ -77,8 +77,8 @@ final class ExternalFieldDirectiveResolver {
 
         // Alias-collision check: the wiring side looks up the field by name via
         // DSL.field("<name>") against the result Record. If the GraphQL field name collides
-        // with a real SQL column on the parent @table, the alias shadows it and ColumnFetcher
-        // resolves to the wrong value.
+        // with a real SQL column on the parent @table, the alias shadows it and the aliased
+        // read resolves to the wrong value.
         if (ctx.catalog.findColumn(parentTable.tableName(), name).isPresent()) {
             return new Resolved.Rejected(Rejection.structural("@externalField name '" + name + "' collides with column '" + name
                     + "' on table '" + parentTable.tableName()

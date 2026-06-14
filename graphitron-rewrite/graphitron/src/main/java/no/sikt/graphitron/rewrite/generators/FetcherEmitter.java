@@ -141,7 +141,7 @@ public final class FetcherEmitter {
      * <p>This is the {@code PropertyDataFetcher} (registration-escape) family only, the invariant
      * {@code validateOutcomeChildArmSwitch} enforces per R268's spec. It does <em>not</em> claim to
      * catch every non-arm-switching emit path: a {@code ComputedField} or other
-     * {@code ColumnFetcher}-backed leaf would emit a (non-arm-switched) {@code LightDataFetcher}
+     * {@code LightFetcher}-backed leaf would emit a (non-arm-switched) {@code LightDataFetcher}
      * rather than a {@code PropertyDataFetcher}, but such shapes are inventory-absent under a
      * class-backed {@code @service} payload (they need a SELECT-projected parent), which is
      * the scope boundary R268 chose.
@@ -274,7 +274,8 @@ public final class FetcherEmitter {
      * The success-arm value expression: the field's own read, source-bound to {@code success.value()}.
      * The read shape follows the field's backing, mirroring {@link #bindRaw} /
      * {@link #propertyOrRecordBinding} so there is no parallel taxonomy: a jOOQ-record column
-     * {@code get} (what {@code ColumnFetcher} does, inlined onto {@code success.value()}), a
+     * {@code get} (the {@code ((Record) source).get(column)} read a jOOQ-record column field emits,
+     * inlined onto {@code success.value()}), a
      * class-backed accessor call, or the constructor/nesting source passthrough.
      *
      * <p>The final {@code throw} is a defensive backstop for any field/backing combination that
@@ -284,7 +285,7 @@ public final class FetcherEmitter {
         if (field instanceof ChildField.ConstructorField || field instanceof ChildField.NestingField) {
             return CodeBlock.of("success.value()");
         }
-        // jOOQ-record-backed column read: ColumnFetcher's ((Record) source).get(column), inlined
+        // jOOQ-record-backed column read: the ((Record) source).get(column) read, inlined
         // onto success.value(). Same two arms as propertyOrRecordBinding's jOOQ branches.
         ColumnRef column = field instanceof ChildField.PropertyField pf ? pf.column()
             : field instanceof ChildField.RecordField rf ? rf.column()

@@ -62,9 +62,11 @@ import java.util.Set;
  * Generates a {@link TypeSpec} for one {@code <TypeName>Fetchers} class in {@code rewrite.fetchers}.
  *
  * <ul>
- *   <li>{@link ChildField.ColumnField} — wired via {@code new ColumnFetcher<>(Tables.X.COLUMN)},
- *       no per-field method generated. {@code ColumnFetcher} implements
- *       {@link graphql.schema.LightDataFetcher} so the runtime uses the lighter call path.</li>
+ *   <li>{@link ChildField.ColumnField} — a reified {@code public static} source-only read method
+ *       (collected from {@link FetcherEmitter#bind}), registered wrapped in
+ *       {@code new LightFetcher<>(<Type>Fetchers::column)}. {@code LightFetcher} implements
+ *       {@link graphql.schema.LightDataFetcher} so the runtime uses the lighter call path while
+ *       the read stays a findable per-field symbol.</li>
  *   <li>{@link QueryField.QueryTableField} — {@code public static} method taking
  *       {@code DataFetchingEnvironment}, returning {@code Result<Record>} or {@code Record},
  *       wired by method reference.</li>
@@ -367,7 +369,8 @@ public class TypeFetcherGenerator {
                             "ColumnField '" + cf.qualifiedName()
                             + "' classified on a non-table-backed parent — classifier invariant violated");
                     }
-                    // handled in wiring via ColumnFetcher — no method emitted
+                    // The reified source-only read is collected below via FetcherEmitter.bind
+                    // (registered wrapped in LightFetcher); this arm emits no method itself.
                 }
                 case QueryField.QueryLookupTableField qlf -> {
                     var lookupTableRef = qlf.returnType().table();
