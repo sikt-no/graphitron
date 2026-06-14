@@ -59,19 +59,37 @@ of which is the deprecation machinery:
 
 The production-shaped `graphitron-sakila-example/schema.graphqls` carries no applied
 `@record` (only comments, some explicitly noting "@record-typed parents no longer
-exist (R276)"); live applications survive only in test fixtures exercising the
-deprecation-warning path, which should stay.
+exist (R276)"). Applied `@record` survives only in test-fixture SDL, in two shapes:
+some fixtures exercise the deprecation-warning path directly (e.g.
+`R96RecordBindingPipelineTest:85`, `GraphitronSchemaBuilderTest:4165`, both asserting
+"the @record directive is ignored"); the rest is legacy binding-hint decoration on
+reachable types in fetcher/shape fixtures (e.g. `FetcherPipelineTest`,
+`SingleRecordPayloadPipelineTest`, `GraphitronSchemaClassGeneratorTest:464`). All
+applied `@record` in fixture SDL stays; removing the directive itself is out of scope
+(below). What this item *does* scrub from test source is the `@record`-as-jargon
+vocabulary in comments, section labels, and assertion strings (see Scope).
 
 ## Scope
 
 - **Rewrite the five recommend-`@record` rejection messages** to point at the
   reflected-backing path instead of the dead directive. Update any pipeline/unit
   tests asserting on the old message text.
-- **Rename the `@record`-as-jargon vocabulary** to something accurate, e.g.
-  "record-backed" / "class-backed" / "reflected-backing" (pick one consistently),
-  across comments, javadoc, rejection text, and the `EntityResolutionBuilder` sealed
-  label. Where a message names the *type variant*, prefer the variant name
-  (Pojo / JavaRecord / JooqRecord / JooqTableRecord) over "@record".
+- **Rename the `@record`-as-jargon vocabulary** to "record-backed" (use this single
+  term consistently; "class-backed" / "reflected-backing" were considered and dropped
+  in favour of the existing dominant phrasing), across comments, javadoc, rejection
+  text, and the `EntityResolutionBuilder` sealed label. Where a message names the *type
+  variant*, prefer the variant name (Pojo / JavaRecord / JooqRecord / JooqTableRecord)
+  over "@record".
+- **Extend the vocabulary scrub to test source.** Test-fixture comments, section
+  labels (e.g. the `FetcherPipelineTest` "@record parent" headers,
+  `GraphitronSchemaBuilderTest:2105`), and assertion strings that pin the renamed
+  message/jargon text (`EntityResolutionBuilderTest:294,337` "is classified as a
+  @record type"; `RejectionRenderingTest:66,69` and `GraphitronSchemaBuilderTest:2160`
+  "@record-typed parent") get the same "record-backed" treatment, in lockstep with the
+  main-source rename so the build stays green. Exceptions that stay verbatim: the
+  deprecation-warning fixtures and any assertion on the warning's own "the @record
+  directive is ignored" wording, and the applied `@record` directive in fixture SDL
+  (directive removal is out of scope).
 - **Leave the deprecation machinery untouched**: the `directives.graphqls`
   declaration, the `DIR_RECORD` assert, `emitDirectiveIgnoredWarnings`,
   `readRecordClassName`, and the warning's own "remove the `@record` directive"
@@ -89,8 +107,10 @@ deprecation-warning path, which should stay.
 - No rejection/error message recommends authoring `@record`; the replacement advice
   names the reflected-backing mechanism. No message uses the invalid `@record(class:)`
   form.
-- "@record" no longer appears as a label for a record-backed *type* in main-source
-  comments/javadoc/messages; remaining mentions are confined to the deprecation
-  machinery and its documentation of the directive itself.
+- "@record" no longer appears as a label for a record-backed *type* anywhere in main
+  or test source (comments, javadoc, messages, section labels, assertion strings);
+  remaining mentions are confined to the deprecation machinery, the warning-path
+  fixtures and their assertions, the applied `@record` directive in fixture SDL, and
+  documentation of the directive itself.
 - Full pipeline build green (`mvn -f graphitron-rewrite/pom.xml install -Plocal-db`),
   including any updated message-assertion tests.
