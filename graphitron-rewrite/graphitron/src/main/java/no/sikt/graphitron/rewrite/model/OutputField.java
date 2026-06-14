@@ -31,6 +31,50 @@ public sealed interface OutputField extends GraphitronField permits RootField, C
      */
     DomainReturnType domainReturnType();
 
+    /**
+     * The {@code carrier} dimension (R299): the GraphQL parent-type category this field is defined on,
+     * which <em>is</em> its field type. Defaulted per carrier root ({@link QueryField} →
+     * {@link Carrier#Query}, {@link MutationField} → {@link Carrier#Mutation}, {@link ChildField} →
+     * {@link Carrier#Source}); it is the legality gate over {@link #intent()} (write intents only on
+     * {@code Mutation}, {@code NodeResolve} only on {@code Query}, {@code Nesting} only on
+     * {@code Source}).
+     */
+    Carrier carrier();
+
+    /**
+     * The {@code intent} dimension (R299): the operation kind this field classifies to. Derived from
+     * the leaf's identity plus the slots it already carries (the {@code DmlKind} discriminator on the
+     * {@code @record} DML carriers); gated by {@link #carrier()}. R290 materialises this on the field;
+     * it reproduces the verdict the retired {@code LeafTupleAdapter} reconstructed from leaf identity.
+     */
+    Intent intent();
+
+    /**
+     * The {@code mapping} dimension (R281): what domain object this field's value <em>is</em> (the
+     * build-vs-consume / catalog-vs-service split). Derived from the leaf's identity plus its slots
+     * (table-vs-connection off the return wrapper, encoded-vs-projected off the DML return expression).
+     * R290 materialises this on the field.
+     */
+    Mapping mapping();
+
+    /**
+     * {@link Mapping#TableConnection} when the return wrapper is a Relay connection, else
+     * {@link Mapping#Table}. The catalog-bound table mapping shared by every table-targeting leaf's
+     * {@link #mapping()}.
+     */
+    static Mapping tableMapping(ReturnTypeRef.TableBoundReturnType returnType) {
+        return returnType.wrapper() instanceof FieldWrapper.Connection ? Mapping.TableConnection : Mapping.Table;
+    }
+
+    /**
+     * Polymorphic (interface/union/node) results are catalog-bound over participant tables, so they
+     * map to {@link Mapping#Table} ({@link Mapping#TableConnection} when paginated) with the
+     * participant set carried in a derived slot rather than as a distinct mapping value.
+     */
+    static Mapping polyMapping(ReturnTypeRef.PolymorphicReturnType returnType) {
+        return returnType.wrapper() instanceof FieldWrapper.Connection ? Mapping.TableConnection : Mapping.Table;
+    }
+
     /** Anchor for "this permit has no concrete Java class on offer" — the unreached generic. */
     ClassName OBJECT_CLASS = ClassName.get(Object.class);
     /** Anchor for permits whose value is a scalar {@code String} (encoded NodeId carriers, etc.). */

@@ -15,8 +15,8 @@ package no.sikt.graphitron.rewrite.classifieddsl;
  * <ul>
  *   <li>{@code @classified(carrier: Carrier!, intent: Intent!, mapping: Mapping!)} on output
  *       {@code FIELD_DEFINITION}s asserts the three-axis {@link DimensionTuple} the field classifies
- *       to (R299). The {@link Carrier} and {@link Intent} enums mirror {@link LeafTupleAdapter}'s value
- *       sets.</li>
+ *       to (R299). The {@code Carrier} and {@code Intent} enums mirror the field model's value
+ *       sets (R290's {@code OutputField.carrier()} / {@code intent()} / {@code mapping()}).</li>
  *   <li>{@code @classifiedType(as: TypeVerdict!)} asserts the {@code GraphitronType} sealed leaf a
  *       type classifies to. {@code TypeVerdict} enumerates those leaves minus the failure leaf
  *       {@code UnclassifiedType}; {@link ClassifiedHarness} mirrors the enum against the live leaf set.</li>

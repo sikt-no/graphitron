@@ -21,6 +21,73 @@ public sealed interface MutationField extends RootField, WithErrorChannel
             MutationField.MutationUpdatePayloadField, MutationField.MutationBulkUpdatePayloadField,
             MutationField.MutationDeletePayloadField, MutationField.MutationBulkDeletePayloadField {
 
+    /** Every {@code MutationField} leaf is on the {@code Mutation} root, so the carrier is {@link Carrier#Mutation}. */
+    @Override default Carrier carrier() { return Carrier.Mutation; }
+
+    @Override default Intent intent() {
+        return switch (this) {
+            // DML write: the verb is the leaf identity.
+            case MutationInsertTableField ignored -> Intent.Insert;
+            case MutationUpsertTableField ignored -> Intent.Upsert;
+            case MutationUpdateTableField ignored -> Intent.Update;
+            case MutationDeleteTableField ignored -> Intent.Delete;
+            case MutationServiceTableField ignored -> Intent.MutationService;
+            case MutationServiceRecordField ignored -> Intent.MutationService;
+            // The @record DML carriers read their verb off the DmlKind discriminator.
+            case MutationDmlRecordField f -> dmlIntent(f.kind());
+            case MutationBulkDmlRecordField f -> dmlIntent(f.kind());
+            // Payload wrappers expose the affected rows as a @record; the verb is the leaf identity.
+            case MutationUpdatePayloadField ignored -> Intent.Update;
+            case MutationBulkUpdatePayloadField ignored -> Intent.Update;
+            case MutationDeletePayloadField ignored -> Intent.Delete;
+            case MutationBulkDeletePayloadField ignored -> Intent.Delete;
+        };
+    }
+
+    @Override default Mapping mapping() {
+        return switch (this) {
+            // The return-shape slot (DmlReturnExpression) decides Column (encoded ID) vs Table
+            // (in-fetcher follow-up SELECT). The follow-up itself is the derived re-fetch, not a tuple axis.
+            case MutationInsertTableField f -> dmlMapping(f.returnExpression());
+            case MutationUpdateTableField f -> dmlMapping(f.returnExpression());
+            case MutationDeleteTableField f -> dmlMapping(f.returnExpression());
+            case MutationUpsertTableField f -> dmlMapping(f.returnExpression());
+            case MutationServiceTableField f -> OutputField.tableMapping(f.returnType());
+            case MutationServiceRecordField ignored -> Mapping.Record;
+            case MutationDmlRecordField ignored -> Mapping.Record;
+            case MutationBulkDmlRecordField ignored -> Mapping.Record;
+            case MutationUpdatePayloadField ignored -> Mapping.Record;
+            case MutationBulkUpdatePayloadField ignored -> Mapping.Record;
+            case MutationDeletePayloadField ignored -> Mapping.Record;
+            case MutationBulkDeletePayloadField ignored -> Mapping.Record;
+        };
+    }
+
+    /**
+     * The DML table carrier's mapping reads off the {@link DmlReturnExpression} slot: an encoded-ID
+     * return is {@link Mapping#Column} (the encoded PK scalar); a projected return is
+     * {@link Mapping#Table} (the in-fetcher follow-up SELECT, whose re-fetch is a derivation, not a
+     * tuple axis).
+     */
+    private static Mapping dmlMapping(DmlReturnExpression expr) {
+        return switch (expr) {
+            case DmlReturnExpression.EncodedSingle ignored -> Mapping.Column;
+            case DmlReturnExpression.EncodedList ignored -> Mapping.Column;
+            case DmlReturnExpression.ProjectedSingle ignored -> Mapping.Table;
+            case DmlReturnExpression.ProjectedList ignored -> Mapping.Table;
+        };
+    }
+
+    /** Maps the {@code @record} DML carrier's {@link DmlKind} discriminator to its write {@link Intent}. */
+    private static Intent dmlIntent(DmlKind kind) {
+        return switch (kind) {
+            case INSERT -> Intent.Insert;
+            case UPDATE -> Intent.Update;
+            case UPSERT -> Intent.Upsert;
+            case DELETE -> Intent.Delete;
+        };
+    }
+
     /**
      * Sealed common supertype of the four direct-return DML mutation variants. Carries the per-field
      * data the INSERT / UPDATE / DELETE / UPSERT emitters share: a pre-resolved
