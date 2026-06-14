@@ -407,16 +407,14 @@ class SingleRecordPayloadPipelineTest {
     @Test
     void fetcherEmitter_revertedTwoArmsPlusSingleRecord() throws Exception {
         // Source-level structural assertion: FetcherEmitter.dataFetcherValue has reverted the
-        // IdentityPassthrough capability arm; ConstructorField/NestingField dispatch on their
-        // own permits, and SingleRecordTableField has a dedicated arm.
+        // IdentityPassthrough capability arm; NestingField dispatches on its own permit, and
+        // SingleRecordTableField has a dedicated arm. (R290 dissolved ConstructorField.)
         var src = Files.readString(Path.of(
             "src/main/java/no/sikt/graphitron/rewrite/generators/FetcherEmitter.java"));
         long identityArms = countMatches(src, Pattern.compile(
             "field\\s+instanceof\\s+ChildField\\.IdentityPassthrough\\b"));
         long passthroughDataArms = countMatches(src, Pattern.compile(
             "field\\s+instanceof\\s+ChildField\\.PassthroughDataField\\b"));
-        long constructorFieldArms = countMatches(src, Pattern.compile(
-            "field\\s+instanceof\\s+ChildField\\.ConstructorField\\b"));
         long nestingFieldArms = countMatches(src, Pattern.compile(
             "field\\s+instanceof\\s+ChildField\\.NestingField\\b"));
         long singleRecordArms = countMatches(src, Pattern.compile(
@@ -428,9 +426,6 @@ class SingleRecordPayloadPipelineTest {
         assertThat(passthroughDataArms)
             .as("PassthroughDataField permit has been retired; no dispatch arm should remain")
             .isZero();
-        assertThat(constructorFieldArms)
-            .as("ConstructorField has its own dispatch arm")
-            .isGreaterThanOrEqualTo(1);
         assertThat(nestingFieldArms)
             .as("NestingField has its own dispatch arm")
             .isGreaterThanOrEqualTo(1);

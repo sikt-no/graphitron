@@ -210,7 +210,6 @@ public class TypeFetcherGenerator {
         ChildField.RecordField.class,
         ChildField.RecordTableField.class,
         ChildField.RecordLookupTableField.class,
-        ChildField.ConstructorField.class,
         ChildField.SingleRecordTableField.class,
         ChildField.SingleRecordIdField.class,
         ChildField.SingleRecordIdFieldFromReturning.class,
@@ -548,7 +547,6 @@ public class TypeFetcherGenerator {
                     }
                 }
                 case ChildField.NestingField ignored            -> { /* source passthrough reified by FetcherEmitter.bind, collected below */ }
-                case ChildField.ConstructorField ignored        -> { /* source passthrough reified by FetcherEmitter.bind, collected below */ }
                 // ServiceRecordField is dispatched alongside ServiceTableField above (shared
                 // emitters parameterised by perKeyType). The "no-op" arm here keeps the switch
                 // exhaustive without re-emitting; the variant has IMPLEMENTED_LEAVES membership.

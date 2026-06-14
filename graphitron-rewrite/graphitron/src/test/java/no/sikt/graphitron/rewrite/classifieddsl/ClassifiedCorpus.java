@@ -303,23 +303,12 @@ public final class ClassifiedCorpus {
             type Query { film: Film }
             """),
 
-        /*
-         * Constructor passthrough: a @record child type under a @table parent. Film.details builds the
-         * record-backed FilmDetails from the parent's row in the parent SELECT (ConstructorField), so it
-         * is a Source-carrier Fetch that maps to Record (it materializes a record, not a catalog
-         * projection). FilmDetails is record-bound as makeFilmDetailsRating's return type. Corpus-only.
-         */
-        new Example("constructor", """
-            type FilmDetails { rating: String }
-            type Film @table(name: "film") {
-              details: FilmDetails @classified(carrier: Source, intent: Fetch, mapping: Record)
-            }
-            type Query {
-              film: Film
-              prodFilmDetails: FilmDetails
-                @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeFilmDetailsRating"})
-            }
-            """),
+        // The former "constructor" example (a @record child type under a @table parent, Film.details
+        // building the record-backed FilmDetails from the parent's row) left the classified corpus when
+        // R290 dissolved ConstructorField as wrong-by-design: that table-and-service clash is now a
+        // build-time rejection, asserted at the validator tier by ConstructorFieldValidationTest rather
+        // than as a clean classification here. Mapping.Record stays exercised by ErrorsField,
+        // ServiceRecordField, and the DML record carriers.
 
         /*
          * Polymorphic children and roots are catalog-bound over their participant tables: the mapping is

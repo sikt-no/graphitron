@@ -131,7 +131,6 @@ public class GraphitronSchemaValidator {
             case no.sikt.graphitron.rewrite.model.ChildField.InterfaceField f          -> validateInterfaceField(f, types, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.UnionField f              -> validateUnionField(f, types, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.NestingField f            -> validateNestingField(f, errors);
-            case no.sikt.graphitron.rewrite.model.ChildField.ConstructorField f        -> validateConstructorField(f, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.ServiceTableField f       -> validateServiceTableField(f, types, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.ServiceRecordField f      -> validateServiceRecordField(f, types, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.RecordTableField f        -> validateRecordTableField(f, types, errors);
@@ -705,7 +704,6 @@ public class GraphitronSchemaValidator {
         ChildField.CompositeColumnField.class,
         ChildField.TableField.class,
         ChildField.LookupTableField.class,
-        ChildField.ConstructorField.class,
         ChildField.NestingField.class,
         ChildField.SplitTableField.class,
         ChildField.SplitLookupTableField.class);
@@ -850,7 +848,6 @@ public class GraphitronSchemaValidator {
             }
         }
     }
-    private void validateConstructorField(no.sikt.graphitron.rewrite.model.ChildField.ConstructorField field, List<ValidationError> errors) {}
     private void validateServiceTableField(no.sikt.graphitron.rewrite.model.ChildField.ServiceTableField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
         validateReferencePath(field.qualifiedName(), field.location(), field.joinPath(), errors);
 

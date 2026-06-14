@@ -19,7 +19,6 @@ import no.sikt.graphitron.rewrite.JooqCatalog;
 import no.sikt.graphitron.rewrite.model.AccessorResolution;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.ChildField.ColumnField;
-import no.sikt.graphitron.rewrite.model.ChildField.ConstructorField;
 import no.sikt.graphitron.rewrite.model.ChildField.ColumnReferenceField;
 import no.sikt.graphitron.rewrite.model.ChildField.ParticipantColumnReferenceField;
 import no.sikt.graphitron.rewrite.model.ChildField.ComputedField;
@@ -852,12 +851,18 @@ class FieldBuilder {
                 List.copyOf(nestedFields));
         }
 
-        // ConstructorField: @table parent with a class-backed child — pass the parent's Record through as
-        // the child's source. The child's own Fetchers class handles property/table-child resolution.
-        if (elementType instanceof ResultType rt) {
-            var wrapper = buildWrapper(fieldDef);
-            var returnType = (ReturnTypeRef.ResultReturnType) ctx.resolveReturnType(elementTypeName, wrapper);
-            return new ConstructorField(parentTypeName, name, location, returnType);
+        // A @table parent whose child returns a @record/service result type has no way to build that
+        // child from the parent's own row. The former ConstructorField passthrough materialised the
+        // child from the @table parent's Record; R290 dissolved that leaf as wrong-by-design (no
+        // production schema relies on it, and its only coverage was self-referential), so the clash is
+        // now a build-time rejection that GraphitronSchemaValidator surfaces. The field needs an
+        // explicit producer, or the child type needs a catalog backing.
+        if (elementType instanceof ResultType) {
+            return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(
+                "field '" + name + "' on @table type '" + parentTypeName + "' returns '" + elementTypeName
+                + "', a record-backed result type, but carries no producer directive to build it: a @table "
+                + "parent cannot construct a @record child from its own row. Add @service, @reference, "
+                + "@tableMethod, or @externalField on the field, or back '" + elementTypeName + "' with @table."));
         }
 
         return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural("return type '" + elementTypeName + "' is not a @table, @record, interface, or union Graphitron type"));

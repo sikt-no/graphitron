@@ -213,8 +213,7 @@ public final class FetcherEmitter {
      * emitted <em>here</em> as a narrowable inline read, a structural property of the emit path.
      */
     private static boolean isInlineArmSwitchedDataField(GraphitronField field) {
-        return field instanceof ChildField.ConstructorField
-            || field instanceof ChildField.NestingField
+        return field instanceof ChildField.NestingField
             || field instanceof ChildField.PropertyField
             || field instanceof ChildField.RecordField;
     }
@@ -276,13 +275,13 @@ public final class FetcherEmitter {
      * {@link #propertyOrRecordBinding} so there is no parallel taxonomy: a jOOQ-record column
      * {@code get} (the {@code ((Record) source).get(column)} read a jOOQ-record column field emits,
      * inlined onto {@code success.value()}), a
-     * class-backed accessor call, or the constructor/nesting source passthrough.
+     * class-backed accessor call, or the nesting source passthrough.
      *
      * <p>The final {@code throw} is a defensive backstop for any field/backing combination that
      * has neither a column nor a resolved accessor and so cannot be projected inline.
      */
     private static CodeBlock inlineSuccessRead(GraphitronField field, GraphitronType.ResultType resultType) {
-        if (field instanceof ChildField.ConstructorField || field instanceof ChildField.NestingField) {
+        if (field instanceof ChildField.NestingField) {
             return CodeBlock.of("success.value()");
         }
         // jOOQ-record-backed column read: the ((Record) source).get(column) read, inlined
@@ -360,7 +359,7 @@ public final class FetcherEmitter {
             GraphitronField field, ClassName fetchersClass,
             TableRef parentTable, GraphitronType.ResultType resultType,
             String outputPackage) {
-        if (field instanceof ChildField.ConstructorField || field instanceof ChildField.NestingField) {
+        if (field instanceof ChildField.NestingField) {
             // Source passthrough: the field value is the source object itself.
             return sourceOnly(field.name(), fetchersClass, outputPackage, CodeBlock.of("return source;\n"));
         }

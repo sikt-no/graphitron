@@ -2272,11 +2272,9 @@ class GraphitronSchemaBuilderTest {
         // corpus and by the slot-asserting service cases above (e.g. TABLE_TYPE_RETURN, the @reference
         // origin-defaulting cases).
 
-        // R281 slice 2: the plain `@table parent + @record child type -> ConstructorField` verdict (a
-        // pure isInstanceOf assertion, no slot detail) migrated to the spec-by-example corpus as the
-        // `constructor` ClassifiedCorpus example (Film.details, asserted via @classified(carrier: Source,
-        // intent: Fetch, mapping: Record); the parent SELECT builds the record-backed child from its own row).
-        // Corpus-only. The ConstructorField leaf is now covered by the corpus.
+        // R290: the `@table parent + @record child type` shape that used to classify as ConstructorField
+        // is now a build-time rejection (the leaf was dissolved as wrong-by-design). Its coverage lives at
+        // the validator tier in ConstructorFieldValidationTest, not as a clean classification here.
 
         // R3: @splitQuery on a @record-parent field is a structural no-op (the record handoff
         // already opens a new DataLoader-backed scope) and should surface as a build warning so
@@ -8955,36 +8953,6 @@ class GraphitronSchemaBuilderTest {
             """);
         var typ = (TypeClassification.Unclassified) s2.typeClassificationsByName().get("NoSuchTable");
         assertThat(typ.reason()).isNotBlank();
-    }
-
-    // ===== ConstructorField — @table parent with @record child =====
-
-    @Test
-    void constructorField_tableParentRecordChild_classifiedAsConstructorField() {
-        var schema = build("""
-            type FilmDetails { rating: String }
-            type Film @table(name: "film") { details: FilmDetails }
-            type Query {
-                film: Film
-                prodFilmDetails: FilmDetails @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeFilmDetailsRating"})
-            }
-            """);
-        assertThat(schema.field("Film", "details")).isInstanceOf(ChildField.ConstructorField.class);
-    }
-
-    @Test
-    @ProjectionFor(ChildField.ConstructorField.class)
-    void constructorFieldProjectionIsZeroPayload() {
-        var snapshot = buildSnapshot("""
-            type FilmDetails { rating: String }
-            type Film @table(name: "film") { details: FilmDetails }
-            type Query {
-                film: Film
-                prodFilmDetails: FilmDetails @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeFilmDetailsRating"})
-            }
-            """);
-        assertThat(snapshot.fieldClassificationsByCoord().get("Film.details"))
-            .isInstanceOf(FieldClassification.Constructor.class);
     }
 
     // ===== Type directive mutual exclusivity =====
