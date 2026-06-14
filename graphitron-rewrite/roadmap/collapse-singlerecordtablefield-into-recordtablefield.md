@@ -77,38 +77,58 @@ the same shape" smell. The dimensional shape keeps both honest at once:
 This is the same move R290 made for `carrier` / `intent` / `mapping` and `requiresReFetch`: a dimension
 lands as model state the consumers read, and the leaf-identity switch dissolves.
 
-## The load-bearing decision: the capability markers go slot-driven
+## Resolving the two capability markers
 
-Two capability markers today split `SingleRecordTableField` from `RecordTableField`, and both are
-*static per-type interface membership*, which a single merged leaf cannot make conditional on a
-per-instance slot:
+Two markers today split `SingleRecordTableField` from `RecordTableField`, and both are *static per-type
+interface membership*, which a single merged leaf cannot make conditional on a per-instance slot. Each
+resolves to a slot read, in a different slot. This is the "emit-mechanism unification, not a leaf merge"
+R290 flagged, and it is the bulk of the work.
 
-- `BatchKeyField` (`BatchKeyField.java`): "this field is DataLoader-backed", requires `sourceKey()` +
-  `loaderRegistration()`, implemented by six leaves including `RecordTableField`. A `SINGLE`-arrival
-  `RecordTableField` is not DataLoader-backed.
-- `OrderingOwnedByProducer` (sealed; permits `SingleRecordTableField` + `ServiceTableField`): the
-  "list-requires-ordering" validator excludes its members by type. A `SINGLE`-arrival merged field needs
-  that exclusion; a `MANY` one does not.
+### OrderingOwnedByProducer → a state of the ordering slot
 
-So dissolving into one leaf forces both markers, for the merged leaf, to become **reads off the
-`SourceArrival` slot** rather than `instanceof` checks. This is the "emit-mechanism unification, not a
-leaf merge" R290 flagged, and it is the bulk of the work. Recommended direction (consistent with R222's
-plan to reorganise the mixin-interface overlay): the loader-discovering consumers
-(`FetcherRegistrationsEmitter`, the `TypeFetcherGenerator` dispatch, `emitsSingleRecordPerKey()`'s sites)
-and the ordering validator switch on `SourceArrival`; `GraphitronSchemaValidator` mirrors the slot
-against the emit path so they cannot drift (the discipline `requiresReFetch` uses). Whether
-`RecordTableField` keeps a (now slot-projected) `BatchKeyField` membership or sheds it is the precise
-fork to settle against the actual consumer iteration, with the `principles-architect` subagent, before
-Ready. Decide against the real `FetcherRegistrationsEmitter` / `emitsSingleRecordPerKey` sites, not in
-the abstract.
+`OrderingOwnedByProducer` (`OrderingOwnedByProducer.java`; sealed, permits `SingleRecordTableField` +
+`ServiceTableField`) exists only so `GraphitronSchemaValidator.validateListRequiresOrdering` (line 232)
+exempts these fields from the "list-shaped + `OrderBySpec.None` ⇒ non-determinism" rejection: their
+visible ordering is owned upstream, not by an `orderBy`. Since **ordering is already a slot**
+(`OrderBySpec`), this belongs *in* that slot, not in a parallel marker. R305 retires the marker and adds
+an `OrderBySpec` arm (working name `OwnedUpstream`) meaning "deterministic ordering supplied by an
+upstream keyed list; the field carries no `ORDER BY` of its own." The validator reads
+`orderBy() instanceof OrderBySpec.OwnedUpstream` instead of `instanceof OrderingOwnedByProducer`. It is
+asserted at classification for the single-arrival merged `RecordTableField` (results re-keyed to the
+upstream source list) and for `ServiceTableField` (the service returns the list verbatim). This dissolves
+the marker cleanly and covers both cases, note that `ServiceTableField` is *not* single-arrival, so an
+arrival-derived predicate would have missed it; the ordering slot is the right home, not the arrival slot.
 
-### Interaction with R222 Stage 5
+This is also why the marker "is related to lookup": `LookupValuesJoinEmitter` (line 37) already orders
+every lookup by a synthetic `idx` column "to preserve input ordering". Lookup ordering is owned by the
+input **key** list exactly as producer-owned ordering is owned by the source list, but today that is
+emitter behaviour invisible to the slot and the validator (a list-shaped lookup landing on
+`OrderBySpec.None` would be wrongly rejected even though the emitter produces deterministic idx-order).
+Folding the lookup leaves onto the same `OwnedUpstream` arm, so the idx-order is a slot fact the emitter
+reads rather than emitter magic, is the natural generalisation. R305 introduces the arm and migrates the
+producer/service cases; extending it to the lookup leaves (which also touches the lookup emitter) rides
+the R222 Stage-2 `Ordering` slot slice unless small enough to fold in (see Out of scope).
 
-This overlay reorganisation is adjacent to R222 Stage 5 (the `LoaderRegistration` permit consolidation).
-R305 does only the slot-local move it needs (the loader on the merged leaf's `Many` arm, the two markers
-slot-driven for that leaf); it does not generalise the permit. Confirm the slot shape does not fight
-Stage 5's planned consolidation; if it would, sequence the retirement step (below) after the relevant
-Stage 5 slice rather than duplicating it. No hard `depends-on` today, but this is the scope edge to watch.
+### BatchKeyField → the loader lives on the SourceArrival.Many arm
+
+`BatchKeyField` (`BatchKeyField.java`) is "this field is DataLoader-backed", requires `sourceKey()` +
+`loaderRegistration()`, implemented by six leaves. Its consumers are the rows-method emit + scatter sites
+in `TypeFetcherGenerator` (the `emitsSingleRecordPerKey` gate at line 666; the `loaderRegistration()`
+reads at 4914 / 4959 / 5032 / 5102) and `SplitRowsMethodEmitter` (line 1253), all firing only for
+DataLoader-backed fields. A single-arrival merged `RecordTableField` must not reach them.
+
+R305 moves the loader to the `SourceArrival.Many` arm and routes the batched-path consumers off the
+`SourceArrival` switch: a `Many` arm yields the `LoaderRegistration` + rows-method; a `Single` arm routes
+to the inline `FetcherEmitter.bind` read. The five always-batched leaves (`SplitTableField`,
+`SplitLookupTableField`, `ServiceTableField`, `RecordLookupTableField`, `ServiceRecordField`) are
+uniformly many-arrival and keep implementing `BatchKeyField` directly; only `RecordTableField` becomes
+bi-modal, so only it carries the `SourceArrival` slot. `GraphitronSchemaValidator` mirrors the slot
+against the emit path so the verdict and the emitter cannot drift (the discipline `requiresReFetch` uses).
+Whether `BatchKeyField`-as-marker survives R305 (the merged leaf satisfying it through its `Many` arm) or
+retires into a general loader slot is the R222 Stage 5 question (the `LoaderRegistration` permit
+consolidation); R305 does the slot-local move and coordinates sequence, it does not retire the marker.
+Confirm the slot shape does not fight Stage 5's consolidation; if it would, sequence the retirement step
+after the relevant Stage 5 slice. No hard `depends-on` today, but this is the scope edge to watch.
 
 ## Sequencing (additive cutover, then retirement)
 
@@ -118,14 +138,18 @@ capability decision and Stage 5.
 
 1. **Rename** `SourceKey.Cardinality {ONE, MANY}` → `SourceKey.ValueCardinality` (mechanical, ~26 call
    sites, payload-free enum, no generated-output change). Independent; can land first.
-2. **Add** the `SourceArrival` slot and assert it at the construction sites (the two formerly-SRTF arms
-   `SINGLE`, nested `RecordTableField` `MANY`); `GraphitronSchemaValidator` mirrors it.
-3. **Migrate** the emit fork and the two capability consumers to read `SourceArrival` instead of
-   `instanceof SingleRecordTableField` / the markers (`FetcherEmitter`, `TypeFetcherGenerator` dispatch,
-   `FetcherRegistrationsEmitter`, the ordering validator).
-4. **Retire** `SingleRecordTableField`: the leaf record, its `intent()` / `mapping()` switch arms, its
-   marker memberships, and the `SingleRecordPayloadPipelineTest` `instanceof SingleRecordTableField`
-   assertions (retargeted to `RecordTableField` + `SourceArrival.Single`). 48 → **47**.
+2. **Add the slots.** The `SourceArrival { Single | Many(LoaderRegistration) }` slot on the merged
+   `RecordTableField`, and the `OrderBySpec.OwnedUpstream` ordering-slot arm. Assert both at the
+   construction sites (the two formerly-SRTF arms → `SINGLE` + `OwnedUpstream`; nested `RecordTableField`
+   → `MANY` + its real `orderBy`; `ServiceTableField` → `OwnedUpstream`). `GraphitronSchemaValidator`
+   mirrors `SourceArrival` against the emit path.
+3. **Migrate the consumers off `instanceof`.** The emit fork and loader consumers read `SourceArrival`
+   (`FetcherEmitter`, `TypeFetcherGenerator` rows-method/scatter sites, `SplitRowsMethodEmitter`); the
+   `validateListRequiresOrdering` validator reads `OrderBySpec.OwnedUpstream`.
+4. **Retire the markers and the leaf.** Delete `OrderingOwnedByProducer` and `SingleRecordTableField`
+   (the leaf record, its `intent()` / `mapping()` switch arms, its marker memberships), and retarget the
+   `SingleRecordPayloadPipelineTest` `instanceof SingleRecordTableField` assertions to `RecordTableField`
+   + `SourceArrival.Single`. 48 → **47**.
 
 ## Acceptance
 
@@ -151,4 +175,10 @@ capability decision and Stage 5.
   list-arriving `@service` carrier needs the producing field's wrapper, which is **R308**
   (`service-list-payload-arrival`), depending on R279's walk. R308 sets `SourceArrival.Many` at that seat
   and emits the DataLoader; kept out so this item's corpus-byte-invariance proof stays clean.
-- **R222 Stage 5's** general `LoaderRegistration` permit consolidation (see interaction note above).
+- **R222 Stage 5's** general `LoaderRegistration` permit consolidation, and whether `BatchKeyField`-as-
+  marker retires into a loader slot (see the BatchKeyField resolution above). R305 does only the
+  slot-local loader move.
+- **Migrating the lookup leaves' idx-ordering onto `OrderBySpec.OwnedUpstream`** and reading it in
+  `LookupValuesJoinEmitter` rather than emitting idx-order unconditionally. R305 introduces the arm and
+  the concept; the lookup-emitter refactor rides the R222 Stage-2 `Ordering` slot slice unless it proves
+  small enough to fold into step 3.
