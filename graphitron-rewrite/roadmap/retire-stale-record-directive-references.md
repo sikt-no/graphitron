@@ -1,7 +1,7 @@
 ---
 id: R307
 title: "Retire stale @record references: dead-directive advice, jargon, the deprecation-warning emitter, test-fixture @record, and the LSP's @record className tooling"
-status: Ready
+status: In Progress
 bucket: cleanup
 priority: 5
 theme: legacy-migration
