@@ -5,7 +5,7 @@ import graphql.schema.DataFetchingEnvironment;
 /**
  * Test fixtures for {@code R88}'s pipeline-tier accessor-resolution coverage. Each public type
  * pins one shape the {@link no.sikt.graphitron.rewrite.ClassAccessorResolver} either accepts or
- * rejects when classifying an SDL field on a {@code @record}-Java-backed parent.
+ * rejects when classifying an SDL field on a JavaRecord-backed parent.
  *
  * <p>Co-located with the other dummy references so SDL fixtures inside
  * {@link no.sikt.graphitron.rewrite.validation.RecordFieldAccessorValidationTest} can name them

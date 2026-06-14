@@ -140,7 +140,7 @@ class TableMethodFieldPipelineTest {
     /**
      * R43 commit 5: DTO-parent emit. Pin the fetcher + rows-method shape for
      * {@link no.sikt.graphitron.rewrite.model.ChildField.RecordTableMethodField}. The classifier
-     * routes a child {@code @tableMethod} on a JooqTableRecord-backed {@code @record} parent
+     * routes a child {@code @tableMethod} on a JooqTableRecord-backed parent
      * through the new branch in {@code FieldBuilder.classifyChildFieldOnResultType}; the emit
      * follows the {@code RecordTableField} DataLoader-keyed batch pattern with the developer's
      * static method substituted for the direct table reference.

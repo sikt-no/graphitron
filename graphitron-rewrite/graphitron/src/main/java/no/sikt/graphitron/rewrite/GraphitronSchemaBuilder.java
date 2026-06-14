@@ -366,7 +366,7 @@ public class GraphitronSchemaBuilder {
                     Rejection.structural(
                         "field '" + existing.parentTypeName() + "." + existing.name()
                         + "' returns SDL Object type '" + sdlReturn + "', which did not classify "
-                        + "into the model (no @table/@record binding, no producer-backed carrier "
+                        + "into the model (no @table or record-backed binding, no producer-backed carrier "
                         + "promotion, not embedded as a nesting projection of a table-backed "
                         + "parent). Emitting the field would reference a type absent from the "
                         + "generated schema and assembly would fail with \"type " + sdlReturn

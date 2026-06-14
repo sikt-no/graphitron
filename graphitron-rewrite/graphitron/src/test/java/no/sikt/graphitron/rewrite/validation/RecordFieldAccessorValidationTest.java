@@ -14,7 +14,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Pipeline-tier coverage for R88's classifier-side accessor-resolution check. Each test builds an
- * SDL with a {@code @record}-Java-backed parent type pointing at a fixture class in
+ * SDL with a JavaRecord-backed parent type pointing at a fixture class in
  * {@link no.sikt.graphitron.codereferences.dummyreferences.R88AccessorFixtures}, runs the
  * classifier and validator end-to-end, and asserts on either the resolved
  * {@link AccessorResolution} arm (positive cases) or the produced {@link ValidationError}

@@ -227,7 +227,7 @@ class GeneratorUtils {
                 throw new IllegalArgumentException(
                     "buildRecordParentKeyExtraction does not handle Reader.ResultRowWalk "
                     + "(single-record DML carrier dispatch path; the parent is the mutation's "
-                    + "Result<RecordN<...>>, not a @record-backed Java class).");
+                    + "Result<RecordN<...>>, not a record-backed Java class).");
         };
     }
 

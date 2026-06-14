@@ -182,7 +182,7 @@ class FieldSourceSigilPipelineTest {
 
     /**
      * Non-carrier-site regression: {@code @field(name: "$source")} on a regular
-     * {@code @record}-backed field continues to surface today's
+     * record-backed field continues to surface today's
      * {@code Rejection.accessorMismatch} on the literal string {@code $source}. R159 does not
      * silently rewire the non-carrier paths to learn about sigils.
      */

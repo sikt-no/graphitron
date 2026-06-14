@@ -573,7 +573,7 @@ final class RecordBindingResolver {
         // Fold the root-producer observations into resultMemo/inputMemo first, so the loop below
         // reads concrete bindings on its first pass. Without this the snapshot (further down) starts
         // empty and the cascade never propagates: it lay dormant while @record/@table bound every
-        // nested type independently, and R276 makes it load-bearing (e.g. a @record type reached
+        // nested type independently, and R276 makes it load-bearing (e.g. a record-backed type reached
         // only through a parent accessor, with no @record directive left to bind it).
         foldAll();
         // Iterate until no new bindings are produced. Each pass walks every SDL Object/Input

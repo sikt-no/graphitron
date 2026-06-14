@@ -33,10 +33,10 @@ public sealed interface MutationField extends RootField, WithErrorChannel
             case MutationDeleteTableField ignored -> Intent.Delete;
             case MutationServiceTableField ignored -> Intent.MutationService;
             case MutationServiceRecordField ignored -> Intent.MutationService;
-            // The @record DML carriers read their verb off the DmlKind discriminator.
+            // The record-backed DML carriers read their verb off the DmlKind discriminator.
             case MutationDmlRecordField f -> dmlIntent(f.kind());
             case MutationBulkDmlRecordField f -> dmlIntent(f.kind());
-            // Payload wrappers expose the affected rows as a @record; the verb is the leaf identity.
+            // Payload wrappers expose the affected rows as a record-backed type; the verb is the leaf identity.
             case MutationUpdatePayloadField ignored -> Intent.Update;
             case MutationBulkUpdatePayloadField ignored -> Intent.Update;
             case MutationDeletePayloadField ignored -> Intent.Delete;
@@ -78,7 +78,7 @@ public sealed interface MutationField extends RootField, WithErrorChannel
         };
     }
 
-    /** Maps the {@code @record} DML carrier's {@link DmlKind} discriminator to its write {@link Intent}. */
+    /** Maps the record-backed DML carrier's {@link DmlKind} discriminator to its write {@link Intent}. */
     private static Intent dmlIntent(DmlKind kind) {
         return switch (kind) {
             case INSERT -> Intent.Insert;

@@ -639,7 +639,7 @@ class BuildContext {
                 return new DmlPayloadScan.Reject(
                     "carrier field '" + f.getName() + "' of type '" + elementTypeName
                     + "' is not a recognized DML payload data-field shape "
-                    + "(expected @table-element, @record-element, or ID-element); "
+                    + "(expected @table-element, record-backed element, or ID-element); "
                     + "file a roadmap item if this shape needs admission");
             }
             dataChannelCount++;

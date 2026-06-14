@@ -496,7 +496,7 @@ class SingleRecordPayloadPipelineTest {
     // ===== LocalContext error channel on DML payloads (R12 + structural-scan integration) =====
     //
     // The structural DML-payload scan (BuildContext.scanStructuralDmlPayload) admits a carrier
-    // shape with one @table-element or @record-element data field plus an optional errors-shaped
+    // shape with one @table-element or record-backed element data field plus an optional errors-shaped
     // sibling; FieldBuilder.detectStructuralDmlErrorChannel binds the errors-channel transport
     // to ErrorChannel.LocalContext when the carrier has no developer-supplied class with an
     // errors slot (no @record(record:{className:})). These tests pin that the resulting

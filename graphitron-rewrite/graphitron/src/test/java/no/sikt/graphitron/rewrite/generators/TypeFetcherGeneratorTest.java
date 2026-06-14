@@ -1404,7 +1404,7 @@ class TypeFetcherGeneratorTest {
             .doesNotContain("graphitronContext");
     }
 
-    // ===== R49: ServiceRecordField (scalar / @record-backed return) =====
+    // ===== R49: ServiceRecordField (scalar / record-backed return) =====
     //
     // ServiceRecordField shares the DataLoader emitters with ServiceTableField; the only axis
     // of variation is the per-key value type (perKeyType): RECORD for table-bound,

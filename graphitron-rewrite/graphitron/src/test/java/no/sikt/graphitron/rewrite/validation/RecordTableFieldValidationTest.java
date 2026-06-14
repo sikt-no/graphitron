@@ -41,7 +41,7 @@ class RecordTableFieldValidationTest {
     private static final LoaderRegistration LR_LIST = TestFixtures.loaderRegistration(RT_LIST, false, false);
 
     // R232: RecordTableField + condition-join first hop classifies straight to AuthorError
-    // upstream (the @record parent has no @table binding to anchor the condition method's
+    // upstream (the record-backed parent has no @table binding to anchor the condition method's
     // source argument). The cases below construct the model directly, bypassing the parser
     // gate, to confirm the validator does not double-fire on the constructed shape.
 

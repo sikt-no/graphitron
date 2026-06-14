@@ -441,11 +441,11 @@ final class SourceRowDirectiveResolver {
         if (parentResultType instanceof GraphitronType.JooqTableRecordType
                 || parentResultType instanceof GraphitronType.JooqRecordType) {
             return "@sourceRow on '" + parentTypeName + "." + fieldName
-                + "' is not supported on jOOQ-backed @record parents; the catalog record's "
+                + "' is not supported on jOOQ-backed parents; the catalog record's "
                 + "columns drive batching — use the existing FK path or @reference";
         }
         return "@sourceRow on '" + parentTypeName + "." + fieldName
-            + "' requires the @record parent to declare a backing class via "
-            + "@record(record: {className: ...})";
+            + "' requires the record-backed parent to resolve a backing class; produce the "
+            + "parent from a @service return type, @table, @tableMethod, or a parent-accessor chain";
     }
 }

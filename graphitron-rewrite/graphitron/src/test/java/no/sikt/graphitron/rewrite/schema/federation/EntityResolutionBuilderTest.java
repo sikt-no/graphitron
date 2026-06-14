@@ -277,9 +277,9 @@ class EntityResolutionBuilderTest {
 
     @Test
     void keyOnRecordType_namesRecordKindInMessage() {
-        // R176: Case B's @record arm — the "missing @table" hint is wrong-by-coincidence
-        // because @record types intentionally have no @table. Name the kind explicitly so
-        // the author sees that @key on @record is the misuse, not a forgotten @table.
+        // R176: Case B's record-backed arm — the "missing @table" hint is wrong-by-coincidence
+        // because record-backed types intentionally have no @table. Name the kind explicitly so
+        // the author sees that @key on a record-backed type is the misuse, not a forgotten @table.
         var schema = TestSchemaHelper.buildSchema(FEDERATION_DIRECTIVES + """
             type Query {
                 x: FooRec @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeDummyRecord"})
@@ -291,7 +291,7 @@ class EntityResolutionBuilderTest {
         assertThat(schema.type("FooRec")).isInstanceOf(UnclassifiedType.class);
         var unclassified = (UnclassifiedType) schema.type("FooRec");
         assertThat(unclassified.reason())
-            .contains("is classified as a @record type")
+            .contains("is classified as a record-backed type")
             .doesNotContain("has no @table directive");
     }
 
@@ -299,7 +299,7 @@ class EntityResolutionBuilderTest {
     void resolvableFalseKeyOnRecordType_isAcceptedAsReferenceOnlyStub() {
         // R286: a @key(resolvable: false) declares a reference-only entity stub — this subgraph
         // does not own its resolution and emits no _entities handler, so it needs no backing
-        // table. The @record type must survive classification (not demote to UnclassifiedType)
+        // table. The record-backed type must survive classification (not demote to UnclassifiedType)
         // and produce no EntityResolution (the dispatcher never sees it).
         var schema = TestSchemaHelper.buildSchema(FEDERATION_DIRECTIVES + """
             type Query {
@@ -334,7 +334,7 @@ class EntityResolutionBuilderTest {
         assertThat(schema.type("FooRec")).isInstanceOf(UnclassifiedType.class);
         var unclassified = (UnclassifiedType) schema.type("FooRec");
         assertThat(unclassified.reason())
-            .contains("is classified as a @record type")
+            .contains("is classified as a record-backed type")
             .contains("federation entities need a @table directive");
     }
 }
