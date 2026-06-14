@@ -16,8 +16,8 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 |---|---|---|---|---|
 | `R19` | Rebase and squash rewrite branch onto main | Ready |  | [plan](history-squash.md) |
 | `R222` | Dimensional model pivot: slots over cross-product permits | Spec | 2026-06-13 <sub>created 2026-05-21</sub> | [plan](dimensional-model-pivot.md) |
-| `R264` | roadmap-tool status round-trip strips quotes from front-matter titles | Spec | 2026-06-14 <sub>created 2026-05-30</sub> | [plan](roadmap-tool-title-quote-roundtrip.md) |
 | `R256` | Absorb the service walker substrate: typed per-arm errors + multi-arg ctors | Ready | 2026-05-30 <sub>created 2026-05-29</sub> | [plan](service-walker-substrate-absorption.md) |
+| `R264` | roadmap-tool status round-trip strips quotes from front-matter titles | Ready | 2026-06-14 <sub>created 2026-05-30</sub> | [plan](roadmap-tool-title-quote-roundtrip.md) |
 | `R279` | Field-first reachability-driven classification driver <sub>blocked by: [dimensional-model-pivot](dimensional-model-pivot.md)</sub> | Ready | 2026-06-07 <sub>created 2026-06-05</sub> | [plan](field-first-classification-driver.md) |
 | `R45` | Multi-tenant routing on top of the schema-driven ExecutionInput factory | Spec | 2026-05-20 | [plan](tenant-routing-and-execution-input.md) |
 | `R307` | Retire stale @record references: error messages recommending the dead directive and @record-as-jargon vocabulary | Spec | 2026-06-14 | [plan](retire-stale-record-directive-references.md) |
