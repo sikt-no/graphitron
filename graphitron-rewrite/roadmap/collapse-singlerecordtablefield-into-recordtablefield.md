@@ -1,6 +1,6 @@
 ---
 id: R305
-title: Name the source-arrival-cardinality axis; keep SingleRecordTableField and RecordTableField as sibling leaves; rename SourceKey.Cardinality to ValueCardinality
+title: Dissolve SingleRecordTableField; assert source-arrival cardinality as a dimensional slot; rename SourceKey.Cardinality to ValueCardinality
 status: Spec
 bucket: structural
 priority: 4
@@ -10,133 +10,145 @@ created: 2026-06-14
 last-updated: 2026-06-14
 ---
 
-# Name the source-arrival-cardinality axis; keep SingleRecordTableField and RecordTableField as sibling leaves; rename SourceKey.Cardinality to ValueCardinality
+# Dissolve SingleRecordTableField; assert source-arrival cardinality as a dimensional slot; rename SourceKey.Cardinality to ValueCardinality
 
-Split out of **R290** (`dimensional-model-pivot`, R222's slot-materialisation work) as its deferred
-second leaf-retirement: collapsing `ChildField.SingleRecordTableField` into `ChildField.RecordTableField`.
-On review the collapse is **declined as wrong-by-design** (see "Why the collapse is declined" below): the
-two leaves carry disjoint payloads and dispatch through two different emit mechanisms, so merging them
-trades a clean sealed split for a nullable `LoaderRegistration` and a conditional `BatchKeyField`, the
-smells "Sealed hierarchies over enums" and "Capability interfaces and sealed switches serve different
-roles" name. R290 itself flagged this when it split the work out: it "proved to be an emit-mechanism
-unification, not a leaf merge."
+Split out of **R290** (`dimensional-model-pivot`, R222 Stage 3) as its deferred second leaf-retirement.
+R222 §"Leaf dissolution and collapse" names the target directly: "`SingleRecordTableField` collapses ...
+**No distinct leaf**"; the service/DML → `@table` two-step is "now *derived* rather than a distinct leaf";
+and "**bulk is a slot** (cardinality), not an intent." This item lands that dissolution on top of the
+dimensional model R290 materialised (the `OutputField.carrier()` / `intent()` / `mapping()` accessors and
+the `requiresReFetch()` derivation): it adds **source-arrival cardinality** as the dimension that
+distinguishes the inline in-hand read from the batched DataLoader read, folds `SingleRecordTableField`
+into `RecordTableField`, and drives the emit fork off the slot instead of leaf identity.
 
-What R290 actually wanted, the arrival fact ceasing to be carried redundantly, is **already in the type
-system** as sealed leaf identity: `SingleRecordTableField` *is* the single-arrival case and
-`RecordTableField` *is* the many-arrival case. This item keeps both leaves, names the axis the split
-encodes so a future contributor does not mistake it for incidental and re-attempt the merge, and does the
-one orthogonal cleanup the axis discussion surfaced: renaming the misnamed `SourceKey.Cardinality`. The
-live leaf set stays **48**; no leaf is retired.
+This reverses an earlier "keep two sibling leaves" pass on this spec. That pass weighed "sealed
+hierarchies over enums" as if the current leaf set were the end state, but R222 is deliberately
+dissolving leaf identity into dimensional slots, and a leaf is exactly what this axis should stop being.
+The reconciliation is in §"The slot shape" below: the disjoint emit payloads do not vanish, they move
+into a sealed *slot* family rather than living as two leaves.
 
-## The missing concept: source-arrival cardinality
+## Source-arrival cardinality is an asserted dimension
 
-R290 framed the DataLoader-skip as "single-source cardinality" without a precise name; this is that
-name. **Source-arrival cardinality** is how many source objects the data fetcher is invoked against.
-graphql-java completes a list parent by iterating it and invoking the child fetcher once per element,
-each seeing a single `env.getSource()`. So a source that arrives singly needs no batching (the inline
-in-hand read is correct and optimal), while a source that can arrive in plurality needs a DataLoader or
-it incurs an N+1. `SingleRecordTableField` is exactly the provably-single-arrival case;
-`RecordTableField` is the default many-arrival case. The DataLoader-skip is not an incidental
-optimisation, it is the correct consequence of single arrival, and it is encoded as the
-`SingleRecordTableField` / `RecordTableField` sealed distinction rather than a flag a merge could fold
-away. Naming the axis records *why* there are two leaves, so the split is not mistaken for incidental.
+**Source-arrival cardinality** is how many source objects the data fetcher is invoked against. graphql-
+java completes a list parent by iterating it and invoking the child fetcher once per element, each seeing
+a single `env.getSource()`; so arrival is a property of the **producing/parent field's** list-ness, not
+of the data field's own return type. A source that arrives singly needs no batching (the inline in-hand
+read is correct and optimal); one that can arrive in plurality needs a DataLoader or it incurs an N+1.
 
-This axis must not be confused with the existing `SourceKey.Cardinality {ONE, MANY}`, which despite its
-name is **value multiplicity** (one vs many target rows per key), set everywhere from
-`returnType.wrapper().isList()` and read to choose source-binding shape, null-vs-empty checks, scatter,
-and return wrapping. It says nothing about the source's arrival; a `SingleRecordTableField` for a bulk
-`List<Payload>` carrier is value-`MANY` yet still single-*arrival*. This item renames the enum to
-`SourceKey.ValueCardinality` (mechanical churn across the `.cardinality()` / `Cardinality.ONE|MANY` call
-sites; it stays a payload-free `enum`) so the generic name stops reading as the source-arrival axis.
+It is **asserted, not derived**, per R222's governing rule ("assert what nothing else carries; derive
+what another axis or slot already forces"). Nothing else on the field forces it:
 
-## Why the collapse is declined: keep two sibling leaves
+- Not `intent()` × `mapping()`. A formerly-`SingleRecordTableField` payload carrier and a nested
+  `RecordTableField` both classify `intent = Fetch`, `mapping = Table` (`ChildField` lines 48/53, 84/88),
+  same tuple, opposite arrival.
+- Not `requiresReFetch()`. That predicate lives on the *producer* (the `MutationField` /
+  `ServiceTableField` that re-queries the table); the data field reading the re-fetched record is a plain
+  `Fetch` either way.
+- Not the field's own value-cardinality (the enum this item renames): a bulk `List<Payload>` DML
+  carrier's data field is value-`MANY` yet still single-*arrival*.
 
-R290 framed the collapse as "the single-source-object DataLoader-skip becomes a derived detail." On
-implementation the two leaves proved to use **different emit mechanisms over disjoint payloads**, not one
-mechanism with a skip flag:
+R308 is the proof the axis is real and orthogonal: a list-arriving `@service` carrier shares the
+`Fetch × Table` tuple of R305's single-`@service` carrier but is many-arrival. `intent × mapping` cannot
+tell them apart; only a walk to the producing field's wrapper can, which is why deriving that seat's
+verdict is **R308**'s job (depending on R279's field-first walk), not this item's. Within R305's scope
+every formerly-`SingleRecordTableField` site is provably single-arrival and the slot is asserted `SINGLE`
+at construction; the default for a nested `RecordTableField` is `MANY`.
 
-- `SingleRecordTableField` (`ChildField.java` ~134) is an **inline-bound** data field. Its compact
-  constructor requires `SourceKey.Reader.ResultRowWalk`; it carries **no** `LoaderRegistration`, no
-  `parentCorrelation`, and structurally-empty `joinPath` / `filters` / `orderBy` / `pagination`. It is
-  `OrderingOwnedByProducer`, is **not** a `BatchKeyField`, and is a no-op arm in the
-  `TypeFetcherGenerator` switch whose fetcher value `FetcherEmitter.bind` /
-  `buildSingleRecordTableFetcherValue` (Wrap.Record + Wrap.TableRecord arms) reifies into an inline
-  in-hand read. It carries the R141 / R158 / R275 payload-carrier execution coverage (the delete-then-echo
-  `fjernSakTagg` shapes).
-- `RecordTableField` (`ChildField.java` ~791) carries a `SourceKey` **and** a `LoaderRegistration` and a
-  `parentCorrelation`, has real `filters` / `orderBy` / `pagination`, **is** a `BatchKeyField`, and emits
-  a `buildRecordBasedDataFetcher` plus a `SplitRowsMethodEmitter` rows-method.
+## The slot shape: a sealed family, not a bare enum or a nullable field
 
-The two share no overlapping component set, dispatch through two emitters, and sit on opposite sides of
-both `BatchKeyField` and `OrderingOwnedByProducer`. That is the textbook case *for* two sealed leaves
-("Sealed hierarchies over enums", "Narrow component types over broad interfaces", "Sub-taxonomies for
-resolution outcomes"), not for a merge. A flat merged leaf would need a nullable `LoaderRegistration` and
-a conditional `BatchKeyField`, breaking the `BatchKeyField.loaderRegistration()` contract its other
-implementers rely on; a sealed sub-variant split *under* `RecordTableField` would widen a concrete leaf
-into an abstract root, re-introducing the broad-component problem one level up, and would not reduce the
-leaf count anyway (the dispatch partition counts the two sub-variants). Either way the merge adds
-redundancy rather than removing it.
+The keep-two-leaves pass was right about one thing: the single-arrival and many-arrival arms carry
+**disjoint payloads**. Single-arrival is a `SourceKey.Reader.ResultRowWalk` in-hand read with no
+`LoaderRegistration`; many-arrival carries a `LoaderRegistration` and a batched rows-method. A bare
+`sourceCardinality` enum plus a nullable `LoaderRegistration` would be the "enum forces every variant to
+the same shape" smell. The dimensional shape keeps both honest at once:
 
-The shared abstraction both leaves want already exists: `ChildField.TableTargetField` (`ChildField.java`
-405-411 permits both). Consumers that need to treat them uniformly go through it; the consumers that fork
-(`CatalogBuilder` ~202/261, `FieldClassification`, `GraphitronSchemaValidator`) switch on the two leaves
-*separately*, which is correct, they emit different code.
+- `SingleRecordTableField` is **dissolved**; its two construction sites in
+  `FieldBuilder.classifyObjectReturnChildField` (~4062 / ~4121) build `RecordTableField` instead.
+- `RecordTableField` becomes a single leaf carrying a **sealed source-arrival slot** whose arms hold the
+  divergent payload, working shape `SourceArrival { Single | Many(LoaderRegistration) }` (the exact
+  record/accessor names, and whether `SourceKey` stays a sibling component, the implementer pins; the
+  load-bearing claim is *one leaf, sealed slot, payload-per-arm*). The `Single` arm carries the in-hand
+  `ResultRowWalk` contract; the `Many` arm carries the `LoaderRegistration`.
+- Because it is one leaf with a slot (not a sub-seal), the dispatch partition counts it once and the live
+  leaf set drops 48 → **47** on retirement. A sealed *sub-variant* split under `RecordTableField` would
+  keep two partition entries and not reduce the count; that is the shape to avoid, it re-encodes arrival
+  as (sub-)leaf identity rather than as the slot R222 wants.
 
-## Arrival is sealed leaf identity, not a stored slot or a derived predicate
+This is the same move R290 made for `carrier` / `intent` / `mapping` and `requiresReFetch`: a dimension
+lands as model state the consumers read, and the leaf-identity switch dissolves.
 
-R222's governing test is "assert what nothing else carries; derive what another axis or slot already
-forces." Source-arrival cardinality is carried by **leaf identity**: `SingleRecordTableField` is
-single-arrival, `RecordTableField` is many-arrival, and the type tells every consumer which it is. So the
-axis needs neither a stored `sourceCardinality` slot (it would duplicate leaf identity and the
-`LoaderRegistration`-presence that tracks with it, the kind of redundant carrying R290 set out to remove)
-nor a separate derived predicate such as `OutputField.sourceArrivesSingle()` (with two leaves that
-predicate is a vacuous `instanceof` duplicating the sealed switch the dispatch already forks on, itself
-the "predicate over pre-resolved data" smell). The cleanest expression of the axis is the one the model
-already has.
+## The load-bearing decision: the capability markers go slot-driven
 
-Because arrival is leaf identity set at the construction site, this item does **not** depend on R279, and
-`depends-on: []` is correct. R279's field-first reachability walk matters only for the seat this item
-leaves untouched: a list-arriving `@service` carrier whose data field is built as
-`SingleRecordTableField` (single-arrival, no loader) today but should batch. Constructing the
-many-arrival `RecordTableField` *there* needs the producing field's list-ness in hand, which is R279's
-walk; that reclassification and its DataLoader emit are **R308**.
+Two capability markers today split `SingleRecordTableField` from `RecordTableField`, and both are
+*static per-type interface membership*, which a single merged leaf cannot make conditional on a
+per-instance slot:
 
-## Scope
+- `BatchKeyField` (`BatchKeyField.java`): "this field is DataLoader-backed", requires `sourceKey()` +
+  `loaderRegistration()`, implemented by six leaves including `RecordTableField`. A `SINGLE`-arrival
+  `RecordTableField` is not DataLoader-backed.
+- `OrderingOwnedByProducer` (sealed; permits `SingleRecordTableField` + `ServiceTableField`): the
+  "list-requires-ordering" validator excludes its members by type. A `SINGLE`-arrival merged field needs
+  that exclusion; a `MANY` one does not.
 
-Behaviour-preserving and small. In scope:
+So dissolving into one leaf forces both markers, for the merged leaf, to become **reads off the
+`SourceArrival` slot** rather than `instanceof` checks. This is the "emit-mechanism unification, not a
+leaf merge" R290 flagged, and it is the bulk of the work. Recommended direction (consistent with R222's
+plan to reorganise the mixin-interface overlay): the loader-discovering consumers
+(`FetcherRegistrationsEmitter`, the `TypeFetcherGenerator` dispatch, `emitsSingleRecordPerKey()`'s sites)
+and the ordering validator switch on `SourceArrival`; `GraphitronSchemaValidator` mirrors the slot
+against the emit path so they cannot drift (the discipline `requiresReFetch` uses). Whether
+`RecordTableField` keeps a (now slot-projected) `BatchKeyField` membership or sheds it is the precise
+fork to settle against the actual consumer iteration, with the `principles-architect` subagent, before
+Ready. Decide against the real `FetcherRegistrationsEmitter` / `emitsSingleRecordPerKey` sites, not in
+the abstract.
 
-- **Rename** `SourceKey.Cardinality {ONE, MANY}` to `SourceKey.ValueCardinality` (mechanical churn across
-  the `.cardinality()` / `Cardinality.ONE|MANY` call sites; it stays a payload-free `enum`). Standalone
-  clarity: the name reads as generic cardinality but means value multiplicity (target rows per key); the
-  rename stops it from being read as the source-arrival axis. ~26 files, no generated-output change.
-- **Name the axis** in the model: javadoc on `SingleRecordTableField` / `RecordTableField` (and the
-  `TableTargetField` parent) recording that the split *is* source-arrival cardinality and why the two
-  must not be merged (disjoint payloads, two emit mechanisms, opposite `BatchKeyField` /
-  `OrderingOwnedByProducer` membership). The note describes facts already pinned by the compact
-  constructors and the sealed permits, so it is not a free-floating invariant claim.
+### Interaction with R222 Stage 5
 
-Out of scope:
+This overlay reorganisation is adjacent to R222 Stage 5 (the `LoaderRegistration` permit consolidation).
+R305 does only the slot-local move it needs (the loader on the merged leaf's `Many` arm, the two markers
+slot-driven for that leaf); it does not generalise the permit. Confirm the slot shape does not fight
+Stage 5's planned consolidation; if it would, sequence the retirement step (below) after the relevant
+Stage 5 slice rather than duplicating it. No hard `depends-on` today, but this is the scope edge to watch.
 
-- **Any leaf merge** (declined above). The live leaf set stays 48.
-- **The list-`@service` carrier reclassification** (a live N+1 defect): a list-arriving `@service`
-  carrier is accepted at the carrier (`checkServiceReturnMatchesPayload` admits `List<Payload>`) yet its
-  data field is built as `SingleRecordTableField`, an unbatched single-arrival read. Fixing it means
-  constructing `RecordTableField` at that site instead; that behavioural change is **R308**
-  (`service-list-payload-arrival`), which depends on R279's walk for the carrier-arrival input.
-- **R222 Stage 5's** `LoaderRegistration` permit consolidation, which operates on the batched leaf's
-  payload only and does not touch the single-arrival leaf.
+## Sequencing (additive cutover, then retirement)
+
+Per R290's slice discipline ("additive cutover, then destructive retirement"). The first three steps are
+behaviour-preserving and safe to land independently; step 4 is the destructive step entangled with the
+capability decision and Stage 5.
+
+1. **Rename** `SourceKey.Cardinality {ONE, MANY}` → `SourceKey.ValueCardinality` (mechanical, ~26 call
+   sites, payload-free enum, no generated-output change). Independent; can land first.
+2. **Add** the `SourceArrival` slot and assert it at the construction sites (the two formerly-SRTF arms
+   `SINGLE`, nested `RecordTableField` `MANY`); `GraphitronSchemaValidator` mirrors it.
+3. **Migrate** the emit fork and the two capability consumers to read `SourceArrival` instead of
+   `instanceof SingleRecordTableField` / the markers (`FetcherEmitter`, `TypeFetcherGenerator` dispatch,
+   `FetcherRegistrationsEmitter`, the ordering validator).
+4. **Retire** `SingleRecordTableField`: the leaf record, its `intent()` / `mapping()` switch arms, its
+   marker memberships, and the `SingleRecordPayloadPipelineTest` `instanceof SingleRecordTableField`
+   assertions (retargeted to `RecordTableField` + `SourceArrival.Single`). 48 → **47**.
 
 ## Acceptance
 
-- **Corpus / dispatch tier**: byte-identical and leaf-count-unchanged. The rename is model-internal and
-  no leaf is added or removed, so the R281/R299 classified corpus and
-  `everyGraphitronFieldLeafHasAKnownDispatchStatus` stay green without edit (the partition keeps all 48
-  leaves).
-- **Naming pinned, not claimed**: the model javadoc names the axis by pointing at the live structural
-  facts (the `ResultRowWalk` / no-`LoaderRegistration` compact-constructor invariants, the `BatchKeyField`
-  / `OrderingOwnedByProducer` sealed permits), per "Documentation names only live tests/code", no prose
-  invariant a test does not already pin.
-- **Rename mechanical**: `SourceKeyTest` and the other `Cardinality.ONE|MANY` call sites compile and pass
-  against `ValueCardinality` with no behavioural edit.
+- **Execution tier (load-bearing)**: the R141 / R158 / R275 payload-carrier behaviour (single + bulk,
+  DIRECT + OUTCOME_SUCCESS envelopes, the delete-then-echo `fjernSakTagg` shapes) is preserved end-to-end
+  against PostgreSQL via `SingleRecordPayloadDmlTest` /
+  `SingleRecordTableFieldServiceProducerExecutionTest`. A `SINGLE`-arrival `RecordTableField` must emit
+  exactly the inline in-hand read `SingleRecordTableField` emits today, no SQL or runtime-result change.
+- **Corpus tier**: byte-identical. The formerly-SRTF fields keep `carrier × intent × mapping` =
+  `Source × Fetch × Table`, so the R281/R299 classified corpus stays green (it reads the three dimension
+  accessors, which are unchanged).
+- **Pipeline tier**: the `SourceArrival` arm and the emit shape it selects (inline follow-up SELECT for
+  `Single`, DataLoader path for `Many`) are pinned by structural `TypeSpec` assertions; the dispatch
+  partition stays exhaustive/disjoint with one fewer leaf
+  (`everyGraphitronFieldLeafHasAKnownDispatchStatus`).
+- **Validator mirror**: an arrival-verdict / emit disagreement fails at validate time, per "validator
+  mirrors classifier invariants".
 - Full aggregator green (`mvn install -Plocal-db`), graphitron-lsp included.
 
+## Out of scope
+
+- **The list-`@service` carrier reclassification** (the live N+1): deriving `MANY` arrival for a
+  list-arriving `@service` carrier needs the producing field's wrapper, which is **R308**
+  (`service-list-payload-arrival`), depending on R279's walk. R308 sets `SourceArrival.Many` at that seat
+  and emits the DataLoader; kept out so this item's corpus-byte-invariance proof stays clean.
+- **R222 Stage 5's** general `LoaderRegistration` permit consolidation (see interaction note above).
