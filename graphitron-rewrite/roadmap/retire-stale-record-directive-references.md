@@ -34,11 +34,13 @@ out at classification (and is testable there without a pipeline fixture).
 A **second live treatment lives in graphitron-lsp**. Because `@record`'s declared argument
 is `record: ExternalCodeReference`, the LSP resolves it through the same generic
 ECR-className machinery as `@enum`: it offers className FQN completion on
-`@record(record: {className: ...})` (`FieldCompletions` / `CompletionContext`, off the
-generic `ExternalCodeReference.className` behavior at `LspVocabulary.java:752`), raises an
+`@record(record: {className: ...})` (`ClassNameCompletions.generate`, dispatching on
+`Behavior.ClassNameBinding`, off the generic `ExternalCodeReference.className` behavior
+registered at `parsing/LspVocabulary.java:755` on the coordinate
+`InputField("ExternalCodeReference", "className")`), raises an
 "Unknown class '…'" diagnostic when the className does not resolve
 (`Diagnostics.validateClassName`, `Diagnostics.java:631`), and hovers the directive as a live
-binding (`DeclarationHover`). None of that should survive: `@record` is dead, so the editor
+binding (`Hovers.richerHover` → `classNameHover`, `Hovers.java:171`). None of that should survive: `@record` is dead, so the editor
 should say only that it is ignored/deprecated and offer nothing else.
 
 The "say it is deprecated" signal already reaches the editor, and not through the
@@ -132,17 +134,26 @@ not generate).
   declaration stay.
 - **Retire the LSP's `@record` className tooling.** Stop the LSP treating `@record` as a
   live `ExternalCodeReference`-className binding: it must no longer offer className FQN
-  completion (`FieldCompletions` / `CompletionContext`) or raise the "Unknown class '…'"
+  completion (`ClassNameCompletions`) or raise the "Unknown class '…'"
   diagnostic (`Diagnostics.validateClassName`, `Diagnostics.java:631`) or hover it as a live
-  binding (`DeclarationHover`) for `@record`. The declaration is **retained** (still parses
+  binding (`Hovers.richerHover` → `classNameHover`, `Hovers.java:171`) for `@record`. The
+  declaration is **retained** (still parses
   `@record(record: {className: ...})`), so this is a per-directive carve-out of the generic
   ECR-className handling, not a retyping of the argument. Gate the carve-out on the **enclosing
   directive name** (`"record"`), mirroring the established `Diagnostics.METHOD_VALIDATING_DIRECTIVES`
-  pattern: `validateClassName` (`Diagnostics.java:631`) does not currently receive the enclosing
+  pattern. Coordinate-based gating is **not** an option: all three surfaces dispatch off the
+  shared `InputField("ExternalCodeReference", "className")` coordinate
+  (`parsing/LspVocabulary.java:755`), which is identical for `@record` and `@enum`, so each site
+  must read the enclosing directive name. Two of the three sites already have it: `validateClassName`
+  (`Diagnostics.java:631`) does not currently receive the enclosing
   directive, but the `dispatch` site (`Diagnostics.java:408`) has it in scope and `validateMethod`
-  already threads it, so the same thread-through applies; `FieldCompletions` / `CompletionContext`
-  and `DeclarationHover` resolve the enclosing directive at the cursor and skip the className
-  behavior when it is `@record`. No `@deprecated` docstring token is added and the
+  already threads it, so the same thread-through applies; `Hovers.richerHover` receives `directive`
+  directly (line 99) and can gate its `ClassNameBinding` arm the same way. The **completion** site
+  needs new plumbing: `ClassNameCompletions.generate` receives only
+  `CompletionContext(SchemaCoordinate, Range)`, which carries no directive identity and (per the
+  shared coordinate above) cannot derive it; the implementer threads the enclosing directive name
+  from `LspVocabulary.CursorLocation` into `CompletionContext` (or the provider call) so
+  `ClassNameCompletions` can skip `@record`. This threading is in scope for this item. No `@deprecated` docstring token is added and the
   `deprecationOf` / `deprecatedCoordinates` pathway is **not** wired (it surfaces nothing at usage
   sites and would only force a `SdlActions.MANUAL_MIGRATION_DEPRECATIONS` entry for no DX gain);
   the editor's "ignored" signal is the generator `BuildWarning` already surfaced through
