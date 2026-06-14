@@ -92,7 +92,48 @@ public class GraphitronSchemaValidator {
         }
     }
 
+    /**
+     * Whether the generator's dispatch emits a service/DML -&gt; {@code @table} follow-up SELECT
+     * (re-fetch) for this field, read from the leaf and its return-shape slot. This <em>mirrors</em>
+     * what {@code TypeFetcherGenerator} actually emits; {@link #validateField} asserts it agrees with
+     * the model's {@code intent x mapping} derivation {@link no.sikt.graphitron.rewrite.model.OutputField#requiresReFetch()},
+     * so the single-homed predicate and the emitter cannot drift. The {@code @service}-table and
+     * {@code DML}-projected-{@code @table} arms re-query; the {@code @service}-record, DML-encoded
+     * (PK-only RETURNING), and catalog {@code Fetch} arms do not. The {@code SingleRecordTableField}
+     * payload-carrier follow-up SELECT is a distinct mechanism driven by the parent producer, not the
+     * field's own service/write intent, so it is not a re-fetch in this derivation's sense (its own
+     * intent is {@code Fetch}).
+     */
+    private static boolean dispatchPerformsReFetch(no.sikt.graphitron.rewrite.model.OutputField field) {
+        return switch (field) {
+            case no.sikt.graphitron.rewrite.model.QueryField.QueryServiceTableField ignored -> true;
+            case no.sikt.graphitron.rewrite.model.MutationField.MutationServiceTableField ignored -> true;
+            case no.sikt.graphitron.rewrite.model.ChildField.ServiceTableField ignored -> true;
+            case no.sikt.graphitron.rewrite.model.MutationField.DmlTableField dml ->
+                dml.returnExpression() instanceof no.sikt.graphitron.rewrite.model.DmlReturnExpression.ProjectedSingle
+                || dml.returnExpression() instanceof no.sikt.graphitron.rewrite.model.DmlReturnExpression.ProjectedList;
+            default -> false;
+        };
+    }
+
     private void validateField(GraphitronField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
+        // R290 — re-fetch derivation mirror. The service/DML -> @table follow-up SELECT is derived
+        // once from intent x mapping on the field (OutputField.requiresReFetch); the generator's
+        // per-leaf fetcher arms emit it. This mirror pins the single-homed derivation against what the
+        // generator actually dispatches, so a future leaf or reclassification that yields a
+        // service/DML x Table shape without a re-fetch arm (or vice versa) fails at build time rather
+        // than silently emitting the wrong fetcher (validator-mirrors-classifier).
+        if (field instanceof no.sikt.graphitron.rewrite.model.OutputField out
+                && out.requiresReFetch() != dispatchPerformsReFetch(out)) {
+            errors.add(new ValidationError(
+                out.qualifiedName(),
+                Rejection.invalidSchema("Field '" + out.qualifiedName() + "': re-fetch derivation (intent "
+                    + out.intent() + " x mapping " + out.mapping() + " -> requiresReFetch="
+                    + out.requiresReFetch() + ") disagrees with the generator's re-fetch dispatch for "
+                    + out.getClass().getSimpleName() + "; the intent x mapping derivation and the "
+                    + "service/DML follow-up SELECT have drifted"),
+                out.location()));
+        }
         switch (field) {
             case no.sikt.graphitron.rewrite.model.QueryField.QueryLookupTableField f        -> validateQueryLookupTableField(f, types, errors);
             case no.sikt.graphitron.rewrite.model.QueryField.QueryTableField f         -> validateQueryTableField(f, types, errors);

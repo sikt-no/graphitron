@@ -58,6 +58,30 @@ public sealed interface OutputField extends GraphitronField permits RootField, C
     Mapping mapping();
 
     /**
+     * Re-fetch (the appendix's {@code RF}): a developer-{@code @service} or DML-write producer that
+     * yields a catalog-{@link Mapping#Table} shape needs a follow-up SELECT to project the
+     * {@code @table}, because the producer hands back a record/result rather than the projected
+     * columns. <strong>Derived</strong> from {@link #intent()} × {@link #mapping()}, not switched on
+     * leaf identity: a service or DML-write intent landing on a {@code Table} mapping. This is the
+     * single home of the re-fetch predicate the service/DML fetcher arms used to each re-decide from
+     * their own leaf type (R290); {@code GraphitronSchemaValidator} mirrors it against the generator's
+     * actual re-fetch dispatch so the derivation and the emitter cannot drift.
+     *
+     * <p>Catalog {@link Intent#Fetch} reads (which read the table directly) and service/DML producers
+     * that map to {@link Mapping#Record} / {@link Mapping#Column} are not re-fetches: the former needs
+     * no producer round-trip, the latter hands back the consumed shape directly.
+     */
+    default boolean requiresReFetch() {
+        if (mapping() != Mapping.Table) {
+            return false;
+        }
+        return switch (intent()) {
+            case QueryService, MutationService, Insert, Update, Upsert, Delete -> true;
+            default -> false;
+        };
+    }
+
+    /**
      * {@link Mapping#TableConnection} when the return wrapper is a Relay connection, else
      * {@link Mapping#Table}. The catalog-bound table mapping shared by every table-targeting leaf's
      * {@link #mapping()}.
