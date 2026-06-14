@@ -423,7 +423,7 @@ class GraphQLQueryTest {
     @Test
     void filmById_detailsForMethod_languageViaTableMethod_routesThroughRecordTableMethodFieldDtoParentEmit() {
         // R43 commit 5 execution-tier fixture: child @tableMethod on a @record (DTO) parent.
-        // Film.detailsForMethod is a ConstructorField passthrough to FilmDetailsForMethod,
+        // Film.detailsForMethod is a same-table NestingField passthrough to FilmDetailsForMethod,
         // a @record(FilmRecord)-backed type (JooqTableRecordType). FilmDetailsForMethod's
         // languageViaTableMethod field classifies as ChildField.RecordTableMethodField; the
         // FK-auto-derive arm of the new @tableMethod branch in
@@ -1712,7 +1712,7 @@ class GraphQLQueryTest {
     @Test
     void recordTableField_singleFilm_returnsLanguage() {
         // Film 1 (ACADEMY DINOSAUR) has language_id=1 (English).
-        // filmDetails is a ConstructorField pass-through; language is a RecordTableField DataLoader.
+        // filmDetails is a same-table NestingField pass-through; language is a RecordTableField DataLoader.
         Map<String, Object> data = execute(
             "{ filmById(film_id: [\"1\"]) { languageId filmDetails { title language { name } } } }");
         var details = assertThat(data).extractingByKey("filmById", as(LIST))
@@ -1754,7 +1754,7 @@ class GraphQLQueryTest {
     @Test
     void recordTableField_propertyField_resolvedFromSameRecord() {
         // title is a PropertyField on FilmDetails; it uses ColumnFetcher(DSL.field("title"))
-        // which extracts from the same Film Record passed through by the ConstructorField.
+        // which extracts from the same Film Record passed through by the NestingField.
         Map<String, Object> data = execute(
             "{ films { filmDetails { title } } }");
         List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("films");

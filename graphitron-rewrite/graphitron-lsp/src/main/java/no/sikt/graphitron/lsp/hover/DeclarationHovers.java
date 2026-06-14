@@ -154,8 +154,6 @@ public final class DeclarationHovers {
                 appendParticipants(sb, p.participantTypeNames());
             case FieldClassification.Nesting ignored ->
                 sb.append("\n\nNested projection on parent table.");
-            case FieldClassification.Constructor ignored ->
-                sb.append("\n\nPropagates the parent source.");
             case FieldClassification.ServiceBacked s ->
                 sb.append("\n\nService method `").append(nullSafe(s.methodClassName())).append("#")
                   .append(nullSafe(s.methodName())).append("`")
