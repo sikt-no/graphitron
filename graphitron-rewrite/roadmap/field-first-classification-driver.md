@@ -7,7 +7,7 @@ priority: 4
 theme: structural-refactor
 depends-on: [dimensional-model-pivot]
 created: 2026-06-05
-last-updated: 2026-06-07
+last-updated: 2026-06-14
 ---
 
 # Field-first reachability-driven classification driver
@@ -16,15 +16,24 @@ Classification today is a strict-ordered multiphase build in
 `GraphitronSchemaBuilder.buildSchema`: an eager type pass (`TypeBuilder.buildTypes`)
 that classifies every named SDL type *in isolation*, then a field pass over *every*
 `GraphQLObjectType` in `schema.getAllTypesAsList()` (no reachability sweep; graphql-java
-parks every declared type into `additionalTypes`, so orphans are visited), then four
+parks every declared type into `additionalTypes`, so orphans are visited), then three
 field->type back-fill post-passes that exist only because the type pass classified blind:
-`registerNestingTypes`, `validateUniformDomainReturnType`, `ConnectionPromoter.promote`
-(which also rebuilds the assembled `GraphQLSchema`), and `promoteSingleRecordPayloads`.
-The result is bidirectional ordering coupling (type pass is a prerequisite for field
-classification; field classification is a prerequisite for the four post-passes), a
-`TypeRegistry` with four write verbs (`classify`/`enrich`/`demote`/`synthesize`) to
-service the phasing, and "classify the type in isolation" as the documented root smell
-behind R278.
+`registerNestingTypes`, `validateUniformDomainReturnType`, and `ConnectionPromoter.promote`
+(which also rebuilds the assembled `GraphQLSchema`). (Verified 2026-06-14 against current
+`buildSchema`: the eager `getAllTypesAsList()` field pass, then `registerNestingTypes`,
+`validateUniformDomainReturnType`, `ConnectionPromoter.promote` /
+`rebuildAssembledForConnections`, and the global post-walk sweeps `rejectDanglingTypeReferences`,
+`rejectCaseInsensitiveTypeCollisions`, `MappingsConstantNameDedup`, `EntityResolutionBuilder`.
+The fourth post-pass this paragraph once listed, `promoteSingleRecordPayloads`, **no longer
+runs here**: R276/R178 folded single-record-carrier binding into the eager type pass itself
+(`TypeBuilder.buildTypes` calls `promoteSingleRecordPayloads` after its second pass, binding
+producer-backed directiveless carriers to a `JooqTableRecordType` via
+`scanStructuralDmlPayload`), and orphan carriers are now *rejected* downstream rather than
+promoted. Slice 3's fold-into-the-walk wording is updated to match.) The result is bidirectional
+ordering coupling (type pass is a prerequisite for field classification; field classification
+is a prerequisite for the post-passes), a `TypeRegistry` with four write verbs
+(`classify`/`enrich`/`demote`/`synthesize`) to service the phasing, and "classify the type in
+isolation" as the documented root smell behind R278.
 
 ## Direction
 
@@ -180,8 +189,10 @@ The slicing is built for risk isolation and bisectability. Two constraints, both
 design principles, shape it more than anything else:
 
 - *The merge gate is the designated primary tier, not the differential.* The behavioural
-  proof is the exhaustive `GraphitronSchemaBuilderTest` truth table (~398 enum rows over the
-  sealed hierarchy, `VariantCoverageTest`-enforced) plus the sakila pipeline-tier `TypeSpec`
+  proof is the exhaustive `GraphitronSchemaBuilderTest` truth table (~370 enum rows over the
+  sealed hierarchy as of 2026-06-14, drifted down from the ~398 this item was written against
+  as R290 and adjacent leaf retirements removed rows; the count is `VariantCoverageTest`-enforced,
+  so lean on that enforcement rather than the literal number) plus the sakila pipeline-tier `TypeSpec`
   assertions, the `graphitron-sakila-example` Java-17 compile, and the execution tier. A
   projection-snapshot differential (old-vs-new through `CatalogBuilder.buildSnapshot`, the
   one model surface that compares by value since `GraphitronSchema` carries identity-equality
@@ -201,14 +212,16 @@ references) has been **eaten by R281 (`classification-test-dsl`)**, whose docume
 phase produces that prose against its executable example corpus; R279 no longer owns a doc slice.
 Coupling that survives: when R279's inversion (slice 3) and orphan pruning (slice 6) land, the
 R281 classification doc must be updated to match. **Truth-table baseline note (R290 / R305):** R290
-(`datafetcher-field-dimensional-slots`, now In Review) removed two `GraphitronSchemaBuilderTest`
+(`datafetcher-field-dimensional-slots`, now **Done**) removed two `GraphitronSchemaBuilderTest`
 enum rows (the `ConstructorField` verdict + its `@ProjectionFor` sibling) and the `constructor`
-corpus fixture when it dissolved `ConstructorField`; R305 will remove the `SingleRecordTableField`
-coverage when it lands the collapse. R279 leans on that truth table as its primary merge gate, so
-whichever item lands second re-baselines against the other's row delta; this is a rebase, not a
-semantic conflict (R279 is behaviour-preserving over whatever rows exist, and the R290/R305 leaf
-removals are independent of R279's orphan pruning). No ordering edge is declared. What remains here
-is the risk-isolated, gated code transformation, slices in landing order:
+corpus fixture when it dissolved `ConstructorField`; that row delta is already absorbed in the
+current ~370-row baseline, so R279 simply takes the tree as it stands. R305
+(`collapse-singlerecordtablefield-into-recordtablefield`, still Spec) will remove the
+`SingleRecordTableField` coverage when it lands the collapse. R279 leans on that truth table as its
+primary merge gate, so whichever of R279 / R305 lands second re-baselines against the other's row
+delta; this is a rebase, not a semantic conflict (R279 is behaviour-preserving over whatever rows
+exist, and the R305 leaf removal is independent of R279's orphan pruning). No ordering edge is
+declared. What remains here is the risk-isolated, gated code transformation, slices in landing order:
 
 1. **Reachability observatory + differential bisect aid (additive, zero behaviour change).**
    Build the `SchemaTraverser` walk that computes the reachable set (seed: Query + Mutation +
@@ -228,8 +241,12 @@ is the risk-isolated, gated code transformation, slices in landing order:
    walk: seed, visit fields, classify each field, and register its target type as a byproduct
    (slice 2's entry). No on-demand recursion and no re-entrancy guard, registration is the only
    write and the accumulator absorbs repeats; walk-level cycles are the traverser's visited-set.
-   Fold `registerNestingTypes` and
-   `promoteSingleRecordPayloads` into the walk (the directiveless-from-field case). **Keep
+   Fold the directiveless-from-field cases into the walk: `registerNestingTypes` (still a
+   post-pass) and the single-record-carrier binding that `TypeBuilder.promoteSingleRecordPayloads`
+   now performs *inside* the eager type pass this slice replaces (producer-backed carriers bind to
+   a `JooqTableRecordType` via `scanStructuralDmlPayload`; orphan carriers stay unbound and are
+   rejected downstream, so the walk reproduces today's reject-the-orphan behaviour rather than
+   promoting it). **Keep
    `validateUniformDomainReturnType`'s demote-to-`UnclassifiedField` intact through this slice**
    so no enforcement gap opens; it is retired in slice 4 when its replacement goes green. Gate:
    truth table + sakila pipeline `TypeSpec` + compile + execute. No dual-run flag.
@@ -278,8 +295,9 @@ Genuine residual forks:
 1. **Test ergonomics.** Unit tests call `FieldBuilder.classifyField` / `TypeBuilder` directly; a
    walk-driven classifier needs either a one-seed in-test driver or a direct-call shim.
 2. **Reuse boundary.** `FieldBuilder.classifyQueryField` / `classifyMutationField` and the
-   per-field dispatch are reusable as-is; the change is the driver, reachability, and registration,
-   not the ~5400 lines of per-field logic. Confirm the blast radius stays bounded to the driver.
+   per-field dispatch are reusable as-is (both still present and private as of 2026-06-14); the
+   change is the driver, reachability, and registration, not the ~5660 lines of per-field logic in
+   `FieldBuilder`. Confirm the blast radius stays bounded to the driver.
 
 The LSP `TypeClassification` / `FieldClassification` projections are read-only consumers
 of the classified model and should be unaffected.
