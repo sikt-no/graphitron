@@ -18,7 +18,7 @@ public sealed interface ChildField extends OutputField
             ChildField.TableMethodField,
             ChildField.RecordTableMethodField,
             ChildField.InterfaceField, ChildField.UnionField,
-            ChildField.ConstructorField, ChildField.NestingField,
+            ChildField.NestingField,
             ChildField.ServiceRecordField,
             ChildField.RecordField,
             ChildField.ComputedField, ChildField.PropertyField,
@@ -56,9 +56,8 @@ public sealed interface ChildField extends OutputField
             case RecordField ignored -> Intent.Fetch;
             case PropertyField ignored -> Intent.Fetch;
             case ComputedField ignored -> Intent.Fetch;
-            // Nesting (asserted, not derived from an absent join-path) and constructor passthrough.
+            // Nesting (asserted, not derived from an absent join-path).
             case NestingField ignored -> Intent.Nesting;
-            case ConstructorField ignored -> Intent.Fetch;
             // Polymorphic children: catalog-bound multi-table UNION keyed off the parent.
             case InterfaceField ignored -> Intent.Fetch;
             case UnionField ignored -> Intent.Fetch;
@@ -93,7 +92,6 @@ public sealed interface ChildField extends OutputField
             // @externalField inlines a jOOQ Field<X> into the parent SELECT; mapping stays Column.
             case ComputedField ignored -> Mapping.Column;
             case NestingField f -> OutputField.tableMapping(f.returnType());
-            case ConstructorField ignored -> Mapping.Record;
             case InterfaceField f -> OutputField.polyMapping(f.returnType());
             case UnionField f -> OutputField.polyMapping(f.returnType());
             case SingleRecordIdFieldFromReturning ignored -> Mapping.Column;
@@ -681,33 +679,6 @@ public sealed interface ChildField extends OutputField
          */
         @Override public DomainReturnType domainReturnType() {
             return new DomainReturnType.Plain(ClassName.get("org.jooq", "Record"));
-        }
-    }
-
-    /**
-     * A child field whose value is the parent itself, propagated through to a
-     * class-backed child whose constructor populates from that same parent record.
-     * The fetcher emit is {@code env -> env.getSource()}; the constructor wiring runs at the
-     * child level through graphql-java's accessor projection.
-     */
-    record ConstructorField(
-        String parentTypeName,
-        String name,
-        SourceLocation location,
-        ReturnTypeRef returnType
-    ) implements ChildField {
-        /**
-         * R204: the constructor-field emitter passes {@code env.getSource()} through verbatim;
-         * the child SDL type's constructor builds from the parent record. When the return is a
-         * {@code @table}-bound type, the per-field children read columns from the same record
-         * via the generic {@code Record} interface, so the consumer-level identity matches
-         * other table-bound producers' {@link DomainReturnType.Record}{@code (table)}.
-         */
-        @Override public DomainReturnType domainReturnType() {
-            if (returnType instanceof ReturnTypeRef.TableBoundReturnType tbrt) {
-                return new DomainReturnType.Record(tbrt.table());
-            }
-            return new DomainReturnType.Plain(OBJECT_CLASS);
         }
     }
 

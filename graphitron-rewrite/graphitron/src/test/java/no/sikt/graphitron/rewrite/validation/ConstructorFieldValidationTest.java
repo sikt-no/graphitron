@@ -1,48 +1,55 @@
 package no.sikt.graphitron.rewrite.validation;
 
+import no.sikt.graphitron.rewrite.GraphitronSchema;
+import no.sikt.graphitron.rewrite.TestSchemaHelper;
 import no.sikt.graphitron.rewrite.ValidationError;
-import no.sikt.graphitron.rewrite.model.ChildField.ConstructorField;
-import no.sikt.graphitron.rewrite.model.FieldWrapper;
-import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.EnumSource;
-
-import java.util.List;
+import no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField;
+import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
+import org.junit.jupiter.api.Test;
 
 import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.validate;
 import static org.assertj.core.api.Assertions.assertThat;
-import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 
-@UnitTier
+/**
+ * R290 dissolved {@code ConstructorField} as wrong-by-design. A {@code @table} parent whose child
+ * returns a record-backed ({@code @service}) result type, with no producer directive on the child to
+ * build it, used to classify cleanly as {@code ConstructorField} — materialising the child from the
+ * {@code @table} parent's own row, a shape no production schema relies on. That table-and-service
+ * clash is now a build-time rejection: the classifier produces an {@code UnclassifiedField} whose
+ * rejection {@code GraphitronSchemaValidator} surfaces as a build error. This is the rejection fixture
+ * the former {@code "constructor"} corpus example became (it left the classified corpus, which holds
+ * successful classifications only).
+ */
+@PipelineTier
 class ConstructorFieldValidationTest {
 
-    enum Case implements ValidatorCase {
-
-        BASIC("constructor field — pass-through, no validation errors",
-            new ConstructorField("Film", "constructed", null, new ReturnTypeRef.ScalarReturnType("Film", new FieldWrapper.Single(true))),
-            List.of());
-
-        private final String description;
-        private final GraphitronField field;
-        private final List<String> errors;
-
-        Case(String description, GraphitronField field, List<String> errors) {
-            this.description = description;
-            this.field = field;
-            this.errors = errors;
+    private static final String TABLE_PARENT_RECORD_CHILD = """
+        type FilmDetails { rating: String }
+        type Film @table(name: "film") { details: FilmDetails }
+        type Query {
+            film: Film
+            prodFilmDetails: FilmDetails @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeFilmDetailsRating"})
         }
+        """;
 
-        @Override public GraphitronField field() { return field; }
-        @Override public List<String> errors() { return errors; }
-        @Override public String toString() { return description; }
+    @Test
+    void tableParentRecordChild_withoutProducer_classifiesAsUnclassified() {
+        GraphitronSchema schema = TestSchemaHelper.buildSchema(TABLE_PARENT_RECORD_CHILD);
+
+        GraphitronField details = schema.field("Film", "details");
+        assertThat(details).isInstanceOf(UnclassifiedField.class);
+        assertThat(((UnclassifiedField) details).reason())
+            .contains("a @table parent cannot construct a @record child from its own row");
     }
 
-    @ParameterizedTest(name = "{0}")
-    @EnumSource(Case.class)
-    void constructorFieldValidation(Case tc) {
-        assertThat(validate(tc.field()))
+    @Test
+    void tableParentRecordChild_withoutProducer_failsValidation() {
+        GraphitronSchema schema = TestSchemaHelper.buildSchema(TABLE_PARENT_RECORD_CHILD);
+
+        assertThat(validate(schema))
             .extracting(ValidationError::message)
-            .containsExactlyInAnyOrderElementsOf(tc.errors());
+            .anyMatch(m -> m.contains("Film.details")
+                && m.contains("a @table parent cannot construct a @record child from its own row"));
     }
 }

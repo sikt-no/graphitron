@@ -51,7 +51,6 @@ public sealed interface FieldClassification
             FieldClassification.TableInterface,
             FieldClassification.Polymorphic,
             FieldClassification.Nesting,
-            FieldClassification.Constructor,
             FieldClassification.ServiceBacked,
             FieldClassification.RecordOrProperty,
             FieldClassification.Computed,
@@ -137,7 +136,6 @@ public sealed interface FieldClassification
                  TableInterface _,
                  Polymorphic _,
                  Nesting _,
-                 Constructor _,
                  ServiceBacked _,
                  RecordOrProperty _,
                  Computed _,
@@ -295,12 +293,6 @@ public sealed interface FieldClassification
      * label switch.
      */
     record Nesting() implements FieldClassification {}
-
-    /**
-     * The field's value is the parent itself, propagated through to a class-backed
-     * child. Covers {@code ChildField.ConstructorField}.
-     */
-    record Constructor() implements FieldClassification {}
 
     /**
      * A child field backed by a developer-provided {@code @service} method. Covers

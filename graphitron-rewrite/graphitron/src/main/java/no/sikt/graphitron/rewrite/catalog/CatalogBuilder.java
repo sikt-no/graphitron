@@ -244,8 +244,6 @@ public final class CatalogBuilder {
                 new FieldClassification.Polymorphic(participantNames(f.participants()));
             case ChildField.NestingField ignored ->
                 new FieldClassification.Nesting();
-            case ChildField.ConstructorField ignored ->
-                new FieldClassification.Constructor();
             case ChildField.ServiceTableField f ->
                 new FieldClassification.ServiceBacked(
                     f.method() != null ? f.method().className() : null,

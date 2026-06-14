@@ -28,6 +28,12 @@ public final class DummyFetcherFixtures {
      */
     public record DetailsProps(String title, String film_title) {}
 
-    /** Backs {@code type FilmDetails { rating: String }}: the @table-parent ConstructorField child. */
+    /**
+     * Backs {@code type FilmDetails { rating: String }} as a {@code @service} return, making
+     * {@code FilmDetails} record-backed. R290 retired the {@code @table}-parent ConstructorField that
+     * used to classify cleanly from this shape; it now backs {@code ConstructorFieldValidationTest}'s
+     * table-and-service clash rejection fixture (the child has no producer to build it from the
+     * {@code @table} parent's row).
+     */
     public record FilmDetailsRating(String rating) {}
 }
