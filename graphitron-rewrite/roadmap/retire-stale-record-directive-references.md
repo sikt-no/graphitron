@@ -1,7 +1,7 @@
 ---
 id: R307
-title: "Retire stale @record references: error messages recommending the dead directive and @record-as-jargon vocabulary"
-status: In Review
+title: "Retire stale @record references: dead-directive advice, jargon, the deprecation-warning emitter, and test-fixture @record"
+status: Spec
 bucket: cleanup
 priority: 5
 theme: legacy-migration
@@ -10,107 +10,109 @@ created: 2026-06-14
 last-updated: 2026-06-14
 ---
 
-# Retire stale @record references: error messages recommending the dead directive and @record-as-jargon vocabulary
+# Retire stale @record references: dead-directive advice, jargon, the deprecation-warning emitter, and test-fixture @record
 
 The `@record` directive is **DEPRECATED and IGNORED** (`directives.graphqls:288-297`):
 it binds no type to a Java class and drives no behaviour, declared only so existing
 schemas keep parsing. A reachable type carrying it gets a build warning telling the
-author to remove it. The generator honours this fully: the only live reads of the
-directive name (`DIR_RECORD`, `BuildContext.java:78`) are the schema-declaration
-assert (`GraphitronSchemaBuilder.java:561`), the warning emitter
-(`TypeBuilder.emitDirectiveIgnoredWarnings`, `:337`), and `readRecordClassName`
-(`:403`), which reads the `className` arg *only* to phrase the warning. Nothing
-reads `@record` to drive binding.
+author to remove it. `@record` **stays a legal-but-ignored directive for now**: the
+`directives.graphqls` declaration is intentionally retained so existing consumer
+schemas keep parsing. The only live reads of the directive name (`DIR_RECORD`,
+`BuildContext.java:78`) are the schema-declaration assert (`GraphitronSchemaBuilder.java:561`),
+the deprecation-warning machinery (`TypeBuilder.emitDirectiveIgnoredWarnings` at `:333`,
+called from `:192`, plus `readRecordClassName` at `:403`, which reads the `className`
+arg only to phrase the warning), and nothing else. Nothing reads `@record` to drive
+binding.
 
-The residue is everything else still mentioning `@record`, in two flavours, neither
-of which is the deprecation machinery:
+Today that warning is produced by a **standalone emitter**: `emitDirectiveIgnoredWarnings`
+re-walks the entire schema *after* classification looking for `@record`-carrying types.
+The classifier already visits every type; this item folds the deprecation warning into
+that single classification pass and deletes the separate emitter, so the signal bottoms
+out at classification (and is testable there without a pipeline fixture).
 
-1. **Error messages that tell authors to *add* `@record`.** Five rejection strings
-   steer authors toward the dead directive; following the advice produces a type the
-   build then warns them to remove, and two of the five use an argument form
-   (`@record(class: ...)`) that was never valid (the arg is `record: ExternalCodeReference`
-   with a `className` field):
-   - `MutationInputResolver.java:184` ("author a carrier with `@record(record: {className: ...})`")
-   - `FieldBuilder.java:5057` ("back the parent with a typed jOOQ TableRecord (`@record(record: {className: ...})`)")
-   - `SourceRowDirectiveResolver.java:448-449` ("declare a backing class via `@record(record: {className: ...})`")
-   - `FieldBuilder.java:4991` (`@record(class: ...)`, bogus arg)
-   - `FieldBuilder.java:5071` (`@record(class: ...)`, bogus arg)
+The work has two parts.
 
-   These are actively wrong: they should instead point authors at the reflected
-   backing path (a producing `@service` return type, `@table`, `@tableMethod`, a
-   parent-accessor chain, or `@sourceRow` for the batch-key lift), since that is what
-   actually drives the binding now.
+**Part A (wording, already landed on trunk)** scrubbed the stale `@record` *references*
+in two flavours, neither of which is the deprecation machinery:
 
-2. **`@record` used as jargon for "record-backed type."** Pervasively, comments,
-   javadoc, rejection text, and at least one sealed-type label use "@record" as
-   shorthand for a Pojo / JavaRecord / jOOQ `Record` / `TableRecord`-backed type:
-   "@record parent", "@record child", "@record-element", "@record-typed parent",
-   "a @record type". Sampling: `FieldBuilder` (854, 864, 868, 3422, 3482, 3701,
-   4204, 4318/4324, 4423, 4791, 4943, 4986, 5020, 5028, 5054, 5056, 5068, 5093,
-   5113, 5203), `EntityResolutionBuilder.java:209-212` (literally returns the string
-   `"a @record type"`), `MutationField`, `Mapping`, `OutputField`, `FetcherEmitter`,
-   `RecordBindingResolver`, `ClasspathScanner`, `BuildContext.java:642`,
-   `GeneratorUtils.java:230`, `ServiceCatalog.java:927`, `MutationInputResolver`
-   (208, 211, 212), `TypeBuilder` (640, 1130), `TypeBackingShape.java:125`,
-   `GraphitronSchemaBuilder.java:369`, `SourceRowDirectiveResolver.java:444`. Since
-   R96/R276 moved binding to reflection, this vocabulary is a misnomer: it reads as
-   if a directive creates the binding when nothing does, which is exactly the
-   confusion the deprecation was meant to remove.
+1. **Error messages that told authors to *add* `@record`.** Five rejection strings
+   steered authors toward the dead directive (two via the never-valid `@record(class: ...)`
+   arg form); they were rewritten to point at the reflected-backing path. (`MutationInputResolver`,
+   `FieldBuilder` ×3, `SourceRowDirectiveResolver`.)
 
-The production-shaped `graphitron-sakila-example/schema.graphqls` carries no applied
-`@record` (only comments, some explicitly noting "@record-typed parents no longer
-exist (R276)"). Applied `@record` survives only in test-fixture SDL, in two shapes:
-some fixtures exercise the deprecation-warning path directly (e.g.
-`R96RecordBindingPipelineTest:85`, `GraphitronSchemaBuilderTest:4165`, both asserting
-"the @record directive is ignored"); the rest is legacy binding-hint decoration on
-reachable types in fetcher/shape fixtures (e.g. `FetcherPipelineTest`,
-`SingleRecordPayloadPipelineTest`, `GraphitronSchemaClassGeneratorTest:464`). All
-applied `@record` in fixture SDL stays; removing the directive itself is out of scope
-(below). What this item *does* scrub from test source is the `@record`-as-jargon
-vocabulary in comments, section labels, and assertion strings (see Scope).
+2. **`@record` used as jargon for "record-backed type."** Comments, javadoc, rejection
+   text, section labels, assertion strings, and the `EntityResolutionBuilder` kind label
+   used "@record" as shorthand for a Pojo / JavaRecord / jOOQ `Record` / `TableRecord`-backed
+   type. All were renamed to "record-backed" (or the variant name) across main and test
+   source, in lockstep so the build stayed green.
+
+**Part B (this re-spec) retires the standalone emitter and the applied `@record` in test
+fixtures.** The production-shaped `graphitron-sakila-example/schema.graphqls` already
+carries no applied `@record` (only comments). Applied `@record` survives only in
+test-fixture SDL (72 occurrences across ~22 files), in two shapes: a handful exist solely
+to exercise the deprecation-warning path (e.g. `R96RecordBindingPipelineTest:84-85`,
+`GraphitronSchemaBuilderTest:4164-4165`, `BuildOutputReportPipelineTest:84`, all asserting
+on the ignored-warning); the rest is legacy binding-hint decoration on types that actually
+bind via reflection (a producing `@service` return type / `@table`), so the directive is
+inert there. Both shapes go: the binding-hint fixtures drop `@record` (classification is
+unchanged, since reflection already drives the binding), and the warning-path coverage
+moves off pipeline fixtures onto a simple classifier-level test, because the deprecation
+warning bottoms out at classification and needs no compilation/execution fixture to verify.
 
 ## Scope
 
-- **Rewrite the five recommend-`@record` rejection messages** to point at the
-  reflected-backing path instead of the dead directive. Update any pipeline/unit
-  tests asserting on the old message text.
-- **Rename the `@record`-as-jargon vocabulary** to "record-backed" (use this single
-  term consistently; "class-backed" / "reflected-backing" were considered and dropped
-  in favour of the existing dominant phrasing), across comments, javadoc, rejection
-  text, and the `EntityResolutionBuilder` sealed label. Where a message names the *type
-  variant*, prefer the variant name (Pojo / JavaRecord / JooqRecord / JooqTableRecord)
-  over "@record".
-- **Extend the vocabulary scrub to test source.** Test-fixture comments, section
-  labels (e.g. the `FetcherPipelineTest` "@record parent" headers,
-  `GraphitronSchemaBuilderTest:2105`), and assertion strings that pin the renamed
-  message/jargon text (`EntityResolutionBuilderTest:294,337` "is classified as a
-  @record type"; `RejectionRenderingTest:66,69` and `GraphitronSchemaBuilderTest:2160`
-  "@record-typed parent") get the same "record-backed" treatment, in lockstep with the
-  main-source rename so the build stays green. Exceptions that stay verbatim: the
-  deprecation-warning fixtures and any assertion on the warning's own "the @record
-  directive is ignored" wording, and the applied `@record` directive in fixture SDL
-  (directive removal is out of scope).
-- **Leave the deprecation machinery untouched**: the `directives.graphqls`
-  declaration, the `DIR_RECORD` assert, `emitDirectiveIgnoredWarnings`,
-  `readRecordClassName`, and the warning's own "remove the `@record` directive"
-  wording all stay, and the test fixtures that apply `@record` to exercise the
-  warning stay.
+### Part A — wording (landed on trunk)
+
+- **Rewrote the five recommend-`@record` rejection messages** to point at the reflected
+  backing path (a producing `@service` return type, `@table`, `@tableMethod`, a
+  parent-accessor chain, or `@sourceRow`) instead of the dead directive, dropping the
+  never-valid `@record(class:)` form; updated the assertions that pinned the old text.
+- **Renamed the `@record`-as-jargon vocabulary** to "record-backed" across main and test
+  source, in lockstep so the build stayed green. Where a message names the *type variant*,
+  the variant name (Pojo / JavaRecord / JooqRecord / JooqTableRecord) is preferred.
+
+### Part B — emitter relocation + fixture purge (remaining)
+
+- **Delete the standalone `emitDirectiveIgnoredWarnings` pass** (`TypeBuilder:333`, call
+  site `:192`) and register the `@record`-ignored deprecation warning from the classifier
+  as it classifies each type, so the warning is a classification output rather than a
+  post-classification re-scan. Preserve the three existing message variants
+  (shadowed-by-`@table`, redundant/matches, disagrees) and the multi-producer-rejection
+  suppression (`bindings.rejection(name)`). `readRecordClassName` and the directive
+  declaration stay.
+- **Remove every applied `@record` from test-fixture SDL** (all 72 occurrences). For the
+  binding-hint fixtures the type already binds via its `@service` producer / `@table`, so
+  dropping `@record` is classification-neutral; migrate any fixture that leaned on
+  `@record(record: {className: ...})` purely for binding onto the reflected form so its
+  verdict is unchanged.
+- **Replace pipeline-fixture warning coverage with a simple classifier-level test.** The
+  deprecation warning bottoms out at classification, so a focused test that drives the
+  classifier (the one legitimate place `@record` appears in tests) replaces the
+  ignored-warning assertions currently piggybacking on `R96RecordBindingPipelineTest`,
+  `GraphitronSchemaBuilderTest` (input `@table + @record`), and `BuildOutputReportPipelineTest`.
+  Compilation/execution fixture tests are reserved for verifying generated-code shape and
+  runtime behaviour, not classifier diagnostics.
 
 ## Out of scope
 
-- Removing the `@record` directive declaration entirely (a separate, later
-  hard-removal once schemas have been scrubbed; this item is wording/vocabulary only).
+- Removing the `@record` directive *declaration* from `directives.graphqls`. `@record`
+  stays a legal-but-ignored directive for now so existing consumer schemas keep parsing;
+  the hard removal of the declaration is a separate, later item once schemas are scrubbed.
 - The legacy modules at the repo root.
 
 ## Done when
 
-- No rejection/error message recommends authoring `@record`; the replacement advice
-  names the reflected-backing mechanism. No message uses the invalid `@record(class:)`
-  form.
-- "@record" no longer appears as a label for a record-backed *type* anywhere in main
-  or test source (comments, javadoc, messages, section labels, assertion strings);
-  remaining mentions are confined to the deprecation machinery, the warning-path
-  fixtures and their assertions, the applied `@record` directive in fixture SDL, and
-  documentation of the directive itself.
-- Full pipeline build green (`mvn -f graphitron-rewrite/pom.xml install -Plocal-db`),
-  including any updated message-assertion tests.
+- (Part A, done) No rejection/error message recommends authoring `@record`; the
+  replacement advice names the reflected-backing mechanism; no message uses the invalid
+  `@record(class:)` form. "@record" no longer labels a record-backed *type* in main or
+  test source.
+- No standalone deprecation-warning emitter remains: `emitDirectiveIgnoredWarnings` is
+  gone and the `@record`-ignored warning is produced by the classifier. The three message
+  variants and the multi-producer-rejection suppression are preserved.
+- No applied `@record` remains in any test-fixture SDL. The only `@record` left in test
+  source is the minimal schema in the dedicated classifier-level deprecation-warning test.
+- The deprecation warning is covered by a simple classifier-level test, not a
+  compilation/execution fixture.
+- `@record` remains a declared, legal-but-ignored directive (`directives.graphqls`
+  declaration and `readRecordClassName` intact); nothing reads it to drive binding.
+- Full pipeline build green (`mvn -f graphitron-rewrite/pom.xml install -Plocal-db`).
