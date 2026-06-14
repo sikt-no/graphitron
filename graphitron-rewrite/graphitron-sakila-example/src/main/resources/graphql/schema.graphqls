@@ -673,9 +673,9 @@ type Category @table(name: "category") {
 
 """
 FilmDetails is backed by jOOQ's FilmRecord (JooqTableRecordType), reflection-bound under R276.
-It is reached via Film.filmDetails (ConstructorField — the Film Record is passed through
-as the FilmDetails source), and has a RecordTableField child (language: Language) that
-DataLoader-batches language lookups keyed by the Film's language_id column.
+It is reached via Film.filmDetails as a same-table NestingField (the Film Record is passed through
+as the FilmDetails source, no producer directive), and has a RecordTableField child
+(language: Language) that DataLoader-batches language lookups keyed by the Film's language_id column.
 """
 type FilmDetails {
     title:    String!     @field(name: "title")
@@ -810,7 +810,7 @@ type Film implements Node & Searchable @table(name: "film") @node {
     # rather than a literal sf. Without the parameterisation, the generated code for
     # either nested arm would reference an undefined sf variable at depth ≥ 1.
     inlineBundle: FilmInlineBundle
-    # C4 RecordTableField fixture: pass Film record through to FilmDetails (ConstructorField),
+    # C4 RecordTableField fixture: pass Film record through to FilmDetails (same-table NestingField),
     # then batch-load Language via DataLoader from FilmDetails.language (RecordTableField).
     filmDetails: FilmDetails
     # argres Phase 2a: child-level @lookupKey via junction table (film_actor).
