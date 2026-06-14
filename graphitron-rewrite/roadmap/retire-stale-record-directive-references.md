@@ -39,11 +39,23 @@ generic `ExternalCodeReference.className` behavior at `LspVocabulary.java:752`),
 "Unknown class '…'" diagnostic when the className does not resolve
 (`Diagnostics.validateClassName`, `Diagnostics.java:631`), and hovers the directive as a live
 binding (`DeclarationHover`). None of that should survive: `@record` is dead, so the editor
-should say only that it is deprecated and offer nothing else. The LSP already has a
-deprecation pathway (`LspVocabulary.deprecationOf` / `deprecatedCoordinates`, driven by the
-`@deprecated` docstring-token convention on a directive declaration), but the `@record`
-declaration's docstring (`directives.graphqls:288-297`) spells "DEPRECATED" in prose without
-the `@deprecated` token, so that pathway is dark for `@record` today.
+should say only that it is ignored/deprecated and offer nothing else.
+
+The "say it is deprecated" signal already reaches the editor, and not through the
+declaration-side `@deprecated` pathway. `LspVocabulary.deprecationOf` / `deprecatedCoordinates`
+(the `@deprecated` docstring-token convention on a declaration) is consumed only by the
+code-action drift test (`SdlActionDriftTest`) and the auto-migration allow-list
+(`SdlActions.MANUAL_MIGRATION_DEPRECATIONS`); it produces **no** usage-site diagnostic or hover,
+so wiring `@record` into it would light up nothing for the author. The signal that *does* reach
+the editor is the generator's own `@record`-ignored `BuildWarning`: the LSP runs a full
+`GraphQLRewriteGenerator` pass, `schema.warnings()` (the `ctx.addWarning` output, including the
+ignored-directive warning) is bundled into the `ValidationReport`, and
+`Diagnostics.validatorDiagnostics` (`Diagnostics.java:190-194`) maps every `BuildWarning` to a
+usage-site LSP `Warning` (covered by `ValidatorDiagnosticsTest`). Because strand 1 keeps the
+warning a `BuildWarning` (it only moves *where* it is produced, from a standalone emitter to the
+classifier), this editor signal is preserved with **no new LSP machinery**. The LSP work is
+therefore purely subtractive: retire the className tooling; the deprecation signal stays wired
+through the existing validator-warning surface.
 
 The work has two parts; Part B carries both the generator-side relocation and the LSP-side
 retirement.
@@ -89,8 +101,13 @@ All three shapes go. The binding-hint fixtures drop `@record` (classification is
 since reflection already drives the binding). The warning-path coverage moves off pipeline
 fixtures onto a simple classifier-level test, because the deprecation warning bottoms out at
 classification and needs no compilation/execution fixture to verify. The LSP fixtures are
-rewritten to assert that `@record` surfaces only a deprecation diagnostic, with no className
-completion and no unknown-class diagnostic.
+rewritten to assert the carve-out: `@record` gets **no** className completion, **no**
+unknown-class diagnostic, and **no** live-binding hover. The "it is ignored" signal in the
+editor is the generator's `@record`-ignored `BuildWarning` already surfaced through
+`validatorDiagnostics`; a reachable `@record` fixture asserts that warning lands as a usage-site
+`Warning` (the `BuildWarning` is reachability-gated, so an unreachable-type fixture asserts only
+the absence of className tooling, matching the generator, which never warns about types it does
+not generate).
 
 ## Scope
 
@@ -117,24 +134,32 @@ completion and no unknown-class diagnostic.
   live `ExternalCodeReference`-className binding: it must no longer offer className FQN
   completion (`FieldCompletions` / `CompletionContext`) or raise the "Unknown class '…'"
   diagnostic (`Diagnostics.validateClassName`, `Diagnostics.java:631`) or hover it as a live
-  binding (`DeclarationHover`) for `@record`. In its place, surface only a deprecation signal
-  through the LSP's existing pathway (`LspVocabulary.deprecationOf` / `deprecatedCoordinates`):
-  mark the `@record` declaration deprecated with the `@deprecated` docstring token the
-  convention keys on (`directives.graphqls:288-297`). The declaration is **retained** (still
-  parses `@record(record: {className: ...})`), so the suppression is a per-directive carve-out
-  of the generic ECR-className handling, not a retyping of the argument; the implementer
-  settles whether to gate the carve-out on the deprecation marker or on the directive name.
+  binding (`DeclarationHover`) for `@record`. The declaration is **retained** (still parses
+  `@record(record: {className: ...})`), so this is a per-directive carve-out of the generic
+  ECR-className handling, not a retyping of the argument. Gate the carve-out on the **enclosing
+  directive name** (`"record"`), mirroring the established `Diagnostics.METHOD_VALIDATING_DIRECTIVES`
+  pattern: `validateClassName` (`Diagnostics.java:631`) does not currently receive the enclosing
+  directive, but the `dispatch` site (`Diagnostics.java:408`) has it in scope and `validateMethod`
+  already threads it, so the same thread-through applies; `FieldCompletions` / `CompletionContext`
+  and `DeclarationHover` resolve the enclosing directive at the cursor and skip the className
+  behavior when it is `@record`. No `@deprecated` docstring token is added and the
+  `deprecationOf` / `deprecatedCoordinates` pathway is **not** wired (it surfaces nothing at usage
+  sites and would only force a `SdlActions.MANUAL_MIGRATION_DEPRECATIONS` entry for no DX gain);
+  the editor's "ignored" signal is the generator `BuildWarning` already surfaced through
+  `validatorDiagnostics`.
 - **Remove every applied `@record` from test-fixture SDL** across both modules (generator
   and `graphitron-lsp`). For the generator-module binding-hint fixtures the type already binds
   via its `@service` producer / `@table`, so dropping `@record` is classification-neutral;
   migrate any fixture that leaned on `@record(record: {className: ...})` purely for binding
   onto the reflected form so its verdict is unchanged. The `graphitron-lsp` fixtures are
-  rewritten, not merely stripped: each is repointed to assert the deprecation diagnostic and
-  the **absence** of className completion / unknown-class diagnostics for `@record`.
+  rewritten, not merely stripped: each is repointed to assert the **absence** of className
+  completion / unknown-class diagnostics / live-binding hover for `@record`, with one reachable
+  fixture asserting the generator's ignored-directive `BuildWarning` surfaces as a usage-site
+  `Warning` through `validatorDiagnostics`.
 - **Replace pipeline-fixture warning coverage with a simple classifier-level test.** The
   deprecation warning bottoms out at classification, so a focused test that drives the
   classifier (one of the two legitimate places `@record` still appears in tests, the other
-  being the LSP deprecation-diagnostic fixtures) replaces the
+  being the rewritten `graphitron-lsp` carve-out / `validatorDiagnostics` fixtures) replaces the
   ignored-warning assertions currently piggybacking on `R96RecordBindingPipelineTest`,
   `GraphitronSchemaBuilderTest` (input `@table + @record`), and `BuildOutputReportPipelineTest`.
   Compilation/execution fixture tests are reserved for verifying generated-code shape and
@@ -144,8 +169,14 @@ completion and no unknown-class diagnostic.
 
 - Removing the `@record` directive *declaration* from `directives.graphqls`. `@record`
   stays a legal-but-ignored directive for now so existing consumer schemas keep parsing
-  (this item only marks it `@deprecated` and stops the editor offering className tooling for
-  it); the hard removal of the declaration is a separate, later item once schemas are scrubbed.
+  (this item only stops the editor offering className tooling for it); the hard removal of the
+  declaration is a separate, later item once schemas are scrubbed.
+- Wiring the `@deprecated` docstring-token / `deprecatedCoordinates` pathway for `@record`, and
+  any presence-based "directive is deprecated" usage-site diagnostic (a new consumer of
+  `deprecationOf(Directive(...))` in `Diagnostics.compute`'s `Bundled` arm). The editor's
+  ignored signal is the reachability-gated generator `BuildWarning`; a presence-based signal for
+  unreachable `@record` is a separate, optional enhancement. If filed, it carries the
+  `@deprecated` token plus the matching `SdlActions.MANUAL_MIGRATION_DEPRECATIONS` entry.
 - The legacy modules at the repo root.
 
 ## Done when
@@ -159,14 +190,15 @@ completion and no unknown-class diagnostic.
   variants and the multi-producer-rejection suppression are preserved.
 - The LSP no longer treats `@record` as a live `ExternalCodeReference`-className binding:
   no className FQN completion, no "Unknown class" diagnostic, no live-binding hover for
-  `@record`. Instead the LSP surfaces a deprecation signal for `@record` through its existing
-  deprecation pathway, driven by the `@deprecated` docstring token now on the declaration.
+  `@record` (carve-out gated on the `"record"` directive name). The editor's ignored signal
+  for `@record` is the generator `BuildWarning` surfaced through `validatorDiagnostics`; the
+  `deprecationOf` / `deprecatedCoordinates` pathway is untouched.
 - No applied `@record` remains in any test-fixture SDL across either module. The only
   `@record` left in test source is the minimal schema in the dedicated classifier-level
-  deprecation-warning test and the `graphitron-lsp` deprecation-diagnostic fixtures.
-- The deprecation warning is covered by a simple classifier-level test, not a
-  compilation/execution fixture; the LSP deprecation behaviour is covered by the rewritten
-  `graphitron-lsp` fixtures.
+  warning test and the rewritten `graphitron-lsp` carve-out fixtures.
+- The classifier warning is covered by a simple classifier-level test, not a
+  compilation/execution fixture; the LSP carve-out and the `validatorDiagnostics` surfacing
+  are covered by the rewritten `graphitron-lsp` fixtures.
 - `@record` remains a declared directive (`directives.graphqls` declaration and
-  `readRecordClassName` intact), now marked `@deprecated`; nothing reads it to drive binding.
+  `readRecordClassName` intact); nothing reads it to drive binding.
 - Full pipeline build green (`mvn -f graphitron-rewrite/pom.xml install -Plocal-db`).
