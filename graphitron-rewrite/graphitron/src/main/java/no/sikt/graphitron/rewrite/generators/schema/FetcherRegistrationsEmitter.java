@@ -5,7 +5,6 @@ import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.generators.FetcherEmitter;
 import no.sikt.graphitron.rewrite.generators.util.ConnectionHelperClassGenerator;
-import no.sikt.graphitron.rewrite.model.BatchKeyField;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
@@ -24,15 +23,17 @@ import java.util.TreeMap;
  * and the value is the method body that attaches each fetcher to the shared code registry
  * through {@link graphql.schema.FieldCoordinates}.
  *
- * <p>Covers five categories inherited from the deleted {@code WiringClassGenerator}:
+ * <p>Covers the categories inherited from the deleted {@code WiringClassGenerator}; every field
+ * is now wired through its owning {@code <Type>Fetchers} class (R303):
  * <ol>
  *   <li>Regular object types. {@code codeRegistry.dataFetcher(FieldCoordinates.coordinates("Film", "title"), FilmFetchers::title)}.</li>
- *   <li>Nested object types with {@link BatchKeyField} leaves — mixes fetcher references with
- *       inline {@code ColumnFetcher} bindings.</li>
- *   <li>Nested object types without {@link BatchKeyField} leaves — inline bindings only.</li>
+ *   <li>Nested object types that own any fetcher — every field references into the type's own
+ *       {@code <Type>Fetchers} class, as a method reference or a {@code LightFetcher}-wrapped read.</li>
  *   <li>Connection types — binds {@code edges}, {@code nodes}, {@code pageInfo}, and (when the
- *       schema declares it) {@code totalCount} to {@link ConnectionHelperClassGenerator}.</li>
- *   <li>Edge types — binds {@code node}, {@code cursor} to {@link ConnectionHelperClassGenerator}.</li>
+ *       schema declares it) {@code totalCount} to the per-connection {@code <Conn>Fetchers}
+ *       delegates, which forward to {@link ConnectionHelperClassGenerator}.</li>
+ *   <li>Edge types — binds {@code node}, {@code cursor} to the per-edge {@code <Edge>Fetchers}
+ *       delegates, which forward to {@link ConnectionHelperClassGenerator}.</li>
  * </ol>
  *
  * <p>The fetcher-value expressions come from {@link FetcherEmitter#bind}'s

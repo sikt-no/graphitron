@@ -838,7 +838,7 @@ public sealed interface ChildField extends OutputField
      * A child field using {@code @externalField} — the developer provides a static method
      * returning a jOOQ {@code Field<X>} that is inlined into the parent's projection at
      * generation time. The method handles the SQL-side computation; runtime wiring uses
-     * a {@code ColumnFetcher} keyed on the GraphQL field name.
+     * a {@code LightFetcher}-wrapped read of the aliased column, keyed on the GraphQL field name.
      *
      * <p>The method signature is:
      * <pre>
