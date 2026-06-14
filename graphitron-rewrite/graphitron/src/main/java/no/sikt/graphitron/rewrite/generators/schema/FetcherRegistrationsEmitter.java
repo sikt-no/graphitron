@@ -60,7 +60,6 @@ public final class FetcherRegistrationsEmitter {
 
     public static Map<String, CodeBlock> emit(GraphitronSchema schema, String outputPackage) {
         String fetchersPackage = outputPackage + ".fetchers";
-        String utilPackage     = outputPackage + ".util";
 
         var nestedTypeMap = new LinkedHashMap<String, NestedTypeWiring>();
         schema.fields().values().forEach(field -> collectNestedTypes(field, nestedTypeMap));
@@ -89,8 +88,8 @@ public final class FetcherRegistrationsEmitter {
         // reads the full ConnectionType to inspect schemaType().getFieldDefinition("totalCount").
         schema.types().values().forEach(type -> {
             if (type instanceof GraphitronType.ConnectionType ct) {
-                result.put(ct.name(),         connectionBody(ct, utilPackage));
-                result.put(ct.edgeTypeName(), edgeBody(ct.edgeTypeName(), utilPackage));
+                result.put(ct.name(),         connectionBody(ct, fetchersPackage));
+                result.put(ct.edgeTypeName(), edgeBody(ct.edgeTypeName(), fetchersPackage));
             }
         });
 
@@ -134,33 +133,34 @@ public final class FetcherRegistrationsEmitter {
         return Optional.of(body.build());
     }
 
-    private static CodeBlock connectionBody(GraphitronType.ConnectionType connectionType, String utilPackage) {
-        var helper = ClassName.get(utilPackage, ConnectionHelperClassGenerator.CLASS_NAME);
+    private static CodeBlock connectionBody(GraphitronType.ConnectionType connectionType, String fetchersPackage) {
+        var fetchers = ClassName.get(fetchersPackage, connectionType.name() + "Fetchers");
         var connName = connectionType.name();
         var body = CodeBlock.builder()
             .add("codeRegistry")
             .indent()
-            .add("\n.dataFetcher($T.coordinates($S, $S), $T::edges)",    FIELD_COORDS, connName, "edges",    helper)
-            .add("\n.dataFetcher($T.coordinates($S, $S), $T::nodes)",    FIELD_COORDS, connName, "nodes",    helper)
-            .add("\n.dataFetcher($T.coordinates($S, $S), $T::pageInfo)", FIELD_COORDS, connName, "pageInfo", helper);
+            .add("\n.dataFetcher($T.coordinates($S, $S), $T::edges)",    FIELD_COORDS, connName, "edges",    fetchers)
+            .add("\n.dataFetcher($T.coordinates($S, $S), $T::nodes)",    FIELD_COORDS, connName, "nodes",    fetchers)
+            .add("\n.dataFetcher($T.coordinates($S, $S), $T::pageInfo)", FIELD_COORDS, connName, "pageInfo", fetchers);
         // totalCount is always present on synthesised connection types; on structural connections
         // it is wired only when the SDL author declared it. GraphitronSchemaValidator already
-        // rejected non-Int totalCount, so a present field is guaranteed to be Int / Int!.
+        // rejected non-Int totalCount, so a present field is guaranteed to be Int / Int!. The same
+        // gate drives ConnectionFetcherClassGenerator so the reference and the method agree.
         var totalCount = connectionType.schemaType().getFieldDefinition("totalCount");
         if (totalCount != null) {
-            body.add("\n.dataFetcher($T.coordinates($S, $S), $T::totalCount)", FIELD_COORDS, connName, "totalCount", helper);
+            body.add("\n.dataFetcher($T.coordinates($S, $S), $T::totalCount)", FIELD_COORDS, connName, "totalCount", fetchers);
         }
         body.add(";\n").unindent();
         return body.build();
     }
 
-    private static CodeBlock edgeBody(String edgeTypeName, String utilPackage) {
-        var helper = ClassName.get(utilPackage, ConnectionHelperClassGenerator.CLASS_NAME);
+    private static CodeBlock edgeBody(String edgeTypeName, String fetchersPackage) {
+        var fetchers = ClassName.get(fetchersPackage, edgeTypeName + "Fetchers");
         return CodeBlock.builder()
             .add("codeRegistry")
             .indent()
-            .add("\n.dataFetcher($T.coordinates($S, $S), $T::edgeNode)",    FIELD_COORDS, edgeTypeName, "node",   helper)
-            .add("\n.dataFetcher($T.coordinates($S, $S), $T::edgeCursor);\n", FIELD_COORDS, edgeTypeName, "cursor", helper)
+            .add("\n.dataFetcher($T.coordinates($S, $S), $T::node)",     FIELD_COORDS, edgeTypeName, "node",   fetchers)
+            .add("\n.dataFetcher($T.coordinates($S, $S), $T::cursor);\n", FIELD_COORDS, edgeTypeName, "cursor", fetchers)
             .unindent()
             .build();
     }
