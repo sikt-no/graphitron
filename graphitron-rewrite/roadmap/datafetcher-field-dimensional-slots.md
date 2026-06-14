@@ -1,7 +1,7 @@
 ---
 id: R290
 title: "Field-side dimensional slots: materialise carrier x intent x mapping on the field"
-status: In Progress
+status: In Review
 bucket: structural
 priority: 4
 theme: structural-refactor
