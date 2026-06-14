@@ -81,46 +81,50 @@ lands as model state the consumers read, and the leaf-identity switch dissolves.
 
 Two markers today split `SingleRecordTableField` from `RecordTableField`, and both are *static per-type
 interface membership*, which a single merged leaf cannot make conditional on a per-instance fact. They
-resolve differently, by the payload-vs-uniformity rule below: `OrderingOwnedByProducer` (payload-free,
-per-instance) dissolves into a derived predicate; `BatchKeyField` (payload-carrying, uniform across its
-other implementers) survives, with the merged leaf's loader riding the `SourceArrival.Many` slot. This is
-the "emit-mechanism unification, not a leaf merge" R290 flagged, and it is the bulk of the work.
+resolve to two *existing* slots: `OrderingOwnedByProducer` is determinism logic that belongs in the
+`OrderBySpec` ordering slot (it dissolves into an `OrderBySpec` arm); `BatchKeyField` (payload-carrying,
+uniform across its other implementers) survives, with the merged leaf's loader riding the
+`SourceArrival.Many` slot. This is the "emit-mechanism unification, not a leaf merge" R290 flagged, and it
+is the bulk of the work.
 
-### OrderingOwnedByProducer → a derived, validator-mirrored predicate
+### OrderingOwnedByProducer → an OrderBySpec arm (determinism belongs in the ordering slot)
 
 `OrderingOwnedByProducer` (`OrderingOwnedByProducer.java`; payload-free sealed marker, permits
 `SingleRecordTableField` + `ServiceTableField`) exists only so
 `GraphitronSchemaValidator.validateListRequiresOrdering` (line 232) exempts those fields from the
-"list-shaped + `OrderBySpec.None` ⇒ non-determinism" rejection: graphitron emits no `ORDER BY` for them
-and the visible order is owned by an upstream producer (the single-arrival inline source re-key; the
-`@service` method's verbatim list). It **dissolves into a derived predicate**, the `requiresReFetch`
-pattern: a single-home `orderingOwnedByProducer()` accessor computed from the field's classification and
-mirrored by `GraphitronSchemaValidator`. Its arms reproduce today's verdict, `ServiceTableField → true`,
-the merged `RecordTableField → sourceArrival() instanceof Single`, everything else `false`. The validator
-reads the predicate instead of `instanceof OrderingOwnedByProducer`; the marker interface is deleted.
+"list-shaped + `OrderBySpec.None` ⇒ non-determinism" rejection. But determinism is `OrderBySpec`'s job:
+`OrderBySpec` is the *authoritative resolved* ordering (its own doc), not author intent, its `Fixed` arm
+is "derived from `@defaultOrder` **or the table's primary key**", and its `None` arm is already overloaded
+("the return type is a single value" *and* "no primary key and no `@defaultOrder`"). The marker is an
+escape hatch around an under-expressive slot: the producer-owned fields are **mislabelled `None`** (their
+order is deterministic, just not a graphitron `ORDER BY`), and the marker only tells the validator to
+ignore that `None`.
 
-It *must* dissolve, not merely narrow. The merged leaf cannot carry a conditional static marker (arrival
-is per-instance), so the exemption is a derived predicate regardless; and once it is one,
-`ServiceTableField` rides it (`true` arm), so a one-permit marker would be pure redundancy, and a
-one-permit marker is leaf-identity-as-interface, exactly what the pivot retires. This is the principled
-split from `BatchKeyField`, which *does* survive: `BatchKeyField` carries payload (`loaderRegistration`)
-and is *uniformly* true across its five always-batched leaves, a capability ("capability interfaces
-express what is uniformly true"); `OrderingOwnedByProducer` is payload-free and per-instance for the
-merged leaf, a derived predicate. Payload + uniform ⇒ capability; payload-free + per-instance ⇒ derived
-predicate.
+The fix is to stop mislabelling them. `OrderBySpec` gains an arm (working name `OwnedByProducer`) meaning
+"deterministic order established upstream; graphitron emits no `ORDER BY`." The merged `RecordTableField`
+`Single` arm and `ServiceTableField` carry it instead of `None`. `validateListRequiresOrdering` then
+simply **drops** its `!(instanceof OrderingOwnedByProducer)` clause: a list field is rejected iff its
+`OrderBySpec` is `None`, which now unambiguously means "unresolvable". The marker is deleted; there is no
+`orderingOwnedByProducer()` predicate, and the validator never reads `SourceArrival`.
 
-There is deliberately **no `OrderBySpec` arm** for this (an earlier pass proposed `OwnedUpstream`,
-dropped): "graphitron does not impose the order" is a fact about the emit/fetch shape, so it belongs in a
-derived predicate over the classification, not in `OrderBySpec`, whose arms (`None` / `Fixed` /
-`Argument` / `NamedOrder`) all express what the *author* asked for.
+As an `OrderBySpec` arm this has *two* real consumers, the emitter (emit `ORDER BY` or not) and the
+validator (determinism), so it is a genuine resolved-ordering value, not a single-consumer predicate. It
+corrects two earlier missteps in this spec's history: dropping this arm (rejected on a false
+"`OrderBySpec` is author-intent-only" premise) and then proposing a mirror-less
+`orderingOwnedByProducer()` predicate.
 
-Lookup is *not* this case, despite the surface resemblance an earlier pass chased. A `BatchKeyField`
-lookup carries a real `OrderBySpec` (PK-default `Fixed`, or the author's `@orderBy`) and clears the
-validator normally; the orderBy resolver lands on `None` only for a PK-less table with no author ordering
-(`validateListRequiresOrdering` doc, lines 219-222). Its `idx` input-order preservation
-(`LookupValuesJoinEmitter` line 37) is a separate scatter concern, not an ordering exemption. The
-keyed-scatter kinship with the producer re-key is real but lives in the arrival/scatter mechanism, not in
-this predicate; R305 leaves lookup ordering untouched.
+`ServiceTableField` shows this is *not* the `SourceArrival` axis: it is many-arrival (a `BatchKeyField`)
+yet producer-ordered. `SourceArrival { Single | Many }` (fetch mechanism) and `OrderBySpec` (resolved
+ordering) are orthogonal, `ServiceTableField` is `Many` + `OwnedByProducer`; the merged single-arrival
+field is `Single` + `OwnedByProducer`. Deriving the ordering exemption from arrival would have been wrong
+for exactly this reason.
+
+Lookup is untouched: it carries a real `Fixed` / `Argument` `OrderBySpec` and clears the validator
+already (the orderBy resolver lands on `None` only for a PK-less table with no author ordering,
+`validateListRequiresOrdering` doc lines 219-222). Its `idx` input-order preservation
+(`LookupValuesJoinEmitter` line 37) is a separate scatter concern. Splitting `None` further
+(single-value-N/A vs unresolvable) is a broader `OrderBySpec` cleanup for the R222 Stage-2 Ordering slice,
+not R305; R305 adds only the one `OwnedByProducer` arm the dissolution needs.
 
 ### BatchKeyField → the loader lives on the SourceArrival.Many arm
 
@@ -151,17 +155,19 @@ capability decision and Stage 5.
 
 1. **Rename** `SourceKey.Cardinality {ONE, MANY}` → `SourceKey.ValueCardinality` (mechanical, ~26 call
    sites, payload-free enum, no generated-output change). Independent; can land first.
-2. **Add the slot and the predicate.** The `SourceArrival { Single | Many(LoaderRegistration) }` slot on
-   the merged `RecordTableField`, asserted at the construction sites (the two formerly-SRTF arms →
-   `SINGLE`; nested `RecordTableField` → `MANY`); and the derived `orderingOwnedByProducer()` predicate
-   reproducing today's verdict. `GraphitronSchemaValidator` mirrors both against the emit path.
-3. **Migrate the consumers off `instanceof`.** The emit fork and loader consumers read `SourceArrival`
-   (`FetcherEmitter`, `TypeFetcherGenerator` rows-method/scatter sites, `SplitRowsMethodEmitter`); the
-   `validateListRequiresOrdering` validator reads `orderingOwnedByProducer()`.
-4. **Retire the markers and the leaf.** Delete `OrderingOwnedByProducer` and `SingleRecordTableField`
-   (the leaf record, its `intent()` / `mapping()` switch arms, its marker memberships), and retarget the
-   `SingleRecordPayloadPipelineTest` `instanceof SingleRecordTableField` assertions to `RecordTableField`
-   + `SourceArrival.Single`. 48 → **47**.
+2. **Add the slot and the ordering arm.** The `SourceArrival { Single | Many(LoaderRegistration) }` slot
+   on the merged `RecordTableField`, asserted at the construction sites (the two formerly-SRTF arms →
+   `SINGLE`; nested `RecordTableField` → `MANY`), mirrored by `GraphitronSchemaValidator`; and the
+   `OrderBySpec.OwnedByProducer` arm, with the merged `Single`-arm sites and `ServiceTableField`
+   constructed carrying it instead of `None`.
+3. **Migrate the consumers.** The emit fork and loader consumers read `SourceArrival` (`FetcherEmitter`,
+   `TypeFetcherGenerator` rows-method/scatter sites, `SplitRowsMethodEmitter`); the emitter treats
+   `OwnedByProducer` like `None` for `ORDER BY` emission; and `validateListRequiresOrdering` drops its
+   `!(instanceof OrderingOwnedByProducer)` clause (reject iff `OrderBySpec` is `None`).
+4. **Retire the marker and the leaf.** Delete `OrderingOwnedByProducer` and `SingleRecordTableField`
+   (the leaf record, its `intent()` / `mapping()` switch arms, its `OrderingOwnedByProducer` membership),
+   and retarget the `SingleRecordPayloadPipelineTest` `instanceof SingleRecordTableField` assertions to
+   `RecordTableField` + `SourceArrival.Single`. 48 → **47**.
 
 ## Acceptance
 
