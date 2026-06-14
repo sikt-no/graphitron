@@ -15,7 +15,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | ID | Item | Status | Updated | Plan |
 |---|---|---|---|---|
 | `R19` | Rebase and squash rewrite branch onto main | Ready |  | [plan](history-squash.md) |
-| `R284` | Reversed source/target alias order in bridging-hop @reference ConditionJoin emission | In Review | 2026-06-08 | [plan](bridging-hop-conditionjoin-alias-order.md) |
+| `R284` | Reversed source/target alias order in bridging-hop @reference ConditionJoin emission | In Review | 2026-06-14 <sub>created 2026-06-08</sub> | [plan](bridging-hop-conditionjoin-alias-order.md) |
 | `R222` | Dimensional model pivot: slots over cross-product permits | Spec | 2026-06-13 <sub>created 2026-05-21</sub> | [plan](dimensional-model-pivot.md) |
 | `R256` | Absorb the service walker substrate: typed per-arm errors + multi-arg ctors | Ready | 2026-05-30 <sub>created 2026-05-29</sub> | [plan](service-walker-substrate-absorption.md) |
 | `R279` | Field-first reachability-driven classification driver <sub>blocked by: [dimensional-model-pivot](dimensional-model-pivot.md)</sub> | Ready | 2026-06-07 <sub>created 2026-06-05</sub> | [plan](field-first-classification-driver.md) |

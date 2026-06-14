@@ -947,6 +947,21 @@ type FilmInlineBundle {
         {key: "film_actor_film_id_fkey"},
         {key: "film_actor_actor_id_fkey"}
     ])
+    # R284 bridging-hop ConditionJoin regression for the inline LookupTableField path. Mirrors
+    # Film.actorsViaJunctionCondition (FK first hop to film_actor, terminal @condition hop to
+    # actor) but as an inline @lookupKey field, so it routes through InlineLookupTableFieldEmitter
+    # rather than the split-rows emitter. The terminal hop emits
+    # .join(film_actor_alias).on(filmActorJunctionToActor(film_actor_alias, actor_alias)); the
+    # fixture's parameters are the concrete, incompatible jOOQ types FilmActor and Actor, so
+    # reversing the two aliases fails to compile in compile-spec. The four sites R284 originally
+    # swapped did not include this one, and every Table<?>-typed lookup fixture compiled either way.
+    actorsByKeyViaJunctionCondition(actor_id: [Int!] @lookupKey): [Actor!]! @reference(path: [
+        {key: "film_actor_film_id_fkey"},
+        {condition: {
+            className: "no.sikt.graphitron.rewrite.test.conditions.ReferencePathConditionFixtures",
+            method: "filmActorJunctionToActor"
+        }}
+    ])
 }
 
 # argres Phase 3 composite-key fixture. Each key carries both film_id and actor_id as
