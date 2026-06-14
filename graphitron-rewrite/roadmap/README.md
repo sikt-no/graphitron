@@ -21,9 +21,9 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R308` | Fix the @service list-payload N+1 by deriving many-arrival for list-returning carriers <sub>blocked by: [collapse-singlerecordtablefield-into-recordtablefield](collapse-singlerecordtablefield-into-recordtablefield.md)</sub> | Spec | 2026-06-14 | [plan](service-list-payload-arrival.md) |
 | `R279` | Field-first reachability-driven classification driver <sub>blocked by: [dimensional-model-pivot](dimensional-model-pivot.md)</sub> | Ready | 2026-06-07 <sub>created 2026-06-05</sub> | [plan](field-first-classification-driver.md) |
 | `R45` | Multi-tenant routing on top of the schema-driven ExecutionInput factory | Spec | 2026-05-20 | [plan](tenant-routing-and-execution-input.md) |
-| `R307` | Retire stale @record references: dead-directive advice, jargon, the deprecation-warning emitter, and test-fixture @record | Spec | 2026-06-14 | [plan](retire-stale-record-directive-references.md) |
 | `R273` | Source NodeId metadata from @node + catalog PK (inferred from `implements Node`), and settle wrong-type/malformed mismatch semantics, retiring the legacy __NODE bare-ID arm | Spec | 2026-06-02 | [plan](nodeid-skip-mismatch-error-surfacing.md) |
 | `R200` | Honor @field(name:) in InputBeanResolver for SDL input bean/record member binding | Ready | 2026-06-10 <sub>created 2026-05-20</sub> | [plan](honor-field-directive-in-inputbeanresolver.md) |
+| `R307` | Retire stale @record references: dead-directive advice, jargon, the deprecation-warning emitter, test-fixture @record, and the LSP's @record className tooling | Ready | 2026-06-14 | [plan](retire-stale-record-directive-references.md) |
 | `R23` | Multi-parent `NestingField` sharing: `TableField` arm | Spec |  | [plan](nestingfield-multiparent-tablefield.md) |
 | `R13` | Faceted search on `@asConnection` | Spec |  | [plan](faceted-search.md) |
 | `R63` | Type UPSERT dialect requirement on the model | Spec |  | [plan](dml-dialect-requirement-on-model.md) |
@@ -254,7 +254,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 - `R19` [**Rebase and squash rewrite branch onto main**](history-squash.md) — Ready
 - `R27` [**Retire `@nodeId` and `IdReferenceField` synthesis shims**](retire-synthesis-shims.md) — Backlog, cleanup, blocked by [sis-rewrite-migration](sis-rewrite-migration.md)
-- `R307` [**Retire stale @record references: dead-directive advice, jargon, the deprecation-warning emitter, and test-fixture @record**](retire-stale-record-directive-references.md) — Spec, cleanup
+- `R307` [**Retire stale @record references: dead-directive advice, jargon, the deprecation-warning emitter, test-fixture @record, and the LSP's @record className tooling**](retire-stale-record-directive-references.md) — Ready, cleanup
 - `R95` [**Routines as data-model citizens (jOOQ-native routine support)**](routines-as-data-model-citizens.md) — Backlog, feature
 - `R47` [**Short class-name resolution for `@service` and `@externalField` (legacy parity)**](service-short-classname-resolution.md) — Backlog, cleanup
 - `R26` [**Retire `graphitron-maven-plugin` + `graphitron-schema-transform`**](retire-maven-plugin.md) — In Progress
