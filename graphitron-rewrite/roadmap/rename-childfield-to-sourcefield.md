@@ -29,8 +29,9 @@ catalog, and the test corpus) update with them. No leaf is added, removed, or re
 ## Why split from R290
 
 R290 materialises `carrier x intent x mapping` on the field, derives the fetcher mechanism, deletes
-`LeafTupleAdapter`, and changes two leaves (dissolve `ConstructorField`, collapse
-`SingleRecordTableField`). That is load-bearing architectural work whose reviewability depends on a
+the throwaway leaf-to-tuple adapter, and dissolves the `ConstructorField` leaf (the
+`SingleRecordTableField` collapse was split to R305). That is load-bearing architectural work whose
+reviewability depends on a
 small, readable diff. Folding a ~940-reference rename into the same commit range would bury the
 substantive change under mechanical noise, exactly the bundling R222's "vertical slices each ship their
 own vocabulary" technique exists to avoid. The rename touches the same files R290 does but is

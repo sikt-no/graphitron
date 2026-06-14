@@ -44,8 +44,8 @@ public sealed interface OutputField extends GraphitronField permits RootField, C
     /**
      * The {@code intent} dimension (R299): the operation kind this field classifies to. Derived from
      * the leaf's identity plus the slots it already carries (the {@code DmlKind} discriminator on the
-     * {@code @record} DML carriers); gated by {@link #carrier()}. R290 materialises this on the field;
-     * it reproduces the verdict the retired {@code LeafTupleAdapter} reconstructed from leaf identity.
+     * {@code @record} DML carriers); gated by {@link #carrier()}. R290 materialises this on the field
+     * as the single home of the leaf-to-intent verdict the corpus harness asserts.
      */
     Intent intent();
 
