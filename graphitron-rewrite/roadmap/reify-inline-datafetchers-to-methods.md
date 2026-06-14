@@ -1,7 +1,7 @@
 ---
 id: R303
 title: Reify inline datafetchers into named XFetchers methods
-status: In Review
+status: Ready
 bucket: architecture
 depends-on: []
 created: 2026-06-13
@@ -396,3 +396,41 @@ carry a resolved errors accessor, which this Spec scoped out (see
 The light path is preserved by wrapping the named reads in `LightFetcher` (see
 [Light path: wrap the read, don't register the bare reference](#light-path-wrap-the-read-dont-register-the-bare-reference)),
 so there is no deferred optimization to track there.
+
+## Review feedback (In Review → Ready, 2026-06-14)
+
+The implementation is architecturally sound and the full pipeline is green end-to-end
+(`mvn -f graphitron-rewrite/pom.xml install -Plocal-db`, all 11 modules SUCCESS including the
+compile-spec and execute-spec tiers). The sealed `FetcherBinding`, the `LightFetcher` `Read<T>`
+SAM with the `Object`-typed reified-method return, the shared `nestedTypeOwnsFetchers` gate closing
+the two-gate drift, the connection/edge/`@error` delegate classes, and the honest PayloadAccessor
+deferral with R304 filed are all delivered as specified, and the tests are faithful
+(method-presence + wiring-kind assertions, no banned code-string body assertions beyond the
+documented `@error` / LocalContext source-pin exception).
+
+**One blocking finding — stale `ColumnFetcher` documentation.** The global
+`ColumnFetcher → LightFetcher` rename left seven javadoc/comment references to the now-deleted
+`ColumnFetcher` class, two of which additionally assert the `no per-field method generated`
+invariant that R303 *inverted* (`ColumnField` now reifies and collects a per-field method). This
+violates the *"Documentation names only live tests/code"* principle in both forms (a name that no
+longer resolves, and a false invariant readers trust), and it is exactly the live documentation the
+[Comment / javadoc hygiene](#comment--javadoc-hygiene) section committed to leaving accurate
+("the live documentation does not describe wiring that no longer exists"). Fix all seven, then
+re-request the In Review → Done handoff:
+
+* `TypeFetcherGenerator.java:65-67` (class javadoc) — `ColumnField` "wired via
+  `new ColumnFetcher<>(Tables.X.COLUMN)`, no per-field method generated. `ColumnFetcher` implements
+  `LightDataFetcher`". Both the class name and the no-method invariant are now false; describe the
+  reified source-only read wrapped in `LightFetcher`. **Most material** (first thing a reader of the
+  central generator sees).
+* `TypeFetcherGenerator.java:370` — `// handled in wiring via ColumnFetcher — no method emitted` on
+  the `ColumnField` switch arm; the method *is* now emitted (collected just below the switch). The
+  sibling no-op arms at `:465-548` were updated; this arm was missed.
+* `FetcherRegistrationsEmitter.java:31` — "inline `ColumnFetcher` bindings".
+* `FetcherEmitter.java:144` — "a `ComputedField` or other `ColumnFetcher`-backed leaf".
+* `FetcherEmitter.java:277` and `:287` — "what `ColumnFetcher` does" / "`ColumnFetcher`'s
+  `((Record) source).get(column)`".
+* `ChildField.java:841` — "a `ColumnFetcher` keyed on the GraphQL field name".
+* `ExternalFieldDirectiveResolver.java:80` — "the alias shadows it and `ColumnFetcher`".
+
+No other rework required; the fix is mechanical and comment-only.
