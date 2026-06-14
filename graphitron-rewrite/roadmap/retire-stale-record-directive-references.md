@@ -1,6 +1,6 @@
 ---
 id: R307
-title: "Retire stale @record references: dead-directive advice, jargon, the deprecation-warning emitter, and test-fixture @record"
+title: "Retire stale @record references: dead-directive advice, jargon, the deprecation-warning emitter, test-fixture @record, and the LSP's @record className tooling"
 status: Spec
 bucket: cleanup
 priority: 5
@@ -10,19 +10,20 @@ created: 2026-06-14
 last-updated: 2026-06-14
 ---
 
-# Retire stale @record references: dead-directive advice, jargon, the deprecation-warning emitter, and test-fixture @record
+# Retire stale @record references: dead-directive advice, jargon, the deprecation-warning emitter, test-fixture @record, and the LSP's @record className tooling
 
 The `@record` directive is **DEPRECATED and IGNORED** (`directives.graphqls:288-297`):
 it binds no type to a Java class and drives no behaviour, declared only so existing
 schemas keep parsing. A reachable type carrying it gets a build warning telling the
 author to remove it. `@record` **stays a legal-but-ignored directive for now**: the
 `directives.graphqls` declaration is intentionally retained so existing consumer
-schemas keep parsing. The only live reads of the directive name (`DIR_RECORD`,
-`BuildContext.java:78`) are the schema-declaration assert (`GraphitronSchemaBuilder.java:561`),
-the deprecation-warning machinery (`TypeBuilder.emitDirectiveIgnoredWarnings` at `:333`,
-called from `:192`, plus `readRecordClassName` at `:403`, which reads the `className`
-arg only to phrase the warning), and nothing else. Nothing reads `@record` to drive
-binding.
+schemas keep parsing. In the generator module the only live reads of the directive name
+(`DIR_RECORD`, `BuildContext.java:78`) are the schema-declaration assert
+(`GraphitronSchemaBuilder.java:561`), the deprecation-warning machinery
+(`TypeBuilder.emitDirectiveIgnoredWarnings` at `:333`, called from `:192`, plus
+`readRecordClassName` at `:403`, which reads the `className` arg only to phrase the warning),
+and nothing else. Nothing reads `@record` to drive binding. (The LSP also treats `@record`
+as live; see below.)
 
 Today that warning is produced by a **standalone emitter**: `emitDirectiveIgnoredWarnings`
 re-walks the entire schema *after* classification looking for `@record`-carrying types.
@@ -30,7 +31,22 @@ The classifier already visits every type; this item folds the deprecation warnin
 that single classification pass and deletes the separate emitter, so the signal bottoms
 out at classification (and is testable there without a pipeline fixture).
 
-The work has two parts.
+A **second live treatment lives in graphitron-lsp**. Because `@record`'s declared argument
+is `record: ExternalCodeReference`, the LSP resolves it through the same generic
+ECR-className machinery as `@enum`: it offers className FQN completion on
+`@record(record: {className: ...})` (`FieldCompletions` / `CompletionContext`, off the
+generic `ExternalCodeReference.className` behavior at `LspVocabulary.java:752`), raises an
+"Unknown class '…'" diagnostic when the className does not resolve
+(`Diagnostics.validateClassName`, `Diagnostics.java:631`), and hovers the directive as a live
+binding (`DeclarationHover`). None of that should survive: `@record` is dead, so the editor
+should say only that it is deprecated and offer nothing else. The LSP already has a
+deprecation pathway (`LspVocabulary.deprecationOf` / `deprecatedCoordinates`, driven by the
+`@deprecated` docstring-token convention on a directive declaration), but the `@record`
+declaration's docstring (`directives.graphqls:288-297`) spells "DEPRECATED" in prose without
+the `@deprecated` token, so that pathway is dark for `@record` today.
+
+The work has two parts; Part B carries both the generator-side relocation and the LSP-side
+retirement.
 
 **Part A (wording, already landed on trunk)** scrubbed the stale `@record` *references*
 in two flavours, neither of which is the deprecation machinery:
@@ -46,18 +62,35 @@ in two flavours, neither of which is the deprecation machinery:
    type. All were renamed to "record-backed" (or the variant name) across main and test
    source, in lockstep so the build stayed green.
 
-**Part B (this re-spec) retires the standalone emitter and the applied `@record` in test
-fixtures.** The production-shaped `graphitron-sakila-example/schema.graphqls` already
-carries no applied `@record` (only comments). Applied `@record` survives only in
-test-fixture SDL (72 occurrences across ~22 files), in two shapes: a handful exist solely
-to exercise the deprecation-warning path (e.g. `R96RecordBindingPipelineTest:84-85`,
-`GraphitronSchemaBuilderTest:4164-4165`, `BuildOutputReportPipelineTest:84`, all asserting
-on the ignored-warning); the rest is legacy binding-hint decoration on types that actually
-bind via reflection (a producing `@service` return type / `@table`), so the directive is
-inert there. Both shapes go: the binding-hint fixtures drop `@record` (classification is
-unchanged, since reflection already drives the binding), and the warning-path coverage
-moves off pipeline fixtures onto a simple classifier-level test, because the deprecation
-warning bottoms out at classification and needs no compilation/execution fixture to verify.
+**Part B (this re-spec) retires the standalone emitter, the LSP's `@record` className
+tooling, and the applied `@record` in test fixtures.** The production-shaped
+`graphitron-sakila-example/schema.graphqls` already carries no applied `@record` (only
+comments; the 11 it used to carry were removed in R294). Applied `@record` survives only in
+the inline-SDL test fixtures of two modules. There is no applied `@record` in any
+`.graphqls` resource; every occurrence is in a Java text-block fixture. It comes in three
+shapes:
+
+1. **Deprecation-warning-path fixtures** (generator module) that exist solely to assert the
+   ignored-warning: `R96RecordBindingPipelineTest:84-85`,
+   `GraphitronSchemaBuilderTest:4164-4165`, `BuildOutputReportPipelineTest:84`.
+2. **Binding-hint decoration** (generator module, the bulk: roughly fifty
+   `@record(record: ...)` uses plus a handful of bare no-arg `@record` applications across
+   the `graphitron` test tree) on types that actually bind via reflection (a producing
+   `@service` return type / `@table`), so the directive is inert there and dropping it is
+   classification-neutral.
+3. **LSP editor-surface fixtures** (`graphitron-lsp`, roughly fourteen `@record(record: ...)`
+   uses across ~8 files: `ClassNameCompletionsTest`, `DiagnosticsTest`, `HoversTest`,
+   `DirectiveShapeSmokeTest`, etc.) that pin the className-completion / unknown-class-diagnostic
+   / hover treatment. These are **not** inert: the LSP serves them off the directive
+   declaration, not reflection, so the classification-neutrality argument does not apply. They
+   pin behaviour that must itself be retired.
+
+All three shapes go. The binding-hint fixtures drop `@record` (classification is unchanged,
+since reflection already drives the binding). The warning-path coverage moves off pipeline
+fixtures onto a simple classifier-level test, because the deprecation warning bottoms out at
+classification and needs no compilation/execution fixture to verify. The LSP fixtures are
+rewritten to assert that `@record` surfaces only a deprecation diagnostic, with no className
+completion and no unknown-class diagnostic.
 
 ## Scope
 
@@ -71,7 +104,7 @@ warning bottoms out at classification and needs no compilation/execution fixture
   source, in lockstep so the build stayed green. Where a message names the *type variant*,
   the variant name (Pojo / JavaRecord / JooqRecord / JooqTableRecord) is preferred.
 
-### Part B — emitter relocation + fixture purge (remaining)
+### Part B — emitter relocation + LSP retirement + fixture purge (remaining)
 
 - **Delete the standalone `emitDirectiveIgnoredWarnings` pass** (`TypeBuilder:333`, call
   site `:192`) and register the `@record`-ignored deprecation warning from the classifier
@@ -80,14 +113,28 @@ warning bottoms out at classification and needs no compilation/execution fixture
   (shadowed-by-`@table`, redundant/matches, disagrees) and the multi-producer-rejection
   suppression (`bindings.rejection(name)`). `readRecordClassName` and the directive
   declaration stay.
-- **Remove every applied `@record` from test-fixture SDL** (all 72 occurrences). For the
-  binding-hint fixtures the type already binds via its `@service` producer / `@table`, so
-  dropping `@record` is classification-neutral; migrate any fixture that leaned on
-  `@record(record: {className: ...})` purely for binding onto the reflected form so its
-  verdict is unchanged.
+- **Retire the LSP's `@record` className tooling.** Stop the LSP treating `@record` as a
+  live `ExternalCodeReference`-className binding: it must no longer offer className FQN
+  completion (`FieldCompletions` / `CompletionContext`) or raise the "Unknown class '…'"
+  diagnostic (`Diagnostics.validateClassName`, `Diagnostics.java:631`) or hover it as a live
+  binding (`DeclarationHover`) for `@record`. In its place, surface only a deprecation signal
+  through the LSP's existing pathway (`LspVocabulary.deprecationOf` / `deprecatedCoordinates`):
+  mark the `@record` declaration deprecated with the `@deprecated` docstring token the
+  convention keys on (`directives.graphqls:288-297`). The declaration is **retained** (still
+  parses `@record(record: {className: ...})`), so the suppression is a per-directive carve-out
+  of the generic ECR-className handling, not a retyping of the argument; the implementer
+  settles whether to gate the carve-out on the deprecation marker or on the directive name.
+- **Remove every applied `@record` from test-fixture SDL** across both modules (generator
+  and `graphitron-lsp`). For the generator-module binding-hint fixtures the type already binds
+  via its `@service` producer / `@table`, so dropping `@record` is classification-neutral;
+  migrate any fixture that leaned on `@record(record: {className: ...})` purely for binding
+  onto the reflected form so its verdict is unchanged. The `graphitron-lsp` fixtures are
+  rewritten, not merely stripped: each is repointed to assert the deprecation diagnostic and
+  the **absence** of className completion / unknown-class diagnostics for `@record`.
 - **Replace pipeline-fixture warning coverage with a simple classifier-level test.** The
   deprecation warning bottoms out at classification, so a focused test that drives the
-  classifier (the one legitimate place `@record` appears in tests) replaces the
+  classifier (one of the two legitimate places `@record` still appears in tests, the other
+  being the LSP deprecation-diagnostic fixtures) replaces the
   ignored-warning assertions currently piggybacking on `R96RecordBindingPipelineTest`,
   `GraphitronSchemaBuilderTest` (input `@table + @record`), and `BuildOutputReportPipelineTest`.
   Compilation/execution fixture tests are reserved for verifying generated-code shape and
@@ -96,8 +143,9 @@ warning bottoms out at classification and needs no compilation/execution fixture
 ## Out of scope
 
 - Removing the `@record` directive *declaration* from `directives.graphqls`. `@record`
-  stays a legal-but-ignored directive for now so existing consumer schemas keep parsing;
-  the hard removal of the declaration is a separate, later item once schemas are scrubbed.
+  stays a legal-but-ignored directive for now so existing consumer schemas keep parsing
+  (this item only marks it `@deprecated` and stops the editor offering className tooling for
+  it); the hard removal of the declaration is a separate, later item once schemas are scrubbed.
 - The legacy modules at the repo root.
 
 ## Done when
@@ -109,10 +157,16 @@ warning bottoms out at classification and needs no compilation/execution fixture
 - No standalone deprecation-warning emitter remains: `emitDirectiveIgnoredWarnings` is
   gone and the `@record`-ignored warning is produced by the classifier. The three message
   variants and the multi-producer-rejection suppression are preserved.
-- No applied `@record` remains in any test-fixture SDL. The only `@record` left in test
-  source is the minimal schema in the dedicated classifier-level deprecation-warning test.
+- The LSP no longer treats `@record` as a live `ExternalCodeReference`-className binding:
+  no className FQN completion, no "Unknown class" diagnostic, no live-binding hover for
+  `@record`. Instead the LSP surfaces a deprecation signal for `@record` through its existing
+  deprecation pathway, driven by the `@deprecated` docstring token now on the declaration.
+- No applied `@record` remains in any test-fixture SDL across either module. The only
+  `@record` left in test source is the minimal schema in the dedicated classifier-level
+  deprecation-warning test and the `graphitron-lsp` deprecation-diagnostic fixtures.
 - The deprecation warning is covered by a simple classifier-level test, not a
-  compilation/execution fixture.
-- `@record` remains a declared, legal-but-ignored directive (`directives.graphqls`
-  declaration and `readRecordClassName` intact); nothing reads it to drive binding.
+  compilation/execution fixture; the LSP deprecation behaviour is covered by the rewritten
+  `graphitron-lsp` fixtures.
+- `@record` remains a declared directive (`directives.graphqls` declaration and
+  `readRecordClassName` intact), now marked `@deprecated`; nothing reads it to drive binding.
 - Full pipeline build green (`mvn -f graphitron-rewrite/pom.xml install -Plocal-db`).
