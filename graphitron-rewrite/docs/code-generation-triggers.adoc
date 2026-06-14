@@ -36,7 +36,7 @@ directive-pattern → variant → generator output chain.
 
 [NOTE]
 ====
-*Pre-pivot vocabulary.* This section describes the field axes (source context, target type, scope) in their original form. They fold into the three-axis `carrier x intent x mapping` model in <<field-classification,Field Classification>>, under the R222 dimensional-model umbrella; materialising those axes as slots on the field itself is R290 (`datafetcher-field-dimensional-slots`). Treat <<field-classification,Field Classification>> as canonical for how a field classifies; the terms below survive as the historical framing and as properties derived from the three axes, not as independent axes.
+*Pre-pivot vocabulary.* This section describes the field axes (source context, target type, scope) in their original form. They fold into the three-axis `carrier x intent x mapping` model in <<field-classification,Field Classification>>, which the field now carries directly through its `carrier()` / `intent()` / `mapping()` accessors. Treat <<field-classification,Field Classification>> as canonical for how a field classifies; the terms below survive as the historical framing and as properties derived from the three axes, not as independent axes.
 ====
 
 Two independent classifications describe every field: the *source context* it is defined on (parent type), and the *target type* it returns. Both matter because scope transitions are determined by the pair, not by either alone.
