@@ -1,7 +1,7 @@
 ---
 id: R306
-title: "status subcommand strips quotes from colon-bearing titles"
-status: Backlog
+title: status subcommand strips quotes from colon-bearing titles
+status: Spec
 bucket: cleanup
 depends-on: []
 created: 2026-06-14
