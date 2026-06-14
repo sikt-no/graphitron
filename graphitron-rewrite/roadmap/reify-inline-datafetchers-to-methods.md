@@ -1,11 +1,11 @@
 ---
 id: R303
 title: Reify inline datafetchers into named XFetchers methods
-status: In Progress
+status: In Review
 bucket: architecture
 depends-on: []
 created: 2026-06-13
-last-updated: 2026-06-13
+last-updated: 2026-06-14
 ---
 
 # Reify inline datafetchers into named XFetchers methods
@@ -54,7 +54,7 @@ exactly one registration value per field, in one of these shapes:
 | Single-expression lambda | `ConstructorField`, `NestingField` (`(env) -> env.getSource()`); single-`TableField` first-row read; `ErrorsField` LocalContext (`env -> env.getLocalContext()`) and WrapperArm (`env -> env.getSource() instanceof ErrorList<?> ...`); `PropertyField` / `RecordField` on a **class-backed** parent (accessor read off `env.getSource()`) | **Reify** |
 | Multi-line lambda block | `SingleRecordTableField`, `SingleRecordIdField`, `SingleRecordIdFieldFromReturning` (record walk + SELECT / NodeId encode); the `ColumnField` and `CompositeColumnField` NodeId-encode lambdas; the R244/R268 arm-switch ternary (`armSwitchedInlineDataFetcher`) | **Reify** |
 | `new ColumnFetcher<>(...)` | plain `ColumnField`, `LookupTableField`, `ComputedField`, `ColumnReferenceField` (Direct), `ParticipantColumnReferenceField`, `PropertyField` / `RecordField` on a **jOOQ-record** parent | **Reify** (light, wrapped read) |
-| `PropertyDataFetcher.fetching(name)` | `ErrorsField` PayloadAccessor transport | **Reify** (resolved accessor) |
+| `PropertyDataFetcher.fetching(name)` | `ErrorsField` PayloadAccessor transport | **Deferred → R304** (see [Validator mirror](#validator-mirror)) |
 | `<Type>Fetchers::<field>` reference | every method-backed variant (`QueryTableField`, `ServiceTableField`, `RecordTableField`, the `Mutation*` carriers, ...) via the fall-through at `FetcherEmitter.java:416` | Already reified |
 
 The connection/edge field fetchers (`ConnectionHelper::edges` etc., wired by
@@ -222,12 +222,16 @@ env-dependent branches take `(DataFetchingEnvironment env)`:
   `T apply(Object source)` SAM), and `ColumnFetcherClassGenerator` is renamed
   `LightFetcherClassGenerator` and emits that shape. `bind` wraps each source-only method as
   `new LightFetcher<>(Fetchers::field)`;
-* the `ErrorsField` PayloadAccessor branch (today `PropertyDataFetcher.fetching(name)`): the
-  method body performs the resolved-accessor read via the same `recordBackedAccessorRead`
-  helper the class-backed `propertyOrRecordValue` path uses, so the errors list is read through a
-  generation-time-resolved accessor rather than graphql-java's runtime property reflection (a
-  source-only read, hence wrapped). This also closes the R268 `PropertyDataFetcher`-escape hole
-  (see Validator mirror).
+* the `ErrorsField` PayloadAccessor branch (today `PropertyDataFetcher.fetching(name)`):
+  **deferred to R304.** The intended reification reads the errors list through the same
+  `recordBackedAccessorRead` helper the class-backed path uses, but that helper needs an
+  `AccessorResolution.Resolved`, and `ChildField.ErrorsField` / `Transport.PayloadAccessor` carry
+  none: the read is left to graphql-java's runtime reflection by design. Resolving it at generation
+  time is a classifier change (resolve the errors accessor in `FieldBuilder.liftToErrorsField`),
+  which this Spec scoped out ("the classifier model is untouched"). Reaching past the parse boundary
+  with emit-time reflection would violate the classification-at-parse-boundary principle, so the
+  `PayloadAccessor` arm stays `Inline(PropertyDataFetcher.fetching(name))` and R304 carries the
+  classifier-backed reification plus the R268 reconciliation (see [Validator mirror](#validator-mirror)).
 
 ### Registration site (`FetcherRegistrationsEmitter`)
 
@@ -318,27 +322,30 @@ to named methods. The signals it landed cleanly:
   it compiles the generated `<Type>Fetchers` classes and the `registerFetchers` method
   references against the sakila catalog, so a mis-named method or an unresolved reference fails
   the build. The **execute-spec** tier proves the reified methods behave identically at runtime.
-* The registration value is now always either a `METHOD_REFERENCE` (env-dependent reads) or a
-  `COLUMN_FETCHER` wrapping a method reference (source-only reads); no `LAMBDA` or bare
-  `PropertyDataFetcher` survives. The `FetcherPipelineTest` wiring-shape assertions and the
-  "no methods" assertions move accordingly (these are the live pins the change touches):
+* The registration value is now a `METHOD_REFERENCE` (env-dependent reads) or a `COLUMN_FETCHER`
+  wrapping a method reference (source-only reads) for every reified shape; the only survivors are
+  the `@error` PayloadAccessor `PropertyDataFetcher` (deferred to R304) and the validator-rejected
+  `CompositeColumnReferenceField` throwing-lambda stub. The `FetcherPipelineTest` wiring-shape
+  assertions and the "no methods" assertions move accordingly (these are the live pins the change
+  touches):
   * `propertyField_onRecordType_fetchersHasNoMethods` and
     `recordField_onRecordType_fetchersHasNoMethods`: `ContainerFetchers` / `FilmDetailsFetchers`
     now carry the reified `value` / `stats` method; assert its presence instead of
-    `methodSpecs().isEmpty()`.
+    `methodSpecs().isEmpty()` (renamed `_reifiesReadMethod`).
   * `propertyField_onBackedRecord_usesAccessorLambda`: `wiringFor("Container", "value")` is a
-    `COLUMN_FETCHER` (source-only zero-arg accessor, wrapped) rather than a `LAMBDA`; rename and
-    re-assert, and check `ContainerFetchers` carries the `value(Object)` read method.
+    `COLUMN_FETCHER` (source-only zero-arg accessor, wrapped) rather than a `LAMBDA`; renamed
+    `_wrapsAccessorReadInLightFetcher`, and checks `ContainerFetchers` carries the `value` read method.
   * the R268 arm-switch pin (`FilmRecordPayload.title`): a source-only read, so a
-    `COLUMN_FETCHER` wrapping `FilmRecordPayloadFetchers::title`; assert the method is present.
+    `COLUMN_FETCHER` wrapping `FilmRecordPayloadFetchers::title`; the method's presence is asserted.
   * `LAMBDA` wiring assertions flip to `METHOD_REFERENCE` (env-dependent) or `COLUMN_FETCHER`
     (source-only) per the read; existing `COLUMN_FETCHER` column pins stay `COLUMN_FETCHER` and
-    additionally assert the wrapped read method now exists on the class.
-* `DataFetcherKind.LAMBDA` (and the `wiringFor` lambda arms) become unreachable for registration
-  values; remove the dead arms. `COLUMN_FETCHER` stays live (it now wraps a method reference) and
-  `METHOD_REFERENCE` stays live; `PROPERTY_FETCHER` becomes unreachable and is removed.
-* New per-type classes appear and are asserted by the existing "class is emitted" style
-  (`FetcherPipelineTest` already does `assertThat(classes).contains("FilmFetchers", ...)`):
+    the `producesNoFetcherMethod` pins (TableField / LookupTableField / ColumnReferenceField /
+    ColumnField) flip to assert the reified read method now exists on the class.
+* `COLUMN_FETCHER` stays live (it now wraps a method reference, matched on `LightFetcher`) and
+  `METHOD_REFERENCE` stays live. `DataFetcherKind.LAMBDA` and `PROPERTY_FETCHER` stay reachable
+  (the CompositeColumnReferenceField stub and the deferred PayloadAccessor respectively), so the
+  dead-arm removal the original Spec anticipated is itself deferred to R304.
+* New per-type classes appear and are asserted by the existing "class is emitted" style:
   `<Conn>Fetchers`, `<Edge>Fetchers`, `<ErrorType>Fetchers`, and a `<NestedType>Fetchers` for a
   nested type with no `BatchKeyField` (the case that produced no class before).
 * The light path is preserved: the wrapped reads register a `LightDataFetcher`. An optional unit
@@ -353,19 +360,16 @@ execution-tier coverage, unchanged.
 
 ## Validator mirror
 
-No new classifier branch is introduced; the classifier model is untouched. There is one
-validator-mirror consequence, in the `PropertyDataFetcher` reification:
-`FetcherEmitter.resolvesViaPropertyDataFetcher` (`:85-89`) exists because the PayloadAccessor
-errors field emits graphql-java's `PropertyDataFetcher`, which under a flipped `Outcome` source
-would silently read off the wrong object; the R268 `validateOutcomeChildArmSwitch` rule consults
-the predicate to reject that hole. Reifying the PayloadAccessor field to a generation-time
-resolved-accessor read removes the `PropertyDataFetcher` emit path the predicate names, so the
-predicate and the rule must be reconciled in the same change: either retire the predicate (the
-escape it guarded no longer exists, since the reified read is a resolved accessor pinned at
-generation time) or repoint it at the new disposition. Because this is the one place the change
-touches R268, the implementer should land the PayloadAccessor reification as its own commit with
-the predicate/rule reconciliation, after the mechanical relocations. `hasWrapperArmErrors` (the
-`sourceIsOutcome` source) is unchanged.
+No new classifier branch is introduced; the classifier model is untouched, and as implemented
+R303 has **no** validator-mirror consequence. The one consequence the Spec anticipated, in the
+`PropertyDataFetcher` reification, did not land: reifying the PayloadAccessor errors field needs a
+generation-time resolved accessor that `ChildField.ErrorsField` / `Transport.PayloadAccessor` do
+not carry, and producing one is a classifier change this Spec scoped out. So the PayloadAccessor
+arm stays `Inline(PropertyDataFetcher.fetching(name))`, the `PropertyDataFetcher` emit path
+survives, and `FetcherEmitter.resolvesViaPropertyDataFetcher` (`:85-89`) plus the R268
+`validateOutcomeChildArmSwitch` rule are **unchanged** (no reconciliation needed while the path it
+guards still exists). The classifier-backed reification and the predicate/rule reconciliation move
+to **R304**. `hasWrapperArmErrors` (the `sourceIsOutcome` source) is unchanged.
 
 ## Non-goals
 
@@ -382,6 +386,13 @@ the predicate/rule reconciliation, after the mechanical relocations. `hasWrapper
 
 ## Roadmap entries
 
-None required. The light path is preserved by wrapping the named reads in `LightFetcher` (see
+**R304** (Backlog): reify the `@error` PayloadAccessor errors fetcher. Discovered during
+implementation: the PayloadAccessor errors read cannot be reified without a classifier change to
+carry a resolved errors accessor, which this Spec scoped out (see
+[Validator mirror](#validator-mirror)). R304 carries the classifier-backed reification, the R268
+`resolvesViaPropertyDataFetcher` / `validateOutcomeChildArmSwitch` reconciliation, and the
+`DataFetcherKind.PROPERTY_FETCHER` retirement.
+
+The light path is preserved by wrapping the named reads in `LightFetcher` (see
 [Light path: wrap the read, don't register the bare reference](#light-path-wrap-the-read-dont-register-the-bare-reference)),
-so there is no deferred optimization to track.
+so there is no deferred optimization to track there.
