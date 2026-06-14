@@ -83,6 +83,36 @@ corpus already asserts `(carrier, intent, mapping)` and `LeafTupleAdapter` (unde
 stays in Spec while its slices land, and the refined field-side model this slice implements is settled.
 Read the edge as "this is R222 Stage 3," not "blocked."
 
+## Progress (in flight)
+
+Landing in build-green slices on trunk:
+
+- **Slice 1 (shipped)**: `carrier()` / `intent()` / `mapping()` materialised on the field model
+  (the dimension enums moved to the `model` package; `carrier()` defaults per carrier root, and
+  `intent()` / `mapping()` are per-carrier default-method switches reproducing the retired
+  `LeafTupleAdapter` exactly). `LeafTupleAdapter` deleted; the corpus harness reads the three
+  accessors off the field. Corpus byte-identical.
+- **Slice 2 (shipped)**: `ConstructorField` dissolved. The classifier's `ResultType` arm rejects with
+  a build-time error `GraphitronSchemaValidator` surfaces; the leaf, its dispatch, and its test
+  cluster are removed/retargeted (the `constructor` corpus example became the
+  `ConstructorFieldValidationTest` rejection fixture). Live leaves 49 -> 48.
+- **Slice 4 (shipped)**: the re-fetch derivation made real. `OutputField.requiresReFetch()` is the
+  single home of the service/DML -> `@table` re-query predicate (derived from `intent x mapping`);
+  `GraphitronSchemaValidator` is the consumer/mirror, asserting the derivation agrees with the
+  generator's actual re-fetch dispatch so the two cannot drift. (The spec named `ValidationBuilder` /
+  `QueryBuilder` as the mirror/sibling consumers; neither class exists. `GraphitronSchemaValidator`
+  is the validator and the mirror home; `TypeFetcherGenerator` is the generator-side consumer.)
+- **Slice 3 (deferred to a follow-up item)**: collapsing `SingleRecordTableField` into
+  `RecordTableField`. On implementation this proved to be more than a leaf merge: the two leaves use
+  *different emit mechanisms* (an inline `env.getSource()`-reading follow-up SELECT with no
+  DataLoader vs. a DataLoader/method-backed batched rows-method), so the "DataLoader-skip becomes a
+  derived detail" framing requires teaching `RecordTableField`'s emit a second in-hand-source mode
+  and threading it through the registration emitter, dispatch partition, and validator. That is a
+  fetcher-emit refactor with execution-tier risk that overlaps Stage 5's permit consolidation; per
+  R222's "Direction, not contract" clause it is split to its own item rather than forced here. With
+  Slice 3 deferred the live leaf set is **48**, not the appendix's 47; the appendix's 47 is the
+  post-collapse target the follow-up item reaches.
+
 ## Spec: implementation shape
 
 The decisions below are load-bearing for this slice; R222's "Direction, not contract" clause still
@@ -214,9 +244,11 @@ The merge gate is both tiers green:
   so emit-shape assertions for the collapsed re-query family stay the pipeline tier's job (structural
   `TypeSpec` assertions, no `code().toString()` body matches, per `rewrite-design-principles.adoc`).
 
-`QueryBuilder` and `ValidationBuilder` are sibling Stage 3 consumers the same corpus drives; the Stage 1
-foundation (`ServiceField` / `ServiceMethodCall`) has landed. See the R281 entry in
-`roadmap/changelog.md`.
+The same corpus drives `TypeFetcherGenerator` (the generator-side consumer) and
+`GraphitronSchemaValidator` (the validator/mirror); the Stage 1 foundation (`ServiceField` /
+`ServiceMethodCall`) has landed. (An earlier draft named `QueryBuilder` / `ValidationBuilder` as
+sibling Stage 3 consumers; neither class exists in the rewrite tree, the actual consumer/mirror are
+the two named here.) See the R281 entry in `roadmap/changelog.md`.
 
 ## Appendix: leaf inventory (the verdicts R290 materialises)
 
