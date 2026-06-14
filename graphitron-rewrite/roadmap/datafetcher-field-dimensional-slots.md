@@ -40,7 +40,8 @@ Concretely the service/DML re-query family (`QueryServiceTableField`, `MutationS
 identity and reads it off `intent x mapping` instead, and the slice **deletes R281's throwaway
 `LeafTupleAdapter`** once the field exposes `(carrier, intent, mapping)` directly. Those service leaves
 *survive* this slice (their leaf-identity consolidation is Stage 5); see **Spec: implementation shape**
-below for the exact scope boundary and the two leaves R290 does retire.
+below for the exact scope boundary and the one leaf R290 retires (`ConstructorField`; the
+`SingleRecordTableField` collapse is split to R305).
 
 ## Leaf changes carried by this slice
 
@@ -48,8 +49,10 @@ The `ChildField` -> `SourceField` carrier rename is **split out to R302**
 (`rename-childfield-to-sourcefield`): it is ~940 references of pure mechanical churn with no
 behavioural change, and folding it into this slice's diff would bury the architectural change under
 rename noise. R302 and this slice are independent (no ordering edge); whichever lands second rebases
-trivially. The two leaf-set changes below stay here, because they change the corpus and are coupled to
-the materialisation:
+trivially. Of the two leaf-set changes originally planned here, `ConstructorField` is retired in this
+item (below); the `SingleRecordTableField` -> `RecordTableField` collapse was **split out to R305**
+once implementation showed it is a fetcher-emit mechanism unification, not a corpus-coupled leaf merge
+(see the Progress note above). The remaining leaf-set change:
 
 - **Dissolve `ConstructorField` (a misfeature; it falls)**: this leaf is wrong by design, and its only
   consumers are our own tests. "Not a live feature" is precise, not loose: no production schema depends on
@@ -67,11 +70,11 @@ the materialisation:
   under **Test surface that falls with `ConstructorField`** in Acceptance). Re-enabling a deliberate
   construct-from-table-row is deferred to a possible future `experimental_constructType` directive and is
   out of scope here.
-- **Collapse `SingleRecordTableField` into `RecordTableField`**: its `(Service`/`DML) x Table` follow-up
-  re-fetch is the same Source/Fetch/Table shape `RecordTableField` already carries. Fields that classify
-  as `SingleRecordTableField` today reclassify to `RecordTableField` with their `(carrier, intent,
-  mapping)` tuple unchanged; the single-source-object DataLoader-skip becomes a derived detail (computed
-  from single-source cardinality off the slot), not a distinct leaf.
+- ~~**Collapse `SingleRecordTableField` into `RecordTableField`**~~ — **split out to R305.** The
+  framing held (the `(carrier, intent, mapping)` tuple is unchanged, so the corpus stays
+  byte-identical), but the "DataLoader-skip becomes a derived detail" turned out to require unifying
+  two distinct emit mechanisms, not merging two leaves; see R305 and the Progress note. R290 leaves the
+  live leaf set at 48; R305 reaches the appendix's 47.
 
 ## Dependency status
 
@@ -102,16 +105,16 @@ Landing in build-green slices on trunk:
   generator's actual re-fetch dispatch so the two cannot drift. (The spec named `ValidationBuilder` /
   `QueryBuilder` as the mirror/sibling consumers; neither class exists. `GraphitronSchemaValidator`
   is the validator and the mirror home; `TypeFetcherGenerator` is the generator-side consumer.)
-- **Slice 3 (deferred to a follow-up item)**: collapsing `SingleRecordTableField` into
-  `RecordTableField`. On implementation this proved to be more than a leaf merge: the two leaves use
-  *different emit mechanisms* (an inline `env.getSource()`-reading follow-up SELECT with no
-  DataLoader vs. a DataLoader/method-backed batched rows-method), so the "DataLoader-skip becomes a
-  derived detail" framing requires teaching `RecordTableField`'s emit a second in-hand-source mode
-  and threading it through the registration emitter, dispatch partition, and validator. That is a
-  fetcher-emit refactor with execution-tier risk that overlaps Stage 5's permit consolidation; per
-  R222's "Direction, not contract" clause it is split to its own item rather than forced here. With
-  Slice 3 deferred the live leaf set is **48**, not the appendix's 47; the appendix's 47 is the
-  post-collapse target the follow-up item reaches.
+- **Slice 3 (split out to R305, `collapse-singlerecordtablefield-into-recordtablefield`)**: collapsing
+  `SingleRecordTableField` into `RecordTableField`. On implementation this proved to be more than a leaf
+  merge: the two leaves use *different emit mechanisms* (an inline `env.getSource()`-reading follow-up
+  SELECT with no DataLoader vs. a DataLoader/method-backed batched rows-method), so the "DataLoader-skip
+  becomes a derived detail" framing requires teaching `RecordTableField`'s emit a second
+  in-hand-source mode and threading it through the registration emitter, dispatch partition, and
+  validator. That is a fetcher-emit refactor with execution-tier risk that overlaps Stage 5's permit
+  consolidation; per R222's "Direction, not contract" clause it is split to **R305** rather than forced
+  here. With it split out, **R290's delivered leaf set is 48** (only `ConstructorField` retired); the
+  appendix's **47** is R305's post-collapse target, not R290's.
 
 ## Spec: implementation shape
 
@@ -167,25 +170,24 @@ What R290 does:
    (the rejected "horizontal phase 1" smell) and leave the re-fetch predicate duplicated across consumers
    (the "generation-thinking" smell); the derivation has to land here for the materialisation to mean
    anything.
-4. **Retire exactly the two leaves the model removes outright** — **dissolve `ConstructorField`**
-   (a wrong-by-design table-and-service construction whose only consumers are tests; the classifier rejects
-   it via `UnclassifiedField` and `GraphitronSchemaValidator`) and **collapse `SingleRecordTableField` into
-   `RecordTableField`** (its
-   single-source DataLoader-skip becomes a derived detail). This brings the live leaf set from 49 to the
-   appendix's
-   **47**, which is the post-R290 inventory. The service re-query leaves (`QueryServiceTableField`,
+4. **Dissolve `ConstructorField`** (a wrong-by-design table-and-service construction whose only consumers
+   are tests; the classifier rejects it via `UnclassifiedField` and `GraphitronSchemaValidator`). This
+   brings the live leaf set from 49 to **48**. (The second leaf change originally planned here, the
+   `SingleRecordTableField` -> `RecordTableField` collapse that reaches the appendix's **47**, was
+   **split out to R305** once it proved to be an emit-mechanism unification rather than a leaf merge.)
+   The service re-query leaves (`QueryServiceTableField`,
    `MutationServiceTableField`, `ChildField.ServiceTableField`) **survive R290 as leaves** — the appendix
    lists all three, with re-fetch shown as derived (`RF`). R290 makes their *mechanism* slot-derived;
    their leaf-*identity* consolidation (merging the redundant permits onto a single service-backed field
    record) needs a consolidation target this slice should not invent, so it stays with Stage 5's broad
    permit merge.
 
-**Reconciliation with Stage 5.** R290's permit-set delta is exactly two leaves (`ConstructorField`,
-`SingleRecordTableField`); it does **not** pre-empt Stage 5's cross-product permit consolidation. What
+**Reconciliation with Stage 5.** R290's permit-set delta is one leaf (`ConstructorField`); R305 adds the
+second (`SingleRecordTableField`). Neither pre-empts Stage 5's cross-product permit consolidation. What
 R290 hands Stage 5 is the slot-derived re-fetch (so the service leaves' dispatch already reads
 `intent x mapping`), leaving Stage 5 the narrower mechanical job of merging the now-behaviourally-identical
 service permits. A future Stage 5 author treats its retirement list as "the cross-product permits, minus
-the two R290 removed."
+the two R290 + R305 removed."
 
 ## Acceptance
 
@@ -196,16 +198,16 @@ accessors off the field. The classified-corpus delta is exactly **one example**:
 fixture (`ClassifiedCorpus`, asserting `Film.details` as Source/Fetch/Record) leaves the classified
 corpus, because that table-and-service shape is now a validator rejection rather than a clean
 classification; it moves to the validator tier as a rejection fixture. **Every other corpus assertion
-stays byte-identical**, including `SingleRecordTableField`'s coverage (`FilmPayload.film`, Source/Fetch/
-Table), which reclassifies to `RecordTableField` with its tuple unchanged and so stays green without
-edit. The continued green of every other row, including all three surviving service re-query leaves now
+stays byte-identical** (including `SingleRecordTableField`'s coverage `FilmPayload.film`, Source/Fetch/
+Table, which is untouched by R290 and reclassifies to `RecordTableField` only when R305 lands). The
+continued green of every other row, including all three surviving service re-query leaves now
 classifying via slots with re-fetch derived, proves the decomposition was behaviour-preserving.
 `everyDimensionValueIsExercised` stays green: `Mapping.Record` is still exercised after the `constructor`
 example leaves (e.g. `ErrorsField`, `ServiceRecordField`, the DML record carriers). The live leaf set
-moves from 49 to **47** (the appendix inventory): the dispatch-partition coverage test
+moves from 49 to **48** (R305 takes it to the appendix's 47): the dispatch-partition coverage test
 (`GeneratorCoverageTest.everyGraphitronFieldLeafHasAKnownDispatchStatus`, see the **Dispatch partition +
-validator mirror** gate below) stays green with two fewer partition entries, and this appendix updates in
-the same change. The generated `roadmap/inference-axis-coverage.adoc` enumerates the live leaves off the
+validator mirror** gate below) stays green with one fewer partition entry, and this appendix updates to
+48 in the same change. The generated `roadmap/inference-axis-coverage.adoc` enumerates the live leaves off the
 model but is a CI-regenerated, data-free stub (R132 dropped the local `mvn verify` gate; trunk push
 regenerates it), so it needs no manual edit here.
 
@@ -232,10 +234,10 @@ The merge gate is both tiers green:
 
 - **Corpus tier** (R281/R299): the decomposition is behaviour-preserving (byte-identical modulo the one
   removed `constructor` example, now a validator-rejection fixture; `SingleRecordTableField`'s coverage
-  reclassifies to `RecordTableField` with its tuple unchanged).
-- **Dispatch partition + validator mirror.** Retiring the two leaves means the `TypeFetcherGenerator`
+  is untouched by R290 and reclassifies to `RecordTableField` only under R305).
+- **Dispatch partition + validator mirror.** Retiring `ConstructorField` means the `TypeFetcherGenerator`
   dispatch partition (`IMPLEMENTED_LEAVES` / `NOT_DISPATCHED_LEAVES` / `PROJECTED_LEAVES` /
-  `STUBBED_VARIANTS`) drops those two entries in the same commit, and the coverage test asserting that
+  `STUBBED_VARIANTS`) drops its one entry in the same commit, and the coverage test asserting that
   partition is an exhaustive disjoint cover of every `GraphitronField` leaf stays green. The re-fetch
   derivation reads off `intent x mapping` at the consumer; `GraphitronSchemaValidator` mirrors that
   derivation so an unimplemented branch still fails at validate time, per "validator mirrors classifier
@@ -252,10 +254,12 @@ the two named here.) See the R281 entry in `roadmap/changelog.md`.
 
 ## Appendix: leaf inventory (the verdicts R290 materialises)
 
-Every current `OutputField` leaf under the `carrier × intent × mapping` model, with the derived columns
-shown. This is the worked target R290 implements; **totality holds, no leaf has an unfilled cell.**
-`ConstructorField` (dissolved; now a validator rejection) and `SingleRecordTableField` (collapsed into
-`RecordTableField`) are absent by design, the leaf set is 47. Derived legend: `FR` = `FetchRelated` (from a
+Every `OutputField` leaf under the `carrier × intent × mapping` model, with the derived columns
+shown. This is the **post-R305 target** inventory (47 leaves); **totality holds, no leaf has an unfilled
+cell.** `ConstructorField` (dissolved by R290; now a validator rejection) and `SingleRecordTableField`
+(collapsed into `RecordTableField` by R305) are absent by design. **After R290 alone the live set is 48**:
+this table plus `SingleRecordTableField` (Source/Fetch/Table), which R290 leaves in place and R305
+removes. Derived legend: `FR` = `FetchRelated` (from a
 non-empty join-path), `RF` = re-fetch (from a `(Service`|`DML`) × `Table` mismatch), `NQ` = new-query
 (`SourceField` slot, forced by `@splitQuery` / polymorphic / record-handoff). The orthogonal slot column
 (method, batch-key, join-path, bulk, composite, participants) carries per-leaf detail; the triple is the
