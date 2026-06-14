@@ -18,9 +18,9 @@ class UnclassifiedTypeValidationTest {
 
     enum Case implements TypeValidatorCase {
 
-        CONFLICTING_DIRECTIVES("conflicting @table and @record directives",
-            new UnclassifiedType("Film", null, Rejection.structural("conflicting directives @table and @record")),
-            List.of("Type 'Film': conflicting directives @table and @record")),
+        CONFLICTING_DIRECTIVES("conflicting @table and @error directives",
+            new UnclassifiedType("Film", null, Rejection.structural("conflicting directives @table and @error")),
+            List.of("Type 'Film': conflicting directives @table and @error")),
 
         UNKNOWN_TABLE("@table name cannot be resolved in the jOOQ catalog",
             new UnclassifiedType("Actor", null, Rejection.structural("table 'unknown_table' not found in jOOQ catalog")),

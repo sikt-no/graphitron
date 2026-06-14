@@ -22,8 +22,18 @@ import java.util.List;
  * binds as a class-name slot fires this provider, including the flat
  * {@code @sourceRow(className:)} that the R110 rescope left silent
  * under the previous hand-coded directive registry.
+ *
+ * <p>R307 carve-out: {@code @record} is deprecated and ignored, so its
+ * {@code className} slot binds no Java class. Its
+ * {@code ExternalCodeReference.className} coordinate is identical to
+ * {@code @enum}'s, so the carve-out cannot key on the coordinate; it gates
+ * on the enclosing directive name carried by {@link CompletionContext},
+ * mirroring {@code Diagnostics.METHOD_VALIDATING_DIRECTIVES}.
  */
 public final class ClassNameCompletions {
+
+    /** Directive whose className slot is deprecated/ignored (R307). */
+    private static final String IGNORED_CLASSNAME_DIRECTIVE = "record";
 
     private ClassNameCompletions() {}
 
@@ -32,6 +42,9 @@ public final class ClassNameCompletions {
         CompletionData data,
         CompletionContext context
     ) {
+        if (IGNORED_CLASSNAME_DIRECTIVE.equals(context.directiveName())) {
+            return List.of();
+        }
         var behavior = vocabulary.behaviorAt(context.coordinate());
         if (behavior.isEmpty() || !(behavior.get() instanceof Behavior.ClassNameBinding)) {
             return List.of();

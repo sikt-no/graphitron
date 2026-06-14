@@ -75,7 +75,7 @@ class R157PipelineTest {
         });
 
         var completions = completionsAt(artefacts,
-            "type FilmCard @record(record: {className: \"no.sikt.graphitron.lsp.fixtures.R157FilmRecord\"}) {\n"
+            "type FilmCard {\n"
                 + "    filmId: Int @field(name: \"\")\n"
                 + "    title: String @field(name: \"title\")\n"
                 + "}\n", 1);
@@ -83,7 +83,7 @@ class R157PipelineTest {
             .containsExactly("filmId", "title");
 
         var diags = diagnosticsFor(artefacts,
-            "type FilmCard @record(record: {className: \"no.sikt.graphitron.lsp.fixtures.R157FilmRecord\"}) {\n"
+            "type FilmCard {\n"
                 + "    filmId: Int @field(name: \"TYPO\")\n"
                 + "}\n");
         assertThat(diags).hasSize(1);

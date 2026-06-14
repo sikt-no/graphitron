@@ -112,6 +112,33 @@ class ValidatorDiagnosticsTest {
     }
 
     @Test
+    void recordIgnoredBuildWarning_surfacesAsUsageSiteWarning() {
+        // R307: the editor's "@record is ignored" signal is the generator's @record-ignored
+        // BuildWarning, with no new LSP machinery. It rides this same validator-warning surface as
+        // any BuildWarning (pipeline -> ValidationReport.warnings() -> validatorDiagnostics ->
+        // usage-site Warning). The generator producing this warning for a reachable @record is
+        // pinned by the generator module's RecordDirectiveIgnoredWarningTest; this pins that its
+        // message lands at the usage site as a Warning. (The signal is reachability-gated: an
+        // unreachable @record produces no warning and thus no editor signal, mirroring the generator.)
+        var path = "/tmp/schema.graphqls";
+        var uri = ValidationReport.canonicalUri(path);
+        var warning = new BuildWarning(
+            "Type 'FilmDetails' carries @record(record: { className: \"com.example.FilmDto\" }). "
+            + "Graphitron derives the same backing class from the producing field's reflected return "
+            + "type. The directive is redundant; remove it.",
+            new SourceLocation(2, 18, path));
+        var report = ValidationReport.from(List.of(), List.of(warning));
+
+        var diags = Diagnostics.compute(uri, file(), CompletionData.empty(), CURRENT_SNAPSHOT, report);
+
+        assertThat(diags).singleElement().satisfies(d -> {
+            assertThat(d.getSeverity()).isEqualTo(DiagnosticSeverity.Warning);
+            assertThat(d.getSource()).isEqualTo("graphitron-validator");
+            assertThat(d.getMessage()).contains("@record").contains("redundant");
+        });
+    }
+
+    @Test
     void entriesForOtherFilesAreFiltered() {
         var openPath = "/tmp/open.graphqls";
         var openUri = ValidationReport.canonicalUri(openPath);

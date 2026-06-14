@@ -207,11 +207,10 @@ public final class ClassifiedCorpus {
          * materialized rather than projected from the catalog, so it is carrier Query, intent
          * QueryService, mapping Record, the root analog of the ServiceRecordField child field above
          * (Film.rating). Corpus-only: it lands on the already-taught QueryService / Record coordinate. The
-         * @service producer's reflected return type binds the payload here; the still-applied @record
-         * directive is deprecated and ignored (R276), surfacing only the directive-ignored build warning.
+         * @service producer's reflected return type binds the payload here.
          */
         new Example("query-service-record", """
-            type FilmDetails @record { title: String }
+            type FilmDetails { title: String }
             type Query {
               filmDetails: FilmDetails
                 @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getDetails"})
@@ -261,14 +260,14 @@ public final class ClassifiedCorpus {
             """),
 
         /*
-         * @error type-verdict admission nuances. An @error type classifies as ErrorType (the GraphQL
-         * type whose @error contract carries the handler set); two admission edges are pinned here. A
-         * field beyond the mandatory path/message (`severity`) does not break the verdict: the
-         * per-handler accessor check fires on the carrier, not the @error type, so the type stays
-         * ErrorType. And an @error co-located with @record stays ErrorType with the @record silently
-         * ignored (the D1 precedence rule), not a conflict. Corpus-only: the @classifiedType axis is
-         * asserted directly; `path` doubles as the fixtures' required field coordinate (Source / Fetch /
-         * Field).
+         * @error type-verdict admission nuance. An @error type classifies as ErrorType (the GraphQL
+         * type whose @error contract carries the handler set). A field beyond the mandatory
+         * path/message (`severity`) does not break the verdict: the per-handler accessor check fires
+         * on the carrier, not the @error type, so the type stays ErrorType. Corpus-only: the
+         * @classifiedType axis is asserted directly; `path` doubles as the fixture's required field
+         * coordinate (Source / Fetch / Field). (The @error + @record silently-ignored verdict, the
+         * D1 precedence rule, is covered by RecordDirectiveIgnoredWarningTest, the one place applied
+         * @record remains; see R307.)
          */
         new Example("error-type", """
             enum Severity { LOW HIGH }
@@ -277,13 +276,6 @@ public final class ClassifiedCorpus {
               path: [String!]! @classified(carrier: Source, intent: Fetch, mapping: Field)
               message: String!
               severity: Severity!
-            }
-            type RecordIgnoredError
-                @error(handlers: [{handler: VALIDATION}])
-                @record(record: {className: "java.lang.Object"})
-                @classifiedType(as: ErrorType) {
-              path: [String!]!
-              message: String!
             }
             type Query { x: String }
             """),
@@ -655,7 +647,7 @@ public final class ClassifiedCorpus {
         new Example("mutation-roots", """
             interface Node { id: ID! }
             type Film implements Node @table(name: "film") @node { id: ID! @nodeId title: String }
-            type FilmDetails @record { title: String }
+            type FilmDetails { title: String }
             type FilmPayload { film: Film @classified(carrier: Source, intent: Fetch, mapping: Table) }
             input FilmKeyInput @table(name: "film") { filmId: Int! @field(name: "film_id") }
             input FilmUpdateInput @table(name: "film") { filmId: Int! @field(name: "film_id") title: String }

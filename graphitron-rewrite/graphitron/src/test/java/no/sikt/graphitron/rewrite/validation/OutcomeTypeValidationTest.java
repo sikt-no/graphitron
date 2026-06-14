@@ -25,8 +25,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 @UnitTier
 class OutcomeTypeValidationTest {
 
-    private static final String SAK_PAYLOAD_FQN =
-        "no.sikt.graphitron.codereferences.dummyreferences.SakPayload";
     private static final String SERVICE_DECL =
         "@service(service: {className: \"no.sikt.graphitron.rewrite.TestServiceStub\", method: \"runSak\"})";
 
@@ -46,13 +44,13 @@ class OutcomeTypeValidationTest {
                 message: String!
             }
             union SakError = ValidationErr | DbErr
-            type SakPayload @record(record: {className: "%s"}) {
+            type SakPayload {
                 data: String
                 errors: [SakError]
                 moreErrors: [SakError]
             }
             type Query { sak: SakPayload %s }
-            """.formatted(SAK_PAYLOAD_FQN, SERVICE_DECL));
+            """.formatted(SERVICE_DECL));
 
         // Precondition that makes the non-vacuity explicit: both fields independently lift to
         // ChildField.ErrorsField on SakPayload, which is what gives validateOutcomeTypeShape two
@@ -88,12 +86,12 @@ class OutcomeTypeValidationTest {
                 message: String!
             }
             union SakError = ValidationErr | DbErr
-            type SakPayload @record(record: {className: "%s"}) {
+            type SakPayload {
                 data: String
                 errors: [SakError]
             }
             type Query { sak: SakPayload %s }
-            """.formatted(SAK_PAYLOAD_FQN, SERVICE_DECL));
+            """.formatted(SERVICE_DECL));
 
         assertThat(validate(schema))
             .extracting(ValidationError::message)
@@ -122,13 +120,13 @@ class OutcomeTypeValidationTest {
             }
             union SakError = ValidationErr | DbErr
             type Language @table(name: "language") { name: String }
-            type SakPayload @record(record: {className: "%s"}) {
+            type SakPayload {
                 data: String
                 language: Language @reference(path: [{key: "film_language_id_fkey"}])
                 errors: [SakError]
             }
             type Query { sak: SakPayload %s }
-            """.formatted(SAK_PAYLOAD_FQN, SERVICE_DECL));
+            """.formatted(SERVICE_DECL));
 
         // Precondition: the @table sibling classifies as a DataLoader-backed RecordTableField (the
         // variant the allow-list excluded), and the errors field is on the WrapperArm transport, so

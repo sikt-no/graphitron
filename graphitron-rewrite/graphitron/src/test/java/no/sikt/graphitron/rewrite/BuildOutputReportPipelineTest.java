@@ -37,21 +37,25 @@ class BuildOutputReportPipelineTest {
     void buildOutput_populatesReportWithValidatorErrorsAndModelWarnings(@TempDir Path tmp) throws IOException {
         // One schema, two independent diagnostics on two different types:
         //  - Film.languageName: @reference to a non-existent FK -> UnclassifiedField -> validator error.
-        //  - FilmDetails: redundant @record (the producer's reflected return derives the same
-        //    FilmRecord) -> "directive is redundant" build warning.
+        //  - FilmDetails.language: @splitQuery on a record-backed parent (FilmDetails binds to the
+        //    @service producer's reflected return) -> "@splitQuery is redundant" build warning.
+        // R307: the warning half no longer leans on a redundant @record (the directive is ignored and
+        // its warning coverage lives in RecordDirectiveIgnoredWarningTest); any model BuildWarning
+        // exercises the same wiring, so this uses the @splitQuery-redundant warning instead.
         // The two are independent so each half of the report is exercised in the same run.
         Path schema = tmp.resolve("schema.graphqls");
         Files.writeString(schema, """
+            type Language @table(name: "language") { name: String }
             type Film @table(name: "film") {
               languageName: String @reference(path: [{key: "no_such_fk"}])
             }
-            type FilmDetails @record(record: {className: "no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord"}) {
-              title: String
+            type FilmDetails {
+              language: Language @splitQuery @reference(path: [{key: "film_language_id_fkey"}])
             }
             type Query {
               film: Film
               details: FilmDetails
-                @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getFilm"})
+                @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeDummyRecord"})
             }
             """);
 
@@ -81,8 +85,8 @@ class BuildOutputReportPipelineTest {
             .isNotEmpty();
         assertThat(report.warnings())
             .extracting(BuildWarning::message)
-            .as("the redundant @record directive surfaces as a build warning")
-            .anyMatch(m -> m.contains("FilmDetails") && m.contains("redundant"));
+            .as("the redundant @splitQuery directive surfaces as a build warning")
+            .anyMatch(m -> m.contains("FilmDetails.language") && m.contains("redundant"));
 
         assertThat(report.isEmpty()).isFalse();
     }

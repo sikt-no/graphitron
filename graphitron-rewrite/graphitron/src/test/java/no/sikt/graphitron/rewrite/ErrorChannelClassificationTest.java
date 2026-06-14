@@ -32,9 +32,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 @UnitTier
 class ErrorChannelClassificationTest {
 
-    private static final String SAK_PAYLOAD_FQN =
-        "no.sikt.graphitron.codereferences.dummyreferences.SakPayload";
-
     private static final String UNION_ERROR_PAYLOAD_SDL = """
             type ValidationErr @error(handlers: [{handler: VALIDATION}]) {
                 path: [String!]!
@@ -45,11 +42,11 @@ class ErrorChannelClassificationTest {
                 message: String!
             }
             union SakError = ValidationErr | DbErr
-            type SakPayload @record(record: {className: "%s"}) {
+            type SakPayload {
                 data: String
                 errors: [SakError]
             }
-            """.formatted(SAK_PAYLOAD_FQN);
+            """;
 
     private static final String SERVICE_DECL =
         "@service(service: {className: \"no.sikt.graphitron.rewrite.TestServiceStub\", method: \"runSak\"})";
@@ -93,62 +90,22 @@ class ErrorChannelClassificationTest {
     @Test
     void payloadWithoutErrorsField_producesNoChannel() {
         var schema = build("""
-            type Plain @record(record: {className: "%s"}) {
+            type Plain {
                 data: String
             }
             type Query { plain: Plain %s }
-            """.formatted(SAK_PAYLOAD_FQN, SERVICE_DECL));
+            """.formatted(SERVICE_DECL));
 
         var f = (QueryField.QueryServiceRecordField) schema.field("Query", "plain");
         assertThat(f.errorChannel()).isEmpty();
     }
 
-    @Test
-    void unTypedRecordPayload_producesChannelFromReflectedProducer() {
-        // R96: the @record directive's className no longer drives binding. Even when @record
-        // carries no className, the @service producer's reflected return type grounds the
-        // backing class, so the payload class IS reflectable and the error channel populates.
-        // (Pre-R96 behaviour: without an explicit className the type would be unbacked and
-        // produce an empty channel; R96 corrects this by reading the producer's return type.)
-        var schema = build(UNION_ERROR_PAYLOAD_SDL.replace(
-                "@record(record: {className: \"" + SAK_PAYLOAD_FQN + "\"})",
-                "@record") + """
-            type Query { sak: SakPayload %s }
-            """.formatted(SERVICE_DECL));
-
-        var f = (QueryField.QueryServiceRecordField) schema.field("Query", "sak");
-        assertThat(f.errorChannel()).isPresent();
-    }
-
-    @Test
-    void payloadHasErrorsFieldButPayloadClassMissing_rejectsCarrier() {
-        // The SDL declares an errors-shaped payload but the @record className points at a class
-        // that doesn't exist on the classpath; the carrier rejects with UnclassifiedField rather
-        // than silently producing no channel.
-        var schema = build("""
-            type ValidationErr @error(handlers: [{handler: VALIDATION}]) {
-                path: [String!]!
-                message: String!
-            }
-            type DbErr @error(handlers: [{handler: DATABASE, sqlState: "23503"}]) {
-                path: [String!]!
-                message: String!
-            }
-            union SakError = ValidationErr | DbErr
-            type SakPayload @record(record: {className: "no.sikt.does.not.exist.MissingPayload"}) {
-                data: String
-                errors: [SakError]
-            }
-            type Query { sak: SakPayload %s }
-            """.formatted(SERVICE_DECL));
-
-        var field = schema.field("Query", "sak");
-        assertThat(field).isInstanceOfAny(
-            // UnclassifiedField on either side is acceptable: the @record reflection at type-build
-            // time produces UnclassifiedType, which propagates to the field; once that lands the
-            // carrier never runs. This is a defense-in-depth test for both paths.
-            UnclassifiedField.class, QueryField.QueryServiceRecordField.class);
-    }
+    // R307: unTypedRecordPayload_producesChannelFromReflectedProducer and
+    // payloadHasErrorsFieldButPayloadClassMissing_rejectsCarrier deleted. Both pinned behaviour of
+    // the @record directive's className (bare @record still grounds via the producer; a missing
+    // @record className rejects). @record is deprecated and ignored — it never drives binding — so
+    // there is no @record-className behaviour left to test: SakPayload grounds via its @service
+    // producer's reflected return, which the surviving errors-channel cases above already exercise.
 
     @Test
     void rule7_multipleValidationHandlersInSameChannel_rejectsCarrier() {
@@ -165,12 +122,12 @@ class ErrorChannelClassificationTest {
                 message: String!
             }
             union SakError = ValidationA | ValidationB
-            type SakPayload @record(record: {className: "%s"}) {
+            type SakPayload {
                 data: String
                 errors: [SakError]
             }
             type Query { sak: SakPayload %s }
-            """.formatted(SAK_PAYLOAD_FQN, SERVICE_DECL));
+            """.formatted(SERVICE_DECL));
 
         var field = schema.field("Query", "sak");
         assertThat(field).isInstanceOf(UnclassifiedField.class);
@@ -199,12 +156,12 @@ class ErrorChannelClassificationTest {
                 message: String!
             }
             union SakError = ValidationErr | DbErr
-            type SakPayload @record(record: {className: "%s"}) {
+            type SakPayload {
                 data: String!
                 errors: [SakError]
             }
             type Query { sak: SakPayload %s }
-            """.formatted(SAK_PAYLOAD_FQN, SERVICE_DECL));
+            """.formatted(SERVICE_DECL));
 
         var field = schema.field("Query", "sak");
         assertThat(field).isInstanceOf(UnclassifiedField.class);
@@ -231,12 +188,12 @@ class ErrorChannelClassificationTest {
                 message: String!
             }
             union SakError = ValidationErr | RuntimeErr
-            type SakPayload @record(record: {className: "%s"}) {
+            type SakPayload {
                 data: String
                 errors: [SakError]
             }
             type Query { sak: SakPayload %s }
-            """.formatted(SAK_PAYLOAD_FQN, SERVICE_DECL));
+            """.formatted(SERVICE_DECL));
 
         var f = (QueryField.QueryServiceRecordField) schema.field("Query", "sak");
         assertThat(f.errorChannel()).isPresent();
@@ -259,12 +216,12 @@ class ErrorChannelClassificationTest {
                 message: String!
             }
             union SakError = ValidationErr | ArgErr
-            type SakPayload @record(record: {className: "%s"}) {
+            type SakPayload {
                 data: String
                 errors: [SakError]
             }
             type Query { sak: SakPayload %s }
-            """.formatted(SAK_PAYLOAD_FQN, SERVICE_DECL));
+            """.formatted(SERVICE_DECL));
 
         var f = (QueryField.QueryServiceRecordField) schema.field("Query", "sak");
         assertThat(f.errorChannel()).isPresent();
@@ -288,12 +245,12 @@ class ErrorChannelClassificationTest {
                 message: String!
             }
             union SakError = RuntimeA | RuntimeB
-            type SakPayload @record(record: {className: "%s"}) {
+            type SakPayload {
                 data: String
                 errors: [SakError]
             }
             type Query { sak: SakPayload %s }
-            """.formatted(SAK_PAYLOAD_FQN, SERVICE_DECL));
+            """.formatted(SERVICE_DECL));
 
         var field = schema.field("Query", "sak");
         assertThat(field).isInstanceOf(UnclassifiedField.class);
@@ -319,12 +276,12 @@ class ErrorChannelClassificationTest {
                 message: String!
             }
             union SakError = DupHandlers
-            type SakPayload @record(record: {className: "%s"}) {
+            type SakPayload {
                 data: String
                 errors: [SakError]
             }
             type Query { sak: SakPayload %s }
-            """.formatted(SAK_PAYLOAD_FQN, SERVICE_DECL));
+            """.formatted(SERVICE_DECL));
 
         var field = schema.field("Query", "sak");
         assertThat(field).isInstanceOf(UnclassifiedField.class);
@@ -349,12 +306,12 @@ class ErrorChannelClassificationTest {
                 message: String!
             }
             union SakError = FkA | FkB
-            type SakPayload @record(record: {className: "%s"}) {
+            type SakPayload {
                 data: String
                 errors: [SakError]
             }
             type Query { sak: SakPayload %s }
-            """.formatted(SAK_PAYLOAD_FQN, SERVICE_DECL));
+            """.formatted(SERVICE_DECL));
 
         var field = schema.field("Query", "sak");
         assertThat(field).isInstanceOf(UnclassifiedField.class);
@@ -380,12 +337,12 @@ class ErrorChannelClassificationTest {
                 message: String!
             }
             union SakError = OraA | OraB
-            type SakPayload @record(record: {className: "%s"}) {
+            type SakPayload {
                 data: String
                 errors: [SakError]
             }
             type Query { sak: SakPayload %s }
-            """.formatted(SAK_PAYLOAD_FQN, SERVICE_DECL));
+            """.formatted(SERVICE_DECL));
 
         var field = schema.field("Query", "sak");
         assertThat(field).isInstanceOf(UnclassifiedField.class);
@@ -411,12 +368,12 @@ class ErrorChannelClassificationTest {
                 message: String!
             }
             union SakError = FkErr | DbErr
-            type SakPayload @record(record: {className: "%s"}) {
+            type SakPayload {
                 data: String
                 errors: [SakError]
             }
             type Query { sak: SakPayload %s }
-            """.formatted(SAK_PAYLOAD_FQN, SERVICE_DECL));
+            """.formatted(SERVICE_DECL));
 
         var f = (QueryField.QueryServiceRecordField) schema.field("Query", "sak");
         assertThat(f.errorChannel()).isPresent();
@@ -445,12 +402,12 @@ class ErrorChannelClassificationTest {
                 message: String!
             }
             union SakError = WithMatches | WithoutMatches
-            type SakPayload @record(record: {className: "%s"}) {
+            type SakPayload {
                 data: String
                 errors: [SakError]
             }
             type Query { sak: SakPayload %s }
-            """.formatted(SAK_PAYLOAD_FQN, SERVICE_DECL));
+            """.formatted(SERVICE_DECL));
 
         var f = (QueryField.QueryServiceRecordField) schema.field("Query", "sak");
         assertThat(f.errorChannel()).isPresent();
@@ -495,12 +452,12 @@ class ErrorChannelClassificationTest {
                 severity: Severity!
             }
             union SakError = RichErr
-            type SakPayload @record(record: {className: "%s"}) {
+            type SakPayload {
                 data: String
                 errors: [SakError]
             }
             type Query { sak: SakPayload %s }
-            """.formatted(SAK_PAYLOAD_FQN, SERVICE_DECL));
+            """.formatted(SERVICE_DECL));
 
         var field = schema.field("Query", "sak");
         assertThat(field).isInstanceOf(UnclassifiedField.class);
@@ -523,12 +480,12 @@ class ErrorChannelClassificationTest {
                 message: String!
             }
             union SakError = SimpleErr
-            type SakPayload @record(record: {className: "%s"}) {
+            type SakPayload {
                 data: String
                 errors: [SakError]
             }
             type Query { sak: SakPayload %s }
-            """.formatted(SAK_PAYLOAD_FQN, SERVICE_DECL));
+            """.formatted(SERVICE_DECL));
 
         var f = (QueryField.QueryServiceRecordField) schema.field("Query", "sak");
         assertThat(f.errorChannel()).isPresent();

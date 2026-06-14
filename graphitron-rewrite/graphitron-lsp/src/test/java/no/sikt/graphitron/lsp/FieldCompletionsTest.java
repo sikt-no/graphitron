@@ -150,8 +150,10 @@ class FieldCompletionsTest {
 
     @Test
     void recordBackingCompletionReturnsRecordComponents() {
+        // The parent's record-backing comes from the snapshot's name-keyed projection (below), not
+        // from any SDL directive, so member completion resolves without an applied @record.
         String source = """
-            input FilmInput @record(record: {className: "com.example.FilmDto"}) {
+            input FilmInput {
                 bar: Int @field(name: "")
             }
             """;
@@ -175,7 +177,7 @@ class FieldCompletionsTest {
     @Test
     void pojoBackingCompletionReturnsBeanAccessors() {
         String source = """
-            type FilmPojo @record(record: {className: "com.example.FilmPojo"}) {
+            type FilmPojo {
                 bar: Int @field(name: "")
             }
             """;

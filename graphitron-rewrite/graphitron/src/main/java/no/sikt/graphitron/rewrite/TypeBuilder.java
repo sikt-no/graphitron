@@ -185,11 +185,14 @@ class TypeBuilder {
                 if (gType != null) {
                     ctx.typeRegistry.classify(namedType.getName(), gType);
                 }
+                // R307: the directive-ignored warning is a classification output, emitted as the
+                // classifier visits each type rather than from a separate post-classification
+                // re-walk. The reflection bindings it reads (resolveAll, above) are already a fixed
+                // point by the time the classify pass runs.
+                emitDirectiveIgnoredWarning(namedType);
             });
 
-        // R96: emit the directive-ignored warning for every reachable type carrying @record, and
-        // surface multi-producer rejections as UnclassifiedType.
-        emitDirectiveIgnoredWarnings();
+        // R96: surface multi-producer rejections as UnclassifiedType.
         surfaceMultiProducerRejections();
 
         // Second pass: enrich interface / union variants with their resolved participants.
@@ -311,8 +314,12 @@ class TypeBuilder {
     }
 
     /**
-     * R96: emit the directive-ignored warning for every reachable SDL type carrying
-     * {@code @record}. Single emission site, three message variants selected by context:
+     * R96: emit the directive-ignored warning for a reachable SDL type carrying
+     * {@code @record}. R307 folds this into the classification pass: the method is called once
+     * per type as the classifier visits it (no separate post-classification re-walk), so the
+     * warning is a classification output. The reflection bindings it reads are a fixed point by
+     * then ({@code bindings.resolveAll} runs before the classify loop). Three message variants
+     * selected by context:
      *
      * <ul>
      *   <li><b>Shadowed by @table</b> (input types only): the type also carries {@code @table},
@@ -330,67 +337,64 @@ class TypeBuilder {
      * <p>Types whose reflection walk produced a multi-producer rejection do not emit the
      * directive-ignored warning at all; the error supersedes the warning at the same site.
      */
-    private void emitDirectiveIgnoredWarnings() {
-        for (var named : ctx.schema.getAllTypesAsList()) {
-            if (named.getName().startsWith("__")) continue;
-            if (!(named instanceof graphql.schema.GraphQLDirectiveContainer container)) continue;
-            if (!container.hasAppliedDirective(DIR_RECORD)) continue;
-            String name = named.getName();
-            // Suppress the warning when the reflection walk produced a multi-producer rejection
-            // for this type; the typed error supersedes the warning at the same site.
-            if (bindings.rejection(name).isPresent()) continue;
+    private void emitDirectiveIgnoredWarning(graphql.schema.GraphQLNamedType named) {
+        if (!(named instanceof graphql.schema.GraphQLDirectiveContainer container)) return;
+        if (!container.hasAppliedDirective(DIR_RECORD)) return;
+        String name = named.getName();
+        // Suppress the warning when the reflection walk produced a multi-producer rejection
+        // for this type; the typed error supersedes the warning at the same site.
+        if (bindings.rejection(name).isPresent()) return;
 
-            boolean isInput = named instanceof GraphQLInputObjectType;
-            boolean reachable = isInput
-                ? bindings.resolveInput(name).isPresent()
-                    || (named instanceof GraphQLInputObjectType iot && iot.hasAppliedDirective(DIR_TABLE))
-                : bindings.resolveResult(name).isPresent();
-            if (!reachable) continue;
+        boolean isInput = named instanceof GraphQLInputObjectType;
+        boolean reachable = isInput
+            ? bindings.resolveInput(name).isPresent()
+                || (named instanceof GraphQLInputObjectType iot && iot.hasAppliedDirective(DIR_TABLE))
+            : bindings.resolveResult(name).isPresent();
+        if (!reachable) return;
 
-            String declaredClassName = readRecordClassName(container);
-            SourceLocation loc = named instanceof GraphQLObjectType obj
-                ? locationOf(obj)
-                : named instanceof GraphQLInputObjectType inp
-                    ? locationOf(inp)
-                    : null;
+        String declaredClassName = readRecordClassName(container);
+        SourceLocation loc = named instanceof GraphQLObjectType obj
+            ? locationOf(obj)
+            : named instanceof GraphQLInputObjectType inp
+                ? locationOf(inp)
+                : null;
 
-            // Shadowed by @table. R276: a @table + @record combination is no longer a hard
-            // conflict (detectTypeDirectiveConflict ignores @record), so both OBJECT and INPUT
-            // carriers reach this site; @table wins and @record is ignored. Warn so the author
-            // removes the dead directive, with the @table-specific message (the backing comes from
-            // @table metadata, not a producing field's reflected return).
-            if (container.hasAppliedDirective(DIR_TABLE)) {
-                String message = (isInput ? "Input type '" : "Type '") + name + "' carries both @table and "
-                    + formatRecordRef(declaredClassName)
-                    + ". Graphitron derives the backing class from @table; "
-                    + "the @record directive is ignored. Remove it.";
-                ctx.addWarning(new BuildWarning(message, loc));
-                continue;
-            }
+        // Shadowed by @table. R276: a @table + @record combination is no longer a hard
+        // conflict (detectTypeDirectiveConflict ignores @record), so both OBJECT and INPUT
+        // carriers reach this site; @table wins and @record is ignored. Warn so the author
+        // removes the dead directive, with the @table-specific message (the backing comes from
+        // @table metadata, not a producing field's reflected return).
+        if (container.hasAppliedDirective(DIR_TABLE)) {
+            String message = (isInput ? "Input type '" : "Type '") + name + "' carries both @table and "
+                + formatRecordRef(declaredClassName)
+                + ". Graphitron derives the backing class from @table; "
+                + "the @record directive is ignored. Remove it.";
+            ctx.addWarning(new BuildWarning(message, loc));
+            return;
+        }
 
-            Class<?> reflectedClass = isInput
-                ? bindings.resolveInput(name).orElse(null)
-                : bindings.resolveResult(name).orElse(null);
-            if (reflectedClass == null) continue;
+        Class<?> reflectedClass = isInput
+            ? bindings.resolveInput(name).orElse(null)
+            : bindings.resolveResult(name).orElse(null);
+        if (reflectedClass == null) return;
 
-            // Matches: declaredClassName is null (no className declared) OR equals the reflected
-            // class name. The no-className case is equivalent to having no @record under R96.
-            boolean matches = declaredClassName == null
-                || declaredClassName.equals(reflectedClass.getName());
-            if (matches) {
-                String message = "Type '" + name + "' carries "
-                    + formatRecordRef(declaredClassName)
-                    + ". Graphitron derives the same backing class from the producing field's "
-                    + "reflected return type. The directive is redundant; remove it.";
-                ctx.addWarning(new BuildWarning(message, loc));
-            } else {
-                String message = "Type '" + name + "' carries "
-                    + formatRecordRef(declaredClassName)
-                    + ". Graphitron derives a different backing class (" + reflectedClass.getName()
-                    + ") from the producing field's reflected return type and uses that; "
-                    + "the directive is ignored. Remove it.";
-                ctx.addWarning(new BuildWarning(message, loc));
-            }
+        // Matches: declaredClassName is null (no className declared) OR equals the reflected
+        // class name. The no-className case is equivalent to having no @record under R96.
+        boolean matches = declaredClassName == null
+            || declaredClassName.equals(reflectedClass.getName());
+        if (matches) {
+            String message = "Type '" + name + "' carries "
+                + formatRecordRef(declaredClassName)
+                + ". Graphitron derives the same backing class from the producing field's "
+                + "reflected return type. The directive is redundant; remove it.";
+            ctx.addWarning(new BuildWarning(message, loc));
+        } else {
+            String message = "Type '" + name + "' carries "
+                + formatRecordRef(declaredClassName)
+                + ". Graphitron derives a different backing class (" + reflectedClass.getName()
+                + ") from the producing field's reflected return type and uses that; "
+                + "the directive is ignored. Remove it.";
+            ctx.addWarning(new BuildWarning(message, loc));
         }
     }
 
@@ -1034,7 +1038,7 @@ class TypeBuilder {
      * R96/R276: {@link RecordBindingResolver} reflection is the only source. This is reached only
      * for a type with a resolved producer binding (gated in {@link #classifyType}); the
      * {@code @record} directive is deprecated and ignored, surfaced by the directive-ignored
-     * warning at {@link #emitDirectiveIgnoredWarnings} rather than consulted here.
+     * warning at {@link #emitDirectiveIgnoredWarning} rather than consulted here.
      */
     private GraphitronType buildResultType(String name, SourceLocation location) {
         Class<?> cls = bindings.resolveResult(name).orElseThrow(() -> new IllegalStateException(
@@ -1130,7 +1134,7 @@ class TypeBuilder {
         // R96: @table wins on the (@table + @record) combination on input types. The legacy
         // emission that surfaced the redundancy as a standalone warning here is removed; the
         // signal is now carried by the "Shadowed by @table" variant of the directive-ignored
-        // warning, emitted at the single post-classification site in emitDirectiveIgnoredWarnings.
+        // warning, emitted per-type during the classification pass in emitDirectiveIgnoredWarning.
         if (inputType.hasAppliedDirective(DIR_TABLE)) {
             String tableName = argString(inputType, DIR_TABLE, ARG_NAME).orElse(name.toLowerCase());
             Optional<TableRef> tableOpt = svc.resolveTable(tableName);
@@ -1544,7 +1548,7 @@ class TypeBuilder {
      * <p>R276: {@code @record} is deprecated and ignored, so its mere presence is not a conflict.
      * A {@code @table} + {@code @record} or {@code @error} + {@code @record} combination is allowed
      * to classify ({@code @table}/{@code @error} wins) and surfaces the directive-ignored warning
-     * in {@link #emitDirectiveIgnoredWarnings} rather than a hard rejection.
+     * in {@link #emitDirectiveIgnoredWarning} rather than a hard rejection.
      */
     private static Rejection.InvalidSchema.DirectiveConflict detectTypeDirectiveConflict(GraphQLObjectType objType) {
         boolean hasTable = objType.hasAppliedDirective(DIR_TABLE);

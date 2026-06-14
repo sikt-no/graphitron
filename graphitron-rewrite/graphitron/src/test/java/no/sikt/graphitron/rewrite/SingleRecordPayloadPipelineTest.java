@@ -119,13 +119,10 @@ class SingleRecordPayloadPipelineTest {
         assertThat(srtf.sourceKey().cardinality()).isEqualTo(SourceKey.Cardinality.ONE);
     }
 
-    @ParameterizedTest
-    @EnumSource(value = DmlKind.class, names = {"INSERT", "UPDATE"})
-    void payload_atRecordWithNullClassName_classifiesAsSinglePayloadLeaf(DmlKind kind) {
-        var schema = TestSchemaHelper.buildSchema(payloadDmlSingleInput(kind, "type FilmPayload @record { film: Film }"));
-        assertThat(schema.field("Mutation", mutationName(kind)))
-            .isInstanceOf(expectedSingleLeaf(kind));
-    }
+    // R307: payload_atRecordWithNullClassName_classifiesAsSinglePayloadLeaf deleted. It pinned that
+    // a bare @record on a single-record DML payload does not change classification; @record is
+    // deprecated and ignored, so this is the same fixture as the no-@record single-payload case
+    // above, which already pins the SingleRecordTableField (cardinality ONE) leaf.
 
     // ===== DELETE-with-carrier admission (R156 / R266 / R287) =====
 
@@ -212,11 +209,12 @@ class SingleRecordPayloadPipelineTest {
     }
 
     @Test
-    void payload_atRecordWithClassName_classifiesAsExistingPath() {
-        // A @record with className keeps the existing authored-carrier path: when the SDL
-        // shape would otherwise admit as carrier (one @table-element data field), the
-        // classifier instead walks the type's fields through classifyChildFieldOnResultType.
-        // No SingleRecordTableField is registered on a JavaRecordType / PojoResultType.Backed.
+    void payload_recordBackedViaProducer_classifiesAsExistingPath() {
+        // A reflection-backed carrier (FilmCarrier binds to the @service producer's return) keeps
+        // the existing authored-carrier path: when the SDL shape would otherwise admit as carrier
+        // (one @table-element data field), the classifier instead walks the type's fields through
+        // classifyChildFieldOnResultType. No SingleRecordTableField is registered on a
+        // JavaRecordType / PojoResultType.Backed.
         var schema = TestSchemaHelper.buildSchema("""
             type Film @table(name: "film") { title: String }
             type FilmCarrier {
@@ -498,8 +496,8 @@ class SingleRecordPayloadPipelineTest {
     // The structural DML-payload scan (BuildContext.scanStructuralDmlPayload) admits a carrier
     // shape with one @table-element or record-backed element data field plus an optional errors-shaped
     // sibling; FieldBuilder.detectStructuralDmlErrorChannel binds the errors-channel transport
-    // to ErrorChannel.LocalContext when the carrier has no developer-supplied class with an
-    // errors slot (no @record(record:{className:})). These tests pin that the resulting
+    // to ErrorChannel.LocalContext when the carrier has no reflected developer-supplied payload
+    // class with an errors slot (its element binds via the DML RETURNING). These tests pin that the resulting
     // MutationDmlRecordField / MutationBulkDmlRecordField carries Optional.of(LocalContext) and
     // the sibling ErrorsField on the payload classifies with Transport.LocalContext — the two
     // halves the emitter's catch arm (TypeFetcherGenerator.catchArm) and the data fetcher

@@ -20,8 +20,15 @@ import org.eclipse.lsp4j.Range;
  * takes this record instead. {@link MethodCompletions} is the one
  * exception that still needs the wider tuple because it walks to a
  * sibling slot.
+ *
+ * <p>R307: also carries the enclosing directive name (from
+ * {@link LspVocabulary.CursorLocation}) so a provider can discriminate by
+ * directive when the coordinate is shared across directives, e.g.
+ * {@link ClassNameCompletions} skips {@code @record}, whose
+ * {@code ExternalCodeReference.className} coordinate is identical to
+ * {@code @enum}'s.
  */
-public record CompletionContext(SchemaCoordinate coordinate, Range replaceRange) {
+public record CompletionContext(SchemaCoordinate coordinate, Range replaceRange, String directiveName) {
 
     /**
      * Builds a context for {@code location}. The leaf node's tree-sitter
@@ -35,7 +42,8 @@ public record CompletionContext(SchemaCoordinate coordinate, Range replaceRange)
     public static CompletionContext from(LspVocabulary.CursorLocation location, byte[] source) {
         return new CompletionContext(
             location.coordinate(),
-            replaceRangeFor(location.leafNode(), source));
+            replaceRangeFor(location.leafNode(), source),
+            location.directiveName());
     }
 
     static Range replaceRangeFor(Node leaf, byte[] source) {

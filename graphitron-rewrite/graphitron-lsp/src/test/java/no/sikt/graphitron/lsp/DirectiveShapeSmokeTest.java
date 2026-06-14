@@ -128,7 +128,10 @@ class DirectiveShapeSmokeTest {
     }
 
     @Test
-    void recordDirectiveSakilaShapeProducesClassHover() {
+    void recordDirectiveSakilaShape_carveOut_noClassHover() {
+        // R307: the @record(record: {className:}) shape still parses and its className coordinate
+        // resolves (the hover falls through to the SDL docstring, proving shape recognition), but
+        // @record is deprecated and ignored so there is no live-binding "**Class**" hover on the FQN.
         String source = """
             input FooInput @record(record: {className: "com.example.FooDto"}) {
                 bar: Int
@@ -140,8 +143,9 @@ class DirectiveShapeSmokeTest {
         var hover = Hovers.compute(new WorkspaceFile(1, source), data,
             LspSchemaSnapshot.unavailable(), cursor).orElseThrow();
 
-        assertThat(hover.getContents().getRight().getValue())
-            .contains("com.example.FooDto");
+        var md = hover.getContents().getRight().getValue();
+        assertThat(md).doesNotContain("**Class**");
+        assertThat(md).isNotBlank();
     }
 
     @Test
