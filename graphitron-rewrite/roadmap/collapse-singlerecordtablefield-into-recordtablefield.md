@@ -80,34 +80,47 @@ lands as model state the consumers read, and the leaf-identity switch dissolves.
 ## Resolving the two capability markers
 
 Two markers today split `SingleRecordTableField` from `RecordTableField`, and both are *static per-type
-interface membership*, which a single merged leaf cannot make conditional on a per-instance slot. Each
-resolves to a slot read, in a different slot. This is the "emit-mechanism unification, not a leaf merge"
-R290 flagged, and it is the bulk of the work.
+interface membership*, which a single merged leaf cannot make conditional on a per-instance fact. They
+resolve differently, by the payload-vs-uniformity rule below: `OrderingOwnedByProducer` (payload-free,
+per-instance) dissolves into a derived predicate; `BatchKeyField` (payload-carrying, uniform across its
+other implementers) survives, with the merged leaf's loader riding the `SourceArrival.Many` slot. This is
+the "emit-mechanism unification, not a leaf merge" R290 flagged, and it is the bulk of the work.
 
-### OrderingOwnedByProducer → a state of the ordering slot
+### OrderingOwnedByProducer → a derived, validator-mirrored predicate
 
-`OrderingOwnedByProducer` (`OrderingOwnedByProducer.java`; sealed, permits `SingleRecordTableField` +
-`ServiceTableField`) exists only so `GraphitronSchemaValidator.validateListRequiresOrdering` (line 232)
-exempts these fields from the "list-shaped + `OrderBySpec.None` ⇒ non-determinism" rejection: their
-visible ordering is owned upstream, not by an `orderBy`. Since **ordering is already a slot**
-(`OrderBySpec`), this belongs *in* that slot, not in a parallel marker. R305 retires the marker and adds
-an `OrderBySpec` arm (working name `OwnedUpstream`) meaning "deterministic ordering supplied by an
-upstream keyed list; the field carries no `ORDER BY` of its own." The validator reads
-`orderBy() instanceof OrderBySpec.OwnedUpstream` instead of `instanceof OrderingOwnedByProducer`. It is
-asserted at classification for the single-arrival merged `RecordTableField` (results re-keyed to the
-upstream source list) and for `ServiceTableField` (the service returns the list verbatim). This dissolves
-the marker cleanly and covers both cases, note that `ServiceTableField` is *not* single-arrival, so an
-arrival-derived predicate would have missed it; the ordering slot is the right home, not the arrival slot.
+`OrderingOwnedByProducer` (`OrderingOwnedByProducer.java`; payload-free sealed marker, permits
+`SingleRecordTableField` + `ServiceTableField`) exists only so
+`GraphitronSchemaValidator.validateListRequiresOrdering` (line 232) exempts those fields from the
+"list-shaped + `OrderBySpec.None` ⇒ non-determinism" rejection: graphitron emits no `ORDER BY` for them
+and the visible order is owned by an upstream producer (the single-arrival inline source re-key; the
+`@service` method's verbatim list). It **dissolves into a derived predicate**, the `requiresReFetch`
+pattern: a single-home `orderingOwnedByProducer()` accessor computed from the field's classification and
+mirrored by `GraphitronSchemaValidator`. Its arms reproduce today's verdict, `ServiceTableField → true`,
+the merged `RecordTableField → sourceArrival() instanceof Single`, everything else `false`. The validator
+reads the predicate instead of `instanceof OrderingOwnedByProducer`; the marker interface is deleted.
 
-This is also why the marker "is related to lookup": `LookupValuesJoinEmitter` (line 37) already orders
-every lookup by a synthetic `idx` column "to preserve input ordering". Lookup ordering is owned by the
-input **key** list exactly as producer-owned ordering is owned by the source list, but today that is
-emitter behaviour invisible to the slot and the validator (a list-shaped lookup landing on
-`OrderBySpec.None` would be wrongly rejected even though the emitter produces deterministic idx-order).
-Folding the lookup leaves onto the same `OwnedUpstream` arm, so the idx-order is a slot fact the emitter
-reads rather than emitter magic, is the natural generalisation. R305 introduces the arm and migrates the
-producer/service cases; extending it to the lookup leaves (which also touches the lookup emitter) rides
-the R222 Stage-2 `Ordering` slot slice unless small enough to fold in (see Out of scope).
+It *must* dissolve, not merely narrow. The merged leaf cannot carry a conditional static marker (arrival
+is per-instance), so the exemption is a derived predicate regardless; and once it is one,
+`ServiceTableField` rides it (`true` arm), so a one-permit marker would be pure redundancy, and a
+one-permit marker is leaf-identity-as-interface, exactly what the pivot retires. This is the principled
+split from `BatchKeyField`, which *does* survive: `BatchKeyField` carries payload (`loaderRegistration`)
+and is *uniformly* true across its five always-batched leaves, a capability ("capability interfaces
+express what is uniformly true"); `OrderingOwnedByProducer` is payload-free and per-instance for the
+merged leaf, a derived predicate. Payload + uniform ⇒ capability; payload-free + per-instance ⇒ derived
+predicate.
+
+There is deliberately **no `OrderBySpec` arm** for this (an earlier pass proposed `OwnedUpstream`,
+dropped): "graphitron does not impose the order" is a fact about the emit/fetch shape, so it belongs in a
+derived predicate over the classification, not in `OrderBySpec`, whose arms (`None` / `Fixed` /
+`Argument` / `NamedOrder`) all express what the *author* asked for.
+
+Lookup is *not* this case, despite the surface resemblance an earlier pass chased. A `BatchKeyField`
+lookup carries a real `OrderBySpec` (PK-default `Fixed`, or the author's `@orderBy`) and clears the
+validator normally; the orderBy resolver lands on `None` only for a PK-less table with no author ordering
+(`validateListRequiresOrdering` doc, lines 219-222). Its `idx` input-order preservation
+(`LookupValuesJoinEmitter` line 37) is a separate scatter concern, not an ordering exemption. The
+keyed-scatter kinship with the producer re-key is real but lives in the arrival/scatter mechanism, not in
+this predicate; R305 leaves lookup ordering untouched.
 
 ### BatchKeyField → the loader lives on the SourceArrival.Many arm
 
@@ -138,14 +151,13 @@ capability decision and Stage 5.
 
 1. **Rename** `SourceKey.Cardinality {ONE, MANY}` → `SourceKey.ValueCardinality` (mechanical, ~26 call
    sites, payload-free enum, no generated-output change). Independent; can land first.
-2. **Add the slots.** The `SourceArrival { Single | Many(LoaderRegistration) }` slot on the merged
-   `RecordTableField`, and the `OrderBySpec.OwnedUpstream` ordering-slot arm. Assert both at the
-   construction sites (the two formerly-SRTF arms → `SINGLE` + `OwnedUpstream`; nested `RecordTableField`
-   → `MANY` + its real `orderBy`; `ServiceTableField` → `OwnedUpstream`). `GraphitronSchemaValidator`
-   mirrors `SourceArrival` against the emit path.
+2. **Add the slot and the predicate.** The `SourceArrival { Single | Many(LoaderRegistration) }` slot on
+   the merged `RecordTableField`, asserted at the construction sites (the two formerly-SRTF arms →
+   `SINGLE`; nested `RecordTableField` → `MANY`); and the derived `orderingOwnedByProducer()` predicate
+   reproducing today's verdict. `GraphitronSchemaValidator` mirrors both against the emit path.
 3. **Migrate the consumers off `instanceof`.** The emit fork and loader consumers read `SourceArrival`
    (`FetcherEmitter`, `TypeFetcherGenerator` rows-method/scatter sites, `SplitRowsMethodEmitter`); the
-   `validateListRequiresOrdering` validator reads `OrderBySpec.OwnedUpstream`.
+   `validateListRequiresOrdering` validator reads `orderingOwnedByProducer()`.
 4. **Retire the markers and the leaf.** Delete `OrderingOwnedByProducer` and `SingleRecordTableField`
    (the leaf record, its `intent()` / `mapping()` switch arms, its marker memberships), and retarget the
    `SingleRecordPayloadPipelineTest` `instanceof SingleRecordTableField` assertions to `RecordTableField`
@@ -178,7 +190,7 @@ capability decision and Stage 5.
 - **R222 Stage 5's** general `LoaderRegistration` permit consolidation, and whether `BatchKeyField`-as-
   marker retires into a loader slot (see the BatchKeyField resolution above). R305 does only the
   slot-local loader move.
-- **Migrating the lookup leaves' idx-ordering onto `OrderBySpec.OwnedUpstream`** and reading it in
-  `LookupValuesJoinEmitter` rather than emitting idx-order unconditionally. R305 introduces the arm and
-  the concept; the lookup-emitter refactor rides the R222 Stage-2 `Ordering` slot slice unless it proves
-  small enough to fold into step 3.
+- **Lookup ordering.** Lookups carry a real `OrderBySpec` and clear the validator normally (see the
+  ordering resolution above); R305 does not touch them. The keyed-scatter kinship between lookup's `idx`
+  input-order and the producer re-key is an arrival/scatter-mechanism observation for the R222 Stage-2
+  `Ordering`/scatter work, not an R305 change.
