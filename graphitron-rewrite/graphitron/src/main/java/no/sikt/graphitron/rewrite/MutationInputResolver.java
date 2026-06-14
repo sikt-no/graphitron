@@ -181,7 +181,7 @@ final class MutationInputResolver {
                     if (scan instanceof BuildContext.DmlPayloadScan.Reject scanReject) {
                         yield "@mutation(typeName: " + kind + ") return type '"
                             + s.returnTypeName() + "': " + scanReject.reason()
-                            + "; or author a carrier with @record(record: {className: ...})";
+                            + "; or back the carrier with a producing @service return type or a @table type";
                     }
                 }
                 yield "@mutation(typeName: " + kind + ") return type '"
@@ -205,11 +205,11 @@ final class MutationInputResolver {
                 // for the wrapper shape (single, not list/connection). Payload-shape rejections
                 // surface from the unified path's per-child classification (the legacy-equality
                 // check inside FieldBuilder.buildServiceField on @service mutations; the
-                // @mutation classifier's inline @record-element / table-equality checks on DML).
+                // @mutation classifier's inline record-backed element / table-equality checks on DML).
                 if (r.wrapper().isList()) {
                     yield "@mutation(typeName: " + kind + ") return type '"
-                        + r.returnTypeName() + "' (list of @record) is not yet supported; "
-                        + "use a single @record payload, an ID, or a @table type";
+                        + r.returnTypeName() + "' (list of record-backed payloads) is not yet supported; "
+                        + "use a single record-backed payload, an ID, or a @table type";
                 }
                 yield null;
             }

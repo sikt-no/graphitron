@@ -65,7 +65,7 @@ public final class AccessorPayloads {
     /**
      * R191 remap case: the accessor name diverges from the GraphQL field name, and the SDL field
      * carries {@code @field(name: "filmRecord")} to bridge the divergence. Exercises the
-     * directive-driven accessor-name remap on a free-form @record parent.
+     * directive-driven accessor-name remap on a free-form record-backed parent.
      */
     public record RemappedPayload(FilmRecord filmRecord) {}
 }

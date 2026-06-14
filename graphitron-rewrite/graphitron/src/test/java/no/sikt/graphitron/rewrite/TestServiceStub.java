@@ -17,7 +17,7 @@ import org.jooq.Result;
  * ({@link FilmRecord}, {@link LanguageRecord}, etc.) exercise the strict
  * service-return-type validation in {@code ServiceCatalog.reflectServiceMethod}
  * against {@code FieldBuilder.computeExpectedServiceReturnType}: a {@code @service}
- * field whose resolved return type is {@code @table}-bound (or a {@code @record}
+ * field whose resolved return type is {@code @table}-bound (or a record-backed type
  * with a backing class) requires the developer's method to declare a matching
  * parameterized return type.
  *
@@ -408,7 +408,7 @@ class TestServiceStub {
 
     /**
      * Returns the multi-ctor variant of the dummy payload. Used by the test that exercises
-     * canonical-constructor selection on hand-rolled {@code @record} POJOs that declare extra
+     * canonical-constructor selection on hand-rolled record-backed POJOs that declare extra
      * constructors alongside the canonical (all-fields) one.
      */
     public static no.sikt.graphitron.codereferences.dummyreferences.MultiCtorSakPayload runMultiCtorSak() {
@@ -441,7 +441,7 @@ class TestServiceStub {
      * payload class itself, not the inner record. Before R178 step 3 the carrier walk admitted
      * the payload shape as a single-record carrier and demanded {@code FilmRecord} as the return
      * type; after step 3 the unified path classifies the data field through the standard
-     * {@code @record}-parent accessor lookup, with no carrier-walk consultation.
+     * record-backed parent accessor lookup, with no carrier-walk consultation.
      */
     public static no.sikt.graphitron.codereferences.dummyreferences.SettKvotesporsmalShapePayload runPassthroughPayload() {
         throw new UnsupportedOperationException();

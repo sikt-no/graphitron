@@ -144,7 +144,7 @@ class SingleRecordTableFieldServiceProducerPipelineTest {
         assertThat(schema.warnings())
             .extracting(BuildWarning::message)
             .anyMatch(m -> m.contains("FilmListPayload.films")
-                && m.contains("@splitQuery is redundant on a @record-parent field"));
+                && m.contains("@splitQuery is redundant on a record-backed parent field"));
     }
 
     /**

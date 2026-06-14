@@ -202,13 +202,13 @@ public final class ClassifiedCorpus {
             """),
 
         /*
-         * Root @service into a @record: a root query field whose @service resolver returns a non-table
-         * @record type (QueryServiceRecordField). The service call produces the record, which is then
+         * Root @service into a record-backed type: a root query field whose @service resolver returns a non-table
+         * record-backed type (QueryServiceRecordField). The service call produces the record, which is then
          * materialized rather than projected from the catalog, so it is carrier Query, intent
          * QueryService, mapping Record, the root analog of the ServiceRecordField child field above
          * (Film.rating). Corpus-only: it lands on the already-taught QueryService / Record coordinate. The
-         * @record directive on the return type is load-bearing; without it the root @service
-         * payload-carrier validation rejects the field.
+         * @service producer's reflected return type binds the payload here; the still-applied @record
+         * directive is deprecated and ignored (R276), surfacing only the directive-ignored build warning.
          */
         new Example("query-service-record", """
             type FilmDetails @record { title: String }
@@ -303,7 +303,7 @@ public final class ClassifiedCorpus {
             type Query { film: Film }
             """),
 
-        // The former "constructor" example (a @record child type under a @table parent, Film.details
+        // The former "constructor" example (a record-backed child type under a @table parent, Film.details
         // building the record-backed FilmDetails from the parent's row) left the classified corpus when
         // R290 dissolved ConstructorField as wrong-by-design: that table-and-service clash is now a
         // build-time rejection, asserted at the validator tier by ConstructorFieldValidationTest rather
@@ -446,7 +446,7 @@ public final class ClassifiedCorpus {
             """),
 
         /*
-         * @table children under a jOOQ-TableRecord-backed @record parent, reached by @lookupKey and by
+         * @table children under a jOOQ-TableRecord-backed parent, reached by @lookupKey and by
          * @tableMethod. The record handoff has already opened a new keyed scope, so both re-query (the
          * new-query is derived): `FilmDetails.language` is a RecordLookupTableField (its @lookupKey makes
          * the intent Lookup, mapping Table) and `FilmDetails.inventories` a RecordTableMethodField (Fetch,
@@ -644,7 +644,7 @@ public final class ClassifiedCorpus {
          * DELETE admits two ways onto the same verdict: a PK-covering filter input (`deleteFilm`) or an
          * explicit `multiRow: true` broadcast over a non-PK filter (`deleteFilmsBroadcast`). An @service
          * mutation re-queries the catalog for its @table return (MutationServiceTableField, Mutation /
-         * MutationService / Table) or materializes a non-table @record (MutationServiceRecordField,
+         * MutationService / Table) or materializes a non-table record-backed type (MutationServiceRecordField,
          * Mutation / MutationService / Record). A DML payload carrier (a plain object wrapping one @table
          * data field) exposes the RETURNING rows as a record, so the carrier itself is Mutation / Insert /
          * Record (MutationDmlRecordField, DmlKind INSERT), the follow-up projection being the data field's

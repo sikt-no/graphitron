@@ -2102,16 +2102,16 @@ class GraphitronSchemaBuilderTest {
         assertThat(iface.participantTypeNames()).contains("Address");
     }
 
-    // ===== Fields on @record parents =====
+    // ===== Fields on record-backed parents =====
 
     /**
-     * Child field on a {@code @record} parent. One case per variant the builder can produce from
-     * this shape. Covers the <em>Child Fields (on {@code @record} parent)</em> table in
+     * Child field on a record-backed parent. One case per variant the builder can produce from
+     * this shape. Covers the <em>Child Fields (on record-backed parent)</em> table in
      * {@code code-generation-triggers.adoc}.
      */
     enum NonTableParentCase implements ClassificationCase {
         PROPERTY_FIELD_ON_RESULT_TYPE(
-            "@record (ResultType) parent — scalar field → PropertyField using field name as columnName",
+            "record-backed (ResultType) parent — scalar field → PropertyField using field name as columnName",
             """
             type FilmDetails { title: String }
             type Film @table(name: "film") { details: FilmDetails }
@@ -2128,7 +2128,7 @@ class GraphitronSchemaBuilderTest {
         },
 
         PROPERTY_FIELD_EXPLICIT_NAME(
-            "@record parent + @field(name:) — PropertyField uses the explicit column name",
+            "record-backed parent + @field(name:) — PropertyField uses the explicit column name",
             """
             type FilmDetails { title: String @field(name: "film_title") }
             type Film @table(name: "film") { details: FilmDetails }
@@ -2143,7 +2143,7 @@ class GraphitronSchemaBuilderTest {
             }),
 
         SERVICE_FIELD_ON_RESULT_TYPE(
-            "@record parent + @service + scalar return → DEFERRED until batch-key lift through parent chain ships",
+            "record-backed parent + @service + scalar return → DEFERRED until batch-key lift through parent chain ships",
             """
             type FilmDetails { rating: String @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "get"}) }
             type Film @table(name: "film") { details: FilmDetails }
@@ -2157,12 +2157,12 @@ class GraphitronSchemaBuilderTest {
                 assertThat(field).isInstanceOf(no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField.class);
                 var unc = (no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField) field;
                 assertThat(unc.kind()).isEqualTo(no.sikt.graphitron.rewrite.RejectionKind.DEFERRED);
-                assertThat(unc.reason()).contains("@record-typed parent", "lifted through the parent chain");
+                assertThat(unc.reason()).contains("record-backed parent", "lifted through the parent chain");
             }) {
             @Override public Set<Class<?>> variants() { return Set.of(no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField.class); }
         },
 
-        // R281 slice 2: the plain `@record parent + @table return (no @lookupKey) -> RecordTableField`
+        // R281 slice 2: the plain `record-backed parent + @table return (no @lookupKey) -> RecordTableField`
         // verdict (a pure isInstanceOf assertion, no slot detail) migrated to the spec-by-example
         // corpus, where FilmDetails.language is the derived-re-query half of the record-handoff minimal
         // pair against the inline TableField Film.language (the `record-table` ClassifiedCorpus example,
@@ -2172,7 +2172,7 @@ class GraphitronSchemaBuilderTest {
         // single cardinality, @splitQuery warning, @sourceRow lifters).
 
         RECORD_LOOKUP_TABLE_FIELD(
-            "@record parent (typed POJO) + @table return type + @lookupKey → RecordLookupTableField with populated SourceKey",
+            "record-backed parent (typed POJO) + @table return type + @lookupKey → RecordLookupTableField with populated SourceKey",
             """
             type Language @table(name: "language") { name: String }
             type FilmDetails {
@@ -2193,7 +2193,7 @@ class GraphitronSchemaBuilderTest {
         },
 
         IMPLICIT_REFERENCE_RECORD_TABLE(
-            "JooqTableRecordType @record parent + @table return with single FK → RecordTableField with one inferred FkJoin",
+            "JooqTableRecordType record-backed parent + @table return with single FK → RecordTableField with one inferred FkJoin",
             """
             type Inventory @table(name: "inventory") { inventoryId: Int! @field(name: "inventory_id") }
             type FilmDetails {
@@ -2214,7 +2214,7 @@ class GraphitronSchemaBuilderTest {
         },
 
         IMPLICIT_REFERENCE_RECORD_LOOKUP_TABLE(
-            "JooqTableRecordType @record parent + @table return + @lookupKey with single FK → RecordLookupTableField with one inferred FkJoin",
+            "JooqTableRecordType record-backed parent + @table return + @lookupKey with single FK → RecordLookupTableField with one inferred FkJoin",
             """
             type Inventory @table(name: "inventory") { inventoryId: Int! @field(name: "inventory_id") }
             type FilmDetails {
@@ -2235,7 +2235,7 @@ class GraphitronSchemaBuilderTest {
             @Override public Set<Class<?>> variants() { return Set.of(RecordLookupTableField.class); }
         },
 
-        // R281 slice 2: the plain `@record parent + non-table object return -> RecordField` verdict
+        // R281 slice 2: the plain `record-backed parent + non-table object return -> RecordField` verdict
         // (a pure isInstanceOf assertion, no slot detail) migrated to the spec-by-example corpus, where
         // FilmDetails.stats is the record-object flavor of the Column-vs-Field mapping minimal pair (the
         // `mapping` ClassifiedCorpus example, asserted via @classified(carrier: Source, intent: Fetch, mapping: Field) and
@@ -2243,7 +2243,7 @@ class GraphitronSchemaBuilderTest {
         // RecordField leaf stays covered by the corpus and by the slot-asserting record cases above.
 
         RECORD_TABLE_FIELD_SINGLE_CARDINALITY(
-            "@record parent + @table return + single cardinality → RecordTableField (R61 lifted Invariant #10)",
+            "record-backed parent + @table return + single cardinality → RecordTableField (R61 lifted Invariant #10)",
             """
             type Language @table(name: "language") { name: String }
             type FilmDetails {
@@ -2272,19 +2272,19 @@ class GraphitronSchemaBuilderTest {
         // corpus and by the slot-asserting service cases above (e.g. TABLE_TYPE_RETURN, the @reference
         // origin-defaulting cases).
 
-        // R290: the `@table parent + @record child type` shape that used to classify as ConstructorField
+        // R290: the `@table parent + record-backed child type` shape that used to classify as ConstructorField
         // is now a build-time rejection (the leaf was dissolved as wrong-by-design). Its coverage lives at
         // the validator tier in ConstructorFieldValidationTest, not as a clean classification here.
 
-        // R3: @splitQuery on a @record-parent field is a structural no-op (the record handoff
+        // R3: @splitQuery on a record-backed parent field is a structural no-op (the record handoff
         // already opens a new DataLoader-backed scope) and should surface as a build warning so
         // the developer who added it learns the directive changes nothing. Two fixtures cover
-        // the regular @record-parent classification arms; the @sourceRow seam is covered in
+        // the regular record-backed parent classification arms; the @sourceRow seam is covered in
         // SourceRowClassificationCase (one fixture, since both arms share the same emit-warning
         // seam).
 
         SPLIT_QUERY_ON_RECORD_PARENT_WARNS_TABLE_FIELD(
-            "@splitQuery on @record-parent + @table return → RecordTableField + build warning naming the field coordinate",
+            "@splitQuery on record-backed parent + @table return → RecordTableField + build warning naming the field coordinate",
             """
             type Language @table(name: "language") { name: String }
             type FilmDetails {
@@ -2301,13 +2301,13 @@ class GraphitronSchemaBuilderTest {
                 assertThat(schema.warnings())
                     .extracting(BuildWarning::message)
                     .anyMatch(m -> m.contains("FilmDetails.language")
-                        && m.contains("@splitQuery is redundant on a @record-parent field"));
+                        && m.contains("@splitQuery is redundant on a record-backed parent field"));
             }) {
             @Override public Set<Class<?>> variants() { return Set.of(RecordTableField.class); }
         },
 
         SPLIT_QUERY_ON_RECORD_PARENT_WARNS_LOOKUP_FIELD(
-            "@splitQuery on @record-parent + @lookupKey + @table return → RecordLookupTableField + build warning",
+            "@splitQuery on record-backed parent + @lookupKey + @table return → RecordLookupTableField + build warning",
             """
             type Language @table(name: "language") { name: String }
             type FilmDetails {
@@ -2326,7 +2326,7 @@ class GraphitronSchemaBuilderTest {
                 assertThat(schema.warnings())
                     .extracting(BuildWarning::message)
                     .anyMatch(m -> m.contains("FilmDetails.language")
-                        && m.contains("@splitQuery is redundant on a @record-parent field"));
+                        && m.contains("@splitQuery is redundant on a record-backed parent field"));
             }) {
             @Override public Set<Class<?>> variants() { return Set.of(RecordLookupTableField.class); }
         },
@@ -2336,7 +2336,7 @@ class GraphitronSchemaBuilderTest {
         // developer needs both diagnostics, not just whichever fires first. Locks the warning
         // emission to the table-bound-return seam, before any rejection guard.
         SPLIT_QUERY_WARNS_ALONGSIDE_RECORD_PARENT_REJECTION(
-            "@splitQuery on @record-parent with unresolvable @reference → UnclassifiedField + build warning still fires",
+            "@splitQuery on record-backed parent with unresolvable @reference → UnclassifiedField + build warning still fires",
             """
             type Language @table(name: "language") { name: String }
             type FilmDetails {
@@ -2353,7 +2353,7 @@ class GraphitronSchemaBuilderTest {
                 assertThat(schema.warnings())
                     .extracting(BuildWarning::message)
                     .anyMatch(m -> m.contains("FilmDetails.language")
-                        && m.contains("@splitQuery is redundant on a @record-parent field"));
+                        && m.contains("@splitQuery is redundant on a record-backed parent field"));
             }) {
             @Override public Set<Class<?>> variants() { return Set.of(UnclassifiedField.class); }
         },
@@ -2376,7 +2376,7 @@ class GraphitronSchemaBuilderTest {
 
         SINGLE_RECORD_IDENTITY_FIELD_ORPHAN(
             "R178 Phase 4: a plain Object carrier wrapping a single record-element data field "
-                + "(@record-backed ResultType) consumed by a Query field with no producing mutation "
+                + "(record-backed ResultType) consumed by a Query field with no producing mutation "
                 + "→ orphan carrier; the data field stays unregistered (record-element identity "
                 + "passthrough is now handled by the unified per-field classifier on producer-bound "
                 + "parents).",
@@ -2461,7 +2461,7 @@ class GraphitronSchemaBuilderTest {
 
     /**
      * Classifier-level coverage for the {@code @sourceRow} directive — the lifter path
-     * for {@code @record} parents whose backing class has no jOOQ FK metadata. Each case
+     * for record-backed parents whose backing class has no jOOQ FK metadata. Each case
      * pins one of the resolver invariants in
      * {@link no.sikt.graphitron.rewrite.SourceRowDirectiveResolver}: parent shape (Inv #1),
      * lifter parameter assignability (Inv #2), lifter return type (Inv #3), arity / column-class
@@ -2528,12 +2528,12 @@ class GraphitronSchemaBuilderTest {
             @Override public Set<Class<?>> variants() { return Set.of(RecordLookupTableField.class); }
         },
 
-        // R276: NULL_FQ_CLASS_NAME deleted. It pinned "a @record parent with no backing class +
-        // @sourceRow → Invariant #1 rejection". Under reflection-only binding a no-backing @record
+        // R276: NULL_FQ_CLASS_NAME deleted. It pinned "a record-backed parent with no backing class +
+        // @sourceRow → Invariant #1 rejection". Under reflection-only binding a no-backing record-backed type
         // is a NestingType whose fields don't classify, so that exact scenario no longer
         // exists. UnclassifiedField coverage for SourceRow is retained by the other reject cases.
         TABLE_PARENT_REJECT(
-            "@table parent + lifter → UnclassifiedField AUTHOR_ERROR (lifter is for @record parents)",
+            "@table parent + lifter → UnclassifiedField AUTHOR_ERROR (lifter is for record-backed parents)",
             """
             type Inventory @table(name: "inventory") { inventoryId: Int! @field(name: "inventory_id") }
             type Film @table(name: "film") {
@@ -2546,7 +2546,7 @@ class GraphitronSchemaBuilderTest {
             schema -> {
                 var unc = (UnclassifiedField) schema.field("Film", "inventories");
                 assertThat(unc.kind()).isEqualTo(RejectionKind.AUTHOR_ERROR);
-                assertThat(unc.reason()).contains("@sourceRow").contains("@record").contains("@reference");
+                assertThat(unc.reason()).contains("@sourceRow").contains("record-backed").contains("@reference");
             }) {
             @Override public Set<Class<?>> variants() { return Set.of(UnclassifiedField.class); }
         },
@@ -2962,12 +2962,12 @@ class GraphitronSchemaBuilderTest {
             @Override public Set<Class<?>> variants() { return Set.of(UnclassifiedField.class); }
         },
 
-        // R3: @splitQuery on a @sourceRow @record-parent field is just as silently no-op as on
-        // the regular @record-parent path — the lifter-keyed DataLoader already opens a new
+        // R3: @splitQuery on a @sourceRow record-backed parent field is just as silently no-op as on
+        // the regular record-backed parent path — the lifter-keyed DataLoader already opens a new
         // scope. One fixture is enough since both arms (RecordTableField, RecordLookupTableField)
         // share the same emit-warning seam.
         SPLIT_QUERY_WARNS_ON_SOURCE_ROW(
-            "@splitQuery on @sourceRow @record-parent field → RecordTableField + build warning naming the field coordinate",
+            "@splitQuery on @sourceRow record-backed parent field → RecordTableField + build warning naming the field coordinate",
             """
             type Inventory @table(name: "inventory") { inventoryId: Int! @field(name: "inventory_id") }
             type FilmDetails {
@@ -2987,12 +2987,12 @@ class GraphitronSchemaBuilderTest {
                 assertThat(schema.warnings())
                     .extracting(BuildWarning::message)
                     .anyMatch(m -> m.contains("FilmDetails.inventories")
-                        && m.contains("@splitQuery is redundant on a @record-parent field"));
+                        && m.contains("@splitQuery is redundant on a record-backed parent field"));
             }) {
             @Override public Set<Class<?>> variants() { return Set.of(RecordTableField.class); }
         },
 
-        // R3: holistic-surfacing rule. The @sourceRow seam mirrors the regular @record-parent
+        // R3: holistic-surfacing rule. The @sourceRow seam mirrors the regular record-backed parent
         // path: an unrelated lifter-signature rejection (Inv #3 in SourceRowDirectiveResolver)
         // must not suppress the @splitQuery redundancy advisory.
         SPLIT_QUERY_WARNS_ALONGSIDE_SOURCE_ROW_REJECTION(
@@ -3017,7 +3017,7 @@ class GraphitronSchemaBuilderTest {
                 assertThat(schema.warnings())
                     .extracting(BuildWarning::message)
                     .anyMatch(m -> m.contains("FilmDetails.inventories")
-                        && m.contains("@splitQuery is redundant on a @record-parent field"));
+                        && m.contains("@splitQuery is redundant on a record-backed parent field"));
             }) {
             @Override public Set<Class<?>> variants() { return Set.of(UnclassifiedField.class); }
         };
@@ -3041,7 +3041,7 @@ class GraphitronSchemaBuilderTest {
     // ===== Accessor-derived SourceKey classifier matrix (R60) =====
 
     /**
-     * Classifier-level coverage for the auto-derivation that runs on {@code @record} parents
+     * Classifier-level coverage for the auto-derivation that runs on record-backed parents
      * whose backing class exposes a typed zero-arg accessor returning a concrete jOOQ
      * {@code TableRecord} subtype. Pins the
      * {@link no.sikt.graphitron.rewrite.FieldBuilder#deriveAccessorRecordParentSource} match
@@ -3173,7 +3173,7 @@ class GraphitronSchemaBuilderTest {
         },
 
         ACCESSOR_ROWKEYED_FIELD_NAME_REMAPS_ACCESSOR(
-            "@field(name:) on a free-form @record parent remaps the accessor base name → admits with the directive-named accessor",
+            "@field(name:) on a free-form record-backed parent remaps the accessor base name → admits with the directive-named accessor",
             """
             type Film @table(name: "film") { filmId: Int! @field(name: "film_id") }
             type Payload {
@@ -3200,7 +3200,7 @@ class GraphitronSchemaBuilderTest {
         },
 
         ACCESSOR_ROWKEYED_FIELD_NAME_REJECTS_WITHOUT_DIRECTIVE(
-            "Divergent accessor name with no @field(name:) on a free-form @record parent → falls through to the three-option AUTHOR_ERROR",
+            "Divergent accessor name with no @field(name:) on a free-form record-backed parent → falls through to the three-option AUTHOR_ERROR",
             """
             type Film @table(name: "film") { filmId: Int! @field(name: "film_id") }
             type Payload {
@@ -3261,18 +3261,18 @@ class GraphitronSchemaBuilderTest {
         tc.assertions.accept(build(tc.sdl));
     }
 
-    // ===== RecordTableMethodField (R43 commit 4 — child @tableMethod on @record parent) =====
+    // ===== RecordTableMethodField (R43 commit 4 — child @tableMethod on record-backed parent) =====
 
     /**
      * Classifier coverage for {@link RecordTableMethodField}: child {@code @tableMethod} on a
-     * {@code @record} (non-table) parent. Two admit arms (FK-auto-derive on a JooqTableRecord-
+     * record-backed (non-table) parent. Two admit arms (FK-auto-derive on a JooqTableRecord-
      * backed parent + lifter-derived via {@code @sourceRow} on a free-form DTO parent) and one
      * rejection (free-form DTO without {@code @sourceRow}). Emit stays stubbed at commit 4;
      * end-to-end emit + execution coverage lands with commit 5.
      */
     enum RecordTableMethodFieldCase implements ClassificationCase {
         JOOQ_TABLE_RECORD_PARENT_AUTO_FK(
-            "JooqTableRecordType @record parent + @tableMethod with single FK → RecordTableMethodField, auto-FK source-key",
+            "JooqTableRecordType record-backed parent + @tableMethod with single FK → RecordTableMethodField, auto-FK source-key",
             """
             type Inventory @table(name: "inventory") { inventoryId: Int! @field(name: "inventory_id") }
             type FilmDetails {
@@ -3294,7 +3294,7 @@ class GraphitronSchemaBuilderTest {
             }),
 
         JOOQ_TABLE_RECORD_PARENT_EXPLICIT_REFERENCE(
-            "JooqTableRecordType @record parent + @tableMethod + @reference(path:) → RecordTableMethodField with explicit FK path",
+            "JooqTableRecordType record-backed parent + @tableMethod + @reference(path:) → RecordTableMethodField with explicit FK path",
             """
             type Language @table(name: "language") { name: String }
             type FilmDetails {
@@ -5901,7 +5901,7 @@ class GraphitronSchemaBuilderTest {
      *   <li>{@code classifyMutationField} — Mutation root {@code @service} returning a payload
      *       (the canonical {@code BehandleSakPayload} shape).</li>
      *   <li>{@code classifyChildFieldOnResultType} (non-service arm) — the payload's own
-     *       {@code errors} field on a {@code @record} parent.</li>
+     *       {@code errors} field on a record-backed parent.</li>
      *   <li>Plus rejection cases: mixed-{@code @error}-and-non-{@code @error} unions, non-null
      *       list shapes, and pure non-{@code @error} polymorphic returns (which still fall
      *       through to the existing "polymorphic not supported" rejection).</li>
@@ -5909,7 +5909,7 @@ class GraphitronSchemaBuilderTest {
      */
     enum ErrorsFieldCase implements ClassificationCase {
         UNION_OF_ALL_ERROR_TYPES_LIFTS_TO_ERRORS_FIELD(
-            "union of @error types on @record payload — errors field lifts to ErrorsField",
+            "union of @error types on record-backed payload — errors field lifts to ErrorsField",
             """
             type ValidationErr @error(handlers: [{handler: VALIDATION}]) {
                 path: [String!]!
@@ -5944,7 +5944,7 @@ class GraphitronSchemaBuilderTest {
             }),
 
         INTERFACE_IMPLEMENTED_BY_ALL_ERROR_TYPES_LIFTS_TO_ERRORS_FIELD(
-            "interface implemented by @error types on @record payload — errors field lifts to ErrorsField",
+            "interface implemented by @error types on record-backed payload — errors field lifts to ErrorsField",
             """
             interface BehandleSakError {
                 path: [String!]!
@@ -6372,7 +6372,7 @@ class GraphitronSchemaBuilderTest {
             @Override public Set<Class<?>> variants() { return Set.of(QueryField.QueryServiceTableField.class); }
         },
 
-        // R281 slice 2: the pure `root @service into a non-table @record -> QueryServiceRecordField`
+        // R281 slice 2: the pure `root @service into a non-table record-backed type -> QueryServiceRecordField`
         // verdict (a bare isInstanceOf assertion, no slot detail) migrated to the spec-by-example
         // corpus as the `query-service-record` ClassifiedCorpus example (Query.filmDetails, asserted
         // via @classified(carrier: Query, intent: QueryService, mapping: Record)). Corpus-only: it lands on the
@@ -6465,7 +6465,7 @@ class GraphitronSchemaBuilderTest {
         // slot detail) migrated to the spec-by-example corpus as the `mutation-roots` example. An
         // @service mutation returning a @table re-queries the catalog (externalMutation ->
         // MutationServiceTableField, asserted via @classified(carrier: Mutation, intent: MutationService, mapping:
-        // Table)); one returning a non-table @record materializes it (externalRecord ->
+        // Table)); one returning a non-table record-backed type materializes it (externalRecord ->
         // MutationServiceRecordField, @classified(carrier: Mutation, intent: MutationService, mapping: Record)). Corpus-only.
         // Both leaves stay covered by the corpus and by the slot-asserting carrier cases below.
 
@@ -7590,7 +7590,7 @@ class GraphitronSchemaBuilderTest {
             }),
 
         DML_INSERT_LIST_PAYLOAD_REJECTED(
-            "DML INSERT with listed input + @record payload return → UnclassifiedField (Invariant #15)",
+            "DML INSERT with listed input + record-backed payload return → UnclassifiedField (Invariant #15)",
             """
             type Film @table(name: "film") { title: String }
             type FilmPayload @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DeleteFilmRowOnlyPayload"}) {
@@ -7740,8 +7740,8 @@ class GraphitronSchemaBuilderTest {
             }),
 
         DML_RECORD_PAYLOAD_TABLE_ELEMENT_WITH_ERRORS_REJECTS(
-            "R287: DELETE returning a @record carrier whose data field is a @table-element (film+errors) "
-                + "→ UnclassifiedField. The carrier's @record backing does not change the data field's "
+            "R287: DELETE returning a record-backed carrier whose data field is a @table-element (film+errors) "
+                + "→ UnclassifiedField. The carrier's record-backed nature does not change the data field's "
                 + "shape: a @table-element projected off a deleted row is impossible (RETURNING carries "
                 + "only the PK). Use an ID-element data field.",
             """
@@ -7770,7 +7770,7 @@ class GraphitronSchemaBuilderTest {
             }),
 
         DML_RECORD_PAYLOAD_TABLE_ELEMENT_ROW_ONLY_REJECTS(
-            "R287: DELETE returning a @record carrier whose only data field is a @table-element (film) "
+            "R287: DELETE returning a record-backed carrier whose only data field is a @table-element (film) "
                 + "→ UnclassifiedField (same reason as the with-errors sibling).",
             """
             type Film @table(name: "film") { title: String }
@@ -7788,7 +7788,7 @@ class GraphitronSchemaBuilderTest {
             }),
 
         DML_RECORD_PAYLOAD_LIST_REJECTED(
-            "DML returning a list of @record payloads → UnclassifiedField (validateReturnType, list-payload not yet supported)",
+            "DML returning a list of record-backed payloads → UnclassifiedField (validateReturnType, list-payload not yet supported)",
             """
             type Film @table(name: "film") { title: String }
             type DeleteFilmPayload @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DeleteFilmRowOnlyPayload"}) {
@@ -7801,11 +7801,11 @@ class GraphitronSchemaBuilderTest {
             schema -> {
                 var f = (UnclassifiedField) schema.field("Mutation", "deleteFilms");
                 assertThat(f.reason())
-                    .contains("(list of @record) is not yet supported");
+                    .contains("(list of record-backed payloads) is not yet supported");
             }),
 
         DML_RECORD_PAYLOAD_NO_DATA_FIELD_REJECTED(
-            "R161: DML returning a @record carrier with no data-channel-shaped field → UnclassifiedField (the structural scan rejects 'data: String' as an unrecognized carrier data-field shape since String is neither @table nor ID; user's developer-supplied class is no longer inspected)",
+            "R161: DML returning a record-backed carrier with no data-channel-shaped field → UnclassifiedField (the structural scan rejects 'data: String' as an unrecognized carrier data-field shape since String is neither @table nor ID; user's developer-supplied class is no longer inspected)",
             """
             type Film @table(name: "film") { title: String }
             type SakPayload @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.SakPayload"}) {

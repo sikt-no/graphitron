@@ -231,7 +231,7 @@ public final class TestFixtures {
 
     /**
      * Polymorphic-Accessor {@link SourceKey} for {@link ChildField.InterfaceField} /
-     * {@link ChildField.UnionField} on a {@code @record}-backed parent with a typed hub
+     * {@link ChildField.UnionField} on a record-backed parent with a typed hub
      * accessor: target=hubTable (where the accessor's typed return lives),
      * columns=hubTable.PK, path=[hop], {@link SourceKey.Wrap.Record} +
      * {@link SourceKey.Reader.AccessorCall}, cardinality per the accessor (Single ⇒ ONE,

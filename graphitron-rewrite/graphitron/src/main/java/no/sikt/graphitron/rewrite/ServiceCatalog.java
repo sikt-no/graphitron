@@ -924,7 +924,7 @@ class ServiceCatalog {
         }
         return "sources type '" + elementClass.getName() + "' is not backed by a jOOQ TableRecord"
             + " — free-form DTO sources on @service SOURCES parameters are not supported."
-            + " The @sourceRow directive solves the analogous case for child fields on @record"
+            + " The @sourceRow directive solves the analogous case for child fields on record-backed"
             + " parents (not @service SOURCES)";
     }
 

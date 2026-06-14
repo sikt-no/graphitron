@@ -22,8 +22,8 @@ public enum Mapping {
     TableConnection,
     /** A single catalog column projected from a table-backed parent. */
     Column,
-    /** A service {@code @record}/pojo object. */
+    /** A service record-backed (Pojo / JavaRecord) object. */
     Record,
-    /** A scalar reflected off a service {@code @record}/pojo parent. */
+    /** A scalar reflected off a service record-backed (Pojo / JavaRecord) parent. */
     Field
 }

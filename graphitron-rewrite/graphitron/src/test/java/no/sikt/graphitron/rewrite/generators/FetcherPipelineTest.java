@@ -79,7 +79,7 @@ class FetcherPipelineTest {
         assertThat(classes).contains("ContainerFetchers");
     }
 
-    // ===== @record parent — PropertyField and RecordField =====
+    // ===== record-backed parent — PropertyField and RecordField =====
 
     @Test
     void propertyField_onRecordType_hasWiringEntry() {
@@ -157,7 +157,7 @@ class FetcherPipelineTest {
         assertThat(fetchers.methodSpecs()).extracting(MethodSpec::name).contains("stats");
     }
 
-    // ===== @record parent — RecordTableField =====
+    // ===== record-backed parent — RecordTableField =====
 
     private static final String RECORD_TABLE_SDL = """
             type Language @table(name: "language") { name: String }
@@ -190,7 +190,7 @@ class FetcherPipelineTest {
         assertThat(fetchers.methodSpecs()).extracting(MethodSpec::name).contains("rowsLanguage");
     }
 
-    // ===== @record parent — RecordLookupTableField =====
+    // ===== record-backed parent — RecordLookupTableField =====
     //
     // Backing class is the real jOOQ FilmRecord from graphitron-sakila-db — a TableRecord
     // bound to "film", classifying the parent as JooqTableRecordType. This lets parsePath anchor on
@@ -238,7 +238,7 @@ class FetcherPipelineTest {
         assertThat(fetchers.methodSpecs()).extracting(MethodSpec::name).contains("actorsByLookupInputRows");
     }
 
-    // R276: the legacy "@record payload with a developer-owned errors slot read via
+    // R276: the legacy "record-backed payload with a developer-owned errors slot read via
     // PropertyDataFetcher" tests were deleted. That passthrough required a backed payload with no
     // producer (the removed @record-className idiom); a @service-produced errors payload now rides
     // the R244 Outcome WrapperArm transport, covered by SAK_DISPATCH_SDL / the OUTCOME_*_SDL tests
@@ -342,7 +342,7 @@ class FetcherPipelineTest {
     // service returns FilmRecord) carries a column-projected data field. Under the wrapper transport
     // its inline read must be the ColumnFetcher get inlined onto success.value(), not the bare
     // ColumnFetcher (which would read off the Outcome object) and not a generation-time throw. The
-    // spec's "Per-shape mechanism" scopes the column inline-read in alongside the @record accessor.
+    // spec's "Per-shape mechanism" scopes the column inline-read in alongside the record-backed accessor.
     private static final String OUTCOME_COLUMN_FIELD_SDL = """
             type ValidationErr @error(handlers: [{handler: VALIDATION}]) { path: [String!]! message: String! }
             type DbErr @error(handlers: [{handler: DATABASE, sqlState: "23503"}]) { path: [String!]! message: String! }

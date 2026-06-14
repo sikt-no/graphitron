@@ -851,7 +851,7 @@ class FieldBuilder {
                 List.copyOf(nestedFields));
         }
 
-        // A @table parent whose child returns a @record/service result type has no way to build that
+        // A @table parent whose child returns a record-backed/service result type has no way to build that
         // child from the parent's own row. The former ConstructorField passthrough materialised the
         // child from the @table parent's Record; R290 dissolved that leaf as wrong-by-design (no
         // production schema relies on it, and its only coverage was self-referential), so the clash is
@@ -861,11 +861,11 @@ class FieldBuilder {
             return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(
                 "field '" + name + "' on @table type '" + parentTypeName + "' returns '" + elementTypeName
                 + "', a record-backed result type, but carries no producer directive to build it: a @table "
-                + "parent cannot construct a @record child from its own row. Add @service, @reference, "
+                + "parent cannot construct a record-backed child from its own row. Add @service, @reference, "
                 + "@tableMethod, or @externalField on the field, or back '" + elementTypeName + "' with @table."));
         }
 
-        return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural("return type '" + elementTypeName + "' is not a @table, @record, interface, or union Graphitron type"));
+        return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural("return type '" + elementTypeName + "' is not a @table, record-backed, interface, or union Graphitron type"));
     }
 
     // ===== Wrapper helpers =====
@@ -3419,7 +3419,7 @@ class FieldBuilder {
 
                 // R178 Phase 4: payload-returning DML mutations classify through structural
                 // detection of the payload SDL (single non-errors-shaped data field; element
-                // kind: @table / @record / ID), dispatching on the DmlElementKind permit returned
+                // kind: @table / record-backed / ID), dispatching on the DmlElementKind permit returned
                 // by scanStructuralDmlPayload. Only INSERT / UPSERT reach here: UPDATE (R246/R258)
                 // and DELETE (R266) are intercepted before resolveInput and classify through their
                 // walker-driven payload classifiers (classifyUpdatePayloadField /
@@ -3479,7 +3479,7 @@ class FieldBuilder {
                                         + "(post-image == primary key) and is admitted only on "
                                         + "@mutation(typeName: DELETE) carriers. On @mutation(typeName: "
                                         + kind + ") the post-image is richer; use a @table-element data field "
-                                        + "or a @record-element data field instead."));
+                                        + "or a record-backed element data field instead."));
                                 }
                             }
                         }
@@ -3698,7 +3698,7 @@ class FieldBuilder {
                 + "(post-image == primary key) and is admitted only on "
                 + "@mutation(typeName: DELETE) carriers. On @mutation(typeName: "
                 + DmlKind.UPDATE + ") the post-image is richer; use a @table-element data field "
-                + "or a @record-element data field instead."));
+                + "or a record-backed element data field instead."));
         }
         var tbl = (BuildContext.DmlElementKind.Table) element;
         String tableMismatch = requireDmlDataTableMatchesInputTable(
@@ -4201,7 +4201,7 @@ class FieldBuilder {
                 var fkSource = deriveFkRecordParentSource(tmPath.elements(), parentResultType, tbReturn);
                 if (fkSource == null) {
                     return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(
-                        "@tableMethod on a @record parent requires either a typed jOOQ TableRecord backing "
+                        "@tableMethod on a record-backed parent requires either a typed jOOQ TableRecord backing "
                         + "(so the FK to the @tableMethod return-type table can be auto-derived from the catalog), "
                         + "or @sourceRow(className: ..., method: ...) to lift the batch key manually. Parent '"
                         + parentTypeName + "' has neither."));
@@ -4315,13 +4315,13 @@ class FieldBuilder {
                 case ServiceDirectiveResolver.Resolved.Result r ->
                     new UnclassifiedField(parentTypeName, name, location, fieldDef,
                         Rejection.deferred(
-                            "@service on a @record-typed parent is not yet supported; the batch key "
+                            "@service on a record-backed parent is not yet supported; the batch key "
                             + "must be lifted through the parent chain to the rooted @table",
                             "service-record-field"));
                 case ServiceDirectiveResolver.Resolved.Scalar s ->
                     new UnclassifiedField(parentTypeName, name, location, fieldDef,
                         Rejection.deferred(
-                            "@service on a @record-typed parent is not yet supported; the batch key "
+                            "@service on a record-backed parent is not yet supported; the batch key "
                             + "must be lifted through the parent chain to the rooted @table",
                             "service-record-field"));
             };
@@ -4420,7 +4420,7 @@ class FieldBuilder {
             String name, SourceLocation location) {
         if (!fieldDef.hasAppliedDirective(DIR_SPLIT_QUERY)) return;
         ctx.addWarning(new BuildWarning(
-            parentTypeName + "." + name + ": @splitQuery is redundant on a @record-parent field; "
+            parentTypeName + "." + name + ": @splitQuery is redundant on a record-backed parent field; "
             + "the record handoff already opens a new DataLoader-backed scope. The directive will be ignored.",
             location));
     }
@@ -4788,7 +4788,7 @@ class FieldBuilder {
                 })
                 .collect(Collectors.joining(", "));
             return new AccessorDerivation.Ambiguous(
-                "@record parent '" + parentFqClassName + "' exposes more than one typed accessor "
+                "record-backed parent '" + parentFqClassName + "' exposes more than one typed accessor "
                 + "returning '" + expectedTable.tableName() + "' records: [" + candidates + "]. Disambiguate "
                 + "by adding @sourceRow(...) on this field.");
         }
@@ -4940,7 +4940,7 @@ class FieldBuilder {
             return new UnclassifiedField(parentTypeName, name, location, fieldDef,
                 Rejection.structural("polymorphic return type '" + elementTypeName
                     + "' is neither a multi-table interface nor a union; cannot classify "
-                    + "polymorphic child field on @record parent"));
+                    + "polymorphic child field on record-backed parent"));
         }
 
         String accessorBaseName = fieldDef.hasAppliedDirective(DIR_FIELD)
@@ -4983,12 +4983,12 @@ class FieldBuilder {
     }
 
     private static final String POLYMORPHIC_HUB_AUTHOR_ERROR_TAIL =
-        "on a free-form @record parent (Pojo / JavaRecord) requires a typed accessor to "
+        "on a free-form record-backed parent (Pojo / JavaRecord) requires a typed accessor to "
         + "discover the hub table the polymorphic participants share an FK to. Either expose a "
         + "typed accessor on the parent returning '...HubRecord' (single cardinality) or "
         + "'List<...HubRecord>' / 'Set<...HubRecord>' (list cardinality), where '...HubRecord' "
         + "is the concrete jOOQ TableRecord all participants reference; or back the parent with "
-        + "a typed jOOQ TableRecord (@record(class: ...)) annotated with the hub table so "
+        + "a typed jOOQ TableRecord (via a producing @service return type or a @table type) annotated with the hub table so "
         + "RowKeyed can be derived from the parent's PK. Note: @sourceRow is not yet "
         + "supported for polymorphic returns.";
 
@@ -5017,7 +5017,7 @@ class FieldBuilder {
             case GraphitronType.JooqTableRecordType jtr -> {
                 if (jtr.table() == null) {
                     yield new PolymorphicRecordParentResolution.Rejected(Rejection.structural(
-                        "@record parent backed by jOOQ TableRecord '" + jtr.fqClassName()
+                        "parent backed by jOOQ TableRecord '" + jtr.fqClassName()
                         + "' has no resolvable table at build time; cannot derive hub for "
                         + "polymorphic child field '" + fieldName + "'"));
                 }
@@ -5025,7 +5025,7 @@ class FieldBuilder {
                 if (pkCols.isEmpty()) {
                     yield new PolymorphicRecordParentResolution.Rejected(Rejection.structural(
                         "multi-table interface/union child field '" + fieldName
-                        + "' requires a non-empty primary key on the @record-backed parent table '"
+                        + "' requires a non-empty primary key on the record-backed parent table '"
                         + jtr.table().tableName() + "'"));
                 }
                 // Polymorphic Row arm: target is null because the parent IS the source; cardinality
@@ -5051,11 +5051,11 @@ class FieldBuilder {
                 if (!fieldIsList) {
                     yield new PolymorphicRecordParentResolution.Rejected(Rejection.deferred(
                         "single-cardinality polymorphic child field '" + fieldName + "' on a "
-                        + "@record (Pojo / JavaRecord) parent is not yet supported; the "
+                        + "record-backed (Pojo / JavaRecord) parent is not yet supported; the "
                         + "single-cardinality multi-table polymorphic fetcher reads parent "
-                        + "context as a jOOQ Record and has no @record-Pojo arm. Workarounds: "
-                        + "back the parent with a typed jOOQ TableRecord (@record(record: {"
-                        + "className: ...})) so the parent record is the source itself, or "
+                        + "context as a jOOQ Record and has no Pojo arm. Workarounds: "
+                        + "back the parent with a typed jOOQ TableRecord (via a producing @service "
+                        + "return type or a @table type) so the parent record is the source itself, or "
                         + "switch the field to list cardinality. Follow-up: widen "
                         + "MultiTablePolymorphicEmitter.buildScalarPerParentFetcher to consume "
                         + "parentKey + parentResultType analogously to the list arm.",
@@ -5065,10 +5065,10 @@ class FieldBuilder {
             }
             case GraphitronType.JooqRecordType jrt ->
                 new PolymorphicRecordParentResolution.Rejected(Rejection.structural(
-                    "@record parent backed by jOOQ Record '" + jrt.fqClassName()
+                    "parent backed by jOOQ Record '" + jrt.fqClassName()
                     + "' has no table reference; polymorphic child field '" + fieldName
                     + "' cannot derive a hub. Back the parent with a typed jOOQ TableRecord "
-                    + "(@record(class: ...)) annotated with the hub table."));
+                    + "(via a producing @service return type or a @table type) annotated with the hub table."));
         };
     }
 
@@ -5090,7 +5090,7 @@ class FieldBuilder {
             parentClass = Class.forName(parentFqClassName, false, ctx.codegenLoader());
         } catch (ClassNotFoundException e) {
             return new PolymorphicRecordParentResolution.Rejected(Rejection.structural(
-                "polymorphic child field '" + fieldName + "': @record parent backing class '"
+                "polymorphic child field '" + fieldName + "': record-backed parent backing class '"
                 + parentFqClassName + "' could not be loaded; " + POLYMORPHIC_HUB_AUTHOR_ERROR_TAIL));
         }
 
@@ -5110,7 +5110,7 @@ class FieldBuilder {
                 })
                 .collect(Collectors.joining(", "));
             return new PolymorphicRecordParentResolution.Rejected(Rejection.structural(
-                "polymorphic child field '" + fieldName + "': @record parent '" + parentFqClassName
+                "polymorphic child field '" + fieldName + "': record-backed parent '" + parentFqClassName
                 + "' exposes more than one typed TableRecord-returning accessor whose element "
                 + "would be eligible as the polymorphic hub: [" + candidates + "]. Cannot pick a "
                 + "unique hub. Disambiguate by removing the unintended accessor or backing the "
@@ -5200,7 +5200,7 @@ class FieldBuilder {
         SourceLocation location = locationOf(fieldDef);
 
         if (fieldDef.hasAppliedDirective(DIR_SOURCE_ROW)) {
-            return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural("@sourceRow is for @record (non-table) parents; use @reference on a @table parent"));
+            return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural("@sourceRow is for record-backed (non-table) parents; use @reference on a @table parent"));
         }
 
         if (fieldDef.hasAppliedDirective(DIR_SERVICE)) {

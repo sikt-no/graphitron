@@ -142,7 +142,7 @@ public final class EntityResolutionBuilder {
             // supergraph composer, but this subgraph does not own its resolution, emits no
             // _entities handler for it, and so needs no backing table. Skip it without an
             // entity entry (the dispatcher never sees it; the type stays classified as
-            // whatever it is, e.g. a @record type). Demote only when at least one key is
+            // whatever it is, e.g. a record-backed type). Demote only when at least one key is
             // resolvable and thus needs a SELECT path. (keys is non-empty here: NodeType is
             // excluded by the branch condition, and the keys.isEmpty() && !isNodeType case
             // already continued above.)
@@ -206,10 +206,10 @@ public final class EntityResolutionBuilder {
     private static String kindLabel(GraphitronType gType) {
         return switch (gType) {
             case NestingType p -> "a plain object type";
-            case JavaRecordType r -> "a @record type";
-            case PojoResultType r -> "a @record type";
-            case JooqRecordType r -> "a @record type";
-            case JooqTableRecordType r -> "a @record type";
+            case JavaRecordType r -> "a record-backed type";
+            case PojoResultType r -> "a record-backed type";
+            case JooqRecordType r -> "a record-backed type";
+            case JooqTableRecordType r -> "a record-backed type";
             default -> "a non-table-bound type";
         };
     }

@@ -3,7 +3,7 @@ package no.sikt.graphitron.codereferences.dummyreferences;
 import java.util.List;
 
 /**
- * Test fixture: a hand-rolled {@code @record} POJO that declares an extra no-arg constructor
+ * Test fixture: a hand-rolled record-backed POJO that declares an extra no-arg constructor
  * alongside its canonical (all-fields) one. The carrier classifier must identify the all-fields
  * constructor by parameter count matching the SDL field count rather than rejecting on the bare
  * presence of multiple constructors.

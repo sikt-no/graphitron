@@ -301,7 +301,7 @@ public final class FetcherEmitter {
                 || resultType instanceof GraphitronType.JooqRecordType) && columnName != null) {
             return CodeBlock.of("(($T) success.value()).get($T.field($S))", RECORD, DSL, columnName);
         }
-        // @record-Java-backed accessor read.
+        // Record-backed (Pojo / JavaRecord) accessor read.
         AccessorResolution.Resolved accessor =
             field instanceof ChildField.PropertyField pf ? pf.accessor()
             : field instanceof ChildField.RecordField rf ? rf.accessor()

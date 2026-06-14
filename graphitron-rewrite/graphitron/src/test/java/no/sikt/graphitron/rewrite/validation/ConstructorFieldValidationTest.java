@@ -40,7 +40,7 @@ class ConstructorFieldValidationTest {
         GraphitronField details = schema.field("Film", "details");
         assertThat(details).isInstanceOf(UnclassifiedField.class);
         assertThat(((UnclassifiedField) details).reason())
-            .contains("a @table parent cannot construct a @record child from its own row");
+            .contains("a @table parent cannot construct a record-backed child from its own row");
     }
 
     @Test
@@ -50,6 +50,6 @@ class ConstructorFieldValidationTest {
         assertThat(validate(schema))
             .extracting(ValidationError::message)
             .anyMatch(m -> m.contains("Film.details")
-                && m.contains("a @table parent cannot construct a @record child from its own row"));
+                && m.contains("a @table parent cannot construct a record-backed child from its own row"));
     }
 }

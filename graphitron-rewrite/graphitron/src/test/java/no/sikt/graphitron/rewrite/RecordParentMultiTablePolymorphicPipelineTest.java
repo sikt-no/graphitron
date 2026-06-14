@@ -13,7 +13,7 @@ import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * SDL → classified schema pipeline tests for the R105 {@code @record}-parent multi-table
+ * SDL → classified schema pipeline tests for the R105 record-backed parent multi-table
  * polymorphic ChildField classifier arm. Three permits become reachable through
  * {@code FieldBuilder.classifyChildFieldOnResultType}'s {@code PolymorphicReturnType} case:
  *
@@ -69,7 +69,7 @@ class RecordParentMultiTablePolymorphicPipelineTest {
 
     @Test
     void childInterfaceField_recordParent_rowKeyed() {
-        // JooqTableRecordType-backed @record parent → hub = parent's mapped table = film →
+        // JooqTableRecordType-backed parent → hub = parent's mapped table = film →
         // SourceKey (Wrap.Row + ColumnRead) off film's PK (single column, film_id). The
         // classifier arm produced here is byte-for-byte equivalent to the table-backed branch's
         // construction when the table-backed parent is the same hub; pin TypeSpec equivalence to
@@ -136,7 +136,7 @@ class RecordParentMultiTablePolymorphicPipelineTest {
         // Pojo parent (AccessorPayloads.SinglePayload) with a single-cardinality polymorphic
         // child is currently deferred at the classifier: MultiTablePolymorphicEmitter's
         // single-cardinality arm (buildScalarPerParentFetcher) reads parent context as a jOOQ
-        // Record (env.getSource() cast) and has no @record-Pojo arm; producing
+        // Record (env.getSource() cast) and has no Pojo arm; producing
         // AccessorKeyedSingle here would generate code that ClassCastExceptions on a Pojo
         // source. The follow-up to lift this restriction is to widen
         // buildScalarPerParentFetcher analogously to the list-cardinality arm. List cardinality
@@ -156,7 +156,7 @@ class RecordParentMultiTablePolymorphicPipelineTest {
         assertThat(unc.kind()).isEqualTo(no.sikt.graphitron.rewrite.RejectionKind.DEFERRED);
         assertThat(unc.reason())
             .contains("single-cardinality polymorphic child field 'film'")
-            .contains("@record (Pojo / JavaRecord) parent")
+            .contains("record-backed (Pojo / JavaRecord) parent")
             .contains("not yet supported");
     }
 
@@ -185,7 +185,7 @@ class RecordParentMultiTablePolymorphicPipelineTest {
 
     @Test
     void childInterfaceField_recordParent_accessorKeyedMany_fieldNameRemapsAccessor() {
-        // R191: @field(name:) on a free-form @record parent remaps the accessor base name. The
+        // R191: @field(name:) on a free-form record-backed parent remaps the accessor base name. The
         // Pojo parent (AccessorPayloads.ListPayload) exposes `List<FilmRecord> films()`; the SDL
         // field is named `referrers` and uses @field(name: "films") to bridge the divergence.
         // Without the directive-honored remap, the matcher would search for an accessor named
@@ -296,7 +296,7 @@ class RecordParentMultiTablePolymorphicPipelineTest {
     void unionParticipants_sharedFieldNameBackedByDifferentColumns_classifiesAndGeneratesStage2Helpers() {
         // R108 asymmetric-fragment fixture: union participants Inventory and Content both expose
         // a `filmId` field, backed by their respective `film_id` columns on different tables.
-        // The classifier produces a JooqTableRecordType-backed @record parent with a single-PK
+        // The classifier produces a JooqTableRecordType-backed parent with a single-PK
         // hub on film; the generator emits Stage-2 per-typename helpers
         // (selectInventoryForReferrers, selectContentForReferrers) that each thread
         // env.getSelectionSet() through PolymorphicSelectionSet.restrictTo with their own
