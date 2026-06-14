@@ -1,7 +1,7 @@
 ---
 id: R303
 title: Reify inline datafetchers into named XFetchers methods
-status: In Review
+status: Ready
 bucket: architecture
 depends-on: []
 created: 2026-06-13
@@ -448,3 +448,51 @@ now-javadoc-only `BatchKeyField` import was dropped. A repo-wide `grep ColumnFet
 `src/main` is clean (the intentional `DataFetcherKind.COLUMN_FETCHER` test enum, documented in the
 Tests section, is the only surviving spelling and is in test code). Full pipeline re-run green
 end-to-end.
+
+## Review feedback (In Review → Ready, 2026-06-14, second pass)
+
+The implementation is architecturally sound and the full pipeline is green end-to-end at the R303
+tip (`mvn -f graphitron-rewrite/pom.xml install -Plocal-db`, all 11 modules SUCCESS including the
+compile-spec and execute-spec tiers; the current trunk-build failure is an unrelated R290
+`graphitron-lsp` regression on `FieldClassification.Constructor`, not R303). The sealed
+`FetcherBinding`, the `LightFetcher` `Read<T>` SAM with the `Object`-typed reified return, the
+shared `nestedTypeOwnsFetchers` gate, the connection/edge/`@error` delegate classes, the honest
+PayloadAccessor deferral with R304 filed, and the faithful method-presence + wiring-kind tests are
+all delivered as specified.
+
+**Blocking — the docs-hygiene rework is incomplete.** The previous In Review → Ready cycle requested
+fixing stale documentation that "describes wiring that no longer exists," and the
+[Comment / javadoc hygiene](#comment--javadoc-hygiene) section committed to correcting the no-op-arm
+comments across `TypeFetcherGenerator.java:465-548`. The rework swept the `ColumnFetcher` *spelling*
+(clean), but the deeper false invariant it inverted, "no per-field fetcher method / emitted inline",
+survives verbatim in sibling sites that do not contain the `ColumnFetcher` token, so the
+spelling-grep missed them. These violate *"Documentation names only live tests/code"*
+(`rewrite-design-principles.adoc`, narrow false-invariant form): a debugging reader who trusts
+"no per-field fetcher method" would not look for the method that R303 now collects, which is exactly
+the findability R303 exists to deliver. Fix, then re-request the handoff:
+
+* `TypeFetcherGenerator.java:508-512` (`SingleRecordTableField` switch arm) — "has no per-field
+  fetcher method ; its DataFetcher value is emitted inline by FetcherEmitter". Both halves are now
+  false: `bind` reifies it to an env-dependent `(DataFetchingEnvironment env)` method collected on
+  the class, and the registration is a `<Type>Fetchers::<field>` reference, not an inline value.
+  **Inside the committed :465-548 range.**
+* `TypeFetcherGenerator.java:513-520` (`SingleRecordIdFieldFromReturning` and `SingleRecordIdField`
+  switch arms) — "emits its DataFetcher value inline through FetcherEmitter ; no per-field fetcher
+  method is emitted here". Same inversion as above. **Inside the committed :465-548 range.**
+* `TypeFetcherGenerator.java:244-245` (`PROJECTED_LEAVES` class javadoc) — "no per-field fetcher
+  method is generated". Now false in absolute terms: every projected leaf (`TableField`,
+  `LookupTableField`, `ColumnReferenceField`, `CompositeColumnField`, `NestingField`) reifies a read
+  method via the `bind` collection below the switch. The dispatch-partition reading ("the switch arm
+  emits no method") is still true, so reword to scope the claim to the dispatch switch rather than
+  delete it.
+* `GraphitronSchemaValidator.java:695-702` (nested-wireable-variants javadoc) — "Inline leaves
+  (`ColumnField`, `TableField`, etc.) have className-independent arms in
+  `FetcherRegistrationsEmitter`. Class-backed leaves (`SplitTableField`, `SplitLookupTableField`) are
+  wired via a per-nested-type `<NestedTypeName>Fetchers` class." R303 dissolved this dichotomy:
+  `nestedBody` now binds every nested field via `<NestedType>Fetchers::<field>`, and every nested
+  type owning any fetcher gets a `<Type>Fetchers` class (the `nestedTypeOwnsFetchers` widening), so
+  the inline-leaf / class-backed-leaf split no longer holds.
+
+No other rework required; the fix is mechanical and comment-only, the same shape as the first pass.
+A repo-wide audit of the inverted invariant (not just the `ColumnFetcher` spelling) before
+re-handoff would close the class of miss.
