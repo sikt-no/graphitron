@@ -242,7 +242,9 @@ public class TypeFetcherGenerator {
 
     /**
      * Leaves whose SELECT projection is emitted inline by {@link TypeClassGenerator}'s
-     * {@code $fields} method — no per-field fetcher method is generated. Together with
+     * {@code $fields} method, so the dispatch switch emits no fetcher method for them (post-R303
+     * the read of the projected value is reified by {@code FetcherEmitter.bind} and collected
+     * below the switch). Together with
      * {@link #IMPLEMENTED_LEAVES}, {@link #NOT_DISPATCHED_LEAVES}, and
      * {@link #STUBBED_VARIANTS}{@code .keySet()}, this forms an exhaustive four-way
      * disjoint partition of every {@link GraphitronField} sealed leaf; enforced by
@@ -480,9 +482,10 @@ public class TypeFetcherGenerator {
                 case ChildField.LookupTableField ignored        -> { }
                 case ChildField.CompositeColumnField ignored    -> { }
                 case ChildField.TableInterfaceField f           -> builder.addMethod(buildTableInterfaceFieldFetcher(ctx, f, outputPackage));
-                // No per-field fetcher method — the value is materialised in the parent record by
-                // the enclosing TableInterfaceField fetcher's conditional LEFT JOIN, and the field
-                // resolver reads it back via FetcherEmitter's ParticipantColumnReferenceField arm.
+                // ParticipantColumnReferenceField: the value is materialised in the parent record by
+                // the enclosing TableInterfaceField fetcher's conditional LEFT JOIN; the read of it
+                // back is reified by FetcherEmitter.bind into a named source-only method (wrapped in
+                // LightFetcher), collected below. No-op arm here.
                 case ChildField.ParticipantColumnReferenceField ignored -> { }
                 case ChildField.RecordTableField rtf -> {
                     builder.addMethod(buildRecordBasedDataFetcher(ctx, rtf, rtf.returnType(), rtf.sourceKey(), resultType, sourceIsOutcome, outputPackage));
@@ -505,18 +508,18 @@ public class TypeFetcherGenerator {
                     builder.addMethod(buildRecordBasedDataFetcher(ctx, rtmf, rtmf.returnType(), rtmf.sourceKey(), resultType, sourceIsOutcome, outputPackage));
                     builder.addMethod(SplitRowsMethodEmitter.buildForRecordTableMethod(ctx, rtmf, outputPackage));
                 }
-                // SingleRecordTableField has no per-field fetcher method — its DataFetcher
-                // value is emitted inline by FetcherEmitter (env.getSource() typed cast +
-                // response SELECT outside the DML transaction). The wiring happens in
-                // FetcherRegistrationsEmitter.registrationEntry.
+                // SingleRecordTableField: the response SELECT (env.getSource() typed cast + SELECT
+                // run outside the DML transaction) is reified by FetcherEmitter.bind into a named
+                // (DataFetchingEnvironment env) method, collected below; the registration is a
+                // <Type>Fetchers::<field> reference. No-op arm here.
                 case ChildField.SingleRecordTableField ignored  -> { }
-                // R156 — SingleRecordIdFieldFromReturning emits its DataFetcher value inline through
-                // FetcherEmitter (PK column read + optional NodeId encode). No per-field fetcher
-                // method is emitted here; wiring lands in FetcherRegistrationsEmitter.
+                // R156 — SingleRecordIdFieldFromReturning: the PK column read (+ optional NodeId
+                // encode) is reified by FetcherEmitter.bind into a named (DataFetchingEnvironment
+                // env) method, collected below. No-op arm here.
                 case ChildField.SingleRecordIdFieldFromReturning ignored -> { }
-                // R275 — the @service-carrier ID sibling: same inline FetcherEmitter emission
-                // (Outcome/source narrowing + node-key read + NodeId encode), no per-field
-                // fetcher method.
+                // R275 — the @service-carrier ID sibling: the Outcome/source narrowing + node-key
+                // read + NodeId encode is likewise reified by FetcherEmitter.bind into a named env
+                // method, collected below. No-op arm here.
                 case ChildField.SingleRecordIdField ignored -> { }
                 case ChildField.InterfaceField f -> {
                     if (f.returnType().wrapper() instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.Connection conn) {

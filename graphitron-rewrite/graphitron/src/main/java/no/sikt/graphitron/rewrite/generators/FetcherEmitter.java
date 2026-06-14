@@ -202,15 +202,16 @@ public final class FetcherEmitter {
 
     /**
      * The inline-resolved data-channel shapes that can appear as an immediate child of a
-     * class-backed {@code Outcome} payload. Each resolves to an inline value expression in
-     * {@link #bindRaw} that reads {@code env.getSource()}; under the wrapper transport
-     * that read is repointed at {@code success.value()} (see {@link #armSwitchedInlineDataFetcher}).
+     * class-backed {@code Outcome} payload. Each is resolved here by {@link #bindRaw} as a read of
+     * the field's own source; under the wrapper transport that read is repointed at
+     * {@code success.value()} (see {@link #armSwitchedInlineDataFetcher}). Post-R303 the read is
+     * reified into a named {@code <Type>Fetchers} method rather than emitted as an inline lambda.
      *
      * <p>The errors field is excluded (it reads {@code ErrorList.errors} via its
      * {@code WrapperArm} transport). DataLoader/method-backed fields are excluded because their
      * generated fetcher method owns the arm-switch; the registration site emits a plain method
-     * reference for them. This is not the retired allow-list: it names the shapes whose value is
-     * emitted <em>here</em> as a narrowable inline read, a structural property of the emit path.
+     * reference for them. This is not the retired allow-list: it names the shapes whose read is
+     * resolved <em>here</em> as a narrowable source read, a structural property of the emit path.
      */
     private static boolean isInlineArmSwitchedDataField(GraphitronField field) {
         return field instanceof ChildField.NestingField
