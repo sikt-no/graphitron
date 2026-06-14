@@ -10,6 +10,25 @@ The `next-id:` front-matter field is the canonical counter for `R<n>` allocation
 
 ---
 
+- R284 (`1e2e719` In Review follow-up; the original four-site pass predates distinct
+  history, folded into the squashed trunk): Fix reversed source/target alias order in
+  bridging-hop `@reference` `ConditionJoin` emission. An FK-first-hop-then-`@condition`
+  bridging path emitted the two-arg condition-method call as `(targetAlias, sourceAlias)`,
+  violating R16's fixed `(srcAlias, tgtAlias)` convention; with the documented opptak
+  `samordnaOrganisasjoner` shape (concrete, mutually incompatible junction-vs-leaf jOOQ
+  table types) the generated resolver fails to compile. The same reversed call was
+  duplicated across five emission sites; the initial pass swapped four
+  (`InlineColumnReferenceFieldEmitter`, `InlineTableFieldEmitter`, and `SplitRowsMethodEmitter`'s
+  split-rows + connection-rows arms) and the In Review follow-up swapped the fifth,
+  `InlineLookupTableFieldEmitter`, which carried the byte-identical reversed arm and shipped
+  unguarded. The defect shipped silently because every prior condition-join fixture declared
+  generic `Table<?>` parameters, which compile either way. Guard: the new
+  `ReferencePathConditionFixtures.filmActorJunctionToActor(FilmActor, Actor)` fixture takes
+  concrete incompatible types, so any future re-reversal fails to compile in compile-spec.
+  Coverage: execution `GraphQLQueryTest.splitTableField_bridgingConditionJoin_returnsActorsPerFilm`
+  round-trips `Film.actorsViaJunctionCondition` (split-rows path); inline-lookup guard
+  `FilmInlineBundle.actorsByKeyViaJunctionCondition` routes the same FK-then-bridging-`@condition`
+  path through `InlineLookupTableFieldEmitter` (the fifth site). Full reactor green.
 - `e6d213d` (reframe) + `cc18815` (impl) → `5e34fb7` (Spec → Ready) — R299
   (`intention-classification-dimension`): migrate the R281 corpus from the two-axis
   `(producer, mapping)` verdict onto R222's refined `carrier x intent x mapping` model, while the
