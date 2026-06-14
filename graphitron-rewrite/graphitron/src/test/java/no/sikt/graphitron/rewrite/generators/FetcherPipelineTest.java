@@ -95,7 +95,7 @@ class FetcherPipelineTest {
     }
 
     @Test
-    void propertyField_onRecordType_fetchersHasNoMethods() {
+    void propertyField_onRecordType_reifiesReadMethod() {
         var fetchers = findSpec("ContainerFetchers", """
             type Container { value: String }
             type Query {
@@ -103,15 +103,16 @@ class FetcherPipelineTest {
                 c: Container @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeContainerRecord"})
             }
             """);
-        // PropertyField wired in ContainerWiring — the Fetchers class has no methods.
-        assertThat(fetchers.methodSpecs()).isEmpty();
+        // R303: the PropertyField read is reified as a named source-only method on the class.
+        assertThat(fetchers.methodSpecs()).extracting(MethodSpec::name).contains("value");
     }
 
     @Test
-    void propertyField_onBackedRecord_usesAccessorLambda() {
+    void propertyField_onBackedRecord_wrapsAccessorReadInLightFetcher() {
         // R276: a standalone untyped @record no longer yields an unbacked PropertyDataFetcher (it
-        // is a NestingType now). A reflection-backed record type reads its scalar field through
-        // the record accessor, emitted as a lambda.
+        // is a NestingType now). R303: a reflection-backed record type reads its scalar field
+        // through the (zero-arg) record accessor, reified as a named source-only method and
+        // registered wrapped in LightFetcher (COLUMN_FETCHER kind), not an inline lambda.
         var sdl = """
             type Container { value: String }
             type Query {
@@ -121,7 +122,9 @@ class FetcherPipelineTest {
             """;
         var bodies = fetcherBodies(sdl);
         assertThat(TypeSpecAssertions.wiringFor(bodies, "Container", "value"))
-            .contains(DataFetcherKind.LAMBDA);
+            .contains(DataFetcherKind.COLUMN_FETCHER);
+        assertThat(findSpec("ContainerFetchers", sdl).methodSpecs())
+            .extracting(MethodSpec::name).contains("value");
     }
 
     @Test
@@ -140,7 +143,7 @@ class FetcherPipelineTest {
     }
 
     @Test
-    void recordField_onRecordType_fetchersHasNoMethods() {
+    void recordField_onRecordType_reifiesReadMethod() {
         var fetchers = findSpec("FilmDetailsFetchers", """
             type FilmStats { count: Int }
             type FilmDetails { stats: FilmStats }
@@ -150,8 +153,8 @@ class FetcherPipelineTest {
                 fs: FilmStats @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeFilmStatsRecord"})
             }
             """);
-        // RecordField wired in FilmDetailsWiring — the Fetchers class has no methods.
-        assertThat(fetchers.methodSpecs()).isEmpty();
+        // R303: the RecordField read is reified as a named source-only method on the class.
+        assertThat(fetchers.methodSpecs()).extracting(MethodSpec::name).contains("stats");
     }
 
     // ===== @record parent — RecordTableField =====
@@ -356,15 +359,18 @@ class FetcherPipelineTest {
 
     @Test
     void outcomePayload_columnDataField_armSwitchesInlineReadOnSuccessValue() {
-        // The column field's registration is a lambda (the arm-switch ternary narrowing Success and
-        // reading the column off success.value()), not a bare ColumnFetcher and not an
-        // IllegalStateException at generation. Building the spec at all proves the throw is gone for
-        // this in-scope shape; the LAMBDA kind proves it arm-switched rather than emitting the
-        // straight ColumnFetcher that would read off the Outcome object. The success.value().get(col)
-        // body shape is pinned structurally here, not by a code-string assertion (banned).
+        // R303: the arm-switch read is reified onto FilmRecordPayloadFetchers as a named source-only
+        // method (narrow Success, return the column off success.value(); null on the ErrorList arm)
+        // and registered wrapped in LightFetcher (COLUMN_FETCHER kind) — not a bare column read off
+        // the Outcome object and not an IllegalStateException at generation. Building the spec proves
+        // the throw is gone; COLUMN_FETCHER proves it stays on the light path; the reified method's
+        // presence proves the read is a findable symbol. Body shape is pinned structurally, not by a
+        // code-string assertion (banned).
         var bodies = fetcherBodies(OUTCOME_COLUMN_FIELD_SDL);
         assertThat(TypeSpecAssertions.wiringFor(bodies, "FilmRecordPayload", "title"))
-            .contains(DataFetcherKind.LAMBDA);
+            .contains(DataFetcherKind.COLUMN_FETCHER);
+        assertThat(findSpec("FilmRecordPayloadFetchers", OUTCOME_COLUMN_FIELD_SDL).methodSpecs())
+            .extracting(MethodSpec::name).contains("title");
     }
 
     @Test

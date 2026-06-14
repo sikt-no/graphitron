@@ -92,22 +92,23 @@ class TypeFetcherGeneratorTest {
             .hasMessageContaining("classifier invariant violated");
     }
 
-    // ===== ColumnField with parentTable → wired via ColumnFetcher, no per-field method =====
+    // ===== ColumnField with parentTable → reified into a named source-only read method (R303) =====
 
     @Test
-    void columnFetcher_withParentTable_noPerFieldMethod() {
+    void columnFetcher_withParentTable_reifiesPerFieldMethod() {
         var spec = TypeFetcherGenerator.generateTypeSpec("Film", FILM_TABLE,
             List.of(columnField("title", "title", "TITLE", "java.lang.String")));
         assertThat(spec.methodSpecs()).extracting(MethodSpec::name)
-            .doesNotContain("title");
+            .contains("title");
     }
 
     @Test
-    void columnFetcher_withParentTable_hasNoMethods() {
-        // ColumnField wiring is handled by FetcherRegistrationsEmitter; the Fetchers class has no methods.
+    void columnFetcher_withParentTable_reifiesExactlyTheReadMethod() {
+        // R303: the column read is the only method on the class; the registration wraps the
+        // reference in LightFetcher (asserted at the pipeline tier).
         var spec = TypeFetcherGenerator.generateTypeSpec("Film", FILM_TABLE,
             List.of(columnField("title", "title", "TITLE", "java.lang.String")));
-        assertThat(spec.methodSpecs()).isEmpty();
+        assertThat(spec.methodSpecs()).extracting(MethodSpec::name).containsExactly("title");
     }
 
     // ===== QueryTableField =====

@@ -1,7 +1,7 @@
 ---
 id: R303
 title: Reify inline datafetchers into named XFetchers methods
-status: Ready
+status: In Progress
 bucket: architecture
 depends-on: []
 created: 2026-06-13

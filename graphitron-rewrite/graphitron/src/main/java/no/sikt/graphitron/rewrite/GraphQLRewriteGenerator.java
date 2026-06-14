@@ -29,7 +29,7 @@ import no.sikt.graphitron.rewrite.generators.schema.ObjectTypeGenerator;
 import no.sikt.graphitron.rewrite.generators.schema.OneOfDirectiveSdl;
 import no.sikt.graphitron.rewrite.generators.schema.OutcomeClassGenerator;
 import no.sikt.graphitron.rewrite.generators.schema.SchemaSdlEmitter;
-import no.sikt.graphitron.rewrite.generators.util.ColumnFetcherClassGenerator;
+import no.sikt.graphitron.rewrite.generators.util.LightFetcherClassGenerator;
 import no.sikt.graphitron.rewrite.generators.util.ConnectionHelperClassGenerator;
 import no.sikt.graphitron.rewrite.generators.util.ConnectionResultClassGenerator;
 import no.sikt.graphitron.rewrite.generators.util.EntityFetcherDispatchClassGenerator;
@@ -184,7 +184,7 @@ public class GraphQLRewriteGenerator {
 
         Set<Path> emittedThisRun = new LinkedHashSet<>();
         write(GraphitronValuesClassGenerator.generate(),                                          "util",       emittedThisRun);
-        write(ColumnFetcherClassGenerator.generate(),                                             "util",       emittedThisRun);
+        write(LightFetcherClassGenerator.generate(outputPackage),                                 "util",       emittedThisRun);
         write(NodeIdEncoderClassGenerator.generate(schema),                                       "util",       emittedThisRun);
         write(EntityFetcherDispatchClassGenerator.generate(schema, outputPackage),                "util",       emittedThisRun);
         write(ConnectionResultClassGenerator.generate(outputPackage),                             "util",       emittedThisRun);

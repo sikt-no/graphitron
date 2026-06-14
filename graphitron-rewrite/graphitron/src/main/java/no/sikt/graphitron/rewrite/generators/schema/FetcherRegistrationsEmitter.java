@@ -35,8 +35,8 @@ import java.util.TreeMap;
  *   <li>Edge types — binds {@code node}, {@code cursor} to {@link ConnectionHelperClassGenerator}.</li>
  * </ol>
  *
- * <p>The fetcher-value expressions come from {@link FetcherEmitter#dataFetcherValue} unchanged
- * from the former wiring path. Output map ordering is alphabetical by type name for stable
+ * <p>The fetcher-value expressions come from {@link FetcherEmitter#bind}'s
+ * {@code registrationValue()}. Output map ordering is alphabetical by type name for stable
  * generated-source diffs; callers pass {@code keySet()} to
  * {@link GraphitronSchemaClassGenerator} so the emitted {@code GraphitronSchema.build()} invokes
  * {@code registerFetchers} on every type that has one.
@@ -114,24 +114,21 @@ public final class FetcherRegistrationsEmitter {
     }
 
     private static Optional<CodeBlock> nestedBody(NestedTypeWiring ntw, String fetchersPackage, String outputPackage) {
-        if (ntw.fields().isEmpty()) {
+        // R303: every nested object type that owns a fetcher gets its own <Type>Fetchers class, and
+        // each field's read (reified or method-backed) references into it. The gate is shared with
+        // TypeFetcherGenerator.collectNestedFetcherClasses (which emits the class) via
+        // FetcherEmitter.nestedTypeOwnsFetchers so the two sites cannot drift.
+        if (!FetcherEmitter.nestedTypeOwnsFetchers(ntw.fields())) {
             return Optional.empty();
         }
-        ClassName nestedFetchersClass = ntw.fields().stream().anyMatch(f -> f instanceof BatchKeyField)
-            ? ClassName.get(fetchersPackage, ntw.nestedTypeName() + "Fetchers") : null;
+        ClassName nestedFetchersClass = ClassName.get(fetchersPackage, ntw.nestedTypeName() + "Fetchers");
 
         boolean sourceIsOutcome = FetcherEmitter.hasWrapperArmErrors(ntw.fields());
         var body = CodeBlock.builder();
         body.add("codeRegistry").indent();
         for (var field : ntw.fields()) {
-            if (nestedFetchersClass != null && field instanceof BatchKeyField) {
-                body.add("\n.dataFetcher($T.coordinates($S, $S), $T::$L)",
-                    FIELD_COORDS, ntw.nestedTypeName(), field.name(),
-                    nestedFetchersClass, field.name());
-            } else {
-                body.add(registrationEntry(ntw.nestedTypeName(), field,
-                    null, ntw.representativeParentTable(), null, outputPackage, sourceIsOutcome));
-            }
+            body.add(registrationEntry(ntw.nestedTypeName(), field,
+                nestedFetchersClass, ntw.representativeParentTable(), null, outputPackage, sourceIsOutcome));
         }
         body.add(";\n").unindent();
         return Optional.of(body.build());
@@ -186,8 +183,8 @@ public final class FetcherRegistrationsEmitter {
             String outputPackage, boolean sourceIsOutcome) {
         return CodeBlock.builder()
             .add("\n.dataFetcher($T.coordinates($S, $S), ", FIELD_COORDS, typeName, field.name())
-            .add(FetcherEmitter.dataFetcherValue(field, fetchersClass, parentTable, resultType,
-                outputPackage, sourceIsOutcome))
+            .add(FetcherEmitter.bind(field, fetchersClass, parentTable, resultType,
+                outputPackage, sourceIsOutcome).registrationValue())
             .add(")")
             .build();
     }

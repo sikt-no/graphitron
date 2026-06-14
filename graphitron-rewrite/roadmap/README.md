@@ -35,7 +35,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R212` | IntelliJ plugin wrapping graphitron:dev LSP | Spec | 2026-05-21 | [plan](intellij-lsp-plugin.md) |
 | `R269` | Null-guard split-query key extraction for nullable to-one records | Spec | 2026-06-02 <sub>created 2026-06-01</sub> | [plan](nullable-to-one-record-into-npe.md) |
 | `R112` | Operation-driven test corpus, capability catalog, and runtime trace <sub>blocked by: [capability-catalog](capability-catalog.md)</sub> | Spec |  | [plan](operation-driven-test-corpus.md) |
-| `R303` | Reify inline datafetchers into named XFetchers methods | Ready | 2026-06-13 | [plan](reify-inline-datafetchers-to-methods.md) |
+| `R303` | Reify inline datafetchers into named XFetchers methods | In Progress | 2026-06-13 | [plan](reify-inline-datafetchers-to-methods.md) |
 
 ---
 

@@ -61,8 +61,9 @@ class TableFieldPipelineTest {
             .toList();
 
         assertThat(methodNames)
-            .as("TableField projects inline via TypeClassGenerator.$fields — no fetcher method")
-            .doesNotContain("language");
+            .as("R303: TableField projects inline via TypeClassGenerator.$fields; the read of that "
+                + "projection is reified as a named source-only method")
+            .contains("language");
     }
 
     @Test
