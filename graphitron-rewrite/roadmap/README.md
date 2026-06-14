@@ -18,7 +18,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R222` | Dimensional model pivot: slots over cross-product permits | Spec | 2026-06-13 <sub>created 2026-05-21</sub> | [plan](dimensional-model-pivot.md) |
 | `R256` | Absorb the service walker substrate: typed per-arm errors + multi-arg ctors | Ready | 2026-05-30 <sub>created 2026-05-29</sub> | [plan](service-walker-substrate-absorption.md) |
 | `R279` | Field-first reachability-driven classification driver <sub>blocked by: [dimensional-model-pivot](dimensional-model-pivot.md)</sub> | Ready | 2026-06-07 <sub>created 2026-06-05</sub> | [plan](field-first-classification-driver.md) |
-| `R290` | Field-side dimensional slots: materialise carrier x intent x mapping on the field <sub>blocked by: [dimensional-model-pivot](dimensional-model-pivot.md)</sub> | In Review | 2026-06-14 <sub>created 2026-06-10</sub> | [plan](datafetcher-field-dimensional-slots.md) |
 | `R45` | Multi-tenant routing on top of the schema-driven ExecutionInput factory | Spec | 2026-05-20 | [plan](tenant-routing-and-execution-input.md) |
 | `R307` | Retire stale @record references: error messages recommending the dead directive and @record-as-jargon vocabulary | Spec | 2026-06-14 | [plan](retire-stale-record-directive-references.md) |
 | `R273` | Source NodeId metadata from @node + catalog PK (inferred from `implements Node`), and settle wrong-type/malformed mismatch semantics, retiring the legacy __NODE bare-ID arm | Spec | 2026-06-02 | [plan](nodeid-skip-mismatch-error-surfacing.md) |
@@ -213,7 +212,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R222` [**Dimensional model pivot: slots over cross-product permits**](dimensional-model-pivot.md) — Spec, structural
 - `R305` [**Collapse SingleRecordTableField into RecordTableField (derive the DataLoader-skip from single-source cardinality)**](collapse-singlerecordtablefield-into-recordtablefield.md) — Backlog, structural
 - `R279` [**Field-first reachability-driven classification driver**](field-first-classification-driver.md) — Ready, architecture, blocked by [dimensional-model-pivot](dimensional-model-pivot.md)
-- `R290` [**Field-side dimensional slots: materialise carrier x intent x mapping on the field**](datafetcher-field-dimensional-slots.md) — In Review, structural, blocked by [dimensional-model-pivot](dimensional-model-pivot.md)
 - `R171` [**Fold InputType and TableInputType under sealed parent InputLikeType**](input-like-type-sealed-parent.md) — Backlog, architecture
 - `R103` [**Lift jOOQ column defaults onto input fields connected to that column**](lift-jooq-column-defaults-onto-inputs.md) — Backlog, architecture
 - `R249` [**Nested @argMapping syntax via GraphQLSelectionParser**](nested-argmapping-syntax.md) — Backlog, feature
