@@ -1,7 +1,7 @@
 ---
 id: R303
 title: Reify inline datafetchers into named XFetchers methods
-status: Ready
+status: In Review
 bucket: architecture
 depends-on: []
 created: 2026-06-13
@@ -496,3 +496,32 @@ the findability R303 exists to deliver. Fix, then re-request the handoff:
 No other rework required; the fix is mechanical and comment-only, the same shape as the first pass.
 A repo-wide audit of the inverted invariant (not just the `ColumnFetcher` spelling) before
 re-handoff would close the class of miss.
+
+### Rework landed (In Progress → In Review, 2026-06-14, second pass)
+
+All four flagged sites fixed, plus two more surfaced by auditing the *inverted invariant* (the
+"no per-field fetcher method / read emitted inline" claim) across `src/main` rather than the
+`ColumnFetcher` spelling, exactly as the feedback recommended:
+
+* `TypeFetcherGenerator.java` SingleRecord switch arms (`SingleRecordTableField`,
+  `SingleRecordIdFieldFromReturning`, `SingleRecordIdField`) now state the read is reified by
+  `FetcherEmitter.bind` into a named `(DataFetchingEnvironment env)` method collected below the
+  switch, with the arm a no-op because the method is collected there.
+* `TypeFetcherGenerator.java` `PROJECTED_LEAVES` javadoc now scopes "emits no fetcher method" to
+  the dispatch switch and notes the projected-value read is reified by `FetcherEmitter.bind` and
+  collected below.
+* `GraphitronSchemaValidator.java` `NESTED_WIREABLE_LEAVES` javadoc now states every leaf is wired
+  through the nested type's own `<NestedTypeName>Fetchers` class (reified column/table reads plus
+  the class-backed heavy methods), gated by the shared `nestedTypeOwnsFetchers`.
+* **Additional (found by the invariant audit):** `TypeFetcherGenerator.java`
+  `ParticipantColumnReferenceField` arm ("No per-field fetcher method ; reads it back via
+  FetcherEmitter's arm") now describes the reified `LightFetcher`-wrapped source-only read collected
+  below; `FetcherEmitter.isInlineArmSwitchedDataField` javadoc ("resolves to an inline value
+  expression that reads `env.getSource()`") now describes the reified-method read; and the R268
+  arm-switch guarantee javadoc in `GraphitronSchemaValidator` ("inline reads narrow `Success` at the
+  registration site") now points at the read reified onto `<Type>Fetchers`.
+
+A repo-wide `grep` over `src/main` for the invariant phrasings (`no per-field`, `emitted inline`,
+`className-independent`, `inline value expression`, `DataFetcher value`, …) is now clean of stale
+claims. The `graphitron` module compiles and its full test suite stays green; the changes are
+comment-only so no behaviour, test, or generated output is affected.

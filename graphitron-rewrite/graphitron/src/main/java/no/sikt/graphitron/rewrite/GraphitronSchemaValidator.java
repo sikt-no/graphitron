@@ -733,12 +733,16 @@ public class GraphitronSchemaValidator {
     }
 
     /**
-     * Variants wireable at nested depth. Inline leaves ({@code ColumnField}, {@code TableField},
-     * etc.) have className-independent arms in {@code FetcherRegistrationsEmitter}.
-     * Class-backed leaves ({@code SplitTableField}, {@code SplitLookupTableField}) are wired via
-     * a per-nested-type {@code <NestedTypeName>Fetchers} class; {@code TypeFetcherGenerator.generate}
-     * emits that class via a separate walk over {@code NestingField.nestedFields()}. Expanding
-     * either group requires the corresponding generator-side change.
+     * Variants wireable at nested depth. Post-R303 every leaf here is wired through the nested
+     * type's own {@code <NestedTypeName>Fetchers} class: the column/table reads ({@code ColumnField},
+     * {@code CompositeColumnField}, {@code TableField}, {@code LookupTableField},
+     * {@code NestingField}) are reified onto it by {@code FetcherEmitter.bind}, and the class-backed
+     * leaves ({@code SplitTableField}, {@code SplitLookupTableField}) carry their heavy methods
+     * there. {@code TypeFetcherGenerator} emits that class for any nested type owning a fetcher (the
+     * {@code FetcherEmitter.nestedTypeOwnsFetchers} gate shared with
+     * {@code FetcherRegistrationsEmitter.nestedBody}, via a separate walk over
+     * {@code NestingField.nestedFields()}). Expanding this set requires the corresponding
+     * generator-side change.
      */
     private static final java.util.Set<Class<? extends GraphitronField>> NESTED_WIREABLE_LEAVES = java.util.Set.of(
         ChildField.ColumnField.class,
@@ -1150,8 +1154,10 @@ public class GraphitronSchemaValidator {
      * <p>R268 retired the former allow-list of "arm-switchable" variants (a parallel taxonomy that
      * drifted from the emitter: a child that can't arm-switch is a generator limitation, not an
      * author error, and {@code @table}-bound DataLoader data fields were wrongly rejected by it).
-     * The arm-switch now lives where it belongs: inline reads narrow {@code Success} at the
-     * registration site, DataLoader fields narrow inside their generated fetcher method. This pass
+     * The arm-switch now lives where it belongs: the inline-resolved reads narrow {@code Success}
+     * in the source-read {@code FetcherEmitter.bind} reifies onto {@code <Type>Fetchers} (the
+     * registration site carries the resulting reference), DataLoader fields narrow inside their
+     * generated fetcher method. This pass
      * keeps a contextual structural guarantee instead of allow-list membership: every immediate
      * child of a wrapper outcome type must resolve through a graphitron-emitted fetcher, never
      * graphql-java's default {@code PropertyDataFetcher}.
