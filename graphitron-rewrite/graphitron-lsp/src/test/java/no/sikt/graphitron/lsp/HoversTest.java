@@ -75,8 +75,10 @@ class HoversTest {
 
     @Test
     void fieldHoverOnRecordBackingShowsComponentMetadata() {
+        // The parent's record-backing comes from the snapshot's name-keyed projection (below), not
+        // from any SDL directive, so the member hover resolves without an applied @record.
         var file = file("""
-            input FilmInput @record(record: {className: "com.example.FilmDto"}) {
+            input FilmInput {
                 bar: Int @field(name: "title")
             }
             """);
@@ -193,7 +195,11 @@ class HoversTest {
     }
 
     @Test
-    void recordClassNameHoverShowsClassFqn() {
+    void recordClassName_carveOut_noLiveBindingHover() {
+        // R307: @record is deprecated and ignored, so hovering its className shows no live-binding
+        // "**Class**" hover even when the class resolves in the catalog. It falls through to the SDL
+        // docstring on the shared ExternalCodeReference.className coordinate (the carve-out gates on
+        // the enclosing directive name; the same coordinate under @enum/@service still hovers the class).
         var file = file("""
             input FooInput @record(record: {className: "com.example.FooDto"}) {
                 bar: Int
@@ -204,7 +210,8 @@ class HoversTest {
         var hover = Hovers.compute(file, classCatalog("com.example.FooDto"), LspSchemaSnapshot.unavailable(), pos).orElseThrow();
 
         var md = hover.getContents().getRight().getValue();
-        assertThat(md).contains("**Class** `com.example.FooDto`");
+        assertThat(md).doesNotContain("**Class**");
+        assertThat(md).isNotBlank();
     }
 
     @Test

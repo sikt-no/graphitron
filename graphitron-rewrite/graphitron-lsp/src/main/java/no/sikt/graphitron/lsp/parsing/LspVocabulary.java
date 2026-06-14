@@ -338,8 +338,15 @@ public record LspVocabulary(
      * {@code string_value}, {@code enum_value}, or {@code name}, the
      * kinds the completion-range helper knows how to slice; consumers
      * that only need the coordinate use {@link #coordinateAt} instead.
+     *
+     * <p>R307: also carries the enclosing directive name. Coordinates such
+     * as {@code InputField("ExternalCodeReference", "className")} are shared
+     * across directives ({@code @record} and {@code @enum} both reference
+     * {@code ExternalCodeReference}), so a value provider that must
+     * discriminate by directive (e.g. the {@code @record} className carve-out)
+     * cannot derive it from the coordinate alone and reads this field.
      */
-    public record CursorLocation(SchemaCoordinate coordinate, Node leafNode) {}
+    public record CursorLocation(SchemaCoordinate coordinate, Node leafNode, String directiveName) {}
 
     /**
      * Coordinate-only view of {@link #locateAt}: the schema coordinate
@@ -441,7 +448,7 @@ public record LspVocabulary(
             coord = new SchemaCoordinate.InputField(
                 currentType, fieldChain.get(fieldChain.size() - 1));
         }
-        return Optional.of(new CursorLocation(coord, leaf));
+        return Optional.of(new CursorLocation(coord, leaf, directiveName));
     }
 
     /**

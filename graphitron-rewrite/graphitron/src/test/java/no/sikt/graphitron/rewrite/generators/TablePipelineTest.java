@@ -65,7 +65,7 @@ class TablePipelineTest {
     @Test
     void nonTableType_notIncluded() {
         var classes = generate("""
-            type Container @record { value: String }
+            type Container { value: String }
             type Query { dummy: String }
             """);
         assertThat(classes).isEmpty();

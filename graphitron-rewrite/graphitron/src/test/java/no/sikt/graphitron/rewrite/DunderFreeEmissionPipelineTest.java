@@ -81,7 +81,7 @@ class DunderFreeEmissionPipelineTest {
             message: String!
         }
         union SakError = ValidationErr | DbErr
-        type SakPayload @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.SakPayload"}) {
+        type SakPayload {
             data: String
             errors: [SakError]
         }

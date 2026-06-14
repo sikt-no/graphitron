@@ -256,7 +256,7 @@ class FetcherPipelineTest {
                 message: String!
             }
             union SakError = ValidationErr | DbErr
-            type SakPayload @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.SakPayload"}) {
+            type SakPayload {
                 data: String
                 errors: [SakError]
             }
@@ -313,7 +313,7 @@ class FetcherPipelineTest {
             type DbErr @error(handlers: [{handler: DATABASE, sqlState: "23503"}]) { path: [String!]! message: String! }
             union SakError = ValidationErr | DbErr
             type Language @table(name: "language") { name: String }
-            type SakPayload @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.SakPayload"}) {
+            type SakPayload {
                 data: String
                 language: Language @reference(path: [{key: "film_language_id_fkey"}])
                 errors: [SakError]
@@ -347,7 +347,7 @@ class FetcherPipelineTest {
             type ValidationErr @error(handlers: [{handler: VALIDATION}]) { path: [String!]! message: String! }
             type DbErr @error(handlers: [{handler: DATABASE, sqlState: "23503"}]) { path: [String!]! message: String! }
             union SakError = ValidationErr | DbErr
-            type FilmRecordPayload @record(record: {className: "no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord"}) {
+            type FilmRecordPayload {
                 title: String @field(name: "TITLE")
                 errors: [SakError]
             }
@@ -860,7 +860,7 @@ class FetcherPipelineTest {
                 message: String!
             }
             union SakError = ValidationErr | DbErr
-            type SakPayload @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.SakPayload"}) {
+            type SakPayload {
                 data: String
                 errors: [SakError]
             }

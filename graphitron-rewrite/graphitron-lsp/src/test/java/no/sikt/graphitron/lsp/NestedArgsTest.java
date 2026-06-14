@@ -36,19 +36,20 @@ class NestedArgsTest {
 
     @Test
     void cursorInsideObjectFieldOfPlainObjectValueResolves() {
-        // record: {className: ""} — cursor inside the className empty quotes.
+        // service: {className: ""} — cursor inside the className empty quotes. (Uses @service rather
+        // than the deprecated/ignored @record; both share the nested ExternalCodeReference shape.)
         String source = """
-            type Foo @record(record: {className: ""}) {
-                bar: Int
+            type Foo {
+                bar: Int @service(service: {className: ""})
             }
             """;
         var lines = source.split("\n");
-        int line = 0;
+        int line = 1;
         int col = lines[line].indexOf("\"\"") + 1;
 
         var nested = resolveNested(source, new Point(line, col));
 
-        assertThat(nested.outerArgumentName()).isEqualTo("record");
+        assertThat(nested.outerArgumentName()).isEqualTo("service");
         assertThat(nested.nestedFieldNameText()).isEqualTo("className");
     }
 

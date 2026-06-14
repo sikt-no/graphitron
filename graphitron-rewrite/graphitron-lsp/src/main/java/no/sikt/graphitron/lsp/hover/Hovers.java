@@ -168,7 +168,14 @@ public final class Hovers {
         var behavior = vocabulary.behaviorAt(coord);
         if (behavior.isEmpty()) return Optional.empty();
         return switch (behavior.get()) {
-            case Behavior.ClassNameBinding ignored -> classNameHover(file, catalog, rangeNode);
+            // R307 carve-out: @record is deprecated/ignored, so its className slot is not a live
+            // binding and gets no live-binding hover. Its ExternalCodeReference.className coordinate
+            // is shared with @enum, so gate on the enclosing directive name (mirroring
+            // METHOD_VALIDATING_DIRECTIVES). Falls through to the SDL docstring hover at the call site.
+            case Behavior.ClassNameBinding ignored ->
+                "record".equals(Nodes.text(directive.nameNode(), file.source()))
+                    ? Optional.empty()
+                    : classNameHover(file, catalog, rangeNode);
             case Behavior.MethodNameBinding mnb ->
                 methodHover(vocabulary, directive, file, catalog, pos, rangeNode, mnb.classNameCoord());
             case Behavior.CatalogTableBinding ignored -> tableHover(file, catalog, rangeNode);

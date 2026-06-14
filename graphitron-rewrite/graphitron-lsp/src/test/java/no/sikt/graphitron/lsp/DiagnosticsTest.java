@@ -106,8 +106,10 @@ class DiagnosticsTest {
 
     @Test
     void unknownRecordComponentProducesError() {
+        // The parent's record-backing comes from the snapshot's name-keyed projection (below), not
+        // from any SDL directive, so the @field member validation fires without an applied @record.
         var file = file("""
-            input FilmInput @record(record: {className: "com.example.FilmDto"}) {
+            input FilmInput {
                 bar: Int @field(name: "TYPO")
             }
             """);
@@ -131,7 +133,7 @@ class DiagnosticsTest {
     @Test
     void knownRecordComponentProducesNoError() {
         var file = file("""
-            input FilmInput @record(record: {className: "com.example.FilmDto"}) {
+            input FilmInput {
                 bar: Int @field(name: "title")
             }
             """);
@@ -213,7 +215,7 @@ class DiagnosticsTest {
         // Parent has a known TypeBackingShape (RecordBacking) but no entry in the carrier
         // projection — the LSP emits the canonical "$source is not defined here" message.
         var file = file("""
-            type Foo @record(record: {className: "com.example.FooDto"}) {
+            type Foo {
                 bar: Int @field(name: "$source")
             }
             """);
@@ -445,7 +447,10 @@ class DiagnosticsTest {
     }
 
     @Test
-    void unknownRecordClassNameProducesError() {
+    void recordClassName_carveOut_producesNoUnknownClassError() {
+        // R307: @record is deprecated and ignored — its className binds no class, so an unresolvable
+        // className raises no "Unknown class" diagnostic (the carve-out gates on the enclosing
+        // directive name). The same coordinate under @enum/@service still validates.
         var file = file("""
             input FooInput @record(record: {className: "com.example.Missing"}) {
                 bar: Int
@@ -454,8 +459,7 @@ class DiagnosticsTest {
 
         var diags = compute(file, catalogWithKnownClass("com.example.RealRecord"), LspSchemaSnapshot.unavailable());
 
-        assertThat(diags).hasSize(1);
-        assertThat(diags.get(0).getMessage()).contains("Missing");
+        assertThat(diags).isEmpty();
     }
 
     @Test
@@ -751,7 +755,11 @@ class DiagnosticsTest {
     // deprecated `name:` alias.
 
     @Test
-    void legacyName_unresolved_record() {
+    void legacyName_record_carveOut_producesNoError() {
+        // R307: @record is deprecated and ignored, so the legacy ExternalCodeReference.name →
+        // className alias nudge is dead tooling for it too (it would only push the author toward a
+        // className the directive no longer reads). The carve-out suppresses it, mirroring the
+        // className-tooling carve-out; the same legacy alias under @service/@condition still warns.
         var file = file("""
             type Foo @record(record: {name: "Ghost"}) {
                 bar: Int
@@ -761,8 +769,7 @@ class DiagnosticsTest {
         var diags = compute(file, catalogWithNamedReferences(
             Map.of(), "com.example.RealRecord"), LspSchemaSnapshot.unavailable());
 
-        assertThat(diags).hasSize(1);
-        assertThat(diags.get(0).getMessage()).contains("'Ghost'");
+        assertThat(diags).isEmpty();
     }
 
     @Test

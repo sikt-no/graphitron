@@ -406,7 +406,7 @@ public final class Diagnostics {
             case Behavior.CatalogFkBinding ignored ->
                 validateCatalogFk(leaf.valueNode(), file, catalog, out);
             case Behavior.ClassNameBinding ignored ->
-                validateClassName(leaf.valueNode(), file, catalog, out);
+                validateClassName(directive, leaf.valueNode(), file, catalog, out);
             case Behavior.MethodNameBinding mnb ->
                 validateMethod(vocabulary, directive, leaf, mnb, file, catalog, out);
             case Behavior.ArgMappingBinding ignored -> { /* sibling roadmap item */ }
@@ -629,8 +629,13 @@ public final class Diagnostics {
     }
 
     private static void validateClassName(
-        Node valueNode, WorkspaceFile file, CompletionData catalog, List<Diagnostic> out
+        Directives.Directive directive, Node valueNode, WorkspaceFile file, CompletionData catalog, List<Diagnostic> out
     ) {
+        // R307 carve-out: @record is deprecated/ignored, so its className slot binds no class
+        // and an unknown-class diagnostic would be noise. The ExternalCodeReference.className
+        // coordinate is shared with @enum, so gate on the enclosing directive name (mirroring
+        // METHOD_VALIDATING_DIRECTIVES) rather than the coordinate.
+        if ("record".equals(Nodes.text(directive.nameNode(), file.source()))) return;
         // Empty `externalReferences` means the classpath scan saw nothing
         // (typically: consumer hasn't run `mvn compile` yet). Reporting
         // every reference as unknown in that state would be noise; defer
@@ -711,6 +716,10 @@ public final class Diagnostics {
         Directives.Directive directive, List<LspVocabulary.Leaf> leaves,
         WorkspaceFile file, CompletionData catalog, List<Diagnostic> out
     ) {
+        // R307 carve-out: @record is deprecated/ignored — it binds no class, so the legacy
+        // ExternalCodeReference.name → className alias nudge is dead tooling for it. Gate on the
+        // enclosing directive name (mirroring METHOD_VALIDATING_DIRECTIVES and the className carve-out).
+        if ("record".equals(Nodes.text(directive.nameNode(), file.source()))) return;
         var classNameCoord = new SchemaCoordinate.InputField("ExternalCodeReference", "className");
         for (var leaf : leaves) {
             if (!(leaf.coord() instanceof SchemaCoordinate.InputField f)) continue;

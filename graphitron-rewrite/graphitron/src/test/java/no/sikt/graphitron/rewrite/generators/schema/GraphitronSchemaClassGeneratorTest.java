@@ -448,8 +448,6 @@ class GraphitronSchemaClassGeneratorTest {
 
     // ===== @error-only union/interface TypeResolver emission (R12 §2c) =====
 
-    private static final String SAK_PAYLOAD_FQN =
-        "no.sikt.graphitron.codereferences.dummyreferences.SakPayload";
 
     private static final String ERROR_UNION_SDL = """
         type ValidationErr @error(handlers: [{handler: VALIDATION}]) {
@@ -461,12 +459,12 @@ class GraphitronSchemaClassGeneratorTest {
             message: String!
         }
         union SakError = ValidationErr | DbErr
-        type SakPayload @record(record: {className: "%s"}) {
+        type SakPayload {
             data: String
             errors: [SakError]
         }
         type Query { sak: SakPayload @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "runSak"}) }
-        """.formatted(SAK_PAYLOAD_FQN);
+        """;
 
     @Test
     void build_emitsErrorTypeResolver_forUnionOfErrorTypes() {

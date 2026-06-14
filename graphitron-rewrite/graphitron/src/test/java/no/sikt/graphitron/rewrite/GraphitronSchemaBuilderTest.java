@@ -2375,13 +2375,12 @@ class GraphitronSchemaBuilderTest {
         },
 
         SINGLE_RECORD_IDENTITY_FIELD_ORPHAN(
-            "R178 Phase 4: a plain Object carrier wrapping a single record-element data field "
-                + "(record-backed ResultType) consumed by a Query field with no producing mutation "
-                + "→ orphan carrier; the data field stays unregistered (record-element identity "
-                + "passthrough is now handled by the unified per-field classifier on producer-bound "
-                + "parents).",
+            "R178 Phase 4: a plain Object carrier wrapping a single Object-element data field "
+                + "consumed by a Query field with no producing mutation → orphan carrier; the data "
+                + "field stays unregistered (record-element identity passthrough is now handled by "
+                + "the unified per-field classifier on producer-bound parents).",
             """
-            type FilmDto @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyRecord"}) {
+            type FilmDto {
                 title: String
             }
             type FilmDtoPayload { film: FilmDto }
@@ -4089,9 +4088,9 @@ class GraphitronSchemaBuilderTest {
                 .isInstanceOf(InputType.class)),
 
         NO_CLASS(
-            "@record with no backing class → PojoInputType with null fqClassName",
+            "input with no reflected producer binding → PojoInputType with null fqClassName",
             """
-            input FilmInput @record { id: ID }
+            input FilmInput { id: ID }
             type Query { x: String }
             """,
             schema -> {
@@ -4100,7 +4099,7 @@ class GraphitronSchemaBuilderTest {
             }),
 
         POJO_CLASS(
-            "@record with plain Java class → PojoInputType with fqClassName",
+            "input consumed by a @service param whose reflected type is a plain Java class → PojoInputType with fqClassName",
             """
             input FilmInput { id: ID }
             type Query {
@@ -4113,7 +4112,7 @@ class GraphitronSchemaBuilderTest {
             }),
 
         JAVA_RECORD_CLASS(
-            "@record with Java record class → JavaRecordInputType with fqClassName",
+            "input consumed by a @service param whose reflected type is a Java record → JavaRecordInputType with fqClassName",
             """
             input FilmInput { id: ID }
             type Query {
@@ -4128,7 +4127,7 @@ class GraphitronSchemaBuilderTest {
         },
 
         JOOQ_TABLE_RECORD_CLASS(
-            "@record with jOOQ TableRecord class → JooqTableRecordInputType with fqClassName and resolved table",
+            "input consumed by a @service param whose reflected type is a jOOQ TableRecord → JooqTableRecordInputType with fqClassName and resolved table",
             """
             input FilmInput { id: ID }
             type Query {
@@ -4142,30 +4141,10 @@ class GraphitronSchemaBuilderTest {
                 assertThat(t.table().tableName()).isEqualTo("film");
             }) {
             @Override public Set<Class<?>> variants() { return Set.of(JooqTableRecordInputType.class); }
-        },
-
-        TABLE_PLUS_RECORD(
-            "@table + @record on an input → R96: @table wins; @record's className is ignored; "
-                + "Shadowed-by-@table directive-ignored warning fires at the post-classification site.",
-            """
-            input FilmInput
-                @table(name: "film")
-                @record(record: {className: "no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord"})
-            { id: ID }
-            type Query { x: String }
-            """,
-            schema -> {
-                // R96: @table wins. With `id` failing to resolve as a film column, the @table
-                // path produces UnclassifiedType — the Shadowed-by-@table warning still fires.
-                assertThat(schema.warnings())
-                    .extracting(BuildWarning::message)
-                    .anyMatch(m -> m.contains("FilmInput")
-                        && m.contains("carries both @table and")
-                        && m.contains("@record")
-                        && m.contains("the @record directive is ignored"));
-            }) {
-            @Override public Set<Class<?>> variants() { return Set.of(); }
         };
+        // R307: the @table + @record input warning case moved to
+        // RecordDirectiveIgnoredWarningTest (the directive-ignored warning is exercised there at
+        // the classifier level; this enum now carries no applied @record).
 
         final String sdl;
         final Consumer<GraphitronSchema> assertions;
@@ -6751,7 +6730,7 @@ class GraphitronSchemaBuilderTest {
                 ASC @field(name: "asc")
                 DESC @field(name: "desc")
             }
-            type FilmDetails @record { title: String }
+            type FilmDetails { title: String }
             type Query { x: String }
             type Mutation {
                 runWithEnumOverride(direction: SortDir): FilmDetails
@@ -6780,7 +6759,7 @@ class GraphitronSchemaBuilderTest {
             "R53: argMapping on @service binds a GraphQL arg to a differently-named Java parameter",
             """
             input TestDtoStub { id: ID }
-            type FilmDetails @record { title: String }
+            type FilmDetails { title: String }
             type Query { x: String }
             type Mutation {
                 runWithRenamedInputs(
@@ -6816,7 +6795,7 @@ class GraphitronSchemaBuilderTest {
             enum TestInputBeanEnum { LOW HIGH }
             input TestInputNested { key: String, value: String }
             input TestInputBean { title: String, rating: TestInputBeanEnum, nested: [TestInputNested!] }
-            type FilmDetails @record { title: String }
+            type FilmDetails { title: String }
             type Query { x: String }
             type Mutation {
                 runWithInputBean(input: TestInputBean): FilmDetails
@@ -6850,7 +6829,7 @@ class GraphitronSchemaBuilderTest {
             enum TestInputBeanEnum { LOW HIGH }
             input TestInputNested { key: String, value: String }
             input TestInputBean { title: String, rating: TestInputBeanEnum, nested: [TestInputNested!] }
-            type FilmDetails @record { title: String }
+            type FilmDetails { title: String }
             type Query { x: String }
             type Mutation {
                 runWithInputBeans(inputs: [TestInputBean!]!): FilmDetails
@@ -6875,7 +6854,7 @@ class GraphitronSchemaBuilderTest {
             "R155: record bean with a primitive int component → FieldBinding.javaElementTypeName boxes to java.lang.Integer",
             """
             input TestInputBeanWithPrimitive { n: Int!, s: String }
-            type FilmDetails @record { title: String }
+            type FilmDetails { title: String }
             type Query { x: String }
             type Mutation {
                 runWithInputBeanPrimitive(input: TestInputBeanWithPrimitive): FilmDetails
@@ -6903,7 +6882,7 @@ class GraphitronSchemaBuilderTest {
             "R155: JavaBean with a void setActive(boolean) setter → FieldBinding.javaElementTypeName boxes to java.lang.Boolean",
             """
             input TestInputJavaBeanWithBoolean { active: Boolean! }
-            type FilmDetails @record { title: String }
+            type FilmDetails { title: String }
             type Query { x: String }
             type Mutation {
                 runWithInputJavaBeanBoolean(input: TestInputJavaBeanWithBoolean): FilmDetails
@@ -7593,7 +7572,7 @@ class GraphitronSchemaBuilderTest {
             "DML INSERT with listed input + record-backed payload return → UnclassifiedField (Invariant #15)",
             """
             type Film @table(name: "film") { title: String }
-            type FilmPayload @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DeleteFilmRowOnlyPayload"}) {
+            type FilmPayload {
                 film: Film
             }
             input FilmInput @table(name: "film") { title: String }
@@ -7755,7 +7734,7 @@ class GraphitronSchemaBuilderTest {
             }
             union DeleteFilmError = ValidationErr | DbErr
             type Film @table(name: "film") { title: String }
-            type DeleteFilmPayload @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DeleteFilmPayload"}) {
+            type DeleteFilmPayload {
                 film: Film
                 errors: [DeleteFilmError]
             }
@@ -7774,7 +7753,7 @@ class GraphitronSchemaBuilderTest {
                 + "→ UnclassifiedField (same reason as the with-errors sibling).",
             """
             type Film @table(name: "film") { title: String }
-            type DeleteFilmPayload @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DeleteFilmRowOnlyPayload"}) {
+            type DeleteFilmPayload {
                 film: Film
             }
             input FilmInput @table(name: "film") { filmId: Int! @field(name: "film_id") }
@@ -7791,7 +7770,7 @@ class GraphitronSchemaBuilderTest {
             "DML returning a list of record-backed payloads → UnclassifiedField (validateReturnType, list-payload not yet supported)",
             """
             type Film @table(name: "film") { title: String }
-            type DeleteFilmPayload @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DeleteFilmRowOnlyPayload"}) {
+            type DeleteFilmPayload {
                 film: Film
             }
             input FilmInput @table(name: "film") { filmId: Int! @field(name: "film_id") }
@@ -7808,7 +7787,7 @@ class GraphitronSchemaBuilderTest {
             "R161: DML returning a record-backed carrier with no data-channel-shaped field → UnclassifiedField (the structural scan rejects 'data: String' as an unrecognized carrier data-field shape since String is neither @table nor ID; user's developer-supplied class is no longer inspected)",
             """
             type Film @table(name: "film") { title: String }
-            type SakPayload @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.SakPayload"}) {
+            type SakPayload {
                 data: String
                 errors: [ValidationErr]
             }
@@ -8729,29 +8708,9 @@ class GraphitronSchemaBuilderTest {
                     .contains("FilmRecord");
             }),
 
-        SERVICE_WITH_RECORD_BACKING_CLASS_MISMATCH_SILENT_CORRECT(
-            "R96: @service at root: @record-declared className disagrees with the method's reflected "
-                + "return — reflection wins silently; directive-ignored 'Disagrees' warning fires.",
-            """
-            type FilmDetails @record(record: {className: "no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord"}) {
-                title: String
-            }
-            type Query {
-                filmDetails: FilmDetails
-                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getLanguage"})
-            }
-            """,
-            schema -> {
-                // R96: the directive's claim ("FilmRecord") is informational only; the walker's
-                // reflection-derived class ("LanguageRecord") wins. FilmDetails classifies as
-                // JooqTableRecordType backed by LanguageRecord, and the directive-ignored
-                // warning's Disagrees variant surfaces the lie.
-                assertThat(schema.warnings())
-                    .extracting(BuildWarning::message)
-                    .anyMatch(m -> m.contains("FilmDetails")
-                        && m.contains("derives a different backing class")
-                        && m.contains("LanguageRecord"));
-            }),
+        // R307: the @service "Disagrees" directive-ignored warning case moved to
+        // RecordDirectiveIgnoredWarningTest; reflection-wins-over-the-directive binding is covered
+        // by R96RecordBindingPipelineTest without any applied @record.
 
         MUTATION_SERVICE_WITH_WRONG_RETURN_TYPE_REJECTED(
             "@service on mutation field with mismatched return type → UnclassifiedField (strict-return applies on mutation arm too)",
@@ -8800,7 +8759,7 @@ class GraphitronSchemaBuilderTest {
             "R53: argMapping with two entries for the same Java parameter → UnclassifiedField (parser-level rejection)",
             """
             input TestDtoStub { id: ID }
-            type FilmDetails @record { title: String }
+            type FilmDetails { title: String }
             type Query { x: String }
             type Mutation {
                 runWithRenamedInputs(
@@ -8821,7 +8780,7 @@ class GraphitronSchemaBuilderTest {
             "R53: argMapping references a GraphQL argument not on the field → UnclassifiedField (pre-reflection rejection)",
             """
             input TestDtoStub { id: ID }
-            type FilmDetails @record { title: String }
+            type FilmDetails { title: String }
             type Query { x: String }
             type Mutation {
                 runWithRenamedInputs(
@@ -8843,7 +8802,7 @@ class GraphitronSchemaBuilderTest {
             "R53: argMapping references a Java parameter that does not exist on the resolved method → UnclassifiedField (post-reflection typo guard)",
             """
             input TestDtoStub { id: ID }
-            type FilmDetails @record { title: String }
+            type FilmDetails { title: String }
             type Query { x: String }
             type Mutation {
                 runWithRenamedInputs(
@@ -8865,7 +8824,7 @@ class GraphitronSchemaBuilderTest {
             "R150: @service with Map<String, Object> Java param paired with an input-object SDL slot → UnclassifiedField; Map is a permanent anti-pattern at the service boundary, not a v1 deferral",
             """
             input TestInputBean { title: String }
-            type FilmDetails @record { title: String }
+            type FilmDetails { title: String }
             type Query { x: String }
             type Mutation {
                 runWithMapInput(input: TestInputBean): FilmDetails
@@ -8885,7 +8844,7 @@ class GraphitronSchemaBuilderTest {
             "R150: @service with a self-referential record bean → UnclassifiedField; the walker would otherwise infinite-loop on the cyclic shape",
             """
             input TestInputRecursive { name: String, children: [TestInputRecursive!] }
-            type FilmDetails @record { title: String }
+            type FilmDetails { title: String }
             type Query { x: String }
             type Mutation {
                 runWithRecursiveBean(input: TestInputRecursive): FilmDetails
@@ -8904,7 +8863,7 @@ class GraphitronSchemaBuilderTest {
             "R150: @service with a package-private record bean → UnclassifiedField; generated fetchers live in a different package",
             """
             input TestInputPackagePrivate { title: String }
-            type FilmDetails @record { title: String }
+            type FilmDetails { title: String }
             type Query { x: String }
             type Mutation {
                 runWithPackagePrivateBean(input: TestInputPackagePrivate): FilmDetails
@@ -8956,8 +8915,9 @@ class GraphitronSchemaBuilderTest {
     }
 
     // ===== Type directive mutual exclusivity =====
-    // @table, @record, and @error are mutually exclusive — the builder produces UnclassifiedType
-    // carrying the names of the conflicting directives in its reason.
+    // @table and @error are mutually exclusive — the builder produces UnclassifiedType
+    // carrying the names of the conflicting directives in its reason. (@record is deprecated and
+    // ignored, so it conflicts with nothing; @table/@error + @record warns instead, see R307.)
 
     enum TypeDirectiveConflictCase implements ClassificationCase {
 
@@ -8972,9 +8932,9 @@ class GraphitronSchemaBuilderTest {
             """,
             "Film", "@table", "@error");
 
-        // @record + @error is intentionally NOT a conflict: the @record(record: {className: ...})
-        // names the @error type's developer-supplied backing class. See
-        // ErrorTypeCase.ERROR_WITH_RECORD_RESOLVES_BACKING_CLASS for the success case.
+        // @record + @error is not a conflict: @record is deprecated and ignored, so it is silently
+        // dropped on an @error type (the type stays ErrorType). See the ClassifiedCorpus `error-type`
+        // example's RecordIgnoredError.
 
         final String typeName;
         final String sdl;

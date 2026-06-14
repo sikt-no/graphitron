@@ -116,21 +116,10 @@ class R58TypedRejectionPipelineTest {
         assertThat(conflict.directives()).containsExactly("service", "mutation");
     }
 
-    @Test
-    void tableRecordCombination_recordIgnored_noLongerRejects() {
-        // R276/D1: @record is deprecated and ignored, so @table + @record on one type is no longer
-        // a DirectiveConflict. @table wins (the type stays table-backed) and the directive-ignored
-        // warning fires (the warning itself is pinned by R96RecordBindingPipelineTest); the type is
-        // not demoted to UnclassifiedType. Only @table vs @error remains mutually exclusive.
-        var schema = TestSchemaHelper.buildSchema("""
-            type Query { x: String }
-            type Conflicted @table(name: "film") @record(record: {className: "no.sikt.graphitron.rewrite.TestDtoStub"}) {
-                title: String
-            }
-            """);
-
-        assertThat(schema.type("Conflicted")).isNotInstanceOf(UnclassifiedType.class);
-    }
+    // R307: tableRecordCombination_recordIgnored_noLongerRejects moved to
+    // RecordDirectiveIgnoredWarningTest (the one place applied @record remains), which pins that
+    // @table + @record classifies table-backed rather than demoting to UnclassifiedType. Only
+    // @table vs @error remains mutually exclusive here.
 
     // R232: the ConditionJoinReportable capability and its three sibling tests
     // (conditionJoinReportable_implementedByExpectedSixVariants,

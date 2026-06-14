@@ -11,17 +11,19 @@ import static org.assertj.core.api.Assertions.assertThat;
  * R96 pipeline-tier coverage: reflection-driven SDL → backing-class binding through the
  * {@link no.sikt.graphitron.rewrite.RecordBindingResolver}.
  *
- * <p>Pins the directive-ignored warning's three variants (Matches, Disagrees, Shadowed-by-@table),
- * the multi-producer agreement check, and the additive-invariant property that reachable types
- * carrying {@code @record} stay backed under R96.
+ * <p>R307: binding is reflection-only and {@code @record} is inert for it, so these fixtures carry
+ * no applied {@code @record}; the directive-ignored warning's three variants, its suppression, and
+ * the reachability gate live in {@link RecordDirectiveIgnoredWarningTest}. What stays here is the
+ * binding behaviour itself: a producer's reflected return type grounds the SDL type, list carriers
+ * unify on the element's table record, and a multi-producer disagreement surfaces a typed rejection.
  */
 @PipelineTier
 class R96RecordBindingPipelineTest {
 
     @Test
-    void matches_directiveAndReflectionAgree_emitsRedundantWarning() {
+    void singleServiceReturn_bindsToJooqTableRecord() {
         var schema = TestSchemaHelper.buildSchema("""
-            type FilmDetails @record(record: {className: "no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord"}) {
+            type FilmDetails {
                 title: String
             }
             type Query {
@@ -34,80 +36,14 @@ class R96RecordBindingPipelineTest {
         assertThat(t).isInstanceOf(GraphitronType.JooqTableRecordType.class);
         assertThat(((GraphitronType.JooqTableRecordType) t).fqClassName())
             .isEqualTo("no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord");
-
-        assertThat(schema.warnings())
-            .extracting(BuildWarning::message)
-            .anyMatch(m -> m.contains("FilmDetails")
-                && m.contains("The directive is redundant; remove it"));
-    }
-
-    @Test
-    void disagrees_directiveLiesAboutClass_reflectionWinsAndWarns() {
-        var schema = TestSchemaHelper.buildSchema("""
-            type FilmDetails @record(record: {className: "no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord"}) {
-                title: String
-            }
-            type Query {
-                language: FilmDetails
-                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getLanguage"})
-            }
-            """);
-
-        var t = schema.type("FilmDetails");
-        // Reflection-derived class wins over the directive's claim.
-        assertThat(t).isInstanceOf(GraphitronType.JooqTableRecordType.class);
-        assertThat(((GraphitronType.JooqTableRecordType) t).fqClassName())
-            .isEqualTo("no.sikt.graphitron.rewrite.test.jooq.tables.records.LanguageRecord");
-
-        assertThat(schema.warnings())
-            .extracting(BuildWarning::message)
-            .anyMatch(m -> m.contains("FilmDetails")
-                && m.contains("derives a different backing class")
-                && m.contains("LanguageRecord"));
-    }
-
-    @Test
-    void shadowedByTable_inputWithBothDirectives_emitsShadowedVariant() {
-        var schema = TestSchemaHelper.buildSchema("""
-            input FilmInput
-                @table(name: "film")
-                @record(record: {className: "no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord"})
-            { id: ID }
-            type Query { x: String }
-            """);
-
-        // The directive-ignored Shadowed-by-@table variant fires for the input.
-        assertThat(schema.warnings())
-            .extracting(BuildWarning::message)
-            .anyMatch(m -> m.contains("FilmInput")
-                && m.contains("carries both @table and")
-                && m.contains("@record")
-                && m.contains("the @record directive is ignored"));
-    }
-
-    @Test
-    void unreachable_recordTypeIsIgnored_leftUnclassified() {
-        // R276: @record is deprecated and ignored; binding is reflection-only with no directive
-        // fallback. A type carrying @record but reached by no producer has no backing class to
-        // bind to and is not nested under a table-backed parent, so the type pass leaves it
-        // unclassified (absent from schema.types()) — the directive supplies nothing. This pins
-        // that the removed className-fallback stays removed: @record never produces a binding.
-        var schema = TestSchemaHelper.buildSchema("""
-            type FilmDetails @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyRecord"}) {
-                title: String
-            }
-            type Query { x: String }
-            """);
-
-        assertThat(schema.type("FilmDetails")).isNull();
     }
 
     @Test
     void serviceListCarrier_bindsWrapperToJooqTableRecord() {
-        // FilmListPayload is a plain SDL Object (no @record) returned by a @service mutation whose
-        // method returns List<FilmRecord>. R276 unifies carriers on JooqTableRecordType: the wrapper
-        // binds to the element's table record (the R75 "wrapper does not bind" path is
-        // retired), and the inner data field reads off it through the standard record-backed path.
+        // FilmListPayload is a plain SDL Object returned by a @service mutation whose method returns
+        // List<FilmRecord>. R276 unifies carriers on JooqTableRecordType: the wrapper binds to the
+        // element's table record (the R75 "wrapper does not bind" path is retired), and the inner
+        // data field reads off it through the standard record-backed path.
         var schema = TestSchemaHelper.buildSchema("""
             type Film @table(name: "film") { title: String }
             type FilmListPayload { films: [Film!] }
@@ -128,7 +64,7 @@ class R96RecordBindingPipelineTest {
         // LanguageRecord. The producer-agreement check surfaces RecordBindingMultiProducer and
         // FilmDetails demotes to UnclassifiedType.
         var schema = TestSchemaHelper.buildSchema("""
-            type FilmDetails @record(record: {className: "no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord"}) {
+            type FilmDetails {
                 title: String
             }
             type Query {

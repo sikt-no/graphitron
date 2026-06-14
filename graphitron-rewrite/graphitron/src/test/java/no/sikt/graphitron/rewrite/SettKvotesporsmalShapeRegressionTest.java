@@ -11,15 +11,15 @@ import static org.assertj.core.api.Assertions.assertThat;
  * R178 step 3 regression pin for the SettKvotesporsmal bug
  * (see {@code graphitron-rewrite/roadmap/retire-single-record-carrier-walk.md}'s
  * "reported bug" section). The bug surfaced as classification divergence between two
- * semantically identical schemas: a {@code @record}-bound payload with one
- * {@code @table}-typed data field, classified differently depending on whether the data
- * field carried an explicit {@code @field(name:)} directive.
+ * semantically identical schemas: a record-backed payload (bound by reflection on the
+ * {@code @service} producer's return type) with one {@code @table}-typed data field, classified
+ * differently depending on whether the data field carried an explicit {@code @field(name:)} directive.
  *
  * <p>Before R178 step 3 retired the carrier walk's role in {@code @service}-mutation
  * classification, removing the redundant {@code @field(name: "<sdlFieldName>")} flipped
  * classification: the carrier walk's forbidden-directives loop at
  * {@code BuildContext.classifyCarrierField} hard-rejected the with-{@code @field} form
- * into the standard {@code @record}-parent path (which worked), while the
+ * into the standard record-backed-parent path (which worked), while the
  * without-{@code @field} form was admitted into the carrier walk and rejected by the
  * legacy {@code FieldBuilder.registerServiceCarrierDataField}'s strict-return demand
  * citing the inner table's record class. After step 3, both forms classify identically
@@ -30,7 +30,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <ol>
  *   <li>Identical-classification pin: both forms produce a {@link ChildField.RecordTableField}
  *       at {@code <Payload>.film} reading via the {@code SinglePayload.film()} accessor on
- *       the {@code @record}-bound parent. The mutation classifies admit
+ *       the record-backed parent. The mutation classifies admit
  *       ({@link MutationField.MutationServiceRecordField}). No
  *       {@link ChildField.SingleRecordTableField} (the carrier-walk-shape permit) is produced.</li>
  *   <li>Diagnostic-wording pin: when the {@code @service} method's reflected return type
@@ -44,16 +44,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 @PipelineTier
 class SettKvotesporsmalShapeRegressionTest {
 
-    private static final String PAYLOAD_CLASS =
-        "no.sikt.graphitron.codereferences.dummyreferences.SettKvotesporsmalShapePayload";
-
     private static final String FILM_TABLE = """
         type Film @table(name: "film") { title: String }
         """;
 
     /**
      * Pin 1a: the with-{@code @field(name: "film")} form classifies the data field through the
-     * standard {@code @record}-parent path (accessor lookup via {@code film()}). Before R178
+     * standard record-backed-parent path (accessor lookup via {@code film()}). Before R178
      * step 3 this form worked only because the carrier walk's forbidden-directives loop hard-
      * rejected {@code @field} on a non-{@code $source} carrier data field, falling through to
      * the standard path; after step 3 the same outcome holds because no carrier walk is
@@ -62,7 +59,7 @@ class SettKvotesporsmalShapeRegressionTest {
     @Test
     void withExplicitFieldDirective_classifiesThroughStandardRecordParentPath() {
         var schema = TestSchemaHelper.buildSchema(FILM_TABLE + """
-            type Payload @record(record: { className: "%s" }) {
+            type Payload {
                 film: Film! @field(name: "film")
             }
             type Query { x: String }
@@ -70,7 +67,7 @@ class SettKvotesporsmalShapeRegressionTest {
                 doIt: Payload
                     @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "runPassthroughPayload"})
             }
-            """.formatted(PAYLOAD_CLASS));
+            """);
 
         var mut = schema.field("Mutation", "doIt");
         assertThat(mut).isInstanceOf(MutationField.MutationServiceRecordField.class);
@@ -89,7 +86,7 @@ class SettKvotesporsmalShapeRegressionTest {
     @Test
     void withoutFieldDirective_classifiesIdenticallyToExplicitForm() {
         var schema = TestSchemaHelper.buildSchema(FILM_TABLE + """
-            type Payload @record(record: { className: "%s" }) {
+            type Payload {
                 film: Film!
             }
             type Query { x: String }
@@ -97,7 +94,7 @@ class SettKvotesporsmalShapeRegressionTest {
                 doIt: Payload
                     @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "runPassthroughPayload"})
             }
-            """.formatted(PAYLOAD_CLASS));
+            """);
 
         var mut = schema.field("Mutation", "doIt");
         assertThat(mut).isInstanceOf(MutationField.MutationServiceRecordField.class);

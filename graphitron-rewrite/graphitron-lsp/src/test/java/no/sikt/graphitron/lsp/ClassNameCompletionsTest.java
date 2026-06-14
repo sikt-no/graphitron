@@ -17,10 +17,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Class-name completion against the actual {@code ExternalCodeReference}
- * shape in {@code directives.graphqls}: each of {@code @service},
- * {@code @condition}, and {@code @record} carries one outer arg whose
- * key matches the directive name and whose value is an object with
- * {@code className} / {@code method} / {@code argMapping} fields.
+ * shape in {@code directives.graphqls}: {@code @service} / {@code @condition} /
+ * {@code @enum} (and the flat {@code @sourceRow} / {@code @tableMethod}) each
+ * carry a className slot whose value is an FQN, completed from the catalog.
+ * {@code @record} shares the same {@code ExternalCodeReference.className}
+ * coordinate but is deprecated and ignored (R307), so its className slot is
+ * carved out and offers no completion.
  */
 class ClassNameCompletionsTest {
 
@@ -57,13 +59,17 @@ class ClassNameCompletionsTest {
     }
 
     @Test
-    void recordClassNameCompletesFqns() {
+    void recordClassName_carveOut_offersNoCompletion() {
+        // R307: @record is deprecated and ignored, so its className slot binds no class and offers
+        // no FQN completion, even though its ExternalCodeReference.className coordinate is identical
+        // to @enum's (which does complete, see enumClassNameCompletesFqns). The carve-out gates on
+        // the enclosing directive name.
         String source = "input Foo @record(record: {className: \"\"}) { bar: Int }\n";
         Point cursor = new Point(0, source.indexOf('"') + 1);
 
         var items = run(source, cursor, "record");
 
-        assertThat(items).hasSize(2);
+        assertThat(items).isEmpty();
     }
 
     @Test
