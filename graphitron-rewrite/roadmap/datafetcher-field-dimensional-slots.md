@@ -1,13 +1,13 @@
 ---
 id: R290
 title: "Field-side dimensional slots: materialise carrier x intent x mapping on the field"
-status: Ready
+status: In Progress
 bucket: structural
 priority: 4
 theme: structural-refactor
 depends-on: [dimensional-model-pivot]
 created: 2026-06-10
-last-updated: 2026-06-13
+last-updated: 2026-06-14
 ---
 
 # Field-side dimensional slots: materialise carrier x intent x mapping on the field
