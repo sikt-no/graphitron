@@ -1,7 +1,7 @@
 ---
 id: R307
 title: "Retire stale @record references: error messages recommending the dead directive and @record-as-jargon vocabulary"
-status: Spec
+status: Ready
 bucket: cleanup
 priority: 5
 theme: legacy-migration
