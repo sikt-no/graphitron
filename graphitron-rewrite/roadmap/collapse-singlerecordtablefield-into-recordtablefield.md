@@ -15,8 +15,9 @@ last-updated: 2026-06-14
 Split out of **R290** (`datafetcher-field-dimensional-slots`). R290 retired one of its two planned
 leaves (`ConstructorField`) and landed the slot materialisation + the re-fetch derivation, but
 deferred the second: collapsing `ChildField.SingleRecordTableField` into `ChildField.RecordTableField`.
-R290's appendix inventory of **47** live leaves is the post-collapse target; with this item still open
-the live leaf set is **48**.
+R290 delivered 48 live leaves (recorded in `changelog.md`, whose R290 entry notes "the appendix's 47 is
+R305's post-collapse target"); 47 is that post-collapse target, and with this item still open the live
+leaf set is **48**.
 
 ## The missing concept: source-arrival cardinality
 
@@ -84,14 +85,16 @@ discipline of separating behaviour-preserving reclassification from a deliberate
 - `SingleRecordTableField` is deleted: the leaf record, its `ChildField.intent()` / `mapping()` switch
   arms, its `OrderingOwnedByProducer` membership, its `TypeFetcherGenerator` / `FetcherEmitter` /
   validator dispatch, and the `SingleRecordPayloadPipelineTest` arm asserting it has a dedicated
-  dispatch arm. Live leaves 48 -> **47** (R290's appendix target).
+  dispatch arm. Live leaves 48 -> **47** (the post-collapse target R290 recorded in `changelog.md`).
 
 ## Acceptance
 
 - **Corpus tier**: byte-identical. The `FilmPayload.film` (Source/Fetch/Table) coverage that
   classifies as `SingleRecordTableField` today reclassifies to `RecordTableField` with its tuple
   unchanged and stays green without edit. `everyGraphitronFieldLeafHasAKnownDispatchStatus` stays green
-  with one fewer partition entry; R290's appendix updates 48 -> 47 in the same change.
+  with one fewer partition entry. The 48 -> 47 leaf-count drop is a documentation fact (no test pins the
+  integer; `everyGraphitronFieldLeafHasAKnownDispatchStatus` enforces the partition is exhaustive and
+  disjoint, not a count) and is recorded in R305's own `changelog.md` entry on Done.
 - **Execution tier**: the R141 / R158 / R275 payload-carrier behaviour (single + bulk, DIRECT +
   OUTCOME_SUCCESS envelopes, the delete-then-echo shapes) is preserved end-to-end against PostgreSQL
   via the existing `SingleRecordPayloadDmlTest` / `SingleRecordTableFieldServiceProducerExecutionTest`
@@ -100,36 +103,54 @@ discipline of separating behaviour-preserving reclassification from a deliberate
   for the single-source case, DataLoader path otherwise) is pinned by structural `TypeSpec` assertions.
 - Full aggregator green (`mvn install -Plocal-db`), graphitron-lsp included.
 
-## Assert vs derive: arrival is a derived verdict, not a stored slot (lead hypothesis)
+## Assert vs derive: arrival is a derived predicate off the leaf's own loader shape (settled: derive)
 
 The governing test for any new axis is R222's "assert what nothing else carries; derive what another
-axis or slot already forces." Arrival is computed by walking to the source's producing field, which is
-the language of a derived facet, not an asserted one. R290 Slice 4 set the precedent for exactly this
-family of fact: `OutputField.requiresReFetch()` is a single-home predicate derived from `intent x
-mapping`, with `GraphitronSchemaValidator` as the mirror, not a stored slot. The lead design mirrors it:
-a single derived predicate (working name `OutputField.sourceArrivesSingle()`, or a method on the merged
-leaf) computed once from the producing-field walk, consumed by the emit fork, and mirrored by
-`GraphitronSchemaValidator` so an emit/verdict disagreement fails at validate time.
+axis or slot already forces." Arrival is already forced by a slot the leaf holds. The single-arrival
+shape is structurally `SourceKey.Reader.ResultRowWalk` with **no** `LoaderRegistration` (the inline
+in-hand read); the many-arrival shape carries a `LoaderRegistration` (the batched rows-method). In main
+today `Reader.ResultRowWalk` is constructed only at the three single-arrival sites (`FieldBuilder` lines
+~4061 / ~4120 / ~4156) and is forbidden on the batched leaves by the `SingleRecordTableField` /
+`SingleRecordIdField` compact constructors, while `RecordTableField` carries a `LoaderRegistration`
+component and no `ResultRowWalk`. So arrival need not be walked to a producing field and need not be
+stored as a fresh slot: it is the verdict already implied by which of the two payloads the leaf carries.
 
-A stored value (sealed or enum) is materialised **only if** the walk's result carries information its
-inputs cannot reconstruct at the consumer; the reachability case below is the only candidate that could
-force it. If materialised it does not get an enum by symmetry with the renamed `ValueCardinality`: the
-single-arrival arm carries the in-hand read contract (today's `Reader.ResultRowWalk`) and the
-many-arrival arm carries the `LoaderRegistration`, which are different payloads, so it would be a sealed
-split or, better, the derivation that *selects between* the existing `Reader` / `LoaderRegistration`
-shapes already on the leaf.
+R290 Slice 4 set the precedent for exactly this family of fact: `OutputField.requiresReFetch()` is a
+single-home predicate derived from `intent x mapping`, with `GraphitronSchemaValidator` as the mirror,
+not a stored slot. This item mirrors it: a single derived predicate (working name
+`OutputField.sourceArrivesSingle()`, or a method on the merged leaf) reads the leaf's own loader shape
+(`LoaderRegistration` absence ⟺ single arrival), is consumed by the emit fork, and is mirrored by
+`GraphitronSchemaValidator` so an emit/verdict disagreement fails at validate time. The verdict is set
+where the leaf is constructed: the two collapsed `SingleRecordTableField` arms in
+`classifyObjectReturnChildField` build the single-arrival (loader-free) shape; every other
+`RecordTableField` construction builds the batched shape.
 
-### Per-seat derivation (reachability)
+No stored `sourceCardinality` value is introduced. Storing arrival as a slot or enum would duplicate what
+`LoaderRegistration` presence already encodes (the redundant-predicate smell "Generation-thinking" names)
+and would be the enum-by-symmetry with the renamed `ValueCardinality` that the shapes rule out anyway:
+the single-arrival arm carries the in-hand read contract (today's `Reader.ResultRowWalk`) and the
+many-arrival arm carries the `LoaderRegistration`, which are *different payloads*. Whether those two
+payloads live as nullable slots on one flat leaf or as a sealed sub-variant split is exactly the
+merged-leaf-shape question (Q2 below); the arrival predicate derives off whichever shape that question
+settles on, and the derive-not-store decision holds either way.
 
-The verdict is a property of the **field instance / SDL seat**, not of the target type (R279's
-field-first, reachability-driven walk). A type reachable both as a single-cardinality payload carrier
-and as a list-nested field then has two independent verdicts, one per seat, with no conflict. Keying it
-on the type (or memoising per type during the walk) would let the two paths collide and let the safe
-"default many" demote the carrier seat to a loader it did not need: correctness-safe but
-optimisation-losing drift no test would catch. "Default many" applies only within a single seat whose
-single arrival is not provable; over-batching is never a correctness bug, so the default direction is
-sound. Whether R279's walk reaches each seat with the producing-field context in hand decides the
-assert-vs-derive question above: if yes, the predicate is pure and need not be stored.
+### Per-seat, set at construction (no reachability walk for this item)
+
+The verdict is a property of the **field instance / SDL seat**, not of the target type, and for this
+item it is fixed where the leaf is constructed: the two collapsed `SingleRecordTableField` arms produce
+the loader-free single-arrival shape, every other `RecordTableField` produces the batched shape, so a
+type reachable both as a single-arrival payload carrier and as a list-nested field gets two independent
+shapes, one per construction site, with no conflict. Because arrival rides on the leaf's own loader
+payload (above), reading it back is an `instanceof` / component read, not a walk; there is no per-type
+memoisation that could let the two paths collide. "Default many" (over-batching) is never a correctness
+bug, so any seat whose single arrival is not provable safely keeps the loader.
+
+This item therefore does **not** depend on R279, and `depends-on: []` is correct. R279's field-first
+reachability walk matters for the one seat R305 leaves untouched: a list-arriving `@service` carrier
+whose data field misclassifies as no-loader single arrival today. Deriving the correct many-arrival
+verdict *there* needs the producing field's list-ness in hand, which is what R279's walk supplies; that
+derivation and its DataLoader emit are **R308**, which depends on R279. R305 reads arrival off the slot
+the leaf already carries and needs no walk.
 
 ### The merged-leaf emit fork (the surface R290 deferred)
 
@@ -146,12 +167,19 @@ shapes, not in the abstract. The unification's blast radius (registration emitte
 `OrderingOwnedByProducer` marker) should also be sized against R222 Stage 5's permit consolidation,
 which may subsume part of it.
 
-## Open questions for Ready (consult principles-architect)
+## Settled / open for Ready
 
-1. **Assert vs derive, settled:** does R279's field-first walk reach every payload-carrier seat with its
-   producing-field wrapper in hand? If yes, arrival is a pure predicate (no stored value); if no, the
-   verdict materialises on the field, and its shape (sealed split, not enum) follows.
-2. **Merged-leaf shape:** flat `RecordTableField` with a non-uniform `BatchKeyField`, or a sealed
-   sub-variant split (single-arrival / batched) under it. Consult the `principles-architect` subagent on
-   the emit-mode shape during the Spec draft.
+1. **Assert vs derive ; settled (derive).** Arrival is a derived predicate off the leaf's own loader
+   shape (`LoaderRegistration` absence ⟺ single arrival), set at the construction site and mirrored by
+   `GraphitronSchemaValidator`, per the `OutputField.requiresReFetch()` precedent. No stored
+   `sourceCardinality` slot, no `SourceKey` cardinality enum, and no R279 dependency (R308 owns the one
+   walk-dependent seat). See §"Assert vs derive" above.
+2. **Merged-leaf shape ; open.** Flat `RecordTableField` with a non-uniform `BatchKeyField`, or a sealed
+   sub-variant split (single-arrival / batched) under it. The structural evidence sharpens the question:
+   the two arms carry *different payloads* (one a `LoaderRegistration`, one a loader-free
+   `Reader.ResultRowWalk` `SourceKey`), which points at the sealed split per "Sealed hierarchies over
+   enums" and away from a flat leaf with a nullable `LoaderRegistration` + conditional `BatchKeyField`
+   (the "capability forks on identity within one leaf" smell). Confirm against the actual `BatchKeyField`
+   / `LoaderRegistration` / `Reader.ResultRowWalk` shapes with the `principles-architect` subagent before
+   Ready.
 
