@@ -12,6 +12,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -212,19 +213,26 @@ public final class Main {
     static void writeChangelogNextId(Path roadmapDir, int nextId) throws IOException {
         Path changelog = roadmapDir.resolve("changelog.md");
         String existing = Files.exists(changelog) ? Files.readString(changelog) : "";
-        ParsedFile parsed = parseFrontMatter(existing);
-        Map<String, Object> fm = new LinkedHashMap<>(parsed.frontMatter());
-        fm.put("next-id", "R" + nextId);
+        boolean hasFrontMatter =
+            existing.startsWith("---\n") || existing.startsWith("---\r\n");
 
-        StringBuilder out = new StringBuilder("---\n");
-        for (Map.Entry<String, Object> e : fm.entrySet()) {
-            out.append(e.getKey()).append(": ").append(e.getValue()).append('\n');
+        if (hasFrontMatter) {
+            // Patch next-id: in place, preserving every other front-matter
+            // line and the body byte-for-byte; same safe write path as
+            // applyStatusTransition. R<n> is always a quote-safe plain scalar.
+            Map<String, String> updates = new LinkedHashMap<>();
+            updates.put("next-id", "R" + nextId);
+            Files.writeString(changelog, patchFrontMatter(existing, updates));
+            return;
         }
+
+        // No front-matter block yet: create one, preserving any existing body.
+        StringBuilder out = new StringBuilder("---\n");
+        out.append("next-id: R").append(nextId).append('\n');
         out.append("---\n");
-        String body = parsed.body();
-        if (!body.isEmpty()) {
-            if (!body.startsWith("\n")) out.append('\n');
-            out.append(body);
+        if (!existing.isEmpty()) {
+            if (!existing.startsWith("\n")) out.append('\n');
+            out.append(existing);
         }
         Files.writeString(changelog, out.toString());
     }
@@ -349,7 +357,8 @@ public final class Main {
                 + " and remain manual.");
         }
 
-        ParsedFile parsed = parseFrontMatter(Files.readString(target));
+        String content = Files.readString(target);
+        ParsedFile parsed = parseFrontMatter(content);
         String currentState = (String) parsed.frontMatter().getOrDefault("status", "Backlog");
         Set<String> allowed = ALLOWED_TRANSITIONS.getOrDefault(currentState, Set.of());
         if (!allowed.contains(newState)) {
@@ -357,26 +366,13 @@ public final class Main {
                 + "' -> '" + newState + "'. Allowed from '" + currentState + "': " + allowed + ".");
         }
 
-        Map<String, Object> fm = new LinkedHashMap<>(parsed.frontMatter());
-        fm.put("status", newState);
-        fm.put("last-updated", LocalDate.now().toString());
-        // created: strictly untouched. Never invented, never overwritten.
-
-        StringBuilder out = new StringBuilder("---\n");
-        for (Map.Entry<String, Object> e : fm.entrySet()) {
-            Object v = e.getValue();
-            if (v instanceof java.util.Date d) {
-                v = d.toInstant().atZone(java.time.ZoneOffset.UTC).toLocalDate().toString();
-            }
-            out.append(e.getKey()).append(": ").append(v).append('\n');
-        }
-        out.append("---\n");
-        String body = parsed.body();
-        if (!body.isEmpty()) {
-            if (!body.startsWith("\n")) out.append('\n');
-            out.append(body);
-        }
-        Files.writeString(target, out.toString());
+        // Patch status: and last-updated: in place, leaving every other line
+        // (notably an already-quoted title:) byte-for-byte untouched. created:
+        // is strictly untouched; never invented, never overwritten.
+        Map<String, String> updates = new LinkedHashMap<>();
+        updates.put("status", newState);
+        updates.put("last-updated", LocalDate.now().toString());
+        Files.writeString(target, patchFrontMatter(content, updates));
         return currentState;
     }
 
@@ -1041,6 +1037,80 @@ public final class Main {
         @SuppressWarnings("unchecked")
         Map<String, Object> map = (Map<String, Object>) new Yaml().load(yaml);
         return new ParsedFile(map == null ? Map.of() : map, content.substring(bodyStart));
+    }
+
+    /**
+     * Rewrites the value of each named front-matter key in place, preserving
+     * every other line, the body, and the surrounding fences byte-for-byte.
+     * A key already present has its value replaced on its own line; a key not
+     * yet present is appended just before the closing {@code ---} fence, in
+     * {@code updates} iteration order.
+     *
+     * <p>This is the safe write path for front-matter mutation. Unlike a
+     * {@code parseFrontMatter}-then-hand-serialize round-trip, it never reads a
+     * value back through snakeyaml and re-emits it unquoted, so a correctly
+     * quoted {@code title: "subtitle: detail"} (and any list or date the load
+     * would otherwise reformat) is left exactly as authored. Callers pass plain
+     * scalars for the values being written ({@code status}, an ISO date,
+     * {@code R<n>}); those need no quoting, and this writer deliberately does
+     * none, which is why it must only ever be handed quote-safe values.
+     */
+    static String patchFrontMatter(String content, Map<String, String> updates) {
+        if (!content.startsWith("---\n") && !content.startsWith("---\r\n")) {
+            throw new IllegalArgumentException("front-matter not found");
+        }
+        int afterFirst = content.indexOf('\n') + 1;
+        int closing = content.indexOf("\n---", afterFirst);
+        if (closing < 0) {
+            throw new IllegalArgumentException("front-matter not closed");
+        }
+        String prefix = content.substring(0, afterFirst);
+        String fmBody = content.substring(afterFirst, closing);
+        String suffix = content.substring(closing);
+
+        Set<String> remaining = new LinkedHashSet<>(updates.keySet());
+        String[] lines = fmBody.split("\n", -1);
+        StringBuilder patched = new StringBuilder();
+        for (int i = 0; i < lines.length; i++) {
+            String line = lines[i];
+            String key = frontMatterKey(line);
+            if (key != null && updates.containsKey(key)) {
+                String cr = line.endsWith("\r") ? "\r" : "";
+                patched.append(key).append(": ").append(updates.get(key)).append(cr);
+                remaining.remove(key);
+            } else {
+                patched.append(line);
+            }
+            if (i < lines.length - 1) {
+                patched.append('\n');
+            }
+        }
+        StringBuilder appended = new StringBuilder();
+        for (String key : remaining) {
+            appended.append('\n').append(key).append(": ").append(updates.get(key));
+        }
+        return prefix + patched + appended + suffix;
+    }
+
+    /**
+     * Returns the top-level mapping key a front-matter line introduces, or
+     * {@code null} if the line is not a {@code key: ...} entry (a list item,
+     * a block-scalar continuation, a comment, or blank). A top-level key has
+     * no leading whitespace and no internal whitespace, so indented list rows
+     * and wrapped values are left untouched by {@link #patchFrontMatter}.
+     */
+    private static String frontMatterKey(String line) {
+        int colon = line.indexOf(':');
+        if (colon <= 0) {
+            return null;
+        }
+        String key = line.substring(0, colon);
+        for (int i = 0; i < key.length(); i++) {
+            if (Character.isWhitespace(key.charAt(i))) {
+                return null;
+            }
+        }
+        return key;
     }
 
     /**

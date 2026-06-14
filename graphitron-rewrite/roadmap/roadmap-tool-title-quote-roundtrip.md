@@ -1,7 +1,7 @@
 ---
 id: R264
 title: roadmap-tool status round-trip strips quotes from front-matter titles
-status: Ready
+status: In Progress
 bucket: cleanup
 priority: 3
 depends-on: []

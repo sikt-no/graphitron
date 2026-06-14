@@ -17,7 +17,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R19` | Rebase and squash rewrite branch onto main | Ready |  | [plan](history-squash.md) |
 | `R222` | Dimensional model pivot: slots over cross-product permits | Spec | 2026-06-13 <sub>created 2026-05-21</sub> | [plan](dimensional-model-pivot.md) |
 | `R256` | Absorb the service walker substrate: typed per-arm errors + multi-arg ctors | Ready | 2026-05-30 <sub>created 2026-05-29</sub> | [plan](service-walker-substrate-absorption.md) |
-| `R264` | roadmap-tool status round-trip strips quotes from front-matter titles | Ready | 2026-06-14 <sub>created 2026-05-30</sub> | [plan](roadmap-tool-title-quote-roundtrip.md) |
+| `R264` | roadmap-tool status round-trip strips quotes from front-matter titles | In Progress | 2026-06-14 <sub>created 2026-05-30</sub> | [plan](roadmap-tool-title-quote-roundtrip.md) |
 | `R305` | Collapse SingleRecordTableField into RecordTableField (derive the DataLoader-skip from single-source cardinality) | Spec | 2026-06-14 | [plan](collapse-singlerecordtablefield-into-recordtablefield.md) |
 | `R308` | Fix the @service list-payload N+1 by deriving many-arrival for list-returning carriers <sub>blocked by: [collapse-singlerecordtablefield-into-recordtablefield](collapse-singlerecordtablefield-into-recordtablefield.md)</sub> | Spec | 2026-06-14 | [plan](service-list-payload-arrival.md) |
 | `R279` | Field-first reachability-driven classification driver <sub>blocked by: [dimensional-model-pivot](dimensional-model-pivot.md)</sub> | Ready | 2026-06-07 <sub>created 2026-06-05</sub> | [plan](field-first-classification-driver.md) |
