@@ -167,15 +167,19 @@ not derive from each other.
   edge case not in use. **Done in R290:** the leaf, its leaf-to-tuple adapter arm, and its generator
   dispatch were deleted, and the table-and-service clash that used to classify it is now a build-time
   rejection.
-- **`SingleRecordTableField` collapses.** It is the same operation as the `@service`-batched
-  `ServiceTableField`, split only on source-shape: SRTF receives a `Source{Record}` (a producer handed the
-  record back), STF produces records itself off a `Source{Table}` parent. Both map to a catalog `Table`,
-  both re-fetch, both re-project via an idx-ordered `VALUES`-join, so the separate leaf is a
-  misclassification, not an operation. **Split to R305**
-  (`collapse-singlerecordtablefield-into-recordtablefield`): SRTF reclassifies as `Source{Record, One}` /
-  `Lookup` / `Table` into the lookup family, the re-fetch derivation above catches it through
-  *holds-records*, and `OrderingOwnedByProducer` dissolves (the idx column owns the visible order). No
-  distinct leaf survives once R305 lands.
+- **`SingleRecordTableField` collapses into `RecordTableField`.** SRTF is `RecordTableField` (RTF) at
+  source cardinality `One`: same operation (re-project a `@table` from a held domain record), differing only
+  in how many source records arrive. Its intent stays what the target dictates (`Fetch`); re-fetch is the
+  orthogonal derived axis, not an intent change. **Split to R305**
+  (`collapse-singlerecordtablefield-into-recordtablefield`): the `SingleRecordTableField` leaf is deleted, its
+  construction sites produce `RecordTableField` carrying source cardinality `One`, the re-fetch derivation
+  above catches it through *holds-records*, and `OrderingOwnedByProducer` dissolves (the source/target key
+  correspondence owns the visible order). The whole re-fetch family (SRTF→RTF, `RecordLookupTableField` as
+  RTF's `@lookupKey` sibling, `RecordTableMethodField` as RTF with the `@tableMethod` target instance, and the
+  `@service`-batched `ServiceTableField`) re-fetches; `One` re-projects inline (no DataLoader), `Many`
+  batches. Because the source record and the target table are the same entity, **the source key is the target
+  key**: the re-fetch key carries the target table plus its identifying columns once, not a source/target
+  column duality. No distinct leaf survives once R305 lands.
 
 ### Model complete, classifier coverage partial
 
