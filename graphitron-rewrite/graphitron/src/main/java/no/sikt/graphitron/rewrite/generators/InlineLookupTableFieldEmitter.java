@@ -62,11 +62,13 @@ public final class InlineLookupTableFieldEmitter {
      *                     recursion, where each nesting level declares its own
      *                     {@code SelectedField} local to avoid JLS §14.4.2 shadowing.
      */
-    public static CodeBlock buildSwitchArmBody(ChildField.LookupTableField lf, String parentAlias, String sfName, String outputPackage) {
-        return buildArm(lf, parentAlias, sfName, outputPackage);
+    public static CodeBlock buildSwitchArmBody(ChildField.LookupTableField lf, String parentAlias, String sfName,
+            String outputPackage, CompositeDecodeHelperRegistry registry) {
+        return buildArm(lf, parentAlias, sfName, outputPackage, registry);
     }
 
-    private static CodeBlock buildArm(ChildField.LookupTableField lf, String parentAlias, String sfName, String outputPackage) {
+    private static CodeBlock buildArm(ChildField.LookupTableField lf, String parentAlias, String sfName,
+            String outputPackage, CompositeDecodeHelperRegistry registry) {
         List<JoinStep> path = lf.joinPath();
         TableRef terminalTable = lf.returnType().table();
         ClassName typeClass = ClassName.get(outputPackage + ".types", lf.returnType().returnTypeName());
@@ -154,7 +156,7 @@ public final class InlineLookupTableFieldEmitter {
         }
 
         CodeBlock innerSelect = buildInnerSelect(lf, path, aliases, terminalAlias, typeClass,
-            parentAlias, onCondition.build(), sfName);
+            parentAlias, onCondition.build(), sfName, registry);
         code.addStatement("fields.add($T.multiset($L).as($S))", DSL, innerSelect, lf.name());
         code.endControlFlow();
 
@@ -168,7 +170,7 @@ public final class InlineLookupTableFieldEmitter {
      */
     private static CodeBlock buildInnerSelect(ChildField.LookupTableField lf, List<JoinStep> path,
             List<String> aliases, String terminalAlias, ClassName typeClass,
-            String parentAlias, CodeBlock onCondition, String sfName) {
+            String parentAlias, CodeBlock onCondition, String sfName, CompositeDecodeHelperRegistry registry) {
         var sel = CodeBlock.builder();
         sel.add("$T.select($T.$$fields($L.getSelectionSet(), $L, env))",
             DSL, typeClass, sfName, terminalAlias);
@@ -220,7 +222,7 @@ public final class InlineLookupTableFieldEmitter {
         for (WhereFilter f : lf.filters()) {
             where.add(".and($T.$L($L))",
                 ClassName.bestGuess(f.className()), f.methodName(),
-                ArgCallEmitter.buildCallArgs(new TypeFetcherEmissionContext(), f.callParams(), f.className(), terminalAlias));
+                ArgCallEmitter.buildCallArgs(new TypeFetcherEmissionContext(), f.callParams(), f.className(), terminalAlias, registry));
         }
         sel.add("\n        .where($L)", where.build());
 

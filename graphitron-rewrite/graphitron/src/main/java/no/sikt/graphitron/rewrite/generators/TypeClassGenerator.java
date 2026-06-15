@@ -134,8 +134,14 @@ public class TypeClassGenerator {
             List<ColumnRef> requiredProjectionColumns,
             String outputPackage) {
         var builder = TypeSpec.classBuilder(typeName)
-            .addModifiers(Modifier.PUBLIC)
-            .addMethod(build$FieldsMethod(tableRef, columnFields, compositeColumnFields, columnReferenceFields, tableFields, lookupTableFields, nestingFields, computedFields, requiredProjectionColumns, outputPackage));
+            .addModifiers(Modifier.PUBLIC);
+        // One decode-helper registry per type class: inline TableField / LookupTableField filter
+        // sites that decode a @nodeId argument lift a per-class private static helper through it.
+        // collectInto co-locates construct and drain so the lifted helpers land on this class
+        // alongside $fields and the lift can never be silently dropped. The registry threads through
+        // emitSelectionSwitch's NestingField recursion, so nested inline fields share it.
+        CompositeDecodeHelperRegistry.collectInto(builder, registry ->
+            builder.addMethod(build$FieldsMethod(tableRef, columnFields, compositeColumnFields, columnReferenceFields, tableFields, lookupTableFields, nestingFields, computedFields, requiredProjectionColumns, outputPackage, registry)));
         // Helpers for inline LookupTableFields are hoisted onto this outer type class — including
         // ones nested inside NestingField sub-types, which don't get their own type class (plain
         // objects share the parent's table context). The generated switch arm calls the helper
@@ -190,7 +196,8 @@ public class TypeClassGenerator {
             List<ChildField.NestingField> nestingFields,
             List<ChildField.ComputedField> computedFields,
             List<ColumnRef> requiredProjectionColumns,
-            String outputPackage) {
+            String outputPackage,
+            CompositeDecodeHelperRegistry registry) {
         var names = GeneratorUtils.ResolvedTableNames.ofTable(tableRef);
         var fieldWildcard = ParameterizedTypeName.get(FIELD, WildcardTypeName.subtypeOf(Object.class));
         var listOfField = ParameterizedTypeName.get(LIST, fieldWildcard);
@@ -222,7 +229,7 @@ public class TypeClassGenerator {
         flat.addAll(lookupTableFields);
         flat.addAll(nestingFields);
         flat.addAll(computedFields);
-        emitSelectionSwitch(builder, 0, flat, "table", entryType, outputPackage);
+        emitSelectionSwitch(builder, 0, flat, "table", entryType, outputPackage, registry);
 
         // Required-projection set: columns the parent SELECT must include regardless of the
         // user's SDL selection — SourceKey columns for DataLoader-backed Split* children, FK
@@ -252,7 +259,8 @@ public class TypeClassGenerator {
     private static void emitSelectionSwitch(MethodSpec.Builder builder, int depth,
                                             List<ChildField> fields, String tableArg,
                                             ParameterizedTypeName entryType,
-                                            String outputPackage) {
+                                            String outputPackage,
+                                            CompositeDecodeHelperRegistry registry) {
         String parentSel = (depth == 0) ? "sel" : (sfName(depth - 1) + ".getSelectionSet()");
         String entry = entryName(depth);
         String sf = sfName(depth);
@@ -282,17 +290,17 @@ public class TypeClassGenerator {
                 }
                 case ChildField.TableField tf -> {
                     builder.addCode("        case $S -> {\n", tf.name());
-                    builder.addCode("$L", InlineTableFieldEmitter.buildSwitchArmBody(tf, tableArg, sf, outputPackage));
+                    builder.addCode("$L", InlineTableFieldEmitter.buildSwitchArmBody(tf, tableArg, sf, outputPackage, registry));
                     builder.addCode("        }\n");
                 }
                 case ChildField.LookupTableField lf -> {
                     builder.addCode("        case $S -> {\n", lf.name());
-                    builder.addCode("$L", InlineLookupTableFieldEmitter.buildSwitchArmBody(lf, tableArg, sf, outputPackage));
+                    builder.addCode("$L", InlineLookupTableFieldEmitter.buildSwitchArmBody(lf, tableArg, sf, outputPackage, registry));
                     builder.addCode("        }\n");
                 }
                 case ChildField.NestingField nf -> {
                     builder.addCode("        case $S -> {\n", nf.name());
-                    emitSelectionSwitch(builder, depth + 1, nf.nestedFields(), tableArg, entryType, outputPackage);
+                    emitSelectionSwitch(builder, depth + 1, nf.nestedFields(), tableArg, entryType, outputPackage, registry);
                     builder.addCode("        }\n");
                 }
                 case ChildField.ComputedField cf -> {

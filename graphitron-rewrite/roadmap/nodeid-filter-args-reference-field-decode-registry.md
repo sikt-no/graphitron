@@ -1,7 +1,7 @@
 ---
 id: R312
 title: "Thread CompositeDecodeHelperRegistry through inline/split reference-field filter emitters"
-status: In Progress
+status: In Review
 bucket: correctness
 priority: 2
 theme: nodeid
@@ -95,6 +95,11 @@ Both crash conditions become unreachable for the `PROJECTED_LEAVES` shapes: Part
 * **Hang the registry on `TypeFetcherEmissionContext`** (the existing per-class scratchpad already drained for the `graphitronContext` helper). Tempting because `ctx` is already threaded through `buildCallArgs`, but it overloads a fetcher-emission carrier with a concern `TypeClassGenerator` (which builds type classes, not fetchers) would have to instantiate; the bracketing helper keeps the registry's ownership with the class-assembly point that owns the builder, which is the correct SRP seam.
 
 ## Implementation
+
+Shipped. Full `graphitron-rewrite` reactor green under `-Plocal-db` (all 2083 `graphitron` unit/pipeline tests + the `graphitron-sakila-example` compilation and execution tiers). Two intended refinements to the plan, both within the "guard the empty case" intent:
+
+* `InlineColumnReferenceFieldEmitter` empty-`path` guard projects the column **directly** off the parent alias (`fields.add(parentAlias.<col>.as(name))`) rather than emitting a standalone subquery: an empty join path means start table == target table, so the referenced column lives on the parent row's own table and needs no correlated subquery at all.
+* `SplitRowsMethodEmitter`'s empty-`path` site throws a descriptive `IllegalStateException` (classifier-invariant violation) rather than emitting standalone SQL: a DataLoader-backed split child structurally requires a parent-correlation join path, and the standalone shape is emitted inline, never as a split rows method. This turns the opaque `Index -1` into an actionable message, which is the defensive guard the plan called for.
 
 * `CompositeDecodeHelperRegistry.java` — add the static bracketing helper `collectInto(TypeSpec.Builder, Consumer<CompositeDecodeHelperRegistry>)` (construct → run body → `emit().forEach(builder::addMethod)`).
 * `ArgCallEmitter.java` — no signature change; the registry overloads already exist. (The no-registry overload stays for the `@service` method-backed path.)

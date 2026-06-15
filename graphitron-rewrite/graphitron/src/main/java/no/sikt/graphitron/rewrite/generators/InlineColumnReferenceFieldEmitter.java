@@ -52,6 +52,15 @@ public final class InlineColumnReferenceFieldEmitter {
                 + "' with NodeIdEncodeKeys compaction must be rejected by the validator before emission");
         }
         List<JoinStep> path = crf.joinPath();
+        if (path.isEmpty()) {
+            // Standalone shape: an empty joinPath means start table == target table, so the
+            // referenced column lives on the parent row's own table (parentCorrelation is null per
+            // ParentCorrelation.checkCarrierInvariant). No join, correlation, or subquery is needed
+            // — project the column directly off the parent alias, aliased to the GraphQL field name.
+            var direct = CodeBlock.builder();
+            direct.addStatement("fields.add($L.$L.as($S))", parentAlias, crf.column().javaName(), crf.name());
+            return direct.build();
+        }
         List<String> aliases = JoinPathEmitter.generateAliases(path, null);
         String terminalAlias = aliases.get(aliases.size() - 1);
 

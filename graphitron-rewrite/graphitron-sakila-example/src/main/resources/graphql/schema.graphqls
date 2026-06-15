@@ -1003,10 +1003,31 @@ input FilmActorSingularNodeIdFilter @table(name: "film_actor") {
     id: ID! @nodeId(typeName: "FilmActor")
 }
 
+# R312 compilation-tier guard: a filter input used on a reference/list child field that mixes
+# @nodeId-decoded fields with @condition fields. The @nodeId decode is lifted into a per-class
+# private static helper drained onto the class hosting the filter call site (the Language type
+# class for the inline field, LanguageFetchers for the @splitQuery field). A forgotten drain would
+# surface as a dangling decodeFilm*(...) reference and fail this module's compile, so these fields
+# are the cross-module backstop for the own-and-drain wiring.
+input FilmMixedNodeIdConditionFilter @table(name: "film") {
+    ids: [ID!] @nodeId(typeName: "Film")
+    filmId: ID @field(name: "film_id")
+        @condition(condition: {
+            className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
+            method: "filmIdCondition"
+        })
+}
+
 type Language @table(name: "language") {
     languageId: Int!    @field(name: "LANGUAGE_ID")
     name:       String! @field(name: "NAME")
     films: [Film!]! @splitQuery @reference(path: [{key: "film_language_id_fkey"}])
+    # Inline @reference path (InlineTableFieldEmitter) with a mixed @nodeId + @condition filter.
+    filmsByMixedFilter(filter: FilmMixedNodeIdConditionFilter): [Film!]!
+        @reference(path: [{key: "film_language_id_fkey"}])
+    # @splitQuery path (SplitRowsMethodEmitter) with the same mixed filter.
+    filmsByMixedFilterSplit(filter: FilmMixedNodeIdConditionFilter): [Film!]! @splitQuery
+        @reference(path: [{key: "film_language_id_fkey"}])
 }
 
 type FilmsConnection {

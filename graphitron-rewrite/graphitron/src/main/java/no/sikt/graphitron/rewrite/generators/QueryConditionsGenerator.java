@@ -56,22 +56,23 @@ public class QueryConditionsGenerator {
         for (var type : schema.types().values()) {
             if (!(type instanceof GraphitronType.RootType rootType)) continue;
             var methods = new ArrayList<MethodSpec>();
-            // One registry per emitted class: composite-key NodeId decode helpers registered
-            // by any condition method on this root type are deduplicated and emitted as private
-            // static helpers alongside the public condition methods.
-            var registry = new CompositeDecodeHelperRegistry();
-            for (var field : schema.fieldsOf(rootType.name())) {
-                if (field instanceof QueryField.QueryTableField qtf) {
-                    methods.add(buildConditionMethod(qtf.name(), qtf.returnType(), qtf.filters(), outputPackage, registry));
-                } else if (field instanceof QueryField.QueryTableInterfaceField qtif) {
-                    methods.add(buildConditionMethod(qtif.name(), qtif.returnType(), qtif.filters(), outputPackage, registry));
-                }
-            }
-            if (methods.isEmpty()) continue;
             String simpleName = rootType.name() + CLASS_NAME_SUFFIX;
             var classBuilder = TypeSpec.classBuilder(simpleName).addModifiers(Modifier.PUBLIC);
-            methods.forEach(classBuilder::addMethod);
-            registry.emit().forEach(classBuilder::addMethod);
+            // One registry per emitted class: composite-key NodeId decode helpers registered by any
+            // condition method on this root type are deduplicated and drained as private static
+            // helpers alongside the public condition methods. collectInto co-locates construct and
+            // drain so the lift can never be silently dropped.
+            CompositeDecodeHelperRegistry.collectInto(classBuilder, registry -> {
+                for (var field : schema.fieldsOf(rootType.name())) {
+                    if (field instanceof QueryField.QueryTableField qtf) {
+                        methods.add(buildConditionMethod(qtf.name(), qtf.returnType(), qtf.filters(), outputPackage, registry));
+                    } else if (field instanceof QueryField.QueryTableInterfaceField qtif) {
+                        methods.add(buildConditionMethod(qtif.name(), qtif.returnType(), qtif.filters(), outputPackage, registry));
+                    }
+                }
+                methods.forEach(classBuilder::addMethod);
+            });
+            if (methods.isEmpty()) continue;
             out.add(classBuilder.build());
         }
         return out;

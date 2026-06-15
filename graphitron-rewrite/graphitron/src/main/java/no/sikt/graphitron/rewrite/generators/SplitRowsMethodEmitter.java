@@ -194,6 +194,19 @@ public final class SplitRowsMethodEmitter {
         TypeName parentRecordType = ParameterizedTypeName.get(recordClass(parentRowArity), parentRowTypeArgs);
         TypeName parentInputTableType = ParameterizedTypeName.get(TABLE, parentRecordType);
 
+        // Classifier contract: joinPath is non-empty for a DataLoader-backed split child (the
+        // parent-correlation JOIN needs at least the first hop's slots). An empty joinPath is the
+        // standalone-lookup shape (parentCorrelation == null per ParentCorrelation.checkCarrierInvariant),
+        // which the classifier does not route here; guard it explicitly so a classifier regression
+        // fails loudly with the cause rather than as an opaque "Index -1 out of bounds" on the
+        // empty alias list below.
+        if (joinPath.isEmpty()) {
+            throw new IllegalStateException(
+                "SplitRowsMethodEmitter reached a standalone (empty-joinPath) shape for field '"
+                + fieldName + "'; a DataLoader-backed split child requires a parent-correlation join "
+                + "path. This is a classifier invariant violation — standalone references are emitted "
+                + "inline, not as split rows methods.");
+        }
         List<String> aliases = JoinPathEmitter.generateAliases(joinPath, terminalTable);
         String terminalAlias = aliases.get(aliases.size() - 1);
         String firstAlias = aliases.get(0);
@@ -303,28 +316,29 @@ public final class SplitRowsMethodEmitter {
      * caller in {@code TypeFetcherGenerator} already has the concrete field type, so no
      * capability-typed dispatcher is needed at this seam.
      */
-    static MethodSpec buildForSplitTable(TypeFetcherEmissionContext ctx, ChildField.SplitTableField stf, String outputPackage) {
+    static MethodSpec buildForSplitTable(TypeFetcherEmissionContext ctx, ChildField.SplitTableField stf, String outputPackage,
+            CompositeDecodeHelperRegistry registry) {
         java.util.function.Function<CodeBlock, RowsMethodBody> permit = RowsMethodBody.SqlSplitTable::new;
         if (stf.returnType().wrapper() instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.Single) {
             return buildSingleMethod(
                 ctx, stf.name(), stf.rowsMethodName(), stf.returnType(),
                 stf.joinPath(), stf.filters(), stf.sourceKey(),
                 stf.parentCorrelation(),
-                outputPackage, permit);
+                outputPackage, permit, registry);
         }
         if (stf.returnType().wrapper() instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.Connection conn) {
             return buildConnectionMethod(
                 ctx, stf.name(), stf.rowsMethodName(), stf.returnType(),
                 stf.joinPath(), stf.filters(), stf.sourceKey(), stf.orderBy(), conn,
                 stf.parentCorrelation(),
-                outputPackage, permit);
+                outputPackage, permit, registry);
         }
         return buildListMethod(
             ctx, stf.name(), stf.rowsMethodName(), stf.returnType(),
             stf.joinPath(), stf.filters(), stf.sourceKey(),
             /* lookupMapping */ null,
             stf.parentCorrelation(),
-            outputPackage, permit);
+            outputPackage, permit, registry);
     }
 
     // -----------------------------------------------------------------------
@@ -332,14 +346,15 @@ public final class SplitRowsMethodEmitter {
     // -----------------------------------------------------------------------
 
     /** See {@link #buildForSplitTable} for the entry-point convention. */
-    static MethodSpec buildForSplitLookupTable(TypeFetcherEmissionContext ctx, ChildField.SplitLookupTableField slf, String outputPackage) {
+    static MethodSpec buildForSplitLookupTable(TypeFetcherEmissionContext ctx, ChildField.SplitLookupTableField slf, String outputPackage,
+            CompositeDecodeHelperRegistry registry) {
         return buildListMethod(
             ctx, slf.name(), slf.rowsMethodName(), slf.returnType(),
             slf.joinPath(), slf.filters(), slf.sourceKey(),
             slf.lookupMapping(),
             slf.parentCorrelation(),
             outputPackage,
-            RowsMethodBody.SqlSplitLookupTable::new);
+            RowsMethodBody.SqlSplitLookupTable::new, registry);
     }
 
     // -----------------------------------------------------------------------
@@ -347,7 +362,8 @@ public final class SplitRowsMethodEmitter {
     // -----------------------------------------------------------------------
 
     /** See {@link #buildForSplitTable} for the entry-point convention. */
-    static MethodSpec buildForRecordTable(TypeFetcherEmissionContext ctx, ChildField.RecordTableField rtf, String outputPackage) {
+    static MethodSpec buildForRecordTable(TypeFetcherEmissionContext ctx, ChildField.RecordTableField rtf, String outputPackage,
+            CompositeDecodeHelperRegistry registry) {
         // RecordTableField fields whose rows-method emits 1 record per key (today, only
         // AccessorKeyedMany: each accessor-derived element-PK key maps to exactly one
         // terminal record) route through buildSingleMethod, which produces the flat join +
@@ -361,14 +377,14 @@ public final class SplitRowsMethodEmitter {
                 ctx, rtf.name(), rtf.rowsMethodName(), rtf.returnType(),
                 rtf.joinPath(), rtf.filters(), rtf.sourceKey(),
                 rtf.parentCorrelation(),
-                outputPackage, permit);
+                outputPackage, permit, registry);
         }
         return buildListMethod(
             ctx, rtf.name(), rtf.rowsMethodName(), rtf.returnType(),
             rtf.joinPath(), rtf.filters(), rtf.sourceKey(),
             /* lookupMapping */ null,
             rtf.parentCorrelation(),
-            outputPackage, permit);
+            outputPackage, permit, registry);
     }
 
     // -----------------------------------------------------------------------
@@ -548,7 +564,8 @@ public final class SplitRowsMethodEmitter {
     // -----------------------------------------------------------------------
 
     /** See {@link #buildForSplitTable} for the entry-point convention. */
-    static MethodSpec buildForRecordLookupTable(TypeFetcherEmissionContext ctx, ChildField.RecordLookupTableField rltf, String outputPackage) {
+    static MethodSpec buildForRecordLookupTable(TypeFetcherEmissionContext ctx, ChildField.RecordLookupTableField rltf, String outputPackage,
+            CompositeDecodeHelperRegistry registry) {
         // Rows-method body is identical to SplitLookupTableField's — same SourceKey
         // (Wrap.Row + ColumnRead) + LookupMapping shape, so buildListMethod handles both. The
         // record-parent divergence (backing-object accessor vs jOOQ-table-row accessor for key
@@ -559,7 +576,7 @@ public final class SplitRowsMethodEmitter {
             rltf.lookupMapping(),
             rltf.parentCorrelation(),
             outputPackage,
-            RowsMethodBody.SqlRecordLookupTable::new);
+            RowsMethodBody.SqlRecordLookupTable::new, registry);
     }
 
 
@@ -580,7 +597,8 @@ public final class SplitRowsMethodEmitter {
             LookupMapping lookupMapping,
             ParentCorrelation parentCorrelation,
             String outputPackage,
-            java.util.function.Function<CodeBlock, RowsMethodBody> permitFactory) {
+            java.util.function.Function<CodeBlock, RowsMethodBody> permitFactory,
+            CompositeDecodeHelperRegistry registry) {
         ClassName typeClass = ClassName.get(
             outputPackage + ".types",
             returnType.returnTypeName());
@@ -739,7 +757,7 @@ public final class SplitRowsMethodEmitter {
         for (WhereFilter f : filters) {
             where.add(".and($T.$L($L))",
                 ClassName.bestGuess(f.className()), f.methodName(),
-                ArgCallEmitter.buildCallArgs(ctx, f.callParams(), f.className(), terminalAlias));
+                ArgCallEmitter.buildCallArgs(ctx, f.callParams(), f.className(), terminalAlias, registry));
         }
         sel.add(".where($L)\n", where.build());
         sel.add(".fetch();\n");
@@ -784,7 +802,8 @@ public final class SplitRowsMethodEmitter {
             SourceKey sourceKey,
             ParentCorrelation parentCorrelation,
             String outputPackage,
-            java.util.function.Function<CodeBlock, RowsMethodBody> permitFactory) {
+            java.util.function.Function<CodeBlock, RowsMethodBody> permitFactory,
+            CompositeDecodeHelperRegistry registry) {
         ClassName typeClass = ClassName.get(
             outputPackage + ".types",
             returnType.returnTypeName());
@@ -854,7 +873,7 @@ public final class SplitRowsMethodEmitter {
         for (WhereFilter f : filters) {
             where.add(".and($T.$L($L))",
                 ClassName.bestGuess(f.className()), f.methodName(),
-                ArgCallEmitter.buildCallArgs(ctx, f.callParams(), f.className(), firstAlias));
+                ArgCallEmitter.buildCallArgs(ctx, f.callParams(), f.className(), firstAlias, registry));
         }
         sel.add(".where($L)\n", where.build());
         sel.add(".fetch();\n");
@@ -910,7 +929,8 @@ public final class SplitRowsMethodEmitter {
             no.sikt.graphitron.rewrite.model.FieldWrapper.Connection conn,
             ParentCorrelation parentCorrelation,
             String outputPackage,
-            java.util.function.Function<CodeBlock, RowsMethodBody> permitFactory) {
+            java.util.function.Function<CodeBlock, RowsMethodBody> permitFactory,
+            CompositeDecodeHelperRegistry registry) {
 
         ClassName typeClass = ClassName.get(
             outputPackage + ".types",
@@ -1049,7 +1069,7 @@ public final class SplitRowsMethodEmitter {
         for (WhereFilter f : filters) {
             where.add(".and($T.$L($L))",
                 ClassName.bestGuess(f.className()), f.methodName(),
-                ArgCallEmitter.buildCallArgs(ctx, f.callParams(), f.className(), terminalAlias));
+                ArgCallEmitter.buildCallArgs(ctx, f.callParams(), f.className(), terminalAlias, registry));
         }
         inner.add(".where($L)\n", where.build());
         inner.add(".orderBy(page.effectiveOrderBy())\n");
