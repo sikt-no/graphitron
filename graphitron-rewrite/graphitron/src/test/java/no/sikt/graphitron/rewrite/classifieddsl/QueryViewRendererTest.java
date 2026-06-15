@@ -148,6 +148,92 @@ class QueryViewRendererTest {
     }
 
     @Test
+    void fieldCommentRendersAsTheFieldsDescription() {
+        String out = QueryViewRenderer.render(FIXTURE, """
+            {
+              film {
+                # The film's display title.
+                title
+              }
+            }
+            """);
+
+        assertThat(out)
+            .as("a # comment above a selected field renders as that field's SDL description")
+            .contains("\"The film's display title.\"")
+            .contains("title: String");
+    }
+
+    @Test
+    void inlineFragmentCommentRendersAsTheTypeDescription() {
+        String out = QueryViewRenderer.render(sdlOf("union"), """
+            {
+              filmActor {
+                related {
+                  # A film in the catalog.
+                  ... on Film { title }
+                  ... on Actor { firstName }
+                }
+              }
+            }
+            """);
+
+        assertThat(out)
+            .as("a # comment above ... on T renders as type T's description")
+            .contains("\"A film in the catalog.\"")
+            .contains("type Film");
+    }
+
+    @Test
+    void topLevelFragmentCommentRendersAsTheTypeDescription() {
+        String out = QueryViewRenderer.render(sdlOf("error-type"), """
+            # An error raised when an extra field is present.
+            fragment e on ExtraFieldError { path message severity }
+            """);
+
+        assertThat(out)
+            .as("a # comment above a top-level fragment renders as the fragment type's description")
+            .contains("\"An error raised when an extra field is present.\"")
+            .contains("type ExtraFieldError @error");
+    }
+
+    @Test
+    void multiLineCommentRendersAsABlockStringDescription() {
+        String out = QueryViewRenderer.render(FIXTURE, """
+            {
+              film {
+                # First line of prose.
+                # Second line of prose.
+                title
+              }
+            }
+            """);
+
+        assertThat(out)
+            .as("multiple # lines on one coordinate join into a block-string description")
+            .contains("\"\"\"")
+            .contains("First line of prose.")
+            .contains("Second line of prose.");
+    }
+
+    @Test
+    void aProjectionWithoutCommentsRendersNoDescriptions() {
+        String out = QueryViewRenderer.render(FIXTURE, "{ film { releaseYear } }");
+
+        // The no-regression pin: with no authored comments the renderer stamps no descriptions, so no
+        // block string appears and no rendered line is a bare SDL description (a leading quoted string).
+        // The only quotes in this projection are directive argument values (@table(name: "film")), which
+        // never start a line.
+        assertThat(out).doesNotContain("\"\"\"");
+        assertThat(out.lines().map(String::strip))
+            .as("no line in a comment-free projection is a bare SDL description string")
+            .noneMatch(line -> line.startsWith("\""));
+        assertThat(out)
+            .contains("type Film @table")
+            .contains("releaseYear: Int @field");
+    }
+
+    @Test
     void lookupKeyScalarArgumentRendersWithoutInputExpansion() {
         String out = QueryViewRenderer.render(sdlOf("split-lookup"),
             "{ store { customers { firstName } } }");

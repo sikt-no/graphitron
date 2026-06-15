@@ -50,7 +50,15 @@ public final class ClassifiedCorpus {
               title: String @classified(carrier: Source, intent: Fetch, mapping: Column)
             }
             """,
-            "{ film { title } }"),
+            """
+            {
+              # A single film, fetched by primary key.
+              film {
+                # The film's display title.
+                title
+              }
+            }
+            """),
 
         /*
          * Enum-typed scalar: a field whose GraphQL return type is an enum still resolves to a real DB
