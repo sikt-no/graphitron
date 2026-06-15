@@ -1,0 +1,119 @@
+= How-to: The dev loop (Quarkus + LSP)
+:description: The inner loop for working on an existing Graphitron subgraph under Quarkus, why macOS needs the LSP, and how to connect IntelliJ to it.
+:!toc:
+
+You have an existing Graphitron subgraph and you want a tight edit-save-see-it loop. The short version: run two long-lived terminals, one for `mvn graphitron:dev` (regenerates Java from your `.graphqls` and serves an LSP), one for `mvn quarkus:dev` (hot-reloads the running app). Edit the schema, save, and the change flows through both without restarting anything.
+
+[TIP]
+====
+On macOS the filesystem-watch half of this loop is slow on its own. Attaching your editor to the LSP is what makes saves feel instant. See <<macos>>.
+====
+
+== TLDR
+
+[cols="1,3"]
+|===
+| Step | What to run
+
+| 1. Regenerate + LSP
+| `mvn graphitron:dev` in a side terminal. Binds an LSP on `localhost:8487`, watches your `.graphqls`, regenerates only the changed files under `target/generated-sources/graphitron`.
+
+| 2. Run the app
+| `mvn quarkus:dev` in another terminal. Quarkus watches `target/generated-sources/` by mtime and hot-reloads only the classes that actually changed.
+
+| 3. Connect your editor
+| Point your LSP client at `localhost:8487` (TCP) for diagnostics, hover, completion, and go-to-definition on `.graphqls`. IntelliJ users: see <<intellij>>.
+
+| 4. Edit and save
+| Save a `.graphqls`. Graphitron regenerates, Quarkus reloads, your editor refreshes diagnostics. No restart of either terminal.
+|===
+
+Both Maven goals are long-lived. Start them once at the beginning of a session and leave them running; stop with Ctrl+C.
+
+== The loop in detail
+
+`mvn graphitron:dev` is one JVM, one terminal, one socket. It binds an LSP server on `localhost:8487`, watches your schema sources, and on every save re-runs the generator. Writes are idempotent: only files whose rendered content actually changed touch disk (SHA-256 comparison), and types you delete from the schema have their generated files removed. So `git diff` after a session shows only what the edit predicts, and downstream tools recompile only what changed.
+
+That idempotence is exactly what lets `quarkus:dev` sit on top. Quarkus detects source-root changes by mtime; because unchanged generated files keep their mtimes, a one-type schema edit triggers a reload of just that type's classes, not the whole schema. The same is true of IntelliJ's incremental compiler and Spring Boot DevTools, so no Graphitron-specific build plugin is needed for the reload half.
+
+If `8487` is already in use, pass `-Dgraphitron.dev.port=N` to `mvn graphitron:dev` and use the matching port in your editor config. The goal fails fast on a bind conflict with a message naming the property; it never silently rebinds to a port the editor would not know about.
+
+For the full picture of how the schema watcher, classpath watcher, and generator dispatch cooperate inside the `dev` goal, see xref:../../../architecture/getting-started.adoc#dev-loop-detail[the dev loop reference] in the architecture docs.
+
+[#macos]
+== Why macOS needs the LSP
+
+Java's `WatchService` has no native file-event backend on macOS; it falls back to a polling implementation that only notices a change on its next poll. In practice a save can take several seconds to register, which makes the filesystem-watch path of the dev loop feel laggy on a Mac in a way it does not on Linux.
+
+The LSP path sidesteps this entirely. When your editor is attached to the LSP on `localhost:8487`, the editor's save event drives the regeneration directly, instead of waiting for the polling watcher to notice the file changed on disk. So on macOS, attaching your editor to the LSP is not just for diagnostics and completion: it is what restores an instant save-to-regen loop. The schema watcher still runs as a headless fallback for saves made outside the attached editor; it is just slower on this platform.
+
+Linux and Windows have native watch backends and do not suffer this latency, but connecting the editor is still worth it for the diagnostics, hover, completion, and go-to-definition the LSP provides.
+
+== Connect your editor to the LSP
+
+The LSP speaks over TCP on `localhost:8487`. Any LSP client that can connect to a TCP socket works: point it at that address and register it for `.graphql` and `.graphqls` files. Neovim, Helix, and VS Code can target a TCP socket directly. IntelliJ needs one extra hop, covered next.
+
+[#intellij]
+== IntelliJ users
+
+IntelliJ's LSP support (both the Ultimate built-in API and the LSP4IJ plugin) launches a language server as a subprocess and talks to it over stdin/stdout; neither connects to a TCP socket out of the box. The simplest bridge is `netcat`: a `nc 127.0.0.1 8487` subprocess copies bytes between IntelliJ's stdio and the dev server's socket.
+
+Set it up with https://plugins.jetbrains.com/plugin/23257-lsp4ij[LSP4IJ] (Red Hat), which works in both IntelliJ Community and Ultimate:
+
+. Install **LSP4IJ** from Settings -> Plugins -> Marketplace.
+. Open Settings -> Languages & Frameworks -> Language Servers, add a new server, and import (or fill in) this configuration:
++
+[source,json]
+----
+{
+  "name": "Graphitron",
+  "programArgs": {
+    "default": "sh -c \"nc 127.0.0.1 8487\""
+  },
+  "languageMappings": [
+    {
+      "language": "GraphQL",
+      "languageId": "graphql"
+    }
+  ],
+  "fileTypeMappings": [
+    {
+      "fileType": {
+        "patterns": [
+          "*.graphql"
+        ]
+      },
+      "languageId": "graphql"
+    },
+    {
+      "fileType": {
+        "patterns": [
+          "*.graphqls"
+        ]
+      },
+      "languageId": "graphql"
+    }
+  ]
+}
+----
++
+The `programArgs` command is what bridges stdio to the dev server's TCP socket; the mappings register the server for `.graphql` and `.graphqls` files.
+. Start `mvn graphitron:dev` in a terminal first (the bridge connects to it; if the dev goal is not running, `nc` exits immediately and IntelliJ reports the server as crashed).
+. Open a `.graphqls` file. LSP4IJ spawns the bridge, attaches, and you get diagnostics, hover, completion, and go-to-definition.
+
+Notes:
+
+* `nc` ships with macOS and most Linux distributions. On Windows, install a netcat (for example `ncat` from Nmap) and adjust the command, or use an editor that connects to TCP directly.
+* If you overrode the port with `-Dgraphitron.dev.port=N`, change `8487` in the command to match.
+* The dev goal serves all connected clients off the same warm catalog, so you can attach IntelliJ and another editor at once; a save in either is seen by both.
+* A native IntelliJ plugin that removes the manual LSP4IJ + netcat setup is on the roadmap; until it ships, this is the supported IntelliJ path.
+
+== See also
+
+* xref:../../../architecture/getting-started.adoc#dev-loop-detail[Dev loop reference] (architecture docs): how the `dev` goal is wired internally.
+* xref:../reference/lsp-inlay-hints.adoc[LSP inlay hints]: the editor hints the LSP surfaces.
+* xref:test-your-schema.adoc[Test your schema]: the consumer-side execution test that complements the inner loop.
+
+xref:index.adoc[← How-to index]
+</content>
+</invoke>
