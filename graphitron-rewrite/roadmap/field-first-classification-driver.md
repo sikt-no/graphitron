@@ -246,7 +246,7 @@ dead `One` branch both consume **R279's walk** to compute the ancestor-product s
 forward edge (R308 cannot build the `Many` arm without this walk), even though nothing blocks R279
 itself. What remains here is the risk-isolated, gated code transformation, slices in landing order:
 
-1. **Reachability observatory + differential bisect aid (additive, zero behaviour change).**
+1. **Reachability observatory + differential bisect aid (additive, zero behaviour change).** *Shipped at `0650f3e`.*
    Build the `SchemaTraverser` walk that computes the reachable set (seed: Query + Mutation +
    `@node`/`@key` directive scan; descend field->target and union->members on native child
    edges, and interface->implementor on the synthesised edge supplied by the custom child
@@ -254,6 +254,13 @@ itself. What remains here is the risk-isolated, gated code transformation, slice
    invariant **reachable ⊆ classified** (every reachable type is classified, the safety property
    every later slice preserves) and separately *measures* the classified-but-unreachable orphan
    set as an inventory slice 6 will prune, phrased as an observation, not a correctness invariant.
+   *As built:* `SchemaReachability` (main, the reusable walk), `ProjectionSnapshotComparator`
+   (test-scoped bisect aid), `SchemaReachabilityTest` (pipeline tier). The child function follows
+   exactly the output edges (field-output / union-member / interface->implementor) and not the
+   native `getChildren()`, since native `getChildren()` would descend into arguments (which the
+   field-first walk never does) and object->interface (which would over-approximate reachability);
+   the reachable set includes the operation roots, which the ⊆ check excludes because a root's
+   fields, not its type, are classified.
 2. **Single-type registration entry (byte-identical output).** Extract per-type classification
    (and participant enrichment) from the eager loop into a single `register`-a-type entry on the
    schema accumulator that tolerates repeated registration (idempotent on a compatible repeat),
