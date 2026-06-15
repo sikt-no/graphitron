@@ -69,16 +69,22 @@ publish:release:
     POSTGRES_HOST_AUTH_METHOD: trust
   script: |
     set -e
-    apt-get update -qq && apt-get install -y -qq postgresql-client gcc debian-archive-keyring
-    cat > /etc/apt/sources.list.d/experimental.sources <<EOF
-    Types: deb
-    URIs: http://deb.debian.org/debian/
-    Suites: experimental
-    Components: main contrib non-free non-free-firmware
-    Signed-By: /usr/share/keyrings/debian-archive-keyring.gpg
-    EOF
-    apt-get update -qq
-    apt-get install -y -t experimental libtree-sitter-dev
+    apt-get update -qq && apt-get install -y -qq postgresql-client gcc make git
+    # libtree-sitter runtime for the graphitron-lsp tests: jtreesitter 0.26 looks up
+    # ts_language_abi_version at Language.load (a symbol introduced in tree-sitter 0.25),
+    # and the bundled grammar (graphitron-tree-sitter-natives) targets the 0.26.x ABI.
+    # apt's libtree-sitter0 is 0.20.x and too old, and Debian experimental is an
+    # unpinnable, rolling suite (an unpinned `-t experimental` install silently regressed
+    # to the stale 0.20.x runtime, producing "Symbol not found: ts_language_abi_version").
+    # Build the pinned runtime from source instead, mirroring the post-deploy matrix in
+    # .github/workflows/tree-sitter-natives-release.yml.
+    TS_VERSION=v0.26.9
+    TS_DIR=$(mktemp -d)
+    git clone --depth=1 --branch=$TS_VERSION https://github.com/tree-sitter/tree-sitter "$TS_DIR"
+    make -C "$TS_DIR"
+    make -C "$TS_DIR" install
+    ldconfig
+    rm -rf "$TS_DIR"
     PGPASSWORD=postgres psql -h postgres -U postgres -d rewrite_test -f graphitron-rewrite/graphitron-sakila-db/src/main/resources/init.sql
     VERSION=${CI_COMMIT_TAG#v}
     echo "Releasing version $VERSION to GitLab Packages"
