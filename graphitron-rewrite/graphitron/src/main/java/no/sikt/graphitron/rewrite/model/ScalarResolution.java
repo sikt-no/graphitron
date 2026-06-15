@@ -24,11 +24,26 @@ import no.sikt.graphitron.javapoet.TypeName;
  *
  * <p>{@link Synthesised} carries the same Java type plus the SDL name the scalar should
  * register under and a {@code (coercingSourceOwner, coercingSourceField)} pair pointing at
- * another {@code GraphQLScalarType} constant whose {@code getCoercing()} the generator borrows
- * for the synthesised scalar. Used for federation-namespace scalars
- * ({@code federation__FieldSet}, etc.) that have no public-static-final form on the consumer
- * classpath but must be registered under their SDL names so directive-argument
- * {@code GraphQLTypeReference}s resolve at schema build.
+ * a {@code GraphQLScalarType} constant whose {@code getCoercing()} the generator borrows
+ * for the synthesised scalar. Two cases reach this arm, both characterised by "the scalar must
+ * register under its SDL name, and that name is not the name of any constant we can hand to
+ * {@code additionalType} directly":
+ *
+ * <ul>
+ *   <li>Federation-namespace scalars ({@code federation__FieldSet}, etc.) that have no
+ *       public-static-final form on the consumer classpath at all; the coercing is borrowed from
+ *       {@code _Any.type}.</li>
+ *   <li>Aliasing scalar declarations whose SDL name differs from the intrinsic
+ *       {@code getName()} of the constant they resolve to: a
+ *       {@code scalar LocalDate @scalarType(scalar: "...ExtendedScalars.Date")} (constant named
+ *       {@code Date}), or a {@code GraphQL}-prefixed convention name like {@code GraphQLBigDecimal}
+ *       (constant named {@code BigDecimal}). Registering the constant directly would register the
+ *       scalar under the constant's name, leaving every {@code typeRef(sdlName)} unresolved at
+ *       schema build; the coercing is borrowed from the resolved constant itself.</li>
+ * </ul>
+ *
+ * <p>Registering under the SDL name keeps directive-argument {@code GraphQLTypeReference}s and
+ * field type references resolvable at schema build.
  *
  * <p>Each {@link Rejected} arm names a distinct misconfiguration class; LSP fix-its in a
  * later phase will switch on the variant to offer per-arm hints (extract anonymous class,

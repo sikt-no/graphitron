@@ -640,6 +640,25 @@ class GraphitronSchemaClassGeneratorTest {
     }
 
     @Test
+    void scalarRegistration_directiveAliasesConstant_synthesisesScalarUnderSdlName() {
+        // R313: when the SDL name differs from the constant's intrinsic name (here
+        // ExtendedScalars.Date is named "Date" but the scalar is declared as LocalDate), the
+        // scalar must register under the SDL name, otherwise typeRef("LocalDate") fails at build.
+        // The emitter routes this through the Synthesised arm + scalar_<name>() helper, the same
+        // path federation-namespace scalars use, rather than additionalType(ExtendedScalars.Date).
+        var body = buildBody("""
+            scalar LocalDate @scalarType(scalar: "graphql.scalars.ExtendedScalars.Date")
+            type Query { d: LocalDate, s: String }
+            """);
+        // Registered via the synthesised-scalar helper, not the bare constant.
+        assertThat(body).contains(".additionalType(scalar_LocalDate())");
+        assertThat(body).doesNotContain(".additionalType(graphql.scalars.ExtendedScalars.Date)");
+        // The helper registers under the SDL name and borrows the Date constant's coercing.
+        assertThat(body).contains("b.name(\"LocalDate\")");
+        assertThat(body).contains("b.coercing(graphql.scalars.ExtendedScalars.Date.getCoercing())");
+    }
+
+    @Test
     void scalarRegistration_unresolvedNonSpecScalar_emitsNoAdditionalType() {
         // A scalar without @scalarType in Phase 2 is left unclassified (Phase 3's convention
         // layer will lift these). The schema generator must not emit an additionalType for it.

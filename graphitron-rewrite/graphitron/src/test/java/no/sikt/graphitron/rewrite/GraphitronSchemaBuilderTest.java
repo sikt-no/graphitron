@@ -5458,9 +5458,13 @@ class GraphitronSchemaBuilderTest {
             type Query { x: BigDecimal }
             """,
             schema -> {
-                // Directive resolves to Money, not the convention table's GraphQLBigDecimal.
+                // Directive resolves to Money, not the convention table's GraphQLBigDecimal. The
+                // SDL name 'BigDecimal' differs from the Money constant's intrinsic name, so the
+                // scalar registers under 'BigDecimal' (Synthesised) borrowing Money's coercing
+                // rather than registering the constant under 'Money'.
                 var t = (ScalarType) schema.type("BigDecimal");
-                assertThat(((ScalarResolution.Resolved) t.resolution()).scalarConstantField()).isEqualTo("MONEY");
+                assertThat(((ScalarResolution.Synthesised) t.resolution()).coercingSourceField()).isEqualTo("MONEY");
+                assertThat(((ScalarResolution.Synthesised) t.resolution()).sdlName()).isEqualTo("BigDecimal");
                 assertThat(t.resolution().javaType().toString())
                     .isEqualTo("no.sikt.graphitron.rewrite.scalarfixture.Money");
             });

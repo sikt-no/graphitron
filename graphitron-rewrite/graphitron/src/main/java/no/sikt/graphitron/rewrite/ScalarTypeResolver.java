@@ -144,9 +144,35 @@ public final class ScalarTypeResolver {
      * {@code loader}, validates the field, and reflects on the {@code Coercing<I, O>} type
      * parameters to recover the input Java type. Used by Phase 2's directive-read path and
      * Phase 3's convention layer.
+     *
+     * <p>Alias-agnostic overload: the scalar is registered under the constant's own
+     * {@code GraphQLScalarType.getName()}, so this always returns {@link ScalarResolution.Resolved}
+     * on success. Callers that declare the scalar under a different SDL name (the {@code @scalarType}
+     * directive and the convention layer) route through
+     * {@link #resolveFromConstantFqn(String, String, String, ClassLoader)} so a name mismatch
+     * surfaces as {@link ScalarResolution.Synthesised}.
      */
     public static ScalarResolution resolveFromConstantFqn(
         String classFqn, String fieldName, ClassLoader loader) {
+        return resolveFromConstantFqn(classFqn, fieldName, null, loader);
+    }
+
+    /**
+     * SDL-name-aware resolution. Behaves like
+     * {@link #resolveFromConstantFqn(String, String, ClassLoader)} except that when {@code sdlName}
+     * is non-null and differs from the resolved constant's intrinsic {@code getName()}, the result
+     * is a {@link ScalarResolution.Synthesised} that registers a scalar named {@code sdlName}
+     * borrowing the constant's coercing, rather than a {@link ScalarResolution.Resolved} that would
+     * register graphql-java under the constant's own name. This is the alias case
+     * ({@code scalar LocalDate @scalarType(scalar: "...ExtendedScalars.Date")}, or the convention
+     * layer's {@code GraphQL}-prefixed names whose constants expose the unprefixed string as their
+     * scalar name): emitting {@code additionalType(<constant>)} would register the scalar under the
+     * wrong name and every {@code typeRef(sdlName)} would fail to resolve at schema build. A
+     * {@code null} {@code sdlName} means "no distinct SDL name is imposed; register under the
+     * constant's own name", which always yields {@code Resolved}.
+     */
+    public static ScalarResolution resolveFromConstantFqn(
+        String classFqn, String fieldName, String sdlName, ClassLoader loader) {
 
         ConstantCheck check = checkConstant(classFqn, fieldName, loader);
         if (check.rejection() != null) {
@@ -161,11 +187,13 @@ public final class ScalarTypeResolver {
             );
         }
         Class<?> owner = check.owner();
-        return new ScalarResolution.Resolved(
-            javaType,
-            ClassName.get(owner.getPackageName(), owner.getSimpleName()),
-            fieldName
-        );
+        ClassName ownerName = ClassName.get(owner.getPackageName(), owner.getSimpleName());
+        if (sdlName != null && !sdlName.equals(check.scalar().getName())) {
+            // SDL name aliases the constant: register a scalar under sdlName borrowing the
+            // constant's coercing, the same shape the federation-namespace path uses.
+            return new ScalarResolution.Synthesised(javaType, sdlName, ownerName, fieldName);
+        }
+        return new ScalarResolution.Resolved(javaType, ownerName, fieldName);
     }
 
     /**
@@ -345,11 +373,23 @@ public final class ScalarTypeResolver {
      * appropriate downstream rejection arm.
      */
     public static ScalarResolution resolveFromDirectiveValue(String scalarFqn, ClassLoader loader) {
+        return resolveFromDirectiveValue(scalarFqn, null, loader);
+    }
+
+    /**
+     * SDL-name-aware variant of {@link #resolveFromDirectiveValue(String, ClassLoader)}. The
+     * {@code sdlName} is the name the scalar declaration uses; a mismatch with the resolved
+     * constant's intrinsic name surfaces as {@link ScalarResolution.Synthesised} (see
+     * {@link #resolveFromConstantFqn(String, String, String, ClassLoader)}). The directive-read
+     * path passes the SDL scalar name here so an aliasing {@code @scalarType} registers under the
+     * declared name rather than the constant's name.
+     */
+    public static ScalarResolution resolveFromDirectiveValue(String scalarFqn, String sdlName, ClassLoader loader) {
         return switch (parseDirectiveValue(scalarFqn)) {
             case ParsedDirectiveValue.Malformed m ->
                 new ScalarResolution.Rejected.ClassNotFound(m.value());
             case ParsedDirectiveValue.Parsed p ->
-                resolveFromConstantFqn(p.classFqn(), p.fieldName(), loader);
+                resolveFromConstantFqn(p.classFqn(), p.fieldName(), sdlName, loader);
         };
     }
 
@@ -462,17 +502,22 @@ public final class ScalarTypeResolver {
     }
 
     /**
-     * Resolves an SDL scalar through the extended-scalars convention layer. Returns
-     * {@link ScalarResolution.Resolved} when the SDL name is in the convention table
+     * Resolves an SDL scalar through the extended-scalars convention layer. Returns a
+     * {@link ScalarResolution.Successful} when the SDL name is in the convention table
      * <em>and</em> the named constant is on the consumer's classpath; otherwise returns a
-     * {@link ScalarResolution.Rejected} arm naming the miss.
+     * {@link ScalarResolution.Rejected} arm naming the miss. The successful arm is
+     * {@link ScalarResolution.Resolved} for names that match their constant's intrinsic
+     * {@code getName()} (e.g. {@code BigDecimal}, {@code UUID}) and
+     * {@link ScalarResolution.Synthesised} for the {@code GraphQL}-prefixed aliases whose constants
+     * expose the unprefixed string as their scalar name (e.g. {@code GraphQLBigDecimal}, whose
+     * constant is named {@code BigDecimal}).
      *
      * <p>The miss shape distinguishes "name not in convention table" (returns
      * {@link ScalarResolution.Rejected.FieldNotFound} naming
      * {@code graphql.scalars.ExtendedScalars} as the searched class) from "name in table but
      * artifact missing on classpath" (returns {@link ScalarResolution.Rejected.ClassNotFound}
      * naming the FQN the table points at). Callers that only care about hit-or-miss can pattern
-     * match on {@link ScalarResolution.Resolved}; callers that want to render a hint route
+     * match on {@link ScalarResolution.Successful}; callers that want to render a hint route
      * through the rejection arm.
      */
     public static ScalarResolution resolveByConvention(String scalarName, ClassLoader loader) {
@@ -481,7 +526,10 @@ public final class ScalarTypeResolver {
             return new ScalarResolution.Rejected.FieldNotFound(
                 "graphql.scalars.ExtendedScalars", scalarName);
         }
-        return resolveFromDirectiveValue(fqn, loader);
+        // The SDL name is the convention-table key; pass it so a GraphQL-prefixed name
+        // (e.g. GraphQLBigDecimal, whose constant's intrinsic name is "BigDecimal") aliases
+        // to a Synthesised registration under the declared name rather than the constant's.
+        return resolveFromDirectiveValue(fqn, scalarName, loader);
     }
 
     /**
