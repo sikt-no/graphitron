@@ -26,7 +26,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R23` | Multi-parent `NestingField` sharing: `TableField` arm | Spec |  | [plan](nestingfield-multiparent-tablefield.md) |
 | `R13` | Faceted search on `@asConnection` | Spec |  | [plan](faceted-search.md) |
 | `R63` | Type UPSERT dialect requirement on the model | Spec |  | [plan](dml-dialect-requirement-on-model.md) |
-| `R309` | Descriptions for query-as-view projections | Ready | 2026-06-15 | [plan](query-view-descriptions.md) |
+| `R309` | Descriptions for query-as-view projections | In Review | 2026-06-15 | [plan](query-view-descriptions.md) |
 | `R92` | Surface database CHECK constraints as Jakarta validation rules | Spec |  | [plan](catalog-check-constraint-validation.md) |
 | `R26` | Retire `graphitron-maven-plugin` + `graphitron-schema-transform` | In Progress |  | [plan](retire-maven-plugin.md) |
 | `R180` | Centralize ResultType column-read emission for @record parents | Spec | 2026-05-19 | [plan](record-parent-column-read-helper.md) |
@@ -245,7 +245,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 ### docs
 
 - `R17` [**Annotated walkthrough of a generated file**](generated-output-walkthrough.md) — Backlog, cleanup
-- `R309` [**Descriptions for query-as-view projections**](query-view-descriptions.md) — Ready, feature
+- `R309` [**Descriptions for query-as-view projections**](query-view-descriptions.md) — In Review, feature
 - `R35` [**Class-level Javadoc and `package-info.java` sweep**](source-orientation-javadocs.md) — Backlog, cleanup
 - `R168` [**Sub-agent classifier for blast-radius effort (Low/Medium/High) at Spec stage**](effort-blast-radius-classification.md) — Backlog, cleanup
 

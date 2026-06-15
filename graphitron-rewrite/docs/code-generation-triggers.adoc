@@ -146,17 +146,20 @@ a scalar child whose name matches a column projects inline.
 [source,graphql]
 ----
 type Query {
+  "A single film, fetched by primary key."
   film: Film
 }
 
 type Film @table(name: "film") {
+  "The film's display title."
   title: String
 }
 ----
 
 `Film` classifies as `TableType` (full SQL generation: queries, joins, projections); `Query.film`
 enters the scope; `Film.title` projects an inline column. Asserted by the `catalog` corpus example via
-`@classifiedType(as: TableType)`.
+`@classifiedType(as: TableType)`. The field descriptions come from `# ...` comments authored on the
+example's projection query, rendered as SDL descriptions by `QueryViewRenderer`.
 
 === Reference table
 
