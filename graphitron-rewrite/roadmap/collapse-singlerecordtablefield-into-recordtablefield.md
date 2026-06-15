@@ -1,7 +1,7 @@
 ---
 id: R305
 title: Expand the carrier dimension with source-shape and cardinality; separate re-fetch from intent and collapse SingleRecordTableField into RecordTableField
-status: In Review
+status: Ready
 bucket: structural
 priority: 4
 theme: structural-refactor
@@ -253,9 +253,55 @@ runtime result: the same rows in the same source order.
   stays exhaustive and disjoint.
 - **Source-shape mirror**: a pipeline-tier test pins `ChildField.sourceShape()` against the parent producer's
   `domainReturnType()` arm, so the leaf-switch cannot silently diverge from the projection it claims to be.
+  **(OPEN — see "Review feedback" above: the delivered `SourceShapeProjectionTest` only checks two example
+  fields against literals, it does not pin the per-leaf invariant. This is the remaining work for the next pass.)**
 - **Validator**: `validateListRequiresOrdering` exempts `requiresReFetch` fields (regardless of intent); a
   PK-less re-fetch fixture validates rather than rejecting, guarding the latent-bug fix.
 - Full aggregator green (`mvn install -Plocal-db`), graphitron-lsp included.
+
+## Review feedback (In Review → Ready, 2026-06-15)
+
+Independent In Review → Done review (session distinct from both implementation sessions). Build verified
+green: full `mvn install -Plocal-db` passes across every module including `graphitron-lsp`, the
+`graphitron-sakila-example` compilation **and** execution tiers, and docs. (The LSP module's
+tree-sitter native-runtime failure on first run was the environmental `libtree-sitter` setup from
+`.claude/web-environment.md`, not an R305 regression; resolved by building `libtree-sitter` from source.)
+
+Nearly the entire contract landed and lands well: SRTF deleted and both carrier sites collapsed onto
+`buildPayloadCarrierRecordTableField`; `requiresReFetch` re-derived as `Table mapping × holds-records`,
+orthogonal to intent, with the `dispatchPerformsReFetch` validator mirror agreeing across the Record-source
+family; `OrderingOwnedByProducer` deleted with the `requiresReFetch` ordering exemption plus the PK-less
+list re-fetch regression guard; `SourceCardinality.Many` hard-coded with the corpus flipped; the 352-line
+FetcherEmitter SRTF path removed with the LocalContext null-source guard preserved; LSP projection collapsed;
+execution-tier behaviour preserved through the batched path (unchanged execution tests pass); pipeline retargets
+are structural with no method-body code-string assertions. The leaf-identity-vs-slot-driven dispatch divergence
+is honestly documented, and R314 is filed for the follow-up.
+
+**One blocking finding — the Source-shape mirror acceptance criterion is met only nominally.**
+
+- *What the spec promised* (slice 3 "Source-shape mirror" bullet + the matching Acceptance bullet): a
+  pipeline-tier test asserting, **for every classified `ChildField`**, that `sourceShape()` agrees with the
+  sealed arm of its parent producer's `domainReturnType()` (`Record` / `TableRecord` → `SourceShape.Record`;
+  catalog-`Table` parent → `SourceShape.Table`) "so the leaf-switch cannot silently diverge from the projection
+  it claims to be" — the source-shape analogue of the `dispatchPerformsReFetch` mirror.
+- *What shipped* (`SourceShapeProjectionTest.java`): two hand-picked example fields (`Film.title` →
+  `SourceShape.Table`, `FilmPayload.film` → `SourceShape.Record`), each asserted against a **literal**
+  `SourceShape`. The test never reads `domainReturnType()` and never iterates the leaf set, so the failure
+  mode the bullet names — a future leaf wired with the wrong `sourceShape` arm silently flipping a re-fetch
+  verdict — is **not** closed: such a leaf passes this test untouched. The `requiresReFetch` ↔
+  `dispatchPerformsReFetch` mirror is only a partial backstop (it catches a wrong shape only for a leaf that
+  some fixture exercises *and* whose shape actually flips a verdict; a newly-stubbed leaf with no fixture gets
+  nothing), which is exactly why the spec asked for the dedicated structural pin.
+- *Secondary, same root cause*: the delivered test's own javadoc claims it "pins the projection on both arms"
+  and is "the source-shape analogue of the `dispatchPerformsReFetch` mirror." It is neither — it exemplifies,
+  it does not pin. Per `rewrite-design-principles.adoc` §"Pin invariants, don't claim them", a comment that
+  asserts an invariant no live assertion enforces is "worse than no comment." Fixing the test fixes the javadoc.
+
+*Suggested fix (small, contained):* make `SourceShapeProjectionTest` (or a replacement) walk every classified
+`ChildField` in a leaf-rich fixture schema and assert `sourceShape()` equals the shape projected from that
+field's parent-producer `domainReturnType()` arm, failing on any divergence; then correct the javadoc to
+describe what is actually pinned. Everything else in the item is complete and green, so the next pass should be
+limited to this test (and its comment).
 
 ## Out of scope
 
