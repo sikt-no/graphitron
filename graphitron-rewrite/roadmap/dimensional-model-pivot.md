@@ -93,6 +93,17 @@ redistributes across them.
 The carrier is *position* and also the **legality gate** the producer used to imply: write intents only
 on `Mutation`, `NodeResolve`/`EntityResolve` only on `Query`, `Nesting` only on `Source`.
 
+The `Source` arm carries payload the root arms do not: a **source-shape** (`Table | Record`) and a
+**source cardinality** (`One | Many`) for what arrives at `env.getSource()`. Source-shape is the input-side
+mirror of `mapping`'s `Table:Column :: Record:Field`: `Table` when the parent producer put a catalog row at
+the source, `Record` when it handed back a domain record (an `@service` / DML payload, or a DTO parent). It
+is a projection of the parent producer's `domainReturnType`, not a separately-asserted axis. Source
+cardinality is the product of all ancestor field cardinalities (one `Many` ancestor makes every descendant
+`Many`); see **bulk is a slot** below. `Query` / `Mutation` have no source, so a sealed `Carrier` makes the
+payload unrepresentable on those arms; R305 reverses the earlier flat-enum framing because these forks are
+load-bearing (re-fetch, list-ordering determinism, the DataLoader skip) and so earn type representation
+rather than smearing across leaf identity and `SourceKey`.
+
 **`intent`** — the operation kind (asserted):
 
 - read: `Fetch`, `Lookup`, `NodeResolve`, `EntityResolve`, `Count`, `Facet`, `Nesting`
@@ -113,9 +124,11 @@ reflects its (user-authored) result, so it is **domain** (`Field`/`Record`), not
 **derived layer** (computed from the axes + slots; never asserted):
 
 - `FetchRelated` ← a non-empty **join-path** slot (a `Fetch` reaching a related entity via FK/`@reference`).
-- **re-fetch** ← `(Service | DML intent) × Table mapping` — a domain/write producer yielding a
-  catalog-table shape forces re-projecting the table from the produced keys. This is the old
-  service/DML → `@table` two-step, now *derived* rather than a distinct leaf.
+- **re-fetch** ← `Table mapping × holds-records`, where *holds-records* is `Source{Record}` (a record
+  received at the source) or a `Service` / DML intent (a record produced mid-field). A field holding a
+  domain record while mapping to a catalog table forces re-projecting the table from the record's keys.
+  The old service/DML → `@table` two-step, now *derived* rather than a distinct leaf; the received-record
+  half is what catches `SingleRecordTableField` without lying about its intent (R305).
 - **new-query** ← a `SourceField` slot, forced by `@splitQuery` / polymorphic UNION / record-handoff.
 - **polarity** (mutating?) ← the intent family (`Write` ∪ `{MutationService}` = mutating).
 
@@ -124,8 +137,9 @@ reflects its (user-authored) result, so it is **domain** (`Field`/`Record`), not
 Its information redistributes with no residual: position → `carrier`; build-vs-consume → `mapping`;
 operation → `intent`; new-query → a derived slot. The governing principle is **assert what nothing else
 carries; derive what another axis or slot already forces.** So `FetchRelated` (forced by the join-path
-slot), re-fetch (forced by the intent×mapping cross-side mismatch), new-query (forced by
-`@splitQuery`/limitations), and polarity (forced by the intent family) are all derived, not asserted.
+slot), re-fetch (forced by *holds-records* on a `Table` mapping, i.e. a domain record meeting a catalog
+shape), new-query (forced by `@splitQuery`/limitations), and polarity (forced by the intent family) are all
+derived, not asserted.
 `Query`/`Mutation` are *not* providers because they double-encode (intent × root-position); read-vs-write
 is the intent and root-ness is the carrier.
 
@@ -141,6 +155,10 @@ the special thing." The service intent stays the coarse polarity `{QueryService,
 graphitron can't know more than mutate-or-not about opaque user code (`LookupService` would need
 method-signature inference; deferred). Write intents enumerate the legal cells of verb × targeting
 (create has no matching variant, so no `InsertMatching`); **bulk is a slot** (cardinality), not an intent.
+The cardinality slot splits two ways: *source* cardinality (how many source objects arrive, the product of
+ancestor field cardinalities, carried on the `Source` carrier arm) and *target* cardinality (rows per source
+object, `SourceKey.Cardinality`, driving within-group `orderBy`). The two answer different questions and do
+not derive from each other.
 
 ### Leaf dissolution and collapse
 
@@ -148,11 +166,15 @@ method-signature inference; deferred). Write intents enumerate the legal cells o
   edge case not in use. **Done in R290:** the leaf, its leaf-to-tuple adapter arm, and its generator
   dispatch were deleted, and the table-and-service clash that used to classify it is now a build-time
   rejection.
-- **`SingleRecordTableField` collapses.** It is only an optimisation to skip the DataLoader for a
-  `Source` field guaranteed a single source object; that skip is a derived detail. **Split to R305**
-  (`collapse-singlerecordtablefield-into-recordtablefield`): on implementation the collapse proved to
-  be an emit-mechanism unification rather than a leaf merge, so it lands separately. No distinct leaf
-  survives once R305 lands.
+- **`SingleRecordTableField` collapses.** It is the same operation as the `@service`-batched
+  `ServiceTableField`, split only on source-shape: SRTF receives a `Source{Record}` (a producer handed the
+  record back), STF produces records itself off a `Source{Table}` parent. Both map to a catalog `Table`,
+  both re-fetch, both re-project via an idx-ordered `VALUES`-join, so the separate leaf is a
+  misclassification, not an operation. **Split to R305**
+  (`collapse-singlerecordtablefield-into-recordtablefield`): SRTF reclassifies as `Source{Record, One}` /
+  `Lookup` / `Table` into the lookup family, the re-fetch derivation above catches it through
+  *holds-records*, and `OrderingOwnedByProducer` dissolves (the idx column owns the visible order). No
+  distinct leaf survives once R305 lands.
 
 ### Model complete, classifier coverage partial
 
