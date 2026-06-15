@@ -1,7 +1,7 @@
 ---
 id: R305
 title: Expand the carrier dimension with source-shape and cardinality; unify the service/DML to @table re-fetch as a source-keyed Lookup
-status: Ready
+status: In Progress
 bucket: structural
 priority: 4
 theme: structural-refactor
