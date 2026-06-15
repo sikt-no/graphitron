@@ -17,8 +17,8 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R19` | Rebase and squash rewrite branch onto main | Ready |  | [plan](history-squash.md) |
 | `R222` | Dimensional model pivot: slots over cross-product permits | Spec | 2026-06-13 <sub>created 2026-05-21</sub> | [plan](dimensional-model-pivot.md) |
 | `R256` | Absorb the service walker substrate: typed per-arm errors + multi-arg ctors | Ready | 2026-05-30 <sub>created 2026-05-29</sub> | [plan](service-walker-substrate-absorption.md) |
-| `R308` | Fix the @service list-payload N+1 by deriving many-arrival for list-returning carriers <sub>blocked by: [collapse-singlerecordtablefield-into-recordtablefield](collapse-singlerecordtablefield-into-recordtablefield.md)</sub> | Spec | 2026-06-14 | [plan](service-list-payload-arrival.md) |
 | `R305` | Expand the carrier dimension with source-shape and cardinality; unify the service/DML to @table re-fetch as a source-keyed Lookup | Spec | 2026-06-14 | [plan](collapse-singlerecordtablefield-into-recordtablefield.md) |
+| `R308` | Fix the @service list-payload N+1 by deriving many-arrival for list-returning carriers <sub>blocked by: [collapse-singlerecordtablefield-into-recordtablefield](collapse-singlerecordtablefield-into-recordtablefield.md)</sub> | Spec | 2026-06-14 | [plan](service-list-payload-arrival.md) |
 | `R279` | Field-first reachability-driven classification driver <sub>blocked by: [dimensional-model-pivot](dimensional-model-pivot.md)</sub> | Ready | 2026-06-07 <sub>created 2026-06-05</sub> | [plan](field-first-classification-driver.md) |
 | `R45` | Multi-tenant routing on top of the schema-driven ExecutionInput factory | Spec | 2026-05-20 | [plan](tenant-routing-and-execution-input.md) |
 | `R273` | Source NodeId metadata from @node + catalog PK (inferred from `implements Node`), and settle wrong-type/malformed mismatch semantics, retiring the legacy __NODE bare-ID arm | Spec | 2026-06-02 | [plan](nodeid-skip-mismatch-error-surfacing.md) |
@@ -209,13 +209,13 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R261` [**Generation-time wire-coercion cast guard across arg-classification sites**](wire-coercion-cast-guard.md) — Backlog, architecture, blocked by [service-walker-substrate-absorption](service-walker-substrate-absorption.md), [dimensional-model-pivot](dimensional-model-pivot.md)
 - `R256` [**Absorb the service walker substrate: typed per-arm errors + multi-arg ctors**](service-walker-substrate-absorption.md) — Ready, structural
 - `R222` [**Dimensional model pivot: slots over cross-product permits**](dimensional-model-pivot.md) — Spec, structural
+- `R305` [**Expand the carrier dimension with source-shape and cardinality; unify the service/DML to @table re-fetch as a source-keyed Lookup**](collapse-singlerecordtablefield-into-recordtablefield.md) — Spec, structural
 - `R279` [**Field-first reachability-driven classification driver**](field-first-classification-driver.md) — Ready, architecture, blocked by [dimensional-model-pivot](dimensional-model-pivot.md)
 - `R308` [**Fix the @service list-payload N+1 by deriving many-arrival for list-returning carriers**](service-list-payload-arrival.md) — Spec, structural, blocked by [collapse-singlerecordtablefield-into-recordtablefield](collapse-singlerecordtablefield-into-recordtablefield.md)
 - `R171` [**Fold InputType and TableInputType under sealed parent InputLikeType**](input-like-type-sealed-parent.md) — Backlog, architecture
 - `R103` [**Lift jOOQ column defaults onto input fields connected to that column**](lift-jooq-column-defaults-onto-inputs.md) — Backlog, architecture
 - `R249` [**Nested @argMapping syntax via GraphQLSelectionParser**](nested-argmapping-syntax.md) — Backlog, feature
 - `R302` [**Rename ChildField to SourceField (carrier-named field hierarchy)**](rename-childfield-to-sourcefield.md) — Backlog, structural
-- `R305` [**Expand the carrier dimension with source-shape and cardinality; unify the service/DML to @table re-fetch as a source-keyed Lookup**](collapse-singlerecordtablefield-into-recordtablefield.md) — Spec, structural
 - `R257` [**UpdateRowsWalker raw-SDL substrate absorption**](updaterows-walker-sdl-substrate.md) — Backlog, structural
 - `R236` [**BuildContext nested-input candidate-hint draws from path-origin table instead of @reference terminal table**](validator-reference-candidate-hint-terminal-table.md) — Backlog, bug
 - `R231` [**Emit text-mapped-enum fields as the GraphQL enum type, not String**](emit-text-mapped-enum-fields-as-enum-type.md) — Backlog, architecture
