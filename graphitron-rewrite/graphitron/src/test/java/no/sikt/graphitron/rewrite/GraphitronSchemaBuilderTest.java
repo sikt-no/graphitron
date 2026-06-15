@@ -7929,6 +7929,97 @@ class GraphitronSchemaBuilderTest {
                 var f = (UnclassifiedField) schema.field("Mutation", "updateFilm");
                 assertThat(f.rejection()).isInstanceOf(Rejection.AuthorError.Structural.class);
                 assertThat(f.reason()).contains("@condition", "@mutation field argument", "not supported");
+            }),
+
+        // ===== R310: forbidden directive on an otherwise-valid DML payload carrier =====
+        // The base SDL is the would-admit R258 bulk-update-payload fixture
+        // (UPDATE_BULK_PAYLOAD_MUTATION_FIELD); each case adds one DML-forbidden directive to the
+        // data field. Under ENFORCE the scan returns NotApplicable, the carrier is never promoted,
+        // and the return falls through to the ScalarReturnType arm of validateReturnType, where the
+        // R310 probe names the offending field/directive instead of the misdirected generic message.
+
+        R310_UPDATE_PAYLOAD_SPLIT_QUERY_FORBIDDEN_REJECTED(
+            "R310: @mutation(typeName: UPDATE) returning an otherwise-valid R258 bulk-update-payload "
+                + "carrier whose data field carries @splitQuery (DML-forbidden) → UnclassifiedField. "
+                + "Instead of the misdirected 'use ID or a @table type', the message names the data "
+                + "field and @splitQuery and appends the @service-carrier asymmetry note (R275).",
+            """
+            type Film @table(name: "film") { title: String }
+            type FilmsPayload { films: [Film!] @splitQuery }
+            input FilmUpdateInput @table(name: "film") { filmId: Int! @field(name: "film_id"), title: String }
+            type Query { x: String }
+            type Mutation {
+                updateFilmsPayload(in: [FilmUpdateInput!]!): FilmsPayload @mutation(typeName: UPDATE)
+            }
+            """,
+            schema -> {
+                var f = (UnclassifiedField) schema.field("Mutation", "updateFilmsPayload");
+                assertThat(f.reason())
+                    .contains("films", "@splitQuery", "@service")
+                    .doesNotContain("use ID or a @table type");
+            }),
+
+        R310_INSERT_PAYLOAD_SPLIT_QUERY_FORBIDDEN_REJECTED(
+            "R310: the same forbidden-@splitQuery carrier under @mutation(typeName: INSERT), which "
+                + "reaches validateReturnType through the inline INSERT path rather than "
+                + "classifyUpdateTableField. Two DML kinds through two distinct routing paths pin the "
+                + "'one arm covers all DML kinds' invariant.",
+            """
+            type Film @table(name: "film") { title: String }
+            type FilmsPayload { films: [Film!] @splitQuery }
+            input FilmInput @table(name: "film") { title: String }
+            type Query { x: String }
+            type Mutation {
+                createFilmsPayload(in: [FilmInput!]!): FilmsPayload @mutation(typeName: INSERT)
+            }
+            """,
+            schema -> {
+                var f = (UnclassifiedField) schema.field("Mutation", "createFilmsPayload");
+                assertThat(f.reason())
+                    .contains("films", "@splitQuery")
+                    .doesNotContain("use ID or a @table type");
+            }),
+
+        R310_UPDATE_PAYLOAD_CONDITION_FORBIDDEN_REJECTED(
+            "R310: a non-@splitQuery forbidden directive (@condition) on an otherwise-valid carrier "
+                + "data field → the targeted message names @condition and does NOT carry the "
+                + "@splitQuery-only asymmetry note. Pins message generality across the broad "
+                + "forbidden set.",
+            """
+            type Film @table(name: "film") { title: String }
+            type FilmsPayload { films: [Film!] @condition }
+            input FilmUpdateInput @table(name: "film") { filmId: Int! @field(name: "film_id"), title: String }
+            type Query { x: String }
+            type Mutation {
+                updateFilmsPayload(in: [FilmUpdateInput!]!): FilmsPayload @mutation(typeName: UPDATE)
+            }
+            """,
+            schema -> {
+                var f = (UnclassifiedField) schema.field("Mutation", "updateFilmsPayload");
+                assertThat(f.reason())
+                    .contains("films", "@condition")
+                    .doesNotContain("@splitQuery", "use ID or a @table type");
+            }),
+
+        R310_FORBIDDEN_DIRECTIVE_ON_NON_CARRIER_FALLS_THROUGH(
+            "R310 negative control (the would-admit gate): a forbidden directive (@splitQuery) on a "
+                + "payload that would NOT otherwise admit — two data-channel-shaped fields — still "
+                + "falls to the generic message. The probe re-runs the scan with the forbidden check "
+                + "disabled; that pass Rejects on the multi-data shape, so the probe does not over-fire.",
+            """
+            type Film @table(name: "film") { title: String }
+            type FilmsPayload { films: [Film!] @splitQuery, moreFilms: [Film!] }
+            input FilmInput @table(name: "film") { title: String }
+            type Query { x: String }
+            type Mutation {
+                createFilmsPayload(in: [FilmInput!]!): FilmsPayload @mutation(typeName: INSERT)
+            }
+            """,
+            schema -> {
+                var f = (UnclassifiedField) schema.field("Mutation", "createFilmsPayload");
+                assertThat(f.reason())
+                    .contains("use ID or a @table type")
+                    .doesNotContain("@splitQuery");
             });
 
         final String description;
