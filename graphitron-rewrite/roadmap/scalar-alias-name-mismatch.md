@@ -1,7 +1,7 @@
 ---
 id: R313
 title: "Scalar alias name mismatch: @scalarType registers under constant intrinsic name not the SDL name"
-status: Ready
+status: In Review
 bucket: bug
 priority: 1
 depends-on: []
@@ -41,6 +41,18 @@ Two items before Done:
    "shipped at `d82392e`", which is not a commit in the repo; the actual code commit is `adfaeff`. Correct it
    when re-shipping (per "Documentation names only live tests/code").
 
+### Resolution (Ready → In Review, 2026-06-15)
+
+Both items addressed:
+
+1. *Build-through test.* Added under §Implementation "Build-through coverage" below: the aliasing scalar now
+   lives in the `graphitron-sakila-example` fixture, and
+   `GraphQLQueryTest.aliasingScalar_registeredUnderSdlNameAndResolvesEndToEnd` assembles the generated
+   `GraphitronSchema.build()` and exercises the field end-to-end against PostgreSQL. Pre-fix, the
+   `@BeforeAll` `Graphitron.buildSchema(...)` threw `type LocalDate not found in schema`.
+2. *Stale SHA.* The §Implementation heading now references the live commit `adfaeff` (the transient
+   `d82392e` was rebased off the trunk line). Specific landing SHAs are recorded in `changelog.md` at Done.
+
 ## Root cause
 
 The bug bites whenever the SDL scalar name is an *alias* for the resolved constant. The
@@ -77,9 +89,9 @@ name hits the identical "registered under `BigDecimal`, referenced as `GraphQLBi
 The fix below covers both the `@scalarType` and convention entry points uniformly because the
 comparison lives in the resolver, below both.
 
-## Implementation (shipped at d82392e)
+## Implementation (core fix at adfaeff)
 
-Landed as designed, single commit:
+Landed as designed:
 
 * `ScalarTypeResolver` forks on the recovered constant's `getName()`: match -> `Resolved`;
   mismatch -> `Synthesised(javaType, sdlName, owner, field)`. The SDL name is threaded through
