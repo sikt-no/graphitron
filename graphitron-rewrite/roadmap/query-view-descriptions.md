@@ -1,7 +1,7 @@
 ---
 id: R309
 title: "Descriptions for query-as-view projections"
-status: Spec
+status: Ready
 bucket: feature
 priority: 7
 theme: docs
