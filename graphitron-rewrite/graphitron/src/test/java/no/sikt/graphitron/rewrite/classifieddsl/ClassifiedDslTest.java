@@ -4,6 +4,8 @@ import no.sikt.graphitron.rewrite.classifieddsl.ClassifiedCorpus.Example;
 import no.sikt.graphitron.rewrite.model.Carrier;
 import no.sikt.graphitron.rewrite.model.Intent;
 import no.sikt.graphitron.rewrite.model.Mapping;
+import no.sikt.graphitron.rewrite.model.SourceCardinality;
+import no.sikt.graphitron.rewrite.model.SourceShape;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -95,24 +97,38 @@ class ClassifiedDslTest {
 
     @Test
     void everyDimensionValueIsExercised() {
-        var carriers = EnumSet.noneOf(Carrier.class);
+        var carrierArms = new java.util.HashSet<String>();
         var intents = EnumSet.noneOf(Intent.class);
         var mappings = EnumSet.noneOf(Mapping.class);
+        var sourceShapes = EnumSet.noneOf(SourceShape.class);
+        var sourceCardinalities = EnumSet.noneOf(SourceCardinality.class);
 
         for (var example : ClassifiedCorpus.examples()) {
             for (var fc : ClassifiedHarness.classify(example.sdl()).fields()) {
-                carriers.add(fc.actual().carrier());
+                Carrier carrier = fc.actual().carrier();
+                carrierArms.add(carrier.getClass().getSimpleName());
+                if (carrier instanceof Carrier.Source source) {
+                    sourceShapes.add(source.shape());
+                    sourceCardinalities.add(source.cardinality());
+                }
                 intents.add(fc.actual().intent());
                 mappings.add(fc.actual().mapping());
             }
         }
 
-        assertThat(carriers)
-            .as("every Carrier value must be exercised by the corpus")
-            .containsExactlyInAnyOrder(Carrier.values());
+        assertThat(carrierArms)
+            .as("every Carrier arm must be exercised by the corpus")
+            .containsExactlyInAnyOrderElementsOf(ClassifiedHarness.carrierArmNames());
         assertThat(mappings)
             .as("every Mapping value must be exercised by the corpus")
             .containsExactlyInAnyOrder(Mapping.values());
+        assertThat(sourceShapes)
+            .as("both source-shape values must be exercised by Source-carried rows")
+            .containsExactlyInAnyOrder(SourceShape.values());
+        assertThat(sourceCardinalities)
+            .as("R305 builds only the One source-cardinality path; the Many arrival is R308 "
+                + "(service-list-payload-arrival), so no corpus row produces Many yet")
+            .containsExactly(SourceCardinality.One);
 
         var unexercisedAndUnexplained = EnumSet.allOf(Intent.class);
         unexercisedAndUnexplained.removeAll(intents);
@@ -130,9 +146,25 @@ class ClassifiedDslTest {
     @Test
     void carrierMirrorsAdapterValues() {
         assertThat(ClassifiedHarness.carrierEnumConstants())
-            .as("the SDL Carrier enum must mirror the Java Carrier value set the adapter produces; "
+            .as("the SDL Carrier enum must mirror the Java Carrier sealed-arm set the adapter produces; "
+                + "adding an arm to one side without the other fails here")
+            .containsExactlyInAnyOrderElementsOf(ClassifiedHarness.carrierArmNames());
+    }
+
+    @Test
+    void sourceShapeMirrorsAdapterValues() {
+        assertThat(ClassifiedHarness.sourceShapeEnumConstants())
+            .as("the SDL SourceShape enum must mirror the Java SourceShape value set; "
                 + "adding a value to one side without the other fails here")
-            .containsExactlyInAnyOrderElementsOf(enumNames(Carrier.values()));
+            .containsExactlyInAnyOrderElementsOf(enumNames(SourceShape.values()));
+    }
+
+    @Test
+    void sourceCardinalityMirrorsAdapterValues() {
+        assertThat(ClassifiedHarness.sourceCardinalityEnumConstants())
+            .as("the SDL SourceCardinality enum must mirror the Java SourceCardinality value set; "
+                + "adding a value to one side without the other fails here")
+            .containsExactlyInAnyOrderElementsOf(enumNames(SourceCardinality.values()));
     }
 
     @Test

@@ -1,7 +1,7 @@
 package no.sikt.graphitron.rewrite.model;
 
 /**
- * The <em>source</em> cardinality of a {@link Carrier#Source}-carried field: how many source
+ * The <em>source</em> cardinality of a {@link Carrier.Source}-carried field: how many source
  * objects arrive at the field across a single resolver dispatch (R305). It is the product of all
  * ancestor field cardinalities along the path from the operation root to the field, over the
  * {@code {One, Many}} semiring where {@link #One} is the identity and {@link #Many} absorbs

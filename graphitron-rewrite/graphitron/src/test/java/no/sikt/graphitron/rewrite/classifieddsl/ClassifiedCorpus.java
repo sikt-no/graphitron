@@ -119,11 +119,11 @@ public final class ClassifiedCorpus {
          */
         new Example("mapping", """
             type FilmStats {
-              count: Int @classified(carrier: Source, intent: Fetch, mapping: Field)
+              count: Int @classified(carrier: Source, intent: Fetch, mapping: Field, sourceShape: Record)
             }
 
             type FilmDetails {
-              stats: FilmStats @classified(carrier: Source, intent: Fetch, mapping: Field)
+              stats: FilmStats @classified(carrier: Source, intent: Fetch, mapping: Field, sourceShape: Record)
             }
 
             type Film @table(name: "film") {
@@ -156,7 +156,7 @@ public final class ClassifiedCorpus {
 
             type FilmDetails {
               language: Language @reference(path: [{key: "film_language_id_fkey"}])
-                @classified(carrier: Source, intent: Fetch, mapping: Table)
+                @classified(carrier: Source, intent: Fetch, mapping: Table, sourceShape: Record)
             }
 
             type Film @table(name: "film") {
@@ -178,7 +178,7 @@ public final class ClassifiedCorpus {
             type Language @table(name: "language") { name: String }
 
             type FilmDetails {
-              title: String @classified(carrier: Source, intent: Fetch, mapping: Field)
+              title: String @classified(carrier: Source, intent: Fetch, mapping: Field, sourceShape: Record)
             }
 
             type Film @table(name: "film") {
@@ -231,7 +231,7 @@ public final class ClassifiedCorpus {
         new Example("result-backing", """
             type PojoBacked @classifiedType(as: Backed) { id: ID }
             type JavaRecordBacked @classifiedType(as: JavaRecordType) {
-              name: String @classified(carrier: Source, intent: Fetch, mapping: Field)
+              name: String @classified(carrier: Source, intent: Fetch, mapping: Field, sourceShape: Record)
             }
             type JooqTableRecordBacked @classifiedType(as: JooqTableRecordType) { id: ID }
             type Query {
@@ -253,8 +253,8 @@ public final class ClassifiedCorpus {
          */
         new Example("error-field", """
             type MyError @error(handlers: [{handler: GENERIC, className: "java.lang.IllegalArgumentException"}]) {
-              path: [String!]! @classified(carrier: Source, intent: Fetch, mapping: Field)
-              message: String! @classified(carrier: Source, intent: Fetch, mapping: Field)
+              path: [String!]! @classified(carrier: Source, intent: Fetch, mapping: Field, sourceShape: Record)
+              message: String! @classified(carrier: Source, intent: Fetch, mapping: Field, sourceShape: Record)
             }
             type Query { x: String }
             """),
@@ -273,7 +273,7 @@ public final class ClassifiedCorpus {
             enum Severity { LOW HIGH }
             type ExtraFieldError @error(handlers: [{handler: GENERIC, className: "java.lang.IllegalArgumentException"}])
                 @classifiedType(as: ErrorType) {
-              path: [String!]! @classified(carrier: Source, intent: Fetch, mapping: Field)
+              path: [String!]! @classified(carrier: Source, intent: Fetch, mapping: Field, sourceShape: Record)
               message: String!
               severity: Severity!
             }
@@ -450,10 +450,10 @@ public final class ClassifiedCorpus {
             type Inventory @table(name: "inventory") { inventoryId: Int! @field(name: "inventory_id") }
             type FilmDetails {
               language(language_id: ID! @lookupKey): Language @reference(path: [{key: "film_language_id_fkey"}])
-                @classified(carrier: Source, intent: Lookup, mapping: Table)
+                @classified(carrier: Source, intent: Lookup, mapping: Table, sourceShape: Record)
               inventories: [Inventory!]!
                 @tableMethod(className: "no.sikt.graphitron.rewrite.TestTableMethodStub", method: "getInventory")
-                @classified(carrier: Source, intent: Fetch, mapping: Table)
+                @classified(carrier: Source, intent: Fetch, mapping: Table, sourceShape: Record)
             }
             type Film @table(name: "film") { details: FilmDetails }
             type Query {
@@ -564,7 +564,7 @@ public final class ClassifiedCorpus {
             }
             union DeleteFilmsError = FilmErr
             type FilmIdsPayload {
-              filmIds: [ID] @nodeId(typeName: "Film") @classified(carrier: Source, intent: Fetch, mapping: Column)
+              filmIds: [ID] @nodeId(typeName: "Film") @classified(carrier: Source, intent: Fetch, mapping: Column, sourceShape: Record)
               errors: [DeleteFilmsError]
             }
             type Query { x: String }
@@ -648,7 +648,7 @@ public final class ClassifiedCorpus {
             interface Node { id: ID! }
             type Film implements Node @table(name: "film") @node { id: ID! @nodeId title: String }
             type FilmDetails { title: String }
-            type FilmPayload { film: Film @classified(carrier: Source, intent: Fetch, mapping: Table) }
+            type FilmPayload { film: Film @classified(carrier: Source, intent: Fetch, mapping: Table, sourceShape: Record) }
             input FilmKeyInput @table(name: "film") { filmId: Int! @field(name: "film_id") }
             input FilmUpdateInput @table(name: "film") { filmId: Int! @field(name: "film_id") title: String }
             input FilmTitleInput @table(name: "film") { title: String @field(name: "title") }

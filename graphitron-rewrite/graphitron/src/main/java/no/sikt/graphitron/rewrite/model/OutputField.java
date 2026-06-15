@@ -34,8 +34,8 @@ public sealed interface OutputField extends GraphitronField permits RootField, C
     /**
      * The {@code carrier} dimension (R299): the GraphQL parent-type category this field is defined on,
      * which <em>is</em> its field type. Defaulted per carrier root ({@link QueryField} →
-     * {@link Carrier#Query}, {@link MutationField} → {@link Carrier#Mutation}, {@link ChildField} →
-     * {@link Carrier#Source}); it is the legality gate over {@link #intent()} (write intents only on
+     * {@link Carrier.Query}, {@link MutationField} → {@link Carrier.Mutation}, {@link ChildField} →
+     * {@link Carrier.Source}); it is the legality gate over {@link #intent()} (write intents only on
      * {@code Mutation}, {@code NodeResolve} only on {@code Query}, {@code Nesting} only on
      * {@code Source}).
      */

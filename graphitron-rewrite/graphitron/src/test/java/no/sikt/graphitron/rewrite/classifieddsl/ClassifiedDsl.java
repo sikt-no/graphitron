@@ -53,6 +53,10 @@ public final class ClassifiedDsl {
 
         enum Mapping { Table TableConnection Column Record Field }
 
+        enum SourceShape { Table Record }
+
+        enum SourceCardinality { One Many }
+
         enum TypeVerdict {
           TableType NodeType TableInterfaceType
           JavaRecordType Backed JooqRecordType JooqTableRecordType
@@ -62,7 +66,10 @@ public final class ClassifiedDsl {
           ConnectionType EdgeType PageInfoType
         }
 
-        directive @classified(carrier: Carrier!, intent: Intent!, mapping: Mapping!) on FIELD_DEFINITION
+        directive @classified(
+          carrier: Carrier!, intent: Intent!, mapping: Mapping!
+          sourceShape: SourceShape, sourceCardinality: SourceCardinality
+        ) on FIELD_DEFINITION
 
         directive @classifiedType(as: TypeVerdict!) on
           OBJECT | INTERFACE | UNION | INPUT_OBJECT | ENUM | SCALAR
