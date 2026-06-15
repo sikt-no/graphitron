@@ -40,13 +40,19 @@ public sealed interface ChildField extends OutputField
 
     /**
      * The shape of what arrives at {@code env.getSource()} for this field (R305). A projection of
-     * the parent producer's {@link DomainReturnType}: a {@code @table}-backed (catalog) parent puts
-     * a table row ({@link SourceShape#Table}); a {@code @service} / DML payload or DTO parent hands
-     * back a domain record ({@link SourceShape#Record}). The classifier already projected the
-     * parent's backing into this leaf's identity ({@code RecordTableField} vs {@code TableField},
-     * {@code RecordField} vs {@code ColumnField}, the {@code SingleRecord*} / {@code Errors} payload
-     * fields), so the leaf-exhaustive switch is that projection; a new leaf forces a source-shape
-     * decision the same way {@link #intent()} / {@link #mapping()} do.
+     * the parent type's backing: a {@code @table}-backed (catalog) parent puts a table row
+     * ({@link SourceShape#Table}); a {@code @service} / DML payload or DTO parent hands back a domain
+     * record ({@link SourceShape#Record}). The classifier already projected the parent's backing into
+     * this leaf's identity ({@code RecordTableField} vs {@code TableField}, {@code RecordField} vs
+     * {@code ColumnField}, the {@code SingleRecord*} / {@code Errors} payload fields), so the
+     * leaf-exhaustive switch is that projection; a new leaf forces a source-shape decision the same
+     * way {@link #intent()} / {@link #mapping()} do.
+     *
+     * <p>The invariant is pinned by {@code SourceShapeProjectionTest}: for every classified
+     * {@code ChildField} the R281 corpus demonstrates, this leaf-derived value is cross-checked
+     * against the parent GraphQL type's independently-classified backing (a {@code TableBackedType}
+     * yields {@link SourceShape#Table}, any other backing {@link SourceShape#Record}), so a leaf
+     * wired to the wrong arm cannot silently diverge from the projection it claims to be.
      */
     default SourceShape sourceShape() {
         return switch (this) {
