@@ -94,6 +94,26 @@ Landed as designed, single commit:
   bare constant); `GraphitronSchemaBuilderTest.DIRECTIVE_BEATS_CONVENTION` updated to the corrected
   `Synthesised` outcome (it was latently broken before). Full `mvn install -Plocal-db` green.
 
+### Build-through coverage (added in In Review, per reviewer)
+
+The string-match generator test above can pass while the generated `build()` still throws, so it
+does not pin the runtime regression (spec Tests §3, "the real proof"). Added the aliasing scalar to
+the `graphitron-sakila-example` fixture as a genuine build-through:
+
+* `schema.graphqls`: `scalar LocalDate @scalarType(scalar: "graphql.scalars.ExtendedScalars.Date")`
+  plus `Customer.createDate: LocalDate @field(name: "CREATE_DATE")`, backed by the
+  `customer.create_date` DATE column (jOOQ maps SQL `date` -> `java.time.LocalDate`, matching the
+  scalar's recovered type).
+* `graphitron-sakila-example/pom.xml`: `graphql-java-extended-scalars` at compile scope so the
+  plugin's codegen loader (`project.getCompileClasspathElements()`) resolves the constant and the
+  generated `GraphitronSchema.build()` compiles/runs against it.
+* `GraphQLQueryTest.aliasingScalar_registeredUnderSdlNameAndResolvesEndToEnd`: asserts the
+  assembled schema registers `LocalDate` (not `Date`) and that `{ customers { createDate } }`
+  returns ISO date strings end-to-end. The generated `GraphitronSchema.java` confirms the
+  `scalar_LocalDate()` helper path; pre-fix, `Graphitron.buildSchema(...)` in `@BeforeAll` threw
+  `type LocalDate not found in schema`.
+* `FixtureWarningsGateTest`: pinned warning line bumped 170 -> 177 for the 7-line scalar block.
+
 ## Design
 
 The alias mechanism already exists in the model. `ScalarResolution.Synthesised(javaType, sdlName,

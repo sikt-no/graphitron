@@ -103,6 +103,33 @@ class GraphQLQueryTest {
         return graphql.execute(input);
     }
 
+    // ===== R313: aliasing scalar build-through + execution =====
+
+    @Test
+    void aliasingScalar_registeredUnderSdlNameAndResolvesEndToEnd() {
+        // Build-through proof: Graphitron.buildSchema(...) in @BeforeAll already assembles this
+        // schema; before the fix it threw "type LocalDate not found in schema" because the
+        // LocalDate scalar (an alias of ExtendedScalars.Date, intrinsic name "Date") was
+        // registered under "Date". Assert the scalar is registered under its SDL name so the
+        // Customer.createDate typeRef("LocalDate") resolves.
+        var assembled = graphql.getGraphQLSchema();
+        assertThat(assembled.getType("LocalDate"))
+            .as("aliasing scalar must register under its SDL name, not the constant's name")
+            .isInstanceOf(graphql.schema.GraphQLScalarType.class);
+        assertThat(assembled.getType("Date"))
+            .as("the constant's intrinsic name must not leak into the schema")
+            .isNull();
+
+        // Execution proof: the field actually projects the customer.create_date DATE column and
+        // serialises it through the Date coercing to an ISO-8601 date string.
+        Map<String, Object> data = execute("{ customers { createDate } }");
+        assertThat(data).extractingByKey("customers", as(LIST))
+            .hasSize(5)
+            .allSatisfy(c -> assertThat(((Map<String, Object>) c).get("createDate"))
+                .asInstanceOf(STRING)
+                .matches("\\d{4}-\\d{2}-\\d{2}"));
+    }
+
     // ===== Multi-field root query =====
 
     @Test

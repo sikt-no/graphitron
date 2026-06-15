@@ -88,6 +88,17 @@
             <artifactId>graphql-java</artifactId>
         </dependency>
         <!--
+            Compile scope: this consumer declares `scalar LocalDate @scalarType(scalar:
+            "graphql.scalars.ExtendedScalars.Date")` (R313 alias fixture), so the extended-scalars
+            constant must be on the codegen classpath (the plugin resolves @scalarType via
+            project.getCompileClasspathElements()) and on the compile/runtime classpath (the
+            generated GraphitronSchema.build() references ExtendedScalars.Date.getCoercing()).
+        -->
+        <dependency>
+            <groupId>com.graphql-java</groupId>
+            <artifactId>graphql-java-extended-scalars</artifactId>
+        </dependency>
+        <!--
             Compile scope: the generated ConstraintViolations helper and the per-fetcher
             wrapper's validator pre-step reference jakarta.validation.* (Validator,
             ConstraintViolation, Path), so the API jar must be on the main compile
