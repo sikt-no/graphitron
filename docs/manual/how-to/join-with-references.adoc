@@ -121,6 +121,23 @@ But two `language`-pointing FKs (e.g. a hypothetical `original_language_id` alon
 
 Setting both `key:` and `table:` is allowed but redundant; the generator validates they agree.
 
+== How `table`, `key`, and `condition` combine
+
+Each `ReferenceElement` carries three optional fields. They are not independent toggles: which ones you set, and whether the catalog can disambiguate, decides how the hop resolves. The role of `condition:` in particular flips depending on whether `table:`/`key:` accompany it, joining `ON` predicate when alone, extra constraint when paired.
+
+[cols="2,5",options="header"]
+|===
+| Fields set | How the hop resolves
+| `key:` alone | The explicit form. `table:` is inferred from the FK target. Always unambiguous; this is what a multi-FK pair must use.
+| `table:` alone | The catalog-driven shortcut. `key:` is inferred when exactly one FK exists between the source and destination tables; an ambiguous pair classifies as `UnclassifiedField` and the build rejects with the candidate FKs listed.
+| `key:` + `table:` | Allowed but redundant. The generator validates the two agree and fails if they do not.
+| `condition:` alone | Treated as the join `ON` predicate: the generator joins the field's target table and applies the returned `org.jooq.Condition` as the join condition. *Classify-only today* (see <<condition-form>>): the schema validates but the field throws at request time.
+| `condition:` + `key:`/`table:` | `condition:` acts as an *extra* constraint on the hop joined via the FK, not as the `ON` predicate. Mixed paths that combine an FK hop with a `condition:`-only terminal hop are reserved; treat as not-yet-supported.
+| none of the three | Not a valid hop. `path:` must be non-empty and each element must pin its hop somehow.
+|===
+
+The `condition:`-bearing rows describe the intended contract; the runtime arm has not shipped. See the `condition:` section below before relying on either.
+
 == Inline cross-table columns
 
 `@reference` is most often seen on object-typed fields, but it works on scalar fields too: the parent type pulls a column from a referenced table directly into its own shape, with no intermediate object.
@@ -175,6 +192,7 @@ The query's return type `Customer` has `@table(name: "customer")`, so the input 
 
 This is the input-side mirror of the inline-column shape: the input field carries a value that the generator resolves through the FK path, not by name on the parent table. The full set of input-field directives (`@field`, `@condition`, `@reference`) interoperate; see xref:condition-cascade.adoc[How-to: Stacking and overriding conditions] for the input-carrier rules and how the input's `@table` cascade interacts with the per-field directives.
 
+[#condition-form]
 == The `condition:` form (classify-only today)
 
 `ReferenceElement` has a third option: `condition:` is an `ExternalCodeReference` to a Java method that returns a `org.jooq.Condition` to use as the join predicate. The classifier accepts it, but the generator's emitter for `ConditionJoin` paths is currently a runtime-throwing stub:
