@@ -94,10 +94,11 @@ The carrier is *position* and also the **legality gate** the producer used to im
 on `Mutation`, `NodeResolve`/`EntityResolve` only on `Query`, `Nesting` only on `Source`.
 
 The `Source` arm carries payload the root arms do not: a **source-shape** (`Table | Record`) and a
-**source cardinality** (`One | Many`) for what arrives at `env.getSource()`. Source-shape is the input-side
-mirror of `mapping`'s `Table:Column :: Record:Field`: `Table` when the parent producer put a catalog row at
-the source, `Record` when it handed back a domain record (an `@service` / DML payload, or a DTO parent). It
-is a projection of the parent producer's `domainReturnType`, not a separately-asserted axis. Source
+**source cardinality** (`One | Many`) for what arrives at `env.getSource()`. Source-shape carries the same
+catalog-vs-domain split `mapping` splits on (`Table`/`Column` catalog vs `Record`/`Field` domain), collapsed
+to the row granularity a source always has: `Table` when the parent producer put a catalog row at the source,
+`Record` when it handed back a domain record (an `@service` / DML payload, or a DTO parent). It is a
+projection of the parent producer's `domainReturnType`, not a separately-asserted axis. Source
 cardinality is the product of all ancestor field cardinalities (one `Many` ancestor makes every descendant
 `Many`); see **bulk is a slot** below. `Query` / `Mutation` have no source, so a sealed `Carrier` makes the
 payload unrepresentable on those arms; R305 reverses the earlier flat-enum framing because these forks are
