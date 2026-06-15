@@ -67,48 +67,16 @@ combined with the field holding records to project**, where "holds records" is *
 received half that intent structurally cannot. Both re-fetch, both re-project via an idx-ordered
 correlation, and `OrderingOwnedByProducer` dissolves in both.
 
-## Slice 1: Amend R222 (the carrier dimension)
+## Slice 1: Amend R222 (the carrier dimension) — shipped at `b3f0f68`
 
-Documentation only: amend `roadmap/dimensional-model-pivot.md` so the model doc is the source of truth before
-any code moves. Three changes:
-
-- **Expand the carrier dimension.** `Source` gains a source-shape (`Table | Record`) and a cardinality
-  (`One | Many`). `Record` source-shape is the parent producer's `domainReturnType` (the reflect side);
-  `Table` is a catalog-backed parent. `Query` / `Mutation` carriers have no source.
-- **Re-derive re-fetch.** Replace `(Service | DML intent) x Table mapping` (pivot doc lines 116-118) with
-  `Table mapping` combined with `holds-records`, where `holds-records` is `Source{Record}` (received) or a
-  `Service` / DML intent (produced). This is the derivation that catches SRTF without lying about its intent.
-- **Reverse the flat-enum decision.** `Carrier.java:12` deliberately made the carrier "a flat typed enum,
-  carries no per-value payload". Source-shape and cardinality give it payload. The reversal is justified by
-  the sealed-hierarchy principle: source-shape and cardinality are load-bearing forks (re-fetch, the
-  DataLoader-skip optimisation, list-ordering determinism), so they earn type-system representation rather
-  than staying smeared across leaf identity and `SourceKey`. Record the amendment in the pivot doc and note
-  that the `@classified(carrier:)` corpus surface grows accordingly.
-
-Cardinality here is the **source** cardinality (how many source objects arrive), kept distinct from target
-cardinality (rows per source object), which continues to drive within-group `orderBy`. R222 line 143
-("bulk is a slot, not an intent") already locates cardinality as a slot; this names which axis it sits on.
-
-**R222 editing targets (Slice 1 is integration, not a bullet drop; match R222's terse principle-driven voice).**
-The amendments land in four sections of `dimensional-model-pivot.md`, all under or near §"Field-side dimensional
-model (refined 2026-06-13)":
-
-- The **`carrier` axis** list (`Query` / `Mutation` / `Source` → `QueryField` / `MutationField` / `SourceField`):
-  add that the `Source` arm carries source-shape (`Table | Record`) and source cardinality (`One | Many`) as
-  payload, on the same `Table:Column :: Record:Field` mirror/reflect vocabulary the `mapping` axis uses; source-shape
-  is a projection of the parent producer's `domainReturnType` (catalog → `Table`, `@service`/DML payload → `Record`).
-- The **derived-layer `re-fetch` bullet**: re-derive from `(Service | DML intent) × Table mapping` to
-  `Table mapping × holds-records` (`holds-records` = `Source{Record}` received, or a Service/DML intent produced).
-  Keep "now derived rather than a distinct leaf" but extend it to catch the received-record half.
-- The **"bulk is a slot" sentence**: name the axis as *source* cardinality, distinct from target/per-key cardinality
-  (`SourceKey.Cardinality`), so the two notions don't blur.
-- The **§"Leaf dissolution and collapse" `SingleRecordTableField` bullet**: reframe from "an optimisation to skip the
-  DataLoader … that skip is a derived detail" to the source-shape framing (a `Record`→`Table` re-fetch that unifies
-  with STF on one `Lookup`/`QueryService` axis), plus a one-line flat-enum-reversal note (`Carrier` gains payload).
-
-As-shipped reality to reflect (Slice 2, `355f9b5`): source-shape is materialised as a leaf-exhaustive switch
-(`ChildField.sourceShape()`), not a separately-stored per-leaf component; source cardinality is constant `One` until
-R308 builds the `Many` arrival. R222 should describe the model, not over-claim the `Many` derivation as present.
+Documentation-only amendment to `dimensional-model-pivot.md` §"Field-side dimensional model", four sections:
+the `carrier` axis gains the `Source`-arm source-shape (`Table | Record`, the input-side mirror of
+`mapping`'s `Table:Column :: Record:Field`, projected from the parent's `domainReturnType`) and source
+cardinality (`One | Many`, the ancestor-cardinality product); the derived-layer re-fetch bullet re-derives to
+`Table mapping × holds-records` (`Source{Record}` received or a Service/DML intent produced) with the "Why the
+producer dimension dissolves" line following; the "bulk is a slot" sentence names the source/target cardinality
+split (`SourceKey.Cardinality` is the target axis); and the `SingleRecordTableField` leaf-dissolution bullet
+reframes to the source-shape unification with `ServiceTableField`. R222 stayed `Spec` (body-only edit).
 
 Source cardinality is **the product of all ancestor field cardinalities** along the path from the operation
 root to the field, over the `{One, Many}` semiring where `One` is the identity and `Many` absorbs
