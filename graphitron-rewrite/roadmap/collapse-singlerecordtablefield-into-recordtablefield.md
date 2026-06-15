@@ -1,7 +1,7 @@
 ---
 id: R305
 title: Expand the carrier dimension with source-shape and cardinality; separate re-fetch from intent and collapse SingleRecordTableField into RecordTableField
-status: In Progress
+status: Spec
 bucket: structural
 priority: 4
 theme: structural-refactor
