@@ -7,7 +7,7 @@ priority: 4
 theme: structural-refactor
 depends-on: []
 created: 2026-06-14
-last-updated: 2026-06-14
+last-updated: 2026-06-15
 ---
 
 # Expand the carrier dimension with source-shape and cardinality; unify the service/DML to @table re-fetch as a source-keyed Lookup
@@ -88,6 +88,26 @@ any code moves. Three changes:
 Cardinality here is the **source** cardinality (how many source objects arrive), kept distinct from target
 cardinality (rows per source object), which continues to drive within-group `orderBy`. R222 line 143
 ("bulk is a slot, not an intent") already locates cardinality as a slot; this names which axis it sits on.
+
+Source cardinality is **the product of all ancestor field cardinalities** along the path from the operation
+root to the field, over the `{One, Many}` semiring where `One` is the identity and `Many` absorbs
+(`One x One = One`, `One x Many = Many`, `Many x Many = Many`). A field is `Source{One}` only when every
+ancestor field is single-valued, and `Source{Many}` the moment any one ancestor is list-valued: a single
+`Many` ancestor makes every descendant `Many`. It is therefore a path-accumulated property of *where the
+field sits in the selection tree*, read off the field's ancestry (the reachability walk R279 gives each
+field that ancestry), not a local property of the field's own return type or wrapper.
+
+This is **very different from `SourceKey.Cardinality`** (`SourceKey.java:110`), which is the *per-key* count:
+how many source rows the rows-method body yields for a single DataLoader key (`ONE` = one row per key, `MANY`
+= a list / accessor walk per key). That is a local, target-side notion (rows per source object), the very
+axis this slice keeps source cardinality distinct from. The implementer must not derive `Source{cardinality}`
+from `SourceKey.cardinality()`: the two answer different questions ("how many source objects arrive" versus
+"how many rows per key") and vary independently. A single-valued child under a list-valued parent is
+`SourceKey.Cardinality.ONE` yet `Source{Many}` (many parents arrive, one row each); a list-valued child under
+a single root is `SourceKey.Cardinality.MANY` yet `Source{One}` (one source object, many rows). The product
+rule is the source axis; `SourceKey.Cardinality` stays the target axis, and the broader disentangling of the
+`wrapper().isList()` source-vs-target conflation remains the out-of-scope `SourceKey.Cardinality` cleanup
+below.
 
 ## Slice 2: Materialise `Source{shape, cardinality}` and assert it in the corpus
 
