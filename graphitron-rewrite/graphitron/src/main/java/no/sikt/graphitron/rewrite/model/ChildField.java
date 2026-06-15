@@ -26,8 +26,59 @@ public sealed interface ChildField extends OutputField
             ChildField.SingleRecordIdFieldFromReturning,
             ChildField.ErrorsField {
 
-    /** Every {@code ChildField} leaf is on a non-root parent type, so the carrier is {@link Carrier#Source}. */
-    @Override default Carrier carrier() { return Carrier.Source; }
+    /**
+     * Every {@code ChildField} leaf is on a non-root parent type, so the carrier is
+     * {@link Carrier.Source}, materialised with this field's {@link #sourceShape()} and source
+     * {@link SourceCardinality}. R305 builds only the {@link SourceCardinality#One} path; the
+     * ancestor-product {@link SourceCardinality#Many} arrival is R308.
+     */
+    @Override default Carrier carrier() {
+        return new Carrier.Source(sourceShape(), SourceCardinality.One);
+    }
+
+    /**
+     * The shape of what arrives at {@code env.getSource()} for this field (R305). A projection of
+     * the parent producer's {@link DomainReturnType}: a {@code @table}-backed (catalog) parent puts
+     * a table row ({@link SourceShape#Table}); a {@code @service} / DML payload or DTO parent hands
+     * back a domain record ({@link SourceShape#Record}). The classifier already projected the
+     * parent's backing into this leaf's identity ({@code RecordTableField} vs {@code TableField},
+     * {@code RecordField} vs {@code ColumnField}, the {@code SingleRecord*} / {@code Errors} payload
+     * fields), so the leaf-exhaustive switch is that projection; a new leaf forces a source-shape
+     * decision the same way {@link #intent()} / {@link #mapping()} do.
+     */
+    default SourceShape sourceShape() {
+        return switch (this) {
+            // Catalog-backed (table) parents: the source is a table row.
+            case ColumnField ignored -> SourceShape.Table;
+            case ColumnReferenceField ignored -> SourceShape.Table;
+            case ParticipantColumnReferenceField ignored -> SourceShape.Table;
+            case CompositeColumnField ignored -> SourceShape.Table;
+            case CompositeColumnReferenceField ignored -> SourceShape.Table;
+            case TableField ignored -> SourceShape.Table;
+            case SplitTableField ignored -> SourceShape.Table;
+            case LookupTableField ignored -> SourceShape.Table;
+            case SplitLookupTableField ignored -> SourceShape.Table;
+            case TableInterfaceField ignored -> SourceShape.Table;
+            case TableMethodField ignored -> SourceShape.Table;
+            case ServiceTableField ignored -> SourceShape.Table;
+            case ServiceRecordField ignored -> SourceShape.Table;
+            case ComputedField ignored -> SourceShape.Table;
+            case NestingField ignored -> SourceShape.Table;
+            case InterfaceField ignored -> SourceShape.Table;
+            case UnionField ignored -> SourceShape.Table;
+            // Record-backed parents (DTO batching, @service / DML payload carriers): the source is a
+            // producer-handed domain record.
+            case RecordTableField ignored -> SourceShape.Record;
+            case RecordLookupTableField ignored -> SourceShape.Record;
+            case RecordTableMethodField ignored -> SourceShape.Record;
+            case RecordField ignored -> SourceShape.Record;
+            case PropertyField ignored -> SourceShape.Record;
+            case SingleRecordTableField ignored -> SourceShape.Record;
+            case SingleRecordIdField ignored -> SourceShape.Record;
+            case SingleRecordIdFieldFromReturning ignored -> SourceShape.Record;
+            case ErrorsField ignored -> SourceShape.Record;
+        };
+    }
 
     @Override default Intent intent() {
         return switch (this) {

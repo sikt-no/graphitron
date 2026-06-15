@@ -23,6 +23,8 @@ import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.Intent;
 import no.sikt.graphitron.rewrite.model.Mapping;
 import no.sikt.graphitron.rewrite.model.OutputField;
+import no.sikt.graphitron.rewrite.model.SourceCardinality;
+import no.sikt.graphitron.rewrite.model.SourceShape;
 
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
@@ -122,7 +124,30 @@ public final class ClassifiedHarness {
     }
 
     private static Carrier carrierArg(Directive d) {
-        return Carrier.valueOf(enumArg(d, "carrier"));
+        String c = enumArg(d, "carrier");
+        return switch (c) {
+            case "Query" -> new Carrier.Query();
+            case "Mutation" -> new Carrier.Mutation();
+            case "Source" -> new Carrier.Source(sourceShapeArg(d), sourceCardinalityArg(d));
+            default -> throw new AssertionError("@classified: unknown carrier '" + c + "'");
+        };
+    }
+
+    /**
+     * The {@code Source}-arm source-shape (R305). Defaults to {@link SourceShape#Table} (the common
+     * catalog-backed case) when the arg is absent, so only the record-source rows declare
+     * {@code sourceShape: Record} explicitly. A row that should be {@code Record} but omits the arg
+     * fails loudly: the expected {@code Source(Table, ...)} mismatches the actual {@code Source(Record, ...)}.
+     */
+    private static SourceShape sourceShapeArg(Directive d) {
+        Argument a = d.getArgument("sourceShape");
+        return a == null ? SourceShape.Table : SourceShape.valueOf(((EnumValue) a.getValue()).getName());
+    }
+
+    /** The {@code Source}-arm source-cardinality (R305); defaults to {@link SourceCardinality#One} (the only path R305 builds). */
+    private static SourceCardinality sourceCardinalityArg(Directive d) {
+        Argument a = d.getArgument("sourceCardinality");
+        return a == null ? SourceCardinality.One : SourceCardinality.valueOf(((EnumValue) a.getValue()).getName());
     }
 
     private static Intent intentArg(Directive d) {
@@ -159,6 +184,23 @@ public final class ClassifiedHarness {
     /** The {@code Carrier} enum constants as declared in {@link ClassifiedDsl#PRELUDE}. */
     public static Set<String> carrierEnumConstants() {
         return preludeEnumConstants("Carrier");
+    }
+
+    /** The simple names of the sealed {@link Carrier} arms (the live carrier-category set). */
+    public static Set<String> carrierArmNames() {
+        return java.util.Arrays.stream(Carrier.class.getPermittedSubclasses())
+            .map(Class::getSimpleName)
+            .collect(java.util.stream.Collectors.toSet());
+    }
+
+    /** The {@code SourceShape} enum constants as declared in {@link ClassifiedDsl#PRELUDE}. */
+    public static Set<String> sourceShapeEnumConstants() {
+        return preludeEnumConstants("SourceShape");
+    }
+
+    /** The {@code SourceCardinality} enum constants as declared in {@link ClassifiedDsl#PRELUDE}. */
+    public static Set<String> sourceCardinalityEnumConstants() {
+        return preludeEnumConstants("SourceCardinality");
     }
 
     /** The {@code Intent} enum constants as declared in {@link ClassifiedDsl#PRELUDE}. */

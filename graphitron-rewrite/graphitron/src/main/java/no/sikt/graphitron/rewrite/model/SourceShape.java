@@ -1,7 +1,7 @@
 package no.sikt.graphitron.rewrite.model;
 
 /**
- * The shape of what arrives at {@code env.getSource()} for a {@link Carrier#Source}-carried field:
+ * The shape of what arrives at {@code env.getSource()} for a {@link Carrier.Source}-carried field:
  * the source-side endpoint of the field's edge, on the same mirror/reflect vocabulary
  * {@link Mapping} uses for the output (R305).
  *
@@ -20,7 +20,7 @@ package no.sikt.graphitron.rewrite.model;
  *
  * <p>Source-shape is a projection of the parent producer's {@link OutputField#domainReturnType()}
  * (the catalog-vs-domain split), materialised onto the {@link Carrier.Source} arm at the classify
- * boundary, not a second independently-classified fact. {@link Carrier#Query} / {@link Carrier#Mutation}
+ * boundary, not a second independently-classified fact. {@link Carrier.Query} / {@link Carrier.Mutation}
  * carriers have no source and therefore no source-shape.
  */
 public enum SourceShape {

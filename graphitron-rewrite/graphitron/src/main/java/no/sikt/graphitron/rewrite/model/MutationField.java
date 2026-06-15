@@ -21,8 +21,8 @@ public sealed interface MutationField extends RootField, WithErrorChannel
             MutationField.MutationUpdatePayloadField, MutationField.MutationBulkUpdatePayloadField,
             MutationField.MutationDeletePayloadField, MutationField.MutationBulkDeletePayloadField {
 
-    /** Every {@code MutationField} leaf is on the {@code Mutation} root, so the carrier is {@link Carrier#Mutation}. */
-    @Override default Carrier carrier() { return Carrier.Mutation; }
+    /** Every {@code MutationField} leaf is on the {@code Mutation} root, so the carrier is {@link Carrier.Mutation}. */
+    @Override default Carrier carrier() { return new Carrier.Mutation(); }
 
     @Override default Intent intent() {
         return switch (this) {
