@@ -16,7 +16,11 @@ last-updated: 2026-06-15
 cardinalities. A producer (`@service` method or DML write) hands back a domain record, and the field
 re-projects the `@table` columns the selection asks for by correlating the record's keys to the catalog rows.
 RTF does this for many arriving source records (DataLoader-batched); SRTF is the single-source case, modeled
-as a separate leaf only to skip the DataLoader. That skip is a derived emit detail, not a distinct operation.
+as a separate leaf only to skip the DataLoader. That skip is an optimisation, not a distinct operation: the
+single-source case is correct through the batched path too (a one-element batch), just unoptimised. So R305
+collapses SRTF into RTF and conservatively hard-codes source cardinality to `Many` (always batch), which is
+never wrong; the inline single-source optimisation is kept as code but stays dead until R279 computes the true
+ancestor-product cardinality that would let a field declare `One`.
 
 The deeper defect is dimensional, and it is two things. The model never asserted **what arrives at the
 field's source**; and it conflated **re-fetch with intent**. Intent is about the target and how arguments are
@@ -51,7 +55,8 @@ off a producer record while its intent stays whatever the target dictates (`Fetc
 **`Table` mapping combined with the field holding records to project**, where "holds records" is *received a
 record* (`Source{Record}`) or *produced one* (a Service / DML intent).
 
-The family on the re-fetch axis, intents left intact:
+The family on the re-fetch axis (the cardinality column is the true / eventual value; R305 conservatively
+materialises `Many` for all, see below), intents left intact:
 
 | field | source | intent | mapping | re-fetch |
 |---|---|---|---|---|
@@ -63,9 +68,13 @@ The family on the re-fetch axis, intents left intact:
 | `Film.rating` (service scalar) | `Source{Table, *}` | `QueryService` | `Field` | no (reflect-side output) |
 
 SRTF is RTF at cardinality `One`: the only model difference is the source cardinality, so the separate leaf
-collapses (the DataLoader skip at `One` is a derived emit detail). And because a re-fetch field's source
-record and target table are the same entity, **the source key is the target key**: the re-fetch key carries
-the target table and its identifying columns once, which is the `SourceKey` cleanup this item takes.
+collapses. R305 hard-codes the slot to `Many` (the absorbing element, hence the safe over-approximation):
+every re-fetch field batches, which is always correct; the `One` inline-skip is dead code until R279 computes
+the true ancestor product. The dispatch reads the slot honestly (`Many` → batched, live; `One` → inline,
+dead), so it never routes to a path R305 hasn't wired. And because a re-fetch field's source record and target
+table are the same entity, **the source key is the target key**: the re-fetch key carries the target table and
+its identifying columns once, read directly off the record with no FK hop, which is the `SourceKey` cleanup
+this item takes for the source=target cases.
 
 ## Slice 1: Amend R222 (the carrier dimension) — shipped at `b3f0f68`
 
@@ -125,6 +134,13 @@ the writes, `QueryService`); it does not move because a field re-fetches. Re-fet
 target table must be re-projected from keys held at the source." SRTF keeps intent `Fetch`; it does not become
 `Lookup`.
 
+A second correction (settled 2026-06-15, after review): R305 does not compute the ancestor-product source
+cardinality (that needs R279's walk, and is R308's scope), so it cannot route the collapse on a true `One` vs
+`Many`. Instead it hard-codes source cardinality to `Many` (the absorbing element): every re-fetch field
+batches, which is always correct, and the inline single-source optimisation is kept as dead code behind the
+`One` branch until R279 makes the slot real. The dispatch reads the slot, so there is no unimplementable fork,
+nothing reads `One` in R305, and the existing batched `RecordTableField` is untouched.
+
 - **Re-fetch derivation (orthogonal to intent).** `OutputField.requiresReFetch()` derives from
   `Table` mapping combined with *holds-records* (`Source{Record}` received, or a Service / DML intent
   produced), not from intent alone. Applied honestly this catches the whole family: SRTF, `RecordTableField`
@@ -141,20 +157,24 @@ target table must be re-projected from keys held at the source." SRTF keeps inte
   agrees with the sealed arm of its parent producer's `domainReturnType()` (`Record` / `TableRecord` →
   `SourceShape.Record`; catalog-`Table` parent → `SourceShape.Table`). This is the source-shape analogue of
   the `dispatchPerformsReFetch` mirror and converts the javadoc invariant into a pinned one.
-- **Collapse SRTF into RTF (source cardinality is the only difference).** SRTF is RTF at source cardinality
-  `One`. Delete the `SingleRecordTableField` leaf; its two construction sites (the R178 DML-carrier arm and the
-  R275 `@service`-carrier arm in `FieldBuilder`) produce `RecordTableField` carrying source cardinality `One`.
-  Intent stays `Fetch`. `RecordLookupTableField` is RTF's `@lookupKey` sibling (intent `Lookup`); both
-  re-fetch. `One` re-projects inline with **no DataLoader**; `Many` keeps the DataLoader batch. The
-  cardinality slot drives the DataLoader-skip, which is now a derived emit detail, not a leaf identity.
+- **Collapse SRTF into RTF, hard-code cardinality `Many`.** Delete the `SingleRecordTableField` leaf; its two
+  construction sites (the R178 DML-carrier arm and the R275 `@service`-carrier arm in `FieldBuilder`) produce
+  `RecordTableField`. Intent stays `Fetch`. `RecordLookupTableField` is RTF's `@lookupKey` sibling (intent
+  `Lookup`); both re-fetch. R305 materialises source cardinality `Many` for every `Source` field (flipping the
+  Slice-2 `One` hard-code in `ChildField.carrier()`), so the former-SRTF coordinate now flows through the
+  **batched** path, correct as a one-element batch keyed on its source=target PK. The cardinality slot drives
+  the inline-vs-batched dispatch: `Many` → batched (the live path in R305), `One` → inline-skip (kept as code,
+  unreachable until R279 computes a true `One`). No field reads `One` in R305, so nothing routes to the inline
+  path and the existing batched `RecordTableField` dispatch (`TypeFetcherGenerator.java:651`) is untouched.
 - **Clean the re-fetch key (`SourceKey` is `TargetKey`).** Because a re-fetch field's source record and its
   target `@table` are the same entity, the key read off the source *is* the target table's identifying key.
-  The re-fetch family carries one key: the target table plus its identifying columns, the source-read shape
-  (`DIRECT` / `OUTCOME_SUCCESS` envelope, `Record` / typed-`TableRecord` wrap), and source cardinality, with
-  no source-vs-target column duality, FK-chain `path`, or lifter/accessor reader. This carves the re-fetch key
-  out of today's general `SourceKey` (whose `path` / six-`Reader` / source-target-column apparatus is
-  DataLoader-batch machinery the re-fetch case does not need). The broad `SourceKey` cleanup for the remaining
-  non-re-fetch DataLoader fields (`SplitTableField` etc.) stays out of scope, riding the R222 work below.
+  For the source=target cases (former-SRTF, and any re-fetch whose held record is the target entity) the
+  re-fetch key carries the target table plus its identifying columns, read directly off the record (no
+  source-vs-target column duality, no FK-chain `path`, no lifter/accessor reader), and feeds the batched path
+  keyed on that PK. This is a strict simplification of today's general `SourceKey` for those cases; batched
+  re-fetch fields that genuinely hop an FK from a non-target DTO parent keep their fuller `SourceKey` in this
+  slice (R305 batches all re-fetch fields, so no batch machinery is dropped). The broad `SourceKey` cleanup
+  for non-re-fetch DataLoader fields (`SplitTableField` etc.) stays out of scope, riding the R222 work below.
 - **RTMF realignment.** `RecordTableMethodField` becomes RTF with the target table instance obtained from the
   `@tableMethod` rather than the static jOOQ table. Fold into this slice if it falls out of the shared
   re-fetch path; split to a follow-up item if it needs its own emit work.
@@ -165,34 +185,40 @@ target table must be re-projected from keys held at the source." SRTF keeps inte
   This also fixes a latent bug: a PK-less idx-ordered re-fetch currently clears the check only by the
   incidental `OrderBySpec.Fixed(PK)` default from `OrderByResolver.java:133`, and would be wrongly rejected
   without a PK.
-- **Emit.** The `One` path re-projects inline (no DataLoader): the `byPk` Java re-walk in
-  `FetcherEmitter.buildSingleRecordTableFetcherValue` is replaced by the `InlineLookupTableFieldEmitter`
-  `VALUES(idx, key)` join + `ORDER BY idx` mechanism (`InlineLookupTableFieldEmitter.java:228`,
-  `LookupValuesJoinEmitter.java:422`) fed by the re-fetch key. The `Many` path keeps RTF's existing
-  `SplitRowsMethodEmitter` DataLoader Split-rows; STF's `buildServiceTableLift` already emits the idx-ordered
-  shape, no STF emit rewrite required.
+- **Emit.** The live path in R305 is **batched**: the former-SRTF coordinate flows through `RecordTableField`'s
+  existing `SplitRowsMethodEmitter` DataLoader Split-rows, keyed on the source=target PK, emitting the
+  idx-ordered scatter (`ORDER BY idx`) it already does; STF's `buildServiceTableLift` already emits this shape,
+  no STF rewrite required. The inline single-source re-projection (today the `byPk` Java re-walk in
+  `FetcherEmitter.buildSingleRecordTableFetcherValue`; eventually the `InlineLookupTableFieldEmitter`
+  `VALUES(idx, key)` + `ORDER BY idx` form at `InlineLookupTableFieldEmitter.java:228` /
+  `LookupValuesJoinEmitter.java:422`) is kept behind the cardinality-`One` branch, dead until R279 computes a
+  true `One`. Whether to preserve the existing inline method verbatim or re-home it onto the
+  `RecordTableField`@`One` dispatch is an implementation call; either way it is unreachable in R305.
 - `GeneratorCoverageTest.everyGraphitronFieldLeafHasAKnownDispatchStatus` stays exhaustive and disjoint after
   the leaf deletion.
 
-This is a *correction*, not a behaviour-preserving reclassification: SRTF's emitted SQL changes (an
-idx-ordered `VALUES`-join instead of a Java re-key) and its re-fetch verdict flips to `true`. Its **intent does
-not change** (stays `Fetch`). What is preserved is the runtime result: the same rows in the same source order.
+This is a *correction*, not a behaviour-preserving reclassification: the former-SRTF coordinate's emitted SQL
+changes (the batched idx-ordered `VALUES`-join scatter instead of the old single-record Java re-key) and its
+re-fetch verdict flips to `true`. Its **intent does not change** (stays `Fetch`). What is preserved is the
+runtime result: the same rows in the same source order.
 
 ## Acceptance
 
 - **Execution tier (load-bearing)**: the R141 / R158 / R275 payload-carrier behaviour (single + bulk,
   `DIRECT` + `OUTCOME_SUCCESS` envelopes, the delete-then-echo `fjernSakTagg` shapes) is preserved end-to-end
   against PostgreSQL via `SingleRecordPayloadDmlTest` /
-  `SingleRecordTableFieldServiceProducerExecutionTest`: same rows, same source order, now produced by an
-  `ORDER BY idx` `VALUES`-join.
-- **Classification / corpus**: the carrier asserts `Source{shape, cardinality}`; the former SRTF coordinate
-  now classifies as `RecordTableField` with `Source{Record, One}`, intent `Fetch` unchanged (the corpus row
-  keeps `intent: Fetch`); `requiresReFetch` derives `true` across the family (SRTF→RTF, RLTF, RTMF, STF);
+  `SingleRecordTableFieldServiceProducerExecutionTest`: same rows, same source order, now produced through the
+  batched Split-rows `ORDER BY idx` `VALUES`-join.
+- **Classification / corpus**: the carrier asserts `Source{shape, cardinality}` with cardinality hard-coded
+  `Many` for every `Source` field (flipping the Slice-2 `One`, including the `ClassifiedDslTest` deferral
+  assertion and the corpus rows' `sourceCardinality`); the former SRTF coordinate now classifies as
+  `RecordTableField` with `Source{Record, Many}`, intent `Fetch` unchanged (the corpus row keeps
+  `intent: Fetch`); `requiresReFetch` derives `true` across the family (former-SRTF, RTF, RLTF, RTMF, STF);
   `ReFetchDerivationTest` gains cases asserting `true` for the Record-source leaves and mirror agreement; the
   `instanceof SingleRecordTableField` assertions in `SingleRecordPayloadPipelineTest` retarget to
-  `RecordTableField` at cardinality `One`. This is a deliberate leaf change, not byte-invariance.
-- **Pipeline tier**: the inline `VALUES(idx, key)` + `ORDER BY idx` emit shape is pinned by structural
-  `TypeSpec` assertions.
+  `RecordTableField`. This is a deliberate leaf change, not byte-invariance.
+- **Pipeline tier**: the batched idx-ordered `VALUES`-join scatter (`ORDER BY idx`) the former-SRTF coordinate
+  now emits through the Split-rows path is pinned by structural `TypeSpec` assertions.
 - **Dispatch and re-fetch mirror**: `SingleRecordTableField` and `OrderingOwnedByProducer` leave the model;
   `dispatchPerformsReFetch` agrees with `requiresReFetch`; `everyGraphitronFieldLeafHasAKnownDispatchStatus`
   stays exhaustive and disjoint.
