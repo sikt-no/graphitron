@@ -183,6 +183,28 @@ final class MutationInputResolver {
                             + s.returnTypeName() + "': " + scanReject.reason()
                             + "; or back the carrier with a producing @service return type or a @table type";
                     }
+                    // R310: a payload that would classify as a DML carrier but for a forbidden
+                    // directive on its data field surfaces a targeted message naming the offending
+                    // field and directive, instead of the generic "use ID or a @table type"
+                    // misdirection, which points at the return type (which is fine) rather than the
+                    // one-token edit on the data field that actually disqualified it.
+                    var forbidden = ctx.diagnoseForbiddenCarrierDirective(s.returnTypeName());
+                    if (forbidden.isPresent()) {
+                        var fc = forbidden.get();
+                        String message = "@mutation(typeName: " + kind + ") return type '"
+                            + s.returnTypeName() + "': payload data field '" + fc.dataFieldName()
+                            + "' carries " + fc.directiveName() + ", which a DML payload carrier's data "
+                            + "field may not have (it signals a different fetcher contract than the "
+                            + "carrier's record-backed data-field path); remove it so the payload "
+                            + "classifies as a carrier.";
+                        if ("@splitQuery".equals(fc.directiveName())) {
+                            message += " @splitQuery is redundant on an @service-backed carrier's data "
+                                + "field (which already resolves through a PK-keyed follow-up SELECT, "
+                                + "where it fires the warnIfSplitQueryOnRecordParent advisory), but it "
+                                + "is rejected on a DML carrier.";
+                        }
+                        yield message;
+                    }
                 }
                 yield "@mutation(typeName: " + kind + ") return type '"
                     + s.returnTypeName() + "' is not yet supported; use ID or a @table type";

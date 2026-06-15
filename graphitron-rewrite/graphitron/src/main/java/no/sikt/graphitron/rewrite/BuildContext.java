@@ -490,6 +490,14 @@ class BuildContext {
     }
 
     /**
+     * R310 — the answer to "would this payload classify as a DML carrier were it not for a
+     * forbidden directive on its data field". Returned by {@link #diagnoseForbiddenCarrierDirective}
+     * so the {@code @mutation} return-type diagnostic can name the offending field and directive
+     * (the {@code @}-prefixed directive name) instead of the misdirected "use ID or a @table type".
+     */
+    public record ForbiddenCarrierDirective(String dataFieldName, String directiveName) {}
+
+    /**
      * R178 Phase 4 — structural detection of a DML payload's carrier shape. Walks the payload
      * SDL once, accumulating non-errors fields and classifying each into a recognized DML
      * element kind (Table / Record / Id) or rejecting unrecognized shapes. Errors-shaped
@@ -537,6 +545,19 @@ class BuildContext {
         }
     }
 
+    /**
+     * R310 — whether {@link #scanStructuralPayload} consults the family's forbidden-directive set on
+     * the data field. {@code ENFORCE} is the only policy the public scan methods use, so their
+     * behaviour (and every speculative caller's: {@code promoteSingleRecordPayloads}, the existing
+     * {@code validateReturnType} Reject probe) is byte-for-byte unchanged. {@code IGNORE} is consulted
+     * solely by {@link #diagnoseForbiddenCarrierDirective}, to answer "would this admit as a DML
+     * carrier were it not for the forbidden directive". This is an orthogonal, private gate on whether
+     * the family's forbidden set is consulted, not a third {@link CarrierFamily}: the family stays
+     * {@code DML} under {@code IGNORE}, so its other policy axis (ID-element wrapper admission) still
+     * applies.
+     */
+    private enum ForbiddenDirectivePolicy { ENFORCE, IGNORE }
+
     public DmlPayloadScan scanStructuralDmlPayload(String payloadSdlName) {
         return scanStructuralPayload(payloadSdlName, CarrierFamily.DML);
     }
@@ -555,7 +576,42 @@ class BuildContext {
         return scanStructuralPayload(payloadSdlName, CarrierFamily.SERVICE);
     }
 
+    /**
+     * R310 — the would-admit-but-for-the-directive probe. Answers exactly the question the
+     * misdirected "use ID or a @table type" diagnostic fails to: would {@code payloadSdlName} classify
+     * as a DML carrier were it not for a forbidden directive on its data field, and if so, which
+     * directive (on which field) blocked it?
+     *
+     * <p>Re-runs the structural DML scan with the forbidden-directive check disabled
+     * ({@link ForbiddenDirectivePolicy#IGNORE}). If that pass {@code Admit}s, the payload is a
+     * structurally valid DML carrier in every respect except the forbidden directive; the offending
+     * directive is read off the admitted data field (the first
+     * {@link #FORBIDDEN_CARRIER_DATA_FIELD_DIRECTIVES} entry the field carries) and returned,
+     * {@code @}-prefixed. Reading it off the admitted field is a single-field lookup, not a re-walk.
+     * If the {@code IGNORE} pass {@code Reject}s or is {@code NotApplicable}, the directive is not the
+     * sole blocker (the type has a different or additional problem) and the result is empty, so the
+     * caller falls through to its generic diagnostic. The family stays {@code DML}, so the question is
+     * specifically "would this admit as a <em>DML</em> carrier", not "under some looser family".
+     */
+    public Optional<ForbiddenCarrierDirective> diagnoseForbiddenCarrierDirective(String payloadSdlName) {
+        if (!(scanStructuralPayload(payloadSdlName, CarrierFamily.DML, ForbiddenDirectivePolicy.IGNORE)
+                instanceof DmlPayloadScan.Admit admit)) {
+            return Optional.empty();
+        }
+        var dataField = admit.dataField();
+        for (String forbidden : FORBIDDEN_CARRIER_DATA_FIELD_DIRECTIVES) {
+            if (dataField.hasAppliedDirective(forbidden)) {
+                return Optional.of(new ForbiddenCarrierDirective(dataField.getName(), "@" + forbidden));
+            }
+        }
+        return Optional.empty();
+    }
+
     private DmlPayloadScan scanStructuralPayload(String payloadSdlName, CarrierFamily family) {
+        return scanStructuralPayload(payloadSdlName, family, ForbiddenDirectivePolicy.ENFORCE);
+    }
+
+    private DmlPayloadScan scanStructuralPayload(String payloadSdlName, CarrierFamily family, ForbiddenDirectivePolicy policy) {
         if (payloadSdlName == null) return new DmlPayloadScan.NotApplicable();
         var payloadType = schema.getType(payloadSdlName);
         if (!(payloadType instanceof GraphQLObjectType payloadObj)) {
@@ -594,10 +650,13 @@ class BuildContext {
             // type away from the DML-payload mold. Note: @field is intentionally NOT on this
             // list (R178 retires the @field-on-non-$source HardReject — the SettKvotesporsmal
             // bug fix). Pure-metadata directives (@deprecated, custom directives without
-            // execution semantics) pass through.
-            for (String forbidden : family.forbiddenDataFieldDirectives) {
-                if (f.hasAppliedDirective(forbidden)) {
-                    return new DmlPayloadScan.NotApplicable();
+            // execution semantics) pass through. R310: skipped under IGNORE so
+            // diagnoseForbiddenCarrierDirective can establish would-admit-but-for-the-directive.
+            if (policy == ForbiddenDirectivePolicy.ENFORCE) {
+                for (String forbidden : family.forbiddenDataFieldDirectives) {
+                    if (f.hasAppliedDirective(forbidden)) {
+                        return new DmlPayloadScan.NotApplicable();
+                    }
                 }
             }
             String elementTypeName = ((GraphQLNamedType) GraphQLTypeUtil.unwrapAll(f.getType())).getName();
