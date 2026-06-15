@@ -14,7 +14,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 | ID | Item | Status | Updated | Plan |
 |---|---|---|---|---|
-| `R313` | Scalar alias name mismatch: @scalarType registers under constant intrinsic name not the SDL name | In Progress | 2026-06-15 | [plan](scalar-alias-name-mismatch.md) |
+| `R313` | Scalar alias name mismatch: @scalarType registers under constant intrinsic name not the SDL name | In Review | 2026-06-15 | [plan](scalar-alias-name-mismatch.md) |
 | `R19` | Rebase and squash rewrite branch onto main | Ready |  | [plan](history-squash.md) |
 | `R222` | Dimensional model pivot: slots over cross-product permits | Spec | 2026-06-13 <sub>created 2026-05-21</sub> | [plan](dimensional-model-pivot.md) |
 | `R256` | Absorb the service walker substrate: typed per-arm errors + multi-arg ctors | Ready | 2026-05-30 <sub>created 2026-05-29</sub> | [plan](service-walker-substrate-absorption.md) |

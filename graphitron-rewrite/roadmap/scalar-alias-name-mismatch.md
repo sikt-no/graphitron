@@ -1,7 +1,7 @@
 ---
 id: R313
 title: "Scalar alias name mismatch: @scalarType registers under constant intrinsic name not the SDL name"
-status: In Progress
+status: In Review
 bucket: bug
 priority: 1
 depends-on: []
@@ -55,6 +55,23 @@ the unprefixed string as the scalar name). So any consumer writing a `GraphQL`-p
 name hits the identical "registered under `BigDecimal`, referenced as `GraphQLBigDecimal`" failure.
 The fix below covers both the `@scalarType` and convention entry points uniformly because the
 comparison lives in the resolver, below both.
+
+## Implementation (shipped at d82392e)
+
+Landed as designed, single commit:
+
+* `ScalarTypeResolver` forks on the recovered constant's `getName()`: match -> `Resolved`;
+  mismatch -> `Synthesised(javaType, sdlName, owner, field)`. The SDL name is threaded through
+  `resolveFromConstantFqn` (new 4-arg overload; the 3-arg overload stays alias-agnostic) via
+  `resolveFromDirectiveValue` and `resolveByConvention`. `resolveBuiltIn` is unchanged.
+* `TypeBuilder` `@scalarType` arm and convention arm widened from `instanceof Resolved` to
+  `instanceof Successful`, mirroring the federation arm.
+* `model/ScalarResolution.java` `Synthesised` javadoc generalised to cover the aliasing case.
+* No change to `GraphitronSchemaClassGenerator`, `HelperMethodSink`, or any `.javaType()` reader.
+* Tests: `ScalarTypeResolverTest` (alias -> `Synthesised`, match -> `Resolved`, `GraphQLBigDecimal`
+  sibling); `GraphitronSchemaClassGeneratorTest` (alias emits `scalar_LocalDate()` helper, not the
+  bare constant); `GraphitronSchemaBuilderTest.DIRECTIVE_BEATS_CONVENTION` updated to the corrected
+  `Synthesised` outcome (it was latently broken before). Full `mvn install -Plocal-db` green.
 
 ## Design
 
