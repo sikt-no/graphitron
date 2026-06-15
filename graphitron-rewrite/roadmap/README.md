@@ -14,8 +14,8 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 | ID | Item | Status | Updated | Plan |
 |---|---|---|---|---|
-| `R312` | Thread CompositeDecodeHelperRegistry through inline/split reference-field filter emitters | Spec | 2026-06-15 | [plan](nodeid-filter-args-reference-field-decode-registry.md) |
 | `R19` | Rebase and squash rewrite branch onto main | Ready |  | [plan](history-squash.md) |
+| `R312` | Thread CompositeDecodeHelperRegistry through inline/split reference-field filter emitters | Ready | 2026-06-15 | [plan](nodeid-filter-args-reference-field-decode-registry.md) |
 | `R222` | Dimensional model pivot: slots over cross-product permits | Spec | 2026-06-13 <sub>created 2026-05-21</sub> | [plan](dimensional-model-pivot.md) |
 | `R256` | Absorb the service walker substrate: typed per-arm errors + multi-arg ctors | Ready | 2026-05-30 <sub>created 2026-05-29</sub> | [plan](service-walker-substrate-absorption.md) |
 | `R305` | Expand the carrier dimension with source-shape and cardinality; separate re-fetch from intent and collapse SingleRecordTableField into RecordTableField | Spec | 2026-06-15 <sub>created 2026-06-14</sub> | [plan](collapse-singlerecordtablefield-into-recordtablefield.md) |
@@ -154,7 +154,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### nodeid
 
-- `R312` [**Thread CompositeDecodeHelperRegistry through inline/split reference-field filter emitters**](nodeid-filter-args-reference-field-decode-registry.md) — Spec, correctness
+- `R312` [**Thread CompositeDecodeHelperRegistry through inline/split reference-field filter emitters**](nodeid-filter-args-reference-field-decode-registry.md) — Ready, correctness
 - `R136` [**Execution-tier coverage for FK-target/NodeType-keyColumns permutation**](nodeid-fk-permutation-execution-tier.md) — Backlog, validation
 - `R135` [**Multi-hop @nodeId pipeline test for FK-target/NodeType-keyColumns permutation**](multi-hop-nodeid-fk-permutation-test.md) — Backlog, validation
 - `R57` [**FK-target argument @nodeId, JOIN-with-translation emission**](nodeid-fk-target-arg-join-translation.md) — Backlog, architecture
