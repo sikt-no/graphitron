@@ -18,8 +18,8 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R222` | Dimensional model pivot: slots over cross-product permits | Spec | 2026-06-13 <sub>created 2026-05-21</sub> | [plan](dimensional-model-pivot.md) |
 | `R256` | Absorb the service walker substrate: typed per-arm errors + multi-arg ctors | Ready | 2026-05-30 <sub>created 2026-05-29</sub> | [plan](service-walker-substrate-absorption.md) |
 | `R308` | Fix the @service list-payload N+1 by deriving many-arrival for list-returning carriers <sub>blocked by: [collapse-singlerecordtablefield-into-recordtablefield](collapse-singlerecordtablefield-into-recordtablefield.md)</sub> | Spec | 2026-06-14 | [plan](service-list-payload-arrival.md) |
-| `R279` | Field-first reachability-driven classification driver <sub>blocked by: [dimensional-model-pivot](dimensional-model-pivot.md)</sub> | Ready | 2026-06-15 <sub>created 2026-06-05</sub> | [plan](field-first-classification-driver.md) |
 | `R305` | Expand the carrier dimension with source-shape and cardinality; separate re-fetch from intent and collapse SingleRecordTableField into RecordTableField | In Progress | 2026-06-15 <sub>created 2026-06-14</sub> | [plan](collapse-singlerecordtablefield-into-recordtablefield.md) |
+| `R279` | Field-first reachability-driven classification driver <sub>blocked by: [dimensional-model-pivot](dimensional-model-pivot.md)</sub> | In Progress | 2026-06-15 <sub>created 2026-06-05</sub> | [plan](field-first-classification-driver.md) |
 | `R311` | Bind a jOOQ TableRecord @service input param: column-axis @field + @nodeId scalar-key decode | Spec | 2026-06-15 | [plan](jooq-record-service-input-param.md) |
 | `R45` | Multi-tenant routing on top of the schema-driven ExecutionInput factory | Spec | 2026-05-20 | [plan](tenant-routing-and-execution-input.md) |
 | `R273` | Source NodeId metadata from @node + catalog PK (inferred from `implements Node`), and settle wrong-type/malformed mismatch semantics, retiring the legacy __NODE bare-ID arm | Spec | 2026-06-02 | [plan](nodeid-skip-mismatch-error-surfacing.md) |
@@ -212,7 +212,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R256` [**Absorb the service walker substrate: typed per-arm errors + multi-arg ctors**](service-walker-substrate-absorption.md) — Ready, structural
 - `R222` [**Dimensional model pivot: slots over cross-product permits**](dimensional-model-pivot.md) — Spec, structural
 - `R305` [**Expand the carrier dimension with source-shape and cardinality; separate re-fetch from intent and collapse SingleRecordTableField into RecordTableField**](collapse-singlerecordtablefield-into-recordtablefield.md) — In Progress, structural
-- `R279` [**Field-first reachability-driven classification driver**](field-first-classification-driver.md) — Ready, architecture, blocked by [dimensional-model-pivot](dimensional-model-pivot.md)
+- `R279` [**Field-first reachability-driven classification driver**](field-first-classification-driver.md) — In Progress, architecture, blocked by [dimensional-model-pivot](dimensional-model-pivot.md)
 - `R308` [**Fix the @service list-payload N+1 by deriving many-arrival for list-returning carriers**](service-list-payload-arrival.md) — Spec, structural, blocked by [collapse-singlerecordtablefield-into-recordtablefield](collapse-singlerecordtablefield-into-recordtablefield.md)
 - `R171` [**Fold InputType and TableInputType under sealed parent InputLikeType**](input-like-type-sealed-parent.md) — Backlog, architecture
 - `R103` [**Lift jOOQ column defaults onto input fields connected to that column**](lift-jooq-column-defaults-onto-inputs.md) — Backlog, architecture
