@@ -1,7 +1,7 @@
 ---
 id: R312
 title: "Thread CompositeDecodeHelperRegistry through inline/split reference-field filter emitters"
-status: Ready
+status: In Progress
 bucket: correctness
 priority: 2
 theme: nodeid
