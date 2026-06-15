@@ -17,25 +17,25 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R19` | Rebase and squash rewrite branch onto main | Ready |  | [plan](history-squash.md) |
 | `R222` | Dimensional model pivot: slots over cross-product permits | Spec | 2026-06-13 <sub>created 2026-05-21</sub> | [plan](dimensional-model-pivot.md) |
 | `R256` | Absorb the service walker substrate: typed per-arm errors + multi-arg ctors | Ready | 2026-05-30 <sub>created 2026-05-29</sub> | [plan](service-walker-substrate-absorption.md) |
-| `R305` | Collapse SingleRecordTableField into RecordTableField (derive the DataLoader-skip from single-source cardinality) | Spec | 2026-06-14 | [plan](collapse-singlerecordtablefield-into-recordtablefield.md) |
 | `R308` | Fix the @service list-payload N+1 by deriving many-arrival for list-returning carriers <sub>blocked by: [collapse-singlerecordtablefield-into-recordtablefield](collapse-singlerecordtablefield-into-recordtablefield.md)</sub> | Spec | 2026-06-14 | [plan](service-list-payload-arrival.md) |
-| `R279` | Field-first reachability-driven classification driver <sub>blocked by: [dimensional-model-pivot](dimensional-model-pivot.md)</sub> | Ready | 2026-06-14 <sub>created 2026-06-05</sub> | [plan](field-first-classification-driver.md) |
+| `R279` | Field-first reachability-driven classification driver <sub>blocked by: [dimensional-model-pivot](dimensional-model-pivot.md)</sub> | Ready | 2026-06-15 <sub>created 2026-06-05</sub> | [plan](field-first-classification-driver.md) |
+| `R305` | Expand the carrier dimension with source-shape and cardinality; separate re-fetch from intent and collapse SingleRecordTableField into RecordTableField | In Progress | 2026-06-15 <sub>created 2026-06-14</sub> | [plan](collapse-singlerecordtablefield-into-recordtablefield.md) |
+| `R311` | Bind a jOOQ TableRecord @service input param: column-axis @field + @nodeId scalar-key decode | Spec | 2026-06-15 | [plan](jooq-record-service-input-param.md) |
 | `R45` | Multi-tenant routing on top of the schema-driven ExecutionInput factory | Spec | 2026-05-20 | [plan](tenant-routing-and-execution-input.md) |
 | `R273` | Source NodeId metadata from @node + catalog PK (inferred from `implements Node`), and settle wrong-type/malformed mismatch semantics, retiring the legacy __NODE bare-ID arm | Spec | 2026-06-02 | [plan](nodeid-skip-mismatch-error-surfacing.md) |
-| `R200` | Honor @field(name:) in InputBeanResolver for SDL input bean/record member binding | Ready | 2026-06-10 <sub>created 2026-05-20</sub> | [plan](honor-field-directive-in-inputbeanresolver.md) |
-| `R307` | Retire stale @record references: error messages recommending the dead directive and @record-as-jargon vocabulary | Ready | 2026-06-14 | [plan](retire-stale-record-directive-references.md) |
 | `R23` | Multi-parent `NestingField` sharing: `TableField` arm | Spec |  | [plan](nestingfield-multiparent-tablefield.md) |
 | `R13` | Faceted search on `@asConnection` | Spec |  | [plan](faceted-search.md) |
 | `R63` | Type UPSERT dialect requirement on the model | Spec |  | [plan](dml-dialect-requirement-on-model.md) |
 | `R92` | Surface database CHECK constraints as Jakarta validation rules | Spec |  | [plan](catalog-check-constraint-validation.md) |
 | `R26` | Retire `graphitron-maven-plugin` + `graphitron-schema-transform` | In Progress |  | [plan](retire-maven-plugin.md) |
 | `R180` | Centralize ResultType column-read emission for @record parents | Spec | 2026-05-19 | [plan](record-parent-column-read-helper.md) |
-| `R242` | DML payload positional input/output alignment | Spec | 2026-05-26 | [plan](dml-payload-positional-alignment.md) |
+| `R242` | DML payload positional input/output alignment <sub>blocked by: [collapse-singlerecordtablefield-into-recordtablefield](collapse-singlerecordtablefield-into-recordtablefield.md)</sub> | Spec | 2026-06-15 <sub>created 2026-05-26</sub> | [plan](dml-payload-positional-alignment.md) |
 | `R115` | Enumerate the capabilities graphitron delivers | Spec |  | [plan](capability-catalog.md) |
 | `R109` | How-to recipe and Sakila fixture for grouped collections via Field<Result<R>> @externalField + multiset | Spec |  | [plan](list-valued-external-field-multiset.md) |
 | `R212` | IntelliJ plugin wrapping graphitron:dev LSP | Spec | 2026-05-21 | [plan](intellij-lsp-plugin.md) |
 | `R269` | Null-guard split-query key extraction for nullable to-one records | Spec | 2026-06-02 <sub>created 2026-06-01</sub> | [plan](nullable-to-one-record-into-npe.md) |
 | `R112` | Operation-driven test corpus, capability catalog, and runtime trace <sub>blocked by: [capability-catalog](capability-catalog.md)</sub> | Spec |  | [plan](operation-driven-test-corpus.md) |
+| `R310` | Forbidden directive on an otherwise-valid DML payload carrier silently misdirects to 'use ID or a @table type' | Ready | 2026-06-15 | [plan](dml-carrier-forbidden-directive-diagnostic.md) |
 
 ---
 
@@ -160,10 +160,10 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### service
 
+- `R311` [**Bind a jOOQ TableRecord @service input param: column-axis @field + @nodeId scalar-key decode**](jooq-record-service-input-param.md) — Spec, feature
 - `R300` [**First-class jOOQ routine support: RoutineCall carrier + Procedure intent**](jooq-routine-fields.md) — Backlog, feature, blocked by [dimensional-model-pivot](dimensional-model-pivot.md)
 - `R201` [**Honor @field(name:) in @error payload construction shape resolution**](honor-field-directive-in-payload-construction-shape.md) — Backlog, bug
 - `R202` [**Honor @field(name:) in @error type extra-field accessor matching against handler source class**](honor-field-directive-in-error-type-source-accessors.md) — Backlog, bug
-- `R200` [**Honor @field(name:) in InputBeanResolver for SDL input bean/record member binding**](honor-field-directive-in-inputbeanresolver.md) — Ready, bug
 - `R45` [**Multi-tenant routing on top of the schema-driven ExecutionInput factory**](tenant-routing-and-execution-input.md) — Spec, architecture
 - `R54` [**Rename @externalField (parallel-support, deprecation, migration)**](rename-externalfield-directive.md) — Backlog, cleanup
 - `R192` [**Mojo-configured custom Bean Validation factory**](custom-validator-factory.md) — Backlog, architecture
@@ -184,6 +184,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R92` [**Surface database CHECK constraints as Jakarta validation rules**](catalog-check-constraint-validation.md) — Spec, architecture
 - `R145` [**Cardinality safety story for UPSERT under the multiRow: regime**](mutation-cardinality-safety-upsert.md) — Backlog, architecture
 - `R146` [**Unique-index coverage as an alternative to PK for mutation cardinality safety**](mutation-cardinality-safety-unique-index.md) — Backlog, architecture
+- `R310` [**Forbidden directive on an otherwise-valid DML payload carrier silently misdirects to 'use ID or a @table type'**](dml-carrier-forbidden-directive-diagnostic.md) — Ready, bug
 
 ### pagination
 
@@ -210,7 +211,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R261` [**Generation-time wire-coercion cast guard across arg-classification sites**](wire-coercion-cast-guard.md) — Backlog, architecture, blocked by [service-walker-substrate-absorption](service-walker-substrate-absorption.md), [dimensional-model-pivot](dimensional-model-pivot.md)
 - `R256` [**Absorb the service walker substrate: typed per-arm errors + multi-arg ctors**](service-walker-substrate-absorption.md) — Ready, structural
 - `R222` [**Dimensional model pivot: slots over cross-product permits**](dimensional-model-pivot.md) — Spec, structural
-- `R305` [**Collapse SingleRecordTableField into RecordTableField (derive the DataLoader-skip from single-source cardinality)**](collapse-singlerecordtablefield-into-recordtablefield.md) — Spec, structural
+- `R305` [**Expand the carrier dimension with source-shape and cardinality; separate re-fetch from intent and collapse SingleRecordTableField into RecordTableField**](collapse-singlerecordtablefield-into-recordtablefield.md) — In Progress, structural
 - `R279` [**Field-first reachability-driven classification driver**](field-first-classification-driver.md) — Ready, architecture, blocked by [dimensional-model-pivot](dimensional-model-pivot.md)
 - `R308` [**Fix the @service list-payload N+1 by deriving many-arrival for list-returning carriers**](service-list-payload-arrival.md) — Spec, structural, blocked by [collapse-singlerecordtablefield-into-recordtablefield](collapse-singlerecordtablefield-into-recordtablefield.md)
 - `R171` [**Fold InputType and TableInputType under sealed parent InputLikeType**](input-like-type-sealed-parent.md) — Backlog, architecture
@@ -254,7 +255,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 - `R19` [**Rebase and squash rewrite branch onto main**](history-squash.md) — Ready
 - `R27` [**Retire `@nodeId` and `IdReferenceField` synthesis shims**](retire-synthesis-shims.md) — Backlog, cleanup, blocked by [sis-rewrite-migration](sis-rewrite-migration.md)
-- `R307` [**Retire stale @record references: error messages recommending the dead directive and @record-as-jargon vocabulary**](retire-stale-record-directive-references.md) — Ready, cleanup
 - `R95` [**Routines as data-model citizens (jOOQ-native routine support)**](routines-as-data-model-citizens.md) — Backlog, feature
 - `R47` [**Short class-name resolution for `@service` and `@externalField` (legacy parity)**](service-short-classname-resolution.md) — Backlog, cleanup
 - `R26` [**Retire `graphitron-maven-plugin` + `graphitron-schema-transform`**](retire-maven-plugin.md) — In Progress

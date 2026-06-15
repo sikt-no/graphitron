@@ -7,7 +7,7 @@ priority: 4
 theme: structural-refactor
 depends-on: [dimensional-model-pivot]
 created: 2026-06-05
-last-updated: 2026-06-14
+last-updated: 2026-06-15
 ---
 
 # Field-first reachability-driven classification driver
@@ -168,6 +168,22 @@ classified `GraphitronSchema` and are not visitor-based.
   These are *classify-time* context, distinct from R222's emit-time `QueryBuilder` /
   `DataFetcherBuilder` dimensional slots that share the dimension names; the context is what lets a
   producer *fill* those slots.
+- *Target-model pivot (R305, 2026-06-15): this walk is the named substrate for source cardinality.*
+  R222's field-side model pivoted after R279 was written: `Carrier` is now sealed, and its `Source`
+  arm carries a **source cardinality** (`One | Many`) defined as **the product of all ancestor field
+  cardinalities** along the path from the operation root (one `Many` ancestor makes every descendant
+  `Many`). That is a path-accumulated, ancestor-chain property, the exact shape of this item's
+  down-the-walk context: it rides the same `TraverserContext` `setVar`/`getVarFromParents` mechanism
+  the Query-scope dimension uses (each field sets its own cardinality; a descendant reads the product
+  over its ancestors), never sideways. R305 itself cannot compute it (no walk exists yet), so it
+  ships the slot **hard-coded to `Many`** with the `One` inline-skip kept as dead code, and both R305
+  and R308 (`service-list-payload-arrival`) explicitly defer the real ancestor-product to "R279's
+  walk." R279 stays behaviour-preserving and does **not** compute source cardinality itself (that
+  new behaviour is R308's scope); the adaptation is only that the downward-context design must *admit*
+  ancestor-cardinality accumulation as a first-class rider so R308 can layer on it without re-walking.
+  Keep it distinct from `SourceKey.Cardinality` (`SourceKey.java`): that is the local, target-side
+  per-key row count (rows per source object), not the source-arrival product; the two answer
+  different questions and must not derive from each other (R305 is emphatic on this).
 - *Arguments and inputs are classified per field-usage, at the field visit.* The visitor visits
   fields only; it does not descend into arguments or input objects as separate events. An
   argument's classification is a function of the visited field: to bind argument `a`, read field
@@ -216,12 +232,19 @@ R281 classification doc must be updated to match. **Truth-table baseline note (R
 enum rows (the `ConstructorField` verdict + its `@ProjectionFor` sibling) and the `constructor`
 corpus fixture when it dissolved `ConstructorField`; that row delta is already absorbed in the
 current ~370-row baseline, so R279 simply takes the tree as it stands. R305
-(`collapse-singlerecordtablefield-into-recordtablefield`, still Spec) will remove the
-`SingleRecordTableField` coverage when it lands the collapse. R279 leans on that truth table as its
-primary merge gate, so whichever of R279 / R305 lands second re-baselines against the other's row
-delta; this is a rebase, not a semantic conflict (R279 is behaviour-preserving over whatever rows
-exist, and the R305 leaf removal is independent of R279's orphan pruning). No ordering edge is
-declared. What remains here is the risk-isolated, gated code transformation, slices in landing order:
+(`collapse-singlerecordtablefield-into-recordtablefield`) is now **In Progress** and its scope grew
+well past the original SRTF collapse: it lands the carrier pivot itself, sealing `Carrier` into
+`Query`/`Mutation` (payload-less) + `Source(SourceShape, SourceCardinality)`, re-deriving re-fetch
+from `Table mapping × holds-records`, asserting `sourceShape`/`sourceCardinality` in the R281 corpus,
+and collapsing `SingleRecordTableField` into `RecordTableField`. It is actively churning the truth
+table and corpus *right now*, so R279's primary merge gate is a moving baseline until R305 settles;
+R279 still declares no hard ordering edge (it is behaviour-preserving over whatever rows exist), but
+in practice it should rebase onto R305's landed corpus rather than race it. The new dependency runs
+the other way and is real: R308 (`service-list-payload-arrival`, blocked by R305) and R305's own
+dead `One` branch both consume **R279's walk** to compute the ancestor-product source cardinality
+(see the *Target-model pivot* bullet under down-the-walk context). So R279 → R308 is a genuine
+forward edge (R308 cannot build the `Many` arm without this walk), even though nothing blocks R279
+itself. What remains here is the risk-isolated, gated code transformation, slices in landing order:
 
 1. **Reachability observatory + differential bisect aid (additive, zero behaviour change).**
    Build the `SchemaTraverser` walk that computes the reachable set (seed: Query + Mutation +
