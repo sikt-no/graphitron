@@ -4896,4 +4896,26 @@ class GraphQLQueryTest {
         payload.containsEntry("reviewId", 50042);
         payload.containsEntry("errors", null);
     }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void submitFilmReviewSummary_routesThroughFieldRenamedRecordBean() {
+        // R200 execution-tier proof: the SDL input fields filmId/rating diverge from the record
+        // components film/stars, bridged by @field(name:). The fetcher must read env.getArgument by
+        // the SDL field name (filmId/rating) and bind positionally to the canonical constructor
+        // FilmReviewSummary(film, stars). If @field were ignored, classification would reject (no
+        // component matches filmId/rating); if the binding mis-positioned, reviewId would differ.
+        // The round-trip delegates to submit(), computing reviewId = stars * 10000 + film.
+        Map<String, Object> data = execute("""
+            mutation {
+                submitFilmReviewSummary(summary: { filmId: 42, rating: 5 }) {
+                    reviewId
+                    errors { __typename }
+                }
+            }
+            """);
+        var payload = assertThat(data).extractingByKey("submitFilmReviewSummary", as(MAP));
+        payload.containsEntry("reviewId", 50042);
+        payload.containsEntry("errors", null);
+    }
 }

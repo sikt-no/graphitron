@@ -347,6 +347,38 @@ class TestServiceStub {
         throw new UnsupportedOperationException();
     }
 
+    // ===== R200 @field(name:) Java-member binding on input beans =====
+
+    /**
+     * R200 fixture: takes a {@link TestInputBeanRenamed} record whose component names ({@code heading},
+     * {@code score}) diverge from the SDL field names ({@code title}, {@code rating}). The SDL input
+     * bridges the divergence with {@code @field(name:)}; the resolved {@code FieldBinding}s must carry
+     * {@code javaFieldName} = the component name and {@code sdlFieldName} = the SDL field name. Also
+     * the bean for the ambiguity rejection case (two SDL fields colliding on one binding key).
+     */
+    public static TestFilmDetailsDto runWithRenamedRecord(TestInputBeanRenamed input) {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
+     * R200 fixture: takes a {@link TestInputJavaBeanRenamed} whose setter properties ({@code heading},
+     * {@code score}) diverge from the SDL field names, bridged by {@code @field(name:)}. Also the bean
+     * for the regression-floor case: an unbridged divergent-name JavaBean (no {@code @field}) must
+     * still reject with "has no fields matching", not start matching by coincidence.
+     */
+    public static TestFilmDetailsDto runWithRenamedJavaBean(TestInputJavaBeanRenamed input) {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
+     * R200 fixture: takes a {@link TestInputSubsetRecord} (two components) against an SDL input with a
+     * third field. The extra field binds to no component; R200's direction-B check rejects the field
+     * at classify time rather than silently dropping its value before the canonical constructor.
+     */
+    public static String runWithSubsetRecord(TestInputSubsetRecord input) {
+        throw new UnsupportedOperationException();
+    }
+
     // ===== R158 @service carrier-data-field fixtures =====
 
     /**

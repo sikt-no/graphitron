@@ -1,13 +1,13 @@
 ---
 id: R200
 title: Honor @field(name:) in InputBeanResolver for SDL input bean/record member binding
-status: Ready
+status: In Review
 bucket: bug
 priority: 5
 theme: service
 depends-on: []
 created: 2026-05-20
-last-updated: 2026-06-10
+last-updated: 2026-06-15
 ---
 
 # Honor @field(name:) in InputBeanResolver for SDL input bean/record member binding

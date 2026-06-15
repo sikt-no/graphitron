@@ -1119,6 +1119,16 @@ input FilmReviewTagInput {
     weight: Int
 }
 
+# R200: input-bean fixture whose record components diverge from the SDL field names. Java-side this
+# maps to FilmReviewSummary(Integer film, Integer stars); @field(name:) bridges filmId -> film and
+# rating -> stars. The generated createFilmReviewSummary helper reads env.getArgument by the SDL
+# field name (the wire/Map key) and binds positionally to the canonical constructor by component
+# name. Compile-tier coverage of the @field-driven member binding; the execution test rides submit().
+input FilmReviewSummaryInput {
+    filmId: Int! @field(name: "film")
+    rating: Int! @field(name: "stars")
+}
+
 # R195: input bean whose member is a jOOQ FilmRecord. The `film` field carries
 # `ID! @nodeId(typeName: "Film")`; Java-side it maps to FilmRecordAssignment(FilmRecord film). The
 # generator decodes the wire id into a FilmRecord rather than casting the wire String to it.
@@ -1806,6 +1816,18 @@ type Mutation {
         @service(service: {
             className: "no.sikt.graphitron.rewrite.test.services.FilmReviewService",
             method: "submitWithDetails"
+        })
+
+    # R200 compilation-/execution-tier fixture: @service taking a consumer-authored input bean whose
+    # record components (film, stars) diverge from the SDL field names (filmId, rating), bridged by
+    # @field(name:). The fetcher generator emits a createFilmReviewSummary(Map) helper that reads
+    # env.getArgument("filmId")/("rating") and binds them positionally to FilmReviewSummary(film,
+    # stars). A well-formed canonical-constructor call is the compile-tier proof; the round-trip in
+    # submitFilmReviewSummary_routesThroughFieldRenamedRecordBean is the execution-tier proof.
+    submitFilmReviewSummary(summary: FilmReviewSummaryInput!): FilmReviewPayload
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.FilmReviewService",
+            method: "submitSummary"
         })
 
     # R195 compilation-tier fixture: @service input bean whose member is a jOOQ FilmRecord backed
