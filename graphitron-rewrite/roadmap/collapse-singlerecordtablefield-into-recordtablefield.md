@@ -109,20 +109,24 @@ rule is the source axis; `SourceKey.Cardinality` stays the target axis, and the 
 `wrapper().isList()` source-vs-target conflation remains the out-of-scope `SourceKey.Cardinality` cleanup
 below.
 
-## Slice 2: Materialise `Source{shape, cardinality}` and assert it in the corpus
+## Slice 2: Materialise `Source{shape, cardinality}` and assert it in the corpus — shipped at `355f9b5`
 
 Foundation slice; SRTF stays a `Fetch` leaf and `OrderingOwnedByProducer` stays present, so the build is green
 throughout and the new carrier values are observable on their own.
 
-- Implement the enriched `Carrier` in the model (sealed shape carrying source-shape and cardinality on the
-  `Source` arm). `OutputField.carrier()` returns it.
-- Classify source-shape and cardinality at the parse boundary. Source-shape is the same fact as the parent
-  producer's `OutputField.domainReturnType()`; assert it once and pin it against that, reusing the existing
-  multi-producer grouping (`OutputField.java:17-21`) so there is a single source of truth, not two
-  unsynchronised ones.
-- Grow the corpus surface: the `@classified` directive, the `ClassifiedDsl` `Carrier` enum
-  (`ClassifiedDsl.java:46`), `DimensionTuple`, and `ClassifiedHarness` extend to declare and compare
-  source-shape and cardinality alongside the carrier. Existing rows acquire their source-shape value.
+- `SourceShape{Table, Record}` and `SourceCardinality{One, Many}` are their own sub-taxonomies; `Carrier` is
+  now sealed (`Query` / `Mutation` payload-less, `Source(SourceShape, SourceCardinality)`).
+  `OutputField.carrier()` materialises `Source(sourceShape(), One)`.
+- Source-shape is a leaf-exhaustive switch on `ChildField.sourceShape()`: the classifier already projects the
+  parent's backing into leaf identity (`RecordTableField` vs `TableField`, `RecordField` vs `ColumnField`, the
+  `SingleRecord*` / `Errors` payload fields), so the switch is that projection and a new leaf is forced to
+  decide, mirroring `intent()` / `mapping()`. Source cardinality is constant `One` this slice (the
+  ancestor-product `Many` arrival is R308).
+- Corpus grown: the `@classified` directive gained optional `sourceShape` / `sourceCardinality` args
+  (`sourceShape` defaults `Table`; the 12 record-source rows declare `Record`), `ClassifiedHarness` builds the
+  sealed `Carrier` and exposes the arm / source-axis value sets, and `ClassifiedDslTest` retargets the
+  `Carrier.values()` sites to the sealed-arm set, mirrors the two new SDL enums, exercises both source-shapes,
+  and pins the `One`-only deferral.
 
 ## Slice 3: Re-derive re-fetch; reclassify SRTF and STF; delete the leaf and the marker; unify emit
 
