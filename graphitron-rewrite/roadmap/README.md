@@ -17,7 +17,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R19` | Rebase and squash rewrite branch onto main | Ready |  | [plan](history-squash.md) |
 | `R222` | Dimensional model pivot: slots over cross-product permits | Spec | 2026-06-13 <sub>created 2026-05-21</sub> | [plan](dimensional-model-pivot.md) |
 | `R256` | Absorb the service walker substrate: typed per-arm errors + multi-arg ctors | Ready | 2026-05-30 <sub>created 2026-05-29</sub> | [plan](service-walker-substrate-absorption.md) |
-| `R305` | Expand the carrier dimension with source-shape and cardinality; unify the service/DML to @table re-fetch as a source-keyed Lookup | Spec | 2026-06-14 | [plan](collapse-singlerecordtablefield-into-recordtablefield.md) |
+| `R305` | Expand the carrier dimension with source-shape and cardinality; unify the service/DML to @table re-fetch as a source-keyed Lookup | Spec | 2026-06-15 <sub>created 2026-06-14</sub> | [plan](collapse-singlerecordtablefield-into-recordtablefield.md) |
 | `R308` | Fix the @service list-payload N+1 by deriving many-arrival for list-returning carriers <sub>blocked by: [collapse-singlerecordtablefield-into-recordtablefield](collapse-singlerecordtablefield-into-recordtablefield.md)</sub> | Spec | 2026-06-14 | [plan](service-list-payload-arrival.md) |
 | `R279` | Field-first reachability-driven classification driver <sub>blocked by: [dimensional-model-pivot](dimensional-model-pivot.md)</sub> | Ready | 2026-06-07 <sub>created 2026-06-05</sub> | [plan](field-first-classification-driver.md) |
 | `R45` | Multi-tenant routing on top of the schema-driven ExecutionInput factory | Spec | 2026-05-20 | [plan](tenant-routing-and-execution-input.md) |
