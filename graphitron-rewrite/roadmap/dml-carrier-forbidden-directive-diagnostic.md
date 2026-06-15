@@ -1,7 +1,7 @@
 ---
 id: R310
 title: "Forbidden directive on an otherwise-valid DML payload carrier silently misdirects to 'use ID or a @table type'"
-status: Spec
+status: Ready
 bucket: bug
 theme: mutations-errors
 depends-on: []

@@ -31,11 +31,11 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R180` | Centralize ResultType column-read emission for @record parents | Spec | 2026-05-19 | [plan](record-parent-column-read-helper.md) |
 | `R242` | DML payload positional input/output alignment <sub>blocked by: [collapse-singlerecordtablefield-into-recordtablefield](collapse-singlerecordtablefield-into-recordtablefield.md)</sub> | Spec | 2026-06-15 <sub>created 2026-05-26</sub> | [plan](dml-payload-positional-alignment.md) |
 | `R115` | Enumerate the capabilities graphitron delivers | Spec |  | [plan](capability-catalog.md) |
-| `R310` | Forbidden directive on an otherwise-valid DML payload carrier silently misdirects to 'use ID or a @table type' | Spec | 2026-06-15 | [plan](dml-carrier-forbidden-directive-diagnostic.md) |
 | `R109` | How-to recipe and Sakila fixture for grouped collections via Field<Result<R>> @externalField + multiset | Spec |  | [plan](list-valued-external-field-multiset.md) |
 | `R212` | IntelliJ plugin wrapping graphitron:dev LSP | Spec | 2026-05-21 | [plan](intellij-lsp-plugin.md) |
 | `R269` | Null-guard split-query key extraction for nullable to-one records | Spec | 2026-06-02 <sub>created 2026-06-01</sub> | [plan](nullable-to-one-record-into-npe.md) |
 | `R112` | Operation-driven test corpus, capability catalog, and runtime trace <sub>blocked by: [capability-catalog](capability-catalog.md)</sub> | Spec |  | [plan](operation-driven-test-corpus.md) |
+| `R310` | Forbidden directive on an otherwise-valid DML payload carrier silently misdirects to 'use ID or a @table type' | Ready | 2026-06-15 | [plan](dml-carrier-forbidden-directive-diagnostic.md) |
 
 ---
 
@@ -185,7 +185,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R92` [**Surface database CHECK constraints as Jakarta validation rules**](catalog-check-constraint-validation.md) — Spec, architecture
 - `R145` [**Cardinality safety story for UPSERT under the multiRow: regime**](mutation-cardinality-safety-upsert.md) — Backlog, architecture
 - `R146` [**Unique-index coverage as an alternative to PK for mutation cardinality safety**](mutation-cardinality-safety-unique-index.md) — Backlog, architecture
-- `R310` [**Forbidden directive on an otherwise-valid DML payload carrier silently misdirects to 'use ID or a @table type'**](dml-carrier-forbidden-directive-diagnostic.md) — Spec, bug
+- `R310` [**Forbidden directive on an otherwise-valid DML payload carrier silently misdirects to 'use ID or a @table type'**](dml-carrier-forbidden-directive-diagnostic.md) — Ready, bug
 
 ### pagination
 
