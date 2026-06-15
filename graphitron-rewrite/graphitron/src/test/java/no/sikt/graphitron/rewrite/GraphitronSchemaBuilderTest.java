@@ -2371,7 +2371,7 @@ class GraphitronSchemaBuilderTest {
             schema -> assertThat(schema.field("FilmPayload", "films"))
                 .as("orphan-carrier data field has no fieldRegistry entry after R158")
                 .isNull()) {
-            @Override public Set<Class<?>> variants() { return Set.of(ChildField.SingleRecordTableField.class); }
+            @Override public Set<Class<?>> variants() { return Set.of(ChildField.RecordTableField.class); }
         },
 
         SINGLE_RECORD_IDENTITY_FIELD_ORPHAN(
@@ -6527,14 +6527,15 @@ class GraphitronSchemaBuilderTest {
                     .isNotInstanceOf(no.sikt.graphitron.rewrite.model.GraphitronType.UnclassifiedType.class);
                 assertThat(schema.field("Mutation", "createFilms"))
                     .isInstanceOf(MutationField.MutationServiceRecordField.class);
-                // The data field projects over the OUTCOME_SUCCESS list path: SingleRecordTableField,
-                // MANY cardinality, reading the records off Outcome.Success.value().
+                // R305: the data field collapsed into RecordTableField — a source=target re-fetch.
+                // MANY (list) per-key cardinality, ProducedRecordRead reading the records off the
+                // source (the OUTCOME_SUCCESS envelope is now applied by the generator at the type
+                // level, not carried on the SourceKey).
                 var dataField = schema.field("FilmsPayload", "films");
-                assertThat(dataField).isInstanceOf(no.sikt.graphitron.rewrite.model.ChildField.SingleRecordTableField.class);
-                var sk = ((no.sikt.graphitron.rewrite.model.ChildField.SingleRecordTableField) dataField).sourceKey();
+                assertThat(dataField).isInstanceOf(no.sikt.graphitron.rewrite.model.ChildField.RecordTableField.class);
+                var sk = ((no.sikt.graphitron.rewrite.model.ChildField.RecordTableField) dataField).sourceKey();
                 assertThat(sk.cardinality()).isEqualTo(no.sikt.graphitron.rewrite.model.SourceKey.Cardinality.MANY);
-                assertThat(((no.sikt.graphitron.rewrite.model.SourceKey.Reader.ResultRowWalk) sk.reader()).envelope())
-                    .isEqualTo(no.sikt.graphitron.rewrite.model.SourceKey.Reader.SourceEnvelope.OUTCOME_SUCCESS);
+                assertThat(sk.reader()).isInstanceOf(no.sikt.graphitron.rewrite.model.SourceKey.Reader.ProducedRecordRead.class);
             }) {
             @Override public Set<Class<?>> variants() { return Set.of(MutationField.MutationServiceRecordField.class); }
         },
@@ -8252,12 +8253,11 @@ class GraphitronSchemaBuilderTest {
 
     @Test
     @ProjectionFor({
-        ChildField.SingleRecordTableField.class,
         ChildField.SingleRecordIdField.class
     })
     void singleRecordCarrierProjectionsCarryTablePayload() {
-        // SingleRecordTableField — single-record DML carrier data field on a @table-element
-        // payload (R75 / R141 INSERT shape).
+        // R305: the single-record DML carrier data field collapsed into RecordTableField, which
+        // projects as RecordTableTarget (R75 / R141 INSERT shape; former SingleRecordTable).
         var s1 = buildSnapshot("""
             type Film @table(name: "film") { title: String }
             type FilmPayload { film: Film }
@@ -8267,7 +8267,7 @@ class GraphitronSchemaBuilderTest {
                 createFilm(in: FilmCreateInput!): FilmPayload @mutation(typeName: INSERT)
             }
             """);
-        var carrier = (FieldClassification.SingleRecordTable) s1.fieldClassificationsByCoord().get("FilmPayload.film");
+        var carrier = (FieldClassification.RecordTableTarget) s1.fieldClassificationsByCoord().get("FilmPayload.film");
         assertThat(carrier.tableName()).isEqualToIgnoringCase("film");
 
         // SingleRecordIdField — R275 @service carrier's @nodeId-from-record data field,

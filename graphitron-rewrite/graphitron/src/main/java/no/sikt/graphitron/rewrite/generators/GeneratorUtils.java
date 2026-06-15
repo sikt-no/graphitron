@@ -4,6 +4,7 @@ import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeName;
+import no.sikt.graphitron.javapoet.WildcardTypeName;
 import no.sikt.graphitron.rewrite.model.AccessorRef;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
@@ -228,35 +229,79 @@ class GeneratorUtils {
                     "buildRecordParentKeyExtraction does not handle Reader.ResultRowWalk "
                     + "(single-record DML carrier dispatch path; the parent is the mutation's "
                     + "Result<RecordN<...>>, not a record-backed Java class).");
+            // R305 — source=target carrier re-fetch: ONE reads the PK off the single produced
+            // record; MANY iterates the produced collection, one PK key per element.
+            case SourceKey.Reader.ProducedRecordRead ignored ->
+                sourceKey.cardinality() == SourceKey.Cardinality.MANY
+                    ? buildProducedRecordsKeyMany(sourceKey, resultType, sourceExpr)
+                    : buildKeyExtractionWithNullCheck(sourceKey, sourceKey.target(), sourceExpr);
         };
     }
 
     private static CodeBlock buildFkRowKey(
             List<ColumnRef> fkCols, TypeName keyType,
             GraphitronType.ResultType resultType, CodeBlock sourceExpr) {
+        return CodeBlock.builder()
+            .addStatement("$T key = $T.row($L)", keyType, DSL,
+                recordColumnReadArgs(fkCols, resultType, sourceExpr))
+            .build();
+    }
+
+    /**
+     * Per-column read of the key tuple off a single record expression, shared by
+     * {@link #buildFkRowKey} (one key off {@code env.getSource()}) and
+     * {@link #buildProducedRecordsKeyMany} (one key per element of a held collection). Forks on the
+     * parent {@link GraphitronType.ResultType}: jOOQ table record / jOOQ record read the column by
+     * field or sql-name; Java record / typed POJO read it via the accessor method.
+     */
+    private static CodeBlock recordColumnReadArgs(
+            List<ColumnRef> cols, GraphitronType.ResultType resultType, CodeBlock recordExpr) {
         var rowArgs = CodeBlock.builder();
-        for (int i = 0; i < fkCols.size(); i++) {
+        for (int i = 0; i < cols.size(); i++) {
             if (i > 0) rowArgs.add(", ");
-            ColumnRef col = fkCols.get(i);
+            ColumnRef col = cols.get(i);
             if (resultType instanceof GraphitronType.JooqTableRecordType jtt) {
                 var tablesClass = jtt.table().constantsClass();
                 rowArgs.add("(($T) $L).get($T.$L.$L)",
-                    RECORD, sourceExpr, tablesClass, jtt.table().javaFieldName(), col.javaName());
+                    RECORD, recordExpr, tablesClass, jtt.table().javaFieldName(), col.javaName());
             } else if (resultType instanceof GraphitronType.JooqRecordType) {
-                rowArgs.add("(($T) $L).get($S)", RECORD, sourceExpr, col.sqlName());
+                rowArgs.add("(($T) $L).get($S)", RECORD, recordExpr, col.sqlName());
             } else if (resultType instanceof GraphitronType.JavaRecordType jrt) {
                 var backingClass = ClassName.bestGuess(jrt.fqClassName());
-                rowArgs.add("(($T) $L).$L()", backingClass, sourceExpr, toCamelCase(col.sqlName()));
+                rowArgs.add("(($T) $L).$L()", backingClass, recordExpr, toCamelCase(col.sqlName()));
             } else {
                 var prt = (GraphitronType.PojoResultType.Backed) resultType;
                 var backingClass = ClassName.bestGuess(prt.fqClassName());
                 var accessorBase = toCamelCase(col.sqlName());
                 var getter = "get" + Character.toUpperCase(accessorBase.charAt(0)) + accessorBase.substring(1);
-                rowArgs.add("(($T) $L).$L()", backingClass, sourceExpr, getter);
+                rowArgs.add("(($T) $L).$L()", backingClass, recordExpr, getter);
             }
         }
+        return rowArgs.build();
+    }
+
+    /**
+     * R305 — {@link SourceKey.Reader.ProducedRecordRead} at {@link SourceKey.Cardinality#MANY}: the
+     * source is the producer's held collection of target records (a {@code List<XRecord>} on
+     * {@code env.getSource()} or {@code Outcome.Success.value()}). Iterates it and builds one
+     * {@code RowN} PK key per element, collected into {@code List<key> keys} for the {@code LOAD_MANY}
+     * dispatch (one re-projected row per key, scattered by idx). Mirrors {@link #buildAccessorKeyMany}
+     * with the source itself as the iterable rather than an accessor's return.
+     */
+    private static CodeBlock buildProducedRecordsKeyMany(
+            SourceKey sourceKey, GraphitronType.ResultType resultType, CodeBlock sourceExpr) {
+        TypeName keyType = sourceKey.keyElementType();
+        TypeName keysListType = ParameterizedTypeName.get(LIST, keyType);
+        ClassName arrayList = ClassName.get("java.util", "ArrayList");
+        TypeName iterableOfWild = ParameterizedTypeName.get(
+            ClassName.get("java.lang", "Iterable"), WildcardTypeName.subtypeOf(Object.class));
         return CodeBlock.builder()
-            .addStatement("$T key = $T.row($L)", keyType, DSL, rowArgs.build())
+            .addStatement("$T keys = new $T<>()", keysListType, arrayList)
+            .beginControlFlow("for ($T element : ($T) $L)", Object.class, iterableOfWild, sourceExpr)
+            .addStatement("$T key = $T.row($L)", keyType, DSL,
+                recordColumnReadArgs(sourceKey.columns(), resultType, CodeBlock.of("element")))
+            .addStatement("keys.add(key)")
+            .endControlFlow()
             .build();
     }
 
@@ -346,6 +391,20 @@ class GeneratorUtils {
      * {@code ColumnRead}).
      */
     static CodeBlock buildKeyExtractionWithNullCheck(SourceKey sourceKey, TableRef parentTable) {
+        return buildKeyExtractionWithNullCheck(sourceKey, parentTable, SOURCE_FROM_ENV);
+    }
+
+    /**
+     * Source-bound variant of {@link #buildKeyExtractionWithNullCheck(SourceKey, TableRef)}; reads
+     * the key columns off {@code sourceExpr} (e.g. {@code success.value()} under an
+     * {@code OUTCOME_SUCCESS} envelope) rather than {@code env.getSource()}. Reads each PK column
+     * into a typed local so a {@code null} component binds as a typed {@code null} (not an untyped
+     * literal), then short-circuits to {@code completedFuture(null)} if any component is {@code null}
+     * — the R305 source=target carrier path relies on both: the typed bind keeps the VALUES-join's
+     * {@code = } comparison well-typed, and the null short-circuit returns no row for the LocalContext
+     * error sentinel (an empty record with a {@code null} PK).
+     */
+    static CodeBlock buildKeyExtractionWithNullCheck(SourceKey sourceKey, TableRef parentTable, CodeBlock sourceExpr) {
         if (!(sourceKey.wrap() instanceof SourceKey.Wrap.Row)) {
             throw new IllegalArgumentException(
                 "buildKeyExtractionWithNullCheck supports SourceKey.Wrap.Row only, got "
@@ -362,8 +421,8 @@ class GeneratorUtils {
             ColumnRef col = pkCols.get(i);
             ClassName colType = ClassName.bestGuess(col.columnClass());
             String local = "fkVal" + i;
-            out.addStatement("$T $L = (($T) env.getSource()).get($T.$L.$L)",
-                colType, local, RECORD, tablesClass, tableField, col.javaName());
+            out.addStatement("$T $L = (($T) $L).get($T.$L.$L)",
+                colType, local, RECORD, sourceExpr, tablesClass, tableField, col.javaName());
             if (i > 0) {
                 nullCheck.add(" || ");
                 rowArgs.add(", ");

@@ -32,7 +32,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       at {@code <Payload>.film} reading via the {@code SinglePayload.film()} accessor on
  *       the record-backed parent. The mutation classifies admit
  *       ({@link MutationField.MutationServiceRecordField}). No
- *       {@link ChildField.SingleRecordTableField} (the carrier-walk-shape permit) is produced.</li>
+ *       {@link ChildField.RecordTableField} (the carrier-walk-shape permit) is produced.</li>
  *   <li>Diagnostic-wording pin: when the {@code @service} method's reflected return type
  *       doesn't match the payload class, the diagnostic cites the payload class (not the
  *       inner table's record class). The diagnostic family migrates from the carrier walk's
@@ -74,7 +74,10 @@ class SettKvotesporsmalShapeRegressionTest {
 
         var df = schema.field("Payload", "film");
         assertThat(df).isInstanceOf(ChildField.RecordTableField.class);
-        assertThat(df).isNotInstanceOf(ChildField.SingleRecordTableField.class);
+        // R305: the standard record-parent path (not the carrier re-fetch); its SourceKey reader is
+        // the catalog-FK/accessor read, not the source=target ProducedRecordRead carrier reader.
+        assertThat(((ChildField.RecordTableField) df).sourceKey().reader())
+            .isNotInstanceOf(no.sikt.graphitron.rewrite.model.SourceKey.Reader.ProducedRecordRead.class);
     }
 
     /**
@@ -101,7 +104,8 @@ class SettKvotesporsmalShapeRegressionTest {
 
         var df = schema.field("Payload", "film");
         assertThat(df).isInstanceOf(ChildField.RecordTableField.class);
-        assertThat(df).isNotInstanceOf(ChildField.SingleRecordTableField.class);
+        assertThat(((ChildField.RecordTableField) df).sourceKey().reader())
+            .isNotInstanceOf(no.sikt.graphitron.rewrite.model.SourceKey.Reader.ProducedRecordRead.class);
     }
 
     // R276: classBacked_returnMismatch_diagnosticDoesNotCiteInnerTableRecord was deleted. It

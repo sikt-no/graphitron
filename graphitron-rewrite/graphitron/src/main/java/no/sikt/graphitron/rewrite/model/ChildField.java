@@ -29,11 +29,13 @@ public sealed interface ChildField extends OutputField
     /**
      * Every {@code ChildField} leaf is on a non-root parent type, so the carrier is
      * {@link Carrier.Source}, materialised with this field's {@link #sourceShape()} and source
-     * {@link SourceCardinality}. R305 builds only the {@link SourceCardinality#One} path; the
-     * ancestor-product {@link SourceCardinality#Many} arrival is R308.
+     * {@link SourceCardinality}. R305 conservatively hard-codes {@link SourceCardinality#Many} (the
+     * absorbing element): every re-fetch field batches, which is always correct as a one-element
+     * batch. The {@link SourceCardinality#One} inline-skip optimisation stays dead until R279
+     * computes the true ancestor-product cardinality that would let a field declare {@code One}.
      */
     @Override default Carrier carrier() {
-        return new Carrier.Source(sourceShape(), SourceCardinality.One);
+        return new Carrier.Source(sourceShape(), SourceCardinality.Many);
     }
 
     /**
@@ -73,7 +75,6 @@ public sealed interface ChildField extends OutputField
             case RecordTableMethodField ignored -> SourceShape.Record;
             case RecordField ignored -> SourceShape.Record;
             case PropertyField ignored -> SourceShape.Record;
-            case SingleRecordTableField ignored -> SourceShape.Record;
             case SingleRecordIdField ignored -> SourceShape.Record;
             case SingleRecordIdFieldFromReturning ignored -> SourceShape.Record;
             case ErrorsField ignored -> SourceShape.Record;
@@ -100,8 +101,6 @@ public sealed interface ChildField extends OutputField
             case RecordLookupTableField ignored -> Intent.Lookup;
             case RecordTableMethodField ignored -> Intent.Fetch;
             case ServiceTableField ignored -> Intent.QueryService;
-            // The follow-up SELECT projecting a @table from a service/DML record parent: a plain Fetch.
-            case SingleRecordTableField ignored -> Intent.Fetch;
             // Service record / passthrough scalars.
             case ServiceRecordField ignored -> Intent.QueryService;
             case RecordField ignored -> Intent.Fetch;
@@ -136,7 +135,6 @@ public sealed interface ChildField extends OutputField
             case RecordLookupTableField f -> OutputField.tableMapping(f.returnType());
             case RecordTableMethodField f -> OutputField.tableMapping(f.returnType());
             case ServiceTableField f -> OutputField.tableMapping(f.returnType());
-            case SingleRecordTableField ignored -> Mapping.Table;
             case ServiceRecordField ignored -> Mapping.Record;
             case RecordField ignored -> Mapping.Field;
             case PropertyField ignored -> Mapping.Field;
@@ -154,60 +152,6 @@ public sealed interface ChildField extends OutputField
     }
 
     /**
-     * R75 / Phase 1 — the single data field on a single-record DML carrier (an SDL Object admitted
-     * by {@code BuildContext.scanStructuralDmlPayload} as an {@code @table}-element carrier)
-     * for a record-returning DML mutation. The parent mutation classifies as
-     * {@code MutationField.MutationDmlRecordField}; its fetcher returns
-     * {@code Result<RecordN<...>>} carrying the upstream DML's PK-only RETURNING rows,
-     * and this data field's fetcher reads {@code env.getSource()} typed by
-     * {@code SourceKey.wrap × columns}, then runs the response SELECT outside the DML
-     * transaction.
-     *
-     * <p>Implements {@link TableTargetField} for structural uniformity with the existing
-     * {@code RecordTableField} family; does not implement {@link BatchKeyField} because there
-     * is no DataLoader setup — the single source row is in hand at fetch time, not batched
-     * across multiple parent rows. See {@code synthesize-payload-carrier.md}, "New sibling
-     * permit: ChildField.SingleRecordTableField", for the design rationale.
-     *
-     * <p>The {@link #sourceKey()} component is pinned by {@link SourceKey}'s compact constructor
-     * to use {@link SourceKey.Reader.ResultRowWalk} with either {@link SourceKey.Wrap.Record}
-     * (DML mutation producer) or {@link SourceKey.Wrap.TableRecord} whose {@code className}
-     * matches {@code target.recordClass()} ({@code @service} payload producer).
-     * {@link #joinPath()},
-     * {@link #filters()}, {@link #orderBy()}, and {@link #pagination()} are structurally empty/None
-     * for this permit (no navigation, no WHERE, no ordering, no pagination); accessor methods return
-     * empty/{@code None}/{@code null} rather than storing the values, encoding the invariant in the
-     * type system per the "narrow component types" principle. The empty {@code orderBy} pairs with
-     * the {@link OrderingOwnedByProducer} marker: the carrier emitter's PK-keyed-map walk owns the
-     * visible result ordering by re-keying the response SELECT to the upstream source list, so the
-     * cross-cutting list-requires-ordering validator excludes this permit by type.
-     */
-    record SingleRecordTableField(
-        String parentTypeName,
-        String name,
-        SourceLocation location,
-        ReturnTypeRef.TableBoundReturnType returnType,
-        SourceKey sourceKey
-    ) implements TableTargetField, OrderingOwnedByProducer {
-
-        public SingleRecordTableField {
-            if (!(sourceKey.reader() instanceof SourceKey.Reader.ResultRowWalk)) {
-                throw new IllegalArgumentException(
-                    "SingleRecordTableField requires SourceKey with Reader.ResultRowWalk; got "
-                    + sourceKey.reader().getClass().getSimpleName());
-            }
-        }
-
-        @Override public List<JoinStep> joinPath() { return List.of(); }
-        @Override public List<WhereFilter> filters() { return List.of(); }
-        @Override public OrderBySpec orderBy() { return new OrderBySpec.None(); }
-        @Override public PaginationSpec pagination() { return null; }
-        @Override public DomainReturnType domainReturnType() {
-            return new DomainReturnType.Record(returnType.table());
-        }
-    }
-
-    /**
      * R156 — the single data field on a payload-returning DELETE carrier whose data field is an
      * ID-typed scalar encoding the deleted row's primary key. The parent classifies as
      * {@code MutationField.MutationDmlRecordField} (single DELETE) or
@@ -215,7 +159,7 @@ public sealed interface ChildField extends OutputField
      * RETURNING rows; this data field's fetcher reads PK column(s) off the source {@code Record}
      * and runs them through {@link #encode} to produce the encoded NodeId.
      *
-     * <p>Sibling of {@link SingleRecordTableField} ("follow-up SELECT outside the tx,"
+     * <p>Sibling of the {@code RecordTableField} carrier re-fetch ("follow-up SELECT,"
      * load-bearing for INSERT / UPDATE / UPSERT carriers) and {@link SingleRecordIdField} ("encoded
      * key off an {@code @service} producer's in-memory record"). The three encode genuinely
      * different invariants — follow-up SELECT vs no-follow-up-encoded-PK-off-RETURNING vs
@@ -253,8 +197,8 @@ public sealed interface ChildField extends OutputField
      * {@code fjernSakTagger} delete-then-echo mutations are the driving case: the record the
      * service returns is already deleted from the database).
      *
-     * <p>Sibling of {@link SingleRecordTableField} ("follow-up SELECT off the producer's
-     * record") and {@link SingleRecordIdFieldFromReturning} ("encoded PK scalar off the DML
+     * <p>Sibling of the {@code RecordTableField} carrier re-fetch ("follow-up SELECT off the
+     * producer's record") and {@link SingleRecordIdFieldFromReturning} ("encoded PK scalar off the DML
      * RETURNING {@code Record}, read by SQL name"). It differs
      * from {@code SingleRecordIdFieldFromReturning} on the source shape, not just the envelope:
      * the source is the developer-declared {@code TableRecord} subclass (read through typed
@@ -458,8 +402,7 @@ public sealed interface ChildField extends OutputField
                 ChildField.LookupTableField, ChildField.SplitLookupTableField,
                 ChildField.TableInterfaceField,
                 ChildField.ServiceTableField,
-                ChildField.RecordTableField, ChildField.RecordLookupTableField,
-                ChildField.SingleRecordTableField {
+                ChildField.RecordTableField, ChildField.RecordLookupTableField {
 
         ReturnTypeRef.TableBoundReturnType returnType();
         List<JoinStep> joinPath();
@@ -764,7 +707,7 @@ public sealed interface ChildField extends OutputField
         SourceKey sourceKey,
         LoaderRegistration loaderRegistration,
         Optional<ErrorChannel> errorChannel
-    ) implements TableTargetField, MethodBackedField, BatchKeyField, WithErrorChannel, OrderingOwnedByProducer {
+    ) implements TableTargetField, MethodBackedField, BatchKeyField, WithErrorChannel {
         @Override
         public String rowsMethodName() {
             return "load" + Character.toUpperCase(name().charAt(0)) + name().substring(1);

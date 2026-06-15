@@ -101,8 +101,9 @@ public class GraphitronSchemaValidator {
      * predicate and the emitter cannot drift.
      *
      * <p>The {@code @service}-table and {@code DML}-projected-{@code @table} arms re-query from a
-     * produced record; the Record-source family ({@code SingleRecordTableField} /
-     * {@code RecordTableField} / {@code RecordLookupTableField} / {@code RecordTableMethodField})
+     * produced record; the Record-source family ({@code RecordTableField} — into which the former
+     * {@code SingleRecordTableField} carriers collapsed — {@code RecordLookupTableField} /
+     * {@code RecordTableMethodField})
      * re-projects the {@code @table} from keys read off a received record (R305). The
      * {@code @service}-record, DML-encoded (PK-only RETURNING), and catalog {@code Fetch} arms do not
      * re-fetch. The strict {@link no.sikt.graphitron.rewrite.model.Mapping#Table} guard matches
@@ -117,8 +118,8 @@ public class GraphitronSchemaValidator {
             case no.sikt.graphitron.rewrite.model.QueryField.QueryServiceTableField ignored -> true;
             case no.sikt.graphitron.rewrite.model.MutationField.MutationServiceTableField ignored -> true;
             case no.sikt.graphitron.rewrite.model.ChildField.ServiceTableField ignored -> true;
-            // R305 — the Record-source family re-projects the @table from keys held at the source.
-            case no.sikt.graphitron.rewrite.model.ChildField.SingleRecordTableField ignored -> true;
+            // R305 — the Record-source family re-projects the @table from keys held at the source
+            // (the former SingleRecordTableField carriers collapsed into RecordTableField).
             case no.sikt.graphitron.rewrite.model.ChildField.RecordTableField ignored -> true;
             case no.sikt.graphitron.rewrite.model.ChildField.RecordLookupTableField ignored -> true;
             case no.sikt.graphitron.rewrite.model.ChildField.RecordTableMethodField ignored -> true;
@@ -189,7 +190,6 @@ public class GraphitronSchemaValidator {
             case no.sikt.graphitron.rewrite.model.ChildField.ServiceRecordField f      -> validateServiceRecordField(f, types, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.RecordTableField f        -> validateRecordTableField(f, types, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.RecordLookupTableField f  -> validateRecordLookupTableField(f, types, errors);
-            case no.sikt.graphitron.rewrite.model.ChildField.SingleRecordTableField f  -> {} // R75 Phase 1 — narrow TableBoundReturnType component + SourceKey compact-constructor invariant pin the structural shape; admission-time checks (table-equality, DELETE rejection) live in the mutation-field classifier
             case no.sikt.graphitron.rewrite.model.ChildField.SingleRecordIdField f -> {} // R275 — narrow ScalarReturnType + SourceKey compact-constructor invariants (ResultRowWalk, Wrap.TableRecord) pin the structural shape; admission-time checks (encoder-pins-to-producer-table, @node resolution) live in the serviceEmitted classifier branch
             case no.sikt.graphitron.rewrite.model.ChildField.SingleRecordIdFieldFromReturning f -> {} // R156 — narrow ScalarReturnType component + NodeIdEncodeKeys compaction; admission-time checks (wrapper shape, encoder-pins-to-input-@table, DELETE-only) live in the @mutation classifier
             case no.sikt.graphitron.rewrite.model.ChildField.RecordField f             -> validateRecordField(f, errors);
@@ -236,15 +236,18 @@ public class GraphitronSchemaValidator {
      *
      * <p>Gated on {@link FieldWrapper.List} (not {@link FieldWrapper#isList()}, which also covers
      * connections) so the message stays disjoint from {@link #validatePaginationRequiresOrdering}
-     * — connections always carry pagination and are caught there. Excludes permits bearing
-     * {@link no.sikt.graphitron.rewrite.model.OrderingOwnedByProducer}: those (single-record
-     * carrier data fields and {@code @service}-backed child fields) have an upstream producer
-     * that determines visible result ordering, so the "list-shaped + {@code None}" signal does
-     * not imply non-determinism for them.
+     * — connections always carry pagination and are caught there. Exempts
+     * {@link no.sikt.graphitron.rewrite.model.OutputField#requiresReFetch()} fields (R305): a
+     * re-fetch field's visible order is locked to the source/target key correspondence (the
+     * {@code ORDER BY idx} scatter re-keys the re-projected rows to the upstream source order), so
+     * the "list-shaped + {@code None}" signal does not imply non-determinism for them, regardless of
+     * intent. This also covers the former {@code SingleRecordTableField} and {@code ServiceTableField}
+     * carriers that the retired {@code OrderingOwnedByProducer} marker exempted, and correctly admits
+     * a PK-less idx-ordered re-fetch that the marker would have rejected.
      */
     private void validateListRequiresOrdering(GraphitronField field, List<ValidationError> errors) {
         if (field instanceof SqlGeneratingField sgf
-                && !(field instanceof no.sikt.graphitron.rewrite.model.OrderingOwnedByProducer)
+                && !(field instanceof no.sikt.graphitron.rewrite.model.OutputField out && out.requiresReFetch())
                 && sgf.returnType().wrapper() instanceof FieldWrapper.List
                 && sgf.orderBy() instanceof OrderBySpec.None) {
             errors.add(new ValidationError(
@@ -1106,10 +1109,11 @@ public class GraphitronSchemaValidator {
      * {@link ChildField.Transport.LocalContext}:
      *
      * <ul>
-     *   <li>{@code SingleRecordTableField} → {@code buildSingleRecordTableFetcherValueRecordWrap}
-     *       + {@code buildSingleRecordTableFetcherValueTableRecordWrap} (explicit
-     *       {@code if (source == null) return null;} before any
-     *       {@code source.value1()} / {@code record.get(<PK>)} read).</li>
+     *   <li>{@code RecordTableField} → {@code buildRecordBasedDataFetcher} (explicit
+     *       {@code if (env.getSource() == null) return completedFuture(null);} prelude before the
+     *       key read; the {@code OUTCOME_SUCCESS} arm's {@code instanceof Success} narrowing also
+     *       rejects null). This is the R305 successor to the former {@code SingleRecordTableField}
+     *       carrier, which collapsed into {@code RecordTableField}.</li>
      *   <li>{@code SingleRecordIdFieldFromReturning} → {@code buildSingleRecordIdFromReturningFetcherValue}
      *       (explicit guard before encoder dispatch).</li>
      * </ul>
@@ -1118,7 +1122,7 @@ public class GraphitronSchemaValidator {
      * removing the guard from an existing emitter arm must remove the variant from this set.
      */
     private static final java.util.Set<Class<? extends GraphitronField>> LOCAL_CONTEXT_GUARDED_DATA_CHANNEL_VARIANTS = java.util.Set.of(
-        ChildField.SingleRecordTableField.class,
+        ChildField.RecordTableField.class,
         ChildField.SingleRecordIdFieldFromReturning.class
     );
 

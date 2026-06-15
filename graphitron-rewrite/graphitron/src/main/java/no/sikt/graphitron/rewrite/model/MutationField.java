@@ -302,7 +302,7 @@ public sealed interface MutationField extends RootField, WithErrorChannel
      * element is an {@code @table}-bound type). Sibling to {@link DmlTableField}: the latter
      * covers the "direct @table return" shape ({@code createFilm: Film}), this covers the
      * "payload wrap" shape ({@code createFilm: CreateFilmPayload}). The carrier's data field is
-     * classified as {@link ChildField.SingleRecordTableField}.
+     * classified as {@link ChildField.RecordTableField}.
      *
      * <p>The {@code kind} discriminator drives per-DML-kind emit variation (INSERT and UPSERT
      * have distinct SQL shapes); the model is one permit because the components are
@@ -363,7 +363,7 @@ public sealed interface MutationField extends RootField, WithErrorChannel
      * ({@code films: [Film!]}). Sibling to {@link MutationDmlRecordField}: the latter covers
      * the singleton-data-field case ({@code Payload { film: Film }}, single input), this
      * covers the bulk-data-field case ({@code Payload { films: [Film!] }}, bulk input). The
-     * carrier's data field is classified as {@link ChildField.SingleRecordTableField} with
+     * carrier's data field is classified as {@link ChildField.RecordTableField} with
      * {@link no.sikt.graphitron.rewrite.model.SourceKey.Cardinality#MANY}.
      *
      * <p>The classifier admits exactly
@@ -474,7 +474,7 @@ public sealed interface MutationField extends RootField, WithErrorChannel
      * surface plus the {@link UpdateRows} carrier, with no {@code TableInputArg} and no {@code @value}
      * dependency; of {@link MutationDmlRecordField} it shares the structural-payload emit shape (a
      * plain SDL Object wrapping one {@code @table}-element data field classified as
-     * {@link ChildField.SingleRecordTableField}, emitted as a two-step PK-only {@code RETURNING}
+     * {@link ChildField.RecordTableField}, emitted as a two-step PK-only {@code RETURNING}
      * inside {@code transactionResult} followed by the data field's response SELECT).
      *
      * <p>R246 migrated the direct-return UPDATE off {@code resolveInput}'s {@code @value}-partition
@@ -508,7 +508,7 @@ public sealed interface MutationField extends RootField, WithErrorChannel
      *
      * <p>Emit follows the bulk record-carrier skeleton: per-row UPDATE inside one
      * {@code dsl.transactionResult(...)}, collecting PK echoes into a {@code Result<RecordN<PK>>} in
-     * input order so the data field's {@link ChildField.SingleRecordTableField}
+     * input order so the data field's {@link ChildField.RecordTableField}
      * ({@link no.sikt.graphitron.rewrite.model.SourceKey.Cardinality#MANY}) fetcher renders rows in
      * input order. The per-row SET/WHERE partition is sourced from the {@link UpdateRows} carrier
      * (PK-or-UK matched-key membership) rather than {@code @value}; see
@@ -573,7 +573,7 @@ public sealed interface MutationField extends RootField, WithErrorChannel
      *
      * <p>Emit follows the bulk record-carrier skeleton: per-row DELETE inside one
      * {@code dsl.transactionResult(...)}, collecting PK echoes into a {@code Result<RecordN<PK>>} in
-     * input order so the data field's {@link ChildField.SingleRecordTableField}
+     * input order so the data field's {@link ChildField.RecordTableField}
      * ({@link no.sikt.graphitron.rewrite.model.SourceKey.Cardinality#MANY}) fetcher renders rows in
      * input order. The per-row WHERE columns are sourced from the {@link DeleteRows} carrier rather
      * than {@code tableInputArg.fieldBindings()}; see

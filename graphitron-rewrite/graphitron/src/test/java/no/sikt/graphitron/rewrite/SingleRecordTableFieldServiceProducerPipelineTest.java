@@ -13,10 +13,12 @@ import static org.assertj.core.api.Assertions.assertThat;
  * R158 pipeline-tier coverage for the {@code @service}-backed producer admit for single-record
  * DML carrier data fields. Verifies that an {@code @service} mutation returning {@code XRecord}
  * (single-record carrier) or {@code List<XRecord>} (list-record carrier) lands a
- * {@link ChildField.SingleRecordTableField} on the carrier's data field with the producer-kind
- * discrimination wired into {@link SourceKey.Wrap.TableRecord} (typed against the data table's
- * record class) — distinct from the DML producer's {@link SourceKey.Wrap.Record} arm. Rejection
- * cases pin the strict-return predicate and the single-producer-kind invariant.
+ * {@link ChildField.RecordTableField} on the carrier's data field (R305: the former
+ * {@code SingleRecordTableField} collapsed into it) keyed on a source=target re-fetch key
+ * ({@link SourceKey.Reader.ProducedRecordRead} + {@link SourceKey.Wrap.Row}, the PK read off the
+ * produced record(s)). The {@code DIRECT} / {@code OUTCOME_SUCCESS} source envelope is no longer
+ * carried on the SourceKey; the generator derives it at the type level. Rejection cases pin the
+ * strict-return predicate and the single-producer-kind invariant.
  */
 @PipelineTier
 class SingleRecordTableFieldServiceProducerPipelineTest {
@@ -25,7 +27,7 @@ class SingleRecordTableFieldServiceProducerPipelineTest {
 
     /** ONE / single-PK admission: @service returning {@code FilmRecord} for a non-list data field. */
     @Test
-    void serviceProducer_one_singlePk_admitsAsWrapTableRecord() {
+    void serviceProducer_one_singlePk_admitsAsRecordTableField() {
         var schema = TestSchemaHelper.buildSchema("""
             type Film @table(name: "film") { title: String }
             type FilmPayload { film: Film }
@@ -40,32 +42,30 @@ class SingleRecordTableFieldServiceProducerPipelineTest {
         assertThat(mutField).isInstanceOf(MutationField.MutationServiceRecordField.class);
 
         var dataField = schema.field("FilmPayload", "film");
-        assertThat(dataField).isInstanceOf(ChildField.SingleRecordTableField.class);
-        var srtf = (ChildField.SingleRecordTableField) dataField;
-        var sk = srtf.sourceKey();
-        assertThat(sk.reader()).isInstanceOf(SourceKey.Reader.ResultRowWalk.class);
-        // No errors field on the payload -> the producer returns the record bare, so the source
-        // envelope is DIRECT (env.getSource() is the FilmRecord, not an Outcome).
-        assertThat(((SourceKey.Reader.ResultRowWalk) sk.reader()).envelope())
-            .isEqualTo(SourceKey.Reader.SourceEnvelope.DIRECT);
-        assertThat(sk.wrap()).isInstanceOf(SourceKey.Wrap.TableRecord.class);
-        assertThat(((SourceKey.Wrap.TableRecord) sk.wrap()).className())
-            .isEqualTo(sk.target().recordClass());
+        assertThat(dataField).isInstanceOf(ChildField.RecordTableField.class);
+        var rtf = (ChildField.RecordTableField) dataField;
+        var sk = rtf.sourceKey();
+        // R305: source=target re-fetch key — ProducedRecordRead reads the PK off the produced
+        // record, Wrap.Row carries the PK tuple. The DIRECT/OUTCOME_SUCCESS envelope is no longer
+        // on the SourceKey (the generator derives it at the type level).
+        assertThat(sk.reader()).isInstanceOf(SourceKey.Reader.ProducedRecordRead.class);
+        assertThat(sk.wrap()).isInstanceOf(SourceKey.Wrap.Row.class);
         assertThat(sk.cardinality()).isEqualTo(SourceKey.Cardinality.ONE);
-        assertThat(sk.path()).isEmpty();
+        assertThat(sk.path()).singleElement().isInstanceOf(no.sikt.graphitron.rewrite.model.JoinStep.LiftedHop.class);
         assertThat(sk.columns()).extracting(c -> c.sqlName()).containsExactly("film_id");
     }
 
     /**
-     * R275: the source-record carrier with an error channel. Adding an {@code errors} field to the
-     * payload routes the {@code @service} producer through the typed {@code Outcome} wrapper, so the
-     * data field's {@link SourceKey.Reader.ResultRowWalk} records the {@code OUTCOME_SUCCESS}
-     * envelope (the fetcher narrows {@code Outcome.Success} and reads off {@code success.value()})
-     * and the sibling errors field is the {@code WrapperArm} transport. This is the opptak
+     * R275/R305: the source-record carrier with an error channel. Adding an {@code errors} field to
+     * the payload routes the {@code @service} producer through the typed {@code Outcome} wrapper; the
+     * data field collapses into {@link ChildField.RecordTableField} (ProducedRecordRead source=target
+     * re-fetch) and the sibling errors field is the {@code WrapperArm} transport. The
+     * {@code OUTCOME_SUCCESS} envelope is no longer recorded on the data field's SourceKey — the
+     * generator derives it from the payload's error channel at the type level. This is the opptak
      * {@code { sak: Sak, errors: [...] }} shape that buckets B/D failed on before R275.
      */
     @Test
-    void serviceProducer_withErrorsField_recordsOutcomeSuccessEnvelope() {
+    void serviceProducer_withErrorsField_collapsesToRecordTableField() {
         var schema = TestSchemaHelper.buildSchema("""
             type Film @table(name: "film") { title: String }
             type DbErr @error(handlers: [{handler: DATABASE}]) {
@@ -85,12 +85,10 @@ class SingleRecordTableFieldServiceProducerPipelineTest {
             """);
 
         var dataField = schema.field("FilmPayload", "film");
-        assertThat(dataField).isInstanceOf(ChildField.SingleRecordTableField.class);
-        var sk = ((ChildField.SingleRecordTableField) dataField).sourceKey();
-        assertThat(sk.reader()).isInstanceOf(SourceKey.Reader.ResultRowWalk.class);
-        assertThat(((SourceKey.Reader.ResultRowWalk) sk.reader()).envelope())
-            .isEqualTo(SourceKey.Reader.SourceEnvelope.OUTCOME_SUCCESS);
-        assertThat(sk.wrap()).isInstanceOf(SourceKey.Wrap.TableRecord.class);
+        assertThat(dataField).isInstanceOf(ChildField.RecordTableField.class);
+        var sk = ((ChildField.RecordTableField) dataField).sourceKey();
+        assertThat(sk.reader()).isInstanceOf(SourceKey.Reader.ProducedRecordRead.class);
+        assertThat(sk.wrap()).isInstanceOf(SourceKey.Wrap.Row.class);
 
         // The sibling errors field rides the WrapperArm transport (the Outcome.ErrorList arm).
         var errorsField = schema.field("FilmPayload", "errors");
@@ -132,11 +130,10 @@ class SingleRecordTableFieldServiceProducerPipelineTest {
         assertThat(schema.field("Mutation", "runFilms"))
             .isInstanceOf(MutationField.MutationServiceRecordField.class);
         var dataField = schema.field("FilmListPayload", "films");
-        assertThat(dataField).isInstanceOf(ChildField.SingleRecordTableField.class);
-        var sk = ((ChildField.SingleRecordTableField) dataField).sourceKey();
+        assertThat(dataField).isInstanceOf(ChildField.RecordTableField.class);
+        var sk = ((ChildField.RecordTableField) dataField).sourceKey();
         assertThat(sk.cardinality()).isEqualTo(SourceKey.Cardinality.MANY);
-        assertThat(((SourceKey.Reader.ResultRowWalk) sk.reader()).envelope())
-            .isEqualTo(SourceKey.Reader.SourceEnvelope.OUTCOME_SUCCESS);
+        assertThat(sk.reader()).isInstanceOf(SourceKey.Reader.ProducedRecordRead.class);
         var errorsField = schema.field("FilmListPayload", "errors");
         assertThat(errorsField).isInstanceOf(ChildField.ErrorsField.class);
         assertThat(((ChildField.ErrorsField) errorsField).transport())
@@ -322,7 +319,7 @@ class SingleRecordTableFieldServiceProducerPipelineTest {
 
     /** MANY / single-PK admission: @service returning {@code List<FilmRecord>}. */
     @Test
-    void serviceProducer_many_singlePk_admitsAsWrapTableRecord() {
+    void serviceProducer_many_singlePk_admitsAsRecordTableField() {
         var schema = TestSchemaHelper.buildSchema("""
             type Film @table(name: "film") { title: String }
             type FilmListPayload { films: [Film!] }
@@ -334,12 +331,11 @@ class SingleRecordTableFieldServiceProducerPipelineTest {
             """);
 
         var dataField = schema.field("FilmListPayload", "films");
-        assertThat(dataField).isInstanceOf(ChildField.SingleRecordTableField.class);
-        var srtf = (ChildField.SingleRecordTableField) dataField;
-        var sk = srtf.sourceKey();
-        assertThat(sk.wrap()).isInstanceOf(SourceKey.Wrap.TableRecord.class);
-        assertThat(((SourceKey.Wrap.TableRecord) sk.wrap()).className())
-            .isEqualTo(sk.target().recordClass());
+        assertThat(dataField).isInstanceOf(ChildField.RecordTableField.class);
+        var rtf = (ChildField.RecordTableField) dataField;
+        var sk = rtf.sourceKey();
+        assertThat(sk.reader()).isInstanceOf(SourceKey.Reader.ProducedRecordRead.class);
+        assertThat(sk.wrap()).isInstanceOf(SourceKey.Wrap.Row.class);
         assertThat(sk.cardinality()).isEqualTo(SourceKey.Cardinality.MANY);
         assertThat(sk.columns()).extracting(c -> c.sqlName()).containsExactly("film_id");
     }
@@ -362,12 +358,11 @@ class SingleRecordTableFieldServiceProducerPipelineTest {
             """);
 
         var dataField = schema.field("FilmActorListPayload", "filmActors");
-        assertThat(dataField).isInstanceOf(ChildField.SingleRecordTableField.class);
-        var srtf = (ChildField.SingleRecordTableField) dataField;
-        var sk = srtf.sourceKey();
-        assertThat(sk.wrap()).isInstanceOf(SourceKey.Wrap.TableRecord.class);
-        assertThat(((SourceKey.Wrap.TableRecord) sk.wrap()).className())
-            .isEqualTo(sk.target().recordClass());
+        assertThat(dataField).isInstanceOf(ChildField.RecordTableField.class);
+        var rtf = (ChildField.RecordTableField) dataField;
+        var sk = rtf.sourceKey();
+        assertThat(sk.reader()).isInstanceOf(SourceKey.Reader.ProducedRecordRead.class);
+        assertThat(sk.wrap()).isInstanceOf(SourceKey.Wrap.Row.class);
         assertThat(sk.cardinality()).isEqualTo(SourceKey.Cardinality.MANY);
         // Composite PK: both columns in declaration order from the catalog.
         assertThat(sk.columns()).extracting(c -> c.sqlName())

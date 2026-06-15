@@ -337,5 +337,20 @@ public record SourceKey(
                 Objects.requireNonNull(envelope, "envelope");
             }
         }
+
+        /**
+         * R305: the source <em>is</em> the produced target record(s). A carrier's producer (DML
+         * write or {@code @service}) handed back the target table's record(s) on
+         * {@code env.getSource()} (or {@code Outcome.Success.value()}); the field reads the
+         * identifying PK off them and re-projects the {@code @table} — a source=target re-fetch. The
+         * read feeds the same Split-rows rows-method as the other readers (the shape is identical);
+         * the source-read is the only difference. {@link Cardinality#ONE} reads the PK off the single
+         * source record; {@link Cardinality#MANY} iterates the held collection, one PK key per
+         * element (the {@code LOAD_MANY} contract that emits one row per key). The source envelope
+         * ({@code DIRECT} / {@code OUTCOME_SUCCESS}) is handled by the generator at the type level
+         * ({@code sourceIsOutcome}), not carried here. Pairs with {@link Wrap.Row} (the key is a
+         * {@code RowN} PK tuple).
+         */
+        record ProducedRecordRead() implements Reader {}
     }
 }

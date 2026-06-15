@@ -144,10 +144,10 @@ public final class ClassifiedHarness {
         return a == null ? SourceShape.Table : SourceShape.valueOf(((EnumValue) a.getValue()).getName());
     }
 
-    /** The {@code Source}-arm source-cardinality (R305); defaults to {@link SourceCardinality#One} (the only path R305 builds). */
+    /** The {@code Source}-arm source-cardinality (R305); defaults to {@link SourceCardinality#Many} (R305 conservatively hard-codes the absorbing element for every Source field). */
     private static SourceCardinality sourceCardinalityArg(Directive d) {
         Argument a = d.getArgument("sourceCardinality");
-        return a == null ? SourceCardinality.One : SourceCardinality.valueOf(((EnumValue) a.getValue()).getName());
+        return a == null ? SourceCardinality.Many : SourceCardinality.valueOf(((EnumValue) a.getValue()).getName());
     }
 
     private static Intent intentArg(Directive d) {

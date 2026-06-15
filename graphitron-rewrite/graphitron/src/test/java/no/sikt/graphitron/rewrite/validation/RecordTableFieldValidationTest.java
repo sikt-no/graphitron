@@ -86,6 +86,20 @@ class RecordTableFieldValidationTest {
                 FK_PATH,
                 List.of(), PK_ORDER, null, SOURCE_KEY_LIST, LR_LIST,
                 TestFixtures.pcFor(FK_PATH, TestFixtures.filmTable())),
+            List.of()),
+
+        // R305 latent-bug guard: a list-valued re-fetch field with OrderBySpec.None (no
+        // @orderBy/@defaultOrder and a PK-less target, so OrderByResolver supplies no Fixed(PK)
+        // default) must VALIDATE, not be rejected for "list fields must have a deterministic order".
+        // A re-fetch field's visible order is locked to the source/target key correspondence (the
+        // ORDER BY idx scatter), so it is deterministic regardless of ordering spec. The retired
+        // OrderingOwnedByProducer marker never covered RecordTableField, so before R305 switched the
+        // exemption to requiresReFetch this PK-less list re-fetch would have been wrongly rejected.
+        LIST_NO_ORDER_REFETCH_EXEMPT("PK-less list re-fetch with OrderBySpec.None — exempt via requiresReFetch (R305 latent-bug guard)",
+            new RecordTableField("FilmDetails", "films", null, RT_LIST,
+                FK_PATH,
+                List.of(), new OrderBySpec.None(), null, SOURCE_KEY_LIST, LR_LIST,
+                TestFixtures.pcFor(FK_PATH, TestFixtures.filmTable())),
             List.of());
 
         private final String description;
