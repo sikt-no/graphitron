@@ -58,27 +58,37 @@ public sealed interface OutputField extends GraphitronField permits RootField, C
     Mapping mapping();
 
     /**
-     * Re-fetch (the appendix's {@code RF}): a developer-{@code @service} or DML-write producer that
-     * yields a catalog-{@link Mapping#Table} shape needs a follow-up SELECT to project the
-     * {@code @table}, because the producer hands back a record/result rather than the projected
-     * columns. <strong>Derived</strong> from {@link #intent()} × {@link #mapping()}, not switched on
-     * leaf identity: a service or DML-write intent landing on a {@code Table} mapping. This is the
-     * single home of the re-fetch predicate the service/DML fetcher arms used to each re-decide from
-     * their own leaf type (R290); {@code GraphitronSchemaValidator} mirrors it against the generator's
-     * actual re-fetch dispatch so the derivation and the emitter cannot drift.
+     * Re-fetch (the appendix's {@code RF}): the target {@code @table} must be re-projected from keys
+     * held at the source, because the field holds a domain record rather than the projected columns.
+     * <strong>Derived</strong> from {@link Mapping#Table} combined with <em>holds-records</em>, not
+     * switched on leaf identity. "Holds records" is two cases on the catalog-vs-domain split: the
+     * source <em>received</em> a record ({@link Carrier.Source} with {@link SourceShape#Record}), or a
+     * service / DML-write intent <em>produced</em> one mid-field. Either way the field re-projects the
+     * table by correlating the record's keys to the catalog rows (mechanically a {@code VALUES(idx,
+     * key...)} join with {@code ORDER BY idx}).
      *
-     * <p>Catalog {@link Intent#Fetch} reads (which read the table directly) and service/DML producers
-     * that map to {@link Mapping#Record} / {@link Mapping#Column} are not re-fetches: the former needs
-     * no producer round-trip, the latter hands back the consumed shape directly.
+     * <p>Re-fetch is orthogonal to {@link #intent()} (R305): a field that re-fetches keeps its own
+     * intent. A {@code SingleRecordTableField} keys off a producer record while its intent stays
+     * {@code Fetch}; this is the single home of the re-fetch predicate the service/DML fetcher arms
+     * used to each re-decide from their own leaf type (R290). {@code GraphitronSchemaValidator} mirrors
+     * it against the generator's actual re-fetch dispatch so the derivation and the emitter cannot
+     * drift.
+     *
+     * <p>Catalog {@link Intent#Fetch} reads off a {@link SourceShape#Table} source read the table
+     * directly (no producer round-trip); producers that map to {@link Mapping#Record} /
+     * {@link Mapping#Column} hand back the consumed shape directly. Neither re-fetches.
      */
     default boolean requiresReFetch() {
         if (mapping() != Mapping.Table) {
             return false;
         }
-        return switch (intent()) {
+        boolean receivedRecord = carrier() instanceof Carrier.Source source
+            && source.shape() == SourceShape.Record;
+        boolean producedRecord = switch (intent()) {
             case QueryService, MutationService, Insert, Update, Upsert, Delete -> true;
             default -> false;
         };
+        return receivedRecord || producedRecord;
     }
 
     /**
