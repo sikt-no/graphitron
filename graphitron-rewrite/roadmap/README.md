@@ -14,7 +14,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 | ID | Item | Status | Updated | Plan |
 |---|---|---|---|---|
-| `R313` | Scalar alias name mismatch: @scalarType registers under constant intrinsic name not the SDL name | In Review | 2026-06-15 | [plan](scalar-alias-name-mismatch.md) |
 | `R19` | Rebase and squash rewrite branch onto main | Ready |  | [plan](history-squash.md) |
 | `R222` | Dimensional model pivot: slots over cross-product permits | Spec | 2026-06-13 <sub>created 2026-05-21</sub> | [plan](dimensional-model-pivot.md) |
 | `R256` | Absorb the service walker substrate: typed per-arm errors + multi-arg ctors | Ready | 2026-05-30 <sub>created 2026-05-29</sub> | [plan](service-walker-substrate-absorption.md) |
@@ -291,7 +290,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R274` [**OutcomeType carries its success projection so the nullability invariant lives on the carrier**](outcometype-carry-success-projection.md)
 - `R213` [**Plain-input field rejections attributed to consumer field, losing input-field source location**](input-field-rejection-attribution.md)
 - `R304` [**Reify @error PayloadAccessor errors fetcher into a named method**](reify-error-payload-accessor-fetcher.md)
-- `R313` [**Scalar alias name mismatch: @scalarType registers under constant intrinsic name not the SDL name**](scalar-alias-name-mismatch.md)
 - `R51` [**Split PropertyField/RecordField on parent-kind instead of nullable column**](propertyfield-recordfield-nullable-column.md)
 - `R219` [**Unify arity-unique and type-unique inference under a single JavaTypeKey-counted rule**](unify-inference-rule-by-javatypekey.md)
 - `R221` [**Validator walks PlainInputArg.fields() for UnboundField rejection**](validator-walks-plain-input-unbound-fields.md)
