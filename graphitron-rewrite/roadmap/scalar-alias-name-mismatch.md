@@ -1,7 +1,7 @@
 ---
 id: R313
 title: "Scalar alias name mismatch: @scalarType registers under constant intrinsic name not the SDL name"
-status: In Review
+status: Ready
 bucket: bug
 priority: 1
 depends-on: []
@@ -19,6 +19,27 @@ last-updated: 2026-06-15
 > fix routes the mismatch through the existing `ScalarResolution.Synthesised` arm, which
 > already registers a scalar under its SDL name by borrowing the constant's coercing; no
 > new emitter branch and no new model component are introduced.
+
+## Review feedback (In Review → Ready, 2026-06-15)
+
+Rework requested. The resolver-tier and pipeline-tier coverage and the `mvn install -Plocal-db` build are
+green, and the code matches the design (the `Synthesised` reuse, the `getName()` fork in
+`resolveFromConstantFqn`, the two `Resolved`→`Successful` widenings, no emitter/model-component additions).
+Two items before Done:
+
+1. **Execution / build-through test missing (Tests §3, the named "real proof").** No fixture schema uses an
+   aliasing scalar, and no test assembles the generated `GraphitronSchema.build()` for the alias case. The
+   pipeline test (`GraphitronSchemaClassGeneratorTest.scalarRegistration_directiveAliasesConstant_...`) only
+   string-matches the emitted registration (`.additionalType(scalar_LocalDate())`, `b.name("LocalDate")`).
+   For a runtime schema-assembly bug, a string match can pass while `build()` still throws, so the very
+   regression this item fixes ("type LocalDate not found in schema") is not pinned by any test that actually
+   builds the schema. Add the aliased scalar to a build-through fixture (the `-Plocal-db` pipeline, or a
+   focused generate-compile-build test) asserting `GraphitronSchema.build()` succeeds and would fail on the
+   pre-fix code. Bears on the spec's own Tests §3 and "compilation/execution against real jOOQ is a test tier".
+
+2. **Stale landing SHA.** The §Implementation note and the `In Review` move-commit (`c1f9f46`) both say
+   "shipped at `d82392e`", which is not a commit in the repo; the actual code commit is `adfaeff`. Correct it
+   when re-shipping (per "Documentation names only live tests/code").
 
 ## Root cause
 
