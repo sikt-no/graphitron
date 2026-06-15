@@ -89,6 +89,27 @@ Cardinality here is the **source** cardinality (how many source objects arrive),
 cardinality (rows per source object), which continues to drive within-group `orderBy`. R222 line 143
 ("bulk is a slot, not an intent") already locates cardinality as a slot; this names which axis it sits on.
 
+**R222 editing targets (Slice 1 is integration, not a bullet drop; match R222's terse principle-driven voice).**
+The amendments land in four sections of `dimensional-model-pivot.md`, all under or near §"Field-side dimensional
+model (refined 2026-06-13)":
+
+- The **`carrier` axis** list (`Query` / `Mutation` / `Source` → `QueryField` / `MutationField` / `SourceField`):
+  add that the `Source` arm carries source-shape (`Table | Record`) and source cardinality (`One | Many`) as
+  payload, on the same `Table:Column :: Record:Field` mirror/reflect vocabulary the `mapping` axis uses; source-shape
+  is a projection of the parent producer's `domainReturnType` (catalog → `Table`, `@service`/DML payload → `Record`).
+- The **derived-layer `re-fetch` bullet**: re-derive from `(Service | DML intent) × Table mapping` to
+  `Table mapping × holds-records` (`holds-records` = `Source{Record}` received, or a Service/DML intent produced).
+  Keep "now derived rather than a distinct leaf" but extend it to catch the received-record half.
+- The **"bulk is a slot" sentence**: name the axis as *source* cardinality, distinct from target/per-key cardinality
+  (`SourceKey.Cardinality`), so the two notions don't blur.
+- The **§"Leaf dissolution and collapse" `SingleRecordTableField` bullet**: reframe from "an optimisation to skip the
+  DataLoader … that skip is a derived detail" to the source-shape framing (a `Record`→`Table` re-fetch that unifies
+  with STF on one `Lookup`/`QueryService` axis), plus a one-line flat-enum-reversal note (`Carrier` gains payload).
+
+As-shipped reality to reflect (Slice 2, `355f9b5`): source-shape is materialised as a leaf-exhaustive switch
+(`ChildField.sourceShape()`), not a separately-stored per-leaf component; source cardinality is constant `One` until
+R308 builds the `Many` arrival. R222 should describe the model, not over-claim the `Many` derivation as present.
+
 Source cardinality is **the product of all ancestor field cardinalities** along the path from the operation
 root to the field, over the `{One, Many}` semiring where `One` is the identity and `Many` absorbs
 (`One x One = One`, `One x Many = Many`, `Many x Many = Many`). A field is `Source{One}` only when every
