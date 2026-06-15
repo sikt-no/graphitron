@@ -28,8 +28,15 @@ directive @scalarType(scalar: String!) on SCALAR
 
 """
 Names the underlying-binding target for the annotated GraphQL slot. The axis is determined by the
-directive site:
+directive site and the backing of the type it sits on:
 - On FIELD_DEFINITION / INPUT_FIELD_DEFINITION of a @table-backed type, the column to bind to.
+- On FIELD_DEFINITION of a free-form (non-@table, class- or record-backed) output type, the Java
+  accessor to read the field from on the backing class: `@field(name: "fullName")` reads
+  `getFullName()` / `isFullName()` / `fullName()` rather than an accessor matching the GraphQL field
+  name. Use it when the Java accessor name diverges from the GraphQL field name.
+- On INPUT_FIELD_DEFINITION of a consumer-authored bean or record bound as a @service input
+  parameter, the Java member to bind: the record component, or the JavaBean property whose setter is
+  `set<Capitalised name>`. Use it when the Java member name diverges from the GraphQL field name.
 - On ARGUMENT_DEFINITION of an @table-backed filter argument, the column to bind to.
 - On ENUM_VALUE, the database string (or, where applicable, the Java enum constant) the value maps to.
 

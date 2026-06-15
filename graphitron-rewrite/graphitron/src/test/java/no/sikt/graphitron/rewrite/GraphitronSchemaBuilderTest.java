@@ -6904,6 +6904,58 @@ class GraphitronSchemaBuilderTest {
                     .isEqualTo("java.lang.Boolean");
             }) {
             @Override public Set<Class<?>> variants() { return Set.of(MutationField.MutationServiceRecordField.class); }
+        },
+
+        // ===== R200 @field(name:) Java-member binding on input beans =====
+
+        SERVICE_MUTATION_FIELD_INPUT_BEAN_FIELD_RENAMED_RECORD(
+            "R200: @field(name:) bridges a record component whose name diverges from the SDL field name — javaFieldName carries the directive value, sdlFieldName stays the SDL (Map-key) name",
+            """
+            input TestInputBeanRenamedInput { title: String @field(name: "heading"), rating: Int @field(name: "score") }
+            type FilmDetails { title: String }
+            type Query { x: String }
+            type Mutation {
+                runWithRenamedRecord(input: TestInputBeanRenamedInput): FilmDetails
+                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "runWithRenamedRecord"})
+            }
+            """,
+            schema -> {
+                var f = (MutationField.MutationServiceRecordField) schema.field("Mutation", "runWithRenamedRecord");
+                var entry = (no.sikt.graphitron.rewrite.model.MappingEntry.FromArg)
+                    f.serviceMethodCall().methodArgs().get(0);
+                var rec = (no.sikt.graphitron.rewrite.model.ValueShape.RecordInput) entry.shape();
+                assertThat(rec.javaClass().simpleName()).isEqualTo("TestInputBeanRenamed");
+                // SDL field name stays the wire/Map key; @field(name:) supplies the component name.
+                assertThat(rec.fields()).extracting(no.sikt.graphitron.rewrite.model.ValueShape.FieldBinding::sdlFieldName)
+                    .containsExactly("title", "rating");
+                assertThat(rec.fields()).extracting(no.sikt.graphitron.rewrite.model.ValueShape.FieldBinding::javaFieldName)
+                    .containsExactly("heading", "score");
+            }) {
+            @Override public Set<Class<?>> variants() { return Set.of(MutationField.MutationServiceRecordField.class); }
+        },
+
+        SERVICE_MUTATION_FIELD_INPUT_BEAN_FIELD_RENAMED_JAVABEAN(
+            "R200: @field(name:) bridges a JavaBean setter property whose name diverges from the SDL field name — the binding key is the directive value, resolving to setHeading/setScore",
+            """
+            input TestInputJavaBeanRenamedInput { title: String @field(name: "heading"), rating: Int @field(name: "score") }
+            type FilmDetails { title: String }
+            type Query { x: String }
+            type Mutation {
+                runWithRenamedJavaBean(input: TestInputJavaBeanRenamedInput): FilmDetails
+                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "runWithRenamedJavaBean"})
+            }
+            """,
+            schema -> {
+                var f = (MutationField.MutationServiceRecordField) schema.field("Mutation", "runWithRenamedJavaBean");
+                var entry = (no.sikt.graphitron.rewrite.model.MappingEntry.FromArg)
+                    f.serviceMethodCall().methodArgs().get(0);
+                var javaBean = (no.sikt.graphitron.rewrite.model.ValueShape.JavaBeanInput) entry.shape();
+                assertThat(javaBean.fields()).extracting(no.sikt.graphitron.rewrite.model.ValueShape.FieldBinding::sdlFieldName)
+                    .containsExactly("title", "rating");
+                assertThat(javaBean.fields()).extracting(no.sikt.graphitron.rewrite.model.ValueShape.FieldBinding::javaFieldName)
+                    .containsExactly("heading", "score");
+            }) {
+            @Override public Set<Class<?>> variants() { return Set.of(MutationField.MutationServiceRecordField.class); }
         };
 
         final String sdl;
@@ -8876,6 +8928,108 @@ class GraphitronSchemaBuilderTest {
                 assertThat(((UnclassifiedField) f).reason())
                     .contains("TestInputPackagePrivate")
                     .contains("not public");
+            }),
+
+        // ===== R200 @field(name:) input-bean binding rejections =====
+
+        SERVICE_INPUT_BEAN_RECORD_COMPONENT_UNBOUND_REJECTED(
+            "R200 direction A: a record component with no SDL field bound to it → UnclassifiedField; the canonical constructor needs every component (the old loop emitted a silent under-arity call)",
+            """
+            enum TestInputBeanEnum { LOW HIGH }
+            input MissingNestedComponentInput { title: String, rating: TestInputBeanEnum }
+            type FilmDetails { title: String }
+            type Query { x: String }
+            type Mutation {
+                runWithInputBean(input: MissingNestedComponentInput): FilmDetails
+                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "runWithInputBean"})
+            }
+            """,
+            schema -> {
+                var f = schema.field("Mutation", "runWithInputBean");
+                assertThat(f).isInstanceOf(UnclassifiedField.class);
+                assertThat(((UnclassifiedField) f).reason())
+                    .contains("TestInputBean")
+                    .contains("component 'nested'")
+                    .contains("every record component must bind");
+            }),
+
+        SERVICE_INPUT_BEAN_RECORD_FIELD_UNCONSUMED_REJECTED(
+            "R200 direction B: an SDL input field that binds to no record component → UnclassifiedField; a record's input correspondence is total, so an unconsumed field (silent data drop) fails, unlike a JavaBean's tolerated partial population",
+            """
+            input SubsetRecordInput { a: String, b: String, c: String }
+            type FilmDetails { title: String }
+            type Query { x: String }
+            type Mutation {
+                runWithSubsetRecord(input: SubsetRecordInput): FilmDetails
+                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "runWithSubsetRecord"})
+            }
+            """,
+            schema -> {
+                var f = schema.field("Mutation", "runWithSubsetRecord");
+                assertThat(f).isInstanceOf(UnclassifiedField.class);
+                assertThat(((UnclassifiedField) f).reason())
+                    .contains("TestInputSubsetRecord")
+                    .contains("'c'")
+                    .contains("names no component");
+            }),
+
+        SERVICE_INPUT_BEAN_FIELD_BINDING_AMBIGUOUS_REJECTED(
+            "R200: two SDL input fields resolving to one Java-member binding key (a @field(name:) collision) → UnclassifiedField; one member cannot be populated by two fields",
+            """
+            input AmbiguousBindingInput { title: String @field(name: "heading"), subtitle: String @field(name: "heading"), rating: Int @field(name: "score") }
+            type FilmDetails { title: String }
+            type Query { x: String }
+            type Mutation {
+                runWithRenamedRecord(input: AmbiguousBindingInput): FilmDetails
+                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "runWithRenamedRecord"})
+            }
+            """,
+            schema -> {
+                var f = schema.field("Mutation", "runWithRenamedRecord");
+                assertThat(f).isInstanceOf(UnclassifiedField.class);
+                assertThat(((UnclassifiedField) f).reason())
+                    .contains("'title'")
+                    .contains("'subtitle'")
+                    .contains("heading")
+                    .contains("both bind to Java member");
+            }),
+
+        SERVICE_INPUT_BEAN_JAVABEAN_DIVERGENT_NO_FIELD_REJECTED(
+            "R200 regression floor: a JavaBean whose property names diverge from the SDL field names and carry NO @field still rejects with 'has no fields matching' — @field is the only bridge, its absence must not start matching by coincidence",
+            """
+            input UnbridgedJavaBeanInput { title: String, rating: Int }
+            type FilmDetails { title: String }
+            type Query { x: String }
+            type Mutation {
+                runWithRenamedJavaBean(input: UnbridgedJavaBeanInput): FilmDetails
+                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "runWithRenamedJavaBean"})
+            }
+            """,
+            schema -> {
+                var f = schema.field("Mutation", "runWithRenamedJavaBean");
+                assertThat(f).isInstanceOf(UnclassifiedField.class);
+                assertThat(((UnclassifiedField) f).reason())
+                    .contains("TestInputJavaBeanRenamed")
+                    .contains("has no fields matching the SDL input type");
+            }),
+
+        SERVICE_INPUT_BEAN_BLANK_FIELD_NAME_REJECTED(
+            "R200: a present-but-blank @field(name: \"\") on an input-bean field → UnclassifiedField; the malformed directive is rejected at classify time, not silently skipped on the JavaBean arm",
+            """
+            input BlankFieldNameInput { title: String @field(name: ""), rating: Int @field(name: "score") }
+            type FilmDetails { title: String }
+            type Query { x: String }
+            type Mutation {
+                runWithRenamedJavaBean(input: BlankFieldNameInput): FilmDetails
+                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "runWithRenamedJavaBean"})
+            }
+            """,
+            schema -> {
+                var f = schema.field("Mutation", "runWithRenamedJavaBean");
+                assertThat(f).isInstanceOf(UnclassifiedField.class);
+                assertThat(((UnclassifiedField) f).reason())
+                    .contains("'title'")
+                    .contains("@field(name:) with a blank value");
             });
 
         final String sdl;

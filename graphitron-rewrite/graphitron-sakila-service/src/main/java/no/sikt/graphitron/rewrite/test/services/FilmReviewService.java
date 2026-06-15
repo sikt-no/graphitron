@@ -51,6 +51,20 @@ public final class FilmReviewService {
     }
 
     /**
+     * R200 fixture: takes a {@link FilmReviewSummary} whose record components ({@code film},
+     * {@code stars}) diverge from the SDL input field names ({@code filmId}, {@code rating}), bridged
+     * by {@code @field(name:)}. The body reads the typed bean's components and delegates to
+     * {@link #submit}; the surface under test is the {@code @field}-driven member binding in the
+     * generated {@code createFilmReviewSummary} helper, not the service behaviour.
+     */
+    public static FilmReviewPayload submitSummary(FilmReviewSummary summary) {
+        if (summary == null) {
+            throw new FilmReviewBadRatingException("summary required");
+        }
+        return submit(summary.film(), summary.stars());
+    }
+
+    /**
      * R195 fixture: takes a {@link FilmRecordAssignment} whose member is a jOOQ
      * {@code FilmRecord} decoded from an {@code ID! @nodeId(typeName: "Film")} input-bean field.
      * The generated fetcher decodes the wire id into the record before calling this method; the

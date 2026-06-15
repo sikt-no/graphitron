@@ -22,7 +22,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R305` | Expand the carrier dimension with source-shape and cardinality; unify the service/DML to @table re-fetch as a source-keyed Lookup | In Progress | 2026-06-15 <sub>created 2026-06-14</sub> | [plan](collapse-singlerecordtablefield-into-recordtablefield.md) |
 | `R45` | Multi-tenant routing on top of the schema-driven ExecutionInput factory | Spec | 2026-05-20 | [plan](tenant-routing-and-execution-input.md) |
 | `R273` | Source NodeId metadata from @node + catalog PK (inferred from `implements Node`), and settle wrong-type/malformed mismatch semantics, retiring the legacy __NODE bare-ID arm | Spec | 2026-06-02 | [plan](nodeid-skip-mismatch-error-surfacing.md) |
-| `R200` | Honor @field(name:) in InputBeanResolver for SDL input bean/record member binding | Ready | 2026-06-10 <sub>created 2026-05-20</sub> | [plan](honor-field-directive-in-inputbeanresolver.md) |
+| `R200` | Honor @field(name:) in InputBeanResolver for SDL input bean/record member binding | In Review | 2026-06-15 <sub>created 2026-05-20</sub> | [plan](honor-field-directive-in-inputbeanresolver.md) |
 | `R23` | Multi-parent `NestingField` sharing: `TableField` arm | Spec |  | [plan](nestingfield-multiparent-tablefield.md) |
 | `R309` | Descriptions for query-as-view projections | Spec | 2026-06-15 | [plan](query-view-descriptions.md) |
 | `R13` | Faceted search on `@asConnection` | Spec |  | [plan](faceted-search.md) |
@@ -163,7 +163,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R300` [**First-class jOOQ routine support: RoutineCall carrier + Procedure intent**](jooq-routine-fields.md) — Backlog, feature, blocked by [dimensional-model-pivot](dimensional-model-pivot.md)
 - `R201` [**Honor @field(name:) in @error payload construction shape resolution**](honor-field-directive-in-payload-construction-shape.md) — Backlog, bug
 - `R202` [**Honor @field(name:) in @error type extra-field accessor matching against handler source class**](honor-field-directive-in-error-type-source-accessors.md) — Backlog, bug
-- `R200` [**Honor @field(name:) in InputBeanResolver for SDL input bean/record member binding**](honor-field-directive-in-inputbeanresolver.md) — Ready, bug
+- `R200` [**Honor @field(name:) in InputBeanResolver for SDL input bean/record member binding**](honor-field-directive-in-inputbeanresolver.md) — In Review, bug
 - `R45` [**Multi-tenant routing on top of the schema-driven ExecutionInput factory**](tenant-routing-and-execution-input.md) — Spec, architecture
 - `R54` [**Rename @externalField (parallel-support, deprecation, migration)**](rename-externalfield-directive.md) — Backlog, cleanup
 - `R192` [**Mojo-configured custom Bean Validation factory**](custom-validator-factory.md) — Backlog, architecture

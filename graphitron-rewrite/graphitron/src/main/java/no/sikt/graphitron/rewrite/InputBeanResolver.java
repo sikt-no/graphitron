@@ -25,7 +25,9 @@ import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+import static no.sikt.graphitron.rewrite.BuildContext.ARG_NAME;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_TYPE_NAME;
+import static no.sikt.graphitron.rewrite.BuildContext.DIR_FIELD;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_NODE_ID;
 import static no.sikt.graphitron.rewrite.BuildContext.argString;
 
@@ -92,7 +94,13 @@ final class InputBeanResolver {
      *   <li>The bean class is not {@code public} (generated fetchers live in a different package
      *       and cannot reach package-private classes).</li>
      *   <li>The bean class has no record / public no-arg-ctor construction strategy.</li>
-     *   <li>For records, the SDL input type omits a record component.</li>
+     *   <li>For records, the component/field correspondence is not a total bijection: a component
+     *       binds to no SDL field (under-arity), or an SDL field binds to no component (silent drop).
+     *       Member binding honors {@code @field(name:)} (the input-side mirror of R191), so the
+     *       correspondence is by binding key, not raw name. JavaBeans tolerate partial population
+     *       (unmatched fields are skipped); the empty-bindings case is the only JavaBean rejection.</li>
+     *   <li>Two SDL fields resolving to the same Java-member binding key (a {@code @field(name:)}
+     *       collision, or a value colliding with another field's plain name) — ambiguous binding.</li>
      *   <li>The bean shape is recursive (the same class appears nested inside itself, directly or
      *       transitively). Recursive shapes are not supported in v1 — the helper would emit
      *       mutually-recursive method calls with no terminating leaf.</li>
@@ -235,10 +243,10 @@ final class InputBeanResolver {
                 + " construct the bean — mark the class public"));
         }
         CallSiteExtraction.InputBean.Target target;
-        Map<String, JavaMember> javaMembersBySdlName;
+        Map<String, JavaMember> javaMembersByName;
         if (beanClass.isRecord()) {
             target = CallSiteExtraction.InputBean.Target.RECORD;
-            javaMembersBySdlName = indexRecordComponents(beanClass);
+            javaMembersByName = indexRecordComponents(beanClass);
         } else {
             String ctorReason = checkJavaBeanShape(beanClass);
             if (ctorReason != null) {
@@ -247,77 +255,152 @@ final class InputBeanResolver {
                     + className + "': bean class '" + beanClass.getName() + "' " + ctorReason));
             }
             target = CallSiteExtraction.InputBean.Target.JAVA_BEAN;
-            javaMembersBySdlName = indexJavaBeanSetters(beanClass);
+            javaMembersByName = indexJavaBeanSetters(beanClass);
         }
+
+        // Index the SDL fields by their Java-member binding key (the @field(name:) value, or the
+        // field's own name when the directive is absent). Two SDL fields resolving to one key is a
+        // structural ambiguity on either target: on the record arm the second would silently win the
+        // bijection slot (order-dependent binding); on the JavaBean arm the same setter would be
+        // invoked twice. Reject it here, before either arm builds a result, so neither can produce an
+        // order-dependent or double-bound bean.
+        var sdlByBindingKey = new LinkedHashMap<String, GraphQLInputObjectField>();
+        for (var f : iot.getFieldDefinitions()) {
+            String key = bindingKey(f);
+            // A present-but-blank @field(name:) yields an empty key (GraphQL field names are never
+            // empty, so this is reachable only via the directive). It can match no record component
+            // or setter; rather than silently skipping it on the JavaBean arm (a silent fallback the
+            // directive newly opens), reject the malformed directive at classify time.
+            if (key.isEmpty()) {
+                return new Built.Fail(Rejection.structural(
+                    "parameter '" + paramName + "' on method '" + methodName + "' in class '"
+                    + className + "': SDL input field '" + f.getName() + "' on type '" + iot.getName()
+                    + "' carries @field(name:) with a blank value — give it the Java member name to"
+                    + " bind (record component / JavaBean property), or drop the directive to bind by"
+                    + " the field's own name"));
+            }
+            GraphQLInputObjectField prior = sdlByBindingKey.put(key, f);
+            if (prior != null) {
+                return new Built.Fail(Rejection.structural(
+                    "parameter '" + paramName + "' on method '" + methodName + "' in class '"
+                    + className + "': SDL input fields '" + prior.getName() + "' and '" + f.getName()
+                    + "' on type '" + iot.getName() + "' both bind to Java member '" + key
+                    + "' on bean class '" + beanClass.getName() + "' (via @field(name:) or a matching"
+                    + " name) — two input fields cannot populate one member; rename one field or"
+                    + " adjust its @field(name:)"));
+            }
+        }
+
+        // Records are positional and total (the canonical constructor needs every component, and a
+        // leftover SDL field would be silently dropped); JavaBean setters are independent and
+        // partial. The two arms encode that invariant difference; they share the binding-key index
+        // above and the per-field leaf classification (bindField).
+        return switch (target) {
+            case RECORD -> bindRecord(beanClass, iot, javaMembersByName, sdlByBindingKey,
+                paramName, methodName, className, visited);
+            case JAVA_BEAN -> bindJavaBean(beanClass, iot, javaMembersByName, sdlByBindingKey,
+                paramName, methodName, className, visited);
+        };
+    }
+
+    /**
+     * The Java-member binding key for an SDL input field: the {@code @field(name:)} value when the
+     * directive is present, else the field's own name. This is the input-side mirror of R191's
+     * output-side "{@code @field} names the Java accessor" read
+     * ({@code FieldBuilder.collectAccessorMatches}) and uses the same {@code argString(...).orElse(name)}
+     * idiom as the column-axis read in {@code BuildContext}. The key names the record component /
+     * JavaBean property the field binds to; the field's own name stays the {@code Map} key the
+     * generated helper reads the wire value from.
+     */
+    private static String bindingKey(GraphQLInputObjectField f) {
+        return f.hasAppliedDirective(DIR_FIELD)
+            ? argString(f, DIR_FIELD, ARG_NAME).orElse(f.getName())
+            : f.getName();
+    }
+
+    /**
+     * Record arm: a bidirectional bijection between record components and SDL input fields. A
+     * record's correspondence to its SDL input type is total in both directions, so the reduction
+     * checks both:
+     * <ul>
+     *   <li><b>Every component must bind</b> (direction A). The canonical constructor takes every
+     *       component, so a component with no SDL field bound to it (none named after it, none
+     *       carrying {@code @field(name: "<component>")}) is a hard fail at classify time, rather
+     *       than the under-arity constructor call the old loop emitted downstream.</li>
+     *   <li><b>Every SDL field must be consumed</b> (direction B). A field whose binding key names
+     *       no component would have its value silently dropped (it never reaches the constructor);
+     *       for a record's total-mirror contract that is a hard fail, not the deliberate
+     *       partial-population the JavaBean arm tolerates.</li>
+     * </ul>
+     * Bindings are produced in record-component (canonical-constructor) order.
+     */
+    private Built bindRecord(Class<?> beanClass, GraphQLInputObjectType iot,
+            Map<String, JavaMember> componentsByName,
+            Map<String, GraphQLInputObjectField> sdlByBindingKey,
+            String paramName, String methodName, String className, Set<Class<?>> visited) {
         var bindings = new ArrayList<CallSiteExtraction.FieldBinding>();
-        // For records, iterate the canonical-constructor parameter order; bindings must match.
-        // For JavaBeans, iterating the SDL order is sufficient (setters are applied independently).
-        List<String> sdlFieldNames = beanClass.isRecord()
-            ? recordOrder(beanClass)
-            : sdlOrder(iot);
-        for (String sdlFieldName : sdlFieldNames) {
-            JavaMember member = javaMembersBySdlName.get(sdlFieldName);
-            if (member == null) {
-                // SDL has a field with no matching Java member — for records, this is a fatal
-                // mismatch (canonical ctor needs every component); for JavaBeans, we skip the
-                // field (the bean simply won't populate it). Records are the strict shape.
-                if (beanClass.isRecord()) {
-                    return new Built.Fail(Rejection.structural(
-                        "parameter '" + paramName + "' on method '" + methodName + "' in class '"
-                        + className + "': record '" + beanClass.getName()
-                        + "' has no component named '" + sdlFieldName + "' to receive the SDL field"));
-                }
-                continue;
-            }
-            GraphQLInputObjectField sdlField = iot.getField(sdlFieldName);
+        var consumedKeys = new HashSet<String>();
+        // Direction A: every component must bind. componentsByName iterates in component order.
+        for (var ce : componentsByName.entrySet()) {
+            String component = ce.getKey();
+            GraphQLInputObjectField sdlField = sdlByBindingKey.get(component);
             if (sdlField == null) {
-                // Java member with no SDL field — JavaBean target only, skip silently. For records
-                // this can't happen (the iteration order is the SDL fields when target = record).
+                return new Built.Fail(Rejection.structural(
+                    "parameter '" + paramName + "' on method '" + methodName + "' in class '"
+                    + className + "': record '" + beanClass.getName() + "' component '" + component
+                    + "' has no SDL input field bound to it on type '" + iot.getName() + "' — every"
+                    + " record component must bind (the canonical constructor needs them all); add a"
+                    + " field named '" + component + "' to the input type, or @field(name: \""
+                    + component + "\") to the field that should populate it"));
+            }
+            consumedKeys.add(component);
+            FieldResult r = bindField(sdlField, ce.getValue(), paramName, methodName, className, visited);
+            if (r instanceof FieldResult.Fail f) {
+                return new Built.Fail(f.rejection());
+            }
+            bindings.add(((FieldResult.Ok) r).binding());
+        }
+        // Direction B: every SDL field must be consumed by some component.
+        for (var e : sdlByBindingKey.entrySet()) {
+            if (!consumedKeys.contains(e.getKey())) {
+                return new Built.Fail(Rejection.structural(
+                    "parameter '" + paramName + "' on method '" + methodName + "' in class '"
+                    + className + "': SDL input field '" + e.getValue().getName() + "' (binding key '"
+                    + e.getKey() + "') on type '" + iot.getName() + "' names no component of record '"
+                    + beanClass.getName() + "' — every field of a record-backed @service input must"
+                    + " bind to a component (else its value is silently dropped); remove the field,"
+                    + " or point its @field(name:) at a component"));
+            }
+        }
+        return new Built.Ok(new CallSiteExtraction.InputBean(
+            ClassName.bestGuess(beanClass.getName()),
+            CallSiteExtraction.InputBean.Target.RECORD, bindings));
+    }
+
+    /**
+     * JavaBean arm: setters are applied independently, so binding is partial by design. Each SDL
+     * field whose binding key names a setter binds; a field whose key names no setter is skipped
+     * (the bean simply does not populate it). The empty-bindings rejection fires only when no field,
+     * by name or by {@code @field(name:)}, matches any setter — the genuine "this bean does not
+     * mirror this input" case.
+     */
+    private Built bindJavaBean(Class<?> beanClass, GraphQLInputObjectType iot,
+            Map<String, JavaMember> settersByName,
+            Map<String, GraphQLInputObjectField> sdlByBindingKey,
+            String paramName, String methodName, String className, Set<Class<?>> visited) {
+        var bindings = new ArrayList<CallSiteExtraction.FieldBinding>();
+        // sdlByBindingKey iterates in SDL declaration order (LinkedHashMap), so the bindings list
+        // keeps that order; for JavaBean setters the order is not load-bearing, only stable.
+        for (var e : sdlByBindingKey.entrySet()) {
+            JavaMember member = settersByName.get(e.getKey());
+            if (member == null) {
                 continue;
             }
-            SdlElement sdlElt = peelSdlListNonNull(sdlField.getType());
-            boolean listShape = sdlElt.list();
-            boolean nonNull = GraphQLTypeUtil.isNonNull(sdlField.getType());
-            String javaElementTypeName = member.elementTypeName();
-            CallSiteExtraction leaf;
-            if (sdlElt.elementType() instanceof GraphQLInputObjectType nestedIot) {
-                Class<?> nestedClass = tryLoad(javaElementTypeName);
-                if (nestedClass == null || !looksLikeBeanCandidate(nestedClass)) {
-                    return new Built.Fail(Rejection.structural(
-                        "parameter '" + paramName + "' on method '" + methodName + "' in class '"
-                        + className + "': nested field '" + sdlFieldName + "' has SDL input-object"
-                        + " type but the Java member type '" + javaElementTypeName
-                        + "' is not a viable bean class"));
-                }
-                Built nested = buildInputBean(nestedClass, nestedIot, paramName, methodName,
-                    className, visited);
-                if (nested instanceof Built.Fail f) {
-                    return f;
-                }
-                leaf = ((Built.Ok) nested).bean();
-            } else if (sdlElt.elementType() instanceof GraphQLEnumType
-                    && tryLoad(javaElementTypeName) != null
-                    && tryLoad(javaElementTypeName).isEnum()) {
-                leaf = new CallSiteExtraction.EnumValueOf(javaElementTypeName);
-            } else {
-                // Scalar SDL field. A jOOQ-record-typed member never lands on Direct: a wire ID
-                // String cast to a *Record throws ClassCastException at the first request (the
-                // R150/R195 bug). Branch to a @nodeId-decode leaf, or reject loudly — never fall
-                // through to Direct with a record member.
-                Class<?> memberClass = tryLoad(javaElementTypeName);
-                if (memberClass != null && isJooqRecord(memberClass)) {
-                    RecordLeaf recordLeaf = buildJooqRecordLeaf(sdlField, sdlFieldName,
-                        javaElementTypeName, nonNull, paramName, methodName, className);
-                    if (recordLeaf instanceof RecordLeaf.Fail rf) {
-                        return new Built.Fail(rf.rejection());
-                    }
-                    leaf = ((RecordLeaf.Ok) recordLeaf).leaf();
-                } else {
-                    leaf = new CallSiteExtraction.Direct();
-                }
+            FieldResult r = bindField(e.getValue(), member, paramName, methodName, className, visited);
+            if (r instanceof FieldResult.Fail f) {
+                return new Built.Fail(f.rejection());
             }
-            bindings.add(new CallSiteExtraction.FieldBinding(
-                sdlFieldName, member.javaName(), leaf, listShape, javaElementTypeName));
+            bindings.add(((FieldResult.Ok) r).binding());
         }
         if (bindings.isEmpty()) {
             return new Built.Fail(Rejection.structural(
@@ -326,7 +409,71 @@ final class InputBeanResolver {
                 + "' has no fields matching the SDL input type '" + iot.getName() + "'"));
         }
         return new Built.Ok(new CallSiteExtraction.InputBean(
-            ClassName.bestGuess(beanClass.getName()), target, bindings));
+            ClassName.bestGuess(beanClass.getName()),
+            CallSiteExtraction.InputBean.Target.JAVA_BEAN, bindings));
+    }
+
+    /** Outcome of classifying one SDL-field / Java-member pair (a {@link CallSiteExtraction.FieldBinding} or a fail). */
+    private sealed interface FieldResult {
+        record Ok(CallSiteExtraction.FieldBinding binding) implements FieldResult {}
+        record Fail(Rejection rejection) implements FieldResult {}
+    }
+
+    /**
+     * Classifies one SDL-field / Java-member pair into a {@link CallSiteExtraction.FieldBinding}.
+     * Member resolution has already happened (the directive selected which member binds); the
+     * member's Java type now drives the leaf branch (nested {@code InputBean} / {@code EnumValueOf} /
+     * R195's {@code NodeIdDecodeRecord} / {@code Direct}), unchanged from before. The binding carries
+     * the SDL field name (the {@code Map} key the helper reads) separately from the Java member name
+     * (the component / property it populates), so the emitter is agnostic to <em>how</em> the member
+     * was chosen, the same property R191 relies on on the output side.
+     */
+    private FieldResult bindField(GraphQLInputObjectField sdlField, JavaMember member,
+            String paramName, String methodName, String className, Set<Class<?>> visited) {
+        String sdlFieldName = sdlField.getName();
+        SdlElement sdlElt = peelSdlListNonNull(sdlField.getType());
+        boolean listShape = sdlElt.list();
+        boolean nonNull = GraphQLTypeUtil.isNonNull(sdlField.getType());
+        String javaElementTypeName = member.elementTypeName();
+        CallSiteExtraction leaf;
+        if (sdlElt.elementType() instanceof GraphQLInputObjectType nestedIot) {
+            Class<?> nestedClass = tryLoad(javaElementTypeName);
+            if (nestedClass == null || !looksLikeBeanCandidate(nestedClass)) {
+                return new FieldResult.Fail(Rejection.structural(
+                    "parameter '" + paramName + "' on method '" + methodName + "' in class '"
+                    + className + "': nested field '" + sdlFieldName + "' has SDL input-object"
+                    + " type but the Java member type '" + javaElementTypeName
+                    + "' is not a viable bean class"));
+            }
+            Built nested = buildInputBean(nestedClass, nestedIot, paramName, methodName,
+                className, visited);
+            if (nested instanceof Built.Fail f) {
+                return new FieldResult.Fail(f.rejection());
+            }
+            leaf = ((Built.Ok) nested).bean();
+        } else if (sdlElt.elementType() instanceof GraphQLEnumType
+                && tryLoad(javaElementTypeName) != null
+                && tryLoad(javaElementTypeName).isEnum()) {
+            leaf = new CallSiteExtraction.EnumValueOf(javaElementTypeName);
+        } else {
+            // Scalar SDL field. A jOOQ-record-typed member never lands on Direct: a wire ID
+            // String cast to a *Record throws ClassCastException at the first request (the
+            // R150/R195 bug). Branch to a @nodeId-decode leaf, or reject loudly — never fall
+            // through to Direct with a record member.
+            Class<?> memberClass = tryLoad(javaElementTypeName);
+            if (memberClass != null && isJooqRecord(memberClass)) {
+                RecordLeaf recordLeaf = buildJooqRecordLeaf(sdlField, sdlFieldName,
+                    javaElementTypeName, nonNull, paramName, methodName, className);
+                if (recordLeaf instanceof RecordLeaf.Fail rf) {
+                    return new FieldResult.Fail(rf.rejection());
+                }
+                leaf = ((RecordLeaf.Ok) recordLeaf).leaf();
+            } else {
+                leaf = new CallSiteExtraction.Direct();
+            }
+        }
+        return new FieldResult.Ok(new CallSiteExtraction.FieldBinding(
+            sdlFieldName, member.javaName(), leaf, listShape, javaElementTypeName));
     }
 
     // ===== jOOQ-record member (@nodeId decode) =====
@@ -426,22 +573,6 @@ final class InputBeanResolver {
      * (with List<>/Set<> wrappers peeled for list-shape members).
      */
     private record JavaMember(String javaName, String elementTypeName, boolean list) {}
-
-    private static List<String> recordOrder(Class<?> beanClass) {
-        var out = new ArrayList<String>();
-        for (var rc : beanClass.getRecordComponents()) {
-            out.add(rc.getName());
-        }
-        return out;
-    }
-
-    private static List<String> sdlOrder(GraphQLInputObjectType iot) {
-        var out = new ArrayList<String>();
-        for (var f : iot.getFieldDefinitions()) {
-            out.add(f.getName());
-        }
-        return out;
-    }
 
     private Map<String, JavaMember> indexRecordComponents(Class<?> beanClass) {
         var out = new LinkedHashMap<String, JavaMember>();
