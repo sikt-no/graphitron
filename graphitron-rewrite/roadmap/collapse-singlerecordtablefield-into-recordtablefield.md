@@ -123,6 +123,15 @@ throughout and the new carrier values are observable on their own.
   intent against `Table` mapping) rather than intent alone. `GraphitronSchemaValidator.dispatchPerformsReFetch`
   and `ReFetchDerivationTest` move SRTF to the re-fetch side so the model finally agrees with the SELECT its
   emitter produces; today both sides hard-code SRTF to `false` and the mirror passes vacuously.
+- **Source-shape mirror (pin the projection).** Slice 2 implemented `ChildField.sourceShape()` as a
+  leaf-exhaustive switch on the reasoning that the classifier already projects parent-backing into leaf
+  identity; the javadoc claims it is "a projection of the parent producer's `domainReturnType`", but nothing
+  mechanical pins that. Since this slice makes `requiresReFetch` consume source-shape (the `holds-records`
+  half), a future leaf added with the wrong `sourceShape` arm would silently flip a re-fetch verdict with no
+  failing test. Add a pipeline-tier test asserting, for every classified `ChildField`, that `sourceShape()`
+  agrees with the sealed arm of its parent producer's `domainReturnType()` (`Record` / `TableRecord` →
+  `SourceShape.Record`; catalog-`Table` parent → `SourceShape.Table`). This is the source-shape analogue of
+  the `dispatchPerformsReFetch` mirror and converts the javadoc invariant into a pinned one.
 - **Reclassify.** SRTF becomes `Source{Record, One}` / `Lookup` / `Table`, keyed by the producer record (the
   existing `SourceKey.Reader.ResultRowWalk`, with its `DIRECT` / `OUTCOME_SUCCESS` envelope, becomes a
   record-sourced reader in the lookup family). STF stays `QueryService` but its re-fetch is now the same
@@ -166,6 +175,8 @@ the same rows in the same source order.
 - **Dispatch and re-fetch mirror**: `SingleRecordTableField` and `OrderingOwnedByProducer` leave the model;
   `dispatchPerformsReFetch` agrees with `requiresReFetch`; `everyGraphitronFieldLeafHasAKnownDispatchStatus`
   stays exhaustive and disjoint.
+- **Source-shape mirror**: a pipeline-tier test pins `ChildField.sourceShape()` against the parent producer's
+  `domainReturnType()` arm, so the leaf-switch cannot silently diverge from the projection it claims to be.
 - **Validator**: `validateListRequiresOrdering` exempts idx-ordered correlations; a PK-less idx-ordered
   lookup fixture validates rather than rejecting, guarding the latent-bug fix.
 - Full aggregator green (`mvn install -Plocal-db`), graphitron-lsp included.
