@@ -1,7 +1,7 @@
 ---
 id: R305
 title: Expand the carrier dimension with source-shape and cardinality; separate re-fetch from intent and collapse SingleRecordTableField into RecordTableField
-status: Ready
+status: In Review
 bucket: structural
 priority: 4
 theme: structural-refactor
@@ -185,7 +185,9 @@ nothing reads `One` in R305, and the existing batched `RecordTableField` is unto
   failing test. Add a pipeline-tier test asserting, for every classified `ChildField`, that `sourceShape()`
   agrees with the sealed arm of its parent producer's `domainReturnType()` (`Record` / `TableRecord` →
   `SourceShape.Record`; catalog-`Table` parent → `SourceShape.Table`). This is the source-shape analogue of
-  the `dispatchPerformsReFetch` mirror and converts the javadoc invariant into a pinned one.
+  the `dispatchPerformsReFetch` mirror and converts the javadoc invariant into a pinned one. (Shipped, but
+  against the **parent type's classified backing** rather than the `domainReturnType()` arm, which proved
+  ill-defined for this purpose; see "Resolution (2026-06-15)" under Review feedback.)
 - **Collapse SRTF into RTF, hard-code cardinality `Many`.** Delete the `SingleRecordTableField` leaf; its two
   construction sites (the R178 DML-carrier arm and the R275 `@service`-carrier arm in `FieldBuilder`) produce
   `RecordTableField`. Intent stays `Fetch`. `RecordLookupTableField` is RTF's `@lookupKey` sibling (intent
@@ -251,10 +253,13 @@ runtime result: the same rows in the same source order.
 - **Dispatch and re-fetch mirror**: `SingleRecordTableField` and `OrderingOwnedByProducer` leave the model;
   `dispatchPerformsReFetch` agrees with `requiresReFetch`; `everyGraphitronFieldLeafHasAKnownDispatchStatus`
   stays exhaustive and disjoint.
-- **Source-shape mirror**: a pipeline-tier test pins `ChildField.sourceShape()` against the parent producer's
-  `domainReturnType()` arm, so the leaf-switch cannot silently diverge from the projection it claims to be.
-  **(OPEN — see "Review feedback" above: the delivered `SourceShapeProjectionTest` only checks two example
-  fields against literals, it does not pin the per-leaf invariant. This is the remaining work for the next pass.)**
+- **Source-shape mirror**: a pipeline-tier test pins `ChildField.sourceShape()` against the parent type's
+  classified backing, so the leaf-switch cannot silently diverge from the projection it claims to be.
+  **(SHIPPED — `SourceShapeProjectionTest` now walks every classified `ChildField` the R281 corpus
+  demonstrates and asserts `sourceShape() == Table` iff the parent `GraphitronType` is a `TableBackedType`,
+  else `Record`; the independent truth is the type-classification backing, not the field-leaf switch. A
+  reflective guard fails when a new `ChildField` leaf is neither corpus-covered nor documented-exempt. See
+  the resolution note under "Review feedback".)**
 - **Validator**: `validateListRequiresOrdering` exempts `requiresReFetch` fields (regardless of intent); a
   PK-less re-fetch fixture validates rather than rejecting, guarding the latent-bug fix.
 - Full aggregator green (`mvn install -Plocal-db`), graphitron-lsp included.
@@ -302,6 +307,26 @@ is honestly documented, and R314 is filed for the follow-up.
 field's parent-producer `domainReturnType()` arm, failing on any divergence; then correct the javadoc to
 describe what is actually pinned. Everything else in the item is complete and green, so the next pass should be
 limited to this test (and its comment).
+
+### Resolution (2026-06-15)
+
+Fixed. While implementing the mechanical mirror, the literal "`domainReturnType()` arm" framing turned out to
+be ill-defined: `TableField` (a catalog nested read) and the record-handoff producers **both** report
+`DomainReturnType.Record`, and a nested catalog column's producer is a `TableField` — so mapping
+"`Record` → child `Record`" would mispredict every catalog column field as `Record` when it is `Table`. The
+implementer's two-example test was a pragmatic retreat from a brief that does not hold as written.
+
+The correct, independent, and fully mechanical projection (verified empirically across the whole R281 corpus):
+**`sourceShape() == Table` iff the parent GraphQL type's classified backing is a `GraphitronType.TableBackedType`,
+else `Record`.** The parent-type backing is produced by the type-classification step, separately from the
+field-leaf switch `sourceShape()` reads, so the comparison is a genuine cross-check (validator-mirrors-classifier
+style), not the switch checking itself. `SourceShapeProjectionTest` now (a) walks every classified `ChildField`
+the corpus demonstrates and asserts the projection, exercising both arms; (b) carries a reflective guard over
+`ChildField`'s sealed leaves so a new leaf that is neither corpus-covered nor documented-exempt fails the build;
+and (c) the `ChildField.sourceShape()` javadoc and the test javadoc now describe exactly what is pinned. Three
+leaves the corpus cannot reach (`CompositeColumnField`, `CompositeColumnReferenceField`,
+`SingleRecordIdFieldFromReturning`) are listed as documented exemptions with reasons. Full
+`mvn install -Plocal-db` green.
 
 ## Out of scope
 
