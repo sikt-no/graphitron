@@ -320,3 +320,67 @@ class) row at `:174`.
   record's own identity.
 - **`@table` on the input type**: R97 owns `@table`-on-input. R311 sources the table from the
   record param's class, not from a directive on the input.
+
+## Spec review: Spec to Ready (2026-06-15)
+
+Revisions requested; status stays Spec. The chosen direction (give the jOOQ-record `@service`
+param a real call-site binding) is right, and the carrier-model half is sound: the two new
+`CallSiteExtraction` arms, the `ColumnBinding` / `RecordKeyDecode` split, the `NodeIdDecodeRecord`
+non-reuse rationale (its javadoc invariant at `CallSiteExtraction.java:190-195` does pin exactly
+what the spec quotes), the orthogonal-axes argument, the `ColumnBinding`-vs-`FieldBinding`
+distinction (`FieldBinding` is member-axis at `CallSiteExtraction.java:295-312`; `ColumnRef`
+carries no table at `ColumnRef.java:20`), and the validator-mirrors-classifier section all hold up
+against the principles, and the cited seams (`enrich:109/122/130`, `bindField:464`,
+`buildJooqRecordLeaf:506`, the R195 mismatch gate `:537-545`, `bindingKey:315`,
+`looksLikeBeanCandidate:637-646` being package-based, `resolveNodeIdRecordDecode:2104`, the
+`argString(field, DIR_FIELD, ARG_NAME).orElse(name)` idiom at `BuildContext.java:1649`, the walker
+`deriveValueShape:133` + `ParameterUnbindable` arms, the emitter `valueShapeExpression:143-148`, the
+`TypeFetcherGenerator` InputBean helper queue at `:580-619`) all check out as named.
+
+The blocker is that the classification-flow half is premised on the shape being undetected and
+"unsupported on the rewrite," which is only half true and drives a duplicated-resolution design.
+
+1. **The spec never mentions `GraphitronType.JooqTableRecordInputType`, the live classification of
+   the identical shape** (intro, "unsupported on the rewrite"; Scope boundary; Classification flow
+   point 1). A `@service` param whose reflected type is a jOOQ `TableRecord` already classifies as
+   `JooqTableRecordInputType` (`GraphitronType.java:357-364`) with its `table` resolved, pinned by
+   `GraphitronSchemaBuilderTest.JOOQ_TABLE_RECORD_CLASS` and the R281 `input-backing` corpus example
+   (`ClassifiedCorpus.java:530-543`), against the exact fixture R311 plans to add
+   (`DummyService.consumeFilmRecord(FilmRecord)`). The type-side detection and table resolution are
+   done; only the param-binding / call-site emission is the gap. Bears on plan completeness (the
+   implementer would hit `JooqTableRecordInputType` mid-flight and have to invent the reconciliation)
+   and on the accuracy of the motivating framing. Revision: re-frame as "the input type classifies
+   as `JooqTableRecordInputType` today; the missing piece is the call-site binding," and locate the
+   new work against that existing classification.
+
+2. **Re-resolving the table in `enrich` duplicates an existing resolution** (Classification flow
+   point 2). `TypeBuilder.java:1226-1227` already calls `svc.resolveTableByRecordClass(cls)` for the
+   same record class and stores the `TableRef` on `JooqTableRecordInputType.table`. Calling
+   `resolveTableByRecordClass` again in `enrich` is the "same resolution evaluated by multiple
+   consumers" smell that "Generation-thinking" and "Classification belongs at the parse boundary"
+   warn against. The same applies to the proposed new `org.jooq.TableRecord.isAssignableFrom`
+   detection in `ServiceCatalog.argExtraction`: that predicate is already evaluated in `TypeBuilder`
+   to produce `JooqTableRecordInputType`. Revision: source the `TableRef` (and the record `ClassName`)
+   from the already-classified `JooqTableRecordInputType` for the arg's SDL input type
+   (`InputBeanResolver` holds a `BuildContext ctx`, so a classified-type lookup is plausibly reachable
+   at the field pass), or, if pass ordering makes the classified type genuinely unavailable in
+   `enrich`, say so and justify the second resolution site explicitly. Pick a side.
+
+3. **The doc-update target is mis-aimed and the cited line is stale** (User documentation).
+   `code-generation-triggers.adoc:174` is the `ResultType` row; the `InputType` (non-`@table`) row is
+   `:177`. More substantively, the classification (`JooqTableRecordInputType`) is *already* documented
+   (`:194`) and in the corpus, so "gains a row recording the new classification" double-records an
+   existing fact. What is genuinely new is the call-site param-binding capability
+   (`CallSiteExtraction.JooqRecord` to `create<Record>` helper), which belongs on the `@service`
+   field / call-site surface (near the `QueryServiceRecordField` rows at `:425-426`), not the
+   type-classification table. Revision: retarget the row to the param-binding capability and fix the
+   line cite.
+
+Minor (fold into the above, not separately blocking): `argExtraction` is shared between `@service`
+(`:241`) and `@tableMethod` (`:573`). Classification flow point 1 says "`argExtraction` gains a
+check" while Implementation says "root `@service` arg path"; reconcile, and pin that a `@tableMethod`
+`TableRecord` arg (the `:573` callsite) is unaffected. This folds into finding 2's "where does
+detection live" question.
+
+Next pass's reviewer-session must differ from this one (the disqualified set now includes this
+review's session).
