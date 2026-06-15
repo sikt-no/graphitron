@@ -5,6 +5,7 @@ import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeName;
+import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.HelperRef;
 
@@ -48,6 +49,25 @@ final class CompositeDecodeHelperRegistry {
 
     private final Map<Key, String> helperNames = new LinkedHashMap<>();
     private final Map<Key, MethodSpec> helpers = new LinkedHashMap<>();
+
+    /**
+     * Brackets the construct-thread-drain lifecycle so a registry can never be registered into
+     * without a matching drain. Constructs a fresh registry, hands it to {@code body} (which emits
+     * the methods whose filter call sites lift NodeId-decode helpers through it), then drains every
+     * collected helper onto {@code classBuilder}. The two steps are co-located so a generator that
+     * lifts a decode helper cannot silently forget to emit it — a dropped drain would otherwise
+     * surface only as a dangling {@code decode<Type>(...)} reference and a downstream consumer
+     * compile error, not a generator failure.
+     *
+     * <p>Used by {@link QueryConditionsGenerator}, {@link TypeClassGenerator}, and
+     * {@link TypeFetcherGenerator}; each owns the {@link TypeSpec.Builder} the helpers land on.
+     */
+    static void collectInto(TypeSpec.Builder classBuilder,
+            java.util.function.Consumer<CompositeDecodeHelperRegistry> body) {
+        var registry = new CompositeDecodeHelperRegistry();
+        body.accept(registry);
+        registry.emit().forEach(classBuilder::addMethod);
+    }
 
     /**
      * Registers a helper for {@code (decode, mode, list)} if not already present and returns its

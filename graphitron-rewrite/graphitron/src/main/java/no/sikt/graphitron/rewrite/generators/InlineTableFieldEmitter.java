@@ -54,35 +54,50 @@ public final class InlineTableFieldEmitter {
      *                     recursion, where each nesting level declares its own
      *                     {@code SelectedField} local to avoid JLS §14.4.2 shadowing.
      */
-    public static CodeBlock buildSwitchArmBody(ChildField.TableField tf, String parentAlias, String sfName, String outputPackage) {
-        return buildArm(tf, parentAlias, sfName, outputPackage);
+    public static CodeBlock buildSwitchArmBody(ChildField.TableField tf, String parentAlias, String sfName,
+            String outputPackage, CompositeDecodeHelperRegistry registry) {
+        return buildArm(tf, parentAlias, sfName, outputPackage, registry);
     }
 
-    private static CodeBlock buildArm(ChildField.TableField tf, String parentAlias, String sfName, String outputPackage) {
+    private static CodeBlock buildArm(ChildField.TableField tf, String parentAlias, String sfName,
+            String outputPackage, CompositeDecodeHelperRegistry registry) {
         List<JoinStep> path = tf.joinPath();
         TableRef terminalTable = tf.returnType().table();
         List<String> aliases = JoinPathEmitter.generateAliases(path, terminalTable);
-        String terminalAlias = aliases.get(aliases.size() - 1);
         ClassName typeClass = ClassName.get(outputPackage + ".types", tf.returnType().returnTypeName());
 
         var code = CodeBlock.builder();
 
-        // Declare aliased jOOQ tables for each hop. Alias strings are prefixed with the parent
-        // alias's runtime name (via the jOOQ parent table's {@code getName()}) so recursive /
-        // self-referential subselects never shadow each other's aliases. For the base (outermost)
-        // call, parent.getName() is the raw table name; each nested call accumulates the prefix,
-        // giving globally unique aliases at every depth. Both FkJoin and ConditionJoin (and the
-        // unreachable-here LiftedHop) expose targetTable() through HasTargetTable.
-        for (int i = 0; i < path.size(); i++) {
-            JoinStep.HasTargetTable ht = (JoinStep.HasTargetTable) path.get(i);
-            ClassName jooqTableClass = ht.targetTable().tableClass();
+        String terminalAlias;
+        if (path.isEmpty()) {
+            // Standalone-lookup shape: an empty joinPath means start table == target table, so
+            // parentCorrelation is null (ParentCorrelation.checkCarrierInvariant) and there is no FK
+            // chain to walk. Synthesize a single alias for the field's own (terminal) table; the
+            // inner SELECT emits a conditions-only correlated subquery against it with no key
+            // projection, mirroring InlineLookupTableFieldEmitter's empty-path arm.
+            terminalAlias = "t0";
             code.addStatement("$T $L = $T.$L.as($L.getName() + $S)",
-                jooqTableClass, aliases.get(i), ht.targetTable().constantsClass(), ht.targetTable().javaFieldName(),
-                parentAlias, "_" + aliases.get(i));
+                terminalTable.tableClass(), terminalAlias, terminalTable.constantsClass(), terminalTable.javaFieldName(),
+                parentAlias, "_" + terminalAlias);
+        } else {
+            terminalAlias = aliases.get(aliases.size() - 1);
+            // Declare aliased jOOQ tables for each hop. Alias strings are prefixed with the parent
+            // alias's runtime name (via the jOOQ parent table's {@code getName()}) so recursive /
+            // self-referential subselects never shadow each other's aliases. For the base (outermost)
+            // call, parent.getName() is the raw table name; each nested call accumulates the prefix,
+            // giving globally unique aliases at every depth. Both FkJoin and ConditionJoin (and the
+            // unreachable-here LiftedHop) expose targetTable() through HasTargetTable.
+            for (int i = 0; i < path.size(); i++) {
+                JoinStep.HasTargetTable ht = (JoinStep.HasTargetTable) path.get(i);
+                ClassName jooqTableClass = ht.targetTable().tableClass();
+                code.addStatement("$T $L = $T.$L.as($L.getName() + $S)",
+                    jooqTableClass, aliases.get(i), ht.targetTable().constantsClass(), ht.targetTable().javaFieldName(),
+                    parentAlias, "_" + aliases.get(i));
+            }
         }
 
         // Assemble the inner SELECT.
-        CodeBlock innerSelect = buildInnerSelect(tf, path, aliases, terminalAlias, typeClass, parentAlias, sfName);
+        CodeBlock innerSelect = buildInnerSelect(tf, path, aliases, terminalAlias, typeClass, parentAlias, sfName, registry);
 
         // Both cardinalities use DSL.multiset(...) uniformly. The single-cardinality path adds
         // .limit(1) to the inner SELECT (inside buildInnerSelect) and the registered DataFetcher
@@ -100,7 +115,7 @@ public final class InlineTableFieldEmitter {
      */
     private static CodeBlock buildInnerSelect(ChildField.TableField tf, List<JoinStep> path,
             List<String> aliases, String terminalAlias, ClassName typeClass,
-            String parentAlias, String sfName) {
+            String parentAlias, String sfName, CompositeDecodeHelperRegistry registry) {
         boolean singleCardinality = tf.returnType().wrapper() instanceof FieldWrapper.Single;
 
         var sel = CodeBlock.builder();
@@ -132,13 +147,20 @@ public final class InlineTableFieldEmitter {
         // then whereFilter methods, then user filters. OnFkSlots: emit the slot-based
         // predicate. OnConditionJoin: the condition method is the correlation predicate
         // (SQL-equivalent to an ON clause for the bridging step that joined firstAlias in).
-        String firstAlias = aliases.get(0);
         var where = CodeBlock.builder();
-        switch (tf.parentCorrelation()) {
-            case ParentCorrelation.OnFkSlots fk ->
-                where.add("$L", JoinPathEmitter.emitCorrelationWhere((JoinStep.FkJoin) fk.firstHop(), firstAlias, parentAlias));
-            case ParentCorrelation.OnConditionJoin cj ->
-                where.add("$L", JoinPathEmitter.emitTwoArgMethodCall(cj.firstHop().condition(), parentAlias, firstAlias));
+        if (path.isEmpty()) {
+            // Standalone shape: no parent correlation (parentCorrelation is null here). Seed
+            // noCondition() so the user filters compose via .and(); short-circuit before the
+            // exhaustive parentCorrelation switch, which has no empty-path arm.
+            where.add("$T.noCondition()", DSL);
+        } else {
+            String firstAlias = aliases.get(0);
+            switch (tf.parentCorrelation()) {
+                case ParentCorrelation.OnFkSlots fk ->
+                    where.add("$L", JoinPathEmitter.emitCorrelationWhere((JoinStep.FkJoin) fk.firstHop(), firstAlias, parentAlias));
+                case ParentCorrelation.OnConditionJoin cj ->
+                    where.add("$L", JoinPathEmitter.emitTwoArgMethodCall(cj.firstHop().condition(), parentAlias, firstAlias));
+            }
         }
         for (JoinStep step : path) {
             if (step instanceof JoinStep.FkJoin fk && fk.whereFilter() != null) {
@@ -150,7 +172,7 @@ public final class InlineTableFieldEmitter {
         for (WhereFilter f : tf.filters()) {
             where.add(".and($T.$L($L))",
                 ClassName.bestGuess(f.className()), f.methodName(),
-                ArgCallEmitter.buildCallArgs(new TypeFetcherEmissionContext(), f.callParams(), f.className(), terminalAlias));
+                ArgCallEmitter.buildCallArgs(new TypeFetcherEmissionContext(), f.callParams(), f.className(), terminalAlias, registry));
         }
         sel.add("\n        .where($L)", where.build());
 

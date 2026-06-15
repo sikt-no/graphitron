@@ -360,6 +360,11 @@ public class TypeFetcherGenerator {
         // is the single home so the two sites cannot drift.
         boolean sourceIsOutcome = FetcherEmitter.hasWrapperArmErrors(fields);
 
+        // One decode-helper registry per <Type>Fetchers class: split rows-method and lookup-rows
+        // filter sites that decode a @nodeId argument lift a per-class private static helper through
+        // it. collectInto co-locates construct and drain onto this class's builder so a lifted
+        // helper can never be silently dropped.
+        CompositeDecodeHelperRegistry.collectInto(builder, registry -> {
         for (var field : fields) {
             switch (field) {
                 case ChildField.ColumnField cf -> {
@@ -378,7 +383,7 @@ public class TypeFetcherGenerator {
                     var lookupTableClass = GeneratorUtils.ResolvedTableNames
                         .of(lookupTableRef, qlf.returnType().returnTypeName(), outputPackage).jooqTableClass();
                     builder.addMethod(buildQueryLookupFetcher(ctx, qlf, outputPackage));
-                    builder.addMethod(buildQueryLookupRowsMethod(ctx, qlf, outputPackage));
+                    builder.addMethod(buildQueryLookupRowsMethod(ctx, qlf, outputPackage, registry));
                     builder.addMethod(LookupValuesJoinEmitter.buildInputRowsMethod(qlf, lookupTableClass));
                 }
                 case QueryField.QueryTableField qtf -> {
@@ -409,11 +414,11 @@ public class TypeFetcherGenerator {
                 }
                 case ChildField.SplitTableField stf -> {
                     builder.addMethod(buildSplitQueryDataFetcher(ctx, stf, stf.returnType(), parentTable, outputPackage));
-                    builder.addMethod(SplitRowsMethodEmitter.buildForSplitTable(ctx, stf, outputPackage));
+                    builder.addMethod(SplitRowsMethodEmitter.buildForSplitTable(ctx, stf, outputPackage, registry));
                 }
                 case ChildField.SplitLookupTableField slf -> {
                     builder.addMethod(buildSplitQueryDataFetcher(ctx, slf, slf.returnType(), parentTable, outputPackage));
-                    builder.addMethod(SplitRowsMethodEmitter.buildForSplitLookupTable(ctx, slf, outputPackage));
+                    builder.addMethod(SplitRowsMethodEmitter.buildForSplitLookupTable(ctx, slf, outputPackage, registry));
                     // Emit the VALUES-building input-rows helper alongside the rows method.
                     // The env-based variant (buildInputRowsMethod) reads args from
                     // env.getArgument(name) — correct for a Split* fetcher whose @lookupKey args
@@ -489,11 +494,11 @@ public class TypeFetcherGenerator {
                 case ChildField.ParticipantColumnReferenceField ignored -> { }
                 case ChildField.RecordTableField rtf -> {
                     builder.addMethod(buildRecordBasedDataFetcher(ctx, rtf, rtf.returnType(), rtf.sourceKey(), resultType, sourceIsOutcome, outputPackage));
-                    builder.addMethod(SplitRowsMethodEmitter.buildForRecordTable(ctx, rtf, outputPackage));
+                    builder.addMethod(SplitRowsMethodEmitter.buildForRecordTable(ctx, rtf, outputPackage, registry));
                 }
                 case ChildField.RecordLookupTableField rltf -> {
                     builder.addMethod(buildRecordBasedDataFetcher(ctx, rltf, rltf.returnType(), rltf.sourceKey(), resultType, sourceIsOutcome, outputPackage));
-                    builder.addMethod(SplitRowsMethodEmitter.buildForRecordLookupTable(ctx, rltf, outputPackage));
+                    builder.addMethod(SplitRowsMethodEmitter.buildForRecordLookupTable(ctx, rltf, outputPackage, registry));
                     // Input-rows helper identical in shape to SplitLookupTableField's — reads
                     // @lookupKey args from env.getArgument(name) and emits the typed Row<M+1>[].
                     if (rltf.lookupMapping() instanceof no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping) {
@@ -572,6 +577,7 @@ public class TypeFetcherGenerator {
                 builder.addMethod(reified.method());
             }
         }
+        });
 
         if (ctx.isRequested(TypeFetcherEmissionContext.HelperKind.GRAPHITRON_CONTEXT)) {
             builder.addMethod(buildGraphitronContextHelper(outputPackage));
@@ -4043,7 +4049,8 @@ public class TypeFetcherGenerator {
      * }
      * }</pre>
      */
-    private static MethodSpec buildQueryLookupRowsMethod(TypeFetcherEmissionContext ctx, QueryField.QueryLookupTableField field, String outputPackage) {
+    private static MethodSpec buildQueryLookupRowsMethod(TypeFetcherEmissionContext ctx, QueryField.QueryLookupTableField field, String outputPackage,
+            CompositeDecodeHelperRegistry registry) {
         var tableRef = field.returnType().table();
         var names = GeneratorUtils.ResolvedTableNames.of(tableRef, field.returnType().returnTypeName(), outputPackage);
 
@@ -4068,7 +4075,7 @@ public class TypeFetcherGenerator {
                         LIST, String.class, toCamelCase(param.name()) + "Keys", param.name());
                 }
             }
-            var callArgs = ArgCallEmitter.buildCallArgs(ctx, filter.callParams(), filter.className(), tableLocal);
+            var callArgs = ArgCallEmitter.buildCallArgs(ctx, filter.callParams(), filter.className(), tableLocal, registry);
             builder.addStatement("condition = condition.and($T.$L($L))",
                 ClassName.bestGuess(filter.className()), filter.methodName(), callArgs);
         }
