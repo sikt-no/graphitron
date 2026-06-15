@@ -819,9 +819,9 @@ class TypeBuilder {
                     "@" + DIR_SCALAR_TYPE + " requires a non-blank scalar reference of the form "
                         + "'fully.qualified.Class.FIELD' pointing at a public static final GraphQLScalarType."));
             }
-            var resolution = ScalarTypeResolver.resolveFromDirectiveValue(scalarFqn, ctx.codegenLoader());
-            if (resolution instanceof ScalarResolution.Resolved r) {
-                return new no.sikt.graphitron.rewrite.model.GraphitronType.ScalarType(name, location, r, scalarType);
+            var resolution = ScalarTypeResolver.resolveFromDirectiveValue(scalarFqn, name, ctx.codegenLoader());
+            if (resolution instanceof ScalarResolution.Successful s) {
+                return new no.sikt.graphitron.rewrite.model.GraphitronType.ScalarType(name, location, s, scalarType);
             }
             return new UnclassifiedType(name, location, asRejection(resolution, name));
         }
@@ -831,8 +831,8 @@ class TypeBuilder {
         // consumer's classpath; the second clause produces a ClassNotFound rejection the
         // unresolved escalation collapses into a single author-facing message.
         var convention = ScalarTypeResolver.resolveByConvention(name, ctx.codegenLoader());
-        if (convention instanceof ScalarResolution.Resolved r) {
-            return new no.sikt.graphitron.rewrite.model.GraphitronType.ScalarType(name, location, r, scalarType);
+        if (convention instanceof ScalarResolution.Successful s) {
+            return new no.sikt.graphitron.rewrite.model.GraphitronType.ScalarType(name, location, s, scalarType);
         }
 
         // Unresolved: scalar is neither a spec built-in, a federation-namespace name, an

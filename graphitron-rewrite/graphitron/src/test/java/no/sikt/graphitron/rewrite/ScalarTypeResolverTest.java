@@ -240,6 +240,37 @@ class ScalarTypeResolverTest {
         assertThat(result).isEqualTo(new ScalarResolution.Rejected.ClassNotFound("does.not.exist.Class"));
     }
 
+    @Test
+    void resolveFromDirectiveValue_sdlNameMatchesConstant_returnsResolved() {
+        // SDL name equals the constant's intrinsic getName() ("Money"): the common path stays
+        // Resolved so the emitter registers the constant directly.
+        ScalarResolution result = ScalarTypeResolver.resolveFromDirectiveValue(
+            FIXTURE_PKG + ".ScalarConstants.MONEY", "Money", LOADER);
+
+        assertThat(result).isInstanceOfSatisfying(ScalarResolution.Resolved.class, r -> {
+            assertThat(r.javaType()).isEqualTo(ClassName.get(Money.class));
+            assertThat(r.scalarConstantField()).isEqualTo("MONEY");
+        });
+    }
+
+    @Test
+    void resolveFromDirectiveValue_sdlNameAliasesConstant_returnsSynthesised() {
+        // Canonical R313 repro: scalar LocalDate @scalarType(scalar: "...ExtendedScalars.Date").
+        // ExtendedScalars.Date.getName() is "Date", so the LocalDate declaration aliases it; the
+        // result must register under "LocalDate" (Synthesised) borrowing the Date coercing, not
+        // register the constant under "Date".
+        ScalarResolution result = ScalarTypeResolver.resolveFromDirectiveValue(
+            "graphql.scalars.ExtendedScalars.Date", "LocalDate", LOADER);
+
+        assertThat(result).isInstanceOfSatisfying(ScalarResolution.Synthesised.class, s -> {
+            assertThat(s.sdlName()).isEqualTo("LocalDate");
+            assertThat(s.coercingSourceOwner()).isEqualTo(ClassName.get("graphql.scalars", "ExtendedScalars"));
+            assertThat(s.coercingSourceField()).isEqualTo("Date");
+            // The recovered Java type flows through unchanged (not hardcoded String).
+            assertThat(s.javaType()).isEqualTo(ClassName.get(java.time.LocalDate.class));
+        });
+    }
+
     // ===== Federation-namespace recognition =====
 
     @Test
@@ -315,12 +346,24 @@ class ScalarTypeResolverTest {
     }
 
     @Test
-    void resolveByConvention_aliasedName_resolvesToSameConstant() {
-        // The bare-name and GraphQL-prefixed forms target the same static field.
+    void resolveByConvention_aliasedName_synthesisesUnderDeclaredNameBorrowingSameConstant() {
+        // The bare-name and GraphQL-prefixed forms target the same static field, but the
+        // GraphQL-prefixed SDL name differs from the constant's intrinsic name ("BigDecimal"),
+        // so it must register under the declared name (Synthesised) rather than the constant's
+        // name (Resolved). Both reference the same constant: ExtendedScalars.GraphQLBigDecimal.
         ScalarResolution bare = ScalarTypeResolver.resolveByConvention("BigDecimal", LOADER);
         ScalarResolution prefixed = ScalarTypeResolver.resolveByConvention("GraphQLBigDecimal", LOADER);
 
-        assertThat(bare).isEqualTo(prefixed);
+        assertThat(bare).isInstanceOfSatisfying(ScalarResolution.Resolved.class, r -> {
+            assertThat(r.scalarConstantOwner()).isEqualTo(ClassName.get("graphql.scalars", "ExtendedScalars"));
+            assertThat(r.scalarConstantField()).isEqualTo("GraphQLBigDecimal");
+        });
+        assertThat(prefixed).isInstanceOfSatisfying(ScalarResolution.Synthesised.class, s -> {
+            assertThat(s.sdlName()).isEqualTo("GraphQLBigDecimal");
+            assertThat(s.coercingSourceOwner()).isEqualTo(ClassName.get("graphql.scalars", "ExtendedScalars"));
+            assertThat(s.coercingSourceField()).isEqualTo("GraphQLBigDecimal");
+            assertThat(s.javaType()).isEqualTo(ClassName.get(java.math.BigDecimal.class));
+        });
     }
 
     @Test
@@ -393,9 +436,11 @@ class ScalarTypeResolverTest {
         // FieldNotFound rejections instead of being discovered by a consumer.
         for (String name : ScalarTypeResolver.conventionTable().keySet()) {
             ScalarResolution result = ScalarTypeResolver.resolveByConvention(name, LOADER);
+            // Successful, not Resolved: GraphQL-prefixed names (GraphQLBigDecimal, ...) alias their
+            // constant's intrinsic unprefixed name and resolve to Synthesised.
             assertThat(result)
                 .as("convention entry '%s' must resolve against extended-scalars on the test classpath", name)
-                .isInstanceOf(ScalarResolution.Resolved.class);
+                .isInstanceOf(ScalarResolution.Successful.class);
         }
     }
 }

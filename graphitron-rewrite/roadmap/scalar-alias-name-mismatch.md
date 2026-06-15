@@ -1,7 +1,7 @@
 ---
 id: R313
 title: "Scalar alias name mismatch: @scalarType registers under constant intrinsic name not the SDL name"
-status: Ready
+status: In Progress
 bucket: bug
 priority: 1
 depends-on: []
