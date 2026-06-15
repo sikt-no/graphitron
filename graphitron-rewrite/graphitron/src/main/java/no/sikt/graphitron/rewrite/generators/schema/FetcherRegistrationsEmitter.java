@@ -72,7 +72,7 @@ public final class FetcherRegistrationsEmitter {
                       || e.getValue() instanceof GraphitronType.NodeType
                       || e.getValue() instanceof GraphitronType.RootType
                       // Single-record DML carriers bind to a JooqTableRecordType and hold one
-                      // SingleRecordTableField data field that needs a wired fetcher entry. They
+                      // RecordTableField (former SingleRecordTableField) data field that needs a wired fetcher entry. They
                       // fall through this filter via the ResultType arm — no NestingType
                       // widening required.
                       || e.getValue() instanceof GraphitronType.ResultType)

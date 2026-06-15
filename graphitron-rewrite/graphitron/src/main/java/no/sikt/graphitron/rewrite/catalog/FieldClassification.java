@@ -56,7 +56,6 @@ public sealed interface FieldClassification
             FieldClassification.Computed,
             FieldClassification.InputUnbound,
             FieldClassification.Errors,
-            FieldClassification.SingleRecordTable,
             FieldClassification.SingleRecordId,
             FieldClassification.SingleRecordIdFromReturning,
             FieldClassification.QueryTable,
@@ -140,7 +139,6 @@ public sealed interface FieldClassification
                  RecordOrProperty _,
                  Computed _,
                  Errors _,
-                 SingleRecordTable _,
                  SingleRecordId _,
                  SingleRecordIdFromReturning _,
                  QueryTable _,
@@ -339,12 +337,6 @@ public sealed interface FieldClassification
     }
 
     // ===== Single-record carrier data fields (R75 / R156) =====
-
-    /**
-     * The single data field on a single-record DML payload carrier whose element is a
-     * {@code @table}-bound type. Covers {@code ChildField.SingleRecordTableField}.
-     */
-    record SingleRecordTable(String tableName) implements FieldClassification {}
 
     /**
      * The single data field on a payload-returning DELETE carrier where the data field

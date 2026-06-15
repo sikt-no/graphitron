@@ -123,7 +123,7 @@ public final class CatalogBuilder {
     /**
      * R159 — projects the carrier-data-field coordinates onto the LSP snapshot. Walks
      * {@link GraphitronSchema#fields()} for fields classified as
-     * {@code ChildField.SingleRecordTableField}, {@code SingleRecordIdField}, or
+     * {@code ChildField.RecordTableField}, {@code SingleRecordIdField}, or
      * {@code SingleRecordIdFieldFromReturning}; each marks its parent type as a single-record
      * carrier whose data field name is the field's own name.
      */
@@ -132,7 +132,8 @@ public final class CatalogBuilder {
         for (var entry : schema.fields().entrySet()) {
             var field = entry.getValue();
             boolean isPayloadData =
-                field instanceof no.sikt.graphitron.rewrite.model.ChildField.SingleRecordTableField
+                (field instanceof no.sikt.graphitron.rewrite.model.ChildField.RecordTableField rtf
+                    && rtf.sourceKey().reader() instanceof no.sikt.graphitron.rewrite.model.SourceKey.Reader.ProducedRecordRead)
                 || field instanceof no.sikt.graphitron.rewrite.model.ChildField.SingleRecordIdField
                 || field instanceof no.sikt.graphitron.rewrite.model.ChildField.SingleRecordIdFieldFromReturning;
             if (isPayloadData) {
@@ -199,10 +200,6 @@ public final class CatalogBuilder {
                     terminalTableName(f.joinPath()),
                     columnSqlNames(f.columns()),
                     fkSteps(f.joinPath()));
-            case ChildField.SingleRecordTableField f ->
-                new FieldClassification.SingleRecordTable(
-                    f.returnType() != null && f.returnType().table() != null
-                        ? f.returnType().table().tableName() : null);
             case ChildField.SingleRecordIdFieldFromReturning ignored ->
                 new FieldClassification.SingleRecordIdFromReturning();
             case ChildField.SingleRecordIdField f ->

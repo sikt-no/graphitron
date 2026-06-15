@@ -4,6 +4,7 @@ import no.sikt.graphitron.rewrite.generators.TypeFetcherGenerator;
 import no.sikt.graphitron.rewrite.model.DmlKind;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
+import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.MutationField;
@@ -86,20 +87,23 @@ class SingleRecordPayloadPipelineTest {
 
     @ParameterizedTest
     @EnumSource(value = DmlKind.class, names = {"INSERT", "UPDATE"})
-    void payload_bulkInput_listDataField_dataFieldClassifiesAsSingleRecordTableField(DmlKind kind) {
+    void payload_bulkInput_listDataField_dataFieldClassifiesAsRecordTableField(DmlKind kind) {
         var schema = TestSchemaHelper.buildSchema(payloadDml(kind, "type FilmPayload { films: [Film!] }"));
 
         var dataField = schema.field("FilmPayload", "films");
-        assertThat(dataField).isInstanceOf(ChildField.SingleRecordTableField.class);
-        var srtf = (ChildField.SingleRecordTableField) dataField;
-        assertThat(srtf.returnType()).isInstanceOf(ReturnTypeRef.TableBoundReturnType.class);
-        assertThat(srtf.returnType().table().tableName()).isEqualTo("film");
-        assertThat(srtf.returnType().wrapper()).isInstanceOf(FieldWrapper.List.class);
-        // SourceKey shape: Reader.ResultRowWalk, Wrap.Record, empty path, PK columns.
-        var sk = srtf.sourceKey();
-        assertThat(sk.reader()).isInstanceOf(SourceKey.Reader.ResultRowWalk.class);
-        assertThat(sk.wrap()).isInstanceOf(SourceKey.Wrap.Record.class);
-        assertThat(sk.path()).isEmpty();
+        // R305: the former SingleRecordTableField carrier collapsed into RecordTableField — a
+        // source=target re-fetch keyed on the PK read off the produced record(s).
+        assertThat(dataField).isInstanceOf(ChildField.RecordTableField.class);
+        var rtf = (ChildField.RecordTableField) dataField;
+        assertThat(rtf.returnType()).isInstanceOf(ReturnTypeRef.TableBoundReturnType.class);
+        assertThat(rtf.returnType().table().tableName()).isEqualTo("film");
+        assertThat(rtf.returnType().wrapper()).isInstanceOf(FieldWrapper.List.class);
+        // SourceKey shape: Reader.ProducedRecordRead, Wrap.Row, single LiftedHop (source=target),
+        // PK columns. The bulk (list) data field is per-key cardinality MANY (the held collection).
+        var sk = rtf.sourceKey();
+        assertThat(sk.reader()).isInstanceOf(SourceKey.Reader.ProducedRecordRead.class);
+        assertThat(sk.wrap()).isInstanceOf(SourceKey.Wrap.Row.class);
+        assertThat(sk.path()).singleElement().isInstanceOf(JoinStep.LiftedHop.class);
         assertThat(sk.cardinality()).isEqualTo(SourceKey.Cardinality.MANY);
         assertThat(sk.columns()).extracting(c -> c.sqlName()).containsExactly("film_id");
     }
@@ -110,13 +114,14 @@ class SingleRecordPayloadPipelineTest {
         var schema = TestSchemaHelper.buildSchema(payloadDmlSingleInput(kind, "type FilmPayload { film: Film }"));
 
         // R258: UPDATE routes onto MutationUpdatePayloadField; INSERT stays on MutationDmlRecordField.
-        // The data field classifies as SingleRecordTableField (cardinality ONE) for both.
+        // R305: the data field classifies as RecordTableField (per-key cardinality ONE) for both.
         var mutField = schema.field("Mutation", mutationName(kind));
         assertThat(mutField).isInstanceOf(expectedSingleLeaf(kind));
         var dataField = schema.field("FilmPayload", "film");
-        assertThat(dataField).isInstanceOf(ChildField.SingleRecordTableField.class);
-        var srtf = (ChildField.SingleRecordTableField) dataField;
-        assertThat(srtf.sourceKey().cardinality()).isEqualTo(SourceKey.Cardinality.ONE);
+        assertThat(dataField).isInstanceOf(ChildField.RecordTableField.class);
+        var rtf = (ChildField.RecordTableField) dataField;
+        assertThat(rtf.sourceKey().reader()).isInstanceOf(SourceKey.Reader.ProducedRecordRead.class);
+        assertThat(rtf.sourceKey().cardinality()).isEqualTo(SourceKey.Cardinality.ONE);
     }
 
     // R307: payload_atRecordWithNullClassName_classifiesAsSinglePayloadLeaf deleted. It pinned that
@@ -205,7 +210,7 @@ class SingleRecordPayloadPipelineTest {
         var mutField = schema.field("Mutation", "createFilm");
         assertThat(mutField).isInstanceOf(MutationField.MutationInsertTableField.class);
         // Film.title classifies through the existing TableBackedType arm, not the carrier arm.
-        assertThat(schema.field("Film", "title")).isNotInstanceOf(ChildField.SingleRecordTableField.class);
+        assertThat(schema.field("Film", "title")).isNotInstanceOf(ChildField.RecordTableField.class);
     }
 
     @Test
@@ -226,7 +231,7 @@ class SingleRecordPayloadPipelineTest {
             """);
 
         var dataField = schema.field("FilmCarrier", "films");
-        assertThat(dataField).isNotInstanceOf(ChildField.SingleRecordTableField.class);
+        assertThat(dataField).isNotInstanceOf(ChildField.RecordTableField.class);
     }
 
     @Test
@@ -260,7 +265,7 @@ class SingleRecordPayloadPipelineTest {
             """);
 
         var dataField = schema.field("FilmPayload", "films");
-        assertThat(dataField).isInstanceOf(ChildField.SingleRecordTableField.class);
+        assertThat(dataField).isInstanceOf(ChildField.RecordTableField.class);
         var mutField = schema.field("Mutation", "createFilm");
         assertThat(mutField).isInstanceOf(MutationField.MutationBulkDmlRecordField.class);
     }
@@ -403,10 +408,11 @@ class SingleRecordPayloadPipelineTest {
     // ===== Dispatch-arm structural regression pin =====
 
     @Test
-    void fetcherEmitter_revertedTwoArmsPlusSingleRecord() throws Exception {
+    void fetcherEmitter_revertedTwoArms() throws Exception {
         // Source-level structural assertion: FetcherEmitter.dataFetcherValue has reverted the
-        // IdentityPassthrough capability arm; NestingField dispatches on its own permit, and
-        // SingleRecordTableField has a dedicated arm. (R290 dissolved ConstructorField.)
+        // IdentityPassthrough capability arm; NestingField dispatches on its own permit. (R290
+        // dissolved ConstructorField; R305 collapsed SingleRecordTableField into RecordTableField,
+        // which dispatches through the DataLoader path in TypeFetcherGenerator, not a bind arm here.)
         var src = Files.readString(Path.of(
             "src/main/java/no/sikt/graphitron/rewrite/generators/FetcherEmitter.java"));
         long identityArms = countMatches(src, Pattern.compile(
@@ -415,8 +421,6 @@ class SingleRecordPayloadPipelineTest {
             "field\\s+instanceof\\s+ChildField\\.PassthroughDataField\\b"));
         long nestingFieldArms = countMatches(src, Pattern.compile(
             "field\\s+instanceof\\s+ChildField\\.NestingField\\b"));
-        long singleRecordArms = countMatches(src, Pattern.compile(
-            "field\\s+instanceof\\s+ChildField\\.SingleRecordTableField\\b"));
 
         assertThat(identityArms)
             .as("IdentityPassthrough capability has been retired; no dispatch arm should remain")
@@ -427,9 +431,6 @@ class SingleRecordPayloadPipelineTest {
         assertThat(nestingFieldArms)
             .as("NestingField has its own dispatch arm")
             .isGreaterThanOrEqualTo(1);
-        assertThat(singleRecordArms)
-            .as("SingleRecordTableField has its own dispatch arm")
-            .isEqualTo(1);
     }
 
     // ===== R75 Phase 2: record-element data fields =====
@@ -538,8 +539,8 @@ class SingleRecordPayloadPipelineTest {
         // single-input form). The validator-mirror allow-list admits this arm; the runtime
         // fetcher honors the null-source short-circuit guard the LocalContext catch path needs.
         var dataField = schema.field("FilmPayload", "film");
-        assertThat(dataField).isInstanceOf(ChildField.SingleRecordTableField.class);
-        var srtf = (ChildField.SingleRecordTableField) dataField;
+        assertThat(dataField).isInstanceOf(ChildField.RecordTableField.class);
+        var srtf = (ChildField.RecordTableField) dataField;
         assertThat(srtf.sourceKey().cardinality()).isEqualTo(SourceKey.Cardinality.ONE);
     }
 
@@ -567,8 +568,8 @@ class SingleRecordPayloadPipelineTest {
             .isInstanceOf(ChildField.Transport.LocalContext.class);
 
         var dataField = schema.field("FilmPayload", "films");
-        assertThat(dataField).isInstanceOf(ChildField.SingleRecordTableField.class);
-        assertThat(((ChildField.SingleRecordTableField) dataField).sourceKey().cardinality())
+        assertThat(dataField).isInstanceOf(ChildField.RecordTableField.class);
+        assertThat(((ChildField.RecordTableField) dataField).sourceKey().cardinality())
             .isEqualTo(SourceKey.Cardinality.MANY);
     }
 

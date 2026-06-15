@@ -179,8 +179,6 @@ public final class DeclarationHovers {
                 sb.append("\n\nError types:");
                 for (String name : e.errorTypeNames()) sb.append("\n- `").append(name).append("`");
             }
-            case FieldClassification.SingleRecordTable s ->
-                sb.append("\n\nElement table: `").append(nullSafe(s.tableName())).append("`");
             case FieldClassification.SingleRecordIdFromReturning ignored ->
                 sb.append("\n\nEncoded PK echo from RETURNING.");
             case FieldClassification.SingleRecordId s ->

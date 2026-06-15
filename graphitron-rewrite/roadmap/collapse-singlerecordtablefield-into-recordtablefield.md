@@ -1,7 +1,7 @@
 ---
 id: R305
 title: Expand the carrier dimension with source-shape and cardinality; separate re-fetch from intent and collapse SingleRecordTableField into RecordTableField
-status: In Progress
+status: In Review
 bucket: structural
 priority: 4
 theme: structural-refactor
@@ -126,7 +126,36 @@ throughout and the new carrier values are observable on their own.
   `Carrier.values()` sites to the sealed-arm set, mirrors the two new SDL enums, exercises both source-shapes,
   and pins the `One`-only deferral.
 
-## Slice 3: Separate re-fetch from intent; collapse SRTF into RecordTableField; clean the re-fetch key; unify emit
+## Slice 3: Separate re-fetch from intent; collapse SRTF into RecordTableField; clean the re-fetch key; unify emit — shipped
+
+**Shipped.** `SingleRecordTableField` is deleted; the two `FieldBuilder` carrier construction sites (R178 DML,
+R275 `@service`) now build `RecordTableField` via `FieldBuilder.buildPayloadCarrierRecordTableField`: a single
+`JoinStep.LiftedHop` over the target PK (`JoinSlot.LifterSlot` folds source=target onto one `ColumnRef`) and a
+new `SourceKey.Reader.ProducedRecordRead` ("the source *is* the produced target record(s)"). `requiresReFetch`
+now derives `Table mapping × holds-records`; `dispatchPerformsReFetch` mirrors it across the whole Record-source
+family. `OrderingOwnedByProducer` is deleted and `validateListRequiresOrdering` exempts `requiresReFetch`.
+`ChildField.carrier()` hard-codes `SourceCardinality.Many`. `FieldClassification.SingleRecordTable` (the LSP
+projection) collapsed into `RecordTableTarget`. Full `mvn install -Plocal-db` green.
+
+**Key learning (the runtime-call insight that settled the design).** SRTF and RTF really are the *same shape*:
+the carrier data field is called **once** with the producer's full held output (a single record for `One`, a
+`List<XRecord>` for the bulk case), and feeds the **same Split-rows rows-method** as RTF (`VALUES(idx,pk) JOIN
+… ORDER BY idx`, scatter). The keys just come from the held source rather than from per-parent DataLoader
+invocations: `ProducedRecordRead` at `One` reads the PK off the single record; at `Many` it iterates the held
+collection (one PK key per element, `LOAD_MANY`, `scatterSingleByIdx`) — `GeneratorUtils.buildProducedRecordsKeyMany`.
+The reader is the only per-source-shape difference; no synchronous/inline path and no new emit shape were needed.
+Two emit subtleties the execution tier caught: the `LocalContext` error sentinel is a non-null empty record
+(PK `null`), so the `One` key read uses the typed-local null-checked extraction
+(`GeneratorUtils.buildKeyExtractionWithNullCheck`) — typed binds keep the VALUES `=` well-typed and a null PK
+short-circuits to `completedFuture(null)` (no row), matching the old behaviour; and `buildRecordBasedDataFetcher`
+gained a null-source guard for the LocalContext-safe allow-list (now naming `RecordTableField`).
+
+The design detail below is retained as the record of the settled correction. One divergence from
+that body: where it says "the cardinality slot drives the inline-vs-batched dispatch," the shipped
+code routes by **leaf identity** — every `RecordTableField` batches through the Split-rows path, and
+the `Many` slot is not literally read at the dispatch fork. The net effect is what the body intends
+(the inline-`One` path is dead code until R279), reached by reusing the existing batched dispatch
+rather than adding a slot-driven fork.
 
 The governing correction (settled 2026-06-15): **intent and re-fetch are orthogonal.** Intent is about the
 target and how arguments are interpreted (`Fetch` plain, `Lookup` the `@lookupKey` positional correspondence,

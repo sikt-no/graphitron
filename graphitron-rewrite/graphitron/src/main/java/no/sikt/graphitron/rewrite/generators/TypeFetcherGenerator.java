@@ -210,7 +210,6 @@ public class TypeFetcherGenerator {
         ChildField.RecordField.class,
         ChildField.RecordTableField.class,
         ChildField.RecordLookupTableField.class,
-        ChildField.SingleRecordTableField.class,
         ChildField.SingleRecordIdField.class,
         ChildField.SingleRecordIdFieldFromReturning.class,
         ChildField.TableMethodField.class,
@@ -513,11 +512,6 @@ public class TypeFetcherGenerator {
                     builder.addMethod(buildRecordBasedDataFetcher(ctx, rtmf, rtmf.returnType(), rtmf.sourceKey(), resultType, sourceIsOutcome, outputPackage));
                     builder.addMethod(SplitRowsMethodEmitter.buildForRecordTableMethod(ctx, rtmf, outputPackage));
                 }
-                // SingleRecordTableField: the response SELECT (env.getSource() typed cast + SELECT
-                // run outside the DML transaction) is reified by FetcherEmitter.bind into a named
-                // (DataFetchingEnvironment env) method, collected below; the registration is a
-                // <Type>Fetchers::<field> reference. No-op arm here.
-                case ChildField.SingleRecordTableField ignored  -> { }
                 // R156 — SingleRecordIdFieldFromReturning: the PK column read (+ optional NodeId
                 // encode) is reified by FetcherEmitter.bind into a named (DataFetchingEnvironment
                 // env) method, collected below. No-op arm here.
@@ -4135,7 +4129,7 @@ public class TypeFetcherGenerator {
      * {@code RecordN<...>} via {@code .fetchOne()}. The transaction commits when
      * {@code transactionResult} returns; the materialised key Record outlives it, and the
      * response SELECT happens later in the data field's
-     * {@link ChildField.SingleRecordTableField} fetcher — outside the transaction, so read
+     * {@link ChildField.RecordTableField} fetcher — outside the transaction, so read
      * errors during traversal cannot undo the DML.
      *
      * <p>DML chain construction reuses the existing per-kind helpers
@@ -5127,7 +5121,17 @@ public class TypeFetcherGenerator {
             keyExtraction = GeneratorUtils.buildRecordParentKeyExtraction(
                 sourceKey, resultType, CodeBlock.of("success.value()"));
         } else {
-            prelude = CodeBlock.of("");
+            // R305: short-circuit on a null source. The LocalContext errors transport fires the
+            // data-channel fetcher with a null source (data(null).localContext(errors)); the former
+            // SingleRecordTableField carrier guarded this explicitly, and RecordTableField (its
+            // collapse successor) must too. Harmless for the ordinary record-source case, where the
+            // parent record is never null.
+            var completableFuture = ClassName.get("java.util.concurrent", "CompletableFuture");
+            prelude = CodeBlock.builder()
+                .beginControlFlow("if (env.getSource() == null)")
+                .addStatement("return $T.completedFuture(null)", completableFuture)
+                .endControlFlow()
+                .build();
             keyExtraction = GeneratorUtils.buildRecordParentKeyExtraction(sourceKey, resultType);
         }
 

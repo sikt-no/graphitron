@@ -126,9 +126,10 @@ class ClassifiedDslTest {
             .as("both source-shape values must be exercised by Source-carried rows")
             .containsExactlyInAnyOrder(SourceShape.values());
         assertThat(sourceCardinalities)
-            .as("R305 builds only the One source-cardinality path; the Many arrival is R308 "
-                + "(service-list-payload-arrival), so no corpus row produces Many yet")
-            .containsExactly(SourceCardinality.One);
+            .as("R305 conservatively hard-codes source cardinality Many (the absorbing element) for "
+                + "every Source field; the true ancestor-product One is computed by R279, until which "
+                + "the One inline-skip path stays dead")
+            .containsExactly(SourceCardinality.Many);
 
         var unexercisedAndUnexplained = EnumSet.allOf(Intent.class);
         unexercisedAndUnexplained.removeAll(intents);

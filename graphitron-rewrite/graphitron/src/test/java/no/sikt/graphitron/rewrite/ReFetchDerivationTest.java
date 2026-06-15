@@ -71,4 +71,49 @@ class ReFetchDerivationTest {
             .extracting(ValidationError::message)
             .noneMatch(m -> m.contains("re-fetch derivation"));
     }
+
+    private static final String RECORD_SOURCE_SINGLE = """
+        type Film @table(name: "film") { title: String }
+        type FilmPayload { film: Film }
+        type Query { x: String }
+        type Mutation {
+          runFilm: FilmPayload
+            @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "runFilm"})
+        }
+        """;
+
+    private static final String RECORD_SOURCE_LIST = """
+        type Film @table(name: "film") { title: String }
+        type FilmListPayload { films: [Film!] }
+        type Query { x: String }
+        type Mutation {
+          runFilms: FilmListPayload
+            @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getFilmsAsList"})
+        }
+        """;
+
+    @Test
+    void recordSourceCarrier_reFetches() {
+        // R305: the @service payload carrier's @table data field collapsed into RecordTableField —
+        // a Source{Record} field on a Table mapping, so holds-records x Table -> re-fetch. Both the
+        // single and the list (bulk) carrier re-fetch (the source=target re-projection).
+        GraphitronSchema single = TestSchemaHelper.buildSchema(RECORD_SOURCE_SINGLE);
+        OutputField film = (OutputField) single.field("FilmPayload", "film");
+        assertThat(film).isInstanceOf(no.sikt.graphitron.rewrite.model.ChildField.RecordTableField.class);
+        assertThat(film.requiresReFetch())
+            .as("a Source{Record} x Table carrier re-fetches (holds a produced record, R305)")
+            .isTrue();
+
+        GraphitronSchema list = TestSchemaHelper.buildSchema(RECORD_SOURCE_LIST);
+        OutputField films = (OutputField) list.field("FilmListPayload", "films");
+        assertThat(films).isInstanceOf(no.sikt.graphitron.rewrite.model.ChildField.RecordTableField.class);
+        assertThat(films.requiresReFetch()).isTrue();
+
+        // Mirror agreement across the Record-source family: the validator's dispatchPerformsReFetch
+        // must match requiresReFetch, or the build fails with a re-fetch-derivation drift.
+        assertThat(validate(single)).extracting(ValidationError::message)
+            .noneMatch(m -> m.contains("re-fetch derivation"));
+        assertThat(validate(list)).extracting(ValidationError::message)
+            .noneMatch(m -> m.contains("re-fetch derivation"));
+    }
 }

@@ -68,7 +68,7 @@ public sealed interface OutputField extends GraphitronField permits RootField, C
      * key...)} join with {@code ORDER BY idx}).
      *
      * <p>Re-fetch is orthogonal to {@link #intent()} (R305): a field that re-fetches keeps its own
-     * intent. A {@code SingleRecordTableField} keys off a producer record while its intent stays
+     * intent. A record-source {@code RecordTableField} carrier (the former {@code SingleRecordTableField}) keys off a producer record while its intent stays
      * {@code Fetch}; this is the single home of the re-fetch predicate the service/DML fetcher arms
      * used to each re-decide from their own leaf type (R290). {@code GraphitronSchemaValidator} mirrors
      * it against the generator's actual re-fetch dispatch so the derivation and the emitter cannot

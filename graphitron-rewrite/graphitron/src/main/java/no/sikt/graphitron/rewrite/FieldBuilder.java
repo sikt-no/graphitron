@@ -3650,7 +3650,7 @@ class FieldBuilder {
      * payload machinery the record-carrier classifier uses (the payload scan, the data-field
      * {@code @table}-equality check, the error-channel detection) with the {@code UpdateRowsWalker}
      * the direct-return UPDATE uses (PK-or-UK identification + SET/WHERE partition), so no UPDATE
-     * path reads {@code @value}. The data field's {@code SingleRecordTableField} classification is
+     * path reads {@code @value}. The data field's {@code RecordTableField} (former SingleRecordTableField) classification is
      * grounded independently by {@code RecordBindingResolver.groundDmlMutationField} (which reads
      * {@code @mutation(typeName:)} straight off the SDL), so no per-field reclassify is needed here.
      * A pre-check failure or a walker {@code Err} surfaces as an {@link UnclassifiedField}; the
@@ -4004,6 +4004,58 @@ class FieldBuilder {
         return false;
     }
 
+    /**
+     * R305: the former {@code SingleRecordTableField} payload carriers (DML write and
+     * {@code @service} producer) collapse into {@link ChildField.RecordTableField} — a
+     * source=target re-fetch. The producer hands back the target table's record on
+     * {@code env.getSource()}; the field re-projects the {@code @table} by correlating the record's
+     * primary key to the catalog rows. Modeled as the {@code @sourceRow} leaf shape: a single
+     * {@link JoinStep.LiftedHop} over the target PK (each {@link JoinSlot.LifterSlot} folds the
+     * source side and target side onto one {@link ColumnRef}, the source=target key fact),
+     * {@link SourceKey.Reader.ColumnRead} (the data-fetcher reads the PK off the source record via
+     * the enclosing type's {@code ResultType}), {@link SourceKey.Wrap.Row} (the DataLoader key is a
+     * {@code RowN} PK tuple), and the {@code @sourceRow} {@link LoaderRegistration} constant. The
+     * source envelope ({@code DIRECT} vs {@code OUTCOME_SUCCESS}) is derived at the type level by the
+     * generator ({@code sourceIsOutcome}), not carried on the key. R305 batches every re-fetch field
+     * (source cardinality {@code Many}); the single-source case is a correct one-element batch.
+     */
+    private ChildField buildPayloadCarrierRecordTableField(
+            String parentTypeName, String name, SourceLocation location,
+            ReturnTypeRef.TableBoundReturnType tb) {
+        TableRef targetTable = tb.table();
+        List<ColumnRef> pkColumns = targetTable.primaryKeyColumns();
+        boolean isList = tb.wrapper().isList();
+        SourceKey.Cardinality cardinality = isList
+            ? SourceKey.Cardinality.MANY
+            : SourceKey.Cardinality.ONE;
+        List<JoinSlot.LifterSlot> hopSlots = pkColumns.stream()
+            .map(JoinSlot.LifterSlot::new)
+            .toList();
+        JoinStep.LiftedHop hop = new JoinStep.LiftedHop(targetTable, hopSlots, name + "_0");
+        List<JoinStep> joinPath = List.of(hop);
+        SourceKey sourceKey = new SourceKey(
+            targetTable,
+            pkColumns,
+            joinPath,
+            new SourceKey.Wrap.Row(),
+            cardinality,
+            new SourceKey.Reader.ProducedRecordRead());
+        // ONE: a single produced record -> one key, loader.load. MANY: a held collection -> one key
+        // per element, loader.loadMany (one re-projected row per key). valueIsList is false either
+        // way: each PK key resolves to exactly one target row.
+        LoaderRegistration loaderRegistration = new LoaderRegistration(
+            false,
+            LoaderRegistration.Container.POSITIONAL_LIST,
+            isList ? LoaderRegistration.Dispatch.LOAD_MANY : LoaderRegistration.Dispatch.LOAD_ONE);
+        var pcResolution = ctx.buildParentCorrelation(joinPath, null, pkColumns);
+        var parentCorrelation =
+            ((BuildContext.ParentCorrelationResolution.Resolved) pcResolution).correlation();
+        return new ChildField.RecordTableField(
+            parentTypeName, name, location, tb, joinPath,
+            List.of(), new OrderBySpec.None(), null,
+            sourceKey, loaderRegistration, parentCorrelation);
+    }
+
     private GraphitronField classifyChildFieldOnResultType(GraphQLFieldDefinition fieldDef, String parentTypeName,
             ResultType parentResultType, Class<?> parentBackingClass) {
         String name = fieldDef.getName();
@@ -4039,28 +4091,12 @@ class FieldBuilder {
                         + "' which does not match the input @table '" + binding.tableRef().tableName()
                         + "'; payload-returning DML mutations require child @table-bound fields to bind to the input table"));
                 }
-                // Step 1 produces {@link ChildField.SingleRecordTableField} with
-                // (Reader.ResultRowWalk, Wrap.Record) so the existing emit path
-                // (FetcherEmitter.buildSingleRecordTableFetcherValueRecordWrap) keeps working
-                // unchanged. A follow-up step lifts the emitter to Wrap.Row + Reader.ColumnRead
-                // so the generated source uses the @splitQuery-shape contract documented in
-                // §"Bulk DML reference" of the R178 spec.
-                var pkColumns = binding.tableRef().primaryKeyColumns();
-                var cardinality = tb.wrapper().isList()
-                    ? SourceKey.Cardinality.MANY
-                    : SourceKey.Cardinality.ONE;
-                var sourceKey = new SourceKey(
-                    binding.tableRef(),
-                    pkColumns,
-                    List.of(),
-                    new SourceKey.Wrap.Record(),
-                    cardinality,
-                    // DML carriers deliver the RecordN<PK> directly on env.getSource() (the
-                    // sentinel/localContext transport); errors ride the LocalContext channel, not
-                    // an Outcome wrapper, so the source envelope is always DIRECT.
-                    new SourceKey.Reader.ResultRowWalk(SourceKey.Reader.SourceEnvelope.DIRECT));
-                return new ChildField.SingleRecordTableField(
-                    parentTypeName, name, location, tb, sourceKey);
+                // R305: the DML payload carrier collapses into RecordTableField — a source=target
+                // re-fetch. The producer hands back the RETURNING record on env.getSource(); the
+                // field re-projects the @table by correlating the record's PK to the catalog rows.
+                // The source envelope (DIRECT here) is derived at the type level by the generator
+                // (sourceIsOutcome), not carried on the key.
+                return buildPayloadCarrierRecordTableField(parentTypeName, name, location, tb);
             }
             // Non-@table, non-polymorphic children on DML payloads fall through to existing
             // arms below. For step 1 the relevant fixtures don't exercise this fall-through.
@@ -4069,10 +4105,10 @@ class FieldBuilder {
         // R178 step 2b: @service-carrier sibling. The producer is an @service method returning
         // XRecord (single) or List<XRecord> (bulk), observed as ProducerBinding.ServiceEmitted
         // by R96's structural detection. The classifier-side dispatch mirrors the DmlEmitted
-        // arm above: construct SingleRecordTableField directly, with Wrap.TableRecord this
-        // time (the source at runtime is the typed XRecord from the @service method, not a
-        // sparse RecordN<PK> from the DML emitter). The existing FetcherEmitter's
-        // Wrap.TableRecord arm consumes the resulting permit unchanged.
+        // arm above: R305 builds a RecordTableField source=target re-fetch carrier (see
+        // buildPayloadCarrierRecordTableField). The source-read shape (typed XRecord vs sparse
+        // RecordN<PK>) and the envelope (DIRECT vs OUTCOME_SUCCESS) are resolved by the generator
+        // at the type level, not carried on the SourceKey.
         var serviceEmitted = serviceEmittedBinding(parentTypeName);
         if (serviceEmitted.isPresent()) {
             var binding = serviceEmitted.get();
@@ -4098,28 +4134,14 @@ class FieldBuilder {
                 // emit below already resolves the field through a PK-keyed follow-up SELECT off
                 // the producer's record. Same advisory family as the class-backed-parent redundancy.
                 warnIfSplitQueryOnRecordParent(fieldDef, parentTypeName, name, location);
-                var pkColumns = binding.tableRef().primaryKeyColumns();
-                var cardinality = tb.wrapper().isList()
-                    ? SourceKey.Cardinality.MANY
-                    : SourceKey.Cardinality.ONE;
-                // R275: an @service carrier whose payload carries an errors field routes the
-                // producer through the typed Outcome wrapper (the same condition that gives the
-                // mutation field its ErrorChannel.Mapped channel, see resolveServiceOutcomeChannel),
-                // so the data field reads its record off Outcome.Success.value(). With no errors
-                // field the producer returns the XRecord bare. The envelope rides on the field so
-                // the emitter never re-derives it from sibling fields.
-                var envelope = carrierPayloadHasErrorsField(parentTypeName)
-                    ? SourceKey.Reader.SourceEnvelope.OUTCOME_SUCCESS
-                    : SourceKey.Reader.SourceEnvelope.DIRECT;
-                var sourceKey = new SourceKey(
-                    binding.tableRef(),
-                    pkColumns,
-                    List.of(),
-                    new SourceKey.Wrap.TableRecord(binding.tableRef().recordClass()),
-                    cardinality,
-                    new SourceKey.Reader.ResultRowWalk(envelope));
-                return new ChildField.SingleRecordTableField(
-                    parentTypeName, name, location, tb, sourceKey);
+                // R305: the @service payload carrier collapses into RecordTableField — a
+                // source=target re-fetch, the same shape as the DML carrier above. The producer
+                // hands back the target XRecord on env.getSource() (bare, or wrapped in
+                // Outcome.Success when the payload carries an errors field); the field re-projects
+                // the @table by correlating the record's PK to the catalog rows. The source
+                // envelope (DIRECT vs OUTCOME_SUCCESS) is derived at the type level by the generator
+                // (sourceIsOutcome = hasWrapperArmErrors), not carried on the key.
+                return buildPayloadCarrierRecordTableField(parentTypeName, name, location, tb);
             }
             // R275 requirement 2: ID-element data field on an @service carrier — the opptak
             // fjernSakTagg/fjernSakTagger @nodeId-from-record shape. The encoder resolution
