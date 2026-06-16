@@ -5,7 +5,7 @@ status: Spec
 bucket: structural
 priority: 4
 theme: structural-refactor
-depends-on: [collapse-singlerecordtablefield-into-recordtablefield]
+depends-on: []
 created: 2026-06-14
 last-updated: 2026-06-14
 ---
