@@ -15,6 +15,8 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 
@@ -29,8 +31,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p>Wiring: {@link GraphitronSchemaBuilder#buildContextForTests} runs the schema generator and
  * {@code TypeBuilder} but stops before field classification, returning the same fully-wired
- * {@link BuildContext} the orchestrator hands to {@link FieldBuilder}. The test calls
- * {@link ConnectionPromoter#promote(BuildContext)} directly against that context.
+ * {@link BuildContext} the orchestrator hands to {@link FieldBuilder}. The {@link #promoteAll} helper
+ * drives {@link ConnectionPromoter#synthesiseForField} over every object field of that context,
+ * standing in for the field-first walk so each carrier is promoted exactly once.
  */
 @UnitTier
 class ConnectionPromoterTest {
@@ -52,7 +55,7 @@ class ConnectionPromoterTest {
             """;
         var bctx = buildBuildContext(sdl);
 
-        var rewrites = ConnectionPromoter.promote(bctx);
+        var rewrites = promoteAll(bctx);
 
         assertThat(rewrites).singleElement().satisfies(r -> {
             assertThat(r.parentTypeName()).isEqualTo("Query");
@@ -76,7 +79,7 @@ class ConnectionPromoterTest {
             """;
         var bctx = buildBuildContext(sdl);
 
-        ConnectionPromoter.promote(bctx);
+        promoteAll(bctx);
 
         var connection = ((ConnectionType) bctx.types.get("QueryCustomersConnection")).schemaType();
         assertThat(connection.getDescription()).isEqualTo("A connection to a list of items.");
@@ -113,7 +116,7 @@ class ConnectionPromoterTest {
             """;
         var bctx = buildBuildContext(sdl);
 
-        var rewrites = ConnectionPromoter.promote(bctx);
+        var rewrites = promoteAll(bctx);
 
         assertThat(rewrites).singleElement().satisfies(r ->
             assertThat(r.connectionName()).isEqualTo("MyCustomerConnection"));
@@ -131,7 +134,7 @@ class ConnectionPromoterTest {
             """;
         var bctx = buildBuildContext(sdl);
 
-        var rewrites = ConnectionPromoter.promote(bctx);
+        var rewrites = promoteAll(bctx);
 
         assertThat(rewrites).singleElement().satisfies(r ->
             assertThat(r.defaultPageSize()).isEqualTo(42));
@@ -167,7 +170,7 @@ class ConnectionPromoterTest {
             """;
         var bctx = buildBuildContext(sdl);
 
-        var rewrites = ConnectionPromoter.promote(bctx);
+        var rewrites = promoteAll(bctx);
 
         assertThat(rewrites).isEmpty();
         assertThat(bctx.types.get("CustomerConnection")).isInstanceOf(ConnectionType.class);
@@ -192,7 +195,7 @@ class ConnectionPromoterTest {
             """;
         var bctx = buildBuildContext(sdl);
 
-        var rewrites = ConnectionPromoter.promote(bctx);
+        var rewrites = promoteAll(bctx);
 
         assertThat(rewrites).hasSize(1);
         var pageInfo = bctx.types.get("PageInfo");
@@ -211,7 +214,7 @@ class ConnectionPromoterTest {
             """;
         var bctx = buildBuildContext(sdl);
 
-        var rewrites = ConnectionPromoter.promote(bctx);
+        var rewrites = promoteAll(bctx);
 
         assertThat(rewrites).hasSize(2);
         assertThat(rewrites).allSatisfy(r -> assertThat(r.connectionName()).isEqualTo("CustomerConnection"));
@@ -249,7 +252,7 @@ class ConnectionPromoterTest {
             """;
         var bctx = buildBuildContext(sdl);
 
-        var rewrites = ConnectionPromoter.promote(bctx);
+        var rewrites = promoteAll(bctx);
 
         assertThat(rewrites).isEmpty();
         assertThat(bctx.types.get("CustomerConnection")).isInstanceOf(ConnectionType.class);
@@ -266,7 +269,7 @@ class ConnectionPromoterTest {
             """;
         var bctx = buildBuildContext(sdl);
 
-        ConnectionPromoter.promote(bctx);
+        promoteAll(bctx);
 
         assertThat(((ConnectionType) bctx.types.get("NullableCustomerConnection")).itemNullable()).isTrue();
         assertThat(((ConnectionType) bctx.types.get("NonNullCustomerConnection")).itemNullable()).isFalse();
@@ -274,9 +277,8 @@ class ConnectionPromoterTest {
 
     @Test
     void rebuildAssembledForConnections_shortCircuitsWhenNoRewritesAndNoSynthesisedTypes() {
-        // The noSynthesisedTypes short-circuit: an already-classified BuildContext with no
-        // ConnectionType / EdgeType / PageInfoType entries and an empty rewrite list must
-        // return the original GraphQLSchema instance by reference.
+        // The empty-set short-circuit: no synthesised types and no rewrites must return the original
+        // GraphQLSchema instance by reference.
         String sdl = """
             type Foo { id: ID! }
             type Query { foo: Foo }
@@ -284,7 +286,7 @@ class ConnectionPromoterTest {
         var bctx = buildBuildContext(sdl);
 
         var rebuilt = ConnectionPromoter.rebuildAssembledForConnections(
-            bctx.schema, bctx.types, List.of());
+            bctx.schema, List.of(), List.of());
 
         assertThat(rebuilt).isSameAs(bctx.schema);
     }
@@ -304,7 +306,7 @@ class ConnectionPromoterTest {
             """;
         var bctx = buildBuildContext(sdl);
 
-        ConnectionPromoter.promote(bctx);
+        promoteAll(bctx);
 
         assertThat(tagNames(connSchema(bctx, "QueryCustomersConnection"))).containsExactly("x");
         assertThat(tagNames(edgeSchema(bctx, "QueryCustomersEdge"))).containsExactly("x");
@@ -324,7 +326,7 @@ class ConnectionPromoterTest {
             """;
         var bctx = buildBuildContext(sdl);
 
-        ConnectionPromoter.promote(bctx);
+        promoteAll(bctx);
 
         assertThat(tagNames(connSchema(bctx, "QueryCustomersConnection"))).containsExactlyInAnyOrder("a", "b");
         assertThat(tagNames(edgeSchema(bctx, "QueryCustomersEdge"))).containsExactlyInAnyOrder("a", "b");
@@ -342,7 +344,7 @@ class ConnectionPromoterTest {
             """;
         var bctx = buildBuildContext(sdl);
 
-        ConnectionPromoter.promote(bctx);
+        promoteAll(bctx);
 
         assertThat(tagNames(connSchema(bctx, "CustomerConnection"))).containsExactlyInAnyOrder("a", "b");
         assertThat(tagNames(edgeSchema(bctx, "CustomerEdge"))).containsExactlyInAnyOrder("a", "b");
@@ -372,7 +374,7 @@ class ConnectionPromoterTest {
             """;
         var bctx = buildBuildContext(sdl);
 
-        ConnectionPromoter.promote(bctx);
+        promoteAll(bctx);
 
         // The author-declared Connection keeps its own tag; the synthesised PageInfo inherits it.
         assertThat(tagNames(connSchema(bctx, "CustomerConnection"))).containsExactly("x");
@@ -408,7 +410,7 @@ class ConnectionPromoterTest {
             """;
         var bctx = buildBuildContext(sdl);
 
-        ConnectionPromoter.promote(bctx);
+        promoteAll(bctx);
 
         // The Connection keeps its author tag; the SDL PageInfo keeps only its own, unchanged.
         assertThat(tagNames(connSchema(bctx, "CustomerConnection"))).containsExactly("conn");
@@ -431,6 +433,25 @@ class ConnectionPromoterTest {
         return type.getAppliedDirectives("tag").stream()
             .map(d -> (String) d.getArgument("name").getValue())
             .toList();
+    }
+
+    /**
+     * Drives {@link ConnectionPromoter#synthesiseForField} over every object-type field of the
+     * context, standing in for the field-first walk that the real builder runs, and returns the
+     * accumulated carrier rewrites. The synthesised-name set is not asserted on here (the tests read
+     * {@code bctx.types} directly), so it is discarded.
+     */
+    private static List<ConnectionPromoter.CarrierRewrite> promoteAll(BuildContext bctx) {
+        var rewrites = new ArrayList<ConnectionPromoter.CarrierRewrite>();
+        var synthesisedNames = new LinkedHashSet<String>();
+        for (var t : bctx.schema.getAllTypesAsList()) {
+            if (t.getName().startsWith("_")) continue;
+            if (!(t instanceof GraphQLObjectType objType)) continue;
+            for (var fieldDef : objType.getFieldDefinitions()) {
+                ConnectionPromoter.synthesiseForField(bctx, objType, fieldDef, rewrites, synthesisedNames);
+            }
+        }
+        return rewrites;
     }
 
     private static BuildContext buildBuildContext(String sdl) {

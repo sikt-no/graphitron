@@ -393,6 +393,39 @@ itself. What remains here is the risk-isolated, gated code transformation, slice
    types otherwise. Add a pipeline assertion covering the assembled-schema delta (the
    differential's blind spot). Delete the now-dead phases; keep `rejectCaseInsensitiveTypeCollisions`
    as a post-walk registry sweep (a global cross-type check, not field-driven).
+
+   **Slice 5 shipped (truth table 2115 + sakila execute-spec 404, all green).** Connection synthesis
+   is folded into the field-first walk and the synthesised-type set has a single producer. What landed:
+   - *Field-first synthesis (`ConnectionPromoter`).* The standalone all-types `promote(BuildContext)`
+     pass (its own `getAllTypesAsList()` scan) is replaced by `synthesiseForField`, called once per
+     visited field at the top of `classifyFieldsOfObject` (before its classification early-returns, so
+     it fires for every field exactly as the retired scan did, including carriers on directiveless
+     parents). Visiting an `@asConnection` / structural carrier registers its Connection / Edge /
+     PageInfo as a byproduct; there is no sibling scan and no dedup/union logic in the promoter.
+   - *Tag union + reconciliation in the accumulator (`TypeRegistry.register`).* The cross-carrier
+     federation `@tag` union (carriers sharing a connection name; every carrier feeding the one shared
+     `PageInfo`) now lives in `register`'s same-kind reconciliation for the synth arms, alongside the
+     planned throw→demote-to-`UnclassifiedType` on an incompatible repeat (validator-mirrored by the
+     unclassified-type pass). The hand-rolled enrich-or-synthesize fork and the `unionTagsIntoExisting`
+     post-pass are gone, and the now-dead `synthesize` / `enrich` verbs are retired (`classify` /
+     `demote` stay, still used by non-connection passes).
+   - *Single-producer rebuild (`rebuildAssembledForConnections`).* It takes the typed
+     `List<GraphQLObjectType>` synthesised set (resolved once, post-walk, from the names the walk
+     flagged) instead of re-deriving it from a second `ctx.types` scan, so the assembled schema cannot
+     drift from the registry (the R165 two-producers bug class, here relocated to Connection types, is
+     closed by construction). `ConnectionAssembledDeltaPipelineTest` pins that delta, the projection
+     differential's blind spot.
+   - *Behaviour-preservation guard.* Because synthesis now registers a structural Connection / Edge /
+     PageInfo *during* the walk, `classifyFieldsOfObject` skips a parent that is a connection arm
+     (in addition to the directiveless `null` skip), reproducing the retired flow where those types
+     were still directiveless at field-classification time and their fields were never classified
+     standalone (the connection emitter owns them).
+   - *Honest scope.* The synth arms' `shareable` flag is now OR-ed uniformly on a same-name merge
+     (previously first-write-wins for Connection / Edge, OR only for `PageInfo`); no gate exercises a
+     same-name `@shareable` divergence, so this is unobservable, and OR is the more correct federation
+     contract. The literal full verb-collapse (`classify` / `demote` into `register`) and the orphan
+     prune remain for slice 6; this slice keeps `rejectCaseInsensitiveTypeCollisions` as a post-walk
+     sweep as specified.
 6. **Prune orphans (the payoff, intended behaviour change).** Stop classifying unreachable types;
    the walk already only reaches the reachable surface. Flip slice 1's orphan *measurement* into
    an assertion that the orphan set is empty (or rejected), and update any truth-table rows that

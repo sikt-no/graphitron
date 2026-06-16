@@ -34,6 +34,7 @@ import no.sikt.graphitron.rewrite.schema.input.FederationLinkApplier;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -230,26 +231,41 @@ public class GraphitronSchemaBuilder {
         // have no fields classified here (only object types do), so getObjectType filters them out.
         // Slice 6 deletes the compensating sweep, at which point fields of unreachable types are no
         // longer classified and the reachability prune becomes observable.
+        // R279 slice 5 — connection synthesis is folded into this field-first walk: visiting an
+        // @asConnection / structural connection carrier registers its Connection / Edge / PageInfo
+        // as a byproduct (ConnectionPromoter.synthesiseForField, called per field inside
+        // classifyFieldsOfObject). The walk accumulates the carrier rewrites and the set of
+        // synthesised names absent from the assembled schema; there is no separate all-types
+        // promotion pass and no second ctx.types scan.
         var reachable = typeBuilder.reachableOutputTypes();
+        var connectionRewrites = new ArrayList<ConnectionPromoter.CarrierRewrite>();
+        var synthesisedConnectionNames = new LinkedHashSet<String>();
         for (var name : reachable) {
             if (!(ctx.schema.getType(name) instanceof GraphQLObjectType objType)) continue;
-            classifyFieldsOfObject(ctx, typeBuilder, fieldBuilder, objType);
+            classifyFieldsOfObject(ctx, typeBuilder, fieldBuilder, objType,
+                connectionRewrites, synthesisedConnectionNames);
         }
         for (var t : ctx.schema.getAllTypesAsList()) {
             if (!(t instanceof GraphQLObjectType objType) || t.getName().startsWith("__")) continue;
             if (reachable.contains(t.getName())) continue;
-            classifyFieldsOfObject(ctx, typeBuilder, fieldBuilder, objType);
+            classifyFieldsOfObject(ctx, typeBuilder, fieldBuilder, objType,
+                connectionRewrites, synthesisedConnectionNames);
         }
         registerNestingTypes(ctx);
         // R279 slice 4 — the multi-producer DomainReturnType agreement check is detected here (on the
-        // pre-promotion, pre-dangling field registry, against the assembled-schema SDL-Object axis,
-        // byte-identically to the retired reclassifying post-pass) but no longer demotes the
-        // producers; the conflicts ride on the model and the validator's validateUniformDomainReturnType
-        // surfaces them, closing the enforcement in the same commit so no gap opens.
+        // pre-dangling field registry, against the assembled-schema SDL-Object axis) but no longer
+        // demotes the producers; the conflicts ride on the model and the validator's
+        // validateUniformDomainReturnType surfaces them, closing the enforcement in the same commit so
+        // no gap opens. Connection synthesis above does not touch the field registry, so the conflict
+        // set is unaffected by its relocation into the walk.
         var domainReturnTypeConflicts = collectDomainReturnTypeConflicts(ctx);
-        var rewrites = ConnectionPromoter.promote(ctx);
         rejectDanglingTypeReferences(ctx);
-        var rebuiltAssembled = ConnectionPromoter.rebuildAssembledForConnections(ctx.schema, ctx.types, rewrites);
+        // The synthesised-type set for the rebuild is resolved once, here, from the names the walk
+        // flagged (their final post-tag-union forms live on the registry). rebuild consumes this typed
+        // set rather than re-deriving it, so the rebuilt assembled schema cannot drift from the registry.
+        var synthesisedConnectionTypes = resolveSynthesisedConnectionTypes(ctx, synthesisedConnectionNames);
+        var rebuiltAssembled = ConnectionPromoter.rebuildAssembledForConnections(
+            ctx.schema, synthesisedConnectionTypes, connectionRewrites);
         // R194: reject case-insensitive type-name collisions. Graphitron emits one Java file per
         // type-name stem; on case-insensitive filesystems two case-equivalent names would clobber
         // each other. Runs post-promotion so synth-vs-synth Connection-name clashes (the consumer
@@ -280,9 +296,29 @@ public class GraphitronSchemaBuilder {
      * {@code NestingField} that embeds it ({@link #registerNestingTypes}), not standalone here.
      */
     private static void classifyFieldsOfObject(
-            BuildContext ctx, TypeBuilder typeBuilder, FieldBuilder fieldBuilder, GraphQLObjectType objType) {
+            BuildContext ctx, TypeBuilder typeBuilder, FieldBuilder fieldBuilder, GraphQLObjectType objType,
+            List<ConnectionPromoter.CarrierRewrite> connectionRewrites, Set<String> synthesisedConnectionNames) {
+        // R279 slice 5 — connection synthesis is a byproduct of visiting each field, run before any of
+        // the classification early-returns below so it fires for every field exactly as the retired
+        // all-types promotion pass did (including fields on directiveless parents whose standalone
+        // classification is skipped). register owns dedup and the cross-carrier @tag union.
+        for (var fieldDef : objType.getFieldDefinitions()) {
+            ConnectionPromoter.synthesiseForField(
+                ctx, objType, fieldDef, connectionRewrites, synthesisedConnectionNames);
+        }
         var parentType = ctx.types.get(objType.getName());
-        if (parentType == null) return;
+        // A directiveless object (parentType == null) has its fields resolved through the embedding
+        // NestingField, not standalone here. A structural Connection / Edge / PageInfo type is also
+        // directiveless in the SDL: the connection synthesis above just registered it as a connection
+        // arm, but its fields are emitted by the connection emitter, never classified standalone —
+        // exactly as it was skipped (still null) under the retired post-walk promotion pass. Skip it
+        // so folding synthesis into the walk does not start classifying connection-internal fields.
+        if (parentType == null
+                || parentType instanceof ConnectionType
+                || parentType instanceof EdgeType
+                || parentType instanceof PageInfoType) {
+            return;
+        }
         // R178 Phase 4: structural carrier-shape detection (scanStructuralDmlPayload)
         // routes payload-returning DML through the unified path. For payloads with a
         // producer binding (DmlEmitted for non-DELETE, or ServiceEmitted), the per-type
@@ -357,6 +393,29 @@ public class GraphitronSchemaBuilder {
     }
 
     /**
+     * R279 slice 5 — resolves the connection names the walk flagged as synthesised (absent from the
+     * assembled schema) to their final graphql-java forms on the registry, in walk-visit order. The
+     * forms are read after the walk so any cross-carrier {@code @tag} union {@code register} applied
+     * has settled; {@link ConnectionPromoter#rebuildAssembledForConnections} adds exactly these via
+     * {@code additionalType}. This is a keyed lookup of the walk's own output, not a sweep of
+     * {@code ctx.types}, so there remains one producer of the synthesised-type set.
+     */
+    private static List<GraphQLObjectType> resolveSynthesisedConnectionTypes(
+            BuildContext ctx, Set<String> synthesisedConnectionNames) {
+        var forms = new ArrayList<GraphQLObjectType>(synthesisedConnectionNames.size());
+        for (var name : synthesisedConnectionNames) {
+            GraphQLObjectType form = switch (ctx.typeRegistry.get(name)) {
+                case ConnectionType ct -> ct.schemaType();
+                case EdgeType et -> et.schemaType();
+                case PageInfoType pi -> pi.schemaType();
+                case null, default -> null;
+            };
+            if (form != null) forms.add(form);
+        }
+        return List.copyOf(forms);
+    }
+
+    /**
      * R275 — model-level soundness backstop: no classified field may reference a type the model
      * dropped. A classified {@link OutputField} whose SDL return element is an Object type with
      * no registry entry would emit {@code typeRef("X")} while the type itself is never emitted;
@@ -375,10 +434,10 @@ public class GraphitronSchemaBuilder {
      * orphan-carrier guard rejects recognized carrier shapes with richer, shape-specific
      * guidance before this pass runs; anything that slips past every classifier-level guard —
      * errors-only payloads, scan-{@code Reject} shapes, future holes — lands here). Runs after
-     * {@link #registerNestingTypes} (nesting projections registered) and after
-     * {@code ConnectionPromoter.promote} (SDL-declared Connection / Edge / PageInfo types are
-     * registered by the promoter, not the type pass; running earlier would demote every
-     * Connection-returning field).
+     * {@link #registerNestingTypes} (nesting projections registered) and after the field-first walk's
+     * connection synthesis ({@code ConnectionPromoter.synthesiseForField} registers the Connection /
+     * Edge / PageInfo types as a byproduct of visiting each carrier; running earlier would demote
+     * every Connection-returning field).
      */
     private static void rejectDanglingTypeReferences(BuildContext ctx) {
         for (var entry : List.copyOf(ctx.fieldRegistry.entries().entrySet())) {

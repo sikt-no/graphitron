@@ -23,11 +23,9 @@ import no.sikt.graphitron.rewrite.model.GraphitronType.ConnectionType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.EdgeType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.PageInfoType;
 
-import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
+import java.util.Set;
 
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_CONNECTION_NAME;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_DEFAULT_FIRST_VALUE;
@@ -37,13 +35,17 @@ import static no.sikt.graphitron.rewrite.BuildContext.DIR_AS_CONNECTION;
  * Promotes Connection-shaped carrier fields and synthesises the supporting
  * {@link ConnectionType} / {@link EdgeType} / {@link PageInfoType} entries.
  *
- * <p>Two entry points: {@link #promote(BuildContext)} runs after type classification has
- * accepted the carrier (rejection of malformed {@code @asConnection} usage lives upstream
- * in {@link FieldBuilder#classifyField}) and registers synthesised types on
- * {@code ctx.typeRegistry} while returning a per-carrier rewrite list;
- * {@link #rebuildAssembledForConnections} consumes that list and the {@code typeRegistry}
- * to produce a {@link GraphQLSchema} whose carriers point at the synthesised types and
- * whose {@code first} / {@code after} arguments are present.
+ * <p>Two entry points, both field-first (R279 slice 5). {@link #synthesiseForField} is called once
+ * per visited field during the classification walk: when the field is an {@code @asConnection} or
+ * structural connection carrier it registers the supporting types through
+ * {@code ctx.typeRegistry.register} (the accumulator owns dedup and the {@code @tag} union across
+ * carriers), records any carrier rewrite, and notes which synthesised names are absent from the
+ * assembled schema. {@link #rebuildAssembledForConnections} then consumes the resolved
+ * synthesised-type set and the rewrite list to produce a {@link GraphQLSchema} whose carriers point
+ * at the synthesised types and whose {@code first} / {@code after} arguments are present. There is no
+ * standalone all-types promotion pass and no second {@code ctx.types} scan, so the rebuilt assembled
+ * schema cannot drift from the registry (rejection of malformed {@code @asConnection} usage lives
+ * upstream in {@link FieldBuilder#classifyField}).
  *
  * <p>Stateless utility class. Per-build state lives in {@link BuildContext}.
  */
@@ -86,126 +88,104 @@ final class ConnectionPromoter {
     ) {}
 
     /**
-     * Promotes every carrier field that returns a Relay connection (directive-driven
-     * {@code @asConnection} on a bare list, or a structural Connection-shaped return type) to a
+     * Promotes one visited field, when it is a Relay connection carrier (directive-driven
+     * {@code @asConnection} on a bare list, or a structural Connection-shaped return type), to a
      * first-class {@link ConnectionType} / {@link EdgeType} / {@link PageInfoType} entry in
-     * {@code ctx.types}.
+     * {@code ctx.types}. A no-op for every other field, so the walk calls it unconditionally per
+     * field. This is the field-first replacement for the former all-types promotion pass (R279
+     * slice 5): synthesis happens as a byproduct of visiting the carrier, never by scanning siblings.
      *
      * <p>For directive-driven carriers the {@link GraphQLObjectType} schema form is built
      * programmatically (the synthesised types are not in the assembled schema). For structural
      * carriers the schema form is referenced from the assembled schema, where it was parsed from
      * the SDL.
      *
-     * <p>Dedups by name: a single synthesised {@code QueryStoresConnection} entry covers every
-     * carrier that points at it. First-write-wins on dedupe — the synthesised type's
-     * {@code location} pins to the first carrier that triggered synthesis, and later carriers
-     * sharing the name short-circuit on the {@link ConnectionType} early-{@code continue} below
-     * without overwriting it. Once R208 retires {@code @asConnection(connectionName:)}, every
-     * connection name is unambiguously produced by exactly one carrier and the dedupe is purely
-     * a structural-vs-directive overlap (which still resolves to the first writer).
+     * <p>Each type is registered through {@code ctx.typeRegistry.register}, which owns reconciliation:
+     * a second carrier reaching the same connection name, and every carrier feeding the one shared
+     * {@code PageInfo}, accumulates the union of their {@code @tag} applications there rather than
+     * here. So this method neither dedups nor unions; it just registers what the current carrier
+     * implies. The synthesised type's {@code location} pins to the first carrier that registers it
+     * (register keeps the existing structural fields on a merge). The synthesised {@code PageInfo}'s
+     * {@code location} is deliberately {@code null}: a single PageInfo serves every connection, so no
+     * carrier site is the actionable one.
      *
-     * <p>{@link PageInfoType} is registered once at most, and only when at least one Connection is
-     * promoted and the SDL doesn't already declare {@code PageInfo}. The synthesised PageInfo's
-     * {@code location} is deliberately {@code null}: a single PageInfo serves every connection in
-     * the schema, so no carrier site is the actionable one — diagnostics on a synth-vs-SDL
-     * PageInfo collision anchor on the SDL member's parse location instead.
+     * @param rewrites           accumulates the per-carrier {@link CarrierRewrite}s (carriers whose
+     *                           graphql-java return type must change to name the Connection)
+     * @param synthesisedNames   accumulates the registered Connection / Edge / PageInfo names that are
+     *                           <em>absent from the assembled schema</em>, i.e. the set
+     *                           {@link #rebuildAssembledForConnections} must add via
+     *                           {@code additionalType}; the walk's owner resolves these to their final
+     *                           (post-tag-union) schema forms after the walk
      */
-    static List<CarrierRewrite> promote(BuildContext ctx) {
-        var rewrites = new ArrayList<CarrierRewrite>();
-        boolean pageInfoShareable = false;
-        // Union of every connection-promoted carrier's @tag, keyed by tag name, feeding the
-        // synthesised PageInfo exactly as pageInfoShareable folds shareable (R295).
-        var pageInfoTags = new LinkedHashMap<Object, GraphQLAppliedDirective>();
-        boolean anyConnectionSynthesised = false;
-        for (var t : ctx.schema.getAllTypesAsList()) {
-            if (t.getName().startsWith("_")) continue;
-            if (!(t instanceof GraphQLObjectType objType)) continue;
-            for (var fieldDef : objType.getFieldDefinitions()) {
-                ConnectionPromotion promotion = promotionFor(ctx, objType, fieldDef);
-                if (promotion == null) continue;
-                // Record a carrier rewrite only when the graphql-java return type actually needs
-                // to change — i.e. the current base-type name differs from the connection name.
-                // Directive-driven bare-list carriers need rewriting; structural carriers (where
-                // the SDL return type already names the Connection) do not, even when they
-                // carry @asConnection alongside.
-                String currentBaseName = baseTypeName(fieldDef.getType());
-                if (fieldDef.hasAppliedDirective(DIR_AS_CONNECTION)
-                        && !promotion.connectionName().equals(currentBaseName)) {
-                    rewrites.add(new CarrierRewrite(
-                        objType.getName(), fieldDef.getName(),
-                        promotion.connectionName(),
-                        resolveDefaultFirstValue(fieldDef),
-                        fieldDef.getType() instanceof GraphQLNonNull));
-                }
-                if (ctx.types.get(promotion.connectionName()) instanceof ConnectionType existing) {
-                    unionTagsIntoExisting(ctx, existing, promotion.edgeName(), promotion.tags());
-                    pageInfoShareable |= existing.shareable();
-                    addTags(pageInfoTags, promotion.tags());
-                    anyConnectionSynthesised = true;
-                    continue;
-                }
-                anyConnectionSynthesised = true;
-                pageInfoShareable |= promotion.shareable();
-                addTags(pageInfoTags, promotion.tags());
-                var connSchema = promotion.connectionSchemaType();
-                var edgeSchema = promotion.edgeSchemaType();
-                // Directive-driven connections: name does not exist in the SDL → synthesize.
-                // Structural connections: SDL declares the Connection / Edge object types with
-                // no domain directive, so the first pass classifies them as NestingType;
-                // promotion replaces that with the typed ConnectionType / EdgeType (an enrich).
-                var carrierLocation = BuildContext.locationOf(fieldDef);
-                var connectionType = new ConnectionType(
-                    promotion.connectionName(), carrierLocation,
-                    promotion.elementTypeName(), promotion.edgeName(),
-                    promotion.itemNullable(), promotion.shareable(), connSchema);
-                if (ctx.typeRegistry.contains(promotion.connectionName())) {
-                    ctx.typeRegistry.enrich(promotion.connectionName(), connectionType);
-                } else {
-                    ctx.typeRegistry.synthesize(promotion.connectionName(), connectionType);
-                }
-                var edgeType = new EdgeType(
-                    promotion.edgeName(), carrierLocation,
-                    promotion.elementTypeName(), promotion.itemNullable(),
-                    promotion.shareable(), edgeSchema);
-                if (ctx.typeRegistry.contains(promotion.edgeName())) {
-                    ctx.typeRegistry.enrich(promotion.edgeName(), edgeType);
-                } else {
-                    ctx.typeRegistry.synthesize(promotion.edgeName(), edgeType);
-                }
-            }
+    static void synthesiseForField(
+            BuildContext ctx, GraphQLObjectType parent, GraphQLFieldDefinition fieldDef,
+            List<CarrierRewrite> rewrites, Set<String> synthesisedNames) {
+        ConnectionPromotion promotion = promotionFor(ctx, parent, fieldDef);
+        if (promotion == null) return;
+        // Record a carrier rewrite only when the graphql-java return type actually needs to change —
+        // i.e. the current base-type name differs from the connection name. Directive-driven bare-list
+        // carriers need rewriting; structural carriers (where the SDL return type already names the
+        // Connection) do not, even when they carry @asConnection alongside.
+        String currentBaseName = baseTypeName(fieldDef.getType());
+        if (fieldDef.hasAppliedDirective(DIR_AS_CONNECTION)
+                && !promotion.connectionName().equals(currentBaseName)) {
+            rewrites.add(new CarrierRewrite(
+                parent.getName(), fieldDef.getName(), promotion.connectionName(),
+                resolveDefaultFirstValue(fieldDef), fieldDef.getType() instanceof GraphQLNonNull));
         }
-        if (anyConnectionSynthesised
-                && ctx.schema.getType("PageInfo") == null
-                && !(ctx.types.get("PageInfo") instanceof PageInfoType)) {
-            ctx.typeRegistry.synthesize("PageInfo", new PageInfoType(
-                "PageInfo", null, pageInfoShareable,
-                buildSynthesisedPageInfo(pageInfoShareable, List.copyOf(pageInfoTags.values()))));
-        } else if (ctx.schema.getType("PageInfo") instanceof GraphQLObjectType pageInfoObj
-                && !(ctx.types.get("PageInfo") instanceof PageInfoType)) {
-            boolean shareable = pageInfoObj.hasAppliedDirective("shareable");
-            // SDL-declared PageInfo: the type pass left it unclassified (a directiveless object), so
-            // it is absent from the registry. Connection promotion registers it as a PageInfoType
-            // carrying the SDL-derived schema form (which the connection-emitter emits from via
-            // schemaType(); the shareable flag is recorded on the record but not read at emission).
-            // An author-declared PageInfo is never tagged by promotion — the author owns it (R295).
-            // Use synthesize when absent (the common case now) and enrich only if some earlier pass
-            // already registered it; the synthesise arm above handles the no-SDL case.
-            var pageInfoType = new PageInfoType("PageInfo", null, shareable, pageInfoObj);
-            if (ctx.typeRegistry.contains("PageInfo")) {
-                ctx.typeRegistry.enrich("PageInfo", pageInfoType);
-            } else {
-                ctx.typeRegistry.synthesize("PageInfo", pageInfoType);
-            }
+        var carrierLocation = BuildContext.locationOf(fieldDef);
+        registerSynthesised(ctx, promotion.connectionName(), new ConnectionType(
+            promotion.connectionName(), carrierLocation, promotion.elementTypeName(),
+            promotion.edgeName(), promotion.itemNullable(), promotion.shareable(),
+            promotion.connectionSchemaType()), synthesisedNames);
+        registerSynthesised(ctx, promotion.edgeName(), new EdgeType(
+            promotion.edgeName(), carrierLocation, promotion.elementTypeName(),
+            promotion.itemNullable(), promotion.shareable(),
+            promotion.edgeSchemaType()), synthesisedNames);
+        registerPageInfo(ctx, promotion, synthesisedNames);
+    }
+
+    /**
+     * The single {@code PageInfo} every connection shares. When the SDL declares {@code PageInfo} it
+     * is registered verbatim (author-owned, never tagged by promotion); otherwise a synthesised form
+     * carrying this carrier's {@code shareable} flag and {@code @tag} applications is registered, and
+     * {@code register} unions across carriers. Idempotent across repeated carriers either way.
+     */
+    private static void registerPageInfo(
+            BuildContext ctx, ConnectionPromotion promotion, Set<String> synthesisedNames) {
+        if (ctx.schema.getType("PageInfo") instanceof GraphQLObjectType sdlPageInfo) {
+            boolean shareable = sdlPageInfo.hasAppliedDirective("shareable");
+            ctx.typeRegistry.register("PageInfo", new PageInfoType("PageInfo", null, shareable, sdlPageInfo));
+        } else {
+            registerSynthesised(ctx, "PageInfo", new PageInfoType("PageInfo", null,
+                promotion.shareable(),
+                buildSynthesisedPageInfo(promotion.shareable(), promotion.tags())), synthesisedNames);
         }
-        return rewrites;
+    }
+
+    /**
+     * Registers a synthesised arm and notes its name in {@code synthesisedNames} when it is absent
+     * from the assembled schema (directive-driven Connection / Edge, and the synthesised PageInfo),
+     * so the post-walk rebuild adds exactly those via {@code additionalType}. Structural / SDL-declared
+     * names are already in the assembled schema, so they are registered but not noted.
+     */
+    private static void registerSynthesised(
+            BuildContext ctx, String name, GraphitronType type, Set<String> synthesisedNames) {
+        if (ctx.schema.getType(name) == null) synthesisedNames.add(name);
+        ctx.typeRegistry.register(name, type);
     }
 
     /**
      * Rewrites directive-driven {@code @asConnection} carrier fields so their return type
      * references the synthesised Connection and their arguments include {@code first} /
-     * {@code after}, and registers all directive-synthesised types
-     * ({@link ConnectionType}, {@link EdgeType}, {@link PageInfoType} entries absent from the
-     * original assembled schema) via {@code additionalType(...)}.
+     * {@code after}, and registers the {@code synthesisedTypes} (the schema forms of every
+     * Connection / Edge / PageInfo entry absent from the original assembled schema) via
+     * {@code additionalType(...)}.
+     *
+     * <p>R279 slice 5: {@code synthesisedTypes} is the set the walk synthesised via
+     * {@link #synthesiseForField} (resolved to final forms by the builder after the walk), so this
+     * method no longer re-derives it from a second {@code ctx.types} scan and the rebuilt assembled
+     * schema cannot drift from the registry.
      *
      * <p>Returns the rebuilt schema; untouched types pass through by reference via
      * {@link SchemaTransformer}, preserving applied directives and field order on everything
@@ -213,31 +193,22 @@ final class ConnectionPromoter {
      */
     static GraphQLSchema rebuildAssembledForConnections(
             GraphQLSchema original,
-            Map<String, GraphitronType> types,
+            List<GraphQLObjectType> synthesisedTypes,
             List<CarrierRewrite> rewrites) {
-        if (rewrites.isEmpty() && noSynthesisedTypes(original, types)) {
+        if (rewrites.isEmpty() && synthesisedTypes.isEmpty()) {
             return original;
         }
 
         // Step 1: register synthesised types on the schema so later carrier rewrites can reference
         // them by typeRef without graphql-java's build-time validation failing.
         var withSynthesised = original;
-        boolean anySynth = false;
-        var extrasBuilder = GraphQLSchema.newSchema(original);
-        for (var entry : types.entrySet()) {
-            if (original.getType(entry.getKey()) != null) continue;
-            GraphQLObjectType schemaType = switch (entry.getValue()) {
-                case ConnectionType ct -> ct.schemaType();
-                case EdgeType et -> et.schemaType();
-                case PageInfoType pi -> pi.schemaType();
-                default -> null;
-            };
-            if (schemaType != null) {
+        if (!synthesisedTypes.isEmpty()) {
+            var extrasBuilder = GraphQLSchema.newSchema(original);
+            for (var schemaType : synthesisedTypes) {
                 extrasBuilder.additionalType(schemaType);
-                anySynth = true;
             }
+            withSynthesised = extrasBuilder.build();
         }
-        if (anySynth) withSynthesised = extrasBuilder.build();
 
         if (rewrites.isEmpty()) return withSynthesised;
 
@@ -259,16 +230,6 @@ final class ConnectionPromoter {
             }
         };
         return SchemaTransformer.transformSchema(withSynthesised, visitor);
-    }
-
-    private static boolean noSynthesisedTypes(GraphQLSchema assembled,
-            Map<String, GraphitronType> types) {
-        for (var entry : types.entrySet()) {
-            var v = entry.getValue();
-            boolean isSynth = v instanceof ConnectionType || v instanceof EdgeType || v instanceof PageInfoType;
-            if (isSynth && assembled.getType(entry.getKey()) == null) return false;
-        }
-        return true;
     }
 
     /**
@@ -489,62 +450,10 @@ final class ConnectionPromoter {
         return builder.build();
     }
 
-    /** The federation {@code @tag} directive name; matches {@code TagApplier.TAG_DIRECTIVE_NAME}. */
-    private static final String TAG_DIRECTIVE = "tag";
-
-    /** The tag's identity for de-duplication is its {@code name} argument value. */
-    private static Object tagKey(GraphQLAppliedDirective tag) {
-        var arg = tag.getArgument("name");
-        return arg == null ? null : arg.getValue();
-    }
-
-    /** Adds each tag to the union keyed by {@link #tagKey}, first-write-wins on collision. */
-    private static void addTags(Map<Object, GraphQLAppliedDirective> union,
-            List<GraphQLAppliedDirective> tags) {
-        for (var tag : tags) union.putIfAbsent(tagKey(tag), tag);
-    }
-
-    /** The carrier's tags whose {@code name} the existing schema form does not already carry. */
-    private static List<GraphQLAppliedDirective> missingTags(GraphQLObjectType existing,
-            List<GraphQLAppliedDirective> carrierTags) {
-        var present = new HashSet<>();
-        for (var t : existing.getAppliedDirectives(TAG_DIRECTIVE)) present.add(tagKey(t));
-        var missing = new ArrayList<GraphQLAppliedDirective>();
-        for (var t : carrierTags) {
-            if (present.add(tagKey(t))) missing.add(t);
-        }
-        return missing;
-    }
-
     /**
-     * Unions a later carrier's {@code @tag} applications into the already-registered
-     * {@link ConnectionType} (and its matching {@link EdgeType}) when the carrier brings tags the
-     * existing synthesised entry lacks. Carriers sharing one {@code connectionName} must produce a
-     * single synthesised type carrying the union of their tags: a missing tag is a federation
-     * contract-composition break. Transforms {@code existing.schemaType()} rather than adding a
-     * second tag representation, then {@code enrich}es the registry entry in place.
+     * The federation {@code @tag} directive name; matches {@code TagApplier.TAG_DIRECTIVE_NAME}.
+     * Read by {@link #promotionFor} to seed the synthesised forms; the cross-carrier {@code @tag}
+     * union itself lives in {@code TypeRegistry.register} (R279 slice 5).
      */
-    private static void unionTagsIntoExisting(BuildContext ctx, ConnectionType existing,
-            String edgeName, List<GraphQLAppliedDirective> carrierTags) {
-        var missingConn = missingTags(existing.schemaType(), carrierTags);
-        if (!missingConn.isEmpty()) {
-            var enrichedConn = existing.schemaType().transform(b -> missingConn.forEach(b::withAppliedDirective));
-            ctx.typeRegistry.enrich(existing.name(), new ConnectionType(
-                existing.name(), existing.location(), existing.elementTypeName(),
-                existing.edgeTypeName(), existing.itemNullable(), existing.shareable(), enrichedConn));
-        }
-        // The matching Edge is co-registered with every Connection (the synthesise arm registers
-        // both in the same iteration, lines ~138-146), so whenever a ConnectionType exists its
-        // EdgeType does too: this guard never falsely skips and a Connection-tagged/Edge-untagged
-        // partial union (itself a composition break) is unreachable.
-        if (ctx.types.get(edgeName) instanceof EdgeType existingEdge) {
-            var missingEdge = missingTags(existingEdge.schemaType(), carrierTags);
-            if (!missingEdge.isEmpty()) {
-                var enrichedEdge = existingEdge.schemaType().transform(b -> missingEdge.forEach(b::withAppliedDirective));
-                ctx.typeRegistry.enrich(existingEdge.name(), new EdgeType(
-                    existingEdge.name(), existingEdge.location(), existingEdge.elementTypeName(),
-                    existingEdge.itemNullable(), existingEdge.shareable(), enrichedEdge));
-            }
-        }
-    }
+    private static final String TAG_DIRECTIVE = "tag";
 }
