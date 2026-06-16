@@ -430,6 +430,8 @@ without declaring its path:
 
 The federation `_entities` field is *not* modelled as a `QueryField` permit; it is resolved by `federation-graphql-java-support` directly and dispatched through the generated `EntityFetcherDispatch` runtime helper. The corresponding entity-resolution metadata is carried in `GraphitronSchema.entitiesByType`.
 
+NOTE: A `@service` field's input *parameter* may itself be a generated jOOQ `TableRecord` (singular or `List<…>`), distinct from the field's return type. When the parameter's SDL input type classifies as `JooqTableRecordInputType`, the call site binds it on the *column axis* rather than instantiating a Java bean: each plain input field names a column through `@field(name:)`, and an optional `@nodeId` field decodes the record's scalar key. The parameter is materialised by a generated `create<Record>` (singular) / `create<Record>List` (list) helper on the `*Fetchers` class (the `CallSiteExtraction.JooqRecord` binding), which loads the columns through `record.fromArray(…, Tables.<T>.<col>…)` and decodes the identity through `NodeIdEncoder.decodeValues`. The binding is coordinate-agnostic: it applies identically whether the `@service` field is a root field or a `@table`-parent child field, sharing one helper.
+
 === Mutation Fields
 
 A mutation whose `@mutation(typeName:)` writes the catalog and returns a `@table` type classifies with

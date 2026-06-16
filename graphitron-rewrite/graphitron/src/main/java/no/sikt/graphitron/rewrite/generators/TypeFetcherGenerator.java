@@ -585,6 +585,12 @@ public class TypeFetcherGenerator {
         // RecordInput / JavaBeanInput shapes; both walks feed the same dedup map.
         var beanHelpers = new java.util.LinkedHashMap<no.sikt.graphitron.javapoet.ClassName,
             CallSiteExtraction.InputBean>();
+        // R311: a sibling dedup queue for jOOQ TableRecord params, keyed by record class, fed by the
+        // same dual walk. A record reached by either coordinate (child via callParams, root via the
+        // ServiceField carrier) emits its create<Record> pair exactly once. No transitive collection:
+        // a jOOQ record param never nests another.
+        var jooqRecordHelpers = new java.util.LinkedHashMap<no.sikt.graphitron.javapoet.ClassName,
+            CallSiteExtraction.JooqRecord>();
         fields.stream()
             .filter(f -> f instanceof MethodBackedField)
             .map(f -> (MethodBackedField) f)
@@ -592,16 +598,28 @@ public class TypeFetcherGenerator {
             .filter(p -> p.extraction() instanceof CallSiteExtraction.InputBean)
             .map(p -> (CallSiteExtraction.InputBean) p.extraction())
             .forEach(ib -> InputBeanInstantiationEmitter.collectTransitively(ib, beanHelpers));
-        // R238: walk the four service permits' carriers for composite ValueShape arms.
+        fields.stream()
+            .filter(f -> f instanceof MethodBackedField)
+            .map(f -> (MethodBackedField) f)
+            .flatMap(f -> f.method().callParams().stream())
+            .filter(p -> p.extraction() instanceof CallSiteExtraction.JooqRecord)
+            .map(p -> (CallSiteExtraction.JooqRecord) p.extraction())
+            .forEach(jr -> jooqRecordHelpers.putIfAbsent(jr.table().recordClass(), jr));
+        // R238: walk the four service permits' carriers for composite ValueShape arms (and R311's
+        // JooqRecordInput leaf).
         for (var field : fields) {
             if (field instanceof no.sikt.graphitron.rewrite.model.ServiceField sf) {
-                collectBeanHelpersFromCarrier(sf.serviceMethodCall(), beanHelpers);
+                collectBeanHelpersFromCarrier(sf.serviceMethodCall(), beanHelpers, jooqRecordHelpers);
             }
         }
         for (var ib : beanHelpers.values()) {
             builder.addMethod(InputBeanInstantiationEmitter.buildSingularHelper(ib));
             builder.addMethod(InputBeanInstantiationEmitter.buildPluralHelper(ib,
                 no.sikt.graphitron.javapoet.ClassName.bestGuess(outputPackage + "." + className)));
+        }
+        for (var jr : jooqRecordHelpers.values()) {
+            builder.addMethod(JooqRecordInstantiationEmitter.buildSingularHelper(jr));
+            builder.addMethod(JooqRecordInstantiationEmitter.buildPluralHelper(jr));
         }
 
         // R195: emit one decode<RecordType>Record helper per jOOQ-record-typed @nodeId input-bean
@@ -1601,31 +1619,38 @@ public class TypeFetcherGenerator {
      */
     private static void collectBeanHelpersFromCarrier(
             ServiceMethodCall carrier,
-            java.util.Map<no.sikt.graphitron.javapoet.ClassName, CallSiteExtraction.InputBean> out) {
+            java.util.Map<no.sikt.graphitron.javapoet.ClassName, CallSiteExtraction.InputBean> out,
+            java.util.Map<no.sikt.graphitron.javapoet.ClassName, CallSiteExtraction.JooqRecord> jooqOut) {
         if (carrier instanceof ServiceMethodCall.Instance inst) {
-            for (var e : inst.ctorArgs()) collectFromMappingEntry(e, out);
+            for (var e : inst.ctorArgs()) collectFromMappingEntry(e, out, jooqOut);
         }
-        for (var e : carrier.methodArgs()) collectFromMappingEntry(e, out);
+        for (var e : carrier.methodArgs()) collectFromMappingEntry(e, out, jooqOut);
     }
 
     private static void collectFromMappingEntry(
             no.sikt.graphitron.rewrite.model.MappingEntry entry,
-            java.util.Map<no.sikt.graphitron.javapoet.ClassName, CallSiteExtraction.InputBean> out) {
+            java.util.Map<no.sikt.graphitron.javapoet.ClassName, CallSiteExtraction.InputBean> out,
+            java.util.Map<no.sikt.graphitron.javapoet.ClassName, CallSiteExtraction.JooqRecord> jooqOut) {
         if (entry instanceof no.sikt.graphitron.rewrite.model.MappingEntry.FromArg fromArg) {
-            collectFromValueShape(fromArg.shape(), out);
+            collectFromValueShape(fromArg.shape(), out, jooqOut);
         }
     }
 
     private static void collectFromValueShape(
             no.sikt.graphitron.rewrite.model.ValueShape shape,
-            java.util.Map<no.sikt.graphitron.javapoet.ClassName, CallSiteExtraction.InputBean> out) {
+            java.util.Map<no.sikt.graphitron.javapoet.ClassName, CallSiteExtraction.InputBean> out,
+            java.util.Map<no.sikt.graphitron.javapoet.ClassName, CallSiteExtraction.JooqRecord> jooqOut) {
         switch (shape) {
             case no.sikt.graphitron.rewrite.model.ValueShape.Scalar ignored -> { /* leaf */ }
-            case no.sikt.graphitron.rewrite.model.ValueShape.ListOf l -> collectFromValueShape(l.elementShape(), out);
+            case no.sikt.graphitron.rewrite.model.ValueShape.ListOf l -> collectFromValueShape(l.elementShape(), out, jooqOut);
             case no.sikt.graphitron.rewrite.model.ValueShape.RecordInput rec ->
-                registerBeanHelper(rec.javaClass(), CallSiteExtraction.InputBean.Target.RECORD, rec.fields(), out);
+                registerBeanHelper(rec.javaClass(), CallSiteExtraction.InputBean.Target.RECORD, rec.fields(), out, jooqOut);
             case no.sikt.graphitron.rewrite.model.ValueShape.JavaBeanInput jb ->
-                registerBeanHelper(jb.javaClass(), CallSiteExtraction.InputBean.Target.JAVA_BEAN, jb.fields(), out);
+                registerBeanHelper(jb.javaClass(), CallSiteExtraction.InputBean.Target.JAVA_BEAN, jb.fields(), out, jooqOut);
+            // R311: the root-coordinate JooqRecordInput leaf carries its own construction carrier, so
+            // the helper registers from the ValueShape alone — true dual-walk parity with InputBean.
+            case no.sikt.graphitron.rewrite.model.ValueShape.JooqRecordInput jr ->
+                jooqOut.putIfAbsent(jr.carrier().table().recordClass(), jr.carrier());
         }
     }
 
@@ -1633,7 +1658,8 @@ public class TypeFetcherGenerator {
             no.sikt.graphitron.javapoet.ClassName beanClass,
             CallSiteExtraction.InputBean.Target target,
             List<no.sikt.graphitron.rewrite.model.ValueShape.FieldBinding> vsFields,
-            java.util.Map<no.sikt.graphitron.javapoet.ClassName, CallSiteExtraction.InputBean> out) {
+            java.util.Map<no.sikt.graphitron.javapoet.ClassName, CallSiteExtraction.InputBean> out,
+            java.util.Map<no.sikt.graphitron.javapoet.ClassName, CallSiteExtraction.JooqRecord> jooqOut) {
         if (out.containsKey(beanClass)) return;
         var fieldBindings = new java.util.ArrayList<CallSiteExtraction.FieldBinding>(vsFields.size());
         for (var vfb : vsFields) {
@@ -1648,9 +1674,10 @@ public class TypeFetcherGenerator {
         }
         var ib = new CallSiteExtraction.InputBean(beanClass, target, fieldBindings);
         out.put(beanClass, ib);
-        // Recurse so nested beans register their own helper.
+        // Recurse so nested beans register their own helper. (A jOOQ record never nests inside a bean,
+        // so jooqOut is threaded only to satisfy the shared collectFromValueShape signature.)
         for (var vfb : vsFields) {
-            collectFromValueShape(vfb.shape(), out);
+            collectFromValueShape(vfb.shape(), out, jooqOut);
         }
     }
 
@@ -1669,6 +1696,11 @@ public class TypeFetcherGenerator {
                 new CallSiteExtraction.InputBean(jb.javaClass(),
                     CallSiteExtraction.InputBean.Target.JAVA_BEAN,
                     convertNestedFieldBindings(jb.fields()));
+            // R311: forced by the sealed addition, unreachable here — a JooqRecordInput is never an
+            // InputBean field shape, so this leaf-for-field-binding walk never meets one.
+            case no.sikt.graphitron.rewrite.model.ValueShape.JooqRecordInput jr ->
+                throw new IllegalStateException(
+                    "JooqRecordInput is not an InputBean field shape: " + jr.carrier().table().recordClass());
         };
     }
 
@@ -1693,6 +1725,9 @@ public class TypeFetcherGenerator {
             case no.sikt.graphitron.rewrite.model.ValueShape.ListOf l -> innerElementTypeNameOf(l.elementShape());
             case no.sikt.graphitron.rewrite.model.ValueShape.RecordInput r -> r.javaClass().toString();
             case no.sikt.graphitron.rewrite.model.ValueShape.JavaBeanInput jb -> jb.javaClass().toString();
+            // R311: forced by the sealed addition; a JooqRecordInput is never an InputBean field shape,
+            // but the record class is the trivially-correct inner element type if ever reached.
+            case no.sikt.graphitron.rewrite.model.ValueShape.JooqRecordInput jr -> jr.carrier().table().recordClass().toString();
         };
     }
 
@@ -1711,6 +1746,8 @@ public class TypeFetcherGenerator {
                 r.fields().isEmpty() ? "" : outerArgOfValueShape(r.fields().getFirst().shape());
             case no.sikt.graphitron.rewrite.model.ValueShape.JavaBeanInput jb ->
                 jb.fields().isEmpty() ? "" : outerArgOfValueShape(jb.fields().getFirst().shape());
+            // R311: a JooqRecordInput carries its own path; defensive read for the forced arm.
+            case no.sikt.graphitron.rewrite.model.ValueShape.JooqRecordInput jr -> jr.sdlPath().outerArgName();
         };
     }
 

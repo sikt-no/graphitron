@@ -295,6 +295,13 @@ public final class ArgCallEmitter {
                     nidk, param.list(), registry);
             case CallSiteExtraction.InputBean ib ->
                 buildInputBeanCallExtraction(ib, param.name(), isListShaped(param));
+            // R311: a jOOQ TableRecord @service param at the child coordinate (a @table-parent field's
+            // DataLoader rows-method). enrich runs for child @service too, so this reaches the same
+            // switch the live InputBean arm does — a real arm, not a throw. Emits the identical
+            // create<Record> / create<Record>List call the root emitter does; the construction lives in
+            // the one shared helper.
+            case CallSiteExtraction.JooqRecord jr ->
+                buildJooqRecordCallExtraction(jr, param.name(), isListShaped(param));
             case CallSiteExtraction.NodeIdDecodeRecord ignored ->
                 throw new IllegalStateException(
                     "NodeIdDecodeRecord is an input-bean field leaf only (decoded into a jOOQ record"
@@ -313,6 +320,21 @@ public final class ArgCallEmitter {
     private static CodeBlock buildInputBeanCallExtraction(CallSiteExtraction.InputBean ib,
             String argName, boolean list) {
         String simpleName = ib.beanClass().simpleName();
+        String helperName = list
+            ? "create" + simpleName + "List"
+            : "create" + simpleName;
+        return CodeBlock.of("$L(env.getArgument($S))", helperName, argName);
+    }
+
+    /**
+     * R311 sibling of {@link #buildInputBeanCallExtraction} for a jOOQ {@code TableRecord} param: emits
+     * the {@code create<Record>} / {@code create<Record>List} call (the helper itself is emitted by
+     * {@code JooqRecordInstantiationEmitter}, named from the record class). The helper picks singular
+     * vs plural by the param's Java list-shape, identical to the root emitter's choice.
+     */
+    private static CodeBlock buildJooqRecordCallExtraction(CallSiteExtraction.JooqRecord jr,
+            String argName, boolean list) {
+        String simpleName = jr.table().recordClass().simpleName();
         String helperName = list
             ? "create" + simpleName + "List"
             : "create" + simpleName;

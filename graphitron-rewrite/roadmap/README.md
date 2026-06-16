@@ -19,9 +19,9 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R256` | Absorb the service walker substrate: typed per-arm errors + multi-arg ctors | Ready | 2026-05-30 <sub>created 2026-05-29</sub> | [plan](service-walker-substrate-absorption.md) |
 | `R308` | Fix the @service list-payload N+1 by deriving many-arrival for list-returning carriers | Spec | 2026-06-14 | [plan](service-list-payload-arrival.md) |
 | `R279` | Field-first reachability-driven classification driver <sub>blocked by: [dimensional-model-pivot](dimensional-model-pivot.md)</sub> | In Progress | 2026-06-15 <sub>created 2026-06-05</sub> | [plan](field-first-classification-driver.md) |
-| `R311` | Bind a jOOQ TableRecord (scalar and List<…>) @service input param: column-axis @field + @nodeId scalar-key decode | Spec | 2026-06-16 <sub>created 2026-06-15</sub> | [plan](jooq-record-service-input-param.md) |
 | `R45` | Multi-tenant routing on top of the schema-driven ExecutionInput factory | Spec | 2026-05-20 | [plan](tenant-routing-and-execution-input.md) |
 | `R273` | Source NodeId metadata from @node + catalog PK (inferred from `implements Node`), and settle wrong-type/malformed mismatch semantics, retiring the legacy __NODE bare-ID arm | Spec | 2026-06-02 | [plan](nodeid-skip-mismatch-error-surfacing.md) |
+| `R311` | Bind a jOOQ TableRecord (scalar and List<…>) @service input param: column-axis @field + @nodeId scalar-key decode | In Review | 2026-06-16 <sub>created 2026-06-15</sub> | [plan](jooq-record-service-input-param.md) |
 | `R23` | Multi-parent `NestingField` sharing: `TableField` arm | Spec |  | [plan](nestingfield-multiparent-tablefield.md) |
 | `R13` | Faceted search on `@asConnection` | Spec |  | [plan](faceted-search.md) |
 | `R63` | Type UPSERT dialect requirement on the model | Spec |  | [plan](dml-dialect-requirement-on-model.md) |
@@ -159,7 +159,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### service
 
-- `R311` [**Bind a jOOQ TableRecord (scalar and List<…>) @service input param: column-axis @field + @nodeId scalar-key decode**](jooq-record-service-input-param.md) — Spec, feature
+- `R311` [**Bind a jOOQ TableRecord (scalar and List<…>) @service input param: column-axis @field + @nodeId scalar-key decode**](jooq-record-service-input-param.md) — In Review, feature
 - `R300` [**First-class jOOQ routine support: RoutineCall carrier + Procedure intent**](jooq-routine-fields.md) — Backlog, feature, blocked by [dimensional-model-pivot](dimensional-model-pivot.md)
 - `R201` [**Honor @field(name:) in @error payload construction shape resolution**](honor-field-directive-in-payload-construction-shape.md) — Backlog, bug
 - `R202` [**Honor @field(name:) in @error type extra-field accessor matching against handler source class**](honor-field-directive-in-error-type-source-accessors.md) — Backlog, bug

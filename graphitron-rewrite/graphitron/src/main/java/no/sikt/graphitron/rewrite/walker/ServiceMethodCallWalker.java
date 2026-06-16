@@ -163,6 +163,19 @@ public final class ServiceMethodCallWalker {
             return shape;
         }
 
+        // R311: a jOOQ TableRecord param (singular or List<…>). The carrier holds the column / identity
+        // bindings; JooqRecordInput is a path-carrying leaf (no per-field children), so it carries its
+        // own sdlPath. Cardinality is handled exactly as the InputBean arm above: read list-ness from
+        // the Java type alone (sound because InputBeanResolver's :elt.list() != sdl.list() parity check
+        // already aligned the Java type with the SDL arg) and wrap the element in the existing ListOf.
+        if (extraction instanceof CallSiteExtraction.JooqRecord jr) {
+            ValueShape shape = new ValueShape.JooqRecordInput(jr, path);
+            if (isListType(javaType, jr.table().recordClass())) {
+                return new ValueShape.ListOf(path, shape);
+            }
+            return shape;
+        }
+
         if (isLeaf(extraction)) {
             return new ValueShape.Scalar(javaType, path, extraction);
         }

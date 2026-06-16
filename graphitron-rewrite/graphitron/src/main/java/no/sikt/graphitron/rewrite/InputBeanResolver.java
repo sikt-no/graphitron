@@ -11,9 +11,12 @@ import graphql.schema.GraphQLType;
 import graphql.schema.GraphQLTypeUtil;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
+import no.sikt.graphitron.rewrite.model.ColumnRef;
+import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.MethodRef;
 import no.sikt.graphitron.rewrite.model.ParamSource;
 import no.sikt.graphitron.rewrite.model.Rejection;
+import no.sikt.graphitron.rewrite.model.TableRef;
 
 import java.lang.reflect.Modifier;
 import java.util.ArrayList;
@@ -22,6 +25,7 @@ import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -186,6 +190,27 @@ final class InputBeanResolver {
                     + (sdl.list() ? "list-shaped" : "scalar")
                     + " — match the cardinalities"));
             }
+            // R311: the param's Java type is a generated jOOQ TableRecord (singular or List<…>). The
+            // type pass already classified the SDL input type as JooqTableRecordInputType, table and
+            // all; read that answer rather than re-resolving, and bind on the COLUMN axis (@field(name:)
+            // → ColumnRef) plus an optional @nodeId identity decode, not the Java-member axis the bean
+            // path uses. Sits after the shared input-object gates (loadable / Map / cardinality-parity)
+            // so a jOOQ record reuses them; only the member-axis bean instantiation below is replaced.
+            // Cardinality parity is inherited from the :elt.list() != sdl.list() check above, which the
+            // walker relies on to read list-ness off the Java type alone.
+            if (ctx.types != null
+                    && ctx.types.get(iot.getName()) instanceof GraphitronType.JooqTableRecordInputType jtr) {
+                JooqBuilt jbuilt = buildJooqRecord(jtr, iot, p.name(), method.methodName(),
+                    method.className(), arg.graphqlArgName());
+                if (jbuilt instanceof JooqBuilt.Fail jf) {
+                    return new Result.Failed(jf.rejection());
+                }
+                var jr = ((JooqBuilt.Ok) jbuilt).record();
+                var jtyped = (MethodRef.Param.Typed) p;
+                newParams.add(new MethodRef.Param.Typed(jtyped.name(), jtyped.typeName(), jtyped.javaType(),
+                    new ParamSource.Arg(jr, arg.path())));
+                continue;
+            }
             var built = buildInputBean(elementClass, iot, p.name(), method.methodName(),
                 method.className(), new HashSet<>());
             if (built instanceof Built.Fail f) {
@@ -204,6 +229,110 @@ final class InputBeanResolver {
     private sealed interface Built {
         record Ok(CallSiteExtraction.InputBean bean) implements Built {}
         record Fail(Rejection rejection) implements Built {}
+    }
+
+    /** Outcome of building a {@link CallSiteExtraction.JooqRecord}: the carrier or a structural fail. */
+    private sealed interface JooqBuilt {
+        record Ok(CallSiteExtraction.JooqRecord record) implements JooqBuilt {}
+        record Fail(Rejection rejection) implements JooqBuilt {}
+    }
+
+    /**
+     * Builds the {@link CallSiteExtraction.JooqRecord} for a {@code @service} param whose SDL input
+     * type classified as {@link GraphitronType.JooqTableRecordInputType} (R311). Walks the SDL fields
+     * binding each on the column axis: a {@code @nodeId(typeName:)} field is the record's single
+     * identity (a {@link CallSiteExtraction.RecordKeyDecode}, R195's wire-decode mechanism projected
+     * onto this record's own key); every other field names a column through {@code @field(name:)} (a
+     * resolved {@link CallSiteExtraction.ColumnBinding}). Rejections are R195/R97-shaped and surface at
+     * validate time as {@code UnclassifiedField} — the honest replacement for the bean path's misleading
+     * "has no fields matching".
+     */
+    private JooqBuilt buildJooqRecord(GraphitronType.JooqTableRecordInputType jtr,
+            graphql.schema.GraphQLInputObjectType iot, String paramName, String methodName,
+            String className, String graphqlArgName) {
+        String where = "parameter '" + paramName + "' on method '" + methodName + "' in class '"
+            + className + "' (GraphQL argument '" + graphqlArgName + "')";
+        TableRef table = jtr.table();
+        if (table == null) {
+            return new JooqBuilt.Fail(Rejection.structural(where
+                + ": param record type '" + jtr.fqClassName() + "' is not in the jOOQ catalog —"
+                + " the backing class comes from a catalog not loaded at build time"));
+        }
+        var columnBindings = new ArrayList<CallSiteExtraction.ColumnBinding>();
+        CallSiteExtraction.RecordKeyDecode keyDecode = null;
+        String keyDecodeField = null;
+        for (var f : iot.getFieldDefinitions()) {
+            if (f.hasAppliedDirective(DIR_NODE_ID)) {
+                if (keyDecode != null) {
+                    return new JooqBuilt.Fail(Rejection.structural(where
+                        + ": input type '" + iot.getName() + "' carries more than one @nodeId field ('"
+                        + keyDecodeField + "' and '" + f.getName() + "') — a jOOQ-record @service param"
+                        + " has exactly one identity; keep the @nodeId that decodes the record's key and"
+                        + " remove the other"));
+                }
+                var built = buildRecordKeyDecode(f, table, where);
+                if (built instanceof KeyDecodeResult.Fail kf) {
+                    return new JooqBuilt.Fail(kf.rejection());
+                }
+                keyDecode = ((KeyDecodeResult.Ok) built).decode();
+                keyDecodeField = f.getName();
+                continue;
+            }
+            String key = bindingKey(f);
+            var col = ctx.catalog.findColumn(table.tableName(), key);
+            if (col.isEmpty()) {
+                return new JooqBuilt.Fail(Rejection.structural(where
+                    + ": input field '" + f.getName() + "' (binding key '" + key + "') resolves to no"
+                    + " column on table '" + table.tableName() + "' backing param record '"
+                    + table.recordClass() + "'"
+                    + BuildContext.candidateHint(key, ctx.catalog.columnSqlNamesOf(table.tableName()))));
+            }
+            var ce = col.get();
+            columnBindings.add(new CallSiteExtraction.ColumnBinding(
+                f.getName(), new ColumnRef(ce.sqlName(), ce.javaName(), ce.columnClass())));
+        }
+        return new JooqBuilt.Ok(new CallSiteExtraction.JooqRecord(
+            table, columnBindings, Optional.ofNullable(keyDecode)));
+    }
+
+    private sealed interface KeyDecodeResult {
+        record Ok(CallSiteExtraction.RecordKeyDecode decode) implements KeyDecodeResult {}
+        record Fail(Rejection rejection) implements KeyDecodeResult {}
+    }
+
+    /**
+     * Resolves the {@code @nodeId(typeName:)} identity field of a jOOQ-record param into a
+     * {@link CallSiteExtraction.RecordKeyDecode}, applying the lifted record-type-mismatch gate (R195,
+     * sourced from the param record's table rather than a bean member): the resolved node table's
+     * record class must equal the param record's. A foreign-table {@code @nodeId} is rejected with the
+     * R195-shaped message naming both records.
+     */
+    private KeyDecodeResult buildRecordKeyDecode(graphql.schema.GraphQLInputObjectField f,
+            TableRef table, String where) {
+        var typeName = argString(f, DIR_NODE_ID, ARG_TYPE_NAME);
+        if (typeName.isEmpty()) {
+            return new KeyDecodeResult.Fail(Rejection.structural(where
+                + ": @nodeId on the identity field '" + f.getName() + "' must specify typeName:"
+                + " explicitly (the param record type alone does not name the NodeType to decode against)"));
+        }
+        var resolution = ctx.resolveNodeIdRecordDecode(typeName.get());
+        if (resolution instanceof BuildContext.NodeIdRecordDecode.Rejected r) {
+            return new KeyDecodeResult.Fail(Rejection.structural(where
+                + ": @nodeId(typeName: \"" + typeName.get() + "\") on field '" + f.getName() + "': "
+                + r.message()));
+        }
+        var resolved = (BuildContext.NodeIdRecordDecode.Resolved) resolution;
+        if (!resolved.table().recordClass().equals(table.recordClass())) {
+            return new KeyDecodeResult.Fail(Rejection.structural(where
+                + ": the param is jOOQ record '" + table.recordClass() + "', but @nodeId(typeName: \""
+                + typeName.get() + "\") on field '" + f.getName() + "' decodes into '"
+                + resolved.table().recordClass() + "' (the record of that type's own @table). A NodeId"
+                + " cannot be decoded into a different record type — declare the param as '"
+                + resolved.table().recordClass() + "', or point @nodeId at the NodeType whose @table"
+                + " backs '" + table.recordClass() + "'"));
+        }
+        return new KeyDecodeResult.Ok(new CallSiteExtraction.RecordKeyDecode(
+            f.getName(), resolved.encoderClass(), resolved.typeId(), resolved.keyColumns()));
     }
 
     /**
