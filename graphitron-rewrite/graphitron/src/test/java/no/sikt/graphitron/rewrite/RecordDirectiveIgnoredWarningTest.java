@@ -84,9 +84,10 @@ class RecordDirectiveIgnoredWarningTest {
         // D1 precedence: @record co-located with @table is not a DirectiveConflict; @table wins and
         // @record is ignored, so the type classifies table-backed rather than demoting to
         // UnclassifiedType. (The reachable-input variant, which also fires the shadowed warning, is
-        // above; this object carrier is unreachable, so it pins only the no-conflict classification.)
+        // above; this object carrier pins only the no-conflict classification. Reached via Query.c so
+        // the R279 field-first walk classifies it; an unreachable type is pruned, not classified.)
         var schema = TestSchemaHelper.buildSchema("""
-            type Query { x: String }
+            type Query { c: Conflicted }
             type Conflicted @table(name: "film") @record(record: {className: "no.sikt.graphitron.rewrite.TestDtoStub"}) {
                 title: String
             }
@@ -135,7 +136,7 @@ class RecordDirectiveIgnoredWarningTest {
                 path: [String!]!
                 message: String!
             }
-            type Query { x: String }
+            type Query { err: RecordIgnoredError }
             """);
 
         assertThat(schema.type("RecordIgnoredError")).isInstanceOf(GraphitronType.ErrorType.class);

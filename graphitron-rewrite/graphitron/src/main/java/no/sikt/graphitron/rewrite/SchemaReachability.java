@@ -34,8 +34,9 @@ import java.util.function.Function;
  * {@code Query._entities} field being present. Both directive names are scanned because the
  * {@code @node} → {@code @key} synthesis ({@code KeyNodeSynthesiser}) runs only on the production
  * attributed-registry path, not on every classify; scanning both covers both paths.
- * Subscription is recognised-but-unsupported (its root fields classify to {@code UnclassifiedField}
- * and reach no targets today), so it is not a seed yet.
+ * Subscription is recognised-but-unsupported: it is seeded so the root type classifies (the
+ * schema-class generator routes the subscription entry point), but its root fields classify to
+ * {@code UnclassifiedField} and reach no supported targets.
  *
  * <h3>Descent edges</h3>
  * The walk follows exactly the output-structure edges, supplied through the
@@ -78,9 +79,20 @@ public final class SchemaReachability {
                 return List.of();
             }
             return switch (element) {
-                case GraphQLObjectType obj -> outputTargets(obj.getFieldDefinitions());
+                case GraphQLObjectType obj -> {
+                    var kids = outputTargets(obj.getFieldDefinitions());
+                    // An object's implemented interfaces are part of its emitted structure (the
+                    // `implements I` clause references I), so a reachable object reaches its
+                    // interfaces even when no field returns the interface — the federation case where
+                    // a @node / @key implementor is seeded directly and the Node interface itself is
+                    // returned by no field (it would otherwise be pruned and the implements clause
+                    // would dangle).
+                    kids.addAll(obj.getInterfaces());
+                    yield kids;
+                }
                 case GraphQLInterfaceType iface -> {
                     var kids = outputTargets(iface.getFieldDefinitions());
+                    kids.addAll(iface.getInterfaces());
                     kids.addAll(schema.getImplementations(iface));
                     yield kids;
                 }
@@ -122,6 +134,12 @@ public final class SchemaReachability {
         }
         if (schema.getMutationType() != null) {
             seeds.add(schema.getMutationType());
+        }
+        // Subscription is recognised-but-unsupported: seeding the root classifies it as a RootType
+        // (so the schema-class generator can route the subscription entry point) while its fields
+        // still classify to UnclassifiedField and reach no supported targets.
+        if (schema.getSubscriptionType() != null) {
+            seeds.add(schema.getSubscriptionType());
         }
         for (var type : schema.getAllTypesAsList()) {
             if (type instanceof GraphQLObjectType obj

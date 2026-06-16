@@ -210,15 +210,21 @@ class TypeBuilder {
                 ctx.typeRegistry.register(name, gType);
             }
         }
-        // Compensating orphan sweep — slice 6 removes the output-orphan half of this. Every named
-        // type the walk did NOT reach is classified here so the registry content stays identical to
-        // the eager pass: input types, scalars, and enums (never reachability-driven through output
-        // edges) plus unreachable output objects (the OrphanCat case in SchemaReachabilityTest).
-        // Slice 6 narrows this to the non-output-object types, at which point an unreachable @table
-        // object is no longer classified and the reachability prune becomes observable behaviour.
+        // R279 slice 6 — the orphan prune (intended behaviour change). The field-first walk already
+        // reaches the whole output surface, so an output composite (object / interface / union) the
+        // walk did NOT reach is an orphan and is no longer classified: an unreachable @table object
+        // gets no generated file and the reachability prune is observable. Input types, scalars, and
+        // enums are never reachable through output edges (the walk descends field-output / union-member
+        // / interface-implementor only), so they keep this dedicated sweep; without it inputs and
+        // scalars would vanish from the registry.
         for (var namedType : ctx.schema.getAllTypesAsList()) {
             if (namedType.getName().startsWith("__")) continue;
             if (reachable.contains(namedType.getName())) continue;
+            if (namedType instanceof GraphQLObjectType
+                    || namedType instanceof GraphQLInterfaceType
+                    || namedType instanceof GraphQLUnionType) {
+                continue;
+            }
             var gType = classifyType(namedType);
             if (gType != null) {
                 ctx.typeRegistry.register(namedType.getName(), gType);

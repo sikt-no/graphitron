@@ -264,7 +264,7 @@ public final class ClassifiedCorpus {
               path: [String!]! @classified(carrier: Source, intent: Fetch, mapping: Field, sourceShape: Record)
               message: String! @classified(carrier: Source, intent: Fetch, mapping: Field, sourceShape: Record)
             }
-            type Query { x: String }
+            type Query { err: MyError }
             """),
 
         /*
@@ -285,7 +285,7 @@ public final class ClassifiedCorpus {
               message: String!
               severity: Severity!
             }
-            type Query { x: String }
+            type Query { err: ExtraFieldError }
             """),
 
         /*

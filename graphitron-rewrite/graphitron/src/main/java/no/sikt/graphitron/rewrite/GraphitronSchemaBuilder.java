@@ -224,13 +224,14 @@ public class GraphitronSchemaBuilder {
     private static BuildResult buildSchema(BuildContext ctx, TypeBuilder typeBuilder, FieldBuilder fieldBuilder) {
         validateDirectiveSchema(ctx);
         typeBuilder.buildTypes();
-        // R279 slice 3b — field classification is driven by the same field-first reachability walk
-        // that drove type classification: visit the reached object types (in walk order), then a
-        // compensating sweep over the unreached object types so the field registry stays
-        // behaviour-identical to the eager all-objects pass. Interfaces / unions in the reachable set
-        // have no fields classified here (only object types do), so getObjectType filters them out.
-        // Slice 6 deletes the compensating sweep, at which point fields of unreachable types are no
-        // longer classified and the reachability prune becomes observable.
+        // R279 slice 3b/6 — field classification is driven by the field-first reachability walk that
+        // drove type classification: visit the reached object types, in walk order. Slice 6 deleted
+        // the compensating sweep over unreached object types that slice 3b carried, so fields of an
+        // unreachable object are no longer classified and the reachability prune is observable
+        // (consistent with the type-side prune in TypeBuilder.buildTypes: the unreachable parent is
+        // itself no longer classified). Interfaces / unions in the reachable set have no fields
+        // classified here (only object types do), so getType-instanceof-GraphQLObjectType filters
+        // them out.
         // R279 slice 5 — connection synthesis is folded into this field-first walk: visiting an
         // @asConnection / structural connection carrier registers its Connection / Edge / PageInfo
         // as a byproduct (ConnectionPromoter.synthesiseForField, called per field inside
@@ -242,12 +243,6 @@ public class GraphitronSchemaBuilder {
         var synthesisedConnectionNames = new LinkedHashSet<String>();
         for (var name : reachable) {
             if (!(ctx.schema.getType(name) instanceof GraphQLObjectType objType)) continue;
-            classifyFieldsOfObject(ctx, typeBuilder, fieldBuilder, objType,
-                connectionRewrites, synthesisedConnectionNames);
-        }
-        for (var t : ctx.schema.getAllTypesAsList()) {
-            if (!(t instanceof GraphQLObjectType objType) || t.getName().startsWith("__")) continue;
-            if (reachable.contains(t.getName())) continue;
             classifyFieldsOfObject(ctx, typeBuilder, fieldBuilder, objType,
                 connectionRewrites, synthesisedConnectionNames);
         }
@@ -289,11 +284,11 @@ public class GraphitronSchemaBuilder {
     }
 
     /**
-     * R279 slice 3b — classifies every field of one SDL object type. Extracted verbatim from the
-     * former all-objects field pass so the reachability-driven driver and the compensating
-     * orphan sweep can both invoke it; the body is unchanged. A type the type pass left
-     * unclassified ({@code ctx.types.get == null}) is skipped: its fields are resolved through the
-     * {@code NestingField} that embeds it ({@link #registerNestingTypes}), not standalone here.
+     * R279 slice 3b/6 — classifies every field of one SDL object type, driven over the field-first
+     * walk's reachable object types only (slice 6 removed the compensating sweep over unreached
+     * objects). A type the type pass left unclassified ({@code ctx.types.get == null}) is skipped:
+     * its fields are resolved through the {@code NestingField} that embeds it
+     * ({@link #registerNestingTypes}), not standalone here.
      */
     private static void classifyFieldsOfObject(
             BuildContext ctx, TypeBuilder typeBuilder, FieldBuilder fieldBuilder, GraphQLObjectType objType,

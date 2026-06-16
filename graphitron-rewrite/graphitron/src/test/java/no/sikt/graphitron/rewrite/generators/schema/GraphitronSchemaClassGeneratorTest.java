@@ -265,7 +265,7 @@ class GraphitronSchemaClassGeneratorTest {
     @Test
     void planFor_preservesRootAndAlphabeticalOrder() {
         var bundle = TestSchemaHelper.buildBundle("""
-            type Query { x: String }
+            type Query { zebra: Zebra alpha: Alpha }
             type Mutation { y: String }
             type Zebra @table(name: "film") { id: ID! }
             type Alpha @table(name: "actor") { id: ID! }

@@ -1,5 +1,8 @@
 package no.sikt.graphitron.rewrite;
 
+import graphql.schema.GraphQLInterfaceType;
+import graphql.schema.GraphQLObjectType;
+import graphql.schema.GraphQLUnionType;
 import no.sikt.graphitron.rewrite.catalog.CatalogBuilder;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
@@ -10,11 +13,11 @@ import java.util.Set;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R279 slice 1 — the reachability observatory. Asserts the durable safety invariant
+ * R279 slice 1 / slice 6 — the reachability observatory. Asserts the durable safety invariant
  * <strong>reachable ⊆ classified</strong> (every type the walk reaches is classified, the property
- * every later slice must preserve) and separately <em>measures</em> the classified-but-unreachable
- * orphan set as the inventory slice 6 will prune. The orphan measurement is an observation, not a
- * correctness invariant: slice 6 flips it into "the orphan set is empty / rejected".
+ * every later slice preserves) and, since slice 6, the converse for output composites:
+ * <strong>every classified output composite is reachable</strong> (the orphan prune, now an
+ * invariant rather than the slice-1 observation).
  *
  * <p>The fixture is built so each descent edge and each seed is exercised in isolation:
  * <ul>
@@ -22,7 +25,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  *   <li>{@code FilmMedia} is reachable only through the interface → implementor fan-out,</li>
  *   <li>{@code City} is reachable only through the {@code @node} seed scan (no field returns it),</li>
  *   <li>the synthesised {@code @asConnection} types are reachable through the rebuilt carrier field,</li>
- *   <li>{@code OrphanCat} is classified but reached by nothing, so it lands in the orphan set.</li>
+ *   <li>{@code OrphanCat} is reached by nothing, so slice 6 prunes it: it is not classified.</li>
  * </ul>
  */
 @PipelineTier
@@ -77,21 +80,27 @@ class SchemaReachabilityTest {
     }
 
     @Test
-    void unreachableClassifiedTypeIsMeasuredAsAnOrphan() {
+    void noClassifiedOutputCompositeIsUnreachable() {
         var bundle = TestSchemaHelper.buildBundle(SDL);
         var reachable = SchemaReachability.reachableTypeNames(bundle.assembled());
 
-        var orphans = new LinkedHashSet<>(bundle.model().types().keySet());
-        orphans.removeAll(reachable);
+        // R279 slice 6 — the orphan prune is now an invariant, not an observation: the field-first
+        // walk is the sole classifier, so an output composite (object / interface / union) reached by
+        // no field, union, interface, or seed is no longer classified. Restricted to output
+        // composites because reachableTypeNames only reports those; input types / scalars / enums stay
+        // classified through their own sweep and are out of this check's scope.
+        var classifiedOutputComposites = bundle.model().types().keySet().stream()
+            .filter(name -> bundle.assembled().getType(name) instanceof GraphQLObjectType
+                || bundle.assembled().getType(name) instanceof GraphQLInterfaceType
+                || bundle.assembled().getType(name) instanceof GraphQLUnionType)
+            .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
 
-        // Observation, not an invariant: OrphanCat is classified (@table) but reached by no field,
-        // union, interface, or seed. Slice 6 will turn this into "the orphan set is empty".
-        assertThat(orphans)
-            .as("a classified-but-unreachable type is detected as an orphan")
-            .contains("OrphanCat");
-        assertThat(orphans)
-            .as("types reached through a real edge or seed are not mistaken for orphans")
-            .doesNotContain("Film", "Actor", "FilmMedia", "City", "PageInfo");
+        assertThat(reachable)
+            .as("slice 6: every classified output composite is reachable (the prune is observable)")
+            .containsAll(classifiedOutputComposites);
+        assertThat(bundle.model().types())
+            .as("the unreachable @table object is pruned, not classified")
+            .doesNotContainKey("OrphanCat");
     }
 
     @Test

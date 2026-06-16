@@ -1973,7 +1973,7 @@ class GraphitronSchemaBuilderTest {
                 tilDato: String @field(name: "DATO_TIL")
             }
             type Film @table(name: "film") { title: String }
-            type Query { film: Film }
+            type Query { film: Film period: Datoperiode }
             """,
             schema -> {
                 var it = (InterfaceType) schema.type("Datoperiode");
@@ -1998,7 +1998,7 @@ class GraphitronSchemaBuilderTest {
             type Film @table(name: "film") { title: String }
             type DatePeriod { fraDato: String @field(name: "DATO_FRA") }
             union MediaOrPeriod = Film | DatePeriod
-            type Query { film: Film }
+            type Query { film: Film mp: MediaOrPeriod }
             """,
             schema -> assertThat(schema.type("MediaOrPeriod")).isInstanceOf(UnclassifiedType.class)) {
             @Override public Set<Class<?>> variants() { return Set.of(); }
@@ -2025,7 +2025,7 @@ class GraphitronSchemaBuilderTest {
             type Language @table(name: "language") { name: String }
             type Film @table(name: "film") { title: String }
             union MediaItem = Language | Film
-            type Query { film: Film }
+            type Query { film: Film media: MediaItem }
             """,
             schema -> {
                 var t = (UnionType) schema.type("MediaItem");
@@ -5316,7 +5316,7 @@ class GraphitronSchemaBuilderTest {
               title: String
             }
             type Actor @table(name: "actor") { firstName: String }
-            type Query { film: Film }
+            type Query { film: Film actor: Actor }
             """);
         // NodeType wins over TableType when @node lifts the table to a NodeType.
         var node = (TypeClassification.Node) snapshot.typeClassificationsByName().get("Film");
@@ -5503,7 +5503,7 @@ class GraphitronSchemaBuilderTest {
                 path: [String!]!
                 message: String!
             }
-            type Query { x: String }
+            type Query { err: MyError }
             """,
             schema -> {
                 var errorType = (ErrorType) schema.type("MyError");
@@ -5523,7 +5523,7 @@ class GraphitronSchemaBuilderTest {
                 path: [String!]!
                 message: String!
             }
-            type Query { x: String }
+            type Query { err: DbError }
             """,
             schema -> {
                 var h = ((ErrorType) schema.type("DbError")).handlers().get(0);
@@ -5540,7 +5540,7 @@ class GraphitronSchemaBuilderTest {
                 path: [String!]!
                 message: String!
             }
-            type Query { x: String }
+            type Query { err: DbError }
             """,
             schema -> {
                 var h = ((ErrorType) schema.type("DbError")).handlers().get(0);
@@ -5555,7 +5555,7 @@ class GraphitronSchemaBuilderTest {
                 path: [String!]!
                 message: String!
             }
-            type Query { x: String }
+            type Query { err: DbError }
             """,
             schema -> {
                 var h = ((ErrorType) schema.type("DbError")).handlers().get(0);
@@ -5571,7 +5571,7 @@ class GraphitronSchemaBuilderTest {
                 path: [String!]!
                 message: String!
             }
-            type Query { x: String }
+            type Query { err: ValidationError }
             """,
             schema -> {
                 var h = ((ErrorType) schema.type("ValidationError")).handlers().get(0);
@@ -5587,7 +5587,7 @@ class GraphitronSchemaBuilderTest {
                 path: [String!]!
                 message: String!
             }
-            type Query { x: String }
+            type Query { err: MatchError }
             """,
             schema -> assertThat(((ErrorType) schema.type("MatchError")).handlers().get(0).matches())
                 .contains("duplicate")),
@@ -5602,7 +5602,7 @@ class GraphitronSchemaBuilderTest {
                 path: [String!]!
                 message: String!
             }
-            type Query { x: String }
+            type Query { err: MultiError }
             """,
             schema -> {
                 var handlers = ((ErrorType) schema.type("MultiError")).handlers();
@@ -5618,7 +5618,7 @@ class GraphitronSchemaBuilderTest {
                 path: [String!]!
                 message: String!
             }
-            type Query { x: String }
+            type Query { err: BadError }
             """,
             schema -> {
                 var t = (UnclassifiedType) schema.type("BadError");
@@ -5632,7 +5632,7 @@ class GraphitronSchemaBuilderTest {
                 path: [String!]!
                 message: String!
             }
-            type Query { x: String }
+            type Query { err: BadError }
             """,
             schema -> {
                 var t = (UnclassifiedType) schema.type("BadError");
@@ -5646,7 +5646,7 @@ class GraphitronSchemaBuilderTest {
                 path: [String!]!
                 message: String!
             }
-            type Query { x: String }
+            type Query { err: BadError }
             """,
             schema -> {
                 var t = (UnclassifiedType) schema.type("BadError");
@@ -5660,7 +5660,7 @@ class GraphitronSchemaBuilderTest {
                 path: [String!]!
                 message: String!
             }
-            type Query { x: String }
+            type Query { err: BadError }
             """,
             schema -> {
                 var t = (UnclassifiedType) schema.type("BadError");
@@ -5674,7 +5674,7 @@ class GraphitronSchemaBuilderTest {
                 path: [String!]!
                 message: String!
             }
-            type Query { x: String }
+            type Query { err: BadError }
             """,
             schema -> {
                 var t = (UnclassifiedType) schema.type("BadError");
@@ -5688,7 +5688,7 @@ class GraphitronSchemaBuilderTest {
                 path: [String!]!
                 message: String!
             }
-            type Query { x: String }
+            type Query { err: BadError }
             """,
             schema -> {
                 var t = (UnclassifiedType) schema.type("BadError");
@@ -5702,7 +5702,7 @@ class GraphitronSchemaBuilderTest {
                 path: [String!]!
                 message: String!
             }
-            type Query { x: String }
+            type Query { err: BadError }
             """,
             schema -> {
                 var t = (UnclassifiedType) schema.type("BadError");
@@ -5716,7 +5716,7 @@ class GraphitronSchemaBuilderTest {
                 path: [String!]!
                 message: String!
             }
-            type Query { x: String }
+            type Query { err: BadError }
             """,
             schema -> {
                 var t = (UnclassifiedType) schema.type("BadError");
@@ -5730,7 +5730,7 @@ class GraphitronSchemaBuilderTest {
                 path: [String!]!
                 message: String!
             }
-            type Query { x: String }
+            type Query { err: BadError }
             """,
             schema -> {
                 var t = (UnclassifiedType) schema.type("BadError");
@@ -5743,7 +5743,7 @@ class GraphitronSchemaBuilderTest {
             type BadError @error(handlers: [{handler: GENERIC, className: "com.example.Ex"}]) {
                 message: String!
             }
-            type Query { x: String }
+            type Query { err: BadError }
             """,
             schema -> assertThat(((UnclassifiedType) schema.type("BadError")).reason())
                 .contains("path")),
@@ -5754,7 +5754,7 @@ class GraphitronSchemaBuilderTest {
             type BadError @error(handlers: [{handler: GENERIC, className: "com.example.Ex"}]) {
                 path: [String!]!
             }
-            type Query { x: String }
+            type Query { err: BadError }
             """,
             schema -> assertThat(((UnclassifiedType) schema.type("BadError")).reason())
                 .contains("message")),
@@ -5773,7 +5773,7 @@ class GraphitronSchemaBuilderTest {
                 path: String
                 message: String!
             }
-            type Query { x: String }
+            type Query { err: BadError }
             """,
             schema -> assertThat(((UnclassifiedType) schema.type("BadError")).reason())
                 .contains("path").contains("[String!]!")),
@@ -5785,7 +5785,7 @@ class GraphitronSchemaBuilderTest {
                 path: [String!]!
                 message: String
             }
-            type Query { x: String }
+            type Query { err: BadError }
             """,
             schema -> assertThat(((UnclassifiedType) schema.type("BadError")).reason())
                 .contains("message").contains("String!")),
@@ -5797,7 +5797,7 @@ class GraphitronSchemaBuilderTest {
                 path: [String!]!
                 message: String!
             }
-            type Query { x: String }
+            type Query { err: BadError }
             """,
             schema -> {
                 var t = (UnclassifiedType) schema.type("BadError");
@@ -5813,7 +5813,7 @@ class GraphitronSchemaBuilderTest {
                 path: [String!]!
                 message: String!
             }
-            type Query { x: String }
+            type Query { err: BadError }
             """,
             schema -> {
                 var t = (UnclassifiedType) schema.type("BadError");
@@ -5853,7 +5853,7 @@ class GraphitronSchemaBuilderTest {
                 path: [String!]!
                 message: String!
             }
-            type Query { x: String }
+            type Query { err: MyError }
             """);
         var p = (TypeClassification.Error) snapshot.typeClassificationsByName().get("MyError");
         assertThat(p.handlerKinds()).isNotEmpty();
