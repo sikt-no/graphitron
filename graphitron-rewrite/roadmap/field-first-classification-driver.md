@@ -281,12 +281,22 @@ itself. What remains here is the risk-isolated, gated code transformation, slice
    slice 3's first gated commit (below). Gate: truth table + sakila, identical output (differential as
    bisect aid).
 3. **The inversion.** *First, as its own byte-identical commit ahead of the flip:* convert
-   `buildParticipantList` to derive each participant's `ParticipantRef` from the participant's own SDL
-   directives + standalone reflection binding (`@table` -> `TableBound` with the `TableRef` re-resolved
-   from the participant's `@table`, directiveless/`@error` -> `Unbound`) instead of reading
-   `ctx.types.get(participant)`. That removes the last sideways read feeding `register` and makes its
-   input order-independent (gate: truth table + sakila, identical output), so the verb that was
-   `register`-in-name-only in slice 2 actually becomes the order-independent entry the walk calls.
+   `buildParticipantList` to stop reading `ctx.types.get(participant)`. *Implementation note (found while
+   scoping):* this is **not** a flat "read the `@table` directive" substitution; the registry-verdict
+   branch keys on the participant's *full* classification (`TableBackedType` and-not-`TableInterfaceType`
+   -> `TableBound` with `tbt.table()`; non-null non-`Unclassified` -> `Unbound`; `null` ->
+   `Unbound`-if-`allowNonTableMembers` else error), which includes reflection-bound variants
+   (`JooqTableRecordType`, whose `table()` is producer-derived, not `@table`-derived) and the
+   `TableInterfaceType` exclusion. The clean order-independent move is therefore to **recompute the
+   participant's verdict via `classifyType(participant)`** (a pure function of SDL + the already-resolved
+   reflection bindings, no registry read) rather than hand-deriving from directives. Two edge cases to
+   reconcile for byte-identity: (i) the enrich pass runs *before* `promoteSingleRecordPayloads`, so a
+   directiveless carrier is `null` at enrich time under both the old read and `classifyType` (they agree);
+   (ii) `surfaceMultiProducerRejections` may have demoted a participant to `UnclassifiedType` *before*
+   the enrich pass, which the registry read sees (-> error arm) but a fresh `classifyType` would not, so
+   that demotion must be threaded in (e.g. consult `bindings.rejection(name)` alongside `classifyType`).
+   Gate: truth table + sakila, identical output, so the verb that was `register`-in-name-only in slice 2
+   becomes the order-independent entry the walk calls.
    *Then the flip:* replace the eager type pass + all-objects field pass with the field-first
    walk: seed, visit fields, classify each field, and register its target type as a byproduct
    (slice 2's entry). No on-demand recursion and no re-entrancy guard, registration is the only
