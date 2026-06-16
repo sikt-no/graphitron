@@ -143,6 +143,9 @@ final class InputBeanInstantiationEmitter {
             case CallSiteExtraction.JooqConvert ignored -> throw notALeaf(fb);
             case CallSiteExtraction.NestedInputField ignored -> throw notALeaf(fb);
             case CallSiteExtraction.NodeIdDecodeKeys ignored -> throw notALeaf(fb);
+            // R311: JooqRecord is a top-level @service param extraction, never an InputBean field leaf
+            // (the resolver never produces it here); genuinely unreachable.
+            case CallSiteExtraction.JooqRecord ignored -> throw notALeaf(fb);
         };
     }
 

@@ -643,4 +643,50 @@ class TestServiceStub {
     public static String assignMismatchedRecord(TestNodeIdMismatchedRecordBean in) {
         throw new UnsupportedOperationException();
     }
+
+    // ===== R311 jOOQ TableRecord @service input param fixtures (root + child coordinate) =====
+
+    /**
+     * R311 root singular: a jOOQ {@link FilmRecord} bound directly as a {@code @service} input param
+     * (not a bean member). The SDL input names columns through {@code @field(name:)} and carries a
+     * {@code @nodeId} identity, so the param binds on the column axis + scalar-key decode — never
+     * bean-ified on the Java-member axis. Returns {@code String} so the field is not a record-return
+     * (the param-binding is the subject, not the return).
+     */
+    public static String modifyFilmRecord(FilmRecord in) {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
+     * R311 root list: a {@code List<FilmRecord>} bound directly as a {@code @service} input param —
+     * the consumer's motivating shape ({@code endreUtdanningsspesifikasjonsstatus(List<…Record>)}).
+     * Differs from the singular only by a {@code ValueShape.ListOf} wrap; the same {@code JooqRecord}
+     * carrier drives one shared {@code createFilmRecord} construction site.
+     */
+    public static String modifyFilmRecords(java.util.List<FilmRecord> in) {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
+     * R311 root composite-key: a jOOQ {@link FilmActorRecord} (composite PK {@code actor_id, film_id})
+     * bound directly as a {@code @service} input param; the {@code @nodeId} identity decodes both key
+     * columns (arity 2).
+     */
+    public static String modifyFilmActorRecord(FilmActorRecord in) {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
+     * R311 child coordinate parity: a child {@code @service} rows-method on a {@code @table} parent,
+     * taking the parent key (Sources, {@code List<Row1<Integer>>}) plus a {@link FilmRecord} arg. The
+     * arg classifies to {@code CallSiteExtraction.JooqRecord} exactly as the root param does, and the
+     * child rows-method emits {@code createFilmRecord} through {@code ArgCallEmitter} (the real arm,
+     * not a throw) — the binding is coordinate-agnostic because {@code enrich} runs for child
+     * {@code @service} too. Returns {@code List<LanguageRecord>} to match a singular {@code Language}
+     * child field's rows-method outer shape (post-R177 V = {@code LanguageRecord}).
+     */
+    public static java.util.List<LanguageRecord> childModifyFilmRecord(
+            java.util.List<org.jooq.Row1<Integer>> keys, FilmRecord in) {
+        throw new UnsupportedOperationException();
+    }
 }

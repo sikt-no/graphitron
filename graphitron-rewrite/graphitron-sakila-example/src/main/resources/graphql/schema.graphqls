@@ -799,6 +799,15 @@ type Film implements Node & Searchable @table(name: "film") @node {
         className: "no.sikt.graphitron.rewrite.test.services.FilmService",
         method: "languageByService"
     })
+    # R311 child coordinate: a child @service whose rows-method takes the parent keys (Sources) plus a
+    # jOOQ FilmRecord arg against ModifyFilmRecordInput. enrich runs for child @service too, so the arg
+    # classifies to a jOOQ-record call-site binding exactly as a root param does; the child rows-method
+    # emits createFilmRecord(env.getArgument("in")) through ArgCallEmitter (the real arm, not a throw).
+    # The compile tier type-checks that emitted call against the real catalog.
+    modifiedLanguage(in: ModifyFilmRecordInput!): Language @service(service: {
+        className: "no.sikt.graphitron.rewrite.test.services.FilmRecordService",
+        method: "modifiedLanguage"
+    })
     # R285 lift-back fixture: a list-cardinality child @service whose @table-bound element type
     # (FilmActor) carries a non-column @reference sub-field (actor). The service returns
     # Map<Record1<Integer>, List<FilmActorRecord>> (mapped, list); the lift re-projects each
@@ -1187,6 +1196,23 @@ input FilmRecordListAssignmentInput {
 # per-element decode — list-ness and composite arity at once.
 input FilmActorRecordListAssignmentInput {
     filmActors: [ID!] @nodeId(typeName: "FilmActor")
+}
+
+# R311: a jOOQ FilmRecord bound DIRECTLY as a @service input param (not a bean member). The SDL
+# input names jOOQ columns through @field(name:) and carries a @nodeId identity that decodes into the
+# record's scalar key. The generator emits a createFilmRecord(Map) helper (NodeIdEncoder.decodeValues
+# for the identity + record.fromArray(Tables.FILM.<col>...) for the columns) rather than casting the
+# wire Map to FilmRecord.
+input ModifyFilmRecordInput {
+    filmId: ID! @nodeId(typeName: "Film")
+    title: String @field(name: "title")
+    releaseYear: Int @field(name: "release_year")
+}
+
+# R311 composite-key: a jOOQ FilmActorRecord param (composite PK actor_id, film_id) whose @nodeId
+# identity decodes both key columns in one fromArray call.
+input ModifyFilmActorRecordInput {
+    id: ID! @nodeId(typeName: "FilmActor")
 }
 
 input PlainFilmIdInput {
@@ -1906,5 +1932,31 @@ type Mutation {
         @service(service: {
             className: "no.sikt.graphitron.rewrite.test.services.FilmReviewService",
             method: "submitSetterShape"
+        })
+
+    # R311 root singular: a jOOQ FilmRecord bound directly as the @service input param. createFilmRecord
+    # decodes the `filmId` @nodeId into film_id and fromArray-loads `title`/`release_year`; the service
+    # reads all three back. The motivating shape's singular member.
+    modifyFilmRecord(in: ModifyFilmRecordInput!): String
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.FilmRecordService",
+            method: "modifyFilmRecord"
+        })
+
+    # R311 root list: a List<FilmRecord> @service input param (the consumer's motivating shape). The
+    # list call site routes through createFilmRecordList, which maps the singular createFilmRecord over
+    # each [ModifyFilmRecordInput!] element — one construction site, two cardinalities.
+    modifyFilmRecords(in: [ModifyFilmRecordInput!]!): String
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.FilmRecordService",
+            method: "modifyFilmRecords"
+        })
+
+    # R311 composite-key root: createFilmActorRecord materialises a composite-PK FilmActorRecord (both
+    # key columns in one fromArray call) from a single FilmActor NodeId.
+    modifyFilmActorRecord(in: ModifyFilmActorRecordInput!): String
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.FilmRecordService",
+            method: "modifyFilmActorRecord"
         })
 }

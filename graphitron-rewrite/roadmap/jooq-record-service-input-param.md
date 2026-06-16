@@ -1,7 +1,7 @@
 ---
 id: R311
 title: "Bind a jOOQ TableRecord (scalar and List<…>) @service input param: column-axis @field + @nodeId scalar-key decode"
-status: Spec
+status: In Review
 bucket: feature
 priority: 5
 theme: service
@@ -15,6 +15,33 @@ last-updated: 2026-06-16
 A top-level `@service` parameter whose Java type is a generated jOOQ `TableRecord` — singular
 (`Record`) or batched (`List<Record>`) — is accepted on the *type* side but cannot be *bound* at the
 call site.
+
+## Implementation status (landed, In Review)
+
+Implemented as specified; all four tiers green. The sealed `CallSiteExtraction.JooqRecord` +
+`ColumnBinding` / `RecordKeyDecode` records, the `ValueShape.JooqRecordInput` path-carrying leaf, the
+`InputBeanResolver.enrich` branch (after the shared input-object gates, before `buildInputBean`), the
+walker `ListOf` wrap, both call-site emitters (root `ServiceMethodCallEmitter`, child `ArgCallEmitter`
+real arm), the new `JooqRecordInstantiationEmitter`, and the `TypeFetcherGenerator` dual-walk dedup
+queue all landed. The compiler-forced arms resolved exactly as the spec predicted (real arms in
+`ServiceMethodCallEmitter.valueShapeExpression`/`listExpression`, `ArgCallEmitter.buildArgExtraction`,
+`TypeFetcherGenerator.collectFromValueShape`; defensive/throw arms in `outerArgOf`, the bean-field-walk
+switches, `FieldBuilder.javaTypeFor`, and `InputBeanInstantiationEmitter.perFieldValueExpr`).
+
+Tests: `JooqRecordServiceParamPipelineTest` (11 cases: singular, composite, list, the regression pin,
+the child-`@service` coordinate, and the rejection set) is the primary tier; the
+`graphitron-sakila-example` compile tier type-checks the emitted `create<Record>` / `create<Record>List`
+helpers and the child `ArgCallEmitter` call against the real catalog; four `GraphQLQueryTest` cases
+round-trip the identity decode + column SET (singular, list, composite, wrong-type-throws).
+
+One fixture-shape note (no design impact): the pipeline child-coordinate fixture uses
+`List<Row1<Integer>>` keys → `List<LanguageRecord>`, while the sakila child fixture
+(`FilmRecordService.modifiedLanguage`) uses the sakila-native `Set<Record1<Integer>>` keys →
+`Map<Record1<Integer>, LanguageRecord>` shape (modeled on the existing `languageByService`). Both are
+valid child rows-method shapes; the `JooqRecord` arg binding is identical across them.
+
+Per the reviewer rule, the implementing session is disqualified from the `In Review → Done` approval;
+a fresh session gates it.
 
 ## The problem
 

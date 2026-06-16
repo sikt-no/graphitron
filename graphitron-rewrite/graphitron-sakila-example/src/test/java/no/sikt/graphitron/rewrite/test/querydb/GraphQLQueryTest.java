@@ -3939,6 +3939,66 @@ class GraphQLQueryTest {
         assertThat(data).extractingByKey("assignFilmActorRecordList").isEqualTo("filmActors:1:2,2:4");
     }
 
+    // ===== R311: a jOOQ TableRecord bound directly as a @service input param =====
+
+    @Test
+    void modifyFilmRecord_decodesNodeIdIdentityAndSetsColumnsOnRecordParam() {
+        // R311 root singular: the @service param IS a jOOQ FilmRecord (not a bean member).
+        // createFilmRecord decodes the `filmId` @nodeId into film_id (NodeIdEncoder.decodeValues +
+        // fromArray) AND fromArray-loads the @field columns `title`/`release_year` from the wire Map.
+        // The service reads all three back — the identity decode and the column SET land together.
+        // Round-trips the column-axis + scalar-key construction end-to-end against PostgreSQL.
+        String filmId3 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Film", 3);
+        Map<String, Object> data = execute(
+            "mutation { modifyFilmRecord(in: {filmId: \"" + filmId3
+            + "\", title: \"Reissued\", releaseYear: 2021}) }");
+        assertThat(data).extractingByKey("modifyFilmRecord").isEqualTo("film:3:title=Reissued:year=2021");
+    }
+
+    @Test
+    void modifyFilmRecord_wrongTypeNodeId_throwsDecodeMismatch() {
+        // R311 lifted R195 throw-on-mismatch: a NodeId whose embedded type id is not "Film" (here a
+        // FilmActor id) fails the decodeValues("Film", …) type check inside createFilmRecord, so the
+        // record's identity decode throws rather than materialising a wrong record. The mutation
+        // returns no value.
+        String wrongTypeId = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("FilmActor", 1, 2);
+        graphql.ExecutionResult result = executeRaw(
+            "mutation { modifyFilmRecord(in: {filmId: \"" + wrongTypeId + "\", title: \"X\"}) }");
+        assertThat(result.getErrors())
+            .as("a wrong-type NodeId at a jOOQ-record param's identity is an authored-input error")
+            .isNotEmpty();
+        Map<String, Object> data = result.getData();
+        assertThat(data.get("modifyFilmRecord"))
+            .as("the mutation does not succeed with a wrong-type NodeId")
+            .isNull();
+    }
+
+    @Test
+    void modifyFilmRecords_listParam_constructsOneRecordPerElement() {
+        // R311 root list (the consumer's motivating shape): a List<FilmRecord> @service param against
+        // [ModifyFilmRecordInput!]!. createFilmRecordList maps the singular createFilmRecord over each
+        // element — two distinct Film NodeIds decode to two constructed records, each carrying its set
+        // title. Proves the one shared construction site serves both cardinalities.
+        String filmId3 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Film", 3);
+        String filmId5 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Film", 5);
+        Map<String, Object> data = execute(
+            "mutation { modifyFilmRecords(in: ["
+            + "{filmId: \"" + filmId3 + "\", title: \"A\"}, "
+            + "{filmId: \"" + filmId5 + "\", title: \"B\"}]) }");
+        assertThat(data).extractingByKey("modifyFilmRecords").isEqualTo("films:3@A,5@B");
+    }
+
+    @Test
+    void modifyFilmActorRecord_decodesCompositeIdentityIntoBothKeyColumns() {
+        // R311 composite-key root: createFilmActorRecord materialises a composite-PK FilmActorRecord
+        // (actor_id, film_id) in one fromArray call from a single FilmActor NodeId. The service reads
+        // both key columns back.
+        String filmActorId = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("FilmActor", 1, 2);
+        Map<String, Object> data = execute(
+            "mutation { modifyFilmActorRecord(in: {id: \"" + filmActorId + "\"}) }");
+        assertThat(data).extractingByKey("modifyFilmActorRecord").isEqualTo("filmActor:1:2");
+    }
+
     // ===== R77 Phase B: missing-vs-null on single-row INSERT (containsKey-gated DEFAULT) =====
 
     @Test

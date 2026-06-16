@@ -1288,6 +1288,9 @@ class FieldBuilder {
             // InputBean arm above it cannot reach a column-bound predicate, so the column's own type
             // is the trivially-correct (unreached) answer.
             case CallSiteExtraction.NodeIdDecodeRecord ignored -> column.columnClass();
+            // R311: JooqRecord is a top-level @service param extraction, never a column-bound BodyParam;
+            // unreached here, same trivially-correct answer as the NodeIdDecodeRecord arm above.
+            case CallSiteExtraction.JooqRecord ignored -> column.columnClass();
         };
     }
 

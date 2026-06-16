@@ -3,6 +3,7 @@ package no.sikt.graphitron.rewrite.model;
 import no.sikt.graphitron.javapoet.ClassName;
 
 import java.util.List;
+import java.util.Optional;
 
 /**
  * How to extract one argument value from a GraphQL execution context at the fetcher call site.
@@ -31,7 +32,7 @@ public sealed interface CallSiteExtraction
                 CallSiteExtraction.ContextArg,
                 CallSiteExtraction.JooqConvert, CallSiteExtraction.NestedInputField,
                 CallSiteExtraction.NodeIdDecodeKeys, CallSiteExtraction.NodeIdDecodeRecord,
-                CallSiteExtraction.InputBean {
+                CallSiteExtraction.InputBean, CallSiteExtraction.JooqRecord {
 
     /** Pass the argument directly: {@code env.getArgument("name")}. */
     record Direct() implements CallSiteExtraction {}
@@ -308,6 +309,114 @@ public sealed interface CallSiteExtraction
             if (javaElementTypeName == null || javaElementTypeName.isEmpty()) {
                 throw new IllegalArgumentException("FieldBinding javaElementTypeName must be non-empty");
             }
+        }
+    }
+
+    /**
+     * Construct a generated jOOQ {@link org.jooq.TableRecord} from a GraphQL input-object {@code Map}
+     * at a {@code @service} parameter position (R311). Sibling to {@link InputBean}: same "instantiate
+     * the consumer's typed parameter at the fetcher boundary so the service body never sees a
+     * {@code Map}" goal, opposite binding axis. Where {@link InputBean} binds SDL fields on the
+     * Java-<em>member</em> axis ({@link FieldBinding#javaFieldName()}), a {@code JooqRecord} binds them
+     * on the <em>column</em> axis: each plain field names a jOOQ column through {@code @field(name:)}
+     * (carried as a resolved {@link ColumnBinding}), and an optional {@code @nodeId} field decodes the
+     * record's scalar key columns (carried as a {@link RecordKeyDecode}).
+     *
+     * <p>{@code table} is read straight off the param's classified
+     * {@link GraphitronType.JooqTableRecordInputType}; the record class is {@code table.recordClass()}
+     * (the two name the same class by construction, so no separate component is carried, mirroring
+     * {@link NodeIdDecodeRecord} which derives its record class from {@code table} too). The two binding
+     * axes are orthogonal — {@code columnBindings} is the SET payload, {@code keyDecode} is the identity
+     * — and either may be empty (a record built from only an identity, or only plain columns), but not
+     * both.
+     *
+     * <p>Produced only by {@code InputBeanResolver} (the SDL-aware post-processor that already holds the
+     * classified type), every {@code JooqRecord} is fully resolved: a non-null {@code table}, resolved
+     * {@code ColumnRef}s on every binding, and a present-or-absent (never partial) {@code keyDecode}.
+     * Consumed by {@code JooqRecordInstantiationEmitter} (the {@code create<Record>} /
+     * {@code create<Record>List} helper pair, reached from either the root-coordinate
+     * {@code ServiceMethodCallEmitter} via {@link no.sikt.graphitron.rewrite.model.ValueShape.JooqRecordInput}
+     * or the child-coordinate {@code ArgCallEmitter} directly), and registered into the helper queue by
+     * {@code TypeFetcherGenerator}'s dual walk. It is a top-level {@code param.extraction()}, like
+     * {@link InputBean} and unlike {@link NodeIdDecodeRecord}; it is never an {@link InputBean} field
+     * leaf, so the bean-field-leaf switch ({@code InputBeanInstantiationEmitter.perFieldValueExpr})
+     * treats it as unreachable-by-construction.
+     */
+    record JooqRecord(TableRef table,
+                      List<ColumnBinding> columnBindings,
+                      Optional<RecordKeyDecode> keyDecode) implements CallSiteExtraction {
+        public JooqRecord {
+            if (table == null) {
+                throw new IllegalArgumentException("JooqRecord table must be non-null");
+            }
+            columnBindings = List.copyOf(columnBindings);
+            if (keyDecode == null) {
+                throw new IllegalArgumentException("JooqRecord keyDecode must be non-null (use Optional.empty())");
+            }
+            // At-least-one-binding floor: an input with neither a SET column nor an identity decode
+            // would construct an empty record, the column-axis analogue of InputBean's empty-bindings
+            // rejection. Producers reject such an input before reaching the constructor; this is the
+            // structural backstop.
+            if (columnBindings.isEmpty() && keyDecode.isEmpty()) {
+                throw new IllegalArgumentException(
+                    "JooqRecord must carry at least one column binding or a key decode");
+            }
+        }
+    }
+
+    /**
+     * One plain ({@code @field}) input field bound on the column axis. {@code sdlFieldName} is the
+     * GraphQL input field name and the {@code Map} key the {@code create<Record>} helper reads the wire
+     * value from; {@code column} is the <em>resolved</em> {@link ColumnRef} (not a raw {@code @field(name:)}
+     * string) on the enclosing {@link JooqRecord#table()}, so the emitter reaches the typed
+     * {@code Tables.<T>.<col>} field with no re-parsing. Column-axis sibling to the member-axis
+     * {@link FieldBinding}; a genuinely different axis, hence a separate record. No list flag: a scalar
+     * column cannot take a list value, and the absence documents that.
+     */
+    record ColumnBinding(String sdlFieldName, ColumnRef column) {
+        public ColumnBinding {
+            if (sdlFieldName == null || sdlFieldName.isEmpty()) {
+                throw new IllegalArgumentException("ColumnBinding sdlFieldName must be non-empty");
+            }
+            if (column == null) {
+                throw new IllegalArgumentException("ColumnBinding column must be non-null");
+            }
+        }
+    }
+
+    /**
+     * The single {@code @nodeId} identity field of a {@link JooqRecord}: the decoded key columns that
+     * <em>are</em> the record's identity. The wire mechanism is R195's
+     * ({@code encoderClass.decodeValues(typeId, nodeId)} then a positional
+     * {@code record.fromArray(values, Tables.<T>.<keyCol>...)}); only the projection target differs from
+     * {@link NodeIdDecodeRecord}, so this is a distinct carrier rather than a reuse.
+     *
+     * <p>Unlike {@link NodeIdDecodeRecord} (which rides as a {@link FieldBinding} leaf and inherits its
+     * {@code Map} key from {@link FieldBinding#sdlFieldName()}), a {@code RecordKeyDecode} is a bare
+     * {@link Optional} on {@link JooqRecord} with no enclosing {@code FieldBinding}, so it must carry its
+     * own {@code sdlFieldName} — the {@code Map} key the helper writes {@code raw.get("<idField>")} for.
+     * It carries no {@code nonNull}: a {@code @nodeId} at the record's identity always decodes the key
+     * that is the record, so a null or type-mismatched id throws (R195 {@code ThrowOnMismatch}) whether
+     * the SDL field is {@code ID!} or {@code ID}, leaving nothing for a nullability flag to vary.
+     * {@code keyColumns} is the resolved key (one entry for a single-key table, N for a composite key),
+     * each a {@link ColumnRef} on the enclosing {@link JooqRecord#table()}.
+     */
+    record RecordKeyDecode(String sdlFieldName, ClassName encoderClass, String typeId,
+                           List<ColumnRef> keyColumns) {
+        public RecordKeyDecode {
+            if (sdlFieldName == null || sdlFieldName.isEmpty()) {
+                throw new IllegalArgumentException("RecordKeyDecode sdlFieldName must be non-empty");
+            }
+            if (encoderClass == null) {
+                throw new IllegalArgumentException("RecordKeyDecode encoderClass must be non-null");
+            }
+            if (typeId == null || typeId.isEmpty()) {
+                throw new IllegalArgumentException("RecordKeyDecode typeId must be non-empty");
+            }
+            if (keyColumns == null || keyColumns.isEmpty()) {
+                throw new IllegalArgumentException("RecordKeyDecode keyColumns must be non-empty");
+            }
+            keyColumns = List.copyOf(keyColumns);
         }
     }
 }
