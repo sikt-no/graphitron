@@ -16,7 +16,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 |---|---|---|---|---|
 | `R19` | Rebase and squash rewrite branch onto main | Ready |  | [plan](history-squash.md) |
 | `R222` | Dimensional model pivot: slots over cross-product permits | Spec | 2026-06-16 <sub>created 2026-05-21</sub> | [plan](dimensional-model-pivot.md) |
-| `R316` | Pivot the field-dimensional model to (source, operation, target) | Spec | 2026-06-16 | [plan](source-operation-target-pivot.md) |
+| `R316` | Pivot the field-dimensional model to (context, operation, target) | Spec | 2026-06-16 | [plan](context-operation-target-pivot.md) |
 | `R256` | Absorb the service walker substrate: typed per-arm errors + multi-arg ctors | Ready | 2026-05-30 <sub>created 2026-05-29</sub> | [plan](service-walker-substrate-absorption.md) |
 | `R315` | Bind FK-reference @nodeId onto jOOQ-record @service params (port legacy @reference FK resolution; generalize R311) | Spec | 2026-06-16 | [plan](fk-reference-nodeid-service-record-input.md) |
 | `R308` | Fix the @service list-payload N+1 by deriving many-arrival for list-returning carriers | Spec | 2026-06-14 | [plan](service-list-payload-arrival.md) |
@@ -209,7 +209,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 - `R261` [**Generation-time wire-coercion cast guard across arg-classification sites**](wire-coercion-cast-guard.md) — Backlog, architecture, blocked by [service-walker-substrate-absorption](service-walker-substrate-absorption.md), [dimensional-model-pivot](dimensional-model-pivot.md)
 - `R256` [**Absorb the service walker substrate: typed per-arm errors + multi-arg ctors**](service-walker-substrate-absorption.md) — Ready, structural
-- `R316` [**Pivot the field-dimensional model to (source, operation, target)**](source-operation-target-pivot.md) — Spec, structural
+- `R316` [**Pivot the field-dimensional model to (context, operation, target)**](context-operation-target-pivot.md) — Spec, structural
 - `R222` [**Dimensional model pivot: slots over cross-product permits**](dimensional-model-pivot.md) — Spec, structural
 - `R314` [**Dissolve the re-fetch (reentry) leaf fields: emit reentry by switching on the dimensional model**](dissolve-reentry-leaves-dimensional-emit.md) — Backlog, architecture, blocked by [dimensional-model-pivot](dimensional-model-pivot.md)
 - `R279` [**Field-first reachability-driven classification driver**](field-first-classification-driver.md) — In Progress, architecture, blocked by [dimensional-model-pivot](dimensional-model-pivot.md)
