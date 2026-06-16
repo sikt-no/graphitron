@@ -11,12 +11,13 @@ import java.util.Objects;
  * sparse-Record projection ({@link Record}) and typed jOOQ {@code TableRecord} subclass
  * ({@link TableRecord}) into "same class."
  *
- * <p>R204: the validator's group-by step over the classified field registry compares
+ * <p>R204 / R279 slice 4: the builder's group-by step over the classified field registry compares
  * {@code domainReturnType()} values by sealed-arm structural equality (record equality on the
  * arm's components). Two producers of the same SDL return type with disagreeing
- * {@code DomainReturnType} demote both producer fields to
- * {@link GraphitronField.UnclassifiedField} carrying a
- * {@link Rejection.AuthorError.MultiProducerDomainTypeDisagreement} rejection.
+ * {@code DomainReturnType} are recorded as a
+ * {@link Rejection.AuthorError.MultiProducerDomainTypeDisagreement} on the
+ * {@link no.sikt.graphitron.rewrite.GraphitronSchema}, which
+ * {@code GraphitronSchemaValidator.validateUniformDomainReturnType} surfaces as a build error.
  *
  * <ul>
  *   <li>{@link Record} — sparse-Record projection over the named table's columns. The producer

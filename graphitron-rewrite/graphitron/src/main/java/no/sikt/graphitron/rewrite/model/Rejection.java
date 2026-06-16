@@ -215,8 +215,8 @@ public sealed interface Rejection permits Rejection.AuthorError, Rejection.Inval
 
             /**
              * One producer in a multi-producer-domain-type-disagreement group. Names the field
-             * coord and the {@link DomainReturnType} arm it answers; the same {@code Participant}
-             * value appears on every demoted producer in the group so downstream tooling can
+             * coord and the {@link DomainReturnType} arm it answers; every participant in the group
+             * is listed on the single rejection the validator surfaces so downstream tooling can
              * cross-reference siblings.
              */
             public record Participant(

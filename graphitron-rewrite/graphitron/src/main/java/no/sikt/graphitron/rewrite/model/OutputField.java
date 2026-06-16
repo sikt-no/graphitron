@@ -12,22 +12,25 @@ import no.sikt.graphitron.javapoet.TypeName;
  * sit outside this sub-interface because they have no resolver and therefore no
  * {@code env.getSource()} story.
  *
- * <p>R204: every leaf in {@link RootField} and {@link ChildField} answers
+ * <p>R204 / R279 slice 4: every leaf in {@link RootField} and {@link ChildField} answers
  * {@link #domainReturnType()} with the Java domain type its emitted resolver puts at
- * {@code env.getSource()} for the return type's child datafetchers. The validator's group-by
- * step over the classified field registry compares the answers across producers reaching the
- * same SDL return type; disagreement on the {@link DomainReturnType} sealed arm demotes every
- * producer in the group to {@link GraphitronField.UnclassifiedField} with a
- * {@link Rejection.AuthorError.MultiProducerDomainTypeDisagreement} payload.
+ * {@code env.getSource()} for the return type's child datafetchers. The builder's group-by step
+ * over the classified field registry compares the answers across producers reaching the same SDL
+ * return type; disagreement on the {@link DomainReturnType} sealed arm is recorded on the
+ * {@link no.sikt.graphitron.rewrite.GraphitronSchema} as a
+ * {@link Rejection.AuthorError.MultiProducerDomainTypeDisagreement}, which
+ * {@code GraphitronSchemaValidator.validateUniformDomainReturnType} surfaces as a build error
+ * (slice 4 retired the post-pass that previously demoted the producers to
+ * {@link GraphitronField.UnclassifiedField}).
  */
 public sealed interface OutputField extends GraphitronField permits RootField, ChildField {
 
     /**
      * The Java domain type this producer puts at {@code env.getSource()} for its return type's
-     * child datafetchers. The validator's structural-equality check rides on the
+     * child datafetchers. The uniform-domain-return-type check rides on the
      * {@link DomainReturnType} sealed arm; relaxing the per-permit answer breaks the
-     * uniform-domain-return-type invariant that lets the generator commit to a single Java
-     * source type per child-field coord at emit time.
+     * invariant that lets the generator commit to a single Java source type per child-field coord
+     * at emit time.
      */
     DomainReturnType domainReturnType();
 
