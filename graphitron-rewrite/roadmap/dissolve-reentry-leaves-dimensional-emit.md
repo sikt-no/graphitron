@@ -5,7 +5,7 @@ status: Backlog
 bucket: architecture
 priority: 4
 theme: structural-refactor
-depends-on: [collapse-singlerecordtablefield-into-recordtablefield, dimensional-model-pivot]
+depends-on: [dimensional-model-pivot]
 created: 2026-06-15
 last-updated: 2026-06-15
 ---
