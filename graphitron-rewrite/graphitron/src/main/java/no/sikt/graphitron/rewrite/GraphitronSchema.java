@@ -4,6 +4,7 @@ import graphql.schema.FieldCoordinates;
 import no.sikt.graphitron.rewrite.model.EntityResolution;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
+import no.sikt.graphitron.rewrite.model.Rejection;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -26,6 +27,13 @@ import java.util.Map;
  * (the validator's {@code validateContextArgumentTypeAgreement} drain and
  * {@code GraphitronFacadeGenerator}'s factory parameter emission) read this field directly
  * rather than re-classifying, so a "single producer" guarantee holds across the two consumers.
+ *
+ * <p>{@link #domainReturnTypeConflicts} (R204 / R279 slice 4) carries the multi-producer
+ * {@code DomainReturnType} disagreements the builder detected at classification time, shape-parallel
+ * to {@link #contextArguments}. The builder computes them once over the classified field registry
+ * (against the assembled schema's SDL-Object axis) and stashes them here rather than reclassifying
+ * the producers; the validator's {@code validateUniformDomainReturnType} drains them into
+ * {@link ValidationError}s. Empty for every test-constructed schema and every conflict-free build.
  */
 public record GraphitronSchema(
     Map<String, GraphitronType> types,
@@ -33,7 +41,8 @@ public record GraphitronSchema(
     Map<String, List<GraphitronField>> fieldsByType,
     Map<String, EntityResolution> entitiesByType,
     List<BuildWarning> warnings,
-    ContextArgumentClassifier.Classification contextArguments
+    ContextArgumentClassifier.Classification contextArguments,
+    List<Rejection> domainReturnTypeConflicts
 ) {
 
     /**
@@ -43,20 +52,21 @@ public record GraphitronSchema(
      */
     public GraphitronSchema(Map<String, GraphitronType> types, Map<FieldCoordinates, GraphitronField> fields) {
         this(types, fields, groupByType(fields), Map.of(), List.of(),
-            ContextArgumentClassifier.classify(fields.values()));
+            ContextArgumentClassifier.classify(fields.values()), List.of());
     }
 
     /**
-     * Three-arg convenience constructor used by {@link GraphitronSchemaBuilder}: same
-     * field-grouping as the two-arg form but preserves the {@code warnings} list the builder
-     * accumulated during classification.
+     * Convenience constructor used by {@link GraphitronSchemaBuilder}: same field-grouping as the
+     * two-arg form but preserves the {@code warnings} list and the {@code domainReturnTypeConflicts}
+     * the builder accumulated during classification.
      */
     public GraphitronSchema(Map<String, GraphitronType> types,
                             Map<FieldCoordinates, GraphitronField> fields,
                             Map<String, EntityResolution> entitiesByType,
-                            List<BuildWarning> warnings) {
+                            List<BuildWarning> warnings,
+                            List<Rejection> domainReturnTypeConflicts) {
         this(types, fields, groupByType(fields), Map.copyOf(entitiesByType), List.copyOf(warnings),
-            ContextArgumentClassifier.classify(fields.values()));
+            ContextArgumentClassifier.classify(fields.values()), List.copyOf(domainReturnTypeConflicts));
     }
 
     private static Map<String, List<GraphitronField>> groupByType(Map<FieldCoordinates, GraphitronField> fields) {

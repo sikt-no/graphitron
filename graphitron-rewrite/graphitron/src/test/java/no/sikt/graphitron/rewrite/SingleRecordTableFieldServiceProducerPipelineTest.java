@@ -3,6 +3,8 @@ package no.sikt.graphitron.rewrite;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField;
 import no.sikt.graphitron.rewrite.model.MutationField;
+import no.sikt.graphitron.rewrite.model.OutputField;
+import no.sikt.graphitron.rewrite.model.Rejection;
 import no.sikt.graphitron.rewrite.model.SourceKey;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
@@ -433,14 +435,15 @@ class SingleRecordTableFieldServiceProducerPipelineTest {
     }
 
     /**
-     * R204 mixed-producer carrier reject (DML-first declaration order). Pins that the validator
-     * detects the conflict regardless of declaration order; the sibling test pins the other
-     * direction.
+     * R204 / R279 slice 4 mixed-producer carrier reject (DML-first declaration order). Pins that the
+     * conflict surfaces regardless of declaration order; the sibling test pins the other direction.
      *
-     * <p>Both producer mutations demote to {@link UnclassifiedField} carrying a
-     * {@code MultiProducerDomainTypeDisagreement} rejection; the message names the payload SDL
-     * type, both producer coords, and both {@code DomainReturnType} arms ({@code Record(film)}
-     * and {@code TableRecord(FilmRecord)}).
+     * <p>R279 slice 4 retired the builder-side demote-to-{@link UnclassifiedField} post-pass: the two
+     * producer mutations now stay classified as their producer leaves, and the disagreement rides on
+     * the model as a {@code MultiProducerDomainTypeDisagreement} the validator surfaces as a single
+     * {@link no.sikt.graphitron.rewrite.ValidationError}. The message names the payload SDL type, both
+     * producer coords, and both {@code DomainReturnType} arms ({@code Record(film)} and
+     * {@code TableRecord(FilmRecord)}).
      */
     @Test
     void serviceProducer_mixedWithDml_dmlFirst_rejects() {
@@ -456,25 +459,23 @@ class SingleRecordTableFieldServiceProducerPipelineTest {
             }
             """);
 
-        var dmlMut = schema.field("Mutation", "createFilms");
-        var serviceMut = schema.field("Mutation", "runFilms");
-        assertThat(dmlMut).isInstanceOf(UnclassifiedField.class);
-        assertThat(serviceMut).isInstanceOf(UnclassifiedField.class);
+        // The builder no longer demotes the producers; they stay classified and the conflict is
+        // carried on the model for the validator to surface.
+        assertThat(schema.field("Mutation", "createFilms")).isInstanceOf(OutputField.class);
+        assertThat(schema.field("Mutation", "runFilms")).isInstanceOf(OutputField.class);
 
-        var dmlReason = ((UnclassifiedField) dmlMut).rejection().message();
-        var serviceReason = ((UnclassifiedField) serviceMut).rejection().message();
-        // Both surfaces carry the same conflict payload; assert one and let the symmetry pin
-        // hold the other arm.
-        assertThat(dmlReason)
-            .contains("FilmListPayload", "createFilms", "runFilms", "Record(film)", "TableRecord(FilmRecord)");
-        assertThat(serviceReason)
+        var conflicts = new GraphitronSchemaValidator().validate(schema).stream()
+            .filter(e -> e.rejection() instanceof Rejection.AuthorError.MultiProducerDomainTypeDisagreement)
+            .toList();
+        assertThat(conflicts).hasSize(1);
+        assertThat(conflicts.get(0).message())
             .contains("FilmListPayload", "createFilms", "runFilms", "Record(film)", "TableRecord(FilmRecord)");
     }
 
     /**
-     * R204 mixed-producer carrier reject (@service-first declaration order). Pins that the
-     * validator detects the conflict regardless of declaration order; the sibling test pins
-     * the other direction.
+     * R204 / R279 slice 4 mixed-producer carrier reject (@service-first declaration order). Pins that
+     * the conflict surfaces regardless of declaration order; the sibling test pins the other
+     * direction.
      */
     @Test
     void serviceProducer_mixedWithDml_serviceFirst_rejects() {
@@ -490,13 +491,14 @@ class SingleRecordTableFieldServiceProducerPipelineTest {
             }
             """);
 
-        var dmlMut = schema.field("Mutation", "createFilms");
-        var serviceMut = schema.field("Mutation", "runFilms");
-        assertThat(dmlMut).isInstanceOf(UnclassifiedField.class);
-        assertThat(serviceMut).isInstanceOf(UnclassifiedField.class);
+        assertThat(schema.field("Mutation", "createFilms")).isInstanceOf(OutputField.class);
+        assertThat(schema.field("Mutation", "runFilms")).isInstanceOf(OutputField.class);
 
-        var dmlReason = ((UnclassifiedField) dmlMut).rejection().message();
-        assertThat(dmlReason)
+        var conflicts = new GraphitronSchemaValidator().validate(schema).stream()
+            .filter(e -> e.rejection() instanceof Rejection.AuthorError.MultiProducerDomainTypeDisagreement)
+            .toList();
+        assertThat(conflicts).hasSize(1);
+        assertThat(conflicts.get(0).message())
             .contains("FilmListPayload", "createFilms", "runFilms", "Record(film)", "TableRecord(FilmRecord)");
     }
 }

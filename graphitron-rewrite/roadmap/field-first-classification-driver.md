@@ -356,6 +356,35 @@ itself. What remains here is the risk-isolated, gated code transformation, slice
    the directiveless-types-inherit-from-fields invariant made structural: the walk's
    compatible-or-demote already covers it; this slice removes the now-redundant post-pass.)
    Gate: truth table + sakila.
+
+   **Slice 4 shipped (truth table 2116 + sakila TypeSpec/compile/execute 404, all green).**
+   `DomainReturnType` is already on the field (an abstract `OutputField.domainReturnType()` every
+   leaf answers, materialised by R290), so the slice's substance was relocating *enforcement* off
+   the builder's reclassifying post-pass and onto a validator rule, in one commit, with no
+   intervening gap. What landed:
+   - *Model change (`GraphitronSchema`).* A new `List<Rejection> domainReturnTypeConflicts`
+     component carries the multi-producer disagreements, shape-parallel to the existing
+     `contextArguments().conflicts()` carrier and defaulted to empty for every test-constructed and
+     conflict-free schema.
+   - *Builder (`GraphitronSchemaBuilder`).* The reclassifying `validateUniformDomainReturnType`
+     post-pass became `collectDomainReturnTypeConflicts`: it runs at the *same point* (on the
+     pre-promotion, pre-dangling field registry, against the assembled schema's SDL-Object axis via
+     the retained `sdlReturnTypeName`), so the conflict set is byte-identical, but it now returns one
+     `MultiProducerDomainTypeDisagreement` per conflict group instead of demoting the producers to
+     `UnclassifiedField`. The list is stashed on the model.
+   - *Validator rule (`GraphitronSchemaValidator`).* A new `validateUniformDomainReturnType` drains
+     the cached conflicts into `ValidationError`s, mirroring `validateContextArgumentTypeAgreement`
+     exactly. The producers now stay classified through the build and the validator halts it before
+     any generation runs, so the net build pass/fail and the rejection message (payload SDL type +
+     all participant coords + both `DomainReturnType` arms) are preserved.
+   - *Honest scope.* Behaviour-preserving at the build pass/fail level; the *internal*
+     representation of a rejected schema changed (classified producers + a validator error, rather
+     than demoted `UnclassifiedField`s), so the two `SingleRecordTableFieldServiceProducerPipelineTest`
+     mixed-producer cases were updated to assert the validator-surfaced conflict instead of the
+     builder-side demotion. The "walk's compatible-or-demote already covers it" framing in the slice
+     header is the aspirational end-state (slices 5/6+); the walk does not yet demote on
+     field-level multi-producer conflicts, which is exactly why the enforcement was moved to a live
+     validator rule rather than simply deleted.
 5. **Fold ConnectionPromoter into the walk.** Synthesise `Connection`/`Edge`/`PageInfo` into the
    registry on demand when an `@asConnection` field is visited. Make
    `rebuildAssembledForConnections` a *pure function of the walk's synthesised-type set* (a typed

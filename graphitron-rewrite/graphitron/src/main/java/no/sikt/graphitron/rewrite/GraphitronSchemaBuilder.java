@@ -241,7 +241,12 @@ public class GraphitronSchemaBuilder {
             classifyFieldsOfObject(ctx, typeBuilder, fieldBuilder, objType);
         }
         registerNestingTypes(ctx);
-        validateUniformDomainReturnType(ctx);
+        // R279 slice 4 — the multi-producer DomainReturnType agreement check is detected here (on the
+        // pre-promotion, pre-dangling field registry, against the assembled-schema SDL-Object axis,
+        // byte-identically to the retired reclassifying post-pass) but no longer demotes the
+        // producers; the conflicts ride on the model and the validator's validateUniformDomainReturnType
+        // surfaces them, closing the enforcement in the same commit so no gap opens.
+        var domainReturnTypeConflicts = collectDomainReturnTypeConflicts(ctx);
         var rewrites = ConnectionPromoter.promote(ctx);
         rejectDanglingTypeReferences(ctx);
         var rebuiltAssembled = ConnectionPromoter.rebuildAssembledForConnections(ctx.schema, ctx.types, rewrites);
@@ -262,7 +267,8 @@ public class GraphitronSchemaBuilder {
         Map<String, EntityResolution> entitiesByType =
             EntityResolutionBuilder.build(ctx.typeRegistry, dedupedFields, rebuiltAssembled, ctx::addWarning);
         var model = new GraphitronSchema(
-            ctx.types, Collections.unmodifiableMap(dedupedFields), entitiesByType, ctx.warnings());
+            ctx.types, Collections.unmodifiableMap(dedupedFields), entitiesByType, ctx.warnings(),
+            domainReturnTypeConflicts);
         return new BuildResult(model, rebuiltAssembled);
     }
 
@@ -401,21 +407,26 @@ public class GraphitronSchemaBuilder {
     }
 
     /**
-     * R204: validates that every {@link OutputField} producer reaching the same SDL return-type
-     * name agrees on its {@link DomainReturnType} sealed arm. Disagreement means the producers
-     * put structurally different Java values at {@code env.getSource()} for the SDL return type's
-     * child datafetchers; the generator commits to one source-Java-type per child-field coord
-     * at emit time and does not branch on runtime source type, so a multi-producer disagreement
-     * would feed a datafetcher generated against the other producer's record shape.
+     * R204 / R279 slice 4: detects, but no longer enforces, that every {@link OutputField} producer
+     * reaching the same SDL return-type name agrees on its {@link DomainReturnType} sealed arm.
+     * Disagreement means the producers put structurally different Java values at
+     * {@code env.getSource()} for the SDL return type's child datafetchers; the generator commits to
+     * one source-Java-type per child-field coord at emit time and does not branch on runtime source
+     * type, so a multi-producer disagreement would feed a datafetcher generated against the other
+     * producer's record shape.
      *
-     * <p>Demotes every producer in a conflict group to {@link GraphitronField.UnclassifiedField}
-     * carrying a {@link Rejection.AuthorError.MultiProducerDomainTypeDisagreement} payload that
-     * names every conflict participant. The data field on the conflict payload (if any) stays
-     * classified as-is per R204's design fork (a): the build halts on the producer demotions
-     * before any generated code runs, so the orphan wrap arm on the data field is unreachable
-     * and the author's actionable surface is the producers.
+     * <p>Returns one {@link Rejection.AuthorError.MultiProducerDomainTypeDisagreement} per conflict
+     * group, each naming every participant. The builder stashes the list on the
+     * {@link GraphitronSchema}; {@code GraphitronSchemaValidator.validateUniformDomainReturnType}
+     * drains it into compiler-style errors that fail the build (R279 slice 4 retired the
+     * reclassify-to-{@link GraphitronField.UnclassifiedField} post-pass that previously enforced
+     * this here, moving enforcement to the validator in the same commit so no gap opens). Runs on the
+     * pre-promotion, pre-dangling field registry against the assembled-schema SDL-Object axis, so the
+     * conflict set is byte-identical to the retired post-pass; the data field on the conflict payload
+     * (if any) stays classified as-is per R204's design fork (a), since the validator halts the build
+     * before any generated code runs.
      */
-    private static void validateUniformDomainReturnType(BuildContext ctx) {
+    private static List<Rejection> collectDomainReturnTypeConflicts(BuildContext ctx) {
         Map<String, List<FieldCoordinates>> bySdlReturnType = new LinkedHashMap<>();
         for (var entry : ctx.fieldRegistry.entries().entrySet()) {
             if (!(entry.getValue() instanceof OutputField of)) continue;
@@ -423,6 +434,7 @@ public class GraphitronSchemaBuilder {
             if (sdlReturn == null) continue;
             bySdlReturnType.computeIfAbsent(sdlReturn, k -> new ArrayList<>()).add(entry.getKey());
         }
+        List<Rejection> conflicts = new ArrayList<>();
         for (var group : bySdlReturnType.entrySet()) {
             String sdlReturn = group.getKey();
             List<FieldCoordinates> coords = group.getValue();
@@ -435,9 +447,6 @@ public class GraphitronSchemaBuilder {
             }
             if (byDomain.size() < 2) continue;
 
-            // Build the typed participant list once; attach the same rejection to every demoted
-            // producer in the group so each surfaces independently in the validator's per-
-            // UnclassifiedField pass.
             List<Rejection.AuthorError.MultiProducerDomainTypeDisagreement.Participant> participants =
                 new ArrayList<>(coords.size());
             for (var coord : coords) {
@@ -445,22 +454,10 @@ public class GraphitronSchemaBuilder {
                 participants.add(new Rejection.AuthorError.MultiProducerDomainTypeDisagreement.Participant(
                     of.parentTypeName(), of.name(), of.domainReturnType()));
             }
-            var rejection = new Rejection.AuthorError.MultiProducerDomainTypeDisagreement(
-                sdlReturn, participants);
-
-            for (var coord : coords) {
-                var existing = ctx.fieldRegistry.get(coord);
-                ctx.fieldRegistry.reclassify(
-                    coord,
-                    new GraphitronField.UnclassifiedField(
-                        existing.parentTypeName(), existing.name(), existing.location(),
-                        ctx.schema.getObjectType(existing.parentTypeName()) == null
-                            ? null
-                            : ctx.schema.getObjectType(existing.parentTypeName()).getFieldDefinition(existing.name()),
-                        rejection),
-                    existing.getClass());
-            }
+            conflicts.add(new Rejection.AuthorError.MultiProducerDomainTypeDisagreement(
+                sdlReturn, participants));
         }
+        return List.copyOf(conflicts);
     }
 
     /**
