@@ -128,14 +128,19 @@ classified `GraphitronSchema` and are not visitor-based.
   The classifier never reads back a prior verdict and never reasons about conflict: it registers
   what the current field implies for itself and for its target. The `GraphitronSchema` accumulator's
   contract is that a field or type coordinate may be registered more than once; reconciling repeated
-  registrations is *its* job, not the classifier's. Compatible repeats agree (idempotent); an
-  incompatible repeat demotes the type to `UnclassifiedType`. **Demotion is the schema's concern,
-  not the classifier's**, the classifier does not know demotion exists. This collapses the four
-  `TypeRegistry` write verbs to one `register`, dissolves the on-demand re-entrancy/cycle guard
-  (re-registration is normal; walk-level cycles are the traverser's visited-set), and makes the
-  result order-independent (the accumulator's merge is commutative, so walk order cannot change a
-  verdict). The legal type directives stay `@node` / `@table` / `@error`, and a polymorphic target
-  additionally reads its participants' directives (the existing `ParticipantRef` model, unchanged).
+  registrations is *its* job, not the classifier's. Reconciliation is three-way, not two: an
+  *equal* repeat is idempotent; a *compatible* repeat is **merged** (the accumulator combines the two
+  into a richer single value, e.g. the synthesised Connection / Edge / PageInfo arms union their
+  federation `@tag` applications and OR `shareable` across the carriers that reach one name, so the
+  cross-carrier tag union lives in `register`, never in the producer); an *incompatible* repeat (two
+  different concrete classifications for one name) demotes the type to `UnclassifiedType`.
+  **Demotion and merge are the schema's concern, not the classifier's**, the classifier does not know
+  either exists. This collapses the `TypeRegistry` write verbs to one `register`, dissolves the
+  on-demand re-entrancy/cycle guard (re-registration is normal; walk-level cycles are the traverser's
+  visited-set), and makes the result order-independent (the accumulator's merge is commutative, so
+  walk order cannot change a verdict). The legal type directives stay `@node` / `@table` / `@error`,
+  and a polymorphic target additionally reads its participants' directives (the existing
+  `ParticipantRef` model, unchanged).
 - *What a verdict closes over: node SDL, reflection, and downward context only.* A field is
   classified from three inputs and no others: the SDL readable at the node (its own directives, its
   parent type's, its target type's directives and kind), reflection on any referenced Java method,
@@ -198,6 +203,26 @@ classified `GraphitronSchema` and are not visitor-based.
   split stays; what collapses is the intra-classify multiphase. Classification must be
   order-independent; validation runs sorted for stable diagnostics. Both validation and
   emission iterate the classified `GraphitronSchema`.
+
+**Model corrections (2026-06-16, from the slice-5 implementation).** Three points where earlier
+prose (and a stale code comment) lagged the model above, recorded so the legacy two-phase frame does
+not reappear:
+
+- *A directiveless object is classified by the field that reaches it, never by a type pass reading it
+  in isolation.* `TypeBuilder.classifyType` returning `null` for a directiveless object is the type
+  pass **declining**, not a classification; the verdict comes from the reaching field's visit
+  (a `NestingField` makes it a `NestingType`, an `@asConnection` / structural carrier makes it a
+  `ConnectionType` / `EdgeType` / `PageInfoType`). The `TypeBuilder.buildTypes` pass still present
+  after slices 3b-5 is transitional scaffolding (it reproduces the eager registry by iterating the
+  walk's discovered set plus a compensating orphan sweep), not part of the model; slice 6 removes it.
+- *There was never a `NestingType` -> `ConnectionType` promotion.* A connection carrier is never a
+  `NestingField` (it classifies as a connection field), so a structural Connection / Edge is never a
+  `NestingType`; it is unregistered until the carrier's visit synthesises it directly. The retired
+  `ConnectionPromoter` comment claiming an enrich-from-`NestingType` described a path that never ran.
+- *`register` owns reconciliation, including the federation `@tag` union and demotion.* Producers
+  (connection synthesis included) register what the current field implies and nothing more; the
+  three-way merge / idempotent / demote reconciliation is the accumulator's, per the pure-producer
+  bullet above.
 
 ## Implementation plan (slicing)
 
@@ -426,10 +451,16 @@ itself. What remains here is the risk-isolated, gated code transformation, slice
      contract. The literal full verb-collapse (`classify` / `demote` into `register`) and the orphan
      prune remain for slice 6; this slice keeps `rejectCaseInsensitiveTypeCollisions` as a post-walk
      sweep as specified.
-6. **Prune orphans (the payoff, intended behaviour change).** Stop classifying unreachable types;
-   the walk already only reaches the reachable surface. Flip slice 1's orphan *measurement* into
-   an assertion that the orphan set is empty (or rejected), and update any truth-table rows that
-   relied on orphan classification.
+6. **Prune orphans and make the walk the sole driver (the payoff, intended behaviour change).** Stop
+   classifying unreachable types; the walk already only reaches the reachable surface. Delete the
+   transitional `TypeBuilder.buildTypes` scaffolding and the two compensating sweeps (narrowing the
+   type sweep to non-output-object types so inputs / scalars / enums stay classified), so the
+   field-first walk is the only classifier, not a driver layered over the eager pass. Flip slice 1's
+   orphan *measurement* into an assertion that the orphan set is empty (or rejected), and update any
+   truth-table rows that relied on orphan classification. With the post-passes that still hold the
+   last `classify` / `demote` callers folded in (nesting registration becomes a walk byproduct; the
+   case-fold collision sweep is the lone surviving global post-walk check), complete the verb-collapse
+   so `register` is the only `TypeRegistry` write verb, the Q2 end state. Gate: truth table + sakila.
 
 ## Open design questions (defer to implementation slices)
 
