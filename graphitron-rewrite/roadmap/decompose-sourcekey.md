@@ -75,43 +75,47 @@ These belong on a richer `Carrier.Source` source-object descriptor (shape + back
 not smeared across each field's `SourceKey`. `Reader` should keep only the field's
 extraction-mechanism axis, not the source-object-shape axis it currently conflates.
 
-## What stays: the source-field extraction strategy
+## What stays: the source-field provenance
 
-After the moves, the irreducible content is the extraction strategy itself, `reader` plus its method
-refs (`AccessorRef`'s `parentBackingClass` / `methodName` / `elementClass`, `LifterRef`'s
-`declaringClass` / `methodName`), which nothing else can derive. Of the other three components, two are
-provably redundant and one is a pre-resolution convenience:
+The decomposition drops **target-side duplicates** (`target`, `path`) — full copies of return-side
+slots (`returnType`, `joinPath`) retained elsewhere in their entirety — but **keeps the source-side
+provenance**: the facts classification reconciled from the jOOQ catalog and from reflection, which the
+SDL cannot reconstruct and which validation and diagnostics consume. Provenance is a separate axis from
+emit-minimality: even where the emitter could re-derive a value from the SDL, classification keeps the
+reconciled fact so a later validator or error message can name *where it came from*. Hence we do **not**
+shrink `SourceKey` to the bare minimum the emitter needs.
 
-- **`wrap` — derive from `reader`.** It is a pure function of the extraction arm: `AccessorCall ⇒
-  Wrap.Record`, every other row-key reader (`ColumnRead` / `SourceRowsCall` / PK-off-record) ⇒
-  `Wrap.Row`. The compact-constructor invariants (`SourceRowsCall ⇒ Row`, `AccessorCall ⇒ Record`) are
-  themselves the proof that `wrap` is not an independent axis. `keyElementType()` and
-  `buildKeyExtraction`'s `switch` take `reader` instead.
-- **`cardinality` — read `returnType.wrapper().isList()`.** The source-field arity is the field's
-  return-type list-ness, on the surviving `TableTargetField.returnType` slot. Construction builds it
-  from exactly that for `ColumnRead` / `SourceRowsCall` / PK-off-record, and for `AccessorCall` the
-  `AccessorMatch.CardinalityMismatch` rejection forces the accessor's arity to equal the field's, so
-  `cardinality == returnType.wrapper().isList()` universally.
-- **`columns` — keep only as a pre-resolution.** Each arm's key tuple is derivable from `reader` +
-  surviving slots (`AccessorCall` / PK-off-record: `returnType.table().primaryKeyColumns()`;
-  `SourceRowsCall`: the `LiftedHop` slots in `joinPath`; `ColumnRead`: `joinPath.get(0)`'s
-  `FkJoin.sourceSideColumns()` or the parent PK). The one reason to retain it is the portable
-  `(wrap, columns)` consumers (`MethodRef.Param.Sourced`, `ParamSource.Sources`) that hold the key
-  shape without a full field / `joinPath` in hand, the same reason the static
-  `keyElementType(wrap, columns)` overload exists. Keep as pre-resolution or push the derivation to
-  those sites; a judgment call for the slice.
+- **`reader` + its refs — keep (reflection provenance).** `AccessorRef`'s `parentBackingClass` /
+  `elementClass` and `LifterRef`'s `declaringClass` are the reflected Java types of the source-object
+  field; the SDL only declared the target. Nothing else carries them, and diagnostics like "accessor
+  `getActors()` returns `List<ActorRecord>` but the field is single" read them directly.
+- **`cardinality` — keep (source-field arity; reflected for `Record` sources).** Not a duplicate of
+  `returnType`: for catalog-FK / `@sourceRow` sources it is value-equal to the SDL contract arity, but
+  for `AccessorCall` it is the **reflected** accessor container, a different data source. The two are
+  only *cross-checked* equal at classify time (`AccessorMatch.CardinalityMismatch`); deriving it from
+  `returnType` later would discard the reflected provenance that the mismatch check and its diagnostics
+  rely on. Keep it as the source-field's own arity. (An earlier draft proposed deriving and dropping it;
+  reversed on the provenance preference. The rename off the misleading `SourceKey.Cardinality` — the
+  source-field one-vs-many, distinct from the source-object arrival count on `Carrier.Source` — still
+  stands.)
+- **`columns` — keep (catalog provenance).** The key tuple lifted off the source object: parent FK/PK
+  columns (catalog), the `@reference` first-hop source-side columns, or the lifter's tuple. Catalog-
+  sourced, not SDL-derivable, and read directly by the portable `(wrap, columns)` consumers
+  (`MethodRef.Param.Sourced`, `ParamSource.Sources`).
+- **`wrap` — the one genuinely-derived field.** A pure function of the `reader` arm (`AccessorCall ⇒
+  Record`, else `Row`; the compact-constructor invariants prove it), carrying no provenance the reader
+  doesn't already hold. Safe to derive in `keyElementType()` / `buildKeyExtraction`, or keep for
+  locality; the only component here that is pure emit-shape rather than provenance.
 
-The net: `SourceKey` collapses to roughly the `Reader` sealed type (the extraction strategy + refs). It
-stops being a tuple and becomes "the source-field extraction strategy", which is exactly the job:
-converting the values read off the source field into a DataLoader row key so the rows-method can
-re-enter SQL. (`cardinality`, where it survives in the derivation, is the field's own one-vs-many, the
-*source-field* arity — distinct from the source-object arrival count on `Carrier.Source`; see R222's
-*bulk is a slot*.)
+The net: post-decomposition `SourceKey` is the **source-field provenance bundle** — the reflected and
+catalog facts about how this field's key is lifted off the source object (`columns` + `cardinality` +
+`reader` refs), with `target`/`path` gone to the return-side slots and the source-object facts gone to
+the carrier. It earns the name "source key": it holds exactly the source-side data the SDL never had,
+which is also exactly the data validation and diagnostics need.
 
 The `parentSourceKey` on `InterfaceField` / `UnionField` is the one place `SourceKey` is bent to
 describe the source *object* (parent-identity extraction; `cardinality` hardcoded `ONE` = "one
-parent"). It belongs with the source-object descriptor, not a field key — separating it is what lets
-the remaining extraction-strategy reader mean source-field extraction unambiguously.
+parent"). It belongs with the source-object descriptor, not a field key.
 
 ## Scope
 
@@ -123,15 +127,16 @@ Roughly independent slices, smallest blast radius first:
 2. **Repoint the four `SourceKey.target()` readers** at the carrier's `returnType.table()`, then
    delete `SourceKey.target()`. The `wrap == target.recordClass()` invariant becomes a cross-slot
    check at assembly (`wrap` vs `returnType.table().recordClass()`).
-3. **Derive `cardinality`, don't carry it.** It equals `returnType.wrapper().isList()` in every arm
-   (the `AccessorMatch.CardinalityMismatch` rejection forces the accessor case to agree), so delete the
-   component and read the field slot. This retires the "source-side / target-side" contradiction in the
-   `SourceKey.Cardinality` javadoc outright rather than merely renaming it.
-4. **Derive `wrap` from `reader`.** `wrap` is a pure function of the reader arm (`AccessorCall ⇒
-   Record`, else `Row`; the compact-constructor invariants prove it), so `keyElementType()` and
-   `buildKeyExtraction` take `reader` and `wrap` is deleted. Decide whether `columns` stays as a
-   pre-resolution (for the portable `(wrap, columns)` consumers) or is derived at those sites. After
-   slices 1–4, `SourceKey` is essentially the `Reader` extraction-strategy sealed type.
+3. **Keep `cardinality`; rename and fix its javadoc.** Do *not* derive-and-drop it — it is the
+   source-field's own arity (reflected for `AccessorCall`), provenance the `AccessorMatch.CardinalityMismatch`
+   check and its diagnostics rely on. Rename `SourceKey.Cardinality` to name the source-field arity and
+   retire the "source-side / target-side" contradiction in its javadoc. No deletion.
+4. **(Optional) derive `wrap` from `reader`.** `wrap` is a pure function of the reader arm (`AccessorCall
+   ⇒ Record`, else `Row`; the compact-constructor invariants prove it) and carries no provenance, so
+   `keyElementType()` / `buildKeyExtraction` may take `reader` and drop `wrap`. Pure emit-shape cleanup,
+   lowest priority; `columns` stays regardless (catalog provenance the portable `(wrap, columns)`
+   consumers read). After slices 1–4, `SourceKey` is the source-field provenance bundle — `columns` +
+   `cardinality` + `reader` refs.
 5. **Source-object descriptor on `Carrier.Source`** — fold shape + backing class + envelope into one
    descriptor; collapse the `ResultRowWalk`/`ProducedRecordRead` envelope asymmetry; narrow `Reader`
    to the extraction-mechanism axis. This slice coordinates with the carrier-dimension work in R305
@@ -147,5 +152,6 @@ Roughly independent slices, smallest blast radius first:
 - **R314** (dissolve-reentry-leaves-dimensional-emit): switches reentry emit onto the dimensional
   model rather than leaf identity; adjacent to slice 5's `Reader`/carrier reshaping, not blocking.
 
-Not hard-blocked: slices 1-4 (the bulk of the line-count win) touch only `SourceKey`, its
-construction sites, and the handful of named readers.
+Not hard-blocked: slices 1-2 (deleting the `target`/`path` duplicates, the bulk of the win) plus the
+optional `wrap` derivation and the `cardinality` rename touch only `SourceKey`, its construction sites,
+and the handful of named readers.
