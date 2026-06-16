@@ -1,7 +1,7 @@
 ---
 id: R315
 title: "Bind FK-reference @nodeId onto jOOQ-record @service params (port legacy @reference FK resolution; generalize R311)"
-status: Backlog
+status: Spec
 bucket: feature
 priority: 4
 theme: nodeid
@@ -170,13 +170,19 @@ becomes necessary for a future table carrying two FKs to the same node.
    `record.fromArray(...)` (sets all columns at once); honoring
    omitted-vs-null requires switching to **per-binding conditional `set`**
    keyed on `map.containsKey(...)`, applied uniformly to `@field` and
-   `@nodeId`-decoded columns.
+   `@nodeId`-decoded columns. See **D4** for the resolved mechanism (the
+   conditional load stays on the non-deprecated `fromArray` coercion path)
+   and the scope decision (folded into R315 with mitigations).
 6. **Model shape.** Generalize R311's `CallSiteExtraction.JooqRecord`: drop
    the single-`@nodeId` gate (`:266`) and the same-record gate (`:325`);
    `keyDecode` goes from `Optional<RecordKeyDecode>` to
-   `List<RecordKeyDecode>`; each decode carries its resolved FK child-column
-   target(s). Factor the `@nodeId` decode-resolution core so a future
-   pojo (member-axis) item reuses it verbatim.
+   `List<RecordKeyDecode>`; each decode names *where the decoded values land*
+   via a sealed `KeyProjection` (`Identity` = the node's own key, R311;
+   `FkChild` = the FK's child columns on this record, R315) rather than an
+   overloaded column list (see **D1**). Factor the FK column-pairing core out
+   of `synthesizeFkJoin` (see **D3**) so the join path and record population
+   share one bug-fixed orientation site; a future pojo (member-axis) item
+   reuses the decode-resolution core verbatim.
 
 ## Relationship to R311 and R97
 
@@ -213,15 +219,204 @@ becomes necessary for a future table carrying two FKs to the same node.
   classification, `opprettCampus` composite-PK INSERT, `Query.noop`) —
   unrelated, separate items.
 
-## Open questions for Spec stage
+## Design decisions (resolved at Spec)
 
-- Reuse R311's `RecordKeyDecode` carrier (extended with the FK child-column
-  target) vs. a new sibling carrier for the reference case.
-- Where FK resolution lives: a rewrite analogue of `NodeIdReferenceHelpers`
-  reading the jOOQ catalog (`ctx.catalog`), and whether the catalog model
-  already exposes FK parent/child column pairings or needs a lift.
-- Exact rewrite phrasing of the two ported rejection messages, consistent
-  with the existing `UnclassifiedField` + candidate-hint style.
-- Whether `@reference` is already parsed/modelled in the rewrite at all, or
-  needs classifier plumbing (it is declared in `directives.graphqls` with
-  `ReferenceElement{table, key, condition}`; confirm the classifier path).
+Resolved against the code with a principles-architect read; these answer the
+Backlog "Open questions" and supersede them. Confirmed along the way:
+`@reference(path: [ReferenceElement{table, key, condition}])` is already fully
+parsed in the rewrite (`BuildContext.parsePath` / `parsePathElement` →
+`JoinStep.FkJoin`; `{key:}` resolves via `catalog.findForeignKey`, `{table:}`
+deduces via `findForeignKeysBetweenTables`), and the catalog already exposes
+every FK primitive this item needs (`findUniqueFkToTable`, `findForeignKey`,
+`findForeignKeysBetweenTables`, `findTableByRecordClass`), so no `@reference`
+classifier plumbing and no record-class→`TableRef` catalog lift are required.
+
+### D1. Carrier shape: one `RecordKeyDecode`, projection as a sealed sub-axis
+
+`JooqRecord.keyDecode` becomes `List<RecordKeyDecode> keyDecodes` (multiple
+`@nodeId` fields per record); the at-least-one-binding floor updates to
+`columnBindings.isEmpty() && keyDecodes.isEmpty()`. `RecordKeyDecode` keeps its
+decode spine (`sdlFieldName`, `encoderClass`, `typeId`), gains a `nonNull` flag,
+and names *where the decoded values land on this record* via a sealed
+`KeyProjection`:
+
+```java
+record RecordKeyDecode(String sdlFieldName, ClassName encoderClass, String typeId,
+                       KeyProjection projection, boolean nonNull) { ... }
+
+sealed interface KeyProjection permits Identity, FkChild {
+    /** Same-table identity (R311): load decoded values into the node's own key columns (== this record's). */
+    record Identity(List<ColumnRef> keyColumns) implements KeyProjection {}
+    /** Cross-table reference (R315): load decoded values into the FK's child columns on this record. */
+    record FkChild(ForeignKeyRef fk, List<ColumnRef> childColumns) implements KeyProjection {}
+}
+```
+
+Each arm carries its own load-target columns, so decode arity is the arm's
+column count and no cross-field invariant is needed. We do **not** reuse R311's
+`keyColumns` field for two meanings: the codebase's own
+`JoinSlot.FkSlot(sourceSide, targetSide)` rejects exactly the "one accessor
+whose meaning depends on the variant" shape, and "the record's identity
+columns" vs "an FK-child projection of *another* node's identity" are different
+facts. `nonNull` (the SDL field's `ID!`-vs-`ID`) drives throw-on-mismatch vs
+conditional-set uniformly, subsuming R311's identity-only "always throw" as data
+rather than an `instanceof`. A full sibling carrier is rejected: the decode
+spine is identical, so the cut is the projection axis only.
+
+### D2. Convergence: the binding axis is the Java param type; the SDL classification is a cross-check (requirement #3)
+
+`InputBeanResolver.enrich`'s column-axis trigger moves from "SDL type classified
+as `JooqTableRecordInputType`" to **"the param's Java element type implements
+`org.jooq.TableRecord`"** (`elementClass` is already loaded; add a
+`TableRecord`-specific test alongside `isJooqRecord`). The record's `TableRef`
+is derived from the record class via `ServiceCatalog.resolveTableByRecordClass` /
+`JooqCatalog.findTableByRecordClass` (both exist). The SDL type's classification
+(`JooqTableRecordInputType` on the `@table`-absent path, `TableInputType` on the
+`@table`-present path) becomes a *consistency cross-check*: if it carries a
+table it must name the same table as the derived record class, else an
+`UnclassifiedField` naming both. This collapses today's divergence
+(`@table`-present → bean path → "has no fields matching"; `@table`-absent → R311
+branch) onto one path: "derive from types, not directives" (R96/R97), with
+`@table` demoted to a checked, ignorable corroborator. `JooqTableRecordInputType`
+is **not** dead afterward: it still drives R94 input-record validation and LSP,
+and is the cross-check signal on the `@table`-absent path; it loses only its
+role as the `InputBeanResolver` gate.
+
+### D3. FK pairing: extract and reuse `synthesizeFkJoin`'s slot core
+
+Extract the FK-orientation-and-pairing body of `BuildContext.synthesizeFkJoin`
+(`:1133-1155`) into `List<JoinSlot.FkSlot> resolveFkSlots(ForeignKey<?,?> f,
+String sourceSqlName, boolean selfRefFkOnSource)`. `synthesizeFkJoin` keeps
+wrapping it with alias / targetTable / whereFilter for the join case; the new
+record-population resolver calls the *same* core with the record table as
+source, getting `FkSlot(recordChildCol, nodeParentCol)` pairs directly. This
+inherits the bug-fix `synthesizeFkJoin` documents (parent columns from
+`ForeignKey.getKeyFields()`, **not** `getKey().getFields()` — legacy
+`NodeIdReferenceHelpers` used the latter via `getInverseKey().getFields()`,
+which mis-pairs composite FKs with reordered referenced columns) and keeps one
+site owning FK orientation. We do *not* call `synthesizeFkJoin` whole (its
+alias / `FkJoin` wrapper is join-emission machinery record population doesn't
+need — the coupling smell) and do *not* re-port legacy's pairing (it would
+re-introduce the fixed bug). `SynthesizeFkJoinReorderedKeysTest` then pins
+orientation for both consumers.
+
+### D4. Null semantics: fold the `fromArray` → conditional load in, with mitigations (requirement #5)
+
+`JooqRecordInstantiationEmitter` switches from "set every column via
+`fromArray`" to **per-binding conditional load keyed on
+`raw.containsKey(sdlFieldName)`**, for both plain `@field` columns and each
+`@nodeId` decode. Coercion stays on the non-deprecated `fromArray` path (a
+`containsKey`-guarded arity-1 `fromArray` per present column, or a filtered
+batch over present columns) — **not** the deprecated-for-removal
+`DataType.convert(Object)` R311 deliberately avoids. Semantics: omitted key →
+not loaded (`changed=false`, excluded from INSERT/UPDATE); explicit `null` →
+loaded as `NULL`; `nonNull` decode (identity, or `ID!` FK reference) → always
+decode-and-load, throw on null/mismatch (R195); nullable FK-reference decode
+(`ID`) → omitted skips, present-null nulls the child columns, present-value
+decodes.
+
+This change *also alters R311's shipped same-table output* (a `fromArray` batch
+becomes conditional loads). Folded into R315 deliberately (requirement #5
+charters it; the FK-reference case needs conditional-set to be correct), with
+three required mitigations: (1) the R315 changelog entry states the R311-output
+change explicitly; (2) an **execution-tier** test pins omitted-vs-null-vs-set on
+a nullable column — no other tier can observe `changed=false` exclusion
+(pipeline sees the carrier, compile sees column existence, emitted-body string
+assertions are banned); (3) the emitter's "two disjoint `fromArray` groups"
+javadoc contract is retired so it does not become a false invariant.
+*Alternative considered:* carve the conditional-load change into a precursor
+item with its own execution test, leaving R315 purely FK-references.
+Recommended-against to honor chartered requirement #5 and avoid a cross-item
+ordering dependency for a one-emitter change; the Spec → Ready reviewer may
+split it if they prefer cleaner attribution.
+
+## Implementation
+
+Flat file-by-file (all land together; no observable intermediate state):
+
+- **`model/CallSiteExtraction.java`** — `JooqRecord`: `Optional<RecordKeyDecode>
+  keyDecode` → `List<RecordKeyDecode> keyDecodes`; update the floor. Reshape
+  `RecordKeyDecode` to `{sdlFieldName, encoderClass, typeId, KeyProjection
+  projection, boolean nonNull}`; add sealed `KeyProjection` (`Identity` /
+  `FkChild`) with non-empty compact-constructor checks. (D1)
+- **`BuildContext.java`** — extract `resolveFkSlots(...)` from
+  `synthesizeFkJoin`; add a record-population FK resolver: given the record
+  `TableRef`, the field's `@nodeId` typeName, and any `@reference(key:)`,
+  resolve the FK (explicit `key` via `findForeignKey`; else
+  `findUniqueFkToTable(recordTable, nodeTable)`; zero/multi → `fkCountMessage`),
+  map the node's key columns (from `resolveNodeIdRecordDecode`, node-key order)
+  through the slots to FK child columns, return a `KeyProjection.FkChild` or a
+  rejection (uncovered key column). (D3)
+- **`InputBeanResolver.java`** — change the `enrich` trigger to the param's
+  Java `TableRecord` type; derive the table from the record class; cross-check
+  the SDL classification's table when present (D2). In `buildJooqRecord` /
+  `buildRecordKeyDecode`: drop the single-`@nodeId` gate (`:266`) and the
+  same-record gate (`:325`); per `@nodeId` field, branch node-table ==
+  record-table → `Identity` (R311) vs ≠ → `FkChild` (new resolver); collect a
+  `List<RecordKeyDecode>`; set `nonNull` from the SDL field.
+- **`generators/JooqRecordInstantiationEmitter.java`** — emit `containsKey`-
+  guarded conditional loads for `@field` columns and each `RecordKeyDecode`,
+  switching on `KeyProjection` for the load targets and honoring `nonNull`.
+  Retire the stale "two disjoint `fromArray` groups" javadoc. (D4)
+- **Docs** — note FK-reference `@nodeId` on `@service` jOOQ-record params in the
+  `@nodeId` / record-input documentation (no roadmap markers in user-facing
+  prose).
+
+## Tests
+
+Mirror `JooqRecordServiceParamPipelineTest` (the R311 template), backed by the
+existing test catalog (`film_actor` → single FKs to `film` and `actor`;
+`FilmActorRecord`; `TestServiceStub.modifyFilmActorRecord`):
+
+- **Pipeline — pure FK references (motivating shape):** input `{ filmId: ID!
+  @nodeId(typeName: "Film"), actorId: ID! @nodeId(typeName: "Actor") }` →
+  `FilmActorRecord`. Assert two `keyDecodes`, each `FkChild` projecting to
+  `film_actor.film_id` / `film_actor.actor_id`, FK deduced; `createFilmActorRecord`
+  emitted; field not `UnclassifiedField`.
+- **Pipeline — convergence (requirement #3):** the same input *with*
+  `@table(name: "film_actor")` produces the identical carrier as without; a
+  `@table` naming a different table rejects (`UnclassifiedField`, names both).
+- **Pipeline — mixed Identity + FkChild + plain `@field`:** a record carrying
+  its own `@nodeId` identity, an FK-reference `@nodeId`, and a `@field` column
+  together (e.g. an `address`-shaped table: PK + FK to `city` + a scalar, if
+  those are node types; else a synthesised fixture). Assert one `Identity`, one
+  `FkChild`, one `ColumnBinding`.
+- **Pipeline — composite / reordered FK pin:** an FK-reference whose FK is
+  composite with referenced-column order differing from the parent PK order,
+  asserting child columns map by FK pairing (the `getKeyFields()` reuse; mirrors
+  `SynthesizeFkJoinReorderedKeysTest`).
+- **Pipeline — rejections (all `UnclassifiedField`):** zero/multi FK between
+  record and node table with no `@reference(key:)`; a node key column not
+  covered by the chosen FK; (unchanged R311) `@field`→no column, cardinality
+  parity, missing `typeName`.
+- **Execution (sakila):** a `@service` mutation taking a `FilmActorRecord` built
+  from `{filmId, actorId}` inserts a `film_actor` row; assert the persisted
+  `film_id` / `actor_id` equal the decoded ids. Plus the **null-semantics** case
+  (D4): a nullable column omitted vs explicit-null vs set yields the correct
+  persisted column set / value.
+- **Compile (graphitron-sakila-example):** carry the FK-reference shape so the
+  generated `*Fetchers` compile against real jOOQ at Java 17.
+
+## Validator-mirror checklist
+
+Every removed gate is replaced and every new branch has a build-time
+`UnclassifiedField` (routed `InputBeanResolver.Result.Failed` →
+`ServiceDirectiveResolver.Resolved.Rejected`, the path R311 already rides):
+
+- Removed `:266` (more than one `@nodeId`) → no replacement; multiple `@nodeId`
+  is now legal (each resolves independently).
+- Removed `:325` (same-record gate) → the cross-table case now *resolves*
+  (`FkChild`); its failure modes are newly guarded: (a) zero/multi FK without
+  `@reference(key:)`; (b) a node key column not covered by the FK.
+- New: `@table`-vs-derived-table disagreement on the convergence path.
+- Unchanged: `@field`→no column; cardinality parity; `@nodeId` without
+  `typeName`.
+- Structural backstop: `KeyProjection` arms reject empty column lists in their
+  compact constructors.
+
+## Sequencing and scope note
+
+Single cycle; the four file changes land together (the model reshape forces the
+resolver and emitter, and the convergence trigger shares the path). The one
+genuine scope fork is D4 (fold vs split the `fromArray`→conditional-load
+change); recommended folded with the three mitigations above.
