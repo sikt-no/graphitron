@@ -728,7 +728,7 @@ class ServiceCatalogTest {
             .name("Decimal").coercing(graphql.schema.GraphQLScalarType.newScalar()
                 .name("_").coercing(new graphql.schema.Coercing<Object, Object>() {}).build().getCoercing())
             .build();
-        ctx.typeRegistry.classify("Decimal", new no.sikt.graphitron.rewrite.model.GraphitronType.ScalarType(
+        ctx.typeRegistry.register("Decimal", new no.sikt.graphitron.rewrite.model.GraphitronType.ScalarType(
             "Decimal",
             new graphql.language.SourceLocation(1, 1),
             new no.sikt.graphitron.rewrite.model.ScalarResolution.Resolved(
