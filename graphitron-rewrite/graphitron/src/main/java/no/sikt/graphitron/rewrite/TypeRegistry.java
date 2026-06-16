@@ -19,37 +19,31 @@ import java.util.Map;
 import java.util.Objects;
 
 /**
- * Type-axis classification registry that funnels every write through a named operation and emits a
+ * Type-axis classification registry that funnels every write through {@link #register} and emits a
  * {@link ClassificationTrace} record per call. The backing map is private, so a new bypass site has
  * to add a public method on the registry (visible in code review).
  *
- * <p>Operation contracts:
- * <ul>
- *   <li>{@link #register} — the reconciling write the field-first walk and connection synthesis use:
- *       tolerates repeated registration, merging or demoting as the reconciliation rules below
- *       dictate. R279 slice 5 folded {@code ConnectionPromoter}'s former enrich-or-synthesize fork
- *       into this entry, retiring the standalone {@code enrich} / {@code synthesize} verbs.
- *   <li>{@code classify} — primary classification. Asserts no prior entry exists. Still used by the
- *       cross-type passes that have not yet folded into the walk (e.g. nesting-type registration).
- *   <li>{@code demote} — replaces an entry with {@link UnclassifiedType} (or any other
- *       classification regression). Asserts a prior entry exists. Still used by the post-walk
- *       case-fold collision sweep.
- * </ul>
+ * <p>R279 slice 6 completed the verb-collapse (the Q2 end state): {@link #register} is the
+ * <strong>only</strong> write verb. The former {@code classify} (assert-absent), {@code demote}
+ * (assert-present), {@code enrich}, and {@code synthesize} verbs all dissolved into it; every caller
+ * now registers what a field or a cross-type pass implies and the accumulator reconciles. The trace
+ * {@code Op} (classify / demote / enrich) is still recorded per call, derived from the reconciliation
+ * arm taken, so the observability the named verbs gave is preserved without the caller-side branching.
  */
 public final class TypeRegistry {
 
     private final Map<String, GraphitronType> types = new LinkedHashMap<>();
 
     /**
-     * R279 slice 2 — the single reconciling write entry the field-first walk will call (slice 3) to
-     * register a type's classification, tolerating repeated registration. The eager type pass routes
-     * its per-type classification ({@code classify}) and participant enrichment ({@code enrich})
-     * through here; {@code demote} / {@code synthesize} and the cross-type passes stay on their
-     * explicit verbs through this slice.
+     * The single reconciling write entry. The field-first walk, connection synthesis, and every
+     * cross-type pass (nesting-type registration, the case-fold collision sweep, node-typeId
+     * uniqueness, multi-producer rejection, federation entity demotion) route through here; as of
+     * R279 slice 6 there is no other write verb. Tolerates repeated registration, reconciling by the
+     * rules below.
      *
      * <p>Reconciliation:
      * <ul>
-     *   <li>name absent → store (the {@code classify} case);
+     *   <li>name absent → store (the former {@code classify} case);
      *   <li>repeat that agrees ({@code equals}) → idempotent no-op;
      *   <li>demotion to {@link UnclassifiedType} → replace (the enrich-to-rejection case, and the
      *       field-walk rejection);
@@ -164,32 +158,6 @@ public final class TypeRegistry {
         var nameArg = directive.getArgument("name");
         Object argValue = nameArg == null ? null : nameArg.getValue();
         return List.of(directive.getName(), String.valueOf(argValue));
-    }
-
-    /** Register a type for the first time. Throws if {@code name} is already classified. */
-    public void classify(String name, GraphitronType type) {
-        Objects.requireNonNull(name, "name");
-        Objects.requireNonNull(type, "type");
-        if (types.containsKey(name)) {
-            throw new IllegalStateException("classify('" + name + "'): already classified as "
-                + types.get(name).getClass().getSimpleName());
-        }
-        types.put(name, type);
-        trace(ClassificationTrace.Op.classify, name, type);
-    }
-
-    /**
-     * Replace an existing entry with a classification regression (typically
-     * {@link UnclassifiedType}). Throws if {@code name} is not yet classified.
-     */
-    public void demote(String name, GraphitronType type) {
-        Objects.requireNonNull(name, "name");
-        Objects.requireNonNull(type, "type");
-        if (!types.containsKey(name)) {
-            throw new IllegalStateException("demote('" + name + "'): no prior classification");
-        }
-        types.put(name, type);
-        trace(ClassificationTrace.Op.demote, name, type);
     }
 
     /** True when {@code name} has been classified by any operation. */

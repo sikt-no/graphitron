@@ -105,7 +105,7 @@ public final class EntityResolutionBuilder {
                     && !keyObj.getAppliedDirectives(KEY_DIRECTIVE).isEmpty()
                     && !registry.contains(keyObj.getName())) {
                 var loc = keyObj.getDefinition() != null ? keyObj.getDefinition().getSourceLocation() : null;
-                registry.classify(keyObj.getName(), new UnclassifiedType(keyObj.getName(), loc, Rejection.structural(
+                registry.register(keyObj.getName(), new UnclassifiedType(keyObj.getName(), loc, Rejection.structural(
                     "@key on type '" + keyObj.getName() + "' requires a table-bound type, but '" + keyObj.getName()
                     + "' is classified as a plain object type — federation entities need a @table directive.")));
             }
@@ -125,7 +125,7 @@ public final class EntityResolutionBuilder {
 
             // @key on a TableInterfaceType is rejected — see Non-goals on the federation plan.
             if (gType instanceof TableInterfaceType) {
-                registry.demote(typeName, new UnclassifiedType(typeName, gType.location(), Rejection.structural(
+                registry.register(typeName, new UnclassifiedType(typeName, gType.location(), Rejection.structural(
                     "@key on TableInterfaceType is not supported; declare @key on the implementing types instead")));
                 continue;
             }
@@ -151,7 +151,7 @@ public final class EntityResolutionBuilder {
                 if (!anyResolvable) {
                     continue;
                 }
-                registry.demote(typeName, new UnclassifiedType(typeName, gType.location(), Rejection.structural(
+                registry.register(typeName, new UnclassifiedType(typeName, gType.location(), Rejection.structural(
                     "@key on type '" + typeName + "' requires a table-bound type, but '" + typeName
                     + "' is classified as " + kindLabel(gType)
                     + " — federation entities need a @table directive.")));
@@ -170,7 +170,7 @@ public final class EntityResolutionBuilder {
                 }
             }
             if (error != null) {
-                registry.demote(typeName, new UnclassifiedType(typeName, gType.location(), Rejection.structural(error)));
+                registry.register(typeName, new UnclassifiedType(typeName, gType.location(), Rejection.structural(error)));
                 continue;
             }
             // NodeTypes always get a NODE_ID alternative: it's the canonical SELECT path used

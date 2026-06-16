@@ -9,7 +9,6 @@ import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatIllegalStateException;
 
 @UnitTier
 class TypeRegistryTest {
@@ -23,45 +22,18 @@ class TypeRegistryTest {
     }
 
     @Test
-    void classify_addsEntry_andEntriesViewIsLive() {
+    void register_addsEntry_andEntriesViewIsLive() {
         var registry = new TypeRegistry();
-        registry.classify("Film", plain("Film"));
+        registry.register("Film", plain("Film"));
 
         assertThat(registry.contains("Film")).isTrue();
         assertThat(registry.get("Film")).isInstanceOf(NestingType.class);
         assertThat(registry.entries()).containsOnlyKeys("Film");
 
-        // Live view: subsequent classify should be visible without re-fetching entries().
+        // Live view: a subsequent register should be visible without re-fetching entries().
         var view = registry.entries();
-        registry.classify("Actor", plain("Actor"));
+        registry.register("Actor", plain("Actor"));
         assertThat(view).containsKeys("Film", "Actor");
-    }
-
-    @Test
-    void classify_rejectsDuplicate() {
-        var registry = new TypeRegistry();
-        registry.classify("Film", plain("Film"));
-        assertThatIllegalStateException()
-            .isThrownBy(() -> registry.classify("Film", plain("Film")))
-            .withMessageContaining("classify('Film')")
-            .withMessageContaining("already classified");
-    }
-
-    @Test
-    void demote_rejectsMissingPrior() {
-        var registry = new TypeRegistry();
-        assertThatIllegalStateException()
-            .isThrownBy(() -> registry.demote("Film", demoted("Film", "x")))
-            .withMessageContaining("demote('Film')")
-            .withMessageContaining("no prior classification");
-    }
-
-    @Test
-    void demote_replacesExistingEntry() {
-        var registry = new TypeRegistry();
-        registry.classify("Film", plain("Film"));
-        registry.demote("Film", demoted("Film", "structural"));
-        assertThat(registry.get("Film")).isInstanceOf(UnclassifiedType.class);
     }
 
     @Test
@@ -122,7 +94,7 @@ class TypeRegistryTest {
     @Test
     void entriesView_isUnmodifiable() {
         var registry = new TypeRegistry();
-        registry.classify("Film", plain("Film"));
+        registry.register("Film", plain("Film"));
         var view = registry.entries();
         var direct = plain("Actor");
         org.assertj.core.api.Assertions.assertThatThrownBy(() -> view.put("Actor", direct))

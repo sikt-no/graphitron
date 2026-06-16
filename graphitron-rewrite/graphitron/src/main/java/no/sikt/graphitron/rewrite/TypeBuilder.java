@@ -341,7 +341,7 @@ class TypeBuilder {
             if (table == null) {
                 continue;
             }
-            ctx.typeRegistry.classify(name,
+            ctx.typeRegistry.register(name,
                 new GraphitronType.JooqTableRecordType(name, locationOf(ctx.schema.getObjectType(name)), null, table));
         }
     }
@@ -359,7 +359,7 @@ class TypeBuilder {
             List<String> colliding = entry.getValue().stream().map(NodeType::name).sorted().toList();
             String others = String.join(", ", colliding);
             for (var nt : entry.getValue()) {
-                registry.demote(nt.name(), new UnclassifiedType(nt.name(), nt.location(),
+                registry.register(nt.name(), new UnclassifiedType(nt.name(), nt.location(),
                     Rejection.structural("typeId '" + typeId + "' is declared on multiple types (" + others
                     + ") — Query.node dispatch would be nondeterministic; pick one via @node(typeId:)")));
             }
@@ -488,14 +488,11 @@ class TypeBuilder {
             else if (named instanceof GraphQLInputObjectType inp) loc = locationOf(inp);
             else continue;
             var unclassified = new UnclassifiedType(name, loc, rejection);
-            // R276: a multi-producer type may have been left unclassified at the type pass (a
-            // directiveless object with no single agreed producer is not registered). demote requires
-            // a prior entry, so classify it as the rejection when absent, demote when present.
-            if (ctx.typeRegistry.contains(name)) {
-                ctx.typeRegistry.demote(name, unclassified);
-            } else {
-                ctx.typeRegistry.classify(name, unclassified);
-            }
+            // R276 / R279 slice 6: a multi-producer type may be absent (a directiveless object with no
+            // single agreed producer was never registered) or present (a prior verdict to demote). The
+            // single reconciling register entry stores when absent and demotes when present, so the
+            // former contains-guarded classify/demote fork collapses to one call.
+            ctx.typeRegistry.register(name, unclassified);
         }
     }
 

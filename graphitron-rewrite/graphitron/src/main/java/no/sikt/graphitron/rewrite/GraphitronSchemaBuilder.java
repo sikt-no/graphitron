@@ -381,7 +381,7 @@ public class GraphitronSchemaBuilder {
         String name = nf.returnType().returnTypeName();
         if (!ctx.typeRegistry.contains(name)) {
             var objType = ctx.schema.getObjectType(name);
-            ctx.typeRegistry.classify(name, new no.sikt.graphitron.rewrite.model.GraphitronType.NestingType(
+            ctx.typeRegistry.register(name, new no.sikt.graphitron.rewrite.model.GraphitronType.NestingType(
                 name, BuildContext.locationOf(objType), objType));
         }
         nf.nestedFields().forEach(child -> registerNestingTypesIn(ctx, child));
@@ -578,7 +578,7 @@ public class GraphitronSchemaBuilder {
                     case PageInfoType ignored -> Origin.SYNTH_PAGE_INFO;
                     default -> Origin.SDL;
                 };
-                ctx.typeRegistry.demote(name, new UnclassifiedType(
+                ctx.typeRegistry.register(name, new UnclassifiedType(
                     name, existing.location(), Rejection.caseFoldCollision(group, origin)));
             }
         }
