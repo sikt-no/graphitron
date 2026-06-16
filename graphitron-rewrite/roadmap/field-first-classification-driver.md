@@ -7,7 +7,7 @@ priority: 4
 theme: structural-refactor
 depends-on: [dimensional-model-pivot]
 created: 2026-06-05
-last-updated: 2026-06-15
+last-updated: 2026-06-16
 ---
 
 # Field-first reachability-driven classification driver
@@ -316,6 +316,40 @@ itself. What remains here is the risk-isolated, gated code transformation, slice
    `validateUniformDomainReturnType`'s demote-to-`UnclassifiedField` intact through this slice**
    so no enforcement gap opens; it is retired in slice 4 when its replacement goes green. Gate:
    truth table + sakila pipeline `TypeSpec` + compile + execute. No dual-run flag.
+
+   **Slice 3b shipped (truth table 2116 + sakila TypeSpec/compile/execute 404, all green).** A
+   `principles-architect` read on the design fork (interleaved single-pass DFS that folds the
+   carrier-binding into the walk, vs a two-phase reachability-driven driver that preserves the
+   type-classify->promote->field-classify ordering) steered to the two-phase form: the
+   producer->carrier relationship the interleaved fold would discover by descent is *already* a
+   fixed point in `RecordBindingResolver` (so the DFS buys no real ordering fidelity), while
+   folding `validateNodeTypeIdUniqueness` (a global cross-type fold, sibling to slice 5's
+   case-fold sweep) and `surfaceMultiProducerRejections` (keyed off the order-independent binding
+   rejection) into walk order would pay reordering risk in the most delicate code for no gain.
+   What landed:
+   - *Type driver (`TypeBuilder.buildTypes`).* The eager "classify every `getAllTypesAsList()`
+     type in isolation" pass-1 is replaced by iterating the field-first walk's discovered set
+     (`SchemaReachability.reachableTypeNames`, the slice-1 walk built for exactly this reuse):
+     each reached type is classified as a byproduct of the field edge that reached it, the verdict
+     still `classifyType`. A **compensating orphan sweep** then classifies every named type the
+     walk did *not* reach (input types, scalars, enums, and unreachable output objects such as
+     `OrphanCat`), so the registry content stays identical to the eager pass. The enrich pass,
+     `surfaceMultiProducerRejections`, `validateNodeTypeIdUniqueness`, and
+     `promoteSingleRecordPayloads` keep their exact relative ordering as post-passes over the
+     registry; `emitDirectiveIgnoredWarning` moved to its own SDL-order pass so warning order is
+     unchanged.
+   - *Field driver (`GraphitronSchemaBuilder.buildSchema`).* The all-objects field pass body is
+     extracted verbatim into `classifyFieldsOfObject`; it is now driven over the reachable object
+     types (walk order) followed by a compensating sweep over the unreached object types. Union of
+     the two = every object type, so field-registry content is behaviour-identical.
+   - *Honest scope.* This is approach (B): the driver is inverted (fields discover the classified
+     set) while the two compensating sweeps keep orphans classified so the slice is
+     behaviour-preserving on the gates. Slice 6 deletes both sweeps (narrowing the type sweep to
+     non-output-object types so inputs/scalars/enums stay classified), at which point an
+     unreachable `@table` object is no longer classified and the reachability prune becomes
+     observable behaviour. The true single-pass DFS fold (approach A) is deferred to a
+     behaviour-preserving simplification over the already-inverted driver. `registerNestingTypes`
+     and `validateUniformDomainReturnType` are untouched, as planned.
 4. **`DomainReturnType` on the field; retire `validateUniformDomainReturnType`.** Move
    `DomainReturnType` onto the field and replace the post-pass agreement check with a validator
    rule, *model change and validator rule in one commit* so no enforcement gap opens. (This is

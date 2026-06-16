@@ -223,57 +223,23 @@ public class GraphitronSchemaBuilder {
     private static BuildResult buildSchema(BuildContext ctx, TypeBuilder typeBuilder, FieldBuilder fieldBuilder) {
         validateDirectiveSchema(ctx);
         typeBuilder.buildTypes();
-        ctx.schema.getAllTypesAsList().stream()
-            .filter(t -> t instanceof GraphQLObjectType && !t.getName().startsWith("__"))
-            .map(t -> (GraphQLObjectType) t)
-            .forEach(objType -> {
-                var parentType = ctx.types.get(objType.getName());
-                if (parentType == null) return;
-                // R178 Phase 4: structural carrier-shape detection (scanStructuralDmlPayload)
-                // routes payload-returning DML through the unified path. For payloads with a
-                // producer binding (DmlEmitted for non-DELETE, or ServiceEmitted), the per-type
-                // pass runs against the binding to construct the data-field permit. For orphan
-                // carriers (carrier-shaped payload that no producer mutation returns)
-                // and for DELETE DML carriers (data-field permit constructed at the @mutation
-                // classifier from the DmlElementKind dispatch), the data field stays
-                // unregistered at this site; graphql-java's never-traverse-unproduced-fields
-                // guarantee makes the missing entry structurally safe. Errors-shaped fields
-                // still classify through the normal per-field classifier so ErrorsField is
-                // materialised independent of the producer binding.
-                var nDml = typeBuilder.dmlEmittedBinding(objType.getName());
-                var nService = typeBuilder.serviceEmittedBinding(objType.getName());
-                boolean skipForUnifiedPath =
-                    (nDml.isPresent() && nDml.get().kind() != no.sikt.graphitron.rewrite.model.DmlKind.DELETE)
-                    || nService.isPresent();
-                var scan = ctx.scanStructuralDmlPayload(objType.getName());
-                // A DELETE carrier's data field is owned by the @mutation DELETE classifier
-                // (SingleRecordIdFieldFromReturning, set via
-                // reclassify). R276 binds the carrier to a JooqTableRecordType, so the standard
-                // per-type pass below would classify that same data field a second time and collide;
-                // skip it here, classifying only the errors field. (Orphan carriers are no longer
-                // promoted, so they fall through to the NestingType guard below.)
-                if (scan instanceof BuildContext.DmlPayloadScan.Admit
-                        && nDml.isPresent() && nDml.get().kind() == no.sikt.graphitron.rewrite.model.DmlKind.DELETE) {
-                    Class<?> parentBackingClass0 = typeBuilder.recordBackingClasses().get(objType.getName());
-                    for (var f : objType.getFieldDefinitions()) {
-                        if (ctx.detectErrorsFieldShape(f) != null) {
-                            ctx.fieldRegistry.classify(
-                                FieldCoordinates.coordinates(objType.getName(), f.getName()),
-                                fieldBuilder.classifyField(f, objType.getName(), parentType, parentBackingClass0));
-                        }
-                    }
-                    return;
-                }
-                // A directiveless object the type pass left unclassified (ctx.types.get == null,
-                // handled by the early return above) has its fields resolved through the NestingField
-                // that embeds it, not standalone here. NestingType is assigned post-field-pass from
-                // those NestingFields (registerNestingTypes), so no parent is a NestingType yet.
-                Class<?> parentBackingClass = typeBuilder.recordBackingClasses().get(objType.getName());
-                objType.getFieldDefinitions().forEach(fieldDef ->
-                    ctx.fieldRegistry.classify(
-                        FieldCoordinates.coordinates(objType.getName(), fieldDef.getName()),
-                        fieldBuilder.classifyField(fieldDef, objType.getName(), parentType, parentBackingClass)));
-            });
+        // R279 slice 3b — field classification is driven by the same field-first reachability walk
+        // that drove type classification: visit the reached object types (in walk order), then a
+        // compensating sweep over the unreached object types so the field registry stays
+        // behaviour-identical to the eager all-objects pass. Interfaces / unions in the reachable set
+        // have no fields classified here (only object types do), so getObjectType filters them out.
+        // Slice 6 deletes the compensating sweep, at which point fields of unreachable types are no
+        // longer classified and the reachability prune becomes observable.
+        var reachable = typeBuilder.reachableOutputTypes();
+        for (var name : reachable) {
+            if (!(ctx.schema.getType(name) instanceof GraphQLObjectType objType)) continue;
+            classifyFieldsOfObject(ctx, typeBuilder, fieldBuilder, objType);
+        }
+        for (var t : ctx.schema.getAllTypesAsList()) {
+            if (!(t instanceof GraphQLObjectType objType) || t.getName().startsWith("__")) continue;
+            if (reachable.contains(t.getName())) continue;
+            classifyFieldsOfObject(ctx, typeBuilder, fieldBuilder, objType);
+        }
         registerNestingTypes(ctx);
         validateUniformDomainReturnType(ctx);
         var rewrites = ConnectionPromoter.promote(ctx);
@@ -298,6 +264,63 @@ public class GraphitronSchemaBuilder {
         var model = new GraphitronSchema(
             ctx.types, Collections.unmodifiableMap(dedupedFields), entitiesByType, ctx.warnings());
         return new BuildResult(model, rebuiltAssembled);
+    }
+
+    /**
+     * R279 slice 3b — classifies every field of one SDL object type. Extracted verbatim from the
+     * former all-objects field pass so the reachability-driven driver and the compensating
+     * orphan sweep can both invoke it; the body is unchanged. A type the type pass left
+     * unclassified ({@code ctx.types.get == null}) is skipped: its fields are resolved through the
+     * {@code NestingField} that embeds it ({@link #registerNestingTypes}), not standalone here.
+     */
+    private static void classifyFieldsOfObject(
+            BuildContext ctx, TypeBuilder typeBuilder, FieldBuilder fieldBuilder, GraphQLObjectType objType) {
+        var parentType = ctx.types.get(objType.getName());
+        if (parentType == null) return;
+        // R178 Phase 4: structural carrier-shape detection (scanStructuralDmlPayload)
+        // routes payload-returning DML through the unified path. For payloads with a
+        // producer binding (DmlEmitted for non-DELETE, or ServiceEmitted), the per-type
+        // pass runs against the binding to construct the data-field permit. For orphan
+        // carriers (carrier-shaped payload that no producer mutation returns)
+        // and for DELETE DML carriers (data-field permit constructed at the @mutation
+        // classifier from the DmlElementKind dispatch), the data field stays
+        // unregistered at this site; graphql-java's never-traverse-unproduced-fields
+        // guarantee makes the missing entry structurally safe. Errors-shaped fields
+        // still classify through the normal per-field classifier so ErrorsField is
+        // materialised independent of the producer binding.
+        var nDml = typeBuilder.dmlEmittedBinding(objType.getName());
+        var nService = typeBuilder.serviceEmittedBinding(objType.getName());
+        boolean skipForUnifiedPath =
+            (nDml.isPresent() && nDml.get().kind() != no.sikt.graphitron.rewrite.model.DmlKind.DELETE)
+            || nService.isPresent();
+        var scan = ctx.scanStructuralDmlPayload(objType.getName());
+        // A DELETE carrier's data field is owned by the @mutation DELETE classifier
+        // (SingleRecordIdFieldFromReturning, set via
+        // reclassify). R276 binds the carrier to a JooqTableRecordType, so the standard
+        // per-type pass below would classify that same data field a second time and collide;
+        // skip it here, classifying only the errors field. (Orphan carriers are no longer
+        // promoted, so they fall through to the NestingType guard below.)
+        if (scan instanceof BuildContext.DmlPayloadScan.Admit
+                && nDml.isPresent() && nDml.get().kind() == no.sikt.graphitron.rewrite.model.DmlKind.DELETE) {
+            Class<?> parentBackingClass0 = typeBuilder.recordBackingClasses().get(objType.getName());
+            for (var f : objType.getFieldDefinitions()) {
+                if (ctx.detectErrorsFieldShape(f) != null) {
+                    ctx.fieldRegistry.classify(
+                        FieldCoordinates.coordinates(objType.getName(), f.getName()),
+                        fieldBuilder.classifyField(f, objType.getName(), parentType, parentBackingClass0));
+                }
+            }
+            return;
+        }
+        // A directiveless object the type pass left unclassified (ctx.types.get == null,
+        // handled by the early return above) has its fields resolved through the NestingField
+        // that embeds it, not standalone here. NestingType is assigned post-field-pass from
+        // those NestingFields (registerNestingTypes), so no parent is a NestingType yet.
+        Class<?> parentBackingClass = typeBuilder.recordBackingClasses().get(objType.getName());
+        objType.getFieldDefinitions().forEach(fieldDef ->
+            ctx.fieldRegistry.classify(
+                FieldCoordinates.coordinates(objType.getName(), fieldDef.getName()),
+                fieldBuilder.classifyField(fieldDef, objType.getName(), parentType, parentBackingClass)));
     }
 
     /**

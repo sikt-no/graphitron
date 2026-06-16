@@ -122,6 +122,20 @@ class TypeBuilder {
     /** Lazily computed by {@link #retainedSupportTypes()}; null until the first support-type gate runs. */
     private Set<String> retainedSupportTypes;
 
+    /**
+     * R279 slice 3b — the reachable output-type set discovered by the field-first walk in
+     * {@link #buildTypes()}. Exposed so the field-classification pass in
+     * {@link GraphitronSchemaBuilder} drives over the same reachable object types first, with a
+     * compensating sweep over the unreached ones (removed in slice 6). Empty until
+     * {@code buildTypes()} runs.
+     */
+    private Set<String> reachableOutputTypes = Set.of();
+
+    /** @see #reachableOutputTypes */
+    Set<String> reachableOutputTypes() {
+        return reachableOutputTypes;
+    }
+
     TypeBuilder(BuildContext ctx, ServiceCatalog svc) {
         this.ctx = ctx;
         this.svc = svc;
@@ -178,21 +192,47 @@ class TypeBuilder {
                 recordBackingClasses.putIfAbsent(named.getName(), cls));
         }
 
-        ctx.schema.getAllTypesAsList().stream()
-            .filter(t -> !t.getName().startsWith("__"))
-            .forEach(namedType -> {
-                var gType = classifyType(namedType);
-                if (gType != null) {
-                    // R279 slice 2: per-type classification goes through the reconciling register
-                    // entry (here: a fresh store, since this is the first pass).
-                    ctx.typeRegistry.register(namedType.getName(), gType);
-                }
-                // R307: the directive-ignored warning is a classification output, emitted as the
-                // classifier visits each type rather than from a separate post-classification
-                // re-walk. The reflection bindings it reads (resolveAll, above) are already a fixed
-                // point by the time the classify pass runs.
-                emitDirectiveIgnoredWarning(namedType);
-            });
+        // R279 slice 3b — the driver inversion. The classified output-type set is *discovered* by
+        // the field-first reachability walk ({@link SchemaReachability}: seed Query / Mutation plus
+        // the @node / @key directive scan, descend field->target, union->member, and
+        // interface->implementor), not by iterating every declared type in isolation. Each reached
+        // type is classified here as a byproduct of the field edge that reached it; the verdict is
+        // the same {@link #classifyType} value the eager pass produced, now triggered on demand from
+        // reachability rather than eagerly over {@code getAllTypesAsList()}. This is the field-first
+        // flip: fields drive types.
+        var reachable = SchemaReachability.reachableTypeNames(ctx.schema);
+        this.reachableOutputTypes = reachable;
+        for (var name : reachable) {
+            if (!(ctx.schema.getType(name) instanceof GraphQLNamedType namedType)) continue;
+            var gType = classifyType(namedType);
+            if (gType != null) {
+                // R279 slice 2: per-type classification goes through the reconciling register entry.
+                ctx.typeRegistry.register(name, gType);
+            }
+        }
+        // Compensating orphan sweep — slice 6 removes the output-orphan half of this. Every named
+        // type the walk did NOT reach is classified here so the registry content stays identical to
+        // the eager pass: input types, scalars, and enums (never reachability-driven through output
+        // edges) plus unreachable output objects (the OrphanCat case in SchemaReachabilityTest).
+        // Slice 6 narrows this to the non-output-object types, at which point an unreachable @table
+        // object is no longer classified and the reachability prune becomes observable behaviour.
+        for (var namedType : ctx.schema.getAllTypesAsList()) {
+            if (namedType.getName().startsWith("__")) continue;
+            if (reachable.contains(namedType.getName())) continue;
+            var gType = classifyType(namedType);
+            if (gType != null) {
+                ctx.typeRegistry.register(namedType.getName(), gType);
+            }
+        }
+        // R307: the directive-ignored warning is a classification output. With the classify driver
+        // now reachability-partitioned, emit it in a dedicated pass over getAllTypesAsList so the
+        // warning order is stable (identical to the pre-slice-3b SDL order) and independent of walk
+        // order. It reads only the reflection-binding fixed point (resolveAll, above) and SDL
+        // directives, never the registry, so it is order-independent of classification.
+        for (var namedType : ctx.schema.getAllTypesAsList()) {
+            if (namedType.getName().startsWith("__")) continue;
+            emitDirectiveIgnoredWarning(namedType);
+        }
 
         // R96: surface multi-producer rejections as UnclassifiedType.
         surfaceMultiProducerRejections();
