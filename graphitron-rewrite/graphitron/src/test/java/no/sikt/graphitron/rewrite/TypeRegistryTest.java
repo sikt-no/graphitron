@@ -1,5 +1,6 @@
 package no.sikt.graphitron.rewrite;
 
+import graphql.language.SourceLocation;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.NestingType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.UnclassifiedType;
@@ -47,41 +48,12 @@ class TypeRegistryTest {
     }
 
     @Test
-    void synthesize_rejectsDuplicate() {
-        var registry = new TypeRegistry();
-        registry.classify("PageInfo", plain("PageInfo"));
-        assertThatIllegalStateException()
-            .isThrownBy(() -> registry.synthesize("PageInfo",
-                new GraphitronType.PageInfoType("PageInfo", null, false, null)))
-            .withMessageContaining("synthesize('PageInfo')")
-            .withMessageContaining("already classified");
-    }
-
-    @Test
-    void enrich_rejectsMissingPrior() {
-        var registry = new TypeRegistry();
-        assertThatIllegalStateException()
-            .isThrownBy(() -> registry.enrich("Film", plain("Film")))
-            .withMessageContaining("enrich('Film')")
-            .withMessageContaining("no prior classification");
-    }
-
-    @Test
     void demote_rejectsMissingPrior() {
         var registry = new TypeRegistry();
         assertThatIllegalStateException()
             .isThrownBy(() -> registry.demote("Film", demoted("Film", "x")))
             .withMessageContaining("demote('Film')")
             .withMessageContaining("no prior classification");
-    }
-
-    @Test
-    void enrich_replacesExistingEntry() {
-        var registry = new TypeRegistry();
-        registry.classify("Film", plain("Film"));
-        var enriched = new GraphitronType.PageInfoType("Film", null, true, null);
-        registry.enrich("Film", enriched);
-        assertThat(registry.get("Film")).isSameAs(enriched);
     }
 
     @Test
@@ -109,11 +81,22 @@ class TypeRegistryTest {
 
     @Test
     void register_replacesWithSameKindEnrichment() {
+        // Non-synth same-kind repeat replaces with the incoming value (plain enrich).
         var registry = new TypeRegistry();
-        registry.register("Film", new GraphitronType.PageInfoType("Film", null, false, null));
-        var enriched = new GraphitronType.PageInfoType("Film", null, true, null);
+        registry.register("Film", new NestingType("Film", new SourceLocation(1, 1), null));
+        var enriched = new NestingType("Film", new SourceLocation(2, 2), null);
         registry.register("Film", enriched);
         assertThat(registry.get("Film")).isSameAs(enriched);
+    }
+
+    @Test
+    void register_mergesSameKindSynthArm_oringShareable() {
+        // A tag-bearing synth arm (Connection / Edge / PageInfo) is merged, not replaced: shareable
+        // ORs across registrations (the @tag union is covered end-to-end by ConnectionPromoterTest).
+        var registry = new TypeRegistry();
+        registry.register("PageInfo", new GraphitronType.PageInfoType("PageInfo", null, false, null));
+        registry.register("PageInfo", new GraphitronType.PageInfoType("PageInfo", null, true, null));
+        assertThat(((GraphitronType.PageInfoType) registry.get("PageInfo")).shareable()).isTrue();
     }
 
     @Test
@@ -125,14 +108,15 @@ class TypeRegistryTest {
     }
 
     @Test
-    void register_throwsOnIncompatibleRepeat() {
+    void register_demotesOnIncompatibleRepeat() {
+        // Two different concrete classifications for one name demote to UnclassifiedType; the
+        // accumulator reacts to the conflict rather than throwing, and the validator surfaces it.
         var registry = new TypeRegistry();
         registry.register("Film", plain("Film"));
-        assertThatIllegalStateException()
-            .isThrownBy(() -> registry.register("Film",
-                new GraphitronType.PageInfoType("Film", null, false, null)))
-            .withMessageContaining("register('Film')")
-            .withMessageContaining("incompatible repeat");
+        registry.register("Film", new GraphitronType.PageInfoType("Film", null, false, null));
+        var result = registry.get("Film");
+        assertThat(result).isInstanceOf(UnclassifiedType.class);
+        assertThat(((UnclassifiedType) result).reason()).contains("classified incompatibly");
     }
 
     @Test
