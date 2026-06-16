@@ -47,9 +47,11 @@ so nothing matches and the build rejects:
     parameter 'inputs' ... bean class '...UtdanningsspesifikasjonsstatusRecord'
     has no fields matching the SDL input type 'EndreUtdanningsspesifikasjonsstatusInput'
 
-That message misdiagnoses: the fields *do* match, on the `@field(name:)` column axis that
-bean-binding never reads. The build correctly stops (no broken code emitted), but on a coincidental
-member-name overlap the same path silently partial-populates or throws an R150-family
+That message misdiagnoses: the fields *do* match, on the `@field(name:)` **column** axis. Bean-binding
+does read `@field(name:)` (via `InputBeanResolver.bindingKey`, `:315`), but only as a Java-**member**
+key; it never resolves it to a `ColumnRef`. So a `@field(name: "DATO_FRA")` naming a column is matched
+against member names, finds nothing, and the build correctly stops (no broken code emitted). On a
+coincidental member-name overlap the same path silently partial-populates or throws an R150-family
 `ClassCastException` at execution instead of rejecting.
 
 **Both cardinalities hit the same wall.** `enrich` peels `List<…>` via `peelJavaListSet` and binds on
@@ -109,7 +111,8 @@ record JooqRecord(ClassName recordClass, TableRef table,
 
 // nested records (column axis; siblings to FieldBinding, which is member axis):
 record ColumnBinding(String sdlFieldName, ColumnRef column) {}
-record RecordKeyDecode(ClassName encoderClass, String typeId, List<ColumnRef> keyColumns) {}
+record RecordKeyDecode(String sdlFieldName, ClassName encoderClass, String typeId,
+                       List<ColumnRef> keyColumns) {}
 ```
 
 - **One fully-resolved arm, produced in `enrich`.** Every `JooqRecord` is complete (non-null
@@ -124,7 +127,16 @@ record RecordKeyDecode(ClassName encoderClass, String typeId, List<ColumnRef> ke
   survives in the model is not "a NodeId decoder" but "these key columns load onto this record's
   identity"; `RecordKeyDecode` says exactly that. The wire mechanism is still R195's
   (`encoderClass.decodeValues(typeId, nodeId)` -> `record.fromArray(values, Tables.T.<keyCol>...)`);
-  only the projection target differs.
+  only the projection target differs. `RecordKeyDecode` also carries its own `sdlFieldName` (the Map
+  key for the wire NodeId), where `NodeIdDecodeRecord` does not: `NodeIdDecodeRecord` rides as a
+  `FieldBinding.leaf` and inherits the key from `FieldBinding.sdlFieldName` (`CallSiteExtraction.java:295`),
+  but `RecordKeyDecode` is a bare `Optional` on `JooqRecord` with no enclosing `FieldBinding`, so the
+  emitter can write `raw.get("<idField>")` only if the carrier names the field (the same reason
+  `ColumnBinding` carries `sdlFieldName`). Detaching the decode from the member axis is exactly what
+  forces the key back onto the carrier. It carries no `nonNull`: a `@nodeId` at the record's identity
+  always decodes the key that *is* the record, so a null or type-mismatched id throws (R195
+  `ThrowOnMismatch`) whether the SDL field is `ID!` or `ID`, leaving nothing for a nullability flag to
+  vary (`NodeIdDecodeRecord.nonNull` exists only to let a *member* yield null on a nullable field).
 - **`columnBindings` (the SET payload) and `keyDecode` (the identity) are orthogonal axes on one
   record.** Same pattern as `SourceKey` carrying `Wrap` + `Reader` + `Cardinality`: each accessor has
   one fixed meaning, no variant-dependent overload.
@@ -161,7 +173,8 @@ belong to `table`" is a producer guarantee whose hard backstop is the compilatio
      record-type-mismatch gate** (R195 `InputBeanResolver.java:537-545`, sourced from `jtr` instead
      of a member): the resolved node table's `recordClass()` must equal the param `recordClass`. A
      foreign-table `@nodeId` is rejected with the R195-shaped message naming the param record, the
-     foreign record, and both fixes. Project to `RecordKeyDecode`.
+     foreign record, and both fixes. Project to `RecordKeyDecode`, capturing the field's own SDL
+     name as the `sdlFieldName` Map key alongside the decoded `encoderClass` / `typeId` / `keyColumns`.
    - **At most one `@nodeId` field** (two would each claim the record's identity); a second is
      rejected.
    - Rewrite the param to `new ParamSource.Arg(jooqRecord, arg.path())`.
@@ -178,18 +191,25 @@ belong to `table`" is a producer guarantee whose hard backstop is the compilatio
 
 3. **Service-call argument expression** (`ServiceMethodCallEmitter`). Two arms, mirroring how
    `RecordInput` / `JavaBeanInput` are rendered in both positions:
-   - `valueShapeExpression` (`:143-148`, singular): `case ValueShape.JooqRecordInput jr ->
-     compositeHelperCall(jr.recordClass(), …)` -> `create<Record>(env.getArgument("<arg>"))`.
-   - `listExpression` (`:289-309`, the `ListOf` element switch): a `case ValueShape.JooqRecordInput`
-     arm that maps `create<Record>` over the list, exactly as the existing `RecordInput` /
-     `JavaBeanInput` arms map their composite helper. The sealed `ValueShape` addition forces *both*
-     switches at compile time, so the list arm cannot be silently forgotten.
+   - `valueShapeExpression` (`:143-150`, singular): a `case ValueShape.JooqRecordInput jr` arm
+     emitting `create<Record>(env.getArgument("<arg>"))`. This is the singular-helper shape that
+     `compositeHelperCall` (`:320-323`) produces; `JooqRecordInput` reads the arg name straight off
+     its own `sdlPath`, so it does not reuse `compositeHelperCall` verbatim (that method takes a
+     `fields` list only to recover the arg name via `outerArgOf`, which `JooqRecordInput` does not
+     need).
+   - `listExpression` (`:289-310`, the `ListOf` element switch): a `case ValueShape.JooqRecordInput`
+     arm rendered `pluralHelperName(jr.recordClass())(env.getArgument("<arg>"))`, i.e.
+     `create<Record>List(env.getArgument("<arg>"))`, byte-for-byte the shape of the existing
+     `RecordInput` / `JavaBeanInput` list arms (`:293-298`). The sealed `ValueShape` addition forces
+     *both* switches at compile time, so the list arm cannot be silently forgotten.
 
 4. **Helper emitter** (`JooqRecordInstantiationEmitter`, new, sibling to
    `InputBeanInstantiationEmitter`; driven by the `CallSiteExtraction.JooqRecord` queue collected in
    `TypeFetcherGenerator` from `callParams()`, parallel to the `InputBean` helper queue at
-   `:580-619`). One deduped `private static <Record> create<Record>(Map<String, Object> raw)` per
-   record class:
+   `:580-619`). A deduped pair per record class, emitted together unconditionally (exactly as
+   `InputBeanInstantiationEmitter` emits its singular + plural pair, `:47-116`): a singular
+   `private static <Record> create<Record>(Map<String, Object> raw)` and a plural
+   `private static List<Record> create<Record>List(Object raw)` that delegates to it. The singular:
 
    ```java
    private static FilmRecord createFilmRecord(Map<String, Object> raw) {
@@ -213,11 +233,17 @@ belong to `table`" is a producer guarantee whose hard backstop is the compilatio
    `fromArray` calls touch disjoint column sets; either group may be absent (no plain columns, or no
    identity field). The decode-and-throw block stays visually grouped.
 
-   **One helper serves both cardinalities.** `create<Record>(Map)` is per-record-class and deduped;
-   the singular param calls it once on `env.getArgument(arg)`, and the `List<Record>` param maps it
-   over the argument list in `listExpression` (the wire value for a `[Input!]` arg is a
-   `List<Map<String,Object>>`). No separate list helper — the same way R195's `decode<Record>` scalar
-   helper is the one the list variant `decode<Record>List` delegates to per element.
+   **Two helpers, one construction site, both cardinalities.** The singular `create<Record>(Map)`
+   holds the construction. The plural `create<Record>List(Object raw)` is emitted alongside it
+   unconditionally and delegates: it casts the `Object` to `List<?>`, rejects null elements, and maps
+   each through the singular helper (the per-element `Map<String,Object>` cast carries the same
+   `@SuppressWarnings("unchecked")` as `InputBeanInstantiationEmitter.buildPluralHelper`, `:94-116`).
+   The singular param calls `create<Record>(env.getArgument(arg))`; the `List<Record>` param calls
+   `create<Record>List(env.getArgument(arg))` (the wire value for a `[Input!]` arg is a
+   `List<Map<String,Object>>`). Burying the `List<Map>` downcast in the plural helper keeps the call
+   site cast-free, where an inline `.stream()` in `listExpression` would need an explicit unchecked
+   cast; the construction logic still lives in one place, the same way R195's `decode<Record>List`
+   delegates to `decode<Record>` per element (`:174-176`).
 
 **Validator.** All rejections above are `Rejection.structural` -> `Resolved.Rejected` ->
 `UnclassifiedField` (`ServiceDirectiveResolver.java:155-158`), which `ValidateMojo` fails on by
@@ -244,9 +270,11 @@ review value.)
   wrapped in `ValueShape.ListOf` when `isListType(javaType, recordClass)` (the `InputBean`-arm
   idiom at `:158-162`).
 - `generators/ServiceMethodCallEmitter.java`: `case ValueShape.JooqRecordInput` in *both*
-  `valueShapeExpression` (singular) and `listExpression` (the `ListOf` element switch) -> the
-  `create<Record>` call / per-element map.
-- `generators/JooqRecordInstantiationEmitter.java` (new): the `create<Record>(Map)` helper.
+  `valueShapeExpression` (singular, `create<Record>`) and `listExpression` (the `ListOf` element
+  switch, `create<Record>List`).
+- `generators/JooqRecordInstantiationEmitter.java` (new): the singular `create<Record>(Map)` helper
+  plus the plural `create<Record>List(Object)` helper that delegates to it, emitted together
+  (mirroring `InputBeanInstantiationEmitter` `:47-116`).
   `generators/TypeFetcherGenerator.java`: collect the `JooqRecord` carriers into a dedup queue and
   drive the new emitter (parallel to the `InputBean` helper queue plus `collectTransitively`).
 - `generators/ArgCallEmitter.java` and any other exhaustive `CallSiteExtraction` switch the compiler
@@ -261,14 +289,15 @@ type- and behaviour-correctness. No generated-body string assertions at any tier
   - Single-key: `ModifyFilmInput { filmId: ID! @nodeId(typeName:"Film"), title: String @field(name:"title"), rentalRate: Float @field(name:"rental_rate") }`
     -> param classifies to `CallSiteExtraction.JooqRecord`; assert the arm, the resolved
     `table.recordClass`, the two `ColumnBinding`s with their `ColumnRef`s, the `RecordKeyDecode`
-    typeId + single key column (the arm assertion is itself the pin that the param did not bean-ify
-    or stay `Direct`). Assert `createFilmRecord` lands on the `*Fetchers` class.
+    `sdlFieldName` + typeId + single key column (the arm assertion is itself the pin that the param
+    did not bean-ify or stay `Direct`). Assert `createFilmRecord` lands on the `*Fetchers` class.
   - Composite-key: a `film_actor`-backed record param with `id: ID! @nodeId(typeName:"FilmActor")`
     -> `RecordKeyDecode` carries both key columns (arity 2).
   - **List param** (`modifyFilms(List<FilmRecord>)` against `[ModifyFilmInput!]!`): the same
     `CallSiteExtraction.JooqRecord` arm, but the derived `ValueShape` is `ListOf(JooqRecordInput)`;
-    assert the `ListOf` wrap (the pin that cardinality is handled, not dropped) and that the *same*
-    `createFilmRecord` helper is reused (one helper, mapped). This is the consumer's real shape
+    assert the `ListOf` wrap (the pin that cardinality is handled, not dropped) and that the list call
+    site is `createFilmRecordList`, which delegates per element to the *same* singular `createFilmRecord`
+    (one construction site, mapped). This is the consumer's real shape
     (`endreUtdanningsspesifikasjonsstatus`), so it is a first-class case here, not a follow-up.
   - **Regression pin for the original bug**: a `List<FilmRecord>` param whose input type carries only
     `@nodeId` + `@field` (no member-name overlap) must classify to `JooqRecord`, *not* an
@@ -281,8 +310,11 @@ type- and behaviour-correctness. No generated-body string assertions at any tier
     misleading message.
 - **Compilation** (`graphitron-sakila-example`): add the fixtures below; the `-Plocal-db` compile
   against the real catalog verifies the emitted `new FilmRecord()` + `fromArray(..., Tables.FILM.<col>...)`
-  references type-check (the hard backstop for "columns belong to `table`"), and that the helper
-  carries no `@SuppressWarnings` (no deprecated `convert`).
+  references type-check (the hard backstop for "columns belong to `table`"), and that the singular
+  `create<Record>` helper uses `fromArray` (R195 coercion discipline) rather than the deprecated
+  `DataType.convert(Object)`, so it needs no `@SuppressWarnings`. (The plural helper's per-element
+  `@SuppressWarnings("unchecked")` is the same one the `InputBean` plural helper already carries and
+  is expected.)
 - **Execution** (`GraphQLQueryTest`-family, alongside the R195 `assignFilmRecord` cases): `modifyFilm`
   round-trip -- encode a `Film` NodeId, pass `title` + `rentalRate`, assert the service reads back the
   decoded `film_id` plus the set `title` / `rental_rate` (identity decode + column coercion together).
@@ -354,5 +386,34 @@ cases, the `List<FilmRecord>` fixture/stub, and the Out-of-scope flip (`List` in
 shared `isListType` `List`-only boundary — deferred). The carrier model is unchanged from the
 endorsed 2026-06-15 design; this is a cardinality-coverage widening, not a redesign.
 
-Status stays Spec; a fresh reviewer session (different from both the original review and this
-revision) gates Spec -> Ready.
+**Reviewer revision, 2026-06-16 (pre-Ready; model + emitter fixes folded in).** A fresh review session
+(distinct from the original review and the `List` broadening) endorsed the design and the carrier
+model, and folded in two implementability fixes plus three clarifications, all surfaced by checking
+the cited seams against the code:
+
+1. *`RecordKeyDecode` could not be emitted as written.* The helper reads the wire NodeId by SDL field
+   name (`raw.get("filmId")`), but the carrier named no field. `NodeIdDecodeRecord` never needed one
+   because it rides as a `FieldBinding.leaf` and inherits `FieldBinding.sdlFieldName`; `RecordKeyDecode`
+   is detached from the member axis (a bare `Optional` on `JooqRecord`), so it must carry its own key.
+   Added `sdlFieldName` as the first component, mirroring `ColumnBinding` (the same argument that rules
+   out reusing `NodeIdDecodeRecord`, applied to the Map key).
+2. *List-helper shape was self-contradictory.* The emitter section said both "exactly as the existing
+   `RecordInput` / `JavaBeanInput` arms" (a separate plural helper) and "no separate list helper" (an
+   inline map). Resolved toward the established pattern: a deduped `create<Record>List` plural helper
+   emitted alongside the singular and delegating per element, exactly as `InputBeanInstantiationEmitter`
+   (`:94-116`) and R195's `decode<Record>List` (`:174-176`) do. The plural buries the `List<Map>`
+   downcast, keeping the call site cast-free; the inline `.stream()` would have needed an explicit
+   unchecked cast the sibling arms avoid.
+3. *Clarifications.* (a) The problem statement no longer says bean-binding "never reads" `@field(name:)`;
+   it reads it (via `bindingKey`, `:315`) but only as a member key, never resolving it to a column.
+   (b) `RecordKeyDecode` carries no `nonNull`: the identity decode throws on a null/mismatched id
+   regardless of SDL nullability (R195 `ThrowOnMismatch`). (c) The singular emitter arm no longer claims
+   to reuse `compositeHelperCall` verbatim (`JooqRecordInput` has no `fields`; it reads the arg name off
+   its own `sdlPath`), and the compilation-tier assertion is scoped to the singular helper's
+   no-deprecated-`convert` discipline (the plural helper legitimately carries the same per-element
+   `@SuppressWarnings("unchecked")` as the `InputBean` plural helper).
+
+The carrier model and overall design are otherwise unchanged from the endorsed 2026-06-15 shape.
+
+Status stays Spec; a fresh reviewer session (different from the original review, the `List` broadening,
+and this reviewer revision) gates Spec -> Ready.
