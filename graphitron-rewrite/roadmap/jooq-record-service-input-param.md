@@ -74,8 +74,10 @@ param-IS-a-jOOQ-record half; R97 owns `@table`-on-the-input-type.)
 `:225` then field classification) and already holds `BuildContext ctx`, whose `types` map
 (`BuildContext.java:165`) carries every classified type. So `enrich` can read the answer the type
 pass already computed: when the `Direct` head arg's SDL input type classifies as
-`JooqTableRecordInputType`, build the call-site binding from that classified type, **before** the
-bean branch, so a jOOQ record never reaches `looksLikeBeanCandidate` / `buildInputBean`.
+`JooqTableRecordInputType`, build the call-site binding from that classified type just before the
+`buildInputBean` call -- after the arm's shared input-object gates (loadable / `Map` /
+cardinality-parity, `:150-188`), which a jOOQ record passes, so the record reuses those gates and
+only the member-axis bean instantiation is replaced.
 
 That binding:
 
@@ -173,8 +175,17 @@ belong to `table`" is a producer guarantee whose hard backstop is the compilatio
 ## Enrichment, re-projection, emit
 
 1. **`InputBeanResolver.enrich`** (the existing post-processor, `:109`). Add a branch in the `Direct`
-   + head + input-object arm, *before* the bean path: look up `ctx.types.get(iot.getName())`; if it
+   + head + input-object arm, after the shared input-object gates (`:150-188`) and *before* the
+   `buildInputBean` call: look up `ctx.types.get(iot.getName())`; if it
    is a `JooqTableRecordInputType jtr`, build `JooqRecord`:
+   - **Cardinality parity is inherited, not re-derived.** The branch sits after the existing
+     `elt.list() == sdl.list()` check (`:180-188`), so a Java `List<Record>` against a singular
+     input-object arg (or a singular `Record` against `[Input!]`) is rejected there before any
+     `JooqRecord` is built -- the same guarantee the bean path relies on, and what lets the walker
+     read list-ness off the Java type alone (step 2) with no second SDL cross-check. Skipping it would
+     let a cardinality-mismatched param reach `create<Record>List` / `create<Record>` against the
+     opposite wire shape and throw a runtime `ClassCastException` instead of failing at validate time
+     (against "Validator mirrors classifier invariants").
    - `table` comes from `jtr.table()`; the record class is `table.recordClass()` (the two name the
      same class, see Model above, so there is no separate `jtr.fqClassName()` read). (A
      `JooqTableRecordInputType` with a null `table` -- backing class from a catalog not loaded at
@@ -207,8 +218,10 @@ belong to `table`" is a producer guarantee whose hard backstop is the compilatio
    `CallSiteExtraction leafTransform`), so the carrier-walk helper collector can register the
    `create<Record>` helper from the `ValueShape` alone (see Helper emitter below). `javaType()`
    returns `carrier.table().recordClass()`. **Cardinality is handled exactly as the `InputBean` arm
-   does it** (`:158-162`): the walker builds the element `JooqRecordInput`, then — when
-   `isListType(javaType, carrier.table().recordClass())` (`:222-229`, the existing `List<X>` test) —
+   does it** (`:158-162`), and is sound for the same reason: the walker reads list-ness from the Java
+   type alone, which step 1's `:180-188` parity check has already aligned with the SDL arg. The walker
+   builds the element `JooqRecordInput`, then -- when
+   `isListType(javaType, carrier.table().recordClass())` (`:222-229`, the existing `List<X>` test) --
    wraps it in the existing `ValueShape.ListOf(path, shape)`. No list flag on the arm and no new list
    carrier: `ListOf` already exists and the singular param is the unwrapped element.
    (`Set<TableRecord>` is not covered, mirroring `InputBean`'s own `List`-only `isListType`; see Out
@@ -382,7 +395,10 @@ type- and behaviour-correctness. No generated-body string assertions at any tier
   - Rejections (on `UnclassifiedField.reason()`): foreign-table `@nodeId` (R195-mismatch message
     naming both records); two `@nodeId` fields; a `@field` / bare field resolving to no column on
     the record's table (the honest replacement for "has no fields matching", with the candidate
-    hint). Assert on both the singular and `List<…>` param so neither path regresses to the old
+    hint); a cardinality mismatch (Java `List<Record>` against a singular input-object arg, and a
+    singular `Record` against `[Input!]`) rejected at the shared `:180-188` parity gate rather than
+    emitted as a `create<Record>List` / `create<Record>` call that throws `ClassCastException` at
+    runtime. Assert on both the singular and `List<…>` param so neither path regresses to the old
     misleading message.
 - **Compilation** (`graphitron-sakila-example`): add the fixtures below; the `-Plocal-db` compile
   against the real catalog verifies the emitted `new FilmRecord()` + `fromArray(..., Tables.FILM.<col>...)`
@@ -420,10 +436,13 @@ table. Follows the R195 / R200 accepted-shape precedent (no user-manual chapter)
 
 ## Out of scope
 
-- **`Set<TableRecord>` param**: the walker's `isListType` (`:222-229`) tests `List<X>` only, so
-  `Set<…>` is not wrapped — the same `List`-only boundary the `InputBean` arm already has. A cheap
-  follow-up if a consumer needs it (widen `isListType` once, both arms inherit it); no current
-  consumer case. In scope by contrast: the jOOQ-record `@service` *input param* at **either**
+- **`Set<TableRecord>` param**: the root walker's `isListType` (`:222-229`) tests `List<X>` only, so
+  a `Set<…>` param is not list-wrapped at the root coordinate (where it would misfire as a singular
+  helper call). At the child coordinate `isListShaped` (`:329-333`) *does* match `Set<…>`, so a `Set`
+  arg there emits `create<Record>List` and fails the consumer compile on `List` vs `Set`. Either way
+  `Set` is deferred, inheriting the `InputBean` path's existing imperfect `Set` handling rather than a
+  clean build-time rejection; a cheap follow-up if a consumer needs it (widen both tests once, both
+  arms inherit it), no current consumer case. In scope by contrast: the jOOQ-record `@service` *input param* at **either**
   coordinate — root (emitted via `ServiceMethodCallEmitter`) and `@table`-parent child (emitted via
   `ArgCallEmitter`), singular or `List<…>`. The root list shape was this item's own motivating case;
   the child coordinate falls out of the same `enrich` rewrite (full `InputBean` parity). This is
@@ -537,3 +556,29 @@ parity. All folded in:
 Status stays Spec. This reviewer session landed substantive edits, so per the reviewer rule it is
 disqualified from approving the resulting revision; a fresh session (different from the original
 review, the `List` broadening, the prior reviewer revision, and this one) gates Spec -> Ready.
+
+**Reviewer revision, 2026-06-16 (cardinality-parity guard + Set-deferral framing).** A fresh review
+session (distinct from the original review, the `List` broadening, and the two prior reviewer
+revisions) re-verified every cited seam against the live code and endorsed the design and carrier
+model unchanged. It surfaced one substantive gap plus one framing fix, both folded in:
+
+1. *The jOOQ-record branch dropped the cardinality-parity guard.* The prior draft sited the branch
+   "before `looksLikeBeanCandidate`", which is also before the `elt.list() == sdl.list()` check
+   (`:180-188`). The walker derives list-ness from the Java type alone (`isListType`, `:158-162` /
+   `:222-229`); that is sound for the bean path only because `:180-188` already guaranteed Java/SDL
+   cardinality parity upstream. Without it, a `List<Record>` param against a singular input-object
+   arg (or a singular `Record` against `[Input!]`) would reach `create<Record>List` / `create<Record>`
+   against the opposite wire shape and throw a runtime `ClassCastException` instead of failing at
+   validate time (against "Validator mirrors classifier invariants"). Resolved: the branch now sits
+   after the shared input-object gates (`:150-188`) and just before `buildInputBean`, inheriting the
+   parity check; step 1 carries an explicit bullet, step 2 notes the walker's reliance on it, and a
+   cardinality-mismatch rejection joins the pipeline-tier rejection set.
+2. *The `Set` out-of-scope justification was root-only.* "The same `List`-only boundary" described
+   the root walker's `isListType`, but the child emitter picks the helper via `isListShaped`
+   (`:329-333`), which matches `Set<…>` too. Reworded so the deferral notes both coordinates' actual
+   (imperfect) `Set` handling rather than implying a clean `List`-only gate.
+
+The carrier model and overall design are unchanged from the endorsed shape. This session landed
+substantive edits, so per the reviewer rule it is disqualified from approving the resulting revision;
+a fresh session (different from the original review, the `List` broadening, and all three reviewer
+revisions) gates Spec -> Ready.
