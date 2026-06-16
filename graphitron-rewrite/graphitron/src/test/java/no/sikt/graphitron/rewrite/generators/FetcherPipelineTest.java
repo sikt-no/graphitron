@@ -33,7 +33,7 @@ class FetcherPipelineTest {
     void singleTableType_producesOneFetchersClass() {
         var classes = generate("""
             type Film @table(name: "film") { title: String }
-            type Query { dummy: String }
+            type Query { film: Film }
             """);
         assertThat(classes).contains("FilmFetchers");
     }
@@ -43,7 +43,7 @@ class FetcherPipelineTest {
         var classes = generate("""
             type Film @table(name: "film") { title: String }
             type Actor @table(name: "actor") { name: String }
-            type Query { dummy: String }
+            type Query { film: Film actor: Actor }
             """);
         assertThat(classes).contains("FilmFetchers", "ActorFetchers");
     }
@@ -52,7 +52,7 @@ class FetcherPipelineTest {
     void classNameIsTypeNamePlusFetchers() {
         var classes = generate("""
             type Film @table(name: "film") { title: String }
-            type Query { dummy: String }
+            type Query { film: Film }
             """);
         assertThat(classes).contains("FilmFetchers");
         assertThat(classes).doesNotContain("Film");
@@ -604,7 +604,7 @@ class FetcherPipelineTest {
     void wiring_columnField_usesColumnFetcher() {
         var sdl = """
             type Film @table(name: "film") { title: String }
-            type Query { dummy: String }
+            type Query { film: Film }
             """;
         assertThat(TypeSpecAssertions.wiringFor(fetcherBodies(sdl), "Film", "title"))
             .contains(DataFetcherKind.COLUMN_FETCHER);
@@ -658,7 +658,7 @@ class FetcherPipelineTest {
         var languageFetchers = findSpec("LanguageFetchers", """
             type Language @table(name: "language") { languageId: Int @field(name: "language_id") }
             type Film @table(name: "film") { title: String }
-            type Query { dummy: String }
+            type Query { language: Language }
             extend type Language {
                 films: [Film!]! @splitQuery @reference(path: [{key: "film_language_id_fkey"}])
             }
@@ -671,7 +671,7 @@ class FetcherPipelineTest {
         var languageFetchers = findSpec("LanguageFetchers", """
             type Language @table(name: "language") { languageId: Int @field(name: "language_id") }
             type Film @table(name: "film") { title: String }
-            type Query { dummy: String }
+            type Query { language: Language }
             extend type Language {
                 films: [Film!]! @splitQuery @reference(path: [{key: "film_language_id_fkey"}])
             }
@@ -685,7 +685,7 @@ class FetcherPipelineTest {
         var languageFetchers = findSpec("LanguageFetchers", """
             type Language @table(name: "language") { languageId: Int @field(name: "language_id") }
             type Film @table(name: "film") { title: String }
-            type Query { dummy: String }
+            type Query { language: Language }
             extend type Language {
                 films: [Film!]! @splitQuery @reference(path: [{key: "film_language_id_fkey"}])
             }
@@ -702,7 +702,7 @@ class FetcherPipelineTest {
         var languageFetchers = findSpec("LanguageFetchers", """
             type Language @table(name: "language") { languageId: Int @field(name: "language_id") }
             type Film @table(name: "film") { title: String }
-            type Query { dummy: String }
+            type Query { language: Language }
             extend type Language {
                 films(filter: String): [Film!]! @service(
                     service: {className: "no.sikt.graphitron.rewrite.generators.TestFilmService", method: "getFilms"},
@@ -727,7 +727,7 @@ class FetcherPipelineTest {
         var languageFetchers = findSpec("LanguageFetchers", """
             type Language @table(name: "language") { languageId: Int @field(name: "language_id") }
             type Film @table(name: "film") { title: String }
-            type Query { dummy: String }
+            type Query { language: Language }
             extend type Language {
                 films: [Film!]! @service(
                     service: {className: "no.sikt.graphitron.rewrite.generators.TestFilmService", method: "getFilmsMapped"}
@@ -745,7 +745,7 @@ class FetcherPipelineTest {
         var languageFetchers = findSpec("LanguageFetchers", """
             type Language @table(name: "language") { languageId: Int @field(name: "language_id") }
             type Film @table(name: "film") { title: String }
-            type Query { dummy: String }
+            type Query { language: Language }
             extend type Language {
                 films(filter: String): [Film!]! @service(
                     service: {className: "no.sikt.graphitron.rewrite.generators.TestFilmService", method: "getFilms"},

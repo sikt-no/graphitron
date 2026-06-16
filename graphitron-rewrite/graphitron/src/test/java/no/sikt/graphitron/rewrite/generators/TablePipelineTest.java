@@ -26,7 +26,7 @@ class TablePipelineTest {
     void singleTableType_producesOneClass() {
         var classes = generate("""
             type Film @table(name: "film") { title: String }
-            type Query { dummy: String }
+            type Query { film: Film }
             """);
         assertThat(classes).containsExactly("Film");
     }
@@ -36,7 +36,7 @@ class TablePipelineTest {
         var classes = generate("""
             type Film @table(name: "film") { title: String }
             type Actor @table(name: "actor") { name: String }
-            type Query { dummy: String }
+            type Query { film: Film actor: Actor }
             """);
         assertThat(classes).containsExactlyInAnyOrder("Film", "Actor");
     }
@@ -46,7 +46,7 @@ class TablePipelineTest {
         // GraphQL type "MovieItem" maps to SQL table "film" → class is "MovieItem"
         var classes = generate("""
             type MovieItem @table(name: "film") { title: String }
-            type Query { dummy: String }
+            type Query { item: MovieItem }
             """);
         assertThat(classes).containsExactly("MovieItem");
         assertThat(classes).doesNotContain("Film");
@@ -57,7 +57,7 @@ class TablePipelineTest {
         var classes = generate("""
             type Film @table(name: "film") { title: String }
             type MovieItem @table(name: "film") { title: String }
-            type Query { dummy: String }
+            type Query { film: Film item: MovieItem }
             """);
         assertThat(classes).containsExactlyInAnyOrder("Film", "MovieItem");
     }
@@ -86,7 +86,7 @@ class TablePipelineTest {
     void fieldsMethod_containsScalarColumnsFromSchema() {
         var filmSpec = findSpec("Film", """
             type Film @table(name: "film") { title: String, filmId: Int @field(name: "film_id") }
-            type Query { dummy: String }
+            type Query { film: Film }
             """);
         // Which SQL columns back which GraphQL fields is a $fields body-content question;
         // compile tier (graphitron-sakila-example) catches a wrong Tables.FILM.TITLE reference,
