@@ -1,7 +1,7 @@
 ---
 id: R311
 title: "Bind a jOOQ TableRecord (scalar and List<…>) @service input param: column-axis @field + @nodeId scalar-key decode"
-status: Spec
+status: Ready
 bucket: feature
 priority: 5
 theme: service
@@ -582,3 +582,30 @@ The carrier model and overall design are unchanged from the endorsed shape. This
 substantive edits, so per the reviewer rule it is disqualified from approving the resulting revision;
 a fresh session (different from the original review, the `List` broadening, and all three reviewer
 revisions) gates Spec -> Ready.
+
+**Spec -> Ready sign-off, 2026-06-16.** A fresh reviewer session (distinct from the original review,
+the `List` broadening, and all four reviewer revisions; confirmed against the per-commit session
+trailers on this file) traced every cited seam against the live code on trunk and endorses the design
+and carrier model for Ready. Verified: the type side already classifies the param's input type as
+`JooqTableRecordInputType` with a resolved non-null `table` (pinned by
+`GraphitronSchemaBuilderTest.JOOQ_TABLE_RECORD_CLASS` and the R281 `input-backing` corpus example), so
+`enrich` reading `ctx.types` is sound and the pass ordering holds (`buildTypes()` precedes field
+classification); the diagnosis reproduces exactly (a generated `TableRecord` passes
+`looksLikeBeanCandidate`, binds as a `JAVA_BEAN`, and column-axis `@field(name:)` names miss the
+lowerCamel setter index -> empty-bindings "has no fields matching"), independently corroborated by
+`ServiceCatalog.looksLikeSourcesShape`'s comment; the insertion point inherits the shared gates incl.
+the cardinality-parity check; `enrich` runs for root and child before the `isRoot` gate
+(`ServiceDirectiveResolver:155`); the `ValueShape` seal compiler-forces the three
+`ServiceMethodCallEmitter` switches (two real, one defensive `outerArgOf`); the child
+`ArgCallEmitter.buildArgExtraction` arm is genuinely reachable via `buildMethodBackedCallArgs`
+(`TypeFetcherGenerator:4978`) and so is real, while `perFieldValueExpr`'s `notALeaf` and the
+bean-field-walk switches stay genuinely-unreachable; `RecordKeyDecode`'s detached `sdlFieldName` is
+necessary; the `InputBeanInstantiationEmitter` singular+plural pair and R195's column-resolution
+helpers (`findColumn`, `columnSqlNamesOf`, `resolveNodeIdRecordDecode`) exist as relied on. Design
+aligns with generation-thinking (fully-resolved carrier), validator-mirrors-classifier (all rejections
+structural; the cardinality guard forecloses a runtime `ClassCastException`), generated-code
+legibility, and the pipeline-first test tier. No revisions requested. Two cosmetic line-drift cites to
+fix in passing during implementation (both already symbol-anchored, so non-blocking):
+`resolveNodeIdRecordDecode` is at `BuildContext.java:2163`, not `:2104` (which is its `resolveTargetKeys`
+delegate); the "column-axis idiom" cite `BuildContext.java:1649` lands on a section header (the live
+anchor is the symbol `InputBeanResolver.bindingKey`). Status flipped Spec -> Ready.
