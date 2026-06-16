@@ -176,6 +176,42 @@ exposes the field as a typed accessor, `AccessorMatch.CardinalityMismatch` rejec
 disagrees with the accessor's return arity, the proof that this axis is the source field's, validated against
 the source object's backing member, not a property of the target table.
 
+### What `SourceKey` decomposes into (researched 2026-06-16)
+
+`SourceKey` is `(target, columns, path, wrap, cardinality, reader)`, but under the source-object /
+source-field vocabulary it bundles three separable concerns, only one of which is a source *key*. The
+mechanical simplification is R316 (`decompose-sourcekey`); the model claim is here.
+
+- **Target reach (already slotted elsewhere).** `target` is the target table, the table the
+  rows-method reads `FROM`, the element type an accessor returns, the leaf of the join path, not the
+  source; the name is correct (it is `null` only for the parent-IS-source polymorphic case). `path` is
+  the join route to it. Both already live as first-class slots on `TableTargetField`: `returnType`
+  (`returnType.table()`) and `joinPath`, carried even by the non-source table-bound variants
+  (`TableField`, `LookupTableField`, `TableMethodField`) that hold no `SourceKey`. The `SourceKey`
+  copies are denormalized: `SourceKey.path()` has *zero* readers in the generator (every emitter reads
+  `field.joinPath()`), and the four `SourceKey.target()` readers all sit on carriers that also expose
+  `returnType.table()` for the same table. So `target`/`path` leave `SourceKey` by deletion, not by
+  introducing a new slot.
+
+- **Source-object facts (migrate to the carrier).** The source object's shape (`Table | Record`,
+  already on `Carrier.Source` as `SourceShape`), its backing class (today in
+  `AccessorRef.parentBackingClass` / the lifter cast target), and its `env.getSource()` envelope
+  (`SourceEnvelope`, carried per-field on `Reader.ResultRowWalk` but deliberately *not* on
+  `Reader.ProducedRecordRead`, which already hoists it to the type level as `sourceIsOutcome`) are
+  properties of the parent type, identical across every field on it. They belong on a richer
+  `Carrier.Source` source-object descriptor, not smeared per field. The `Reader` permit conflates
+  source-object shape with the field's extraction mechanism; only the latter is a field fact.
+
+- **The source key (what stays).** `columns` (the key tuple lifted off the source object), `wrap` (its
+  Java row shape), `cardinality` (the source-**field** arity, see *bulk is a slot* above), and the
+  extraction-mechanism half of `reader` (`ColumnRead` / `AccessorCall` / `SourceRowsCall` /
+  PK-off-record). This residue earns the name: the key extracted from the source field, nothing about
+  where it points or what shape its parent arrived in.
+
+The `parentSourceKey` on `InterfaceField` / `UnionField` is the one place `SourceKey` is bent to
+describe the source *object* (parent-identity extraction, `cardinality` hardcoded `ONE` = "one
+parent"); it belongs with the source-object descriptor, not a field key.
+
 ### Leaf dissolution and collapse
 
 - **`ConstructorField` dissolves.** Dead since the `@record`-on-types ban; its only path was an
