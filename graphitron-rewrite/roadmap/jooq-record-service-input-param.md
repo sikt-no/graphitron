@@ -101,11 +101,24 @@ encoded, table and all, in `JooqTableRecordInputType`. Re-deriving it in `Servic
 single resolution site. (It also leaves the `argExtraction` path shared with `@tableMethod` (`:573`)
 untouched, so a `@tableMethod` `TableRecord` arg is unaffected by construction.)
 
+**Both `@service` coordinates, one binding.** `enrich` runs unconditionally for every `@service`
+field, root and `@table`-parent child alike (`ServiceDirectiveResolver.resolve` calls it before the
+`isRoot` gate, `:155`), so the `JooqRecord` rewrite is coordinate-agnostic exactly as the `InputBean`
+rewrite it parallels. What differs by coordinate is only which call-site emitter renders the param:
+a root field emits through the R238 carrier path (`ServiceMethodCallEmitter`, switching on
+`ValueShape`), while a child field's DataLoader rows-method emits through the legacy method-backed
+path (`ArgCallEmitter.buildMethodBackedCallArgs`, `TypeFetcherGenerator:4978`, switching on
+`CallSiteExtraction`). Both already carry a live `InputBean` arm; `JooqRecord` gets a real arm in
+each (not an "unreachable" throw), so a jOOQ-record arg binds identically whether the `@service`
+field is root or child. The construction itself is one helper (`create<Record>` / `create<Record>List`),
+reached from either emitter. (`@tableMethod` is still untouched: its params are never enriched, so they
+never become `JooqRecord`.)
+
 ## Model: one new `CallSiteExtraction` arm + two column-axis records
 
 ```java
 // CallSiteExtraction permit, added:
-record JooqRecord(ClassName recordClass, TableRef table,
+record JooqRecord(TableRef table,
                   List<ColumnBinding> columnBindings,
                   Optional<RecordKeyDecode> keyDecode) implements CallSiteExtraction { /* compact ctor below */ }
 
@@ -115,12 +128,15 @@ record RecordKeyDecode(String sdlFieldName, ClassName encoderClass, String typeI
                        List<ColumnRef> keyColumns) {}
 ```
 
+The record `ClassName` is `table.recordClass()`, not a separate component: a `JooqTableRecordInputType`'s `table` is resolved *by matching* `Table.getRecordType()` against the backing class, so `jtr.fqClassName()` and `jtr.table().recordClass()` denote the same class by construction; carrying both would be redundant model state. R195's `NodeIdDecodeRecord` sets the precedent (it carries only `table` and reads `table.recordClass()` for the helper name and `new <T>Record()`; `InputBeanInstantiationEmitter.buildRecordDecodeHelper`). The record class reaches the emitter and walker through `table.recordClass()` everywhere below.
+
 - **One fully-resolved arm, produced in `enrich`.** Every `JooqRecord` is complete (non-null
   `table`, resolved `columnBindings` and `keyColumns`); there is no partial/unbound intermediate
   state. `enrich` replaces the catalog's `Direct` with a finished `JooqRecord`, exactly as it
   replaces `Direct` with a finished `InputBean` today.
 - **The `@nodeId` identity decode gets its own carrier (`RecordKeyDecode`), not R195's
-  `NodeIdDecodeRecord`.** `NodeIdDecodeRecord`'s javadoc (`CallSiteExtraction.java:206-225`) pins
+  `NodeIdDecodeRecord`.** `NodeIdDecodeRecord`'s javadoc (`CallSiteExtraction.java:166-225`, the
+  `NodeIdDecodeRecord` record and its doc) pins
   "produced only by `InputBeanResolver` ... consumed only by `InputBeanInstantiationEmitter`" and
   documents its `nonNull` / `list` fields in *member*-axis terms (list-ness lives on the enclosing
   `FieldBinding`, absent at the param position). Reusing it would falsify that invariant. What
@@ -148,8 +164,8 @@ record RecordKeyDecode(String sdlFieldName, ClassName encoderClass, String typeI
 
 **Compact-constructor invariant on `JooqRecord`.** `ColumnRef` carries no table of its own
 (`ColumnRef.java:20`), so every `ColumnBinding.column` and every `RecordKeyDecode.keyColumns` entry
-is resolved against the one `TableRef` on the record. The constructor enforces non-null
-`recordClass` / `table` and an at-least-one-binding floor (`columnBindings` non-empty OR `keyDecode`
+is resolved against the one `TableRef` on the record. The constructor enforces a non-null
+`table` and an at-least-one-binding floor (`columnBindings` non-empty OR `keyDecode`
 present; an empty input is rejected, like `InputBean`'s empty-bindings rejection). "All columns
 belong to `table`" is a producer guarantee whose hard backstop is the compilation tier (a
 `Tables.FILM.NOPE` reference fails javac against the real catalog).
@@ -159,7 +175,8 @@ belong to `table`" is a producer guarantee whose hard backstop is the compilatio
 1. **`InputBeanResolver.enrich`** (the existing post-processor, `:109`). Add a branch in the `Direct`
    + head + input-object arm, *before* the bean path: look up `ctx.types.get(iot.getName())`; if it
    is a `JooqTableRecordInputType jtr`, build `JooqRecord`:
-   - `table` and `recordClass` come from `jtr.table()` / `jtr.fqClassName()`. (A
+   - `table` comes from `jtr.table()`; the record class is `table.recordClass()` (the two name the
+     same class, see Model above, so there is no separate `jtr.fqClassName()` read). (A
      `JooqTableRecordInputType` with a null `table` -- backing class from a catalog not loaded at
      build time -- is rejected: "param record type X is not in the jOOQ catalog".)
    - For each SDL input field, the **binding key** is `argString(f, DIR_FIELD, ARG_NAME).orElse(f.getName())`
@@ -171,7 +188,8 @@ belong to `table`" is a producer guarantee whose hard backstop is the compilatio
    - A field carrying `@nodeId(typeName:)` is the identity field: resolve through
      `BuildContext.resolveNodeIdRecordDecode(typeName)` (`:2104`), then apply the **lifted
      record-type-mismatch gate** (R195 `InputBeanResolver.java:537-545`, sourced from `jtr` instead
-     of a member): the resolved node table's `recordClass()` must equal the param `recordClass`. A
+     of a member): the resolved node table's `recordClass()` must equal the param record's
+     `table.recordClass()`. A
      foreign-table `@nodeId` is rejected with the R195-shaped message naming the param record, the
      foreign record, and both fixes. Project to `RecordKeyDecode`, capturing the field's own SDL
      name as the `sdlFieldName` Map key alongside the decoded `encoderClass` / `typeId` / `keyColumns`.
@@ -180,17 +198,25 @@ belong to `table`" is a producer guarantee whose hard backstop is the compilatio
    - Rewrite the param to `new ParamSource.Arg(jooqRecord, arg.path())`.
 
 2. **`ValueShape` + walker** (`ServiceMethodCallWalker.deriveValueShape`, `:133-176`). Add
-   `ValueShape.JooqRecordInput(ClassName recordClass, ArgPath sdlPath)`, parallel to `RecordInput` /
-   `JavaBeanInput`; `case CallSiteExtraction.JooqRecord` -> `JooqRecordInput`. **Cardinality is
-   handled exactly as the `InputBean` arm does it** (`:158-162`): the walker builds the element
-   `JooqRecordInput`, then — when `isListType(javaType, jr.recordClass())` (`:222-229`, the existing
-   `List<X>` test) — wraps it in the existing `ValueShape.ListOf(path, shape)`. No list flag on the
-   arm and no new list carrier: `ListOf` already exists and the singular param is the unwrapped
-   element. (`Set<TableRecord>` is not covered, mirroring `InputBean`'s own `List`-only `isListType`;
-   see Out of scope.)
+   `ValueShape.JooqRecordInput(CallSiteExtraction.JooqRecord carrier, ArgPath sdlPath)`;
+   `case CallSiteExtraction.JooqRecord jr` -> `new JooqRecordInput(jr, path)`. This is a
+   *path-carrying leaf*, not a pathless composite: unlike `RecordInput` / `JavaBeanInput` (which hang
+   their paths on per-field `Scalar` leaves), a `JooqRecordInput` has no per-field `ValueShape`
+   children, so it carries its own `sdlPath` exactly as `ValueShape.Scalar` does. It also carries the
+   whole `CallSiteExtraction.JooqRecord` (the same way `Scalar` carries its raw
+   `CallSiteExtraction leafTransform`), so the carrier-walk helper collector can register the
+   `create<Record>` helper from the `ValueShape` alone (see Helper emitter below). `javaType()`
+   returns `carrier.table().recordClass()`. **Cardinality is handled exactly as the `InputBean` arm
+   does it** (`:158-162`): the walker builds the element `JooqRecordInput`, then — when
+   `isListType(javaType, carrier.table().recordClass())` (`:222-229`, the existing `List<X>` test) —
+   wraps it in the existing `ValueShape.ListOf(path, shape)`. No list flag on the arm and no new list
+   carrier: `ListOf` already exists and the singular param is the unwrapped element.
+   (`Set<TableRecord>` is not covered, mirroring `InputBean`'s own `List`-only `isListType`; see Out
+   of scope.)
 
-3. **Service-call argument expression** (`ServiceMethodCallEmitter`). Two arms, mirroring how
-   `RecordInput` / `JavaBeanInput` are rendered in both positions:
+3. **Service-call argument expression** (`ServiceMethodCallEmitter`, the root-coordinate emitter).
+   Two real arms plus one forced-but-unreachable arm, mirroring how `RecordInput` / `JavaBeanInput`
+   are rendered. The record class is `jr.carrier().table().recordClass()` throughout:
    - `valueShapeExpression` (`:143-150`, singular): a `case ValueShape.JooqRecordInput jr` arm
      emitting `create<Record>(env.getArgument("<arg>"))`. This is the singular-helper shape that
      `compositeHelperCall` (`:320-323`) produces; `JooqRecordInput` reads the arg name straight off
@@ -198,15 +224,47 @@ belong to `table`" is a producer guarantee whose hard backstop is the compilatio
      `fields` list only to recover the arg name via `outerArgOf`, which `JooqRecordInput` does not
      need).
    - `listExpression` (`:289-310`, the `ListOf` element switch): a `case ValueShape.JooqRecordInput`
-     arm rendered `pluralHelperName(jr.recordClass())(env.getArgument("<arg>"))`, i.e.
-     `create<Record>List(env.getArgument("<arg>"))`, byte-for-byte the shape of the existing
-     `RecordInput` / `JavaBeanInput` list arms (`:293-298`). The sealed `ValueShape` addition forces
-     *both* switches at compile time, so the list arm cannot be silently forgotten.
+     arm rendered `create<Record>List(env.getArgument("<arg>"))` (the helper name from
+     `jr.carrier().table().recordClass()`), byte-for-byte the shape of the existing `RecordInput` /
+     `JavaBeanInput` list arms (`:293-298`).
+   - `outerArgOf(ValueShape)` (`:346-353`) is a third exhaustive `ValueShape` switch the sealed
+     addition forces; its `JooqRecordInput` arm is unreachable-by-construction (a `JooqRecordInput`
+     is only ever a top-level param shape or a `ListOf` element, never an `InputBean` field shape, so
+     `outerArgOf` is never called with one) and takes a defensive `jr.sdlPath().outerArgName()`.
 
-4. **Helper emitter** (`JooqRecordInstantiationEmitter`, new, sibling to
-   `InputBeanInstantiationEmitter`; driven by the `CallSiteExtraction.JooqRecord` queue collected in
-   `TypeFetcherGenerator` from `callParams()`, parallel to the `InputBean` helper queue at
-   `:580-619`). A deduped pair per record class, emitted together unconditionally (exactly as
+   The sealed `ValueShape` addition flags *every* exhaustive switch over it at compile time, so no
+   arm can be silently forgotten. Beyond the three above, the forced arms in
+   `TypeFetcherGenerator`'s `ValueShape` switches are: `collectFromValueShape` (`:1622`), which gets
+   **real** handling (see Helper emitter below); and the bean-field-walk switches
+   (`leafForFieldBinding` `:1659`, `innerElementTypeNameOf` `:1691`, the field-path `outerArgOf`
+   `:1707`), which take defensive arms for the same never-an-`InputBean`-field-shape reason. The
+   reachable trio is `valueShapeExpression`, `listExpression`, and `collectFromValueShape`.
+
+4. **Child-coordinate argument expression** (`ArgCallEmitter`, the legacy method-backed emitter). A
+   child `@service` field's DataLoader rows-method renders its call args through
+   `ArgCallEmitter.buildArgExtraction` (the `switch (param.extraction())` at `:272`), reached via
+   `buildMethodBackedCallArgs` (`TypeFetcherGenerator:4978`). Add a **real** `case
+   CallSiteExtraction.JooqRecord jr` arm there, paralleling the live `InputBean` arm
+   (`:296`, `buildInputBeanCallExtraction`): emit `create<Record>(env.getArgument("<name>"))` or
+   `create<Record>List(...)`, picking the helper by `isListShaped(param)` (`:329-333`, the existing
+   `List<…>` / `Set<…>` test) and naming it from `jr.table().recordClass().simpleName()`. This emits
+   the identical expression the root emitter does; the construction lives in the one shared helper.
+   (The sibling `NodeIdDecodeRecord` arm at `:298` stays a throw — that leaf is *only* ever an
+   `InputBean` field leaf, never a top-level `param.extraction()`, so it is genuinely unreachable
+   here. `JooqRecord` is a top-level `param.extraction()`, like `InputBean`, so its arm is real, not
+   a throw.)
+
+5. **Helper emitter** (`JooqRecordInstantiationEmitter`, new, sibling to
+   `InputBeanInstantiationEmitter`; driven by a `CallSiteExtraction.JooqRecord` dedup queue, keyed by
+   record class, collected in `TypeFetcherGenerator` by the same dual walk the `InputBean` helper
+   queue uses (`:580-619`). The `MethodBackedField.callParams()` walk (`:588-594`) — which sees both
+   child `@service` fields and the four root permits during the additive cutover — picks up the full
+   `CallSiteExtraction.JooqRecord` directly; the `ServiceField`-carrier walk
+   (`collectBeanHelpersFromCarrier` -> `collectFromValueShape`, `:596-600` / `:1622`) reads it off
+   `ValueShape.JooqRecordInput.carrier()`. Both feed one map, so a record reached by either coordinate
+   emits its helper exactly once. There is no transitive collection: a jOOQ record param never nests
+   another, so no `collectTransitively` analogue is needed.) A deduped pair per record class, emitted
+   together unconditionally (exactly as
    `InputBeanInstantiationEmitter` emits its singular + plural pair, `:47-116`): a singular
    `private static <Record> create<Record>(Map<String, Object> raw)` and a plural
    `private static List<Record> create<Record>List(Object raw)` that delegates to it. The singular:
@@ -243,42 +301,53 @@ belong to `table`" is a producer guarantee whose hard backstop is the compilatio
    `List<Map<String,Object>>`). Burying the `List<Map>` downcast in the plural helper keeps the call
    site cast-free, where an inline `.stream()` in `listExpression` would need an explicit unchecked
    cast; the construction logic still lives in one place, the same way R195's `decode<Record>List`
-   delegates to `decode<Record>` per element (`:174-176`).
+   delegates to `decode<Record>` per element (`InputBeanInstantiationEmitter.buildRecordDecodeHelperList`).
 
 **Validator.** All rejections above are `Rejection.structural` -> `Resolved.Rejected` ->
 `UnclassifiedField` (`ServiceDirectiveResolver.java:155-158`), which `ValidateMojo` fails on by
-default -- the same validate-time surface R195's gate uses. Adding the new arm makes the sealed
-compiler flag every exhaustive `CallSiteExtraction` switch that needs handling
-(`InputBeanInstantiationEmitter.perFieldValueExpr` -> `notALeaf`; `ArgCallEmitter` -> unreachable
-arm; the walker -> real `JooqRecordInput` handling).
+default -- the same validate-time surface R195's gate uses. Adding the new permit makes the sealed
+compiler flag every exhaustive `CallSiteExtraction` switch: `InputBeanInstantiationEmitter.perFieldValueExpr`
+-> `notALeaf` throw (genuinely unreachable -- `JooqRecord` is never an `InputBean` field leaf, only a
+top-level `param.extraction()`); `ArgCallEmitter.buildArgExtraction` -> a **real** arm (the child
+`@service` call site, step 4 above), *not* a throw, since a child `@service` reaches it exactly as
+the live `InputBean` arm does; the walker -> real `JooqRecordInput` handling.
 
 ## Files
 
 (The sealed-arm addition forces most of the rest via compile errors; one commit unless the seams add
 review value.)
 
-- `model/CallSiteExtraction.java`: add the `JooqRecord` permit and the nested `ColumnBinding` /
-  `RecordKeyDecode` records, with the compact-constructor invariants. Javadoc producer
-  (`InputBeanResolver`) and consumers (the helper emitter, the walker), keeping the cross-references
-  live per "Documentation names only live tests/code".
-- `model/ValueShape.java`: add the `JooqRecordInput` permit.
-- `InputBeanResolver.java`: the `JooqTableRecordInputType` branch -> `JooqRecord` (table/class off
-  the classified type, column-axis field walk, single-`@nodeId` decode with the lifted mismatch gate,
+- `model/CallSiteExtraction.java`: add the `JooqRecord` permit (carrying `table`; the record class is
+  `table.recordClass()`, no separate component) and the nested `ColumnBinding` / `RecordKeyDecode`
+  records, with the compact-constructor invariants. Javadoc producer (`InputBeanResolver`) and
+  consumers (the helper emitter, the walker, the child-coordinate `ArgCallEmitter` arm), keeping the
+  cross-references live per "Documentation names only live tests/code".
+- `model/ValueShape.java`: add the `JooqRecordInput(CallSiteExtraction.JooqRecord carrier, ArgPath sdlPath)`
+  permit (a path-carrying leaf that also carries its construction carrier, like `Scalar`;
+  `javaType()` is `carrier.table().recordClass()`).
+- `InputBeanResolver.java`: the `JooqTableRecordInputType` branch -> `JooqRecord` (table off the
+  classified type, column-axis field walk, single-`@nodeId` decode with the lifted mismatch gate,
   the rejections). Factor the column/key resolution so the message discipline matches R195's
   `buildJooqRecordLeaf`.
-- `walker/ServiceMethodCallWalker.java`: `case CallSiteExtraction.JooqRecord` -> `JooqRecordInput`,
-  wrapped in `ValueShape.ListOf` when `isListType(javaType, recordClass)` (the `InputBean`-arm
-  idiom at `:158-162`).
-- `generators/ServiceMethodCallEmitter.java`: `case ValueShape.JooqRecordInput` in *both*
+- `walker/ServiceMethodCallWalker.java`: `case CallSiteExtraction.JooqRecord jr` ->
+  `new JooqRecordInput(jr, path)`, wrapped in `ValueShape.ListOf` when
+  `isListType(javaType, jr.table().recordClass())` (the `InputBean`-arm idiom at `:158-162`).
+- `generators/ServiceMethodCallEmitter.java` (root coordinate): `case ValueShape.JooqRecordInput` in
   `valueShapeExpression` (singular, `create<Record>`) and `listExpression` (the `ListOf` element
-  switch, `create<Record>List`).
+  switch, `create<Record>List`); plus the forced defensive arm in `outerArgOf(ValueShape)`.
+- `generators/ArgCallEmitter.java` (child coordinate): a **real** `case CallSiteExtraction.JooqRecord`
+  arm in `buildArgExtraction` emitting the same `create<Record>` / `create<Record>List` call,
+  paralleling the live `InputBean` arm (`:296`). (The genuinely-unreachable `CallSiteExtraction`
+  switch — `InputBeanInstantiationEmitter.perFieldValueExpr` — takes a `notALeaf` throw.)
 - `generators/JooqRecordInstantiationEmitter.java` (new): the singular `create<Record>(Map)` helper
   plus the plural `create<Record>List(Object)` helper that delegates to it, emitted together
   (mirroring `InputBeanInstantiationEmitter` `:47-116`).
-  `generators/TypeFetcherGenerator.java`: collect the `JooqRecord` carriers into a dedup queue and
-  drive the new emitter (parallel to the `InputBean` helper queue plus `collectTransitively`).
-- `generators/ArgCallEmitter.java` and any other exhaustive `CallSiteExtraction` switch the compiler
-  flags: an explicit unreachable arm.
+- `generators/TypeFetcherGenerator.java`: collect `CallSiteExtraction.JooqRecord` carriers into a
+  record-class-keyed dedup queue via the same dual walk as the `InputBean` queue (`:580-619`) — the
+  `MethodBackedField.callParams()` walk and the `ServiceField`-carrier walk
+  (`collectFromValueShape` gets a real `JooqRecordInput` arm reading `.carrier()`; the bean-field-walk
+  `ValueShape` switches take defensive arms) — and drive the new emitter. No `collectTransitively`
+  analogue (jOOQ record params don't nest).
 
 ## Tests
 
@@ -303,6 +372,13 @@ type- and behaviour-correctness. No generated-body string assertions at any tier
     `@nodeId` + `@field` (no member-name overlap) must classify to `JooqRecord`, *not* an
     `UnclassifiedField` "has no fields matching" — the red-test that fails on `main` today and the
     proof the list shape no longer reaches `buildInputBean`.
+  - **Child `@service` coordinate** (the parity pin for the `ArgCallEmitter` arm): a `@table`-parent
+    field whose nested `@service` method takes the parent key (`Sources`) plus a `FilmRecord` arg
+    against `ModifyFilmInput`. Assert the arg classifies to `CallSiteExtraction.JooqRecord` and the
+    child rows-method's call site emits `createFilmRecord` through `ArgCallEmitter` (real arm), not a
+    throw and not the old "has no fields matching". This is the pin that the binding is
+    coordinate-agnostic — `enrich` runs for child `@service` too — and that the `ArgCallEmitter` arm
+    is not the "unreachable" throw an earlier draft assumed.
   - Rejections (on `UnclassifiedField.reason()`): foreign-table `@nodeId` (R195-mismatch message
     naming both records); two `@nodeId` fields; a `@field` / bare field resolving to no column on
     the record's table (the honest replacement for "has no fields matching", with the candidate
@@ -314,7 +390,8 @@ type- and behaviour-correctness. No generated-body string assertions at any tier
   `create<Record>` helper uses `fromArray` (R195 coercion discipline) rather than the deprecated
   `DataType.convert(Object)`, so it needs no `@SuppressWarnings`. (The plural helper's per-element
   `@SuppressWarnings("unchecked")` is the same one the `InputBean` plural helper already carries and
-  is expected.)
+  is expected.) The child-coordinate fixture compiles the `ArgCallEmitter` arm's emitted call, so a
+  mismatch there fails the cross-module build the same way the root arms do.
 - **Execution** (`GraphQLQueryTest`-family, alongside the R195 `assignFilmRecord` cases): `modifyFilm`
   round-trip -- encode a `Film` NodeId, pass `title` + `rentalRate`, assert the service reads back the
   decoded `film_id` plus the set `title` / `rental_rate` (identity decode + column coercion together).
@@ -324,10 +401,12 @@ type- and behaviour-correctness. No generated-body string assertions at any tier
 - **Fixtures**: `graphitron-sakila-service` gains `FilmRecordService.modifyFilmRecord(FilmRecord)` and
   `modifyFilmRecords(List<FilmRecord>)` (and a composite `FilmActorRecord` variant); `schema.graphqls`
   gains `ModifyFilmInput` + `modifyFilm` (singular) and `modifyFilms` (`[ModifyFilmInput!]!`), no
-  `@table` on the input (the table comes from the record param). Pipeline SDL fixtures live inline
-  as in `NodeIdRecordInputBeanPipelineTest`; the `List<FilmRecord>` `TestServiceStub` method needed
-  by the pipeline tier is added there (the existing `List<FilmRecord>` stubs are SOURCES-context, not
-  root `@service` input params).
+  `@table` on the input (the table comes from the record param). For the child-coordinate parity, a
+  `@table`-parent field carries a nested `@service` taking the parent key plus a `FilmRecord` arg
+  against `ModifyFilmInput`, so the compile and execution tiers exercise the `ArgCallEmitter` arm, not
+  only the pipeline tier. Pipeline SDL fixtures live inline as in `NodeIdRecordInputBeanPipelineTest`;
+  the `List<FilmRecord>` `TestServiceStub` method needed by the pipeline tier is added there (the
+  existing `List<FilmRecord>` stubs are SOURCES-context, not root `@service` input params).
 
 ## User documentation
 
@@ -341,13 +420,16 @@ table. Follows the R195 / R200 accepted-shape precedent (no user-manual chapter)
 
 ## Out of scope
 
-- **`Set<TableRecord>` root param**: the walker's `isListType` (`:222-229`) tests `List<X>` only, so
+- **`Set<TableRecord>` param**: the walker's `isListType` (`:222-229`) tests `List<X>` only, so
   `Set<…>` is not wrapped — the same `List`-only boundary the `InputBean` arm already has. A cheap
   follow-up if a consumer needs it (widen `isListType` once, both arms inherit it); no current
-  consumer case. Note the `List<TableRecord>` *root `@service` input param* IS now in scope (it was
-  this item's own motivating case). The *child*-coordinate `List<TableRecord>` SOURCES case is a
-  different path again — it already classifies to `SourceKey.Wrap.TableRecord`
-  (`ServiceCatalog.java:824-831`), untouched here.
+  consumer case. In scope by contrast: the jOOQ-record `@service` *input param* at **either**
+  coordinate — root (emitted via `ServiceMethodCallEmitter`) and `@table`-parent child (emitted via
+  `ArgCallEmitter`), singular or `List<…>`. The root list shape was this item's own motivating case;
+  the child coordinate falls out of the same `enrich` rewrite (full `InputBean` parity). This is
+  distinct from the child-coordinate `List<TableRecord>` *SOURCES* batch-key param, a different path
+  entirely: that classifies to `SourceKey.Wrap.TableRecord` (`ServiceCatalog.java:824-831`),
+  untouched here.
 - **FK-reference `@nodeId`** (a `@nodeId` pointing at a *different* table to set an FK column): the
   lifted record-type-mismatch gate rejects it. That is `@reference` / R97 territory, not the record's
   own identity.
@@ -415,5 +497,43 @@ the cited seams against the code:
 
 The carrier model and overall design are otherwise unchanged from the endorsed 2026-06-15 shape.
 
-Status stays Spec; a fresh reviewer session (different from the original review, the `List` broadening,
-and this reviewer revision) gates Spec -> Ready.
+**Reviewer revision, 2026-06-16 (child-coordinate parity + model/citation fixes).** A fresh review
+session (distinct from the original review, the `List` broadening, and the prior reviewer revision)
+re-verified every cited seam against the live code, endorsed the carrier model and the diagnosis (the
+latter corroborated by `ServiceCatalog.looksLikeSourcesShape`'s own comment, `:744-753`: root
+`List<XRecord>` is "the canonical `InputBeanResolver` shape ... must fall through"), and surfaced one
+substantive reachability gap plus four model/citation fixes. The author directed full `InputBean`
+parity. All folded in:
+
+1. *The `ArgCallEmitter` arm was wrongly marked "unreachable".* `enrich` runs unconditionally for
+   child `@service` too (`ServiceDirectiveResolver:155`, before the `isRoot` gate), and a child
+   field's DataLoader rows-method emits via `ArgCallEmitter.buildMethodBackedCallArgs`
+   (`TypeFetcherGenerator:4978`) — the same switch whose `InputBean` arm (`:296`) is *live*. So a
+   child `@service` jOOQ-record arg reaches that switch exactly as `InputBean` does; an "unreachable"
+   throw would crash generation on a valid schema (against "Validator mirrors classifier invariants").
+   Resolved toward **full `InputBean` parity**: a real `case CallSiteExtraction.JooqRecord` arm in
+   `ArgCallEmitter` (step 4), emitting the same `create<Record>` / `create<Record>List` call as the
+   root emitter; child `@service` is now in scope (Out of scope updated), with a pipeline parity pin
+   plus a child compile/execution fixture. The genuinely-unreachable switch
+   (`InputBeanInstantiationEmitter.perFieldValueExpr`) keeps its `notALeaf` throw —
+   `JooqRecord` is never an `InputBean` field leaf.
+2. *`JooqRecord.recordClass` was redundant with `table.recordClass()`.* A `JooqTableRecordInputType`'s
+   `table` is resolved by matching `getRecordType()` against the backing class, so `fqClassName` and
+   `table.recordClass()` name the same class by construction; R195's `NodeIdDecodeRecord` carries only
+   `table` and derives the class. Dropped `recordClass`; the record class now reaches every consumer
+   via `table.recordClass()`.
+3. *The "forces *both* switches" count was wrong.* Adding `ValueShape.JooqRecordInput` flags several
+   exhaustive `ValueShape` switches; only three are reachable for a top-level shape
+   (`valueShapeExpression`, `listExpression`, `collectFromValueShape`), the rest (`outerArgOf`, the
+   bean-field-walk switches) take compiler-forced defensive arms since a `JooqRecordInput` is never an
+   `InputBean` field shape. Section 3 and the Files list now say so.
+4. *`JooqRecordInput` reframed.* It is a path-carrying leaf (like `Scalar`), not a pathless composite
+   like `RecordInput`; it now carries its construction carrier (`CallSiteExtraction.JooqRecord`) — the
+   `Scalar`-carries-`leafTransform` precedent — so the carrier-walk collector can register the helper
+   from the `ValueShape` alone, giving the helper queue true `InputBean` dual-walk parity.
+5. *Citation drift.* Re-anchored the `NodeIdDecodeRecord` javadoc and `decode<Record>List` cites on
+   their symbols rather than drifted line ranges.
+
+Status stays Spec. This reviewer session landed substantive edits, so per the reviewer rule it is
+disqualified from approving the resulting revision; a fresh session (different from the original
+review, the `List` broadening, the prior reviewer revision, and this one) gates Spec -> Ready.
