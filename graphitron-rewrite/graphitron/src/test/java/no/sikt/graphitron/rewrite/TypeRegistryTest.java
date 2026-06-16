@@ -93,6 +93,49 @@ class TypeRegistryTest {
     }
 
     @Test
+    void register_storesWhenAbsent() {
+        var registry = new TypeRegistry();
+        registry.register("Film", plain("Film"));
+        assertThat(registry.get("Film")).isInstanceOf(NestingType.class);
+    }
+
+    @Test
+    void register_isIdempotentOnEqualRepeat() {
+        var registry = new TypeRegistry();
+        registry.register("Film", plain("Film"));
+        registry.register("Film", plain("Film")); // value-equal repeat: no throw, no change
+        assertThat(registry.get("Film")).isEqualTo(plain("Film"));
+    }
+
+    @Test
+    void register_replacesWithSameKindEnrichment() {
+        var registry = new TypeRegistry();
+        registry.register("Film", new GraphitronType.PageInfoType("Film", null, false, null));
+        var enriched = new GraphitronType.PageInfoType("Film", null, true, null);
+        registry.register("Film", enriched);
+        assertThat(registry.get("Film")).isSameAs(enriched);
+    }
+
+    @Test
+    void register_replacesWithDemotionToUnclassified() {
+        var registry = new TypeRegistry();
+        registry.register("Film", plain("Film"));
+        registry.register("Film", demoted("Film", "participant not table-bound"));
+        assertThat(registry.get("Film")).isInstanceOf(UnclassifiedType.class);
+    }
+
+    @Test
+    void register_throwsOnIncompatibleRepeat() {
+        var registry = new TypeRegistry();
+        registry.register("Film", plain("Film"));
+        assertThatIllegalStateException()
+            .isThrownBy(() -> registry.register("Film",
+                new GraphitronType.PageInfoType("Film", null, false, null)))
+            .withMessageContaining("register('Film')")
+            .withMessageContaining("incompatible repeat");
+    }
+
+    @Test
     void entriesView_isUnmodifiable() {
         var registry = new TypeRegistry();
         registry.classify("Film", plain("Film"));

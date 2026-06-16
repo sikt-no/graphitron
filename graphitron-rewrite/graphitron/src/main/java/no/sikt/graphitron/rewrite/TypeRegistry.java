@@ -31,6 +31,59 @@ public final class TypeRegistry {
 
     private final Map<String, GraphitronType> types = new LinkedHashMap<>();
 
+    /**
+     * R279 slice 2 — the single reconciling write entry the field-first walk will call (slice 3) to
+     * register a type's classification, tolerating repeated registration. The eager type pass routes
+     * its per-type classification ({@code classify}) and participant enrichment ({@code enrich})
+     * through here; {@code demote} / {@code synthesize} and the cross-type passes stay on their
+     * explicit verbs through this slice.
+     *
+     * <p>Reconciliation:
+     * <ul>
+     *   <li>name absent → store (the {@code classify} case);
+     *   <li>repeat that agrees ({@code equals}) → idempotent no-op;
+     *   <li>demotion to {@link UnclassifiedType} → replace (the enrich-to-rejection case, and the
+     *       future field-walk rejection);
+     *   <li>same-kind enrichment (same concrete type, richer value) → replace (the {@code enrich} case);
+     *   <li>incompatible repeat (two <em>different</em> concrete classifications) → <strong>throws</strong>.
+     * </ul>
+     *
+     * <p>The throw is a deliberate tripwire: the eager two-pass driver provably never produces an
+     * incompatible repeat (every repeat is the enrich pass replacing a same-kind or rejected value),
+     * so reaching it in slice 2 is a bug. Slice 3 replaces the throw with demotion-to-{@code
+     * UnclassifiedType} once the field walk can register genuinely-competing verdicts, landing the
+     * exact compatibility predicate together with its validator mirror against real inputs rather
+     * than guessing it here. The absent/present axis is shaped so slice 5 can fold
+     * {@code ConnectionPromoter}'s hand-rolled enrich-or-synthesize fork into this same entry.
+     */
+    public void register(String name, GraphitronType type) {
+        Objects.requireNonNull(name, "name");
+        Objects.requireNonNull(type, "type");
+        var existing = types.get(name);
+        if (existing == null) {
+            types.put(name, type);
+            trace(ClassificationTrace.Op.classify, name, type);
+            return;
+        }
+        if (existing.equals(type)) {
+            return;
+        }
+        if (type instanceof UnclassifiedType) {
+            types.put(name, type);
+            trace(ClassificationTrace.Op.demote, name, type);
+            return;
+        }
+        if (existing.getClass() == type.getClass()) {
+            types.put(name, type);
+            trace(ClassificationTrace.Op.enrich, name, type);
+            return;
+        }
+        throw new IllegalStateException("register('" + name + "'): incompatible repeat — "
+            + existing.getClass().getSimpleName() + " then " + type.getClass().getSimpleName()
+            + "; the eager type pass must never produce an incompatible repeat. Slice 3 replaces "
+            + "this tripwire with demotion-to-UnclassifiedType plus its validator mirror.");
+    }
+
     /** Register a type for the first time. Throws if {@code name} is already classified. */
     public void classify(String name, GraphitronType type) {
         Objects.requireNonNull(name, "name");
