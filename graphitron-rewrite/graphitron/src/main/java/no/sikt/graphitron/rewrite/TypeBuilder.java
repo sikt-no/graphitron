@@ -485,6 +485,38 @@ class TypeBuilder {
     }
 
     /**
+     * R279 slice 3a — the participant's classification verdict, recomputed as a pure function of SDL
+     * plus the already-resolved reflection bindings, with <em>no</em> sideways read of the type
+     * registry. This is the order-independence step that lets the field-first walk (slice 3b) call
+     * {@link #buildParticipantList} before any eager type pass has populated {@code ctx.types}.
+     *
+     * <p>It reproduces exactly the value {@code ctx.types.get(typeName)} returned at enrich time:
+     * <ul>
+     *   <li>a multi-producer rejection ({@link RecordBindingResolver#rejection}) is what
+     *       {@code surfaceMultiProducerRejections} demoted/classified to {@link UnclassifiedType}
+     *       before the enrich pass ran, so it is reproduced first and as an {@code UnclassifiedType}
+     *       (routing to {@code buildParticipantList}'s error arm, as the old registry read did);
+     *   <li>otherwise the type pass's own {@link #classifyType} result, which is {@code null} for a
+     *       directiveless object. {@code promoteSingleRecordPayloads} runs <em>after</em> the enrich
+     *       pass, so a directiveless single-record carrier is {@code null} here under both the old
+     *       registry read and this recompute, exactly as before.
+     * </ul>
+     *
+     * <p>{@code classifyType} is a value-builder over SDL + bindings + catalog with no registry or
+     * accumulator writes, so re-invoking it here is safe; its only side effect anywhere is a rare
+     * {@code LOGGER.warn} for a {@code @node} keyColumns order mismatch, which does not affect
+     * generated output.
+     */
+    private GraphitronType participantClassification(String typeName) {
+        var named = (GraphQLNamedType) ctx.schema.getType(typeName);
+        var rejection = bindings.rejection(typeName).orElse(null);
+        if (rejection != null) {
+            return new UnclassifiedType(typeName, named == null ? null : locationOf(named), rejection);
+        }
+        return named == null ? null : classifyType(named);
+    }
+
+    /**
      * Classifies each interface implementor / union member into a {@link ParticipantRef}: a
      * {@code @table}-bound member becomes {@link ParticipantRef.TableBound}; a non-table member
      * becomes {@link ParticipantRef.Unbound} when the context admits non-table members
@@ -515,7 +547,7 @@ class TypeBuilder {
         var result = new ArrayList<ParticipantRef>();
         var errors = new ArrayList<String>();
         for (var typeName : typeNames) {
-            var gt = ctx.types.get(typeName);
+            var gt = participantClassification(typeName);
             if (gt instanceof TableBackedType tbt && !(gt instanceof TableInterfaceType)) {
                 String discriminatorValue = argString(ctx.schema.getObjectType(typeName), DIR_DISCRIMINATOR, ARG_VALUE).orElse(null);
                 List<ParticipantRef.TableBound.CrossTableField> crossTableFields = interfaceTable != null
