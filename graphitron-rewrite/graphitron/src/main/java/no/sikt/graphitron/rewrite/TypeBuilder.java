@@ -183,7 +183,9 @@ class TypeBuilder {
             .forEach(namedType -> {
                 var gType = classifyType(namedType);
                 if (gType != null) {
-                    ctx.typeRegistry.classify(namedType.getName(), gType);
+                    // R279 slice 2: per-type classification goes through the reconciling register
+                    // entry (here: a fresh store, since this is the first pass).
+                    ctx.typeRegistry.register(namedType.getName(), gType);
                 }
                 // R307: the directive-ignored warning is a classification output, emitted as the
                 // classifier visits each type rather than from a separate post-classification
@@ -221,7 +223,12 @@ class TypeBuilder {
                 case UnclassifiedType ignored -> type;
             };
             if (enriched != type) {
-                ctx.typeRegistry.enrich(name, enriched);
+                // R279 slice 2: participant enrichment goes through the reconciling register entry
+                // (here: a same-kind enrichment, or a demotion to UnclassifiedType on a participant
+                // error). NB the enrichment value is still computed order-dependently from
+                // ctx.types.get(participant); converting that to an SDL-directive read is the
+                // order-independence step slice 3 lands before the driver flip.
+                ctx.typeRegistry.register(name, enriched);
             }
         }
 
