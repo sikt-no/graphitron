@@ -261,13 +261,33 @@ itself. What remains here is the risk-isolated, gated code transformation, slice
    field-first walk never does) and object->interface (which would over-approximate reachability);
    the reachable set includes the operation roots, which the ⊆ check excludes because a root's
    fields, not its type, are classified.
-2. **Single-type registration entry (byte-identical output).** Extract per-type classification
-   (and participant enrichment) from the eager loop into a single `register`-a-type entry on the
-   schema accumulator that tolerates repeated registration (idempotent on a compatible repeat),
-   but keep driving it eagerly over `getAllTypesAsList()` so output is unchanged. This decouples
-   "how a type is classified" from "who triggers it," creating the entry point field classification
-   will call as a byproduct. Gate: truth table + sakila, identical output (differential as bisect aid).
-3. **The inversion.** Replace the eager type pass + all-objects field pass with the field-first
+2. **Single-type registration entry (byte-identical output).** *Shipped at `ddd6e1f`.* Route the eager
+   per-type path (the pass-1 `classify` and the pass-2 participant `enrich`) through one reconciling
+   `register` entry on `TypeRegistry` that tolerates repeated registration: absent -> store; a repeat
+   that agrees -> idempotent no-op; a demotion to `UnclassifiedType` or a same-kind enrichment ->
+   replace; an *incompatible* repeat (two different concrete classifications) -> **throw**. Keep driving
+   it eagerly over `getAllTypesAsList()` (the two-pass driver, `demote`/`synthesize`, and the cross-type
+   passes stay on their explicit verbs) so output is byte-identical. *Honest scope (per a
+   `principles-architect` read):* this delivers the reconciling write verb, **not yet** the
+   order-independent entry point the inversion calls. The incompatible arm is a deliberate tripwire,
+   not the real compatibility predicate: the eager two-pass provably never produces an incompatible
+   repeat (every repeat is the enrich pass replacing a same-kind or rejected value), so the predicate
+   is left to slice 3, written against the field walk's real competing-verdict inputs with its
+   validator mirror in the same commit rather than guessed here as dead code. The absent/present axis
+   is shaped so slice 5 can fold `ConnectionPromoter`'s hand-rolled enrich-or-synthesize fork into the
+   same entry. **What slice 2 does *not* touch:** participant enrichment (`buildParticipantList`) still
+   reads `ctx.types.get(participant)` sideways, so `register`'s *input* is still order-dependent;
+   converting that to a participant-SDL-directive read is the order-independence step, broken out as
+   slice 3's first gated commit (below). Gate: truth table + sakila, identical output (differential as
+   bisect aid).
+3. **The inversion.** *First, as its own byte-identical commit ahead of the flip:* convert
+   `buildParticipantList` to derive each participant's `ParticipantRef` from the participant's own SDL
+   directives + standalone reflection binding (`@table` -> `TableBound` with the `TableRef` re-resolved
+   from the participant's `@table`, directiveless/`@error` -> `Unbound`) instead of reading
+   `ctx.types.get(participant)`. That removes the last sideways read feeding `register` and makes its
+   input order-independent (gate: truth table + sakila, identical output), so the verb that was
+   `register`-in-name-only in slice 2 actually becomes the order-independent entry the walk calls.
+   *Then the flip:* replace the eager type pass + all-objects field pass with the field-first
    walk: seed, visit fields, classify each field, and register its target type as a byproduct
    (slice 2's entry). No on-demand recursion and no re-entrancy guard, registration is the only
    write and the accumulator absorbs repeats; walk-level cycles are the traverser's visited-set.
