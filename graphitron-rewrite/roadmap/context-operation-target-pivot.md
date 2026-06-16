@@ -1,7 +1,7 @@
 ---
 id: R316
 title: "Pivot the field-dimensional model to (context, operation, target)"
-status: Spec
+status: Ready
 bucket: structural
 priority: 3
 theme: structural-refactor
