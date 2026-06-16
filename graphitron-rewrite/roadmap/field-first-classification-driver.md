@@ -462,6 +462,33 @@ itself. What remains here is the risk-isolated, gated code transformation, slice
    case-fold collision sweep is the lone surviving global post-walk check), complete the verb-collapse
    so `register` is the only `TypeRegistry` write verb, the Q2 end state. Gate: truth table + sakila.
 
+   **Slice 6 shipped in two gated commits.** *Part 1 (prune):* the compensating type sweep narrows to
+   skip output composites (objects / interfaces / unions); the compensating field-pass sweep is
+   deleted; an unreachable output composite is no longer classified, so the prune is observable. Slice
+   1's orphan measurement became the invariant "every classified output composite is reachable"
+   (`OrphanCat` is pruned). *Part 2 (verb-collapse):* `register` is the sole `TypeRegistry` write verb;
+   `classify` / `demote` are removed and every caller (nesting registration, case-fold sweep,
+   node-typeId uniqueness, multi-producer rejection, federation entity demotion, single-record-carrier
+   binding) routes through `register`, which derives the trace `Op` from the reconciliation arm so the
+   per-call observability is preserved. The "true single-pass DFS fold" (approach A: type classification
+   inlined into the field walk) stays deferred as the spec's slice-3b honest scope set out; the driver
+   is field-first and the walk is the sole classifier, but `TypeBuilder.buildTypes` still hosts the
+   type-classify loop over the walk's reachable set rather than registering each type at its reaching
+   field's visit. Gate: truth table 2112 + sakila execute-spec 404, full pipeline BUILD SUCCESS.
+
+   **Two reachability-model corrections the prune surfaced (folded into `SchemaReachability`).** Slice
+   1's edge set was incomplete for pruning, latent until orphans were actually removed: (1) a reachable
+   object now reaches its implemented interfaces (the object -> interface edge slice 1 deliberately
+   omitted as "over-approximation"). It is a structural necessity, not over-approximation: a `@node` /
+   `@key` implementor can be seeded directly while the `Node` interface it implements is returned by no
+   field (the federation fixture), and without the edge the interface is pruned and the emitted
+   `implements` clause dangles, failing schema assembly. The interface -> implementor edge it pairs with
+   means reaching one implementor pulls in the interface's siblings, which is acceptable (they are
+   needed for polymorphic resolution and were classified before). (2) Subscription is now a seed: the
+   root type classifies as a `RootType` so the schema-class generator can route the subscription entry
+   point, while its fields still classify to `UnclassifiedField` and reach no supported targets (the
+   "future third seed" note is resolved to root-classification-only).
+
 ## Open design questions (defer to implementation slices)
 
 A `principles-architect` read on this slicing landed (its findings are folded into the slice
