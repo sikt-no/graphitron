@@ -7,7 +7,7 @@ priority: 3
 theme: structural-refactor
 depends-on: []
 created: 2026-05-21
-last-updated: 2026-06-13
+last-updated: 2026-06-16
 ---
 
 # Dimensional model pivot: slots over cross-product permits
@@ -94,11 +94,13 @@ The carrier is *position* and also the **legality gate** the producer used to im
 on `Mutation`, `NodeResolve`/`EntityResolve` only on `Query`, `Nesting` only on `Source`.
 
 The `Source` arm carries payload the root arms do not: a **source-shape** (`Table | Record`) and a
-**source cardinality** (`One | Many`) for what arrives at `env.getSource()`. Source-shape carries the same
+**source-object cardinality** (`One | Many`) for what arrives at `env.getSource()`. (This is the arrival
+count, the *source-object* arity; the *source-field* arity, how many this field yields per object, is a
+separate axis, see **bulk is a slot** below.) Source-shape carries the same
 catalog-vs-domain split `mapping` splits on (`Table`/`Column` catalog vs `Record`/`Field` domain), collapsed
 to the row granularity a source always has: `Table` when the parent producer put a catalog row at the source,
 `Record` when it handed back a domain record (an `@service` / DML payload, or a DTO parent). It is a
-projection of the parent producer's `domainReturnType`, not a separately-asserted axis. Source
+projection of the parent producer's `domainReturnType`, not a separately-asserted axis. Source-object
 cardinality is the product of all ancestor field cardinalities (one `Many` ancestor makes every descendant
 `Many`); see **bulk is a slot** below. `Query` / `Mutation` have no source, so a sealed `Carrier` makes the
 payload unrepresentable on those arms; R305 reverses the earlier flat-enum framing because these forks are
@@ -156,10 +158,23 @@ the special thing." The service intent stays the coarse polarity `{QueryService,
 graphitron can't know more than mutate-or-not about opaque user code (`LookupService` would need
 method-signature inference; deferred). Write intents enumerate the legal cells of verb × targeting
 (create has no matching variant, so no `InsertMatching`); **bulk is a slot** (cardinality), not an intent.
-The cardinality slot splits two ways: *source* cardinality (how many source objects arrive, the product of
-ancestor field cardinalities, carried on the `Source` carrier arm) and *target* cardinality (rows per source
-object, `SourceKey.Cardinality`, driving within-group `orderBy`). The two answer different questions and do
-not derive from each other.
+A data fetcher is wired to a **(source object, source field)** pair: `env.getSource()` is the object, and the
+field it resolves is a field *on* that object. There are correspondingly two source-side cardinalities, the
+arities of those two nouns, and they answer different questions:
+
+- **source-object cardinality** — how many source objects arrive across one operation, the product of all
+  ancestor field cardinalities; carried on the `Source` carrier arm.
+- **source-field cardinality** — the arity of *this field* on the source object (one vs many); today's
+  `SourceKey.Cardinality`, driving `load`/`loadMany`, the rows-method per-key iteration, and within-group
+  `orderBy`.
+
+The two vary independently (a single field deep under a list ancestor is source-object `Many`, source-field
+`One`) and neither derives from the other. Earlier drafts called the second *target* cardinality ("rows per
+source object"); that names the right value but anchors it to the target table, when it is really the source
+field's own arity, the field-level sibling of the object-level arrival count. Where a record-backed parent
+exposes the field as a typed accessor, `AccessorMatch.CardinalityMismatch` rejects a declared arity that
+disagrees with the accessor's return arity, the proof that this axis is the source field's, validated against
+the source object's backing member, not a property of the target table.
 
 ### Leaf dissolution and collapse
 
