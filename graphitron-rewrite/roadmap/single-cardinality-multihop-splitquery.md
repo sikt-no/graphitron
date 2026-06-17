@@ -208,8 +208,11 @@ remain correct for a single-hop path (it is, by construction: the bridging loop 
 
 - **Classification (pipeline tier, `GraphitronSchemaBuilderTest`):** convert
   `SPLIT_TABLE_MULTI_HOP_SINGLE_CARDINALITY_REJECTED` into a positive case asserting the field
-  classifies as `SplitTableField` with a 2-element `joinPath` of `FkJoin` steps (the `§1c` doc-block
-  reference in `code-generation-triggers.adoc` is the corpus source; update it to the new verdict).
+  classifies as `SplitTableField` with a 2-element `joinPath` of `FkJoin` steps. This stays a plain
+  enum verdict (it is not a `@classified` corpus example, so it renders nothing into
+  `code-generation-triggers.adoc`); rename the entry off the `_REJECTED` suffix and update its
+  description string, which still carries the stale `§1c rejection` label from the old plan's
+  section numbering.
 - **Execution (`graphitron-sakila-example`, PostgreSQL tier):** a two-hop to-one fixture mirroring
   `Customer.storeAddress` (`customer -> store -> address` exists in Sakila), asserting a query
   returns the correct `Address` per customer. Add a case where an intermediate link is absent (or a
@@ -226,9 +229,11 @@ remain correct for a single-hop path (it is, by construction: the bridging loop 
 - `docs/manual/how-to/split-vs-inline.adoc` "When the classifier requires split" -> "Single-
   cardinality multi-hop reference": multi-hop single cardinality is now supported via the split path;
   rewrite the bullet (it currently documents the rejection as a requirement).
-- Update any `graphitron-rewrite/docs/` reference (e.g. `code-generation-triggers.adoc`) that
-  describes the old rejection. The legacy `graphitron-codegen-parent/.../README.md` note is out of
-  scope (legacy module, not AI-maintained).
+
+`code-generation-triggers.adoc` needs no edit: it renders the `@classified` corpus via
+`ClassifiedDocTest` and the rejected shape was never a corpus example, so it documents nothing about
+this constraint. The legacy `graphitron-codegen-parent/.../README.md` note is out of scope (legacy
+module, not AI-maintained).
 
 ## Success criteria
 
@@ -259,5 +264,8 @@ Identifier-level references (line numbers drift; refer to the named symbol):
 - Existing tests: `GraphitronSchemaBuilderTest.SPLIT_TABLE_MULTI_HOP_SINGLE_CARDINALITY_REJECTED`
   (to convert), `SplitTableFieldPipelineTest` (`film_actor` multi-hop list fixtures),
   `SplitTableFieldValidationTest` (single-cardinality emittable case).
-- Docs: `docs/manual/how-to/split-vs-inline.adoc` (the rejection bullet),
-  `graphitron-rewrite/docs/code-generation-triggers.adoc` (`§1c` corpus block).
+- Stale `§1c` labels to refresh when the verdict flips:
+  `GraphitronSchemaBuilderTest.SPLIT_TABLE_MULTI_HOP_SINGLE_CARDINALITY_REJECTED`'s description string
+  and the `SplitRowsMethodEmitter` "§1c rejects multi-hop single-cardinality" comment (both inherited
+  from the old plan's section numbering; the token appears nowhere in `code-generation-triggers.adoc`).
+- Docs: `docs/manual/how-to/split-vs-inline.adoc` (the rejection bullet).
