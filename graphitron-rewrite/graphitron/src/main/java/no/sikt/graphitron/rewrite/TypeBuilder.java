@@ -26,12 +26,9 @@ import no.sikt.graphitron.rewrite.model.HelperRef;
 import no.sikt.graphitron.rewrite.model.InputRecordShape;
 import no.sikt.graphitron.rewrite.model.InputRecordShape.InputComponent;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType;
-import no.sikt.graphitron.rewrite.model.GraphitronType.ConnectionType;
-import no.sikt.graphitron.rewrite.model.GraphitronType.EdgeType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.InputType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.InterfaceType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.NodeType;
-import no.sikt.graphitron.rewrite.model.GraphitronType.PageInfoType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.NestingType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ResultType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.RootType;
@@ -98,9 +95,10 @@ import static no.sikt.graphitron.rewrite.BuildContext.locationOf;
 /**
  * Classifies all named types in the schema into the {@link GraphitronType} hierarchy.
  *
- * <p>Runs in two passes (see {@link #buildTypes()}): the first pass classifies each type in
- * isolation; the second pass enriches interface and union types with their participant lists,
- * which require the full first-pass map to be available.
+ * <p>Classification is field-first and reachability-driven (see {@link #buildTypes()}): each type
+ * is classified as the walk reaches it, including interface / union participant lists, which are a
+ * registry-free function of SDL plus the reflection fixed point (R279 slice 3a, R317 slice 1) and
+ * so need no separate enrichment pass.
  */
 class TypeBuilder {
 
@@ -175,7 +173,7 @@ class TypeBuilder {
         return bindings == null ? java.util.Optional.empty() : bindings.resolveServiceEmitted(sdlTypeName);
     }
 
-    // ===== Two-pass type map construction =====
+    // ===== Type map construction =====
 
     Map<String, GraphitronType> buildTypes() {
         // R96: derive SDL → backing-class bindings from reflection before per-type classification
@@ -243,40 +241,11 @@ class TypeBuilder {
         // R96: surface multi-producer rejections as UnclassifiedType.
         surfaceMultiProducerRejections();
 
-        // Second pass: enrich interface / union variants with their resolved participants.
-        // Snapshot the names so the iteration is independent of registry mutation; the
-        // registry's internal map is the live store.
-        var firstPassNames = List.copyOf(ctx.typeRegistry.entries().keySet());
-        for (var name : firstPassNames) {
-            var type = ctx.typeRegistry.get(name);
-            GraphitronType enriched = switch (type) {
-                case TableInterfaceType tit   -> enrichTableInterfaceType(tit);
-                case InterfaceType it         -> enrichInterfaceType(it);
-                case UnionType ut             -> enrichUnionType(ut);
-                case TableType ignored        -> type;
-                case NodeType ignored         -> type;
-                case ResultType ignored       -> type;
-                case RootType ignored         -> type;
-                case ErrorType ignored        -> type;
-                case InputType ignored        -> type;
-                case TableInputType ignored   -> type;
-                case ConnectionType ignored   -> type;
-                case EdgeType ignored         -> type;
-                case PageInfoType ignored     -> type;
-                case NestingType ignored  -> type;
-                case no.sikt.graphitron.rewrite.model.GraphitronType.EnumType ignored -> type;
-                case no.sikt.graphitron.rewrite.model.GraphitronType.ScalarType ignored -> type;
-                case UnclassifiedType ignored -> type;
-            };
-            if (enriched != type) {
-                // R279 slice 2: participant enrichment goes through the reconciling register entry
-                // (here: a same-kind enrichment, or a demotion to UnclassifiedType on a participant
-                // error). NB the enrichment value is still computed order-dependently from
-                // ctx.types.get(participant); converting that to an SDL-directive read is the
-                // order-independence step slice 3 lands before the driver flip.
-                ctx.typeRegistry.register(name, enriched);
-            }
-        }
+        // R317 slice 1 — the former second interface/union enrichment pass is gone: each interface
+        // and union is now classified with its participants at the node visit in {@link #classifyType}
+        // (the participant verdict is registry-free per slice 3a, so folding it onto the visit is
+        // byte-identical). What remains here is global validation over the finished registry, not a
+        // classification pass.
 
         // NodeType typeId uniqueness: two types cannot share a typeId because Query.node(id:)
         // dispatch extracts the typeId prefix and routes to one GraphQL type. Colliding entries
@@ -494,32 +463,6 @@ class TypeBuilder {
             // former contains-guarded classify/demote fork collapses to one call.
             ctx.typeRegistry.register(name, unclassified);
         }
-    }
-
-    private GraphitronType enrichTableInterfaceType(TableInterfaceType type) {
-        var participants = buildParticipantList(implementorNames(type.name()), false, type.table());
-        if (participants.error() != null) {
-            return new UnclassifiedType(type.name(), type.location(), Rejection.structural(participants.error()));
-        }
-        return new TableInterfaceType(type.name(), type.location(), type.discriminatorColumn(), type.table(), participants.list());
-    }
-
-    private GraphitronType enrichInterfaceType(InterfaceType type) {
-        var participants = buildParticipantList(implementorNames(type.name()), true, null);
-        if (participants.error() != null) {
-            return new UnclassifiedType(type.name(), type.location(), Rejection.structural(participants.error()));
-        }
-        return new InterfaceType(type.name(), type.location(), participants.list());
-    }
-
-    private GraphitronType enrichUnionType(UnionType type) {
-        var unionType = (GraphQLUnionType) ctx.schema.getType(type.name());
-        var names = unionType.getTypes().stream().map(t -> t.getName()).toList();
-        var participants = buildParticipantList(names, false, null);
-        if (participants.error() != null) {
-            return new UnclassifiedType(type.name(), type.location(), Rejection.structural(participants.error()));
-        }
-        return new UnionType(type.name(), type.location(), participants.list());
     }
 
     private List<String> implementorNames(String interfaceName) {
@@ -740,10 +683,27 @@ class TypeBuilder {
             if (iface.hasAppliedDirective(DIR_TABLE) && iface.hasAppliedDirective(DIR_DISCRIMINATE)) {
                 return buildTableInterfaceType(iface);
             }
-            return new InterfaceType(name, location, List.of());
+            // R317 slice 1 — classify a plain interface with its participants at the moment the walk
+            // reaches it, folding the former second-pass enrichment onto the node visit.
+            // {@link #participantClassification} is registry-free (slice 3a), so the participant list
+            // is a pure function of SDL + the reflection fixed point and reads nothing from the
+            // still-being-populated type registry; the verdict is therefore identical to the one the
+            // separate enrich pass produced.
+            var participants = buildParticipantList(implementorNames(name), true, null);
+            if (participants.error() != null) {
+                return new UnclassifiedType(name, location, Rejection.structural(participants.error()));
+            }
+            return new InterfaceType(name, location, participants.list());
         }
-        if (namedType instanceof GraphQLUnionType) {
-            return new UnionType(name, location, List.of());
+        if (namedType instanceof GraphQLUnionType union) {
+            // R317 slice 1 — see the interface arm above: union members are classified into
+            // participants at the union's own visit, not in a trailing enrich pass.
+            var memberNames = union.getTypes().stream().map(t -> t.getName()).toList();
+            var participants = buildParticipantList(memberNames, false, null);
+            if (participants.error() != null) {
+                return new UnclassifiedType(name, location, Rejection.structural(participants.error()));
+            }
+            return new UnionType(name, location, participants.list());
         }
         return null;
     }
@@ -1155,7 +1115,14 @@ class TypeBuilder {
         JooqCatalog.ColumnEntry discriminatorEntry = discriminatorRaw == null ? null
             : ctx.catalog.findColumn(tableOpt.get().tableName(), discriminatorRaw).orElse(null);
         String discriminatorColumn = discriminatorEntry != null ? discriminatorEntry.sqlName() : discriminatorRaw;
-        return new TableInterfaceType(name, location, discriminatorColumn, tableOpt.get(), List.of());
+        // R317 slice 1 — enrich at classify time (see the interface arm of classifyType). The
+        // single-table interface passes its own table so each participant's cross-table fields are
+        // detected against it.
+        var participants = buildParticipantList(implementorNames(name), false, tableOpt.get());
+        if (participants.error() != null) {
+            return new UnclassifiedType(name, location, Rejection.structural(participants.error()));
+        }
+        return new TableInterfaceType(name, location, discriminatorColumn, tableOpt.get(), participants.list());
     }
 
     private GraphitronType buildErrorType(GraphQLObjectType objType) {
