@@ -7,7 +7,7 @@ priority: 4
 theme: nodeid
 depends-on: []
 created: 2026-06-16
-last-updated: 2026-06-16
+last-updated: 2026-06-17
 ---
 
 # Bind FK-reference @nodeId onto jOOQ-record @service params (port legacy @reference FK resolution; generalize R311)
@@ -259,9 +259,16 @@ column count and no cross-field invariant is needed. We do **not** reuse R311's
 whose meaning depends on the variant" shape, and "the record's identity
 columns" vs "an FK-child projection of *another* node's identity" are different
 facts. `nonNull` (the SDL field's `ID!`-vs-`ID`) drives throw-on-mismatch vs
-conditional-set uniformly, subsuming R311's identity-only "always throw" as data
-rather than an `instanceof`. A full sibling carrier is rejected: the decode
-spine is identical, so the cut is the projection axis only.
+conditional-set uniformly across **both** projections, read off one data field
+rather than an `instanceof` on the projection. The `@service` method owns the
+insert/update (Graphitron only populates the record), so the framework does
+**not** force a same-table identity to be non-null: a nullable (`ID`) identity is
+a legitimate service-side upsert input (omitted → unset PK → the service inserts)
+and is handled exactly like a nullable FK reference. This deliberately changes
+R311's same-table identity, which formerly always threw on null whether `ID!` or
+`ID`; see **D4** for the behavior change and its mitigations. A full sibling
+carrier is rejected: the decode spine is identical, so the cut is the projection
+axis only.
 
 ### D2. Convergence: the binding axis is the Java param type; the SDL classification is a cross-check (requirement #3)
 
@@ -308,22 +315,30 @@ orientation for both consumers.
 `@nodeId` decode. Coercion stays on the non-deprecated `fromArray` path (a
 `containsKey`-guarded arity-1 `fromArray` per present column, or a filtered
 batch over present columns) — **not** the deprecated-for-removal
-`DataType.convert(Object)` R311 deliberately avoids. Semantics: omitted key →
-not loaded (`changed=false`, excluded from INSERT/UPDATE); explicit `null` →
-loaded as `NULL`; `nonNull` decode (identity, or `ID!` FK reference) → always
-decode-and-load, throw on null/mismatch (R195); nullable FK-reference decode
-(`ID`) → omitted skips, present-null nulls the child columns, present-value
-decodes.
+`DataType.convert(Object)` R311 deliberately avoids. Semantics split on
+**nullability**, applied identically to identity and FK-reference decodes (and to
+plain `@field` columns): a `nonNull` (`ID!` / `!`) binding → always
+decode-and-load, throw on null/mismatch (R195); a nullable (`ID`) binding →
+omitted key not loaded (`changed=false`, excluded from INSERT/UPDATE),
+present-`null` loaded as `NULL`, present-value decoded (a wrong-type decode still
+throws). The projection (identity vs FK child) decides only *where* the decoded
+values land, never *whether* a missing value throws.
 
-This change *also alters R311's shipped same-table output* (a `fromArray` batch
-becomes conditional loads). Folded into R315 deliberately (requirement #5
-charters it; the FK-reference case needs conditional-set to be correct), with
-three required mitigations: (1) the R315 changelog entry states the R311-output
-change explicitly; (2) an **execution-tier** test pins omitted-vs-null-vs-set on
-a nullable column — no other tier can observe `changed=false` exclusion
-(pipeline sees the carrier, compile sees column existence, emitted-body string
-assertions are banned); (3) the emitter's "two disjoint `fromArray` groups"
-javadoc contract is retired so it does not become a false invariant.
+This change *also alters R311's shipped same-table behavior* on two counts: a
+`fromArray` batch becomes conditional loads, **and** a nullable (`ID`) same-table
+identity moves from always-throw-on-null to skip-when-omitted (the upsert input
+chartered in D1). Folded into R315 deliberately (requirement #5 charters it; the
+FK-reference case needs conditional-set to be correct), with three required
+mitigations: (1) the R315 changelog entry states *both* R311 behavior changes
+explicitly — the batching shift and the nullable-identity throw→skip; (2) an
+**execution-tier** test pins omitted-vs-null-vs-set on a nullable column,
+including a nullable same-table identity (omitted → unset PK, the service-owned
+insert path) — no other tier can observe `changed=false` exclusion (pipeline sees
+the carrier, compile sees column existence, emitted-body string assertions are
+banned); (3) the emitter's "two disjoint `fromArray` groups" javadoc contract
+**and** the `RecordKeyDecode` carrier javadoc that asserts identity "always
+throws … whether `ID!` or `ID`" are both retired so neither becomes a false
+invariant.
 *Alternative considered:* carve the conditional-load change into a precursor
 item with its own execution test, leaving R315 purely FK-references.
 Recommended-against to honor chartered requirement #5 and avoid a cross-item
@@ -389,11 +404,20 @@ existing test catalog (`film_actor` → single FKs to `film` and `actor`;
   record and node table with no `@reference(key:)`; a node key column not
   covered by the chosen FK; (unchanged R311) `@field`→no column, cardinality
   parity, missing `typeName`.
+- **Pipeline — explicit `@reference(key:)` disambiguation (positive):** a record
+  table carrying **two** FKs to the same node type (a synthesized fixture; the
+  existing catalog has no such shape); assert `@reference(key: "<fkName>")`
+  selects the named FK so the projection lands in *that* FK's child columns,
+  while omitting the key on the same shape gives the ambiguous rejection above.
+  Pins the directive-arg → selected-FK binding the deduced-FK tests cannot reach.
 - **Execution (sakila):** a `@service` mutation taking a `FilmActorRecord` built
   from `{filmId, actorId}` inserts a `film_actor` row; assert the persisted
-  `film_id` / `actor_id` equal the decoded ids. Plus the **null-semantics** case
-  (D4): a nullable column omitted vs explicit-null vs set yields the correct
-  persisted column set / value.
+  `film_id` / `actor_id` equal the decoded ids. Plus the **null-semantics** cases
+  (D4), the only tier that observes `changed=false` exclusion: a nullable plain
+  column omitted vs explicit-null vs set; and, on a single-PK table with a
+  DB-assignable PK (e.g. `FilmRecord`), a nullable same-table identity (`filmId:
+  ID @nodeId`) omitted (PK left unset → the service inserts) vs set (the update
+  path), each yielding the correct persisted column set / value.
 - **Compile (graphitron-sakila-example):** carry the FK-reference shape so the
   generated `*Fetchers` compile against real jOOQ at Java 17.
 
