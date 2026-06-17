@@ -1,7 +1,7 @@
 ---
 id: R317
 title: "Inline type classification into the field-first walk (retire TypeBuilder.buildTypes)"
-status: Ready
+status: In Progress
 bucket: architecture
 priority: 4
 theme: structural-refactor
@@ -109,7 +109,21 @@ invariant is retired, so the validator-mirror rule is satisfied trivially.
    visit, so the traversal classifies every type and field in one pass. The reachable set may stay
    materialised through this slice. Global validation reductions untouched. Gate: truth table + sakila,
    byte-identical.
+
+   *Shipped (participant enrichment only).* `classifyType` now classifies each interface / union with
+   its participants at the node visit, and the separate second enrichment pass in `buildTypes` (plus
+   the `enrichTableInterfaceType` / `enrichInterfaceType` / `enrichUnionType` helpers) is deleted; the
+   participant verdict is registry-free (slice 3a) so this is byte-identical. The other three folds in
+   this bullet stay as retained passes for slice 2, because under the byte-identity gate each is not a
+   clean per-node fold yet: `surfaceMultiProducerRejections` and `emitDirectiveIgnoredWarning` iterate
+   `getAllTypesAsList()` and so process *unreachable* types, whose verdict / warning a reachable-set
+   fold would drop; and `promoteSingleRecordPayloads` cannot be split from its load-bearing
+   `scanStructuralDmlPayload` gate, which reads the carrier's element-type verdicts, exactly the
+   carrier-scan dependency slice 2 resolves. The three therefore fold naturally alongside slice 2's
+   structural change rather than ahead of it.
 2. **Resolve the carrier scan dependency and delete `buildTypes`.** Land the post-order (or
    fixed-point) carrier classification, retire `TypeBuilder.buildTypes` and the `reachableOutputTypes`
    cross-class hand-off, and make the `SchemaTraverser` visitor the sole classifier with only the
-   validation reductions after it. Gate: truth table + sakila, byte-identical.
+   validation reductions after it. Folds in the remaining three deferred passes from slice 1
+   (multi-producer rejection, directive-ignored warning, carrier binding) as the structure changes.
+   Gate: truth table + sakila, byte-identical.
