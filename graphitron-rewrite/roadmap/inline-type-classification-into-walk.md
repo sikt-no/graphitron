@@ -44,9 +44,10 @@ Two structural facts block that, and a third keeps the validate phase from being
 2. **`classifyField`'s only whole-registry reads are reverse-index queries over a fixed point.**
    Almost every `ctx.types.get(...)` in `FieldBuilder` is edge-local (the field's own
    return / element / member type, satisfiable by a post-order walk). The exceptions are two reverse
-   indexes: `table -> NodeType` (five byte-identical `ctx.types.values()` scans resolving an
-   ID-returning field's encode helper) and `participant-field -> crossTableField`
-   (`lookupParticipantCrossTableField`). Both query information that is a registry-free fixed point
+   indexes: `table -> NodeType` (four byte-identical `ctx.types.values()` scans resolving an
+   ID-returning field's encode helper, `FieldBuilder` lines 3038 / 3496 / 3563 / 3770) and
+   `participant-field -> crossTableField` (`lookupParticipantCrossTableField`). Both query
+   information that is a registry-free fixed point
    (the `@node` / `@key` and `@reference` SDL plus the catalog and reflection bindings, the same
    inputs the classifier itself consumes). Five consumers evaluating one predicate is the
    under-specified-model smell; the fix is to compute the index once as a fixed point.
@@ -143,10 +144,13 @@ trivially.
    its helpers are deleted. Byte-identical.
 2. **Lift the reverse-lookups to fixed-point indices.** Build `table -> NodeType` (from the `@node`
    / `@key` SDL + catalog) and `participant-field -> crossTableField` (from `@reference` SDL); route
-   the five encode-helper sites and `lookupParticipantCrossTableField` through them; add the
+   the four encode-helper sites and `lookupParticipantCrossTableField` through them; add the
    one-NodeType-per-table validator mirror and pin the tie-break. Removes `classifyField`'s
    whole-registry reads. Byte-identical except that the new guard rejects a previously
-   silently-first-wins two-node-per-table schema.
+   silently-first-wins two-node-per-table schema; that guard ships with a truth-table / pipeline
+   fixture declaring two `@node` types on one table and asserting the new rejection, per the
+   validator-mirror rule (the behaviour change is not byte-identical, so it must be pinned by a
+   test, not just claimed).
 3. **Edge-complete `classifyType` for directiveless objects.** Classify nesting (fold
    `registerNestingTypes`) and carrier (fold `promoteSingleRecordPayloads` via the binding
    fixed-point verdict) at the reaching edge; edge-decidable orphans produce `UnclassifiedField`
@@ -157,6 +161,51 @@ trivially.
    `buildContextForTests` seam. Only validation reductions after. Byte-identical.
 5. **Immutable validate phase (inlines R318).** The global reductions register diagnostics into a
    diagnostic channel instead of demoting to `UnclassifiedType` / `UnclassifiedField`; the
-   validator, LSP, and emitter read diagnostics from there. Needs the diagnostic-channel design
-   (where diagnostics live and how each reader consumes them). Changes the error-carrier mechanism,
-   not which schemas pass or fail.
+   validator and LSP read diagnostics from there. Changes the error-carrier mechanism, not which
+   schemas pass or fail. The diagnostic-channel design is pinned below.
+
+### Diagnostic-channel design (the inlined R318)
+
+**What stops mutating.** Exactly the post-classification *demotions*, the sites where a verdict
+classification already produced is overwritten purely to surface an error:
+
+- `validateNodeTypeIdUniqueness` and the new one-NodeType-per-table guard (`TypeBuilder`) —
+  `register(UnclassifiedType)` over a real `NodeType`.
+- `rejectCaseInsensitiveTypeCollisions` (`GraphitronSchemaBuilder.java:581`) —
+  `register(UnclassifiedType)` over the colliding real verdicts.
+- the dangling-reference backstop (`GraphitronSchemaBuilder.java:444`) —
+  `reclassify(UnclassifiedField)` over a real `OutputField`.
+- `EntityResolutionBuilder` federation checks (`:108` / `:128` / `:154` / `:173`) —
+  `register(UnclassifiedType)`.
+- the carrier-shape scan, re-expressed here as the validation guard slice 3's design decision
+  already identified it to be.
+
+**What does not change.** Classification's own honest `UnclassifiedType` / `UnclassifiedField`
+verdicts (unknown table, inert enum, unbound participant, directive conflict, the edge-decidable
+orphan from slice 3) stay exactly as they are: "this type genuinely did not classify" *is* the
+verdict, not a demotion. R318 retires the overwrites, not the variant.
+
+**Where diagnostics live.** Generalise the channel R279 slice 4 already built:
+`collectDomainReturnTypeConflicts` stopped demoting and stashes a `List<Rejection>` on
+`GraphitronSchema` that `validateUniformDomainReturnType` drains. Slice 5 promotes that one-off into
+a single diagnostic channel on the schema (a `Rejection` plus its type-name / field-coord and
+`SourceLocation`), folding `domainReturnTypeConflicts` into it since the shape is identical. The
+`BuildWarning` channel stays separate unless folding it in is near-free; warnings are not part of
+this entanglement.
+
+**How each reader consumes it.** The validator drains the channel into the same `ValidationError`
+stream it emits today from the `validateUnclassifiedType` / `validateUnclassifiedField` passes, so
+`validate()`'s output is unchanged. The LSP is insulated: `Diagnostics.java` reads
+`ValidationReport.errors()` / `.warnings()`, never the registry verdicts, so it needs no change as
+long as the `ValidationError` stream is preserved. Emission is already globally gated:
+`GraphQLRewriteGenerator.validate()` throws `ValidationFailedException` before `generate()` runs, so
+a field that stays classified but carries an error diagnostic never reaches the emitter. This is why
+the dangling-reference demotion's second job (removing the field from emission so assembly cannot
+choke) is redundant under this design and can be dropped: the assembled `GraphQLSchema` is built
+from SDL up front (graphql-java has already validated SDL type references), and the dangling case is
+a graphitron-emission concern the global gate forecloses. The slice must confirm nothing between the
+builder and the validator (notably `rebuildAssembledForConnections`) reads the demoted verdict.
+
+**Acceptance.** Identical `ValidationError` stream out; the registry verdict for every demoted case
+now reflects what the type actually is (the verdict means one thing); generated output for
+error-free schemas stays byte-identical. Truth table + sakila gate as for the other slices.
