@@ -3364,20 +3364,29 @@ class FieldBuilder {
                         yield new UnclassifiedField(parentTypeName, name, location, fieldDef,
                             Rejection.structural(carrierError));
                     }
-                    // R275: a carrier-shaped SDL-Object return reaching the Scalar arm with no
-                    // registry entry is an orphan carrier — the structural scan recognizes it as a
-                    // single-data-field carrier, but it neither bound (by producer
+                    // R275 / R317 slice 3c: a carrier-shaped SDL-Object return reaching the Scalar
+                    // arm with no producer binding is an orphan carrier — the structural scan
+                    // recognizes it as a single-data-field carrier, but it neither bound (by producer
                     // reflection) nor promoted as a producer-backed carrier, so the type is dropped
                     // from the model and the field's emitted typeRef would dangle (graphql-java
-                    // assembly fails with "type X not found in schema"). The field edge owns the
-                    // orphan rejection (see GraphitronSchemaBuilder.registerNestingTypesIn); reject
-                    // loudly instead of classifying over a dropped type. Non-carrier orphan shapes
-                    // (scan Reject / NotApplicable) are caught by the shape-agnostic backstop
-                    // (GraphitronSchemaBuilder.rejectDanglingTypeReferences); this arm runs first
-                    // so recognized carriers get the richer, shape-specific guidance.
+                    // assembly fails with "type X not found in schema"). This is an edge-decidable
+                    // orphan: the producing edge owns the rejection and produces UnclassifiedField
+                    // directly here. The orphan predicate is registry-free — it reads
+                    // {@code typeBuilder.carrierTableBinding}, the same scan + producer-binding fixed
+                    // point that registerProducerBackedCarrier registers from, never the in-progress
+                    // type registry. A carrier-shaped scan Admit with a null carrierTableBinding is
+                    // definitionally an orphan (Admit + a bound producer would have registered a
+                    // JooqTableRecordType at the producing edge before this field classified, so the
+                    // resolver would have yielded Result, not Scalar); evaluating the orphan verdict
+                    // without a ctx.types read keeps it order-independent ahead of the slice-4
+                    // collapse. Non-carrier orphan shapes (scan Reject / NotApplicable) may be rescued
+                    // by a later nesting / connection edge, so they are not edge-decidable; the
+                    // shape-agnostic backstop (GraphitronSchemaBuilder.rejectDanglingTypeReferences)
+                    // catches them after the walk. This arm runs first so recognized carriers get the
+                    // richer, shape-specific guidance.
                     String payloadName = s.returnType().returnTypeName();
                     if (ctx.schema.getType(payloadName) instanceof graphql.schema.GraphQLObjectType
-                            && ctx.types.get(payloadName) == null
+                            && typeBuilder.carrierTableBinding(payloadName) == null
                             && ctx.scanStructuralServiceCarrierPayload(payloadName)
                                 instanceof BuildContext.DmlPayloadScan.Admit admit) {
                         yield new UnclassifiedField(parentTypeName, name, location, fieldDef,

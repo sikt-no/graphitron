@@ -8495,6 +8495,46 @@ class GraphitronSchemaBuilderTest {
                     .contains("LoosePayload", "did not classify", "not found in schema");
             }),
 
+        // R317 slice 3c — the edge-decidable orphan: an @service mutation returning an [ID] @nodeId
+        // carrier (the SERVICE_MUTATION_ID_CARRIER_ENCODES_FROM_RECORD shape) whose producer return
+        // (List<LanguageRecord>) does not match the @nodeId(typeName: "Film") target's record
+        // (FilmRecord), so no ServiceEmitted binding grounds and carrierTableBinding stays null. The
+        // carrier scan still Admits the shape (IdElement), so this is a recognized-but-unbound carrier:
+        // a definitively-orphan shape the producing edge owns and rejects directly with the richer
+        // ID-element guidance, never reaching the shape-agnostic backstop. Unlike the two backstop
+        // cases above (reason "did not classify into the model ... not found in schema"), the edge
+        // verdict is registry-free — it reads typeBuilder.carrierTableBinding, not ctx.types — which
+        // is the slice-3c structural delta and what keeps the verdict order-independent ahead of the
+        // slice-4 collapse. The assertion pins that the EDGE produced the verdict (the ID-element
+        // reason is present and the backstop's "not found in schema" signature is absent).
+        SERVICE_MUTATION_ID_CARRIER_UNBOUND_ORPHAN_REJECTED_AT_EDGE(
+            "@service mutation returning an [ID] @nodeId carrier whose producer return does not ground "
+                + "the binding is rejected at the producing edge, not by the dangling backstop",
+            """
+            type Film implements Node @node @table(name: "film") { id: ID! @nodeId  title: String }
+            type SakErr @error(handlers: [{handler: GENERIC, className: "java.lang.IllegalArgumentException"}]) {
+                path: [String!]!
+                message: String!
+            }
+            union DeleteFilmsError = SakErr
+            type FilmIdsPayload {
+                filmIds: [ID] @nodeId(typeName: "Film")
+                errors: [DeleteFilmsError]
+            }
+            type Query { x: String }
+            type Mutation {
+                deleteFilms: FilmIdsPayload @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getLanguagesAsList"})
+            }
+            """,
+            schema -> {
+                var f = schema.field("Mutation", "deleteFilms");
+                assertThat(f).isInstanceOf(UnclassifiedField.class);
+                assertThat(((UnclassifiedField) f).reason())
+                    .contains("FilmIdsPayload", "did not classify", "ID-element carrier",
+                        "no @service producer binding grounds it")
+                    .doesNotContain("not found in schema");
+            }),
+
         QUERY_FIELD_RETURNING_UNCLASSIFIED_TYPE(
             "query field returning a type with no Graphitron directive → UnclassifiedField",
             """
