@@ -144,7 +144,12 @@ becomes necessary for a future table carrying two FKs to the same node.
 
 1. **Binding rule** for `@nodeId(typeName: X)` onto a jOOQ-record param:
    - X's table **==** record's table → write X's `keyColumns` directly
-     (R311's existing branch, unchanged).
+     (R311's existing branch, unchanged), **unless** the field carries an
+     explicit `@reference`. An `@reference` on a same-table `@nodeId` can only
+     name a self-FK (the out-of-scope self-reference request), so it is
+     **rejected** (see #4 and "Out of scope"), not silently routed to the
+     identity branch with the authored directive ignored. This mirrors legacy's
+     `isNodeIdReferenceField`, where any `@reference` forces the reference branch.
    - X's table **≠** record's table → resolve the FK between the record's
      table and X's table; map X's `keyColumns` to the FK's **child** columns
      on the record **by column identity** (match each node key column against
@@ -173,7 +178,8 @@ becomes necessary for a future table carrying two FKs to the same node.
    while R315 re-derives the FK, i.e. two readers of one directive (see **D2**).
 4. **Strict rejections** (rewrite-style `UnclassifiedField`): ambiguous/zero
    FK with no explicit `@reference` key; a node `keyColumn` not covered by
-   the chosen FK; `@field` resolving to no column (R311, unchanged). Multiple
+   the chosen FK; an explicit `@reference` on a same-table `@nodeId` (a self-FK
+   request, out of scope); `@field` resolving to no column (R311, unchanged). Multiple
    `@nodeId` fields are now legal (the `:266` gate is removed). When two decodes
    target the **same** column, their runtime value-agreement is **not** guarded
    here: that is a data-dependent (runtime) concern deferred to **R322**
@@ -229,7 +235,10 @@ becomes necessary for a future table carrying two FKs to the same node.
   non-`@splitQuery` self-references (`SelfReferenceError`/`Warning`).
   Supporting it needs a new disambiguator (e.g. `@reference(key:)`
   overriding the own-identity default) — a separate design item. None of the
-  four motivating mutations need it.
+  four motivating mutations need it. Until that item lands, the only way to
+  *request* self-FK semantics (an explicit `@reference` on a same-table
+  `@nodeId`) is **rejected** (requirement #4), preserving legacy's loud
+  forbiddance instead of silently writing the record's own PK.
 - **Pojo (member-axis) FK-`@nodeId`** — same decode core, but the "set"
   target is a Java member, and one `@nodeId` field → N key columns has no
   column catalog to match against (a real modeling decision). Separate item;
@@ -381,8 +390,11 @@ This change *also alters R311's shipped same-table behavior* on two counts: a
 `fromArray` batch becomes conditional loads, **and** a nullable (`ID`) same-table
 identity moves from always-throw-on-null to skip-when-omitted (the upsert input
 chartered in D1). Folded into R315 deliberately (requirement #5 charters it; the
-FK-reference case needs conditional-set to be correct), with three required
-mitigations: (1) the R315 changelog entry states *both* R311 behavior changes
+nullable FK-reference and nullable-identity cases need conditional-set to be
+correct). The motivating consumer's keys are all `ID!`/`!`, so the model reshape
+plus FK resolution already close the literal breakage; D4 is therefore a
+completeness generalization rather than a fix the four mutations require, folded
+with three required mitigations: (1) the R315 changelog entry states *both* R311 behavior changes
 explicitly — the batching shift and the nullable-identity throw→skip; (2) an
 **execution-tier** test pins omitted-vs-null-vs-set on a nullable column,
 including a nullable same-table identity (omitted → unset PK, the service-owned
@@ -424,8 +436,10 @@ Flat file-by-file (all land together; no observable intermediate state):
   the SDL input classified as `TableInputType` (the `@table`-present shape), emit
   the requirement-#3 reject `UnclassifiedField` (D2). In `buildJooqRecord` /
   `buildRecordKeyDecode`: drop the single-`@nodeId` gate (`:266`) and the
-  same-record gate (`:325`); per `@nodeId` field, branch node-table ==
-  record-table → resolve the record's own key columns (R311) vs ≠ → call the new
+  same-record gate (`:325`); per `@nodeId` field, branch: an explicit `@reference`
+  forces the FK branch (a self-FK resolution, record-table == node-table, is
+  rejected as out of scope); else node-table == record-table → resolve the
+  record's own key columns (R311) vs ≠ → call the new
   FK resolver for the reconciled child columns; build each `RecordKeyDecode` with
   the resolved `targetColumns` and `nonNull` from the SDL field; collect a
   `List<RecordKeyDecode>`.
@@ -490,7 +504,9 @@ discriminating pins use renamed-FK fixtures (see Implementation / Test fixtures)
   `SynthesizeFkJoinReorderedKeysTest`'s slot-orientation pin.
 - **Pipeline — rejections (all `UnclassifiedField`):** zero/multi FK between
   record and node table with no `@reference(key:)`; a node key column not covered
-  by the chosen FK; (unchanged R311) `@field`→no column, cardinality parity,
+  by the chosen FK; an explicit `@reference` on a same-table `@nodeId` (self-FK
+  request, out of scope) rejecting rather than silently doing identity; (unchanged
+  R311) `@field`→no column, cardinality parity,
   missing `typeName`. "More than one `@nodeId`" is **no longer** a rejection (the
   `:266` gate is gone): the former `twoNodeIdFields_reject` becomes a positive
   classification test (two `keyDecodes` resolve; their overlap value-agreement is
@@ -511,7 +527,9 @@ discriminating pins use renamed-FK fixtures (see Implementation / Test fixtures)
   single-PK table with a DB-assignable PK (e.g. `FilmRecord`), a nullable
   same-table identity (`filmId: ID @nodeId`) omitted (PK left unset → the service
   inserts) vs set (the update path), each yielding the correct persisted column
-  set / value.
+  set / value; and a nullable FK reference (`ID @nodeId` resolving to an FK child
+  column) omitted (child column left unwritten, `changed=false`) vs set (decoded
+  into the child column), the most direct pin of the D4 generalization.
 - **Compile (graphitron-sakila-example):** carry the FK-reference shape so the
   generated `*Fetchers` compile against real jOOQ at Java 17.
 
@@ -533,6 +551,9 @@ check); new rejections route `InputBeanResolver.Result.Failed` →
 - New: `@table` present on a `@service` jOOQ-record param (SDL classifies as
   `TableInputType`) → reject with the requirement-#3 message (replacing the bean
   path's misleading "has no fields matching").
+- New: an explicit `@reference` on a same-table `@nodeId` (resolves to a self-FK)
+  → reject as the out-of-scope self-reference case, instead of silently taking the
+  identity branch and ignoring the authored `@reference`.
 - Unchanged: `@field`→no column; cardinality parity; `@nodeId` without
   `typeName`.
 - Structural backstop: `RecordKeyDecode` rejects an empty `targetColumns` in its
