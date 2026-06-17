@@ -3,6 +3,9 @@ package no.sikt.graphitron.rewrite.maven;
 import graphql.schema.idl.errors.SchemaProblem;
 import no.sikt.graphitron.rewrite.GraphQLRewriteGenerator;
 import no.sikt.graphitron.rewrite.RewriteContext;
+import no.sikt.graphitron.rewrite.ValidationError;
+import no.sikt.graphitron.rewrite.ValidationFailedException;
+import no.sikt.graphitron.rewrite.maven.watch.WatchErrorFormatter;
 import org.apache.maven.artifact.DependencyResolutionRequiredException;
 import org.apache.maven.execution.MavenSession;
 import org.apache.maven.plugin.AbstractMojo;
@@ -252,11 +255,34 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
                 throw new MojoExecutionException(
                     SchemaProblemDiagnostic.format(e, loaded, ctx.basedir(), ctx.schemaFileExtensions()),
                     new RuntimeException((String) null, e));
+            } catch (ValidationFailedException e) {
+                // Render the carried errors into the failure summary so one-shot `generate` /
+                // `validate` surface the same file:line:col detail DevMojo already renders, no
+                // matter which build stage raised the exception (validate(), the federation-recipe
+                // rewrap in GraphitronSchemaBuilder.buildBundle, or TagLinkSynthesiser.apply).
+                // Wrap the cause in a null-message intermediary, as the SchemaProblem arm does, so
+                // Maven's DefaultExceptionHandler does not append the bare "N schema validation
+                // error(s)" count after our detail; the ValidationFailedException stays on the
+                // cause chain for `-e` / `-X` consumers.
+                throw new MojoExecutionException(
+                    validationFailureMessage(e.errors()),
+                    new RuntimeException((String) null, e));
             } catch (RuntimeException e) {
                 throw new MojoExecutionException(e.getMessage(), e);
             }
         });
         return holder[0];
+    }
+
+    /**
+     * Renders a {@link ValidationFailedException}'s carried errors into the one-shot mojo failure
+     * message. Delegates the per-error tree to {@link WatchErrorFormatter#format}, the same renderer
+     * the {@code graphitron:dev} loop uses, so the one-shot and dev surfaces cannot drift; the
+     * {@code null} previous-key set drops the dev-only delta line. The leading header mirrors the
+     * {@code SchemaProblemDiagnostic} arm so both schema-failure surfaces read alike.
+     */
+    static String validationFailureMessage(List<ValidationError> errors) {
+        return "GraphQL schema validation failed:\n\n" + WatchErrorFormatter.format(errors, null);
     }
 
     /**

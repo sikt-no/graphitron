@@ -1,7 +1,7 @@
 ---
 id: R321
 title: "One-shot mojos must render ValidationFailedException.errors() in the failure output (parity with DevMojo and the SchemaProblem branch)"
-status: Ready
+status: In Review
 bucket: bug
 priority: 3
 depends-on: []
@@ -21,7 +21,7 @@ in the log.
 
 `ValidationFailedException` carries its structured `errors()`, but the one-shot
 mojos route through `AbstractRewriteMojo.runGenerator`
-(`graphitron-maven-plugin/src/main/java/no/sikt/graphitron/rewrite/maven/AbstractRewriteMojo.java`),
+(`graphitron-rewrite/graphitron-maven-plugin/src/main/java/no/sikt/graphitron/rewrite/maven/AbstractRewriteMojo.java`),
 which special-cases `SchemaProblem` (formats a rich diagnostic into the
 `MojoExecutionException` message) but lets `ValidationFailedException` fall
 through to the generic `catch (RuntimeException e)` arm. That arm rethrows
@@ -60,6 +60,18 @@ For the federation-recipe case, accumulate-and-continue is not available
 (`makeExecutableSchema` failing leaves no assembled schema to keep classifying),
 so rendering at the mojo boundary is the right delivery point.
 
+## Renderer decision (resolved at Spec → Ready)
+
+Reuse the grouped `WatchErrorFormatter` output, not the clang-style single-line
+rendering from `validateAndLogErrors`. `WatchErrorFormatter` already lives in the
+maven-plugin module alongside the mojos and returns a formatted `String` (directly
+embeddable in the `MojoExecutionException` message), whereas `validateAndLogErrors`
+is a private, log-only, side-effecting method in the *graphitron* module that
+returns no string and would need cross-module extraction. Both the one-shot and
+dev paths now call `WatchErrorFormatter.format(errors, ...)` (the one-shot path
+passes `null` for the previous-key set, dropping the dev-only delta line), so they
+share the one renderer and cannot drift.
+
 ## Acceptance
 
 - A schema that fails only at the `buildBundle` federation-recipe stage produces
@@ -67,6 +79,23 @@ so rendering at the mojo boundary is the right delivery point.
   count.
 - Parity check: `ValidateMojo` / `GenerateMojo` failure output carries the same
   error detail that `DevMojo` already renders for the identical schema.
-- Decide whether to reuse the clang-style single-line rendering from
-  `validateAndLogErrors` or the grouped `WatchErrorFormatter` output, and factor
-  the chosen renderer so the one-shot and dev paths cannot drift.
+- The chosen renderer (`WatchErrorFormatter`) is shared, not duplicated, so the
+  one-shot and dev paths cannot drift.
+
+## Implementation (shipped)
+
+- `AbstractRewriteMojo.runGenerator` gains a `catch (ValidationFailedException e)`
+  arm ahead of the generic `catch (RuntimeException e)`, mirroring the
+  `SchemaProblem` arm: it wraps the cause in a null-message intermediary so Maven
+  does not append the bare count after the detail, and keeps the exception on the
+  cause chain for `-e` / `-X`.
+- The rendering is factored into a package-private static
+  `AbstractRewriteMojo.validationFailureMessage(List<ValidationError>)` that
+  prepends a `"GraphQL schema validation failed:"` header (matching the
+  `SchemaProblemDiagnostic` arm) to `WatchErrorFormatter.format(errors, null)`.
+- Coverage: `AbstractRewriteMojoTest` asserts the message carries per-error
+  `file:line:col` detail (not just the count) and that it embeds the exact tree
+  `WatchErrorFormatter.format(errors, null)` produces (structural parity with the
+  dev loop). This mirrors `SchemaProblemDiagnosticTest`'s formatter-level tier;
+  the full mojo run is not exercised end-to-end, consistent with how the sibling
+  `SchemaProblem` rendering is tested.
