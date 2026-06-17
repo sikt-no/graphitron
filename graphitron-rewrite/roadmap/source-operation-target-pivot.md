@@ -89,28 +89,37 @@ is a **subset of `TargetShape`** (a source object is always a row, never a scala
 
 ### operation (the verb)
 
-A sealed hierarchy renaming `Intent`, **whose arms are the eventual payload carriers**, but
-R316 ships the arms *empty*. The arm set, pinned here:
+A sealed hierarchy renaming `Intent`, **payload-carrying, not a flat enum.** Each arm carries
+the slots its kind needs, and the spec models them concretely because that is the spec's job:
 
-- `Fetch`: a catalog read; eventual payload the resolved filter surface `List<WhereFilter>`
-  (`GeneratedConditionFilter | ConditionFilter`) plus ordering / pagination.
-- `Lookup`: the positional `@lookupKey` correspondence; eventual payload `LookupMapping`.
-- `ServiceCall`: a developer `@service` invocation; eventual payload the service `MethodRef`
-  and params. This **collapses today's `QueryService` / `MutationService`**: they differ only
-  by read-vs-write, which is purely the legality gate now carried by `Root`'s `Query` / `Mutation`, and the
-  two classify identically (same payload, same emit). `ServiceCall` carries no read/write bit;
-  that holds while services stay root-only and graphitron does not branch on mutate-or-not (a
-  future nested mutating `@service` would put the bit in a slot).
-- the writes (`Insert` / `Update` / `Upsert` / `Delete`) and the remaining `Intent` values.
+- `Fetch`: a catalog read. Carries the resolved filter surface `List<WhereFilter>`
+  (`GeneratedConditionFilter | ConditionFilter`) plus ordering and pagination slots. Field
+  arguments bind the **target**: generated conditions key off the return-type table, and user
+  `@condition` (field, argument, or input-field position) binds its single `REQUIRED` table
+  slot to the target too. `@condition(override: true)` is resolved at classification time into
+  which filters survive; override is not an operation fact, the arm carries only the resolved
+  list.
+- `Lookup`: the positional `@lookupKey` correspondence. Carries `LookupMapping` (key arguments
+  to target key columns).
+- `ServiceCall`: a developer `@service` invocation. Carries the service `MethodRef` and its
+  params; arguments bind to method **parameters**, no table (the code is opaque), the one arm
+  whose arguments are not target-bound. This **collapses today's `QueryService` /
+  `MutationService`**: they differ only by read-vs-write, which is purely the legality gate now
+  carried by `Root`'s `Query` / `Mutation`, and the two classify identically. `ServiceCall`
+  carries no read/write bit while services stay root-only (a future nested mutating `@service`
+  would put the bit in a slot).
+- the writes (`Insert` / `Update` / `Upsert` / `Delete`), each carrying its DML / structural
+  payload.
 
-**Why empty arms.** The per-arm *payloads* (filters, lookup mapping, method ref) have no reader
-in R316's scope: the emit still dispatches by leaf, and those facts already live on the leaves
-and the condition model where every consumer reads them. The only future reader is R314's
-re-platformed emit. So R316 seals the hierarchy and pins the arm set, which *is* consumed
-(`requiresReFetch`, the corpus, diagnostics) and gives R314 a fixed target, and the per-arm
-payload slots land in **R314, sliced per operation kind**, each slot arriving in the same slice
-as the emit that reads it (see Relationships). Building boxes-with-data in R316 would stand up a
-second home for facts that already have one, ahead of any reader.
+R316 **builds** this hierarchy, populated. The payload is the model, and modeling it is the
+point of this spec; "no reader until R314" is a build-sequencing fact, not a reason to leave
+the model abstract (the same confusion that nearly cost us the concrete `source` wrapper). What
+R314 owns is the emit's *consumption*: re-platforming the generator to dispatch off `operation`
+instead of leaf identity. Until then the leaf emit stays the runtime path, so the one real risk
+is a second home for facts the leaves still hold. The operation arm is the **model of record**
+and the leaves project from it; where that is not yet practical for a given arm, a validator
+mirror pins the two in agreement (the discipline `dispatchPerformsReFetch` already applies),
+rather than the arm shipping empty.
 
 ### target (the projection endpoint)
 
@@ -204,8 +213,9 @@ new understanding." Replace the `carrier x intent x mapping` target model with
 `(source, operation, target)`: the `source` and `target` endpoints as `wrapper(shape)` pairs
 (arrival wrapper `Root | OnlyChild | Child`, output wrapper `Single | List`, `SourceShape ⊆
 TargetShape`), the wrapper algebra (target wrapper local, source wrapper the ancestor fold), the
-`operation` arm set (arms empty, payloads deferred to R314), and the re-derived re-fetch
-predicate. Documentation only; it pins the vocabulary every later slice speaks.
+`operation` payload-carrying arm set (`Fetch` / `Lookup` / `ServiceCall` / writes, each with
+its concrete payload), and the re-derived re-fetch predicate. Documentation only; it pins the
+vocabulary every later slice speaks.
 
 ### Slice 2: The `source` wrapper in code
 
@@ -226,12 +236,13 @@ conservatively unreached (R305 hard-codes `Many`); it carries one documented
 
 ### Slice 3: `operation` and `target` in code
 
-Rename `Intent` to a sealed `Operation` and **pin the arm set** (`Fetch` / `Lookup` /
-`ServiceCall` / the writes / the remaining values), `ServiceCall` collapsing today's
-`QueryService` / `MutationService`. The arms ship **empty**: their payloads (`Fetch`'s
-`List<WhereFilter>`, `Lookup`'s `LookupMapping`, `ServiceCall`'s `MethodRef`) have no reader
-while the emit stays leaf-dispatched, so they are deferred to R314, landed per-kind alongside
-the emit that reads them (see Relationships). Restructure `Mapping` into the `target` wrapper:
+Rename `Intent` to a sealed `Operation` and build the arms **populated** (`Fetch`'s
+`List<WhereFilter>` + ordering/pagination, `Lookup`'s `LookupMapping`, `ServiceCall`'s
+`MethodRef` + params, the writes' DML payload), `ServiceCall` collapsing today's
+`QueryService` / `MutationService`. The operation arm is the model of record; the still-leaf
+emit projects from it (or a validator mirror pins agreement where it cannot yet), so the arms
+are concrete here, not deferred. R314 re-platforms the emit to dispatch off `operation` rather
+than leaf identity (see Relationships). Restructure `Mapping` into the `target` wrapper:
 a `Single(TargetShape) | List(TargetShape)` sealed hierarchy, the wrapper read off
 `field.getType()` (the value `SourceKey.Cardinality` computes today from `wrapper().isList()`),
 the shape carrying the catalog-vs-Java polarity. The fused `Mapping.TableConnection` value
@@ -337,8 +348,8 @@ scope; the pivot is the prerequisite that gives those pieces honest homes.
   to align the field name with `Carrier.Source`. R316 retires `Carrier.Source` and re-aligns
   `ChildField` with the nested source wrapper arms (`OnlyChild` / `Child`) instead, so this
   pivot likely moots or reverses R302.
-- **R314** (dissolve-reentry-leaves-dimensional-emit): owns the emit re-platforming and, now,
-  the `operation` **payloads**. R316 seals `Operation` and pins the arm set; R314 fills each
-  arm's payload slot, **sliced per operation kind**, each slot landing in the same slice as the
-  emit that reads it (the R222 slice pattern). It also dissolves the re-fetch leaves and retires
-  the `dispatchPerformsReFetch` mirror R316 leaves standing.
+- **R314** (dissolve-reentry-leaves-dimensional-emit): owns the emit **re-platforming**, not the
+  model. R316 builds `Operation` populated (the payloads are the model); R314 switches the
+  generator to dispatch off `operation` / `source` / `target` instead of leaf identity, dissolves
+  the re-fetch leaves, and retires the `dispatchPerformsReFetch` mirror R316 leaves standing. The
+  division is model (R316) versus its consumption (R314), not payload-by-payload deferral.
