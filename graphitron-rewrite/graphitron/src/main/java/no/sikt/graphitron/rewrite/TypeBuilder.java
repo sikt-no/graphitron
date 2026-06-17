@@ -258,71 +258,37 @@ class TypeBuilder {
         // issued IDs, which would violate the durability invariant.
         validateNodeTypeIdUniqueness(ctx.typeRegistry);
 
-        // R75 Phase 1 / R276: bind plain SDL Objects that pass the single-record-carrier trigger to
-        // their producer's jOOQ table record (JooqTableRecordType), so the mutation/service
-        // classifier resolves the data field through the standard record-backed path. Carrier-shaped
-        // payloads with no producer stay NestingType and are rejected downstream.
-        promoteSingleRecordPayloads();
+        // R317 slice 3b — carrier promotion is folded onto the producing edge. The former
+        // promoteSingleRecordPayloads pass (a post-type-pass SDL scan that registered every
+        // producer-backed single-record carrier as a JooqTableRecordType) is deleted; the verdict is
+        // now landed at the edge that reaches the carrier, from the registry-free
+        // carrierTableBinding fixed point, when the carrier type is visited in the field pass
+        // (GraphitronSchemaBuilder.classifyFieldsOfObject). See carrierTableBinding.
 
         return ctx.typeRegistry.entries();
     }
 
     /**
-     * R178 Phase 4 / R276 — walks every {@link NestingType} in the registry and binds those
-     * whose structural carrier-shape scan ({@link BuildContext#scanStructuralDmlPayload}) admits
-     * to a {@link GraphitronType.JooqTableRecordType}: the carrier is a payload over a DML
-     * {@code RETURNING} or an {@code @service} method's jOOQ record, so it binds to that producer's
-     * table record and its data field classifies through the standard record-backed path, exactly
-     * like any other {@code JooqTableRecordType} payload.
-     *
-     * <p>Must run after the second pass so the scan sees the fully-classified element-type registry
-     * and so the {@code DmlEmitted} / {@code ServiceEmitted} producer bindings are grounded. A
-     * carrier-shaped payload that no producer returns (orphan) has no record to bind to; it stays a
-     * {@link NestingType} and is rejected by the soundness pass. There is no valid schema that
-     * classifies as a backing-less result.
-     */
-    private void promoteSingleRecordPayloads() {
-        // Carrier candidates are the directiveless object types the type pass left unclassified
-        // (classifyType returned null). Scan the SDL for them rather than the registry, since they
-        // have no registry entry yet.
-        var candidates = ctx.schema.getAllTypesAsList().stream()
-            .filter(t -> t instanceof GraphQLObjectType && !t.getName().startsWith("__"))
-            .map(graphql.schema.GraphQLNamedType::getName)
-            .filter(name -> !ctx.typeRegistry.contains(name))
-            .toList();
-        for (var name : candidates) {
-            // A producer-backed carrier binds its wrapper to the producer's table record: a DML
-            // RETURNING or an @service method yields a Record (single) or Result<Record> (multi),
-            // so the carrier IS that record, single or multi cardinality alike. Both DML
-            // (DmlEmitted) and @service (ServiceEmitted) carriers unify on JooqTableRecordType; the
-            // inner data field reads off the record through the standard record-backed path, and
-            // the cardinality lives on the producing field, not the carrier type. A carrier-shaped
-            // payload with no matching producer (orphan, or a return whose element/cardinality does
-            // not match the carrier so neither RootService nor *Emitted grounds) is left unclassified
-            // here; the field that returns it surfaces the rejection.
-            //
-            // R275: each producer family gates on its own scan. DML carriers keep the strict
-            // forbidden-directive set; @service carriers tolerate @splitQuery on the data field
-            // (redundant there; see BuildContext.scanStructuralServiceCarrierPayload).
-            var table = carrierTableBinding(name);
-            if (table == null) {
-                continue;
-            }
-            ctx.typeRegistry.register(name,
-                new GraphitronType.JooqTableRecordType(name, locationOf(ctx.schema.getObjectType(name)), null, table));
-        }
-    }
-
-    /**
-     * R317 slice 3a — the producer-bound table backing a directiveless single-record carrier, or
+     * R317 slice 3a/3b — the producer-bound table backing a directiveless single-record carrier, or
      * {@code null} when no DML {@code RETURNING} or {@code @service} producer returns it. Registry-free:
-     * derived from the structural carrier scan plus the producer binding fixed point, the same inputs
-     * {@code promoteSingleRecordPayloads} consumes. Sole producer of the carrier-table fact, shared by
-     * {@code promoteSingleRecordPayloads} (which registers the {@link GraphitronType.JooqTableRecordType})
-     * and {@link #isDirectivelessNestingTarget} (which excludes carriers from the nesting verdict), so the
-     * two cannot drift.
+     * derived from the structural carrier scan ({@link BuildContext#scanStructuralDmlPayload} /
+     * {@link BuildContext#scanStructuralServiceCarrierPayload}) plus the producer binding fixed point
+     * ({@code DmlEmitted} / {@code ServiceEmitted}), never from the in-progress type registry. A
+     * producer-backed carrier binds its wrapper to the producer's table record: a DML {@code RETURNING}
+     * or an {@code @service} method yields a {@code Record} (single) or {@code Result<Record>} (multi),
+     * so the carrier IS that record, single or multi cardinality alike, and the inner data field reads
+     * off the record through the standard record-backed path. R275: each producer family gates on its
+     * own scan; DML carriers keep the strict forbidden-directive set, {@code @service} carriers tolerate
+     * {@code @splitQuery} on the data field.
+     *
+     * <p>Sole producer of the carrier-table fact, shared by
+     * {@link GraphitronSchemaBuilder#classifyFieldsOfObject} (slice 3b: registers the
+     * {@link GraphitronType.JooqTableRecordType} at the carrier's visit) and
+     * {@link #isDirectivelessNestingTarget} (which excludes producer-backed carriers from the nesting
+     * verdict), so the two cannot drift. A carrier-shaped payload that no producer returns (orphan) has
+     * no table to bind to; it stays a {@link NestingType} and is rejected by the soundness pass.
      */
-    private TableRef carrierTableBinding(String name) {
+    TableRef carrierTableBinding(String name) {
         if (ctx.scanStructuralDmlPayload(name) instanceof BuildContext.DmlPayloadScan.Admit) {
             var table = dmlEmittedBinding(name).map(b -> b.tableRef()).orElse(null);
             if (table != null) return table;
@@ -588,9 +554,10 @@ class TypeBuilder {
      *       before the enrich pass ran, so it is reproduced first and as an {@code UnclassifiedType}
      *       (routing to {@code buildParticipantList}'s error arm, as the old registry read did);
      *   <li>otherwise the type pass's own {@link #classifyType} result, which is {@code null} for a
-     *       directiveless object. {@code promoteSingleRecordPayloads} runs <em>after</em> the enrich
-     *       pass, so a directiveless single-record carrier is {@code null} here under both the old
-     *       registry read and this recompute, exactly as before.
+     *       directiveless object. A directiveless single-record carrier classifies as a
+     *       {@code JooqTableRecordType} only at the producing edge in the field pass (R317 slice 3b,
+     *       {@link #carrierTableBinding}), after this enrich-time recompute, so it is {@code null} here
+     *       under both the old registry read and this recompute, exactly as before.
      * </ul>
      *
      * <p>{@code classifyType} is a value-builder over SDL + bindings + catalog with no registry or
@@ -777,11 +744,12 @@ class TypeBuilder {
                 return buildResultType(name, location);
             }
             // A directiveless object with no producer is left UNCLASSIFIED here: the type builder
-            // cannot yet know what it is. It becomes a NestingType only if a NestingField later
-            // references it (assigned post-field-pass, so NestingType implies a corresponding
-            // NestingField by construction); a carrier-shaped payload is bound by
-            // promoteSingleRecordPayloads below; anything else is an orphan, caught at the field
-            // edge where the field referencing it classifies as UnclassifiedField.
+            // cannot yet know what it is. It becomes a NestingType at the embedding edge if a
+            // NestingField references it (R317 slice 3a, so NestingType implies a corresponding
+            // NestingField by construction); a producer-backed carrier-shaped payload is bound to a
+            // JooqTableRecordType at its visit in the field pass (R317 slice 3b, carrierTableBinding);
+            // anything else is an orphan, caught at the field edge where the field referencing it
+            // classifies as UnclassifiedField.
             return null;
         }
         if (namedType instanceof GraphQLInterfaceType iface) {

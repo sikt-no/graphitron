@@ -568,7 +568,7 @@ class BuildContext {
     /**
      * R310 — whether {@link #scanStructuralPayload} consults the family's forbidden-directive set on
      * the data field. {@code ENFORCE} is the only policy the public scan methods use, so their
-     * behaviour (and every speculative caller's: {@code promoteSingleRecordPayloads}, the existing
+     * behaviour (and every speculative caller's: {@code TypeBuilder.carrierTableBinding}, the existing
      * {@code validateReturnType} Reject probe) is byte-for-byte unchanged. {@code IGNORE} is consulted
      * solely by {@link #diagnoseForbiddenCarrierDirective}, to answer "would this admit as a DML
      * carrier were it not for the forbidden directive". This is an orthogonal, private gate on whether
@@ -589,7 +589,7 @@ class BuildContext {
      * PK-keyed follow-up SELECT off the producer's record, so the directive is redundant rather
      * than a different fetcher contract), and an ID-element data field admits the list-of-nullable
      * {@code [ID]} wrapper (see {@link CarrierFamily}). Consulted by
-     * {@code TypeBuilder.promoteSingleRecordPayloads} for {@code ServiceEmitted}-bound candidates
+     * {@code TypeBuilder.carrierTableBinding} for {@code ServiceEmitted}-bound candidates
      * and by the {@code @service} classifier's orphan-payload diagnostics.
      */
     public DmlPayloadScan scanStructuralServiceCarrierPayload(String payloadSdlName) {

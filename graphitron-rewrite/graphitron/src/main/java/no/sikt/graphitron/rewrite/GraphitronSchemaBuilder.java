@@ -360,6 +360,18 @@ public class GraphitronSchemaBuilder {
         // fields resolved through the NestingField that embeds it, not standalone here.
         Class<?> parentBackingClass = typeBuilder.recordBackingClasses().get(objType.getName());
         objType.getFieldDefinitions().forEach(fieldDef -> {
+            // R317 slice 3b — land the producer-backed single-record carrier verdict at the producing
+            // edge: the field whose return type is the carrier registers its JooqTableRecordType here,
+            // before its own classification, replacing the deleted post-type-pass
+            // promoteSingleRecordPayloads SDL scan. The binding (carrierTableBinding) is computed from
+            // the producer (DmlEmitted / ServiceEmitted) and the structural carrier scan, never from the
+            // in-progress type registry, so it is order-independent; the contains guard keeps the
+            // register idempotent across the several edges (producing field, the carrier's own later
+            // visit) that observe the same carrier. Registering before classifyField is what retires the
+            // classify-reads-classify dependency: the field's resolveReturnType then sees the carrier as
+            // a ResultType and routes through the record-backed mutation path, and the carrier's own
+            // later visit reads the verdict as its parentType.
+            registerProducerBackedCarrier(ctx, typeBuilder, BuildContext.baseTypeName(fieldDef));
             var classified = fieldBuilder.classifyField(fieldDef, objType.getName(), parentType, parentBackingClass);
             ctx.fieldRegistry.classify(
                 FieldCoordinates.coordinates(objType.getName(), fieldDef.getName()), classified);
@@ -396,6 +408,27 @@ public class GraphitronSchemaBuilder {
                 name, BuildContext.locationOf(objType), objType));
         }
         nf.nestedFields().forEach(child -> registerNestingTypesIn(ctx, child));
+    }
+
+    /**
+     * R317 slice 3b — registers the {@link GraphitronType.JooqTableRecordType} verdict for a
+     * producer-backed single-record carrier at the producing edge (the field returning it), replacing
+     * the deleted post-type-pass {@code TypeBuilder.promoteSingleRecordPayloads} SDL scan. {@code name}
+     * is the field's unwrapped return-type name; the verdict fires only when
+     * {@link TypeBuilder#carrierTableBinding} resolves a producer-bound table (a DML {@code RETURNING}
+     * or {@code @service} method returns it), which is registry-free, so registering it at whichever
+     * edge first returns the carrier is order-independent. The {@code contains} guard keeps it
+     * idempotent: the carrier's own later visit, and any sibling field returning the same carrier, see
+     * the verdict already present. A directiveless object that no producer returns gets {@code null}
+     * here and stays a nesting / orphan target, decided at its embedding edge ({@link #registerNestingTypesIn}).
+     */
+    private static void registerProducerBackedCarrier(BuildContext ctx, TypeBuilder typeBuilder, String name) {
+        if (ctx.typeRegistry.contains(name)) return;
+        var carrierTable = typeBuilder.carrierTableBinding(name);
+        if (carrierTable == null) return;
+        var objType = ctx.schema.getObjectType(name);
+        ctx.typeRegistry.register(name, new GraphitronType.JooqTableRecordType(
+            name, BuildContext.locationOf(objType), null, carrierTable));
     }
 
     /**
