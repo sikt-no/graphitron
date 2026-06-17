@@ -391,9 +391,9 @@ public sealed interface GraphitronType
      * {@code @table} and maps to the same database row; its fields are columns on the embedding
      * table (the same column may appear under several nested names, sharing one SELECT term).
      *
-     * <p>This classification is assigned <em>only</em> by the post-field-pass walk that registers
-     * the element type of each {@code NestingField} (see {@code GraphitronSchemaBuilder
-     * .registerNestingTypes}); the type pass leaves a directiveless object unclassified because it
+     * <p>This classification is assigned <em>only</em> at the embedding edge, when the field-first walk
+     * builds a {@code NestingField} and registers its element type (see {@code GraphitronSchemaBuilder
+     * .registerNestingTypesIn}); the type pass leaves a directiveless object unclassified because it
      * cannot yet know whether anything nests it. The invariant {@code NestingType} ⟺ a corresponding
      * {@code NestingField} therefore holds by construction. A directiveless object that nothing
      * nests is left unclassified (an orphan) and the field that returns it classifies as

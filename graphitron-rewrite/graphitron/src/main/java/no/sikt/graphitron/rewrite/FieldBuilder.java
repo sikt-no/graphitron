@@ -807,12 +807,16 @@ class FieldBuilder {
         // their respective leaves). class-backed parents cannot reach here; this path is gated
         // on TableBackedType by classifyChildFieldOnTableType's caller at line 1217.
         //
-        // "No domain classification" includes both the pre-classifier-records-plain-types state
-        // (elementType == null) and the post-Phase-4 state (classified as NestingType).
-        boolean isPlainObjectElement = elementType == null
-            || elementType instanceof GraphitronType.NestingType;
+        // R317 slice 3a — "no domain classification" is decided structurally by
+        // TypeBuilder.isDirectivelessNestingTarget (the type pass's null verdict, minus carriers and
+        // multi-producer rejections), not by reading ctx.types here. The former
+        // `elementType == null || elementType instanceof NestingType` guard read the in-progress
+        // registry, so once NestingType registration folds onto this edge a sibling edge embedding the
+        // same target would observe the sibling's NestingType. The structural verdict is independent of
+        // any sibling edge's registration: both Film.details and FilmList.details classify FilmDetails
+        // the same way without either seeing the other.
         if (ctx.schema.getType(elementTypeName) instanceof GraphQLObjectType graphQLObjectType
-                && isPlainObjectElement) {
+                && typeBuilder.isDirectivelessNestingTarget(elementTypeName)) {
             var wrapper = buildWrapper(fieldDef);
             if (expandingTypes.contains(elementTypeName)) {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.invalidSchema("circular type reference detected while expanding '" + elementTypeName + "'"));
@@ -3366,7 +3370,7 @@ class FieldBuilder {
                     // reflection) nor promoted as a producer-backed carrier, so the type is dropped
                     // from the model and the field's emitted typeRef would dangle (graphql-java
                     // assembly fails with "type X not found in schema"). The field edge owns the
-                    // orphan rejection (see GraphitronSchemaBuilder.registerNestingTypes); reject
+                    // orphan rejection (see GraphitronSchemaBuilder.registerNestingTypesIn); reject
                     // loudly instead of classifying over a dropped type. Non-carrier orphan shapes
                     // (scan Reject / NotApplicable) are caught by the shape-agnostic backstop
                     // (GraphitronSchemaBuilder.rejectDanglingTypeReferences); this arm runs first
