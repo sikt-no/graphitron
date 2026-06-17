@@ -89,8 +89,14 @@ is a **subset of `TargetShape`** (a source object is always a row, never a scala
 
 ### operation (the verb)
 
-A sealed hierarchy renaming `Intent`, **payload-carrying, not a flat enum.** Each arm carries
-the slots its kind needs, and the spec models them concretely because that is the spec's job:
+The operation axis becomes a **sealed interface `Operation` with `record` arms**, replacing
+today's flat `enum Intent`. The enum cannot survive the pivot: every arm carries a distinct
+payload, and enum constants cannot hold per-arm typed payloads without a kitchen-sink of
+optionals (the cross-product disease). Payload-light arms (`Nesting`, `Count`) are zero-component
+records; a sealed interface accommodates both, an enum cannot. This also aligns the operation
+axis with the already-sealed `Carrier` (the source axis), so all three axes are sealed
+hierarchies. Each arm carries the slots its kind needs, modeled concretely because that is the
+spec's job:
 
 - `Fetch`: a catalog read returning rows (target `Single` / `List` of a row or scalar shape,
   never a connection). Carries the resolved filter surface `List<WhereFilter>`
@@ -246,7 +252,8 @@ conservatively unreached (R305 hard-codes `Many`); it carries one documented
 
 ### Slice 3: `operation` and `target` in code
 
-Rename `Intent` to a sealed `Operation` and build the arms **populated** (`Fetch`'s
+Convert the `enum Intent` to a **sealed interface `Operation` with `record` arms** and build
+them **populated** (`Fetch`'s
 `List<WhereFilter>` + ordering, `Paginate`'s window + `pageInfo` synthesis, `Lookup`'s
 `LookupMapping`, `ServiceCall`'s `MethodRef` + params, the writes' DML payload), `ServiceCall`
 collapsing today's `QueryService` / `MutationService`, `Paginate` joining the existing `Count` /
