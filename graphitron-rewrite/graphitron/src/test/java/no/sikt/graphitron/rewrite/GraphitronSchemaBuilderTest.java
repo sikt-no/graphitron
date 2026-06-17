@@ -1700,6 +1700,51 @@ class GraphitronSchemaBuilderTest {
         assertThat(stf.sourceKey().columns()).extracting(ColumnRef::javaName).containsExactly("FILM_ID");
     }
 
+    // R23: a plain-object nested type shared across two @table parents whose shared field
+    // classifies as an inline TableField. Customer and Staff both FK to address; the nested
+    // LocationInfo type exposes `address` as a TableField. The classifier resolves the FK
+    // joinPath against each outer parent's table independently, and the multi-parent shape
+    // check (GraphitronSchemaValidator.compareNestedFieldsShape) admits the TableField arm
+    // rather than rejecting it as "not yet supported across multiple parents".
+    @Test
+    void multiParentSharedNesting_inlineTableFieldLeaf_classifiesAndValidatesPerParent() {
+        var schema = build("""
+            type Address @table(name: "address") { district: String }
+            type LocationInfo { address: Address }
+            type Customer @table(name: "customer") { info: LocationInfo }
+            type Staff @table(name: "staff") { info: LocationInfo }
+            type Query { customer: Customer staff: Staff }
+            """);
+
+        // Each parent's nested `address` field classifies as a TableField with a one-hop Fk
+        // joinPath inferred from that parent's own table -> address FK.
+        var customerAddress = nestedTableField(schema, "Customer", "info", "address");
+        var staffAddress = nestedTableField(schema, "Staff", "info", "address");
+        assertThat(((JoinStep.FkJoin) customerAddress.joinPath().get(0)).targetTable().tableName())
+            .isEqualToIgnoringCase("address");
+        assertThat(((JoinStep.FkJoin) staffAddress.joinPath().get(0)).targetTable().tableName())
+            .isEqualToIgnoringCase("address");
+        // The two parents resolve through their own FK constraints: the joinPath is genuinely
+        // per-parent, not shared.
+        assertThat(((JoinStep.FkJoin) customerAddress.joinPath().get(0)).fk().sqlName())
+            .isNotEqualTo(((JoinStep.FkJoin) staffAddress.joinPath().get(0)).fk().sqlName());
+
+        // The multi-parent shape check admits the shared TableField (no "not yet supported" error).
+        var errors = new GraphitronSchemaValidator().validate(schema);
+        assertThat(errors)
+            .extracting(ValidationError::message)
+            .noneMatch(m -> m.contains("not yet supported across multiple parents"));
+    }
+
+    private static TableField nestedTableField(GraphitronSchema schema, String parent, String nesting, String leaf) {
+        var nf = (NestingField) schema.field(parent, nesting);
+        var field = nf.nestedFields().stream()
+            .filter(f -> f.name().equals(leaf))
+            .findFirst().orElseThrow();
+        assertThat(field).isInstanceOf(TableField.class);
+        return (TableField) field;
+    }
+
     // ===== ServiceTableField / ServiceRecordField =====
 
     enum ServiceFieldCase implements ClassificationCase {

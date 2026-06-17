@@ -555,6 +555,11 @@ type Customer implements Node @table(name: "customer") @node {
             method: "customerToAddress"
         }
     }])
+    # R23 execution fixture: OccupantLocation is a plain-object nested type shared with Store
+    # (see below). Both parents FK to address, so the shared inline `address` TableField has its
+    # one-hop FK joinPath inferred against this parent's table (customer.address_id → address)
+    # independently of Store's. Exercises the multi-parent NestingField TableField arm.
+    location: OccupantLocation
 }
 
 type Address implements Node @table(name: "address") @node {
@@ -594,6 +599,19 @@ type Store @table(name: "store") {
     # (store.manager_staff_id and staff.store_id), so inference would fail — explicit
     # @reference is required.
     manager:    Staff @splitQuery @reference(path: [{key: "store_manager_staff_id_fkey"}])
+    # R23 execution fixture: the same OccupantLocation nested type Customer uses. Store also FKs
+    # to address (store.address_id → address), so the shared inline `address` TableField infers
+    # its joinPath against store independently of customer — the joinPath is genuinely per-parent.
+    location: OccupantLocation
+}
+
+# R23 execution fixture: a plain-object (NestingField) type shared across two @table parents
+# (Customer and Store) that both FK to address. Its `address` field carries no @reference, so the
+# FK joinPath is inferred against whichever outer @table parent projects it. Before R23 the
+# multi-parent shape check rejected this with "not yet supported across multiple parents"; the
+# TableField arm now admits it.
+type OccupantLocation {
+    address: Address
 }
 
 type Staff @table(name: "staff") {

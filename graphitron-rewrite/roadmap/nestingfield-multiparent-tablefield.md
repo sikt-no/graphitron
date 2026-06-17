@@ -1,7 +1,7 @@
 ---
 id: R23
 title: "Multi-parent `NestingField` sharing: `TableField` arm"
-status: Ready
+status: In Review
 bucket: architecture
 priority: 6
 theme: model-cleanup
@@ -15,6 +15,31 @@ last-updated: 2026-06-17
 > R290 / R305 (the dimensional leaf-set changes), and the nested-module split, so its symbol
 > names, paths, and build commands had drifted. The core thesis is unchanged and re-verified:
 > the fix is a single validator arm; the emitter already supports the shape.
+
+> **Implemented 2026-06-17.** The `TableField` arm landed in
+> `GraphitronSchemaValidator.compareNestedFieldsShape` exactly as planned — no emitter or wiring
+> change. The plan's "Verification to perform during implementation" was confirmed by the
+> cross-module compile + the new execution test: the regenerated code compiles against real jOOQ
+> and resolves the shared `address` per parent, so the projected read does not consult the outer
+> parent table. Coverage shipped at all three named tiers (run under `-Plocal-db`; full suites
+> green: graphitron 2073/0, sakila-example 405/0):
+> - **Pipeline:** `GraphitronSchemaBuilderTest#multiParentSharedNesting_inlineTableFieldLeaf_classifiesAndValidatesPerParent`
+>   — two `@table` parents sharing a plain-object nested type whose `address` leaf classifies as a
+>   `TableField`; asserts both parents' `nestedFields()` carry a `TableField` with a *distinct*
+>   per-parent FK `joinPath`, and that the validator emits no "not yet supported" error.
+> - **Execution:** `GraphQLQueryTest#multiParentSharedNesting_inlineTableField_returnsAddressPerParent`.
+>   Deviation from the spec's candidate pair: the fixture shares the nested `OccupantLocation` type
+>   across **`Customer` and `Store`** (not `Customer`/`Staff`), because both have `Query` roots
+>   (`customers`, `storeById`) whereas `Staff` is only reachable via `Store.manager` (`@splitQuery`).
+>   Both single-FK to `address`, so the shared inline `address` infers its `joinPath` per parent
+>   with no `@reference` plumbing.
+> - **Validator regression:** the existing `NestingFieldValidationTest` non-`TableField` rejection
+>   case stays green (a `ColumnReferenceField` leaf is still rejected; only `TableField` is admitted).
+>
+> Also: retired the stale `#8` roadmap pointer in the catch-all comment (Spec → Ready review
+> finding), and filed the BatchKey follow-up as **R323**
+> (`nestingfield-multiparent-batchkey-leaves`), which also carries the open `LookupTableField`
+> re-scoping question.
 
 ## Overview
 
@@ -146,11 +171,11 @@ disjoint concrete records; place this arm next to the `ColumnField` arm for read
 
 ### 2. Follow-up roadmap entry: BatchKey leaves
 
-File a Backlog entry (slug `nestingfield-multiparent-batchkey-leaves`) covering `SplitTableField`,
+Filed as **R323** (`nestingfield-multiparent-batchkey-leaves`, Backlog) covering `SplitTableField`,
 `SplitLookupTableField`, `RecordTableField`, `RecordLookupTableField`, and the `Record*MethodField`
 family under a `NestingField` shared across parents: their DataLoader registration and per-parent
 rows-method emission need reconciling (each variant has its own considerations). `TableField` ships
-here; `LookupTableField` is the open re-scoping question noted above.
+here; the open `LookupTableField` re-scoping question is carried into R323 as well.
 
 ### 3. Tests
 
