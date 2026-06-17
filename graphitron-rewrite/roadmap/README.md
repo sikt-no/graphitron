@@ -24,6 +24,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R317` | Single edge-driven classification pass and immutable validation (retire TypeBuilder.buildTypes) | In Progress | 2026-06-17 <sub>created 2026-06-16</sub> | [plan](inline-type-classification-into-walk.md) |
 | `R45` | Multi-tenant routing on top of the schema-driven ExecutionInput factory | Spec | 2026-05-20 | [plan](tenant-routing-and-execution-input.md) |
 | `R273` | Source NodeId metadata from @node + catalog PK (inferred from `implements Node`), and settle wrong-type/malformed mismatch semantics, retiring the legacy __NODE bare-ID arm | Spec | 2026-06-02 | [plan](nodeid-skip-mismatch-error-surfacing.md) |
+| `R324` | Lift single-cardinality multi-hop @splitQuery restriction | Spec | 2026-06-17 | [plan](single-cardinality-multihop-splitquery.md) |
 | `R23` | Multi-parent `NestingField` sharing: `TableField` arm | In Review | 2026-06-17 | [plan](nestingfield-multiparent-tablefield.md) |
 | `R13` | Faceted search on `@asConnection` | Spec |  | [plan](faceted-search.md) |
 | `R63` | Type UPSERT dialect requirement on the model | Spec |  | [plan](dml-dialect-requirement-on-model.md) |
@@ -292,6 +293,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R109` [**How-to recipe and Sakila fixture for grouped collections via Field<Result<R>> @externalField + multiset**](list-valued-external-field-multiset.md)
 - `R288` [**Inline TableInterfaceField and TableMethodField children (currently N+1)**](inline-interface-and-tablemethod-children.md)
 - `R52` [**Lift lookup-vs-query operation taxonomy into the model**](lift-operation-taxonomy.md)
+- `R324` [**Lift single-cardinality multi-hop @splitQuery restriction**](single-cardinality-multihop-splitquery.md)
 - `R252` [**Multi-file federation fixture coverage for schema.graphqls emission**](multi-file-federation-fixture-coverage.md)
 - `R269` [**Null-guard split-query key extraction for nullable to-one records**](nullable-to-one-record-into-npe.md)
 - `R321` [**One-shot mojos must render ValidationFailedException.errors() in the failure output (parity with DevMojo and the SchemaProblem branch)**](surface-validation-errors-in-mojo-failure.md)
