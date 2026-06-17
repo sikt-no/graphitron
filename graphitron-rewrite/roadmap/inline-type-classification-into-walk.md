@@ -1,13 +1,13 @@
 ---
 id: R317
 title: "Inline type classification into the field-first walk (retire TypeBuilder.buildTypes)"
-status: Spec
+status: Ready
 bucket: architecture
 priority: 4
 theme: structural-refactor
 depends-on: [field-first-classification-driver]
 created: 2026-06-16
-last-updated: 2026-06-16
+last-updated: 2026-06-17
 ---
 
 # Inline type classification into the field-first walk (retire TypeBuilder.buildTypes)
