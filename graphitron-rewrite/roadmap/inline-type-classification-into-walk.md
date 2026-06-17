@@ -1,129 +1,162 @@
 ---
 id: R317
-title: "Inline type classification into the field-first walk (retire TypeBuilder.buildTypes)"
+title: "Single edge-driven classification pass and immutable validation (retire TypeBuilder.buildTypes)"
 status: In Progress
 bucket: architecture
 priority: 4
 theme: structural-refactor
+depends-on: []
 created: 2026-06-16
 last-updated: 2026-06-17
 ---
 
-# Inline type classification into the field-first walk (retire TypeBuilder.buildTypes)
+# Single edge-driven classification pass and immutable validation (retire TypeBuilder.buildTypes)
+
+> Rescoped 2026-06-17, mid-implementation. The original plan framed this as a byte-identical
+> reordering that moved the existing passes into the walk. Investigation (see "Why the original
+> framing could not reach the goal") showed that framing cannot land the single walk: the walk
+> requires `classifyType` to become edge-complete and the reverse-index registry scans to become
+> fixed points, and a genuinely simple end state also requires the validate phase to stop mutating
+> classification. R318 (immutable validate phase) is inlined here as the closing slice; R319
+> (warn on pruned unreachable types) stays separate.
 
 ## Problem
 
 R279 made classification field-first and reachability-pruned and collapsed `TypeRegistry` to one
-`register` verb, but it stopped short of the single walk its own Direction describes. The reachable
-surface is still traversed three times:
+`register` verb, but the reachable surface is still traversed three times: `SchemaReachability`
+computes a `Set<String>`; `TypeBuilder.buildTypes` loops it classifying each type and then runs its
+deferred passes; `GraphitronSchemaBuilder.buildSchema` loops it again classifying fields. The set is
+threaded across two classes as a hand-off (`TypeBuilder.reachableOutputTypes`). The goal is one walk
+that classifies as it goes, with `buildTypes` deleted.
 
-1. `SchemaReachability.reachableTypeNames` runs a `SchemaTraverser` and hands back a materialised
-   `Set<String>` of reachable output-composite names.
-2. `TypeBuilder.buildTypes` loops that set, classifying each type, then runs its deferred-classification
-   passes: carrier binding (`promoteSingleRecordPayloads`), participant enrichment,
-   `surfaceMultiProducerRejections`, `emitDirectiveIgnoredWarning`.
-3. `GraphitronSchemaBuilder.buildSchema` loops the same set again, classifying each object's fields.
+Two structural facts block that, and a third keeps the validate phase from being clean:
 
-The set is threaded across two classes as a hand-off (`TypeBuilder.reachableOutputTypes`). The walk
-exists only to compute a set; the verdicts are then produced by two flat loops over it. `buildTypes`
-is, in the R279 model corrections' own words, "transitional scaffolding, not part of the model."
+1. **`classifyType` is a standalone, own-directive classifier that punts on directiveless objects.**
+   For a directiveless object it returns `null` (TypeBuilder.classifyType), an open admission that
+   it cannot decide the type standalone, because what such an object *is* depends on the edge that
+   reaches it. The real verdict is then scattered across three later passes keyed on edge context
+   discovered after `classifyType` ran: `promoteSingleRecordPayloads` (a directiveless carrier
+   becomes `JooqTableRecordType`), `registerNestingTypes` (a directiveless object embedded by a
+   `NestingField` becomes `NestingType`), and the orphan arm of `rejectDanglingTypeReferences` (a
+   reached-but-neither object demotes its referencing field). That scatter is the inversion the
+   field-first model set out to kill: fields should drive types, at the edge.
+
+2. **`classifyField`'s only whole-registry reads are reverse-index queries over a fixed point.**
+   Almost every `ctx.types.get(...)` in `FieldBuilder` is edge-local (the field's own
+   return / element / member type, satisfiable by a post-order walk). The exceptions are two reverse
+   indexes: `table -> NodeType` (five byte-identical `ctx.types.values()` scans resolving an
+   ID-returning field's encode helper) and `participant-field -> crossTableField`
+   (`lookupParticipantCrossTableField`). Both query information that is a registry-free fixed point
+   (the `@node` / `@key` and `@reference` SDL plus the catalog and reflection bindings, the same
+   inputs the classifier itself consumes). Five consumers evaluating one predicate is the
+   under-specified-model smell; the fix is to compute the index once as a fixed point.
+
+3. **The validate phase mutates classification.** The global soundness reductions
+   (`validateNodeTypeIdUniqueness`, `rejectCaseInsensitiveTypeCollisions`,
+   `collectDomainReturnTypeConflicts`, the dangling-reference backstop, and the carrier-shape scan)
+   surface their findings by demoting to `UnclassifiedType` / `UnclassifiedField`. So "what a type
+   is" and "what is wrong with the schema" are entangled in one mutable registry value, and a
+   verdict read after validation is not the verdict classification produced.
+
+## Why the original framing could not reach the goal
+
+A byte-identical reorder leaves `classifyType` punting and the reverse scans reading the live
+registry, so field classification still needs the complete type map first and cannot fold into the
+walk. The single walk is not a reordering; it is the model correction in (1) and (2). And a clean
+classify-then-validate boundary is not reachable while (3) holds. This item does that work.
 
 ## Goal
 
-One walk classifies everything. The `SchemaTraverser` that today only computes a reachable set instead
-carries a classifying visitor: it classifies each type as the edge reaches it and each field as it
-visits it, and `buildTypes` is deleted. There is no second classification pass. This is R279's stated
-model ("each field visit classifies the field and, as a byproduct, registers a classification for the
-field's target type") carried to its end state. Output is byte-identical; the prerequisites are already
-paid (order-independent `participantClassification` from slice 3a, the commutative single-verb
-`register` from slice 6).
+One edge-driven classification pass, then an immutable validate pass, then emit.
 
-One walk for classification does not erase R279's classify then validate then emit phases. The global
-soundness checks listed below are *validation*, a later phase, not a second classification pass.
-Keeping them after the walk is the phase boundary working as designed, not the multiphase smell R279
-set out to kill.
+- **One classification pass.** The `SchemaTraverser` walk classifies each type as the edge reaches
+  it (directiveless objects classified at the reaching edge from the parent's nature, carried down
+  the walk, plus the binding fixed points) and each field in post-order (its edge-local target is
+  already classified). The two reverse-lookups are served by precomputed fixed-point indices, so
+  `classifyField` has no whole-registry dependency. `buildTypes` is deleted; the
+  `reachableOutputTypes` cross-class hand-off is retired.
+- **Immutable validate pass.** The global reductions read the finished registry and *register
+  diagnostics*; they do not reclassify. After validation, a verdict equals the verdict
+  classification produced.
+- Verdicts stay order-independent: every verdict reads only node SDL, reflection, the fixed-point
+  indices, and downward walk context, never the mutable in-progress registry sideways or back.
 
-Verdicts stay order-independent. Every verdict still reads only node SDL, reflection, and downward
-context, so it is identical regardless of visit order. "Register a type at the edge that reaches it
-before classifying its fields" is a local data dependency the walk's own shape satisfies, not a verdict
-that changes with order; it is precisely R279's model, not a regression toward strict-ordered phasing.
+## Design decisions (settled with the principles-architect pass, 2026-06-17)
 
-## What folds into the walk
+- **Fixed-point indices derive from the fixed point, not from the registry.** `table -> NodeType`
+  is built from the `@node` / `@key` SDL scan plus the catalog (the inputs `NodeType` itself comes
+  from); `participant-field -> crossTableField` from the `@reference` SDL. Building either by
+  scanning `ctx.types.values()` and memoising would create a second producer of the same fact that
+  can drift; deriving from the fixed point keeps one producer. The encode-helper the `table` index
+  yields is itself derivable (encoder class constant + `"encode" + typeName` + keyColumns), so the
+  index need not hold a `NodeType` registry entry.
+- **`table -> NodeType` makes one-NodeType-per-table load-bearing.** Today the five scans take
+  `findFirst()` in registry-iteration order; nothing enforces uniqueness
+  (`validateNodeTypeIdUniqueness` guards only typeId). Lifting to a map must pin the tie-break and
+  add a validator mirror rejecting two `@node` types on one table, or the lift is not byte-identical
+  on a pathological schema.
+- **Carrier binding takes the fixed-point route, not post-order.** The `JooqTableRecordType` verdict
+  needs no descent: the table is known from the producer binding (`dmlEmittedBinding` /
+  `serviceEmittedBinding`). Only the structural carrier scan reads element verdicts, and that scan
+  is a validation guard in classification costume (it rejects a carrier whose element shape
+  disagrees with its producer). Land the verdict at the edge from the binding; re-express the scan
+  as a validate-phase diagnostic. This retires the classify-reads-classify dependency rather than
+  relocating it to walk-leave (the post-order route would keep it).
+- **Nesting becomes a product of the embedding edge.** `NestingField` construction already reads
+  only the parent's table context; its single target read is a negative guard ("the target carries
+  no competing verdict"), structurally true at the edge under edge-driven classification. Folding
+  `registerNestingTypes` into the walk is sound; the two-pass `|| instanceof NestingType` guard is
+  dropped (it encodes the old two-pass shape).
+- **Orphan handling stays split.** The edge produces `UnclassifiedField` directly for an
+  edge-decidable orphan (no reclassify, which is already the immutable-validate end shape for free).
+  But the whole-registry dangling-reference *backstop* stays a validate-phase reduction: a target
+  that looks orphaned mid-walk may be rescued by a later nesting or connection edge, so a per-edge
+  final demotion is not sound. Under the immutable validate phase the backstop registers a
+  diagnostic rather than demoting.
 
-These are deferred *classification*. Each reads a fixed point that exists before the walk (the
-`RecordBindingResolver.resolveAll` bindings) or is a pure function of SDL plus reflection, so none needs
-a separate pass; each becomes work done at the node the walk is already visiting:
+## What stays after the walk (validate phase, now immutable)
 
-- *Participant enrichment (interface / union).* Slice 3a made `participantClassification` a pure
-  SDL+reflection function with no registry read, and the walk already fans out to implementors and
-  members. An interface or union is classified with its participants when reached. This computes
-  participants earlier; it does not change *what* a participant is, so it stays clear of R278 (which
-  owns the `ParticipantRef` primitive).
-- *Multi-producer rejection.* `surfaceMultiProducerRejections` reads `bindings.rejection(name)`, a
-  fixed point. Register the `UnclassifiedType` when the rejected type is reached.
-- *Directive-ignored warning.* Reads bindings plus SDL, a fixed point. The only reason it is a
-  separate SDL-order pass today is to keep warning emission order stable, a presentation concern
-  (collect and emit in a deterministic order), not a reason to keep a classification pass.
-- *Single-record carrier binding (`promoteSingleRecordPayloads`).* The producer to carrier to table
-  relationship is already a fixed point in `RecordBindingResolver`, so a carrier's
-  `JooqTableRecordType` verdict is computable at the node, not in a post-pass. This is the one with a
-  real dependency to resolve (next section).
+`validateNodeTypeIdUniqueness`, the new one-NodeType-per-table guard,
+`rejectCaseInsensitiveTypeCollisions`, the dangling-reference backstop,
+`collectDomainReturnTypeConflicts`, the carrier-shape scan, `EntityResolutionBuilder`, and
+`MappingsConstantNameDedup`. These are reductions over the finished registry; a per-edge visit
+cannot detect a cross-type conflict. They keep their place but, after the closing slice, register
+diagnostics instead of reclassifying.
 
-## What stays after the walk (validation, not classification)
+## Out of scope
 
-The global soundness reductions need the *complete* classified set to detect a cross-type conflict; a
-per-edge visit structurally cannot: `validateNodeTypeIdUniqueness`, `rejectCaseInsensitiveTypeCollisions`,
-`rejectDanglingTypeReferences`, `collectDomainReturnTypeConflicts`, `EntityResolutionBuilder`,
-`MappingsConstantNameDedup`. These are reductions over the finished registry and belong to the validate
-phase; R279 slice 4 already moved the `domainReturnType` agreement check to the validator on exactly
-this reasoning. R317 leaves them where they sit. Migrating any of them further into the validator is a
-separate concern and not in scope. They are not a classification pass, so they do not contradict the
-goal.
-
-## The one real dependency to resolve
-
-`promoteSingleRecordPayloads` runs today "after the second pass so the scan sees the fully-classified
-element-type registry": `scanStructuralDmlPayload` reads the classifications of a carrier's *element*
-types, which are the carrier's own children in the walk. Folding it in therefore needs the carrier
-classified from verdicts that exist only after descending into it. This is the substance of the item,
-and it is local and solvable, not a global pre-order invariant. Two routes to settle during
-implementation:
-
-- *Finalise carriers on walk-leave (post-order).* Normal types classify on enter (before their
-  fields); a carrier finalises on leave, once its children are classified. The dependency is on the
-  carrier's own subtree, which the walk has by then visited.
-- *Lean on the binding fixed point.* `RecordBindingResolver` already knows the carrier's table, so the
-  `JooqTableRecordType` verdict needs no descent; the scan's registry read is then re-expressed as the
-  validation guard it really is and moves to the validate phase with the other reductions.
-
-Pick whichever keeps the diff byte-identical with less coupling; the post-order route is the smaller
-change, the fixed-point route is the cleaner end state.
+R319 (emitting the warn-on-prune warning for unreachable types) stays a separate item; this item
+only shifts unreachable types from silently classified to pruned. Migrating further reductions into
+the LSP layer, and the broader diagnostic-surface redesign beyond what the inlined R318 needs, are
+out of scope.
 
 ## Slicing
 
-Risk is purely reordering (behaviour byte-identical), so the slices isolate reorderings; no classifier
-invariant is retired, so the validator-mirror rule is satisfied trivially.
+Each slice is independently gateable on the `GraphitronSchemaBuilderTest` truth table plus the
+sakila pipeline / compile / execution tiers. Byte-identity is claimed per slice as noted; the
+rescope deliberately relocates two invariants (one-NodeType-per-table becomes load-bearing; the
+orphan verdict moves to the edge), so the validator-mirror rule is satisfied by explicit guards, not
+trivially.
 
-1. **Fold the fixed-point classification into the walk.** Move participant enrichment, multi-producer
-   rejection, the directive-ignored warning, and the no-descent part of carrier binding onto the node
-   visit, so the traversal classifies every type and field in one pass. The reachable set may stay
-   materialised through this slice. Global validation reductions untouched. Gate: truth table + sakila,
-   byte-identical.
-
-   *Shipped (participant enrichment only).* `classifyType` now classifies each interface / union with
-   its participants at the node visit, and the separate second enrichment pass in `buildTypes` (plus
-   the `enrichTableInterfaceType` / `enrichInterfaceType` / `enrichUnionType` helpers) is deleted; the
-   participant verdict is registry-free (slice 3a) so this is byte-identical. The other three folds in
-   this bullet stay as retained passes for slice 2, because under the byte-identity gate each is not a
-   clean per-node fold yet: `surfaceMultiProducerRejections` and `emitDirectiveIgnoredWarning` iterate
-   `getAllTypesAsList()` and so process *unreachable* types, whose verdict / warning a reachable-set
-   fold would drop; and `promoteSingleRecordPayloads` cannot be split from its load-bearing
-   `scanStructuralDmlPayload` gate, which reads the carrier's element-type verdicts, exactly the
-   carrier-scan dependency slice 2 resolves. The three therefore fold naturally alongside slice 2's
-   structural change rather than ahead of it.
-2. **Resolve the carrier scan dependency and delete `buildTypes`.** Land the post-order (or
-   fixed-point) carrier classification, retire `TypeBuilder.buildTypes` and the `reachableOutputTypes`
-   cross-class hand-off, and make the `SchemaTraverser` visitor the sole classifier with only the
-   validation reductions after it. Folds in the remaining three deferred passes from slice 1
-   (multi-producer rejection, directive-ignored warning, carrier binding) as the structure changes.
-   Gate: truth table + sakila, byte-identical.
+1. **Participant enrichment onto the node visit.** *Shipped (`96b2f18`).* `classifyType` classifies
+   each interface / union with its participants at the node visit; the separate enrichment pass and
+   its helpers are deleted. Byte-identical.
+2. **Lift the reverse-lookups to fixed-point indices.** Build `table -> NodeType` (from the `@node`
+   / `@key` SDL + catalog) and `participant-field -> crossTableField` (from `@reference` SDL); route
+   the five encode-helper sites and `lookupParticipantCrossTableField` through them; add the
+   one-NodeType-per-table validator mirror and pin the tie-break. Removes `classifyField`'s
+   whole-registry reads. Byte-identical except that the new guard rejects a previously
+   silently-first-wins two-node-per-table schema.
+3. **Edge-complete `classifyType` for directiveless objects.** Classify nesting (fold
+   `registerNestingTypes`) and carrier (fold `promoteSingleRecordPayloads` via the binding
+   fixed-point verdict) at the reaching edge; edge-decidable orphans produce `UnclassifiedField`
+   directly. The dangling backstop stays a post-walk reduction. Unreachable output types shift from
+   classified to pruned (the warning is R319). Byte-identical for the reachable verdicts.
+4. **Collapse to one walk; delete `buildTypes`.** The `SchemaTraverser` walk classifies types and
+   fields (post-order); delete `buildTypes` and the `reachableOutputTypes` hand-off; update the
+   `buildContextForTests` seam. Only validation reductions after. Byte-identical.
+5. **Immutable validate phase (inlines R318).** The global reductions register diagnostics into a
+   diagnostic channel instead of demoting to `UnclassifiedType` / `UnclassifiedField`; the
+   validator, LSP, and emitter read diagnostics from there. Needs the diagnostic-channel design
+   (where diagnostics live and how each reader consumes them). Changes the error-carrier mechanism,
+   not which schemas pass or fail.
