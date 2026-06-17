@@ -135,7 +135,7 @@ One edge-driven classification pass, then an immutable validate pass, then emit.
 
 ## What stays after the walk (validate phase, now immutable)
 
-`validateNodeTypeIdUniqueness`, the new one-NodeType-per-table guard,
+`validateNodeTypeIdUniqueness`,
 `rejectCaseInsensitiveTypeCollisions`, the dangling-reference backstop,
 `collectDomainReturnTypeConflicts`, the carrier-shape scan, `EntityResolutionBuilder`, and
 `MappingsConstantNameDedup`. These are reductions over the finished registry; a per-edge visit
@@ -152,10 +152,12 @@ out of scope.
 ## Slicing
 
 Each slice is independently gateable on the `GraphitronSchemaBuilderTest` truth table plus the
-sakila pipeline / compile / execution tiers. Byte-identity is claimed per slice as noted; the
-rescope deliberately relocates two invariants (one-NodeType-per-table becomes load-bearing; the
-orphan verdict moves to the edge), so the validator-mirror rule is satisfied by explicit guards, not
-trivially.
+sakila pipeline / compile / execution tiers. Byte-identity is the default per-slice gate, but it
+defers to correctness where the old behavior was a latent bug rather than a contract: slice 2 found
+that `types.values().findFirst()` silently picked one `@node` when several backed a table, and
+corrected it to a use-site ambiguity error instead of preserving (or hardening) the arbitrary pick.
+The rescope also moves the orphan verdict to the edge (slice 3). Both the orphan move and the
+slice-2 ambiguity rule are pinned by explicit tests, not claimed trivially.
 
 1. **Participant enrichment onto the node visit.** *Shipped (`96b2f18`).* `classifyType` classifies
    each interface / union with its participants at the node visit; the separate enrichment pass and
@@ -196,8 +198,8 @@ trivially.
 **What stops mutating.** Exactly the post-classification *demotions*, the sites where a verdict
 classification already produced is overwritten purely to surface an error:
 
-- `validateNodeTypeIdUniqueness` and the new one-NodeType-per-table guard (`TypeBuilder`) —
-  `register(UnclassifiedType)` over a real `NodeType`.
+- `validateNodeTypeIdUniqueness` (`TypeBuilder`) — `register(UnclassifiedType)` over a real
+  `NodeType`.
 - `rejectCaseInsensitiveTypeCollisions` (`GraphitronSchemaBuilder.java:581`) —
   `register(UnclassifiedType)` over the colliding real verdicts.
 - the dangling-reference backstop (`GraphitronSchemaBuilder.java:444`) —
