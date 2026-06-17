@@ -42,6 +42,7 @@ import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.JoinStep.ConditionJoin;
 import no.sikt.graphitron.rewrite.model.JoinStep.FkJoin;
 import no.sikt.graphitron.rewrite.model.MethodRef;
+import no.sikt.graphitron.rewrite.model.ParticipantRef;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
 import org.jooq.ForeignKey;
 import org.slf4j.Logger;
@@ -163,6 +164,26 @@ class BuildContext {
      * registry itself.
      */
     final Map<String, GraphitronType> types = typeRegistry.entries();
+    /**
+     * R317 slice 2 — fixed-point reverse index, table SQL name &rarr; the {@link NodeType}
+     * declared on that table. Populated once by {@link TypeBuilder#buildTypes()} from the
+     * reachable {@code @node} SDL scan plus the catalog (the inputs {@code NodeType} itself comes
+     * from), excluding any node the soundness reductions demote (typeId collision; the
+     * one-{@code NodeType}-per-table guard), so a lookup never resolves an encoder the registry
+     * rejected. Retires {@code FieldBuilder}'s four {@code types.values()} NodeType scans: field
+     * classification reads this O(1) map instead of scanning the whole type registry, which is the
+     * precondition for collapsing classification into a single walk (R317 slice 4). Empty for
+     * tests that build a registry without going through {@code buildTypes}.
+     */
+    Map<String, NodeType> nodeTypeByTable = Map.of();
+    /**
+     * R317 slice 2 — fixed-point index, participant type name &rarr; (field name &rarr; the
+     * participant's {@link ParticipantRef.TableBound.CrossTableField}). Populated once by
+     * {@link TypeBuilder#buildTypes()} from the reachable {@code @table}+{@code @discriminate}
+     * interface scan and the participants' {@code @reference} SDL. Retires
+     * {@code FieldBuilder.lookupParticipantCrossTableField}'s nested registry scan.
+     */
+    Map<String, Map<String, ParticipantRef.TableBound.CrossTableField>> crossTableFieldsByParticipant = Map.of();
     /**
      * Set by {@link GraphitronSchemaBuilder} immediately after constructing {@link ServiceCatalog}.
      * Used by {@link #resolveConditionRef} for condition-join method reflection.

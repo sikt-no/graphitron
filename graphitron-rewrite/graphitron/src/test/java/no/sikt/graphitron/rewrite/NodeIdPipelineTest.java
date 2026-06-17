@@ -213,6 +213,27 @@ class NodeIdPipelineTest {
                     .contains("nondeterministic");
             }),
 
+        TWO_NODE_TYPES_PER_TABLE_DEMOTES_BOTH(
+            "two NodeTypes on the same table with distinct typeIds → both demoted to UnclassifiedType "
+                + "(R317 slice 2: the table->NodeType index pins one node per table; the implicit "
+                + "ID-encode lookup has no well-defined encoder otherwise). Distinct typeIds so the "
+                + "typeId-uniqueness guard does not fire first; this pins the new one-node-per-table "
+                + "guard specifically.",
+            """
+            type Foo implements Node @table(name: "bar") @node(typeId: "Foo") { id: ID! name: String }
+            type Zed implements Node @table(name: "bar") @node(typeId: "Zed") { id: ID! name: String }
+            type Query { foo: Foo zed: Zed }
+            """,
+            schema -> {
+                assertThat(schema.type("Foo")).isInstanceOf(GraphitronType.UnclassifiedType.class);
+                assertThat(schema.type("Zed")).isInstanceOf(GraphitronType.UnclassifiedType.class);
+                var fooReason = ((GraphitronType.UnclassifiedType) schema.type("Foo")).reason();
+                assertThat(fooReason)
+                    .contains("table 'bar'")
+                    .contains("Foo, Zed")
+                    .contains("node-id encoder must be unique");
+            }),
+
         METADATA_ONLY_TYPES_DO_NOT_COLLIDE(
             "two `@table`-only types backed by metadata-carrying tables stay TableType — no NodeType "
                 + "promotion, so no typeId collision even when the tables share `__NODE_TYPE_ID`-style "
