@@ -27,7 +27,74 @@ constraint is thoroughness:** experience (R287, the staleness audits) shows that
 remnants of the retired model is a trap. The old vocabulary must be gone from the rewrite
 scope when this item is Done, not merely shadowed by the new one.
 
-## The target model
+## The model at a glance
+
+A field is an edge: it **arrives into** a `source`, **performs** an `operation`, and **projects**
+a `target`. `source` and `target` are each a *wrapper around a shape* (the wrapper a multiplicity
+layer, the shape the named thing inside); `operation` is a sealed interface of payload-carrying
+verbs. This is the whole model the spec iterates; the detail sections below give each axis
+concretely.
+
+```mermaid
+classDiagram
+  direction LR
+
+  OutputField --> Source : source
+  OutputField --> Operation : operation
+  OutputField --> Target : target
+
+  class Source { <<sealed wrapper>> }
+  Source <|-- Root
+  Source <|-- OnlyChild
+  Source <|-- Child
+  Root <|-- Query
+  Root <|-- Mutation
+  OnlyChild ..> SourceShape : wraps
+  Child ..> SourceShape : wraps
+
+  class Operation { <<sealed interface>> }
+  Operation <|-- Fetch
+  Operation <|-- Paginate
+  Operation <|-- Lookup
+  Operation <|-- ServiceCall
+  Operation <|-- Count
+  Operation <|-- Facet
+  Operation <|-- Nest
+  Operation <|-- Insert
+  Operation <|-- Update
+  Operation <|-- Upsert
+  Operation <|-- Delete
+
+  class Target { <<sealed wrapper>> }
+  Target <|-- Single
+  Target <|-- List
+  Single ..> TargetShape : wraps
+  List ..> TargetShape : wraps
+
+  class SourceShape { <<sealed>> }
+  class TargetShape { <<sealed>> }
+  SourceShape <|-- Table
+  SourceShape <|-- Record
+  TargetShape <|-- Table
+  TargetShape <|-- Column
+  TargetShape <|-- Connection
+  TargetShape <|-- Record
+  TargetShape <|-- Field
+```
+
+`Table` and `Record` sit under both shape seals: that is `SourceShape ⊆ TargetShape` drawn
+directly (a source is always a row, so it has only the row shapes; the target adds the scalar
+shapes `Column` / `Field` and the wrapper shape `Connection`).
+
+- **source** (arrival wrapper): `Root` (`Query` / `Mutation`, nothing arrives) | `OnlyChild`
+  (one arrives, direct SQL) | `Child` (many arrive, DataLoader); the nested arms wrap a
+  `SourceShape`. The wrapper is the emit-strategy dispatch.
+- **operation** (sealed interface, `record` arms): `Fetch`, `Paginate`, `Lookup`, `ServiceCall`,
+  `Count`, `Facet`, `Nest`, and the writes (`Insert` / `Update` / `Upsert` / `Delete`), each
+  carrying its own payload.
+- **target** (output wrapper): `Single` | `List`, wrapping a `TargetShape`.
+
+## The model in detail
 
 Both endpoints have the same form: a **wrapper around a shape**, where the wrapper is a
 multiplicity layer (the `List` dimension of graphitron's `wrapper()`, GraphQL's own
@@ -92,7 +159,7 @@ is a **subset of `TargetShape`** (a source object is always a row, never a scala
 The operation axis becomes a **sealed interface `Operation` with `record` arms**, replacing
 today's flat `enum Intent`. The enum cannot survive the pivot: every arm carries a distinct
 payload, and enum constants cannot hold per-arm typed payloads without a kitchen-sink of
-optionals (the cross-product disease). Payload-light arms (`Nesting`, `Count`) are zero-component
+optionals (the cross-product disease). Payload-light arms (`Nest`, `Count`) are zero-component
 records; a sealed interface accommodates both, an enum cannot. This also aligns the operation
 axis with the already-sealed `Carrier` (the source axis), so all three axes are sealed
 hierarchies. Each arm carries the slots its kind needs, modeled concretely because that is the
