@@ -1,7 +1,7 @@
 ---
 id: R23
 title: "Multi-parent `NestingField` sharing: `TableField` arm"
-status: Spec
+status: Ready
 bucket: architecture
 priority: 6
 theme: model-cleanup
