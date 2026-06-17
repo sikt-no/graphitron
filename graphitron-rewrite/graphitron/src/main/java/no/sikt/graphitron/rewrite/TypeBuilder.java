@@ -304,20 +304,56 @@ class TypeBuilder {
             // R275: each producer family gates on its own scan. DML carriers keep the strict
             // forbidden-directive set; @service carriers tolerate @splitQuery on the data field
             // (redundant there; see BuildContext.scanStructuralServiceCarrierPayload).
-            TableRef table = null;
-            if (ctx.scanStructuralDmlPayload(name) instanceof BuildContext.DmlPayloadScan.Admit) {
-                table = dmlEmittedBinding(name).map(b -> b.tableRef()).orElse(null);
-            }
-            if (table == null
-                    && ctx.scanStructuralServiceCarrierPayload(name) instanceof BuildContext.DmlPayloadScan.Admit) {
-                table = serviceEmittedBinding(name).map(b -> b.tableRef()).orElse(null);
-            }
+            var table = carrierTableBinding(name);
             if (table == null) {
                 continue;
             }
             ctx.typeRegistry.register(name,
                 new GraphitronType.JooqTableRecordType(name, locationOf(ctx.schema.getObjectType(name)), null, table));
         }
+    }
+
+    /**
+     * R317 slice 3a — the producer-bound table backing a directiveless single-record carrier, or
+     * {@code null} when no DML {@code RETURNING} or {@code @service} producer returns it. Registry-free:
+     * derived from the structural carrier scan plus the producer binding fixed point, the same inputs
+     * {@code promoteSingleRecordPayloads} consumes. Sole producer of the carrier-table fact, shared by
+     * {@code promoteSingleRecordPayloads} (which registers the {@link GraphitronType.JooqTableRecordType})
+     * and {@link #isDirectivelessNestingTarget} (which excludes carriers from the nesting verdict), so the
+     * two cannot drift.
+     */
+    private TableRef carrierTableBinding(String name) {
+        if (ctx.scanStructuralDmlPayload(name) instanceof BuildContext.DmlPayloadScan.Admit) {
+            var table = dmlEmittedBinding(name).map(b -> b.tableRef()).orElse(null);
+            if (table != null) return table;
+        }
+        if (ctx.scanStructuralServiceCarrierPayload(name) instanceof BuildContext.DmlPayloadScan.Admit) {
+            var table = serviceEmittedBinding(name).map(b -> b.tableRef()).orElse(null);
+            if (table != null) return table;
+        }
+        return null;
+    }
+
+    /**
+     * R317 slice 3a — registry-free verdict for whether an SDL object reached at an embedding edge is a
+     * directiveless nesting target: a plain object with no competing classification, to be projected as a
+     * {@link GraphitronType.NestingType} from the embedding parent's table context. Computed from the
+     * type's own SDL plus the binding fixed points, never from the in-progress type registry, so an
+     * embedding edge decides nesting independently of whether a sibling edge already registered the same
+     * {@code NestingType} (the edge-driven order-independence invariant: an edge never reads a sibling
+     * edge's classification). True iff the type is a {@link GraphQLObjectType} that {@link #classifyType}
+     * leaves unclassified (no {@code @table} / {@code @error} / producer-backed result, not a root /
+     * interface / union / enum / scalar), is not a multi-producer rejection (those classify as
+     * {@link UnclassifiedType}), and is not a producer-bound single-record carrier
+     * ({@link #carrierTableBinding}, which classifies as {@code JooqTableRecordType} instead). This
+     * reproduces, structurally, the {@code ctx.types.get(name) == null} signal the field pass read before
+     * the fold (an SDL object the type pass left unregistered), minus the registry read.
+     */
+    boolean isDirectivelessNestingTarget(String name) {
+        if (!(ctx.schema.getType(name) instanceof GraphQLObjectType obj)) return false;
+        if (bindings.rejection(name).isPresent()) return false;
+        if (classifyType(obj) != null) return false;
+        return carrierTableBinding(name) == null;
     }
 
     private static void validateNodeTypeIdUniqueness(TypeRegistry registry) {

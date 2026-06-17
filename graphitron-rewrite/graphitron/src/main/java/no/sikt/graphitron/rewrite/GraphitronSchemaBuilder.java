@@ -246,7 +246,9 @@ public class GraphitronSchemaBuilder {
             classifyFieldsOfObject(ctx, typeBuilder, fieldBuilder, objType,
                 connectionRewrites, synthesisedConnectionNames);
         }
-        registerNestingTypes(ctx);
+        // R317 slice 3a — NestingType registration is folded onto the embedding edge (per classified
+        // field in classifyFieldsOfObject), so the former post-walk registerNestingTypes sweep over the
+        // whole field registry is gone.
         // R279 slice 4 — the multi-producer DomainReturnType agreement check is detected here (on the
         // pre-dangling field registry, against the assembled-schema SDL-Object axis) but no longer
         // demotes the producers; the conflicts ride on the model and the validator's
@@ -286,9 +288,10 @@ public class GraphitronSchemaBuilder {
     /**
      * R279 slice 3b/6 — classifies every field of one SDL object type, driven over the field-first
      * walk's reachable object types only (slice 6 removed the compensating sweep over unreached
-     * objects). A type the type pass left unclassified ({@code ctx.types.get == null}) is skipped:
-     * its fields are resolved through the {@code NestingField} that embeds it
-     * ({@link #registerNestingTypes}), not standalone here.
+     * objects). A directiveless nesting target (structurally decided, see
+     * {@link TypeBuilder#isDirectivelessNestingTarget}) is skipped: its fields are resolved through the
+     * {@code NestingField} that embeds it, whose {@code NestingType} this method registers at the edge
+     * ({@link #registerNestingTypesIn}), not standalone here.
      */
     private static void classifyFieldsOfObject(
             BuildContext ctx, TypeBuilder typeBuilder, FieldBuilder fieldBuilder, GraphQLObjectType objType,
@@ -302,13 +305,17 @@ public class GraphitronSchemaBuilder {
                 ctx, objType, fieldDef, connectionRewrites, synthesisedConnectionNames);
         }
         var parentType = ctx.types.get(objType.getName());
-        // A directiveless object (parentType == null) has its fields resolved through the embedding
-        // NestingField, not standalone here. A structural Connection / Edge / PageInfo type is also
-        // directiveless in the SDL: the connection synthesis above just registered it as a connection
-        // arm, but its fields are emitted by the connection emitter, never classified standalone —
-        // exactly as it was skipped (still null) under the retired post-walk promotion pass. Skip it
-        // so folding synthesis into the walk does not start classifying connection-internal fields.
-        if (parentType == null
+        // A directiveless nesting target has its fields resolved through the embedding NestingField, not
+        // standalone here. R317 slice 3a — this is decided structurally
+        // (TypeBuilder.isDirectivelessNestingTarget), not by reading parentType == null: once NestingType
+        // registration folds onto the embedding edge, this object's own registry slot may already hold the
+        // NestingType a sibling edge produced, so a null check would observe sibling state. The structural
+        // verdict is sibling-independent and reproduces the old null signal. A structural Connection / Edge
+        // / PageInfo type is also directiveless in the SDL: the connection synthesis above just registered
+        // it as a connection arm, but its fields are emitted by the connection emitter, never classified
+        // standalone, so skip it too so folding synthesis into the walk does not start classifying
+        // connection-internal fields.
+        if (typeBuilder.isDirectivelessNestingTarget(objType.getName())
                 || parentType instanceof ConnectionType
                 || parentType instanceof EdgeType
                 || parentType instanceof PageInfoType) {
@@ -349,33 +356,37 @@ public class GraphitronSchemaBuilder {
             }
             return;
         }
-        // A directiveless object the type pass left unclassified (ctx.types.get == null,
-        // handled by the early return above) has its fields resolved through the NestingField
-        // that embeds it, not standalone here. NestingType is assigned post-field-pass from
-        // those NestingFields (registerNestingTypes), so no parent is a NestingType yet.
+        // A directiveless object the type pass left unclassified (the structural skip above) has its
+        // fields resolved through the NestingField that embeds it, not standalone here.
         Class<?> parentBackingClass = typeBuilder.recordBackingClasses().get(objType.getName());
-        objType.getFieldDefinitions().forEach(fieldDef ->
+        objType.getFieldDefinitions().forEach(fieldDef -> {
+            var classified = fieldBuilder.classifyField(fieldDef, objType.getName(), parentType, parentBackingClass);
             ctx.fieldRegistry.classify(
-                FieldCoordinates.coordinates(objType.getName(), fieldDef.getName()),
-                fieldBuilder.classifyField(fieldDef, objType.getName(), parentType, parentBackingClass)));
+                FieldCoordinates.coordinates(objType.getName(), fieldDef.getName()), classified);
+            // R317 slice 3a — fold NestingType registration onto the embedding edge: a NestingField built
+            // here establishes its target (and any deeper nested targets) as a NestingType right now,
+            // recursing into nested fields, rather than in a post-walk sweep.
+            registerNestingTypesIn(ctx, classified);
+        });
     }
 
     /**
-     * R276: assign {@link no.sikt.graphitron.rewrite.model.GraphitronType.NestingType} to every SDL
-     * object type that a {@code NestingField} embeds. The type pass leaves a directiveless object
-     * unclassified (it cannot know what it is); a {@code NestingField} built during the field pass is
-     * the only thing that establishes it as a nesting projection of a table-backed parent, so this
-     * walk registers exactly those, recursing into nested {@code NestingField}s. The invariant
-     * {@code NestingType} ⟺ {@code ∃ NestingField} therefore holds by construction.
+     * R276: assign {@link no.sikt.graphitron.rewrite.model.GraphitronType.NestingType} to the SDL object
+     * type a {@code NestingField} embeds, recursing into nested {@code NestingField}s. The type pass
+     * leaves a directiveless object unclassified (it cannot know what it is); a {@code NestingField} built
+     * at the embedding edge is the only thing that establishes it as a nesting projection of a table-backed
+     * parent, so the invariant {@code NestingType} ⟺ {@code ∃ NestingField} holds by construction.
+     *
+     * <p>R317 slice 3a — called per classified field at the embedding edge (from
+     * {@link #classifyFieldsOfObject}), not in a post-walk sweep over the whole field registry. The
+     * {@code contains} guard keeps the registration idempotent across the several edges that may embed the
+     * same target; it dedups an already-produced {@code NestingType}, it does not gate the nesting verdict
+     * (that is decided structurally and registry-free at each edge).
      *
      * <p>A directiveless object that no {@code NestingField} embeds is left unclassified (absent from
      * {@code schema.types()}). It is an orphan: the field that returns it already classifies as
      * {@code UnclassifiedField}, so the rejection surfaces at the field edge.
      */
-    private static void registerNestingTypes(BuildContext ctx) {
-        ctx.fieldRegistry.entries().values().forEach(f -> registerNestingTypesIn(ctx, f));
-    }
-
     private static void registerNestingTypesIn(BuildContext ctx, no.sikt.graphitron.rewrite.model.GraphitronField field) {
         if (!(field instanceof no.sikt.graphitron.rewrite.model.ChildField.NestingField nf)) return;
         String name = nf.returnType().returnTypeName();
@@ -428,8 +439,9 @@ public class GraphitronSchemaBuilder {
      * shape-agnostic closure of the per-shape classifier guards (the {@code @service}
      * orphan-carrier guard rejects recognized carrier shapes with richer, shape-specific
      * guidance before this pass runs; anything that slips past every classifier-level guard —
-     * errors-only payloads, scan-{@code Reject} shapes, future holes — lands here). Runs after
-     * {@link #registerNestingTypes} (nesting projections registered) and after the field-first walk's
+     * errors-only payloads, scan-{@code Reject} shapes, future holes — lands here). Runs after the
+     * field-first walk has registered every nesting projection at its embedding edge
+     * ({@link #registerNestingTypesIn}) and after that walk's
      * connection synthesis ({@code ConnectionPromoter.synthesiseForField} registers the Connection /
      * Edge / PageInfo types as a byproduct of visiting each carrier; running earlier would demote
      * every Connection-returning field).
