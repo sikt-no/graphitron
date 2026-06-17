@@ -3003,6 +3003,12 @@ class FieldBuilder {
         record TableMismatch(NodeType nodeType) implements IdEncoderResolution {}
         /** Implicit form (no {@code @nodeId(typeName:)}) and no {@code @node} covers the table. */
         record NoNodeForTable() implements IdEncoderResolution {}
+        /**
+         * Implicit form, but the table backs several {@code @node} types, so "the encoder for this
+         * table" has no single answer. {@code nodeTypeNames} are the candidates (sorted) for the
+         * disambiguation hint.
+         */
+        record Ambiguous(java.util.List<String> nodeTypeNames) implements IdEncoderResolution {}
     }
 
     /**
@@ -3024,21 +3030,42 @@ class FieldBuilder {
         if (dataField.hasAppliedDirective(DIR_NODE_ID)) {
             Optional<String> explicitTypeName = argString(dataField, DIR_NODE_ID, ARG_TYPE_NAME);
             if (explicitTypeName.isPresent()) {
-                var targetGType = ctx.types.get(explicitTypeName.get());
-                if (!(targetGType instanceof NodeType targetNodeType)) {
+                // R317 slice 2 — the by-name node index replaces the keyed ctx.types lookup.
+                var targetNode = ctx.nodes.forName(explicitTypeName.get());
+                if (targetNode.isEmpty()) {
                     return new IdEncoderResolution.UnknownNodeType(explicitTypeName.get());
                 }
+                NodeType targetNodeType = targetNode.get();
                 if (!targetNodeType.table().tableName().equals(tableSqlName)) {
                     return new IdEncoderResolution.TableMismatch(targetNodeType);
                 }
                 return new IdEncoderResolution.Resolved(targetNodeType);
             }
         }
-        // R317 slice 2 — the table->NodeType fixed-point index replaces the whole-registry scan.
-        var nodeType = ctx.nodeTypeByTable.get(tableSqlName);
-        return nodeType != null
-            ? new IdEncoderResolution.Resolved(nodeType)
-            : new IdEncoderResolution.NoNodeForTable();
+        // R317 slice 2 — the by-table node index (one-to-many) replaces the whole-registry scan.
+        // A table may back several @node types; the implicit form resolves only when exactly one
+        // covers it (zero -> NoNodeForTable, multiple -> Ambiguous, both surfaced by the callers'
+        // *IdEncoderError renderers).
+        var nodesOnTable = ctx.nodes.forTable(tableSqlName);
+        return switch (nodesOnTable.size()) {
+            case 0 -> new IdEncoderResolution.NoNodeForTable();
+            case 1 -> new IdEncoderResolution.Resolved(nodesOnTable.get(0));
+            default -> new IdEncoderResolution.Ambiguous(
+                nodesOnTable.stream().map(NodeType::name).sorted().toList());
+        };
+    }
+
+    /**
+     * R317 — diagnostic for a bare-{@code ID}-returning mutation whose input {@code @table} backs
+     * multiple {@code @node} types, so the implicit "encoder for this table" has no single answer.
+     * These direct-return sites carry no {@code @nodeId} disambiguator (unlike the carrier path),
+     * so the remedy is a typed {@code @node} return rather than a bare {@code ID}.
+     */
+    private static String ambiguousImplicitNodeError(String fieldDesc, String tableSqlName, List<NodeType> nodes) {
+        String names = nodes.stream().map(NodeType::name).sorted().collect(Collectors.joining(", "));
+        return fieldDesc + " returns ID but table '" + tableSqlName + "' backs multiple @node types ("
+            + names + "), so the node-id encoder is ambiguous; return the specific @node type instead "
+            + "of a bare ID";
     }
 
     /**
@@ -3068,6 +3095,13 @@ class FieldBuilder {
                     + "' returns ID-element data on a carrier but no @node type is declared for "
                     + "table '" + inputTableSqlName + "'; annotate the input @table's SDL type with "
                     + "@node, or use a @table-element data field";
+            case IdEncoderResolution.Ambiguous a ->
+                "@mutation(typeName: DELETE) field '" + mutationName
+                    + "' returns implicit ID-element data but the @table input table '"
+                    + inputTableSqlName + "' backs multiple @node types ("
+                    + String.join(", ", a.nodeTypeNames())
+                    + "), so the encoder is ambiguous; add @nodeId(typeName:) to the carrier data "
+                    + "field to pick which one to encode";
         };
     }
 
@@ -3100,6 +3134,13 @@ class FieldBuilder {
                     + "producer's record table '" + producerTableSqlName
                     + "'; annotate that table's SDL type with @node and point "
                     + "@nodeId(typeName:) at it";
+            case IdEncoderResolution.Ambiguous a ->
+                "@service-carrier payload field '" + payloadTypeName + "." + fieldName
+                    + "' is an implicit ID-element data field but the producer's record table '"
+                    + producerTableSqlName + "' backs multiple @node types ("
+                    + String.join(", ", a.nodeTypeNames())
+                    + "), so the encoder is ambiguous; add @nodeId(typeName:) to pick which one to "
+                    + "encode";
         };
     }
 
@@ -3492,13 +3533,18 @@ class FieldBuilder {
                 Optional<HelperRef.Encode> encodeReturn = Optional.empty();
                 if (returnType instanceof ReturnTypeRef.ScalarReturnType s && "ID".equals(s.returnTypeName())) {
                     String tableSqlName = tia.inputTable().tableName();
-                    // R317 slice 2 — table->NodeType fixed-point index in place of the registry scan.
-                    encodeReturn = Optional.ofNullable(ctx.nodeTypeByTable.get(tableSqlName))
-                        .map(NodeType::encodeMethod);
-                    if (encodeReturn.isEmpty()) {
+                    // R317 slice 2 — the one-to-many by-table node index in place of the registry
+                    // scan; the implicit ID encoder is well-defined only for a single-node table.
+                    var nodesOnTable = ctx.nodes.forTable(tableSqlName);
+                    if (nodesOnTable.isEmpty()) {
                         return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural("@mutation field '" + name + "' returns ID but no @node type is declared for table '"
                                 + tableSqlName + "'; annotate the type with @node or use a @table return type"));
                     }
+                    if (nodesOnTable.size() > 1) {
+                        return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(
+                            ambiguousImplicitNodeError("@mutation field '" + name + "'", tableSqlName, nodesOnTable)));
+                    }
+                    encodeReturn = Optional.of(nodesOnTable.get(0).encodeMethod());
                 }
 
                 Optional<HelperRef.Encode> enc = encodeReturn;
@@ -3558,14 +3604,19 @@ class FieldBuilder {
         Optional<HelperRef.Encode> encodeReturn = Optional.empty();
         if (returnType instanceof ReturnTypeRef.ScalarReturnType s && "ID".equals(s.returnTypeName())) {
             String tableSqlName = foundTit.table().tableName();
-            // R317 slice 2 — table->NodeType fixed-point index in place of the registry scan.
-            encodeReturn = Optional.ofNullable(ctx.nodeTypeByTable.get(tableSqlName))
-                .map(NodeType::encodeMethod);
-            if (encodeReturn.isEmpty()) {
+            // R317 slice 2 — the one-to-many by-table node index in place of the registry scan;
+            // the implicit ID encoder is well-defined only for a single-node table.
+            var nodesOnTable = ctx.nodes.forTable(tableSqlName);
+            if (nodesOnTable.isEmpty()) {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(
                     "@mutation field '" + name + "' returns ID but no @node type is declared for table '"
                     + tableSqlName + "'; annotate the type with @node or use a @table return type"));
             }
+            if (nodesOnTable.size() > 1) {
+                return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(
+                    ambiguousImplicitNodeError("@mutation field '" + name + "'", tableSqlName, nodesOnTable)));
+            }
+            encodeReturn = Optional.of(nodesOnTable.get(0).encodeMethod());
         }
 
         // R246 walker: PK-or-UK identification + SET/WHERE partition over the already-classified
@@ -3764,14 +3815,19 @@ class FieldBuilder {
         Optional<HelperRef.Encode> encodeReturn = Optional.empty();
         if (returnType instanceof ReturnTypeRef.ScalarReturnType s && "ID".equals(s.returnTypeName())) {
             String tableSqlName = foundTit.table().tableName();
-            // R317 slice 2 — table->NodeType fixed-point index in place of the registry scan.
-            encodeReturn = Optional.ofNullable(ctx.nodeTypeByTable.get(tableSqlName))
-                .map(NodeType::encodeMethod);
-            if (encodeReturn.isEmpty()) {
+            // R317 slice 2 — the one-to-many by-table node index in place of the registry scan;
+            // the implicit ID encoder is well-defined only for a single-node table.
+            var nodesOnTable = ctx.nodes.forTable(tableSqlName);
+            if (nodesOnTable.isEmpty()) {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(
                     "@mutation(typeName: DELETE) field '" + name + "' returns ID but no @node type is "
                     + "declared for table '" + tableSqlName + "'; annotate the type with @node"));
             }
+            if (nodesOnTable.size() > 1) {
+                return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(
+                    ambiguousImplicitNodeError("@mutation(typeName: DELETE) field '" + name + "'", tableSqlName, nodesOnTable)));
+            }
+            encodeReturn = Optional.of(nodesOnTable.get(0).encodeMethod());
         }
 
         // R266 walker: PK-or-UK identification over the already-classified input fields, with

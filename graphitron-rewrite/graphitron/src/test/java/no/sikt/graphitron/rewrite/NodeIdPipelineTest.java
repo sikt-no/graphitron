@@ -213,25 +213,27 @@ class NodeIdPipelineTest {
                     .contains("nondeterministic");
             }),
 
-        TWO_NODE_TYPES_PER_TABLE_DEMOTES_BOTH(
-            "two NodeTypes on the same table with distinct typeIds → both demoted to UnclassifiedType "
-                + "(R317 slice 2: the table->NodeType index pins one node per table; the implicit "
-                + "ID-encode lookup has no well-defined encoder otherwise). Distinct typeIds so the "
-                + "typeId-uniqueness guard does not fire first; this pins the new one-node-per-table "
-                + "guard specifically.",
+        MULTIPLE_NODE_TYPES_PER_TABLE_ALLOWED(
+            "two NodeTypes on the same table with distinct typeIds both classify as NodeType "
+                + "(R317 slice 2: a table can back several @node types with distinct node ids; the "
+                + "by-table index is one-to-many and ambiguity is a use-site concern for the implicit "
+                + "ID-encode form, not a type-level rejection). Regression for the wrongly-global "
+                + "one-node-per-table guard that rejected such schemas (e.g. sis Soker / Studiekurv "
+                + "on table soker).",
             """
             type Foo implements Node @table(name: "bar") @node(typeId: "Foo") { id: ID! name: String }
             type Zed implements Node @table(name: "bar") @node(typeId: "Zed") { id: ID! name: String }
             type Query { foo: Foo zed: Zed }
             """,
             schema -> {
-                assertThat(schema.type("Foo")).isInstanceOf(GraphitronType.UnclassifiedType.class);
-                assertThat(schema.type("Zed")).isInstanceOf(GraphitronType.UnclassifiedType.class);
-                var fooReason = ((GraphitronType.UnclassifiedType) schema.type("Foo")).reason();
-                assertThat(fooReason)
-                    .contains("table 'bar'")
-                    .contains("Foo, Zed")
-                    .contains("node-id encoder must be unique");
+                var foo = schema.type("Foo");
+                var zed = schema.type("Zed");
+                assertThat(foo).isInstanceOf(GraphitronType.NodeType.class);
+                assertThat(zed).isInstanceOf(GraphitronType.NodeType.class);
+                assertThat(((GraphitronType.NodeType) foo).table().tableName()).isEqualTo("bar");
+                assertThat(((GraphitronType.NodeType) zed).table().tableName()).isEqualTo("bar");
+                assertThat(((GraphitronType.NodeType) foo).typeId()).isEqualTo("Foo");
+                assertThat(((GraphitronType.NodeType) zed).typeId()).isEqualTo("Zed");
             }),
 
         METADATA_ONLY_TYPES_DO_NOT_COLLIDE(

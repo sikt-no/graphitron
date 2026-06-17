@@ -81,6 +81,37 @@ class MutationDmlNodeIdClassificationTest {
     }
 
     @Test
+    void idReturnOnMultiNodeTable_ambiguous_rejected() {
+        // R317 slice 2: a table may legitimately back several @node types (distinct node ids), so
+        // multiple-nodes-per-table is allowed at the type level. But a bare-ID mutation return uses
+        // the implicit "encoder for this table" form, which has no single answer when the input
+        // @table backs more than one node; the field is rejected at its use site with a
+        // disambiguation hint (return the specific @node type), not by a global type-level guard.
+        var schema = TestSchemaHelper.buildSchema("""
+            type Bar implements Node @table(name: "bar") @node(typeId: "Bar", keyColumns: ["id_1", "id_2"]) {
+                id: ID! @nodeId
+                name: String
+            }
+            type BarTwo implements Node @table(name: "bar") @node(typeId: "BarTwo", keyColumns: ["id_1", "id_2"]) {
+                id: ID! @nodeId
+                name: String
+            }
+            input BarInput @table(name: "bar") { name: String }
+            type Query { bar: Bar barTwo: BarTwo }
+            type Mutation { createBar(in: BarInput!): ID @mutation(typeName: INSERT) }
+            """, NODEID_CTX);
+
+        // Both node types survive (allowed); the mutation field is the only thing rejected.
+        assertThat(schema.type("Bar")).isInstanceOf(no.sikt.graphitron.rewrite.model.GraphitronType.NodeType.class);
+        assertThat(schema.type("BarTwo")).isInstanceOf(no.sikt.graphitron.rewrite.model.GraphitronType.NodeType.class);
+        var f = (UnclassifiedField) schema.field("Mutation", "createBar");
+        assertThat(f.reason())
+            .contains("table 'bar'")
+            .contains("Bar, BarTwo")
+            .contains("ambiguous");
+    }
+
+    @Test
     void nodeIdFieldInInput_keyOnly_rejectedNoSetFields() {
         var schema = TestSchemaHelper.buildSchema("""
             type Bar implements Node @table(name: "bar") @node(keyColumns: ["id_1", "id_2"]) {
