@@ -76,15 +76,24 @@ classDiagram
   SourceShape <|-- Table
   SourceShape <|-- Record
   TargetShape <|-- Table
-  TargetShape <|-- Column
-  TargetShape <|-- Connection
   TargetShape <|-- Record
+  TargetShape <|-- Column
   TargetShape <|-- Field
+  TargetShape <|-- Connection
+  TargetShape <|-- Interface
+  TargetShape <|-- Union
+  Connection ..> TargetShape : wraps
+  Interface ..> Table : wraps
+  Interface ..> Record : wraps
+  Union ..> Table : wraps
 ```
 
 `Table` and `Record` sit under both shape seals: that is `SourceShape ⊆ TargetShape` drawn
 directly (a source is always a row, so it has only the row shapes; the target adds the scalar
-shapes `Column` / `Field` and the wrapper shape `Connection`).
+shapes `Column` / `Field` and the **container shapes** `Connection` / `Interface` / `Union`,
+each wrapping an inner shape). `Interface` wraps `Table` or `Record` (a polymorphic result over
+catalog- or producer-backed participants); `Union` wraps `Table` (a union is unlikely to come
+back from a service); `Connection` wraps any `TargetShape`.
 
 - **source** (arrival wrapper): `Root` (`Query` / `Mutation`, nothing arrives) | `OnlyChild`
   (one arrives, direct SQL) | `Child` (many arrive, DataLoader); the nested arms wrap a
@@ -211,19 +220,35 @@ it is what the field projects:
 
 ```
 target      = Single(TargetShape) | List(TargetShape)
-TargetShape = Table | Column | Connection | Record | Field
+TargetShape = Table | Record | Column | Field          // base shapes
+            | Connection(TargetShape)                   // container shapes: wrap an inner shape
+            | Interface(Table | Record) | Union(Table)
 ```
 
 - `Single` / `List`: the field's output wrapper. This is the value `SourceKey.Cardinality`
   computes today from `wrapper().isList()`; it lives here, on the target, named for GraphQL's
   `List`, not as a free cardinality enum.
-- `TargetShape` is the projection's shape and its catalog-vs-Java polarity (`Table` / `Column`
-  / `Connection` catalog, `Record` / `Field` Java). `SourceShape ⊆ TargetShape`: source has
-  only the row shapes (`Table` / `Record`); target adds the scalar shapes (`Column` / `Field`)
-  a source can never be. `Connection` is a `Single`-wrapped shape with its own fields, its
-  many-ness lives on those fields (`edges` / `nodes`), classified normally, not on the
-  connection field's wrapper, which retires the fused `Mapping.TableConnection` value (its
-  "paginated" fact moves to the `operation` `Paginate` arm, not `Fetch`).
+- The **base shapes** are `Table` / `Column` (catalog) and `Record` / `Field` (Java), the
+  catalog-vs-Java polarity. `SourceShape ⊆ TargetShape`: source has only the row shapes
+  (`Table` / `Record`); target adds the scalar shapes (`Column` / `Field`) a source can never be.
+- The **container shapes** wrap an inner shape. `Connection(TargetShape)` is a `Single`-wrapped
+  shape with its own fields, its many-ness living on those fields (`edges` / `nodes`), classified
+  normally rather than on the connection field's wrapper (this retires the fused
+  `Mapping.TableConnection`; the "paginated" fact moves to the `operation` `Paginate` arm, not
+  `Fetch`). `Interface(Table | Record)` and `Union(Table)` are the polymorphic shapes: the wrapper
+  names the participants' backing kind, and the participant set plus per-participant join paths
+  ride as payload.
+- A target shape's **definition can be developer-supplied** instead of catalog-derived, and that
+  provenance, not a new operation, is the home for `@tableMethod` / `@externalField`.
+  `@tableMethod` supplies the `Table<?>` that `@table` would otherwise resolve (it replaces the
+  target table); `@externalField` supplies the `Field<X>` expression a `Column` would otherwise
+  read from the catalog (it is just a `Column<T>` whose expression is authored). The `MethodRef`
+  rides the target shape as its provenance; the operation stays `Fetch` / projection.
+- A `Column` is not always a scalar leaf: a jOOQ embeddable column carries an embedded record, so
+  a target `Column` can itself be the **source `Record` for further child fields**. This is the
+  shape-level reading of the wrapper algebra below: a field's target shape becomes its children's
+  source shape (projected to row granularity), which is *why* `SourceShape ⊆ TargetShape` holds
+  and why a source `Record` has origins beyond `@service` / DML payloads.
 
 The endpoints are not equal: the source wrapper has a `Zero` (`Root`) arm the target lacks (a
 field always projects something), and `TargetShape` is a superset of `SourceShape`. What they
@@ -261,6 +286,91 @@ conditions that consume **context arguments only** (no field arguments are in sc
 path-step `@condition`). So the path is not an argument-addressable surface; field arguments
 bind `target`, and the path does not perturb the triple.
 
+### the error channel (a cross-cut slot)
+
+The typed-error channel (`errorChannel` on the fetcher-emitting leaves, and the `errors` field's
+own `errorTypes` / `transport`) is **not a fourth axis**: it is a cross-cut slot, like the join
+path, that only some coordinates carry. It rides alongside the triple (the existing
+`WithErrorChannel` marker is its home), never inside `source` / `operation` / `target`. Naming it
+a cross-cut keeps the three axes from absorbing a concern orthogonal to arrival, verb, and
+projection.
+
+## Leaf reconstruction: the slot translation
+
+The completeness test for the model: given an `OutputField`'s `(source, operation, target)`
+coordinate plus its bridge and cross-cut slots, the legacy leaf record (`TableField`,
+`RecordTableField`, the `Mutation*` carriers, ...) must be reconstructible. A leaf carrying a
+fact the triple cannot hold is a model gap. Walking all leaves of `QueryField` / `MutationField`
+/ `ChildField` produces the slot-to-axis assignment below; it is the concrete contract R314
+consumes when it re-platforms the emit off leaf identity, and the inverse of R222's type-level
+decomposition (R222 says which leaves dissolve; this says where each *slot* lands).
+
+### where each slot lands
+
+| Legacy slot (representative) | Lands on | As |
+|---|---|---|
+| `returnType: ReturnTypeRef` + `FieldWrapper` | target | the wrapper(shape): `wrapper()` → `Single` / `List`; the arms → `TargetShape` |
+| `column` / `columns` / `columnName` (projection side) | target | `Column` shape (arity ≥ 2 is the composite sub-detail) |
+| `compaction` / `encode` | target | projection function on `Column` / `Field` |
+| `aliasName` | target | projection alias |
+| `returnExpression: DmlReturnExpression` | target | `Single` / `List` × `Column`(encoded id) / `Table`(projected) |
+| `filters` / `orderBy` | operation | `Fetch` / `Paginate` payload |
+| `pagination: PaginationSpec` | operation | the `Fetch` ↔ `Paginate` discriminant; `Paginate` payload |
+| `method` / `serviceMethodCall` | operation **or** target provenance | `ServiceCall` payload; `@tableMethod` / `@externalField` ride the target shape |
+| `lookupMapping` | operation | `Lookup` payload |
+| `tableInputArg` / `inputArg` + `updateRows` / `deleteRows` / `kind` | operation | the write-arm input payload |
+| `nestedFields` | operation | `Nest` payload |
+| `participants` / `participantJoinPaths` / `discriminatorColumn` | target + bridge | `Interface` / `Union` shape payload + per-participant join paths |
+| `SourceKey` (target, columns, path, wrap, cardinality, reader) | splits | `path` / `target` → bridge + target; reader / wrap / backing → `source.Record`; `cardinality` → target wrapper |
+| `loaderRegistration` | source | the `Child`-arm batch payload (its presence = `Child`) |
+| `parentSourceKey` / `parentResultType` / `accessor` | source | source-object key / shape / `Record` extraction |
+| `joinPath` / `fkJoin` / `parentCorrelation` | bridge | the FK route and its step-0 correlation |
+| `errorChannel` / `errorTypes` / `transport` | cross-cut | the error channel, not an axis |
+| `parentTypeName` / `name` / `location` | field identity | the `OutputField` envelope, not a dimension |
+
+### the collisions the triple collapses
+
+The leaf set reads larger than the model because one concept wears different vocabulary across
+leaves. Each is carried once by the unified axes:
+
+1. **Service call**: `method: MethodRef` (child) and `serviceMethodCall: ServiceMethodCall`
+   (root) are one call in two records, collapsing onto `Operation.ServiceCall`.
+2. **Write input**: `tableInputArg` (INSERT / UPSERT) and `inputArg` + a walker carrier
+   (UPDATE / DELETE) are one "rows this write applies" in two shapes, collapsing onto one
+   write-arm input payload.
+3. **FK route**: `joinPath`, the narrowed `fkJoin`, `participantJoinPaths`, and `SourceKey.path`
+   are one join bridge.
+4. **NodeId encode**: `compaction: CallSiteCompaction` and the bare `encode: NodeIdEncodeKeys`
+   are one target projection.
+5. **Return shape**: `returnExpression: DmlReturnExpression` re-expresses `returnType` +
+   `FieldWrapper` for DML alone; it dissolves into the target wrapper(shape).
+6. **`column`**: the projection on `ColumnField` and the source read-location on `PropertyField`
+   are the same name at opposite endpoints, split by endpoint.
+7. **Cardinality** (already pinned by [the wrapper algebra](#the-wrapper-algebra)):
+   `SourceKey.cardinality`, `LoaderRegistration`, `wrapper().isList()`, and the arrival count are
+   one-vs-many at four positions, each a wrapper bound to its endpoint.
+
+### the reconstruction key
+
+```
+leaf = f(source shape, source arrival, operation, target shape, target wrapper)
+       + { new-query, re-fetch }   // derived slots
+```
+
+Worked over the set, this separates the leaf distinctions that are genuine coordinates from those
+that are derived slots and therefore collapse:
+
+- `Split*` vs non-`Split` is the `@splitQuery` **new-query** derived slot, not a coordinate.
+- `Record*` vs non-`Record` is source `Record` vs `Table`.
+- `Lookup*` is operation `Lookup` vs `Fetch`.
+- `Bulk*` vs single is target `List` vs `Single`.
+- `*Payload` vs `*Table` is target shape `Record` vs `Table` / `Column`.
+- `Composite*` is target `Column` arity ≥ 2.
+
+The key being invertible is the model's completeness proof, and it predicts the leaf collapse R314
+harvests. A `leafReconstructsFromCoordinate` test over the corpus would make it executable (see
+Tests).
+
 ## Lineage: from decompose-sourcekey
 
 R316 began as the mechanical `SourceKey` decomposition (evict `target`/`path` to the
@@ -297,8 +407,10 @@ new understanding." Replace the `carrier x intent x mapping` target model with
 TargetShape`), the wrapper algebra (target wrapper local, source wrapper the ancestor fold), the
 `operation` payload-carrying arm set (`Fetch` / `Paginate` / `Lookup` / `ServiceCall` /
 `Count` / `Facet` / writes, each with its concrete payload, `Paginate` the windowed-read arm the
-`TableConnection` decomposition surfaces), and the re-derived re-fetch predicate. Documentation
-only; it pins the vocabulary every later slice speaks.
+`TableConnection` decomposition surfaces), and the re-derived re-fetch predicate. Carry over the
+[leaf-reconstruction slot translation](#leaf-reconstruction-the-slot-translation) (the collapse
+list and the reconstruction key) so R222 records where each legacy slot lands, not only which
+leaves dissolve. Documentation only; it pins the vocabulary every later slice speaks.
 
 ### Slice 2: The `source` wrapper in code
 
@@ -408,6 +520,10 @@ The no-remnants mandate, made enforceable rather than aspirational:
   wrappers, making the two-position algebra executable rather than prose.
 - Slice 4 migrates the existing `ReFetchDerivationTest` onto the new axes (behavioural, no
   `code().toString()` body matches) and keeps its validator-mirror agreement check.
+- `leafReconstructsFromCoordinate` (new, recommended): over the R281 corpus, assert the legacy
+  leaf rebuilt from `(source, operation, target)` plus the bridge / cross-cut slots equals the
+  classified leaf, making the reconstruction key executable rather than prose. This is the
+  completeness backstop that a future slot fails to find a home.
 - The `source` seal gets a sealed-leaf exhaustiveness guard (what `SourceShapeProjectionTest`
   becomes); the arms are exercised by corpus coordinates with a documented `NOT_CORPUS_COVERED`
   for any arm no example reaches.
