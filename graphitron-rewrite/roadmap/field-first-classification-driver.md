@@ -1,13 +1,13 @@
 ---
 id: R279
 title: Field-first reachability-driven classification driver
-status: In Progress
+status: In Review
 bucket: architecture
 priority: 4
 theme: structural-refactor
 depends-on: [dimensional-model-pivot]
 created: 2026-06-05
-last-updated: 2026-06-16
+last-updated: 2026-06-17
 ---
 
 # Field-first reachability-driven classification driver
