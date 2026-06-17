@@ -1502,6 +1502,45 @@ class GraphQLQueryTest {
 
     @SuppressWarnings("unchecked")
     @Test
+    void multiParentSharedNesting_inlineTableField_returnsAddressPerParent() {
+        // R23: OccupantLocation is a plain-object nested type shared across two @table parents,
+        // Customer and Store, both of which FK to address. Its `address` field carries no
+        // @reference; the one-hop FK joinPath is inferred against each outer parent's own table
+        // (customer.address_id → address; store.address_id → address). This query exercises both
+        // arms in one request — the shared TableField must resolve independently per parent.
+        Map<String, Object> data = execute("""
+            {
+              customers { customerId address { addressId } location { address { addressId } } }
+              storeById(store_id: [1, 2]) { storeId location { address { addressId district } } }
+            }
+            """);
+
+        // Customer side: the nested location.address resolves the same row as the direct
+        // Customer.address FK navigation (both go through customer_address_id_fkey).
+        List<Map<String, Object>> customers = (List<Map<String, Object>>) data.get("customers");
+        assertThat(customers).hasSize(5);
+        for (Map<String, Object> c : customers) {
+            var direct = (Map<String, Object>) c.get("address");
+            var viaNesting = (Map<String, Object>) ((Map<String, Object>) c.get("location")).get("address");
+            assertThat(viaNesting)
+                .as("Customer %s: location.address resolves the same row as the direct address FK", c.get("customerId"))
+                .isEqualTo(direct);
+        }
+
+        // Store side: the same shared nested type resolves address through store's own FK,
+        // proving the joinPath is per-parent. init.sql seeds store 1 → address 1, store 2 → address 2.
+        List<Map<String, Object>> stores = (List<Map<String, Object>>) data.get("storeById");
+        assertThat(stores).hasSize(2);
+        for (Map<String, Object> s : stores) {
+            var addr = (Map<String, Object>) ((Map<String, Object>) s.get("location")).get("address");
+            assertThat(addr).as("Store %s: location.address is resolved through store.address_id", s.get("storeId")).isNotNull();
+            assertThat(addr.get("addressId")).isNotNull();
+            assertThat(addr.get("district")).isNotNull();
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
     void splitTableField_conditionJoin_returnsActorsPerFilm() {
         // R232: Film.actorsByCondition (SplitTableField + ConditionJoin first hop).
         // The condition method `filmActorsViaCondition` expresses the film_actor junction

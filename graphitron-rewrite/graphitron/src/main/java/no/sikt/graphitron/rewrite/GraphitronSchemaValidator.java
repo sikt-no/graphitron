@@ -894,15 +894,24 @@ public class GraphitronSchemaValidator {
                         other.location()
                     ));
                 }
+            } else if (rf instanceof ChildField.TableField) {
+                // TableField is safe to share across parents: each parent's $fields emits its own
+                // DSL.multiset arm (per-parent joinPath / filters / orderBy / pagination are
+                // intentionally not compared), and the reified projected read (PROJECTED_LEAVES) reads
+                // by field name from the source Record without consulting the outer parent table. No
+                // further shape check is needed: returnType() derives from the single SDL declaration
+                // on the shared nested type and is identical by construction. The class-equality gate
+                // above already guarantees `of` is a TableField too.
             } else if (rf instanceof ChildField.NestingField rnf && of instanceof ChildField.NestingField onf) {
                 // Two-level nesting: recurse so divergent inner columns don't slip past the
                 // outer class-equality check. Thread the outer @table parent names so inner
                 // errors still name the original tables, not the intermediate nested type.
                 compareNestedFieldsShape(rnf, onf, repParent, otherParent, errors);
             } else if (!(rf instanceof ChildField.NestingField)) {
-                // Non-column, non-nesting leaves are not yet supported as multi-parent shared nested
-                // fields, their resolution depends on per-parent metadata that this shape check
-                // doesn't inspect. Lands with the corresponding roadmap #8 arm.
+                // Remaining non-column, non-nesting, non-TableField leaves (the BatchKey carriers and
+                // composite NodeId references) are not yet supported as multi-parent shared nested
+                // fields: their resolution depends on per-parent metadata this shape check doesn't
+                // inspect. See roadmap nestingfield-multiparent-batchkey-leaves for the follow-up.
                 errors.add(new ValidationError(
                     coord,
             Rejection.deferred("Nested type '" + nestedTypeName + "' shared across '" + repParent
