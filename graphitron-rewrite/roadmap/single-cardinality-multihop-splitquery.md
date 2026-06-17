@@ -1,7 +1,7 @@
 ---
 id: R324
 title: "Lift single-cardinality multi-hop @splitQuery restriction"
-status: Spec
+status: Ready
 bucket: feature
 priority: 6
 depends-on: []
