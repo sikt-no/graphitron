@@ -40,11 +40,62 @@ One `SchemaTraverser.depthFirst` walk with a **real** `GraphQLTypeVisitor`
   it is the **primary, natural case** of this model, not a trailing patch-up.
   `registerNestingTypes` as a post-field backfill pass goes away.
 - Reflection to discover a producer's backing signature is done **on demand,
-  at the visit that needs it**, reconciling incrementally against any
-  already-registered verdict for a multi-producer target. There is no global
-  "reflection binding fixed point" pre-pass; the current
-  `RecordBindingResolver.resolveAll()` eager grounding is not a precondition of
-  the walk.
+  at the visit that needs it**, from the node + its parent-var context — never
+  by reading back a verdict the walk already registered (see the read-free
+  invariant below). Multi-producer agreement is not the visitor's concern; it
+  is settled off the visitor (see the invariant's reconciliation boundary), so
+  the visitor stays a pure function. There is no global "reflection binding
+  fixed point" pre-pass; the current `RecordBindingResolver.resolveAll()` eager
+  grounding is not a precondition of the walk.
+
+## Invariant: the visitor never reads the registry it is building
+
+The visitor may **only `register`**, never read, the model under
+construction. A child's classification is a pure function of (its own node and
+directives, the catalog, and state handed down from its parent through the
+traverser's var channel) — never a lookup of a sibling's or parent's verdict
+from the registry. This is the structural enforcement that makes "fields drive
+types" true rather than a convention: with no read path, the only way a field
+visit can know its parent type's verdict, table, or source shape is because the
+parent visit stashed it as a var. Order-dependence bugs become unrepresentable,
+and the registry is strictly write-only during the walk. This invariant is the
+reason the item exists; an implementation that leaves a registry-read path open
+has not delivered it, regardless of how the passes are named.
+
+Parent context flows via graphql-java's `TraverserContext`: a parent visit
+`setVar(Key.class, value)`, the child reads `getVarFromParents(Key.class)`
+(`getParentNode()` is already used this way in `ConnectionPromoter`). The exact
+keys (parent classification verdict, parent `TableRef`, source-shape context)
+are the Spec's to enumerate; "getParentVar" is shorthand for this channel, not
+a literal method.
+
+Two boundaries the Spec must pin, because the invariant constrains the
+*visitor*, not everything around it:
+
+- **Reconciliation boundary — not a visitor read.** A type reached by multiple
+  producers needs multi-producer agreement. That is settled either inside
+  `register` (which may inspect the entry it is overwriting) or in a post-walk
+  validation pass — never by the visitor consulting the registry. The Spec
+  picks one; both keep the visitor pure.
+- **Consuming the parent-var is per-node-kind, not universal.** An interface
+  reached via an object's `implements` clause must not classify as a function
+  of that object; it classifies from its own directives and participants. So
+  the rule is "may not read the registry," not "must read the parent-var" —
+  some node kinds ignore the channel.
+
+### The sharp edge: shared targets and traversal dedup
+
+`SchemaTraverser` descends a node reached by two parents **once** (identity
+dedup, the `expanded` set in `SchemaReachability`), so its fields see only the
+*first* parent's vars. For a type's own classification verdict this is harmless
+(the verdict is parent-independent). But for **parent-relative field context** —
+a `@reference` path resolved against the parent table, say — a reusable type
+returned from two different parent tables would bind to whichever parent the
+walk reached first. The Spec must decide whether that case is forbidden,
+classified parent-independently, or genuinely needs a re-descend per parent
+(which breaks dedup). This intersects the existing
+`parent-context-aware-schema-coordinates` item and is the single hardest
+question the invariant forces; it must not be hand-waved.
 
 ## Edges that are not literally "field → return type" (must be carried explicitly)
 
