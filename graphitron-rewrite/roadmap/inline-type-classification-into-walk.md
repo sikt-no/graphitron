@@ -1,7 +1,7 @@
 ---
 id: R317
 title: "Single edge-driven classification pass and immutable validation (retire TypeBuilder.buildTypes)"
-status: In Progress
+status: Spec
 bucket: architecture
 priority: 4
 theme: structural-refactor
