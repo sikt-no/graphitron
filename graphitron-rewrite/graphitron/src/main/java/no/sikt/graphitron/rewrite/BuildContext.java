@@ -176,6 +176,26 @@ class BuildContext {
      */
     NodeIndex nodes = NodeIndex.EMPTY;
     /**
+     * R317 slice 3d — pure, typename-keyed fixed-point index over the schema's table-backed types
+     * ({@link TableIndex}). Populated once by {@link TypeBuilder#buildClassificationIndices}. Field
+     * classification resolves the table-backed fact at its return/element/data-field edges through
+     * this index instead of keying into the type registry (retires the {@code TableBackedType}
+     * {@code ctx.types.get} reads, including the deep payload-data-field reads two hops below the
+     * field being classified), which is part of the precondition for collapsing classification into a
+     * single walk (R317 slice 4). {@link TableIndex#EMPTY} for tests that build a registry without
+     * going through {@code buildTypes}.
+     */
+    TableIndex tables = TableIndex.EMPTY;
+    /**
+     * R317 slice 3d — pure, typename-keyed fixed-point index over the schema's {@code @error} types
+     * ({@link ErrorIndex}). Populated once by {@link TypeBuilder#buildClassificationIndices}. The
+     * error-channel union-member scan resolves the error-member fact through this index instead of
+     * keying into the type registry (retires the {@code ErrorType} {@code ctx.types.get} read two
+     * hops below the field being classified). {@link ErrorIndex#EMPTY} for tests that build a
+     * registry without going through {@code buildTypes}.
+     */
+    ErrorIndex errors = ErrorIndex.EMPTY;
+    /**
      * R317 slice 2 — fixed-point index, participant type name &rarr; (field name &rarr; the
      * participant's {@link ParticipantRef.TableBound.CrossTableField}). Populated once by
      * {@link TypeBuilder#buildTypes()} from the reachable {@code @table}+{@code @discriminate}

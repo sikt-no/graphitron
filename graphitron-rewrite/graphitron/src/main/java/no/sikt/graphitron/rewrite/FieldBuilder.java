@@ -663,11 +663,22 @@ class FieldBuilder {
         String elementTypeName = ctx.isConnectionType(rawTypeName)
             ? ctx.connectionElementTypeName(rawTypeName)
             : rawTypeName;
+        // R317 slice 3d — the table-backed fact comes from the pure TableIndex (a fixed point threaded
+        // in, not the in-progress registry), so no edge reads a sibling/parent verdict for it. The
+        // edge-local interface / union / result arms below still read ctx.types (post-order
+        // satisfiable; out of scope for this slice, migrating with InterfaceType / UnionType indices
+        // in a later slice).
+        GraphitronType tableBacked = ctx.tables.forName(elementTypeName).orElse(null);
         GraphitronType elementType = ctx.types.get(elementTypeName);
 
-        if (elementType instanceof TableBackedType tbt && !(elementType instanceof TableInterfaceType)) {
+        if (tableBacked instanceof TableBackedType tbt && !(tableBacked instanceof TableInterfaceType)) {
             var wrapper = buildWrapper(fieldDef);
-            var returnType = (ReturnTypeRef.TableBoundReturnType) ctx.resolveReturnType(elementTypeName, wrapper);
+            // R317 slice 3d — build the TableBoundReturnType from the index verdict's table directly
+            // rather than casting ctx.resolveReturnType (which reads the registry). The pure TableIndex
+            // keeps a typeId-collided node visible here, whereas validateNodeTypeIdUniqueness has
+            // already demoted it in the registry; resolveReturnType would yield a ScalarReturnType and
+            // the cast would crash. The collision still hard-fails the build at the validation pass.
+            var returnType = new ReturnTypeRef.TableBoundReturnType(elementTypeName, tbt.table(), wrapper);
             var referencePath = ctx.parsePath(fieldDef, name, parentTableType.table().tableName(), returnType.table().tableName(), wrapper.isList());
             if (referencePath.hasError()) {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(referencePath.errorMessage()));
@@ -733,7 +744,7 @@ class FieldBuilder {
                 tbtParentCorrelation);
         }
 
-        if (elementType instanceof TableInterfaceType tableInterfaceType) {
+        if (tableBacked instanceof TableInterfaceType tableInterfaceType) {
             var wrapper = buildWrapper(fieldDef);
             var referencePath = ctx.parsePath(fieldDef, name, parentTableType.table().tableName(), tableInterfaceType.table().tableName());
             if (referencePath.hasError()) {
@@ -1837,8 +1848,12 @@ class FieldBuilder {
         java.util.List<ErrorType> errorTypes = new java.util.ArrayList<>();
         java.util.List<String> nonErrorMembers = new java.util.ArrayList<>();
         for (String memberName : memberNames) {
-            if (ctx.types.get(memberName) instanceof ErrorType et) {
-                errorTypes.add(et);
+            // R317 slice 3d — the error-member fact comes from the pure ErrorIndex (a fixed point, not
+            // the in-progress registry); a member two hops below the field being classified no longer
+            // forces that deep type to be registered first. Present ⇒ error member; absent ⇒ non-error.
+            var errorType = ctx.errors.forName(memberName);
+            if (errorType.isPresent()) {
+                errorTypes.add(errorType.get());
             } else {
                 nonErrorMembers.add(memberName);
             }
@@ -2814,8 +2829,10 @@ class FieldBuilder {
         GraphQLFieldDefinition dataField = null;
         for (var f : payloadObj.getFieldDefinitions()) {
             String unwrappedFieldType = ((GraphQLNamedType) GraphQLTypeUtil.unwrapAll(f.getType())).getName();
-            var t = ctx.types.get(unwrappedFieldType);
-            if (!(t instanceof GraphitronType.TableBackedType)) continue;
+            // R317 slice 3d — the payload data field is two hops below the field being classified;
+            // resolving its table-backed fact from the pure TableIndex (a fixed point) removes the
+            // deep in-progress-registry read that blocks the single-walk collapse.
+            if (ctx.tables.forName(unwrappedFieldType).isEmpty()) continue;
             if (dataField != null) return null;
             dataField = f;
         }
@@ -2969,8 +2986,9 @@ class FieldBuilder {
         SourceKey.Cardinality cardinality = null;
         for (var f : payloadObj.getFieldDefinitions()) {
             String unwrappedFieldType = ((GraphQLNamedType) GraphQLTypeUtil.unwrapAll(f.getType())).getName();
-            var t = ctx.types.get(unwrappedFieldType);
-            if (!(t instanceof GraphitronType.TableBackedType tbt)) continue;
+            // R317 slice 3d — payload data field two hops below; table-backed fact from the pure
+            // TableIndex (a fixed point) removes the deep in-progress-registry read.
+            if (!(ctx.tables.forName(unwrappedFieldType).orElse(null) instanceof GraphitronType.TableBackedType tbt)) continue;
             if (dataField != null) return null;
             dataField = f;
             table = tbt.table();
@@ -3265,18 +3283,29 @@ class FieldBuilder {
 
         String rawTypeName = baseTypeName(fieldDef);
         String elementTypeName = ctx.isConnectionType(rawTypeName) ? ctx.connectionElementTypeName(rawTypeName) : rawTypeName;
+        // R317 slice 3d — the table-backed fact comes from the pure TableIndex (a fixed point, not the
+        // in-progress registry). The edge-local interface / union arms below still read ctx.types
+        // (post-order satisfiable; out of scope for this slice).
+        GraphitronType tableBacked = ctx.tables.forName(elementTypeName).orElse(null);
         GraphitronType elementType = ctx.types.get(elementTypeName);
 
-        if (elementType instanceof TableBackedType tbt && !(elementType instanceof TableInterfaceType)) {
+        if (tableBacked instanceof TableBackedType tbt && !(tableBacked instanceof TableInterfaceType)) {
             var wrapper = buildWrapper(fieldDef);
-            var returnType = (ReturnTypeRef.TableBoundReturnType) ctx.resolveReturnType(elementTypeName, wrapper);
+            // R317 slice 3d — build the TableBoundReturnType from the index verdict's table directly
+            // rather than casting ctx.resolveReturnType (which reads the registry). The pure TableIndex
+            // keeps a typeId-collided node visible here, whereas validateNodeTypeIdUniqueness has
+            // already demoted it in the registry, so resolveReturnType would yield a ScalarReturnType
+            // and the cast would crash. The field resolves cleanly against the index verdict; the
+            // collision still hard-fails the build at validateNodeTypeIdUniqueness before generation,
+            // so passing-fixture output is unchanged.
+            var returnType = new ReturnTypeRef.TableBoundReturnType(elementTypeName, tbt.table(), wrapper);
             var components = resolveTableFieldComponents(fieldDef, returnType.table(), elementTypeName,
                 buildNodeIdArgPlan(fieldDef, returnType.table()));
             if (components instanceof TableFieldComponents.Rejected rj) return new UnclassifiedField(parentTypeName, name, location, fieldDef, rj.rejection());
             var tfc = (TableFieldComponents.Ok) components;
             return new QueryField.QueryTableField(parentTypeName, name, location, returnType, tfc.filters(), tfc.orderBy(), tfc.pagination());
         }
-        if (elementType instanceof TableInterfaceType tableInterfaceType) {
+        if (tableBacked instanceof TableInterfaceType tableInterfaceType) {
             var wrapper = buildWrapper(fieldDef);
             var components = resolveTableFieldComponents(fieldDef, tableInterfaceType.table(), elementTypeName,
                 buildNodeIdArgPlan(fieldDef, tableInterfaceType.table()));
@@ -5376,15 +5405,29 @@ class FieldBuilder {
             Optional<String> typeName = argString(fieldDef, DIR_NODE_ID, ARG_TYPE_NAME);
             if (typeName.isPresent()) {
                 ReturnTypeRef targetType = ctx.resolveReturnType(typeName.get(), new FieldWrapper.Single(true));
-                var targetGType = ctx.types.get(typeName.get());
-                if (targetGType == null) {
+                // R317 slice 3d — the node fact comes from the pure NodeIndex (a fixed point, not the
+                // in-progress registry). Mirror the former two-branch logic precisely: an absent index
+                // entry that nonetheless names an existing SDL object is the "does not have @node"
+                // rejection; an absent entry naming nothing is the "does not exist in the schema"
+                // rejection (candidate list preserved as the registry keyset). The NodeIndex is pure
+                // (slice 3d dropped the typeId-uniqueness exclusion), so a typeId-collided node now
+                // resolves here and proceeds; the collision still fails the build at
+                // validateNodeTypeIdUniqueness before generation, so this is sound.
+                var targetNode = ctx.nodes.forName(typeName.get());
+                if (targetNode.isEmpty()) {
+                    // A target that exists in the SDL (any kind) but is not a node is the
+                    // "does not have @node" rejection; a name that resolves to nothing is the
+                    // "does not exist in the schema" rejection. SDL presence (getType != null) is
+                    // read-free and reproduces the old non-null-but-not-NodeType branch for every
+                    // classified target (objects, interfaces, scalars alike).
+                    if (ctx.schema.getType(typeName.get()) != null) {
+                        return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural("@nodeId(typeName:) type '" + typeName.get() + "' does not have @node"));
+                    }
                     return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.unknownTypeName(
                         "@nodeId(typeName:) type '" + typeName.get() + "' does not exist in the schema",
                         typeName.get(), new ArrayList<>(ctx.types.keySet())));
                 }
-                if (!(targetGType instanceof NodeType targetNodeType)) {
-                    return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural("@nodeId(typeName:) type '" + typeName.get() + "' does not have @node"));
-                }
+                NodeType targetNodeType = targetNode.get();
                 TableRef parentTable = tableType.table();
                 var nodeRefPath = ctx.parsePath(fieldDef, name, tableType.table().tableName(), targetNodeType.table().tableName());
                 if (nodeRefPath.hasError()) {
