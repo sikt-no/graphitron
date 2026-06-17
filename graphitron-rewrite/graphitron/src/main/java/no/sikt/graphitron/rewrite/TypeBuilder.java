@@ -343,49 +343,76 @@ class TypeBuilder {
     }
 
     /**
-     * R317 slice 2 — builds the fixed-point reverse indices ({@link BuildContext#nodes},
+     * R317 slice 2/3d — builds the fixed-point reverse indices ({@link BuildContext#nodes},
+     * {@link BuildContext#tables}, {@link BuildContext#errors},
      * {@link BuildContext#crossTableFieldsByParticipant}) that retire {@code FieldBuilder}'s
-     * whole-registry NodeType and participant scans and the keyed {@code ctx.types.get} at the
-     * {@code @nodeId(typeName:)} path. Derived from the SDL declarations via the same
-     * producers classification uses ({@code buildTableType} for nodes, {@code buildTableInterfaceType}
-     * for table-interfaces), restricted to the reachable set so membership matches the registry the
-     * field pass would otherwise scan. NodeTypes the {@link #validateNodeTypeIdUniqueness} reduction
-     * demotes (typeId collisions) are excluded so a lookup never resolves an encoder the registry
-     * rejected. Multiple {@code @node} types on one table is legitimate (distinct node ids over the
-     * same rows): {@code byTable} is one-to-many (every node on a table, in reachable-registration
-     * order), and the implicit "encoder for this table" lookup is resolved at the call site, which
-     * rejects the zero and ambiguous (>1) cases. {@code byName} keys on the distinct type names so
-     * each node resolves independently through the explicit {@code @nodeId(typeName:)} path.
+     * whole-registry and keyed {@code ctx.types.get} reads at classification edges. Derived from the
+     * SDL declarations via the same producers classification uses ({@code buildTableType} for nodes
+     * and tables, {@code buildTableInterfaceType} for table-interfaces, {@code buildErrorType} for
+     * errors).
+     *
+     * <p>R317 slice 3d — the three membership indices ({@code nodes} / {@code tables} / {@code errors})
+     * are directive-scanned over <b>all</b> declared types (a superset of the reachable set, unpruned),
+     * and are <b>pure</b>: no demotion, no reachability prune, and no typeId-uniqueness exclusion (slice
+     * 2 conflated the latter into {@code NodeIndex}; it comes out here, with
+     * {@link #validateNodeTypeIdUniqueness} left the sole owner of uniqueness as a validation reduction
+     * over the registry). The superset is sound because every type a field read actually queries is
+     * already reachable. Multiple {@code @node} types on one table is legitimate (distinct node ids
+     * over the same rows): {@code byTable} is one-to-many (every node on a table), and the implicit
+     * "encoder for this table" lookup is resolved at the call site, which rejects the zero and
+     * ambiguous (>1) cases. {@code byName} keys on the distinct type names so each node resolves
+     * independently through the explicit {@code @nodeId(typeName:)} path.
+     *
+     * <p>The participant index ({@code crossTableFieldsByParticipant}) stays restricted to the
+     * reachable set.
      */
     private void buildClassificationIndices(Set<String> reachable) {
-        var nodeTypes = new ArrayList<NodeType>();
-        for (var name : reachable) {
-            if (!(ctx.schema.getType(name) instanceof GraphQLObjectType obj)) continue;
-            if (!obj.hasAppliedDirective(DIR_NODE) || !obj.hasAppliedDirective(DIR_TABLE)) continue;
-            if (buildTableType(obj) instanceof NodeType nt) {
-                nodeTypes.add(nt);
-            }
-        }
-        // Exclude only typeId-collision groups: validateNodeTypeIdUniqueness demotes those to
-        // UnclassifiedType, so the field pass (which runs after that demotion) never resolves them.
-        // Multiple @node types on ONE table is legitimate (distinct node ids over the same rows), so
-        // byTable is one-to-many: it lists every node on a table in reachable-registration order
-        // (the order the old types.values() scan saw, the registry being insertion-ordered). The
-        // implicit "encoder for this table" lookup is resolved at the call site, which rejects the
-        // zero and ambiguous cases. byName keys on the distinct type names so each node on a shared
-        // table resolves independently through the explicit @nodeId(typeName:) path.
-        var typeIdCounts = nodeTypes.stream()
-            .collect(Collectors.groupingBy(NodeType::typeId, Collectors.counting()));
+        // R317 slice 3d — the membership indices (node / table / error) are directive-scanned over
+        // ALL declared types (skipping the __-prefixed introspection types), a superset of the
+        // reachable set. No reachability prune: every type a field read actually queries is already
+        // reachable (@node / @key self-seed; a @table data field or @error member is queried only by
+        // a field that reaches it), so the index and the reachability-pruned registry agree on the
+        // consulted domain. The indices are PURE: no demotion, no reachability prune, and no
+        // typeId-uniqueness exclusion (validateNodeTypeIdUniqueness is the sole owner of uniqueness,
+        // as a validation reduction over the registry). Iteration follows SDL declaration order, which
+        // is the order classifyType registers the reachable subset in, so byName/byTable ordering is
+        // unchanged for the consulted (reachable) entries.
         var byTable = new LinkedHashMap<String, List<NodeType>>();
         var byName = new LinkedHashMap<String, NodeType>();
-        for (var nt : nodeTypes) {
-            if (typeIdCounts.get(nt.typeId()) > 1) continue;
-            byTable.computeIfAbsent(nt.table().tableName(), k -> new ArrayList<>()).add(nt);
-            byName.put(nt.name(), nt);
+        var byTableType = new LinkedHashMap<String, TableBackedType>();
+        var byErrorName = new LinkedHashMap<String, ErrorType>();
+        for (var named : ctx.schema.getAllTypesAsList()) {
+            if (named.getName().startsWith("__")) continue;
+            if (!(named instanceof GraphQLObjectType || named instanceof GraphQLInterfaceType)) continue;
+            // Drive membership off the same classifyType verdict the registry stores (classifyType is
+            // registry-free / pure), so the index agrees with the registry by construction: a directive
+            // conflict (e.g. @table + @error) or a catalog-miss yields an UnclassifiedType, not a
+            // TableBackedType / ErrorType, exactly as classifyType would register it. Calling
+            // classifyType directly (rather than the producers in isolation) keeps the index from
+            // resolving a verdict the conflict / federation / support-type gates in classifyType would
+            // have suppressed.
+            var verdict = classifyType(named);
+            switch (verdict) {
+                case TableBackedType tbt -> {
+                    byTableType.put(tbt.name(), tbt);
+                    if (tbt instanceof NodeType nt) {
+                        // Multiple @node types on ONE table is legitimate (distinct node ids over the
+                        // same rows), so byTable is one-to-many. byName keys on the distinct type names
+                        // so each node on a shared table resolves independently through the explicit
+                        // @nodeId(typeName:) path.
+                        byTable.computeIfAbsent(nt.table().tableName(), k -> new ArrayList<>()).add(nt);
+                        byName.put(nt.name(), nt);
+                    }
+                }
+                case ErrorType et -> byErrorName.put(et.name(), et);
+                case null, default -> { /* not table-backed / error: not indexed */ }
+            }
         }
         var byTableFrozen = new LinkedHashMap<String, List<NodeType>>();
         byTable.forEach((table, nodes) -> byTableFrozen.put(table, List.copyOf(nodes)));
         ctx.nodes = new NodeIndex(byTableFrozen, byName);
+        ctx.tables = new TableIndex(byTableType);
+        ctx.errors = new ErrorIndex(byErrorName);
 
         var byParticipant = new LinkedHashMap<String, Map<String, ParticipantRef.TableBound.CrossTableField>>();
         for (var name : reachable) {

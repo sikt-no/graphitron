@@ -12,15 +12,25 @@ last-updated: 2026-06-17
 
 # Single edge-driven classification pass and immutable validation (retire TypeBuilder.buildTypes)
 
-> **Status (resume pointer).** Slices 1, 2, 3a, 3b and 3c are shipped to trunk; slice 4 (collapse to
-> one walk, delete `buildTypes`) is the active front, then 5 (immutable validate). Slice 3c made the
+> **Status (resume pointer).** Slices 1, 2, 3a, 3b, 3c and 3d are shipped to trunk; slice 4 (collapse
+> to one walk, delete `buildTypes`) is the active front, then 5 (immutable validate). Slice 3d lifted
+> table / node / error membership to three pure, typename-keyed fixed-point indices (`ctx.tables`,
+> `ctx.nodes`, `ctx.errors`), directive-scanned over all types as a superset and driven off the pure
+> `classifyType` verdict; the deep `FieldBuilder` reads (union-member `ErrorType`, payload-data-field
+> `TableBackedType`) and the table/node reads now go through the indices, so field classification is
+> registry-free for those facts. The indices carry no classification duty: the typeId-uniqueness
+> exclusion came out of `NodeIndex` (it conflated indexing with validation in slice 2), leaving
+> `validateNodeTypeIdUniqueness` the sole owner of uniqueness; classification now succeeds against a
+> typeId-collided node (the field resolves via the index), and the validation pass flags the
+> collision so the invalid schema does not generate. Slice 3c made the
 > last orphan verdict at a classification edge registry-free: the `@service`-mutation orphan-carrier
 > rejection (`FieldBuilder` Scalar arm) now reads `TypeBuilder.carrierTableBinding` instead of
 > `ctx.types.get(payload)`, so the edge owns the edge-decidable orphan without a read into the
 > in-progress registry; the whole-registry dangling-reference backstop stays for rescuable shapes.
 > Slice 2's
-> `NodeIndex` (`ctx.nodes`) is SDL-derived (via the producers) restricted to the reachable set,
-> excludes only typeId-collision groups, and is **one-to-many by table** (a table may back several
+> `NodeIndex` (`ctx.nodes`), as of slice 3d, is a pure typename-keyed index: SDL-derived (off the
+> `classifyType` verdict) over **all** types as a superset, with **no** reachability prune and **no**
+> typeId-collision exclusion, and is **one-to-many by table** (a table may back several
 > `@node` types with distinct node ids; ambiguity of the implicit encoder is rejected at the call
 > site, not by a type-level guard). All `classifyField` node reads go through `ctx.nodes` (`forTable`
 > / `forName`), including the `@nodeId(typeName:)` path. Slice 3a folded `registerNestingTypes` onto
@@ -334,6 +344,42 @@ orphan move are pinned by explicit tests, not claimed trivially.
    `GraphitronSchemaBuilderTest.UnclassifiedFieldCase.SERVICE_MUTATION_ID_CARRIER_UNBOUND_ORPHAN_REJECTED_AT_EDGE`
    (an `[ID] @nodeId` carrier whose producer return does not ground the binding is rejected at the
    producing edge with the ID-element guidance, never reaching the backstop's "not found in schema").
+3d. **Lift table / node / error membership to pure fixed-point indices.** *Shipped.* The remaining
+   `ctx.types.get(x) instanceof {TableBackedType | NodeType | ErrorType}` reads in `FieldBuilder` are
+   the last registry reads at classification edges, and the *deep* ones (the union-member `ErrorType`
+   read at `:1840`; the payload-data-field `TableBackedType` reads at `:2817` / `:2972`, which read a
+   type **two hops below** the field being classified, e.g. `registerCustomer → CustomerPayload →
+   customer → Customer`) are the structural blocker to the collapse: a single enter-only walk cannot
+   have that deep type classified before the shallower field reads it. Retire them by generalising
+   slice 2's `NodeIndex` into three **pure, typename-keyed** fixed-point indices, `TableIndex`
+   (name → `TableRef`), `NodeIndex`, `ErrorIndex` (name → `ErrorType`), directive-scanned over all
+   types (`@table` / `@node` / `@error`), a **superset of the reachable set, unpruned**. The superset
+   needs no reachability pruning because every type a read actually queries is already reachable
+   (`@node` / `@key` self-seed; a `@table` data field or `@error` member is queried only by a field
+   that reaches it), so the index and the pruned registry agree on the consulted domain. The indices
+   carry **no classification duty**: no demotion, no reachability prune, and **no typeId-uniqueness**
+   exclusion (slice 2 conflated that into `NodeIndex`; it comes out here, with
+   `validateNodeTypeIdUniqueness` left the sole owner of uniqueness as a validation reduction over the
+   registry, eventually a slice-5 diagnostic). The `TableBackedType` / `ErrorType` / node reads at
+   `:666`, `:1840`, `:2817`, `:2972`, `:3268`, `:5013`, `:5379` migrate to index lookups, so field
+   classification becomes a function of its node + directives + these fixed points + the parent var,
+   with no in-progress-registry read, the read-free invariant in full, and the deep/direct distinction
+   dissolved. Output byte-identical over passing fixtures (uniqueness still fails the build via the
+   validation pass before generation, so a collided node the field pass can now resolve never reaches
+   output); if a typeId-collision fixture's exact error set shifts from a field-resolution rejection to
+   the validation error, that is the intentional consequence of making validation the single owner and
+   is pinned. Structure delta: the last classification-edge registry reads removed; `NodeIndex` reduced
+   to a pure index. *As shipped:* the three indices are driven off the pure `classifyType` verdict
+   (not the bare `buildTable*` / `buildErrorType` producers), so a directive conflict / catalog-miss /
+   federation / support-type gate yields the same `UnclassifiedType` the registry would hold and the
+   index agrees with the registry by construction. The six reads (`:666`, `:1840`, `:2817`, `:2972`,
+   `:3268`, `:5379`) migrated; the `:666` / `:3268` table arm builds its `TableBoundReturnType` from
+   the index verdict's `tbt.table()` directly (byte-identical to the former `resolveReturnType` cast,
+   which would have thrown `ClassCastException` on a collided node now visible to the field pass). No
+   test assertions changed; truth table 448, full pipeline / compile / execution build green. The
+   typeId-collision case (`NodeIdPipelineTest.TYPE_ID_COLLISION_DEMOTES_BOTH`) confirms the model:
+   classification succeeds against the collided node, `validateNodeTypeIdUniqueness` still flags it,
+   and the invalid schema does not generate.
 4. **Collapse to one walk; delete `buildTypes`.** Replace the no-op `GraphQLTypeVisitorStub` in
    `SchemaReachability` with a real `GraphQLTypeVisitor` that classifies types and fields in one
    `SchemaTraverser.depthFirst` call, parent context flowing down the var channel and the `NodeIndex`
