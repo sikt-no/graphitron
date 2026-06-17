@@ -12,16 +12,19 @@ last-updated: 2026-06-17
 
 # Single edge-driven classification pass and immutable validation (retire TypeBuilder.buildTypes)
 
-> **Status (resume pointer).** Slices 1, 2 and 3a are shipped to trunk; slice 3b (fold carrier
-> promotion onto the producing edge) is the active front, then 3c (edge-decidable orphan to the
-> edge), 4 (collapse to one walk, delete `buildTypes`) and 5 (immutable validate). Slice 2's
+> **Status (resume pointer).** Slices 1, 2, 3a and 3b are shipped to trunk; slice 3c (edge-decidable
+> orphan to the edge) is the active front, then 4 (collapse to one walk, delete `buildTypes`) and 5
+> (immutable validate). Slice 2's
 > `NodeIndex` (`ctx.nodes`) is SDL-derived (via the producers) restricted to the reachable set,
 > excludes only typeId-collision groups, and is **one-to-many by table** (a table may back several
 > `@node` types with distinct node ids; ambiguity of the implicit encoder is rejected at the call
 > site, not by a type-level guard). All `classifyField` node reads go through `ctx.nodes` (`forTable`
 > / `forName`), including the `@nodeId(typeName:)` path. Slice 3a folded `registerNestingTypes` onto
 > the embedding edge via a registry-free nesting verdict (`TypeBuilder.isDirectivelessNestingTarget`,
-> `carrierTableBinding`); 3b folds `promoteSingleRecordPayloads` the same way. See the slice list and
+> `carrierTableBinding`); 3b folded `promoteSingleRecordPayloads` the same way, landing the
+> `JooqTableRecordType` verdict at the producing edge (the field returning the carrier) from
+> `carrierTableBinding`, before that field classifies, so its `resolveReturnType` routes through the
+> record-backed mutation path without reading a not-yet-registered carrier. See the slice list and
 > "Design decisions".
 >
 > **R325 folded in (2026-06-17).** R325 ("Classify in a single field-first visitor walk") was a
@@ -137,13 +140,20 @@ One edge-driven classification pass, then an immutable validate pass, then emit.
   bare-`ID` mutation). This fires only when the ambiguous implicit path is exercised, so a schema
   with several nodes on one table that disambiguates via explicit `@nodeId` (the by-name view) builds
   unchanged.
-- **Carrier binding takes the fixed-point route, not post-order.** The `JooqTableRecordType` verdict
-  needs no descent: the table is known from the producer binding (`dmlEmittedBinding` /
-  `serviceEmittedBinding`). Only the structural carrier scan reads element verdicts, and that scan
-  is a validation guard in classification costume (it rejects a carrier whose element shape
-  disagrees with its producer). Land the verdict at the edge from the binding; re-express the scan
-  as a validate-phase diagnostic. This retires the classify-reads-classify dependency rather than
-  relocating it to walk-leave (the post-order route would keep it).
+- **Carrier binding takes the fixed-point route, not post-order (shipped, slice 3b).** The
+  `JooqTableRecordType` verdict needs no descent: the table is known from the producer binding
+  (`dmlEmittedBinding` / `serviceEmittedBinding`), exposed registry-free as
+  `TypeBuilder.carrierTableBinding`. The verdict is landed at the **producing edge**: the field
+  whose return type is the carrier registers the `JooqTableRecordType` (from `carrierTableBinding`)
+  *before* it classifies itself (`GraphitronSchemaBuilder.registerProducerBackedCarrier`, called per
+  field in `classifyFieldsOfObject`). That ordering is what retires the classify-reads-classify
+  dependency in practice: the producing field's `resolveReturnType` reads the carrier as a
+  `ResultType` and routes through the record-backed mutation path, and the carrier's own later visit
+  reads the verdict as its `parentType`, with neither reading a not-yet-registered carrier. The
+  former `promoteSingleRecordPayloads` post-type-pass SDL scan is deleted. Only the structural
+  carrier scan still reads element verdicts (it runs after `buildTypes`, when the element registry is
+  complete); that scan is a validation guard in classification costume, and re-expressing it as a
+  validate-phase diagnostic is deferred to slice 5, not relocated here.
 - **Nesting becomes a product of the embedding edge (shipped, slice 3a).** `NestingField`
   construction needs only the parent's table context plus a negative verdict on the target ("the
   target carries no competing classification"). The former guard read that verdict from the registry
@@ -289,12 +299,17 @@ orphan move are pinned by explicit tests, not claimed trivially.
    the edge. Output byte-identical (truth table 447, `NestingFieldPipelineTest` incl. the
    `sharedNestedType` multi-parent case, node-id / mutation-DML / split-table); structure delta:
    a pass deleted, the verdict made registry-free.
-3b. **Fold carrier promotion onto the producing edge.** Land the `JooqTableRecordType` verdict at the
-   producing edge from the binding fixed-point (`carrierTableBinding`, already extracted in 3a), not
-   the `promoteSingleRecordPayloads` registry scan; delete that pass. The structural carrier scan is a
-   validation guard in classification costume; re-express it as a validate-phase diagnostic (slice 5
-   territory) rather than relocating the classify-reads-classify dependency. Output byte-identical;
-   structure delta: a pass deleted.
+3b. **Fold carrier promotion onto the producing edge.** *Shipped.* The `JooqTableRecordType` verdict
+   is landed at the producing edge (the field returning the carrier) from the binding fixed-point
+   (`TypeBuilder.carrierTableBinding`, exposed package-private since 3a), via
+   `GraphitronSchemaBuilder.registerProducerBackedCarrier` called per field in `classifyFieldsOfObject`
+   *before* that field classifies, so its `resolveReturnType` routes through the record-backed mutation
+   path; the carrier's own later visit reads the verdict as `parentType`. The `promoteSingleRecordPayloads`
+   post-type-pass SDL scan is deleted. The structural carrier scan stays a classification-time guard
+   (re-expressing it as a validate-phase diagnostic is slice 5 territory), so the classify-reads-classify
+   dependency it carries is not relocated here. Output byte-identical (truth table 447, full graphitron
+   suite, sakila pipeline / compile / execution tiers); structure delta: a pass deleted, the carrier
+   verdict moved onto the edge.
 3c. **Move the edge-decidable orphan verdict to the edge.** The edge produces `UnclassifiedField`
    directly for an edge-decidable orphan (no reclassify). The whole-registry dangling-reference
    *backstop* stays a post-walk reduction: a target that looks orphaned mid-walk may be rescued by a
