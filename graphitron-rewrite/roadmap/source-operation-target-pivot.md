@@ -75,6 +75,7 @@ classDiagram
   class TargetShape { <<sealed>> }
   SourceShape <|-- Table
   SourceShape <|-- Record
+  SourceShape <|-- Interface
   TargetShape <|-- Table
   TargetShape <|-- Record
   TargetShape <|-- Column
@@ -88,12 +89,16 @@ classDiagram
   Union ..> Table : wraps
 ```
 
-`Table` and `Record` sit under both shape seals: that is `SourceShape ⊆ TargetShape` drawn
-directly (a source is always a row, so it has only the row shapes; the target adds the scalar
-shapes `Column` / `Field` and the **container shapes** `Connection` / `Interface` / `Union`,
-each wrapping an inner shape). `Interface` wraps `Table` or `Record` (a polymorphic result over
-catalog- or producer-backed participants); `Union` wraps `Table` (a union is unlikely to come
-back from a service); `Connection` wraps any `TargetShape`.
+`Table`, `Record`, and `Interface` sit under both shape seals: that is `SourceShape ⊆
+TargetShape` drawn directly (a source is always a row, so it has only the row shapes; the target
+adds the scalar shapes `Column` / `Field` and the `Connection` container shape). `Interface`
+wraps `Table` or `Record` (a polymorphic result over catalog- or producer-backed participants);
+`Interface(Record)` arrives source-side too, because an interface declares its own fields and a
+`@service` returning an interface puts that polymorphic record at `env.getSource()` for them.
+`Union` wraps `Table` only and is **target-only**: a GraphQL union declares no fields, so a union
+value is never a source (nothing resolves against it), and `Union(Record)` is unrepresentable in
+the Java type system (it degrades to `Object`, which we cannot interrogate by reflection), so a
+record-backed union is unsupported. `Connection` wraps any `TargetShape`.
 
 - **source** (arrival wrapper): `Root` (`Query` / `Mutation`, nothing arrives) | `OnlyChild`
   (one arrives, direct SQL) | `Child` (many arrive, DataLoader); the nested arms wrap a
@@ -124,6 +129,7 @@ that will never grow, so switching on it is not heavy:
 source      = Root | OnlyChild(SourceShape) | Child(SourceShape)
 Root        = Query | Mutation
 SourceShape = Table(<catalog metadata>) | Record(SourceObject, <extraction>)
+            | Interface(Table | Record)
 ```
 
 - `Root` (permits `Query` / `Mutation`): an operation root, no source object arrives (the
@@ -162,6 +168,11 @@ is a **subset of `TargetShape`** (a source object is always a row, never a scala
   record), reusing the existing `AccessorRef` / `LifterRef` via the (narrowed)
   `SourceKey.Reader` family. This arm is exactly where the decomposed `SourceKey`'s
   Record-source pieces land (see Downstream).
+- `Interface(Table | Record)`: a polymorphic source, the value handed to an interface's own
+  fields. The catalog case (`Interface(Table)`) is today's table-backed polymorphic parent; the
+  producer case (`Interface(Record)`) is a `@service` returning an interface, which we are sure
+  to meet, so the model carries it now rather than degrading it to a flat `Record`. A child field
+  on the interface dispatches on `__typename` to read against the matched participant.
 
 ### operation (the verb)
 
@@ -237,7 +248,10 @@ TargetShape = Table | Record | Column | Field          // base shapes
   `Mapping.TableConnection`; the "paginated" fact moves to the `operation` `Paginate` arm, not
   `Fetch`). `Interface(Table | Record)` and `Union(Table)` are the polymorphic shapes: the wrapper
   names the participants' backing kind, and the participant set plus per-participant join paths
-  ride as payload.
+  ride as payload. `Interface` straddles both seals (an interface has its own fields, so its value
+  can be a source); `Union` is target-only (a union declares no fields, so it is never a source)
+  and wraps `Table` only (`Union(Record)` degrades to `Object` in the Java type system, which we
+  cannot reflect on, so it is unsupported).
 - A target shape's **definition can be developer-supplied** instead of catalog-derived, and that
   provenance, not a new operation, is the home for `@tableMethod` / `@externalField`.
   `@tableMethod` supplies the `Table<?>` that `@table` would otherwise resolve (it replaces the
