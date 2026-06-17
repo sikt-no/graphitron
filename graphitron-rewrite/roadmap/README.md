@@ -20,7 +20,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R316` | Pivot the field-dimensional model to (context, operation, target) <sub>blocked by: [dimensional-model-pivot](dimensional-model-pivot.md)</sub> | Ready | 2026-06-16 | [plan](context-operation-target-pivot.md) |
 | `R315` | Bind FK-reference @nodeId onto jOOQ-record @service params (port legacy @reference FK resolution; generalize R311) | Spec | 2026-06-16 | [plan](fk-reference-nodeid-service-record-input.md) |
 | `R308` | Fix the @service list-payload N+1 by deriving many-arrival for list-returning carriers | Spec | 2026-06-14 | [plan](service-list-payload-arrival.md) |
-| `R317` | Inline type classification into the field-first walk (retire TypeBuilder.buildTypes) <sub>blocked by: [field-first-classification-driver](field-first-classification-driver.md)</sub> | Spec | 2026-06-16 | [plan](inline-type-classification-into-walk.md) |
+| `R317` | Inline type classification into the field-first walk (retire TypeBuilder.buildTypes) <sub>blocked by: [field-first-classification-driver](field-first-classification-driver.md)</sub> | Ready | 2026-06-17 <sub>created 2026-06-16</sub> | [plan](inline-type-classification-into-walk.md) |
 | `R279` | Field-first reachability-driven classification driver <sub>blocked by: [dimensional-model-pivot](dimensional-model-pivot.md)</sub> | In Progress | 2026-06-16 <sub>created 2026-06-05</sub> | [plan](field-first-classification-driver.md) |
 | `R45` | Multi-tenant routing on top of the schema-driven ExecutionInput factory | Spec | 2026-05-20 | [plan](tenant-routing-and-execution-input.md) |
 | `R273` | Source NodeId metadata from @node + catalog PK (inferred from `implements Node`), and settle wrong-type/malformed mismatch semantics, retiring the legacy __NODE bare-ID arm | Spec | 2026-06-02 | [plan](nodeid-skip-mismatch-error-surfacing.md) |
@@ -216,7 +216,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R279` [**Field-first reachability-driven classification driver**](field-first-classification-driver.md) — In Progress, architecture, blocked by [dimensional-model-pivot](dimensional-model-pivot.md)
 - `R308` [**Fix the @service list-payload N+1 by deriving many-arrival for list-returning carriers**](service-list-payload-arrival.md) — Spec, structural
 - `R171` [**Fold InputType and TableInputType under sealed parent InputLikeType**](input-like-type-sealed-parent.md) — Backlog, architecture
-- `R317` [**Inline type classification into the field-first walk (retire TypeBuilder.buildTypes)**](inline-type-classification-into-walk.md) — Spec, architecture, blocked by [field-first-classification-driver](field-first-classification-driver.md)
+- `R317` [**Inline type classification into the field-first walk (retire TypeBuilder.buildTypes)**](inline-type-classification-into-walk.md) — Ready, architecture, blocked by [field-first-classification-driver](field-first-classification-driver.md)
 - `R103` [**Lift jOOQ column defaults onto input fields connected to that column**](lift-jooq-column-defaults-onto-inputs.md) — Backlog, architecture
 - `R249` [**Nested @argMapping syntax via GraphQLSelectionParser**](nested-argmapping-syntax.md) — Backlog, feature
 - `R302` [**Rename ChildField to SourceField (carrier-named field hierarchy)**](rename-childfield-to-sourcefield.md) — Backlog, structural
