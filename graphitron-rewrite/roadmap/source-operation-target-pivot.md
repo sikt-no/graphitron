@@ -92,13 +92,22 @@ is a **subset of `TargetShape`** (a source object is always a row, never a scala
 A sealed hierarchy renaming `Intent`, **payload-carrying, not a flat enum.** Each arm carries
 the slots its kind needs, and the spec models them concretely because that is the spec's job:
 
-- `Fetch`: a catalog read. Carries the resolved filter surface `List<WhereFilter>`
-  (`GeneratedConditionFilter | ConditionFilter`) plus ordering and pagination slots. Field
-  arguments bind the **target**: generated conditions key off the return-type table, and user
-  `@condition` (field, argument, or input-field position) binds its single `REQUIRED` table
-  slot to the target too. `@condition(override: true)` is resolved at classification time into
-  which filters survive; override is not an operation fact, the arm carries only the resolved
-  list.
+- `Fetch`: a catalog read returning rows (target `Single` / `List` of a row or scalar shape,
+  never a connection). Carries the resolved filter surface `List<WhereFilter>`
+  (`GeneratedConditionFilter | ConditionFilter`) plus ordering. Field arguments bind the
+  **target**: generated conditions key off the return-type table, and user `@condition` (field,
+  argument, or input-field position) binds its single `REQUIRED` table slot to the target too.
+  `@condition(override: true)` is resolved at classification time into which filters survive;
+  override is not an operation fact, the arm carries only the resolved list.
+- `Paginate`: a **windowed** catalog read producing a connection, distinct from `Fetch` and the
+  sibling of `Count` / `Facet` in the connection-operation family. Target `Single(Connection)`,
+  whose `edges` / `nodes` project the page. Carries the same filter surface and ordering as
+  `Fetch` (ordering is load-bearing here, cursor stability needs a total order) **plus** the
+  pagination window (`first` / `after` / `last` / `before` resolved to a cursor / limit bound)
+  and the `pageInfo` / cursor synthesis. This is the home of pagination, which the fused
+  `Mapping.TableConnection` had mis-filed on the target axis; `Count` (`totalCount`) and `Facet`
+  already sit on the operation axis (modeled-but-unpopulated behind the ConnectionType
+  quarantine), and `Paginate` is the windowed-read member they were missing.
 - `Lookup`: the positional `@lookupKey` correspondence. Carries `LookupMapping` (key arguments
   to target key columns).
 - `ServiceCall`: a developer `@service` invocation. Carries the service `MethodRef` and its
@@ -141,7 +150,7 @@ TargetShape = Table | Column | Connection | Record | Field
   a source can never be. `Connection` is a `Single`-wrapped shape with its own fields, its
   many-ness lives on those fields (`edges` / `nodes`), classified normally, not on the
   connection field's wrapper, which retires the fused `Mapping.TableConnection` value (its
-  "paginated" fact moves to `operation` `Fetch`).
+  "paginated" fact moves to the `operation` `Paginate` arm, not `Fetch`).
 
 The endpoints are not equal: the source wrapper has a `Zero` (`Root`) arm the target lacks (a
 field always projects something), and `TargetShape` is a superset of `SourceShape`. What they
@@ -213,9 +222,10 @@ new understanding." Replace the `carrier x intent x mapping` target model with
 `(source, operation, target)`: the `source` and `target` endpoints as `wrapper(shape)` pairs
 (arrival wrapper `Root | OnlyChild | Child`, output wrapper `Single | List`, `SourceShape ⊆
 TargetShape`), the wrapper algebra (target wrapper local, source wrapper the ancestor fold), the
-`operation` payload-carrying arm set (`Fetch` / `Lookup` / `ServiceCall` / writes, each with
-its concrete payload), and the re-derived re-fetch predicate. Documentation only; it pins the
-vocabulary every later slice speaks.
+`operation` payload-carrying arm set (`Fetch` / `Paginate` / `Lookup` / `ServiceCall` /
+`Count` / `Facet` / writes, each with its concrete payload, `Paginate` the windowed-read arm the
+`TableConnection` decomposition surfaces), and the re-derived re-fetch predicate. Documentation
+only; it pins the vocabulary every later slice speaks.
 
 ### Slice 2: The `source` wrapper in code
 
@@ -237,9 +247,10 @@ conservatively unreached (R305 hard-codes `Many`); it carries one documented
 ### Slice 3: `operation` and `target` in code
 
 Rename `Intent` to a sealed `Operation` and build the arms **populated** (`Fetch`'s
-`List<WhereFilter>` + ordering/pagination, `Lookup`'s `LookupMapping`, `ServiceCall`'s
-`MethodRef` + params, the writes' DML payload), `ServiceCall` collapsing today's
-`QueryService` / `MutationService`. The operation arm is the model of record; the still-leaf
+`List<WhereFilter>` + ordering, `Paginate`'s window + `pageInfo` synthesis, `Lookup`'s
+`LookupMapping`, `ServiceCall`'s `MethodRef` + params, the writes' DML payload), `ServiceCall`
+collapsing today's `QueryService` / `MutationService`, `Paginate` joining the existing `Count` /
+`Facet` connection-operation arms. The operation arm is the model of record; the still-leaf
 emit projects from it (or a validator mirror pins agreement where it cannot yet), so the arms
 are concrete here, not deferred. R314 re-platforms the emit to dispatch off `operation` rather
 than leaf identity (see Relationships). Restructure `Mapping` into the `target` wrapper:
@@ -247,7 +258,8 @@ a `Single(TargetShape) | List(TargetShape)` sealed hierarchy, the wrapper read o
 `field.getType()` (the value `SourceKey.Cardinality` computes today from `wrapper().isList()`),
 the shape carrying the catalog-vs-Java polarity. The fused `Mapping.TableConnection` value
 **decomposes**: `Connection` becomes a `Single`-wrapped `TargetShape`, and its "paginated" fact
-moves to `operation` `Fetch`. Rename `OutputField.intent()` to `operation()` and `mapping()` to
+becomes the `operation` `Paginate` arm (joining `Count` / `Facet`), not a `Fetch` slot. Rename
+`OutputField.intent()` to `operation()` and `mapping()` to
 `target()`. Repoint all readers: `FieldBuilder`, `GraphitronSchemaValidator`,
 `ServiceMethodCallEmitter`, `TypeFetcherGenerator`, the catalog classification
 (`TypeClassification`, `FieldClassification`, `CatalogBuilder`).
