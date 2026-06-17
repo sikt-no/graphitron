@@ -23,7 +23,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R317` | Single edge-driven classification pass and immutable validation (retire TypeBuilder.buildTypes) | In Progress | 2026-06-17 <sub>created 2026-06-16</sub> | [plan](inline-type-classification-into-walk.md) |
 | `R45` | Multi-tenant routing on top of the schema-driven ExecutionInput factory | Spec | 2026-05-20 | [plan](tenant-routing-and-execution-input.md) |
 | `R273` | Source NodeId metadata from @node + catalog PK (inferred from `implements Node`), and settle wrong-type/malformed mismatch semantics, retiring the legacy __NODE bare-ID arm | Spec | 2026-06-02 | [plan](nodeid-skip-mismatch-error-surfacing.md) |
-| `R324` | Lift single-cardinality multi-hop @splitQuery restriction | In Progress | 2026-06-17 | [plan](single-cardinality-multihop-splitquery.md) |
+| `R324` | Lift single-cardinality multi-hop @splitQuery restriction | In Review | 2026-06-17 | [plan](single-cardinality-multihop-splitquery.md) |
 | `R13` | Faceted search on `@asConnection` | Spec |  | [plan](faceted-search.md) |
 | `R63` | Type UPSERT dialect requirement on the model | Spec |  | [plan](dml-dialect-requirement-on-model.md) |
 | `R92` | Surface database CHECK constraints as Jakarta validation rules | Spec |  | [plan](catalog-check-constraint-validation.md) |

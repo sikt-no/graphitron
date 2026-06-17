@@ -27,9 +27,8 @@ The Sakila example schema shows both shapes at the same logical position. `Film.
 
 == When the classifier *requires* split
 
-`@splitQuery` is required (not optional) in three operational cases:
+`@splitQuery` is required (not optional) in two operational cases:
 
-* *Single-cardinality multi-hop reference.* A `@reference(path: [a, b, c])` field returning `T` (not `[T!]`) without `@splitQuery` is rejected: `Single-cardinality @splitQuery requires a single-hop parent-holds-FK reference path; multi-hop paths are not yet supported on single cardinality` (`FieldBuilder.classifyObjectReturnChildField:469`). Multi-hop single-cardinality is currently only supported via the split path.
 * *Non-root `@service`.* A child field with `@service` does not derive its data from the parent SELECT (the service runs independently). Without `@splitQuery`, there's no way to dispatch the service per parent. The reference page documents this as a structural requirement; in practice the example schema's `City.filmsFromCity: [Film!]! @splitQuery @service(...)` shows the canonical shape.
 * *`@asConnection` on a child of a `@table` parent.* Inline correlated subqueries can't carry per-parent pagination (the `multiset` cell would have to encode the entire connection state, including a cursor that isn't known until parents are resolved). The classifier rejects `@asConnection` on a non-split TableField with a directive-conflict diagnostic; combining `@asConnection + @splitQuery` is the supported shape (covered in xref:connections.adoc[connections]).
 

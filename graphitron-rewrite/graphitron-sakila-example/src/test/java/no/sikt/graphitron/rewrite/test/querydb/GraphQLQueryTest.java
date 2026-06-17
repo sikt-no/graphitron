@@ -1476,6 +1476,43 @@ class GraphQLQueryTest {
         assertThat(byId.get(5).get("addressId")).isEqualTo(2);  // shared with c2
     }
 
+    @SuppressWarnings("unchecked")
+    @Test
+    void splitTableField_singleCardinality_multiHop_bridgesToTerminalAddressPerCustomer() {
+        // R324: Customer.storeAddressSplit (SplitTableField, single cardinality, multi-hop
+        // parent-holds-FK: customer -> store -> address). The rows-method keys by customer.store_id,
+        // bridges store -> address via store_address_id_fkey, and scatters the terminal Address 1:1.
+        // Seeded chain: c1/c2/c4 -> store 1 -> address 1 (47 MySakila Drive);
+        //               c3/c5    -> store 2 -> address 2 (28 MySQL Boulevard).
+        // Must match the inline (non-split) Customer.storeAddress navigation exactly.
+        Map<String, Object> data = execute(
+            "{ customers { customerId storeAddressSplit { addressId address } } }");
+        List<Map<String, Object>> customers = (List<Map<String, Object>>) data.get("customers");
+        var byId = customers.stream().collect(java.util.stream.Collectors.toMap(
+            c -> (Integer) c.get("customerId"),
+            c -> (Map<String, Object>) c.get("storeAddressSplit")));
+        assertThat(byId.get(1)).containsEntry("addressId", 1).containsEntry("address", "47 MySakila Drive");
+        assertThat(byId.get(2)).containsEntry("addressId", 1).containsEntry("address", "47 MySakila Drive");
+        assertThat(byId.get(3)).containsEntry("addressId", 2).containsEntry("address", "28 MySQL Boulevard");
+        assertThat(byId.get(4)).containsEntry("addressId", 1).containsEntry("address", "47 MySakila Drive");
+        assertThat(byId.get(5)).containsEntry("addressId", 2).containsEntry("address", "28 MySQL Boulevard");
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    void splitTableField_singleCardinality_multiHop_dedupesSharedKey_oneBatchRoundTrip() {
+        // Five customers hit the storeAddressSplit DataLoader, but only two distinct store_id keys
+        // (store 1: c1,c2,c4; store 2: c3,c5). Caching-enabled dedup collapses to one batched
+        // rows-method round-trip: 1 (customers) + 1 (batched storeAddressSplit) = 2. An un-batched
+        // scatter would fire 1 + 5 = 6.
+        QUERY_COUNT.set(0);
+        Map<String, Object> data = execute(
+            "{ customers { customerId storeAddressSplit { addressId } } }");
+        List<Map<String, Object>> customers = (List<Map<String, Object>>) data.get("customers");
+        assertThat(customers).hasSize(5);
+        assertThat(QUERY_COUNT.get()).isEqualTo(2);
+    }
+
     // ===== R232 condition-join execution-tier coverage =====
 
     @SuppressWarnings("unchecked")
