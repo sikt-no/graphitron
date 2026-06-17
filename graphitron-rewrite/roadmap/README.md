@@ -25,7 +25,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R45` | Multi-tenant routing on top of the schema-driven ExecutionInput factory | Spec | 2026-05-20 | [plan](tenant-routing-and-execution-input.md) |
 | `R273` | Source NodeId metadata from @node + catalog PK (inferred from `implements Node`), and settle wrong-type/malformed mismatch semantics, retiring the legacy __NODE bare-ID arm | Spec | 2026-06-02 | [plan](nodeid-skip-mismatch-error-surfacing.md) |
 | `R324` | Lift single-cardinality multi-hop @splitQuery restriction | Spec | 2026-06-17 | [plan](single-cardinality-multihop-splitquery.md) |
-| `R23` | Multi-parent `NestingField` sharing: `TableField` arm | In Review | 2026-06-17 | [plan](nestingfield-multiparent-tablefield.md) |
 | `R13` | Faceted search on `@asConnection` | Spec |  | [plan](faceted-search.md) |
 | `R63` | Type UPSERT dialect requirement on the model | Spec |  | [plan](dml-dialect-requirement-on-model.md) |
 | `R92` | Surface database CHECK constraints as Jakarta validation rules | Spec |  | [plan](catalog-check-constraint-validation.md) |
@@ -208,7 +207,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R16` [**`FkJoin` model cleanup: `JoinConditionRef` wrapper**](fkjoin-model-cleanup.md) — Backlog, cleanup
 - `R97` [**Deprecate @table on input types; consumer-derived tables + argMapping grouping**](consumer-derived-input-tables.md) — Backlog, architecture
 - `R323` [**Multi-parent NestingField sharing: BatchKey leaves**](nestingfield-multiparent-batchkey-leaves.md) — Backlog, architecture
-- `R23` [**Multi-parent `NestingField` sharing: `TableField` arm**](nestingfield-multiparent-tablefield.md) — In Review, architecture
 - `R120` [**Drop or wire FkJoin.alias dead storage**](fkjoin-alias-dead-storage.md) — Backlog, cleanup
 - `R126` [**Scrub residual BatchKey.X references from sakila-service / sakila-example prose**](scrub-stale-batchkey-prose.md) — Backlog, cleanup
 
