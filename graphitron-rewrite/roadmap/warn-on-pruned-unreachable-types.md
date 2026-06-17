@@ -20,4 +20,5 @@ mysteriously missing resolver. The intent is a warning, not an error: unreachabl
 and pruned, and a healthy reachable schema must still build, so this must never block. Emit a
 build warning naming each pruned unreachable output type (and ideally why it is unreachable), so
 dead schema surfaces without failing an otherwise sound build. Small, additive, and orthogonal to
-R317's byte-identical reordering; it rides best on top of the single-pass walk R317 lands.
+R317's classification rework; it rides best on top of the single-pass walk R317 lands (R317 slice 3
+shifts unreachable output types from classified to pruned; this item adds the warning).
