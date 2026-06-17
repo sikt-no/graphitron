@@ -18,7 +18,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R222` | Dimensional model pivot: slots over cross-product permits | Spec | 2026-06-16 <sub>created 2026-05-21</sub> | [plan](dimensional-model-pivot.md) |
 | `R316` | Pivot the field-dimensional model to (source, operation, target) <sub>blocked by: [dimensional-model-pivot](dimensional-model-pivot.md)</sub> | Spec | 2026-06-17 <sub>created 2026-06-16</sub> | [plan](source-operation-target-pivot.md) |
 | `R256` | Absorb the service walker substrate: typed per-arm errors + multi-arg ctors | Ready | 2026-05-30 <sub>created 2026-05-29</sub> | [plan](service-walker-substrate-absorption.md) |
-| `R321` | One-shot mojos must render ValidationFailedException.errors() in the failure output (parity with DevMojo and the SchemaProblem branch) | In Review | 2026-06-17 | [plan](surface-validation-errors-in-mojo-failure.md) |
 | `R315` | Bind FK-reference @nodeId onto jOOQ-record @service params (port legacy @reference FK resolution; generalize R311) | Spec | 2026-06-17 <sub>created 2026-06-16</sub> | [plan](fk-reference-nodeid-service-record-input.md) |
 | `R308` | Fix the @service list-payload N+1 by deriving many-arrival for list-returning carriers | Spec | 2026-06-14 | [plan](service-list-payload-arrival.md) |
 | `R317` | Single edge-driven classification pass and immutable validation (retire TypeBuilder.buildTypes) | In Progress | 2026-06-17 <sub>created 2026-06-16</sub> | [plan](inline-type-classification-into-walk.md) |
@@ -294,7 +293,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R324` [**Lift single-cardinality multi-hop @splitQuery restriction**](single-cardinality-multihop-splitquery.md)
 - `R252` [**Multi-file federation fixture coverage for schema.graphqls emission**](multi-file-federation-fixture-coverage.md)
 - `R269` [**Null-guard split-query key extraction for nullable to-one records**](nullable-to-one-record-into-npe.md)
-- `R321` [**One-shot mojos must render ValidationFailedException.errors() in the failure output (parity with DevMojo and the SchemaProblem branch)**](surface-validation-errors-in-mojo-failure.md)
 - `R274` [**OutcomeType carries its success projection so the nullability invariant lives on the carrier**](outcometype-carry-success-projection.md)
 - `R213` [**Plain-input field rejections attributed to consumer field, losing input-field source location**](input-field-rejection-attribution.md)
 - `R304` [**Reify @error PayloadAccessor errors fetcher into a named method**](reify-error-payload-accessor-fetcher.md)
