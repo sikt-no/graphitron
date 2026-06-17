@@ -258,12 +258,6 @@ class TypeBuilder {
         // issued IDs, which would violate the durability invariant.
         validateNodeTypeIdUniqueness(ctx.typeRegistry);
 
-        // R317 slice 2 — the validator mirror for the table->NodeType index. The index pins one
-        // NodeType per table; nothing else enforced uniqueness (validateNodeTypeIdUniqueness guards
-        // only typeId), so two @node types on one table previously resolved silently first-wins.
-        // The encoder for a table must be unique, so reject the schema symmetrically (both demote).
-        validateOneNodeTypePerTable(ctx.typeRegistry);
-
         // R75 Phase 1 / R276: bind plain SDL Objects that pass the single-record-carrier trigger to
         // their producer's jOOQ table record (JooqTableRecordType), so the mutation/service
         // classifier resolves the data field through the standard record-backed path. Carrier-shaped
@@ -347,45 +341,19 @@ class TypeBuilder {
     }
 
     /**
-     * R317 slice 2 — the validator mirror for the {@code table -> NodeType} fixed-point index.
-     * The index pins exactly one {@link NodeType} per table; two {@code @node} types on one table
-     * have no well-defined node-id encoder (the implicit ID-encode lookup picks "the node on this
-     * table"), so reject symmetrically rather than letting one win silently. Mirrors the shape of
-     * {@link #validateNodeTypeIdUniqueness}: both colliding entries demote to {@link UnclassifiedType}
-     * so the build fails with a clear message rather than emitting a nondeterministic encoder.
-     */
-    private static void validateOneNodeTypePerTable(TypeRegistry registry) {
-        var byTable = new LinkedHashMap<String, List<NodeType>>();
-        for (var type : registry.entries().values()) {
-            if (type instanceof NodeType nt) {
-                byTable.computeIfAbsent(nt.table().tableName(), k -> new ArrayList<>()).add(nt);
-            }
-        }
-        for (var entry : byTable.entrySet()) {
-            if (entry.getValue().size() < 2) continue;
-            String table = entry.getKey();
-            List<String> colliding = entry.getValue().stream().map(NodeType::name).sorted().toList();
-            String others = String.join(", ", colliding);
-            for (var nt : entry.getValue()) {
-                registry.register(nt.name(), new UnclassifiedType(nt.name(), nt.location(),
-                    Rejection.structural("table '" + table + "' has multiple @node types (" + others
-                    + ") — a table's node-id encoder must be unique; declare @node on exactly one type per table")));
-            }
-        }
-    }
-
-    /**
-     * R317 slice 2 — builds the fixed-point reverse indices ({@link BuildContext#nodeTypeByTable},
+     * R317 slice 2 — builds the fixed-point reverse indices ({@link BuildContext#nodes},
      * {@link BuildContext#crossTableFieldsByParticipant}) that retire {@code FieldBuilder}'s
-     * whole-registry NodeType and participant scans. Derived from the SDL declarations via the same
+     * whole-registry NodeType and participant scans and the keyed {@code ctx.types.get} at the
+     * {@code @nodeId(typeName:)} path. Derived from the SDL declarations via the same
      * producers classification uses ({@code buildTableType} for nodes, {@code buildTableInterfaceType}
      * for table-interfaces), restricted to the reachable set so membership matches the registry the
-     * field pass would otherwise scan. NodeTypes the soundness reductions demote are excluded so a
-     * lookup never resolves an encoder the registry rejected: typeId collisions (mirrors
-     * {@link #validateNodeTypeIdUniqueness}) and table collisions (mirrors
-     * {@link #validateOneNodeTypePerTable}). On a healthy schema every table carries at most one
-     * {@code @node} type and no collision fires, so the index is total over the reachable node
-     * surface and identical to what {@code types.values().findFirst()} resolved.
+     * field pass would otherwise scan. NodeTypes the {@link #validateNodeTypeIdUniqueness} reduction
+     * demotes (typeId collisions) are excluded so a lookup never resolves an encoder the registry
+     * rejected. Multiple {@code @node} types on one table is legitimate (distinct node ids over the
+     * same rows): {@code byTable} is one-to-many (every node on a table, in reachable-registration
+     * order), and the implicit "encoder for this table" lookup is resolved at the call site, which
+     * rejects the zero and ambiguous (>1) cases. {@code byName} keys on the distinct type names so
+     * each node resolves independently through the explicit {@code @nodeId(typeName:)} path.
      */
     private void buildClassificationIndices(Set<String> reachable) {
         var nodeTypes = new ArrayList<NodeType>();
@@ -396,17 +364,26 @@ class TypeBuilder {
                 nodeTypes.add(nt);
             }
         }
+        // Exclude only typeId-collision groups: validateNodeTypeIdUniqueness demotes those to
+        // UnclassifiedType, so the field pass (which runs after that demotion) never resolves them.
+        // Multiple @node types on ONE table is legitimate (distinct node ids over the same rows), so
+        // byTable is one-to-many: it lists every node on a table in reachable-registration order
+        // (the order the old types.values() scan saw, the registry being insertion-ordered). The
+        // implicit "encoder for this table" lookup is resolved at the call site, which rejects the
+        // zero and ambiguous cases. byName keys on the distinct type names so each node on a shared
+        // table resolves independently through the explicit @nodeId(typeName:) path.
         var typeIdCounts = nodeTypes.stream()
             .collect(Collectors.groupingBy(NodeType::typeId, Collectors.counting()));
-        var tableCounts = nodeTypes.stream()
-            .collect(Collectors.groupingBy(nt -> nt.table().tableName(), Collectors.counting()));
-        var byTable = new LinkedHashMap<String, NodeType>();
+        var byTable = new LinkedHashMap<String, List<NodeType>>();
+        var byName = new LinkedHashMap<String, NodeType>();
         for (var nt : nodeTypes) {
             if (typeIdCounts.get(nt.typeId()) > 1) continue;
-            if (tableCounts.get(nt.table().tableName()) > 1) continue;
-            byTable.put(nt.table().tableName(), nt);
+            byTable.computeIfAbsent(nt.table().tableName(), k -> new ArrayList<>()).add(nt);
+            byName.put(nt.name(), nt);
         }
-        ctx.nodeTypeByTable = Map.copyOf(byTable);
+        var byTableFrozen = new LinkedHashMap<String, List<NodeType>>();
+        byTable.forEach((table, nodes) -> byTableFrozen.put(table, List.copyOf(nodes)));
+        ctx.nodes = new NodeIndex(byTableFrozen, byName);
 
         var byParticipant = new LinkedHashMap<String, Map<String, ParticipantRef.TableBound.CrossTableField>>();
         for (var name : reachable) {

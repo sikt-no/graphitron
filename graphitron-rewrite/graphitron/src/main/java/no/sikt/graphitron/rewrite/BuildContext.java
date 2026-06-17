@@ -165,17 +165,16 @@ class BuildContext {
      */
     final Map<String, GraphitronType> types = typeRegistry.entries();
     /**
-     * R317 slice 2 — fixed-point reverse index, table SQL name &rarr; the {@link NodeType}
-     * declared on that table. Populated once by {@link TypeBuilder#buildTypes()} from the
-     * reachable {@code @node} SDL scan plus the catalog (the inputs {@code NodeType} itself comes
-     * from), excluding any node the soundness reductions demote (typeId collision; the
-     * one-{@code NodeType}-per-table guard), so a lookup never resolves an encoder the registry
-     * rejected. Retires {@code FieldBuilder}'s four {@code types.values()} NodeType scans: field
-     * classification reads this O(1) map instead of scanning the whole type registry, which is the
-     * precondition for collapsing classification into a single walk (R317 slice 4). Empty for
+     * R317 slice 2 — fixed-point reverse index over the schema's {@code @node} types
+     * ({@link NodeIndex}), keyed by backing table and by type name. Populated once by
+     * {@link TypeBuilder#buildClassificationIndices}. Field classification resolves every node-id
+     * encoder through this index instead of scanning or keying into the type registry (retires
+     * {@code FieldBuilder}'s four {@code types.values()} NodeType scans and the keyed
+     * {@code ctx.types.get} at the {@code @nodeId(typeName:)} path), which is the precondition for
+     * collapsing classification into a single walk (R317 slice 4). {@link NodeIndex#EMPTY} for
      * tests that build a registry without going through {@code buildTypes}.
      */
-    Map<String, NodeType> nodeTypeByTable = Map.of();
+    NodeIndex nodes = NodeIndex.EMPTY;
     /**
      * R317 slice 2 — fixed-point index, participant type name &rarr; (field name &rarr; the
      * participant's {@link ParticipantRef.TableBound.CrossTableField}). Populated once by

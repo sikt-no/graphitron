@@ -12,6 +12,16 @@ last-updated: 2026-06-17
 
 # Single edge-driven classification pass and immutable validation (retire TypeBuilder.buildTypes)
 
+> **Status (resume pointer).** Slices 1 and 2 are shipped to trunk; slice 3 (edge-complete
+> `classifyType` for directiveless objects) is the active front. Slice 2's `NodeIndex` (`ctx.nodes`)
+> is SDL-derived (via the producers) restricted to the reachable set, excludes only typeId-collision
+> groups, and is **one-to-many by table** (a table may back several `@node` types with distinct node
+> ids; ambiguity of the implicit encoder is rejected at the call site, not by a type-level guard).
+> All `classifyField` node reads now go through `ctx.nodes` (`forTable` / `forName`), including the
+> `@nodeId(typeName:)` path. Slice 3 starts at the directiveless `return null` arm of
+> `TypeBuilder.classifyType` and folds `registerNestingTypes` + `promoteSingleRecordPayloads` onto
+> the reaching edge; see the slice list and "Design decisions".
+>
 > Rescoped 2026-06-17, mid-implementation. The original plan framed this as a byte-identical
 > reordering that moved the existing passes into the walk. Investigation (see "Why the original
 > framing could not reach the goal") showed that framing cannot land the single walk: the walk
@@ -91,11 +101,19 @@ One edge-driven classification pass, then an immutable validate pass, then emit.
   can drift; deriving from the fixed point keeps one producer. The encode-helper the `table` index
   yields is itself derivable (encoder class constant + `"encode" + typeName` + keyColumns), so the
   index need not hold a `NodeType` registry entry.
-- **`table -> NodeType` makes one-NodeType-per-table load-bearing.** Today the four scans take
-  `findFirst()` in registry-iteration order; nothing enforces uniqueness
-  (`validateNodeTypeIdUniqueness` guards only typeId). Lifting to a map must pin the tie-break and
-  add a validator mirror rejecting two `@node` types on one table, or the lift is not byte-identical
-  on a pathological schema.
+- **`table -> NodeType` is one-to-many; ambiguity is a use-site concern, not a type-level guard.**
+  A table can legitimately back several `@node` types (distinct node ids over the same rows; e.g.
+  sis `Soker` / `Studiekurv` on table `soker`), so the by-table index lists *every* node on a table
+  rather than collapsing to one. (An earlier revision of this decision wrongly proposed a global
+  "one `@node` per table" validator mirror; it rejected valid schemas and was reverted.) The old
+  `findFirst()` silently picked one node for the implicit "encoder for this table" form, which was a
+  latent bug: where the table is ambiguous, the implicit form (a bare-`ID` mutation return, or an
+  `@nodeId`-less carrier) has no single answer. Resolution moves to the call site: one node resolves,
+  zero is the existing "no `@node` for table" error, and two-or-more is a new use-site rejection with
+  a disambiguation hint (`@nodeId(typeName:)` on a carrier, or a typed `@node` return for a direct
+  bare-`ID` mutation). This fires only when the ambiguous implicit path is exercised, so a schema
+  with several nodes on one table that disambiguates via explicit `@nodeId` (the by-name view) builds
+  unchanged.
 - **Carrier binding takes the fixed-point route, not post-order.** The `JooqTableRecordType` verdict
   needs no descent: the table is known from the producer binding (`dmlEmittedBinding` /
   `serviceEmittedBinding`). Only the structural carrier scan reads element verdicts, and that scan
@@ -142,22 +160,24 @@ trivially.
 1. **Participant enrichment onto the node visit.** *Shipped (`96b2f18`).* `classifyType` classifies
    each interface / union with its participants at the node visit; the separate enrichment pass and
    its helpers are deleted. Byte-identical.
-2. **Lift the reverse-lookups to fixed-point indices.** *Shipped.* `BuildContext.nodeTypeByTable`
-   (`table -> NodeType`) and `BuildContext.crossTableFieldsByParticipant`
+2. **Lift the reverse-lookups to fixed-point indices.** *Shipped.* `BuildContext.nodes` (a
+   `NodeIndex`: by-table one-to-many + by-name) and `BuildContext.crossTableFieldsByParticipant`
    (`participant -> field -> crossTableField`) are built once in `TypeBuilder.buildClassificationIndices`
    from the reachable `@node` / `@table`+`@discriminate` SDL scan via the same producers
    (`buildTableType` / `buildTableInterfaceType`), not memoised from the registry. The four
-   encode-helper `types.values()` scans and `lookupParticipantCrossTableField` now read those O(1)
-   maps, so `classifyField` has no whole-registry NodeType / participant read left. The
-   `validateOneNodeTypePerTable` mirror demotes both colliding nodes (symmetric, like
-   `validateNodeTypeIdUniqueness`); the index excludes typeId- and table-collision groups so a
-   lookup never resolves a demoted encoder. The tie-break is moot for healthy schemas (one node per
-   table) and never observable for rejected ones (the build fails). Byte-identical across the
-   pipeline / compile / execution tiers except the new rejection, pinned by
-   `NodeIdPipelineTest.TypeCase.TWO_NODE_TYPES_PER_TABLE_DEMOTES_BOTH` (two `@node` types on one
-   table, distinct typeIds, asserting both demote with the new message). The keyed
-   `ctx.types.get(explicitTypeName)` at the `@nodeId(typeName:)` path stays (a keyed get, not a
-   whole-registry scan); slice 4 retires it with the walk.
+   encode-helper `types.values()` scans, `lookupParticipantCrossTableField`, *and* the keyed
+   `ctx.types.get(explicitTypeName)` at the `@nodeId(typeName:)` path now read those maps
+   (`forTable` / `forName` / the participant map), so `classifyField` has no NodeType or participant
+   read into the type registry left at all. The index excludes only typeId-collision groups (which
+   `validateNodeTypeIdUniqueness` demotes); a table backing several `@node` types is kept whole
+   (`forTable` returns the list). The implicit "encoder for this table" form is resolved at the call
+   site: one node resolves; zero is the existing "no `@node` for table" error; two-or-more is a new
+   `IdEncoderResolution.Ambiguous` / `ambiguousImplicitNodeError` rejection with a disambiguation
+   hint. Byte-identical across the pipeline / compile / execution tiers for single-node tables
+   (the universal case); the new behavior is pinned by
+   `NodeIdPipelineTest.TypeCase.MULTIPLE_NODE_TYPES_PER_TABLE_ALLOWED` (two `@node` types on one
+   table both classify) and `MutationDmlNodeIdClassificationTest.idReturnOnMultiNodeTable_ambiguous_rejected`
+   (the bare-`ID` implicit return on such a table is rejected with the disambiguation hint).
 3. **Edge-complete `classifyType` for directiveless objects.** Classify nesting (fold
    `registerNestingTypes`) and carrier (fold `promoteSingleRecordPayloads` via the binding
    fixed-point verdict) at the reaching edge; edge-decidable orphans produce `UnclassifiedField`
