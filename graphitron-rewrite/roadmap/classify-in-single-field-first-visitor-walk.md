@@ -69,33 +69,58 @@ keys (parent classification verdict, parent `TableRef`, source-shape context)
 are the Spec's to enumerate; "getParentVar" is shorthand for this channel, not
 a literal method.
 
-Two boundaries the Spec must pin, because the invariant constrains the
+Two boundaries, both **decided**, because the invariant constrains the
 *visitor*, not everything around it:
 
-- **Reconciliation boundary — not a visitor read.** A type reached by multiple
-  producers needs multi-producer agreement. That is settled either inside
-  `register` (which may inspect the entry it is overwriting) or in a post-walk
-  validation pass — never by the visitor consulting the registry. The Spec
-  picks one; both keep the visitor pure.
+- **Reconciliation lives in the registry; the visitor stays pure (decided).**
+  The visitor computes a candidate verdict from (node, parent-var) and calls
+  `register`. A type reached by multiple producers is registered more than
+  once; the registry collects and reconciles those writes (multi-producer
+  agreement, supersession). The visitor never reads back what it registered.
 - **Consuming the parent-var is per-node-kind, not universal.** An interface
   reached via an object's `implements` clause must not classify as a function
   of that object; it classifies from its own directives and participants. So
   the rule is "may not read the registry," not "must read the parent-var" —
   some node kinds ignore the channel.
 
-### The sharp edge: shared targets and traversal dedup
+### Why dedup is not a problem: parent-independent entries, per-site field context (decided)
 
-`SchemaTraverser` descends a node reached by two parents **once** (identity
-dedup, the `expanded` set in `SchemaReachability`), so its fields see only the
-*first* parent's vars. For a type's own classification verdict this is harmless
-(the verdict is parent-independent). But for **parent-relative field context** —
-a `@reference` path resolved against the parent table, say — a reusable type
-returned from two different parent tables would bind to whichever parent the
-walk reached first. The Spec must decide whether that case is forbidden,
-classified parent-independently, or genuinely needs a re-descend per parent
-(which breaks dedup). This intersects the existing
-`parent-context-aware-schema-coordinates` item and is the single hardest
-question the invariant forces; it must not be hand-waved.
+The earlier worry was that `SchemaTraverser` descends a node reached by two
+parents **once** (identity dedup, the `expanded` set in `SchemaReachability`),
+so a reusable type's fields would bind to whichever parent the walk reached
+first. Checked against the code, this dissolves, and the resolution is a
+*requirement* on the design, not a hope:
+
+- **Every type's registry entry is parent-independent.** Each verdict is
+  intrinsic to the type: `@table`/catalog (Table / Node / Result), directives
+  (Interface / Union / Enum / Scalar), or — for a directiveless projection — a
+  bare `NestingType` *marker* that carries **no table** (`GraphitronType
+  .NestingType` is `(name, location, schemaType)`; its fields inline into the
+  embedding parent's query and read off the parent row through the
+  `NestingField`). So registering the same type once per incoming field is N
+  identical writes the registry collapses trivially; multi-producer
+  disagreement is the only non-identical case, and that is exactly what the
+  registry reconciles.
+- **All parent-relative context lives on the per-site field, keyed per-site.**
+  A projection `Thing` embedded under `A` (table a) and `B` (table b) yields
+  two `NestingField`s at coordinates `A.thing` and `B.thing`, each carrying its
+  own copy of Thing's projected fields resolved in its own table context. Those
+  projected fields live on the `NestingField` (`nf.nestedFields()`), **not** in
+  the global field registry under `Thing.foo`, so they never collide and are
+  free to diverge (a column absent under `b` errors only `B.thing.foo`).
+
+So the same type and its fields are classified **many times, once per embedding
+site**, with zero registry collision, because projection field classification
+happens at each embedding *field* visit (carrying parent context via the var
+channel), never at the once-visited type node. The dedup of the type node is
+therefore irrelevant to it.
+
+**The guard the Spec must hold:** a type's registry entry stays
+parent-independent. The moment a `TableRef` or source shape is put on a shared
+type's entry, the N-identical-writes property breaks and the edge returns.
+Parent context lives on the field, full stop. (This is the constructive answer
+to the `parent-context-aware-schema-coordinates` item's territory, not a
+deferral to it.)
 
 ## Edges that are not literally "field → return type" (must be carried explicitly)
 
@@ -108,12 +133,16 @@ dangle:
 - **Interface → implementors** and **object → implemented interfaces:**
   structural edges, not field-return edges. Already in the custom child
   function; the classifier walk must follow them too.
-- **Arguments → input types → nested input fields:** the current reachability
-  walk *deliberately excludes* arguments/inputs and sweeps input types in a
-  separate `getAllTypesAsList` loop. Under field-first, visiting a field's
-  arguments is what discovers and classifies its input types. This is the part
-  of the current code most opposed to the model and the part the spec must
-  most carefully fold into the walk rather than retain as a side-sweep.
+- **Arguments → input types → nested input fields (decided: per-usage, not via
+  the visitor).** Inputs are read **during field classification**, in the
+  context of the current field, never via a separate visitor descent and never
+  reusing a sibling field's classification of the same input type. This moves
+  input *type* classification off today's global `buildInputType` pass (one
+  verdict per input type name) onto per-field-usage resolution, carrying the
+  same guard as above: if a shared input type keeps a registry entry at all,
+  that entry stays parent-independent and the per-usage context lives on the
+  argument. Whether a shared input needs a global entry or is purely
+  field-level is the one input-specific question the Spec must answer.
 
 ## Validations move out of the walk, explicitly
 
