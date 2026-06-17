@@ -29,30 +29,53 @@ scope when this item is Done, not merely shadowed by the new one.
 
 ## The target model
 
+Both endpoints have the same form: a **wrapper around a shape**, where the wrapper is a
+multiplicity layer (the `List` dimension of graphitron's `wrapper()`, GraphQL's own
+vocabulary) and the shape is the named thing inside it. They are not equal, the wrapper
+arm-sets and the shape value-sets differ per endpoint, but the *form* is shared, and that
+shared form is what the "(source, operation, target)" symmetry actually is. See
+[the wrapper algebra](#the-wrapper-algebra) for why the two wrappers are one algebra at two
+positions, and why keeping cardinality *as a wrapper* (never a free enum) is what stops the
+collision this pivot exists to fix.
+
 ### source (the arrival endpoint)
 
-A sealed hierarchy folding today's `Carrier` arms into one type whose arms are the field's
-arrival position. `SourceShape` and `SourceCardinality` survive as the payload of the nested
-arm rather than dissolving:
+The source wrapper is the field's **arrival cardinality** (how many source objects reach its
+fetcher); the shape inside it is what arrives. The arm-set is closed and small, three arms
+that will never grow, so switching on it is not heavy:
 
 ```
-source      = Root(RootKind) | Child(SourceShape, SourceCardinality)
-RootKind    = Query | Mutation
+source      = Root | OnlyChild(SourceShape) | Child(SourceShape)
+Root        = Query | Mutation
 SourceShape = Table(<catalog metadata>) | Record(SourceObject, <extraction>)
 ```
 
-- `Root(RootKind)`: an operation root; no parent arrives. `RootKind` (`Query` / `Mutation`)
-  *is* the operation-legality gate (write operations only on `Mutation`, `NodeResolve` only
-  on `Query`), so the gate stops being a separate concern.
-- `Child(SourceShape, SourceCardinality)`: nested; a parent source object arrives. The arm
-  names mirror the field seal (`OutputField permits RootField, ChildField`), so `RootField`
-  builds `Root` and `ChildField` builds `Child`.
+- `Root` (permits `Query` / `Mutation`): an operation root, no source object arrives (the
+  empty product, arrival `Zero`). `Root` carries no `SourceShape`; the `Query` / `Mutation`
+  split *is* the operation-legality gate (writes only on `Mutation`, `NodeResolve` only on
+  `Query`), so the gate stops being a separate concern.
+- `OnlyChild(SourceShape)`: exactly one source object arrives (arrival `One`).
+- `Child(SourceShape)`: many source objects arrive (arrival `Many`).
 
-`SourceCardinality` (`One` / `Many`) stays a **slot** on `Child` rather than splitting it into
-arm identity. It is a semiring (`One` the identity, `Many` the absorber) that R279/R308 will
-compute by multiplying a field's ancestors', so it must stay a value to multiply; and `One` is
-not yet produced (R305 hard-codes `Many`), so a cardinality-keyed arm would be born unreachable.
-The `Child` arm carries `SourceShape`, the catalog-vs-Java polarity of the parent:
+**The wrapper is the emit-strategy dispatch.** `Child` requires a DataLoader to batch the
+once-per-parent invocations or it is an N+1; `Root` and `OnlyChild` run their SQL directly,
+single invocation, no loader. The `OnlyChild` optimisation *is* "arrive-once dispatches like a
+root," so every fetcher emitter switches on `Root` / `OnlyChild` / `Child` by definition once
+it exists. That makes arrival arm identity, not a slot: it is the axis the dominant consumer
+forks on, and an emitter that fails to consult it is then a non-exhaustive match (a compile
+error) rather than the silent N+1 of R308. The three-armed switch is cheap; the closed arm-set
+guarantees it stays cheap.
+
+Naming the arms for their referent (the arrival, not a bare `One` / `Many`) is load-bearing,
+not cosmetic. A free `Cardinality.MANY` is unreadable because the *target* wrapper carries the
+same values (see [the wrapper algebra](#the-wrapper-algebra)); `OnlyChild` / `Child` bind the
+count to the source endpoint so it cannot be misread as the field's own output arity. That
+collision is live today: `SourceKey.Cardinality` (computed from `wrapper().isList()`, the
+target wrapper) and `Carrier.Source`'s cardinality are two indistinguishable `ONE` / `MANY`
+enums, and it has cost real confusion.
+
+`SourceShape` is the shape inside the wrapper, the catalog-vs-Java polarity of the parent, and
+is a **subset of `TargetShape`** (a source object is always a row, never a scalar):
 
 - `Table`: a catalog table row parent; carries its catalog metadata (table ref / row
   identity), slot detailed in the implementation pass.
@@ -74,7 +97,7 @@ R316 ships the arms *empty*. The arm set, pinned here:
 - `Lookup`: the positional `@lookupKey` correspondence; eventual payload `LookupMapping`.
 - `ServiceCall`: a developer `@service` invocation; eventual payload the service `MethodRef`
   and params. This **collapses today's `QueryService` / `MutationService`**: they differ only
-  by read-vs-write, which is purely the legality gate now carried by `Root(RootKind)`, and the
+  by read-vs-write, which is purely the legality gate now carried by `Root`'s `Query` / `Mutation`, and the
   two classify identically (same payload, same emit). `ServiceCall` carries no read/write bit;
   that holds while services stay root-only and graphitron does not branch on mutate-or-not (a
   future nested mutating `@service` would put the bit in a slot).
@@ -91,16 +114,54 @@ second home for facts that already have one, ahead of any reader.
 
 ### target (the projection endpoint)
 
-Today's `Mapping`, renamed and reinterpreted: the destination endpoint and its shape,
-`Table` / `Column` / `Connection` (catalog) and `Record` / `Field` (Java). The catalog-vs-Java
-split here is the target's *polarity*, a sibling of `source`'s `SourceShape` polarity rather
-than standing in for both. The two are not perfectly symmetric: on `source` the polarity *is*
-the whole shape (`Table` / `Record`), while `target` carries five shapes with polarity only a
-grouping, and re-fetch reads source-*polarity* together with target-*shape* (`Table`
-specifically), not two parallel polarities. The vindication is the clean separation, not the
-symmetry: each endpoint owns its polarity, so re-fetch is a record-producing endpoint (a
-`source` `Record` or a record-producing `operation`) crossing into a catalog `Target.Table`,
-read off the endpoints rather than decoded from a conflated `mapping`.
+`Mapping` renamed and restructured to the same `wrapper(shape)` form. The target wrapper is
+the field's **own output cardinality**, read straight off `field.getType()`; the shape inside
+it is what the field projects:
+
+```
+target      = Single(TargetShape) | List(TargetShape)
+TargetShape = Table | Column | Connection | Record | Field
+```
+
+- `Single` / `List`: the field's output wrapper. This is the value `SourceKey.Cardinality`
+  computes today from `wrapper().isList()`; it lives here, on the target, named for GraphQL's
+  `List`, not as a free cardinality enum.
+- `TargetShape` is the projection's shape and its catalog-vs-Java polarity (`Table` / `Column`
+  / `Connection` catalog, `Record` / `Field` Java). `SourceShape ⊆ TargetShape`: source has
+  only the row shapes (`Table` / `Record`); target adds the scalar shapes (`Column` / `Field`)
+  a source can never be. `Connection` is a `Single`-wrapped shape with its own fields, its
+  many-ness lives on those fields (`edges` / `nodes`), classified normally, not on the
+  connection field's wrapper, which retires the fused `Mapping.TableConnection` value (its
+  "paginated" fact moves to `operation` `Fetch`).
+
+The endpoints are not equal: the source wrapper has a `Zero` (`Root`) arm the target lacks (a
+field always projects something), and `TargetShape` is a superset of `SourceShape`. What they
+share is the form. Each owns its polarity, so re-fetch is a record-producing endpoint (a
+source `Record`, or a record-producing `operation`) crossing into a catalog `Target.Table`,
+read off the two endpoints rather than decoded from a conflated `mapping`.
+
+### the wrapper algebra
+
+The two wrappers are **one algebra at two positions.** The target wrapper is *local*: this
+field's own output wrapper. The source wrapper is *accumulated*: the product (fold) of the
+ancestor fields' target wrappers, so one `List` ancestor makes every descendant `Many`. A
+field's target wrapper thus becomes part of its descendants' source wrapper. The monoid is
+trivial and closed over the arms: `Root` is the empty product, `OnlyChild` the `One` identity,
+`Child` the `Many` absorber.
+
+```
+Root · x        = x          OnlyChild · x   = x
+Child · OnlyChild = Child     Child · Child   = Child
+```
+
+This is *why* a bare `Cardinality.MANY` is unreadable: the same `{One, Many}` values appear at
+both positions (local and accumulated), so detached from its endpoint a cardinality value could
+be either, the exact `SourceKey.Cardinality`-versus-arrival collision. The fix that cannot be
+lost again is structural: cardinality only ever exists as a wrapper bound to an endpoint, never
+as a standalone `SourceCardinality` / `TargetCardinality` type. One named invariant keeps the
+two positions honest, `sourceWrapperIsTheFoldOfAncestorTargetWrappers`: `target.wrapper` equals
+the field's own output wrapper, and `source.wrapper` equals the fold of the ancestors' target
+wrappers. A test asserting the fold makes local-versus-accumulated executable rather than prose.
 
 ### the join path
 
@@ -140,20 +201,28 @@ share the model types.
 Revise [`dimensional-model-pivot.md`](dimensional-model-pivot.md) (R222), whose umbrella
 explicitly licenses slices to "redraw the diagram as implementation slices land and surface
 new understanding." Replace the `carrier x intent x mapping` target model with
-`(source, operation, target)`: the `source` arrival seal, the `operation` arm set (arms empty,
-payloads deferred to R314), the `target` endpoint with per-endpoint polarity, and the
-re-derived re-fetch predicate. Documentation only; it pins the vocabulary every later slice speaks.
+`(source, operation, target)`: the `source` and `target` endpoints as `wrapper(shape)` pairs
+(arrival wrapper `Root | OnlyChild | Child`, output wrapper `Single | List`, `SourceShape ⊆
+TargetShape`), the wrapper algebra (target wrapper local, source wrapper the ancestor fold), the
+`operation` arm set (arms empty, payloads deferred to R314), and the re-derived re-fetch
+predicate. Documentation only; it pins the vocabulary every later slice speaks.
 
-### Slice 2: The `source` seal in code
+### Slice 2: The `source` wrapper in code
 
-Fold `Carrier`'s arms into one `source` sealed hierarchy (`Root(RootKind)` /
-`Child(SourceShape, SourceCardinality)`). `SourceShape` and `SourceCardinality` are no longer
-top-level axes but survive as the payload of the `Child` arm (their internal reshaping,
-`SourceShape.Record`'s reflected facts, is the downstream `SourceKey` work, not R316). Rename
-`OutputField.carrier()` to `source()`; repoint its producers (`QueryField` / `MutationField`
-build `Root`; `ChildField` builds `Child` over `Table` / `Record` and the carried cardinality)
-and its readers. Retire `Carrier.java` as a standalone type; `SourceShape.java` /
-`SourceCardinality.java` stay, now reachable only as `Child`'s slots.
+Fold `Carrier` into one `source` sealed hierarchy whose arms are the arrival wrapper:
+`Root` (permits `Query` / `Mutation`) `| OnlyChild(SourceShape) | Child(SourceShape)`.
+`SourceCardinality` is **retired as a standalone type**: its `One` / `Many` become the
+`OnlyChild` / `Child` arm identity, and `Zero` is `Root`'s shape-absence. `SourceShape` stays
+as the shape wrapped by the nested arms (its internal reshaping, `SourceShape.Record`'s
+reflected facts, is the downstream `SourceKey` work, not R316). Rename `OutputField.carrier()`
+to `source()`; repoint its producers (`QueryField` / `MutationField` build `Root`; `ChildField`
+builds `OnlyChild` / `Child` over `Table` / `Record`, the arm chosen by the arrival fold) and
+its readers. The arrival arm is the emit-strategy dispatch (`Child` → DataLoader,
+`Root` / `OnlyChild` → direct), so the generator's loader-vs-direct fork reads the arm.
+Until R279/R308 compute the true ancestor-product fold, `OnlyChild` is producible but
+conservatively unreached (R305 hard-codes `Many`); it carries one documented
+`NOT_CORPUS_COVERED` entry, correct-but-empty, not unrepresentable. Retire `Carrier.java` and
+`SourceCardinality.java` as standalone types.
 
 ### Slice 3: `operation` and `target` in code
 
@@ -162,9 +231,13 @@ Rename `Intent` to a sealed `Operation` and **pin the arm set** (`Fetch` / `Look
 `QueryService` / `MutationService`. The arms ship **empty**: their payloads (`Fetch`'s
 `List<WhereFilter>`, `Lookup`'s `LookupMapping`, `ServiceCall`'s `MethodRef`) have no reader
 while the emit stays leaf-dispatched, so they are deferred to R314, landed per-kind alongside
-the emit that reads them (see Relationships). Rename `Mapping` to `Target` and reinterpret its
-catalog-vs-Java split as polarity. Rename `OutputField.intent()` to `operation()` and
-`mapping()` to `target()`. Repoint all readers: `FieldBuilder`, `GraphitronSchemaValidator`,
+the emit that reads them (see Relationships). Restructure `Mapping` into the `target` wrapper:
+a `Single(TargetShape) | List(TargetShape)` sealed hierarchy, the wrapper read off
+`field.getType()` (the value `SourceKey.Cardinality` computes today from `wrapper().isList()`),
+the shape carrying the catalog-vs-Java polarity. The fused `Mapping.TableConnection` value
+**decomposes**: `Connection` becomes a `Single`-wrapped `TargetShape`, and its "paginated" fact
+moves to `operation` `Fetch`. Rename `OutputField.intent()` to `operation()` and `mapping()` to
+`target()`. Repoint all readers: `FieldBuilder`, `GraphitronSchemaValidator`,
 `ServiceMethodCallEmitter`, `TypeFetcherGenerator`, the catalog classification
 (`TypeClassification`, `FieldClassification`, `CatalogBuilder`).
 **Carve-out:** `LookupMapping` and `MappingEntry` are the `@lookupKey` correspondence (the
@@ -175,11 +248,14 @@ rename must not sweep them. The retirement inventory lists them explicitly as do
 
 The R281 classification corpus is the primary lift target. Migrate `DimensionTuple`
 (`(Carrier, Intent, Mapping)` to `(Source, Operation, Target)`) and the `@classified` directive.
-The directive has **five** arguments, not three: `intent:` / `mapping:` become `operation:` /
-`target:`, and `carrier:` / `sourceShape:` / `sourceCardinality:` all fold into the `source:`
-representation, the natural shape being a discriminator `source: {Query | Mutation | Child}`
-plus `shape:` / `cardinality:` for the `Child` case, mirroring how `carrier:` + siblings
-reconstitute `Carrier.Source` today. Migrate the `classifieddsl/*` harness (`ClassifiedCorpus`,
+Each endpoint is a `wrapper(shape)` pair: `source:` is the arrival wrapper
+`{Root(Query | Mutation) | OnlyChild | Child}` plus a `sourceShape:` for the nested arms;
+`target:` is the output wrapper `{Single | List}` plus a `targetShape:`; `operation:` replaces
+`intent:`. The former `carrier:` / `sourceShape:` / `sourceCardinality:` and `mapping:` all
+reconstitute from these. A corpus coordinate for a connection field pins the decomposition,
+`target(Single, Connection)` with the connection type's `edges` field at `target(List, ...)`,
+so the "Connection is a `Single`-wrapped shape" invariant is a live assertion, not prose.
+Migrate the `classifieddsl/*` harness (`ClassifiedCorpus`,
 `ClassifiedDsl`, `ClassifiedHarness`, `QueryViewRenderer`) plus its tests
 (`ClassifiedDslTest`, `QueryViewRendererTest`, `GraphitronSchemaBuilderTest`,
 `SingleRecordPayloadPipelineTest`, `SourceShapeProjectionTest`, `TypeRegistryTest`,
@@ -198,15 +274,22 @@ projection test.
 
 The no-remnants mandate, made enforceable rather than aspirational:
 
-- **Code.** No `Carrier` / `Intent` / `Mapping` type remains in `graphitron/src` (excluding the
-  `LookupMapping` / `MappingEntry` carve-out). `SourceShape` / `SourceCardinality` are *not*
-  retired (they survive as `Source.Child`'s slots), so the remnant grep targets the three
-  retired names only. Two distinct guards, not one: the *coverage* gate is the
-  disjoint-exhaustive partition over the `source` and `Operation` seals (the shape
-  `GeneratorCoverageTest.everyGraphitronFieldLeafHasAKnownDispatchStatus` already uses for leaf
-  dispatch), proving every arm is handled; the *remnant* guard is a supplementary
+- **Code.** No `Carrier` / `Intent` / `Mapping` / `SourceCardinality` type remains in
+  `graphitron/src` (excluding the `LookupMapping` / `MappingEntry` carve-out), and no
+  `TableConnection` value (it decomposed into `Single(Connection)` + `Fetch`). `SourceShape`
+  survives (as the shape wrapped by the source arms); `SourceCardinality` does *not* (it became
+  `OnlyChild` / `Child` arm identity), so the remnant grep targets `Carrier` / `Intent` /
+  `Mapping` / `SourceCardinality` / `TableConnection`. Two distinct guards, not one: the
+  *coverage* gate is the disjoint-exhaustive partition over the `source` and `Operation` seals
+  (the shape `GeneratorCoverageTest.everyGraphitronFieldLeafHasAKnownDispatchStatus` already
+  uses for leaf dispatch), proving every arm is handled; the *remnant* guard is a supplementary
   repository-grep for the retired type names, proving stale names and prose are gone, not merely
   shadowed. The grep is not a coverage check and must not be relied on as one.
+- **Wrapper invariant.** A named test, `sourceWrapperIsTheFoldOfAncestorTargetWrappers`, pins
+  the two-position algebra: `target.wrapper` equals the field's own output wrapper, and
+  `source.wrapper` equals the fold of the ancestors' target wrappers (`Root` empty product,
+  `OnlyChild` the `One` identity, `Child` the `Many` absorber). This is the structural guard
+  that keeps cardinality from ever drifting back into a free `ONE` / `MANY` enum.
 - **Docs.** Sweep the four `.adoc` files that name the old axes
   (`code-generation-triggers.adoc`, `argument-resolution.adoc`, `typed-rejection.adoc`,
   `rewrite-design-principles.adoc`) to the new vocabulary. (`getting-started.adoc` does not name
@@ -220,8 +303,12 @@ The no-remnants mandate, made enforceable rather than aspirational:
 - The `@classified` corpus is the behavioural backstop: migrated to the new axes, it must
   stay equivalent in *coverage* (every coordinate that classified before classifies after,
   to the renamed-but-corresponding verdict). `everyDimensionValueIsExercised` and the
-  coverage/disjointness meta-tests carry over per axis (now folding `sourceShape:` /
-  `sourceCardinality:` coverage under the `source:` arm).
+  coverage/disjointness meta-tests carry over per axis (now over the `source` wrapper arms
+  `Root` / `OnlyChild` / `Child`, the `target` wrapper arms `Single` / `List`, and the two
+  shape sub-seals).
+- `sourceWrapperIsTheFoldOfAncestorTargetWrappers` (new): asserts `target.wrapper` is the
+  field's own output wrapper and `source.wrapper` is the fold of the ancestors' target
+  wrappers, making the two-position algebra executable rather than prose.
 - Slice 4 migrates the existing `ReFetchDerivationTest` onto the new axes (behavioural, no
   `code().toString()` body matches) and keeps its validator-mirror agreement check.
 - The `source` seal gets a sealed-leaf exhaustiveness guard (what `SourceShapeProjectionTest`
@@ -248,7 +335,8 @@ scope; the pivot is the prerequisite that gives those pieces honest homes.
   this item is where their vocabulary is retired.
 - **R302** (rename-childfield-to-sourcefield): wanted to rename `ChildField` to `SourceField`
   to align the field name with `Carrier.Source`. R316 retires `Carrier.Source` and re-aligns
-  `ChildField` with `Source.Child` instead, so this pivot likely moots or reverses R302.
+  `ChildField` with the nested source wrapper arms (`OnlyChild` / `Child`) instead, so this
+  pivot likely moots or reverses R302.
 - **R314** (dissolve-reentry-leaves-dimensional-emit): owns the emit re-platforming and, now,
   the `operation` **payloads**. R316 seals `Operation` and pins the arm set; R314 fills each
   arm's payload slot, **sliced per operation kind**, each slot landing in the same slice as the
