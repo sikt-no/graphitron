@@ -12,9 +12,13 @@ last-updated: 2026-06-17
 
 # Single edge-driven classification pass and immutable validation (retire TypeBuilder.buildTypes)
 
-> **Status (resume pointer).** Slices 1, 2, 3a and 3b are shipped to trunk; slice 3c (edge-decidable
-> orphan to the edge) is the active front, then 4 (collapse to one walk, delete `buildTypes`) and 5
-> (immutable validate). Slice 2's
+> **Status (resume pointer).** Slices 1, 2, 3a, 3b and 3c are shipped to trunk; slice 4 (collapse to
+> one walk, delete `buildTypes`) is the active front, then 5 (immutable validate). Slice 3c made the
+> last orphan verdict at a classification edge registry-free: the `@service`-mutation orphan-carrier
+> rejection (`FieldBuilder` Scalar arm) now reads `TypeBuilder.carrierTableBinding` instead of
+> `ctx.types.get(payload)`, so the edge owns the edge-decidable orphan without a read into the
+> in-progress registry; the whole-registry dangling-reference backstop stays for rescuable shapes.
+> Slice 2's
 > `NodeIndex` (`ctx.nodes`) is SDL-derived (via the producers) restricted to the reachable set,
 > excludes only typeId-collision groups, and is **one-to-many by table** (a table may back several
 > `@node` types with distinct node ids; ambiguity of the implicit encoder is rejected at the call
@@ -165,12 +169,19 @@ One edge-driven classification pass, then an immutable validate pass, then emit.
   directiveless object each classify it independently and identically, neither reading the other; the
   `NestingType` registration is a write-only side-effect no edge consumes. `registerNestingTypes` (the
   post-walk sweep) is deleted.
-- **Orphan handling stays split.** The edge produces `UnclassifiedField` directly for an
-  edge-decidable orphan (no reclassify, which is already the immutable-validate end shape for free).
-  But the whole-registry dangling-reference *backstop* stays a validate-phase reduction: a target
-  that looks orphaned mid-walk may be rescued by a later nesting or connection edge, so a per-edge
-  final demotion is not sound. Under the immutable validate phase the backstop registers a
-  diagnostic rather than demoting.
+- **Orphan handling stays split (shipped, slice 3c).** The edge produces `UnclassifiedField` directly
+  for an edge-decidable orphan (no reclassify, which is already the immutable-validate end shape for
+  free). The one such verdict that still read the in-progress registry was the `@service`-mutation
+  orphan-carrier rejection: a carrier-shaped payload reaching the resolver's `Scalar` arm with no
+  producer binding. Its `ctx.types.get(payload) == null` gate is replaced by
+  `TypeBuilder.carrierTableBinding(payload) == null`, the same registry-free scan + producer-binding
+  fixed point `registerProducerBackedCarrier` registers from; a carrier scan `Admit` with a null
+  `carrierTableBinding` is definitionally an orphan (a bound producer would have registered a
+  `JooqTableRecordType` at the producing edge and the resolver would have yielded `Result`, not
+  `Scalar`), so the verdict is order-independent. The whole-registry dangling-reference *backstop*
+  stays a validate-phase reduction: a non-carrier target that looks orphaned mid-walk may be rescued
+  by a later nesting or connection edge, so a per-edge final demotion is not sound. Under the
+  immutable validate phase the backstop registers a diagnostic rather than demoting.
 
 ## Read-free visitor invariant and the single walk (folded from R325, 2026-06-17)
 
@@ -310,12 +321,19 @@ orphan move are pinned by explicit tests, not claimed trivially.
    dependency it carries is not relocated here. Output byte-identical (truth table 447, full graphitron
    suite, sakila pipeline / compile / execution tiers); structure delta: a pass deleted, the carrier
    verdict moved onto the edge.
-3c. **Move the edge-decidable orphan verdict to the edge.** The edge produces `UnclassifiedField`
-   directly for an edge-decidable orphan (no reclassify). The whole-registry dangling-reference
-   *backstop* stays a post-walk reduction: a target that looks orphaned mid-walk may be rescued by a
-   later nesting or connection edge, so a per-edge final demotion is not sound. Unreachable output
-   types shift from classified to pruned (the warning is R319). Output byte-identical for the reachable
-   verdicts; pinned by an explicit orphan test.
+3c. **Move the edge-decidable orphan verdict to the edge.** *Shipped.* The edge-decidable orphan
+   verdict is now produced read-free: the `@service`-mutation orphan-carrier rejection
+   (`FieldBuilder` Scalar arm) gates on `TypeBuilder.carrierTableBinding(payload) == null` instead of
+   `ctx.types.get(payload) == null`, the last orphan-related read into the in-progress registry at a
+   classification edge, removed the same way slice 3a removed the nesting read and 3b the carrier read.
+   The whole-registry dangling-reference *backstop* stays a post-walk reduction for rescuable
+   (non-carrier) shapes: a target that looks orphaned mid-walk may be rescued by a later nesting or
+   connection edge, so a per-edge final demotion is not sound. Output byte-identical (truth table now
+   448 with the new pin, full graphitron suite, sakila pipeline / compile / execution tiers, 2976
+   tests); structure delta: the edge orphan verdict made registry-free. Pinned by
+   `GraphitronSchemaBuilderTest.UnclassifiedFieldCase.SERVICE_MUTATION_ID_CARRIER_UNBOUND_ORPHAN_REJECTED_AT_EDGE`
+   (an `[ID] @nodeId` carrier whose producer return does not ground the binding is rejected at the
+   producing edge with the ID-element guidance, never reaching the backstop's "not found in schema").
 4. **Collapse to one walk; delete `buildTypes`.** Replace the no-op `GraphQLTypeVisitorStub` in
    `SchemaReachability` with a real `GraphQLTypeVisitor` that classifies types and fields in one
    `SchemaTraverser.depthFirst` call, parent context flowing down the var channel and the `NodeIndex`
