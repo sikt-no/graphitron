@@ -1,7 +1,7 @@
 ---
 id: R321
 title: "One-shot mojos must render ValidationFailedException.errors() in the failure output (parity with DevMojo and the SchemaProblem branch)"
-status: Backlog
+status: Spec
 bucket: bug
 priority: 3
 depends-on: []
