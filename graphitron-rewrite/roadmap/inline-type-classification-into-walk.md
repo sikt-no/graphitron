@@ -1,7 +1,7 @@
 ---
 id: R317
 title: "Single edge-driven classification pass and immutable validation (retire TypeBuilder.buildTypes)"
-status: Spec
+status: Ready
 bucket: architecture
 priority: 4
 theme: structural-refactor
@@ -91,7 +91,7 @@ One edge-driven classification pass, then an immutable validate pass, then emit.
   can drift; deriving from the fixed point keeps one producer. The encode-helper the `table` index
   yields is itself derivable (encoder class constant + `"encode" + typeName` + keyColumns), so the
   index need not hold a `NodeType` registry entry.
-- **`table -> NodeType` makes one-NodeType-per-table load-bearing.** Today the five scans take
+- **`table -> NodeType` makes one-NodeType-per-table load-bearing.** Today the four scans take
   `findFirst()` in registry-iteration order; nothing enforces uniqueness
   (`validateNodeTypeIdUniqueness` guards only typeId). Lifting to a map must pin the tie-break and
   add a validator mirror rejecting two `@node` types on one table, or the lift is not byte-identical
