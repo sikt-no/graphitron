@@ -305,6 +305,115 @@ public final class SplitRowsMethodEmitter {
         return new PreludeBindings(aliases, terminalAlias, firstAlias, joinOnAlias, joinOnCols, joinOnParentCols, keyElement);
     }
 
+    /**
+     * Emits the flat join topology shared by all three cardinality siblings
+     * ({@link #buildListMethod}, {@link #buildSingleMethod}, {@link #buildConnectionMethod}):
+     * {@code .from(terminalAlias)}, the bridging-hop chain back to step 0, the optional
+     * {@code OnConditionJoin} parent JOIN, and the {@code parentInput} correlation JOIN. Appends
+     * to {@code sel} and stops before the WHERE clause (list inserts its lookup-input JOIN there;
+     * connection appends its window tail), so each caller frames the projection and tail itself.
+     *
+     * <p>This block was the source of R324's bug: it lived as a byte-for-byte copy in
+     * {@code buildListMethod} and {@code buildConnectionMethod} but never grew into
+     * {@code buildSingleMethod}, which projected off {@code firstAlias} with no bridging loop and
+     * was therefore single-hop only. Extracting it makes the topology uniform across the
+     * cardinality fork; the genuine per-cardinality divergence (projection envelope, scatter call)
+     * stays with each sibling.
+     *
+     * <p>The bridging loop dispatches on step identity: FK hops use {@code .onKey(FK)}, condition
+     * hops use {@code .on(method(prevAlias, alias))}. {@link JoinStep.LiftedHop} never appears at a
+     * bridging position ({@code @reference}-composed paths are FK / condition chains; lifter shapes
+     * are single-hop), so the loop is a no-op for a single-hop path and the helper degrades to the
+     * old single-hop shape with no behaviour change.
+     */
+    private static void emitFromBridgeAndParentJoin(
+            CodeBlock.Builder sel,
+            List<JoinStep> path,
+            List<String> aliases,
+            String terminalAlias,
+            String firstAlias,
+            ParentCorrelation parentCorrelation,
+            String joinOnAlias,
+            List<ColumnRef> joinOnCols,
+            List<ColumnRef> joinOnParentCols) {
+        sel.add(".from($L)\n", terminalAlias);
+        // Bridging hops: terminal back to step 0. No-op when path.size() == 1.
+        for (int i = path.size() - 1; i >= 1; i--) {
+            JoinStep bridging = path.get(i);
+            String prevAlias = aliases.get(i - 1);
+            switch (bridging) {
+                case JoinStep.FkJoin fk -> sel.add(".join($L).onKey($T.$L)\n",
+                    prevAlias, fk.fk().keysClass(), fk.fk().constantName());
+                case JoinStep.ConditionJoin cj -> sel.add(".join($L).on($L)\n",
+                    prevAlias, JoinPathEmitter.emitTwoArgMethodCall(cj.condition(), prevAlias, aliases.get(i)));
+                case JoinStep.LiftedHop ignored -> throw new IllegalStateException(
+                    "LiftedHop should not appear at bridging position; @reference-composed paths "
+                    + "are FkJoin / ConditionJoin chains, lifter shapes are single-hop");
+            }
+        }
+        // OnConditionJoin: bring parentAlias into scope via the step-0 condition method, pairing
+        // parentAlias with firstAlias (= aliases[0], the ConditionJoin's resolved target).
+        // OnFkSlots needs no extra JOIN here — parentInput pairs directly with firstAlias.
+        if (parentCorrelation instanceof ParentCorrelation.OnConditionJoin cj) {
+            sel.add(".join(parentAlias).on($L)\n",
+                JoinPathEmitter.emitTwoArgMethodCall(cj.firstHop().condition(), "parentAlias", firstAlias));
+        }
+        // JOIN parentInput on the carrier's parent-correlation columns. For OnFkSlots, joinOnAlias
+        // is firstAlias and the predicate pairs slot.targetSide()/slot.sourceSide(). For
+        // OnConditionJoin, joinOnAlias is parentAlias and the predicate pairs parent-PK on both
+        // sides. The parentInput field is resolved by sqlName + Java type rather than positional
+        // index, sidestepping @node(keyColumns: [...]) vs FK column ordering mismatches.
+        var onCond = CodeBlock.builder();
+        for (int i = 0; i < joinOnCols.size(); i++) {
+            if (i > 0) onCond.add(".and(");
+            ColumnRef parentCol = joinOnParentCols.get(i);
+            ClassName parentColType = ClassName.bestGuess(parentCol.columnClass());
+            onCond.add("$L.$L.eq(parentInput.field($S, $T.class))",
+                joinOnAlias,
+                joinOnCols.get(i).javaName(),
+                parentCol.sqlName(), parentColType);
+            if (i > 0) onCond.add(")");
+        }
+        sel.add(".join(parentInput).on($L)\n", onCond.build());
+    }
+
+    /**
+     * Builds the WHERE condition expression shared by the three cardinality siblings:
+     * {@code DSL.noCondition()} AND-ed with each FK hop's {@code whereFilter} (paired
+     * {@code (srcAlias, tgtAlias)} per hop) AND the field-level {@code filters} (projected off
+     * {@code terminalAlias}). Returns the condition CodeBlock; the caller wraps it in
+     * {@code .where(...)} so the connection sibling can chain {@code .orderBy()/.seek()} after.
+     *
+     * <p>Only FK hops carry a per-hop whereFilter; condition / lifter hops are skipped (the
+     * {@code instanceof} guard also keeps a {@code ConditionJoin} bridging hop from a stray cast).
+     */
+    private static CodeBlock buildWhereCondition(
+            TypeFetcherEmissionContext ctx,
+            List<JoinStep> path,
+            List<String> aliases,
+            String terminalAlias,
+            String firstAlias,
+            List<WhereFilter> filters,
+            CompositeDecodeHelperRegistry registry) {
+        var where = CodeBlock.builder();
+        where.add("$T.noCondition()", DSL);
+        for (int i = 0; i < path.size(); i++) {
+            if (!(path.get(i) instanceof JoinStep.FkJoin hop)) continue;
+            if (hop.whereFilter() != null) {
+                String srcAlias = i == 0 ? firstAlias : aliases.get(i - 1);
+                String tgtAlias = aliases.get(i);
+                where.add(".and($L)",
+                    JoinPathEmitter.emitTwoArgMethodCall(hop.whereFilter(), srcAlias, tgtAlias));
+            }
+        }
+        for (WhereFilter f : filters) {
+            where.add(".and($T.$L($L))",
+                ClassName.bestGuess(f.className()), f.methodName(),
+                ArgCallEmitter.buildCallArgs(ctx, f.callParams(), f.className(), terminalAlias, registry));
+        }
+        return where.build();
+    }
+
     // -----------------------------------------------------------------------
     // SplitTableField
     // -----------------------------------------------------------------------
@@ -672,53 +781,14 @@ public final class SplitRowsMethodEmitter {
         }
 
         // Flat SELECT: FROM terminal, JOIN bridging hops back toward step 0, JOIN parentInput
-        // on first-hop source columns eq parent PK via parentInput.field(sqlName).
+        // on first-hop source columns eq parent PK via parentInput.field(sqlName). Shared with
+        // the single and connection siblings via emitFromBridgeAndParentJoin.
         var sel = CodeBlock.builder();
         sel.add("$T<$T> flat = dsl\n", ClassName.get("org.jooq", "Result"), RECORD);
         sel.indent();
         sel.add(".select(selectFields)\n");
-        sel.add(".from($L)\n", terminalAlias);
-        // Bridging hops: terminal back to step 0. Dispatches on step identity — FK hops use
-        // .onKey(FK), condition hops use .on(method(prevAlias, alias)). LiftedHop never appears
-        // in an @reference-composed multi-hop path (single-hop terminal only), so the throw is
-        // an unreachable-by-construction sentinel.
-        for (int i = path.size() - 1; i >= 1; i--) {
-            JoinStep bridging = path.get(i);
-            String prevAlias = aliases.get(i - 1);
-            switch (bridging) {
-                case JoinStep.FkJoin fk -> sel.add(".join($L).onKey($T.$L)\n",
-                    prevAlias, fk.fk().keysClass(), fk.fk().constantName());
-                case JoinStep.ConditionJoin cj -> sel.add(".join($L).on($L)\n",
-                    prevAlias, JoinPathEmitter.emitTwoArgMethodCall(cj.condition(), prevAlias, aliases.get(i)));
-                case JoinStep.LiftedHop ignored -> throw new IllegalStateException(
-                    "LiftedHop should not appear at bridging position; @reference-composed paths "
-                    + "are FkJoin / ConditionJoin chains, lifter shapes are single-hop");
-            }
-        }
-        // OnConditionJoin: bring parentAlias into scope via the step-0 condition method,
-        // pairing parentAlias with firstAlias (= aliases[0], the ConditionJoin's resolved target).
-        // OnFkSlots needs no extra JOIN here — parentInput pairs directly with firstAlias.
-        if (parentCorrelation instanceof ParentCorrelation.OnConditionJoin cj) {
-            sel.add(".join(parentAlias).on($L)\n",
-                JoinPathEmitter.emitTwoArgMethodCall(cj.firstHop().condition(), "parentAlias", firstAlias));
-        }
-        // JOIN parentInput on the carrier's parent-correlation columns. For OnFkSlots, joinOnAlias
-        // is firstAlias and the predicate pairs slot.targetSide()/slot.sourceSide(). For
-        // OnConditionJoin, joinOnAlias is parentAlias and the predicate pairs parent-PK on both
-        // sides (DataLoader key tuple IS parent-PK tuple). The single accessor (joinOnAlias +
-        // joinOnCols / joinOnParentCols) means buildList/Single/Connection don't fork here.
-        var onCond = CodeBlock.builder();
-        for (int i = 0; i < joinOnCols.size(); i++) {
-            if (i > 0) onCond.add(".and(");
-            ColumnRef parentCol = joinOnParentCols.get(i);
-            ClassName parentColType = ClassName.bestGuess(parentCol.columnClass());
-            onCond.add("$L.$L.eq(parentInput.field($S, $T.class))",
-                joinOnAlias,
-                joinOnCols.get(i).javaName(),
-                parentCol.sqlName(), parentColType);
-            if (i > 0) onCond.add(")");
-        }
-        sel.add(".join(parentInput).on($L)\n", onCond.build());
+        emitFromBridgeAndParentJoin(sel, path, aliases, terminalAlias, firstAlias,
+            parentCorrelation, joinOnAlias, joinOnCols, joinOnParentCols);
 
         // Lookup-input JOIN (SplitLookupTableField only). ON predicate uses typed
         // lookupInput.field(i+1, ColType.class) so the .eq against terminalAlias.COL matches
@@ -740,26 +810,10 @@ public final class SplitRowsMethodEmitter {
             sel.add(".join(lookupInput).on($L)\n", lookupOnCond.build());
         }
 
-        // WHERE: per-hop whereFilters + field-level filters. Only FkJoin hops carry a
-        // whereFilter; LiftedHop (lifter path) holds the target table + key columns and has no
-        // FK-side filter to apply, so the loop skips it.
-        var where = CodeBlock.builder();
-        where.add("$T.noCondition()", DSL);
-        for (int i = 0; i < path.size(); i++) {
-            if (!(path.get(i) instanceof JoinStep.FkJoin hop)) continue;
-            if (hop.whereFilter() != null) {
-                String srcAlias = i == 0 ? firstAlias : aliases.get(i - 1);
-                String tgtAlias = aliases.get(i);
-                where.add(".and($L)",
-                    JoinPathEmitter.emitTwoArgMethodCall(hop.whereFilter(), srcAlias, tgtAlias));
-            }
-        }
-        for (WhereFilter f : filters) {
-            where.add(".and($T.$L($L))",
-                ClassName.bestGuess(f.className()), f.methodName(),
-                ArgCallEmitter.buildCallArgs(ctx, f.callParams(), f.className(), terminalAlias, registry));
-        }
-        sel.add(".where($L)\n", where.build());
+        // WHERE: per-hop whereFilters + field-level filters, shared with the single and connection
+        // siblings via buildWhereCondition.
+        sel.add(".where($L)\n",
+            buildWhereCondition(ctx, path, aliases, terminalAlias, firstAlias, filters, registry));
         sel.add(".fetch();\n");
         sel.unindent();
         body.add(sel.build());
@@ -776,21 +830,24 @@ public final class SplitRowsMethodEmitter {
 
     /**
      * Single-cardinality sibling of {@link #buildListMethod} for {@link ChildField.SplitTableField}.
-     * Classifier contract: single-hop, parent-holds-FK ({@link ChildField.SplitTableField}'s
-     * {@code sourceKey} carries the parent's FK columns per
-     * {@code FieldBuilder.deriveSplitQuerySource}). Emits a flat
-     * {@code terminal JOIN parentInput ON terminal.pk = parentInput.fk_value} SELECT that returns
-     * {@code List<Record>} indexed 1:1 with {@code keys} (nulls where no match).
+     * Parent-holds-FK at step 0 ({@link ChildField.SplitTableField}'s {@code sourceKey} carries the
+     * parent's FK columns per {@code FieldBuilder.deriveSplitQuerySource}). Emits a flat
+     * {@code terminal JOIN <bridging hops> JOIN parentInput ON <step-0 correlation>} SELECT that
+     * returns {@code List<Record>} indexed 1:1 with {@code keys} (nulls where no match).
      *
-     * <p>The JOIN column reference differs from list-cardinality: list-cardinality's
-     * {@code firstHop.sourceColumns()} sit on the target (terminal) table (the FK-holder is the
-     * child); single-cardinality's {@code sourceColumns()} sit on the <em>parent</em>, so the
-     * emitter uses {@code firstHop.targetColumns()} to address the column on {@code firstAlias}
-     * and {@code firstHop.sourceColumns()} (FkJoin) or the same {@code targetColumns()}
-     * (LiftedHop) as the parent-side column whose value drives the {@code parentInput.field(...)}
-     * lookup. The lookup is by sqlName + Java type rather than positional index, so an
-     * {@code @node(keyColumns: [...])} order that differs from the FK column order does not
-     * mis-pair column types.
+     * <p>Shares its join topology and WHERE clause with {@link #buildListMethod} and
+     * {@link #buildConnectionMethod} via {@link #emitFromBridgeAndParentJoin} and
+     * {@link #buildWhereCondition}; the only per-cardinality divergence is the {@code List<Record>}
+     * return shape and the {@code scatterSingleByIdx} (1:1, null where no match) call. The shared
+     * topology projects and FROMs off {@code terminalAlias} and bridges multi-hop paths back to
+     * step 0, so a multi-hop single-cardinality {@code @splitQuery} (e.g. {@code customer -> store
+     * -> address}) resolves the terminal row per key in one batched query. Single-hop paths collapse
+     * the bridging loop to a no-op, reproducing the original single-hop shape.
+     *
+     * <p>The bridging hops emit inner joins, consistent with the list and connection siblings: a
+     * to-one chain resolves to {@code null} when any hop is absent (the row drops, and
+     * {@code scatterSingleByIdx} fills {@code null}). Distinguishing intermediate-null from
+     * terminal-null (LEFT JOINs) is out of scope and would have to span all three siblings (R324).
      */
     private static MethodSpec buildSingleMethod(
             TypeFetcherEmissionContext ctx,
@@ -811,12 +868,11 @@ public final class SplitRowsMethodEmitter {
         TypeName listOfRecord = ParameterizedTypeName.get(LIST, RECORD);
 
         var body = CodeBlock.builder();
-        // Classifier guarantees single-hop (§1c rejects multi-hop single-cardinality, the lifter
-        // path is single-hop by type construction, and the accessor-derived path builds a
-        // [LiftedHop] joinPath in FieldBuilder), so the shared prelude's FK-chain loop emits
-        // exactly one declaration.
         PreludeBindings p = emitParentInputAndFkChain(ctx,
             body, fieldName, sourceKey, returnType, joinPath, parentCorrelation);
+        List<JoinStep> path = joinPath;
+        List<String> aliases = p.aliases();
+        String terminalAlias = p.terminalAlias();
         String firstAlias = p.firstAlias();
         String joinOnAlias = p.joinOnAlias();
         List<ColumnRef> joinOnCols = p.joinOnCols();
@@ -824,58 +880,24 @@ public final class SplitRowsMethodEmitter {
         TypeName keyElement = p.keyElement();
         TypeName keysListType = ParameterizedTypeName.get(LIST, keyElement);
 
+        // Projection off terminalAlias (the end of the bridging chain), idx + the child selection.
+        // Identical to buildListMethod modulo the scatter call; single-hop paths collapse the
+        // bridging loop to a no-op so terminalAlias == firstAlias there.
         TypeName wildField = ParameterizedTypeName.get(FIELD, WildcardTypeName.subtypeOf(Object.class));
         TypeName listOfField = ParameterizedTypeName.get(LIST, wildField);
         body.addStatement("$T selectFields = new $T<>($T.$$fields(env.getSelectionSet(), $L, env))",
-            listOfField, ARRAY_LIST, typeClass, firstAlias);
+            listOfField, ARRAY_LIST, typeClass, terminalAlias);
         body.addStatement("selectFields.add(parentInput.field(0, $T.class).as($S))",
             Integer.class, IDX_COLUMN);
-
-        // JOIN parentInput on the carrier's parent-correlation columns. The prelude bindings
-        // collapse the OnFkSlots / OnConditionJoin fork: joinOnAlias is firstAlias for FK first
-        // hops or parentAlias for condition first hops; joinOnCols + joinOnParentCols carry the
-        // matching column lists. The parentInput field is resolved by sqlName + Java type rather
-        // than positional index, sidestepping @node(keyColumns: [...]) vs FK column ordering
-        // mismatches.
-        var onCond = CodeBlock.builder();
-        for (int i = 0; i < joinOnCols.size(); i++) {
-            if (i > 0) onCond.add(".and(");
-            ColumnRef parentCol = joinOnParentCols.get(i);
-            ClassName colType = ClassName.bestGuess(parentCol.columnClass());
-            onCond.add("$L.$L.eq(parentInput.field($S, $T.class))",
-                joinOnAlias,
-                joinOnCols.get(i).javaName(),
-                parentCol.sqlName(), colType);
-            if (i > 0) onCond.add(")");
-        }
 
         var sel = CodeBlock.builder();
         sel.add("$T<$T> flat = dsl\n", ClassName.get("org.jooq", "Result"), RECORD);
         sel.indent();
         sel.add(".select(selectFields)\n");
-        sel.add(".from($L)\n", firstAlias);
-        // OnConditionJoin: bring parentAlias into scope via the step-0 condition method,
-        // pairing parentAlias against firstAlias (the ConditionJoin's resolved target = the
-        // terminal alias on the single-hop path).
-        if (parentCorrelation instanceof ParentCorrelation.OnConditionJoin cj) {
-            sel.add(".join(parentAlias).on($L)\n",
-                JoinPathEmitter.emitTwoArgMethodCall(cj.firstHop().condition(), "parentAlias", firstAlias));
-        }
-        sel.add(".join(parentInput).on($L)\n", onCond.build());
-
-        var where = CodeBlock.builder();
-        where.add("$T.noCondition()", DSL);
-        // whereFilter is FkJoin-only (the accessor / lifter / condition paths carry no per-step WHERE).
-        if (joinPath.get(0) instanceof JoinStep.FkJoin fk && fk.whereFilter() != null) {
-            where.add(".and($L)",
-                JoinPathEmitter.emitTwoArgMethodCall(fk.whereFilter(), firstAlias, firstAlias));
-        }
-        for (WhereFilter f : filters) {
-            where.add(".and($T.$L($L))",
-                ClassName.bestGuess(f.className()), f.methodName(),
-                ArgCallEmitter.buildCallArgs(ctx, f.callParams(), f.className(), firstAlias, registry));
-        }
-        sel.add(".where($L)\n", where.build());
+        emitFromBridgeAndParentJoin(sel, path, aliases, terminalAlias, firstAlias,
+            parentCorrelation, joinOnAlias, joinOnCols, joinOnParentCols);
+        sel.add(".where($L)\n",
+            buildWhereCondition(ctx, path, aliases, terminalAlias, firstAlias, filters, registry));
         sel.add(".fetch();\n");
         sel.unindent();
         body.add(sel.build());
@@ -1020,58 +1042,13 @@ public final class SplitRowsMethodEmitter {
         inner.add("$T<?> ranked = dsl\n", TABLE);
         inner.indent();
         inner.add(".select(selectFields)\n");
-        inner.add(".from($L)\n", terminalAlias);
-        // Bridging hops dispatch on step type (FkJoin vs ConditionJoin).
-        for (int i = path.size() - 1; i >= 1; i--) {
-            JoinStep bridging = path.get(i);
-            String prevAlias = aliases.get(i - 1);
-            switch (bridging) {
-                case JoinStep.FkJoin fk -> inner.add(".join($L).onKey($T.$L)\n",
-                    prevAlias, fk.fk().keysClass(), fk.fk().constantName());
-                case JoinStep.ConditionJoin cj -> inner.add(".join($L).on($L)\n",
-                    prevAlias, JoinPathEmitter.emitTwoArgMethodCall(cj.condition(), prevAlias, aliases.get(i)));
-                case JoinStep.LiftedHop ignored -> throw new IllegalStateException(
-                    "LiftedHop should not appear at bridging position in a connection rows-method");
-            }
-        }
-        // OnConditionJoin: bring parentAlias into scope via the step-0 condition method, then
-        // pair parentInput on parent-PK columns. OnFkSlots pairs parentInput directly with
-        // firstAlias on the first hop's slot columns.
-        if (parentCorrelation instanceof ParentCorrelation.OnConditionJoin cj) {
-            inner.add(".join(parentAlias).on($L)\n",
-                JoinPathEmitter.emitTwoArgMethodCall(cj.firstHop().condition(), "parentAlias", firstAlias));
-        }
-        var onCond = CodeBlock.builder();
-        for (int i = 0; i < joinOnCols.size(); i++) {
-            if (i > 0) onCond.add(".and(");
-            ColumnRef parentCol = joinOnParentCols.get(i);
-            ClassName parentColType = ClassName.bestGuess(parentCol.columnClass());
-            onCond.add("$L.$L.eq(parentInput.field($S, $T.class))",
-                joinOnAlias,
-                joinOnCols.get(i).javaName(),
-                parentCol.sqlName(), parentColType);
-            if (i > 0) onCond.add(")");
-        }
-        inner.add(".join(parentInput).on($L)\n", onCond.build());
-
-        // WHERE: per-hop filters + field-level filters. Seek predicate added by .seek() below.
-        var where = CodeBlock.builder();
-        where.add("$T.noCondition()", DSL);
-        for (int i = 0; i < path.size(); i++) {
-            JoinStep.FkJoin hop = (JoinStep.FkJoin) path.get(i);
-            if (hop.whereFilter() != null) {
-                String srcAlias = i == 0 ? firstAlias : aliases.get(i - 1);
-                String tgtAlias = aliases.get(i);
-                where.add(".and($L)",
-                    JoinPathEmitter.emitTwoArgMethodCall(hop.whereFilter(), srcAlias, tgtAlias));
-            }
-        }
-        for (WhereFilter f : filters) {
-            where.add(".and($T.$L($L))",
-                ClassName.bestGuess(f.className()), f.methodName(),
-                ArgCallEmitter.buildCallArgs(ctx, f.callParams(), f.className(), terminalAlias, registry));
-        }
-        inner.add(".where($L)\n", where.build());
+        // Join topology + WHERE shared with the list and single siblings via
+        // emitFromBridgeAndParentJoin / buildWhereCondition; the connection-specific window tail
+        // (.orderBy/.seek/.asTable) is appended after.
+        emitFromBridgeAndParentJoin(inner, path, aliases, terminalAlias, firstAlias,
+            parentCorrelation, joinOnAlias, joinOnCols, joinOnParentCols);
+        inner.add(".where($L)\n",
+            buildWhereCondition(ctx, path, aliases, terminalAlias, firstAlias, filters, registry));
         inner.add(".orderBy(page.effectiveOrderBy())\n");
         inner.add(".seek(page.seekFields())\n");
         inner.add(".asTable($S);\n", "ranked");

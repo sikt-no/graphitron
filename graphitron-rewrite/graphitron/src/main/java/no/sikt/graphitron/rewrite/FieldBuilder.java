@@ -717,14 +717,6 @@ class FieldBuilder {
                     tbtParentCorrelation);
             }
             if (hasSplitQuery) {
-                if (returnType.wrapper() instanceof FieldWrapper.Single
-                        && referencePath.elements().size() != 1) {
-                    return new UnclassifiedField(parentTypeName, name, location, fieldDef,
-                        Rejection.deferred(
-                            "Single-cardinality @splitQuery requires a single-hop parent-holds-FK reference path; "
-                            + "multi-hop paths are not yet supported on single cardinality",
-                            "", ChildField.SplitTableField.class));
-                }
                 return new no.sikt.graphitron.rewrite.model.ChildField.SplitTableField(
                     parentTypeName, name, location, returnType, referencePath.elements(), tfc.filters(), tfc.orderBy(), tfc.pagination(),
                     parentSplitSource.sourceKey(),
@@ -4639,13 +4631,13 @@ class FieldBuilder {
 
     /**
      * Derives the {@link SourceKey} + {@link LoaderRegistration} for a {@code @table}-parent
-     * {@code @splitQuery} field. Single cardinality keys by the parent's FK columns
-     * (parent-holds-FK); list cardinality keys by the parent's PK. The direction signal is
+     * {@code @splitQuery} field. Single cardinality keys by the parent's FK columns at the first
+     * hop (parent-holds-FK); list cardinality keys by the parent's PK. The direction signal is
      * cardinality alone — the {@code @splitQuery} schema contract ties Single ⇒ parent-holds-FK
-     * and List ⇒ child-holds-FK, so no table-identity comparison is needed. The caller enforces
-     * the single-hop precondition; this helper only picks the keying strategy and is safe to call
-     * with any path shape (multi-hop single cardinality falls through to parent-PK, but the
-     * classifier rejects it upstream).
+     * and List ⇒ child-holds-FK, so no table-identity comparison is needed. The keying is taken
+     * from {@code path.get(0)} only, so it is hop-count agnostic: a multi-hop single-cardinality
+     * path (e.g. {@code customer -> store -> address}) keys correctly by the first hop's FK
+     * source columns, and the emitter bridges the remaining hops back from the terminal table.
      *
      * <p>The {@link SourceKey} projection is {@link SourceKey.Wrap.Row} +
      * {@link SourceKey.Reader.ColumnRead} (catalog-FK column read on the parent); the

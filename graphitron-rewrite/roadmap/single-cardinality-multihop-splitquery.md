@@ -1,7 +1,7 @@
 ---
 id: R324
 title: "Lift single-cardinality multi-hop @splitQuery restriction"
-status: In Progress
+status: In Review
 bucket: feature
 priority: 6
 depends-on: []
@@ -37,6 +37,39 @@ traverses two relationships) or restructure the SDL.
 
 This is a pure emitter-completeness item: the classifier model already represents the shape
 correctly. No model-shape change, no new directive, no wire-format change.
+
+## Implementation outcome (In Review)
+
+Shipped as specified. Summary of what landed, against the approach below:
+
+- **Shared helpers extracted** (`SplitRowsMethodEmitter`): `emitFromBridgeAndParentJoin`
+  (FROM-terminal + bridging-hop loop + OnConditionJoin parent JOIN + parentInput correlation)
+  and `buildWhereCondition` (per-hop FK whereFilters + field-level filters). All three siblings
+  (`buildListMethod`, `buildSingleMethod`, `buildConnectionMethod`) route through both; the
+  list/single/connection topology duplication is retired. The connection sibling reused both
+  helpers cleanly (it diverges only in the window tail after WHERE), so the "share only the
+  bridging sub-block" fallback was not needed. A side benefit: the connection WHERE loop's
+  unconditional `(JoinStep.FkJoin)` cast is replaced by the shared `instanceof`-guarded form.
+- **`buildSingleMethod` completed**: projects/FROMs off `terminalAlias`, bridges multi-hop, and
+  returns `scatterSingleByIdx`. The old `(firstAlias, firstAlias)` per-hop WHERE shortcut is gone.
+- **Classifier guard removed** (`FieldBuilder.classifyObjectReturnChildField`); the stale
+  `deriveSplitQuerySource` javadoc and the `SplitRowsMethodEmitter` `§1c` comment are updated.
+- **RecordTableField audit (spec step 4): no change required.** `buildForRecordTable` routes
+  `emitsSingleRecordPerKey()` (the `AccessorKeyedMany` path) through `buildSingleMethod`; those
+  paths are single-hop by construction (the prelude builds a single-hop `[liftedHop]` / single
+  `FkJoin` joinPath), and the extracted bridging loop is a no-op when `path.size() == 1`, so the
+  record path reproduces its previous single-hop emission exactly. Confirmed green by the full
+  `graphitron` + `graphitron-sakila-example` test run (all RecordTableField pipeline / execution
+  fixtures pass unchanged).
+- **Tests**: `GraphitronSchemaBuilderTest.SPLIT_TABLE_MULTI_HOP_SINGLE_CARDINALITY` (the former
+  `_REJECTED` enum, now a positive 2-hop assertion); new `graphitron-sakila-example` execution
+  fixtures `Customer.storeAddressSplit` +
+  `GraphQLQueryTest.splitTableField_singleCardinality_multiHop_bridgesToTerminalAddressPerCustomer`
+  / `_dedupesSharedKey_oneBatchRoundTrip`. The null-where-no-match semantic is structurally
+  covered by `scatterSingleByIdx` (`ScatterSingleByIdxTest`) and the existing single-hop null-FK
+  fixtures (`Store.manager`); Sakila's `customer.store_id` / `store.address_id` are both NOT NULL,
+  so a multi-hop null cannot be seeded without polluting reference data, and the inner-join +
+  null-fill mechanics are identical regardless of hop count.
 
 ## Current state
 

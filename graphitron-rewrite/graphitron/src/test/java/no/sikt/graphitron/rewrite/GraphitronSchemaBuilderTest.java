@@ -914,8 +914,8 @@ class GraphitronSchemaBuilderTest {
             @Override public Set<Class<?>> variants() { return Set.of(SplitLookupTableField.class); }
         },
 
-        SPLIT_TABLE_MULTI_HOP_SINGLE_CARDINALITY_REJECTED(
-            "single-cardinality @splitQuery with multi-hop path → UnclassifiedField (§1c rejection)",
+        SPLIT_TABLE_MULTI_HOP_SINGLE_CARDINALITY(
+            "single-cardinality @splitQuery with multi-hop parent-holds-FK path → SplitTableField, first-hop FK SourceKey (R324)",
             """
             type Address @table(name: "address") { address: String }
             type Customer @table(name: "customer") {
@@ -924,9 +924,16 @@ class GraphitronSchemaBuilderTest {
             type Query { customer: Customer }
             """,
             schema -> {
-                assertThat(schema.field("Customer", "storeAddress")).isInstanceOf(UnclassifiedField.class);
-                assertThat(((UnclassifiedField) schema.field("Customer", "storeAddress")).reason())
-                    .contains("Single-cardinality @splitQuery requires a single-hop parent-holds-FK reference path");
+                var f = (SplitTableField) schema.field("Customer", "storeAddress");
+                assertThat(f.returnType().wrapper()).isInstanceOf(FieldWrapper.Single.class);
+                assertThat(f.joinPath()).hasSize(2);
+                assertThat(f.joinPath().get(0)).isInstanceOf(JoinStep.FkJoin.class);
+                assertThat(f.joinPath().get(1)).isInstanceOf(JoinStep.FkJoin.class);
+                // Keyed off the first hop's FK source columns (customer.store_id), hop-count
+                // agnostic per FieldBuilder.deriveSplitQuerySource; the emitter bridges store -> address.
+                assertThat(f.sourceKey().reader()).isInstanceOf(SourceKey.Reader.ColumnRead.class);
+                assertThat(f.sourceKey().columns()).extracting(ColumnRef::sqlName)
+                    .containsExactly("store_id");
             }) {
             @Override public Set<Class<?>> variants() { return Set.of(SplitTableField.class); }
         },

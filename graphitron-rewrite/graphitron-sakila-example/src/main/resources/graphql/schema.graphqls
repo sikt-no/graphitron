@@ -544,6 +544,15 @@ type Customer implements Node @table(name: "customer") @node {
     # The FK column is NOT NULL on this table, so the §4 null-FK short-circuit never fires
     # here — covered by Store.manager below.
     addressSplit:  Address @splitQuery @reference(path: [{key: "customer_address_id_fkey"}])
+    # R324 execution-tier fixture: single-cardinality multi-hop @splitQuery
+    # (customer -> store -> address, two NOT NULL parent-holds-FK hops). The split counterpart
+    # of the inline `storeAddress` above. The rows-method keys the DataLoader by customer.store_id
+    # (first-hop FK source columns), bridges store -> address, and scatters the terminal Address
+    # 1:1 per customer. Proves multi-hop on single cardinality, which was rejected before R324.
+    storeAddressSplit: Address @splitQuery @reference(path: [
+        {key: "customer_store_id_fkey"},
+        {key: "store_address_id_fkey"}
+    ])
     # R232 execution-tier fixture: inline TableField + ConditionJoin first hop. The condition
     # method `customerToAddress` expresses the natural customer.address_id = address.address_id
     # FK as a two-arg Java predicate; the emitter routes step-0 correlation through the
