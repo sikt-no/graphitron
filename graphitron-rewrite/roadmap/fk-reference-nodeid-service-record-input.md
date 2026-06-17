@@ -389,12 +389,13 @@ a missing value throws.
 This change *also alters R311's shipped same-table behavior* on two counts: a
 `fromArray` batch becomes conditional loads, **and** a nullable (`ID`) same-table
 identity moves from always-throw-on-null to skip-when-omitted (the upsert input
-chartered in D1). Folded into R315 deliberately (requirement #5 charters it; the
-nullable FK-reference and nullable-identity cases need conditional-set to be
-correct). The motivating consumer's keys are all `ID!`/`!`, so the model reshape
-plus FK resolution already close the literal breakage; D4 is therefore a
-completeness generalization rather than a fix the four mutations require, folded
-with three required mitigations: (1) the R315 changelog entry states *both* R311 behavior changes
+chartered in D1). Folded into R315 deliberately and settled as folded, not split:
+honoring omitted-vs-null-vs-value on every record-population field (the jOOQ
+`changed`-flag contract) is correct behavior R315's emitter must have, not an
+optional add-on keyed to how today's consumers happen to be typed. Conditional-set
+is what makes a nullable key / reference / `@field` correct, and nullable fields
+are where it is observable. Requirement #5 charters it; three required
+mitigations cover the R311 behavior change it carries: (1) the R315 changelog entry states *both* R311 behavior changes
 explicitly — the batching shift and the nullable-identity throw→skip; (2) an
 **execution-tier** test pins omitted-vs-null-vs-set on a nullable column,
 including a nullable same-table identity (omitted → unset PK, the service-owned
@@ -404,11 +405,11 @@ banned); (3) the emitter's "two disjoint `fromArray` groups" javadoc contract
 **and** the `RecordKeyDecode` carrier javadoc that asserts identity "always
 throws … whether `ID!` or `ID`" are both retired so neither becomes a false
 invariant.
-*Alternative considered:* carve the conditional-load change into a precursor
-item with its own execution test, leaving R315 purely FK-references.
-Recommended-against to honor chartered requirement #5 and avoid a cross-item
-ordering dependency for a one-emitter change; the Spec → Ready reviewer may
-split it if they prefer cleaner attribution.
+*Alternative considered and rejected:* carve the conditional-load change into a
+precursor item with its own execution test, leaving R315 purely FK-references.
+Rejected because correct null-semantics is behavior R315's emitter must have
+regardless of consumer typing; a separate item would add a cross-item ordering
+dependency for a one-emitter change and buy nothing.
 
 ## Implementation
 
@@ -564,7 +565,6 @@ check); new rejections route `InputBeanResolver.Result.Failed` →
 Single cycle; the core code changes land together (the model reshape forces the
 resolver and emitter, and the `@table` reject arm rides the same `enrich`
 entry). R322 (overlap value-agreement) is the deferred follow-on, not part of
-this cycle. The remaining scope fork is D4 (fold the
-`fromArray`→conditional-load change in vs carve it into a precursor); recommended
-folded with the three mitigations above, and the Spec → Ready reviewer may still
-split it for cleaner attribution.
+this cycle. D4's conditional-load is folded in and settled, not split: it is
+correct null-semantics R315's emitter must have, carried with the three
+mitigations above.
