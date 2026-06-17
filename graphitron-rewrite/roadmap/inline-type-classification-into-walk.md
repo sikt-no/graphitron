@@ -5,7 +5,6 @@ status: Ready
 bucket: architecture
 priority: 4
 theme: structural-refactor
-depends-on: [field-first-classification-driver]
 created: 2026-06-16
 last-updated: 2026-06-17
 ---
