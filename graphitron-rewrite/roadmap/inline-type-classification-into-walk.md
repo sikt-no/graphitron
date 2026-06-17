@@ -1,7 +1,7 @@
 ---
 id: R317
 title: "Single edge-driven classification pass and immutable validation (retire TypeBuilder.buildTypes)"
-status: Ready
+status: In Progress
 bucket: architecture
 priority: 4
 theme: structural-refactor
@@ -142,15 +142,22 @@ trivially.
 1. **Participant enrichment onto the node visit.** *Shipped (`96b2f18`).* `classifyType` classifies
    each interface / union with its participants at the node visit; the separate enrichment pass and
    its helpers are deleted. Byte-identical.
-2. **Lift the reverse-lookups to fixed-point indices.** Build `table -> NodeType` (from the `@node`
-   / `@key` SDL + catalog) and `participant-field -> crossTableField` (from `@reference` SDL); route
-   the four encode-helper sites and `lookupParticipantCrossTableField` through them; add the
-   one-NodeType-per-table validator mirror and pin the tie-break. Removes `classifyField`'s
-   whole-registry reads. Byte-identical except that the new guard rejects a previously
-   silently-first-wins two-node-per-table schema; that guard ships with a truth-table / pipeline
-   fixture declaring two `@node` types on one table and asserting the new rejection, per the
-   validator-mirror rule (the behaviour change is not byte-identical, so it must be pinned by a
-   test, not just claimed).
+2. **Lift the reverse-lookups to fixed-point indices.** *Shipped.* `BuildContext.nodeTypeByTable`
+   (`table -> NodeType`) and `BuildContext.crossTableFieldsByParticipant`
+   (`participant -> field -> crossTableField`) are built once in `TypeBuilder.buildClassificationIndices`
+   from the reachable `@node` / `@table`+`@discriminate` SDL scan via the same producers
+   (`buildTableType` / `buildTableInterfaceType`), not memoised from the registry. The four
+   encode-helper `types.values()` scans and `lookupParticipantCrossTableField` now read those O(1)
+   maps, so `classifyField` has no whole-registry NodeType / participant read left. The
+   `validateOneNodeTypePerTable` mirror demotes both colliding nodes (symmetric, like
+   `validateNodeTypeIdUniqueness`); the index excludes typeId- and table-collision groups so a
+   lookup never resolves a demoted encoder. The tie-break is moot for healthy schemas (one node per
+   table) and never observable for rejected ones (the build fails). Byte-identical across the
+   pipeline / compile / execution tiers except the new rejection, pinned by
+   `NodeIdPipelineTest.TypeCase.TWO_NODE_TYPES_PER_TABLE_DEMOTES_BOTH` (two `@node` types on one
+   table, distinct typeIds, asserting both demote with the new message). The keyed
+   `ctx.types.get(explicitTypeName)` at the `@nodeId(typeName:)` path stays (a keyed get, not a
+   whole-registry scan); slice 4 retires it with the walk.
 3. **Edge-complete `classifyType` for directiveless objects.** Classify nesting (fold
    `registerNestingTypes`) and carrier (fold `promoteSingleRecordPayloads` via the binding
    fixed-point verdict) at the reaching edge; edge-decidable orphans produce `UnclassifiedField`

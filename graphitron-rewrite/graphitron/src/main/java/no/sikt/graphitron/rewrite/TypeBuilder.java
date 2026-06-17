@@ -200,6 +200,11 @@ class TypeBuilder {
         // flip: fields drive types.
         var reachable = SchemaReachability.reachableTypeNames(ctx.schema);
         this.reachableOutputTypes = reachable;
+        // R317 slice 2 — build the fixed-point reverse indices the field pass reads in place of
+        // its whole-registry NodeType / participant scans. Derived from SDL + catalog via the same
+        // producers (buildTableType / buildTableInterfaceType), not memoised from the registry, so
+        // it carries no dependency on the registry being fully populated.
+        buildClassificationIndices(reachable);
         for (var name : reachable) {
             if (!(ctx.schema.getType(name) instanceof GraphQLNamedType namedType)) continue;
             var gType = classifyType(namedType);
@@ -252,6 +257,12 @@ class TypeBuilder {
         // demote symmetrically — we can't pick a winner without silently breaking the loser's
         // issued IDs, which would violate the durability invariant.
         validateNodeTypeIdUniqueness(ctx.typeRegistry);
+
+        // R317 slice 2 — the validator mirror for the table->NodeType index. The index pins one
+        // NodeType per table; nothing else enforced uniqueness (validateNodeTypeIdUniqueness guards
+        // only typeId), so two @node types on one table previously resolved silently first-wins.
+        // The encoder for a table must be unique, so reject the schema symmetrically (both demote).
+        validateOneNodeTypePerTable(ctx.typeRegistry);
 
         // R75 Phase 1 / R276: bind plain SDL Objects that pass the single-record-carrier trigger to
         // their producer's jOOQ table record (JooqTableRecordType), so the mutation/service
@@ -333,6 +344,87 @@ class TypeBuilder {
                     + ") — Query.node dispatch would be nondeterministic; pick one via @node(typeId:)")));
             }
         }
+    }
+
+    /**
+     * R317 slice 2 — the validator mirror for the {@code table -> NodeType} fixed-point index.
+     * The index pins exactly one {@link NodeType} per table; two {@code @node} types on one table
+     * have no well-defined node-id encoder (the implicit ID-encode lookup picks "the node on this
+     * table"), so reject symmetrically rather than letting one win silently. Mirrors the shape of
+     * {@link #validateNodeTypeIdUniqueness}: both colliding entries demote to {@link UnclassifiedType}
+     * so the build fails with a clear message rather than emitting a nondeterministic encoder.
+     */
+    private static void validateOneNodeTypePerTable(TypeRegistry registry) {
+        var byTable = new LinkedHashMap<String, List<NodeType>>();
+        for (var type : registry.entries().values()) {
+            if (type instanceof NodeType nt) {
+                byTable.computeIfAbsent(nt.table().tableName(), k -> new ArrayList<>()).add(nt);
+            }
+        }
+        for (var entry : byTable.entrySet()) {
+            if (entry.getValue().size() < 2) continue;
+            String table = entry.getKey();
+            List<String> colliding = entry.getValue().stream().map(NodeType::name).sorted().toList();
+            String others = String.join(", ", colliding);
+            for (var nt : entry.getValue()) {
+                registry.register(nt.name(), new UnclassifiedType(nt.name(), nt.location(),
+                    Rejection.structural("table '" + table + "' has multiple @node types (" + others
+                    + ") — a table's node-id encoder must be unique; declare @node on exactly one type per table")));
+            }
+        }
+    }
+
+    /**
+     * R317 slice 2 — builds the fixed-point reverse indices ({@link BuildContext#nodeTypeByTable},
+     * {@link BuildContext#crossTableFieldsByParticipant}) that retire {@code FieldBuilder}'s
+     * whole-registry NodeType and participant scans. Derived from the SDL declarations via the same
+     * producers classification uses ({@code buildTableType} for nodes, {@code buildTableInterfaceType}
+     * for table-interfaces), restricted to the reachable set so membership matches the registry the
+     * field pass would otherwise scan. NodeTypes the soundness reductions demote are excluded so a
+     * lookup never resolves an encoder the registry rejected: typeId collisions (mirrors
+     * {@link #validateNodeTypeIdUniqueness}) and table collisions (mirrors
+     * {@link #validateOneNodeTypePerTable}). On a healthy schema every table carries at most one
+     * {@code @node} type and no collision fires, so the index is total over the reachable node
+     * surface and identical to what {@code types.values().findFirst()} resolved.
+     */
+    private void buildClassificationIndices(Set<String> reachable) {
+        var nodeTypes = new ArrayList<NodeType>();
+        for (var name : reachable) {
+            if (!(ctx.schema.getType(name) instanceof GraphQLObjectType obj)) continue;
+            if (!obj.hasAppliedDirective(DIR_NODE) || !obj.hasAppliedDirective(DIR_TABLE)) continue;
+            if (buildTableType(obj) instanceof NodeType nt) {
+                nodeTypes.add(nt);
+            }
+        }
+        var typeIdCounts = nodeTypes.stream()
+            .collect(Collectors.groupingBy(NodeType::typeId, Collectors.counting()));
+        var tableCounts = nodeTypes.stream()
+            .collect(Collectors.groupingBy(nt -> nt.table().tableName(), Collectors.counting()));
+        var byTable = new LinkedHashMap<String, NodeType>();
+        for (var nt : nodeTypes) {
+            if (typeIdCounts.get(nt.typeId()) > 1) continue;
+            if (tableCounts.get(nt.table().tableName()) > 1) continue;
+            byTable.put(nt.table().tableName(), nt);
+        }
+        ctx.nodeTypeByTable = Map.copyOf(byTable);
+
+        var byParticipant = new LinkedHashMap<String, Map<String, ParticipantRef.TableBound.CrossTableField>>();
+        for (var name : reachable) {
+            if (!(ctx.schema.getType(name) instanceof GraphQLInterfaceType iface)) continue;
+            if (!iface.hasAppliedDirective(DIR_TABLE) || !iface.hasAppliedDirective(DIR_DISCRIMINATE)) continue;
+            if (!(buildTableInterfaceType(iface) instanceof TableInterfaceType tit)) continue;
+            for (var p : tit.participants()) {
+                if (!(p instanceof ParticipantRef.TableBound tb)) continue;
+                var fields = byParticipant.computeIfAbsent(tb.typeName(), k -> new LinkedHashMap<>());
+                for (var ctf : tb.crossTableFields()) {
+                    // First-wins across interfaces, mirroring the old findFirst over the scan.
+                    fields.putIfAbsent(ctf.fieldName(), ctf);
+                }
+            }
+        }
+        var participantIndex = new LinkedHashMap<String, Map<String, ParticipantRef.TableBound.CrossTableField>>();
+        byParticipant.forEach((k, v) -> participantIndex.put(k, Map.copyOf(v)));
+        ctx.crossTableFieldsByParticipant = Map.copyOf(participantIndex);
     }
 
     /**

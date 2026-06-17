@@ -3034,11 +3034,11 @@ class FieldBuilder {
                 return new IdEncoderResolution.Resolved(targetNodeType);
             }
         }
-        return ctx.types.values().stream()
-            .filter(t -> t instanceof NodeType nt && nt.table().tableName().equals(tableSqlName))
-            .findFirst()
-            .<IdEncoderResolution>map(t -> new IdEncoderResolution.Resolved((NodeType) t))
-            .orElseGet(IdEncoderResolution.NoNodeForTable::new);
+        // R317 slice 2 — the table->NodeType fixed-point index replaces the whole-registry scan.
+        var nodeType = ctx.nodeTypeByTable.get(tableSqlName);
+        return nodeType != null
+            ? new IdEncoderResolution.Resolved(nodeType)
+            : new IdEncoderResolution.NoNodeForTable();
     }
 
     /**
@@ -3492,10 +3492,9 @@ class FieldBuilder {
                 Optional<HelperRef.Encode> encodeReturn = Optional.empty();
                 if (returnType instanceof ReturnTypeRef.ScalarReturnType s && "ID".equals(s.returnTypeName())) {
                     String tableSqlName = tia.inputTable().tableName();
-                    encodeReturn = ctx.types.values().stream()
-                        .filter(t -> t instanceof NodeType nt && nt.table().tableName().equals(tableSqlName))
-                        .map(t -> ((NodeType) t).encodeMethod())
-                        .findFirst();
+                    // R317 slice 2 — table->NodeType fixed-point index in place of the registry scan.
+                    encodeReturn = Optional.ofNullable(ctx.nodeTypeByTable.get(tableSqlName))
+                        .map(NodeType::encodeMethod);
                     if (encodeReturn.isEmpty()) {
                         return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural("@mutation field '" + name + "' returns ID but no @node type is declared for table '"
                                 + tableSqlName + "'; annotate the type with @node or use a @table return type"));
@@ -3559,10 +3558,9 @@ class FieldBuilder {
         Optional<HelperRef.Encode> encodeReturn = Optional.empty();
         if (returnType instanceof ReturnTypeRef.ScalarReturnType s && "ID".equals(s.returnTypeName())) {
             String tableSqlName = foundTit.table().tableName();
-            encodeReturn = ctx.types.values().stream()
-                .filter(t -> t instanceof NodeType nt && nt.table().tableName().equals(tableSqlName))
-                .map(t -> ((NodeType) t).encodeMethod())
-                .findFirst();
+            // R317 slice 2 — table->NodeType fixed-point index in place of the registry scan.
+            encodeReturn = Optional.ofNullable(ctx.nodeTypeByTable.get(tableSqlName))
+                .map(NodeType::encodeMethod);
             if (encodeReturn.isEmpty()) {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(
                     "@mutation field '" + name + "' returns ID but no @node type is declared for table '"
@@ -3766,10 +3764,9 @@ class FieldBuilder {
         Optional<HelperRef.Encode> encodeReturn = Optional.empty();
         if (returnType instanceof ReturnTypeRef.ScalarReturnType s && "ID".equals(s.returnTypeName())) {
             String tableSqlName = foundTit.table().tableName();
-            encodeReturn = ctx.types.values().stream()
-                .filter(t -> t instanceof NodeType nt && nt.table().tableName().equals(tableSqlName))
-                .map(t -> ((NodeType) t).encodeMethod())
-                .findFirst();
+            // R317 slice 2 — table->NodeType fixed-point index in place of the registry scan.
+            encodeReturn = Optional.ofNullable(ctx.nodeTypeByTable.get(tableSqlName))
+                .map(NodeType::encodeMethod);
             if (encodeReturn.isEmpty()) {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(
                     "@mutation(typeName: DELETE) field '" + name + "' returns ID but no @node type is "
@@ -5623,17 +5620,11 @@ class FieldBuilder {
      */
     private ParticipantRef.TableBound.CrossTableField lookupParticipantCrossTableField(
             String parentTypeName, String fieldName) {
-        for (var t : ctx.types.values()) {
-            if (!(t instanceof GraphitronType.TableInterfaceType tit)) continue;
-            for (var p : tit.participants()) {
-                if (!(p instanceof ParticipantRef.TableBound tb)) continue;
-                if (!tb.typeName().equals(parentTypeName)) continue;
-                for (var ctf : tb.crossTableFields()) {
-                    if (ctf.fieldName().equals(fieldName)) return ctf;
-                }
-            }
-        }
-        return null;
+        // R317 slice 2 — the participant cross-table-field fixed-point index replaces the nested
+        // whole-registry scan over every TableInterfaceType's participants.
+        return ctx.crossTableFieldsByParticipant
+            .getOrDefault(parentTypeName, Map.of())
+            .get(fieldName);
     }
 
     /**
