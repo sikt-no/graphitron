@@ -36,6 +36,28 @@ per field under the field-relative model. The change must be gated against the f
 verdict shifts, pinned as the intentional consequence (with execution-tier coverage proving the
 per-field table binding generates correct SQL).
 
+## Evidence: R330 is a concrete failure caused by the @table / plain-input fork
+
+R330 (FK-target `@nodeId` + `@condition(override)`) shipped a fix that was correct for `@table`
+inputs but silently broke on plain inputs, and the root cause is exactly the divergence this item
+retires. The model path is shared (`@table` `TableInputArg` and plain `PlainInputArg` both flow
+through `FieldBuilder.walkInputFieldConditions`), but the **validator** is not: the FK-target
+structural rejections live in `validateInputFieldRecursive`, reached only from
+`validateTableInputType` (the `@table` walk). Plain inputs are never walked. So an identical
+schema-author error (a composite-key FK-target `@condition` that the model could not yet emit)
+produced a clean build-time rejection on a `@table` input but a *silently generated broken call* on a
+plain input, which detonated at the consumer's `javac` (the real `SoknadsmangeltypeFilterInput` is a
+plain input). Behaviour forked on the presence of `@table` for something `@table` has no business
+gating. Two consequences for this item:
+
+- It is direct evidence that `@table`-on-input is load-bearing in places it should not be (here, it
+  silently decides whether the validator even inspects a field), strengthening the retirement case.
+- A residual gap is left behind deliberately: R330's validator structural checks still run only on the
+  `@table` walk. The right fix is *not* to duplicate the walk onto plain inputs (that adds more of the
+  divergent code this item deletes) but to make input-field validation field-relative alongside the
+  classification, so every input's fields are walked once regardless of `@table`. Fold that into this
+  item's scope rather than patching it separately.
+
 ## Relation to R332 (the deprecation signal)
 
 R332 (`table-on-input-deprecation-signal`, Backlog) is the cheap, ship-now announcement that
