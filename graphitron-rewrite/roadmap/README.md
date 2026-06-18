@@ -16,8 +16,8 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 |---|---|---|---|---|
 | `R19` | Rebase and squash rewrite branch onto main | Ready |  | [plan](history-squash.md) |
 | `R222` | Dimensional model pivot: slots over cross-product permits | Spec | 2026-06-16 <sub>created 2026-05-21</sub> | [plan](dimensional-model-pivot.md) |
-| `R316` | Pivot the field-dimensional model to (source, operation, target) <sub>blocked by: [dimensional-model-pivot](dimensional-model-pivot.md)</sub> | Spec | 2026-06-17 <sub>created 2026-06-16</sub> | [plan](source-operation-target-pivot.md) |
 | `R256` | Absorb the service walker substrate: typed per-arm errors + multi-arg ctors | Ready | 2026-05-30 <sub>created 2026-05-29</sub> | [plan](service-walker-substrate-absorption.md) |
+| `R316` | Pivot the field-dimensional model to (source, operation, target) <sub>blocked by: [dimensional-model-pivot](dimensional-model-pivot.md)</sub> | Ready | 2026-06-18 <sub>created 2026-06-16</sub> | [plan](source-operation-target-pivot.md) |
 | `R315` | Bind FK-reference @nodeId onto jOOQ-record @service params (port legacy @reference FK resolution; generalize R311) | Spec | 2026-06-17 <sub>created 2026-06-16</sub> | [plan](fk-reference-nodeid-service-record-input.md) |
 | `R308` | Fix the @service list-payload N+1 by deriving many-arrival for list-returning carriers | Spec | 2026-06-14 | [plan](service-list-payload-arrival.md) |
 | `R317` | Single edge-driven classification pass and immutable validation (retire TypeBuilder.buildTypes) | In Progress | 2026-06-17 <sub>created 2026-06-16</sub> | [plan](inline-type-classification-into-walk.md) |
@@ -214,7 +214,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R261` [**Generation-time wire-coercion cast guard across arg-classification sites**](wire-coercion-cast-guard.md) — Backlog, architecture, blocked by [service-walker-substrate-absorption](service-walker-substrate-absorption.md), [dimensional-model-pivot](dimensional-model-pivot.md)
 - `R256` [**Absorb the service walker substrate: typed per-arm errors + multi-arg ctors**](service-walker-substrate-absorption.md) — Ready, structural
 - `R222` [**Dimensional model pivot: slots over cross-product permits**](dimensional-model-pivot.md) — Spec, structural
-- `R316` [**Pivot the field-dimensional model to (source, operation, target)**](source-operation-target-pivot.md) — Spec, structural, blocked by [dimensional-model-pivot](dimensional-model-pivot.md)
+- `R316` [**Pivot the field-dimensional model to (source, operation, target)**](source-operation-target-pivot.md) — Ready, structural, blocked by [dimensional-model-pivot](dimensional-model-pivot.md)
 - `R314` [**Dissolve the re-fetch (reentry) leaf fields: emit reentry by switching on the dimensional model**](dissolve-reentry-leaves-dimensional-emit.md) — Backlog, architecture, blocked by [dimensional-model-pivot](dimensional-model-pivot.md)
 - `R308` [**Fix the @service list-payload N+1 by deriving many-arrival for list-returning carriers**](service-list-payload-arrival.md) — Spec, structural
 - `R171` [**Fold InputType and TableInputType under sealed parent InputLikeType**](input-like-type-sealed-parent.md) — Backlog, architecture
