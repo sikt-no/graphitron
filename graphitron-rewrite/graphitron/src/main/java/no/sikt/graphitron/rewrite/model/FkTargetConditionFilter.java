@@ -33,8 +33,10 @@ import java.util.List;
  *   <li>{@link #keyColumns()} — {@code X}'s key columns the decoded NodeId maps to.</li>
  * </ul>
  *
- * <p>Composite-key FK targets ({@code keyColumns().size() > 1}) are rejected at validate time
- * (deferred to R24); only the single-column case reaches the emitter.
+ * <p>Composite-key FK targets ({@code keyColumns().size() > 1}) are supported (R330 rework): the
+ * correlated {@code EXISTS} ANDs every composite-FK slot via
+ * {@code JoinPathEmitter.emitCorrelationWhere}, so the composite case wraps in this same filter and
+ * reaches the emitter exactly like the single-column case.
  */
 public record FkTargetConditionFilter(
     ConditionFilter delegate,
