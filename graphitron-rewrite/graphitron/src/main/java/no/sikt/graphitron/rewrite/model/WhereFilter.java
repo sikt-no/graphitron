@@ -18,6 +18,11 @@ import java.util.List;
  *       method body.</li>
  *   <li>{@link ConditionFilter} — a developer-supplied {@code @condition} method. No generation
  *       is needed; the developer wrote the body.</li>
+ *   <li>{@link FkTargetConditionFilter} — a developer-supplied {@code @condition} method on an
+ *       FK-target {@code @nodeId} input field (R330). Like {@link ConditionFilter} the developer
+ *       wrote the body, but the implicit first parameter is the FK-target table reached through a
+ *       join path rather than the field's own table, so the fetcher generator emits a correlated
+ *       {@code EXISTS} instead of passing the root {@code table} local.</li>
  * </ul>
  *
  * <p>The raw argument-classification intermediates ({@code ColumnFilter}, {@code EnumColumnFilter},
@@ -25,7 +30,7 @@ import java.util.List;
  * in the taxonomy. The builder converts them into {@link GeneratedConditionFilter} instances,
  * validating each argument at build time before storing the result.
  */
-public sealed interface WhereFilter permits GeneratedConditionFilter, ConditionFilter {
+public sealed interface WhereFilter permits GeneratedConditionFilter, ConditionFilter, FkTargetConditionFilter {
 
     /** Fully qualified class name of the condition method (e.g. {@code "com.example.rewrite.conditions.FilmConditions"}). */
     String className();

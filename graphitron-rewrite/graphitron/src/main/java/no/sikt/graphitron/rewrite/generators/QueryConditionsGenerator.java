@@ -2,18 +2,22 @@ package no.sikt.graphitron.rewrite.generators;
 
 import no.sikt.graphitron.javapoet.AnnotationSpec;
 import no.sikt.graphitron.javapoet.ClassName;
+import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
+import no.sikt.graphitron.rewrite.model.FkTargetConditionFilter;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
+import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.QueryField;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
 import no.sikt.graphitron.rewrite.model.WhereFilter;
 
 import javax.lang.model.element.Modifier;
 import java.util.ArrayList;
+import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -172,22 +176,104 @@ public class QueryConditionsGenerator {
         // own EmissionContext and emitting the helper when requested. Until then, the throwaway
         // ctx here records into a context nothing drains.
         var ctx = new TypeFetcherEmissionContext();
+
+        // R330: pre-declare one aliased jOOQ table local per FK-target join hop. The correlated
+        // EXISTS that each FkTargetConditionFilter emits references its target alias by name, but
+        // filter terms compose as expressions and cannot introduce locals themselves — so they are
+        // declared up front, like the JooqConvert/liftedOuters lifts above. The per-filter index
+        // keeps both the Java local names and the SQL alias strings unique within the method.
+        var fkTargetAliases = new IdentityHashMap<WhereFilter, List<String>>();
+        int fkTargetIndex = 0;
+        for (var filter : filters) {
+            if (filter instanceof FkTargetConditionFilter fk) {
+                var path = fk.joinPath();
+                var hopAliases = new ArrayList<String>(path.size());
+                for (int i = 0; i < path.size(); i++) {
+                    var ht = (JoinStep.HasTargetTable) path.get(i);
+                    String varName = "fkt" + fkTargetIndex + "_" + i;
+                    builder.addStatement("$T $L = $T.$L.as($S)",
+                        ht.targetTable().tableClass(), varName,
+                        ht.targetTable().constantsClass(), ht.targetTable().javaFieldName(), varName);
+                    hopAliases.add(varName);
+                }
+                fkTargetAliases.put(filter, hopAliases);
+                fkTargetIndex++;
+            }
+        }
+
         if (filters.isEmpty()) {
             builder.addStatement("return $T.noCondition()", DSL);
         } else if (filters.size() == 1) {
-            var only = filters.get(0);
-            var callArgs = ArgCallEmitter.buildCallArgs(ctx, only.callParams(), only.className(), "table", registry, liftedOuters);
-            builder.addStatement("return $T.$L($L)",
-                ClassName.bestGuess(only.className()), only.methodName(), callArgs);
+            builder.addStatement("return $L",
+                emitFilterTerm(ctx, filters.get(0), registry, liftedOuters, fkTargetAliases));
         } else {
             builder.addStatement("$T condition = $T.noCondition()", CONDITION, DSL);
             for (var filter : filters) {
-                var callArgs = ArgCallEmitter.buildCallArgs(ctx, filter.callParams(), filter.className(), "table", registry, liftedOuters);
-                builder.addStatement("condition = condition.and($T.$L($L))",
-                    ClassName.bestGuess(filter.className()), filter.methodName(), callArgs);
+                builder.addStatement("condition = condition.and($L)",
+                    emitFilterTerm(ctx, filter, registry, liftedOuters, fkTargetAliases));
             }
             builder.addStatement("return condition");
         }
         return builder.build();
+    }
+
+    /**
+     * Emits one composed WHERE term for a single filter. The root-table arm (plain
+     * {@link WhereFilter}) hands the developer method the method's {@code table} local as today;
+     * the FK-target arm ({@link FkTargetConditionFilter}, R330) emits a correlated {@code EXISTS}
+     * that hands the method an alias for the FK-target table instead.
+     */
+    private static CodeBlock emitFilterTerm(TypeFetcherEmissionContext ctx, WhereFilter filter,
+            CompositeDecodeHelperRegistry registry, Map<String, String> liftedOuters,
+            Map<WhereFilter, List<String>> fkTargetAliases) {
+        if (filter instanceof FkTargetConditionFilter fk) {
+            return emitFkTargetExists(ctx, fk, registry, liftedOuters, fkTargetAliases.get(fk));
+        }
+        var callArgs = ArgCallEmitter.buildCallArgs(ctx, filter.callParams(), filter.className(), "table", registry, liftedOuters);
+        return CodeBlock.of("$T.$L($L)",
+            ClassName.bestGuess(filter.className()), filter.methodName(), callArgs);
+    }
+
+    /**
+     * Emits the correlated {@code EXISTS} for an FK-target {@code @nodeId} override condition
+     * (R330): {@code DSL.exists(DSL.selectOne().from(X).where(<correlation>.and(<method>(X, args))))}.
+     * The {@code <correlation>} ties the first hop's target alias to the parent {@code table} local;
+     * multi-hop paths walk the FK chain back from the terminal target alias (mirroring
+     * {@link InlineColumnReferenceFieldEmitter}). The developer method is called against the
+     * terminal (FK-target) alias rather than the root {@code table}.
+     */
+    private static CodeBlock emitFkTargetExists(TypeFetcherEmissionContext ctx,
+            FkTargetConditionFilter fk, CompositeDecodeHelperRegistry registry,
+            Map<String, String> liftedOuters, List<String> hopAliases) {
+        var path = fk.joinPath();
+        String terminalAlias = hopAliases.get(hopAliases.size() - 1);
+
+        var sel = CodeBlock.builder();
+        sel.add("$T.selectOne()", DSL);
+        sel.add("\n        .from($L)", terminalAlias);
+        for (int i = path.size() - 1; i >= 1; i--) {
+            var bridging = path.get(i);
+            String prevAlias = hopAliases.get(i - 1);
+            if (bridging instanceof JoinStep.FkJoin fkHop) {
+                sel.add("\n        .join($L).onKey($T.$L)",
+                    prevAlias, fkHop.fk().keysClass(), fkHop.fk().constantName());
+            } else {
+                throw new IllegalStateException(
+                    "FK-target @nodeId override join hop " + i + " on '" + fk.methodName()
+                    + "' is not an FkJoin (" + bridging.getClass().getSimpleName()
+                    + "); the validator must reject unresolved FK-target overrides before emission");
+            }
+        }
+        if (!(path.get(0) instanceof JoinStep.FkJoin firstHop)) {
+            throw new IllegalStateException(
+                "FK-target @nodeId override first hop on '" + fk.methodName()
+                + "' is not an FkJoin; the validator must reject unresolved FK-target overrides before emission");
+        }
+        var correlation = JoinPathEmitter.emitCorrelationWhere(firstHop, hopAliases.get(0), "table");
+        var callArgs = ArgCallEmitter.buildCallArgs(ctx, fk.callParams(), fk.className(), terminalAlias, registry, liftedOuters);
+        var devCall = CodeBlock.of("$T.$L($L)", ClassName.bestGuess(fk.className()), fk.methodName(), callArgs);
+        sel.add("\n        .where($L.and($L))", correlation, devCall);
+
+        return CodeBlock.of("$T.exists($L)", DSL, sel.build());
     }
 }
