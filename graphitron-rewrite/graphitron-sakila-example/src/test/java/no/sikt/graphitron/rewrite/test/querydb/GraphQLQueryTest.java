@@ -226,6 +226,34 @@ class GraphQLQueryTest {
     }
 
     @Test
+    void projectNotesByPlainFilter_plainInputCompositeFkTargetOverride_filtersByForeignTable() {
+        // R330 rework: the opptak SoknadsmangeltypeFilterInput shape exactly — a PLAIN input (no
+        // @table) carrying a composite FK-target @nodeId + @condition(override) alongside a sibling
+        // implicit field. The plain input is promoted to project_note; projectNameAtlas receives an
+        // aliased Project inside a correlated EXISTS over the composite (org_id, project_id) FK. The
+        // plain-input path is what the @table fixtures missed: the old validator's composite
+        // rejection only walked @table inputs, so a plain input slipped a broken call through to the
+        // consumer's javac (exactly the opptak symptom).
+        Map<String, Object> data = execute("{ projectNotesByPlainFilter(filter: {}) { body } }");
+        assertThat(data).extractingByKey("projectNotesByPlainFilter", as(list(Map.class)))
+            .extracting(c -> c.get("body"))
+            .containsExactlyInAnyOrder("Atlas-N1", "Atlas-N2", "Atlas-N3");
+    }
+
+    @Test
+    void projectNotesByPlainFilterConnection_plainInputCompositeFkTargetOverride_filtersByForeignTable() {
+        // R330 rework: the same plain-input composite FK-target shape on an @asConnection query,
+        // mirroring soknadsmangeltyper(...): [Soknadsmangeltype!] @asConnection. The shim feeds the
+        // same composite EXISTS into the connection fetcher.
+        Map<String, Object> data = execute(
+            "{ projectNotesByPlainFilterConnection(filter: {}) { nodes { body } } }");
+        assertThat(data).extractingByKey("projectNotesByPlainFilterConnection", as(map(String.class, Object.class)))
+            .extractingByKey("nodes", as(list(Map.class)))
+            .extracting(c -> c.get("body"))
+            .containsExactlyInAnyOrder("Atlas-N1", "Atlas-N2", "Atlas-N3");
+    }
+
+    @Test
     void store_customersByAddressDistrict_inlineFkTargetOverride_filtersByForeignTable() {
         // R330: inline child TableField path (InlineTableFieldEmitter). Store.customersByAddressDistrict
         // correlates store -> customer, then the FK-target @nodeId(Address) @condition(override) on the

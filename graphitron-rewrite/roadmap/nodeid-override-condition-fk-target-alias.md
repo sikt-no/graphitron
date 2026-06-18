@@ -161,12 +161,16 @@ execution assertion (the Atlas notes). The pipeline test's composite case
 (`reordered_fk_child` → `reordered_pk_parent`) now asserts the `FkTargetConditionFilter` carrier and
 clean emission rather than a rejection.
 
-Note on the consumer's symptom: a composite `@nodeId` FK-target resolves to a non-empty `joinPath`
-(`DirectFk`), which the *old* validator rejected at build time — yet the consumer saw a generated-code
-compile error, not a build rejection. If that persists after this rework, the field is resolving with
-an empty `joinPath` (e.g. a `@reference` whose path infers to the own table) rather than a composite
-`@nodeId` `DirectFk`; that case carries no FK correlation in the model and needs the consumer's exact
-field SDL to address.
+Root cause of the consumer's symptom (confirmed against the real SDL): the reported input
+(`SoknadsmangeltypeFilterInput`) is a **plain** input (no `@table`), and the target
+(`Regelverksamling`) has a **composite** node key. Two factors combined: (1) the composite
+`CompositeColumnReferenceField` arm emitted a plain `ConditionFilter` (the deferral bug, now fixed);
+and (2) the validator's composite rejection only ran on the `@table`-input walk
+(`validateTableInputType` → `validateInputFieldRecursive`), never on plain inputs, so the broken call
+was generated and surfaced at the consumer's javac instead of as a build-time rejection. The fix in
+the model arm corrects both `@table` and plain inputs (both flow through `walkInputFieldConditions`).
+Plain-input + composite + `@asConnection` is reproduced and execution-covered in sakila
+(`projectNotesByPlainFilter` / `projectNotesByPlainFilterConnection`, `ProjectNotePlainFilter`).
 
 ## Reported instances
 

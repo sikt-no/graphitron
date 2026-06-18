@@ -201,6 +201,11 @@ type Query {
     # via a composite FK; projectNameAtlas receives an aliased Project inside a correlated EXISTS
     # whose correlation ANDs both (org_id, project_id) slots. The common opptak shape (composite keys).
     projectNotesByProject(filter: ProjectNoteByProjectFilter): [ProjectNote!]!
+    # R330 rework: the opptak shape exactly — a PLAIN input filter (no @table) with a composite
+    # FK-target @nodeId + @condition(override), on an @asConnection query returning a composite-key
+    # @node. Reproduces SoknadsmangeltypeFilterInput / soknadsmangeltyper.
+    projectNotesByPlainFilter(filter: ProjectNotePlainFilter): [ProjectNote!]!
+    projectNotesByPlainFilterConnection(filter: ProjectNotePlainFilter): [ProjectNote!]! @asConnection(defaultFirstValue: 10)
     # R330: the opptak shim shape exactly — a field-level @condition(override) on the query
     # *and* an FK-target @nodeId + @condition(override) input field. The generated QueryConditions
     # shim accumulates two terms: the field-level customersActiveOnly(table, ...) against the root
@@ -1560,6 +1565,20 @@ input ProjectNoteByProjectFilter @table(name: "project_note") {
             className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
             method: "projectNameAtlas"
         }, override: true)
+}
+
+# R330 rework: the opptak SoknadsmangeltypeFilterInput shape EXACTLY — a PLAIN input (no @table)
+# with a composite FK-target @nodeId + @condition(override) field alongside a sibling implicit
+# field. The plain input is promoted to the project_note table by its single @table-bound query
+# field. projectId reaches the composite-key @node Project via the composite FK; projectNameAtlas
+# must receive an aliased Project inside a correlated EXISTS, not the project_note table.
+input ProjectNotePlainFilter {
+    projectId: ID @nodeId(typeName: "Project")
+        @condition(condition: {
+            className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
+            method: "projectNameAtlas"
+        }, override: true)
+    body: [String!] @field(name: "body")
 }
 
 # R22 Phase 2 fixture: minimal INSERT input. Sakila's `film` table has two NOT-NULL columns
