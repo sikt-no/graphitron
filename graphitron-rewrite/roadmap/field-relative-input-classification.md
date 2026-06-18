@@ -34,6 +34,29 @@ This is **not** automatically byte-identical, which is why it is its own item: a
 more than one table classifies non-table today (the aggregate bails on `> 1`) but becomes table-bound
 per field under the field-relative model. The change must be gated against the fixtures, and where a
 verdict shifts, pinned as the intentional consequence (with execution-tier coverage proving the
-per-field table binding generates correct SQL). Scope the `@table`-on-input deprecation path
-(warn-then-remove vs. keep-as-override) when this moves to Spec.
+per-field table binding generates correct SQL).
+
+## Relation to R332 (the deprecation signal)
+
+R332 (`table-on-input-deprecation-signal`, Backlog) is the cheap, ship-now announcement that
+`@table`-on-input is on its way out. It does **not** own the deprecation *policy*; this item does.
+So the "warn-then-remove vs. keep-as-override" decision belongs here at Spec, but the user-facing
+*signal* (directive description, build warning, LSP hint, docs) is R332's surface. Coordinate rather
+than re-open: R332 announces, R327 removes. R332 already cross-references this item as the mechanism
+its carve-out (below) waits on; the two should stay consistent.
+
+## This item owns the INSERT/UPSERT write-target migration
+
+R332 carves out one case it must **not** flag as deprecated until this item lands: INSERT/UPSERT
+mutations whose return type is an encoded ID or scalar (`createFilm(...): ID`). For those,
+`@table`-on-input is currently the *only* signal naming the write target. Per
+`MutationField.DmlTableField` (`MutationField.java:82-109`), INSERT/UPSERT "carry the `@table`
+`TableInputArg` that drives the statement **directly**" (`:92-94`), while UPDATE/DELETE already moved
+to a field-relative walker carrier (R246/R266). The field-relative derivation this item introduces is
+exactly what unblocks the INSERT/UPSERT arms: the write target must come from the consuming mutation
+field's resolved target, not its return type (the return type can be a bare `ID`). Extending the
+UPDATE/DELETE field-relative pattern to INSERT/UPSERT is in scope here, and is the gate R332's
+carve-out is waiting on. The `findReturnTablesForInput` removal and the `@table`-on-input retirement
+this item already names also overlap R222 Stage 5 / Stage 7 and R97; reconcile ownership across that
+cluster (mapped in R332's "Related items" section) when this moves to Spec.
 
