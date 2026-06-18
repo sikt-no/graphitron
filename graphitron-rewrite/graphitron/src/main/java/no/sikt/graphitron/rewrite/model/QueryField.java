@@ -33,18 +33,20 @@ public sealed interface QueryField extends RootField
     /** Every {@code QueryField} leaf is on the {@code Query} root, so the source is {@link Source.Root.Query}. */
     @Override default Source source() { return new Source.Root.Query(); }
 
-    @Override default Intent intent() {
+    @Override default Operation operation() {
         return switch (this) {
-            case QueryTableField ignored -> Intent.Fetch;
-            case QueryTableMethodTableField ignored -> Intent.Fetch;
-            case QueryTableInterfaceField ignored -> Intent.Fetch;
-            case QueryInterfaceField ignored -> Intent.Fetch;
-            case QueryUnionField ignored -> Intent.Fetch;
-            case QueryLookupTableField ignored -> Intent.Lookup;
-            case QueryNodeField ignored -> Intent.NodeResolve;
-            case QueryNodesField ignored -> Intent.NodeResolve;
-            case QueryServiceTableField ignored -> Intent.QueryService;
-            case QueryServiceRecordField ignored -> Intent.QueryService;
+            // Catalog reads: Paginate when the return wrapper is a connection, else Fetch.
+            case QueryTableField f -> OutputField.readOperation(f.returnType(), f.filters(), f.orderBy(), f.pagination());
+            case QueryTableInterfaceField f -> OutputField.readOperation(f.returnType(), f.filters(), f.orderBy(), f.pagination());
+            // Table-method / polymorphic roots carry no field-level filter surface.
+            case QueryTableMethodTableField f -> OutputField.readOperation(f.returnType(), List.of(), new OrderBySpec.None(), null);
+            case QueryInterfaceField f -> OutputField.readOperation(f.returnType(), List.of(), new OrderBySpec.None(), null);
+            case QueryUnionField f -> OutputField.readOperation(f.returnType(), List.of(), new OrderBySpec.None(), null);
+            case QueryLookupTableField f -> new Operation.Lookup(f.lookupMapping());
+            case QueryNodeField ignored -> new Operation.NodeResolve();
+            case QueryNodesField ignored -> new Operation.NodeResolve();
+            case QueryServiceTableField f -> OutputField.serviceCall(f.serviceMethodCall());
+            case QueryServiceRecordField f -> OutputField.serviceCall(f.serviceMethodCall());
         };
     }
 
