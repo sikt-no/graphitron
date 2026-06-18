@@ -411,14 +411,26 @@ orphan move are pinned by explicit tests, not claimed trivially.
    decided separately by `isDirectivelessNestingTarget`), and the post-walk demotions (typeId
    uniqueness, multi-producer, case-fold) do not change any arm these reads test (a demoted node is
    read through the `NodeIndex`; a multi-producer / case-fold demotion turns a verdict already not
-   interface / union / result into an `UnclassifiedType` still not one of those). The six reads
-   (`:672`, `:2120`, `:3236`, `:3291`, `:4654`, `:5046`) migrated to `lookAheadVerdict`, so field
-   classification carries no in-progress-registry read for any target verdict. The four remaining
-   `ctx.types` reads are not enter-unsafe: inputs (`:963` / `:3708`) and scalar (`:4645`) resolve types
-   the pre-walk input/scalar/enum sweep classifies, and `:5436` is an error-message candidate-name hint
-   (slice 4 sources it off the schema, not the partial registry). Output byte-identical (truth table
-   448, full pipeline / compile / execution build green); structure delta: the last classification-edge
-   registry reads removed, the read-free invariant now holding for every target verdict.
+   interface / union / result into an `UnclassifiedType` still not one of those). The interface /
+   union / result-family target reads migrated to `lookAheadVerdict`, and so did the argument
+   **input** reads and the **scalar** assignability read: a field's input and scalar targets are
+   reachable from the field by definition, and their interpretation belongs at the field's edge, not a
+   global registry lookup, so they resolve through the same look-ahead rather than leaning on the
+   pre-walk sweep. The input case is *why* look-ahead is the right mechanism here and not an index:
+   whether an input is table-bound is a function of the field's target, so it cannot be a single global
+   index entry (an index can't be field-relative; a look-ahead can take the field's target). To stay
+   byte-identical, `lookAheadVerdict` reproduces the current global verdict (`buildInputType`'s
+   `@table`-on-input plus the `findReturnTablesForInput` aggregate); the field-relative input model
+   (classify the input *after* the target, deriving its table from the field's target, with
+   `@table`-on-input de-emphasised) is a slice-4 change, gated there because moving off the global
+   aggregate changes classification for an input used across more than one table. `lookAheadVerdict`
+   runs the multi-producer rejection guard first (mirroring `participantClassification`) so a
+   binding-rejected input reads as the `UnclassifiedType` `surfaceMultiProducerRejections` produced,
+   not a live verdict. After this, the only `ctx.types` read left in `FieldBuilder` is the
+   error-message candidate-name hint (`ctx.types.keySet()`); slice 4 sources it off the schema, not the
+   partial registry. Output byte-identical (truth table 448, full pipeline / compile / execution build
+   green); structure delta: every classification-edge target-verdict registry read removed, the
+   read-free invariant holding for every target verdict.
 4. **Collapse to one walk; delete `buildTypes`.** Replace the no-op `GraphQLTypeVisitorStub` in
    `SchemaReachability` with a real `GraphQLTypeVisitor` that classifies types on enter and folds
    field classification into the same `SchemaTraverser.depthFirst` call. With slice 3e the visit is
@@ -426,12 +438,26 @@ orphan move are pinned by explicit tests, not claimed trivially.
    not-yet-visited child) no longer matters: a type's own verdict is computed at its visit
    (registry-free, the parent context that field classification needs is its own verdict plus the
    precomputed indices / bindings, not a sibling lookup). Delete `buildTypes`, the separate
-   `classifyFieldsOfObject` loop, and the `reachableOutputTypes` hand-off; run the input/scalar/enum
-   sweep before the walk so its verdicts are present; source the `:5436` candidate-name hint off the
-   schema; update the `buildContextForTests` seam; make reflection grounding on-demand (drop the
-   `resolveAll()` precondition) only if it does not fight eager index construction (the indices call
-   `classifyType` over all types, which grounds bindings as a side effect; resolve that tension when
-   the slice lands). Only validation reductions after. Output byte-identical; structure delta is the
+   `classifyFieldsOfObject` loop, and the `reachableOutputTypes` hand-off.
+
+   Retire the pre-walk input/scalar/enum sweep rather than merely reordering it, per the look-ahead /
+   index split slice 3e established. **Enums** are a global fact (a pure function of the enum's own
+   SDL) like `@table` / `@node` / `@error`, so they go into an `EnumIndex` built up front in
+   `buildClassificationIndices` and registered into the model from there. **Scalars and inputs** are
+   reachable from the fields that use them and resolve at the edge through `lookAheadVerdict`; they are
+   registered into the model when reached. **Input classification becomes field-relative:** the input
+   arg is classified *after* its field's target, deriving table-boundness from the field's target table
+   rather than `@table`-on-input or the global `findReturnTablesForInput` aggregate (`@table` on inputs
+   is to be de-emphasised, eventually deprecated). This is the one place slice 4 is *not* automatically
+   byte-identical: an input used across more than one table classifies as non-table today (the
+   aggregate bails on `> 1`) but would become table-bound per field under the field-relative model;
+   gate that against the fixtures and, if it diverges, pin it as the intentional consequence (or split
+   it to its own item). Source the candidate-name hint (`ctx.types.keySet()`, the last `FieldBuilder`
+   registry read) off the schema, not the partial registry; update the `buildContextForTests` seam;
+   make reflection grounding on-demand (drop the `resolveAll()` precondition) only if it does not fight
+   eager index construction (the indices call `classifyType` over all types, which grounds bindings as
+   a side effect; resolve that tension when the slice lands). Only validation reductions after. Output
+   byte-identical (modulo the gated field-relative input change above); structure delta is the
    whole point, gated by the falsifiable acceptance test (no type registered before its discovering
    field is visited), which the current eager pass fails.
 5. **Immutable validate phase (inlines R318).** The global reductions register diagnostics into a

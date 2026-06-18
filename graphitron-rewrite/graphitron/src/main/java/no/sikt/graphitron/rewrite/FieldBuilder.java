@@ -960,7 +960,10 @@ class FieldBuilder {
         // InputType (Pojo / Java record / jOOQ record) and UnclassifiedType (input resolution
         // failed — e.g. FilmKey unresolvable against the surrounding table) both go through the
         // plain-input path so lookup-key search still runs and produces a focused error.
-        var resolvedType = ctx.types.get(typeName);
+        // R317 slice 3e — registry-free look-ahead at the argument's input type, reachable from this
+        // field; reproduces the ctx.types verdict (including a binding-rejected UnclassifiedType)
+        // without reading the in-progress registry.
+        var resolvedType = typeBuilder.lookAheadVerdict(typeName);
         if (resolvedType instanceof GraphitronType.TableInputType tit) {
             // R144: @lookupKey on INPUT_FIELD_DEFINITION is retired. Query-side @table input args
             // derive their lookup binding set from arg-level @lookupKey on ARGUMENT_DEFINITION:
@@ -3705,7 +3708,8 @@ class FieldBuilder {
             var argType = arg.getType();
             boolean argList = GraphQLTypeUtil.unwrapNonNull(argType) instanceof GraphQLList;
             String typeName = ((GraphQLNamedType) GraphQLTypeUtil.unwrapAll(argType)).getName();
-            var resolvedType = ctx.types.get(typeName);
+            // R317 slice 3e — registry-free look-ahead at the @mutation arg's input type.
+            var resolvedType = typeBuilder.lookAheadVerdict(typeName);
             if (!(resolvedType instanceof GraphitronType.TableInputType tit)) {
                 return new DmlWalkerInputArgResolution.Rejected(new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(
                     "@mutation fields only accept @table input arguments; found '" + arg.getName()
@@ -4642,7 +4646,9 @@ class FieldBuilder {
         }
         if (listDepth > 0) return java.util.List.class;
         if (current instanceof GraphQLScalarType s && ctx.types != null) {
-            var classified = ctx.types.get(s.getName());
+            // R317 slice 3e — registry-free look-ahead at the scalar's verdict for the assignability
+            // check; resolved at this field's edge, not read from the in-progress registry.
+            var classified = typeBuilder.lookAheadVerdict(s.getName());
             if (classified instanceof GraphitronType.ScalarType st
                     && st.resolution().javaType() instanceof no.sikt.graphitron.javapoet.ClassName cn) {
                 try { return Class.forName(cn.reflectionName(), false, ctx.codegenLoader()); }
