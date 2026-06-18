@@ -12,47 +12,73 @@ last-updated: 2026-06-18
 
 # Lower each schema coordinate to a DataFetcher and its QueryParts
 
-The shipped field model (R290/R299/R305/R316) maintains a hidden 1:1 assumption: **one schema
-coordinate == one graphitron field** (one `OutputField` leaf). That assumption is the root cause of the
-leaf cross-product (`Split` x `Lookup` x `Record` x `Composite` x ...): whenever a single SDL field needs
-to contribute more than one thing to the emit, the multiplicity gets welded into a monolithic leaf as a
-repeating group or an extra duty. The pivot is to drop the 1:1 and say:
+The shipped field model (R290/R299/R305/R316) carries a hidden 1:1 assumption: **one schema coordinate
+== one graphitron field** (one `OutputField` leaf). That assumption is the root cause of the leaf
+cross-product (`Split` x `Lookup` x `Record` x `Composite` x ...): whenever a single SDL field has to
+contribute more than one thing to the emit, the multiplicity gets welded into a monolithic leaf as a
+repeating group or an extra duty. The pivot drops the 1:1, but the unit it drops *to* is the heart of
+this spec, and it is neither the field nor either library type. It is the **emitted Java method**:
 
-> **A schema coordinate lowers to exactly one `DataFetcher`, and (if table-bound) one or more
-> `QueryPart`s.**
+> **A schema coordinate is the input key to a lowering whose output is a referentially-closed graph of
+> emitted Java methods.** Each node is a method we generate; each edge is one method calling another by
+> name. The leaf zoo, the per-field "graphitron field", and the two library types (`DataFetcher`,
+> `QueryPart`) are all denormalized or partial views of that one graph.
 
-That is two rules over two concrete types instead of a leaf zoo, and it is what makes the R314
-dissolution fall out structurally rather than leaf by leaf.
+This spec is the **model**; consuming it (re-platforming the generator onto the lowering) is R314's emit
+re-platforming. The graph framing was reached by walking the actual emitters; the **Discovery** section
+below records that chain, each step pinned to a current emitter with line numbers. It superseded an
+earlier, narrower headline ("a coordinate lowers to one `DataFetcher` plus one or more `org.jooq.QueryPart`s")
+that named the SQL-side unit a level too fine. That earlier framing is kept in Discovery as the path in,
+not as the model.
 
-This spec is the **model**; consuming it (re-platforming the generator onto the lowering) is R314's
-emit re-platforming. It was discovered while researching whether `SplitTableField` should dissolve into
-`RecordTableField` (see Lineage); the answer reframed the whole field model.
+## The method call graph is the granularity
 
-**Refined in a 2026-06-18 design session** (see "Refinement: the SQL emit target is a method-call-graph"
-below). The headline above names the SQL-side unit one level too fine. Read "QueryPart" throughout the
-foundational sections as *the method that emits QueryParts*: the emit target is a referentially-closed
-graph of emitted Java methods, and the `org.jooq.QueryPart` is the per-request runtime value those methods
-produce. The foundational framing here (normalization, natural keys, anchors) survives the sharpening
-intact; only the SQL-side codegen unit moves.
+The reason the field is the wrong unit is **granularity**: the methods we emit do not all sit at field
+granularity, so no single per-field model can source them. The method graph is the model precisely
+because it lets each node sit at its own granularity. Reading the current output bottom-up:
 
-## The two emit targets
+- **Field-granular (1:1).** `<Type>Fetchers.<field>(env)`: one coordinate, one `DataFetcher`, total.
+  `FetcherEmitter` binds exactly this. The resolve side genuinely *is* field-granular, so the R316 field
+  model is correct here and stays.
+- **Argument/input-granular (finer than, and driven by something other than, the field).** A condition
+  method is the clean example. `TypeConditionsGenerator` emits one `<Type>Conditions` class per type, with
+  one method per `GeneratedConditionFilter`; each is a pure function of the field's *typed argument
+  values*, returning a jOOQ `Condition`, its body shape (`eq` / `in` / `row(...).eq` for composite) driven
+  by the input surface, not by the field. One coordinate mints a method whose identity and body are a
+  function of the inputs the field merely carries. No per-field model can express that; the method can.
+- **Type-granular (a fold).** `<Type>.$fields(sel, table, env)`: one method per table-bound type that
+  folds in its own scalar/inline fields, recurses through nested types in the same method, and opts in the
+  columns Split children need projected. Many coordinates, one method.
+- **Anchor-granular.** `lookup<X>` / `load<X>` rows-methods: one per SELECT-launching coordinate.
+- **Dedup-by-class / boundary helpers.** `createBean` / `createRecord` / `scatterByIdx` / `<field>OrderBy`
+  / `<field>InputRows`: emitted once per class, or per boundary they serve.
 
-Graphitron's job is to bridge GraphQL-Java and jOOQ, so the two emit-target types are the two libraries'
-own:
+Granularity is heterogeneous *on purpose*; that heterogeneity is the content of the model. The leaf zoo
+is what you get from forcing one field-granular model to source all of these kinds at once. (Full table
+with code coordinates: Discovery thread E.)
 
-- **`graphql.schema.DataFetcher`** (the resolve side). **Every** schema coordinate emits exactly one: an
-  SDL field has exactly one resolver. Total.
-- **`org.jooq.QueryPart`** (the SQL side). **Only table-bound** coordinates emit these, and **one or
-  more**: a projected `Field`, a join, a condition, a key projection for a DataLoader, a DML clause. A
-  jOOQ `QueryPart` is the base type of every SQL fragment, so the SQL contributions already share a real
-  supertype. (Refined below: the codegen unit is the *method* that emits these at runtime, not the
-  per-request `QueryPart` itself.)
+## The two library types are node kinds, not the top level
 
-The "graphitron field" (`OutputField` leaf) conflated the *identity* of an SDL field with its *emit*.
-The lowering separates them: the schema coordinate is the identity, the DataFetcher + QueryParts are the
-emit.
+Graphitron bridges GraphQL-Java and jOOQ, and the two libraries' own types still name the two sides of the
+graph, but as **node-kind attributes**, not as the top-level structure:
+
+- **`graphql.schema.DataFetcher`** is the resolve-side node kind, and it is the field-granular one above:
+  every coordinate emits exactly one, total. The "graphitron field" identity lives here, and only here.
+- **`org.jooq.QueryPart`** is *not* an emit target at codegen. The SQL projection is assembled at runtime
+  from the client's `DataFetchingFieldSelectionSet` inside `$fields`; the `QueryPart` is the per-request
+  value those methods produce, not a thing we generate. The SQL-side node kinds are the **methods that
+  emit QueryParts** (`$fields`, the rows-methods, the condition methods), at the granularities above.
+
+So the model is one graph; the resolve/SQL split and the two library types are how its nodes are *typed*,
+not two parallel emit targets. (Why the `QueryPart` is runtime-only, with the emitter evidence: Discovery
+thread D.)
 
 ## Normalization: the leaf zoo is a denormalized view
+
+(The sections from here through "What dissolves" predate the method-graph sharpening and still say
+"QueryPart" for the SQL-side unit. Read it as shorthand for *the method that emits that QueryPart at
+runtime*, per the node-kinds section above; the normalization, natural-key, and anchor arguments are
+unchanged by the sharpening. Folding the wording through is part of the systematic pass.)
 
 The leaf model is denormalized in textbook ways, and the pivot is its normalization:
 
@@ -138,13 +164,14 @@ The address unifies composite and split: composite's column QueryParts are addre
   leaf variant in the first place, it was already the `target` `List` wrapper, which is the tell that
   this is the right cut.
 
-## Refinement: the SQL emit target is a method-call-graph
+## Discovery: walking the emitters to the method-call-graph
 
-The "one DataFetcher + one or more QueryParts" headline is the right instinct but names the SQL unit one
-level too fine. A 2026-06-18 session walking the actual emitters sharpened it: **the codegen command is
-the emitted Java method, and the full emit target is a referentially-closed graph of those methods.** The
-threads below record the chain; each is a claim grounded in a current emitter, with the code coordinate
-that pins it.
+This section is the derivation of the lead model above, not a refinement bolted onto a different one. The
+chain began from the narrower "one DataFetcher + one or more QueryParts" instinct, which is right about the
+resolve side but names the SQL unit one level too fine. A 2026-06-18 session walking the actual emitters
+sharpened it to the model this spec now leads with: **the codegen command is the emitted Java method, and
+the full emit target is a referentially-closed graph of those methods.** The threads below record the
+chain; each is a claim grounded in a current emitter, with the code coordinate that pins it.
 
 **A. `SplitTableField` and `RecordTableField` are component-identical (measured).** Both records carry
 the same eleven components (`parentTypeName, name, location, returnType, joinPath, filters, orderBy,
