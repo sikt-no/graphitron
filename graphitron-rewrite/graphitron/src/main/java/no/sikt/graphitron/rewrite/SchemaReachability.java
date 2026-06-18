@@ -6,6 +6,7 @@ import graphql.schema.GraphQLObjectType;
 import graphql.schema.GraphQLSchema;
 import graphql.schema.GraphQLSchemaElement;
 import graphql.schema.GraphQLTypeUtil;
+import graphql.schema.GraphQLTypeVisitor;
 import graphql.schema.GraphQLTypeVisitorStub;
 import graphql.schema.GraphQLUnionType;
 import graphql.schema.SchemaTraverser;
@@ -69,39 +70,66 @@ public final class SchemaReachability {
      */
     public static Set<String> reachableTypeNames(GraphQLSchema schema) {
         var reachable = new LinkedHashSet<String>();
-        // graphql-java schema elements use identity equality, so this dedupes by node identity:
-        // once a node has been expanded its children are not re-pushed, which terminates the walk
-        // on recursive (cyclic) schema types regardless of the traverser's own visited tracking.
         var expanded = new HashSet<GraphQLSchemaElement>();
         Function<GraphQLSchemaElement, List<GraphQLSchemaElement>> children = element -> {
             recordIfNamedType(element, reachable);
-            if (!expanded.add(element)) {
-                return List.of();
-            }
-            return switch (element) {
-                case GraphQLObjectType obj -> {
-                    var kids = outputTargets(obj.getFieldDefinitions());
-                    // An object's implemented interfaces are part of its emitted structure (the
-                    // `implements I` clause references I), so a reachable object reaches its
-                    // interfaces even when no field returns the interface — the federation case where
-                    // a @node / @key implementor is seeded directly and the Node interface itself is
-                    // returned by no field (it would otherwise be pruned and the implements clause
-                    // would dangle).
-                    kids.addAll(obj.getInterfaces());
-                    yield kids;
-                }
-                case GraphQLInterfaceType iface -> {
-                    var kids = outputTargets(iface.getFieldDefinitions());
-                    kids.addAll(iface.getInterfaces());
-                    kids.addAll(schema.getImplementations(iface));
-                    yield kids;
-                }
-                case GraphQLUnionType union -> new ArrayList<>(union.getTypes());
-                default -> List.of();
-            };
+            return childrenOf(schema, element, expanded);
         };
         new SchemaTraverser(children).depthFirst(new GraphQLTypeVisitorStub(), seeds(schema));
         return reachable;
+    }
+
+    /**
+     * R317 slice 4 — the single classify-and-emit walk. Runs {@code visitor} over the same
+     * reachable output surface {@link #reachableTypeNames} measures (same seeds, same descent
+     * edges), driving classification on enter rather than only collecting a name set. The
+     * {@link SchemaTraverser} fires the visitor's {@code visitGraphQL*Type} callbacks on enter
+     * exactly once per node identity (graphql-java's {@code Traverser} routes re-encounters to
+     * {@code backRef}), so a real visitor classifies each reached composite once, with no dedup of
+     * its own. The custom child function supplies the output-structure descent (field-output,
+     * union-member, interface-implementor, object/interface {@code implements}); see
+     * {@link #reachableTypeNames} for the edge rationale.
+     */
+    public static void walk(GraphQLSchema schema, GraphQLTypeVisitor visitor) {
+        var expanded = new HashSet<GraphQLSchemaElement>();
+        Function<GraphQLSchemaElement, List<GraphQLSchemaElement>> children =
+            element -> childrenOf(schema, element, expanded);
+        new SchemaTraverser(children).depthFirst(visitor, seeds(schema));
+    }
+
+    /**
+     * The output-structure descent edges, shared by {@link #reachableTypeNames} (which only measures)
+     * and {@link #walk} (which classifies on enter). graphql-java schema elements use identity
+     * equality, so {@code expanded} dedupes by node identity: once a node has been expanded its
+     * children are not re-pushed, which terminates the walk on recursive (cyclic) schema types
+     * regardless of the traverser's own visited tracking.
+     */
+    private static List<GraphQLSchemaElement> childrenOf(
+            GraphQLSchema schema, GraphQLSchemaElement element, Set<GraphQLSchemaElement> expanded) {
+        if (!expanded.add(element)) {
+            return List.of();
+        }
+        return switch (element) {
+            case GraphQLObjectType obj -> {
+                var kids = outputTargets(obj.getFieldDefinitions());
+                // An object's implemented interfaces are part of its emitted structure (the
+                // `implements I` clause references I), so a reachable object reaches its
+                // interfaces even when no field returns the interface — the federation case where
+                // a @node / @key implementor is seeded directly and the Node interface itself is
+                // returned by no field (it would otherwise be pruned and the implements clause
+                // would dangle).
+                kids.addAll(obj.getInterfaces());
+                yield kids;
+            }
+            case GraphQLInterfaceType iface -> {
+                var kids = outputTargets(iface.getFieldDefinitions());
+                kids.addAll(iface.getInterfaces());
+                kids.addAll(schema.getImplementations(iface));
+                yield kids;
+            }
+            case GraphQLUnionType union -> new ArrayList<>(union.getTypes());
+            default -> List.of();
+        };
     }
 
     private static void recordIfNamedType(GraphQLSchemaElement element, Set<String> reachable) {

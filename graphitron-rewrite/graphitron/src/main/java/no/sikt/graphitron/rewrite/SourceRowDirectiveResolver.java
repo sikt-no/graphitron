@@ -132,8 +132,12 @@ final class SourceRowDirectiveResolver {
 
         // 2. Resolve the field's @table return type. The directive only applies to table-bound
         //    returns; non-table returns are rejected with a directive-specific message.
-        GraphitronType target = ctx.types.get(elementTypeName);
-        if (!(target instanceof GraphitronType.TableBackedType tbt)) {
+        //    R317 slice 4 — resolved through the pure TableIndex (a fixed point built before the walk),
+        //    not ctx.types: under the single classify-and-emit walk the field's target composite may not
+        //    be registered yet when the field classifies. The index agrees with the registry for
+        //    table-backed types by construction (slice 3d).
+        GraphitronType.TableBackedType tbt = ctx.tables.forName(elementTypeName).orElse(null);
+        if (tbt == null) {
             return new Resolved.Rejected(Rejection.structural("@sourceRow on '" + parentTypeName + "." + fieldName
                 + "' applies only to fields whose return type is @table-bound; got '"
                 + elementTypeName + "'"));

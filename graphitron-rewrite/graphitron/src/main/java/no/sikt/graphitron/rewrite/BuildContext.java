@@ -63,8 +63,10 @@ import java.util.stream.Collectors;
  * Shared build-time state and stateless utilities used by {@link TypeBuilder},
  * {@link FieldBuilder}, and {@link ServiceCatalog}.
  *
- * <p>{@link #types} is {@code null} until {@link TypeBuilder#buildTypes()} completes its first
- * pass and sets it. All code that reads {@code types} is called only after that point.
+ * <p>{@link #types} is a live view of the type registry, empty until the single classification walk
+ * (see {@link TypeBuilder#classifyAndRegister} and {@link TypeBuilder#finishTypeClassification()})
+ * populates it. Field classification reads it only for the field's own parent verdict, never a
+ * not-yet-visited sibling's (R317 slices 3a–3e make every cross-type read registry-free).
  */
 class BuildContext {
 
@@ -140,9 +142,11 @@ class BuildContext {
     final JooqCatalog catalog;
     final RewriteContext ctx;
     /**
-     * Type-axis classification registry. {@link TypeBuilder#buildTypes()} populates it via
+     * Type-axis classification registry. The single classification walk
+     * ({@link TypeBuilder#classifyAndRegister} on the walk, {@link TypeBuilder#finishTypeClassification()}
+     * after it) populates it via
      * {@link TypeRegistry#classify}, {@link TypeRegistry#enrich}, {@link TypeRegistry#demote},
-     * and {@link TypeRegistry#synthesize} during the first build pass; downstream code reads
+     * and {@link TypeRegistry#synthesize}; downstream code reads
      * via {@link TypeRegistry#get} / {@link TypeRegistry#entries}. Replaces the previously bare
      * {@code Map<String, GraphitronType> types} field; the backing map is private so any new
      * write site has to go through one of the four named operations (visible in code review).
@@ -170,9 +174,9 @@ class BuildContext {
      * {@link TypeBuilder#buildClassificationIndices}. Field classification resolves every node-id
      * encoder through this index instead of scanning or keying into the type registry (retires
      * {@code FieldBuilder}'s four {@code types.values()} NodeType scans and the keyed
-     * {@code ctx.types.get} at the {@code @nodeId(typeName:)} path), which is the precondition for
-     * collapsing classification into a single walk (R317 slice 4). {@link NodeIndex#EMPTY} for
-     * tests that build a registry without going through {@code buildTypes}.
+     * {@code ctx.types.get} at the {@code @nodeId(typeName:)} path), which is part of the precondition
+     * for collapsing classification into a single walk (R317 slice 4). {@link NodeIndex#EMPTY} for
+     * tests that build a registry without running the classification walk.
      */
     NodeIndex nodes = NodeIndex.EMPTY;
     /**
@@ -183,7 +187,7 @@ class BuildContext {
      * {@code ctx.types.get} reads, including the deep payload-data-field reads two hops below the
      * field being classified), which is part of the precondition for collapsing classification into a
      * single walk (R317 slice 4). {@link TableIndex#EMPTY} for tests that build a registry without
-     * going through {@code buildTypes}.
+     * running the classification walk.
      */
     TableIndex tables = TableIndex.EMPTY;
     /**
@@ -192,13 +196,13 @@ class BuildContext {
      * error-channel union-member scan resolves the error-member fact through this index instead of
      * keying into the type registry (retires the {@code ErrorType} {@code ctx.types.get} read two
      * hops below the field being classified). {@link ErrorIndex#EMPTY} for tests that build a
-     * registry without going through {@code buildTypes}.
+     * registry without running the classification walk.
      */
     ErrorIndex errors = ErrorIndex.EMPTY;
     /**
      * R317 slice 2 — fixed-point index, participant type name &rarr; (field name &rarr; the
      * participant's {@link ParticipantRef.TableBound.CrossTableField}). Populated once by
-     * {@link TypeBuilder#buildTypes()} from the reachable {@code @table}+{@code @discriminate}
+     * {@link TypeBuilder#buildClassificationIndices} from the {@code @table}+{@code @discriminate}
      * interface scan and the participants' {@code @reference} SDL. Retires
      * {@code FieldBuilder.lookupParticipantCrossTableField}'s nested registry scan.
      */
@@ -210,8 +214,20 @@ class BuildContext {
     ServiceCatalog svc;
 
     /**
+     * R317 slice 4 — set by {@link GraphitronSchemaBuilder} immediately after constructing the
+     * {@link TypeBuilder}. The single classify-and-emit walk classifies a field's output target only
+     * when the walk reaches it, so during a field's classification its target composite may not be
+     * registered yet; the return-type and DML-element resolvers below read the target verdict through
+     * {@link TypeBuilder#lookAheadVerdict} (a registry-free recompute) rather than {@code types.get},
+     * keeping field classification independent of walk order (the read-free visitor invariant). Null
+     * only before the walk has been wired (the indices and {@code lookAheadVerdict} both need
+     * {@code prepareForWalk} to have run first).
+     */
+    TypeBuilder typeBuilder;
+
+    /**
      * SDL-level scalar applied-directive map, populated by {@link GraphitronSchemaBuilder} from
-     * the {@link graphql.schema.idl.TypeDefinitionRegistry} *before* {@link TypeBuilder#buildTypes()}
+     * the {@link graphql.schema.idl.TypeDefinitionRegistry} *before* the classification walk
      * runs. Graphql-java's {@code SchemaGenerator} strips applied directives from spec built-in
      * scalar redeclarations (it picks its own {@code GraphQLString} / {@code GraphQLInt} / ...
      * instances and discards the SDL's applied directives), so a check that relies on the
@@ -455,7 +471,12 @@ class BuildContext {
      * a {@link ReturnTypeRef.ResultReturnType} the mutation classifier reads structurally.
      */
     ReturnTypeRef resolveReturnType(String targetTypeName, FieldWrapper wrapper) {
-        GraphitronType target = types.get(targetTypeName);
+        // R317 slice 4 — resolve the target's verdict registry-free (look-ahead), not types.get: under
+        // the single classify-and-emit walk a field's output target is a not-yet-visited child, so a
+        // registry read would miss it. lookAheadVerdict reproduces the verdict types.get returned in the
+        // two-pass world (classifyType + producer-bound carrier), and a NestingType / ConnectionType /
+        // carrier (none of the four arms below) falls through to ScalarReturnType under both, identically.
+        GraphitronType target = typeBuilder.lookAheadVerdict(targetTypeName);
         if (target instanceof TableBackedType tbt)
             return new ReturnTypeRef.TableBoundReturnType(targetTypeName, tbt.table(), wrapper);
         if (target instanceof InterfaceType || target instanceof UnionType)
@@ -700,7 +721,12 @@ class BuildContext {
                 }
             }
             String elementTypeName = ((GraphQLNamedType) GraphQLTypeUtil.unwrapAll(f.getType())).getName();
-            var elementType = types.get(elementTypeName);
+            // R317 slice 4 — registry-free look-ahead at the payload data field's element type, not
+            // types.get: this scan runs during field classification (and via carrierTableBinding), when
+            // the element composite may not be registered yet. lookAheadVerdict reproduces the verdict;
+            // the element is a @table or record-bound type (classifyType non-null), so the look-ahead
+            // resolves without recursing back through carrierTableBinding.
+            var elementType = typeBuilder.lookAheadVerdict(elementTypeName);
             DmlElementKind kind;
             if (elementType instanceof GraphitronType.TableBackedType tbt) {
                 kind = new DmlElementKind.Table(tbt.table(), elementTypeName);
@@ -782,7 +808,10 @@ class BuildContext {
         if (memberNames.isEmpty()) return null;
         var errorTypes = new ArrayList<GraphitronType.ErrorType>();
         for (String memberName : memberNames) {
-            if (!(types.get(memberName) instanceof GraphitronType.ErrorType et)) {
+            // R317 slice 4 — error membership through the pure ErrorIndex (a fixed point built before
+            // the walk), not types.get: the union members may not be registered yet during the walk.
+            var et = errors.forName(memberName).orElse(null);
+            if (et == null) {
                 return null;
             }
             errorTypes.add(et);
@@ -2106,8 +2135,11 @@ class BuildContext {
         var typeNameOpt = findGraphQLTypeForTable(sqlTableName);
         if (typeNameOpt.isPresent()) {
             String typeName = typeNameOpt.get();
-            if (types != null && types.get(typeName) instanceof no.sikt.graphitron.rewrite.model.GraphitronType.NodeType nt) {
-                return nt.decodeMethod();
+            // R317 slice 4 — node lookup through the pure NodeIndex (a fixed point built before the
+            // walk), not types.get: the node may not be registered yet during the walk.
+            var ntOpt = nodes.forName(typeName);
+            if (ntOpt.isPresent()) {
+                return ntOpt.get().decodeMethod();
             }
             return new no.sikt.graphitron.rewrite.model.HelperRef.Decode(encoderClass, "decode" + typeName, keyColumns);
         }
@@ -2147,8 +2179,11 @@ class BuildContext {
         if (meta.isPresent()) {
             return new TargetKeys(meta.get().typeId(), meta.get().keyColumns(), null);
         }
-        if (types != null && types.get(refTypeName) instanceof NodeType nt) {
-            return new TargetKeys(nt.typeId(), nt.nodeKeyColumns(), null);
+        // R317 slice 4 — node lookup through the pure NodeIndex (a fixed point built before the walk),
+        // not types.get: the node may not be registered yet during the walk.
+        var ntOpt = nodes.forName(refTypeName);
+        if (ntOpt.isPresent()) {
+            return new TargetKeys(ntOpt.get().typeId(), ntOpt.get().nodeKeyColumns(), null);
         }
         if (targetObj.hasAppliedDirective(DIR_NODE)) {
             String typeId = argString(targetObj, DIR_NODE, ARG_TYPE_ID).orElse(refTypeName);

@@ -154,7 +154,7 @@ class FieldBuilder {
     /**
      * R178: post-construction reference for the producer-binding map. {@link TypeBuilder} is
      * built before {@link FieldBuilder} (so it can populate its binding state via
-     * {@code buildTypes()}); the schema builder injects the reference here once both builders
+     * {@code prepareForWalk()}); the schema builder injects the reference here once both builders
      * exist. Read at field-classify time via {@link #dmlEmittedBinding} to decide whether a
      * payload-returning DML mutation's child fields should classify against the producer's
      * inner {@link no.sikt.graphitron.rewrite.model.ProducerBinding.DmlEmitted}.
@@ -181,9 +181,9 @@ class FieldBuilder {
     /**
      * R178: wires the post-construction {@link TypeBuilder} reference so the unified-path
      * classifier can query producer bindings (currently {@code dmlEmittedBinding}). Called
-     * exactly once from {@link GraphitronSchemaBuilder#buildSchema} after
-     * {@link TypeBuilder#buildTypes()} populates the binding state. Field-classify time runs
-     * strictly after this injection.
+     * exactly once from {@link GraphitronSchemaBuilder#buildSchema} before the classification walk;
+     * {@link TypeBuilder#prepareForWalk()} populates the binding state before any field classifies,
+     * and field classification runs during the walk, strictly after both.
      */
     void setTypeBuilder(TypeBuilder typeBuilder) {
         this.typeBuilder = typeBuilder;
@@ -5437,9 +5437,19 @@ class FieldBuilder {
                     if (ctx.schema.getType(typeName.get()) != null) {
                         return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural("@nodeId(typeName:) type '" + typeName.get() + "' does not have @node"));
                     }
+                    // R317 slice 4 — the "did you mean" candidate set is sourced off the schema, not
+                    // ctx.types.keySet(): under the single classify-and-emit walk the registry is only
+                    // partially populated when a field classifies (its as-yet-unvisited siblings are not
+                    // registered), so the partial registry would make this hint walk-order dependent. The
+                    // schema's declared type names are a stable, registry-free, order-independent source.
+                    // This is the last ctx.types read in FieldBuilder; the read-free invariant now holds.
+                    var candidates = ctx.schema.getAllTypesAsList().stream()
+                        .map(graphql.schema.GraphQLNamedType::getName)
+                        .filter(n -> !n.startsWith("__"))
+                        .toList();
                     return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.unknownTypeName(
                         "@nodeId(typeName:) type '" + typeName.get() + "' does not exist in the schema",
-                        typeName.get(), new ArrayList<>(ctx.types.keySet())));
+                        typeName.get(), candidates));
                 }
                 NodeType targetNodeType = targetNode.get();
                 TableRef parentTable = tableType.table();
