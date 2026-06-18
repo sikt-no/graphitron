@@ -197,6 +197,20 @@ class GraphQLQueryTest {
     }
 
     @Test
+    void customersByMultiFieldFilter_fkTargetAmongImplicitSiblings_emitsExists() {
+        // R330 rework: the opptak SoknadsmangeltypeFilterInput shim shape — un-annotated implicit
+        // siblings (firstName, activebool) produce a GeneratedConditionFilter and lift the `filter`
+        // arg to a `filterMap` local, ALONGSIDE a non-null ID! FK-target @nodeId @condition(override).
+        // The FK-target term must still emit a correlated EXISTS handing addressDistrictAlberta an
+        // aliased Address. Empty filter: the implicit siblings are null (no-op) and the override owns
+        // the predicate, so this returns the Alberta customers.
+        Map<String, Object> data = execute("{ customersByMultiFieldFilter(filter: {}) { lastName } }");
+        assertThat(data).extractingByKey("customersByMultiFieldFilter", as(list(Map.class)))
+            .extracting(c -> c.get("lastName"))
+            .containsExactlyInAnyOrder("Smith", "Williams", "Jones");
+    }
+
+    @Test
     void store_customersByAddressDistrict_inlineFkTargetOverride_filtersByForeignTable() {
         // R330: inline child TableField path (InlineTableFieldEmitter). Store.customersByAddressDistrict
         // correlates store -> customer, then the FK-target @nodeId(Address) @condition(override) on the
