@@ -75,6 +75,26 @@ input FilmSameTableNodeIdInput {
 
 On the decode side the rewrite verifies the ID's embedded `typeId` against the declared `typeName:`; mismatched IDs surface as `GraphqlErrorException` via the ThrowOnMismatch contract before any SQL runs.
 
+=== Decoding into a jOOQ record at a `@service` param
+
+When a `@service` method parameter is a generated jOOQ `TableRecord` (singular or `List<…>`), the framework builds the record at the fetcher boundary, and an `@nodeId` field on the backing input type decodes into columns *on that record*. The target columns are resolved by table identity:
+
+* *Same-table identity.* When the `@nodeId` type's xref:table.adoc[`@table`] is the param record's own table, the decoded key loads into the record's own key columns.
+* *Cross-table FK reference.* When the `@nodeId` type is a *different* table (the common status / history / junction-row shape), the decoded key loads into the foreign-key child columns on the record, resolved through the FK constraint between the two tables. The FK is deduced when exactly one connects them; when several do, name it with xref:reference.adoc[`@reference`]`(path: [{key: "<fk-name>"}])`. A record may carry several such FK-reference `@nodeId` fields.
+
+[source,graphql]
+----
+# A jOOQ FilmActorRecord @service param. Each @nodeId references a *different* node
+# type; the decoded ids load into the junction row's FK child columns (film_actor.film_id,
+# film_actor.actor_id), resolved through the catalog FK constraints — not by name match.
+input AssignFilmActorInput {
+    filmId:  ID! @nodeId(typeName: "Film")
+    actorId: ID! @nodeId(typeName: "Actor")
+}
+----
+
+A nullable (`ID`) field follows jOOQ's changed-flag contract: an omitted key leaves its column unwritten (excluded from the service's INSERT/UPDATE), an explicit `null` writes `NULL`, and a value decodes and loads. A non-null (`ID!`) field always decodes and throws on a malformed or wrong-type id. A self-reference (an `@reference` on a same-table `@nodeId`) is rejected as out of scope.
+
 == Constraints
 
 * The named or inferred type must carry xref:node.adoc[`@node`]. The build fails when `typeName:` resolves to a non-node type.

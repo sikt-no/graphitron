@@ -1223,21 +1223,47 @@ class BuildContext {
 
         TableRef targetTable = targetResolved.entry().toTableRef(targetSqlName);
         TableRef originTable = originResolved.entry().toTableRef(sourceSqlName);
+        List<JoinSlot.FkSlot> slots = resolveFkSlots(f, sourceSqlName, selfRefFkOnSource);
+        String alias = fieldName + "_" + stepIndex;
+        return new FkJoinResolution.Resolved(new FkJoin(fkResolved.ref(), originTable,
+            targetTable, slots, whereFilter, alias));
+    }
+
+    /**
+     * The FK-orientation-and-pairing core, shared by {@link #synthesizeFkJoin} (the join path) and the
+     * record-population FK resolver ({@link #resolveRecordFkTargetColumns}, R315). Given a catalog
+     * {@link ForeignKey} and the SQL name of the side treated as the join/population <em>source</em>,
+     * returns the FK's column pairs as {@link JoinSlot.FkSlot}s oriented so each slot's
+     * {@link JoinSlot#sourceSide()} is the column on the source table and {@link JoinSlot#targetSide()}
+     * is the column on the other table. The FK-direction question (which end of the FK sits on the
+     * source) is answered once, here, and baked into the slot pair so every consumer reads
+     * direction-blind.
+     *
+     * <p>Parent (referenced) columns come from {@link ForeignKey#getKeyFields()} — the FK's <em>own</em>
+     * referenced-column list (third {@code TableField[]} arg passed to {@code Internal.createForeignKey}
+     * at codegen time), which jOOQ keeps parallel to {@link ForeignKey#getFields()}: position {@code i}
+     * of the referencing list pairs with position {@code i} of the referenced list.
+     * {@code getKey().getFields()} returns the referenced {@code UniqueKey}'s <em>own</em> declaration
+     * order, which for an FK whose referenced-column ordering differs from the parent PK's declaration
+     * order (e.g. {@code PRIMARY KEY (a, b, c)} referenced as {@code REFERENCES parent (b, c, a)}) does
+     * NOT pair positionally with {@code getFields()}. Zipping the two non-parallel lists produced silent
+     * mis-paired slots — observable as {@code Field<X>.eq(Field<Y>)} compile errors in generated JOIN ON
+     * predicates when the FK column types are heterogeneous, and (R315) as values decoded into the wrong
+     * record columns. See {@code SynthesizeFkJoinReorderedKeysTest}.
+     *
+     * @param selfRefFkOnSource for self-referential FKs (where {@code f.getTable()} equals
+     *     {@code f.getKey().getTable()}), the table-name comparison cannot decide orientation; the
+     *     caller supplies this hint (ignored for non-self-ref FKs).
+     */
+    List<JoinSlot.FkSlot> resolveFkSlots(ForeignKey<?, ?> f, String sourceSqlName, boolean selfRefFkOnSource) {
+        String fkSideTable  = f.getTable().getName();
+        String keySideTable = f.getKey().getTable().getName();
+        boolean isSelfRef = fkSideTable.equalsIgnoreCase(keySideTable);
+        boolean fkOnSource = isSelfRef
+            ? selfRefFkOnSource
+            : sourceSqlName.equalsIgnoreCase(fkSideTable);
         List<ColumnRef> fkSideCols  = resolveFkColumnRefs(f.getTable(), f.getFields());
-        // The FK's *own* referenced-column list (third TableField[] arg passed to
-        // Internal.createForeignKey at codegen time, surfaced as ForeignKey.getKeyFields()) is
-        // parallel to getFields() by jOOQ's contract: position i of the referencing list pairs
-        // with position i of the referenced list. ForeignKey.getKey().getFields() returns the
-        // referenced UniqueKey's *own* declaration order, which for an FK whose referenced-column
-        // ordering differs from the parent PK's declaration order (e.g. PRIMARY KEY (a, b, c)
-        // referenced as REFERENCES parent (b, c, a)) does NOT pair positionally with getFields().
-        // Zipping the two non-parallel lists produced silent mis-paired slots — observable as
-        // Field<X>.eq(Field<Y>) compile errors in generated rows-method JOIN ON predicates when
-        // the FK column types are heterogeneous. See SynthesizeFkJoinReorderedKeysTest.
         List<ColumnRef> keySideCols = resolveFkColumnRefs(f.getKey().getTable(), f.getKeyFields());
-        // Synthesis-time orientation: bake the FK-direction decision into each slot pair so
-        // emitter sites read direction-blind (target.<targetSide>.eq(source.<sourceSide>))
-        // regardless of whether the FK lives on the source or the target table.
         List<JoinSlot.FkSlot> slots = new java.util.ArrayList<>(fkSideCols.size());
         for (int i = 0; i < fkSideCols.size(); i++) {
             ColumnRef fkCol  = fkSideCols.get(i);
@@ -1246,9 +1272,7 @@ class BuildContext {
                 ? new JoinSlot.FkSlot(fkCol, keyCol)
                 : new JoinSlot.FkSlot(keyCol, fkCol));
         }
-        String alias = fieldName + "_" + stepIndex;
-        return new FkJoinResolution.Resolved(new FkJoin(fkResolved.ref(), originTable,
-            targetTable, slots, whereFilter, alias));
+        return slots;
     }
 
     /**
@@ -2287,6 +2311,80 @@ class BuildContext {
             no.sikt.graphitron.rewrite.generators.util.NodeIdEncoderClassGenerator.CLASS_NAME);
         return new NodeIdRecordDecode.Resolved(encoderClass, keys.typeId(), keys.keyColumns(),
             tableEntry.get().toTableRef(targetTableName));
+    }
+
+    /**
+     * Outcome of resolving the FK child columns <em>on a record</em> that a cross-table
+     * {@code @nodeId} reference loads its decoded values into (R315). {@link Resolved} carries the
+     * target columns aligned to node-key (decode) order; {@link Rejected} carries a formatted reason.
+     */
+    sealed interface RecordFkTargets {
+        record Resolved(List<ColumnRef> targetColumns) implements RecordFkTargets {}
+        record Rejected(String message) implements RecordFkTargets {}
+    }
+
+    /**
+     * Resolves the FK child columns on {@code recordTable} that a cross-table FK-reference
+     * {@code @nodeId} populates (R315): the decoded node-key values load into the foreign key's child
+     * columns on the record. This is legacy {@code NodeIdReferenceHelpers.mapKeyColumnsThroughForeignKey}
+     * expressed in the rewrite's model.
+     *
+     * <p>FK selection: an explicit {@code @reference(key:)} ({@code explicitFkKey}) names the FK
+     * verbatim via {@link JooqCatalog#findForeignKey}; otherwise the FK is <em>deduced</em> as the
+     * single foreign key whose source side is {@code recordTable} and which references
+     * {@code nodeTableSqlName} (the directional {@code findUniqueFkToTable} deduction, materialised to
+     * the FK object). Zero or multiple such FKs reject through {@link #fkCountMessage}, asking the
+     * author to add {@code @reference(key:)}.
+     *
+     * <p>Column reconciliation is <em>by column identity, not position</em> (D3): the decoded values
+     * arrive in node-key order ({@code nodeKeyColumns}), while {@link #resolveFkSlots} returns the
+     * pairs in the FK's own declaration order. For each node key column, the slot whose parent
+     * ({@code targetSide}) column equals it contributes its child ({@code sourceSide}) column, so the
+     * returned {@code targetColumns} align with the decode order. A positional zip would mis-assign
+     * every value on a reordered FK (the {@code reordered_fk_child} fixture). A node key column not
+     * covered by the chosen FK rejects.
+     */
+    RecordFkTargets resolveRecordFkTargetColumns(TableRef recordTable, String nodeTableSqlName,
+            List<ColumnRef> nodeKeyColumns, Optional<String> explicitFkKey) {
+        ForeignKey<?, ?> fk;
+        if (explicitFkKey.isPresent()) {
+            var fkOpt = catalog.findForeignKey(explicitFkKey.get());
+            if (fkOpt.isEmpty()) {
+                return new RecordFkTargets.Rejected("@reference(key: \"" + explicitFkKey.get()
+                    + "\") could not be resolved in the jOOQ catalog"
+                    + candidateHint(explicitFkKey.get(), catalog.allForeignKeySqlNames()));
+            }
+            fk = fkOpt.get();
+        } else {
+            var directional = catalog.findForeignKeysBetweenTables(recordTable.tableName(), nodeTableSqlName)
+                .stream()
+                .filter(k -> k.getTable().getName().equalsIgnoreCase(recordTable.tableName()))
+                .toList();
+            if (directional.size() != 1) {
+                return new RecordFkTargets.Rejected(
+                    fkCountMessage(recordTable.tableName(), nodeTableSqlName, directional, /*directiveAbsent=*/false));
+            }
+            fk = directional.get(0);
+        }
+        // Orient the FK against the record table as source: slot.sourceSide is the FK child column on
+        // the record, slot.targetSide is the referenced (node-key) column. selfRefFkOnSource is moot
+        // (a self-FK would mean record table == node table, the rejected out-of-scope self-reference).
+        var slots = resolveFkSlots(fk, recordTable.tableName(), /*selfRefFkOnSource=*/true);
+        var targetColumns = new ArrayList<ColumnRef>(nodeKeyColumns.size());
+        for (var nodeKeyCol : nodeKeyColumns) {
+            var match = slots.stream()
+                .filter(s -> s.targetSide().sqlName().equalsIgnoreCase(nodeKeyCol.sqlName()))
+                .findFirst();
+            if (match.isEmpty()) {
+                String referenced = slots.stream().map(s -> s.targetSide().sqlName())
+                    .collect(Collectors.joining(", "));
+                return new RecordFkTargets.Rejected("node key column '" + nodeKeyCol.sqlName()
+                    + "' is not covered by foreign key '" + fk.getName() + "' (referenced columns: "
+                    + referenced + ") — the NodeType's key is not fully mapped by this FK");
+            }
+            targetColumns.add(match.get().sourceSide());
+        }
+        return new RecordFkTargets.Resolved(List.copyOf(targetColumns));
     }
 
     /**

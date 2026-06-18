@@ -29,10 +29,13 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+import static no.sikt.graphitron.rewrite.BuildContext.ARG_KEY;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_NAME;
+import static no.sikt.graphitron.rewrite.BuildContext.ARG_PATH;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_TYPE_NAME;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_FIELD;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_NODE_ID;
+import static no.sikt.graphitron.rewrite.BuildContext.DIR_REFERENCE;
 import static no.sikt.graphitron.rewrite.BuildContext.argString;
 
 /**
@@ -211,6 +214,24 @@ final class InputBeanResolver {
                     new ParamSource.Arg(jr, arg.path())));
                 continue;
             }
+            // R315 (D2): an @table on the input classifies it as a TableInputType (the
+            // "Graphitron owns the DML" contract), which contradicts a jOOQ-record @service param
+            // (the service owns the DML, R311). Without this arm a TableRecord param against a
+            // @table-present input falls through to the bean path and dies on the misleading "bean
+            // class … has no fields matching"; reject it honestly instead, so the binding/error
+            // behavior converges with the @table-absent path. isTableRecord is narrower than
+            // isJooqRecord on purpose: a non-table Record has no TableRef and keeps falling through
+            // to the bean path rather than reaching this (TableRef-less) reject.
+            if (ctx.types != null
+                    && isTableRecord(elementClass)
+                    && ctx.types.get(iot.getName()) instanceof GraphitronType.TableInputType) {
+                return new Result.Failed(Rejection.structural(
+                    "parameter '" + p.name() + "' on method '" + method.methodName() + "' in class '"
+                    + method.className() + "' is jOOQ record '" + elementClass.getName() + "', but the"
+                    + " GraphQL input '" + iot.getName() + "' carries @table — drop @table; this input"
+                    + " feeds a @service param, so the service owns record construction (an @table input"
+                    + " means Graphitron owns the DML, which contradicts a jOOQ-record @service param)"));
+            }
             var built = buildInputBean(elementClass, iot, p.name(), method.methodName(),
                 method.className(), new HashSet<>());
             if (built instanceof Built.Fail f) {
@@ -239,11 +260,13 @@ final class InputBeanResolver {
 
     /**
      * Builds the {@link CallSiteExtraction.JooqRecord} for a {@code @service} param whose SDL input
-     * type classified as {@link GraphitronType.JooqTableRecordInputType} (R311). Walks the SDL fields
-     * binding each on the column axis: a {@code @nodeId(typeName:)} field is the record's single
-     * identity (a {@link CallSiteExtraction.RecordKeyDecode}, R195's wire-decode mechanism projected
-     * onto this record's own key); every other field names a column through {@code @field(name:)} (a
-     * resolved {@link CallSiteExtraction.ColumnBinding}). Rejections are R195/R97-shaped and surface at
+     * type classified as {@link GraphitronType.JooqTableRecordInputType} (R311, generalized by R315).
+     * Walks the SDL fields binding each on the column axis: every {@code @nodeId(typeName:)} field is a
+     * {@link CallSiteExtraction.RecordKeyDecode} (R195's wire-decode mechanism) whose decoded values
+     * load into resolved target columns on this record — the record's own key (same-table identity,
+     * R311) or a foreign key's child columns (cross-table reference, R315); every other field names a
+     * column through {@code @field(name:)} (a resolved {@link CallSiteExtraction.ColumnBinding}). A
+     * record may carry several {@code @nodeId} fields. Rejections are R195/R97-shaped and surface at
      * validate time as {@code UnclassifiedField} — the honest replacement for the bean path's misleading
      * "has no fields matching".
      */
@@ -259,23 +282,18 @@ final class InputBeanResolver {
                 + " the backing class comes from a catalog not loaded at build time"));
         }
         var columnBindings = new ArrayList<CallSiteExtraction.ColumnBinding>();
-        CallSiteExtraction.RecordKeyDecode keyDecode = null;
-        String keyDecodeField = null;
+        var keyDecodes = new ArrayList<CallSiteExtraction.RecordKeyDecode>();
         for (var f : iot.getFieldDefinitions()) {
             if (f.hasAppliedDirective(DIR_NODE_ID)) {
-                if (keyDecode != null) {
-                    return new JooqBuilt.Fail(Rejection.structural(where
-                        + ": input type '" + iot.getName() + "' carries more than one @nodeId field ('"
-                        + keyDecodeField + "' and '" + f.getName() + "') — a jOOQ-record @service param"
-                        + " has exactly one identity; keep the @nodeId that decodes the record's key and"
-                        + " remove the other"));
-                }
+                // R315: multiple @nodeId fields are legal (an FK-reference record carries several FK
+                // references). Each resolves independently to its target columns on this record; when
+                // two decodes target the same column their runtime value-agreement is a data-dependent
+                // concern deferred to R322 (last-write-wins here). The legacy single-@nodeId gate is gone.
                 var built = buildRecordKeyDecode(f, table, where);
                 if (built instanceof KeyDecodeResult.Fail kf) {
                     return new JooqBuilt.Fail(kf.rejection());
                 }
-                keyDecode = ((KeyDecodeResult.Ok) built).decode();
-                keyDecodeField = f.getName();
+                keyDecodes.add(((KeyDecodeResult.Ok) built).decode());
                 continue;
             }
             String key = bindingKey(f);
@@ -292,7 +310,7 @@ final class InputBeanResolver {
                 f.getName(), new ColumnRef(ce.sqlName(), ce.javaName(), ce.columnClass())));
         }
         return new JooqBuilt.Ok(new CallSiteExtraction.JooqRecord(
-            table, columnBindings, Optional.ofNullable(keyDecode)));
+            table, columnBindings, List.copyOf(keyDecodes)));
     }
 
     private sealed interface KeyDecodeResult {
@@ -301,18 +319,30 @@ final class InputBeanResolver {
     }
 
     /**
-     * Resolves the {@code @nodeId(typeName:)} identity field of a jOOQ-record param into a
-     * {@link CallSiteExtraction.RecordKeyDecode}, applying the lifted record-type-mismatch gate (R195,
-     * sourced from the param record's table rather than a bean member): the resolved node table's
-     * record class must equal the param record's. A foreign-table {@code @nodeId} is rejected with the
-     * R195-shaped message naming both records.
+     * Resolves one {@code @nodeId(typeName:)} field of a jOOQ-record param into a
+     * {@link CallSiteExtraction.RecordKeyDecode}, branching on whether the referenced NodeType's table
+     * is the param record's own table (R311 identity) or a different table (R315 FK reference):
+     *
+     * <ul>
+     *   <li><b>Same table</b> (node table == record table) → the decode loads the record's own key
+     *       columns. An explicit {@code @reference} here can only name a self-FK (the out-of-scope
+     *       self-reference request) and is rejected, rather than silently taking the identity branch
+     *       with the authored directive ignored.</li>
+     *   <li><b>Different table</b> → the cross-table FK-reference case: the node-key columns map through
+     *       the foreign key (deduced when exactly one connects the two tables, else named by
+     *       {@code @reference(key:)}) to the FK's child columns on this record, via
+     *       {@link BuildContext#resolveRecordFkTargetColumns}.</li>
+     * </ul>
+     *
+     * The decode's {@code nonNull} is read off the SDL field's {@code ID!}-vs-{@code ID} nullability and
+     * drives the emitter's throw-vs-conditional-set (D4), set identically for both branches.
      */
     private KeyDecodeResult buildRecordKeyDecode(graphql.schema.GraphQLInputObjectField f,
             TableRef table, String where) {
         var typeName = argString(f, DIR_NODE_ID, ARG_TYPE_NAME);
         if (typeName.isEmpty()) {
             return new KeyDecodeResult.Fail(Rejection.structural(where
-                + ": @nodeId on the identity field '" + f.getName() + "' must specify typeName:"
+                + ": @nodeId on field '" + f.getName() + "' must specify typeName:"
                 + " explicitly (the param record type alone does not name the NodeType to decode against)"));
         }
         var resolution = ctx.resolveNodeIdRecordDecode(typeName.get());
@@ -322,17 +352,56 @@ final class InputBeanResolver {
                 + r.message()));
         }
         var resolved = (BuildContext.NodeIdRecordDecode.Resolved) resolution;
-        if (!resolved.table().recordClass().equals(table.recordClass())) {
-            return new KeyDecodeResult.Fail(Rejection.structural(where
-                + ": the param is jOOQ record '" + table.recordClass() + "', but @nodeId(typeName: \""
-                + typeName.get() + "\") on field '" + f.getName() + "' decodes into '"
-                + resolved.table().recordClass() + "' (the record of that type's own @table). A NodeId"
-                + " cannot be decoded into a different record type — declare the param as '"
-                + resolved.table().recordClass() + "', or point @nodeId at the NodeType whose @table"
-                + " backs '" + table.recordClass() + "'"));
+        boolean nonNull = GraphQLTypeUtil.isNonNull(f.getType());
+        List<ColumnRef> targetColumns;
+        if (resolved.table().recordClass().equals(table.recordClass())) {
+            // Same-table identity (R311): the decoded values are the record's own key columns.
+            if (f.hasAppliedDirective(DIR_REFERENCE)) {
+                return new KeyDecodeResult.Fail(Rejection.structural(where
+                    + ": @nodeId(typeName: \"" + typeName.get() + "\") on field '" + f.getName()
+                    + "' targets the param's own record '" + table.recordClass() + "', so its @reference"
+                    + " can only name a self-foreign-key — self-reference record population is out of"
+                    + " scope (legacy never solved it). Drop the @reference to populate the record's own"
+                    + " identity, or model the self-FK through a separate input"));
+            }
+            targetColumns = resolved.keyColumns();
+        } else {
+            // Cross-table FK reference (R315): map the node-key columns through the FK to the record's
+            // child columns.
+            var fkTargets = ctx.resolveRecordFkTargetColumns(
+                table, resolved.table().tableName(), resolved.keyColumns(), firstReferenceKey(f));
+            if (fkTargets instanceof BuildContext.RecordFkTargets.Rejected fr) {
+                return new KeyDecodeResult.Fail(Rejection.structural(where
+                    + ": @nodeId(typeName: \"" + typeName.get() + "\") on field '" + f.getName()
+                    + "': " + fr.message()));
+            }
+            targetColumns = ((BuildContext.RecordFkTargets.Resolved) fkTargets).targetColumns();
         }
         return new KeyDecodeResult.Ok(new CallSiteExtraction.RecordKeyDecode(
-            f.getName(), resolved.encoderClass(), resolved.typeId(), resolved.keyColumns()));
+            f.getName(), resolved.encoderClass(), resolved.typeId(), targetColumns, nonNull));
+    }
+
+    /**
+     * Reads the FK constraint name from the first {@code @reference(path:)} element on {@code f}, when
+     * present. Only the first element is consulted for record population (later hops are a fetch/join
+     * concern); an absent directive, empty path, or a first element without a {@code key:} yields empty,
+     * and FK deduction then applies.
+     */
+    private static Optional<String> firstReferenceKey(GraphQLInputObjectField f) {
+        var directive = f.getAppliedDirective(DIR_REFERENCE);
+        if (directive == null) {
+            return Optional.empty();
+        }
+        var pathArg = directive.getArgument(ARG_PATH);
+        if (pathArg == null) {
+            return Optional.empty();
+        }
+        Object value = pathArg.getValue();
+        List<?> elements = value instanceof List<?> l ? l : (value == null ? List.of() : List.of(value));
+        if (elements.isEmpty() || !(elements.get(0) instanceof Map<?, ?> m)) {
+            return Optional.empty();
+        }
+        return Optional.ofNullable(m.get(ARG_KEY)).map(Object::toString).filter(s -> !s.isBlank());
     }
 
     /**
@@ -692,6 +761,23 @@ final class InputBeanResolver {
             if (isJooqRecord(i)) return true;
         }
         return isJooqRecord(cls.getSuperclass());
+    }
+
+    /**
+     * True when {@code cls} implements {@code org.jooq.TableRecord} (transitively). Strictly narrower
+     * than {@link #isJooqRecord}: a non-table {@code Record} (e.g. {@code Record1}) implements
+     * {@code org.jooq.Record} but not {@code org.jooq.TableRecord} and has no backing {@code TableRef},
+     * so the R315 {@code @table}-on-input reject (D2) gates on this — a non-table record keeps falling
+     * through to the bean path rather than reaching a reject that assumes a table. Same FQN-based,
+     * classloader-agnostic discipline as {@link #isJooqRecord}.
+     */
+    private static boolean isTableRecord(Class<?> cls) {
+        if (cls == null) return false;
+        if (cls.getName().equals("org.jooq.TableRecord")) return true;
+        for (Class<?> i : cls.getInterfaces()) {
+            if (isTableRecord(i)) return true;
+        }
+        return isTableRecord(cls.getSuperclass());
     }
 
     // ===== Java-side helpers =====

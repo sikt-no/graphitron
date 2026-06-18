@@ -1242,6 +1242,23 @@ input ModifyFilmActorRecordInput {
     id: ID! @nodeId(typeName: "FilmActor")
 }
 
+# R315: a jOOQ FilmEndorsementRecord param populated from an FK-reference @nodeId(typeName: "Film").
+# The FK child column (endorsed_film) is named differently from the referenced parent key
+# (film.film_id), so createFilmEndorsementRecord must resolve the target column through the FK
+# constraint (landing the decoded Film id on endorsed_film) rather than a name-match. `note` is a
+# plain @field column. The serial PK (endorsement_id) is never in the input, so it stays unset
+# (changed=false) and the service-owned INSERT lets the database assign it.
+#
+# filmId is nullable (ID, not ID!) so the same input drives the D4 null-semantics: the execution tier
+# observes the jOOQ changed-flag contract (omitted → changed=false, explicit null → NULL, value →
+# decode-and-load) applied identically to the FK-reference decode and the plain column. A single input
+# type backs both the endorseFilm INSERT and the describeEndorsement report, so the dedup'd
+# createFilmEndorsementRecord helper has one unambiguous shape.
+input EndorseFilmInput {
+    filmId: ID @nodeId(typeName: "Film")
+    note: String @field(name: "note")
+}
+
 input PlainFilmIdInput {
     filmId: ID! @field(name: "film_id")
         @condition(condition: {
@@ -1985,5 +2002,24 @@ type Mutation {
         @service(service: {
             className: "no.sikt.graphitron.rewrite.test.services.FilmRecordService",
             method: "modifyFilmActorRecord"
+        })
+
+    # R315: createFilmEndorsementRecord decodes the FK-reference `filmId` @nodeId through the
+    # film_endorsement → film FK and loads it onto the renamed child column endorsed_film, then the
+    # service INSERTs (the serial PK is unset, so the database assigns it) and returns the persisted
+    # endorsed_film — end-to-end proof the decoded Film id landed on the FK child column.
+    endorseFilm(in: EndorseFilmInput!): String
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.FilmEndorsementRecordService",
+            method: "endorseFilm"
+        })
+
+    # R315 null-semantics: the service reports the constructed record's jOOQ changed-flags and values
+    # without inserting, so the execution tier can observe omitted (changed=false) vs explicit-null
+    # (changed=true, NULL) vs set on both the nullable FK reference and the nullable plain column.
+    describeEndorsement(in: EndorseFilmInput!): String
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.FilmEndorsementRecordService",
+            method: "describeEndorsement"
         })
 }

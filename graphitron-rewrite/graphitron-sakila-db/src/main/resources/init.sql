@@ -188,6 +188,20 @@ CREATE TABLE content (
     last_update       timestamp    NOT NULL DEFAULT now()
 );
 
+-- -------------------------
+-- film_endorsement: R315 FK-reference @nodeId fixture. The FK child column
+-- (endorsed_film) is deliberately named differently from the referenced parent
+-- key (film.film_id), so an FK-reference @nodeId(typeName: "Film") must resolve the
+-- target column through the FK constraint, not a name-match shortcut: the decoded
+-- Film id lands on endorsed_film, never a same-named film_id column.
+-- -------------------------
+
+CREATE TABLE film_endorsement (
+    endorsement_id  serial        PRIMARY KEY,
+    endorsed_film   int           NOT NULL REFERENCES film(film_id),
+    note            varchar(255)
+);
+
 -- ===========================
 -- Seed data
 -- ===========================
