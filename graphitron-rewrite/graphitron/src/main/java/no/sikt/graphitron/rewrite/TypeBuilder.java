@@ -257,10 +257,12 @@ class TypeBuilder {
      */
     void finishTypeClassification() {
         // NodeType typeId uniqueness: two types cannot share a typeId because Query.node(id:)
-        // dispatch extracts the typeId prefix and routes to one GraphQL type. Colliding entries
-        // demote symmetrically — we can't pick a winner without silently breaking the loser's
-        // issued IDs, which would violate the durability invariant.
-        validateNodeTypeIdUniqueness(ctx.typeRegistry);
+        // dispatch extracts the typeId prefix and routes to one GraphQL type. R317 slice 5 — the
+        // colliding nodes keep their NodeType verdict (the registry is no longer mutated by a
+        // validation reduction); the collision is surfaced as a build-time diagnostic the validator
+        // drains, so the build still fails before generation but a verdict read after the walk
+        // equals the verdict classification produced.
+        validateNodeTypeIdUniqueness();
     }
 
     /**
@@ -363,9 +365,9 @@ class TypeBuilder {
         return new GraphitronType.JooqTableRecordType(typeName, locationOf(objType), null, carrierTable);
     }
 
-    private static void validateNodeTypeIdUniqueness(TypeRegistry registry) {
+    private void validateNodeTypeIdUniqueness() {
         var byTypeId = new LinkedHashMap<String, List<NodeType>>();
-        for (var type : registry.entries().values()) {
+        for (var type : ctx.typeRegistry.entries().values()) {
             if (type instanceof NodeType nt) {
                 byTypeId.computeIfAbsent(nt.typeId(), k -> new ArrayList<>()).add(nt);
             }
@@ -376,9 +378,14 @@ class TypeBuilder {
             List<String> colliding = entry.getValue().stream().map(NodeType::name).sorted().toList();
             String others = String.join(", ", colliding);
             for (var nt : entry.getValue()) {
-                registry.register(nt.name(), new UnclassifiedType(nt.name(), nt.location(),
+                // R317 slice 5 — register a diagnostic instead of demoting the NodeType. The
+                // coordinate, prefixed message and location reproduce exactly what the validator's
+                // validateUnclassifiedType pass emitted from the former UnclassifiedType demotion.
+                ctx.addDiagnostic(new ValidationError(nt.name(),
                     Rejection.structural("typeId '" + typeId + "' is declared on multiple types (" + others
-                    + ") — Query.node dispatch would be nondeterministic; pick one via @node(typeId:)")));
+                    + ") — Query.node dispatch would be nondeterministic; pick one via @node(typeId:)")
+                        .prefixedWith("Type '" + nt.name() + "': "),
+                    nt.location()));
             }
         }
     }

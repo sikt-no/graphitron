@@ -8466,10 +8466,14 @@ class GraphitronSchemaBuilderTest {
             }
             """,
             schema -> {
+                // R317 slice 5 — the dangling-reference backstop no longer demotes the field; it
+                // keeps its real verdict and the rejection rides the validation diagnostic channel.
                 var f = schema.field("Mutation", "fjern");
-                assertThat(f).isInstanceOf(UnclassifiedField.class);
-                assertThat(((UnclassifiedField) f).reason())
-                    .contains("FjernPayload", "did not classify", "not found in schema");
+                assertThat(f).isNotInstanceOf(UnclassifiedField.class);
+                assertThat(new GraphitronSchemaValidator().validate(schema))
+                    .extracting(ValidationError::message)
+                    .anyMatch(m -> m.contains("FjernPayload")
+                        && m.contains("did not classify") && m.contains("not found in schema"));
             }),
 
         // R275 requirement 1 backstop, generic arm: a @service mutation returning a directiveless
@@ -8489,10 +8493,14 @@ class GraphitronSchemaBuilderTest {
             }
             """,
             schema -> {
+                // R317 slice 5 — see SERVICE_MUTATION_ERRORS_ONLY_ORPHAN_PAYLOAD_REJECTED: the
+                // backstop registers a diagnostic instead of demoting the field.
                 var f = schema.field("Mutation", "doIt");
-                assertThat(f).isInstanceOf(UnclassifiedField.class);
-                assertThat(((UnclassifiedField) f).reason())
-                    .contains("LoosePayload", "did not classify", "not found in schema");
+                assertThat(f).isNotInstanceOf(UnclassifiedField.class);
+                assertThat(new GraphitronSchemaValidator().validate(schema))
+                    .extracting(ValidationError::message)
+                    .anyMatch(m -> m.contains("LoosePayload")
+                        && m.contains("did not classify") && m.contains("not found in schema"));
             }),
 
         // R317 slice 3c — the edge-decidable orphan: an @service mutation returning an [ID] @nodeId
@@ -9867,15 +9875,17 @@ class GraphitronSchemaBuilderTest {
 
     enum CaseInsensitiveTypeClashCase implements ClassificationCase {
         SDL_VS_SDL(
-            "two SDL types differing only in case both demote to UnclassifiedType with full-group messages",
+            "two SDL types differing only in case keep their classified verdict; the collision surfaces "
+                + "as full-group validation diagnostics (R317 slice 5; was demote-to-UnclassifiedType)",
             """
             type Poengklasse @table(name: "film") { v: String }
             type poengklasse @table(name: "film") { v: String }
             type Query { a: Poengklasse b: poengklasse }
             """,
             (schema, sdl) -> {
-                assertThat(schema.type("Poengklasse")).isInstanceOf(UnclassifiedType.class);
-                assertThat(schema.type("poengklasse")).isInstanceOf(UnclassifiedType.class);
+                // R317 slice 5 — the case-fold collision no longer demotes; verdicts stay real.
+                assertThat(schema.type("Poengklasse")).isNotInstanceOf(UnclassifiedType.class);
+                assertThat(schema.type("poengklasse")).isNotInstanceOf(UnclassifiedType.class);
                 var errors = new GraphitronSchemaValidator().validate(schema);
                 assertThat(errors)
                     .filteredOn(e -> e.message().contains("case-insensitively"))
@@ -9899,8 +9909,8 @@ class GraphitronSchemaBuilderTest {
             }
             """,
             (schema, sdl) -> {
-                assertThat(schema.type("FooConnection")).isInstanceOf(UnclassifiedType.class);
-                assertThat(schema.type("fooConnection")).isInstanceOf(UnclassifiedType.class);
+                assertThat(schema.type("FooConnection")).isNotInstanceOf(UnclassifiedType.class);
+                assertThat(schema.type("fooConnection")).isNotInstanceOf(UnclassifiedType.class);
                 var errors = new GraphitronSchemaValidator().validate(schema);
                 assertThat(errors)
                     .filteredOn(e -> e.message().contains("case-insensitively"))
@@ -9942,8 +9952,8 @@ class GraphitronSchemaBuilderTest {
             }
             """,
             (schema, sdl) -> {
-                assertThat(schema.type("FooConnection")).isInstanceOf(UnclassifiedType.class);
-                assertThat(schema.type("fooConnection")).isInstanceOf(UnclassifiedType.class);
+                assertThat(schema.type("FooConnection")).isNotInstanceOf(UnclassifiedType.class);
+                assertThat(schema.type("fooConnection")).isNotInstanceOf(UnclassifiedType.class);
                 var errors = new GraphitronSchemaValidator().validate(schema);
                 var clashMessages = errors.stream()
                     .filter(e -> e.message().contains("case-insensitively"))
@@ -9980,8 +9990,8 @@ class GraphitronSchemaBuilderTest {
             }
             """,
             (schema, sdl) -> {
-                assertThat(schema.type("FooEdge")).isInstanceOf(UnclassifiedType.class);
-                assertThat(schema.type("fooEdge")).isInstanceOf(UnclassifiedType.class);
+                assertThat(schema.type("FooEdge")).isNotInstanceOf(UnclassifiedType.class);
+                assertThat(schema.type("fooEdge")).isNotInstanceOf(UnclassifiedType.class);
                 var errors = new GraphitronSchemaValidator().validate(schema);
                 var clashMessages = errors.stream()
                     .filter(e -> e.message().contains("case-insensitively"))
@@ -10018,8 +10028,8 @@ class GraphitronSchemaBuilderTest {
             }
             """,
             (schema, sdl) -> {
-                assertThat(schema.type("PageInfo")).isInstanceOf(UnclassifiedType.class);
-                assertThat(schema.type("pageInfo")).isInstanceOf(UnclassifiedType.class);
+                assertThat(schema.type("PageInfo")).isNotInstanceOf(UnclassifiedType.class);
+                assertThat(schema.type("pageInfo")).isNotInstanceOf(UnclassifiedType.class);
                 var errors = new GraphitronSchemaValidator().validate(schema);
                 var clashMessages = errors.stream()
                     .filter(e -> e.message().contains("case-insensitively"))
@@ -10054,9 +10064,9 @@ class GraphitronSchemaBuilderTest {
             type Query { a: Foo b: FOO c: foo }
             """,
             (schema, sdl) -> {
-                assertThat(schema.type("Foo")).isInstanceOf(UnclassifiedType.class);
-                assertThat(schema.type("FOO")).isInstanceOf(UnclassifiedType.class);
-                assertThat(schema.type("foo")).isInstanceOf(UnclassifiedType.class);
+                assertThat(schema.type("Foo")).isNotInstanceOf(UnclassifiedType.class);
+                assertThat(schema.type("FOO")).isNotInstanceOf(UnclassifiedType.class);
+                assertThat(schema.type("foo")).isNotInstanceOf(UnclassifiedType.class);
                 var errors = new GraphitronSchemaValidator().validate(schema);
                 var clashMessages = errors.stream()
                     .filter(e -> e.message().contains("case-insensitively"))

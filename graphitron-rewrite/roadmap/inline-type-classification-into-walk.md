@@ -12,8 +12,19 @@ last-updated: 2026-06-17
 
 # Single edge-driven classification pass and immutable validation (retire TypeBuilder.buildTypes)
 
-> **Status (resume pointer).** Slices 1, 2, 3a, 3b, 3c, 3d, 3e and 4 are shipped to trunk; slice 5
-> (immutable validate) is the active front. Slice 4 collapsed the three traversals into one
+> **Status (resume pointer).** All slices (1, 2, 3a–3e, 4, 5) are shipped to trunk; this item is
+> implementation-complete and ready for the In Progress → In Review gate. Slice 5 made the validate
+> phase immutable: the five global soundness reductions (node-typeId uniqueness, case-fold collisions,
+> the dangling-reference backstop, the federation `@key` checks, and the multi-producer
+> `DomainReturnType` agreement) now register a `ValidationError` on a single diagnostic channel
+> (`GraphitronSchema.diagnostics`, generalising the R204/R279 `domainReturnTypeConflicts` one-off and
+> threaded through `BuildContext.addDiagnostic`) instead of demoting a classified verdict to
+> `UnclassifiedType` / `UnclassifiedField`. A verdict read after the walk now equals the verdict
+> classification produced; the validator drains the channel, so the `ValidationError` stream and which
+> schemas pass or fail are byte-identical (truth table + full pipeline / compile / execution tiers
+> green). The "carrier-shape scan" the spec listed as a fifth demotion family was already absorbed into
+> the edge-decidable orphan (slice 3c) and the dangling backstop by the time slice 5 landed, so it has
+> no separate site to convert. Slice 4 collapsed the three traversals into one
 > `SchemaTraverser.depthFirst` (a real `GraphQLTypeVisitor` classifying composites on enter and folding
 > field classification into the same visit), deleted `buildTypes` / the `reachableOutputTypes` hand-off
 > / the separate field loop, and is byte-identical across the truth table (448) and the full pipeline /
@@ -524,10 +535,54 @@ orphan move are pinned by explicit tests, not claimed trivially.
    falsifiable acceptance test `SingleWalkClassificationOrderTest` (a deep target's type-classify trace
    record follows its discovering field's record; an eager type pass registers the type first and fails
    it).
-5. **Immutable validate phase (inlines R318).** The global reductions register diagnostics into a
-   diagnostic channel instead of demoting to `UnclassifiedType` / `UnclassifiedField`; the
-   validator and LSP read diagnostics from there. Changes the error-carrier mechanism, not which
-   schemas pass or fail. The diagnostic-channel design is pinned below.
+5. **Immutable validate phase (inlines R318).** *Shipped.* The global reductions register diagnostics
+   into a single channel instead of demoting to `UnclassifiedType` / `UnclassifiedField`; the validator
+   drains the channel and the LSP is insulated (it reads `ValidationReport`, unchanged). Changes the
+   error-carrier mechanism, not which schemas pass or fail.
+
+   **What stopped mutating.** The five post-classification demotions named in the diagnostic-channel
+   design below: `validateNodeTypeIdUniqueness` (`TypeBuilder`), `rejectCaseInsensitiveTypeCollisions`,
+   the dangling-reference backstop (`rejectDanglingTypeReferences`), and the multi-producer
+   `DomainReturnType` agreement (`collectDomainReturnTypeConflicts`) (`GraphitronSchemaBuilder`), and the
+   four federation `@key` checks (`EntityResolutionBuilder.build`). Each now constructs a fully-formed
+   `ValidationError` (coordinate + typed `Rejection` + `SourceLocation`) and registers it via
+   `BuildContext.addDiagnostic`; none overwrites the registry. Classification's own honest
+   `UnclassifiedType` / `UnclassifiedField` verdicts (unknown table, inert enum, unbound participant,
+   directive conflict, the edge-decidable orphan from slice 3c) are untouched: that is the verdict, not
+   a demotion. The carrier-shape scan the design listed as a sixth family had already dissolved into the
+   slice-3c edge orphan and the dangling backstop, so it had no separate site to convert.
+
+   **The channel.** `GraphitronSchema` carries `List<ValidationError> diagnostics`, generalising the
+   R204/R279 slice-4 `domainReturnTypeConflicts` one-off (folded in, since the shape was identical) into
+   the single channel the design called for. The currency is `ValidationError` itself rather than a new
+   `Diagnostic` twin: it is already exactly the `(coordinate, Rejection, SourceLocation)` triple the
+   design describes, lives in the same package, and is the validator's currency, so the validator drains
+   it with `errors.addAll(schema.diagnostics())` (the former `validateUniformDomainReturnType` Rejection-
+   wrapping is retired). Each diagnostic's coordinate, prefixed message and location reproduce
+   byte-for-byte what the validator's `validateUnclassifiedType` / `validateUnclassifiedField` passes
+   emitted from the former demotions, so the error stream is unchanged.
+
+   **The dangling backstop's emission-removal job is dropped, confirmed safe.** The backstop no longer
+   reclassifies the field to `UnclassifiedField`; the field keeps its real `OutputField` verdict. The
+   emission gate (the validator throws before the emitter runs) makes removing the field from emission
+   redundant, and nothing between the builder and the validator reads the demoted verdict:
+   `rebuildAssembledForConnections` works off the SDL assembled schema plus carrier rewrites, not the
+   field registry. `EntityResolutionBuilder` and `MappingsConstantNameDedup`, which do read the field
+   map, are unaffected by a dangling field staying a real `OutputField` (verified by the green build).
+
+   Output byte-identical for error-free schemas (truth table 448, full pipeline / compile / execution
+   build green). One unit-test fixture changed, not the contract: `AppliedDirectiveEmitterTest`'s
+   `FEDERATION_SDL` declared a `@key` entity with no `@table` (an invalid schema) and relied on the
+   federation demotion *incidentally registering* the orphan as an `UnclassifiedType` so
+   `ObjectTypeGenerator` (it iterates the type registry) would emit a `UserType`; with the demotion gone
+   the orphan stays absent and is not emitted. The fixture now gives `User` a `@table` (the canonical
+   valid federation entity), exercising the same survivor-directive emission on a schema that also
+   classifies. Pinned by the updated demotion-family tests, which now assert the verdict stays real
+   (`isNotInstanceOf(UnclassifiedType/Field)`, or absent for the never-classified orphan) **and** the
+   validator still produces the byte-identical error: `NodeIdPipelineTest.TYPE_ID_COLLISION_DEMOTES_BOTH`,
+   `GraphitronSchemaBuilderTest`'s case-fold (`CaseInsensitiveTypeClashCase`) and dangling
+   (`SERVICE_MUTATION_*_ORPHAN_PAYLOAD_REJECTED`) cases, and `EntityResolutionBuilderTest`'s federation
+   `@key` cases.
 
 ### Diagnostic-channel design (the inlined R318)
 

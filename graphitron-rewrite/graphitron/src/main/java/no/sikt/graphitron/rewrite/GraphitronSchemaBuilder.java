@@ -2,6 +2,7 @@ package no.sikt.graphitron.rewrite;
 
 import com.apollographql.federation.graphqljava.FederationDirectives;
 import graphql.language.DirectiveDefinition;
+import graphql.language.SourceLocation;
 import graphql.schema.FieldCoordinates;
 import graphql.schema.GraphQLArgument;
 import graphql.schema.GraphQLInterfaceType;
@@ -266,11 +267,13 @@ public class GraphitronSchemaBuilder {
         // whole field registry is gone.
         // R279 slice 4 — the multi-producer DomainReturnType agreement check is detected here (on the
         // pre-dangling field registry, against the assembled-schema SDL-Object axis) but no longer
-        // demotes the producers; the conflicts ride on the model and the validator's
-        // validateUniformDomainReturnType surfaces them, closing the enforcement in the same commit so
-        // no gap opens. Connection synthesis above does not touch the field registry, so the conflict
-        // set is unaffected by its relocation into the walk.
-        var domainReturnTypeConflicts = collectDomainReturnTypeConflicts(ctx);
+        // demotes the producers; the conflicts ride on the schema's diagnostic channel and the
+        // validator surfaces them, closing the enforcement in the same commit so no gap opens.
+        // Connection synthesis above does not touch the field registry, so the conflict set is
+        // unaffected by its relocation into the walk. R317 slice 5 — this and the three reductions
+        // below register build-time diagnostics on ctx rather than demoting a verdict; see
+        // GraphitronSchema.diagnostics.
+        collectDomainReturnTypeConflicts(ctx);
         rejectDanglingTypeReferences(ctx);
         // The synthesised-type set for the rebuild is resolved once, here, from the names the walk
         // flagged (their final post-tag-union forms live on the registry). rebuild consumes this typed
@@ -281,11 +284,10 @@ public class GraphitronSchemaBuilder {
         // R194: reject case-insensitive type-name collisions. Graphitron emits one Java file per
         // type-name stem; on case-insensitive filesystems two case-equivalent names would clobber
         // each other. Runs post-promotion so synth-vs-synth Connection-name clashes (the consumer
-        // repro) are visible; runs post-rebuild so the assembled schema stays consistent with the
-        // pre-demotion registry shape (rebuild only inspects carrier rewrites + ConnectionType /
-        // EdgeType / PageInfoType arms in the type map; demoting after rebuild keeps the
-        // assembled-schema typeRefs resolvable while still routing the collision through the
-        // validator's UnclassifiedType path).
+        // repro) are visible. R317 slice 5 — registers a build-time diagnostic per colliding member
+        // rather than demoting the registry entry, so the colliding types keep their classified
+        // verdict and the assembled schema stays consistent; the validator surfaces the collision by
+        // draining the channel.
         rejectCaseInsensitiveTypeCollisions(ctx);
         // Hash-suffix dedup: walk every WithErrorChannel field and apply the collision-suffix
         // rule to ErrorChannel.mappingsConstantName so the resolved name lands on the carrier
@@ -293,10 +295,11 @@ public class GraphitronSchemaBuilder {
         // most one channel shape).
         var dedupedFields = MappingsConstantNameDedup.apply(ctx.fieldRegistry.entries());
         Map<String, EntityResolution> entitiesByType =
-            EntityResolutionBuilder.build(ctx.typeRegistry, dedupedFields, rebuiltAssembled, ctx::addWarning);
+            EntityResolutionBuilder.build(ctx.typeRegistry, dedupedFields, rebuiltAssembled,
+                ctx::addWarning, ctx::addDiagnostic);
         var model = new GraphitronSchema(
             ctx.types, Collections.unmodifiableMap(dedupedFields), entitiesByType, ctx.warnings(),
-            domainReturnTypeConflicts);
+            ctx.diagnostics());
         return new BuildResult(model, rebuiltAssembled);
     }
 
@@ -543,10 +546,14 @@ public class GraphitronSchemaBuilder {
      * {@code NestingField} embedding); every other SDL kind either registers or demotes to a
      * registered {@link UnclassifiedType} that carries its own diagnostic.
      *
-     * <p>Demotes the referencing field to {@link GraphitronField.UnclassifiedField} (the same
-     * shape as {@link #validateUniformDomainReturnType}), which both fails the build through
-     * the validator's UnclassifiedField pass <em>and</em> removes the field from emission, so
-     * the dangling reference is structurally impossible rather than merely checked. This is the
+     * <p>R317 slice 5 — registers a build-time {@link ValidationError} on the schema's diagnostic
+     * channel instead of reclassifying the field to {@link GraphitronField.UnclassifiedField}. The
+     * field keeps its real {@link OutputField} verdict (so a verdict read after the walk equals the
+     * one classification produced); the build still fails through the validator's drain of the
+     * channel. The former demotion's second job — removing the field from emission — is redundant
+     * because the validator throws before the emitter runs and nothing between this pass and the
+     * validator reads the field verdict ({@code rebuildAssembledForConnections} works off the SDL
+     * assembled schema plus carrier rewrites). This is the
      * shape-agnostic closure of the per-shape classifier guards (the {@code @service}
      * orphan-carrier guard rejects recognized carrier shapes with richer, shape-specific
      * guidance before this pass runs; anything that slips past every classifier-level guard —
@@ -558,28 +565,34 @@ public class GraphitronSchemaBuilder {
      * every Connection-returning field).
      */
     private static void rejectDanglingTypeReferences(BuildContext ctx) {
-        for (var entry : List.copyOf(ctx.fieldRegistry.entries().entrySet())) {
+        for (var entry : ctx.fieldRegistry.entries().entrySet()) {
             if (!(entry.getValue() instanceof OutputField existing)) continue;
             String sdlReturn = sdlReturnTypeName(ctx.schema, entry.getKey());
             if (sdlReturn == null) continue;
             if (ctx.typeRegistry.contains(sdlReturn)) continue;
-            var parentObj = ctx.schema.getObjectType(existing.parentTypeName());
-            ctx.fieldRegistry.reclassify(
-                entry.getKey(),
-                new GraphitronField.UnclassifiedField(
-                    existing.parentTypeName(), existing.name(), existing.location(),
-                    parentObj == null ? null : parentObj.getFieldDefinition(existing.name()),
-                    Rejection.structural(
-                        "field '" + existing.parentTypeName() + "." + existing.name()
-                        + "' returns SDL Object type '" + sdlReturn + "', which did not classify "
-                        + "into the model (no @table or record-backed binding, no producer-backed carrier "
-                        + "promotion, not embedded as a nesting projection of a table-backed "
-                        + "parent). Emitting the field would reference a type absent from the "
-                        + "generated schema and assembly would fail with \"type " + sdlReturn
-                        + " not found in schema\". Give '" + sdlReturn + "' a binding (e.g. a "
-                        + "@table data field or an [ID] @nodeId(typeName:) data field matching a "
-                        + "producer's returned record), or remove the field.")),
-                existing.getClass());
+            // R317 slice 5 — register a build-time diagnostic instead of reclassifying the field to
+            // UnclassifiedField. The field keeps its real OutputField verdict; the demotion's second
+            // job (removing the field from emission) is redundant because the validator throws before
+            // the emitter runs (the global gate), and nothing between here and the validator reads the
+            // demoted verdict: rebuildAssembledForConnections works off the SDL assembled schema plus
+            // carrier rewrites, not the field registry. The coordinate, prefixed message and location
+            // reproduce exactly what the validator's validateUnclassifiedField pass emitted from the
+            // former demotion.
+            String qualifiedName = existing.qualifiedName();
+            ctx.addDiagnostic(new ValidationError(
+                qualifiedName,
+                Rejection.structural(
+                    "field '" + existing.parentTypeName() + "." + existing.name()
+                    + "' returns SDL Object type '" + sdlReturn + "', which did not classify "
+                    + "into the model (no @table or record-backed binding, no producer-backed carrier "
+                    + "promotion, not embedded as a nesting projection of a table-backed "
+                    + "parent). Emitting the field would reference a type absent from the "
+                    + "generated schema and assembly would fail with \"type " + sdlReturn
+                    + " not found in schema\". Give '" + sdlReturn + "' a binding (e.g. a "
+                    + "@table data field or an [ID] @nodeId(typeName:) data field matching a "
+                    + "producer's returned record), or remove the field.")
+                    .prefixedWith("Field '" + qualifiedName + "': "),
+                existing.location()));
         }
     }
 
@@ -592,18 +605,20 @@ public class GraphitronSchemaBuilder {
      * type, so a multi-producer disagreement would feed a datafetcher generated against the other
      * producer's record shape.
      *
-     * <p>Returns one {@link Rejection.AuthorError.MultiProducerDomainTypeDisagreement} per conflict
-     * group, each naming every participant. The builder stashes the list on the
-     * {@link GraphitronSchema}; {@code GraphitronSchemaValidator.validateUniformDomainReturnType}
-     * drains it into compiler-style errors that fail the build (R279 slice 4 retired the
-     * reclassify-to-{@link GraphitronField.UnclassifiedField} post-pass that previously enforced
-     * this here, moving enforcement to the validator in the same commit so no gap opens). Runs on the
-     * pre-promotion, pre-dangling field registry against the assembled-schema SDL-Object axis, so the
-     * conflict set is byte-identical to the retired post-pass; the data field on the conflict payload
-     * (if any) stays classified as-is per R204's design fork (a), since the validator halts the build
-     * before any generated code runs.
+     * <p>Registers one {@link Rejection.AuthorError.MultiProducerDomainTypeDisagreement} per conflict
+     * group on the schema's diagnostic channel ({@code ctx.addDiagnostic}), each naming every
+     * participant; the validator drains the channel into compiler-style errors that fail the build
+     * (R279 slice 4 retired the reclassify-to-{@link GraphitronField.UnclassifiedField} post-pass that
+     * previously enforced this here, moving enforcement to the validator in the same commit so no gap
+     * opens; R317 slice 5 folded the dedicated {@code domainReturnTypeConflicts} carrier into the
+     * single diagnostic channel). Runs on the pre-promotion, pre-dangling field registry against the
+     * assembled-schema SDL-Object axis, so the conflict set is byte-identical to the retired post-pass;
+     * the data field on the conflict payload (if any) stays classified as-is per R204's design fork
+     * (a), since the validator halts the build before any generated code runs. The diagnostic
+     * coordinate ({@code "<schema>"}) and empty {@link SourceLocation} reproduce what the former
+     * {@code validateUniformDomainReturnType} drain emitted, so the error stream is byte-identical.
      */
-    private static List<Rejection> collectDomainReturnTypeConflicts(BuildContext ctx) {
+    private static void collectDomainReturnTypeConflicts(BuildContext ctx) {
         Map<String, List<FieldCoordinates>> bySdlReturnType = new LinkedHashMap<>();
         for (var entry : ctx.fieldRegistry.entries().entrySet()) {
             if (!(entry.getValue() instanceof OutputField of)) continue;
@@ -611,7 +626,6 @@ public class GraphitronSchemaBuilder {
             if (sdlReturn == null) continue;
             bySdlReturnType.computeIfAbsent(sdlReturn, k -> new ArrayList<>()).add(entry.getKey());
         }
-        List<Rejection> conflicts = new ArrayList<>();
         for (var group : bySdlReturnType.entrySet()) {
             String sdlReturn = group.getKey();
             List<FieldCoordinates> coords = group.getValue();
@@ -631,10 +645,10 @@ public class GraphitronSchemaBuilder {
                 participants.add(new Rejection.AuthorError.MultiProducerDomainTypeDisagreement.Participant(
                     of.parentTypeName(), of.name(), of.domainReturnType()));
             }
-            conflicts.add(new Rejection.AuthorError.MultiProducerDomainTypeDisagreement(
-                sdlReturn, participants));
+            ctx.addDiagnostic(new ValidationError("<schema>",
+                new Rejection.AuthorError.MultiProducerDomainTypeDisagreement(sdlReturn, participants),
+                SourceLocation.EMPTY));
         }
-        return List.copyOf(conflicts);
     }
 
     /**
@@ -657,7 +671,7 @@ public class GraphitronSchemaBuilder {
     }
 
     /**
-     * R194: Demotes every type whose name collides case-insensitively with another emit-producing
+     * R194: Rejects every type whose name collides case-insensitively with another emit-producing
      * type. Graphitron emits one Java file per type-name stem, and GraphQL identifiers are
      * case-sensitive ({@code type Foo} and {@code type foo} parse as distinct types); on
      * case-insensitive filesystems (APFS, NTFS) the two map to the same filename and clobber each
@@ -668,13 +682,13 @@ public class GraphitronSchemaBuilder {
      * <p>One case-folded pass over {@code ctx.typeRegistry.entries()}, skipping variants that do
      * not implement {@link EmitsPerTypeFile} ({@link
      * no.sikt.graphitron.rewrite.model.GraphitronType.ScalarType} and {@link UnclassifiedType}
-     * today). For each collision group of two or more members, every member is demoted to
-     * {@link UnclassifiedType} carrying a typed
-     * {@link Rejection.InvalidSchema.CaseFoldCollision} rejection that names the full group plus
-     * the demoted member's classifier-arm {@link Origin}; the variant's {@code message()} renders
-     * the actionable fix hint per origin.
-     * {@link GraphitronSchemaValidator#validateUnclassifiedType} then projects one
-     * {@link ValidationError} per member, so the diagnostic is actionable from either entry point.
+     * today). R317 slice 5 — for each collision group of two or more members, every member's typed
+     * {@link Rejection.InvalidSchema.CaseFoldCollision} rejection (naming the full group plus the
+     * member's classifier-arm {@link Origin}) is registered as a build-time {@link ValidationError}
+     * on the diagnostic channel rather than demoting the registry entry; the colliding types keep
+     * their classified verdict and the validator surfaces one error per member by draining the
+     * channel. The coordinate, prefixed message and location are byte-identical to what the former
+     * demotion's {@code validateUnclassifiedType} projection produced.
      *
      * <p>Demote-all (rather than first-wins) because there's no logical winner between two
      * SDL-declared types: silently picking one would tilt the schema's public surface against the
@@ -701,8 +715,12 @@ public class GraphitronSchemaBuilder {
                     case PageInfoType ignored -> Origin.SYNTH_PAGE_INFO;
                     default -> Origin.SDL;
                 };
-                ctx.typeRegistry.register(name, new UnclassifiedType(
-                    name, existing.location(), Rejection.caseFoldCollision(group, origin)));
+                // R317 slice 5 — register a diagnostic instead of demoting the colliding type. The
+                // coordinate, prefixed message and location reproduce exactly what the validator's
+                // validateUnclassifiedType pass emitted from the former UnclassifiedType demotion.
+                ctx.addDiagnostic(new ValidationError(name,
+                    Rejection.caseFoldCollision(group, origin).prefixedWith("Type '" + name + "': "),
+                    existing.location()));
             }
         }
     }
