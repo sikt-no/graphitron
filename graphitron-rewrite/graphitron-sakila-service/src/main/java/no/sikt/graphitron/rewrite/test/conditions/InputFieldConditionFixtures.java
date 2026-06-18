@@ -1,6 +1,7 @@
 package no.sikt.graphitron.rewrite.test.conditions;
 
 import no.sikt.graphitron.rewrite.test.jooq.tables.Address;
+import no.sikt.graphitron.rewrite.test.jooq.tables.Customer;
 import no.sikt.graphitron.rewrite.test.jooq.tables.Film;
 import org.jooq.Condition;
 import org.jooq.Table;
@@ -62,6 +63,19 @@ public final class InputFieldConditionFixtures {
      */
     public static Condition addressDistrictAlberta(Address address, String addressId) {
         return address.DISTRICT.eq("Alberta");
+    }
+
+    /**
+     * R330: field-level {@code @condition(override: true)} paired with an FK-target {@code @nodeId}
+     * input field, mirroring the opptak {@code soknadsmangeltyperCondition} shim shape. The declared
+     * first parameter is the concrete root table {@link Customer} (the table the query selects from),
+     * so the generated shim only compiles if it hands this method the root {@code table} local while
+     * still wrapping the sibling FK-target term in a correlated EXISTS. Restricts to active
+     * customers; combined with {@code addressDistrictAlberta} the shim is
+     * {@code (customer.activebool = true) AND EXISTS(address district = 'Alberta')}.
+     */
+    public static Condition customersActiveOnly(Customer table, Map<String, Object> filter) {
+        return table.ACTIVEBOOL.eq(true);
     }
 
 }

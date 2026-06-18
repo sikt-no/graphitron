@@ -194,6 +194,16 @@ type Query {
     # FK-target Address, not customer. The rewrite emits a correlated EXISTS over the FK;
     # addressDistrictAlberta filters customers whose address district is 'Alberta'.
     customersByAddressDistrict(filter: CustomerAddressNodeFilter!): [Customer!]!
+    # R330: the opptak shim shape exactly — a field-level @condition(override) on the query
+    # *and* an FK-target @nodeId + @condition(override) input field. The generated QueryConditions
+    # shim accumulates two terms: the field-level customersActiveOnly(table, ...) against the root
+    # customer table, and the FK-target EXISTS handing addressDistrictAlberta an aliased Address.
+    # Guards the multi-filter accumulation in buildConditionMethod where soknadsmangeltyper failed.
+    customersByAddressDistrictActive(filter: CustomerAddressNodeFilter!): [Customer!]!
+        @condition(condition: {
+            className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
+            method: "customersActiveOnly"
+        }, override: true)
     # implicit-input-conditions plan: @table input with two un-annotated fields.
     # Both filmId and title get implicit predicates; GCF body ANDs them.
     filmsWithMultiImplicit(filter: FilmMultiImplicitInput): [Film!]!
@@ -607,6 +617,19 @@ type Store @table(name: "store") {
     # the classifier infers the one-hop FK customer.store_id → store.store_id from the jOOQ
     # catalog because there is exactly one FK between the two tables.
     customers:  [Customer!]! @defaultOrder(primaryKey: true)
+    # R330: inline child TableField (InlineTableFieldEmitter) whose @table filter carries an
+    # FK-target @nodeId + @condition(override). The child correlation is store -> customer
+    # (customer_store_id_fkey); the filter's addressId is itself an FK-target @nodeId(Address)
+    # reached via customer_address_id_fkey, so addressDistrictAlberta must receive an aliased
+    # Address inside a correlated EXISTS, not the customer alias. The concrete Address parameter
+    # makes this a compile-tier regression guard for the inline emission path (the SakFetchers
+    # shape that regressed in 10.0.0-RC16).
+    customersByAddressDistrict(filter: CustomerAddressNodeFilter!): [Customer!]!
+        @reference(path: [{key: "customer_store_id_fkey"}]) @defaultOrder(primaryKey: true)
+    # R330: the same FK-target filter on a @splitQuery child, exercising the SplitRowsMethodEmitter
+    # emission path (the third WHERE-emitting site).
+    customersByAddressDistrictSplit(filter: CustomerAddressNodeFilter!): [Customer!]! @splitQuery
+        @reference(path: [{key: "customer_store_id_fkey"}]) @defaultOrder(primaryKey: true)
     # plan-single-cardinality-split-query.md §5: single-cardinality @splitQuery with a
     # NULLABLE FK (store.manager_staff_id). At least one store seeds manager_staff_id as
     # NULL in init.sql, so the §4 null-FK short-circuit returns null for that store without

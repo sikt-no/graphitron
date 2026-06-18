@@ -4099,6 +4099,12 @@ public class TypeFetcherGenerator {
         // entries. For pure-@lookupKey fields (the common case) filters() is empty and this is a
         // no-op that jOOQ elides.
         builder.addStatement("$T condition = $T.noCondition()", CONDITION, DSL);
+        // R330: declare an aliased FK-target table local per join hop for every FK-target @nodeId
+        // override @condition, so each is emitted as a correlated EXISTS rather than mis-passing the
+        // lookup's own table. Top-level (non-recursive) method, so static SQL aliases suffice.
+        var fkDeclarations = CodeBlock.builder();
+        var fkTargetAliases = FkTargetConditionEmitter.declareAliases(fkDeclarations, field.filters(), tableLocal, false);
+        builder.addCode(fkDeclarations.build());
         for (var filter : field.filters()) {
             for (var param : filter.callParams()) {
                 if (param.extraction() instanceof CallSiteExtraction.JooqConvert && param.list()) {
@@ -4106,9 +4112,8 @@ public class TypeFetcherGenerator {
                         LIST, String.class, toCamelCase(param.name()) + "Keys", param.name());
                 }
             }
-            var callArgs = ArgCallEmitter.buildCallArgs(ctx, filter.callParams(), filter.className(), tableLocal, registry);
-            builder.addStatement("condition = condition.and($T.$L($L))",
-                ClassName.bestGuess(filter.className()), filter.methodName(), callArgs);
+            builder.addStatement("condition = condition.and($L)",
+                FkTargetConditionEmitter.emitTerm(ctx, filter, tableLocal, registry, null, fkTargetAliases));
         }
 
         var typeFieldsCall = CodeBlock.of("$T.$$fields(env.getSelectionSet(), $L, env)",

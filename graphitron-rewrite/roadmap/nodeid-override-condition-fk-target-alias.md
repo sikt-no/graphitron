@@ -1,7 +1,7 @@
 ---
 id: R330
 title: "@condition(override: true) on a @nodeId filter field passes the root table instead of the joined FK-target alias"
-status: In Review
+status: In Progress
 bucket: bug
 priority: 3
 theme: nodeid
@@ -104,6 +104,46 @@ Per validator-mirrors-classifier, every classifier decision implying an emitter 
 
 The existing `NodeIdReferenceFilterPipelineTest` puts `@nodeId` and `@condition` on *separate* fields and only asserts the decode helper is lifted + generation does not throw; no current test exercises both directives on one field, nor asserts the alias bound to an override method's first argument, which is why the gap went uncaught. The acceptance test above closes it.
 
+## Rework: the FK-target arm belongs at *every* WHERE-emitting site, not just the shim
+
+The first implementation pass (`8197af15b`) patched only `QueryConditionsGenerator` (the
+`(Table, env) -> Condition` shim). That fixed `SoknadsmangeltypeFilterInput.regelverksamlingId`
+(a top-level query field, shim path) but left the second reported instance,
+`EndringsloggV2FilterInput.brukerId -> harBruker`, broken: it is a **child field** whose `@condition`
+is emitted *inline* in the fetcher (`SakFetchers`), a different emission site the shim fix never
+touched. The consumer still saw `EndringsloggForSak cannot be converted to Bruker`.
+
+Mapping the model, `FkTargetConditionFilter` flows uniformly through `List<WhereFilter>` to **five**
+WHERE-emitting sites; the shim was the only one with FK-target dispatch:
+
+1. `QueryConditionsGenerator.buildConditionMethod` (root query shim) — fixed in pass 1.
+2. `InlineTableFieldEmitter.buildInnerSelect` (inline child `TableField` — the `brukerId` path).
+3. `InlineLookupTableFieldEmitter.buildInnerSelect` (inline lookup child).
+4. `SplitRowsMethodEmitter.buildWhereCondition` (`@splitQuery` batched rows).
+5. `TypeFetcherGenerator.buildQueryLookupRowsMethod` (query lookup rows).
+
+Resolution: the EXISTS emission (alias declaration + term composition) was factored out of the shim
+into a shared `FkTargetConditionEmitter` (`declareAliases` + `emitTerm`) that all five sites call,
+so the FK-target arm is defined once and cannot drift. Inline/lookup/split sites recurse, so their
+SQL aliases are runtime-prefixed onto the base alias's `getName()` (matching the existing hop
+aliases); the two top-level method sites use static aliases.
+
+Readability (consumer flagged the generated WHERE as "an eyesore" that "violates our principle of
+readable and debuggable code"): the inline `.where(...).and(...).and(...)` chains and the FK-target
+`EXISTS` now render multi-line, one predicate per line. The remaining per-argument extraction
+(nested `instanceof Map ... ? (Cast) map.get(...) : null` ternaries) is cross-cutting through
+`ArgCallEmitter` and every WHERE site; it is split out to **R334** rather than folded in here.
+
+Coverage added for the rework: sakila `Store.customersByAddressDistrict` (inline child) and
+`Store.customersByAddressDistrictSplit` (`@splitQuery`) reproduce the `brukerId` shape (store ->
+customer child, FK-target Address filter) with a concrete `Address` condition parameter as the
+compile-tier guard, plus execution assertions on the Alberta seed; and
+`customersByAddressDistrictActive` reproduces the opptak shim shape exactly (field-level
+`@condition(override)` + FK-target input field, two accumulated terms).
+
 ## Reported instances
 
-Two real consumer instances (both `incompatible types` compile failures at Graphitron 10.0.0-RC16): `SoknadsmangeltypeFilterInput.regelverksamlingId` -> `iRegelverksamling(Regelverksamling, ...)`, and `EndringsloggV2FilterInput.brukerId` -> `harBruker(Bruker, ...)`.
+Two real consumer instances (both `incompatible types` compile failures at Graphitron 10.0.0-RC16):
+`SoknadsmangeltypeFilterInput.regelverksamlingId` -> `iRegelverksamling(Regelverksamling, ...)` (a
+top-level query field, **shim** path, fixed in pass 1), and `EndringsloggV2FilterInput.brukerId` ->
+`harBruker(Bruker, ...)` (a **child field**, **inline** fetcher path, fixed in the rework).
