@@ -113,10 +113,10 @@ public final class EntityResolutionBuilder {
                     && !keyObj.getAppliedDirectives(KEY_DIRECTIVE).isEmpty()
                     && !registry.contains(keyObj.getName())) {
                 var loc = keyObj.getDefinition() != null ? keyObj.getDefinition().getSourceLocation() : null;
-                diagnosticSink.accept(new ValidationError(keyObj.getName(), Rejection.structural(
+                diagnosticSink.accept(ValidationError.forType(keyObj.getName(), Rejection.structural(
                     "@key on type '" + keyObj.getName() + "' requires a table-bound type, but '" + keyObj.getName()
-                    + "' is classified as a plain object type — federation entities need a @table directive.")
-                    .prefixedWith("Type '" + keyObj.getName() + "': "), loc));
+                    + "' is classified as a plain object type — federation entities need a @table directive."),
+                    loc));
             }
         }
         for (var entry : List.copyOf(registry.entries().entrySet())) {
@@ -134,9 +134,9 @@ public final class EntityResolutionBuilder {
 
             // @key on a TableInterfaceType is rejected — see Non-goals on the federation plan.
             if (gType instanceof TableInterfaceType) {
-                diagnosticSink.accept(new ValidationError(typeName, Rejection.structural(
-                    "@key on TableInterfaceType is not supported; declare @key on the implementing types instead")
-                    .prefixedWith("Type '" + typeName + "': "), gType.location()));
+                diagnosticSink.accept(ValidationError.forType(typeName, Rejection.structural(
+                    "@key on TableInterfaceType is not supported; declare @key on the implementing types instead"),
+                    gType.location()));
                 continue;
             }
             // A type already rejected upstream (e.g. unresolvable @table, malformed @node
@@ -161,11 +161,11 @@ public final class EntityResolutionBuilder {
                 if (!anyResolvable) {
                     continue;
                 }
-                diagnosticSink.accept(new ValidationError(typeName, Rejection.structural(
+                diagnosticSink.accept(ValidationError.forType(typeName, Rejection.structural(
                     "@key on type '" + typeName + "' requires a table-bound type, but '" + typeName
                     + "' is classified as " + kindLabel(gType)
-                    + " — federation entities need a @table directive.")
-                    .prefixedWith("Type '" + typeName + "': "), gType.location()));
+                    + " — federation entities need a @table directive."),
+                    gType.location()));
                 continue;
             }
 
@@ -181,8 +181,7 @@ public final class EntityResolutionBuilder {
                 }
             }
             if (error != null) {
-                diagnosticSink.accept(new ValidationError(typeName,
-                    Rejection.structural(error).prefixedWith("Type '" + typeName + "': "), gType.location()));
+                diagnosticSink.accept(ValidationError.forType(typeName, Rejection.structural(error), gType.location()));
                 continue;
             }
             // NodeTypes always get a NODE_ID alternative: it's the canonical SELECT path used

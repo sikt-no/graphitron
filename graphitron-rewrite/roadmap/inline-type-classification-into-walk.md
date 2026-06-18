@@ -550,7 +550,11 @@ orphan move are pinned by explicit tests, not claimed trivially.
    `UnclassifiedType` / `UnclassifiedField` verdicts (unknown table, inert enum, unbound participant,
    directive conflict, the edge-decidable orphan from slice 3c) are untouched: that is the verdict, not
    a demotion. The carrier-shape scan the design listed as a sixth family had already dissolved into the
-   slice-3c edge orphan and the dangling backstop, so it had no separate site to convert.
+   slice-3c edge orphan and the dangling backstop, so it had no separate site to convert. The
+   immutability claim is scoped to the **post-walk validate phase**: `TypeRegistry.register`'s own
+   in-walk reconciliation (incompatible repeat -> demote, the "Reconciliation lives in the registry"
+   decision above) still settles a verdict *during* the walk and is unchanged; what slice 5 removed is
+   every *validate-phase* overwrite of an already-settled verdict.
 
    **The channel.** `GraphitronSchema` carries `List<ValidationError> diagnostics`, generalising the
    R204/R279 slice-4 `domainReturnTypeConflicts` one-off (folded in, since the shape was identical) into

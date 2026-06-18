@@ -1056,19 +1056,11 @@ public class GraphitronSchemaValidator {
         }
     }
     private void validateUnclassifiedType(no.sikt.graphitron.rewrite.model.GraphitronType.UnclassifiedType type, List<ValidationError> errors) {
-        errors.add(new ValidationError(
-            type.name(),
-            type.rejection().prefixedWith("Type '" + type.name() + "': "),
-            type.location()
-        ));
+        errors.add(ValidationError.forType(type.name(), type.rejection(), type.location()));
     }
 
     private void validateUnclassifiedField(no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField field, List<ValidationError> errors) {
-        errors.add(new ValidationError(
-            field.qualifiedName(),
-            field.rejection().prefixedWith("Field '" + field.qualifiedName() + "': "),
-            field.location()
-        ));
+        errors.add(ValidationError.forField(field.qualifiedName(), field.rejection(), field.location()));
     }
 
     private void validateCardinality(String fieldName, SourceLocation location, no.sikt.graphitron.rewrite.model.FieldWrapper cardinality, List<ValidationError> errors) {
