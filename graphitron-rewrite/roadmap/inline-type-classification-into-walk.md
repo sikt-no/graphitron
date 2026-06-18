@@ -1,19 +1,20 @@
 ---
 id: R317
 title: "Single edge-driven classification pass and immutable validation (retire TypeBuilder.buildTypes)"
-status: In Progress
+status: In Review
 bucket: architecture
 priority: 4
 theme: structural-refactor
 depends-on: []
 created: 2026-06-16
-last-updated: 2026-06-17
+last-updated: 2026-06-18
 ---
 
 # Single edge-driven classification pass and immutable validation (retire TypeBuilder.buildTypes)
 
 > **Status (resume pointer).** All slices (1, 2, 3a–3e, 4, 5) are shipped to trunk; this item is
-> implementation-complete and ready for the In Progress → In Review gate. Slice 5 made the validate
+> implementation-complete and now In Review, awaiting the In Review → Done sign-off by an independent
+> Claude session (reviewer ≠ implementer). Slice 5 made the validate
 > phase immutable: the five global soundness reductions (node-typeId uniqueness, case-fold collisions,
 > the dangling-reference backstop, the federation `@key` checks, and the multi-producer
 > `DomainReturnType` agreement) now register a `ValidationError` on a single diagnostic channel
