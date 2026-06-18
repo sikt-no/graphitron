@@ -1,7 +1,7 @@
 ---
 id: R331
 title: "LSP @field(name:) validation on @table-interface participant cross-table reference fields scopes to the participant @table instead of the @reference terminal table"
-status: Ready
+status: In Review
 bucket: bug
 theme: lsp
 depends-on: []
@@ -38,7 +38,7 @@ The three column-name LSP consumers (validation, hover, completion) share one di
 
 ## Fix
 
-Move `ParticipantCrossTable` out of the `FallThrough` arm and into `Resolve`, keyed on its terminal table:
+**Shipped.** Move `ParticipantCrossTable` out of the `FallThrough` arm and into `Resolve`, keyed on its terminal table:
 
 ```java
 case ParticipantCrossTable c -> new LspColumnDispatch.Resolve(c.targetTableName());
@@ -50,12 +50,10 @@ The dispatch switch is exhaustive with no `default`, so this is a single-arm rel
 
 ## Test
 
-Mirror the R233 trio that pinned the `@table`-backed `ColumnReference` case, adding the interface-participant dimension (`type X implements <Iface> @table @discriminator { f: T @field(name:"") @reference(path: [...]) }`):
+**Shipped.** Mirrored the R233 trio with the interface-participant dimension (`type DokumentMelding implements Melding @table(name:"film") @discriminator(value:"DOKUMENT") { ... @field @reference }`), built from inline schema source the way the R233 tests do (a `ParticipantCrossTable` classification injected into the snapshot, backing pinned to the participant's own `@table`, terminal table reached only via `targetTableName`):
 
-- `DiagnosticsTest`: a participant cross-table `@field(name:)` naming a real column on the terminal table emits **no** diagnostic; naming a bogus column emits an unknown-column diagnostic citing the **terminal** table, not the participant's `@table`. (The wrong-table message is the user-visible bug; assert the table name in the message text.)
-- `HoversTest` and `FieldCompletionsTest`: the existing R233 sections (`HoversTest.java:528+`, `FieldCompletionsTest.java:311+`) are the pattern; add the participant-shaped counterpart so the hover renders the terminal-table column and completion offers the terminal table's columns.
-
-Confirm the LSP test fixture catalog supports a single-table-interface participant with a cross-table FK; if no existing fixture interface fits, the snapshot can be built from inline schema source the way the R233 tests do. No assertions on generated method bodies (LSP tests assert diagnostics / hover / completion payloads, not codegen output).
+- `DiagnosticsTest` (`participantCrossTableReferenceValidatesAgainstTerminalTable`, `participantCrossTableReferenceBogusColumnCitesTerminalTable`): a real terminal-table column emits **no** diagnostic; a bogus column emits `Unknown column 'NOPE' on table 'language'` and **no** diagnostic citing the participant table `'film'`.
+- `HoversTest` (`participantCrossTableReferenceHoversOnTerminalTableColumn`) and `FieldCompletionsTest` (`participantCrossTableReferenceCompletesTerminalTableColumns`): hover renders the terminal-table column, completion offers the terminal table's columns and not the participant table's. No assertions on generated method bodies.
 
 ## Out of scope
 
