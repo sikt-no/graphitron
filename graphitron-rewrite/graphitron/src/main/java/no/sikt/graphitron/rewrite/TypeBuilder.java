@@ -378,13 +378,13 @@ class TypeBuilder {
             List<String> colliding = entry.getValue().stream().map(NodeType::name).sorted().toList();
             String others = String.join(", ", colliding);
             for (var nt : entry.getValue()) {
-                // R317 slice 5 — register a diagnostic instead of demoting the NodeType. The
-                // coordinate, prefixed message and location reproduce exactly what the validator's
-                // validateUnclassifiedType pass emitted from the former UnclassifiedType demotion.
-                ctx.addDiagnostic(new ValidationError(nt.name(),
+                // R317 slice 5 — register a diagnostic instead of demoting the NodeType. The shared
+                // ValidationError.forType factory applies the same "Type '<name>': " prefix the
+                // validator's validateUnclassifiedType pass did, so the error stream is byte-identical
+                // to the former UnclassifiedType demotion by construction.
+                ctx.addDiagnostic(ValidationError.forType(nt.name(),
                     Rejection.structural("typeId '" + typeId + "' is declared on multiple types (" + others
-                    + ") — Query.node dispatch would be nondeterministic; pick one via @node(typeId:)")
-                        .prefixedWith("Type '" + nt.name() + "': "),
+                    + ") — Query.node dispatch would be nondeterministic; pick one via @node(typeId:)"),
                     nt.location()));
             }
         }

@@ -575,12 +575,11 @@ public class GraphitronSchemaBuilder {
             // job (removing the field from emission) is redundant because the validator throws before
             // the emitter runs (the global gate), and nothing between here and the validator reads the
             // demoted verdict: rebuildAssembledForConnections works off the SDL assembled schema plus
-            // carrier rewrites, not the field registry. The coordinate, prefixed message and location
-            // reproduce exactly what the validator's validateUnclassifiedField pass emitted from the
-            // former demotion.
-            String qualifiedName = existing.qualifiedName();
-            ctx.addDiagnostic(new ValidationError(
-                qualifiedName,
+            // carrier rewrites, not the field registry. The shared ValidationError.forField factory
+            // applies the same "Field '<qname>': " prefix the validator's validateUnclassifiedField
+            // pass did, so the error stream is byte-identical to the former demotion by construction.
+            ctx.addDiagnostic(ValidationError.forField(
+                existing.qualifiedName(),
                 Rejection.structural(
                     "field '" + existing.parentTypeName() + "." + existing.name()
                     + "' returns SDL Object type '" + sdlReturn + "', which did not classify "
@@ -590,8 +589,7 @@ public class GraphitronSchemaBuilder {
                     + "generated schema and assembly would fail with \"type " + sdlReturn
                     + " not found in schema\". Give '" + sdlReturn + "' a binding (e.g. a "
                     + "@table data field or an [ID] @nodeId(typeName:) data field matching a "
-                    + "producer's returned record), or remove the field.")
-                    .prefixedWith("Field '" + qualifiedName + "': "),
+                    + "producer's returned record), or remove the field."),
                 existing.location()));
         }
     }
@@ -716,11 +714,11 @@ public class GraphitronSchemaBuilder {
                     default -> Origin.SDL;
                 };
                 // R317 slice 5 — register a diagnostic instead of demoting the colliding type. The
-                // coordinate, prefixed message and location reproduce exactly what the validator's
-                // validateUnclassifiedType pass emitted from the former UnclassifiedType demotion.
-                ctx.addDiagnostic(new ValidationError(name,
-                    Rejection.caseFoldCollision(group, origin).prefixedWith("Type '" + name + "': "),
-                    existing.location()));
+                // shared ValidationError.forType factory applies the same "Type '<name>': " prefix the
+                // validator's validateUnclassifiedType pass did, so the error stream is byte-identical
+                // to the former UnclassifiedType demotion by construction.
+                ctx.addDiagnostic(ValidationError.forType(name,
+                    Rejection.caseFoldCollision(group, origin), existing.location()));
             }
         }
     }
