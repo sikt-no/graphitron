@@ -3,7 +3,13 @@ package no.sikt.graphitron.rewrite.model;
 import java.util.Objects;
 
 /**
- * The {@code carrier} dimension (R299): the GraphQL parent-type category a field is defined on, which
+ * <strong>Retiring (R316 slice 2 → slice 4).</strong> The {@code carrier} axis is superseded by the
+ * {@link Source} arrival wrapper; {@link OutputField#carrier()} now derives this value from
+ * {@link OutputField#source()} as an additive-cutover bridge so the R281 corpus keeps classifying
+ * unchanged. This type and {@link SourceCardinality} retire when slice 4 migrates the corpus harness
+ * and the {@code @classified} directive onto {@code source()}.
+ *
+ * <p>The {@code carrier} dimension (R299): the GraphQL parent-type category a field is defined on, which
  * <em>is</em> its field type. The carrier is position, and it is also the legality gate the retired
  * {@code producer} axis used to imply: write intents only on {@link Mutation}, {@code NodeResolve}
  * only on {@link Query}, {@code Nesting} only on {@link Source}. The carrier is materialised on the

@@ -30,8 +30,8 @@ public sealed interface QueryField extends RootField
             QueryField.QueryUnionField,
             QueryField.QueryServiceTableField, QueryField.QueryServiceRecordField {
 
-    /** Every {@code QueryField} leaf is on the {@code Query} root, so the carrier is {@link Carrier.Query}. */
-    @Override default Carrier carrier() { return new Carrier.Query(); }
+    /** Every {@code QueryField} leaf is on the {@code Query} root, so the source is {@link Source.Root.Query}. */
+    @Override default Source source() { return new Source.Root.Query(); }
 
     @Override default Intent intent() {
         return switch (this) {

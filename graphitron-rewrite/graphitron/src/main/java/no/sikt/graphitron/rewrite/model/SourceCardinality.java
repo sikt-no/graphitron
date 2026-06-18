@@ -1,7 +1,12 @@
 package no.sikt.graphitron.rewrite.model;
 
 /**
- * The <em>source</em> cardinality of a {@link Carrier.Source}-carried field: how many source
+ * <strong>Retiring (R316 slice 2 → slice 4).</strong> Folded into the {@link Source} arrival wrapper:
+ * {@link #One} is now the {@link Source.OnlyChild} arm and {@link #Many} the {@link Source.Child} arm.
+ * This enum survives only as the {@link OutputField#carrier()} bridge target until slice 4 migrates the
+ * corpus off {@code carrier()}.
+ *
+ * <p>The <em>source</em> cardinality of a {@link Carrier.Source}-carried field: how many source
  * objects arrive at the field across a single resolver dispatch (R305). It is the product of all
  * ancestor field cardinalities along the path from the operation root to the field, over the
  * {@code {One, Many}} semiring where {@link #One} is the identity and {@link #Many} absorbs
