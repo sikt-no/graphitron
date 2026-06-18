@@ -10,6 +10,7 @@ import graphql.schema.GraphQLObjectType;
 import graphql.schema.GraphQLSchema;
 import no.sikt.graphitron.rewrite.BuildWarning;
 import no.sikt.graphitron.rewrite.TypeRegistry;
+import no.sikt.graphitron.rewrite.ValidationError;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.EntityResolution;
@@ -78,36 +79,44 @@ public final class EntityResolutionBuilder {
 
     /**
      * Walks the classified type map and returns an entity-resolution entry for every type
-     * whose schema element carries at least one {@code @key} directive. Demotes types whose
-     * {@code @key} directives cannot be resolved via {@link TypeRegistry#demote}.
+     * whose schema element carries at least one {@code @key} directive. R317 slice 5 — a type
+     * whose {@code @key} directives cannot be resolved keeps its classified verdict; the federation
+     * rejection is registered as a build-time {@link ValidationError} on {@code diagnosticSink}
+     * (the validator drains it) rather than demoting the registry entry, so a verdict read after the
+     * walk equals the verdict classification produced.
      *
-     * @param registry the classifier's type registry (writes go through {@code demote})
+     * @param registry the classifier's type registry (read-only here)
      * @param fields the classifier's field map (read-only)
      * @param assembled the assembled graphql-java schema (read-only)
      * @param warningSink receiver for non-fatal advisories (e.g. compound key on @node type
      *                    that includes "id"); typically {@code BuildContext::addWarning}
+     * @param diagnosticSink receiver for the federation {@code @key} rejections; typically
+     *                    {@code BuildContext::addDiagnostic}
      */
     public static Map<String, EntityResolution> build(
         TypeRegistry registry,
         Map<FieldCoordinates, GraphitronField> fields,
         GraphQLSchema assembled,
-        Consumer<BuildWarning> warningSink
+        Consumer<BuildWarning> warningSink,
+        Consumer<ValidationError> diagnosticSink
     ) {
         var out = new LinkedHashMap<String, EntityResolution>();
         // R276: a @key object type the type pass left unclassified (a directiveless object — a
         // federation entity needs a @table) is absent from the registry, so the entity loop below
         // never sees it. Reject it here with the federation diagnostic rather than letting it slip
-        // through as a generic unclassified field. (Once classified it rides the UnclassifiedType
-        // skip in the loop below.)
+        // through as a generic unclassified field. R317 slice 5 — registers the rejection on the
+        // diagnostic channel; the type stays absent from the registry (it was never classified) and
+        // the entity loop below still never sees it, so no entity entry is built.
         for (var named : assembled.getAllTypesAsList()) {
             if (named instanceof GraphQLObjectType keyObj
                     && !keyObj.getName().startsWith("__")
                     && !keyObj.getAppliedDirectives(KEY_DIRECTIVE).isEmpty()
                     && !registry.contains(keyObj.getName())) {
                 var loc = keyObj.getDefinition() != null ? keyObj.getDefinition().getSourceLocation() : null;
-                registry.register(keyObj.getName(), new UnclassifiedType(keyObj.getName(), loc, Rejection.structural(
+                diagnosticSink.accept(new ValidationError(keyObj.getName(), Rejection.structural(
                     "@key on type '" + keyObj.getName() + "' requires a table-bound type, but '" + keyObj.getName()
-                    + "' is classified as a plain object type — federation entities need a @table directive.")));
+                    + "' is classified as a plain object type — federation entities need a @table directive.")
+                    .prefixedWith("Type '" + keyObj.getName() + "': "), loc));
             }
         }
         for (var entry : List.copyOf(registry.entries().entrySet())) {
@@ -125,8 +134,9 @@ public final class EntityResolutionBuilder {
 
             // @key on a TableInterfaceType is rejected — see Non-goals on the federation plan.
             if (gType instanceof TableInterfaceType) {
-                registry.register(typeName, new UnclassifiedType(typeName, gType.location(), Rejection.structural(
-                    "@key on TableInterfaceType is not supported; declare @key on the implementing types instead")));
+                diagnosticSink.accept(new ValidationError(typeName, Rejection.structural(
+                    "@key on TableInterfaceType is not supported; declare @key on the implementing types instead")
+                    .prefixedWith("Type '" + typeName + "': "), gType.location()));
                 continue;
             }
             // A type already rejected upstream (e.g. unresolvable @table, malformed @node
@@ -151,10 +161,11 @@ public final class EntityResolutionBuilder {
                 if (!anyResolvable) {
                     continue;
                 }
-                registry.register(typeName, new UnclassifiedType(typeName, gType.location(), Rejection.structural(
+                diagnosticSink.accept(new ValidationError(typeName, Rejection.structural(
                     "@key on type '" + typeName + "' requires a table-bound type, but '" + typeName
                     + "' is classified as " + kindLabel(gType)
-                    + " — federation entities need a @table directive.")));
+                    + " — federation entities need a @table directive.")
+                    .prefixedWith("Type '" + typeName + "': "), gType.location()));
                 continue;
             }
 
@@ -170,7 +181,8 @@ public final class EntityResolutionBuilder {
                 }
             }
             if (error != null) {
-                registry.register(typeName, new UnclassifiedType(typeName, gType.location(), Rejection.structural(error)));
+                diagnosticSink.accept(new ValidationError(typeName,
+                    Rejection.structural(error).prefixedWith("Type '" + typeName + "': "), gType.location()));
                 continue;
             }
             // NodeTypes always get a NODE_ID alternative: it's the canonical SELECT path used

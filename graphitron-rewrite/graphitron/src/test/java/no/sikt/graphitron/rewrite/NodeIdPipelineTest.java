@@ -197,20 +197,26 @@ class NodeIdPipelineTest {
             }),
 
         TYPE_ID_COLLISION_DEMOTES_BOTH(
-            "two NodeTypes with the same typeId → both demoted to UnclassifiedType (R4a registry uniqueness)",
+            "two NodeTypes with the same typeId → both keep their NodeType verdict; the collision "
+                + "surfaces as a validation diagnostic, not a registry demotion (R317 slice 5 "
+                + "immutable validate phase; was R4a registry-uniqueness demotion to UnclassifiedType)",
             """
             type Foo implements Node @table(name: "bar") @node(typeId: "Shared") { id: ID! name: String }
             type Zed implements Node @table(name: "qux") @node(typeId: "Shared") { id: ID! name: String }
             type Query { foo: Foo zed: Zed }
             """,
             schema -> {
-                assertThat(schema.type("Foo")).isInstanceOf(GraphitronType.UnclassifiedType.class);
-                assertThat(schema.type("Zed")).isInstanceOf(GraphitronType.UnclassifiedType.class);
-                var fooReason = ((GraphitronType.UnclassifiedType) schema.type("Foo")).reason();
-                assertThat(fooReason)
-                    .contains("typeId 'Shared'")
-                    .contains("Foo, Zed")
-                    .contains("nondeterministic");
+                // The verdict is no longer overwritten by the validation reduction; a verdict read
+                // after the walk equals the verdict classification produced.
+                assertThat(schema.type("Foo")).isInstanceOf(GraphitronType.NodeType.class);
+                assertThat(schema.type("Zed")).isInstanceOf(GraphitronType.NodeType.class);
+                // The build still fails: the validator drains the typeId-collision diagnostic (one
+                // per colliding type), byte-identical to the message the former demotion carried.
+                assertThat(new GraphitronSchemaValidator().validate(schema))
+                    .extracting(ValidationError::message)
+                    .anyMatch(m -> m.contains("typeId 'Shared'")
+                        && m.contains("Foo, Zed")
+                        && m.contains("nondeterministic"));
             }),
 
         MULTIPLE_NODE_TYPES_PER_TABLE_ALLOWED(

@@ -42,25 +42,25 @@ public class GraphitronSchemaValidator {
         validateOutcomeTypeShape(schema, errors);
         validateOutcomeChildArmSwitch(schema, errors);
         validateContextArgumentTypeAgreement(schema, errors);
-        validateUniformDomainReturnType(schema, errors);
+        drainBuildDiagnostics(schema, errors);
         return List.copyOf(errors);
     }
 
     /**
-     * R204 / R279 slice 4: drains the builder's cached multi-producer
-     * {@link no.sikt.graphitron.rewrite.model.DomainReturnType} disagreements
-     * ({@link GraphitronSchema#domainReturnTypeConflicts()}) into one {@link ValidationError} per
-     * conflict group, mirroring the cross-cutting drain shape of
-     * {@link #validateContextArgumentTypeAgreement}. The builder detects the disagreement at
-     * classification time (every producer of a given SDL Object return type must agree on the Java
-     * value placed at {@code env.getSource()}); this rule is the enforcement surface that replaced
-     * the reclassifying post-pass, so the demote-to-{@code UnclassifiedField} mechanism and the
-     * validator can no longer drift on which schemas are rejected.
+     * R317 slice 5: drains the build-time validation diagnostics the immutable validate phase
+     * accumulated ({@link GraphitronSchema#diagnostics()}) into the {@link ValidationError} stream.
+     * The global soundness reductions (node-typeId uniqueness, case-fold collisions, the
+     * dangling-reference backstop, the federation {@code @key} checks, and the multi-producer
+     * {@code DomainReturnType} agreement, R204 / R279 slice 4) register a fully-formed
+     * {@link ValidationError} on the schema rather than demoting a classified verdict to
+     * {@code UnclassifiedType} / {@code UnclassifiedField}, so a verdict read after the walk equals
+     * the verdict classification produced. This drain re-surfaces those findings unchanged: the
+     * coordinate, typed {@link Rejection}, and source location are already those the validator's own
+     * {@code validateUnclassifiedType} / {@code validateUnclassifiedField} passes would have
+     * produced from the demotion, so the error stream is byte-identical to the demoting world.
      */
-    private void validateUniformDomainReturnType(GraphitronSchema schema, List<ValidationError> errors) {
-        for (Rejection conflict : schema.domainReturnTypeConflicts()) {
-            errors.add(new ValidationError("<schema>", conflict, SourceLocation.EMPTY));
-        }
+    private void drainBuildDiagnostics(GraphitronSchema schema, List<ValidationError> errors) {
+        errors.addAll(schema.diagnostics());
     }
 
     /**

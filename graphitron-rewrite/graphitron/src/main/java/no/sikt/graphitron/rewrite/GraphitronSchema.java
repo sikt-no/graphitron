@@ -4,7 +4,6 @@ import graphql.schema.FieldCoordinates;
 import no.sikt.graphitron.rewrite.model.EntityResolution;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
-import no.sikt.graphitron.rewrite.model.Rejection;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -28,12 +27,16 @@ import java.util.Map;
  * {@code GraphitronFacadeGenerator}'s factory parameter emission) read this field directly
  * rather than re-classifying, so a "single producer" guarantee holds across the two consumers.
  *
- * <p>{@link #domainReturnTypeConflicts} (R204 / R279 slice 4) carries the multi-producer
- * {@code DomainReturnType} disagreements the builder detected at classification time, shape-parallel
- * to {@link #contextArguments}. The builder computes them once over the classified field registry
- * (against the assembled schema's SDL-Object axis) and stashes them here rather than reclassifying
- * the producers; the validator's {@code validateUniformDomainReturnType} drains them into
- * {@link ValidationError}s. Empty for every test-constructed schema and every conflict-free build.
+ * <p>{@link #diagnostics} (R317 slice 5, generalising the R204 / R279 slice 4
+ * {@code domainReturnTypeConflicts} one-off) carries the build-time validation findings the
+ * immutable validate phase accumulated instead of demoting a classified verdict to
+ * {@code UnclassifiedType} / {@code UnclassifiedField}: the multi-producer {@code DomainReturnType}
+ * disagreements, node-typeId collisions, case-fold collisions, the dangling-reference backstop, and
+ * the federation {@code @key} checks. Each is a fully-formed {@link ValidationError} (coordinate,
+ * typed {@link Rejection}, source location); the validator drains them into the same
+ * {@link ValidationError} stream it emits today, so which schemas pass or fail is unchanged while a
+ * verdict read after the walk equals the verdict classification produced. Empty for every
+ * test-constructed schema and every error-free build.
  */
 public record GraphitronSchema(
     Map<String, GraphitronType> types,
@@ -42,7 +45,7 @@ public record GraphitronSchema(
     Map<String, EntityResolution> entitiesByType,
     List<BuildWarning> warnings,
     ContextArgumentClassifier.Classification contextArguments,
-    List<Rejection> domainReturnTypeConflicts
+    List<ValidationError> diagnostics
 ) {
 
     /**
@@ -57,16 +60,16 @@ public record GraphitronSchema(
 
     /**
      * Convenience constructor used by {@link GraphitronSchemaBuilder}: same field-grouping as the
-     * two-arg form but preserves the {@code warnings} list and the {@code domainReturnTypeConflicts}
-     * the builder accumulated during classification.
+     * two-arg form but preserves the {@code warnings} list and the build-time {@code diagnostics}
+     * the immutable validate phase accumulated.
      */
     public GraphitronSchema(Map<String, GraphitronType> types,
                             Map<FieldCoordinates, GraphitronField> fields,
                             Map<String, EntityResolution> entitiesByType,
                             List<BuildWarning> warnings,
-                            List<Rejection> domainReturnTypeConflicts) {
+                            List<ValidationError> diagnostics) {
         this(types, fields, groupByType(fields), Map.copyOf(entitiesByType), List.copyOf(warnings),
-            ContextArgumentClassifier.classify(fields.values()), List.copyOf(domainReturnTypeConflicts));
+            ContextArgumentClassifier.classify(fields.values()), List.copyOf(diagnostics));
     }
 
     private static Map<String, List<GraphitronField>> groupByType(Map<FieldCoordinates, GraphitronField> fields) {

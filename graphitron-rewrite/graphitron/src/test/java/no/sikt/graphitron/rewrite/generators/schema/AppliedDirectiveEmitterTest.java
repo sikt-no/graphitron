@@ -12,12 +12,18 @@ import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 @UnitTier
 class AppliedDirectiveEmitterTest {
 
+    // A federation @key entity is backed by a @table (the dispatcher SELECTs from it); R317 slice 5
+    // stopped the federation @key check from incidentally registering a @table-less @key type as an
+    // UnclassifiedType, which is what previously made ObjectTypeGenerator (it iterates the type
+    // registry) emit a UserType for this fixture. The @table here makes User a real, emittable
+    // TableType — the canonical valid federation entity — so the survivor-directive emission this
+    // test asserts is exercised on a schema that also passes classification.
     private static final String FEDERATION_SDL = """
         directive @key(fields: String!) on OBJECT
         directive @external on FIELD_DEFINITION
         directive @shareable on OBJECT | FIELD_DEFINITION
         type Query { user: User }
-        type User @key(fields: "id") @shareable {
+        type User @table(name: "film") @key(fields: "id") @shareable {
           id: ID!
           name: String @external
         }

@@ -244,6 +244,18 @@ class BuildContext {
      * the plugin's validate / generate mojos; never fail the build. See {@link BuildWarning}.
      */
     private final List<BuildWarning> warnings = new ArrayList<>();
+    /**
+     * Build-time validation diagnostics the immutable validate phase (R317 slice 5) accumulates
+     * instead of demoting a classified verdict to {@code UnclassifiedType} / {@code UnclassifiedField}.
+     * The global soundness reductions (node-typeId uniqueness, case-fold collisions, the
+     * dangling-reference backstop, the federation {@code @key} checks, and the multi-producer
+     * {@code DomainReturnType} agreement) register a {@link ValidationError} here rather than
+     * overwriting the registry, so a verdict read after the walk equals the verdict classification
+     * produced. {@code GraphitronSchemaBuilder} hands the list to {@link GraphitronSchema}; the
+     * validator drains it into the same {@link ValidationError} stream it emits today, so which
+     * schemas pass or fail is unchanged.
+     */
+    private final List<ValidationError> diagnostics = new ArrayList<>();
     private final Map<String, List<String>> typeNamesByTableKey;
     private final NodeIdLeafResolver nodeIdLeafResolver;
 
@@ -308,6 +320,18 @@ class BuildContext {
 
     List<BuildWarning> warnings() {
         return List.copyOf(warnings);
+    }
+
+    /**
+     * Records a build-time validation diagnostic (R317 slice 5). Used by the immutable validate
+     * phase's global reductions in place of demoting a classified verdict; see {@link #diagnostics}.
+     */
+    void addDiagnostic(ValidationError diagnostic) {
+        diagnostics.add(diagnostic);
+    }
+
+    List<ValidationError> diagnostics() {
+        return List.copyOf(diagnostics);
     }
 
     // ===== Directive-reading helpers =====
