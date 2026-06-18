@@ -194,6 +194,9 @@ type Query {
     # FK-target Address, not customer. The rewrite emits a correlated EXISTS over the FK;
     # addressDistrictAlberta filters customers whose address district is 'Alberta'.
     customersByAddressDistrict(filter: CustomerAddressNodeFilter!): [Customer!]!
+    # R330 rework: opptak shim reproduction — multi-field @table filter (implicit siblings +
+    # GeneratedConditionFilter + lifted filterMap) with a non-null ID! FK-target @condition(override).
+    customersByMultiFieldFilter(filter: CustomerMultiFieldNodeFilter): [Customer!]!
     # R330: the opptak shim shape exactly — a field-level @condition(override) on the query
     # *and* an FK-target @nodeId + @condition(override) input field. The generated QueryConditions
     # shim accumulates two terms: the field-level customersActiveOnly(table, ...) against the root
@@ -1339,7 +1342,22 @@ input CustomerAddressNodeFilter @table(name: "customer") {
         }, override: true)
 }
 
-# argres Phase 4b: plain input type used as a NestingField inside a @table input,
+# R330 rework reproduction: mirrors the opptak SoknadsmangeltypeFilterInput shape exactly that the
+# shim fix initially missed — sibling un-annotated implicit fields (which produce a
+# GeneratedConditionFilter and lift the `filter` arg to a `filterMap` local) ALONGSIDE a non-null
+# ID! FK-target @nodeId + @condition(override) field. The FK-target term must still emit a correlated
+# EXISTS handing addressDistrictAlberta an aliased Address, not the customer table.
+input CustomerMultiFieldNodeFilter @table(name: "customer") {
+    firstName: String @field(name: "FIRST_NAME")
+    activebool: Boolean @field(name: "ACTIVEBOOL")
+    addressId: ID @nodeId(typeName: "Address")
+        @condition(condition: {
+            className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
+            method: "addressDistrictAlberta"
+        }, override: true)
+}
+
+
 # one level deep; nested-arg extraction walks path ["inner", "filmId"].
 input InnerFilmInput {
     filmId: ID! @field(name: "film_id")
