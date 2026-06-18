@@ -608,6 +608,39 @@ class HoversTest {
         assertThat(Hovers.compute(file, filmAndLanguageCatalogWithLanguageName(), snapshot, pos)).isEmpty();
     }
 
+    // ===== R331 — @field(name:) on a @table-interface participant cross-table reference =====
+    //              hovers on the @reference terminal-table column, not the participant's @table
+
+    @Test
+    void participantCrossTableReferenceHoversOnTerminalTableColumn() {
+        // The enclosing @table is "film" (the participant table); the field reaches "lang_name"
+        // on the terminal table "language" via a ParticipantCrossTable classification. Pre-R331
+        // the hover dispatched on the enclosing backing and rendered the wrong table; routing
+        // ParticipantCrossTable through lspColumnDispatch() hovers the terminal-table column.
+        var file = file("""
+            type DokumentMelding implements Melding @table(name: "film") @discriminator(value: "DOKUMENT") {
+                languageName: String @field(name: "lang_name") @reference(path: [{table: "language"}])
+            }
+            """);
+        var pos = pointAt(file, 1, "lang_name");
+
+        var snapshot = new LspSchemaSnapshot.Built.Current(
+            List.of(),
+            java.util.Map.of("DokumentMelding", new TypeBackingShape.TableBacking("film")),
+            java.util.Map.of(),
+            java.util.Map.of("DokumentMelding.languageName",
+                new no.sikt.graphitron.rewrite.catalog.FieldClassification.ParticipantCrossTable(
+                    "language", "lang_name", "DOKUMENT_MELDING__DOKUMENT_MELDING_BASE_FK", "soknad")),
+            java.util.Map.of()
+        );
+        var hover = Hovers.compute(file, filmAndLanguageCatalogWithLanguageName(), snapshot, pos).orElseThrow();
+        var md = hover.getContents().getRight().getValue();
+
+        assertThat(md).contains("**Column** `lang_name`");
+        assertThat(md).contains("on `language`");
+        assertThat(md).doesNotContain("on `film`");
+    }
+
     private static CompletionData filmAndLanguageCatalogWithLanguageName() {
         var film = new CompletionData.Table(
             "film", "Movies",

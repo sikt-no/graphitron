@@ -385,6 +385,62 @@ class DiagnosticsTest {
         assertThat(diags).noneMatch(d -> d.getMessage().contains("Unknown column"));
     }
 
+    // ===== R331 — @field(name:) on a @table-interface participant cross-table reference =====
+    //              validates against the @reference terminal table, not the participant's @table
+
+    @Test
+    void participantCrossTableReferenceValidatesAgainstTerminalTable() {
+        // Single-table-interface participant: the enclosing @table is "film" but the field
+        // reaches a column on "language" through a single-hop @reference. The field classifies
+        // as ParticipantCrossTable, whose targetTableName is the terminal table. "NAME"
+        // exists on "language" but not on "film"; pre-R331 the ParticipantCrossTable arm fell
+        // through to the enclosing @table and emitted a false-positive
+        // "Unknown column 'NAME' on table 'film'." on a schema that builds clean.
+        var file = file("""
+            type DokumentMelding implements Melding @table(name: "film") @discriminator(value: "DOKUMENT") {
+                languageName: String @field(name: "NAME") @reference(path: [{table: "language"}])
+            }
+            """);
+
+        var snapshot = new LspSchemaSnapshot.Built.Current(
+            java.util.List.of(),
+            java.util.Map.of("DokumentMelding", new no.sikt.graphitron.rewrite.catalog.TypeBackingShape.TableBacking("film")),
+            java.util.Map.of(),
+            java.util.Map.of("DokumentMelding.languageName",
+                new no.sikt.graphitron.rewrite.catalog.FieldClassification.ParticipantCrossTable(
+                    "language", "NAME", "DOKUMENT_MELDING__DOKUMENT_MELDING_BASE_FK", "soknad")),
+            java.util.Map.of()
+        );
+        var diags = compute(file, filmAndLanguageCatalogWithLanguageName(), snapshot);
+
+        assertThat(diags).isEmpty();
+    }
+
+    @Test
+    void participantCrossTableReferenceBogusColumnCitesTerminalTable() {
+        // The wrong-table message is the user-visible bug: a bogus column must be reported
+        // against the terminal table ("language"), never the participant's own @table ("film").
+        var file = file("""
+            type DokumentMelding implements Melding @table(name: "film") @discriminator(value: "DOKUMENT") {
+                languageName: String @field(name: "NOPE") @reference(path: [{table: "language"}])
+            }
+            """);
+
+        var snapshot = new LspSchemaSnapshot.Built.Current(
+            java.util.List.of(),
+            java.util.Map.of("DokumentMelding", new no.sikt.graphitron.rewrite.catalog.TypeBackingShape.TableBacking("film")),
+            java.util.Map.of(),
+            java.util.Map.of("DokumentMelding.languageName",
+                new no.sikt.graphitron.rewrite.catalog.FieldClassification.ParticipantCrossTable(
+                    "language", "NOPE", "DOKUMENT_MELDING__DOKUMENT_MELDING_BASE_FK", "soknad")),
+            java.util.Map.of()
+        );
+        var diags = compute(file, filmAndLanguageCatalogWithLanguageName(), snapshot);
+
+        assertThat(diags).anyMatch(d -> d.getMessage().contains("Unknown column 'NOPE' on table 'language'"));
+        assertThat(diags).noneMatch(d -> d.getMessage().contains("on table 'film'"));
+    }
+
     @Test
     void emptyArgumentValueProducesNoError() {
         // Mid-edit state: cursor sits in an empty quoted value. We

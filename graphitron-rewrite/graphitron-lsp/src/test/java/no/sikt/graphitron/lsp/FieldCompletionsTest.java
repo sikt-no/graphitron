@@ -396,6 +396,40 @@ class FieldCompletionsTest {
         assertThat(items).isEmpty();
     }
 
+    // ===== R331 — @field(name:) on a @table-interface participant cross-table reference =====
+    //              completes the @reference terminal-table columns, not the participant's @table
+
+    @Test
+    void participantCrossTableReferenceCompletesTerminalTableColumns() {
+        // The enclosing @table is "FILM" (the participant table); the field reaches the terminal
+        // table "LANGUAGE" via a ParticipantCrossTable classification. Pre-R331 the dropdown
+        // listed FILM's columns; routing ParticipantCrossTable through lspColumnDispatch() emits
+        // LANGUAGE's columns instead.
+        String source = """
+            type DokumentMelding implements Melding @table(name: "FILM") @discriminator(value: "DOKUMENT") {
+                languageName: String @field(name: "") @reference(path: [{table: "LANGUAGE"}])
+            }
+            """;
+        int line = 1;
+        int col = source.split("\n")[line].indexOf("@field(name: \"") + "@field(name: \"".length();
+        Point cursor = new Point(line, col);
+
+        var snapshot = new LspSchemaSnapshot.Built.Current(
+            List.of(),
+            Map.of("DokumentMelding", new TypeBackingShape.TableBacking("FILM")),
+            Map.of(),
+            Map.of("DokumentMelding.languageName",
+                new no.sikt.graphitron.rewrite.catalog.FieldClassification.ParticipantCrossTable(
+                    "LANGUAGE", "", "DOKUMENT_MELDING__DOKUMENT_MELDING_BASE_FK", "soknad")),
+            Map.of()
+        );
+        var items = run(filmAndLanguageCatalog(), snapshot, source, cursor);
+
+        assertThat(items).extracting(c -> c.getLabel())
+            .containsExactly("LANGUAGE_ID", "NAME")
+            .doesNotContain("FILM_ID", "TITLE");
+    }
+
     private static CompletionData filmAndLanguageCatalog() {
         var film = new CompletionData.Table(
             "FILM", "Movies", CompletionData.SourceLocation.UNKNOWN,

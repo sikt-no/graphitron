@@ -126,10 +126,10 @@ public sealed interface FieldClassification
             case ColumnReference c              -> new LspColumnDispatch.Resolve(c.tableName());
             case CompositeColumn c              -> new LspColumnDispatch.Resolve(c.tableName());
             case CompositeColumnReference c     -> new LspColumnDispatch.Resolve(c.tableName());
+            case ParticipantCrossTable c        -> new LspColumnDispatch.Resolve(c.targetTableName());
             case InputUnbound _                 -> new LspColumnDispatch.Silent();
             case Unclassified _                 -> new LspColumnDispatch.Silent();
-            case ParticipantCrossTable _,
-                 TableTarget _,
+            case TableTarget _,
                  RecordTableTarget _,
                  TableMethod _,
                  TableInterface _,
