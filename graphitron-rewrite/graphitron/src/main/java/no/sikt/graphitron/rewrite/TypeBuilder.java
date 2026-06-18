@@ -322,6 +322,41 @@ class TypeBuilder {
         return carrierTableBinding(name) == null;
     }
 
+    /**
+     * R317 slice 3e — registry-free look-ahead at a field's target type. Returns the verdict the
+     * target type name resolves to, computed from SDL + reflection bindings + catalog
+     * ({@link #classifyType}) plus the producer-bound single-record carrier fixed point
+     * ({@link #carrierTableBinding}), never read from the in-progress type registry. It reproduces
+     * exactly what {@code ctx.types.get(name)} returned at field-classification time in the two-pass
+     * world (where {@code buildTypes} had fully populated the registry before the field pass ran),
+     * so the field pass can resolve an {@link InterfaceType} / {@link UnionType} / {@link ResultType}
+     * target without depending on that target having been registered. That independence is the
+     * precondition for folding type and field classification into one enter-only walk (slice 4),
+     * where a field's output target is a not-yet-visited child of the field's parent.
+     *
+     * <p>{@code classifyType} covers the {@code @table} / {@code @node} / {@code @error} / interface
+     * / union / reflection-bound result / scalar / enum / input verdicts. The carrier fallback covers
+     * the one verdict {@code classifyType} leaves {@code null} but the registry holds non-null: the
+     * directiveless single-record carrier, bound at the producing edge from {@link #carrierTableBinding}
+     * (a {@link GraphitronType.JooqTableRecordType}), not by a resolved {@code @record} producer. A
+     * directiveless nesting target / orphan classifies to {@code null} under both, matching the
+     * registry's absent entry; the nesting branch in {@link FieldBuilder} is decided separately by
+     * {@link #isDirectivelessNestingTarget}, not by this verdict. The post-walk demotions
+     * ({@link #validateNodeTypeIdUniqueness}, multi-producer, case-fold) do not change any verdict arm
+     * this look-ahead is read for (interface / union / result): a demoted node is read through the
+     * {@code NodeIndex}, and a multi-producer / case-fold demotion turns a verdict that was already not
+     * one of those arms into an {@code UnclassifiedType} that is still not one of those arms.
+     */
+    GraphitronType lookAheadVerdict(String typeName) {
+        if (!(ctx.schema.getType(typeName) instanceof GraphQLNamedType named)) return null;
+        var verdict = classifyType(named);
+        if (verdict != null) return verdict;
+        var carrierTable = carrierTableBinding(typeName);
+        if (carrierTable == null) return null;
+        var objType = ctx.schema.getObjectType(typeName);
+        return new GraphitronType.JooqTableRecordType(typeName, locationOf(objType), null, carrierTable);
+    }
+
     private static void validateNodeTypeIdUniqueness(TypeRegistry registry) {
         var byTypeId = new LinkedHashMap<String, List<NodeType>>();
         for (var type : registry.entries().values()) {

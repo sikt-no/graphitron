@@ -12,8 +12,22 @@ last-updated: 2026-06-17
 
 # Single edge-driven classification pass and immutable validation (retire TypeBuilder.buildTypes)
 
-> **Status (resume pointer).** Slices 1, 2, 3a, 3b, 3c and 3d are shipped to trunk; slice 4 (collapse
-> to one walk, delete `buildTypes`) is the active front, then 5 (immutable validate). Slice 3d lifted
+> **Status (resume pointer).** Slices 1, 2, 3a, 3b, 3c, 3d and 3e are shipped to trunk; slice 4
+> (collapse to one walk, delete `buildTypes`) is the active front, then 5 (immutable validate). Slice
+> 3e closed the last classification-edge registry reads: the interface / union / result-family target
+> reads in `FieldBuilder` (`:672` / `:2120` / `:3236` / `:3291` / `:4654` / `:5046`) now resolve
+> through a registry-free look-ahead (`TypeBuilder.lookAheadVerdict`, a pure `classifyType` + carrier
+> fixed point), so field classification no longer depends on the target type having been registered.
+> This was forced by an investigation finding for slice 4: `SchemaTraverser.depthFirst` fires the
+> `GraphQLTypeVisitor` on **enter only** (`TraverserDelegateVisitor.leave` is a hard-coded `CONTINUE`,
+> confirmed by decompiling graphql-java 25), so the spec's original "each field in post-order, its
+> edge-local target already classified" premise is unavailable; a field's output target is a
+> not-yet-visited child. Look-ahead (rather than a new InterfaceType / UnionType index, or a different
+> traverser) closes that gap by reading the target's verdict from SDL + bindings on demand. The four
+> `ctx.types` reads that remain in `FieldBuilder` are not enter-unsafe target reads: inputs (`:963` /
+> `:3708`) and scalar (`:4645`) are served by the pre-walk input/scalar/enum sweep, and `:5436` is an
+> error-message candidate-name hint (slice 4 must source it off the schema, not the partial registry).
+> Slice 3d lifted
 > table / node / error membership to three pure, typename-keyed fixed-point indices (`ctx.tables`,
 > `ctx.nodes`, `ctx.errors`), directive-scanned over all types as a superset and driven off the pure
 > `classifyType` verdict; the deep `FieldBuilder` reads (union-member `ErrorType`, payload-data-field
@@ -380,15 +394,46 @@ orphan move are pinned by explicit tests, not claimed trivially.
    typeId-collision case (`NodeIdPipelineTest.TYPE_ID_COLLISION_DEMOTES_BOTH`) confirms the model:
    classification succeeds against the collided node, `validateNodeTypeIdUniqueness` still flags it,
    and the invalid schema does not generate.
+3e. **Look-ahead retires the last classification-edge registry reads.** *Shipped.* Slice 3d left the
+   interface / union / result-family target reads in `FieldBuilder` reading `ctx.types`, on the
+   premise (from the slice-4 spec) that they were "post-order satisfiable" once the walk classified a
+   field's target before the field. Investigation for slice 4 falsified that premise:
+   `SchemaTraverser.depthFirst` fires the `GraphQLTypeVisitor` on **enter only**
+   (`TraverserDelegateVisitor.leave` is a hard-coded `return CONTINUE`, confirmed by decompiling
+   graphql-java 25), so in the single walk a field's output target is a not-yet-visited child and the
+   read would see no entry. Of the two strategies considered (look-ahead vs. a different traverser),
+   look-ahead is taken: a registry-free `TypeBuilder.lookAheadVerdict(typeName)` returns the verdict
+   the target resolves to from SDL + reflection bindings + catalog (`classifyType`) plus the
+   producer-bound single-record carrier fixed point (`carrierTableBinding`), the one verdict
+   `classifyType` leaves `null` that the registry holds non-null. This reproduces the value
+   `ctx.types.get(name)` returned in the two-pass world (where `buildTypes` populated the registry
+   before the field pass) byte-for-byte: a nesting target / orphan is `null` under both (its branch is
+   decided separately by `isDirectivelessNestingTarget`), and the post-walk demotions (typeId
+   uniqueness, multi-producer, case-fold) do not change any arm these reads test (a demoted node is
+   read through the `NodeIndex`; a multi-producer / case-fold demotion turns a verdict already not
+   interface / union / result into an `UnclassifiedType` still not one of those). The six reads
+   (`:672`, `:2120`, `:3236`, `:3291`, `:4654`, `:5046`) migrated to `lookAheadVerdict`, so field
+   classification carries no in-progress-registry read for any target verdict. The four remaining
+   `ctx.types` reads are not enter-unsafe: inputs (`:963` / `:3708`) and scalar (`:4645`) resolve types
+   the pre-walk input/scalar/enum sweep classifies, and `:5436` is an error-message candidate-name hint
+   (slice 4 sources it off the schema, not the partial registry). Output byte-identical (truth table
+   448, full pipeline / compile / execution build green); structure delta: the last classification-edge
+   registry reads removed, the read-free invariant now holding for every target verdict.
 4. **Collapse to one walk; delete `buildTypes`.** Replace the no-op `GraphQLTypeVisitorStub` in
-   `SchemaReachability` with a real `GraphQLTypeVisitor` that classifies types and fields in one
-   `SchemaTraverser.depthFirst` call, parent context flowing down the var channel and the `NodeIndex`
-   threaded in as a traverser argument (read-free invariant); delete `buildTypes`, the separate
-   `classifyFieldsOfObject` loop, and the `reachableOutputTypes` hand-off; update the
-   `buildContextForTests` seam; make reflection grounding on-demand (drop the `resolveAll()`
-   precondition). Only validation reductions after. Output byte-identical; structure delta is the whole
-   point, gated by the falsifiable acceptance test (no type registered before its discovering field is
-   visited), which the current eager pass fails.
+   `SchemaReachability` with a real `GraphQLTypeVisitor` that classifies types on enter and folds
+   field classification into the same `SchemaTraverser.depthFirst` call. With slice 3e the visit is
+   read-free for every target verdict, so the enter-only traversal order (a field's target is a
+   not-yet-visited child) no longer matters: a type's own verdict is computed at its visit
+   (registry-free, the parent context that field classification needs is its own verdict plus the
+   precomputed indices / bindings, not a sibling lookup). Delete `buildTypes`, the separate
+   `classifyFieldsOfObject` loop, and the `reachableOutputTypes` hand-off; run the input/scalar/enum
+   sweep before the walk so its verdicts are present; source the `:5436` candidate-name hint off the
+   schema; update the `buildContextForTests` seam; make reflection grounding on-demand (drop the
+   `resolveAll()` precondition) only if it does not fight eager index construction (the indices call
+   `classifyType` over all types, which grounds bindings as a side effect; resolve that tension when
+   the slice lands). Only validation reductions after. Output byte-identical; structure delta is the
+   whole point, gated by the falsifiable acceptance test (no type registered before its discovering
+   field is visited), which the current eager pass fails.
 5. **Immutable validate phase (inlines R318).** The global reductions register diagnostics into a
    diagnostic channel instead of demoting to `UnclassifiedType` / `UnclassifiedField`; the
    validator and LSP read diagnostics from there. Changes the error-carrier mechanism, not which
