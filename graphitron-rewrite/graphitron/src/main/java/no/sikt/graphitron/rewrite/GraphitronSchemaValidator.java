@@ -1050,18 +1050,22 @@ public class GraphitronSchemaValidator {
     }
 
     /**
-     * R330: a composite-key FK-target {@code @nodeId} field carrying a {@code @condition} would need
-     * a {@code row(parentFkCols).eq(row(targetKeyCols))} correlation inside the EXISTS, which is
-     * deferred to R24 (the composite NodeId-reference work). Reject it at validate time with a
-     * directed deferral message rather than letting the emitter mis-handle it.
+     * R330: a composite-key FK-target {@code @nodeId} field carrying a {@code @condition} emits a
+     * correlated EXISTS whose correlation ANDs every composite-FK slot (the same
+     * {@code QueryConditionsGenerator}/{@code FkTargetConditionEmitter} path as the single-column
+     * case, since {@link no.sikt.graphitron.rewrite.generators.JoinPathEmitter#emitCorrelationWhere}
+     * already walks all slots). That requires every hop to be a resolved FkJoin; mirror the emitter
+     * precondition here so a non-Fk / unresolved hop fails at validate time with a directed message
+     * rather than as an emitter IllegalStateException.
      */
     private void validateInputCompositeColumnReferenceField(no.sikt.graphitron.rewrite.model.InputField.CompositeColumnReferenceField field, List<ValidationError> errors) {
-        if (field.condition().isPresent() && !field.joinPath().isEmpty()) {
+        if (field.condition().isPresent() && !field.joinPath().isEmpty()
+                && field.joinPath().stream().anyMatch(h -> !(h instanceof no.sikt.graphitron.rewrite.model.JoinStep.FkJoin))) {
             errors.add(new ValidationError(
                 field.qualifiedName(),
                 Rejection.structural("Input field '" + field.qualifiedName()
-                    + "': @condition on a composite-key FK-target @nodeId field is not yet supported "
-                    + "(deferred to R24); use a single-column NodeType key, or drop the @condition"),
+                    + "': @condition on a composite-key FK-target @nodeId field requires a foreign-key join path; "
+                    + "the resolved path contains a non-foreign-key hop, which is not supported"),
                 field.location()
             ));
         }

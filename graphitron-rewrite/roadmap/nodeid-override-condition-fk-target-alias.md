@@ -89,7 +89,7 @@ Per validator-mirrors-classifier, every classifier decision implying an emitter 
 | Case | Handling |
 |---|---|
 | Multi-hop `joinPath` (>1 `FkJoin`) | Walk the full path inside the `EXISTS` `from`/`where`; reuse `JoinPathEmitter`. Confined to one method body (no cross-layer terminal-alias threading). |
-| Composite key (`CompositeColumnReferenceField`) | **Rejected at validate time** in this fix (deferred stub); the `RowN` correlation is R24. |
+| Composite key (`CompositeColumnReferenceField`) | **Supported** (rework). The composite arm wraps in `FkTargetConditionFilter` exactly like the single-column arm; the EXISTS correlation ANDs every composite-FK slot via `JoinPathEmitter.emitCorrelationWhere` (no `RowN` needed). The original deferral to R24 was wrong: composite NodeType keys are the common consumer shape (the real `Regelverksamling`/`Bruker` targets), so deferring left the feature unusable. |
 | Nullable FK | `EXISTS` is false when no `X` row matches, correct filter semantics; structurally safe under the cardinality invariant. |
 | List-valued `[ID!]` nodeId filter | Decode list, predicate is `rs.pk IN (decoded keys)` inside the `EXISTS`, ANDed with the developer call; matches the existing `RowIn` body shape. Execution-covered. |
 | `override: false` / no condition | **Unchanged**: implicit predicate binds decoded keys against `liftedSourceColumns`, no join. The fix never touches this path. |
@@ -140,6 +140,33 @@ customer child, FK-target Address filter) with a concrete `Address` condition pa
 compile-tier guard, plus execution assertions on the Alberta seed; and
 `customersByAddressDistrictActive` reproduces the opptak shim shape exactly (field-level
 `@condition(override)` + FK-target input field, two accumulated terms).
+
+## Rework 2: composite-key NodeType targets are supported, not deferred
+
+The original spec deferred composite-key FK-target `@condition` to R24 and rejected it at validate
+time. That was wrong for the real consumer: composite NodeType keys are the norm there (the actual
+`Regelverksamling` / `Bruker` targets are composite), so deferring left R330 unusable for them.
+
+The emitter already handles composite correlations for free: `JoinPathEmitter.emitCorrelationWhere`
+walks every FK slot, so a composite FK correlates `target.c1 = parent.c1 AND target.c2 = parent.c2`
+with no `RowN` construct. The only changes were (1) the `CompositeColumnReferenceField` arm in
+`walkInputFieldConditions` now wraps in `FkTargetConditionFilter` exactly like the single-column
+`ColumnReferenceField` arm, and (2) the validator's composite rejection became the same
+non-FkJoin-hop guard the single-column case uses (instead of a blanket deferral).
+
+Coverage: sakila `Project` is now a composite-key `@node` (PK `org_id, project_id`) and a new
+`projectNotesByProject` query filters via `ProjectNoteByProjectFilter` (`project_note` → `project`
+composite FK), with `projectNameAtlas(Project, String)` as the concrete compile-tier guard and an
+execution assertion (the Atlas notes). The pipeline test's composite case
+(`reordered_fk_child` → `reordered_pk_parent`) now asserts the `FkTargetConditionFilter` carrier and
+clean emission rather than a rejection.
+
+Note on the consumer's symptom: a composite `@nodeId` FK-target resolves to a non-empty `joinPath`
+(`DirectFk`), which the *old* validator rejected at build time — yet the consumer saw a generated-code
+compile error, not a build rejection. If that persists after this rework, the field is resolving with
+an empty `joinPath` (e.g. a `@reference` whose path infers to the own table) rather than a composite
+`@nodeId` `DirectFk`; that case carries no FK correlation in the model and needs the consumer's exact
+field SDL to address.
 
 ## Reported instances
 

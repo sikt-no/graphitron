@@ -211,6 +211,21 @@ class GraphQLQueryTest {
     }
 
     @Test
+    void projectNotesByProject_compositeKeyFkTargetOverride_filtersByForeignTable() {
+        // R330 rework: composite-key FK-target @nodeId + @condition(override) — the common consumer
+        // shape (composite NodeType keys). project_note reaches project via a composite FK
+        // (org_id, project_id); projectNameAtlas receives an aliased Project inside a correlated
+        // EXISTS whose correlation ANDs both composite-FK slots. Seed: project (1,100) is 'Atlas'
+        // with notes Atlas-N1..N3; (1,101)=Beacon and (2,100)=Cipher are filtered out. Pre-fix the
+        // composite arm emitted a plain ConditionFilter passing the project_note table to a method
+        // declaring Project, failing at consumer compile (the opptak Regelverksamling shape).
+        Map<String, Object> data = execute("{ projectNotesByProject(filter: {}) { body } }");
+        assertThat(data).extractingByKey("projectNotesByProject", as(list(Map.class)))
+            .extracting(c -> c.get("body"))
+            .containsExactlyInAnyOrder("Atlas-N1", "Atlas-N2", "Atlas-N3");
+    }
+
+    @Test
     void store_customersByAddressDistrict_inlineFkTargetOverride_filtersByForeignTable() {
         // R330: inline child TableField path (InlineTableFieldEmitter). Store.customersByAddressDistrict
         // correlates store -> customer, then the FK-target @nodeId(Address) @condition(override) on the

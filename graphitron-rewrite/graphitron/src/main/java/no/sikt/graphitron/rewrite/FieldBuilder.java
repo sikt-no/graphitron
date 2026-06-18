@@ -1606,7 +1606,21 @@ class FieldBuilder {
                     }
                 }
                 case InputField.CompositeColumnReferenceField ccrf -> {
-                    ccrf.condition().ifPresent(c -> out.add(conditionResolver.rewrapForNested(c.filter(), outerArgName, leafPath)));
+                    // R330: composite-key FK-target @nodeId + @condition is the common consumer
+                    // shape (composite NodeType keys are the norm). Same lift as the single-column
+                    // ColumnReferenceField arm: a non-empty joinPath means the developer method
+                    // expects the FK-target table X, so wrap in an FkTargetConditionFilter and the
+                    // emitter produces a correlated EXISTS whose correlation ANDs every composite-FK
+                    // slot (JoinPathEmitter.emitCorrelationWhere). Empty joinPath keeps the plain
+                    // ConditionFilter (start table == target table, so `table` is correct).
+                    ccrf.condition().ifPresent(c -> {
+                        var rewrapped = conditionResolver.rewrapForNested(c.filter(), outerArgName, leafPath);
+                        out.add(ccrf.joinPath().isEmpty()
+                            ? rewrapped
+                            : new FkTargetConditionFilter(rewrapped,
+                                ((JoinStep.HasTargetTable) ccrf.joinPath().get(ccrf.joinPath().size() - 1)).targetTable(),
+                                ccrf.joinPath(), ccrf.liftedSourceColumns(), ccrf.columns()));
+                    });
                     if (!enclosingOverride
                             && ccrf.condition().isEmpty()
                             && !lookupBoundNames.contains(ccrf.name())) {

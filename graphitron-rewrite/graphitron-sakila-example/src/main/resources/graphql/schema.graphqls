@@ -197,6 +197,10 @@ type Query {
     # R330 rework: opptak shim reproduction — multi-field @table filter (implicit siblings +
     # GeneratedConditionFilter + lifted filterMap) with a non-null ID! FK-target @condition(override).
     customersByMultiFieldFilter(filter: CustomerMultiFieldNodeFilter): [Customer!]!
+    # R330 rework: composite-key FK-target @nodeId + @condition(override). project_note -> project
+    # via a composite FK; projectNameAtlas receives an aliased Project inside a correlated EXISTS
+    # whose correlation ANDs both (org_id, project_id) slots. The common opptak shape (composite keys).
+    projectNotesByProject(filter: ProjectNoteByProjectFilter): [ProjectNote!]!
     # R330: the opptak shim shape exactly — a field-level @condition(override) on the query
     # *and* an FK-target @nodeId + @condition(override) input field. The generated QueryConditions
     # shim accumulates two terms: the field-level customersActiveOnly(table, ...) against the root
@@ -1534,11 +1538,28 @@ type ProjectEvent implements ProjectItem @table(name: "project_event") {
     label:   String! @field(name: "SUMMARY")
 }
 
-type Project @table(name: "project") {
+type Project implements Node @table(name: "project") @node {
+    # R330 rework: Project is a composite-key @node (PK org_id, project_id) so project_note can
+    # carry a composite FK-target @nodeId + @condition(override), the common consumer shape.
+    id:        ID!     @nodeId
     orgId:     Int!    @field(name: "ORG_ID")
     projectId: Int!    @field(name: "PROJECT_ID")
     name:      String! @field(name: "NAME")
     items:     [ProjectItem!]! @asConnection(defaultFirstValue: 5)
+}
+
+# R330 rework: composite-key FK-target @nodeId + @condition(override). project_note carries a
+# composite FK (org_id, project_id) -> project (a composite-key @node). With override the implicit
+# decoded predicate is suppressed and projectNameAtlas receives the FK-target Project alias inside a
+# correlated EXISTS whose correlation ANDs both composite-FK slots. The concrete Project parameter
+# is the compile-tier guard for the composite case (project_note cannot be passed where Project is
+# expected). Nullable so a test can pass an empty filter.
+input ProjectNoteByProjectFilter @table(name: "project_note") {
+    projectId: ID @nodeId(typeName: "Project")
+        @condition(condition: {
+            className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
+            method: "projectNameAtlas"
+        }, override: true)
 }
 
 # R22 Phase 2 fixture: minimal INSERT input. Sakila's `film` table has two NOT-NULL columns
