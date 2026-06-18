@@ -1259,6 +1259,23 @@ input EndorseFilmInput {
     note: String @field(name: "note")
 }
 
+# R315: a jOOQ AddressRecord param populated from a *nullable same-table identity*
+# @nodeId(typeName: "Address") — Address's own table, so the decode lands on the record's own PK
+# (address_id), the X.table == record.table arm R311 first shipped. This is the execution pin for D4's
+# nullable-same-table-identity behavior change (R311 always threw on a null/omitted identity, whether
+# ID! or ID; R315 makes a nullable ID identity skip-when-omitted so a DB-assignable serial PK can be
+# left for the service-owned INSERT to assign):
+#   - omitted (upsertAddress(in: {}))            → address_id unset (changed=false) → the @service owns
+#                                                   the INSERT and the database assigns the serial PK.
+#   - set     (upsertAddress(in: {addressId: …})) → the decoded Address id lands on address_id (update path).
+# Address (not the spec's FilmRecord example) is used deliberately: it is a reachable @node with a
+# serial DB-assignable PK whose record is not otherwise a @service param, so its create<Record> helper
+# does not collide. A second FilmRecord-backed input would clash with ModifyFilmRecordInput on the
+# per-fetcher create<Record> dedup (keyed by record class), which putIfAbsent would silently drop.
+input UpsertAddressInput {
+    addressId: ID @nodeId(typeName: "Address")
+}
+
 input PlainFilmIdInput {
     filmId: ID! @field(name: "film_id")
         @condition(condition: {
@@ -2021,5 +2038,17 @@ type Mutation {
         @service(service: {
             className: "no.sikt.graphitron.rewrite.test.services.FilmEndorsementRecordService",
             method: "describeEndorsement"
+        })
+
+    # R315 D4 execution pin: a nullable same-table identity (addressId: ID @nodeId(typeName: "Address"))
+    # on a jOOQ AddressRecord @service param, resolving to the record's own serial PK (address_id).
+    # createAddressRecord conditional-loads it: omitted → address_id left unset (changed=false) so the
+    # service-owned INSERT lets the database assign it; set → the decoded id lands on address_id (the
+    # update path). Pins the R311 throw-on-null → skip-when-omitted change for a same-table identity,
+    # the case D4 mitigation #2 named distinct from the nullable FK-reference / plain-column cases above.
+    upsertAddress(in: UpsertAddressInput!): String
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.AddressRecordService",
+            method: "upsertAddress"
         })
 }

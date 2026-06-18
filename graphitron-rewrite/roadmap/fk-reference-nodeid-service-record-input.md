@@ -1,7 +1,7 @@
 ---
 id: R315
 title: "Bind FK-reference @nodeId onto jOOQ-record @service params (port legacy @reference FK resolution; generalize R311)"
-status: Ready
+status: In Review
 bucket: feature
 priority: 4
 theme: nodeid
@@ -63,6 +63,35 @@ next reader.
 
 Re-handoff: the reviewer-session ≠ implementer-session rule applies again next
 cycle.
+
+## Rework landed (Ready → In Review, 2026-06-18, implementer session)
+
+The one blocker is addressed: a **nullable same-table identity** execution case
+now ships (D4 mitigation #2 / §Tests execution). One input + one service method +
+two assertions, on a single-PK, DB-assignable-PK table, exactly as named:
+
+- **Fixture:** `UpsertAddressInput { addressId: ID @nodeId(typeName: "Address") }`
+  feeds a jOOQ `AddressRecord` `@service` param (`upsertAddress` mutation →
+  `AddressRecordService.upsertAddress`). `Address`'s own table, so the decode
+  resolves to the record's own serial PK `address_id` (the `X.table ==
+  record.table` arm, here nullable).
+- **Assertions** (`GraphQLQueryTest`): `upsertAddress(in: {})` → `address_id`
+  omitted → `changed=false` → the service-owned `INSERT` lets the DB assign the
+  serial PK (`omitted: pkAssignedByDb=true`); `upsertAddress(in: {addressId})` →
+  the decoded id lands on `address_id` (`set: pk=2`). The omitted case is the
+  direct end-to-end pin for the R311 throw-on-null → skip-when-omitted change
+  this item folds in: under R311 a same-table identity always threw on a null
+  identity, `ID!` or `ID`.
+- **Why `Address`, not the spec's `FilmRecord` example:** the `create<Record>`
+  helper queue is keyed by record class with `putIfAbsent`
+  (`TypeFetcherGenerator`), so a second `FilmRecord`-backed input would collide
+  with `ModifyFilmRecordInput`'s helper and be silently dropped. `Address` is the
+  closest collision-free analog: a reachable `@node` with a serial DB-assignable
+  PK whose record is not otherwise a `@service` param. Reusing it (vs. a new
+  table + `@node`, which would need query-reachability wiring to survive R279
+  reachability pruning) kept the change to one input + one service method.
+- **Verification:** `mvn -f graphitron-rewrite/pom.xml install -Plocal-db` green;
+  the two new execution tests pass.
 
 ---
 
@@ -467,6 +496,10 @@ dependency for a one-emitter change and buy nothing.
 
 ## Implementation
 
+_Shipped at `0bb7161` (core code, fixtures, pipeline + FK-reference/plain-column
+execution + compile), plus the nullable same-table-identity execution case in the
+rework commit (see "Rework landed" above)._
+
 Flat file-by-file (all land together; no observable intermediate state):
 
 - **`model/CallSiteExtraction.java`** — `JooqRecord`: `Optional<RecordKeyDecode>
@@ -579,8 +612,10 @@ discriminating pins use renamed-FK fixtures (see Implementation / Test fixtures)
   value lands on the renamed FK child column, not a same-named PK column). Plus
   the **null-semantics** cases (D4), the only tier that observes `changed=false`
   exclusion: a nullable plain column omitted vs explicit-null vs set; and, on a
-  single-PK table with a DB-assignable PK (e.g. `FilmRecord`), a nullable
-  same-table identity (`filmId: ID @nodeId`) omitted (PK left unset → the service
+  single-PK table with a DB-assignable PK (landed on `AddressRecord` rather than
+  `FilmRecord` to avoid a `create<Record>` helper-dedup collision; see "Rework
+  landed"), a nullable
+  same-table identity (`addressId: ID @nodeId`) omitted (PK left unset → the service
   inserts) vs set (the update path), each yielding the correct persisted column
   set / value; and a nullable FK reference (`ID @nodeId` resolving to an FK child
   column) omitted (child column left unwritten, `changed=false`) vs set (decoded
