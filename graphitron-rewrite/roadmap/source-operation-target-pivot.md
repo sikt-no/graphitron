@@ -456,6 +456,23 @@ conservatively unreached (R305 hard-codes `Many`); it carries one documented
 
 ### Slice 3: `operation` and `target` in code
 
+**Landed (additive cutover), in two steps.** `Operation` (slice 3a) and `Target` (slice 3b) are the
+new primitives `OutputField.operation()` / `OutputField.target()`, built populated by the leaf
+producers; `intent()` / `mapping()` survive as derived `default` bridges (`intent()` recovers the
+`QueryService` / `MutationService` split from `source()`, not leaf identity; `mapping()` derives over
+`target().shape()`, deriving `TableConnection` from `Single(Connection(...))`). The R281 corpus
+classifies unchanged. Per a `principles-architect` self-check on the design fork: `ServiceCall`
+collapses `QueryService` / `MutationService` and holds its two un-unified call carriers
+(`ServiceMethodCall` root / `MethodRef` child) in a transitional `Call` holder pinned to R314, not a
+semantic axis; the write arms carry their narrowest input directly (no `WriteInput` union); the read
+family decomposes by return wrapper into `Fetch` / `Paginate`, the connection *shape* living on
+`target` as `Single(Connection)`; `TargetShape` is lean (`Interface` / `Union` participant payloads
+and the `Interface(Table | Record)` backing distinction modeled-but-unpopulated, mirroring the flat
+`SourceShape`); all declared-gap operation arms are modeled (`Count` / `Facet` / `EntityResolve` /
+`UpdateMatching` / `DeleteMatching`), not only the ones a leaf reaches. The `Intent.java` /
+`Mapping.java` *type deletion* and the `intent()` / `mapping()` bridge removal are deferred to slice 4
+(corpus migration), pinned below.
+
 Convert the `enum Intent` to a **sealed interface `Operation` with `record` arms** and build
 them **populated** (`Fetch`'s
 `List<WhereFilter>` + ordering, `Paginate`'s window + `pageInfo` synthesis, `Lookup`'s
@@ -498,11 +515,16 @@ Migrate the `classifieddsl/*` harness (`ClassifiedCorpus`,
 `operation` crossing into a `Target.Table`), replacing the `mapping() != Mapping.Table` gate;
 the existing `ReFetchDerivationTest` is migrated, not added.
 
-**Retire the slice-2 bridge.** Slice 2 landed `Source` additively, leaving `OutputField.carrier()` as a
-`default` deriving the retired `Carrier` from `source()` so the corpus classified unchanged; the corpus is
-its last reader. Once this slice repoints the corpus onto `source()` / `operation()` / `target()`, delete
-`OutputField.carrier()`, `Carrier.java`, and `SourceCardinality.java` (the latter's `One` / `Many` already
-live as the `OnlyChild` / `Child` arms). Slice 5's remnant grep is the backstop that none survive.
+**Retire the slice-2 and slice-3 bridges.** Slices 2-3 landed `Source` / `Operation` / `Target`
+additively, leaving `OutputField.carrier()` / `intent()` / `mapping()` as `default` bridges deriving the
+retired `Carrier` / `Intent` / `Mapping` from the new primitives so the corpus classified unchanged; the
+corpus is their last reader. Once this slice repoints the corpus onto `source()` / `operation()` /
+`target()`, delete those three bridge methods and `Carrier.java`, `SourceCardinality.java`,
+`Intent.java`, and `Mapping.java` (the retired enums: `SourceCardinality`'s `One` / `Many` already live as
+the `OnlyChild` / `Child` arms; `Mapping.TableConnection` already decomposed into `Single(Connection)` +
+`Operation.Paginate`). The slice-3 `ServiceCall.Call` holder and the `Interface` / `Union` /
+`Connection` payloads stay modeled-but-unpopulated until their corpus coordinates land here. Slice 5's
+remnant grep is the backstop that none survive.
 
 The `dispatchPerformsReFetch` validator mirror is re-expressed over the new axes but **survives
 R316 by design**: it guards the still-leaf-dispatched generator against `requiresReFetch()`
