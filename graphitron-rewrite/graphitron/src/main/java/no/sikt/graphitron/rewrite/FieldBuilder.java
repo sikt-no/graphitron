@@ -664,12 +664,13 @@ class FieldBuilder {
             ? ctx.connectionElementTypeName(rawTypeName)
             : rawTypeName;
         // R317 slice 3d — the table-backed fact comes from the pure TableIndex (a fixed point threaded
-        // in, not the in-progress registry), so no edge reads a sibling/parent verdict for it. The
-        // edge-local interface / union / result arms below still read ctx.types (post-order
-        // satisfiable; out of scope for this slice, migrating with InterfaceType / UnionType indices
-        // in a later slice).
+        // in, not the in-progress registry), so no edge reads a sibling/parent verdict for it. R317
+        // slice 3e — the interface / union / result arms below resolve their target through the
+        // registry-free look-ahead (TypeBuilder.lookAheadVerdict), not ctx.types, so the field's
+        // output target need not have been registered: the precondition for the enter-only single
+        // walk, where the target is a not-yet-visited child.
         GraphitronType tableBacked = ctx.tables.forName(elementTypeName).orElse(null);
-        GraphitronType elementType = ctx.types.get(elementTypeName);
+        GraphitronType elementType = typeBuilder.lookAheadVerdict(elementTypeName);
 
         if (tableBacked instanceof TableBackedType tbt && !(tableBacked instanceof TableInterfaceType)) {
             var wrapper = buildWrapper(fieldDef);
@@ -2116,7 +2117,9 @@ class FieldBuilder {
                         result.returnTypeName(), f.getName()));
             }
         }
-        if (!(ctx.types.get(result.returnTypeName()) instanceof GraphitronType.ResultType backing)) {
+        // R317 slice 3e — registry-free look-ahead at the payload's data type; reproduces the
+        // ctx.types verdict (including a producer-bound carrier) without reading the in-progress registry.
+        if (!(typeBuilder.lookAheadVerdict(result.returnTypeName()) instanceof GraphitronType.ResultType backing)) {
             return new ServiceOutcomeResult.NoChannel();
         }
         var errorsLocation = errorsFieldDef.getDefinition() != null
@@ -3230,7 +3233,7 @@ class FieldBuilder {
         // Federation subgraphs commonly expose extra node-by-id entry points under
         // distinct names (e.g. `internalOpptakNode(id: ID): Node @inaccessible`); name-
         // based dispatch alone would misclassify those as QueryInterfaceField.
-        if (baseTypeName(fieldDef).equals("Node") && ctx.types.get("Node") instanceof InterfaceType) {
+        if (baseTypeName(fieldDef).equals("Node") && typeBuilder.lookAheadVerdict("Node") instanceof InterfaceType) {
             var wrapper = buildWrapper(fieldDef);
             var returnType = new ReturnTypeRef.PolymorphicReturnType("Node", wrapper);
             if (wrapper instanceof FieldWrapper.List) {
@@ -3284,10 +3287,11 @@ class FieldBuilder {
         String rawTypeName = baseTypeName(fieldDef);
         String elementTypeName = ctx.isConnectionType(rawTypeName) ? ctx.connectionElementTypeName(rawTypeName) : rawTypeName;
         // R317 slice 3d — the table-backed fact comes from the pure TableIndex (a fixed point, not the
-        // in-progress registry). The edge-local interface / union arms below still read ctx.types
-        // (post-order satisfiable; out of scope for this slice).
+        // in-progress registry). R317 slice 3e — the interface / union arms below resolve their target
+        // through the registry-free look-ahead (TypeBuilder.lookAheadVerdict), not ctx.types, so the
+        // target need not have been registered yet (the enter-only single-walk precondition).
         GraphitronType tableBacked = ctx.tables.forName(elementTypeName).orElse(null);
-        GraphitronType elementType = ctx.types.get(elementTypeName);
+        GraphitronType elementType = typeBuilder.lookAheadVerdict(elementTypeName);
 
         if (tableBacked instanceof TableBackedType tbt && !(tableBacked instanceof TableInterfaceType)) {
             var wrapper = buildWrapper(fieldDef);
@@ -4647,7 +4651,10 @@ class FieldBuilder {
             return Object.class;
         }
         if (current instanceof GraphQLNamedType nt && ctx.types != null) {
-            var classified = ctx.types.get(nt.getName());
+            // R317 slice 3e — registry-free look-ahead at the result-backed target (reproduces the
+            // ctx.types verdict, carrier included) so the assignability check does not depend on the
+            // target having been registered.
+            var classified = typeBuilder.lookAheadVerdict(nt.getName());
             String fqcn = switch (classified) {
                 case GraphitronType.PojoResultType prt -> prt.fqClassName();
                 case GraphitronType.JavaRecordType jrt -> jrt.fqClassName();
@@ -5039,7 +5046,8 @@ class FieldBuilder {
             SourceLocation location, String elementTypeName,
             ReturnTypeRef.PolymorphicReturnType returnType,
             GraphitronType.ResultType parentResultType) {
-        GraphitronType elementType = ctx.types.get(elementTypeName);
+        // R317 slice 3e — registry-free look-ahead at the polymorphic element (interface / union).
+        GraphitronType elementType = typeBuilder.lookAheadVerdict(elementTypeName);
         List<ParticipantRef> participants;
         boolean isInterface;
         if (elementType instanceof InterfaceType interfaceType) {
