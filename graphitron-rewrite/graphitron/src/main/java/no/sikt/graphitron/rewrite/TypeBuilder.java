@@ -95,7 +95,8 @@ import static no.sikt.graphitron.rewrite.BuildContext.locationOf;
 /**
  * Classifies all named types in the schema into the {@link GraphitronType} hierarchy.
  *
- * <p>Classification is field-first and reachability-driven (see {@link #buildTypes()}): each type
+ * <p>Classification is field-first and reachability-driven (see {@link #classifyAndRegister}, driven
+ * by the single walk in {@link GraphitronSchemaBuilder}): each type
  * is classified as the walk reaches it, including interface / union participant lists, which are a
  * registry-free function of SDL plus the reflection fixed point (R279 slice 3a, R317 slice 1) and
  * so need no separate enrichment pass.
@@ -111,7 +112,7 @@ class TypeBuilder {
     private final Map<String, Class<?>> recordBackingClasses = new LinkedHashMap<>();
     /**
      * R96: the reflection-driven SDL → backing-class binding resolver. Constructed and
-     * populated by {@link #buildTypes()} before per-type classification; consulted by
+     * populated by {@link #prepareForWalk()} before per-type classification; consulted by
      * {@link #buildResultType} and {@link #buildNonTableInputType} to decide the backed
      * variant. The directive's {@code className} no longer participates.
      */
@@ -119,20 +120,6 @@ class TypeBuilder {
 
     /** Lazily computed by {@link #retainedSupportTypes()}; null until the first support-type gate runs. */
     private Set<String> retainedSupportTypes;
-
-    /**
-     * R279 slice 3b — the reachable output-type set discovered by the field-first walk in
-     * {@link #buildTypes()}. Exposed so the field-classification pass in
-     * {@link GraphitronSchemaBuilder} drives over the same reachable object types first, with a
-     * compensating sweep over the unreached ones (removed in slice 6). Empty until
-     * {@code buildTypes()} runs.
-     */
-    private Set<String> reachableOutputTypes = Set.of();
-
-    /** @see #reachableOutputTypes */
-    Set<String> reachableOutputTypes() {
-        return reachableOutputTypes;
-    }
 
     TypeBuilder(BuildContext ctx, ServiceCatalog svc) {
         this.ctx = ctx;
@@ -156,7 +143,7 @@ class TypeBuilder {
      * Keyed by payload SDL type name. Read by the schema-builder loop and threaded into
      * {@link FieldBuilder#classifyField} so the unified-path classifier can route a payload
      * field's child classification through the inner {@code TableRef} the DML producer carries.
-     * Empty until {@code buildTypes()} completes.
+     * Empty until {@code prepareForWalk()} resolves the bindings.
      */
     java.util.Optional<no.sikt.graphitron.rewrite.model.ProducerBinding.DmlEmitted> dmlEmittedBinding(String sdlTypeName) {
         return bindings == null ? java.util.Optional.empty() : bindings.resolveDmlEmitted(sdlTypeName);
@@ -175,7 +162,26 @@ class TypeBuilder {
 
     // ===== Type map construction =====
 
-    Map<String, GraphitronType> buildTypes() {
+    /**
+     * R317 slice 4 — the pre-walk preparation, shared by the production single walk
+     * ({@link GraphitronSchemaBuilder#buildSchema}) and the types-only test seam
+     * ({@link GraphitronSchemaBuilder#buildContextForTests}). Resolves the reflection-driven
+     * SDL → backing-class bindings (R96), builds the fixed-point classification indices, and
+     * classifies every SDL kind the output walk never reaches: input types, scalars, and enums (they
+     * sit only on argument / input-field coordinates the walk does not descend). These leaf kinds are
+     * classified <em>before</em> the walk, not after, because field classification reads input / scalar
+     * / enum verdicts from {@code ctx.types} (e.g. {@code MutationInputResolver}, {@code EnumMappingResolver},
+     * {@code ServiceCatalog}'s scalar binding); having them registered up front keeps those reads valid
+     * during the walk, exactly as the two-pass world (which classified them before any field) did. The
+     * directive-ignored warnings and the multi-producer rejection demotions also run here, so a
+     * rejected input is read as its {@link UnclassifiedType} demotion during the walk, matching two-pass.
+     *
+     * <p>The output composite types are <em>not</em> classified here; each is classified as the walk
+     * reaches it ({@link #classifyAndRegister}). The one validation reduction that depends on the
+     * composites ({@link #validateNodeTypeIdUniqueness} over {@code @node} types) runs after the walk
+     * ({@link #finishTypeClassification}).
+     */
+    void prepareForWalk() {
         // R96: derive SDL → backing-class bindings from reflection before per-type classification
         // runs. The directive-driven path inside buildResultType / buildNonTableInputType is gone;
         // both consult the resolver for the variant decision.
@@ -189,83 +195,72 @@ class TypeBuilder {
             bindings.resolveInput(named.getName()).ifPresent(cls ->
                 recordBackingClasses.putIfAbsent(named.getName(), cls));
         }
-
-        // R279 slice 3b — the driver inversion. The classified output-type set is *discovered* by
-        // the field-first reachability walk ({@link SchemaReachability}: seed Query / Mutation plus
-        // the @node / @key directive scan, descend field->target, union->member, and
-        // interface->implementor), not by iterating every declared type in isolation. Each reached
-        // type is classified here as a byproduct of the field edge that reached it; the verdict is
-        // the same {@link #classifyType} value the eager pass produced, now triggered on demand from
-        // reachability rather than eagerly over {@code getAllTypesAsList()}. This is the field-first
-        // flip: fields drive types.
-        var reachable = SchemaReachability.reachableTypeNames(ctx.schema);
-        this.reachableOutputTypes = reachable;
-        // R317 slice 2 — build the fixed-point reverse indices the field pass reads in place of
+        // R317 slice 2/3d — build the fixed-point reverse indices the field pass reads in place of
         // its whole-registry NodeType / participant scans. Derived from SDL + catalog via the same
         // producers (buildTableType / buildTableInterfaceType), not memoised from the registry, so
-        // it carries no dependency on the registry being fully populated.
-        buildClassificationIndices(reachable);
-        for (var name : reachable) {
-            if (!(ctx.schema.getType(name) instanceof GraphQLNamedType namedType)) continue;
-            var gType = classifyType(namedType);
-            if (gType != null) {
-                // R279 slice 2: per-type classification goes through the reconciling register entry.
-                ctx.typeRegistry.register(name, gType);
-            }
-        }
-        // R279 slice 6 — the orphan prune (intended behaviour change). The field-first walk already
-        // reaches the whole output surface, so an output composite (object / interface / union) the
-        // walk did NOT reach is an orphan and is no longer classified: an unreachable @table object
-        // gets no generated file and the reachability prune is observable. Input types, scalars, and
-        // enums are never reachable through output edges (the walk descends field-output / union-member
-        // / interface-implementor only), so they keep this dedicated sweep; without it inputs and
-        // scalars would vanish from the registry.
+        // they carry no dependency on the registry being populated, and may be built before the walk.
+        buildClassificationIndices();
+        // Classify the input / scalar / enum kinds the output walk never reaches. The walk descends
+        // field-output / union-member / interface-implementor only, so these are reached only through
+        // argument / input coordinates it does not descend; without this they would vanish from the
+        // registry. Output composites (object / interface / union) are classified on the walk — an
+        // unreached composite is an orphan, deliberately pruned (R279 slice 6) — so skip them here.
         for (var namedType : ctx.schema.getAllTypesAsList()) {
             if (namedType.getName().startsWith("__")) continue;
-            if (reachable.contains(namedType.getName())) continue;
             if (namedType instanceof GraphQLObjectType
                     || namedType instanceof GraphQLInterfaceType
                     || namedType instanceof GraphQLUnionType) {
                 continue;
             }
-            var gType = classifyType(namedType);
-            if (gType != null) {
-                ctx.typeRegistry.register(namedType.getName(), gType);
-            }
+            classifyAndRegister(namedType);
         }
-        // R307: the directive-ignored warning is a classification output. With the classify driver
-        // now reachability-partitioned, emit it in a dedicated pass over getAllTypesAsList so the
-        // warning order is stable (identical to the pre-slice-3b SDL order) and independent of walk
-        // order. It reads only the reflection-binding fixed point (resolveAll, above) and SDL
-        // directives, never the registry, so it is order-independent of classification.
+        // R307: the directive-ignored warning is a classification output. Emit it in a dedicated pass
+        // over getAllTypesAsList so the warning order is stable (SDL order) and independent of walk
+        // order. It reads only the reflection-binding fixed point (resolveAll) and SDL directives,
+        // never the registry, so it is order-independent of classification.
         for (var namedType : ctx.schema.getAllTypesAsList()) {
             if (namedType.getName().startsWith("__")) continue;
             emitDirectiveIgnoredWarning(namedType);
         }
-
-        // R96: surface multi-producer rejections as UnclassifiedType.
+        // R96: surface multi-producer rejections as UnclassifiedType. Runs before the walk so a
+        // rejected input reads as its demotion during field classification (the only composite this
+        // demotes is a directiveless object, whose classifyType verdict is null, so the walk does not
+        // overwrite the demotion).
         surfaceMultiProducerRejections();
+    }
 
-        // R317 slice 1 — the former second interface/union enrichment pass is gone: each interface
-        // and union is now classified with its participants at the node visit in {@link #classifyType}
-        // (the participant verdict is registry-free per slice 3a, so folding it onto the visit is
-        // byte-identical). What remains here is global validation over the finished registry, not a
-        // classification pass.
+    /**
+     * R317 slice 4 — classifies one reached type and registers its verdict, the per-type work the
+     * single walk drives on enter (see {@link GraphitronSchemaBuilder} {@code ClassifyingVisitor}).
+     * Replaces the eager pre-field type loop that {@code buildTypes} ran over the whole reachable set:
+     * a composite is now classified as the edge reaches it, not all up front. {@link #classifyType}
+     * is registry-free, so the verdict is identical regardless of how much of the registry exists yet
+     * (the read-free visitor invariant). A {@code null} verdict (a directiveless object: a nesting
+     * target, a producer-backed carrier, or an orphan) registers nothing here; that verdict is landed
+     * at the producing / embedding edge during field classification, or stays absent for an orphan.
+     * Also drives the input / scalar / enum sweep in {@link #prepareForWalk}.
+     */
+    GraphitronType classifyAndRegister(GraphQLNamedType namedType) {
+        var gType = classifyType(namedType);
+        if (gType != null) {
+            // R279 slice 2: per-type classification goes through the reconciling register entry.
+            ctx.typeRegistry.register(namedType.getName(), gType);
+        }
+        return gType;
+    }
 
+    /**
+     * R317 slice 4 — the one validation reduction that runs after the single walk, because it depends
+     * on the composite types the walk classifies. Field classification reads node membership through
+     * the pure {@link NodeIndex} (which carries no typeId exclusion), so running this demotion after
+     * the field walk leaves field classification unchanged (R317 slice 3d).
+     */
+    void finishTypeClassification() {
         // NodeType typeId uniqueness: two types cannot share a typeId because Query.node(id:)
         // dispatch extracts the typeId prefix and routes to one GraphQL type. Colliding entries
         // demote symmetrically — we can't pick a winner without silently breaking the loser's
         // issued IDs, which would violate the durability invariant.
         validateNodeTypeIdUniqueness(ctx.typeRegistry);
-
-        // R317 slice 3b — carrier promotion is folded onto the producing edge. The former
-        // promoteSingleRecordPayloads pass (a post-type-pass SDL scan that registered every
-        // producer-backed single-record carrier as a JooqTableRecordType) is deleted; the verdict is
-        // now landed at the edge that reaches the carrier, from the registry-free
-        // carrierTableBinding fixed point, when the carrier type is visited in the field pass
-        // (GraphitronSchemaBuilder.classifyFieldsOfObject). See carrierTableBinding.
-
-        return ctx.typeRegistry.entries();
     }
 
     /**
@@ -409,10 +404,14 @@ class TypeBuilder {
      * ambiguous (>1) cases. {@code byName} keys on the distinct type names so each node resolves
      * independently through the explicit {@code @nodeId(typeName:)} path.
      *
-     * <p>The participant index ({@code crossTableFieldsByParticipant}) stays restricted to the
-     * reachable set.
+     * <p>R317 slice 4 — the participant index ({@code crossTableFieldsByParticipant}) is now also
+     * directive-scanned over <b>all</b> declared types, not the reachable set: this lets the indices be
+     * built before the walk (the reachable set is no longer precomputed as a separate pass). It is the
+     * same superset argument as the membership indices: a participant a reachable field actually queries
+     * is itself reachable, so the index and the consulted domain agree. The extra entries (for
+     * {@code @table}+{@code @discriminate} interfaces no reachable field queries) are never read.
      */
-    private void buildClassificationIndices(Set<String> reachable) {
+    private void buildClassificationIndices() {
         // R317 slice 3d — the membership indices (node / table / error) are directive-scanned over
         // ALL declared types (skipping the __-prefixed introspection types), a superset of the
         // reachable set. No reachability prune: every type a field read actually queries is already
@@ -461,8 +460,9 @@ class TypeBuilder {
         ctx.errors = new ErrorIndex(byErrorName);
 
         var byParticipant = new LinkedHashMap<String, Map<String, ParticipantRef.TableBound.CrossTableField>>();
-        for (var name : reachable) {
-            if (!(ctx.schema.getType(name) instanceof GraphQLInterfaceType iface)) continue;
+        for (var named : ctx.schema.getAllTypesAsList()) {
+            if (named.getName().startsWith("__")) continue;
+            if (!(named instanceof GraphQLInterfaceType iface)) continue;
             if (!iface.hasAppliedDirective(DIR_TABLE) || !iface.hasAppliedDirective(DIR_DISCRIMINATE)) continue;
             if (!(buildTableInterfaceType(iface) instanceof TableInterfaceType tit)) continue;
             for (var p : tit.participants()) {

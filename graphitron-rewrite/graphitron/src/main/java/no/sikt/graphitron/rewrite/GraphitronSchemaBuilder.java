@@ -4,8 +4,14 @@ import com.apollographql.federation.graphqljava.FederationDirectives;
 import graphql.language.DirectiveDefinition;
 import graphql.schema.FieldCoordinates;
 import graphql.schema.GraphQLArgument;
+import graphql.schema.GraphQLInterfaceType;
 import graphql.schema.GraphQLObjectType;
 import graphql.schema.GraphQLSchema;
+import graphql.schema.GraphQLSchemaElement;
+import graphql.schema.GraphQLTypeVisitorStub;
+import graphql.schema.GraphQLUnionType;
+import graphql.util.TraversalControl;
+import graphql.util.TraverserContext;
 import graphql.schema.idl.EchoingWiringFactory;
 import graphql.schema.idl.ScalarInfo;
 import graphql.schema.idl.SchemaGenerator;
@@ -151,6 +157,7 @@ public class GraphitronSchemaBuilder {
         var svc = new ServiceCatalog(bctx);
         bctx.svc = svc;
         var typeBuilder = new TypeBuilder(bctx, svc);
+        bctx.typeBuilder = typeBuilder;
         var fieldBuilder = new FieldBuilder(bctx, svc);
         fieldBuilder.setTypeBuilder(typeBuilder);
         var result = buildSchema(bctx, typeBuilder, fieldBuilder);
@@ -215,7 +222,16 @@ public class GraphitronSchemaBuilder {
         var svc = new ServiceCatalog(bctx);
         bctx.svc = svc;
         var typeBuilder = new TypeBuilder(bctx, svc);
-        typeBuilder.buildTypes();
+        bctx.typeBuilder = typeBuilder;
+        // R317 slice 4 — the types-only half of the single walk: classify the reachable composites on
+        // enter (a ClassifyingVisitor with no FieldBuilder, so no field-classification side effects),
+        // then the post-walk type-level work. This reproduces the type registry the deleted
+        // buildTypes() built, without consuming the resolver via field classification (which
+        // NodeIdLeafResolverTest depends on; see this method's javadoc).
+        typeBuilder.prepareForWalk();
+        SchemaReachability.walk(bctx.schema,
+            new ClassifyingVisitor(bctx, typeBuilder, null, null, null));
+        typeBuilder.finishTypeClassification();
         return bctx;
     }
 
@@ -223,29 +239,28 @@ public class GraphitronSchemaBuilder {
 
     private static BuildResult buildSchema(BuildContext ctx, TypeBuilder typeBuilder, FieldBuilder fieldBuilder) {
         validateDirectiveSchema(ctx);
-        typeBuilder.buildTypes();
-        // R279 slice 3b/6 — field classification is driven by the field-first reachability walk that
-        // drove type classification: visit the reached object types, in walk order. Slice 6 deleted
-        // the compensating sweep over unreached object types that slice 3b carried, so fields of an
-        // unreachable object are no longer classified and the reachability prune is observable
-        // (consistent with the type-side prune in TypeBuilder.buildTypes: the unreachable parent is
-        // itself no longer classified). Interfaces / unions in the reachable set have no fields
-        // classified here (only object types do), so getType-instanceof-GraphQLObjectType filters
-        // them out.
-        // R279 slice 5 — connection synthesis is folded into this field-first walk: visiting an
-        // @asConnection / structural connection carrier registers its Connection / Edge / PageInfo
-        // as a byproduct (ConnectionPromoter.synthesiseForField, called per field inside
-        // classifyFieldsOfObject). The walk accumulates the carrier rewrites and the set of
-        // synthesised names absent from the assembled schema; there is no separate all-types
-        // promotion pass and no second ctx.types scan.
-        var reachable = typeBuilder.reachableOutputTypes();
+        // R317 slice 4 — the single classify-and-emit walk. One SchemaTraverser.depthFirst over the
+        // reachable output surface classifies each composite type on enter AND classifies the fields of
+        // each reached object in the same visit (ClassifyingVisitor), replacing the three former
+        // traversals of that surface: the SchemaReachability name-set walk, TypeBuilder.buildTypes'
+        // eager type loop, and this method's separate field loop. The fold is possible because field
+        // classification became registry-read-free for every target verdict (R317 slices 3a–3e): a
+        // field's output target is a not-yet-visited child of its parent under the enter-only traversal,
+        // and the field resolves it through the registry-free look-ahead / fixed-point indices, never a
+        // registry lookup. buildTypes, the reachableOutputTypes hand-off, and the field loop are deleted.
+        //
+        // R279 slice 5 — connection synthesis stays a byproduct of visiting each field
+        // (ConnectionPromoter.synthesiseForField inside classifyFieldsOfObject); the walk accumulates
+        // the carrier rewrites and the synthesised names absent from the assembled schema.
+        typeBuilder.prepareForWalk();
         var connectionRewrites = new ArrayList<ConnectionPromoter.CarrierRewrite>();
         var synthesisedConnectionNames = new LinkedHashSet<String>();
-        for (var name : reachable) {
-            if (!(ctx.schema.getType(name) instanceof GraphQLObjectType objType)) continue;
-            classifyFieldsOfObject(ctx, typeBuilder, fieldBuilder, objType,
-                connectionRewrites, synthesisedConnectionNames);
-        }
+        SchemaReachability.walk(ctx.schema, new ClassifyingVisitor(
+            ctx, typeBuilder, fieldBuilder, connectionRewrites, synthesisedConnectionNames));
+        // The post-walk type-level work: classify the input / scalar / enum kinds the output walk never
+        // reaches, then the global validation reductions over the finished registry. Runs after the walk
+        // because field classification is registry-read-free, so the reductions change no verdict.
+        typeBuilder.finishTypeClassification();
         // R317 slice 3a — NestingType registration is folded onto the embedding edge (per classified
         // field in classifyFieldsOfObject), so the former post-walk registerNestingTypes sweep over the
         // whole field registry is gone.
@@ -286,9 +301,72 @@ public class GraphitronSchemaBuilder {
     }
 
     /**
-     * R279 slice 3b/6 — classifies every field of one SDL object type, driven over the field-first
-     * walk's reachable object types only (slice 6 removed the compensating sweep over unreached
-     * objects). A directiveless nesting target (structurally decided, see
+     * R317 slice 4 — the single classify-and-emit walk's visitor. Fired by
+     * {@link SchemaReachability#walk} once per reached composite (the schema traverser dispatches
+     * {@code enter} exactly once per node identity), it classifies each composite type on enter
+     * ({@link TypeBuilder#classifyAndRegister}) and, for object types, classifies that object's fields in
+     * the same visit ({@link #classifyFieldsOfObject}). Because field classification is registry-read-free
+     * (R317 slices 3a–3e), classifying a type and its fields together is order-independent: a field's
+     * output target is a not-yet-visited child, resolved through the look-ahead / fixed-point indices, not
+     * a registry lookup.
+     *
+     * <p>The object's own verdict is registered before its fields classify, so the field work reads the
+     * object's own registry entry (its parent verdict, set here or, for a producer-backed carrier /
+     * connection arm, by the discovering parent field before this visit) — never a sibling's or a
+     * not-yet-determined verdict.
+     *
+     * <p>{@code fieldBuilder} is {@code null} for the types-only test seam
+     * ({@link #buildContextForTests}); then only type classification runs and no fields are classified.
+     */
+    private static final class ClassifyingVisitor extends GraphQLTypeVisitorStub {
+        private final BuildContext ctx;
+        private final TypeBuilder typeBuilder;
+        private final FieldBuilder fieldBuilder;
+        private final List<ConnectionPromoter.CarrierRewrite> connectionRewrites;
+        private final Set<String> synthesisedConnectionNames;
+
+        ClassifyingVisitor(
+                BuildContext ctx, TypeBuilder typeBuilder, FieldBuilder fieldBuilder,
+                List<ConnectionPromoter.CarrierRewrite> connectionRewrites,
+                Set<String> synthesisedConnectionNames) {
+            this.ctx = ctx;
+            this.typeBuilder = typeBuilder;
+            this.fieldBuilder = fieldBuilder;
+            this.connectionRewrites = connectionRewrites;
+            this.synthesisedConnectionNames = synthesisedConnectionNames;
+        }
+
+        @Override
+        public TraversalControl visitGraphQLObjectType(
+                GraphQLObjectType node, TraverserContext<GraphQLSchemaElement> context) {
+            typeBuilder.classifyAndRegister(node);
+            if (fieldBuilder != null) {
+                classifyFieldsOfObject(ctx, typeBuilder, fieldBuilder, node,
+                    connectionRewrites, synthesisedConnectionNames);
+            }
+            return TraversalControl.CONTINUE;
+        }
+
+        @Override
+        public TraversalControl visitGraphQLInterfaceType(
+                GraphQLInterfaceType node, TraverserContext<GraphQLSchemaElement> context) {
+            typeBuilder.classifyAndRegister(node);
+            return TraversalControl.CONTINUE;
+        }
+
+        @Override
+        public TraversalControl visitGraphQLUnionType(
+                GraphQLUnionType node, TraverserContext<GraphQLSchemaElement> context) {
+            typeBuilder.classifyAndRegister(node);
+            return TraversalControl.CONTINUE;
+        }
+    }
+
+    /**
+     * R317 slice 4 — classifies every field of one SDL object type, invoked from
+     * {@link ClassifyingVisitor} as the single walk enters each reached object (slice 6 removed the
+     * compensating sweep over unreached objects, so an unreached object's fields are not classified). A
+     * directiveless nesting target (structurally decided, see
      * {@link TypeBuilder#isDirectivelessNestingTarget}) is skipped: its fields are resolved through the
      * {@code NestingField} that embeds it, whose {@code NestingType} this method registers at the edge
      * ({@link #registerNestingTypesIn}), not standalone here.

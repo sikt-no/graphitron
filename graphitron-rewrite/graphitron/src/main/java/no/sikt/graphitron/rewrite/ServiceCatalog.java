@@ -114,7 +114,11 @@ class ServiceCatalog {
      * {@code null} when the type has no associated table.
      */
     String getTableSqlNameForType(String typeName) {
-        var type = ctx.types.get(typeName);
+        // R317 slice 4 — resolve table-backedness through the pure TableIndex (a fixed point built
+        // before the walk), not ctx.types: under the single classify-and-emit walk a field's target
+        // composite may not be registered yet when the field classifies, so a registry read would miss
+        // it. The index agrees with the registry for table-backed types by construction (slice 3d).
+        var type = ctx.tables.forName(typeName).orElse(null);
         if (type instanceof TableBackedType tbt) return tbt.table().tableName();
         return null;
     }

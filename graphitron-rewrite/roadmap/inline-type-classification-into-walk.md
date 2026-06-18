@@ -12,8 +12,24 @@ last-updated: 2026-06-17
 
 # Single edge-driven classification pass and immutable validation (retire TypeBuilder.buildTypes)
 
-> **Status (resume pointer).** Slices 1, 2, 3a, 3b, 3c, 3d and 3e are shipped to trunk; slice 4
-> (collapse to one walk, delete `buildTypes`) is the active front, then 5 (immutable validate). Slice
+> **Status (resume pointer).** Slices 1, 2, 3a, 3b, 3c, 3d, 3e and 4 are shipped to trunk; slice 5
+> (immutable validate) is the active front. Slice 4 collapsed the three traversals into one
+> `SchemaTraverser.depthFirst` (a real `GraphQLTypeVisitor` classifying composites on enter and folding
+> field classification into the same visit), deleted `buildTypes` / the `reachableOutputTypes` hand-off
+> / the separate field loop, and is byte-identical across the truth table (448) and the full pipeline /
+> compile / execution tiers, gated by the falsifiable acceptance test
+> `SingleWalkClassificationOrderTest` (no type registered before its discovering field is visited). The
+> collapse surfaced that the read-free precondition was incomplete after 3e: `BuildContext.resolveReturnType`
+> (the central return-type resolver) plus `BuildContext` node / error / DML-element reads and the
+> `ServiceCatalog.getTableSqlNameForType` / `SourceRowDirectiveResolver` table reads still read the
+> in-progress registry; slice 4 migrated all of them to the registry-free look-ahead / fixed-point indices,
+> so field classification is now read-free in fact, not just in `FieldBuilder`. Two deviations from the
+> slice-4 plan as written: (a) enums / scalars are classified up front by the pre-walk sweep (moved ahead
+> of the walk, where input / scalar / enum verdicts the helpers read must already exist) rather than via a
+> dedicated `EnumIndex` / scalar index, which the pre-walk sweep makes unnecessary; (b) the field-relative
+> input model (classify the input after its field's target, deriving table-boundness from the target) is
+> deferred to a follow-up, since it is the one non-byte-identical change and slice 4 stayed byte-identical.
+> Slice
 > 3e closed the last classification-edge registry reads: the interface / union / result-family target
 > reads in `FieldBuilder` (`:672` / `:2120` / `:3236` / `:3291` / `:4654` / `:5046`) now resolve
 > through a registry-free look-ahead (`TypeBuilder.lookAheadVerdict`, a pure `classifyType` + carrier
@@ -454,41 +470,59 @@ orphan move are pinned by explicit tests, not claimed trivially.
    partial registry. Output byte-identical (truth table 448, full pipeline / compile / execution build
    green); structure delta: every classification-edge target-verdict registry read removed, the
    read-free invariant holding for every target verdict.
-4. **Collapse to one walk; delete `buildTypes`.** Replace the no-op `GraphQLTypeVisitorStub` in
-   `SchemaReachability` with a real `GraphQLTypeVisitor` that classifies types on enter and folds
-   field classification into the same `SchemaTraverser.depthFirst` call. With slice 3e the visit is
-   read-free for every target verdict, so the enter-only traversal order (a field's target is a
-   not-yet-visited child) no longer matters: a type's own verdict is computed at its visit
-   (registry-free, the parent context that field classification needs is its own verdict plus the
-   precomputed indices / bindings, not a sibling lookup). Delete `buildTypes`, the separate
-   `classifyFieldsOfObject` loop, and the `reachableOutputTypes` hand-off.
+4. **Collapse to one walk; delete `buildTypes`.** *Shipped.* The no-op `GraphQLTypeVisitorStub` in
+   `SchemaReachability` is replaced by a real `GraphQLTypeVisitor` (`GraphitronSchemaBuilder.ClassifyingVisitor`,
+   driven by the new `SchemaReachability.walk(schema, visitor)`) that classifies each composite type on
+   enter (`TypeBuilder.classifyAndRegister`) and, for object types, classifies that object's fields in the
+   same visit (`classifyFieldsOfObject`). This one `SchemaTraverser.depthFirst` replaces the three former
+   traversals of the reachable surface: the `SchemaReachability` name-set walk, `buildTypes`' eager type
+   loop, and `buildSchema`'s separate field loop. `buildTypes`, the `reachableOutputTypes` field +
+   hand-off, and the field loop are deleted; `buildTypes` splits into `prepareForWalk` (bindings +
+   indices + the pre-walk leaf sweep, below) and `finishTypeClassification` (the one post-walk reduction,
+   `validateNodeTypeIdUniqueness`). The `buildContextForTests` seam runs the same walk with a null
+   `FieldBuilder` (types only, no field side effects, so `NodeIdLeafResolverTest` still gets an
+   unconsumed resolver).
 
-   Retire the pre-walk input/scalar/enum sweep rather than merely reordering it, per the look-ahead /
-   index split slice 3e established and the on-visit-vs-index decision above. **Enums and scalars** are
-   indexed up front (an `EnumIndex` and a scalar index built in `buildClassificationIndices` over
-   *all* declared types, like `@table` / `@node` / `@error`) and registered into the model from there.
-   On-visit classification would be incomplete for them: an enum / scalar can appear only on an
-   argument or input-field coordinate, which the walk never descends, so its `enter` would never fire,
-   yet it still needs a model entry. The index is reachability-independent and therefore complete, as
-   the sweep was. (The slice-3e edge look-ahead that *reads* a scalar verdict during the assignability
-   check is unaffected; that is a field-edge read, distinct from model-registration, which now comes
-   from the index.) **Inputs** are not indexed: they resolve at the edge through `lookAheadVerdict`,
-   registered into the model when a field's argument reaches them. **Input classification becomes
-   field-relative:** the input
-   arg is classified *after* its field's target, deriving table-boundness from the field's target table
-   rather than `@table`-on-input or the global `findReturnTablesForInput` aggregate (`@table` on inputs
-   is to be de-emphasised, eventually deprecated). This is the one place slice 4 is *not* automatically
-   byte-identical: an input used across more than one table classifies as non-table today (the
-   aggregate bails on `> 1`) but would become table-bound per field under the field-relative model;
-   gate that against the fixtures and, if it diverges, pin it as the intentional consequence (or split
-   it to its own item). Source the candidate-name hint (`ctx.types.keySet()`, the last `FieldBuilder`
-   registry read) off the schema, not the partial registry; update the `buildContextForTests` seam;
-   make reflection grounding on-demand (drop the `resolveAll()` precondition) only if it does not fight
-   eager index construction (the indices call `classifyType` over all types, which grounds bindings as
-   a side effect; resolve that tension when the slice lands). Only validation reductions after. Output
-   byte-identical (modulo the gated field-relative input change above); structure delta is the
-   whole point, gated by the falsifiable acceptance test (no type registered before its discovering
-   field is visited), which the current eager pass fails.
+   **The read-free precondition was incomplete after 3e, and slice 4 finished it.** Slice 3e migrated
+   `FieldBuilder`'s own reads, but the collapse surfaced that field classification still read the
+   in-progress registry through `BuildContext.resolveReturnType` (the central return-type resolver, called
+   by every return-type path) and four other `BuildContext` reads (the DML-element kind, the error-union
+   members, and two `@nodeId` node lookups), plus `ServiceCatalog.getTableSqlNameForType` and
+   `SourceRowDirectiveResolver`'s `@table`-return read. All of these are migrated to the registry-free
+   look-ahead (`TypeBuilder.lookAheadVerdict`, threaded onto `BuildContext` as `ctx.typeBuilder`) or the
+   pure fixed-point indices (`ctx.tables` / `ctx.nodes` / `ctx.errors`, the slice-3d indices). Field
+   classification is therefore read-free in fact, not just within `FieldBuilder`; that is the actual
+   precondition the collapse rests on.
+
+   **The pre-walk leaf sweep, not a dedicated index.** Input types, scalars, and enums are reached only
+   through argument / input coordinates the walk never descends, so the walk does not classify them; they
+   are classified by a sweep that runs *before* the walk (in `prepareForWalk`), because field
+   classification reads input / scalar / enum verdicts from `ctx.types` (`MutationInputResolver`,
+   `EnumMappingResolver`, `ServiceCatalog`'s scalar binding), so they must already be registered when a
+   field classifies, exactly as the two-pass world (which classified them before any field) had them. This
+   subsumes the plan's "index enums / scalars up front" with no separate `EnumIndex` / scalar index: the
+   pre-walk sweep is itself the reachability-independent, complete registration the index would have
+   provided. The directive-ignored warnings and the multi-producer rejection demotions also move into
+   `prepareForWalk`, so a rejected input reads as its `UnclassifiedType` demotion during the walk (the
+   only composite the demotion touches is a directiveless object, whose `classifyType` verdict is null, so
+   the walk never overwrites it). The candidate-name hint (the last `FieldBuilder` `ctx.types` read) is
+   sourced off the schema's declared type names, not the partial registry.
+
+   **Deferred: the field-relative input model.** Inputs stay classified by the pre-walk sweep with the
+   existing global verdict (`@table`-on-input plus the `findReturnTablesForInput` aggregate), so slice 4
+   is byte-identical. Classifying the input *after* its field's target (deriving table-boundness from the
+   target, de-emphasising `@table`-on-input) is the one non-byte-identical change the plan flagged; it is
+   split to a follow-up item rather than landed here, keeping the collapse a pure structural delta.
+   Reflection grounding stays eager (`resolveAll` in `prepareForWalk`): the indices call `classifyType`
+   over all types and ground bindings as a side effect, so dropping the precondition would fight eager
+   index construction, exactly the tension the plan anticipated; left as-is.
+
+   Output byte-identical (truth table 448, full pipeline / compile / execution build green); structure
+   delta: three traversals collapsed to one, `buildTypes` + the hand-off + the field loop deleted, the
+   read-free precondition completed across `BuildContext` and the helper resolvers. Gated by the
+   falsifiable acceptance test `SingleWalkClassificationOrderTest` (a deep target's type-classify trace
+   record follows its discovering field's record; an eager type pass registers the type first and fails
+   it).
 5. **Immutable validate phase (inlines R318).** The global reductions register diagnostics into a
    diagnostic channel instead of demoting to `UnclassifiedType` / `UnclassifiedField`; the
    validator and LSP read diagnostics from there. Changes the error-carrier mechanism, not which

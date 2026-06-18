@@ -95,7 +95,7 @@ final class RecordBindingResolver {
      * R178 DML mutation payload bindings, observed for the payload SDL type of every DML
      * {@code @mutation} field whose payload is a non-{@code @table} SDL Object. Stored on a
      * dedicated axis (not result/input) so the existing record-binding fold and the
-     * {@code recordBackingClasses} pump in {@link TypeBuilder#buildTypes()} continue to ignore
+     * {@code recordBackingClasses} pump in {@link TypeBuilder#prepareForWalk()} continue to ignore
      * the new arm. A future cutover commit may lift these observations into the result-axis
      * fold; until then the dedicated map keeps the DML-emitted shape isolated from
      * reflection-derived class bindings.
@@ -139,7 +139,7 @@ final class RecordBindingResolver {
      * R178 DML mutation payload binding for an SDL type. Carries the inner {@link TableRef}
      * the DML producer emits rows for, the {@link DmlKind}, and the producer-side cardinality
      * lifted from the input {@code @table} arg. Held on a dedicated axis so the existing fold
-     * and the {@link TypeBuilder#buildTypes()} {@code recordBackingClasses} pump don't see it.
+     * and the {@link TypeBuilder#prepareForWalk()} {@code recordBackingClasses} pump don't see it.
      */
     Optional<ProducerBinding.DmlEmitted> resolveDmlEmitted(String sdlTypeName) {
         return Optional.ofNullable(dmlEmittedMemo.get(sdlTypeName));
