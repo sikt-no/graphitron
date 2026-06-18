@@ -87,40 +87,42 @@ public sealed interface ChildField extends OutputField
         };
     }
 
-    @Override default Intent intent() {
+    @Override default Operation operation() {
         return switch (this) {
-            // Catalog column carriers.
-            case ColumnField ignored -> Intent.Fetch;
-            case ColumnReferenceField ignored -> Intent.Fetch;
-            case ParticipantColumnReferenceField ignored -> Intent.Fetch;
-            case CompositeColumnField ignored -> Intent.Fetch;
-            case CompositeColumnReferenceField ignored -> Intent.Fetch;
-            // Table targets. Lookup-keyed reads are Lookup; the rest are plain Fetch. new-query
-            // (@splitQuery / record-handoff) is derived, not an axis.
-            case TableField ignored -> Intent.Fetch;
-            case SplitTableField ignored -> Intent.Fetch;
-            case LookupTableField ignored -> Intent.Lookup;
-            case SplitLookupTableField ignored -> Intent.Lookup;
-            case TableInterfaceField ignored -> Intent.Fetch;
-            case TableMethodField ignored -> Intent.Fetch;
-            case RecordTableField ignored -> Intent.Fetch;
-            case RecordLookupTableField ignored -> Intent.Lookup;
-            case RecordTableMethodField ignored -> Intent.Fetch;
-            case ServiceTableField ignored -> Intent.QueryService;
-            // Service record / passthrough scalars.
-            case ServiceRecordField ignored -> Intent.QueryService;
-            case RecordField ignored -> Intent.Fetch;
-            case PropertyField ignored -> Intent.Fetch;
-            case ComputedField ignored -> Intent.Fetch;
-            // Nesting (asserted, not derived from an absent join-path).
-            case NestingField ignored -> Intent.Nesting;
-            // Polymorphic children: catalog-bound multi-table UNION keyed off the parent.
-            case InterfaceField ignored -> Intent.Fetch;
-            case UnionField ignored -> Intent.Fetch;
-            // Encoded-PK scalar carriers and the errors field.
-            case SingleRecordIdFieldFromReturning ignored -> Intent.Fetch;
-            case SingleRecordIdField ignored -> Intent.Fetch;
-            case ErrorsField ignored -> Intent.Fetch;
+            // Catalog column / scalar projections off an already-arrived source: bare reads, no
+            // filter surface. The column-ness is a target shape fact, not an operation fact.
+            case ColumnField ignored -> OutputField.bareFetch();
+            case ColumnReferenceField ignored -> OutputField.bareFetch();
+            case ParticipantColumnReferenceField ignored -> OutputField.bareFetch();
+            case CompositeColumnField ignored -> OutputField.bareFetch();
+            case CompositeColumnReferenceField ignored -> OutputField.bareFetch();
+            // Table targets carrying a filter surface: Paginate when the wrapper is a connection, else Fetch.
+            case TableField f -> OutputField.readOperation(f.returnType(), f.filters(), f.orderBy(), f.pagination());
+            case SplitTableField f -> OutputField.readOperation(f.returnType(), f.filters(), f.orderBy(), f.pagination());
+            case TableInterfaceField f -> OutputField.readOperation(f.returnType(), f.filters(), f.orderBy(), f.pagination());
+            case RecordTableField f -> OutputField.readOperation(f.returnType(), f.filters(), f.orderBy(), f.pagination());
+            // Method-backed / polymorphic table reads carry no field-level filter surface.
+            case TableMethodField f -> OutputField.readOperation(f.returnType(), List.of(), new OrderBySpec.None(), null);
+            case RecordTableMethodField f -> OutputField.readOperation(f.returnType(), List.of(), new OrderBySpec.None(), null);
+            case InterfaceField f -> OutputField.readOperation(f.returnType(), List.of(), new OrderBySpec.None(), null);
+            case UnionField f -> OutputField.readOperation(f.returnType(), List.of(), new OrderBySpec.None(), null);
+            // Lookup-keyed reads.
+            case LookupTableField f -> new Operation.Lookup(f.lookupMapping());
+            case SplitLookupTableField f -> new Operation.Lookup(f.lookupMapping());
+            case RecordLookupTableField f -> new Operation.Lookup(f.lookupMapping());
+            // Developer @service calls (reflected MethodRef carrier).
+            case ServiceTableField f -> OutputField.serviceCall(f.method());
+            case ServiceRecordField f -> OutputField.serviceCall(f.method());
+            // Record / passthrough scalar reads.
+            case RecordField ignored -> OutputField.bareFetch();
+            case PropertyField ignored -> OutputField.bareFetch();
+            case ComputedField ignored -> OutputField.bareFetch();
+            // Structural nesting (asserted, not derived from an absent join-path).
+            case NestingField ignored -> new Operation.Nest();
+            // Encoded-PK scalar carriers and the errors field: bare reads off the source record.
+            case SingleRecordIdFieldFromReturning ignored -> OutputField.bareFetch();
+            case SingleRecordIdField ignored -> OutputField.bareFetch();
+            case ErrorsField ignored -> OutputField.bareFetch();
         };
     }
 

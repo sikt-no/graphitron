@@ -24,23 +24,23 @@ public sealed interface MutationField extends RootField, WithErrorChannel
     /** Every {@code MutationField} leaf is on the {@code Mutation} root, so the source is {@link Source.Root.Mutation}. */
     @Override default Source source() { return new Source.Root.Mutation(); }
 
-    @Override default Intent intent() {
+    @Override default Operation operation() {
         return switch (this) {
-            // DML write: the verb is the leaf identity.
-            case MutationInsertTableField ignored -> Intent.Insert;
-            case MutationUpsertTableField ignored -> Intent.Upsert;
-            case MutationUpdateTableField ignored -> Intent.Update;
-            case MutationDeleteTableField ignored -> Intent.Delete;
-            case MutationServiceTableField ignored -> Intent.MutationService;
-            case MutationServiceRecordField ignored -> Intent.MutationService;
+            // DML write: the verb is the leaf identity; the arm carries the leaf's input surface.
+            case MutationInsertTableField f -> new Operation.Insert(f.tableInputArg());
+            case MutationUpsertTableField f -> new Operation.Upsert(f.tableInputArg());
+            case MutationUpdateTableField f -> new Operation.Update(f.inputArg(), f.updateRows());
+            case MutationDeleteTableField f -> new Operation.Delete(f.inputArg(), f.deleteRows());
+            case MutationServiceTableField f -> OutputField.serviceCall(f.serviceMethodCall());
+            case MutationServiceRecordField f -> OutputField.serviceCall(f.serviceMethodCall());
             // The record-backed DML carriers read their verb off the DmlKind discriminator.
-            case MutationDmlRecordField f -> dmlIntent(f.kind());
-            case MutationBulkDmlRecordField f -> dmlIntent(f.kind());
-            // Payload wrappers expose the affected rows as a record-backed type; the verb is the leaf identity.
-            case MutationUpdatePayloadField ignored -> Intent.Update;
-            case MutationBulkUpdatePayloadField ignored -> Intent.Update;
-            case MutationDeletePayloadField ignored -> Intent.Delete;
-            case MutationBulkDeletePayloadField ignored -> Intent.Delete;
+            case MutationDmlRecordField f -> dmlOperation(f.kind(), f.tableInputArg());
+            case MutationBulkDmlRecordField f -> dmlOperation(f.kind(), f.tableInputArg());
+            // Payload wrappers source their SET/WHERE partition from the walker carrier; verb is the leaf identity.
+            case MutationUpdatePayloadField f -> new Operation.Update(f.inputArg(), f.updateRows());
+            case MutationBulkUpdatePayloadField f -> new Operation.Update(f.inputArg(), f.updateRows());
+            case MutationDeletePayloadField f -> new Operation.Delete(f.inputArg(), f.deleteRows());
+            case MutationBulkDeletePayloadField f -> new Operation.Delete(f.inputArg(), f.deleteRows());
         };
     }
 
@@ -78,13 +78,18 @@ public sealed interface MutationField extends RootField, WithErrorChannel
         };
     }
 
-    /** Maps the record-backed DML carrier's {@link DmlKind} discriminator to its write {@link Intent}. */
-    private static Intent dmlIntent(DmlKind kind) {
+    /**
+     * Maps the record-backed DML carrier's {@link DmlKind} discriminator to its write
+     * {@link Operation} arm. The carriers' compact constructors reject UPDATE / DELETE (carved off
+     * onto the walker-carrier payload leaves), so the live range is {@code {INSERT, UPSERT}}; the
+     * UPDATE / DELETE arms here are unreachable backstops keeping the switch exhaustive.
+     */
+    private static Operation dmlOperation(DmlKind kind, ArgumentRef.InputTypeArg.TableInputArg input) {
         return switch (kind) {
-            case INSERT -> Intent.Insert;
-            case UPDATE -> Intent.Update;
-            case UPSERT -> Intent.Upsert;
-            case DELETE -> Intent.Delete;
+            case INSERT -> new Operation.Insert(input);
+            case UPSERT -> new Operation.Upsert(input);
+            case UPDATE, DELETE -> throw new IllegalStateException(
+                "record-backed DML carrier rejects DmlKind." + kind + " in its compact constructor");
         };
     }
 
