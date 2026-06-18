@@ -242,15 +242,38 @@ reads `getVarFromParents(Key.class)` (graphql-java's `TraverserContext`, already
 source-shape context) are enumerated when slice 4 lands.
 
 **Why dedup is not a problem (decided).** `SchemaTraverser` descends a node reached by two parents
-once (identity dedup), but this is irrelevant because every type's registry entry is
-*parent-independent* and all parent-relative context lives on the per-site field. A directiveless
-projection registers a bare `NestingType` *marker* that carries **no table** (`(name, location,
-schemaType)`); registering it once per incoming field is N identical writes the registry collapses
-trivially. The projection's fields live on each embedding `NestingField` (`nf.nestedFields()`),
-classified in that parent's table context, never in the global field registry under the shared type
-name, so they never collide and are free to diverge per site. **The guard the implementation must
-hold:** a shared type's registry entry stays parent-independent; the moment a `TableRef` or source
-shape lands on it, the N-identical-writes property breaks. Parent context lives on the field.
+once: verified in `graphql.util.Traverser`, the per-node dispatch checks `isVisited()` and routes a
+re-encounter to `visitor.backRef` (phase `BACKREF`), calling `visitor.enter` exactly once per node
+identity and only then `addVisited`. So a real `GraphQLTypeVisitor`'s `enter` (the
+`visitGraphQL*Type` callbacks) fires once per type, no dedup needed on our side. This once-per-node
+property is what makes on-enter classification viable, and it is irrelevant to multi-parent
+reconciliation anyway, because every type's registry entry is *parent-independent* and all
+parent-relative context lives on the per-site field. A directiveless projection registers a bare
+`NestingType` *marker* that carries **no table** (`(name, location, schemaType)`); registering it
+once per incoming field is N identical writes the registry collapses trivially. The projection's
+fields live on each embedding `NestingField` (`nf.nestedFields()`), classified in that parent's table
+context, never in the global field registry under the shared type name, so they never collide and are
+free to diverge per site. **The guard the implementation must hold:** a shared type's registry entry
+stays parent-independent; the moment a `TableRef` or source shape lands on it, the N-identical-writes
+property breaks. Parent context lives on the field.
+
+**What classifies on the visit, and what is indexed up front (decided).** The once-per-node `enter`
+makes the visitor the natural classifier for the **composite output types** (object / interface /
+union): each is reached only through output edges (field return, union member, interface implementor,
+object `implements`), so "reached by the walk" and "needs classifying" coincide, and a composite the
+walk never reaches is an orphan we deliberately prune (the type-side of R279 slice 6). For those,
+classify on `enter`. **Enums and scalars are different and are indexed up front instead** (an
+`EnumIndex` / scalar index over *all* declared types, like the `@table` / `@node` / `@error`
+indices). Their verdict is a global fact (a pure function of the type's own SDL), but the decisive
+reason is reachability: an enum or scalar can appear *only* on an argument or input-field coordinate,
+and the walk deliberately does not descend arguments or input objects, so its `enter` would never
+fire for an argument-only enum (e.g. a `SortDirection` / filter enum) or input-only scalar. Those
+still need a model entry (an enum emits a Java enum class, a scalar needs its resolution recorded)
+regardless of coordinate, so on-visit classification would silently drop them. The up-front index
+over all declared enums / scalars is reachability-independent and therefore complete, exactly as the
+retired sweep was. (Reading a scalar verdict *at a field edge* — the slice-3e assignability
+look-ahead — is a separate concern from *registering* every scalar into the model; the edge read
+stays look-ahead, model-registration comes from the index.)
 
 **Edges that are not literally "field -> return type"** must be carried explicitly or types dangle:
 `@node` / `@key` seeds and the `Node` interface no field returns (already in
@@ -441,11 +464,17 @@ orphan move are pinned by explicit tests, not claimed trivially.
    `classifyFieldsOfObject` loop, and the `reachableOutputTypes` hand-off.
 
    Retire the pre-walk input/scalar/enum sweep rather than merely reordering it, per the look-ahead /
-   index split slice 3e established. **Enums** are a global fact (a pure function of the enum's own
-   SDL) like `@table` / `@node` / `@error`, so they go into an `EnumIndex` built up front in
-   `buildClassificationIndices` and registered into the model from there. **Scalars and inputs** are
-   reachable from the fields that use them and resolve at the edge through `lookAheadVerdict`; they are
-   registered into the model when reached. **Input classification becomes field-relative:** the input
+   index split slice 3e established and the on-visit-vs-index decision above. **Enums and scalars** are
+   indexed up front (an `EnumIndex` and a scalar index built in `buildClassificationIndices` over
+   *all* declared types, like `@table` / `@node` / `@error`) and registered into the model from there.
+   On-visit classification would be incomplete for them: an enum / scalar can appear only on an
+   argument or input-field coordinate, which the walk never descends, so its `enter` would never fire,
+   yet it still needs a model entry. The index is reachability-independent and therefore complete, as
+   the sweep was. (The slice-3e edge look-ahead that *reads* a scalar verdict during the assignability
+   check is unaffected; that is a field-edge read, distinct from model-registration, which now comes
+   from the index.) **Inputs** are not indexed: they resolve at the edge through `lookAheadVerdict`,
+   registered into the model when a field's argument reaches them. **Input classification becomes
+   field-relative:** the input
    arg is classified *after* its field's target, deriving table-boundness from the field's target table
    rather than `@table`-on-input or the global `findReturnTablesForInput` aggregate (`@table` on inputs
    is to be de-emphasised, eventually deprecated). This is the one place slice 4 is *not* automatically
