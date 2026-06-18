@@ -1,6 +1,6 @@
 ---
 id: R327
-title: "Field-relative input classification (retire the findReturnTablesForInput aggregate; demote @table-on-input to an edge override)"
+title: "Field-relative input classification (retire findReturnTablesForInput; add @mutation(table:) and deprecate @table-on-input)"
 status: Spec
 bucket: architecture
 priority: 4
@@ -10,7 +10,7 @@ created: 2026-06-18
 last-updated: 2026-06-18
 ---
 
-# Field-relative input classification (retire the findReturnTablesForInput aggregate; demote @table-on-input to an edge override)
+# Field-relative input classification (retire findReturnTablesForInput; add @mutation(table:) and deprecate @table-on-input)
 
 Split out of R317 slice 4 (the classify-and-emit collapse), which deferred this as the one
 non-byte-identical change so the collapse could stay a pure structural delta. R317 left the question
@@ -18,14 +18,17 @@ explicit: *"whether a shared input type needs a global (parent-independent) regi
 is purely field-level, is the one input-specific question slice 4's implementation must answer."*
 This item answers it: purely field-level.
 
-> **Title correction from the Backlog stub.** The stub read "retire @table-on-input". That is not
-> reachable, and the Spec says why: a DML mutation whose return is a bare scalar
-> (`deleteFilm(input: FilmInput): Boolean`) has no table-derivable target, so `@table`-on-input is the
-> only table source there — load-bearing, not merely papering over a gap. R327 therefore *demotes*
-> `@table`-on-input from a global classifier input to an edge-consulted override, and *retires* the
+> **The Backlog stub said "retire @table-on-input"; here is the migration target that makes it real.**
+> Field-relative derivation covers `@table`-on-input's query role (the table comes from the field's
+> return target), but a DML mutation whose return is a bare scalar
+> (`deleteFilm(input: FilmInput): Boolean`) has no table-derivable target, so something must still name
+> the table at the use site. R327 adds an **optional `table:` argument to `@mutation`** as that use-site
+> source, which is the migration target for **deprecating `@table`-on-input**. With both halves in place
+> the directive has a complete replacement story (query side: automatic field-relative derivation; DML
+> side: `@mutation(table:)`), so `@table`-on-input is deprecated (warned) by this item; physically
+> removing the directive location is the follow-on (see Out of scope). R327 also *retires* the
 > `findReturnTablesForInput` aggregate, the `isUsedWithOverrideCondition` global scan, and
-> `TableInputType`-the-registry-verdict. Removing the directive entirely is a separate future
-> decision (see Out of scope).
+> `TableInputType`-the-registry-verdict.
 
 ## Problem
 
@@ -77,11 +80,20 @@ exists. The global verdict is a detour: the edge is where the table is known and
 Classify the input arg **after** its field's target, deriving table-boundness from the target's table,
 at the edge, with a single producer.
 
-- **One edge producer of "what table does this arg bind against."** Given a field whose target table is
-  resolved (`lookAheadVerdict` of the return), the arg's input fields resolve against that table via the
-  existing `BuildContext.classifyInputField` (`:1374`), yielding a `TableInputArg`; otherwise the arg is
-  a plain input. `@table`-on-input is an **edge-consulted table source** that wins over field-target
-  derivation at the same edge — an input to the single producer, not a competing producer.
+- **One edge producer of "what table does this arg bind against," from one ordered set of use-site
+  sources.** Given the field's edge, the table resolves as: (1) the explicit `@mutation(table:)` argument
+  if present (DML fields); else (2) the field's return-derivable table (`lookAheadVerdict` of the return:
+  the `@table` return / carrier / payload-data-field `@table`); else (3) for a deprecated `@table`-on-input,
+  that table, with a deprecation warning; else (4) no table → plain input (query) or a validate-time
+  rejection (DML). The arg's input fields then resolve against that table via the existing
+  `BuildContext.classifyInputField` (`:1374`), yielding a `TableInputArg`. Every source is a use-site
+  fact feeding one producer; none is a competing global verdict.
+- **Add `@mutation(table:)` and deprecate `@table`-on-input.** The optional `table:` argument on
+  `@mutation` (`directives.graphqls:225`) is the use-site table source for DML fields whose return does
+  not carry the table. With it in place, `@table`-on-input has a full migration target and is deprecated:
+  its use emits a deprecation warning naming the replacement (field-relative derivation for query args,
+  `@mutation(table:)` for DML), via the existing classify-time directive-warning channel
+  (`emitDirectiveIgnoredWarning` / `BuildWarning`).
 - **Retire the global machinery.** `findReturnTablesForInput`, `isUsedWithOverrideCondition` (override
   becomes the use-site flag already partly threaded as `enclosingOverride` at `FieldBuilder:1016`), and
   `TableInputType`-the-registry-verdict are deleted. Every input's global registry entry is uniformly the
@@ -103,20 +115,29 @@ These are the resolved forks (a `principles-architect` pass on the draft, 2026-0
   the **plain-input path already documents and accepts** (`argument-resolution.adoc` §Classification:
   "Classification is cheap; reclassification is simpler than caching"); arm (b) makes the `@table`-input
   path converge on that policy rather than forking it by input flavour.
-- **`@table`-on-input stays, as an edge-consulted source, not a global verdict.** It is load-bearing for
-  the no-derivable-target DML case and cannot be removed. The single-producer property is preserved as
-  long as the directive resolves to *the table the edge uses* (winning over field-target derivation at
-  that edge), never to a parallel global verdict the edge must reconcile against. Keeping fork-1 ("keep
-  the directive") consistent with fork-2 arm (b) is exactly this: directive-as-input-to-the-edge, not
-  directive-as-second-producer.
+- **The DML table override moves from the input type to the mutation directive (`@mutation(table:)`).**
+  The original draft kept `@table`-on-input as an edge-consulted override because the bare-scalar-return
+  DML case has no derivable target. The architect's open tension was that an override is still a second
+  table source the edge must consult. Moving it onto `@mutation(table:)` resolves that: the override is now
+  a use-site fact on the *same field* whose edge is doing the resolving, in the same ordered source list
+  as the return-derived table, so it is unambiguously an input to the single producer, not a competing
+  producer. `@table`-on-input is then a deprecated alias of the same use-site intent, not a structurally
+  distinct override. This is the only fork combination where the directive survives R327 without
+  reintroducing the two-producers-of-one-fact smell.
+- **`@table`-on-input is deprecated, not removed, in this item.** Its uses keep working (resolving to the
+  same table they do today) but emit a deprecation warning pointing at the migration target. Removal (the
+  `INPUT_OBJECT` directive location, `buildTableInputType` for the `@table`-on-input case, and the
+  warning) is the follow-on once consumers migrate. This keeps R327 a non-breaking change for existing
+  schemas while making the replacement canonical.
 - **Validator mirrors the new failure mode.** Field-relative derivation introduces a rejection the global
-  model could not produce: a DML / filter arg whose field has **no return-derivable table AND no
-  `@table`-on-input**. Per "the validator mirrors classifier invariants," this must fail at *validate*
-  time as an `UnclassifiedField`, not as a runtime null-table `NoSuchElement` in the walker. It reuses the
-  existing `DmlWalkerInputArgResolution.Rejected` arm (`FieldBuilder:3713-3734`); the Spec names it rather
-  than leaving it implicit. The rejection prose distinguishing real-`@table` inputs from promoted-plain
-  inputs (`FieldBuilder:1351-1357`) is re-derived from the SDL view, since the registry verdict no longer
-  records the distinction.
+  model could not produce: a DML arg whose field has **no `@mutation(table:)` AND no return-derivable
+  table AND no (deprecated) `@table`-on-input**. Per "the validator mirrors classifier invariants," this
+  must fail at *validate* time as an `UnclassifiedField`, not as a runtime null-table `NoSuchElement` in
+  the walker. It reuses the existing `DmlWalkerInputArgResolution.Rejected` arm (`FieldBuilder:3713-3734`);
+  the Spec names it rather than leaving it implicit, with a rejection message naming `@mutation(table:)` as
+  the fix. The rejection prose distinguishing real-`@table` inputs from promoted-plain inputs
+  (`FieldBuilder:1351-1357`) is re-derived from the SDL view, since the registry verdict no longer records
+  the distinction.
 
 ## The non-byte-identical surface and its gate
 
@@ -139,11 +160,12 @@ compile / execution tiers; that is the non-negotiable correctness gate.
 
 ## Out of scope
 
-- **Removing `@table`-on-input** (warn-then-remove). It stays an edge-consulted override; whether to
-  deprecate it once the field-relative default covers the common case is a separate future Backlog
-  decision, orthogonal to this item's structural move.
-- **LSP / diagnostic-surface changes** beyond the one new `UnclassifiedField` rejection the validator
-  mirror requires.
+- **Physically removing `@table`-on-input.** R327 deprecates it (warning + migration target); deleting
+  the `INPUT_OBJECT` directive location, the `buildTableInputType` `@table`-on-input branch, and the
+  warning is the follow-on once consumer schemas migrate to `@mutation(table:)`. File that as a separate
+  Backlog item when R327 lands.
+- **LSP / diagnostic-surface changes** beyond the new `UnclassifiedField` rejection the validator mirror
+  requires and the `@table`-on-input deprecation warning.
 - **The broader input-model redesign** (input record shape, binding reflection) — untouched; R327 changes
   only where table-boundness is decided.
 
@@ -158,12 +180,19 @@ structure-only (R317's anti-narrative rule). The variant retirement lands with t
    deleted (override becomes the edge flag). The two query-side verdict shifts land and are pinned (the
    reuse-across-tables execution test, the table-vs-non-table pipeline test). `TableInputType` still
    exists, now produced only for `@table`-on-input / DML inputs.
-2. **Field-relative DML/mutation inputs; retire `TableInputType`-the-verdict.** `resolveDmlWalkerInputArg`
-   and `MutationInputResolver` derive the table from the mutation's target shape (`@table` return /
-   carrier / payload-data-field `@table`), consulting `@table`-on-input as the override; the
-   `MutationInputResolver` `ctx.types.get` registry read is converted. `buildInputType` collapses to the
-   table-agnostic shape, `TableInputType` the variant is removed, and the validator mirror for the
-   no-derivable-table case is added. Byte-identical for `@table`-on-input DML inputs (the universal case).
-3. **Doc sweep.** Update `argument-resolution.adoc` and any classification-pipeline prose to describe the
-   edge-relative model; confirm no doc names a retired symbol (`findReturnTablesForInput`,
-   `TableInputType`, `isUsedWithOverrideCondition`).
+2. **Add `@mutation(table:)`.** Extend the directive (`directives.graphqls:225`) with the optional
+   `table: String` argument and resolve it as the first DML table source ahead of return-derivation. Pin a
+   pipeline + execution test on a bare-scalar-return DML field (`deleteFilm(input: FilmInput): Boolean`)
+   that classifies and generates correct SQL via `@mutation(table:)` with no `@table` anywhere. Additive:
+   no existing fixture sets the argument, so byte-identical.
+3. **Field-relative DML inputs; retire `TableInputType`-the-verdict.** `resolveDmlWalkerInputArg` and
+   `MutationInputResolver` derive the table from the ordered source list (`@mutation(table:)` → return
+   shape → deprecated `@table`-on-input); the `MutationInputResolver` `ctx.types.get` registry read is
+   converted. `buildInputType` collapses to the table-agnostic shape, `TableInputType` the variant is
+   removed, and the validator mirror for the no-table-source case is added. Byte-identical for existing
+   `@table`-on-input DML inputs (which now also emit the deprecation warning).
+4. **Deprecate `@table`-on-input.** Emit the deprecation `BuildWarning` on use, naming the migration
+   target; pin the warning's presence and text. (May fold into slice 3 if near-free.)
+5. **Doc sweep.** Update `argument-resolution.adoc`, the directive reference, and any
+   classification-pipeline prose to describe the edge-relative model and `@mutation(table:)`; confirm no
+   doc names a retired symbol (`findReturnTablesForInput`, `TableInputType`, `isUsedWithOverrideCondition`).

@@ -18,7 +18,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R222` | Dimensional model pivot: slots over cross-product permits | Spec | 2026-06-18 <sub>created 2026-05-21</sub> | [plan](dimensional-model-pivot.md) |
 | `R256` | Absorb the service walker substrate: typed per-arm errors + multi-arg ctors | Ready | 2026-05-30 <sub>created 2026-05-29</sub> | [plan](service-walker-substrate-absorption.md) |
 | `R316` | Pivot the field-dimensional model to (source, operation, target) <sub>blocked by: [dimensional-model-pivot](dimensional-model-pivot.md)</sub> | In Progress | 2026-06-18 <sub>created 2026-06-16</sub> | [plan](source-operation-target-pivot.md) |
-| `R327` | Field-relative input classification (retire the findReturnTablesForInput aggregate; demote @table-on-input to an edge override) | Spec | 2026-06-18 | [plan](field-relative-input-classification.md) |
+| `R327` | Field-relative input classification (retire findReturnTablesForInput; add @mutation(table:) and deprecate @table-on-input) | Spec | 2026-06-18 | [plan](field-relative-input-classification.md) |
 | `R308` | Fix the @service list-payload N+1 by deriving many-arrival for list-returning carriers | Spec | 2026-06-14 | [plan](service-list-payload-arrival.md) |
 | `R45` | Multi-tenant routing on top of the schema-driven ExecutionInput factory | Spec | 2026-05-20 | [plan](tenant-routing-and-execution-input.md) |
 | `R273` | Source NodeId metadata from @node + catalog PK (inferred from `implements Node`), and settle wrong-type/malformed mismatch semantics, retiring the legacy __NODE bare-ID arm | Spec | 2026-06-02 | [plan](nodeid-skip-mismatch-error-surfacing.md) |
@@ -218,7 +218,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R222` [**Dimensional model pivot: slots over cross-product permits**](dimensional-model-pivot.md) — Spec, structural
 - `R316` [**Pivot the field-dimensional model to (source, operation, target)**](source-operation-target-pivot.md) — In Progress, structural, blocked by [dimensional-model-pivot](dimensional-model-pivot.md)
 - `R314` [**Dissolve the re-fetch (reentry) leaf fields: emit reentry by switching on the dimensional model**](dissolve-reentry-leaves-dimensional-emit.md) — Backlog, architecture, blocked by [dimensional-model-pivot](dimensional-model-pivot.md)
-- `R327` [**Field-relative input classification (retire the findReturnTablesForInput aggregate; demote @table-on-input to an edge override)**](field-relative-input-classification.md) — Spec, architecture
+- `R327` [**Field-relative input classification (retire findReturnTablesForInput; add @mutation(table:) and deprecate @table-on-input)**](field-relative-input-classification.md) — Spec, architecture
 - `R308` [**Fix the @service list-payload N+1 by deriving many-arrival for list-returning carriers**](service-list-payload-arrival.md) — Spec, structural
 - `R171` [**Fold InputType and TableInputType under sealed parent InputLikeType**](input-like-type-sealed-parent.md) — Backlog, architecture
 - `R103` [**Lift jOOQ column defaults onto input fields connected to that column**](lift-jooq-column-defaults-onto-inputs.md) — Backlog, architecture
