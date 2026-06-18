@@ -341,14 +341,25 @@ class TypeBuilder {
      * (a {@link GraphitronType.JooqTableRecordType}), not by a resolved {@code @record} producer. A
      * directiveless nesting target / orphan classifies to {@code null} under both, matching the
      * registry's absent entry; the nesting branch in {@link FieldBuilder} is decided separately by
-     * {@link #isDirectivelessNestingTarget}, not by this verdict. The post-walk demotions
-     * ({@link #validateNodeTypeIdUniqueness}, multi-producer, case-fold) do not change any verdict arm
-     * this look-ahead is read for (interface / union / result): a demoted node is read through the
-     * {@code NodeIndex}, and a multi-producer / case-fold demotion turns a verdict that was already not
-     * one of those arms into an {@code UnclassifiedType} that is still not one of those arms.
+     * {@link #isDirectivelessNestingTarget}, not by this verdict.
+     *
+     * <p>The multi-producer rejection guard runs first, mirroring {@link #participantClassification}:
+     * {@code surfaceMultiProducerRejections} demotes every binding-rejected type (result <em>and</em>
+     * input) to {@link UnclassifiedType} in {@code buildTypes}, before the field pass reads it, so a
+     * faithful look-ahead reproduces that demotion rather than the live verdict {@code classifyType}
+     * would still compute. This matters for the input reads (an input rejected for a binding clash is
+     * read as {@code UnclassifiedType}, not a live {@code TableInputType} / {@code InputType}). The
+     * other post-walk demotions do not change any arm this look-ahead is read for: a typeId-collided
+     * node is read through the {@code NodeIndex} (and is table-backed, never one of these arms), and the
+     * case-fold collision pass runs after the field walk, so the registry it reads during the walk does
+     * not carry that demotion either.
      */
     GraphitronType lookAheadVerdict(String typeName) {
         if (!(ctx.schema.getType(typeName) instanceof GraphQLNamedType named)) return null;
+        var rejection = bindings.rejection(typeName).orElse(null);
+        if (rejection != null) {
+            return new UnclassifiedType(typeName, locationOf(named), rejection);
+        }
         var verdict = classifyType(named);
         if (verdict != null) return verdict;
         var carrierTable = carrierTableBinding(typeName);
