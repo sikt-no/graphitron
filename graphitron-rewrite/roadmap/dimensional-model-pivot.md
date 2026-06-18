@@ -7,7 +7,7 @@ priority: 3
 theme: structural-refactor
 depends-on: []
 created: 2026-05-21
-last-updated: 2026-06-16
+last-updated: 2026-06-18
 ---
 
 # Dimensional model pivot: slots over cross-product permits
@@ -76,105 +76,154 @@ After the pivot, `GraphitronField`'s sealed parent and the `UnclassifiedField` p
 - `OutputField` and `RootField` retire as redundant intermediate sub-seals — there is no "Input" half left to contrast with, and the `RootField` between `OutputField` and `QueryField` / `MutationField` carries nothing distinctive.
 - The surviving permits live directly under `GraphitronField`: `QueryField`, `MutationField`, `ChildField` (the latter renamed `SourceField`; see the refined field-side model below).
 
-## Field-side dimensional model (refined 2026-06-13)
+## Field-side dimensional model (pivoted 2026-06-18 to source/operation/target)
 
-The field-side pivot (Stage 3, R164's content) resolved, through the R299 design work, into a sharper
-shape than the "`DataFetcherBuilder` source-cardinality + action + field-cardinality axes" the earlier
-draft sketched. The load-bearing finding: **the producer dimension dissolves entirely.** A field's
-classification is three asserted axes plus a derived layer, and what "producer" used to carry
-redistributes across them.
+The field-side pivot (Stage 3, R164's content) first materialised as `carrier × intent × mapping`
+(R290 / R299 / R305). R316 (`source-operation-target-pivot`) corrects that model to
+**`(source, operation, target)`**: `mapping` was not a dimension but a per-endpoint *polarity*, and the
+first two axes were under-named. A field is an **edge**: it **arrives into** a `source`, **performs** an
+`operation`, and **projects** a `target`. `source` and `target` are each a *wrapper around a shape* (the
+wrapper a multiplicity layer, the shape the named thing inside); `operation` is a sealed interface of
+payload-carrying verbs. The producer dimension still dissolves entirely (see below); what changed is the
+naming of the three surviving axes and the recognition that the two endpoints share one form. The full
+argument is R316 and its backing audit; this section records the model the umbrella now speaks.
 
-**`carrier`** — the GraphQL parent-type category, which *is* the field type:
+**`source`** — the arrival endpoint: a wrapper around a `SourceShape`, the wrapper being the field's
+**arrival cardinality** (how many source objects reach its fetcher).
 
-- `Query` (root Query type) → `QueryField`
-- `Mutation` (root Mutation type) → `MutationField`
-- `Source` (every other, non-Subscription, type) → `SourceField` (the renamed `ChildField`)
+```
+source      = Root | OnlyChild(SourceShape) | Child(SourceShape)
+Root        = Query | Mutation
+SourceShape = Table | Record | Interface(Table | Record)
+```
 
-The carrier is *position* and also the **legality gate** the producer used to imply: write intents only
-on `Mutation`, `NodeResolve`/`EntityResolve` only on `Query`, `Nesting` only on `Source`.
+- `Root` (permits `Query` / `Mutation`): an operation root, no source object arrives (arrival `Zero`).
+  The `Query` / `Mutation` split *is* the legality gate the old `carrier` implied (writes only on
+  `Mutation`, `NodeResolve` only on `Query`), folded into the arm identity.
+- `OnlyChild(SourceShape)`: exactly one source object arrives (arrival `One`), direct SQL.
+- `Child(SourceShape)`: many source objects arrive (arrival `Many`), DataLoader-batched.
 
-The `Source` arm carries payload the root arms do not: a **source-shape** (`Table | Record`) and a
-**source-object cardinality** (`One | Many`) for what arrives at `env.getSource()`. (This is the arrival
-count, the *source-object* arity; the *source-field* arity, how many this field yields per object, is a
-separate axis, see **bulk is a slot** below.) Source-shape carries the same
-catalog-vs-domain split `mapping` splits on (`Table`/`Column` catalog vs `Record`/`Field` domain), collapsed
-to the row granularity a source always has: `Table` when the parent producer put a catalog row at the source,
-`Record` when it handed back a domain record (an `@service` / DML payload, or a DTO parent). It is a
-projection of the parent producer's `domainReturnType`, not a separately-asserted axis. Source-object
-cardinality is the product of all ancestor field cardinalities (one `Many` ancestor makes every descendant
-`Many`); see **bulk is a slot** below. `Query` / `Mutation` have no source, so a sealed `Carrier` makes the
-payload unrepresentable on those arms; R305 reverses the earlier flat-enum framing because these forks are
-load-bearing (re-fetch, list-ordering determinism, the DataLoader skip) and so earn type representation
-rather than smearing across leaf identity and `SourceKey`.
+**The arrival wrapper is the emit-strategy dispatch:** `Child` needs a DataLoader or it is an N+1;
+`Root` / `OnlyChild` run SQL directly, single invocation. Naming the arms for the arrival (not a bare
+`One` / `Many`) keeps the count from being misread as the field's *output* arity, since the same
+`{One, Many}` values sit on the target wrapper (see [the wrapper algebra](#the-wrapper-algebra)).
+`SourceShape` carries the catalog-vs-Java polarity of the parent and is a **subset of `TargetShape`** (a
+source object is always a row, never a scalar): `Table` (a catalog row parent), `Record` (a
+producer-handed domain record: an `@service` / DML payload, a DTO parent, or a jOOQ embeddable column read
+as a record), and `Interface(Table | Record)` (a polymorphic parent; the `Record` case is a `@service`
+returning an interface). This replaces the old `Carrier.Source`'s flat `source-shape` +
+`source-object cardinality` payload: the cardinality became the wrapper arm, the shape stayed inside it,
+and R305's "sealed makes the payload unrepresentable on `Query` / `Mutation`" survives as `Root` carrying
+no `SourceShape`.
 
-**`intent`** — the operation kind (asserted):
+**`operation`** — the verb: a **sealed interface `Operation` with `record` arms** (replacing the flat
+`enum Intent`, which could not hold per-arm payloads). Each arm carries the slots its kind needs:
 
-- read: `Fetch`, `Lookup`, `NodeResolve`, `EntityResolve`, `Count`, `Facet`, `Nesting`
-- write: `Insert`, `Upsert`, `Update`, `UpdateMatching`, `Delete`, `DeleteMatching`
-- service: `QueryService`, `MutationService`
+- read: `Fetch` (catalog read returning rows; carries `List<WhereFilter>` + ordering), `Paginate`
+  (windowed read producing a connection; carries the filter surface + ordering + the pagination window +
+  `pageInfo` synthesis), `Lookup` (`@lookupKey` correspondence; carries `LookupMapping`), `Count` /
+  `Facet` (the connection-operation siblings of `Paginate`), `Nest` (a zero-component regroup).
+- service: `ServiceCall` (a `@service` invocation; carries the `MethodRef` + params, arguments binding to
+  method **parameters**). This **collapses** the old `QueryService` / `MutationService`, which differed
+  only by the read/write legality gate now carried by `Root`'s `Query` / `Mutation` split.
+- write: `Insert` / `Update` / `Upsert` / `Delete`, each carrying its DML payload.
 
-**`mapping`** — the value shape, which also carries **build-vs-consume**:
+`Paginate` is the windowed-read arm the old fused `Mapping.TableConnection` mis-filed on the target axis;
+pagination lives on the operation, joining `Count` / `Facet` (the previously modeled-but-unpopulated
+connection roles). The framework resolvers `NodeResolve` / `EntityResolve` stay protocol-specific
+operation arms (Relay `node` / `nodes`, Federation `_entities`); the old `UpdateMatching` /
+`DeleteMatching` condition-matched writes remain modeled gaps. Arms carry payload concretely (the payload
+*is* the model); R314 owns the emit's *consumption* of it.
 
-- `Table`, `Column` — catalog: graphitron *builds* the SQL.
-- `Record`, `Field` — domain: graphitron *consumes* a value it did not build.
+**`target`** — the projection endpoint: a wrapper around a `TargetShape`, the wrapper being the field's
+**own output cardinality** (read off `field.getType()`).
 
-`Table:Column :: Record:Field` (mirror : reflect). There is no separate provider/producer axis;
-build-vs-consume *is* the mapping. The mapping classifies graphitron's epistemic role, not the runtime
-SQL location: `@externalField` emits a jOOQ `Field<X>` that runs in the query, but graphitron only
-reflects its (user-authored) result, so it is **domain** (`Field`/`Record`), not catalog. "In the SQL
-≠ catalog."
+```
+target      = Single(TargetShape) | List(TargetShape)
+TargetShape = Table | Record | Column | Field          // base shapes
+            | Connection(TargetShape)                   // container shape
+            | Interface(Table | Record) | Union(Table)
+```
 
-**derived layer** (computed from the axes + slots; never asserted):
+- The **base shapes** carry the catalog-vs-Java polarity: `Table` / `Column` (catalog, graphitron
+  *builds* the SQL) and `Record` / `Field` (Java, graphitron *consumes* a value it did not build).
+  `Table:Column :: Record:Field` (mirror : reflect). This is exactly what the old `mapping` axis
+  encoded; it is **not a dimension** but the shape's polarity, and it reappears on `source`. The polarity
+  classifies graphitron's epistemic role, not the runtime SQL location: `@externalField` emits a jOOQ
+  `Field<X>` that runs in the query, but graphitron only reflects its user-authored result, so it is
+  domain (`Field` / `Record`), not catalog. "In the SQL ≠ catalog." `SourceShape ⊆ TargetShape`: source
+  has only the row shapes; target adds the scalar shapes (`Column` / `Field`) a source can never be.
+- `Connection(TargetShape)` is a `Single`-wrapped shape with its own fields, its many-ness living on
+  those fields (`edges` / `nodes`), classified normally. This retires the fused `Mapping.TableConnection`;
+  the "paginated" fact moves to `operation`'s `Paginate` arm.
+- `Interface(Table | Record)` and `Union(Table)` are the polymorphic shapes. `Interface` straddles both
+  seals (an interface declares its own fields, so its value can be a source); `Union` is target-only (a
+  union declares no fields, so it is never a source) and wraps `Table` only (`Union(Record)` degrades to
+  `Object` in the Java type system, which we cannot reflect on, so it is unsupported).
+- A target shape's **definition can be developer-supplied** instead of catalog-derived, and that
+  provenance (not a new operation) is the home for `@tableMethod` (supplies the `Table<?>` that `@table`
+  would resolve, replacing the target table) and `@externalField` (a `Column<T>` whose expression is
+  authored). The provenance `MethodRef` rides the target shape; the operation stays `Fetch` / projection.
+- A `Column` is not always a scalar leaf: a jOOQ embeddable column carries an embedded record, so a target
+  `Column` can be the **source `Record` for further child fields**. This is the shape-level reading of the
+  wrapper algebra: a field's target shape becomes its children's source shape (projected to row
+  granularity), which is *why* `SourceShape ⊆ TargetShape` holds.
 
-- `FetchRelated` ← a non-empty **join-path** slot (a `Fetch` reaching a related entity via FK/`@reference`).
-- **re-fetch** ← `Table mapping × holds-records`, where *holds-records* is `Source{Record}` (a record
-  received at the source) or a `Service` / DML intent (a record produced mid-field). A field holding a
-  domain record while mapping to a catalog table forces re-projecting the table from the record's keys.
-  The old service/DML → `@table` two-step, now *derived* rather than a distinct leaf; the received-record
-  half is what catches `SingleRecordTableField` without lying about its intent (R305).
-- **new-query** ← a `SourceField` slot, forced by `@splitQuery` / polymorphic UNION / record-handoff.
-- **polarity** (mutating?) ← the intent family (`Write` ∪ `{MutationService}` = mutating).
+### the wrapper algebra
+
+The two wrappers are **one algebra at two positions**. The target wrapper is *local* (this field's own
+output); the source wrapper is *accumulated* (the fold of the ancestor fields' target wrappers, so one
+`List` ancestor makes every descendant `Many`). A field's target wrapper thus becomes part of its
+descendants' source wrapper. The monoid is trivial and closed over the arms (`Root` the empty product,
+`OnlyChild` the `One` identity, `Child` the `Many` absorber):
+
+```
+Root · x          = x          OnlyChild · x   = x
+Child · OnlyChild = Child       Child · Child   = Child
+```
+
+This is *why* a bare `Cardinality.MANY` is unreadable: the same `{One, Many}` values appear at both
+positions, so detached from its endpoint a cardinality value could be either. The fix is structural:
+cardinality only ever exists as a wrapper bound to an endpoint, never as a standalone
+`SourceCardinality` / `TargetCardinality` type. This subsumes the earlier draft's two source
+cardinalities: the *source-object* arity (arrival) is the source wrapper arm, and the *source-field*
+arity (today's `SourceKey.Cardinality`, rows of this field per object) is the target output wrapper. The
+named invariant `sourceWrapperIsTheFoldOfAncestorTargetWrappers` keeps the two positions honest. Where a
+record-backed parent exposes the field as a typed accessor, `AccessorMatch.CardinalityMismatch` still
+rejects a declared arity that disagrees with the accessor's return arity.
+
+**derived layer** (computed from the endpoints; never asserted):
+
+- `FetchRelated` ← a non-empty **join-path** slot (a `Fetch` reaching a related entity via FK / `@reference`).
+- **re-fetch** ← a record-producing endpoint (a source `Record`, or a record-producing `operation`:
+  `ServiceCall` / a write) crossing into a catalog `Target.Table`. A field holding a domain record while
+  projecting a catalog table forces re-projecting the table from the record's keys. Read off the two
+  endpoints' polarities rather than decoded from a conflated `mapping`; this replaces the
+  `mapping() != Mapping.Table` gate and still catches `SingleRecordTableField` (R305) through its received
+  `Record` source.
+- **new-query** ← a source-side slot, forced by `@splitQuery` / polymorphic UNION / record-handoff.
+- **polarity** (mutating?) ← `Root.Mutation` plus the write operations.
 
 ### Why the producer dimension dissolves
 
-Its information redistributes with no residual: position → `carrier`; build-vs-consume → `mapping`;
-operation → `intent`; new-query → a derived slot. The governing principle is **assert what nothing else
-carries; derive what another axis or slot already forces.** So `FetchRelated` (forced by the join-path
-slot), re-fetch (forced by *holds-records* on a `Table` mapping, i.e. a domain record meeting a catalog
-shape), new-query (forced by `@splitQuery`/limitations), and polarity (forced by the intent family) are all
-derived, not asserted.
-`Query`/`Mutation` are *not* providers because they double-encode (intent × root-position); read-vs-write
-is the intent and root-ness is the carrier.
+Its information redistributes with no residual: position → `source` (the `Root` / `OnlyChild` / `Child`
+arm); build-vs-consume → the shape polarity on `source` / `target`; operation → `operation`; new-query → a
+derived slot. The governing principle is **assert what nothing else carries; derive what another axis or
+slot already forces.** So `FetchRelated` (forced by the join-path slot), re-fetch (forced by a
+record-producing endpoint meeting a catalog `Target.Table`), new-query (forced by `@splitQuery` /
+limitations), and polarity (forced by `Root.Mutation` + the write operations) are all derived, not
+asserted. `Query` / `Mutation` are *not* a separate provider axis because they double-encode: read-vs-write
+is the operation legality gate, and root-ness is the `Root` arm.
 
-`Nesting` is asserted (not derived from "empty join-path") specifically to avoid the
-absence-as-domain-state shape this umbrella rejects elsewhere: deriving nesting from the *absence* of a
-join-path would reintroduce a `No<Family>`-style negative signal. It is a distinct structural operation
-(produces nothing, inherits the parent's scope, regroups children) and sits outside read/write/service.
-
-node/entity resolvers stay protocol-specific intents (`NodeResolve` for Relay `node`/`nodes`, cardinality
-is a slot not a second intent; `EntityResolve` for Federation `_entities`) rather than generalising into
-`Lookup` — framework-defined operations resist generalisation, the same instinct as "ConnectionType is
-the special thing." The service intent stays the coarse polarity `{QueryService, MutationService}` only:
-graphitron can't know more than mutate-or-not about opaque user code (`LookupService` would need
-method-signature inference; deferred). Write intents enumerate the legal cells of verb × targeting
-(create has no matching variant, so no `InsertMatching`); **bulk is a slot** (cardinality), not an intent.
-A data fetcher is wired to a **(source object, source field)** pair: `env.getSource()` is the object, and the
-field it resolves is a field *on* that object. There are correspondingly two source-side cardinalities, the
-arities of those two nouns, and they answer different questions:
-
-- **source-object cardinality** — how many source objects arrive across one operation, the product of all
-  ancestor field cardinalities; carried on the `Source` carrier arm.
-- **source-field cardinality** — the arity of *this field* on the source object (one vs many); today's
-  `SourceKey.Cardinality`, driving `load`/`loadMany`, the rows-method per-key iteration, and within-group
-  `orderBy`.
-
-The two vary independently (a single field deep under a list ancestor is source-object `Many`, source-field
-`One`) and neither derives from the other. Earlier drafts called the second *target* cardinality ("rows per
-source object"); that names the right value but anchors it to the target table, when it is really the source
-field's own arity, the field-level sibling of the object-level arrival count. Where a record-backed parent
-exposes the field as a typed accessor, `AccessorMatch.CardinalityMismatch` rejects a declared arity that
-disagrees with the accessor's return arity, the proof that this axis is the source field's, validated against
-the source object's backing member, not a property of the target table.
+`Nest` is an asserted operation (not derived from "empty join-path"), avoiding the absence-as-domain-state
+shape this umbrella rejects elsewhere: it is a distinct structural verb (produces nothing, inherits the
+parent's scope, regroups children) outside read / write / service. `ServiceCall` stays the coarse
+mutate-or-not polarity only (graphitron can't infer more from opaque user code; a `Lookup`-like service
+would need method-signature inference, deferred), with the read/write split now on `Root` rather than two
+`*Service` intents. The writes enumerate the legal verbs; **bulk is the target wrapper** (`List`), not an
+operation. The two source-side cardinalities the earlier draft separated (source-object arrival,
+source-field arity) are the two wrapper positions of [the wrapper algebra](#the-wrapper-algebra) above,
+not two free enums.
 
 ### What `SourceKey` decomposes into (researched 2026-06-16)
 
@@ -193,14 +242,14 @@ mechanical simplification is R316 (`decompose-sourcekey`); the model claim is he
   `returnType.table()` for the same table. So `target`/`path` leave `SourceKey` by deletion, not by
   introducing a new slot.
 
-- **Source-object facts (migrate to the carrier).** The source object's shape (`Table | Record`,
-  already on `Carrier.Source` as `SourceShape`), its backing class (today in
+- **Source-object facts (migrate to the source endpoint).** The source object's shape (`Table | Record`,
+  now the `SourceShape` inside the `OnlyChild` / `Child` arm), its backing class (today in
   `AccessorRef.parentBackingClass` / the lifter cast target), and its `env.getSource()` envelope
   (`SourceEnvelope`, carried per-field on `Reader.ResultRowWalk` but deliberately *not* on
   `Reader.ProducedRecordRead`, which already hoists it to the type level as `sourceIsOutcome`) are
-  properties of the parent type, identical across every field on it. They belong on a richer
-  `Carrier.Source` source-object descriptor, not smeared per field. The `Reader` permit conflates
-  source-object shape with the field's extraction mechanism; only the latter is a field fact.
+  properties of the parent type, identical across every field on it. They belong on a richer source-object
+  descriptor under the source arm's `SourceShape.Record`, not smeared per field. The `Reader` permit
+  conflates source-object shape with the field's extraction mechanism; only the latter is a field fact.
 
 - **The source key (what stays).** `columns` (the key tuple lifted off the source object), `wrap` (its
   Java row shape), `cardinality` (the source-**field** arity, see *bulk is a slot* above), and the
@@ -219,33 +268,90 @@ parent"); it belongs with the source-object descriptor, not a field key.
   dispatch were deleted, and the table-and-service clash that used to classify it is now a build-time
   rejection.
 - **`SingleRecordTableField` collapses into `RecordTableField`.** SRTF is `RecordTableField` (RTF) at
-  source cardinality `One`: same operation (re-project a `@table` from a held domain record), differing only
-  in how many source records arrive. Its intent stays what the target dictates (`Fetch`); re-fetch is the
-  orthogonal derived axis, not an intent change. **Split to R305**
+  arrival `OnlyChild`: same operation (re-project a `@table` from a held domain record), differing only in
+  how many source records arrive. Its operation stays what the target dictates (`Fetch`); re-fetch is the
+  orthogonal derived axis, not an operation change. **Split to R305**
   (`collapse-singlerecordtablefield-into-recordtablefield`): the `SingleRecordTableField` leaf is deleted, its
-  construction sites produce `RecordTableField` carrying source cardinality `One`, the re-fetch derivation
-  above catches it through *holds-records*, and `OrderingOwnedByProducer` dissolves (the source/target key
+  construction sites produce `RecordTableField` at arrival `OnlyChild`, the re-fetch derivation above catches
+  it through its received `Record` source, and `OrderingOwnedByProducer` dissolves (the source/target key
   correspondence owns the visible order). The whole re-fetch family (SRTF→RTF, `RecordLookupTableField` as
   RTF's `@lookupKey` sibling, `RecordTableMethodField` as RTF with the `@tableMethod` target instance, and the
-  `@service`-batched `ServiceTableField`) re-fetches; `One` re-projects inline (no DataLoader), `Many`
+  `@service`-batched `ServiceTableField`) re-fetches; `OnlyChild` re-projects inline (no DataLoader), `Child`
   batches. Because the source record and the target table are the same entity, **the source key is the target
   key**: the re-fetch key carries the target table plus its identifying columns once, not a source/target
   column duality. No distinct leaf survives once R305 lands.
 
+### Leaf reconstruction: where each slot lands
+
+The inverse of the dissolution above: dissolution says *which leaves* collapse, this says *where each
+legacy slot* lands on the triple. The completeness test for the model (full walk and worked examples in
+R316): given an `OutputField`'s `(source, operation, target)` coordinate plus its bridge and cross-cut
+slots, the legacy leaf record must be reconstructible. A slot the triple cannot hold is a model gap.
+
+| Legacy slot (representative) | Lands on | As |
+|---|---|---|
+| `returnType` + `FieldWrapper` | target | `wrapper(shape)`: `wrapper()` → `Single` / `List`; arms → `TargetShape` |
+| `column` / `columns` / `columnName` (projection) | target | `Column` shape (arity ≥ 2 is the composite sub-detail) |
+| `compaction` / `encode` / `aliasName` | target | projection function / alias on `Column` / `Field` |
+| `returnExpression: DmlReturnExpression` | target | `Single` / `List` × `Column` (encoded id) / `Table` (projected) |
+| `filters` / `orderBy` | operation | `Fetch` / `Paginate` payload |
+| `pagination` | operation | the `Fetch` ↔ `Paginate` discriminant; `Paginate` payload |
+| `method` / `serviceMethodCall` | operation **or** target provenance | `ServiceCall`; `@tableMethod` / `@externalField` ride the target shape |
+| `lookupMapping` | operation | `Lookup` payload |
+| `tableInputArg` / `inputArg` + `updateRows` / `deleteRows` / `kind` | operation | the write-arm input payload |
+| `nestedFields` | operation | `Nest` payload |
+| `participants` / `participantJoinPaths` / `discriminatorColumn` | target + bridge | `Interface` / `Union` shape payload + per-participant join paths |
+| `SourceKey` (target, columns, path, wrap, cardinality, reader) | splits | `path` / `target` → bridge + target; reader / wrap / backing → source `Record`; `cardinality` → target wrapper |
+| `loaderRegistration` | source | the `Child`-arm batch payload (its presence = `Child`) |
+| `parentSourceKey` / `parentResultType` / `accessor` | source | source-object key / shape / `Record` extraction |
+| `joinPath` / `fkJoin` / `parentCorrelation` | bridge | the FK route and its step-0 correlation |
+| `errorChannel` / `errorTypes` / `transport` | cross-cut | the error channel, not an axis |
+| `parentTypeName` / `name` / `location` | field identity | the `OutputField` envelope, not a dimension |
+
+The leaf set reads larger than the model because one concept wears different vocabulary across leaves; each
+is carried once by the unified axes:
+
+1. **Service call**: `method` (child) and `serviceMethodCall` (root) collapse onto `Operation.ServiceCall`.
+2. **Write input**: `tableInputArg` (INSERT / UPSERT) and `inputArg` + a walker carrier (UPDATE / DELETE)
+   collapse onto one write-arm input payload.
+3. **FK route**: `joinPath`, `fkJoin`, `participantJoinPaths`, and `SourceKey.path` are one join bridge.
+4. **NodeId encode**: `compaction: CallSiteCompaction` and the bare `encode: NodeIdEncodeKeys` are one
+   target projection.
+5. **Return shape**: `returnExpression` re-expresses `returnType` + `FieldWrapper` for DML; it dissolves
+   into the target `wrapper(shape)`.
+6. **`column`**: the projection on `ColumnField` and the source read-location on `PropertyField` are the
+   same name at opposite endpoints, split by endpoint.
+7. **Cardinality**: `SourceKey.cardinality`, `LoaderRegistration`, `wrapper().isList()`, and the arrival
+   count are one-vs-many at four positions, each a wrapper bound to its endpoint (the wrapper algebra).
+
+The reconstruction key, invertible, is the completeness proof and predicts the leaf collapse R314 harvests:
+
+```
+leaf = f(source shape, source arrival, operation, target shape, target wrapper)
+       + { new-query, re-fetch }   // derived slots
+```
+
+`Split*` vs non-`Split` is the `@splitQuery` new-query derived slot; `Record*` is a source `Record` vs
+`Table`; `Lookup*` is operation `Lookup`; `Bulk*` is target `List`; `*Payload` vs `*Table` is target shape
+`Record` vs `Table` / `Column`; `Composite*` is target `Column` arity ≥ 2. A `leafReconstructsFromCoordinate`
+test over the R281 corpus (R316) makes the key executable.
+
 ### Model complete, classifier coverage partial
 
-The intent set is the full model; the classifier populates what the current leaf set permits. The
-modeled-but-unpopulated intents (declared gaps, never silently absent): `EntityResolve` (Federation
-`_entities`), `Count`, `Facet` (connection roles, behind the ConnectionType quarantine),
-`UpdateMatching`, `DeleteMatching` (condition-matched writes, unimplemented). Model leads classifier.
+The `operation` set is the full model; the classifier populates what the current leaf set permits. The
+modeled-but-unpopulated operations (declared gaps, never silently absent): `EntityResolve` (Federation
+`_entities`), `Count`, `Facet` (connection roles, behind the ConnectionType quarantine), and the
+condition-matched writes (unimplemented). Model leads classifier.
 
 ### Where this lands across the stages
 
 This refines **Stage 3**. The dimensional-slot consumers (`DataFetcherBuilder`, `QueryBuilder`,
 `ValidationBuilder`) compose these three axes plus the Stage-2 walker carriers into emit. **R290** is the
-field-side spin-out that materialises `carrier × intent × mapping` on the field and deletes
-`LeafTupleAdapter`. **R299** is the slice that first asserts `intent` (and `carrier`) in the R281 corpus,
-migrating it off the producer/mapping reconstruction.
+field-side spin-out that first materialised the field axes (as `carrier × intent × mapping`) and deletes
+`LeafTupleAdapter`. **R299** first asserted them in the R281 corpus, migrating it off the producer/mapping
+reconstruction; **R305** built the sealed source arm. **R316** is the pivot that renames the three axes to
+`(source, operation, target)` and lifts R290 / R299 / R305's output onto them; its slices own the code
+changes, this section the vocabulary.
 
 ## Architectural principle this codifies
 
@@ -280,7 +386,7 @@ Each remaining walker-output carrier ships as an independent slice: its sealed f
 
 ### Stage 3 — Field dimensional slots
 
-R164's content. `DataFetcherBuilder`, `QueryBuilder`, `ValidationBuilder` dimensional slots land per sub-seal, composing walker carriers and reflection-driven information into emit-ready form. Each dimension's sealed family lands once; the sub-seal's cross-product permits flatten under it. Each dimension is a spin-out slice; runs in parallel with Stage 2 once the foundation lands. See **Field-side dimensional model (refined 2026-06-13)** above for the sharpened target this stage implements: the field axes are `carrier × intent × mapping` with the producer dimension dissolved, and the builders here are the consumers that compose them.
+R164's content. `DataFetcherBuilder`, `QueryBuilder`, `ValidationBuilder` dimensional slots land per sub-seal, composing walker carriers and reflection-driven information into emit-ready form. Each dimension's sealed family lands once; the sub-seal's cross-product permits flatten under it. Each dimension is a spin-out slice; runs in parallel with Stage 2 once the foundation lands. See **Field-side dimensional model (pivoted 2026-06-18 to source/operation/target)** above for the sharpened target this stage implements: the field axes are `(source, operation, target)` with the producer dimension dissolved, and the builders here are the consumers that compose them.
 
 ### Stage 4 — Failure at the wrapper everywhere
 
