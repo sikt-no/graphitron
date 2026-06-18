@@ -498,6 +498,12 @@ Migrate the `classifieddsl/*` harness (`ClassifiedCorpus`,
 `operation` crossing into a `Target.Table`), replacing the `mapping() != Mapping.Table` gate;
 the existing `ReFetchDerivationTest` is migrated, not added.
 
+**Retire the slice-2 bridge.** Slice 2 landed `Source` additively, leaving `OutputField.carrier()` as a
+`default` deriving the retired `Carrier` from `source()` so the corpus classified unchanged; the corpus is
+its last reader. Once this slice repoints the corpus onto `source()` / `operation()` / `target()`, delete
+`OutputField.carrier()`, `Carrier.java`, and `SourceCardinality.java` (the latter's `One` / `Many` already
+live as the `OnlyChild` / `Child` arms). Slice 5's remnant grep is the backstop that none survive.
+
 The `dispatchPerformsReFetch` validator mirror is re-expressed over the new axes but **survives
 R316 by design**: it guards the still-leaf-dispatched generator against `requiresReFetch()`
 drift. Retiring it requires the emit to read `requiresReFetch()` directly, which is R314's
