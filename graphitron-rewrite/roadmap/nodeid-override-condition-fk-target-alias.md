@@ -1,7 +1,7 @@
 ---
 id: R330
 title: "@condition(override: true) on a @nodeId filter field passes the root table instead of the joined FK-target alias"
-status: Ready
+status: In Progress
 bucket: bug
 priority: 3
 theme: nodeid
