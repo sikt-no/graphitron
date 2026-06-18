@@ -22,6 +22,7 @@ import no.sikt.graphitron.rewrite.model.WhereFilter;
 import javax.lang.model.element.Modifier;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.DSL;
 import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.ENV;
@@ -388,6 +389,7 @@ public final class SplitRowsMethodEmitter {
      * {@code instanceof} guard also keeps a {@code ConditionJoin} bridging hop from a stray cast).
      */
     private static CodeBlock buildWhereCondition(
+            CodeBlock.Builder body,
             TypeFetcherEmissionContext ctx,
             List<JoinStep> path,
             List<String> aliases,
@@ -395,6 +397,14 @@ public final class SplitRowsMethodEmitter {
             String firstAlias,
             List<WhereFilter> filters,
             CompositeDecodeHelperRegistry registry) {
+        // R330: declare an aliased FK-target table local per join hop for every FK-target @nodeId
+        // override @condition among the filters, into the enclosing method's `body` (the WHERE is an
+        // expression and cannot introduce locals itself). Each caller embeds the returned WHERE in a
+        // select that is added to `body` after this call, so the aliases precede their use. Rows
+        // methods recurse, so the SQL alias is runtime-prefixed onto the terminal alias's getName().
+        Map<WhereFilter, List<String>> fkTargetAliases =
+            FkTargetConditionEmitter.declareAliases(body, filters, terminalAlias, true);
+
         var where = CodeBlock.builder();
         where.add("$T.noCondition()", DSL);
         for (int i = 0; i < path.size(); i++) {
@@ -402,14 +412,13 @@ public final class SplitRowsMethodEmitter {
             if (hop.whereFilter() != null) {
                 String srcAlias = i == 0 ? firstAlias : aliases.get(i - 1);
                 String tgtAlias = aliases.get(i);
-                where.add(".and($L)",
+                where.add("\n        .and($L)",
                     JoinPathEmitter.emitTwoArgMethodCall(hop.whereFilter(), srcAlias, tgtAlias));
             }
         }
         for (WhereFilter f : filters) {
-            where.add(".and($T.$L($L))",
-                ClassName.bestGuess(f.className()), f.methodName(),
-                ArgCallEmitter.buildCallArgs(ctx, f.callParams(), f.className(), terminalAlias, registry));
+            where.add("\n        .and($L)",
+                FkTargetConditionEmitter.emitTerm(ctx, f, terminalAlias, registry, null, fkTargetAliases));
         }
         return where.build();
     }
@@ -813,7 +822,7 @@ public final class SplitRowsMethodEmitter {
         // WHERE: per-hop whereFilters + field-level filters, shared with the single and connection
         // siblings via buildWhereCondition.
         sel.add(".where($L)\n",
-            buildWhereCondition(ctx, path, aliases, terminalAlias, firstAlias, filters, registry));
+            buildWhereCondition(body, ctx, path, aliases, terminalAlias, firstAlias, filters, registry));
         sel.add(".fetch();\n");
         sel.unindent();
         body.add(sel.build());
@@ -897,7 +906,7 @@ public final class SplitRowsMethodEmitter {
         emitFromBridgeAndParentJoin(sel, path, aliases, terminalAlias, firstAlias,
             parentCorrelation, joinOnAlias, joinOnCols, joinOnParentCols);
         sel.add(".where($L)\n",
-            buildWhereCondition(ctx, path, aliases, terminalAlias, firstAlias, filters, registry));
+            buildWhereCondition(body, ctx, path, aliases, terminalAlias, firstAlias, filters, registry));
         sel.add(".fetch();\n");
         sel.unindent();
         body.add(sel.build());
@@ -1048,7 +1057,7 @@ public final class SplitRowsMethodEmitter {
         emitFromBridgeAndParentJoin(inner, path, aliases, terminalAlias, firstAlias,
             parentCorrelation, joinOnAlias, joinOnCols, joinOnParentCols);
         inner.add(".where($L)\n",
-            buildWhereCondition(ctx, path, aliases, terminalAlias, firstAlias, filters, registry));
+            buildWhereCondition(body, ctx, path, aliases, terminalAlias, firstAlias, filters, registry));
         inner.add(".orderBy(page.effectiveOrderBy())\n");
         inner.add(".seek(page.seekFields())\n");
         inner.add(".asTable($S);\n", "ranked");

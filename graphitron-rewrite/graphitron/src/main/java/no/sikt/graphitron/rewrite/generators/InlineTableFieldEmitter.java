@@ -11,6 +11,7 @@ import no.sikt.graphitron.rewrite.model.TableRef;
 import no.sikt.graphitron.rewrite.model.WhereFilter;
 
 import java.util.List;
+import java.util.Map;
 
 import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.DSL;
 
@@ -96,8 +97,16 @@ public final class InlineTableFieldEmitter {
             }
         }
 
+        // R330: declare an aliased FK-target table local per join hop for every FK-target
+        // @nodeId override @condition among the user filters, so buildInnerSelect can emit each as
+        // a correlated EXISTS against that alias instead of mis-passing the field's own table. This
+        // arm recurses (self-referential nested projections), so the SQL alias is runtime-prefixed
+        // onto the terminal alias's getName(), matching the hop aliases above.
+        Map<WhereFilter, List<String>> fkTargetAliases =
+            FkTargetConditionEmitter.declareAliases(code, tf.filters(), terminalAlias, true);
+
         // Assemble the inner SELECT.
-        CodeBlock innerSelect = buildInnerSelect(tf, path, aliases, terminalAlias, typeClass, parentAlias, sfName, registry);
+        CodeBlock innerSelect = buildInnerSelect(tf, path, aliases, terminalAlias, typeClass, parentAlias, sfName, registry, fkTargetAliases);
 
         // Both cardinalities use DSL.multiset(...) uniformly. The single-cardinality path adds
         // .limit(1) to the inner SELECT (inside buildInnerSelect) and the registered DataFetcher
@@ -115,7 +124,8 @@ public final class InlineTableFieldEmitter {
      */
     private static CodeBlock buildInnerSelect(ChildField.TableField tf, List<JoinStep> path,
             List<String> aliases, String terminalAlias, ClassName typeClass,
-            String parentAlias, String sfName, CompositeDecodeHelperRegistry registry) {
+            String parentAlias, String sfName, CompositeDecodeHelperRegistry registry,
+            Map<WhereFilter, List<String>> fkTargetAliases) {
         boolean singleCardinality = tf.returnType().wrapper() instanceof FieldWrapper.Single;
 
         var sel = CodeBlock.builder();
@@ -165,14 +175,13 @@ public final class InlineTableFieldEmitter {
         for (JoinStep step : path) {
             if (step instanceof JoinStep.FkJoin fk && fk.whereFilter() != null) {
                 String srcAlias = resolveSourceAlias(path, aliases, fk, parentAlias);
-                where.add(".and($L)",
+                where.add("\n        .and($L)",
                     JoinPathEmitter.emitTwoArgMethodCall(fk.whereFilter(), srcAlias, aliasForStep(path, aliases, fk)));
             }
         }
         for (WhereFilter f : tf.filters()) {
-            where.add(".and($T.$L($L))",
-                ClassName.bestGuess(f.className()), f.methodName(),
-                ArgCallEmitter.buildCallArgs(new TypeFetcherEmissionContext(), f.callParams(), f.className(), terminalAlias, registry));
+            where.add("\n        .and($L)",
+                FkTargetConditionEmitter.emitTerm(new TypeFetcherEmissionContext(), f, terminalAlias, registry, null, fkTargetAliases));
         }
         sel.add("\n        .where($L)", where.build());
 

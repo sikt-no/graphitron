@@ -13,6 +13,7 @@ import no.sikt.graphitron.rewrite.model.TableRef;
 import no.sikt.graphitron.rewrite.model.WhereFilter;
 
 import java.util.List;
+import java.util.Map;
 
 import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.DSL;
 
@@ -155,8 +156,15 @@ public final class InlineLookupTableFieldEmitter {
             if (i > 0) onCondition.add(")");
         }
 
+        // R330: declare an aliased FK-target table local per join hop for every FK-target @nodeId
+        // override @condition among the user filters, so buildInnerSelect emits each as a correlated
+        // EXISTS rather than mis-passing the lookup's own table. Runtime-prefixed SQL alias (this
+        // arm recurses), matching the hop aliases above.
+        Map<WhereFilter, List<String>> fkTargetAliases =
+            FkTargetConditionEmitter.declareAliases(code, lf.filters(), terminalAlias, true);
+
         CodeBlock innerSelect = buildInnerSelect(lf, path, aliases, terminalAlias, typeClass,
-            parentAlias, onCondition.build(), sfName, registry);
+            parentAlias, onCondition.build(), sfName, registry, fkTargetAliases);
         code.addStatement("fields.add($T.multiset($L).as($S))", DSL, innerSelect, lf.name());
         code.endControlFlow();
 
@@ -170,7 +178,8 @@ public final class InlineLookupTableFieldEmitter {
      */
     private static CodeBlock buildInnerSelect(ChildField.LookupTableField lf, List<JoinStep> path,
             List<String> aliases, String terminalAlias, ClassName typeClass,
-            String parentAlias, CodeBlock onCondition, String sfName, CompositeDecodeHelperRegistry registry) {
+            String parentAlias, CodeBlock onCondition, String sfName, CompositeDecodeHelperRegistry registry,
+            Map<WhereFilter, List<String>> fkTargetAliases) {
         var sel = CodeBlock.builder();
         sel.add("$T.select($T.$$fields($L.getSelectionSet(), $L, env))",
             DSL, typeClass, sfName, terminalAlias);
@@ -215,14 +224,13 @@ public final class InlineLookupTableFieldEmitter {
         for (JoinStep step : path) {
             if (step instanceof JoinStep.FkJoin fk && fk.whereFilter() != null) {
                 String srcAlias = resolveSourceAlias(path, aliases, fk, parentAlias);
-                where.add(".and($L)",
+                where.add("\n        .and($L)",
                     JoinPathEmitter.emitTwoArgMethodCall(fk.whereFilter(), srcAlias, aliasForStep(path, aliases, fk)));
             }
         }
         for (WhereFilter f : lf.filters()) {
-            where.add(".and($T.$L($L))",
-                ClassName.bestGuess(f.className()), f.methodName(),
-                ArgCallEmitter.buildCallArgs(new TypeFetcherEmissionContext(), f.callParams(), f.className(), terminalAlias, registry));
+            where.add("\n        .and($L)",
+                FkTargetConditionEmitter.emitTerm(new TypeFetcherEmissionContext(), f, terminalAlias, registry, null, fkTargetAliases));
         }
         sel.add("\n        .where($L)", where.build());
 

@@ -196,6 +196,61 @@ class GraphQLQueryTest {
             .containsExactlyInAnyOrder("Smith", "Williams", "Jones");
     }
 
+    @Test
+    void store_customersByAddressDistrict_inlineFkTargetOverride_filtersByForeignTable() {
+        // R330: inline child TableField path (InlineTableFieldEmitter). Store.customersByAddressDistrict
+        // correlates store -> customer, then the FK-target @nodeId(Address) @condition(override) on the
+        // filter is emitted as a correlated EXISTS handing addressDistrictAlberta an aliased Address.
+        // Seed: store 1 holds Smith + Jones (address 1, Alberta), store 2 holds Williams (address 3,
+        // Alberta). Pre-fix the inline emitter passed the customer alias to a method declaring Address
+        // and failed to compile (the SakFetchers shape that regressed in 10.0.0-RC16).
+        Map<String, Object> data = execute(
+            "{ storeById(store_id: [1, 2]) { storeId customersByAddressDistrict(filter: {}) { lastName } } }");
+        assertThat(data).extractingByKey("storeById", as(list(Map.class)))
+            .anySatisfy(s -> {
+                assertThat(s.get("storeId")).isEqualTo(1);
+                assertThat((List<Map<String, Object>>) s.get("customersByAddressDistrict"))
+                    .extracting(c -> c.get("lastName")).containsExactlyInAnyOrder("Smith", "Jones");
+            })
+            .anySatisfy(s -> {
+                assertThat(s.get("storeId")).isEqualTo(2);
+                assertThat((List<Map<String, Object>>) s.get("customersByAddressDistrict"))
+                    .extracting(c -> c.get("lastName")).containsExactlyInAnyOrder("Williams");
+            });
+    }
+
+    @Test
+    void store_customersByAddressDistrictSplit_splitFkTargetOverride_filtersByForeignTable() {
+        // R330: @splitQuery child path (SplitRowsMethodEmitter, the third WHERE-emitting site). Same
+        // FK-target EXISTS as the inline sibling, embedded in the batched rows-method instead.
+        Map<String, Object> data = execute(
+            "{ storeById(store_id: [1, 2]) { storeId customersByAddressDistrictSplit(filter: {}) { lastName } } }");
+        assertThat(data).extractingByKey("storeById", as(list(Map.class)))
+            .anySatisfy(s -> {
+                assertThat(s.get("storeId")).isEqualTo(1);
+                assertThat((List<Map<String, Object>>) s.get("customersByAddressDistrictSplit"))
+                    .extracting(c -> c.get("lastName")).containsExactlyInAnyOrder("Smith", "Jones");
+            })
+            .anySatisfy(s -> {
+                assertThat(s.get("storeId")).isEqualTo(2);
+                assertThat((List<Map<String, Object>>) s.get("customersByAddressDistrictSplit"))
+                    .extracting(c -> c.get("lastName")).containsExactlyInAnyOrder("Williams");
+            });
+    }
+
+    @Test
+    void customersByAddressDistrictActive_fieldOverridePlusFkTarget_composesBothShimTerms() {
+        // R330: the opptak shim shape exactly — a field-level @condition(override) (customersActiveOnly,
+        // against the root customer table) AND an FK-target @nodeId @condition(override)
+        // (addressDistrictAlberta, against an aliased Address via EXISTS). The QueryConditions shim ANDs
+        // both terms. Alberta customers are Smith, Williams, Jones; Jones is inactive, so the active
+        // term drops it. Guards the multi-filter accumulation where soknadsmangeltyper regressed.
+        Map<String, Object> data = execute("{ customersByAddressDistrictActive(filter: {}) { lastName } }");
+        assertThat(data).extractingByKey("customersByAddressDistrictActive", as(list(Map.class)))
+            .extracting(c -> c.get("lastName"))
+            .containsExactlyInAnyOrder("Smith", "Williams");
+    }
+
     // ===== films query =====
 
     @Test
