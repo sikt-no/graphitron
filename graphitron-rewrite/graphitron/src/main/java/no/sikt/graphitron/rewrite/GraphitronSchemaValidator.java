@@ -124,12 +124,13 @@ public class GraphitronSchemaValidator {
      * {@code RecordTableMethodField})
      * re-projects the {@code @table} from keys read off a received record (R305). The
      * {@code @service}-record, DML-encoded (PK-only RETURNING), and catalog {@code Fetch} arms do not
-     * re-fetch. The strict {@link no.sikt.graphitron.rewrite.model.Mapping#Table} guard matches
-     * {@code requiresReFetch}, which fires only on a non-connection {@code Table} mapping; a
-     * connection-shaped table field paginates rather than re-projecting in this derivation's sense.
+     * re-fetch. The strict {@link no.sikt.graphitron.rewrite.model.TargetShape.Table} guard matches
+     * {@code requiresReFetch}, which fires only on a bare (non-connection) {@code Table} target shape; a
+     * connection-shaped table field carries a {@link no.sikt.graphitron.rewrite.model.TargetShape.Connection}
+     * shape and paginates rather than re-projecting in this derivation's sense.
      */
     private static boolean dispatchPerformsReFetch(no.sikt.graphitron.rewrite.model.OutputField field) {
-        if (field.mapping() != no.sikt.graphitron.rewrite.model.Mapping.Table) {
+        if (!(field.target().shape() instanceof no.sikt.graphitron.rewrite.model.TargetShape.Table)) {
             return false;
         }
         return switch (field) {

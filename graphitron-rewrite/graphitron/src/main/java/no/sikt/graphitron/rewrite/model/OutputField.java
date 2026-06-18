@@ -167,27 +167,32 @@ public sealed interface OutputField extends GraphitronField permits RootField, C
     /**
      * Re-fetch (the appendix's {@code RF}): the target {@code @table} must be re-projected from keys
      * held at the source, because the field holds a domain record rather than the projected columns.
-     * <strong>Derived</strong> from {@link Mapping#Table} combined with <em>holds-records</em>, not
-     * switched on leaf identity. "Holds records" is two cases on the catalog-vs-domain split: the
-     * source <em>received</em> a record (a {@link Source.OnlyChild} / {@link Source.Child} arm with
-     * {@link SourceShape#Record}), or a service / DML-write intent <em>produced</em> one mid-field.
-     * Either way the field re-projects the
-     * table by correlating the record's keys to the catalog rows (mechanically a {@code VALUES(idx,
-     * key...)} join with {@code ORDER BY idx}).
+     * <strong>Derived</strong> from a bare catalog {@link TargetShape.Table} target combined with
+     * <em>holds-records</em>, not switched on leaf identity. "Holds records" is two cases on the
+     * catalog-vs-domain split: the source <em>received</em> a record (a {@link Source.OnlyChild} /
+     * {@link Source.Child} arm with {@link SourceShape#Record}), or a service / DML-write
+     * {@link Operation} <em>produced</em> one mid-field. Either way the field re-projects the table by
+     * correlating the record's keys to the catalog rows (mechanically a {@code VALUES(idx, key...)} join
+     * with {@code ORDER BY idx}).
      *
-     * <p>Re-fetch is orthogonal to {@link #intent()} (R305): a field that re-fetches keeps its own
-     * intent. A record-source {@code RecordTableField} carrier (the former {@code SingleRecordTableField}) keys off a producer record while its intent stays
-     * {@code Fetch}; this is the single home of the re-fetch predicate the service/DML fetcher arms
-     * used to each re-decide from their own leaf type (R290). {@code GraphitronSchemaValidator} mirrors
-     * it against the generator's actual re-fetch dispatch so the derivation and the emitter cannot
-     * drift.
+     * <p>Re-fetch is orthogonal to the {@link #operation()} verb (R305): a field that re-fetches keeps
+     * its own operation. A record-source {@code RecordTableField} carrier (the former
+     * {@code SingleRecordTableField}) keys off a producer record while its operation stays
+     * {@link Operation.Fetch}; this is the single home of the re-fetch predicate the service/DML fetcher
+     * arms used to each re-decide from their own leaf type (R290). {@code GraphitronSchemaValidator}
+     * mirrors it against the generator's actual re-fetch dispatch so the derivation and the emitter
+     * cannot drift.
      *
-     * <p>Catalog {@link Intent#Fetch} reads off a {@link SourceShape#Table} source read the table
-     * directly (no producer round-trip); producers that map to {@link Mapping#Record} /
-     * {@link Mapping#Column} hand back the consumed shape directly. Neither re-fetches.
+     * <p>The guard is the bare {@link TargetShape.Table} shape, not the {@link TargetShape.Connection}
+     * container that wraps it when paginated: a connection-shaped table field paginates rather than
+     * re-projecting in this derivation's sense (the decomposed {@code Mapping.TableConnection}). A
+     * catalog {@link Operation.Fetch} off a {@link SourceShape#Table} source reads the table directly
+     * (no producer round-trip); producers whose target is a {@link TargetShape.Record} /
+     * {@link TargetShape.Field} / {@link TargetShape.Column} hand back the consumed shape directly.
+     * Neither re-fetches.
      */
     default boolean requiresReFetch() {
-        if (mapping() != Mapping.Table) {
+        if (!(target().shape() instanceof TargetShape.Table)) {
             return false;
         }
         boolean receivedRecord = switch (source()) {
@@ -195,8 +200,12 @@ public sealed interface OutputField extends GraphitronField permits RootField, C
             case Source.Child(var shape) -> shape == SourceShape.Record;
             case Source.Root ignored -> false;
         };
-        boolean producedRecord = switch (intent()) {
-            case QueryService, MutationService, Insert, Update, Upsert, Delete -> true;
+        boolean producedRecord = switch (operation()) {
+            case Operation.ServiceCall ignored -> true;
+            case Operation.Insert ignored -> true;
+            case Operation.Update ignored -> true;
+            case Operation.Upsert ignored -> true;
+            case Operation.Delete ignored -> true;
             default -> false;
         };
         return receivedRecord || producedRecord;
