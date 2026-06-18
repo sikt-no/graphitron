@@ -1,13 +1,13 @@
 ---
 id: R315
 title: "Bind FK-reference @nodeId onto jOOQ-record @service params (port legacy @reference FK resolution; generalize R311)"
-status: Spec
+status: Ready
 bucket: feature
 priority: 4
 theme: nodeid
 depends-on: []
 created: 2026-06-16
-last-updated: 2026-06-17
+last-updated: 2026-06-18
 ---
 
 # Bind FK-reference @nodeId onto jOOQ-record @service params (port legacy @reference FK resolution; generalize R311)
