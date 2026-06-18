@@ -1,5 +1,6 @@
 package no.sikt.graphitron.rewrite.test.conditions;
 
+import no.sikt.graphitron.rewrite.test.jooq.tables.Address;
 import no.sikt.graphitron.rewrite.test.jooq.tables.Film;
 import org.jooq.Condition;
 import org.jooq.Table;
@@ -47,6 +48,20 @@ public final class InputFieldConditionFixtures {
      */
     public static Condition outerOverrideMethod(Table<?> table, Map<String, Object> filter) {
         return table.field(Film.FILM.FILM_ID).ge(2);
+    }
+
+    /**
+     * R330: FK-target {@code @nodeId} {@code @condition} method. The declared first parameter is
+     * the concrete FK-target table {@link Address} (not the input's own {@code customer} table),
+     * so the generated condition only compiles if {@code QueryConditionsGenerator} hands it an
+     * aliased {@code Address} from the correlated {@code EXISTS} rather than the root
+     * {@code customer} local. Filters on the FK-target table to prove the alias is bound there:
+     * customers whose address is in district {@code Alberta}. {@code addressId} is unused (the
+     * {@code override} drops the decoded predicate); it is present so the binding shape mirrors a
+     * real consumer method that receives the decoded id alongside the table.
+     */
+    public static Condition addressDistrictAlberta(Address address, String addressId) {
+        return address.DISTRICT.eq("Alberta");
     }
 
 }

@@ -180,6 +180,22 @@ class GraphQLQueryTest {
             .containsExactlyInAnyOrder("Mary", "Patricia", "Linda");
     }
 
+    @Test
+    void customersByAddressDistrict_fkTargetNodeIdOverrideCondition_filtersByForeignTable() {
+        // R330: CustomerAddressNodeFilter.addressId carries @nodeId(typeName: "Address") +
+        // @condition(override: true). customer reaches address via customer_address_id_fkey, so the
+        // condition method (addressDistrictAlberta) receives the FK-target Address alias, not the
+        // customer table, emitted as a correlated EXISTS. Seed: addresses 1 and 3 are 'Alberta',
+        // held by customers Smith (addr 1), Williams (addr 3), and Jones (addr 1). The empty filter
+        // exercises the override path: the decoded-id predicate is dropped and the method owns the
+        // WHERE entirely. Pre-fix the generated call handed the method the customer table and either
+        // failed to compile (concrete Address parameter) or filtered the wrong table.
+        Map<String, Object> data = execute("{ customersByAddressDistrict(filter: {}) { lastName } }");
+        assertThat(data).extractingByKey("customersByAddressDistrict", as(list(Map.class)))
+            .extracting(c -> c.get("lastName"))
+            .containsExactlyInAnyOrder("Smith", "Williams", "Jones");
+    }
+
     // ===== films query =====
 
     @Test
