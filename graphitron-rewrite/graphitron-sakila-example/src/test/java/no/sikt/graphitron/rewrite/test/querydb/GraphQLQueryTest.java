@@ -4124,6 +4124,29 @@ class GraphQLQueryTest {
             .isEqualTo("endorsedFilm[changed=true,val=5] note[changed=true,val=set]");
     }
 
+    @Test
+    void upsertAddress_omittedSameTableIdentity_serviceInsertAssignsPk() {
+        // R315 D4 execution pin (nullable same-table identity, omitted): addressId @nodeId(typeName:
+        // "Address") resolves to AddressRecord's own PK (address_id). Omitting it leaves address_id unset
+        // (changed=false) — under R311 a same-table identity always threw on null, so this is the exact
+        // throw→skip behavior change D4 folds in. The @service owns the INSERT; the database assigns the
+        // serial PK, which jOOQ refreshes back. The only tier that can observe the changed=false → unset
+        // PK → DB-assigned outcome.
+        Map<String, Object> data = execute("mutation { upsertAddress(in: {}) }");
+        assertThat(data).extractingByKey("upsertAddress").isEqualTo("omitted: pkAssignedByDb=true");
+    }
+
+    @Test
+    void upsertAddress_setSameTableIdentity_decodeLandsOnPk() {
+        // R315 D4 execution pin (nullable same-table identity, set): a present addressId decodes and
+        // lands on the record's own PK address_id (the update path) — the same conditional-load path the
+        // nullable FK reference and plain column take, here for the record's own identity.
+        String addressId2 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Address", 2);
+        Map<String, Object> data = execute(
+            "mutation { upsertAddress(in: {addressId: \"" + addressId2 + "\"}) }");
+        assertThat(data).extractingByKey("upsertAddress").isEqualTo("set: pk=2");
+    }
+
     // ===== R77 Phase B: missing-vs-null on single-row INSERT (containsKey-gated DEFAULT) =====
 
     @Test
