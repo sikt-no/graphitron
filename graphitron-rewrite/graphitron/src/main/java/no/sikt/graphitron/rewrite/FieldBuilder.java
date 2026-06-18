@@ -78,6 +78,7 @@ import no.sikt.graphitron.rewrite.model.BodyParam;
 import no.sikt.graphitron.rewrite.model.CallParam;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.ConditionFilter;
+import no.sikt.graphitron.rewrite.model.FkTargetConditionFilter;
 import no.sikt.graphitron.rewrite.model.GeneratedConditionFilter;
 import no.sikt.graphitron.rewrite.model.WhereFilter;
 
@@ -1323,7 +1324,7 @@ class FieldBuilder {
     private List<WhereFilter> projectFilters(List<ArgumentRef> refs, GraphQLFieldDefinition fieldDef,
                                              TableRef rt, String returnTypeName, List<Rejection> errors) {
         var bodyParams = new ArrayList<BodyParam>();
-        var argConditions = new ArrayList<ConditionFilter>();
+        var argConditions = new ArrayList<WhereFilter>();
         boolean hadError = false;
         var fieldCond = ctx.readConditionDirective(fieldDef);
         boolean fieldOverride = fieldCond != null && fieldCond.override();
@@ -1530,7 +1531,7 @@ class FieldBuilder {
             List<InputField> fields, String outerArgName, List<String> pathPrefix,
             boolean enclosingOverride, boolean effectiveNonNull, Set<String> lookupBoundNames,
             List<BodyParam> implicitBodyParams,
-            List<ConditionFilter> out,
+            List<WhereFilter> out,
             List<Rejection> walkRejections,
             TableRef resolvingTable,
             String containerSummary) {
@@ -1555,7 +1556,22 @@ class FieldBuilder {
                     }
                 }
                 case InputField.ColumnReferenceField rf -> {
-                    rf.condition().ifPresent(c -> out.add(conditionResolver.rewrapForNested(c.filter(), outerArgName, leafPath)));
+                    // R330: an FK-target @nodeId field's @condition method expects the FK-target
+                    // table X, not the input's own table, so the plain ConditionFilter (whose Table
+                    // slot the emitter fills with the root `table` local) would hand the method the
+                    // wrong table and fail at consumer compile. Wrap it in an FkTargetConditionFilter
+                    // carrying the FK correlation so QueryConditionsGenerator emits a correlated
+                    // EXISTS that hands the method an alias for X. An empty joinPath means start
+                    // table == target table (the column lives on the parent's own table), so `table`
+                    // is genuinely correct and the plain ConditionFilter stands.
+                    rf.condition().ifPresent(c -> {
+                        var rewrapped = conditionResolver.rewrapForNested(c.filter(), outerArgName, leafPath);
+                        out.add(rf.joinPath().isEmpty()
+                            ? rewrapped
+                            : new FkTargetConditionFilter(rewrapped,
+                                ((JoinStep.HasTargetTable) rf.joinPath().get(rf.joinPath().size() - 1)).targetTable(),
+                                rf.joinPath(), rf.liftedSourceColumns(), List.of(rf.column())));
+                    });
                     if (!enclosingOverride
                             && rf.condition().isEmpty()
                             && !lookupBoundNames.contains(rf.name())) {

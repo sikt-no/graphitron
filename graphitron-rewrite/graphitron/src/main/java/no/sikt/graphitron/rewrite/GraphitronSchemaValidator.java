@@ -218,7 +218,7 @@ public class GraphitronSchemaValidator {
             case no.sikt.graphitron.rewrite.model.InputField.ColumnField f            -> validateInputColumnField(f, errors);
             case no.sikt.graphitron.rewrite.model.InputField.ColumnReferenceField f  -> validateInputColumnReferenceField(f, errors);
             case no.sikt.graphitron.rewrite.model.InputField.CompositeColumnField f  -> {} // type-narrowed extraction; arity invariant enforced by record ctor
-            case no.sikt.graphitron.rewrite.model.InputField.CompositeColumnReferenceField f -> {} // same as above
+            case no.sikt.graphitron.rewrite.model.InputField.CompositeColumnReferenceField f -> validateInputCompositeColumnReferenceField(f, errors);
             case no.sikt.graphitron.rewrite.model.InputField.NestingField f          -> validateInputNestingField(f, errors);
             case no.sikt.graphitron.rewrite.model.InputField.UnboundField f          -> validateInputUnboundField(f, errors);
             case no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField f -> validateUnclassifiedField(f, errors);
@@ -393,9 +393,9 @@ public class GraphitronSchemaValidator {
                 }
             }
             case no.sikt.graphitron.rewrite.model.InputField.ColumnField ignored -> {}
-            case no.sikt.graphitron.rewrite.model.InputField.ColumnReferenceField ignored -> {}
+            case no.sikt.graphitron.rewrite.model.InputField.ColumnReferenceField crf -> validateInputColumnReferenceField(crf, errors);
             case no.sikt.graphitron.rewrite.model.InputField.CompositeColumnField ignored -> {}
-            case no.sikt.graphitron.rewrite.model.InputField.CompositeColumnReferenceField ignored -> {}
+            case no.sikt.graphitron.rewrite.model.InputField.CompositeColumnReferenceField ccrf -> validateInputCompositeColumnReferenceField(ccrf, errors);
         }
     }
 
@@ -545,6 +545,7 @@ public class GraphitronSchemaValidator {
                     case no.sikt.graphitron.rewrite.model.GeneratedConditionFilter gcf ->
                         gcf.bodyParams().stream().anyMatch(bp -> bp.list());
                     case no.sikt.graphitron.rewrite.model.ConditionFilter ignored -> false;
+                    case no.sikt.graphitron.rewrite.model.FkTargetConditionFilter ignored -> false;
                 });
             boolean returnIsList = field.returnType().wrapper() instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.List;
             if (anyKeyIsList != returnIsList) {
@@ -1031,7 +1032,39 @@ public class GraphitronSchemaValidator {
         // Column resolution is guaranteed by the builder (unresolved → UnclassifiedType). Nothing to validate here.
     }
     private void validateInputColumnReferenceField(no.sikt.graphitron.rewrite.model.InputField.ColumnReferenceField field, List<ValidationError> errors) {
-        // Column and join path resolution is guaranteed by the builder (unresolved → UnclassifiedType). Nothing to validate here.
+        // Column and join path resolution is guaranteed by the builder (unresolved → UnclassifiedType).
+        // R330: an FK-target @nodeId field carrying a @condition emits a correlated EXISTS over the
+        // join path (QueryConditionsGenerator.emitFkTargetExists), which requires every hop to be a
+        // resolved FkJoin. Mirror that emitter precondition here so a non-Fk / unresolved hop fails
+        // at validate time with a directed message rather than as an emitter IllegalStateException.
+        if (field.condition().isPresent() && !field.joinPath().isEmpty()
+                && field.joinPath().stream().anyMatch(h -> !(h instanceof no.sikt.graphitron.rewrite.model.JoinStep.FkJoin))) {
+            errors.add(new ValidationError(
+                field.qualifiedName(),
+                Rejection.structural("Input field '" + field.qualifiedName()
+                    + "': @condition on an FK-target @nodeId field requires a foreign-key join path; "
+                    + "the resolved path contains a non-foreign-key hop, which is not supported"),
+                field.location()
+            ));
+        }
+    }
+
+    /**
+     * R330: a composite-key FK-target {@code @nodeId} field carrying a {@code @condition} would need
+     * a {@code row(parentFkCols).eq(row(targetKeyCols))} correlation inside the EXISTS, which is
+     * deferred to R24 (the composite NodeId-reference work). Reject it at validate time with a
+     * directed deferral message rather than letting the emitter mis-handle it.
+     */
+    private void validateInputCompositeColumnReferenceField(no.sikt.graphitron.rewrite.model.InputField.CompositeColumnReferenceField field, List<ValidationError> errors) {
+        if (field.condition().isPresent() && !field.joinPath().isEmpty()) {
+            errors.add(new ValidationError(
+                field.qualifiedName(),
+                Rejection.structural("Input field '" + field.qualifiedName()
+                    + "': @condition on a composite-key FK-target @nodeId field is not yet supported "
+                    + "(deferred to R24); use a single-column NodeType key, or drop the @condition"),
+                field.location()
+            ));
+        }
     }
     private void validateInputNestingField(no.sikt.graphitron.rewrite.model.InputField.NestingField field, List<ValidationError> errors) {
         // Nested field columns are resolved at classification time; no additional structural checks needed.
