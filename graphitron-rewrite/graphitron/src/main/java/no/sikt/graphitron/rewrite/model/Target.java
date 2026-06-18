@@ -14,11 +14,10 @@ package no.sikt.graphitron.rewrite.model;
  * a detached cardinality value would be ambiguous. A Relay connection is {@code Single(Connection(inner))}
  * (the windowed-read verb is {@link Operation.Paginate}, not a wrapper fact).
  *
- * <p><strong>Slice-3 additive cutover (R316).</strong> {@code target()} is the new primitive;
- * {@link OutputField#mapping()} survives as a derived {@code default} bridge deriving the retired
- * {@link Mapping} from {@code target().shape()} so the R281 corpus keeps classifying unchanged until
- * slice 4 migrates it. {@link Mapping} (and the {@code TableConnection} value, now decomposed into
- * {@code Single(Connection)} + {@link Operation.Paginate}) retire with that cutover.
+ * <p>{@code target()} is the projection-axis primitive (R316 slice 3 introduced it; slice 4 retired the
+ * {@code mapping} axis and migrated the R281 corpus onto it). The fused {@code TableConnection} mapping
+ * decomposed into this wrapper's {@code Single(Connection)} shape plus the {@link Operation.Paginate}
+ * windowed-read verb.
  */
 public sealed interface Target {
 

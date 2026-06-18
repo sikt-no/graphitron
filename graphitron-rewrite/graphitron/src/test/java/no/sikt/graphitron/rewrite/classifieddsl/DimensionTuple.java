@@ -1,25 +1,55 @@
 package no.sikt.graphitron.rewrite.classifieddsl;
 
-import no.sikt.graphitron.rewrite.model.Carrier;
-import no.sikt.graphitron.rewrite.model.Intent;
-import no.sikt.graphitron.rewrite.model.Mapping;
+import no.sikt.graphitron.rewrite.model.OutputField;
+import no.sikt.graphitron.rewrite.model.Operation;
+import no.sikt.graphitron.rewrite.model.Source;
+import no.sikt.graphitron.rewrite.model.Target;
+import no.sikt.graphitron.rewrite.model.TargetShape;
 
 /**
- * The three-axis classification verdict R299's corpus asserts: a {@link Carrier} (the GraphQL
- * parent-type category, which <em>is</em> the field type), an {@link Intent} (the operation kind), and
- * a {@link Mapping} (the value shape, carrying build-vs-consume). This is the dimensional fingerprint
- * the {@code @classified} directive carries and the field model exposes directly through
- * {@code OutputField.carrier()} / {@code intent()} / {@code mapping()} (R290 materialised these slots).
+ * The three-axis classification verdict the R281 corpus asserts (R316): a {@link Source} (the arrival
+ * endpoint), an {@link Operation} arm (the verb), and a {@link Target} (the projection endpoint). This is
+ * the dimensional fingerprint the {@code @classified} directive carries and the field model exposes
+ * directly through {@link OutputField#source()} / {@link OutputField#operation()} /
+ * {@link OutputField#target()}.
  *
- * <p>The R281 {@code (producer, mapping)} verdict retired here: the {@code producer} dimension
- * dissolves, its information redistributing across {@code carrier} (position), {@code intent}
- * (operation), {@code mapping} (build-vs-consume), and a <em>derived layer</em> (re-fetch, new-query,
- * {@code FetchRelated}, polarity) that is computed from the axes and slots, never asserted as a
- * coordinate. See R222's "Field-side dimensional model (refined 2026-06-13)".
+ * <p>The axes are not all flat, so the tuple compares each at the altitude the {@code @classified}
+ * directive can actually express, the <em>classification coordinate</em> (arm identity), not the
+ * payload:
+ * <ul>
+ *   <li><b>source</b> is compared by full structural equality, because {@link Source} carries no heavy
+ *       payload (only a {@code SourceShape} enum on its nested arms) and is fully reconstructible from
+ *       the {@code source:} / {@code sourceShape:} directive arguments.</li>
+ *   <li><b>operation</b> is compared by its {@link Operation} arm type token. The arm carries a payload
+ *       (a {@link Operation.Fetch}'s filters, a {@link Operation.ServiceCall}'s call, ...) the directive
+ *       provably cannot reconstruct, so the corpus asserts which arm the classifier landed on, not its
+ *       contents. The payload-completeness obligation lives with the pipeline / execution tiers that
+ *       compile and run the generated resolvers, not here.</li>
+ *   <li><b>target</b> is compared by its {@link Target} wrapper arm token and its outer
+ *       {@link TargetShape} arm token. The {@link TargetShape.Connection} container's inner shape is not
+ *       asserted at the connection coordinate (the decomposition's many-ness rides the connection
+ *       type's own {@code edges} / {@code nodes} fields, classified as their own coordinates).</li>
+ * </ul>
  *
- * <p>The tuple is the primary fingerprint, not the complete emit key: the derived facts and the
- * orthogonal slots (source-context, fetcher/loader mechanism, dispatch batching, error channel) live
+ * <p>The tuple is the primary fingerprint, not the complete emit key: the derived facts (re-fetch,
+ * new-query) and the orthogonal slots (the FK path, fetcher / loader mechanism, error channel) live
  * beside these three axes, so two leaves differing only in a slot share one tuple.
  */
-public record DimensionTuple(Carrier carrier, Intent intent, Mapping mapping) {
+public record DimensionTuple(Source source, Class<? extends Operation> operation, TargetVerdict target) {
+
+    /**
+     * The shallow target coordinate: the {@link Target} wrapper arm ({@link Target.Single} /
+     * {@link Target.List}) and the outer {@link TargetShape} arm, ignoring a
+     * {@link TargetShape.Connection}'s inner shape.
+     */
+    public record TargetVerdict(Class<? extends Target> wrapper, Class<? extends TargetShape> shape) {
+        public static TargetVerdict of(Target target) {
+            return new TargetVerdict(target.getClass(), target.shape().getClass());
+        }
+    }
+
+    /** The verdict the field model produces for {@code field}, the {@code actual} side of a corpus assertion. */
+    public static DimensionTuple of(OutputField field) {
+        return new DimensionTuple(field.source(), field.operation().getClass(), TargetVerdict.of(field.target()));
+    }
 }

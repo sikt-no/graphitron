@@ -48,65 +48,19 @@ public sealed interface OutputField extends GraphitronField permits RootField, C
     Source source();
 
     /**
-     * The retired {@code carrier} dimension (R299), derived from {@link #source()} during the R316
-     * slice-2 additive cutover so the R281 corpus keeps classifying unchanged until slice 4 migrates it
-     * onto {@code source()}. {@link Carrier} and {@link SourceCardinality} retire with that cutover; new
-     * readers should consume {@link #source()} directly.
-     */
-    default Carrier carrier() {
-        return switch (source()) {
-            case Source.Root.Query ignored -> new Carrier.Query();
-            case Source.Root.Mutation ignored -> new Carrier.Mutation();
-            case Source.OnlyChild(var shape) -> new Carrier.Source(shape, SourceCardinality.One);
-            case Source.Child(var shape) -> new Carrier.Source(shape, SourceCardinality.Many);
-        };
-    }
-
-    /**
      * The {@code operation} dimension (R316): the verb this field <em>performs</em>, a sealed
      * {@link Operation} arm carrying its own payload. Built by the leaf producers from the slots they
      * already carry ({@code QueryField} / {@code MutationField} / {@code ChildField} switch on leaf
-     * identity); the new primitive of the verb axis, replacing the leaf-to-{@link Intent} verdict.
+     * identity); the verb-axis primitive (R316 retired the leaf-to-{@code intent} verdict).
      */
     Operation operation();
-
-    /**
-     * The retired {@code intent} dimension (R299), derived from {@link #operation()} during the R316
-     * slice-3 additive cutover so the R281 corpus keeps classifying unchanged until slice 4 migrates it
-     * onto {@code operation()}. The read/write split {@link Operation.ServiceCall} collapses is
-     * recovered from {@link #source()} (the {@link Source.Root.Query} / {@link Source.Root.Mutation}
-     * legality gate), not from leaf identity, so the collapse is real and not shadowed. {@link Intent}
-     * retires with that cutover; new readers should consume {@link #operation()} directly.
-     */
-    default Intent intent() {
-        return switch (operation()) {
-            case Operation.Fetch ignored -> Intent.Fetch;
-            case Operation.Paginate ignored -> Intent.Fetch;
-            case Operation.Lookup ignored -> Intent.Lookup;
-            case Operation.ServiceCall ignored -> switch (source()) {
-                case Source.Root.Mutation ignored2 -> Intent.MutationService;
-                default -> Intent.QueryService;
-            };
-            case Operation.Count ignored -> Intent.Count;
-            case Operation.Facet ignored -> Intent.Facet;
-            case Operation.Nest ignored -> Intent.Nesting;
-            case Operation.NodeResolve ignored -> Intent.NodeResolve;
-            case Operation.EntityResolve ignored -> Intent.EntityResolve;
-            case Operation.Insert ignored -> Intent.Insert;
-            case Operation.Upsert ignored -> Intent.Upsert;
-            case Operation.Update ignored -> Intent.Update;
-            case Operation.Delete ignored -> Intent.Delete;
-            case Operation.UpdateMatching ignored -> Intent.UpdateMatching;
-            case Operation.DeleteMatching ignored -> Intent.DeleteMatching;
-        };
-    }
 
     /**
      * Builds the read-family {@link Operation} for a leaf with a resolved return wrapper:
      * {@link Operation.Paginate} (carrying the pagination window) when the wrapper is a Relay
      * connection, else {@link Operation.Fetch}. The "paginated" verb thus lives on the operation axis
      * (this {@code Paginate} vs {@code Fetch} split) while the connection <em>shape</em> lives on the
-     * target axis, the decomposition of the fused {@code Mapping.TableConnection}.
+     * target axis, the decomposition of the fused {@code TableConnection} mapping.
      */
     static Operation readOperation(ReturnTypeRef returnType, List<WhereFilter> filters,
                                    OrderBySpec orderBy, PaginationSpec pagination) {
@@ -138,31 +92,10 @@ public sealed interface OutputField extends GraphitronField permits RootField, C
      * The {@code target} dimension (R316): the field's <em>projection endpoint</em>, a
      * {@link Target} wrapper ({@link Target.Single} / {@link Target.List}) around the
      * {@link TargetShape} it projects. Built by the leaf producers from the return wrapper plus the
-     * leaf's shape slot; the new primitive of the projection axis, replacing the leaf-to-{@link Mapping}
-     * verdict.
+     * leaf's shape slot; the projection-axis primitive (R316 retired the leaf-to-{@code mapping}
+     * verdict).
      */
     Target target();
-
-    /**
-     * The retired {@code mapping} dimension (R281), derived from {@link #target()} during the R316
-     * slice-3 additive cutover so the R281 corpus keeps classifying unchanged until slice 4 migrates it
-     * onto {@code target()}. The polymorphic shapes ({@link TargetShape.Interface} /
-     * {@link TargetShape.Union}) are catalog-bound today, so they derive {@link Mapping#Table}; the
-     * {@link TargetShape.Connection} container derives {@link Mapping#TableConnection} (the decomposed
-     * {@code Mapping.TableConnection}). {@link Mapping} retires with that cutover; new readers should
-     * consume {@link #target()} directly.
-     */
-    default Mapping mapping() {
-        return switch (target().shape()) {
-            case TargetShape.Connection ignored -> Mapping.TableConnection;
-            case TargetShape.Column ignored -> Mapping.Column;
-            case TargetShape.Field ignored -> Mapping.Field;
-            case TargetShape.Record ignored -> Mapping.Record;
-            case TargetShape.Table ignored -> Mapping.Table;
-            case TargetShape.Interface ignored -> Mapping.Table;
-            case TargetShape.Union ignored -> Mapping.Table;
-        };
-    }
 
     /**
      * Re-fetch (the appendix's {@code RF}): the target {@code @table} must be re-projected from keys
@@ -185,7 +118,7 @@ public sealed interface OutputField extends GraphitronField permits RootField, C
      *
      * <p>The guard is the bare {@link TargetShape.Table} shape, not the {@link TargetShape.Connection}
      * container that wraps it when paginated: a connection-shaped table field paginates rather than
-     * re-projecting in this derivation's sense (the decomposed {@code Mapping.TableConnection}). A
+     * re-projecting in this derivation's sense (the decomposed {@code TableConnection} mapping). A
      * catalog {@link Operation.Fetch} off a {@link SourceShape#Table} source reads the table directly
      * (no producer round-trip); producers whose target is a {@link TargetShape.Record} /
      * {@link TargetShape.Field} / {@link TargetShape.Column} hand back the consumed shape directly.
@@ -240,7 +173,7 @@ public sealed interface OutputField extends GraphitronField permits RootField, C
      * {@link Target.List} when the return wrapper is list-shaped, else {@link Target.Single}, never
      * {@link TargetShape.Connection}. The wrapper builder for the Java-side shapes
      * ({@link TargetShape.Record} / {@link TargetShape.Field}) and bare {@link TargetShape.Column}
-     * reads, whose {@link #mapping()} is flat (never {@code TableConnection}) regardless of wrapper: a
+     * reads, whose target shape is flat (never {@link TargetShape.Connection}) regardless of wrapper: a
      * Relay connection is a catalog-table shape, so it never wraps these.
      */
     static Target listOrSingle(FieldWrapper wrapper, TargetShape shape) {

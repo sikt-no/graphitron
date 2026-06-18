@@ -8,10 +8,10 @@ import java.util.Objects;
  * source objects reach its fetcher), and it is the emit-strategy dispatch: {@link Child} batches
  * through a DataLoader, {@link Root} and {@link OnlyChild} run their SQL directly (single invocation).
  *
- * <p>This folds the retired {@code carrier} axis (R299's {@link Carrier}) and the retired
- * {@link SourceCardinality} into one sealed hierarchy: the {@code One} / {@code Many} cardinality
- * becomes the {@link OnlyChild} / {@link Child} arm identity, and {@code Zero} (no source) is
- * {@link Root}'s shape-absence. Naming the arms for the arrival (not a bare {@code One} / {@code Many})
+ * <p>This folds the retired {@code carrier} axis (R299) and the retired stand-alone source-cardinality
+ * enum into one sealed hierarchy: the {@code One} / {@code Many} cardinality becomes the
+ * {@link OnlyChild} / {@link Child} arm identity, and {@code Zero} (no source) is {@link Root}'s
+ * shape-absence. Naming the arms for the arrival (not a bare {@code One} / {@code Many})
  * keeps the count from being misread as the field's <em>output</em> arity: the same {@code {One, Many}}
  * values sit on the target wrapper, and cardinality only ever exists as a wrapper bound to an endpoint
  * (the wrapper algebra, R316).
@@ -29,9 +29,8 @@ import java.util.Objects;
  * {@code Many} absorbing element until R279 / R308 compute the true ancestor-product fold); {@link OnlyChild}
  * is producible but conservatively unreached. {@link SourceShape} stays the shape wrapped by the nested
  * arms; its internal reshaping (the reflected {@code Record} facts) is the downstream {@code SourceKey}
- * work, not this slice. During the slice-2 additive cutover {@link OutputField#carrier()} derives the
- * retired {@link Carrier} from this value so the R281 corpus keeps classifying unchanged until slice 4
- * migrates it; the legacy types retire with that cutover.
+ * work, not this slice. R316 slice 4 retired the {@code carrier} axis and migrated the R281 corpus onto
+ * {@link OutputField#source()}, so this is now the sole arrival-axis primitive.
  *
  * <p>See R316 ("Pivot the field-dimensional model to (source, operation, target)") and the {@code source}
  * axis in R222's "Field-side dimensional model".

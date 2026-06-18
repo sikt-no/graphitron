@@ -15,10 +15,10 @@ package no.sikt.graphitron.rewrite.model;
  *   <li>{@link Connection} — the Relay-connection container shape, wrapping the inner element shape.
  *       Its many-ness lives on its own {@code edges} / {@code nodes} fields, classified normally; the
  *       windowed-<em>read</em> verb lives on {@link Operation.Paginate}. This is the decomposition of
- *       the fused {@code Mapping.TableConnection}.</li>
+ *       the fused {@code TableConnection} mapping.</li>
  *   <li>{@link Interface} / {@link Union} — the polymorphic shapes. Both are catalog-bound today (every
- *       participant is a {@code @table} / NodeType), so the {@link OutputField#mapping()} bridge derives
- *       {@code Table} from them. <strong>Modeled-but-unpopulated payload (R316):</strong> the
+ *       participant is a {@code @table} / NodeType), the catalog projection landing on participant rows.
+ *       <strong>Modeled-but-unpopulated payload (R316):</strong> the
  *       participant set, per-participant join paths, and the {@code Interface(Table | Record)} backing
  *       distinction the spec carries on these shapes are not populated this slice (the
  *       {@code mapping()} bridge needs only the shape identity); the corpus coordinate that pins them
