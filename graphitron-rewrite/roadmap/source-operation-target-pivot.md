@@ -1,13 +1,13 @@
 ---
 id: R316
 title: "Pivot the field-dimensional model to (source, operation, target)"
-status: Spec
+status: Ready
 bucket: structural
 priority: 3
 theme: structural-refactor
 depends-on: [dimensional-model-pivot]
 created: 2026-06-16
-last-updated: 2026-06-17
+last-updated: 2026-06-18
 ---
 
 # Pivot the field-dimensional model to (source, operation, target)
