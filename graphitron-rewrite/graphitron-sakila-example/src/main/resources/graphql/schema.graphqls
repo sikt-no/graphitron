@@ -188,6 +188,12 @@ type Query {
             className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
             method: "outerOverrideMethod"
         }, override: true)
+    # R330: FK-target @nodeId + @condition(override: true) on one input field. customer carries
+    # FK customer_address_id_fkey → address (a @node NodeType), so CustomerAddressNodeFilter.addressId
+    # classifies as an FK-target reference and the condition method's table parameter is the
+    # FK-target Address, not customer. The rewrite emits a correlated EXISTS over the FK;
+    # addressDistrictAlberta filters customers whose address district is 'Alberta'.
+    customersByAddressDistrict(filter: CustomerAddressNodeFilter!): [Customer!]!
     # implicit-input-conditions plan: @table input with two un-annotated fields.
     # Both filmId and title get implicit predicates; GCF body ANDs them.
     filmsWithMultiImplicit(filter: FilmMultiImplicitInput): [Film!]!
@@ -1294,6 +1300,19 @@ input FilmConditionInputWithOverrideField @table(name: "film") {
         @condition(condition: {
             className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
             method: "filmIdCondition"
+        }, override: true)
+}
+
+# R330: FK-target @nodeId reference filter. addressId decodes an Address NodeId; customer reaches
+# address through customer_address_id_fkey. With @condition(override: true) the implicit decoded
+# predicate is suppressed and the developer method owns the predicate, receiving the FK-target
+# Address alias (a correlated EXISTS). Nullable so a test can pass an empty filter (the method
+# ignores addressId).
+input CustomerAddressNodeFilter @table(name: "customer") {
+    addressId: ID @nodeId(typeName: "Address")
+        @condition(condition: {
+            className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
+            method: "addressDistrictAlberta"
         }, override: true)
 }
 
