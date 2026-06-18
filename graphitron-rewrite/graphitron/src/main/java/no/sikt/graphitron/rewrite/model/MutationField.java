@@ -44,37 +44,23 @@ public sealed interface MutationField extends RootField, WithErrorChannel
         };
     }
 
-    @Override default Mapping mapping() {
+    @Override default Target target() {
         return switch (this) {
-            // The return-shape slot (DmlReturnExpression) decides Column (encoded ID) vs Table
-            // (in-fetcher follow-up SELECT). The follow-up itself is the derived re-fetch, not a tuple axis.
-            case MutationInsertTableField f -> dmlMapping(f.returnExpression());
-            case MutationUpdateTableField f -> dmlMapping(f.returnExpression());
-            case MutationDeleteTableField f -> dmlMapping(f.returnExpression());
-            case MutationUpsertTableField f -> dmlMapping(f.returnExpression());
-            case MutationServiceTableField f -> OutputField.tableMapping(f.returnType());
-            case MutationServiceRecordField ignored -> Mapping.Record;
-            case MutationDmlRecordField ignored -> Mapping.Record;
-            case MutationBulkDmlRecordField ignored -> Mapping.Record;
-            case MutationUpdatePayloadField ignored -> Mapping.Record;
-            case MutationBulkUpdatePayloadField ignored -> Mapping.Record;
-            case MutationDeletePayloadField ignored -> Mapping.Record;
-            case MutationBulkDeletePayloadField ignored -> Mapping.Record;
-        };
-    }
-
-    /**
-     * The DML table carrier's mapping reads off the {@link DmlReturnExpression} slot: an encoded-ID
-     * return is {@link Mapping#Column} (the encoded PK scalar); a projected return is
-     * {@link Mapping#Table} (the in-fetcher follow-up SELECT, whose re-fetch is a derivation, not a
-     * tuple axis).
-     */
-    private static Mapping dmlMapping(DmlReturnExpression expr) {
-        return switch (expr) {
-            case DmlReturnExpression.EncodedSingle ignored -> Mapping.Column;
-            case DmlReturnExpression.EncodedList ignored -> Mapping.Column;
-            case DmlReturnExpression.ProjectedSingle ignored -> Mapping.Table;
-            case DmlReturnExpression.ProjectedList ignored -> Mapping.Table;
+            // The return-shape slot (DmlReturnExpression) encodes both wrapper and shape: Column
+            // (encoded ID) vs Table (in-fetcher follow-up SELECT). The follow-up itself is the derived
+            // re-fetch, not a tuple axis.
+            case MutationInsertTableField f -> OutputField.dmlTarget(f.returnExpression());
+            case MutationUpdateTableField f -> OutputField.dmlTarget(f.returnExpression());
+            case MutationDeleteTableField f -> OutputField.dmlTarget(f.returnExpression());
+            case MutationUpsertTableField f -> OutputField.dmlTarget(f.returnExpression());
+            case MutationServiceTableField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Table());
+            case MutationServiceRecordField f -> OutputField.listOrSingle(f.returnType().wrapper(), new TargetShape.Record());
+            case MutationDmlRecordField f -> OutputField.listOrSingle(f.returnType().wrapper(), new TargetShape.Record());
+            case MutationBulkDmlRecordField f -> OutputField.listOrSingle(f.returnType().wrapper(), new TargetShape.Record());
+            case MutationUpdatePayloadField f -> OutputField.listOrSingle(f.returnType().wrapper(), new TargetShape.Record());
+            case MutationBulkUpdatePayloadField f -> OutputField.listOrSingle(f.returnType().wrapper(), new TargetShape.Record());
+            case MutationDeletePayloadField f -> OutputField.listOrSingle(f.returnType().wrapper(), new TargetShape.Record());
+            case MutationBulkDeletePayloadField f -> OutputField.listOrSingle(f.returnType().wrapper(), new TargetShape.Record());
         };
     }
 
