@@ -1,7 +1,7 @@
 ---
 id: R315
 title: "Bind FK-reference @nodeId onto jOOQ-record @service params (port legacy @reference FK resolution; generalize R311)"
-status: In Review
+status: Ready
 bucket: feature
 priority: 4
 theme: nodeid
@@ -11,6 +11,60 @@ last-updated: 2026-06-18
 ---
 
 # Bind FK-reference @nodeId onto jOOQ-record @service params (port legacy @reference FK resolution; generalize R311)
+
+## Review feedback (In Review → Ready, 2026-06-18, independent reviewer session)
+
+**Rework requested at the In Review → Done gate.** The implementation (landed
+`0bb7161`) is otherwise approve-quality: D1/D2/D3/D4 are all delivered
+faithfully; the full pipeline rejection + positive set is present and asserts
+the right `targetColumns` / `nonNull`; the FK-child INSERT-readback and the
+nullable-FK-reference / nullable-plain-column null-semantics execution cases
+pass; the `film_endorsement` renamed-FK fixture + `schemaVersion` bump landed;
+the reused `studierett` / `reordered_fk_child` / `child_ref` fixtures carry the
+claimed shapes; `SynthesizeFkJoinReorderedKeysTest` still pins slot orientation
+through the extracted `resolveFkSlots` core; and `mvn -f
+graphitron-rewrite/pom.xml install -Plocal-db` is green.
+
+**One required addition before re-handoff (the only blocker):**
+
+- **Missing execution case: nullable same-table identity (D4 mitigation #2 /
+  §Tests execution).** The shipped execution tests cover a nullable
+  *FK-reference* decode (`endorsed_film` via `filmId`) and a nullable *plain*
+  column (`note`) across omitted / explicit-null / set, but **not** a nullable
+  **same-table identity** decode. D4 mitigation #2 ("an execution-tier test …
+  *including a nullable same-table identity* (omitted → unset PK, the
+  service-owned insert path)") and the §Tests execution bullet ("on a single-PK
+  table with a DB-assignable PK (e.g. `FilmRecord`), a nullable same-table
+  identity (`filmId: ID @nodeId`) omitted … vs set (the update path)") both name
+  this as a distinct deliverable. It is the direct end-to-end pin for the
+  **R311 behavior change this item folds in** (a nullable same-table identity
+  moves from always-throw-on-null to skip-when-omitted), and on Done the
+  changelog (mitigation #1) must state that change, so it should be test-backed.
+  *Fix:* add a `@service` jOOQ-record param on a single-PK, DB-assignable-PK
+  table populated from `filmId: ID @nodeId(typeName: "<sameTable>")` (resolving
+  to the record's own PK), asserting omitted → PK left unset → service-owned
+  INSERT assigns it, and set → the decoded id lands on the PK. One input + one
+  service method + two execution assertions.
+- *Why this is a blocker and not a waved-through note:* the behavior **is**
+  already transitively covered (the emitter does not branch identity-vs-FK per
+  D1, so the shipped nullable-FK-reference execution test exercises the same
+  emitted shape, and `mixedIdentityFkReferenceAndPlainField` pins the nullable
+  same-table-identity → own-PK + `nonNull=false` resolution at the pipeline
+  tier), so this is a contract-completeness / regression-pin gap, not a known
+  correctness defect. But the spec author named this exact case twice as the
+  mitigation that justified folding D4's behavior change in rather than splitting
+  it out; enforcing that at the gate is the reviewer's job, while judging the
+  transitive coverage sufficient (and skipping the case) is the user's call.
+
+**Minor (optional, not a blocker):** the spec body was not annotated to reflect
+shipped state. For a single-cycle flat item there are no phases to collapse, but
+a one-line `shipped at 0bb7161` marker on the Implementation list would help the
+next reader.
+
+Re-handoff: the reviewer-session ≠ implementer-session rule applies again next
+cycle.
+
+---
 
 A `@service` parameter that is a generated jOOQ `TableRecord` cannot be
 populated from an input type whose `@nodeId` fields are **foreign-key
