@@ -126,36 +126,41 @@ public sealed interface ChildField extends OutputField
         };
     }
 
-    @Override default Mapping mapping() {
+    @Override default Target target() {
         return switch (this) {
-            case ColumnField ignored -> Mapping.Column;
-            case ColumnReferenceField ignored -> Mapping.Column;
-            case ParticipantColumnReferenceField ignored -> Mapping.Column;
-            case CompositeColumnField ignored -> Mapping.Column;
-            case CompositeColumnReferenceField ignored -> Mapping.Column;
-            case TableField f -> OutputField.tableMapping(f.returnType());
-            case SplitTableField f -> OutputField.tableMapping(f.returnType());
-            case LookupTableField f -> OutputField.tableMapping(f.returnType());
-            case SplitLookupTableField f -> OutputField.tableMapping(f.returnType());
-            case TableInterfaceField f -> OutputField.tableMapping(f.returnType());
-            case TableMethodField f -> OutputField.tableMapping(f.returnType());
-            case RecordTableField f -> OutputField.tableMapping(f.returnType());
-            case RecordLookupTableField f -> OutputField.tableMapping(f.returnType());
-            case RecordTableMethodField f -> OutputField.tableMapping(f.returnType());
-            case ServiceTableField f -> OutputField.tableMapping(f.returnType());
-            case ServiceRecordField ignored -> Mapping.Record;
-            case RecordField ignored -> Mapping.Field;
-            case PropertyField ignored -> Mapping.Field;
-            // @externalField inlines a jOOQ Field<X> into the parent SELECT; mapping stays Column.
-            case ComputedField ignored -> Mapping.Column;
-            case NestingField f -> OutputField.tableMapping(f.returnType());
-            case InterfaceField f -> OutputField.polyMapping(f.returnType());
-            case UnionField f -> OutputField.polyMapping(f.returnType());
-            case SingleRecordIdFieldFromReturning ignored -> Mapping.Column;
-            case SingleRecordIdField ignored -> Mapping.Column;
+            // Column projections: no return wrapper on the leaf, so Single(Column).
+            case ColumnField ignored -> OutputField.single(new TargetShape.Column());
+            case ColumnReferenceField ignored -> OutputField.single(new TargetShape.Column());
+            case ParticipantColumnReferenceField ignored -> OutputField.single(new TargetShape.Column());
+            case CompositeColumnField ignored -> OutputField.single(new TargetShape.Column());
+            case CompositeColumnReferenceField ignored -> OutputField.single(new TargetShape.Column());
+            // Catalog table reads: wrap(...) keeps the Connection -> Single(Connection) decomposition.
+            case TableField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Table());
+            case SplitTableField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Table());
+            case LookupTableField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Table());
+            case SplitLookupTableField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Table());
+            case TableInterfaceField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Table());
+            case TableMethodField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Table());
+            case RecordTableField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Table());
+            case RecordLookupTableField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Table());
+            case RecordTableMethodField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Table());
+            case ServiceTableField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Table());
+            case NestingField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Table());
+            // Java-side shapes: listOrSingle (never Connection, mapping stays flat Record / Field).
+            case ServiceRecordField f -> OutputField.listOrSingle(f.returnType().wrapper(), new TargetShape.Record());
+            case RecordField f -> OutputField.listOrSingle(f.returnType().wrapper(), new TargetShape.Field());
+            case PropertyField ignored -> OutputField.single(new TargetShape.Field());
+            // @externalField inlines a jOOQ Field<X> into the parent SELECT; the shape stays Column.
+            case ComputedField f -> OutputField.listOrSingle(f.returnType().wrapper(), new TargetShape.Column());
+            // Polymorphic children: catalog-bound (shape payload modeled-but-unpopulated this slice).
+            case InterfaceField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Interface());
+            case UnionField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Union());
+            // Encoded-PK scalar carriers: Column.
+            case SingleRecordIdFieldFromReturning f -> OutputField.listOrSingle(f.returnType().wrapper(), new TargetShape.Column());
+            case SingleRecordIdField f -> OutputField.listOrSingle(f.returnType().wrapper(), new TargetShape.Column());
             // The errors field reads an Outcome wrapper arm off env.getSource(); @error element types
-            // are object types, so Record.
-            case ErrorsField ignored -> Mapping.Record;
+            // are object types, so Record (the errors-list wrapper is not modeled on this leaf).
+            case ErrorsField ignored -> OutputField.single(new TargetShape.Record());
         };
     }
 

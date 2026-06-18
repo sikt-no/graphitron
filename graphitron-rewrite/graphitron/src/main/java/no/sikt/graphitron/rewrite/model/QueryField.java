@@ -50,20 +50,21 @@ public sealed interface QueryField extends RootField
         };
     }
 
-    @Override default Mapping mapping() {
+    @Override default Target target() {
         return switch (this) {
-            case QueryTableField f -> OutputField.tableMapping(f.returnType());
-            case QueryLookupTableField f -> OutputField.tableMapping(f.returnType());
-            case QueryTableMethodTableField f -> OutputField.tableMapping(f.returnType());
-            case QueryTableInterfaceField f -> OutputField.tableMapping(f.returnType());
-            case QueryServiceTableField f -> OutputField.tableMapping(f.returnType());
-            case QueryServiceRecordField ignored -> Mapping.Record;
-            // Polymorphic roots are catalog-bound (every participant is a @table/NodeType): mapping is
-            // Table, with the participant set as a derived slot.
-            case QueryInterfaceField f -> OutputField.polyMapping(f.returnType());
-            case QueryUnionField f -> OutputField.polyMapping(f.returnType());
-            case QueryNodeField f -> OutputField.polyMapping(f.returnType());
-            case QueryNodesField f -> OutputField.polyMapping(f.returnType());
+            // Catalog table reads: wrap(...) keeps the Connection -> Single(Connection) decomposition.
+            case QueryTableField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Table());
+            case QueryLookupTableField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Table());
+            case QueryTableMethodTableField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Table());
+            case QueryTableInterfaceField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Table());
+            case QueryServiceTableField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Table());
+            case QueryServiceRecordField f -> OutputField.listOrSingle(f.returnType().wrapper(), new TargetShape.Record());
+            // Polymorphic roots are catalog-bound (every participant is a @table/NodeType): the shape is
+            // Interface / Union (its payload modeled-but-unpopulated this slice); mapping() derives Table.
+            case QueryInterfaceField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Interface());
+            case QueryUnionField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Union());
+            case QueryNodeField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Interface());
+            case QueryNodesField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Interface());
         };
     }
 

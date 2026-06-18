@@ -135,12 +135,34 @@ public sealed interface OutputField extends GraphitronField permits RootField, C
     }
 
     /**
-     * The {@code mapping} dimension (R281): what domain object this field's value <em>is</em> (the
-     * build-vs-consume / catalog-vs-service split). Derived from the leaf's identity plus its slots
-     * (table-vs-connection off the return wrapper, encoded-vs-projected off the DML return expression).
-     * R290 materialises this on the field.
+     * The {@code target} dimension (R316): the field's <em>projection endpoint</em>, a
+     * {@link Target} wrapper ({@link Target.Single} / {@link Target.List}) around the
+     * {@link TargetShape} it projects. Built by the leaf producers from the return wrapper plus the
+     * leaf's shape slot; the new primitive of the projection axis, replacing the leaf-to-{@link Mapping}
+     * verdict.
      */
-    Mapping mapping();
+    Target target();
+
+    /**
+     * The retired {@code mapping} dimension (R281), derived from {@link #target()} during the R316
+     * slice-3 additive cutover so the R281 corpus keeps classifying unchanged until slice 4 migrates it
+     * onto {@code target()}. The polymorphic shapes ({@link TargetShape.Interface} /
+     * {@link TargetShape.Union}) are catalog-bound today, so they derive {@link Mapping#Table}; the
+     * {@link TargetShape.Connection} container derives {@link Mapping#TableConnection} (the decomposed
+     * {@code Mapping.TableConnection}). {@link Mapping} retires with that cutover; new readers should
+     * consume {@link #target()} directly.
+     */
+    default Mapping mapping() {
+        return switch (target().shape()) {
+            case TargetShape.Connection ignored -> Mapping.TableConnection;
+            case TargetShape.Column ignored -> Mapping.Column;
+            case TargetShape.Field ignored -> Mapping.Field;
+            case TargetShape.Record ignored -> Mapping.Record;
+            case TargetShape.Table ignored -> Mapping.Table;
+            case TargetShape.Interface ignored -> Mapping.Table;
+            case TargetShape.Union ignored -> Mapping.Table;
+        };
+    }
 
     /**
      * Re-fetch (the appendix's {@code RF}): the target {@code @table} must be re-projected from keys
@@ -181,21 +203,54 @@ public sealed interface OutputField extends GraphitronField permits RootField, C
     }
 
     /**
-     * {@link Mapping#TableConnection} when the return wrapper is a Relay connection, else
-     * {@link Mapping#Table}. The catalog-bound table mapping shared by every table-targeting leaf's
-     * {@link #mapping()}.
+     * Wraps a {@link TargetShape} in the {@link Target} wrapper its GraphQL return wrapper dictates: a
+     * Relay connection becomes {@code Single(Connection(shape))} (the connection is a single value whose
+     * many-ness rides its {@code edges} / {@code nodes} fields), a list wrapper becomes
+     * {@link Target.List}, and a single wrapper becomes {@link Target.Single}. The catalog-bound table /
+     * polymorphic builder shared by every table-targeting leaf's {@link #target()}.
      */
-    static Mapping tableMapping(ReturnTypeRef.TableBoundReturnType returnType) {
-        return returnType.wrapper() instanceof FieldWrapper.Connection ? Mapping.TableConnection : Mapping.Table;
+    static Target wrap(FieldWrapper wrapper, TargetShape shape) {
+        return switch (wrapper) {
+            case FieldWrapper.Connection ignored -> new Target.Single(new TargetShape.Connection(shape));
+            case FieldWrapper.List ignored -> new Target.List(shape);
+            case FieldWrapper.Single ignored -> new Target.Single(shape);
+        };
     }
 
     /**
-     * Polymorphic (interface/union/node) results are catalog-bound over participant tables, so they
-     * map to {@link Mapping#Table} ({@link Mapping#TableConnection} when paginated) with the
-     * participant set carried in a derived slot rather than as a distinct mapping value.
+     * A {@link Target.Single} of {@code shape}: the default wrapper for a leaf that carries no return
+     * wrapper (a scalar column / property projection). The leaf does not model its own output
+     * cardinality, so {@code Single} is the faithful read; the wrapper-fold invariant test (slice 5)
+     * is where any list-shaped scalar leaf would surface.
      */
-    static Mapping polyMapping(ReturnTypeRef.PolymorphicReturnType returnType) {
-        return returnType.wrapper() instanceof FieldWrapper.Connection ? Mapping.TableConnection : Mapping.Table;
+    static Target single(TargetShape shape) {
+        return new Target.Single(shape);
+    }
+
+    /**
+     * {@link Target.List} when the return wrapper is list-shaped, else {@link Target.Single}, never
+     * {@link TargetShape.Connection}. The wrapper builder for the Java-side shapes
+     * ({@link TargetShape.Record} / {@link TargetShape.Field}) and bare {@link TargetShape.Column}
+     * reads, whose {@link #mapping()} is flat (never {@code TableConnection}) regardless of wrapper: a
+     * Relay connection is a catalog-table shape, so it never wraps these.
+     */
+    static Target listOrSingle(FieldWrapper wrapper, TargetShape shape) {
+        return wrapper.isList() ? new Target.List(shape) : new Target.Single(shape);
+    }
+
+    /**
+     * The DML {@link Target}: the {@link DmlReturnExpression} arm encodes both the wrapper
+     * (single vs list) and the shape (encoded-id {@link TargetShape.Column} vs projected
+     * {@link TargetShape.Table}) directly, so the target reads from one switch without a
+     * {@link FieldWrapper} lookup.
+     */
+    static Target dmlTarget(DmlReturnExpression expr) {
+        return switch (expr) {
+            case DmlReturnExpression.EncodedSingle ignored -> new Target.Single(new TargetShape.Column());
+            case DmlReturnExpression.EncodedList ignored -> new Target.List(new TargetShape.Column());
+            case DmlReturnExpression.ProjectedSingle ignored -> new Target.Single(new TargetShape.Table());
+            case DmlReturnExpression.ProjectedList ignored -> new Target.List(new TargetShape.Table());
+        };
     }
 
     /** Anchor for "this permit has no concrete Java class on offer" — the unreached generic. */
