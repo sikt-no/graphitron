@@ -28,12 +28,13 @@ import static org.assertj.core.api.Assertions.assertThatCode;
  * failing at consumer compile. The fix lifts the FK correlation onto a
  * {@link FkTargetConditionFilter} so the emitter produces a correlated {@code EXISTS} over the FK
  * join path. The acceptance test pins the classified model carrier (falsifiable: pre-fix it is a
- * bare {@code ConditionFilter}); the rejection test pins the composite-key deferral.
+ * bare {@code ConditionFilter}); the composite-key test pins that composite FK targets are now
+ * supported (R330 rework), carrying the same FK correlation rather than being rejected.
  *
  * <p>Uses the {@code nodeidfixture} catalog: {@code bar} carries a single-column FK
  * ({@code bar_id_1_fkey}) to {@code baz} (single-column PK {@code id}), the single-column FK-target
  * case; {@code reordered_fk_child} carries a composite FK to {@code reordered_pk_parent}, the
- * composite case deferred to R24.
+ * supported composite FK-target case (R330 rework).
  */
 @PipelineTier
 class NodeIdOverrideConditionFkTargetPipelineTest {
