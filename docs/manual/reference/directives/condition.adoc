@@ -112,6 +112,21 @@ type Query {
 
 `tenantScoped(City table, UUID tenantId)` runs at request time with `tenantId` pulled from `GraphQLContext`.
 
+FK-target `@nodeId` filter. When an input field carries both `@nodeId(typeName: "X")` and `@condition`, the field decodes an opaque id for a *foreign-key-linked* table `X` (reached from the input's own table through a catalog foreign key). The reflected method's table parameter is then `X`, not the input's own table:
+
+[source,graphql]
+----
+input SoknadsmangeltypeFilterInput @table(name: "soknadsmangeltype") {
+    regelverksamlingId: ID! @nodeId(typeName: "Regelverksamling")
+        @condition(condition: {
+            className: "com.example.conditions.SoknadsmangeltypeConditions",
+            method:    "iRegelverksamling"
+        }, override: true)
+}
+----
+
+The method signature is `iRegelverksamling(Regelverksamling rs, String regelverksamligId)`: it receives an alias for the FK-target `Regelverksamling`, and the rewrite wraps the returned `Condition` in a correlated subquery, `EXISTS (SELECT 1 FROM regelverksamling rs WHERE soknadsmangeltype.<fk> = rs.<pk> AND <your predicate>)`, so the predicate runs against `X` while the outer row set is preserved. The developer method is identical to any other `@condition` method; it neither knows nor cares that its `Condition` lands inside an `EXISTS` rather than the top-level `WHERE`. Composite-key NodeType targets are not yet supported on this combination and are rejected at build time.
+
 == Constraints
 
 * Applies on `FIELD_DEFINITION`, `ARGUMENT_DEFINITION`, and `INPUT_FIELD_DEFINITION`. The element type fixes the predicate's scope: argument-level conditions can only see *their own* argument and any context arguments, field-level conditions see *all* of the field's arguments, input-field-level conditions see the input's enclosing argument map (the rewrite extracts the leaf value via the path from the outer argument).
@@ -120,6 +135,7 @@ type Query {
 * `contextArguments:` values must already be wired into the runtime `GraphQLContext` map, the rewrite passes the listed keys through unmodified. A typo here surfaces as a `null` parameter at request time, not as a build error.
 * Field-level `override: true` suppresses the implicit predicates from the field's direct arguments *and* from any `@table`-bound input nested under those arguments. Inner explicit `@condition` annotations on the input's fields are *preserved*, override does not cascade through them. (Divergence from the legacy generator: legacy semantics dropped them. The rewrite's behaviour is the intended one and `filmsOuterOverrideTableInput` pins it as a regression-fence.)
 * Argument-level `override: true` is local: it suppresses the implicit `column = ?` for that one argument, nothing else.
+* An input field carrying both `@nodeId(typeName: "X")` and `@condition` binds the condition method's table parameter to the FK-*target* table `X` (the table the decoded id identifies), reached through the catalog foreign key from the input's own table. The predicate is emitted as a correlated `EXISTS` over that foreign key, so the method receives an alias for `X` rather than the input's own table. Single-column NodeType keys only; composite-key `X` targets are rejected at build time (deferred).
 * Nested input types must be carrier-mapped to flow through `@condition`. A `@table` input maps to a jOOQ record (only at the leaf, jOOQ records can not contain other records); a class-backed input maps to its Java record (and any input above it must also be a Java record). An input is class-backed when the Java parameter it flows into is that record type; leaving it without a carrier routes through the `PojoInputType` path, which still works for plain scalar paths.
 * Listed nested input types (`[InnerInput]` inside an outer record) require a Java record carrier on the outer input, the rewrite needs a stable Java type for the list element.
 
