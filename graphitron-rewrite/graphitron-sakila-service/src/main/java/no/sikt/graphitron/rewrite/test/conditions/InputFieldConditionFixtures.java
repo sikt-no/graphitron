@@ -3,6 +3,7 @@ package no.sikt.graphitron.rewrite.test.conditions;
 import no.sikt.graphitron.rewrite.test.jooq.tables.Address;
 import no.sikt.graphitron.rewrite.test.jooq.tables.Customer;
 import no.sikt.graphitron.rewrite.test.jooq.tables.Film;
+import no.sikt.graphitron.rewrite.test.jooq.tables.Project;
 import org.jooq.Condition;
 import org.jooq.Table;
 import org.jooq.impl.DSL;
@@ -76,6 +77,18 @@ public final class InputFieldConditionFixtures {
      */
     public static Condition customersActiveOnly(Customer table, Map<String, Object> filter) {
         return table.ACTIVEBOOL.eq(true);
+    }
+
+    /**
+     * R330 rework: composite-key FK-target {@code @nodeId} {@code @condition(override)}. project_note
+     * reaches project through a composite FK {@code (org_id, project_id)}. The declared first
+     * parameter is the concrete FK-target {@link Project}, so the generated code only compiles if
+     * {@code FkTargetConditionEmitter} hands it an aliased Project from the correlated EXISTS (whose
+     * correlation ANDs both composite-FK slots) rather than the project_note table. Filters notes
+     * whose project is named {@code Atlas}. {@code projectId} is unused (override drops the decode).
+     */
+    public static Condition projectNameAtlas(Project table, String projectId) {
+        return table.NAME.eq("Atlas");
     }
 
 }

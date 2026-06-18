@@ -78,7 +78,10 @@ class NodeIdOverrideConditionFkTargetPipelineTest {
     }
 
     @Test
-    void compositeKeyFkTarget_nodeIdWithOverrideCondition_rejectsAtValidateTime() {
+    void compositeKeyFkTarget_nodeIdWithOverrideCondition_carriesFkCorrelation() {
+        // R330 rework: composite-key NodeType targets are the common consumer shape, so the
+        // combination must WORK (a correlated EXISTS whose correlation ANDs every composite-FK
+        // slot), not be rejected. reordered_fk_child carries a composite FK to reordered_pk_parent.
         var schema = TestSchemaHelper.buildSchema("""
             type ReorderedPkParent implements Node @table(name: "reordered_pk_parent") @node { id: ID! }
             input ReorderedChildFilter @table(name: "reordered_fk_child") {
@@ -89,9 +92,27 @@ class NodeIdOverrideConditionFkTargetPipelineTest {
             }
             """, FIXTURE_CTX);
 
+        // No validation error: composite FK-target @condition is supported, not deferred.
         assertThat(new GraphitronSchemaValidator().validate(schema))
             .extracting(ValidationError::message)
-            .anyMatch(m -> m.contains("composite-key FK-target")
-                && m.contains("deferred to R24"));
+            .noneMatch(m -> m.contains("composite-key FK-target"));
+
+        var children = (QueryField.QueryTableField) schema.fieldsOf("Query").stream()
+            .filter(f -> f.name().equals("children"))
+            .findFirst().orElseThrow();
+
+        // The developer condition is lifted to an FkTargetConditionFilter carrying the composite FK
+        // correlation to reordered_pk_parent — not a bare ConditionFilter (which would mis-emit the
+        // root `table`). The composite key has multiple key columns.
+        var fkFilter = children.filters().stream()
+            .filter(f -> f instanceof FkTargetConditionFilter)
+            .map(f -> (FkTargetConditionFilter) f)
+            .findFirst().orElseThrow();
+        assertThat(fkFilter.targetTable().tableName()).isEqualTo("reordered_pk_parent");
+        assertThat(fkFilter.keyColumns().size()).isGreaterThan(1);
+
+        // And the emitter consumes it without throwing (the composite correlated EXISTS arm).
+        assertThatCode(() -> QueryConditionsGenerator.generate(schema, DEFAULT_OUTPUT_PACKAGE))
+            .doesNotThrowAnyException();
     }
 }
