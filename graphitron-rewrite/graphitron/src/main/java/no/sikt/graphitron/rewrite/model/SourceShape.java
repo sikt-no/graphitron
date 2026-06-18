@@ -1,9 +1,9 @@
 package no.sikt.graphitron.rewrite.model;
 
 /**
- * The shape of what arrives at {@code env.getSource()} for a {@link Carrier.Source}-carried field:
- * the source-side endpoint of the field's edge, on the same mirror/reflect vocabulary
- * {@link Mapping} uses for the output (R305).
+ * The shape of what arrives at {@code env.getSource()} for a nested-source field (a {@link Source.OnlyChild}
+ * / {@link Source.Child} arm): the source-side endpoint of the field's edge, on the same mirror/reflect
+ * vocabulary the {@link TargetShape} base shapes use for the output (R305).
  *
  * <ul>
  *   <li>{@link #Table} — the source is a catalog table row: the parent producer put a jOOQ
@@ -15,13 +15,13 @@ package no.sikt.graphitron.rewrite.model;
  *       {@code @service} method or a DML write handed back a record (a payload / DTO parent),
  *       and the field re-projects from it. The distinguishing fact that separates a re-fetch
  *       inline field (source {@code Record}) from a {@code @lookupKey} child lookup (source
- *       {@code Table}) when both classify as {@link Intent#Lookup} on a {@link Mapping#Table}.</li>
+ *       {@code Table}) when both classify as {@link Operation.Lookup} on a {@link TargetShape.Table}.</li>
  * </ul>
  *
  * <p>Source-shape is a projection of the parent producer's {@link OutputField#domainReturnType()}
- * (the catalog-vs-domain split), materialised onto the {@link Carrier.Source} arm at the classify
- * boundary, not a second independently-classified fact. {@link Carrier.Query} / {@link Carrier.Mutation}
- * carriers have no source and therefore no source-shape.
+ * (the catalog-vs-domain split), materialised onto the {@link Source.OnlyChild} / {@link Source.Child}
+ * arm at the classify boundary, not a second independently-classified fact. {@link Source.Root} fields
+ * ({@code Query} / {@code Mutation}) have no source and therefore no source-shape.
  */
 public enum SourceShape {
     /** The source is a catalog table row (a catalog-backed parent). */

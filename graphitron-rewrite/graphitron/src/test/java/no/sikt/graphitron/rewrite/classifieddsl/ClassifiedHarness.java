@@ -17,25 +17,27 @@ import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.GraphitronSchemaBuilder;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
 import no.sikt.graphitron.rewrite.generators.GeneratorCoverageTest;
-import no.sikt.graphitron.rewrite.model.Carrier;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
-import no.sikt.graphitron.rewrite.model.Intent;
-import no.sikt.graphitron.rewrite.model.Mapping;
+import no.sikt.graphitron.rewrite.model.Operation;
 import no.sikt.graphitron.rewrite.model.OutputField;
-import no.sikt.graphitron.rewrite.model.SourceCardinality;
+import no.sikt.graphitron.rewrite.model.Source;
 import no.sikt.graphitron.rewrite.model.SourceShape;
+import no.sikt.graphitron.rewrite.model.Target;
+import no.sikt.graphitron.rewrite.model.TargetShape;
 
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * Drives R281's spec-by-example corpus: parses an annotated fixture schema, runs <em>today's</em>
  * classifier, and for each {@code @classified} / {@code @classifiedType} coordinate compares the
  * directive's declared verdict against what the classifier produces (read off the field model's
- * {@code carrier()} / {@code intent()} / {@code mapping()} accessors for fields, off the sealed leaf's
+ * {@code source()} / {@code operation()} / {@code target()} accessors for fields, off the sealed leaf's
  * simple name for types).
  *
  * <p>The fixture's test-only directives ({@link ClassifiedDsl#PRELUDE}) are prepended before the
@@ -112,8 +114,8 @@ public final class ClassifiedHarness {
                 + "OutputField (got " + (field == null ? "null" : field.getClass().getSimpleName())
                 + "); the corpus asserts successful classification only.");
         }
-        DimensionTuple expected = new DimensionTuple(carrierArg(d), intentArg(d), mappingArg(d));
-        DimensionTuple actual = new DimensionTuple(out.carrier(), out.intent(), out.mapping());
+        DimensionTuple expected = new DimensionTuple(sourceArg(d), operationArg(d), targetArg(d));
+        DimensionTuple actual = DimensionTuple.of(out);
         return new FieldCase(parentType, fieldName, expected, actual, out.getClass());
     }
 
@@ -123,40 +125,80 @@ public final class ClassifiedHarness {
         return new TypeCase(typeName, enumArg(d, "as"), actual, type == null ? null : type.getClass());
     }
 
-    private static Carrier carrierArg(Directive d) {
-        String c = enumArg(d, "carrier");
-        return switch (c) {
-            case "Query" -> new Carrier.Query();
-            case "Mutation" -> new Carrier.Mutation();
-            case "Source" -> new Carrier.Source(sourceShapeArg(d), sourceCardinalityArg(d));
-            default -> throw new AssertionError("@classified: unknown carrier '" + c + "'");
+    /**
+     * The {@code source:} arrival wrapper (R316), reconstructed in full from the directive: the flat
+     * {@code SourceWrapper} enum names the wrapper arm ({@link Source.Root.Query} / {@link Source.Root.Mutation}
+     * / {@link Source.OnlyChild} / {@link Source.Child}), and the nested arms take their {@link SourceShape}
+     * from {@code sourceShape:}. {@link Source} carries no heavy payload, so the whole value is asserted by
+     * structural equality against {@link OutputField#source()}.
+     */
+    private static Source sourceArg(Directive d) {
+        String w = enumArg(d, "source");
+        return switch (w) {
+            case "Query" -> new Source.Root.Query();
+            case "Mutation" -> new Source.Root.Mutation();
+            case "OnlyChild" -> new Source.OnlyChild(sourceShapeArg(d));
+            case "Child" -> new Source.Child(sourceShapeArg(d));
+            default -> throw new AssertionError("@classified: unknown source wrapper '" + w + "'");
         };
     }
 
     /**
-     * The {@code Source}-arm source-shape (R305). Defaults to {@link SourceShape#Table} (the common
+     * The nested-arm source-shape (R305 / R316). Defaults to {@link SourceShape#Table} (the common
      * catalog-backed case) when the arg is absent, so only the record-source rows declare
      * {@code sourceShape: Record} explicitly. A row that should be {@code Record} but omits the arg
-     * fails loudly: the expected {@code Source(Table, ...)} mismatches the actual {@code Source(Record, ...)}.
+     * fails loudly: the expected {@code Child(Table)} mismatches the actual {@code Child(Record)}.
      */
     private static SourceShape sourceShapeArg(Directive d) {
         Argument a = d.getArgument("sourceShape");
         return a == null ? SourceShape.Table : SourceShape.valueOf(((EnumValue) a.getValue()).getName());
     }
 
-    /** The {@code Source}-arm source-cardinality (R305); defaults to {@link SourceCardinality#Many} (R305 conservatively hard-codes the absorbing element for every Source field). */
-    private static SourceCardinality sourceCardinalityArg(Directive d) {
-        Argument a = d.getArgument("sourceCardinality");
-        return a == null ? SourceCardinality.Many : SourceCardinality.valueOf(((EnumValue) a.getValue()).getName());
+    /**
+     * The {@code operation:} verb (R316), as the {@link Operation} arm type token. The arm carries a
+     * payload the directive cannot express, so the corpus asserts arm identity only; the token is
+     * resolved from the seal's leaf set by simple name, so a directive value that names no arm fails.
+     */
+    private static Class<? extends Operation> operationArg(Directive d) {
+        String name = enumArg(d, "operation");
+        Class<? extends Operation> arm = OPERATION_ARMS.get(name);
+        if (arm == null) {
+            throw new AssertionError("@classified: unknown operation '" + name + "'");
+        }
+        return arm;
     }
 
-    private static Intent intentArg(Directive d) {
-        return Intent.valueOf(enumArg(d, "intent"));
+    /**
+     * The {@code target:} / {@code targetShape:} projection coordinate (R316): the {@link Target} wrapper
+     * arm token and the outer {@link TargetShape} arm token, both resolved from their seals' leaf sets by
+     * simple name.
+     */
+    private static DimensionTuple.TargetVerdict targetArg(Directive d) {
+        Class<? extends Target> wrapper = TARGET_WRAPPERS.get(enumArg(d, "target"));
+        if (wrapper == null) {
+            throw new AssertionError("@classified: unknown target wrapper '" + enumArg(d, "target") + "'");
+        }
+        Class<? extends TargetShape> shape = TARGET_SHAPES.get(enumArg(d, "targetShape"));
+        if (shape == null) {
+            throw new AssertionError("@classified: unknown targetShape '" + enumArg(d, "targetShape") + "'");
+        }
+        return new DimensionTuple.TargetVerdict(wrapper, shape);
     }
 
-    private static Mapping mappingArg(Directive d) {
-        return Mapping.valueOf(enumArg(d, "mapping"));
+    /**
+     * The arm type tokens of a sealed hierarchy, keyed by simple name (the SDL enum constant). Built from
+     * the seal's recursive leaf set via {@code sealedLeaves}, so the SDL-vs-Java mirror is what pins the
+     * name set; {@code toMap} additionally fails fast on a duplicate simple name within the seal.
+     */
+    @SuppressWarnings("unchecked")
+    private static <T> Map<String, Class<? extends T>> armsByName(Class<T> seal) {
+        return GeneratorCoverageTest.sealedLeaves(seal).stream()
+            .collect(Collectors.toMap(Class::getSimpleName, c -> (Class<? extends T>) c));
     }
+
+    private static final Map<String, Class<? extends Operation>> OPERATION_ARMS = armsByName(Operation.class);
+    private static final Map<String, Class<? extends Target>> TARGET_WRAPPERS = armsByName(Target.class);
+    private static final Map<String, Class<? extends TargetShape>> TARGET_SHAPES = armsByName(TargetShape.class);
 
     private static String enumArg(Directive d, String argName) {
         return ((EnumValue) argValue(d, argName)).getName();
@@ -181,16 +223,53 @@ public final class ClassifiedHarness {
         return preludeEnumConstants("TypeVerdict");
     }
 
-    /** The {@code Carrier} enum constants as declared in {@link ClassifiedDsl#PRELUDE}. */
-    public static Set<String> carrierEnumConstants() {
-        return preludeEnumConstants("Carrier");
+    /** The {@code SourceWrapper} enum constants as declared in {@link ClassifiedDsl#PRELUDE}. */
+    public static Set<String> sourceWrapperEnumConstants() {
+        return preludeEnumConstants("SourceWrapper");
     }
 
-    /** The simple names of the sealed {@link Carrier} arms (the live carrier-category set). */
-    public static Set<String> carrierArmNames() {
-        return java.util.Arrays.stream(Carrier.class.getPermittedSubclasses())
-            .map(Class::getSimpleName)
-            .collect(java.util.stream.Collectors.toSet());
+    /**
+     * The simple names of the sealed {@link Source} leaf arms (the live arrival-wrapper set). Uses the
+     * recursive leaf walker so {@link Source.Root} flattens to its {@code Query} / {@code Mutation} leaves,
+     * matching the flat {@code SourceWrapper} SDL enum.
+     */
+    public static List<String> sourceWrapperArmSimpleNames() {
+        return sealedLeafSimpleNames(Source.class);
+    }
+
+    /** The {@code Operation} enum constants as declared in {@link ClassifiedDsl#PRELUDE}. */
+    public static Set<String> operationEnumConstants() {
+        return preludeEnumConstants("Operation");
+    }
+
+    /**
+     * The simple names of the sealed {@link Operation} arms (the live verb set). The {@code Operation}
+     * arms are all direct records, so the recursive walker stops at them; the per-arm transitional holders
+     * (e.g. {@code ServiceCall.Call}) are payload components, not permitted subclasses, so they never enter
+     * this set.
+     */
+    public static List<String> operationArmSimpleNames() {
+        return sealedLeafSimpleNames(Operation.class);
+    }
+
+    /** The {@code TargetWrapper} enum constants as declared in {@link ClassifiedDsl#PRELUDE}. */
+    public static Set<String> targetWrapperEnumConstants() {
+        return preludeEnumConstants("TargetWrapper");
+    }
+
+    /** The simple names of the sealed {@link Target} wrapper arms ({@code Single} / {@code List}). */
+    public static List<String> targetWrapperArmSimpleNames() {
+        return sealedLeafSimpleNames(Target.class);
+    }
+
+    /** The {@code TargetShape} enum constants as declared in {@link ClassifiedDsl#PRELUDE}. */
+    public static Set<String> targetShapeEnumConstants() {
+        return preludeEnumConstants("TargetShape");
+    }
+
+    /** The simple names of the sealed {@link TargetShape} arms (the live projection-shape set). */
+    public static List<String> targetShapeArmSimpleNames() {
+        return sealedLeafSimpleNames(TargetShape.class);
     }
 
     /** The {@code SourceShape} enum constants as declared in {@link ClassifiedDsl#PRELUDE}. */
@@ -198,14 +277,16 @@ public final class ClassifiedHarness {
         return preludeEnumConstants("SourceShape");
     }
 
-    /** The {@code SourceCardinality} enum constants as declared in {@link ClassifiedDsl#PRELUDE}. */
-    public static Set<String> sourceCardinalityEnumConstants() {
-        return preludeEnumConstants("SourceCardinality");
-    }
-
-    /** The {@code Intent} enum constants as declared in {@link ClassifiedDsl#PRELUDE}. */
-    public static Set<String> intentEnumConstants() {
-        return preludeEnumConstants("Intent");
+    /**
+     * The simple names of every concrete sealed leaf of {@code seal}, in discovery order and
+     * <em>preserving duplicates</em>, so a mirror that compares by simple name can assert the set has no
+     * duplicate names before relying on the name-based comparison (the discipline
+     * {@link #graphitronTypeNonFailureLeafSimpleNames()} already applies for {@code GraphitronType}).
+     */
+    private static List<String> sealedLeafSimpleNames(Class<?> seal) {
+        return GeneratorCoverageTest.sealedLeaves(seal).stream()
+            .map(Class::getSimpleName)
+            .toList();
     }
 
     /** The constant names of an enum declared in {@link ClassifiedDsl#PRELUDE}, in declaration order. */

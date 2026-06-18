@@ -7,7 +7,7 @@ import java.util.List;
 /**
  * The {@code operation} axis (R316): the verb a field <em>performs</em>, spanning the edge from its
  * {@link Source} arrival to its {@link Target} projection. A sealed interface with {@code record}
- * arms, replacing the retired flat {@link Intent} enum: every arm carries the slots its kind needs,
+ * arms, replacing the retired flat {@code intent} enum: every arm carries the slots its kind needs,
  * which an enum constant cannot hold without a kitchen-sink of optionals (the cross-product disease
  * R316 exists to cure). This also aligns the verb axis with the already-sealed {@link Source}, so all
  * three axes are sealed hierarchies.
@@ -21,11 +21,11 @@ import java.util.List;
  * Federation {@link EntityResolve} has no classified leaf, and the condition-matched writes
  * {@link UpdateMatching} / {@link DeleteMatching} are unimplemented.
  *
- * <p><strong>Slice-3 additive cutover (R316).</strong> {@code operation()} is the new primitive;
- * {@link OutputField#intent()} survives as a {@code default} deriving the retired {@link Intent} from
- * it (consulting {@link Source} for the read/write split {@link ServiceCall} collapses) so the R281
- * {@code @classified} corpus keeps classifying unchanged until slice 4 migrates it onto
- * {@code operation()}. {@link Intent} retires with that cutover.
+ * <p>{@code operation()} is the verb-axis primitive (R316 slice 3 introduced it; slice 4 retired the
+ * {@code intent} axis and migrated the R281 {@code @classified} corpus onto it). The read/write split
+ * the former {@code QueryService} / {@code MutationService} pair encoded is recovered from {@link Source}
+ * (the {@link Source.Root.Query} / {@link Source.Root.Mutation} legality gate), so {@link ServiceCall}
+ * carries no read/write bit.
  */
 public sealed interface Operation {
 
@@ -47,7 +47,7 @@ public sealed interface Operation {
      * {@link Facet} in the connection-operation family, distinct from {@link Fetch}. Carries the same
      * filter surface and ordering as {@link Fetch} (ordering is load-bearing, cursor stability needs a
      * total order) <em>plus</em> the pagination window ({@code first} / {@code after} / {@code last} /
-     * {@code before}). This is the home of pagination, which the fused {@code Mapping.TableConnection}
+     * {@code before}). This is the home of pagination, which the fused {@code TableConnection} mapping
      * had mis-filed on the target axis; the connection <em>shape</em> stays on {@link Target} as
      * {@code Single(Connection)}, the windowed-<em>read</em> verb is here.
      */
@@ -60,7 +60,7 @@ public sealed interface Operation {
 
     /**
      * A developer {@code @service} invocation. R316 collapses the former {@code QueryService} /
-     * {@code MutationService} {@link Intent} pair: read-vs-write is the {@link Source.Root.Query} /
+     * {@code MutationService} verb pair: read-vs-write is the {@link Source.Root.Query} /
      * {@link Source.Root.Mutation} legality gate now, not an operation fact, so this arm carries no
      * read/write bit (the position is read off {@link OutputField#source()}).
      *

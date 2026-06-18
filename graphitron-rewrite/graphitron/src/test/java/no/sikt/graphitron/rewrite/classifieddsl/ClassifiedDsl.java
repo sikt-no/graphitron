@@ -8,15 +8,18 @@ package no.sikt.graphitron.rewrite.classifieddsl;
  * exist in the schema document only so graphql-java's {@code SchemaGenerator.makeExecutableSchema}
  * accepts the applications (an undeclared directive application fails schema assembly).
  *
- * <p>The enums make the assertion validated SDL-side: a typo in a {@code carrier}, {@code intent}, or
- * {@code mapping} value is a parse/assembly error graphql-java rejects before the harness runs, and
+ * <p>The enums make the assertion validated SDL-side: a typo in a {@code source}, {@code operation}, or
+ * {@code target} value is a parse/assembly error graphql-java rejects before the harness runs, and
  * the values autocomplete in a schema-aware editor.
  *
  * <ul>
- *   <li>{@code @classified(carrier: Carrier!, intent: Intent!, mapping: Mapping!)} on output
- *       {@code FIELD_DEFINITION}s asserts the three-axis {@link DimensionTuple} the field classifies
- *       to (R299). The {@code Carrier} and {@code Intent} enums mirror the field model's value
- *       sets (R290's {@code OutputField.carrier()} / {@code intent()} / {@code mapping()}).</li>
+ *   <li>{@code @classified(source: SourceWrapper!, operation: Operation!, target: TargetWrapper!,
+ *       targetShape: TargetShape!, sourceShape: SourceShape)} on output {@code FIELD_DEFINITION}s
+ *       asserts the three-axis {@link DimensionTuple} the field classifies to (R316). Each endpoint is a
+ *       {@code wrapper(shape)} pair: {@code source:} is the arrival wrapper plus a {@code sourceShape:}
+ *       for the nested arms, {@code target:} the output wrapper plus a {@code targetShape:}. The enums
+ *       mirror the field model's sealed-arm sets ({@code OutputField.source()} /
+ *       {@code operation()} / {@code target()}).</li>
  *   <li>{@code @classifiedType(as: TypeVerdict!)} asserts the {@code GraphitronType} sealed leaf a
  *       type classifies to. {@code TypeVerdict} enumerates those leaves minus the failure leaf
  *       {@code UnclassifiedType}; {@link ClassifiedHarness} mirrors the enum against the live leaf set.</li>
@@ -43,19 +46,19 @@ public final class ClassifiedDsl {
      * half of the DSL.
      */
     public static final String PRELUDE = """
-        enum Carrier { Query Mutation Source }
+        enum SourceWrapper { Query Mutation OnlyChild Child }
 
-        enum Intent {
-          Fetch Lookup NodeResolve EntityResolve Count Facet Nesting
+        enum Operation {
+          Fetch Paginate Lookup ServiceCall Count Facet Nest
+          NodeResolve EntityResolve
           Insert Upsert Update UpdateMatching Delete DeleteMatching
-          QueryService MutationService
         }
 
-        enum Mapping { Table TableConnection Column Record Field }
+        enum TargetWrapper { Single List }
 
         enum SourceShape { Table Record }
 
-        enum SourceCardinality { One Many }
+        enum TargetShape { Table Record Column Field Connection Interface Union }
 
         enum TypeVerdict {
           TableType NodeType TableInterfaceType
@@ -67,8 +70,8 @@ public final class ClassifiedDsl {
         }
 
         directive @classified(
-          carrier: Carrier!, intent: Intent!, mapping: Mapping!
-          sourceShape: SourceShape, sourceCardinality: SourceCardinality
+          source: SourceWrapper!, operation: Operation!, target: TargetWrapper!, targetShape: TargetShape!
+          sourceShape: SourceShape
         ) on FIELD_DEFINITION
 
         directive @classifiedType(as: TypeVerdict!) on

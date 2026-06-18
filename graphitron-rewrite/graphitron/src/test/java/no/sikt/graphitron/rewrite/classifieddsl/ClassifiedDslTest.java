@@ -1,10 +1,8 @@
 package no.sikt.graphitron.rewrite.classifieddsl;
 
 import no.sikt.graphitron.rewrite.classifieddsl.ClassifiedCorpus.Example;
-import no.sikt.graphitron.rewrite.model.Carrier;
-import no.sikt.graphitron.rewrite.model.Intent;
-import no.sikt.graphitron.rewrite.model.Mapping;
-import no.sikt.graphitron.rewrite.model.SourceCardinality;
+import no.sikt.graphitron.rewrite.model.Operation;
+import no.sikt.graphitron.rewrite.model.Source;
 import no.sikt.graphitron.rewrite.model.SourceShape;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
@@ -13,6 +11,7 @@ import org.junit.jupiter.params.provider.MethodSource;
 
 import java.util.Arrays;
 import java.util.EnumSet;
+import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -21,32 +20,30 @@ import java.util.stream.Stream;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R281 slice 1: the spec-by-example corpus running alongside the legacy enum truth table
- * ({@code GraphitronSchemaBuilderTest}). Each fixture is an annotated schema; the harness classifies
- * it with today's classifier and checks every {@code @classified} / {@code @classifiedType}
- * coordinate against its declared dimensional verdict (read off the field model's
- * {@code carrier()} / {@code intent()} / {@code mapping()} accessors).
+ * R281 / R316: the spec-by-example corpus. Each fixture is an annotated schema; the harness classifies
+ * it with today's classifier and checks every {@code @classified} / {@code @classifiedType} coordinate
+ * against its declared dimensional verdict (read off the field model's {@code source()} /
+ * {@code operation()} / {@code target()} accessors).
  *
- * <p>Slice 1's primary deliverable is the <em>validated value sets</em>, not full leaf coverage. The
- * meta-tests here pin three of the four coverage obligations from the Spec
- * (§"Validating the axis set"):
+ * <p>The meta-tests pin the coverage obligations from the Spec (§"Validating the axis set"), now over the
+ * {@code (source, operation, target)} axes:
  * <ul>
- *   <li><b>Verdict totality</b> is compiler-enforced: the {@code intent()} / {@code mapping()}
- *       accessors on each carrier root ({@code QueryField} / {@code MutationField} / {@code ChildField})
- *       switch exhaustively over that carrier's sealed leaves, so a new leaf without a verdict fails
- *       the build. No runtime test can strengthen that, so none is written.</li>
- *   <li><b>Value exercise</b>, {@link #everyDimensionValueIsExercised()}: every {@link Carrier},
- *       {@link Intent}, and {@link Mapping} value is either produced by some fixture or, for the
- *       modeled-but-unpopulated intents, on an explicit known-gap list with a stated reason.</li>
- *   <li><b>Carrier / Intent mirror</b>, {@link #carrierMirrorsAdapterValues()} /
- *       {@link #intentMirrorsAdapterValues()}: the SDL {@code Carrier} / {@code Intent} enums equal
- *       the Java {@link Carrier} / {@link Intent} value sets the field model produces.</li>
- *   <li><b>TypeVerdict mirror</b>, {@link #typeVerdictMirrorsGraphitronTypeLeaves()}: the SDL
- *       {@code TypeVerdict} enum equals the non-failure {@code GraphitronType} leaf set. Its
- *       soundness rests on {@link #graphitronTypeLeafSimpleNamesAreUnique()}, since the mirror
- *       compares by simple name.</li>
+ *   <li><b>Verdict totality</b> is compiler-enforced: the {@code source()} / {@code operation()} /
+ *       {@code target()} producers on each root ({@code QueryField} / {@code MutationField} /
+ *       {@code ChildField}) switch exhaustively over that root's sealed leaves, so a new leaf without a
+ *       verdict fails the build. No runtime test can strengthen that, so none is written.</li>
+ *   <li><b>Value exercise</b>, {@link #everyDimensionValueIsExercised()}: every {@link Source} wrapper
+ *       arm, {@link Operation} arm, {@link no.sikt.graphitron.rewrite.model.Target} wrapper arm,
+ *       {@link no.sikt.graphitron.rewrite.model.TargetShape} arm, and {@link SourceShape} value is either
+ *       produced by some fixture or, for the modeled-but-unpopulated arms, on an explicit known-gap list
+ *       with a stated reason.</li>
+ *   <li><b>SDL-vs-Java mirrors</b>: the SDL {@code SourceWrapper} / {@code Operation} /
+ *       {@code TargetWrapper} / {@code TargetShape} / {@code SourceShape} enums equal the sealed-arm sets
+ *       the field model produces.</li>
+ *   <li><b>TypeVerdict mirror</b>: the SDL {@code TypeVerdict} enum equals the non-failure
+ *       {@code GraphitronType} leaf set. Its soundness, like every name-based mirror here, rests on the
+ *       arm simple names being unique ({@link #sealedAxisLeafSimpleNamesAreUnique()}).</li>
  * </ul>
- * Per-leaf corpus coverage (the fourth obligation) is slice 3's sweep, not slice 1's.
  */
 @PipelineTier
 class ClassifiedDslTest {
@@ -62,12 +59,12 @@ class ClassifiedDslTest {
 
         assertThat(result.fields().isEmpty() && result.types().isEmpty())
             .as("fixture %s must annotate at least one coordinate (@classified field or "
-                + "@classifiedType type); some slice-3 coverage fixtures assert only a type verdict", example)
+                + "@classifiedType type); some coverage fixtures assert only a type verdict", example)
             .isFalse();
 
         for (var fc : result.fields()) {
             assertThat(fc.actual())
-                .as("%s.%s classifies to its declared (carrier, intent, mapping)", fc.parentType(), fc.fieldName())
+                .as("%s.%s classifies to its declared (source, operation, target)", fc.parentType(), fc.fieldName())
                 .isEqualTo(fc.expected());
         }
         for (var tc : result.types()) {
@@ -78,78 +75,127 @@ class ClassifiedDslTest {
     }
 
     /**
-     * Intents the model declares but the current leaf set cannot populate, each with the reason no
+     * Source wrapper arms the model declares but no fixture reaches, each with the reason. The
+     * {@link Source.OnlyChild} ({@code One} arrival) is producible but conservatively unreached: R305
+     * hard-codes the {@code Many} absorbing element ({@link Source.Child}) for every source field until
+     * R279 / R308 compute the true ancestor-product fold.
+     */
+    private static final Map<String, String> SOURCE_KNOWN_GAPS = Map.of(
+        "OnlyChild", "The One arrival is producible but conservatively unreached: R305 hard-codes the "
+            + "Many absorbing element (Child) for every source field until R279 / R308 compute the true "
+            + "ancestor-product fold.");
+
+    /**
+     * Operation arms the model declares but the current leaf set cannot populate, each with the reason no
      * fixture lands on it. Five are R222's model-completeness gaps (no classified leaf exists yet);
      * {@code Upsert} is the sixth shape, a leaf that exists but is upstream-rejected, following the
-     * {@code VariantCoverageTest.NO_CASE_REQUIRED} precedent for {@code MutationUpsertTableField}. A
-     * value leaves this list the moment a fixture exercises it; an unexercised value not listed here
-     * fails {@link #everyDimensionValueIsExercised()}.
+     * {@code VariantCoverageTest.NO_CASE_REQUIRED} precedent for {@code MutationUpsertTableField}. An arm
+     * leaves this list the moment a fixture exercises it; an unexercised arm not listed here fails
+     * {@link #everyDimensionValueIsExercised()}.
      */
-    private static final Map<Intent, String> INTENT_KNOWN_GAPS = Map.of(
-        Intent.EntityResolve, "Federation _entities is not a classified leaf yet (separate item).",
-        Intent.Count, "Connection totalCount is generator-only emit behind the ConnectionType quarantine.",
-        Intent.Facet, "Connection facets are generator-only emit behind the ConnectionType quarantine.",
-        Intent.UpdateMatching, "Condition-matched UPDATE is unimplemented.",
-        Intent.DeleteMatching, "Condition-matched DELETE is unimplemented.",
-        Intent.Upsert, "R144 retires UPSERT generation pending R145; the classifier rejects every "
+    private static final Map<Class<? extends Operation>, String> OPERATION_KNOWN_GAPS = Map.of(
+        Operation.EntityResolve.class, "Federation _entities is not a classified leaf yet (separate item).",
+        Operation.Count.class, "Connection totalCount is generator-only emit behind the ConnectionType quarantine.",
+        Operation.Facet.class, "Connection facets are generator-only emit behind the ConnectionType quarantine.",
+        Operation.UpdateMatching.class, "Condition-matched UPDATE is unimplemented.",
+        Operation.DeleteMatching.class, "Condition-matched DELETE is unimplemented.",
+        Operation.Upsert.class, "R144 retires UPSERT generation pending R145; the classifier rejects every "
             + "UPSERT mutation at MutationInputResolver, so no schema-reachable fixture lands on it "
             + "(mirrors VariantCoverageTest.NO_CASE_REQUIRED for MutationUpsertTableField).");
 
     @Test
     void everyDimensionValueIsExercised() {
-        var carrierArms = new java.util.HashSet<String>();
-        var intents = EnumSet.noneOf(Intent.class);
-        var mappings = EnumSet.noneOf(Mapping.class);
+        var sourceArms = new HashSet<String>();
         var sourceShapes = EnumSet.noneOf(SourceShape.class);
-        var sourceCardinalities = EnumSet.noneOf(SourceCardinality.class);
+        var operations = new HashSet<String>();
+        var targetWrappers = new HashSet<String>();
+        var targetShapes = new HashSet<String>();
 
         for (var example : ClassifiedCorpus.examples()) {
             for (var fc : ClassifiedHarness.classify(example.sdl()).fields()) {
-                Carrier carrier = fc.actual().carrier();
-                carrierArms.add(carrier.getClass().getSimpleName());
-                if (carrier instanceof Carrier.Source source) {
-                    sourceShapes.add(source.shape());
-                    sourceCardinalities.add(source.cardinality());
+                Source source = fc.actual().source();
+                sourceArms.add(source.getClass().getSimpleName());
+                switch (source) {
+                    case Source.OnlyChild(var shape) -> sourceShapes.add(shape);
+                    case Source.Child(var shape) -> sourceShapes.add(shape);
+                    case Source.Root ignored -> { }
                 }
-                intents.add(fc.actual().intent());
-                mappings.add(fc.actual().mapping());
+                operations.add(fc.actual().operation().getSimpleName());
+                targetWrappers.add(fc.actual().target().wrapper().getSimpleName());
+                targetShapes.add(fc.actual().target().shape().getSimpleName());
             }
         }
 
-        assertThat(carrierArms)
-            .as("every Carrier arm must be exercised by the corpus")
-            .containsExactlyInAnyOrderElementsOf(ClassifiedHarness.carrierArmNames());
-        assertThat(mappings)
-            .as("every Mapping value must be exercised by the corpus")
-            .containsExactlyInAnyOrder(Mapping.values());
-        assertThat(sourceShapes)
-            .as("both source-shape values must be exercised by Source-carried rows")
-            .containsExactlyInAnyOrder(SourceShape.values());
-        assertThat(sourceCardinalities)
-            .as("R305 conservatively hard-codes source cardinality Many (the absorbing element) for "
-                + "every Source field; the true ancestor-product One is computed by R279, until which "
-                + "the One inline-skip path stays dead")
-            .containsExactly(SourceCardinality.Many);
+        // Target wrapper and shape arms are fully exercised (no declared gaps).
+        assertThat(targetWrappers)
+            .as("every Target wrapper arm must be exercised by the corpus")
+            .containsExactlyInAnyOrderElementsOf(ClassifiedHarness.targetWrapperArmSimpleNames());
+        assertThat(targetShapes)
+            .as("every TargetShape arm must be exercised by the corpus")
+            .containsExactlyInAnyOrderElementsOf(ClassifiedHarness.targetShapeArmSimpleNames());
 
-        var unexercisedAndUnexplained = EnumSet.allOf(Intent.class);
-        unexercisedAndUnexplained.removeAll(intents);
-        unexercisedAndUnexplained.removeAll(INTENT_KNOWN_GAPS.keySet());
-        assertThat(unexercisedAndUnexplained)
-            .as("every Intent value must be exercised by a fixture or listed in INTENT_KNOWN_GAPS "
+        // Both source shapes are exercised on the nested (Child / OnlyChild) arms.
+        assertThat(sourceShapes)
+            .as("both source-shape values must be exercised by nested-source rows")
+            .containsExactlyInAnyOrder(SourceShape.values());
+
+        // Source wrapper arms: every arm exercised or on the known-gap list.
+        var unexercisedSource = new HashSet<>(ClassifiedHarness.sourceWrapperArmSimpleNames());
+        unexercisedSource.removeAll(sourceArms);
+        unexercisedSource.removeAll(SOURCE_KNOWN_GAPS.keySet());
+        assertThat(unexercisedSource)
+            .as("every source wrapper arm must be exercised by a fixture or listed in SOURCE_KNOWN_GAPS "
                 + "with a stated reason; these are neither")
             .isEmpty();
+        assertThat(SOURCE_KNOWN_GAPS.keySet())
+            .as("a known-gap source arm that a fixture now exercises must be removed from SOURCE_KNOWN_GAPS")
+            .doesNotContainAnyElementsOf(sourceArms);
 
-        assertThat(EnumSet.copyOf(INTENT_KNOWN_GAPS.keySet()))
-            .as("a known-gap intent that a fixture now exercises must be removed from INTENT_KNOWN_GAPS")
-            .doesNotContainAnyElementsOf(intents);
+        // Operation arms: every arm exercised or on the known-gap list.
+        Set<String> operationGapNames = OPERATION_KNOWN_GAPS.keySet().stream()
+            .map(Class::getSimpleName).collect(Collectors.toSet());
+        var unexercisedOps = new HashSet<>(ClassifiedHarness.operationArmSimpleNames());
+        unexercisedOps.removeAll(operations);
+        unexercisedOps.removeAll(operationGapNames);
+        assertThat(unexercisedOps)
+            .as("every Operation arm must be exercised by a fixture or listed in OPERATION_KNOWN_GAPS "
+                + "with a stated reason; these are neither")
+            .isEmpty();
+        assertThat(operationGapNames)
+            .as("a known-gap operation that a fixture now exercises must be removed from OPERATION_KNOWN_GAPS")
+            .doesNotContainAnyElementsOf(operations);
     }
 
     @Test
-    void carrierMirrorsAdapterValues() {
-        assertThat(ClassifiedHarness.carrierEnumConstants())
-            .as("the SDL Carrier enum must mirror the Java Carrier sealed-arm set the adapter produces; "
+    void sourceWrapperMirrorsAdapterValues() {
+        assertThat(ClassifiedHarness.sourceWrapperEnumConstants())
+            .as("the SDL SourceWrapper enum must mirror the sealed Source leaf arms; "
                 + "adding an arm to one side without the other fails here")
-            .containsExactlyInAnyOrderElementsOf(ClassifiedHarness.carrierArmNames());
+            .containsExactlyInAnyOrderElementsOf(ClassifiedHarness.sourceWrapperArmSimpleNames());
+    }
+
+    @Test
+    void operationMirrorsAdapterValues() {
+        assertThat(ClassifiedHarness.operationEnumConstants())
+            .as("the SDL Operation enum must mirror the sealed Operation arms; "
+                + "adding an arm to one side without the other fails here")
+            .containsExactlyInAnyOrderElementsOf(ClassifiedHarness.operationArmSimpleNames());
+    }
+
+    @Test
+    void targetWrapperMirrorsAdapterValues() {
+        assertThat(ClassifiedHarness.targetWrapperEnumConstants())
+            .as("the SDL TargetWrapper enum must mirror the sealed Target wrapper arms; "
+                + "adding an arm to one side without the other fails here")
+            .containsExactlyInAnyOrderElementsOf(ClassifiedHarness.targetWrapperArmSimpleNames());
+    }
+
+    @Test
+    void targetShapeMirrorsAdapterValues() {
+        assertThat(ClassifiedHarness.targetShapeEnumConstants())
+            .as("the SDL TargetShape enum must mirror the sealed TargetShape arms; "
+                + "adding an arm to one side without the other fails here")
+            .containsExactlyInAnyOrderElementsOf(ClassifiedHarness.targetShapeArmSimpleNames());
     }
 
     @Test
@@ -158,22 +204,6 @@ class ClassifiedDslTest {
             .as("the SDL SourceShape enum must mirror the Java SourceShape value set; "
                 + "adding a value to one side without the other fails here")
             .containsExactlyInAnyOrderElementsOf(enumNames(SourceShape.values()));
-    }
-
-    @Test
-    void sourceCardinalityMirrorsAdapterValues() {
-        assertThat(ClassifiedHarness.sourceCardinalityEnumConstants())
-            .as("the SDL SourceCardinality enum must mirror the Java SourceCardinality value set; "
-                + "adding a value to one side without the other fails here")
-            .containsExactlyInAnyOrderElementsOf(enumNames(SourceCardinality.values()));
-    }
-
-    @Test
-    void intentMirrorsAdapterValues() {
-        assertThat(ClassifiedHarness.intentEnumConstants())
-            .as("the SDL Intent enum must mirror the Java Intent value set the adapter produces; "
-                + "adding a value to one side without the other fails here")
-            .containsExactlyInAnyOrderElementsOf(enumNames(Intent.values()));
     }
 
     private static <E extends Enum<E>> Set<String> enumNames(E[] values) {
@@ -189,12 +219,18 @@ class ClassifiedDslTest {
     }
 
     @Test
-    void graphitronTypeLeafSimpleNamesAreUnique() {
+    void sealedAxisLeafSimpleNamesAreUnique() {
+        // Every name-based mirror above compares the SDL enum against sealed-leaf simple names, so a future
+        // nested leaf reusing a name within one seal would silently conflate two leaves and let the mirror
+        // pass while a real leaf goes unmirrored. (Table / Record / Interface reused *across* SourceShape
+        // and TargetShape is safe: the two seals are never folded into one name set.)
+        assertThat(ClassifiedHarness.sourceWrapperArmSimpleNames()).as("Source arm names").doesNotHaveDuplicates();
+        assertThat(ClassifiedHarness.operationArmSimpleNames()).as("Operation arm names").doesNotHaveDuplicates();
+        assertThat(ClassifiedHarness.targetWrapperArmSimpleNames()).as("Target wrapper arm names").doesNotHaveDuplicates();
+        assertThat(ClassifiedHarness.targetShapeArmSimpleNames()).as("TargetShape arm names").doesNotHaveDuplicates();
         assertThat(ClassifiedHarness.graphitronTypeNonFailureLeafSimpleNames())
             .as("GraphitronType's sealed leaves must have unique simple names: the TypeVerdict mirror "
-                + "compares by simple name, so a future nested leaf reusing a name (e.g. a second "
-                + "`Backed`) would silently conflate two leaves and let the mirror pass while a real "
-                + "leaf goes unmirrored")
+                + "compares by simple name, so a future nested leaf reusing a name would silently conflate two")
             .doesNotHaveDuplicates();
     }
 }

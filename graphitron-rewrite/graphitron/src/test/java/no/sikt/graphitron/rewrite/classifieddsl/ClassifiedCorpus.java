@@ -10,12 +10,14 @@ import java.util.Set;
  * the corpus, the DSL assertions ({@link ClassifiedDslTest}), the leaf-coverage bridge
  * ({@code VariantCoverageTest}), and the query-as-view documentation renderer.
  *
- * <p>Each {@code @classified} coordinate asserts the three-axis {@code (carrier, intent, mapping)}
- * verdict R299 migrated the corpus onto (from R281's original {@code (producer, mapping)}); between
- * them the fixtures exercise every {@link Carrier} and {@link Mapping} value and every populated
- * {@link Intent}, with the modeled-but-unpopulated intents tracked as known gaps in
- * {@link ClassifiedDslTest}. The set grows example by example as the {@code code-generation-triggers}
- * documentation pulls each one in (see {@link #coveredLeaves()}).
+ * <p>Each {@code @classified} coordinate asserts the three-axis {@code (source, operation, target)}
+ * verdict R316 migrated the corpus onto (from R299's {@code (carrier, intent, mapping)}, itself from
+ * R281's original {@code (producer, mapping)}); between them the fixtures exercise every
+ * {@link no.sikt.graphitron.rewrite.model.Source} wrapper arm, every
+ * {@link no.sikt.graphitron.rewrite.model.Target} wrapper and {@code TargetShape} arm, and every
+ * populated {@link no.sikt.graphitron.rewrite.model.Operation} arm, with the modeled-but-unpopulated
+ * arms tracked as known gaps in {@link ClassifiedDslTest}. The set grows example by example as the
+ * {@code code-generation-triggers} documentation pulls each one in (see {@link #coveredLeaves()}).
  */
 public final class ClassifiedCorpus {
 
@@ -42,12 +44,12 @@ public final class ClassifiedCorpus {
         /* Catalog side: a root query, a Relay connection, an inline column, and a TableType. */
         new Example("catalog", """
             type Query @classifiedType(as: RootType) {
-              film: Film @classified(carrier: Query, intent: Fetch, mapping: Table)
-              films: [Film!]! @asConnection @classified(carrier: Query, intent: Fetch, mapping: TableConnection)
+              film: Film @classified(source: Query, operation: Fetch, target: Single, targetShape: Table)
+              films: [Film!]! @asConnection @classified(source: Query, operation: Paginate, target: Single, targetShape: Connection)
             }
 
             type Film @table(name: "film") @classifiedType(as: TableType) {
-              title: String @classified(carrier: Source, intent: Fetch, mapping: Column)
+              title: String @classified(source: Child, operation: Fetch, target: Single, targetShape: Column)
             }
             """,
             """
@@ -71,7 +73,7 @@ public final class ClassifiedCorpus {
         new Example("enum-column", """
             enum Rating @classifiedType(as: EnumType) { G PG PG13 R NC17 }
             type Film @table(name: "film") {
-              rating: Rating @classified(carrier: Source, intent: Fetch, mapping: Column)
+              rating: Rating @classified(source: Child, operation: Fetch, target: Single, targetShape: Column)
             }
             type Query { film: Film }
             """),
@@ -85,16 +87,16 @@ public final class ClassifiedCorpus {
          */
         new Example("child-table", """
             type Country @table(name: "country") @classifiedType(as: TableType) {
-              name: String @field(name: "country") @classified(carrier: Source, intent: Fetch, mapping: Column)
+              name: String @field(name: "country") @classified(source: Child, operation: Fetch, target: Single, targetShape: Column)
             }
 
             type City @table(name: "city") @classifiedType(as: TableType) {
-              country: Country @classified(carrier: Source, intent: Fetch, mapping: Table)
-              countrySplit: Country @splitQuery @classified(carrier: Source, intent: Fetch, mapping: Table)
+              country: Country @classified(source: Child, operation: Fetch, target: Single, targetShape: Table)
+              countrySplit: Country @splitQuery @classified(source: Child, operation: Fetch, target: Single, targetShape: Table)
             }
 
             type Query {
-              city: City @classified(carrier: Query, intent: Fetch, mapping: Table)
+              city: City @classified(source: Query, operation: Fetch, target: Single, targetShape: Table)
             }
             """,
             "{ city { country { name } countrySplit { name } } }"),
@@ -110,7 +112,7 @@ public final class ClassifiedCorpus {
             type Customer @table(name: "customer") { firstName: String @field(name: "FIRST_NAME") }
             type Store @table(name: "store") {
               customers(customer_id: ID! @lookupKey): [Customer!]! @splitQuery
-                @classified(carrier: Source, intent: Lookup, mapping: Table)
+                @classified(source: Child, operation: Lookup, target: List, targetShape: Table)
             }
             type Query { store: Store }
             """),
@@ -127,15 +129,15 @@ public final class ClassifiedCorpus {
          */
         new Example("mapping", """
             type FilmStats {
-              count: Int @classified(carrier: Source, intent: Fetch, mapping: Field, sourceShape: Record)
+              count: Int @classified(source: Child, operation: Fetch, target: Single, targetShape: Field, sourceShape: Record)
             }
 
             type FilmDetails {
-              stats: FilmStats @classified(carrier: Source, intent: Fetch, mapping: Field, sourceShape: Record)
+              stats: FilmStats @classified(source: Child, operation: Fetch, target: Single, targetShape: Field, sourceShape: Record)
             }
 
             type Film @table(name: "film") {
-              title: String @classified(carrier: Source, intent: Fetch, mapping: Column)
+              title: String @classified(source: Child, operation: Fetch, target: Single, targetShape: Column)
               details: FilmDetails
             }
 
@@ -164,12 +166,12 @@ public final class ClassifiedCorpus {
 
             type FilmDetails {
               language: Language @reference(path: [{key: "film_language_id_fkey"}])
-                @classified(carrier: Source, intent: Fetch, mapping: Table, sourceShape: Record)
+                @classified(source: Child, operation: Fetch, target: Single, targetShape: Table, sourceShape: Record)
             }
 
             type Film @table(name: "film") {
               language: Language @reference(path: [{key: "film_language_id_fkey"}])
-                @classified(carrier: Source, intent: Fetch, mapping: Table)
+                @classified(source: Child, operation: Fetch, target: Single, targetShape: Table)
               details: FilmDetails
             }
 
@@ -186,17 +188,17 @@ public final class ClassifiedCorpus {
             type Language @table(name: "language") { name: String }
 
             type FilmDetails {
-              title: String @classified(carrier: Source, intent: Fetch, mapping: Field, sourceShape: Record)
+              title: String @classified(source: Child, operation: Fetch, target: Single, targetShape: Field, sourceShape: Record)
             }
 
             type Film @table(name: "film") {
               details: FilmDetails
               rating: String
                 @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "get"})
-                @classified(carrier: Source, intent: QueryService, mapping: Record)
+                @classified(source: Child, operation: ServiceCall, target: Single, targetShape: Record)
               language: Language
                 @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getLanguage"})
-                @classified(carrier: Source, intent: QueryService, mapping: Table)
+                @classified(source: Child, operation: ServiceCall, target: Single, targetShape: Table)
             }
 
             type Query {
@@ -205,7 +207,7 @@ public final class ClassifiedCorpus {
                 @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeDetailsProps"})
               externalFilm: Film
                 @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getFilm"})
-                @classified(carrier: Query, intent: QueryService, mapping: Table)
+                @classified(source: Query, operation: ServiceCall, target: Single, targetShape: Table)
             }
             """),
 
@@ -222,7 +224,7 @@ public final class ClassifiedCorpus {
             type Query {
               filmDetails: FilmDetails
                 @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getDetails"})
-                @classified(carrier: Query, intent: QueryService, mapping: Record)
+                @classified(source: Query, operation: ServiceCall, target: Single, targetShape: Record)
             }
             """),
 
@@ -239,7 +241,7 @@ public final class ClassifiedCorpus {
         new Example("result-backing", """
             type PojoBacked @classifiedType(as: Backed) { id: ID }
             type JavaRecordBacked @classifiedType(as: JavaRecordType) {
-              name: String @classified(carrier: Source, intent: Fetch, mapping: Field, sourceShape: Record)
+              name: String @classified(source: Child, operation: Fetch, target: Single, targetShape: Field, sourceShape: Record)
             }
             type JooqTableRecordBacked @classifiedType(as: JooqTableRecordType) { id: ID }
             type Query {
@@ -261,8 +263,8 @@ public final class ClassifiedCorpus {
          */
         new Example("error-field", """
             type MyError @error(handlers: [{handler: GENERIC, className: "java.lang.IllegalArgumentException"}]) {
-              path: [String!]! @classified(carrier: Source, intent: Fetch, mapping: Field, sourceShape: Record)
-              message: String! @classified(carrier: Source, intent: Fetch, mapping: Field, sourceShape: Record)
+              path: [String!]! @classified(source: Child, operation: Fetch, target: Single, targetShape: Field, sourceShape: Record)
+              message: String! @classified(source: Child, operation: Fetch, target: Single, targetShape: Field, sourceShape: Record)
             }
             type Query { err: MyError }
             """),
@@ -281,7 +283,7 @@ public final class ClassifiedCorpus {
             enum Severity { LOW HIGH }
             type ExtraFieldError @error(handlers: [{handler: GENERIC, className: "java.lang.IllegalArgumentException"}])
                 @classifiedType(as: ErrorType) {
-              path: [String!]! @classified(carrier: Source, intent: Fetch, mapping: Field, sourceShape: Record)
+              path: [String!]! @classified(source: Child, operation: Fetch, target: Single, targetShape: Field, sourceShape: Record)
               message: String!
               severity: Severity!
             }
@@ -298,7 +300,7 @@ public final class ClassifiedCorpus {
         new Example("nesting", """
             type FilmDetails @classifiedType(as: NestingType) { title: String description: String }
             type Film @table(name: "film") {
-              details: FilmDetails @classified(carrier: Source, intent: Nesting, mapping: Table)
+              details: FilmDetails @classified(source: Child, operation: Nest, target: Single, targetShape: Table)
             }
             type Query { film: Film }
             """),
@@ -328,11 +330,11 @@ public final class ClassifiedCorpus {
             interface Named @classifiedType(as: InterfaceType) { name: String }
             type Address implements Named @table(name: "address") { name: String @field(name: "ADDRESS") }
             type Customer @table(name: "customer") {
-              address: Named @classified(carrier: Source, intent: Fetch, mapping: Table)
+              address: Named @classified(source: Child, operation: Fetch, target: Single, targetShape: Interface)
             }
             type Query {
               customer: Customer
-              anyNamed: Named @classified(carrier: Query, intent: Fetch, mapping: Table)
+              anyNamed: Named @classified(source: Query, operation: Fetch, target: Single, targetShape: Interface)
             }
             """,
             "{ customer { address { name } } }"),
@@ -342,11 +344,11 @@ public final class ClassifiedCorpus {
             type Actor @table(name: "actor") { firstName: String @field(name: "FIRST_NAME") }
             union FilmOrActor @classifiedType(as: UnionType) = Film | Actor
             type FilmActor @table(name: "film_actor") {
-              related: FilmOrActor @classified(carrier: Source, intent: Fetch, mapping: Table)
+              related: FilmOrActor @classified(source: Child, operation: Fetch, target: Single, targetShape: Union)
             }
             type Query {
               filmActor: FilmActor
-              search: FilmOrActor @classified(carrier: Query, intent: Fetch, mapping: Table)
+              search: FilmOrActor @classified(source: Query, operation: Fetch, target: Single, targetShape: Union)
             }
             """,
             "{ filmActor { related { ... on Film { title } ... on Actor { firstName } } } }"),
@@ -355,11 +357,11 @@ public final class ClassifiedCorpus {
             interface MediaItem @table(name: "film") @discriminate(on: "kind") @classifiedType(as: TableInterfaceType) { title: String }
             type Film implements MediaItem @table(name: "film") @discriminator(value: "film") { title: String }
             type Inventory @table(name: "inventory") {
-              media: MediaItem @classified(carrier: Source, intent: Fetch, mapping: Table)
+              media: MediaItem @classified(source: Child, operation: Fetch, target: Single, targetShape: Table)
             }
             type Query {
               inventory: Inventory
-              topMedia: MediaItem @classified(carrier: Query, intent: Fetch, mapping: Table)
+              topMedia: MediaItem @classified(source: Query, operation: Fetch, target: Single, targetShape: Table)
             }
             """),
 
@@ -367,9 +369,9 @@ public final class ClassifiedCorpus {
             interface Node { id: ID! }
             type Film implements Node @table(name: "film") { id: ID! title: String }
             type Query {
-              node(id: ID!): Node @classified(carrier: Query, intent: NodeResolve, mapping: Table)
-              nodes(ids: [ID!]!): [Node] @classified(carrier: Query, intent: NodeResolve, mapping: Table)
-              internalFilmNode(id: ID): Node @classified(carrier: Query, intent: NodeResolve, mapping: Table)
+              node(id: ID!): Node @classified(source: Query, operation: NodeResolve, target: Single, targetShape: Interface)
+              nodes(ids: [ID!]!): [Node] @classified(source: Query, operation: NodeResolve, target: List, targetShape: Interface)
+              internalFilmNode(id: ID): Node @classified(source: Query, operation: NodeResolve, target: Single, targetShape: Interface)
             }
             """),
 
@@ -393,10 +395,10 @@ public final class ClassifiedCorpus {
         new Example("reference-and-computed", """
             type Film @table(name: "film") {
               languageName: String @field(name: "name") @reference(path: [{key: "film_language_id_fkey"}])
-                @classified(carrier: Source, intent: Fetch, mapping: Column)
+                @classified(source: Child, operation: Fetch, target: Single, targetShape: Column)
               computedRating: String
                 @externalField(reference: {className: "no.sikt.graphitron.rewrite.TestExternalFieldStub", method: "rating"})
-                @classified(carrier: Source, intent: Fetch, mapping: Column)
+                @classified(source: Child, operation: Fetch, target: Single, targetShape: Column)
             }
             type Query { film: Film }
             """),
@@ -412,12 +414,12 @@ public final class ClassifiedCorpus {
             type Film @table(name: "film") { filmId: Int! @field(name: "film_id") }
             type FilmActor @table(name: "film_actor") {
               actors(actor_id: [Int!]! @lookupKey): [Actor!]!
-                @classified(carrier: Source, intent: Lookup, mapping: Table)
+                @classified(source: Child, operation: Lookup, target: List, targetShape: Table)
             }
             type Query {
               filmActor: FilmActor
               filmById(film_id: [ID] @lookupKey): [Film!]!
-                @classified(carrier: Query, intent: Lookup, mapping: Table)
+                @classified(source: Query, operation: Lookup, target: List, targetShape: Table)
             }
             """),
 
@@ -435,13 +437,13 @@ public final class ClassifiedCorpus {
               language: Language
                 @tableMethod(className: "no.sikt.graphitron.rewrite.TestTableMethodStub", method: "getLanguage")
                 @reference(path: [{key: "film_language_id_fkey"}])
-                @classified(carrier: Source, intent: Fetch, mapping: Table)
+                @classified(source: Child, operation: Fetch, target: Single, targetShape: Table)
             }
             type Query {
               film: Film
               filteredFilms: [Film!]!
                 @tableMethod(className: "no.sikt.graphitron.rewrite.TestTableMethodStub", method: "getFilmWithContext", contextArguments: ["tenantId"])
-                @classified(carrier: Query, intent: Fetch, mapping: Table)
+                @classified(source: Query, operation: Fetch, target: List, targetShape: Table)
             }
             """),
 
@@ -458,10 +460,10 @@ public final class ClassifiedCorpus {
             type Inventory @table(name: "inventory") { inventoryId: Int! @field(name: "inventory_id") }
             type FilmDetails {
               language(language_id: ID! @lookupKey): Language @reference(path: [{key: "film_language_id_fkey"}])
-                @classified(carrier: Source, intent: Lookup, mapping: Table, sourceShape: Record)
+                @classified(source: Child, operation: Lookup, target: Single, targetShape: Table, sourceShape: Record)
               inventories: [Inventory!]!
                 @tableMethod(className: "no.sikt.graphitron.rewrite.TestTableMethodStub", method: "getInventory")
-                @classified(carrier: Source, intent: Fetch, mapping: Table, sourceShape: Record)
+                @classified(source: Child, operation: Fetch, target: List, targetShape: Table, sourceShape: Record)
             }
             type Film @table(name: "film") { details: FilmDetails }
             type Query {
@@ -484,7 +486,7 @@ public final class ClassifiedCorpus {
             type FilmContent implements Content @table(name: "content") @discriminator(value: "FILM") {
               contentId: Int! @field(name: "CONTENT_ID")
               rating: String @reference(path: [{key: "content_film_id_fkey"}]) @field(name: "RATING")
-                @classified(carrier: Source, intent: Fetch, mapping: Column)
+                @classified(source: Child, operation: Fetch, target: Single, targetShape: Column)
             }
             type ShortContent implements Content @table(name: "content") @discriminator(value: "SHORT") {
               contentId: Int! @field(name: "CONTENT_ID")
@@ -572,7 +574,7 @@ public final class ClassifiedCorpus {
             }
             union DeleteFilmsError = FilmErr
             type FilmIdsPayload {
-              filmIds: [ID] @nodeId(typeName: "Film") @classified(carrier: Source, intent: Fetch, mapping: Column, sourceShape: Record)
+              filmIds: [ID] @nodeId(typeName: "Film") @classified(source: Child, operation: Fetch, target: List, targetShape: Column, sourceShape: Record)
               errors: [DeleteFilmsError]
             }
             type Query { x: String }
@@ -606,13 +608,13 @@ public final class ClassifiedCorpus {
             type Mutation {
               createFilmsPayload(in: [FilmCreateInput!]!): FilmInsertBulkPayload
                 @mutation(typeName: INSERT)
-                @classified(carrier: Mutation, intent: Insert, mapping: Record)
+                @classified(source: Mutation, operation: Insert, target: Single, targetShape: Record)
               updateFilmPayload(in: FilmUpdateInput!): FilmUpdatePayload
                 @mutation(typeName: UPDATE)
-                @classified(carrier: Mutation, intent: Update, mapping: Record)
+                @classified(source: Mutation, operation: Update, target: Single, targetShape: Record)
               updateFilmsPayload(in: [FilmUpdateInput!]!): FilmUpdateBulkPayload
                 @mutation(typeName: UPDATE)
-                @classified(carrier: Mutation, intent: Update, mapping: Record)
+                @classified(source: Mutation, operation: Update, target: Single, targetShape: Record)
             }
             """),
 
@@ -630,7 +632,7 @@ public final class ClassifiedCorpus {
             type Mutation {
               createFilm(in: FilmInput!): Film
                 @mutation(typeName: INSERT)
-                @classified(carrier: Mutation, intent: Insert, mapping: Table)
+                @classified(source: Mutation, operation: Insert, target: Single, targetShape: Table)
             }
             """,
             "mutation { createFilm { title } }"),
@@ -656,7 +658,7 @@ public final class ClassifiedCorpus {
             interface Node { id: ID! }
             type Film implements Node @table(name: "film") @node { id: ID! @nodeId title: String }
             type FilmDetails { title: String }
-            type FilmPayload { film: Film @classified(carrier: Source, intent: Fetch, mapping: Table, sourceShape: Record) }
+            type FilmPayload { film: Film @classified(source: Child, operation: Fetch, target: Single, targetShape: Table, sourceShape: Record) }
             input FilmKeyInput @table(name: "film") { filmId: Int! @field(name: "film_id") }
             input FilmUpdateInput @table(name: "film") { filmId: Int! @field(name: "film_id") title: String }
             input FilmTitleInput @table(name: "film") { title: String @field(name: "title") }
@@ -665,22 +667,22 @@ public final class ClassifiedCorpus {
             type Mutation {
               updateFilm(in: FilmUpdateInput!): Film
                 @mutation(typeName: UPDATE)
-                @classified(carrier: Mutation, intent: Update, mapping: Table)
+                @classified(source: Mutation, operation: Update, target: Single, targetShape: Table)
               deleteFilm(in: FilmKeyInput!): ID
                 @mutation(typeName: DELETE)
-                @classified(carrier: Mutation, intent: Delete, mapping: Column)
+                @classified(source: Mutation, operation: Delete, target: Single, targetShape: Column)
               deleteFilmsBroadcast(in: FilmTitleInput!): ID
                 @mutation(typeName: DELETE, multiRow: true)
-                @classified(carrier: Mutation, intent: Delete, mapping: Column)
+                @classified(source: Mutation, operation: Delete, target: Single, targetShape: Column)
               externalMutation: Film
                 @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "runFilm"})
-                @classified(carrier: Mutation, intent: MutationService, mapping: Table)
+                @classified(source: Mutation, operation: ServiceCall, target: Single, targetShape: Table)
               externalRecord: FilmDetails
                 @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "runDetails"})
-                @classified(carrier: Mutation, intent: MutationService, mapping: Record)
+                @classified(source: Mutation, operation: ServiceCall, target: Single, targetShape: Record)
               createFilmPayload(in: FilmCreateInput!): FilmPayload
                 @mutation(typeName: INSERT)
-                @classified(carrier: Mutation, intent: Insert, mapping: Record)
+                @classified(source: Mutation, operation: Insert, target: Single, targetShape: Record)
             }
             """));
 
