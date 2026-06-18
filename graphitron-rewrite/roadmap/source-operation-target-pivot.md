@@ -428,6 +428,17 @@ leaves dissolve. Documentation only; it pins the vocabulary every later slice sp
 
 ### Slice 2: The `source` wrapper in code
 
+**Landed (additive cutover).** `Source` (`Root` permits `Query` / `Mutation` `| OnlyChild(SourceShape) |
+Child(SourceShape)`) is the new primitive `OutputField.source()`; the producers build it (`QueryField` →
+`Root.Query`, `MutationField` → `Root.Mutation`, `ChildField` → `Child(sourceShape())`), and
+`requiresReFetch()` plus the validator's re-fetch-mirror message read it. The `Carrier.java` /
+`SourceCardinality.java` *type deletion* is deferred to slice 4: cleanly deleting them requires migrating
+the `@classified` directive vocabulary and the `classifieddsl/*` harness that slice 4 owns, so per the
+additive-cutover technique `carrier()` survives as a `default` deriving `Carrier` from `source()` and the
+R281 corpus classifies unchanged. The generator's loader-vs-direct fork stays leaf-based here (R314's emit
+re-platforming owns repointing it to the arm); `OnlyChild` is producible but unreached (R305 hard-codes
+`Child`), its corpus coverage entry landing with slice 4's source-arm projection test.
+
 Fold `Carrier` into one `source` sealed hierarchy whose arms are the arrival wrapper:
 `Root` (permits `Query` / `Mutation`) `| OnlyChild(SourceShape) | Child(SourceShape)`.
 `SourceCardinality` is **retired as a standalone type**: its `One` / `Many` become the

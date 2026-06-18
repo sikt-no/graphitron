@@ -27,15 +27,15 @@ public sealed interface ChildField extends OutputField
             ChildField.ErrorsField {
 
     /**
-     * Every {@code ChildField} leaf is on a non-root parent type, so the carrier is
-     * {@link Carrier.Source}, materialised with this field's {@link #sourceShape()} and source
-     * {@link SourceCardinality}. R305 conservatively hard-codes {@link SourceCardinality#Many} (the
-     * absorbing element): every re-fetch field batches, which is always correct as a one-element
-     * batch. The {@link SourceCardinality#One} inline-skip optimisation stays dead until R279
-     * computes the true ancestor-product cardinality that would let a field declare {@code One}.
+     * Every {@code ChildField} leaf is on a non-root parent type, so the source arrives as a
+     * {@link Source.Child} wrapping this field's {@link #sourceShape()}. R316 slice 2 conservatively
+     * builds the {@link Source.Child} (arrival {@code Many}) absorbing arm: every re-fetch field
+     * batches, which is always correct as a one-element batch. The {@link Source.OnlyChild} inline-skip
+     * arm stays unreached until R279 / R308 compute the true ancestor-product cardinality that would let
+     * a field declare it.
      */
-    @Override default Carrier carrier() {
-        return new Carrier.Source(sourceShape(), SourceCardinality.Many);
+    @Override default Source source() {
+        return new Source.Child(sourceShape());
     }
 
     /**

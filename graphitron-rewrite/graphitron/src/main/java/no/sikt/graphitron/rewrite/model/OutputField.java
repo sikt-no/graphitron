@@ -35,14 +35,30 @@ public sealed interface OutputField extends GraphitronField permits RootField, C
     DomainReturnType domainReturnType();
 
     /**
-     * The {@code carrier} dimension (R299): the GraphQL parent-type category this field is defined on,
-     * which <em>is</em> its field type. Defaulted per carrier root ({@link QueryField} →
-     * {@link Carrier.Query}, {@link MutationField} → {@link Carrier.Mutation}, {@link ChildField} →
-     * {@link Carrier.Source}); it is the legality gate over {@link #intent()} (write intents only on
-     * {@code Mutation}, {@code NodeResolve} only on {@code Query}, {@code Nesting} only on
-     * {@code Source}).
+     * The {@code source} dimension (R316): the field's <em>arrival endpoint</em>, a wrapper around a
+     * {@link SourceShape} whose arm is the arrival cardinality. Defaulted per arrival ({@link QueryField}
+     * → {@link Source.Root.Query}, {@link MutationField} → {@link Source.Root.Mutation}, {@link ChildField}
+     * → {@link Source.Child}); the {@code Query} / {@code Mutation} split under {@link Source.Root} is the
+     * legality gate over {@link #intent()} (write intents only on {@code Mutation}, {@code NodeResolve}
+     * only on {@code Query}). The arm is the emit-strategy dispatch ({@link Source.Child} → DataLoader,
+     * {@link Source.Root} / {@link Source.OnlyChild} → direct).
      */
-    Carrier carrier();
+    Source source();
+
+    /**
+     * The retired {@code carrier} dimension (R299), derived from {@link #source()} during the R316
+     * slice-2 additive cutover so the R281 corpus keeps classifying unchanged until slice 4 migrates it
+     * onto {@code source()}. {@link Carrier} and {@link SourceCardinality} retire with that cutover; new
+     * readers should consume {@link #source()} directly.
+     */
+    default Carrier carrier() {
+        return switch (source()) {
+            case Source.Root.Query ignored -> new Carrier.Query();
+            case Source.Root.Mutation ignored -> new Carrier.Mutation();
+            case Source.OnlyChild(var shape) -> new Carrier.Source(shape, SourceCardinality.One);
+            case Source.Child(var shape) -> new Carrier.Source(shape, SourceCardinality.Many);
+        };
+    }
 
     /**
      * The {@code intent} dimension (R299): the operation kind this field classifies to. Derived from
@@ -65,8 +81,9 @@ public sealed interface OutputField extends GraphitronField permits RootField, C
      * held at the source, because the field holds a domain record rather than the projected columns.
      * <strong>Derived</strong> from {@link Mapping#Table} combined with <em>holds-records</em>, not
      * switched on leaf identity. "Holds records" is two cases on the catalog-vs-domain split: the
-     * source <em>received</em> a record ({@link Carrier.Source} with {@link SourceShape#Record}), or a
-     * service / DML-write intent <em>produced</em> one mid-field. Either way the field re-projects the
+     * source <em>received</em> a record (a {@link Source.OnlyChild} / {@link Source.Child} arm with
+     * {@link SourceShape#Record}), or a service / DML-write intent <em>produced</em> one mid-field.
+     * Either way the field re-projects the
      * table by correlating the record's keys to the catalog rows (mechanically a {@code VALUES(idx,
      * key...)} join with {@code ORDER BY idx}).
      *
@@ -85,8 +102,11 @@ public sealed interface OutputField extends GraphitronField permits RootField, C
         if (mapping() != Mapping.Table) {
             return false;
         }
-        boolean receivedRecord = carrier() instanceof Carrier.Source source
-            && source.shape() == SourceShape.Record;
+        boolean receivedRecord = switch (source()) {
+            case Source.OnlyChild(var shape) -> shape == SourceShape.Record;
+            case Source.Child(var shape) -> shape == SourceShape.Record;
+            case Source.Root ignored -> false;
+        };
         boolean producedRecord = switch (intent()) {
             case QueryService, MutationService, Insert, Update, Upsert, Delete -> true;
             default -> false;

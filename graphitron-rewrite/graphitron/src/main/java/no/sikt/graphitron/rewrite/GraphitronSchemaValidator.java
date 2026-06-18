@@ -160,7 +160,7 @@ public class GraphitronSchemaValidator {
             errors.add(new ValidationError(
                 out.qualifiedName(),
                 Rejection.invalidSchema("Field '" + out.qualifiedName() + "': re-fetch derivation (intent "
-                    + out.intent() + " x mapping " + out.mapping() + " x carrier " + out.carrier()
+                    + out.intent() + " x mapping " + out.mapping() + " x source " + out.source()
                     + " -> requiresReFetch=" + out.requiresReFetch() + ") disagrees with the generator's "
                     + "re-fetch dispatch for " + out.getClass().getSimpleName() + "; the Table-mapping x "
                     + "holds-records derivation and the re-projecting SELECT have drifted"),
