@@ -39,8 +39,10 @@ case and was explicit that it does **not** deprecate `@table` generally, that th
 general deprecation is R97's, and that R315's targeted rejection is
 forward-compatible with it. So today the picture is uneven: one path hard-rejects
 `@table`-on-input, every other path silently accepts it, and nothing announces
-the intended direction. This item closes that gap with a uniform deprecation
-signal across all input-type usages.
+the intended direction. This item closes that gap with a deprecation signal over
+input-type usages, with one carve-out (the encoded-ID / scalar-return
+INSERT/UPSERT case; see "Scope constraint" below) that the signal must not flag
+until its replacement mechanism (R327) lands.
 
 ## Why a separate item from R97
 
@@ -51,10 +53,82 @@ on R97 Phase 1 + R94. A pure "deprecated, will be removed; see R97" signal needs
 none of that machinery and can ship immediately. Shipping the announcement early
 is the point: it tells consumers to stop adding new `@table`-on-input usages
 while the replacement is still being built, and it shrinks the eventual R97
-migration. R97 remains the owner of the actual removal, the consumer-derived
-table resolution, and the `argMapping` grouping; this item is its signaling
-precursor and should be folded into R97 (or retired) if R97 lands its Phase 2
-warning first.
+migration. This item is the signaling precursor and should be folded into the
+removal owner (or retired) if that owner lands its own deprecation warning first.
+
+Note that "the removal owner" is not cleanly R97 alone; see the cluster section
+below. R97 names the consumer-derived resolution + `argMapping` grouping, but the
+field-relative mechanism that actually retires `@table`-on-input is R327's, and
+the directive-scope narrowing is claimed by both R97 Phase 3 and R222 Stage 7.
+The Spec author should reconcile against all three before settling which item the
+"see Rnn" pointer in the deprecation message targets.
+
+## Related items: the `@table`-on-input cluster
+
+Three other live items converge on `@table`-on-input. They were filed
+independently and do not all cross-reference each other; this item's Spec should
+reconcile the ownership before announcing a direction, because the deprecation
+message points at "the removal owner" and that owner is currently contested.
+
+- **R97** (`consumer-derived-input-tables`, Backlog, architecture). The original
+  full-lifecycle item: consumer-derived table resolution + `argMapping` grouping
+  (GG-376) + a Phase 2 build warning + Phase 3 directive-scope removal. Its
+  redundancy proof walks only the `createFilm(in: ...): Film @table` happy path.
+- **R327** (`field-relative-input-classification`, Backlog, architecture). The
+  concrete, reachable-now mechanism: derive an input's table-boundness from the
+  consuming field's resolved target (via `lookAheadVerdict`) instead of the
+  global `@table` + `findReturnTablesForInput` aggregate. Split out of R317
+  slice 4. This is the item that actually retires `@table`-on-input; R97's
+  "consumer-derived tables" is the same idea under a different name.
+- **R222** (`dimensional-model-pivot`, **Spec**, structural). The umbrella that
+  already declares it absorbs R97: Stage 5 removes `findReturnTablesForInput`,
+  Stage 7 narrows `@table` / `@record(class:)` / `@value` out of `INPUT_OBJECT`
+  ("Closes R97"), and its vocabulary states "table-binding collapses to the
+  consumer's `@table` return at production time." `argMapping` grouping (R97
+  Phase 1) is explicitly left separable.
+
+Overlap map (what a Spec author will collide with): `findReturnTablesForInput`
+removal is claimed by both R327 and R222 Stage 5; directive-scope narrowing by
+R97 Phase 3, R222 Stage 7, and R327; the deprecation signal itself by this item
+**and** R97 Phase 2. The genuinely separable piece is `argMapping` grouping
+(R222 says so twice). The field-relative mechanism (R327) is the load-bearing
+migration step the directive narrowing depends on.
+
+## Scope constraint: the encoded-ID INSERT/UPSERT carve-out
+
+A blanket "`@table` on input is deprecated, remove it" signal is **wrong** for
+one class of mutation, and the Spec must carve it out (or gate the whole signal
+behind R327).
+
+The write-target table is sourced per verb today (`MutationField.DmlTableField`,
+`MutationField.java:82-109`):
+
+- INSERT / UPSERT "carry the `@table` `TableInputArg` that drives the statement
+  **directly**" (`MutationField.java:92-94`). The input's `@table` *is* the
+  write-target mechanism for these.
+- UPDATE / DELETE already moved off it (R246 / R266) onto a field-relative
+  walker carrier; the code comment already cites "per R222, input fields have no
+  semantics independent of the consuming field."
+- The return shape is an independent axis (`DmlReturnExpression`, R204):
+  `Encoded` (ID / scalar return), `Projected` (`@table` return), or class-backed
+  payload.
+
+The replacement framing "table-binding collapses to the consumer's `@table`
+return" (R222) covers INSERT/UPSERT that **return** a `@table` type, and the
+single-`@table`-field payload case the model already reads
+(`MutationField.java:271`). It does **not** cover INSERT/UPSERT returning an
+**encoded ID or scalar** (`createFilm(...): ID`): the return type carries no
+`@table`, so there is nothing to collapse to, and `@table`-on-input is currently
+the *only* signal naming the write target. R327 has not yet migrated those arms.
+
+Consequence for this item: the deprecation signal must **not** fire on inputs
+feeding encoded-ID / scalar-return INSERT/UPSERT until R327 closes that
+derivation, or it instructs authors to remove the only mechanism that works.
+(Secondary correction for whoever writes R327/R97/R222 prose: the table comes
+from the consuming field's *resolved target*, not literally its *return type*;
+the "consumer's `@table` return" wording papers over the encoded-ID case.)
+`argMapping` grouping does not plug this; it binds input fields to params /
+columns, not the write target table.
 
 ## Candidate signal surfaces (to be settled at Spec)
 
