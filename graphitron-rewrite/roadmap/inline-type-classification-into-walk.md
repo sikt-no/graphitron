@@ -28,7 +28,8 @@ last-updated: 2026-06-17
 > of the walk, where input / scalar / enum verdicts the helpers read must already exist) rather than via a
 > dedicated `EnumIndex` / scalar index, which the pre-walk sweep makes unnecessary; (b) the field-relative
 > input model (classify the input after its field's target, deriving table-boundness from the target) is
-> deferred to a follow-up, since it is the one non-byte-identical change and slice 4 stayed byte-identical.
+> deferred to its own item, R327, since it is the one non-byte-identical change and slice 4 stayed
+> byte-identical.
 > Slice
 > 3e closed the last classification-edge registry reads: the interface / union / result-family target
 > reads in `FieldBuilder` (`:672` / `:2120` / `:3236` / `:3291` / `:4654` / `:5046`) now resolve
@@ -512,7 +513,7 @@ orphan move are pinned by explicit tests, not claimed trivially.
    existing global verdict (`@table`-on-input plus the `findReturnTablesForInput` aggregate), so slice 4
    is byte-identical. Classifying the input *after* its field's target (deriving table-boundness from the
    target, de-emphasising `@table`-on-input) is the one non-byte-identical change the plan flagged; it is
-   split to a follow-up item rather than landed here, keeping the collapse a pure structural delta.
+   split to its own item, R327, rather than landed here, keeping the collapse a pure structural delta.
    Reflection grounding stays eager (`resolveAll` in `prepareForWalk`): the indices call `classifyType`
    over all types and ground bindings as a side effect, so dropping the precondition would fight eager
    index construction, exactly the tension the plan anticipated; left as-is.
