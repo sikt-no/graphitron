@@ -497,7 +497,33 @@ rename must not sweep them. The retirement inventory lists them explicitly as do
 
 ### Slice 4: Lift R281 (focus) and the derived layer
 
-The R281 classification corpus is the primary lift target. Migrate `DimensionTuple`
+**Landed, in two steps.** Slice 4a re-derived `OutputField.requiresReFetch()` and the validator's
+`dispatchPerformsReFetch` mirror over `target().shape()` / `operation()` / `source()` (the strict bare
+`TargetShape.Table` guard, behaviour-preserving against the old `mapping() != Mapping.Table` gate), removing
+the only production/internal readers of the bridges. Slice 4b migrated the `@classified` corpus harness onto
+the new axes and deleted the bridges and the four retired types (`Carrier` / `Intent` / `Mapping` /
+`SourceCardinality`). Decisions taken in 4b (a `principles-architect` self-check on the comparison-altitude
+fork informed these):
+
+- The `@classified` directive's `carrier:` / `intent:` / `mapping:` / `sourceCardinality:` became the
+  `wrapper(shape)` pairs: `source:` (flat `SourceWrapper` {Query, Mutation, OnlyChild, Child} + the existing
+  `sourceShape:`), `operation:` (the 15 `Operation` arms), and `target:` (`TargetWrapper` {Single, List}) +
+  `targetShape:` (the 7 `TargetShape` arms). The connection coordinate pins the decomposition as
+  `target(Single, Connection)`.
+- `DimensionTuple` compares each axis at the altitude the directive can express, not the payload: `Source`
+  by full structural equality (payload-free, fully reconstructible), `Operation` by arm **type token**, and
+  `Target` by a `(wrapper, outer-shape)` type-token pair (the `Connection` inner shape is not asserted at the
+  connection coordinate). The tokens are resolved from the seals via `sealedLeaves`-backed name maps, so the
+  SDL-vs-Java mirror pins the name set; per the architect, the coordinates are type tokens rather than raw
+  strings. The corpus thus asserts **coverage equivalence** (which arm the classifier lands on), exactly the
+  guarantee the old flat-enum corpus gave; the arm payloads the directive cannot reconstruct are exercised
+  behaviourally by the pipeline / execution tiers.
+- The recommended `leafReconstructsFromCoordinate` test is **deferred** (not landed this slice): the old
+  corpus never pinned payloads either (`Intent` / `Mapping` were flat, so `.equals()` was identity), so no
+  guarantee regressed, and the arm payloads are already exercised by the execution tier. It remains a
+  worthwhile follow-on completeness pin.
+
+Migrate `DimensionTuple`
 (`(Carrier, Intent, Mapping)` to `(Source, Operation, Target)`) and the `@classified` directive.
 Each endpoint is a `wrapper(shape)` pair: `source:` is the arrival wrapper
 `{Root(Query | Mutation) | OnlyChild | Child}` plus a `sourceShape:` for the nested arms;
@@ -557,6 +583,13 @@ The no-remnants mandate, made enforceable rather than aspirational:
   `rewrite-design-principles.adoc`) to the new vocabulary. (`getting-started.adoc` does not name
   the axes, its only "intent" is colloquial, so it is out of scope.) The user-facing-doc check
   applies.
+- **Test-comment prose.** Slice 4 migrated the load-bearing `@classified` directives but left the
+  explanatory prose comments that describe each verdict in the old `(carrier, intent, mapping)`
+  vocabulary: the per-example block comments in `ClassifiedCorpus` (e.g. "Source / Fetch / Table",
+  "carrier Mutation, mapping Record", a stray `Mapping.Record`) and the corpus cross-reference comments
+  in `GraphitronSchemaBuilderTest` (which quote `@classified(carrier: …)` verbatim). The remnant grep is
+  the backstop that these capitalized type names are gone; sweep the prose to the new vocabulary as part
+  of this gate.
 - **Changelog.** The R290/R299/R305 changelog entries describe a model that no longer
   exists; add a forward note so a reader is not misled, without rewriting history.
 
