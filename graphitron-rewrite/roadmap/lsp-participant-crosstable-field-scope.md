@@ -1,7 +1,7 @@
 ---
 id: R331
 title: "LSP @field(name:) validation on @table-interface participant cross-table reference fields scopes to the participant @table instead of the @reference terminal table"
-status: Spec
+status: Ready
 bucket: bug
 theme: lsp
 depends-on: []

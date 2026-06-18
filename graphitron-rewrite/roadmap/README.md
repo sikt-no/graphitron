@@ -31,9 +31,9 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R115` | Enumerate the capabilities graphitron delivers | Spec |  | [plan](capability-catalog.md) |
 | `R109` | How-to recipe and Sakila fixture for grouped collections via Field<Result<R>> @externalField + multiset | Spec |  | [plan](list-valued-external-field-multiset.md) |
 | `R212` | IntelliJ plugin wrapping graphitron:dev LSP | Spec | 2026-05-21 | [plan](intellij-lsp-plugin.md) |
-| `R331` | LSP @field(name:) validation on @table-interface participant cross-table reference fields scopes to the participant @table instead of the @reference terminal table | Spec | 2026-06-18 | [plan](lsp-participant-crosstable-field-scope.md) |
 | `R269` | Null-guard split-query key extraction for nullable to-one records | Spec | 2026-06-02 <sub>created 2026-06-01</sub> | [plan](nullable-to-one-record-into-npe.md) |
 | `R112` | Operation-driven test corpus, capability catalog, and runtime trace <sub>blocked by: [capability-catalog](capability-catalog.md)</sub> | Spec |  | [plan](operation-driven-test-corpus.md) |
+| `R331` | LSP @field(name:) validation on @table-interface participant cross-table reference fields scopes to the participant @table instead of the @reference terminal table | Ready | 2026-06-18 | [plan](lsp-participant-crosstable-field-scope.md) |
 
 ---
 
@@ -282,7 +282,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R90` [**LSP Javadoc surfacing + per-line definitions + @externalField + argMapping**](lsp-javaparser-javadoc-and-definitions.md) — Backlog, Backlog
 - `R118` [**Graphitron MCP server: live catalog discovery and docs RAG in graphitron:dev**](graphitron-mcp-server.md) — Backlog, feature
 - `R212` [**IntelliJ plugin wrapping graphitron:dev LSP**](intellij-lsp-plugin.md) — Spec, feature
-- `R331` [**LSP @field(name:) validation on @table-interface participant cross-table reference fields scopes to the participant @table instead of the @reference terminal table**](lsp-participant-crosstable-field-scope.md) — Spec, bug
+- `R331` [**LSP @field(name:) validation on @table-interface participant cross-table reference fields scopes to the participant @table instead of the @reference terminal table**](lsp-participant-crosstable-field-scope.md) — Ready, bug
 - `R99` [**LSP classpath scan misses sibling modules when dev goal runs from a sub-module**](lsp-submodule-sibling-classpath.md) — Backlog, feature
 - `R152` [**Scope @nodeId(typeName:) hover column lookup to the @node type's @table**](lsp-nodetype-hover-column-scoping.md) — Backlog, bug
 
