@@ -2,6 +2,7 @@ package no.sikt.graphitron.rewrite.generators;
 
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.TypeSpec;
+import no.sikt.graphitron.rewrite.RewriteContext;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
 import no.sikt.graphitron.rewrite.model.CallParam;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
@@ -13,7 +14,12 @@ import no.sikt.graphitron.rewrite.model.ValueShape;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
 
+import java.nio.file.Path;
+import java.util.List;
+import java.util.Map;
+
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_OUTPUT_PACKAGE;
+import static java.util.stream.Collectors.toMap;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
@@ -86,11 +92,12 @@ class JooqRecordServiceParamPipelineTest {
             .as("the two plain @field columns bind on the column axis, each a resolved ColumnRef")
             .extracting(cb -> cb.sdlFieldName() + "->" + cb.column().sqlName())
             .containsExactly("title->title", "releaseYear->release_year");
-        assertThat(jr.keyDecode()).as("the @nodeId field is the record's identity").isPresent();
-        var kd = jr.keyDecode().get();
+        assertThat(jr.keyDecodes()).as("the @nodeId field is the record's identity").hasSize(1);
+        var kd = jr.keyDecodes().get(0);
         assertThat(kd.sdlFieldName()).as("the decode carries its own Map key").isEqualTo("filmId");
         assertThat(kd.typeId()).isEqualTo("Film");
-        assertThat(kd.keyColumns()).extracting(c -> c.sqlName()).containsExactly("film_id");
+        assertThat(kd.targetColumns()).extracting(c -> c.sqlName()).containsExactly("film_id");
+        assertThat(kd.nonNull()).as("filmId is ID! → non-null identity").isTrue();
     }
 
     @Test
@@ -111,8 +118,8 @@ class JooqRecordServiceParamPipelineTest {
         var jr = carrier(COMPOSITE_KEY_SDL, "modifyFilmActor", false);
         assertThat(jr.table().recordClass().toString()).isEqualTo(FILM_ACTOR_RECORD_FQN);
         assertThat(jr.columnBindings()).isEmpty();
-        assertThat(jr.keyDecode()).isPresent();
-        assertThat(jr.keyDecode().get().keyColumns())
+        assertThat(jr.keyDecodes()).hasSize(1);
+        assertThat(jr.keyDecodes().get(0).targetColumns())
             .extracting(c -> c.sqlName())
             .containsExactly("actor_id", "film_id");
         assertThat(findSpec("QueryFetchers", COMPOSITE_KEY_SDL).methodSpecs())
@@ -195,10 +202,13 @@ class JooqRecordServiceParamPipelineTest {
     // ===== Rejections (honest, validate-time UnclassifiedField) =====
 
     @Test
-    void foreignTableNodeId_rejectsWithLiftedMismatchMessage() {
-        // The param is a FilmRecord, but @nodeId(typeName: "FilmActor") decodes into a FilmActorRecord.
-        // The lifted record-type-mismatch gate rejects, naming both records — never a decode helper
-        // whose record type mismatches the param.
+    void foreignTableNodeIdWithNoFk_rejectsWithFkCountMessage() {
+        // R315: the param is a FilmRecord, and @nodeId(typeName: "FilmActor") references a different
+        // table (film_actor) → the cross-table FK branch. There is no foreign key whose source is `film`
+        // referencing `film_actor` (the FK runs the other way, film_actor → film), so the deduction
+        // finds zero directional FKs and rejects with the fk-count message. The old R311 "A NodeId
+        // cannot be decoded into a different record type" gate (:325) is gone — a foreign table is now a
+        // legitimate FK-reference shape when an FK connects them, and an honest zero-FK rejection when not.
         var sdl = """
             type Film implements Node @table(name: "film") @node { id: ID! }
             type FilmActor implements Node @table(name: "film_actor") @node { id: ID! }
@@ -213,13 +223,18 @@ class JooqRecordServiceParamPipelineTest {
         var field = TestSchemaHelper.buildSchema(sdl).field("Query", "modifyMismatch");
         assertThat(field).isInstanceOf(UnclassifiedField.class);
         assertThat(((UnclassifiedField) field).reason())
-            .contains("FilmRecord")
-            .contains("FilmActorRecord")
-            .contains("@nodeId(typeName: \"FilmActor\")");
+            .contains("no foreign key found")
+            .contains("film")
+            .contains("film_actor");
     }
 
     @Test
-    void twoNodeIdFields_reject() {
+    void twoNodeIdFields_classifyAsTwoKeyDecodes() {
+        // R315 flips the former twoNodeIdFields_reject: the :266 single-@nodeId gate is gone, so two
+        // @nodeId fields are legal. Here both reference Film (== the param record's table), so both are
+        // same-table identity decodes resolving to film_id; their overlapping-column value-agreement is
+        // R322's runtime concern, deliberately not asserted here. The pin is that classification no
+        // longer rejects.
         var sdl = """
             type Film implements Node @table(name: "film") @node { id: ID! }
             input ModifyTwoIdInput {
@@ -232,9 +247,12 @@ class JooqRecordServiceParamPipelineTest {
             }
             """;
         var field = TestSchemaHelper.buildSchema(sdl).field("Query", "modifyTwoId");
-        assertThat(field).isInstanceOf(UnclassifiedField.class);
-        assertThat(((UnclassifiedField) field).reason())
-            .contains("more than one @nodeId");
+        assertThat(field).as("two @nodeId fields no longer reject").isNotInstanceOf(UnclassifiedField.class);
+        var jr = carrier(sdl, "modifyTwoId", false);
+        assertThat(jr.keyDecodes()).hasSize(2);
+        assertThat(jr.keyDecodes())
+            .as("both reference Film, the param's own table → both resolve to its identity column")
+            .allSatisfy(kd -> assertThat(kd.targetColumns()).extracting(c -> c.sqlName()).containsExactly("film_id"));
     }
 
     @Test
@@ -294,10 +312,278 @@ class JooqRecordServiceParamPipelineTest {
         assertThat(((UnclassifiedField) field).reason()).contains("cardinalities");
     }
 
+    // ===== R315 FK-reference @nodeId (cross-table) =====
+
+    private static final String FILM_ENDORSEMENT_RECORD_FQN =
+        "no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmEndorsementRecord";
+
+    private static RewriteContext fixtureCtx(String jooqPackage) {
+        return new RewriteContext(List.of(), Path.of(""), Path.of(""),
+            DEFAULT_OUTPUT_PACKAGE, jooqPackage, Map.of());
+    }
+
+    private static final RewriteContext NODEID_CTX = fixtureCtx("no.sikt.graphitron.rewrite.nodeidfixture");
+    private static final RewriteContext IDREF_CTX = fixtureCtx("no.sikt.graphitron.rewrite.idreffixture");
+
+    private static final String PURE_FK_SDL = """
+        type Film implements Node @table(name: "film") @node { id: ID! }
+        type Actor implements Node @table(name: "actor") @node { id: ID! }
+        input AssignFilmActorInput {
+            filmId: ID! @nodeId(typeName: "Film")
+            actorId: ID! @nodeId(typeName: "Actor")
+        }
+        type Query {
+            assignFilmActor(in: AssignFilmActorInput!): String
+                @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "modifyFilmActorRecord"})
+        }
+        """;
+
+    @Test
+    void pureFkReferences_filmActorSmoke_twoKeyDecodesResolveFkChildColumns() {
+        // The motivating shape: every @nodeId is an FK reference to another node type. Two keyDecodes
+        // resolve (FK deduced). Smoke only — film_actor's PK columns ARE its FK columns, so this cannot
+        // discriminate FK resolution from name-match; the renamed-FK fixtures below do that.
+        var jr = carrier(PURE_FK_SDL, "assignFilmActor", false);
+        assertThat(jr.table().recordClass().toString()).isEqualTo(FILM_ACTOR_RECORD_FQN);
+        assertThat(jr.keyDecodes())
+            .extracting(kd -> kd.sdlFieldName() + "->" + kd.targetColumns().get(0).sqlName())
+            .containsExactlyInAnyOrder("filmId->film_id", "actorId->actor_id");
+        assertThat(findSpec("QueryFetchers", PURE_FK_SDL).methodSpecs())
+            .extracting(MethodSpec::name).contains("createFilmActorRecord");
+    }
+
+    private static final String ENDORSEMENT_FK_SDL = """
+        type Film implements Node @table(name: "film") @node { id: ID! }
+        input EndorseFilmInput {
+            filmId: ID! @nodeId(typeName: "Film")
+            note: String @field(name: "note")
+        }
+        type Query {
+            endorseFilm(in: EndorseFilmInput!): String
+                @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "modifyFilmEndorsementRecord"})
+        }
+        """;
+
+    @Test
+    void fkConstraintNotNameMatch_filmEndorsement_targetColumnsAreRenamedFkChild() {
+        // The real pin: the FK child column (endorsed_film) is named differently from the referenced
+        // parent key (film.film_id). FK-constraint resolution must land the decoded Film id on
+        // endorsed_film — a name-match shortcut would produce [film_id] or fail.
+        var jr = carrier(ENDORSEMENT_FK_SDL, "endorseFilm", false);
+        assertThat(jr.table().recordClass().toString()).isEqualTo(FILM_ENDORSEMENT_RECORD_FQN);
+        assertThat(jr.keyDecodes()).hasSize(1);
+        var kd = jr.keyDecodes().get(0);
+        assertThat(kd.sdlFieldName()).isEqualTo("filmId");
+        assertThat(kd.targetColumns())
+            .as("decoded Film id lands on the renamed FK child column, not a same-named film_id")
+            .extracting(c -> c.sqlName()).containsExactly("endorsed_film");
+        assertThat(jr.columnBindings())
+            .extracting(cb -> cb.sdlFieldName() + "->" + cb.column().sqlName()).containsExactly("note->note");
+        assertThat(findSpec("QueryFetchers", ENDORSEMENT_FK_SDL).methodSpecs())
+            .extracting(MethodSpec::name).contains("createFilmEndorsementRecord");
+    }
+
+    @Test
+    void tablePresentOnServiceRecordParam_rejectsWithDropTableMessage() {
+        // Convergence by rejection (requirement #3): the motivating input WITH @table classifies as a
+        // TableInputType (Graphitron-owns-DML), which contradicts a jOOQ-record @service param. Reject
+        // honestly ("drop @table") instead of the bean path's misleading "has no fields matching". The
+        // same input WITHOUT @table (PURE_FK_SDL above) classifies to the JooqRecord carrier.
+        var sdl = """
+            type Film implements Node @table(name: "film") @node { id: ID! }
+            type Actor implements Node @table(name: "actor") @node { id: ID! }
+            input AssignFilmActorTableInput @table(name: "film_actor") {
+                filmId: ID! @nodeId(typeName: "Film")
+                actorId: ID! @nodeId(typeName: "Actor")
+            }
+            type Query {
+                assignFilmActorTable(in: AssignFilmActorTableInput!): String
+                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "modifyFilmActorRecord"})
+            }
+            """;
+        var field = TestSchemaHelper.buildSchema(sdl).field("Query", "assignFilmActorTable");
+        assertThat(field).isInstanceOf(UnclassifiedField.class);
+        assertThat(((UnclassifiedField) field).reason())
+            .contains("@table")
+            .contains("drop @table")
+            .doesNotContain("has no fields matching");
+    }
+
+    private static final String MIXED_SDL = """
+        type Film implements Node @table(name: "film") @node { id: ID! }
+        type FilmEndorsement implements Node @table(name: "film_endorsement") @node { id: ID! }
+        input EditEndorsementInput {
+            endorsementId: ID @nodeId(typeName: "FilmEndorsement")
+            filmId: ID! @nodeId(typeName: "Film")
+            note: String @field(name: "note")
+        }
+        type Query {
+            editEndorsement(in: EditEndorsementInput!): String
+                @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "modifyFilmEndorsementRecord"})
+        }
+        """;
+
+    @Test
+    void mixedIdentityFkReferenceAndPlainField() {
+        // A record carrying its own @nodeId identity (endorsementId → the PK), an FK-reference @nodeId
+        // (filmId → the FK child column), and a plain @field (note). Two keyDecodes resolve to different
+        // target columns; one ColumnBinding.
+        var jr = carrier(MIXED_SDL, "editEndorsement", false);
+        assertThat(jr.keyDecodes()).hasSize(2);
+        var byField = jr.keyDecodes().stream().collect(toMap(kd -> kd.sdlFieldName(), kd -> kd));
+        assertThat(byField.get("endorsementId").targetColumns())
+            .as("same-table identity → the record's own PK").extracting(c -> c.sqlName()).containsExactly("endorsement_id");
+        assertThat(byField.get("endorsementId").nonNull()).as("ID → nullable identity").isFalse();
+        assertThat(byField.get("filmId").targetColumns())
+            .as("cross-table FK reference → the FK child column").extracting(c -> c.sqlName()).containsExactly("endorsed_film");
+        assertThat(byField.get("filmId").nonNull()).as("ID! → non-null reference").isTrue();
+        assertThat(jr.columnBindings())
+            .extracting(cb -> cb.sdlFieldName() + "->" + cb.column().sqlName()).containsExactly("note->note");
+    }
+
+    private static final String REORDERED_SDL = """
+        type ReorderedPkParent implements Node @table(name: "reordered_pk_parent") @node { id: ID! }
+        input AssignReorderedInput {
+            ref: ID! @nodeId(typeName: "ReorderedPkParent")
+        }
+        type Query {
+            assignReordered(in: AssignReorderedInput!): String
+                @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "modifyReorderedFkChild"})
+        }
+        """;
+
+    @Test
+    void reorderedFk_targetColumnsReconciledToDecodeOrder() {
+        // Composite / reordered-FK decode-order reconciliation (D3): the FK references
+        // reordered_pk_parent (pk_b, pk_c, pk_a) while the node key is (pk_a, pk_b, pk_c). The decode's
+        // targetColumns must align with node-key (decode) order [fk_a, fk_b, fk_c], NOT the FK
+        // declaration order [fk_b, fk_c, fk_a] a positional zip would land on.
+        var jr = carrier(REORDERED_SDL, "assignReordered", false, NODEID_CTX);
+        assertThat(jr.keyDecodes()).hasSize(1);
+        assertThat(jr.keyDecodes().get(0).targetColumns())
+            .extracting(c -> c.sqlName()).containsExactly("fk_a", "fk_b", "fk_c");
+    }
+
+    @Test
+    void referenceOnSameTableNodeId_rejectsAsSelfReference() {
+        // An @reference on a @nodeId targeting the param's own table can only name a self-FK — out of
+        // scope. Reject rather than silently taking the identity branch and ignoring the directive.
+        var sdl = """
+            type Film implements Node @table(name: "film") @node { id: ID! }
+            input SelfRefInput {
+                filmId: ID! @nodeId(typeName: "Film") @reference(path: [{key: "film_endorsement_endorsed_film_fkey"}])
+            }
+            type Query {
+                selfRef(in: SelfRefInput!): String
+                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "modifyFilmRecord"})
+            }
+            """;
+        var field = TestSchemaHelper.buildSchema(sdl).field("Query", "selfRef");
+        assertThat(field).isInstanceOf(UnclassifiedField.class);
+        assertThat(((UnclassifiedField) field).reason())
+            .contains("self-foreign-key")
+            .contains("out of scope");
+    }
+
+    @Test
+    void nodeKeyColumnNotCoveredByFk_rejects() {
+        // child_ref → parent_node FK references the parent's alternate unique column (alt_key), while the
+        // ParentNode NodeType's key is pk_id. The named FK therefore does not cover the node key column,
+        // which rejects (the cross-table failure mode that the removed :325 gate's hazard relocates to).
+        var sdl = """
+            type ParentNode implements Node @table(name: "parent_node") @node { id: ID! }
+            input AssignChildRefInput {
+                parentRef: ID! @nodeId(typeName: "ParentNode") @reference(path: [{key: "child_ref_parent_alt_key_fkey"}])
+            }
+            type Query {
+                assignChildRef(in: AssignChildRefInput!): String
+                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "modifyChildRef"})
+            }
+            """;
+        var field = TestSchemaHelper.buildSchema(sdl, NODEID_CTX).field("Query", "assignChildRef");
+        assertThat(field).isInstanceOf(UnclassifiedField.class);
+        assertThat(((UnclassifiedField) field).reason())
+            .contains("pk_id")
+            .contains("not covered by foreign key");
+    }
+
+    @Test
+    void explicitReferenceKey_studierett_selectsNamedFk() {
+        // studierett carries TWO FKs to studieprogram; @reference(key:) selects which one a reference
+        // @nodeId resolves through. Pins the directive-arg → selected-FK binding the deduced-FK tests
+        // cannot reach (studierett.registrar_studieprogram is the renamed FK child column).
+        var sdl = """
+            type Studieprogram implements Node @table(name: "studieprogram") @node { id: ID! }
+            input AssignStudierettInput {
+                programId: ID! @nodeId(typeName: "Studieprogram") @reference(path: [{key: "studierett_registrar_studieprogram_fkey"}])
+            }
+            type Query {
+                assignStudierett(in: AssignStudierettInput!): String
+                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "modifyStudierett"})
+            }
+            """;
+        var jr = carrier(sdl, "assignStudierett", false, IDREF_CTX);
+        assertThat(jr.keyDecodes()).hasSize(1);
+        assertThat(jr.keyDecodes().get(0).targetColumns())
+            .as("@reference(key:) selects the renamed FK → its child column")
+            .extracting(c -> c.sqlName()).containsExactly("registrar_studieprogram");
+    }
+
+    @Test
+    void nodeIdWithoutTypeName_rejects() {
+        // Unchanged from R311: @nodeId on a jOOQ-record param must name its NodeType explicitly (the
+        // param record type alone does not name the NodeType to decode against).
+        var sdl = """
+            type Film implements Node @table(name: "film") @node { id: ID! }
+            input ModifyNoTypeNameInput {
+                filmId: ID! @nodeId
+            }
+            type Query {
+                modifyNoTypeName(in: ModifyNoTypeNameInput!): String
+                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "modifyFilmRecord"})
+            }
+            """;
+        var field = TestSchemaHelper.buildSchema(sdl).field("Query", "modifyNoTypeName");
+        assertThat(field).isInstanceOf(UnclassifiedField.class);
+        assertThat(((UnclassifiedField) field).reason()).contains("typeName");
+    }
+
+    @Test
+    void ambiguousFk_studierett_rejectsWithoutKey() {
+        // The same two-FK shape without @reference(key:) is ambiguous → reject, enumerating the candidate
+        // FK names so the author can disambiguate.
+        var sdl = """
+            type Studieprogram implements Node @table(name: "studieprogram") @node { id: ID! }
+            input AssignStudierettAmbigInput {
+                programId: ID! @nodeId(typeName: "Studieprogram")
+            }
+            type Query {
+                assignStudierettAmbig(in: AssignStudierettAmbigInput!): String
+                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "modifyStudierett"})
+            }
+            """;
+        var field = TestSchemaHelper.buildSchema(sdl, IDREF_CTX).field("Query", "assignStudierettAmbig");
+        assertThat(field).isInstanceOf(UnclassifiedField.class);
+        assertThat(((UnclassifiedField) field).reason())
+            .contains("multiple foreign keys")
+            .contains("studierett_registrar_studieprogram_fkey")
+            .contains("studierett_studieprogram_id_fkey");
+    }
+
     // ===== Helpers =====
 
     private static CallSiteExtraction.JooqRecord carrier(String sdl, String queryField, boolean list) {
-        var field = TestSchemaHelper.buildSchema(sdl).field("Query", queryField);
+        return carrier(TestSchemaHelper.buildSchema(sdl).field("Query", queryField), list);
+    }
+
+    /** Variant against a fixture catalog (nodeidfixture / idreffixture) supplied as a custom context. */
+    private static CallSiteExtraction.JooqRecord carrier(String sdl, String queryField, boolean list,
+            RewriteContext ctx) {
+        return carrier(TestSchemaHelper.buildSchema(sdl, ctx).field("Query", queryField), list);
+    }
+
+    private static CallSiteExtraction.JooqRecord carrier(
+            no.sikt.graphitron.rewrite.model.GraphitronField field, boolean list) {
         var shape = fromArgShape((ServiceField) field);
         ValueShape.JooqRecordInput jr = list
             ? (ValueShape.JooqRecordInput) ((ValueShape.ListOf) shape).elementShape()

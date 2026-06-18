@@ -1,6 +1,7 @@
 package no.sikt.graphitron.rewrite;
 
 import no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmActorRecord;
+import no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmEndorsementRecord;
 import no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord;
 import no.sikt.graphitron.rewrite.test.jooq.tables.records.LanguageRecord;
 import org.jooq.DSLContext;
@@ -687,6 +688,55 @@ class TestServiceStub {
      */
     public static java.util.List<LanguageRecord> childModifyFilmRecord(
             java.util.List<org.jooq.Row1<Integer>> keys, FilmRecord in) {
+        throw new UnsupportedOperationException();
+    }
+
+    // ===== R315 FK-reference @nodeId on jOOQ-record @service input param fixtures =====
+
+    /**
+     * R315 FK-constraint-not-name-match pin: a {@link FilmEndorsementRecord} whose FK child column
+     * ({@code endorsed_film}) is named differently from the referenced parent key ({@code film.film_id}).
+     * An FK-reference {@code @nodeId(typeName: "Film")} must resolve the target column through the FK
+     * constraint (landing the decoded Film id on {@code endorsed_film}), never a name-match shortcut.
+     * Also the mixed identity + FK-reference + plain-{@code @field} fixture (its serial PK
+     * {@code endorsement_id} is a nullable same-table identity, its {@code endorsed_film} an FK reference,
+     * its {@code note} a plain column).
+     */
+    public static String modifyFilmEndorsementRecord(FilmEndorsementRecord in) {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
+     * R315 composite / reordered-FK decode-order reconciliation pin (nodeidfixture catalog): a
+     * {@code ReorderedFkChildRecord} whose FK references {@code reordered_pk_parent (pk_b, pk_c, pk_a)}
+     * while the parent NodeType's key is {@code (pk_a, pk_b, pk_c)}. The decode's target columns must be
+     * reconciled to node-key (decode) order {@code [fk_a, fk_b, fk_c]}, not the FK declaration order.
+     */
+    public static String modifyReorderedFkChild(
+            no.sikt.graphitron.rewrite.nodeidfixture.tables.records.ReorderedFkChildRecord in) {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
+     * R315 explicit {@code @reference(key:)} disambiguation pin (idreffixture catalog): a
+     * {@code StudierettRecord} whose table carries <em>two</em> FKs to {@code studieprogram}
+     * ({@code studieprogram_id} and the renamed {@code registrar_studieprogram}). {@code @reference(key:)}
+     * selects which FK an FK-reference {@code @nodeId(typeName: "Studieprogram")} resolves through;
+     * omitting it gives the ambiguous-FK rejection.
+     */
+    public static String modifyStudierett(
+            no.sikt.graphitron.rewrite.idreffixture.tables.records.StudierettRecord in) {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
+     * R315 node-key-not-covered rejection pin (nodeidfixture catalog): a {@code ChildRefRecord} whose FK
+     * ({@code child_ref.parent_alt_key → parent_node.alt_key}) references the parent's <em>alternate</em>
+     * unique column, while the {@code ParentNode} NodeType's key is {@code pk_id}. An FK-reference
+     * {@code @nodeId(typeName: "ParentNode")} through that FK leaves {@code pk_id} uncovered, which rejects.
+     */
+    public static String modifyChildRef(
+            no.sikt.graphitron.rewrite.nodeidfixture.tables.records.ChildRefRecord in) {
         throw new UnsupportedOperationException();
     }
 }

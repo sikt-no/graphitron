@@ -4075,6 +4075,55 @@ class GraphQLQueryTest {
         assertThat(data).extractingByKey("modifyFilmActorRecord").isEqualTo("filmActor:1:2");
     }
 
+    // ===== R315: FK-reference @nodeId on a jOOQ-record @service param (cross-table) =====
+
+    @Test
+    void endorseFilm_fkReferenceLandsOnRenamedChildColumn() {
+        // R315 end-to-end: createFilmEndorsementRecord decodes the FK-reference `filmId` @nodeId
+        // (typeName "Film") and — through the film_endorsement → film FK — loads it onto the renamed
+        // child column endorsed_film (NOT a same-named film_id). The serial PK endorsement_id is never
+        // in the input, so it stays unset (changed=false) and the service-owned INSERT lets the database
+        // assign it. The service reads endorsed_film back from the persisted row: the decoded Film id (3)
+        // landed on the FK child column.
+        String filmId3 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Film", 3);
+        Map<String, Object> data = execute(
+            "mutation { endorseFilm(in: {filmId: \"" + filmId3 + "\", note: \"great\"}) }");
+        assertThat(data).extractingByKey("endorseFilm").isEqualTo("endorsed_film=3");
+    }
+
+    @Test
+    void describeEndorsement_omittedKeys_leaveColumnsUnwritten() {
+        // R315 null-semantics (D4): an omitted nullable FK reference and an omitted nullable plain column
+        // are not loaded — changed=false — so they would be excluded from the INSERT/UPDATE. The only
+        // tier that can observe changed=false exclusion.
+        Map<String, Object> data = execute("mutation { describeEndorsement(in: {}) }");
+        assertThat(data).extractingByKey("describeEndorsement")
+            .isEqualTo("endorsedFilm[changed=false,val=null] note[changed=false,val=null]");
+    }
+
+    @Test
+    void describeEndorsement_explicitNull_writesNull() {
+        // R315 null-semantics (D4): an explicit null on the nullable FK reference and the nullable plain
+        // column is present (changed=true) and loaded as NULL — distinct from omitted.
+        Map<String, Object> data = execute(
+            "mutation { describeEndorsement(in: {filmId: null, note: null}) }");
+        assertThat(data).extractingByKey("describeEndorsement")
+            .isEqualTo("endorsedFilm[changed=true,val=null] note[changed=true,val=null]");
+    }
+
+    @Test
+    void describeEndorsement_setValues_decodeAndLoad() {
+        // R315 null-semantics (D4): a present nullable FK reference decodes-and-loads onto the FK child
+        // column (endorsed_film = the decoded Film id), and a present plain value loads — the most direct
+        // pin of the generalization that nullable FK-reference decodes follow the same conditional-load
+        // path as plain columns.
+        String filmId5 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Film", 5);
+        Map<String, Object> data = execute(
+            "mutation { describeEndorsement(in: {filmId: \"" + filmId5 + "\", note: \"set\"}) }");
+        assertThat(data).extractingByKey("describeEndorsement")
+            .isEqualTo("endorsedFilm[changed=true,val=5] note[changed=true,val=set]");
+    }
+
     // ===== R77 Phase B: missing-vs-null on single-row INSERT (containsKey-gated DEFAULT) =====
 
     @Test

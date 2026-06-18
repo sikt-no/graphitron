@@ -3,7 +3,6 @@ package no.sikt.graphitron.rewrite.model;
 import no.sikt.graphitron.javapoet.ClassName;
 
 import java.util.List;
-import java.util.Optional;
 
 /**
  * How to extract one argument value from a GraphQL execution context at the fetcher call site.
@@ -319,20 +318,23 @@ public sealed interface CallSiteExtraction
      * {@code Map}" goal, opposite binding axis. Where {@link InputBean} binds SDL fields on the
      * Java-<em>member</em> axis ({@link FieldBinding#javaFieldName()}), a {@code JooqRecord} binds them
      * on the <em>column</em> axis: each plain field names a jOOQ column through {@code @field(name:)}
-     * (carried as a resolved {@link ColumnBinding}), and an optional {@code @nodeId} field decodes the
-     * record's scalar key columns (carried as a {@link RecordKeyDecode}).
+     * (carried as a resolved {@link ColumnBinding}), and each {@code @nodeId} field decodes a node
+     * identity into resolved target columns on this record (carried as a {@link RecordKeyDecode}). A
+     * record may carry several {@code @nodeId} fields (R315): a same-table identity decode loads the
+     * record's own key columns (R311), a cross-table FK-reference decode loads the foreign key's child
+     * columns on this record (the common "status / history / junction row" shape).
      *
      * <p>{@code table} is read straight off the param's classified
      * {@link GraphitronType.JooqTableRecordInputType}; the record class is {@code table.recordClass()}
      * (the two name the same class by construction, so no separate component is carried, mirroring
      * {@link NodeIdDecodeRecord} which derives its record class from {@code table} too). The two binding
-     * axes are orthogonal — {@code columnBindings} is the SET payload, {@code keyDecode} is the identity
-     * — and either may be empty (a record built from only an identity, or only plain columns), but not
-     * both.
+     * axes are orthogonal — {@code columnBindings} is the SET payload, {@code keyDecodes} are the
+     * {@code @nodeId}-decoded identities / FK references — and either may be empty (a record built from
+     * only identities/references, or only plain columns), but not both.
      *
      * <p>Produced only by {@code InputBeanResolver} (the SDL-aware post-processor that already holds the
      * classified type), every {@code JooqRecord} is fully resolved: a non-null {@code table}, resolved
-     * {@code ColumnRef}s on every binding, and a present-or-absent (never partial) {@code keyDecode}.
+     * {@code ColumnRef}s on every binding, and a fully-resolved (possibly empty) {@code keyDecodes} list.
      * Consumed by {@code JooqRecordInstantiationEmitter} (the {@code create<Record>} /
      * {@code create<Record>List} helper pair, reached from either the root-coordinate
      * {@code ServiceMethodCallEmitter} via {@link no.sikt.graphitron.rewrite.model.ValueShape.JooqRecordInput}
@@ -344,20 +346,21 @@ public sealed interface CallSiteExtraction
      */
     record JooqRecord(TableRef table,
                       List<ColumnBinding> columnBindings,
-                      Optional<RecordKeyDecode> keyDecode) implements CallSiteExtraction {
+                      List<RecordKeyDecode> keyDecodes) implements CallSiteExtraction {
         public JooqRecord {
             if (table == null) {
                 throw new IllegalArgumentException("JooqRecord table must be non-null");
             }
             columnBindings = List.copyOf(columnBindings);
-            if (keyDecode == null) {
-                throw new IllegalArgumentException("JooqRecord keyDecode must be non-null (use Optional.empty())");
+            if (keyDecodes == null) {
+                throw new IllegalArgumentException("JooqRecord keyDecodes must be non-null (use List.of())");
             }
-            // At-least-one-binding floor: an input with neither a SET column nor an identity decode
+            keyDecodes = List.copyOf(keyDecodes);
+            // At-least-one-binding floor: an input with neither a SET column nor a key/reference decode
             // would construct an empty record, the column-axis analogue of InputBean's empty-bindings
             // rejection. Producers reject such an input before reaching the constructor; this is the
             // structural backstop.
-            if (columnBindings.isEmpty() && keyDecode.isEmpty()) {
+            if (columnBindings.isEmpty() && keyDecodes.isEmpty()) {
                 throw new IllegalArgumentException(
                     "JooqRecord must carry at least one column binding or a key decode");
             }
@@ -385,24 +388,35 @@ public sealed interface CallSiteExtraction
     }
 
     /**
-     * The single {@code @nodeId} identity field of a {@link JooqRecord}: the decoded key columns that
-     * <em>are</em> the record's identity. The wire mechanism is R195's
-     * ({@code encoderClass.decodeValues(typeId, nodeId)} then a positional
-     * {@code record.fromArray(values, Tables.<T>.<keyCol>...)}); only the projection target differs from
-     * {@link NodeIdDecodeRecord}, so this is a distinct carrier rather than a reuse.
+     * One {@code @nodeId} decode of a {@link JooqRecord}: the wire NodeId is decoded
+     * ({@code encoderClass.decodeValues(typeId, nodeId)}) and the decoded values load into
+     * {@code targetColumns} on the enclosing {@link JooqRecord#table()}. Only the projection target
+     * differs from {@link NodeIdDecodeRecord}, so this is a distinct carrier rather than a reuse.
      *
      * <p>Unlike {@link NodeIdDecodeRecord} (which rides as a {@link FieldBinding} leaf and inherits its
-     * {@code Map} key from {@link FieldBinding#sdlFieldName()}), a {@code RecordKeyDecode} is a bare
-     * {@link Optional} on {@link JooqRecord} with no enclosing {@code FieldBinding}, so it must carry its
-     * own {@code sdlFieldName} — the {@code Map} key the helper writes {@code raw.get("<idField>")} for.
-     * It carries no {@code nonNull}: a {@code @nodeId} at the record's identity always decodes the key
-     * that is the record, so a null or type-mismatched id throws (R195 {@code ThrowOnMismatch}) whether
-     * the SDL field is {@code ID!} or {@code ID}, leaving nothing for a nullability flag to vary.
-     * {@code keyColumns} is the resolved key (one entry for a single-key table, N for a composite key),
-     * each a {@link ColumnRef} on the enclosing {@link JooqRecord#table()}.
+     * {@code Map} key from {@link FieldBinding#sdlFieldName()}), a {@code RecordKeyDecode} sits directly
+     * on {@link JooqRecord} with no enclosing {@code FieldBinding}, so it carries its own
+     * {@code sdlFieldName} — the {@code Map} key the helper reads {@code raw.get("<idField>")} for.
+     *
+     * <p>{@code targetColumns} is the resolved list of columns <em>on this record</em> the decoded
+     * values load into, in node-key (decode) order (one entry for a single-key NodeType, N for a
+     * composite key). For a same-table identity decode (R311) these are the record's own key columns;
+     * for a cross-table FK-reference decode (R315) they are the FK's child columns on this record,
+     * resolved by FK-constraint pairing in {@code BuildContext}. That identity-vs-FK distinction lives
+     * <em>only in the resolver</em>; the carrier holds the resolved target either way (see the R315
+     * spec, D1: no {@code KeyProjection} sub-axis, because both arms load the columns identically).
+     *
+     * <p>{@code nonNull} reflects the SDL field's nullability ({@code ID!} vs {@code ID}) and drives
+     * the emitter's null semantics (R315, D4), applied identically to identity and FK-reference decodes:
+     * a {@code nonNull} ({@code ID!}) decode always loads, throwing on a null / type-mismatched id (R195);
+     * a nullable ({@code ID}) decode is conditional on the wire key being present (omitted → columns left
+     * unwritten / {@code changed=false}, present-{@code null} → columns set to {@code NULL},
+     * present-value → decoded-and-loaded, a wrong-type decode still throwing). The {@code @service}
+     * method owns the insert/update, so the framework does not force even a same-table identity to be
+     * non-null; a nullable identity is a legitimate service-side upsert input.
      */
     record RecordKeyDecode(String sdlFieldName, ClassName encoderClass, String typeId,
-                           List<ColumnRef> keyColumns) {
+                           List<ColumnRef> targetColumns, boolean nonNull) {
         public RecordKeyDecode {
             if (sdlFieldName == null || sdlFieldName.isEmpty()) {
                 throw new IllegalArgumentException("RecordKeyDecode sdlFieldName must be non-empty");
@@ -413,10 +427,10 @@ public sealed interface CallSiteExtraction
             if (typeId == null || typeId.isEmpty()) {
                 throw new IllegalArgumentException("RecordKeyDecode typeId must be non-empty");
             }
-            if (keyColumns == null || keyColumns.isEmpty()) {
-                throw new IllegalArgumentException("RecordKeyDecode keyColumns must be non-empty");
+            if (targetColumns == null || targetColumns.isEmpty()) {
+                throw new IllegalArgumentException("RecordKeyDecode targetColumns must be non-empty");
             }
-            keyColumns = List.copyOf(keyColumns);
+            targetColumns = List.copyOf(targetColumns);
         }
     }
 }
