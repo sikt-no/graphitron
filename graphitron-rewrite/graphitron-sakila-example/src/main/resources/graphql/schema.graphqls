@@ -77,6 +77,8 @@ type Query {
     # GraphitronSchema.build() via .additionalType(...). Hand-written Connection types
     # (FilmsConnection, ActorsConnection) are unaffected — both paths coexist.
     stores: [Store!]! @asConnection @defaultOrder(primaryKey: true)
+    # R338 execution-tier root for the non-PK-referenced-FK @splitQuery fixture below.
+    splitParents: [SplitParent!]! @defaultOrder(primaryKey: true)
     filmsConnection(
         first: Int, last: Int, after: String, before: String
     ): FilmsConnection! @defaultOrder(primaryKey: true)
@@ -668,6 +670,26 @@ type Staff @table(name: "staff") {
     staffId:   Int!    @field(name: "STAFF_ID")
     firstName: String! @field(name: "FIRST_NAME")
     lastName:  String! @field(name: "LAST_NAME")
+}
+
+# R338 execution-tier fixture: a list @splitQuery child whose @reference FK targets a *non-PK
+# unique key* on the parent (split_parent_tag.parent_code -> split_parent.parent_code, a UNIQUE
+# column, not the parent_id PK). deriveSplitQuerySource must project the FK's referenced column
+# (parent_code) into parentInput; keying off the parent PK made the correlation predicate reference
+# an absent parentInput column and silently returned zero rows for every parent. See
+# split-query-non-pk-fk-referenced-column.md (R338).
+type SplitParent @table(name: "split_parent") {
+    parentId:   Int!    @field(name: "PARENT_ID")
+    parentCode: String! @field(name: "PARENT_CODE")
+    label:      String! @field(name: "LABEL")
+    tags: [SplitParentTag!]! @splitQuery
+        @reference(path: [{key: "split_parent_tag_parent_code_fkey"}])
+        @defaultOrder(primaryKey: true)
+}
+
+type SplitParentTag @table(name: "split_parent_tag") {
+    tagId: Int!    @field(name: "TAG_ID")
+    tag:   String! @field(name: "TAG")
 }
 
 # R61 execution-tier fixture: @externalField returning Field<TableRecord<?>> and

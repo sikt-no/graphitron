@@ -37,7 +37,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R269` | Null-guard split-query key extraction for nullable to-one records | Spec | 2026-06-02 <sub>created 2026-06-01</sub> | [plan](nullable-to-one-record-into-npe.md) |
 | `R112` | Operation-driven test corpus, capability catalog, and runtime trace <sub>blocked by: [capability-catalog](capability-catalog.md)</sub> | Spec |  | [plan](operation-driven-test-corpus.md) |
 | `R339` | @defaultOrder(primaryKey: true) ignores direction and always sorts ASC | Ready | 2026-06-19 | [plan](default-order-primary-key-direction-ignored.md) |
-| `R338` | Split-query correlation projects parent node/PK columns instead of the FK referenced columns | Ready | 2026-06-19 | [plan](split-query-non-pk-fk-referenced-column.md) |
+| `R338` | Split-query correlation projects parent node/PK columns instead of the FK referenced columns | In Review | 2026-06-19 | [plan](split-query-non-pk-fk-referenced-column.md) |
 
 ---
 
