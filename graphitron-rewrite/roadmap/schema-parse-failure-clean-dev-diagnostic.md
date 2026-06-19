@@ -1,7 +1,7 @@
 ---
 id: R344
 title: "Surface schema parse failures as clean dev-watch diagnostics, not infrastructure stack traces"
-status: In Progress
+status: In Review
 bucket: bug
 priority: 5
 theme: lsp
