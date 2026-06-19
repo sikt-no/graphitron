@@ -1,7 +1,7 @@
 ---
 id: R90
 title: "LSP Java-source surfacing: goto-definition, Javadoc, @externalField, argMapping"
-status: Spec
+status: Ready
 bucket: Backlog
 priority: 17
 theme: lsp
