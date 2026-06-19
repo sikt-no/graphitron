@@ -24,7 +24,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R322` | Runtime value-agreement check for multiple @nodeId decodes onto shared columns | In Review | 2026-06-19 <sub>created 2026-06-17</sub> | [plan](nodeid-shared-column-agreement.md) |
 | `R45` | Multi-tenant routing on top of the schema-driven ExecutionInput factory | Spec | 2026-05-20 | [plan](tenant-routing-and-execution-input.md) |
 | `R273` | Source NodeId metadata from @node + catalog PK (inferred from `implements Node`), and settle wrong-type/malformed mismatch semantics, retiring the legacy __NODE bare-ID arm | Spec | 2026-06-02 | [plan](nodeid-skip-mismatch-error-surfacing.md) |
-| `R344` | Surface schema parse failures as clean dev-watch diagnostics, not infrastructure stack traces | Spec | 2026-06-19 | [plan](schema-parse-failure-clean-dev-diagnostic.md) |
+| `R344` | Surface schema parse failures as clean dev-watch diagnostics, not infrastructure stack traces | Ready | 2026-06-19 | [plan](schema-parse-failure-clean-dev-diagnostic.md) |
 | `R300` | First-class jOOQ routine support: read functions as target-shape provenance | In Progress | 2026-06-19 <sub>created 2026-06-13</sub> | [plan](jooq-routine-fields.md) |
 | `R332` | Mark @table on input types as deprecated (signal ahead of R97 removal) | Spec | 2026-06-19 <sub>created 2026-06-18</sub> | [plan](table-on-input-deprecation-signal.md) |
 | `R13` | Faceted search on `@asConnection` | Spec |  | [plan](faceted-search.md) |
@@ -280,7 +280,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 ### lsp
 
 - `R148` [**Advance SourceLocation past description so diagnostics point at the field, not the doc block**](source-location-skips-description.md) — Backlog, bug
-- `R344` [**Surface schema parse failures as clean dev-watch diagnostics, not infrastructure stack traces**](schema-parse-failure-clean-dev-diagnostic.md) — Spec, bug
+- `R344` [**Surface schema parse failures as clean dev-watch diagnostics, not infrastructure stack traces**](schema-parse-failure-clean-dev-diagnostic.md) — Ready, bug
 - `R123` [**Parent-context-aware schema coordinates for per-directive Behavior policy**](parent-context-aware-schema-coordinates.md) — Backlog, architecture
 - `R121` [**LSP diagnostic for redundant @splitQuery on @record-parent fields**](lsp-diagnostic-redundant-splitquery-on-record.md) — Backlog, feature
 - `R118` [**Graphitron MCP server: live catalog discovery and docs RAG in graphitron:dev**](graphitron-mcp-server.md) — Backlog, feature, blocked by [mcp-server-skeleton](mcp-server-skeleton.md)
