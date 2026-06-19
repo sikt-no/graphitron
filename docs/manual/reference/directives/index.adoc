@@ -31,6 +31,7 @@ a|
 * xref:orderBy.adoc[`@orderBy`]
 * xref:record.adoc[`@record`] _(deprecated, ignored, remove from the schema)_
 * xref:reference.adoc[`@reference`]
+* xref:routine.adoc[`@routine`]
 * xref:scalarType.adoc[`@scalarType`]
 * xref:service.adoc[`@service`]
 * xref:splitQuery.adoc[`@splitQuery`]
@@ -47,7 +48,7 @@ xref:table.adoc[`@table`], xref:field.adoc[`@field`], xref:enum.adoc[`@enum`], x
 xref:reference.adoc[`@reference`], xref:sourceRow.adoc[`@sourceRow`]
 
 *Querying* +
-xref:asConnection.adoc[`@asConnection`], xref:condition.adoc[`@condition`], xref:experimental_constructType.adoc[`@experimental_constructType`], xref:externalField.adoc[`@externalField`], xref:lookupKey.adoc[`@lookupKey`], xref:splitQuery.adoc[`@splitQuery`], xref:tableMethod.adoc[`@tableMethod`]
+xref:asConnection.adoc[`@asConnection`], xref:condition.adoc[`@condition`], xref:experimental_constructType.adoc[`@experimental_constructType`], xref:externalField.adoc[`@externalField`], xref:lookupKey.adoc[`@lookupKey`], xref:routine.adoc[`@routine`], xref:splitQuery.adoc[`@splitQuery`], xref:tableMethod.adoc[`@tableMethod`]
 
 *Mutating* +
 xref:mutation.adoc[`@mutation`], xref:service.adoc[`@service`]
