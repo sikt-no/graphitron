@@ -30,7 +30,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R63` | Type UPSERT dialect requirement on the model | Spec |  | [plan](dml-dialect-requirement-on-model.md) |
 | `R92` | Surface database CHECK constraints as Jakarta validation rules | Spec |  | [plan](catalog-check-constraint-validation.md) |
 | `R26` | Retire `graphitron-maven-plugin` + `graphitron-schema-transform` | In Progress |  | [plan](retire-maven-plugin.md) |
-| `R90` | LSP Java-source surfacing: goto-definition, Javadoc, @externalField, argMapping | Ready | 2026-06-19 | [plan](lsp-javaparser-javadoc-and-definitions.md) |
+| `R90` | LSP Java-source surfacing: goto-definition, Javadoc, @externalField, argMapping | In Progress | 2026-06-19 | [plan](lsp-javaparser-javadoc-and-definitions.md) |
 | `R180` | Centralize ResultType column-read emission for @record parents | Spec | 2026-05-19 | [plan](record-parent-column-read-helper.md) |
 | `R242` | DML payload positional input/output alignment | Spec | 2026-06-15 <sub>created 2026-05-26</sub> | [plan](dml-payload-positional-alignment.md) |
 | `R115` | Enumerate the capabilities graphitron delivers | Spec |  | [plan](capability-catalog.md) |
@@ -282,7 +282,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R148` [**Advance SourceLocation past description so diagnostics point at the field, not the doc block**](source-location-skips-description.md) — Backlog, bug
 - `R123` [**Parent-context-aware schema coordinates for per-directive Behavior policy**](parent-context-aware-schema-coordinates.md) — Backlog, architecture
 - `R121` [**LSP diagnostic for redundant @splitQuery on @record-parent fields**](lsp-diagnostic-redundant-splitquery-on-record.md) — Backlog, feature
-- `R90` [**LSP Java-source surfacing: goto-definition, Javadoc, @externalField, argMapping**](lsp-javaparser-javadoc-and-definitions.md) — Ready, Backlog
+- `R90` [**LSP Java-source surfacing: goto-definition, Javadoc, @externalField, argMapping**](lsp-javaparser-javadoc-and-definitions.md) — In Progress, Backlog
 - `R118` [**Graphitron MCP server: live catalog discovery and docs RAG in graphitron:dev**](graphitron-mcp-server.md) — Backlog, feature, blocked by [mcp-server-skeleton](mcp-server-skeleton.md)
 - `R212` [**IntelliJ plugin wrapping graphitron:dev LSP**](intellij-lsp-plugin.md) — Spec, feature
 - `R99` [**LSP classpath scan misses sibling modules when dev goal runs from a sub-module**](lsp-submodule-sibling-classpath.md) — Backlog, feature
