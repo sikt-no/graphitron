@@ -84,8 +84,11 @@ public sealed interface FieldClassification
      * {@link #lspColumnDispatch()}.
      *
      * <p>{@link Resolve} carries the table whose columns to use for completion / hover /
-     * validation (the {@code @reference} terminal table for the four column-bearing
-     * permits). {@link Silent} signals "the LSP should not surface a candidate or
+     * validation: the {@code @reference} terminal table for the four column-bearing
+     * permits, and (R343) the navigated child/element table for {@code TableTarget} /
+     * {@code RecordTableTarget}, where {@code @defaultOrder(fields: [{name: ...}])} names a
+     * column on that element table rather than the enclosing type's {@code @table}. {@link
+     * Silent} signals "the LSP should not surface a candidate or
      * diagnostic" (a duplicate diagnostic with the wrong table would be noise for
      * {@code InputUnbound}; an unclassified field has nothing useful to render). {@link
      * FallThrough} means the LSP arm falls back to its existing backing-driven dispatch
@@ -127,11 +130,15 @@ public sealed interface FieldClassification
             case CompositeColumn c              -> new LspColumnDispatch.Resolve(c.tableName());
             case CompositeColumnReference c     -> new LspColumnDispatch.Resolve(c.tableName());
             case ParticipantCrossTable c        -> new LspColumnDispatch.Resolve(c.targetTableName());
+            // R343: a list/connection field navigating to a child table carries that child
+            // (element) table in its tableName. @defaultOrder(fields: [{name: ...}]) at such a
+            // field names a column on the element table, not the enclosing type's @table, so
+            // these resolve their own target table the same way the @reference permits above do.
+            case TableTarget c                  -> new LspColumnDispatch.Resolve(c.tableName());
+            case RecordTableTarget c            -> new LspColumnDispatch.Resolve(c.tableName());
             case InputUnbound _                 -> new LspColumnDispatch.Silent();
             case Unclassified _                 -> new LspColumnDispatch.Silent();
-            case TableTarget _,
-                 RecordTableTarget _,
-                 TableMethod _,
+            case TableMethod _,
                  TableInterface _,
                  Polymorphic _,
                  Nesting _,

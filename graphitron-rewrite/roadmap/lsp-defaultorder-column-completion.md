@@ -1,7 +1,7 @@
 ---
 id: R343
 title: "LSP column-name completion for @defaultOrder(fields[].name)"
-status: Ready
+status: In Review
 bucket: feature
 theme: lsp
 depends-on: []
