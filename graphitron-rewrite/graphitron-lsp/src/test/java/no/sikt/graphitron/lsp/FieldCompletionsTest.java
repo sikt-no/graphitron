@@ -430,6 +430,104 @@ class FieldCompletionsTest {
             .doesNotContain("FILM_ID", "TITLE");
     }
 
+    // ===== R343 — @defaultOrder(fields: [{name:}]) completes the element-table columns =====
+    //              (the list/connection field's target table), not the enclosing type's @table.
+
+    @Test
+    void defaultOrderFieldsCompletesElementTableColumns() {
+        // The enclosing @table is "FILM"; the list field navigates to LANGUAGE. The ordering
+        // column named in @defaultOrder lives on LANGUAGE, so the dropdown must list LANGUAGE's
+        // columns, never FILM's. TableTarget.lspColumnDispatch() Resolves the element table.
+        String source = """
+            type Film @table(name: "FILM") {
+                languages: [Language!]! @defaultOrder(fields: [{name: ""}])
+            }
+            """;
+        int line = 1;
+        int col = source.split("\n")[line].indexOf("{name: \"") + "{name: \"".length();
+        Point cursor = new Point(line, col);
+
+        var items = run(filmAndLanguageCatalog(), defaultOrderSnapshot(), source, cursor);
+
+        assertThat(items).extracting(c -> c.getLabel())
+            .containsExactly("LANGUAGE_ID", "NAME")
+            .doesNotContain("FILM_ID", "TITLE");
+    }
+
+    @Test
+    void defaultOrderFieldsOnConnectionCompletesElementTableColumns() {
+        // @asConnection does not change the element table; the cursor walk still keys the
+        // @defaultOrder(fields: [{name:}]) site to FieldSort.name through the stacked directives.
+        String source = """
+            type Film @table(name: "FILM") {
+                languages: [Language!]! @asConnection @defaultOrder(fields: [{name: ""}])
+            }
+            """;
+        int line = 1;
+        int col = source.split("\n")[line].indexOf("{name: \"") + "{name: \"".length();
+        Point cursor = new Point(line, col);
+
+        var items = run(filmAndLanguageCatalog(), defaultOrderSnapshot(), source, cursor);
+
+        assertThat(items).extracting(c -> c.getLabel())
+            .containsExactly("LANGUAGE_ID", "NAME")
+            .doesNotContain("FILM_ID", "TITLE");
+    }
+
+    @Test
+    void defaultOrderFieldsOnReferenceSplitQueryCompletesElementTableColumns() {
+        // The motivating shape: a @reference + @splitQuery list field. It still classifies as a
+        // table-navigating TableTarget whose element table is LANGUAGE, so the same Resolve path
+        // applies; the extra directives must not derail the cursor walk to FieldSort.name.
+        String source = """
+            type Film @table(name: "FILM") {
+                languages: [Language!]! @reference(path: [{table: "LANGUAGE"}]) @splitQuery @defaultOrder(fields: [{name: ""}])
+            }
+            """;
+        int line = 1;
+        int col = source.split("\n")[line].indexOf("@defaultOrder(fields: [{name: \"")
+            + "@defaultOrder(fields: [{name: \"".length();
+        Point cursor = new Point(line, col);
+
+        var items = run(filmAndLanguageCatalog(), defaultOrderSnapshot(), source, cursor);
+
+        assertThat(items).extracting(c -> c.getLabel())
+            .containsExactly("LANGUAGE_ID", "NAME")
+            .doesNotContain("FILM_ID", "TITLE");
+    }
+
+    @Test
+    void defaultOrderPrimaryKeySiteOffersNoColumns() {
+        // Negative: @defaultOrder(primaryKey: true) has no fields object and no name coordinate,
+        // so FieldSort.name is never reached; the boolean-arg site must not leak column candidates.
+        String source = """
+            type Film @table(name: "FILM") {
+                languages: [Language!]! @defaultOrder(primaryKey: )
+            }
+            """;
+        int line = 1;
+        int col = source.split("\n")[line].indexOf("primaryKey: ") + "primaryKey: ".length();
+        Point cursor = new Point(line, col);
+
+        var items = run(filmAndLanguageCatalog(), defaultOrderSnapshot(), source, cursor);
+
+        assertThat(items).isEmpty();
+    }
+
+    private static LspSchemaSnapshot defaultOrderSnapshot() {
+        // Enclosing Film backs FILM; the list field's classification carries the element table
+        // LANGUAGE. The dispatch must prefer the classification's table over the enclosing backing.
+        return new LspSchemaSnapshot.Built.Current(
+            List.of(),
+            Map.of("Film", new TypeBackingShape.TableBacking("FILM")),
+            Map.of(),
+            Map.of("Film.languages",
+                new no.sikt.graphitron.rewrite.catalog.FieldClassification.TableTarget(
+                    "LANGUAGE", List.of(), false, false)),
+            Map.of()
+        );
+    }
+
     private static CompletionData filmAndLanguageCatalog() {
         var film = new CompletionData.Table(
             "FILM", "Movies", CompletionData.SourceLocation.UNKNOWN,

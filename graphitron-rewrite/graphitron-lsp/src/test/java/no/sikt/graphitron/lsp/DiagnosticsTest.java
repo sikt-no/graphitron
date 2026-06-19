@@ -441,6 +441,58 @@ class DiagnosticsTest {
         assertThat(diags).noneMatch(d -> d.getMessage().contains("on table 'film'"));
     }
 
+    // ===== R343 — @defaultOrder(fields: [{name:}]) validates against the element table =====
+
+    @Test
+    void defaultOrderFieldNameValidatesAgainstElementTable() {
+        // The enclosing @table is "film"; the list field navigates to "language". "NAME"
+        // exists on the element table, so a valid @defaultOrder column raises no diagnostic.
+        var file = file("""
+            type Film @table(name: "film") {
+                languages: [Language!]! @defaultOrder(fields: [{name: "NAME"}])
+            }
+            """);
+
+        var snapshot = new LspSchemaSnapshot.Built.Current(
+            java.util.List.of(),
+            java.util.Map.of("Film", new no.sikt.graphitron.rewrite.catalog.TypeBackingShape.TableBacking("film")),
+            java.util.Map.of(),
+            java.util.Map.of("Film.languages",
+                new no.sikt.graphitron.rewrite.catalog.FieldClassification.TableTarget(
+                    "language", java.util.List.of(), false, false)),
+            java.util.Map.of()
+        );
+        var diags = compute(file, filmAndLanguageCatalogWithLanguageName(), snapshot);
+
+        assertThat(diags).isEmpty();
+    }
+
+    @Test
+    void defaultOrderFieldNameBogusColumnCitesElementTable() {
+        // validator-mirrors-classifier: a bogus @defaultOrder column must be reported against the
+        // element table ("language"), never the enclosing type's @table ("film"). This diagnostic
+        // comes for free from routing FieldSort.name through the shared lspColumnDispatch().
+        var file = file("""
+            type Film @table(name: "film") {
+                languages: [Language!]! @defaultOrder(fields: [{name: "NOPE"}])
+            }
+            """);
+
+        var snapshot = new LspSchemaSnapshot.Built.Current(
+            java.util.List.of(),
+            java.util.Map.of("Film", new no.sikt.graphitron.rewrite.catalog.TypeBackingShape.TableBacking("film")),
+            java.util.Map.of(),
+            java.util.Map.of("Film.languages",
+                new no.sikt.graphitron.rewrite.catalog.FieldClassification.TableTarget(
+                    "language", java.util.List.of(), false, false)),
+            java.util.Map.of()
+        );
+        var diags = compute(file, filmAndLanguageCatalogWithLanguageName(), snapshot);
+
+        assertThat(diags).anyMatch(d -> d.getMessage().contains("Unknown column 'NOPE' on table 'language'"));
+        assertThat(diags).noneMatch(d -> d.getMessage().contains("on table 'film'"));
+    }
+
     @Test
     void emptyArgumentValueProducesNoError() {
         // Mid-edit state: cursor sits in an empty quoted value. We

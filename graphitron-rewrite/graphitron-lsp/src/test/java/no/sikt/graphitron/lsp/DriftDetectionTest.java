@@ -50,4 +50,16 @@ class DriftDetectionTest {
                 "field", "name")
         );
     }
+
+    @Test
+    void fieldSortNameResolvesAndBindsToColumnBehavior() {
+        // R343: the @defaultOrder(fields: [{name: ...}]) coordinate. Resolving against the bundled
+        // directives.graphqls (input FieldSort { name: String! ... }) is guarded by the startup
+        // invariant in productionOverlayResolvesAgainstBundledDirectivesSdl; this pins the binding.
+        var vocab = LspVocabulary.load();
+        var coord = new no.sikt.graphitron.lsp.parsing.SchemaCoordinate.InputField("FieldSort", "name");
+        assertThat(vocab.overlay()).containsKey(coord);
+        assertThat(vocab.behaviorAt(coord))
+            .containsInstanceOf(no.sikt.graphitron.lsp.parsing.Behavior.CatalogColumnBinding.class);
+    }
 }

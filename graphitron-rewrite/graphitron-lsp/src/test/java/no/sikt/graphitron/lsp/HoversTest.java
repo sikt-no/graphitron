@@ -641,6 +641,37 @@ class HoversTest {
         assertThat(md).doesNotContain("on `film`");
     }
 
+    // ===== R343 — @defaultOrder(fields: [{name:}]) hovers on the element-table column =====
+
+    @Test
+    void defaultOrderFieldNameHoversOnElementTableColumn() {
+        // The enclosing @table is "film"; the list field navigates to "language". The ordering
+        // column "lang_name" lives on the element table, so the hover must render it on "language",
+        // not "film". TableTarget.lspColumnDispatch() Resolves the element table for the hover too.
+        var file = file("""
+            type Film @table(name: "film") {
+                languages: [Language!]! @defaultOrder(fields: [{name: "lang_name"}])
+            }
+            """);
+        var pos = pointAt(file, 1, "lang_name");
+
+        var snapshot = new LspSchemaSnapshot.Built.Current(
+            List.of(),
+            java.util.Map.of("Film", new TypeBackingShape.TableBacking("film")),
+            java.util.Map.of(),
+            java.util.Map.of("Film.languages",
+                new no.sikt.graphitron.rewrite.catalog.FieldClassification.TableTarget(
+                    "language", List.of(), false, false)),
+            java.util.Map.of()
+        );
+        var hover = Hovers.compute(file, filmAndLanguageCatalogWithLanguageName(), snapshot, pos).orElseThrow();
+        var md = hover.getContents().getRight().getValue();
+
+        assertThat(md).contains("**Column** `lang_name`");
+        assertThat(md).contains("on `language`");
+        assertThat(md).doesNotContain("on `film`");
+    }
+
     private static CompletionData filmAndLanguageCatalogWithLanguageName() {
         var film = new CompletionData.Table(
             "film", "Movies",

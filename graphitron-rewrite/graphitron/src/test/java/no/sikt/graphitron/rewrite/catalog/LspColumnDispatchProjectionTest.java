@@ -15,10 +15,12 @@ import java.nio.charset.StandardCharsets;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R233 — pipeline-tier coverage of the producer-side
+ * R233 / R343 — pipeline-tier coverage of the producer-side
  * {@link FieldClassification#lspColumnDispatch()} switch. Drives the full classifier on a small
  * synthetic schema covering the three audience-specific arms (Resolve / Silent / FallThrough)
- * across representative permits. The exhaustive switch is the load-bearing meta-assertion: a new
+ * across representative permits. R343 adds the {@code TableTarget} element-table cases, where a
+ * list/connection field's {@code @defaultOrder(fields: [{name: ...}])} resolves the navigated
+ * child table rather than the enclosing type's {@code @table}. The exhaustive switch is the load-bearing meta-assertion: a new
  * permit on {@link FieldClassification} fails {@code lspColumnDispatch()} to compile, forcing the
  * implementer to place it in one of the three arms deliberately in one place, ahead of any
  * consumer-side switch.
@@ -68,6 +70,64 @@ class LspColumnDispatchProjectionTest {
         assertThat(dispatch).isInstanceOf(FieldClassification.LspColumnDispatch.Resolve.class);
         assertThat(((FieldClassification.LspColumnDispatch.Resolve) dispatch).tableName())
             .isEqualToIgnoringCase("film");
+    }
+
+    @Test
+    void tableTargetListFieldDispatchesResolveOnElementTable() {
+        // R343: a plain list field navigating to a child table classifies as TableTarget; its
+        // @defaultOrder(fields: [{name: ...}]) names a column on the element table ("actor"),
+        // not the enclosing type's @table ("film_actor"). The dispatch resolves the element table.
+        var snapshot = snapshotOf("""
+            type Actor @table(name: "actor") { name: String }
+            type FilmActor @table(name: "film_actor") {
+              actors: [Actor!]! @defaultOrder(fields: [{name: "last_name"}])
+            }
+            type Query { filmActor: FilmActor }
+            """);
+        var classification = snapshot.fieldClassificationsByCoord().get("FilmActor.actors");
+        assertThat(classification).isInstanceOf(FieldClassification.TableTarget.class);
+        var dispatch = classification.lspColumnDispatch();
+        assertThat(dispatch).isInstanceOf(FieldClassification.LspColumnDispatch.Resolve.class);
+        assertThat(((FieldClassification.LspColumnDispatch.Resolve) dispatch).tableName())
+            .isEqualToIgnoringCase("actor");
+    }
+
+    @Test
+    void tableTargetConnectionFieldDispatchesResolveOnElementTable() {
+        // A connection field (@asConnection requires @splitQuery on an inline field) stays a
+        // TableField family permit collapsed onto TableTarget; the element table is unchanged.
+        var snapshot = snapshotOf("""
+            type Actor @table(name: "actor") { name: String }
+            type FilmActor @table(name: "film_actor") {
+              actors: [Actor!]! @asConnection @splitQuery @defaultOrder(fields: [{name: "last_name"}])
+            }
+            type Query { filmActor: FilmActor }
+            """);
+        var classification = snapshot.fieldClassificationsByCoord().get("FilmActor.actors");
+        assertThat(classification).isInstanceOf(FieldClassification.TableTarget.class);
+        var dispatch = classification.lspColumnDispatch();
+        assertThat(dispatch).isInstanceOf(FieldClassification.LspColumnDispatch.Resolve.class);
+        assertThat(((FieldClassification.LspColumnDispatch.Resolve) dispatch).tableName())
+            .isEqualToIgnoringCase("actor");
+    }
+
+    @Test
+    void tableTargetSplitQueryFieldDispatchesResolveOnElementTable() {
+        // @splitQuery makes it a SplitTableField, still collapsed onto TableTarget; element table
+        // resolution is identical, so @defaultOrder column completion works on the split path too.
+        var snapshot = snapshotOf("""
+            type Actor @table(name: "actor") { name: String }
+            type FilmActor @table(name: "film_actor") {
+              actors: [Actor!]! @splitQuery @defaultOrder(fields: [{name: "last_name"}])
+            }
+            type Query { filmActor: FilmActor }
+            """);
+        var classification = snapshot.fieldClassificationsByCoord().get("FilmActor.actors");
+        assertThat(classification).isInstanceOf(FieldClassification.TableTarget.class);
+        var dispatch = classification.lspColumnDispatch();
+        assertThat(dispatch).isInstanceOf(FieldClassification.LspColumnDispatch.Resolve.class);
+        assertThat(((FieldClassification.LspColumnDispatch.Resolve) dispatch).tableName())
+            .isEqualToIgnoringCase("actor");
     }
 
     @Test
