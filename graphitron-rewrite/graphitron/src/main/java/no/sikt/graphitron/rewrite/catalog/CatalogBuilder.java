@@ -291,6 +291,15 @@ public final class CatalogBuilder {
                     targetTableName(f.returnType()),
                     f.method() != null ? f.method().className() : null,
                     f.method() != null ? f.method().methodName() : null);
+            // R300 day-one: a @routine read is a root table sourced from a generated Routines-class
+            // method call, so it projects onto the method-backed QueryTableMethod classification
+            // (className = the generated Routines class). A dedicated QueryRoutine classification is a
+            // follow-up once the LSP label/hover surface is wired.
+            case QueryField.QueryRoutineTableField f ->
+                new FieldClassification.QueryTableMethod(
+                    targetTableName(f.returnType()),
+                    f.routine() != null ? f.routine().routinesClass().canonicalName() : null,
+                    f.routine() != null ? f.routine().methodName() : null);
             case QueryField.QueryNodeField ignored ->
                 new FieldClassification.QueryNode(false);
             case QueryField.QueryNodesField ignored ->

@@ -410,6 +410,27 @@ directive @tableMethod(
 ) on FIELD_DEFINITION
 
 """
+Backs the field with a jOOQ database routine (a stored function or procedure).
+
+Day-one supports a table-valued read function (PostgreSQL `RETURNS TABLE` / `SETOF`): the field's
+`@table`-bound element type must point at the jOOQ-generated table-valued-function table, and the
+routine's IN parameters are bound from GraphQL field arguments. The read shape is read off the
+routine's jOOQ kind, not declared. Scalar-read and procedure-write routines are deferred and fail
+at validate time.
+"""
+directive @routine(
+  """The database routine name, optionally schema-qualified (`schema.routine`). Must resolve to a table-valued function in the jOOQ catalog."""
+  name: String!
+  """
+  Maps routine IN parameters to GraphQL argument names. Each entry is
+  `routineParam: graphqlArg`; multiple entries are comma-separated. The routine parameter name is
+  the jOOQ-generated (camelCased) name, e.g. `pEnv` for a `p_env` parameter. Unmentioned parameters
+  bind to a GraphQL argument of the same name (identity).
+  """
+  argMapping: String
+) on FIELD_DEFINITION
+
+"""
 Specifies how fields should be resolved for nested types. This would typically be used with non-resolvable federation entities.
 """
 directive @experimental_constructType(

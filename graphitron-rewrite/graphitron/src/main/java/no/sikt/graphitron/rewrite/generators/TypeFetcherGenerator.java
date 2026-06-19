@@ -188,6 +188,7 @@ public class TypeFetcherGenerator {
         QueryField.QueryLookupTableField.class,
         QueryField.QueryTableField.class,
         QueryField.QueryTableMethodTableField.class,
+        QueryField.QueryRoutineTableField.class,
         QueryField.QueryServiceTableField.class,
         QueryField.QueryServiceRecordField.class,
         MutationField.MutationInsertTableField.class,
@@ -433,6 +434,7 @@ public class TypeFetcherGenerator {
                 case QueryField.QueryNodeField f              -> builder.addMethod(buildQueryNodeFetcher(ctx, f, outputPackage));
                 case QueryField.QueryNodesField f             -> builder.addMethod(buildQueryNodesFetcher(ctx, f, outputPackage));
                 case QueryField.QueryTableMethodTableField f  -> builder.addMethod(buildQueryTableMethodFetcher(ctx, f, outputPackage));
+                case QueryField.QueryRoutineTableField f      -> builder.addMethod(buildQueryRoutineFetcher(ctx, f, outputPackage));
                 case QueryField.QueryServiceTableField f      -> builder.addMethod(buildQueryServiceTableFetcher(ctx, f, outputPackage));
                 case QueryField.QueryServiceRecordField f     -> builder.addMethod(buildQueryServiceRecordFetcher(ctx, f, outputPackage));
                 // Stub variants — see STUBBED_VARIANTS
@@ -1160,6 +1162,70 @@ public class TypeFetcherGenerator {
         builder.addCode(returnSyncSuccess(valueType, "payload"));
         builder.nextControlFlow("catch ($T e)", Exception.class);
         builder.addCode(catchArm(outputPackage, qtmtf.errorChannel()));
+        builder.endControlFlow();
+
+        return builder.build();
+    }
+
+    /**
+     * Generates a fetcher for a root-query {@code @routine} table field (R300). Mirrors
+     * {@link #buildQueryTableFetcher}, with one difference: the {@code FROM} source is the schema's
+     * global {@code Routines} convenience method (which returns the configured table-valued-function
+     * table) rather than the bare {@code Tables.X} singleton, with the routine's IN parameters bound
+     * from GraphQL field arguments. Selection narrowing via {@code Type.$fields(...)} is unchanged,
+     * so the {@code SELECT} projects only the routine-result columns the query selected.
+     *
+     * <p>Generated code (list variant):
+     * <pre>{@code
+     * public static Result<Record> tilganger(DataFetchingEnvironment env) {
+     *     TilgangerForFeidebrukerMedFsFiktivtFnr table =
+     *         Routines.tilgangerForFeidebrukerMedFsFiktivtFnr(
+     *             env.<String>getArgument("env"), env.<String>getArgument("serviceId"), env.<String>getArgument("feideId"));
+     *     DSLContext dsl = graphitronContext(env).getDslContext(env);
+     *     Result<Record> payload = dsl
+     *         .select(Tilgang.$fields(env.getSelectionSet(), table, env))
+     *         .from(table)
+     *         .fetch();
+     *     ...
+     * }
+     * }</pre>
+     */
+    private static MethodSpec buildQueryRoutineFetcher(TypeFetcherEmissionContext ctx,
+            QueryField.QueryRoutineTableField qrtf, String outputPackage) {
+        var tableRef = qrtf.returnType().table();
+        var names = GeneratorUtils.ResolvedTableNames.of(tableRef, qrtf.returnType().returnTypeName(), outputPackage);
+        boolean isList = qrtf.returnType().wrapper().isList();
+        var valueType = isList ? (TypeName) ParameterizedTypeName.get(RESULT, RECORD) : RECORD;
+
+        var builder = MethodSpec.methodBuilder(qrtf.name())
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(syncResultType(valueType))
+            .addParameter(ENV, "env");
+
+        // Routines.<method>(<bound IN params>) returns the configured table-valued-function table.
+        var routine = qrtf.routine();
+        CodeBlock args = CodeBlock.join(routine.argBindings().stream()
+            .map(b -> CodeBlock.of("env.<$T>getArgument($S)", b.paramType(), b.graphqlArgName()))
+            .toList(), ", ");
+        String tableLocal = names.tableLocalName();
+
+        builder.beginControlFlow("try");
+        builder.addStatement("$T $L = $T.$L($L)",
+            names.jooqTableClass(), tableLocal, routine.routinesClass(), routine.methodName(), args);
+
+        var dslContextClass = ClassName.get("org.jooq", "DSLContext");
+        builder.addStatement("$T dsl = $L.getDslContext(env)", dslContextClass, ctx.graphitronContextCall());
+        builder.addCode(CodeBlock.builder()
+            .add("$T payload = dsl\n", valueType)
+            .indent()
+            .add(".select($T.$$fields(env.getSelectionSet(), $L, env))\n", names.typeClass(), tableLocal)
+            .add(".from($L)\n", tableLocal)
+            .add(isList ? ".fetch();\n" : ".fetchOne();\n")
+            .unindent()
+            .build());
+        builder.addCode(returnSyncSuccess(valueType, "payload"));
+        builder.nextControlFlow("catch ($T e)", Exception.class);
+        builder.addCode(redactCatchArm(outputPackage));
         builder.endControlFlow();
 
         return builder.build();

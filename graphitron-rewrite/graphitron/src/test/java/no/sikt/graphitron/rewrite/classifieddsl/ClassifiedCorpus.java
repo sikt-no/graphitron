@@ -448,6 +448,25 @@ public final class ClassifiedCorpus {
             """),
 
         /*
+         * @routine (R300): a table-valued read function backing a root list field. jOOQ models the
+         * function as a catalog Table<R>, so the verdict is the same shape as a plain catalog read
+         * (QueryRoutineTableField, Query / Fetch / List(Table)); only the FROM source differs (the
+         * generated Routines convenience method, with IN params bound from GraphQL arguments). The
+         * routine resolves against the sakila-db fixture catalog.
+         */
+        new Example("routine-table-valued-read", """
+            type Tilgang @table(name: "tilganger_for_feidebruker_med_fs_fiktivt_fnr") {
+              organisasjonskode: Int
+              rollekode: String
+            }
+            type Query {
+              tilganger(env: String!, serviceId: String!, feideId: String!): [Tilgang!]!
+                @routine(name: "tilganger_for_feidebruker_med_fs_fiktivt_fnr", argMapping: "pEnv: env, pServiceId: serviceId, pFeideId: feideId")
+                @classified(source: Query, operation: Fetch, target: List, targetShape: Table)
+            }
+            """),
+
+        /*
          * @table children under a jOOQ-TableRecord-backed parent, reached by @lookupKey and by
          * @tableMethod. The record handoff has already opened a new keyed scope, so both re-query (the
          * new-query is derived): `FilmDetails.language` is a RecordLookupTableField (its @lookupKey makes
