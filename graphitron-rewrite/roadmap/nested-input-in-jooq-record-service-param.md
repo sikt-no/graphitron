@@ -20,11 +20,23 @@ This is the column-axis analogue of a gap the `@table`-input path already solved
 
 ## Spec
 
+### Semantics: transparent unpack
+
+A nested grouping input behaves exactly as if its fields were declared directly on the parent. For every leaf field, at any nesting depth:
+
+* **omitted** → its column is left `changed=false` (untouched, excluded from the INSERT/UPDATE the `@service` runs);
+* **present and `null`** → its column is set to `NULL` (`changed=true`);
+* **present with a value** → its column is set to that value (`changed=true`).
+
+A nested group that is itself absent, `null`, or not a `Map` is treated identically to "absent": every column under it stays untouched, so `details: null`, an omitted `details`, and `details: {}` all reach the same outcome. This is the column-axis extension of the existing top-level three-way (`JooqRecordInstantiationEmitter.emitColumnBinding`): a top-level field and a nested field backing the same column behave identically.
+
+**Required-ness is owned by graphql-java, not by this flatten.** A nested grouping field's own nullability is the switch. A non-null group (`details: FilmDetailsInput!`) is mandatory: per the GraphQL spec a Non-Null argument or input-object field that is "not provided, ... or ... provided the literal value null" raises a request error at the execution boundary, and when the group *is* present its own non-null fields are enforced in turn. A nullable group is optional: the spec's required-field check ("if no default value is provided and the input object field's type is non-null, an error should be raised") is a step *inside* coercing an input-object value, so it fires only when the enclosing object is actually coerced; a nullable parent that is omitted or `null` is never descended into ("if the field is not required, then no entry is added to the coerced unordered map"). Consequence: by the time the generated `create<Record>` helper runs, graphql-java has already enforced every required field that should be present. The helper therefore **never throws for a missing nested field**; it skips a binding whose enclosing group is absent, and throws only on a *malformed id it actually attempts to decode* (R195, possible only when the group and the id are both present).
+
 ### D1: Access path on the column-axis carriers
 
 Replace the single `sdlFieldName` on `CallSiteExtraction.ColumnBinding` and `RecordKeyDecode` with an ordered, non-empty `List<String> path`: the last element is the leaf SDL field name (the `Map` key), earlier elements are the enclosing nested-input field names. A top-level binding carries a single-element path; the nested `details.title` carries `["details", "title"]`.
 
-This adopts the representation `CallSiteExtraction.NestedInputField` already settled (R186): an ordered, non-empty key path, single-element for the top-level case. Its emitter dual `ArgCallEmitter.nestedMapValueExpr(mapLocal, path)` degrades **byte-identically** to `mapLocal.get(key)` at depth 1, so existing single-level emission is preserved exactly. The outer-argument name stays *outside* the bindings (carried by the enclosing `ValueShape.JooqRecordInput(jr, path)`), so the per-binding path is correctly scoped to "keys from the record's own `Map` down to the leaf," with no `outerArgName` to duplicate.
+This adopts the representation `CallSiteExtraction.NestedInputField` already settled (R186): an ordered, non-empty key path, single-element for the top-level case. The earlier path elements drive the emitter's parent-`Map` descent (D4) and the last element is the leaf `Map` key read from the bound parent map; at depth 1 there is no enclosing group, the descent is empty, and emission is byte-identical to the current top-level form. The outer-argument name stays *outside* the bindings (carried by the enclosing `ValueShape.JooqRecordInput(jr, path)`), so the per-binding path is correctly scoped to "keys from the record's own `Map` down to the leaf," with no `outerArgName` to duplicate.
 
 Rejected alternatives: a separate `nestingPath` beside a retained `sdlFieldName` splits one fact (the full access path) across two components, forces every consumer to reassemble it, and opens an illegal-state surface the compact constructor must police; literally reusing `NestedInputField` as the carrier does not fit (these are `JooqRecord` sub-records, not `CallSiteExtraction`s, and it would re-duplicate `outerArgName`).
 
@@ -45,18 +57,33 @@ There is no `GraphitronSchemaValidator` arm for the `JooqRecord` family; its inv
 
 The existing `buildJooqRecord` javadoc enumerates its R195/R97-shaped rejections; extend that enumeration with these.
 
-### D4: Emitter path descent and collision-free locals
+### D4: Emitter parent-`Map` descent and collision-free locals
 
-`JooqRecordInstantiationEmitter` replaces its `raw.get(sdlFieldName)` reads with `ArgCallEmitter.nestedMapValueExpr("raw", binding.path())` for both the `ColumnBinding` set and the `RecordKeyDecode` decode, inheriting the null-safe descent (any intermediate non-`Map`/`null` yields an absent leaf). The per-binding local names (`<x>Value`, `<x>Keys` at `JooqRecordInstantiationEmitter` ~99/123) must derive from the full path (e.g. `details_title`), not the leaf name alone, or two nested groups sharing a leaf name (`title`) would emit colliding `titleValue` locals in one helper body.
+For a binding whose `path` has more than one element, `JooqRecordInstantiationEmitter` wraps the existing per-binding emission in a descent that binds the leaf's enclosing `Map` and short-circuits when any ancestor is absent, `null`, or not a `Map`:
+
+```java
+if (raw.get("details") instanceof Map<?, ?> detailsMap) {   // group present and a Map?
+    // the current top-level emission, verbatim, with raw -> detailsMap and the leaf key "title":
+    if (detailsMap.containsKey("title")) { ... }
+}
+// group absent / null / not-a-Map -> block skipped -> columns under it untouched
+```
+
+This one construct realises every rule in *Semantics* at once: a `null`/absent group fails the `instanceof Map` and skips everything beneath it, and a non-null identity field under an *absent nullable* group is skipped rather than thrown (its R195 throw lives in the body, which is never entered). The descent reuses the `instanceof Map<?,?>` chain idiom already in `ArgCallEmitter` (generalised for paths deeper than two); the per-binding set/decode body is otherwise unchanged, reading `parentMap.containsKey(leaf)` / `parentMap.get(leaf)` exactly as today's code reads `raw.containsKey(sdlFieldName)` / `raw.get(sdlFieldName)`. At depth 1 the `path` is single-element, no wrapping block is emitted, and the output is byte-identical to today.
+
+The per-binding local names must derive from the full `path`, not the leaf name alone: the bound parent-`Map` local (e.g. `detailsMap`) and all three leaf locals (`<x>Value`, `<x>Keys`, and `<x>Raw` on the nullable-decode arm). Otherwise two nested groups sharing a leaf name (`title`) would emit colliding `titleValue` / `titleRaw` locals in one helper body. Bindings sharing a parent group may share one wrapping descent block (grouped by parent path) or each re-descend; that is an In-Progress emitter nicety, not a contract.
 
 ### Untouched (verified clean)
 
-The at-least-one-binding floor (flatten only adds bindings, never removes), the R315 D4 nullable conditional-set semantics (per-decode `nonNull`, axis-agnostic, source unchanged at depth), and the `create<Record>List` plural path (outer-record cardinality, orthogonal to inner nesting) need no change.
+The at-least-one-binding floor (the flatten only adds bindings, never removes) and the `create<Record>List` plural path (outer-record cardinality, orthogonal to inner nesting) need no change.
+
+The per-decode `nonNull` flag and its null-vs-set semantics are deliberately *not* in this list. The set/decode body is reused unchanged, but it now runs against the descended parent `Map` (D4), and the non-null identity arm newly gains the group-presence guard so an absent nullable group skips rather than throws (*Semantics*, required-ness rule). That is the column-axis behavior change this item introduces, not an invariant left alone; the earlier "source unchanged at depth" framing was wrong.
 
 ### Test plan
 
 * **Pipeline tier** alongside `JooqRecordServiceParamPipelineTest`: assert the classified `JooqRecord` carries the expected `ColumnBinding` / `RecordKeyDecode` `path`s (flattened plain columns; a nested `@nodeId` decode; mixed top-level + nested). No body-string assertions on the descent chain.
-* **Execution tier**: a round-trip proving a nested `details.title` lands in the right column on the generated INSERT/UPDATE.
+* **Execution tier**: a round-trip proving a nested `details.title` lands in the right column on the generated INSERT/UPDATE, plus the transparent-unpack semantics: an omitted nested leaf leaves its column `changed=false` (the partial-update contract, untouched by the service's UPDATE), a present-`null` nested leaf writes `NULL`, and a `null`/omitted nullable group leaves every column under it untouched.
+* **Skip-not-throw**: a non-null identity field inside an omitted nullable group is skipped with no decode error raised (*Semantics*, required-ness rule); a *malformed* id in a *present* group still throws.
 * **Rejection tests** by message substring for each D3 invariant (cycle, list-valued nesting, nested `@table`, plain-column collision).
 
 ## Notes from triage
