@@ -82,6 +82,14 @@ type Query {
     filmsConnection(
         first: Int, last: Int, after: String, before: String
     ): FilmsConnection! @defaultOrder(primaryKey: true)
+    # R339: @defaultOrder(primaryKey: true, direction: DESC). The directive-level direction:
+    # must reach the synthesised PK entries, so this paginates film_id DESC (5..1), the exact
+    # reverse of the filmsConnection PK-ASC baseline. End-to-end proof that the emitted jOOQ
+    # runs .desc() and keyset pagination seeks descending; a resolution-layer regression that
+    # drops direction: for primaryKey-mode breaks this test by name.
+    filmsConnectionDesc(
+        first: Int, last: Int, after: String, before: String
+    ): FilmsConnection! @defaultOrder(primaryKey: true, direction: DESC)
     filmsOrderedConnection(
         rating: MpaaRating @field(name: "RATING"),
         order: [FilmOrderBy] @orderBy,

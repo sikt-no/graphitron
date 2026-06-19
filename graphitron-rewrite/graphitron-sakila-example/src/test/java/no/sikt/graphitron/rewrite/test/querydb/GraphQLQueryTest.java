@@ -898,6 +898,24 @@ class GraphQLQueryTest {
     }
 
     @Test
+    void filmsConnectionDesc_executesDescendingPrimaryKeyOrder() {
+        // R339 execution proof: @defaultOrder(primaryKey: true, direction: DESC) must thread the
+        // directive-level direction onto the synthesised PK entries, so the emitted jOOQ runs
+        // film_id.desc() and keyset pagination seeks descending. The five seeded films return in
+        // film_id order 5..1 — the exact reverse of the filmsConnection PK-ASC baseline (1..5).
+        // A resolution-layer regression that drops direction: for primaryKey-mode would emit ASC
+        // and return 1..5, breaking this test. A pipeline assertion alone would not catch a
+        // seek/emission regression.
+        Map<String, Object> data = execute(
+            "{ filmsConnectionDesc(first: 5) { nodes { filmId } } }");
+        var conn = assertThat(data).extractingByKey("filmsConnectionDesc", as(MAP));
+        conn.extractingByKey("nodes", as(list(Map.class)))
+            .hasSize(5)
+            .extracting(n -> n.get("filmId"))
+            .containsExactly(5, 4, 3, 2, 1);
+    }
+
+    @Test
     void filmsConnectionByRequiredIds_idsSupplied_paginatesBoundedSet() {
         // R113 production shape: required outer wrapper on a same-table @nodeId list arg
         // composed with @asConnection. Classifier emits a LOG.warn (pinned in
