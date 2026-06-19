@@ -1,7 +1,7 @@
 ---
 id: R336
 title: "Flatten nested input-object fields in jOOQ-record @service params"
-status: Spec
+status: Ready
 bucket: architecture
 priority: 6
 theme: service
