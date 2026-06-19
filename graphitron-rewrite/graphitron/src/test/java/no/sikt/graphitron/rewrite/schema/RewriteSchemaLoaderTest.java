@@ -101,10 +101,15 @@ class RewriteSchemaLoaderTest {
         SchemaParseException ex = (SchemaParseException) thrown;
 
         // The structured location is carried for the deferred LSP-squiggle surface;
-        // it names the offending file with source-relative coordinates.
+        // it names the offending file with source-relative coordinates. Pin the line, not
+        // just the source name: the location is the one non-derivable field this exception
+        // carries (the brief is a slice of getMessage()), so its correctness is what makes
+        // carrying it worthwhile. strayTokenHere sits on line 4 of broken.graphqls, and
+        // trackData(true) gives source-relative coordinates, so the location must point there.
         SourceLocation location = ex.location();
         assertThat(location).isNotNull();
         assertThat(location.getSourceName()).isEqualTo(broken.toString());
+        assertThat(location.getLine()).isEqualTo(4);
         assertThat(ex.brief()).isNotBlank();
 
         // getMessage() is the file-attributed one-liner, NOT a wrapper / count string.
