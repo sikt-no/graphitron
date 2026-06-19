@@ -775,6 +775,56 @@ class JooqRecordServiceParamPipelineTest {
             .contains("details.aka");
     }
 
+    @Test
+    void twoIdentityDecodesOnOneColumn_admitsTwoKeyDecodes_deferredToRuntimeAgreement() {
+        // R322: two @nodeId(typeName: "Film") identity fields both resolve to film_id. Unlike two plain
+        // @field's (the build-time reject above), an overlap involving a decode is admitted — the runtime
+        // value-agreement check (emitted into createFilmRecord) reconciles it. The carrier carries both
+        // decodes targeting the one column; the overlap is data-dependent, so it is not a classify-time fail.
+        var sdl = """
+            type Film implements Node @table(name: "film") @node { id: ID! title: String }
+            input DualFilmIdInput {
+                filmId: ID! @nodeId(typeName: "Film")
+                sameFilm: ID! @nodeId(typeName: "Film")
+            }
+            type Query {
+                modifyDual(in: DualFilmIdInput!): String
+                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "modifyFilmRecord"})
+            }
+            """;
+        var jr = carrier(sdl, "modifyDual", false);
+        assertThat(jr.table().recordClass().toString()).isEqualTo(FILM_RECORD_FQN);
+        assertThat(jr.keyDecodes())
+            .as("both @nodeId identity decodes are admitted, each targeting film_id")
+            .extracting(kd -> kd.leaf() + "->" + kd.targetColumns().get(0).sqlName())
+            .containsExactly("filmId->film_id", "sameFilm->film_id");
+    }
+
+    @Test
+    void plainFieldPlusDecodeOnOneColumn_admitsBothWriters_deferredToRuntimeAgreement() {
+        // R322 decode-vs-column overlap: a plain @field and a @nodeId decode resolve to the same column.
+        // Admitted (the field-vs-field reject does not fire because one writer is a decode); reconciled by
+        // the runtime agreement check. The carrier carries one column binding and one key decode on film_id.
+        var sdl = """
+            type Film implements Node @table(name: "film") @node { id: ID! title: String }
+            input FieldPlusNodeInput {
+                filmId: ID! @nodeId(typeName: "Film")
+                filmIdText: String @field(name: "film_id")
+            }
+            type Query {
+                modifyFieldPlusNode(in: FieldPlusNodeInput!): String
+                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "modifyFilmRecord"})
+            }
+            """;
+        var jr = carrier(sdl, "modifyFieldPlusNode", false);
+        assertThat(jr.columnBindings())
+            .extracting(cb -> cb.leaf() + "->" + cb.column().sqlName())
+            .containsExactly("filmIdText->film_id");
+        assertThat(jr.keyDecodes())
+            .extracting(kd -> kd.leaf() + "->" + kd.targetColumns().get(0).sqlName())
+            .containsExactly("filmId->film_id");
+    }
+
     // ===== Helpers =====
 
     private static CallSiteExtraction.JooqRecord carrier(String sdl, String queryField, boolean list) {

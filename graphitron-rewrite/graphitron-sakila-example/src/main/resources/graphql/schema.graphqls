@@ -1763,6 +1763,20 @@ input StorageBinDeleteByCodeInput @table(name: "storage_bin") {
     code: String! @field(name: "code")
 }
 
+# R322 execution-tier fixture (the @service jOOQ-record path): a directiveless StorageBinRecord @service
+# input with TWO writers on the bin_id column — the same-table identity @nodeId(typeName: "StorageBin")
+# decode and a plain @field bound to bin_id. createStorageBinRecord emits the value-agreement check
+# (NodeIdEncoder.requireColumnAgreement) coerced through bin_id's integer DataType: present writers must
+# resolve to the same value or it throws GraphqlErrorException. binIdText is String (not Int) so the
+# execution tier can drive a format-variant wire value ("01") that String.valueOf would false-disagree
+# with the decoded "1", but integer-column coercion collapses to agreement. Both fields nullable so an
+# omitted binIdText leaves the lone decode present (the presence guard: no throw). StorageBinRecord is not
+# otherwise a @service param, so its createStorageBinRecord helper does not collide on the per-fetcher dedup.
+input StorageBinAgreeInput {
+    binId: ID @nodeId(typeName: "StorageBin")
+    binIdText: String @field(name: "bin_id")
+}
+
 # R75 Phase 1: single-record DML carrier payload type. The SDL author authors no Java class —
 # the type promotes to PojoResultType.NoBacking at type-classification time; the data field
 # classifies as ChildField.SingleRecordTableField; the mutation classifies as
@@ -2188,6 +2202,16 @@ type Mutation {
         @service(service: {
             className: "no.sikt.graphitron.rewrite.test.services.FilmEndorsementRecordService",
             method: "describeEndorsement"
+        })
+
+    # R322 @service-path value agreement: createStorageBinRecord runs NodeIdEncoder.requireColumnAgreement
+    # over the two writers on bin_id (the @nodeId(typeName: "StorageBin") decode and the plain @field) and
+    # throws GraphqlErrorException on disagreement before the service body. agreeStorageBin reports the
+    # agreed bin_id off the constructed record (no INSERT; the agreement fires in the helper).
+    agreeStorageBin(in: StorageBinAgreeInput!): String
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.StorageBinRecordAgreementService",
+            method: "agreeStorageBin"
         })
 
     # R315 D4 execution pin: a nullable same-table identity (addressId: ID @nodeId(typeName: "Address"))
