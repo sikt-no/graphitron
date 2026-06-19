@@ -1,7 +1,7 @@
 ---
 id: R347
 title: "Consolidate graphitron-lsp navigation, dispatch, and result-building"
-status: Spec
+status: Ready
 bucket: architecture
 priority: 5
 theme: lsp
