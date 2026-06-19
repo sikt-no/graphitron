@@ -3,8 +3,10 @@ package no.sikt.graphitron.rewrite.generators.util;
 import no.sikt.graphitron.javapoet.AnnotationSpec;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.MethodSpec;
+import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.javapoet.TypeSpec;
+import no.sikt.graphitron.javapoet.WildcardTypeName;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.GraphitronType.NodeType;
@@ -56,6 +58,9 @@ public class NodeIdEncoderClassGenerator {
     private static final ClassName CHARSETS    = ClassName.get(StandardCharsets.class);
     private static final ClassName DSL         = ClassName.get("org.jooq.impl", "DSL");
     private static final ClassName SQL_DIALECT = ClassName.get("org.jooq", "SQLDialect");
+    private static final ClassName DATA_TYPE   = ClassName.get("org.jooq", "DataType");
+    private static final ClassName GRAPHQL_ERROR = ClassName.get("graphql", "GraphqlErrorException");
+    private static final ClassName OBJECTS     = ClassName.get("java.util", "Objects");
 
     /**
      * Backwards-compatible no-arg generator: emits the encoder class with no per-Node helpers.
@@ -154,7 +159,8 @@ public class NodeIdEncoderClassGenerator {
             .addMethod(privateCtor)
             .addMethod(encode)
             .addMethod(peekTypeId)
-            .addMethod(decodeValues);
+            .addMethod(decodeValues)
+            .addMethod(buildRequireColumnAgreement());
 
         for (NodeType nt : nodeTypes) {
             classBuilder.addMethod(buildPerTypeEncode(nt));
@@ -165,6 +171,39 @@ public class NodeIdEncoderClassGenerator {
         }
 
         return List.of(classBuilder.build());
+    }
+
+    /**
+     * Emits {@code static void requireColumnAgreement(String conflictLabel, DataType<?> type,
+     * Object a, Object b)} — the shared value-agreement predicate (R322, D3). When more than one
+     * writer ({@code @nodeId} decode or plain {@code @field}) lands on a single row column, this
+     * checks that the present writers agree on the column's value, throwing
+     * {@code GraphqlErrorException} on disagreement.
+     *
+     * <p>Agreement is defined by the destination column's coercion: each value is run through the
+     * column's jOOQ {@code DataType.convert} (the same coercion the real write applies) and the
+     * results compared with {@code Objects.equals}. Coercing both sides collapses format-variant
+     * wire values ({@code "01"}, {@code 1.0}, a {@code BigInteger}) and a decoded {@code "1"} onto
+     * the same key, so they agree, while genuinely different stored values still disagree. The
+     * {@code convert(Object)} call rides the class-level {@code @SuppressWarnings({"deprecation",
+     * "removal"})}, so it adds no new suppression. {@code conflictLabel} names the conflicting
+     * GraphQL input fields (never the SQL column or the {@code @field(name:)} mapping), consistent
+     * with the existing decode-mismatch messages. Call sites with more than two writers emit pairwise
+     * calls against the first present writer ({@code equals} is transitive).
+     */
+    private static MethodSpec buildRequireColumnAgreement() {
+        TypeName dataTypeWildcard = ParameterizedTypeName.get(DATA_TYPE, WildcardTypeName.subtypeOf(TypeName.OBJECT));
+        return MethodSpec.methodBuilder("requireColumnAgreement")
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .addParameter(String.class, "conflictLabel")
+            .addParameter(dataTypeWildcard, "type")
+            .addParameter(Object.class, "a")
+            .addParameter(Object.class, "b")
+            .beginControlFlow("if (!$T.equals(type.convert(a), type.convert(b)))", OBJECTS)
+            .addStatement("throw $T.newErrorException().message($S + conflictLabel).build()",
+                GRAPHQL_ERROR, "Conflicting values supplied for ")
+            .endControlFlow()
+            .build();
     }
 
     /** Emits {@code static String encode<TypeName>(T1 v0, ..., TN vN-1)}. */
