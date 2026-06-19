@@ -197,7 +197,9 @@ final class OrderByResolver {
             Object nameVal = nameArg != null ? nameArg.getValue() : null;
             String indexName = nameVal instanceof StringValue sv ? sv.getValue().strip()
                 : nameVal instanceof String s ? s.strip() : null;
-            entries = resolveIndexColumns(tableSqlName, indexName);
+            // @order enum-value direction comes from the runtime input object, not the directive;
+            // ASC is the build-time fallback the *OrderBy helper flips at code-generation time.
+            entries = resolveIndexColumns(tableSqlName, indexName, OrderBySpec.SortDirection.ASC);
         }
         if (entries == null) {
             errors.add("enum value '" + ev.getName() + "': could not resolve @order columns in table '" + tableSqlName + "'");
@@ -207,8 +209,15 @@ final class OrderByResolver {
         return new OrderBySpec.Fixed(entries, uniformAsc);
     }
 
-    /** Looks up named index columns from the catalog; returns {@code null} when not found. */
-    private List<OrderBySpec.ColumnOrderEntry> resolveIndexColumns(String tableSqlName, String indexName) {
+    /**
+     * Looks up named index columns from the catalog; returns {@code null} when not found.
+     *
+     * <p>{@code direction} is stamped onto every resolved entry. The {@code @defaultOrder} call site
+     * passes the directive-level {@code direction:}; the {@code @order} enum-value alias passes
+     * {@code ASC} because its direction comes from the runtime input object, not the directive.
+     */
+    private List<OrderBySpec.ColumnOrderEntry> resolveIndexColumns(
+            String tableSqlName, String indexName, OrderBySpec.SortDirection direction) {
         if (indexName == null) return null;
         var colsOpt = ctx.catalog.findIndexColumns(tableSqlName, indexName);
         if (colsOpt.isEmpty() || colsOpt.get().isEmpty()) return null;
@@ -216,7 +225,7 @@ final class OrderByResolver {
             .map(ce -> new OrderBySpec.ColumnOrderEntry(
                 new ColumnRef(ce.sqlName(), ce.javaName(), ce.columnClass()),
                 null,
-                OrderBySpec.SortDirection.ASC))
+                direction))
             .toList();
     }
 
@@ -239,7 +248,7 @@ final class OrderByResolver {
             Object indexVal = indexArg.getValue();
             String indexName = indexVal instanceof StringValue sv ? sv.getValue().strip()
                 : indexVal instanceof String s ? s.strip() : null;
-            if (indexName != null) return resolveIndexColumns(tableSqlName, indexName);
+            if (indexName != null) return resolveIndexColumns(tableSqlName, indexName, defaultDirection);
         }
 
         var pkArg = dir.getArgument(ARG_PRIMARY_KEY);
@@ -253,7 +262,7 @@ final class OrderByResolver {
                 .map(ce -> new OrderBySpec.ColumnOrderEntry(
                     new ColumnRef(ce.sqlName(), ce.javaName(), ce.columnClass()),
                     null,
-                    OrderBySpec.SortDirection.ASC))
+                    defaultDirection))
                 .toList();
         }
 

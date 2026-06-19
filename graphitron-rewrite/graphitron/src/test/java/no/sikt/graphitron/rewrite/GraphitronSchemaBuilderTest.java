@@ -1054,6 +1054,24 @@ class GraphitronSchemaBuilderTest {
                 assertThat(order.columns().get(0).direction()).isEqualTo(OrderBySpec.SortDirection.ASC);
             }),
 
+        DEFAULT_ORDER_INDEX_DESC(
+            "R339: @defaultOrder(index:, direction: DESC) stamps DESC onto each index column",
+            """
+            type Actor @table(name: "actor") { name: String }
+            type FilmActor @table(name: "film_actor") {
+                actors: [Actor!]! @defaultOrder(index: "idx_actor_last_name", direction: DESC)
+            }
+            type Query { filmActor: FilmActor }
+            """,
+            schema -> {
+                var order = (OrderBySpec.Fixed) ((TableField) schema.field("FilmActor", "actors")).orderBy();
+                assertThat(order).isNotNull();
+                assertThat(order.uniformAsc()).isFalse();
+                assertThat(order.columns()).hasSize(1);
+                assertThat(order.columns().get(0).column().sqlName()).isEqualToIgnoringCase("last_name");
+                assertThat(order.columns().get(0).direction()).isEqualTo(OrderBySpec.SortDirection.DESC);
+            }),
+
         DEFAULT_ORDER_PRIMARY_KEY(
             "@defaultOrder(primaryKey: true) resolves PK columns — actor_id",
             """
@@ -1089,8 +1107,8 @@ class GraphitronSchemaBuilderTest {
             }),
 
         DEFAULT_ORDER_DIRECTION_DESC(
-            "@defaultOrder(direction: DESC) pushes DESC onto each PK entry; primaryKey-mode "
-            + "synthesised entries hardcode ASC, so uniformAsc reflects the entries' ASC, not the directive's DESC",
+            "@defaultOrder(primaryKey: true, direction: DESC) stamps DESC onto each PK entry; "
+            + "uniformAsc is false because the directive-level direction is honoured for primaryKey-mode",
             """
             type Actor @table(name: "actor") { name: String }
             type FilmActor @table(name: "film_actor") {
@@ -1100,10 +1118,10 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> {
                 var order = (OrderBySpec.Fixed) ((TableField) schema.field("FilmActor", "actors")).orderBy();
-                // primaryKey-mode synthesises entries hardcoded to ASC; directive-level DESC does not
-                // apply to PK/index variants (only to fields:). Per the R243 spec, fork (b).
-                assertThat(order.uniformAsc()).isTrue();
-                assertThat(order.columns().get(0).direction()).isEqualTo(OrderBySpec.SortDirection.ASC);
+                // R339: primaryKey-mode honours the directive-level direction:, so DESC is stamped
+                // onto each synthesised PK entry and uniformAsc reflects it.
+                assertThat(order.uniformAsc()).isFalse();
+                assertThat(order.columns().get(0).direction()).isEqualTo(OrderBySpec.SortDirection.DESC);
             }),
 
         // R243: per-field direction in @defaultOrder(fields: [...]).
