@@ -34,6 +34,15 @@ import java.util.Set;
  *                       plugin loader. Unit-tier callers default to the current thread's
  *                       context classloader through the six-arg overload, which equals the
  *                       system classloader in a JUnit-launched JVM.
+ * @param compileSourceRoots compile source-root directories (hand-written plus
+ *                       generated-sources) the LSP catalog parses to recover Java
+ *                       declaration positions and Javadoc for goto-definition and
+ *                       hover. Populated from every reactor project's
+ *                       {@link org.apache.maven.project.MavenProject#getCompileSourceRoots()}
+ *                       when the mojo runs inside Maven; empty for unit-tier callers and
+ *                       for any goal that builds a catalog without a real project, in
+ *                       which case source positions stay
+ *                       {@link no.sikt.graphitron.rewrite.catalog.CompletionData.SourceLocation#UNKNOWN}.
  */
 public record RewriteContext(
     List<SchemaInput> schemaInputs,
@@ -45,7 +54,8 @@ public record RewriteContext(
     String jooqPackage,
     Map<String, String> namedReferences,
     List<Path> classpathRoots,
-    ClassLoader codegenLoader
+    ClassLoader codegenLoader,
+    List<Path> compileSourceRoots
 ) {
     /** Standard schema file extensions accepted out of the box. */
     public static final Set<String> DEFAULT_SCHEMA_FILE_EXTENSIONS = Set.of(".graphqls", ".graphql");
@@ -68,6 +78,32 @@ public record RewriteContext(
         schemaFileExtensions = Set.copyOf(schemaFileExtensions);
         namedReferences = Map.copyOf(namedReferences);
         classpathRoots = List.copyOf(classpathRoots);
+        // Source roots are null-tolerant: callers that build a catalog without a Maven
+        // project (unit tier, validate-only) omit them and goto-definition / hover fall
+        // back to file-level / UNKNOWN locations.
+        compileSourceRoots = compileSourceRoots == null ? List.of() : List.copyOf(compileSourceRoots);
+    }
+
+    /**
+     * Back-compatible ten-arg constructor (pre-{@code compileSourceRoots}). Defaults
+     * {@code compileSourceRoots} to empty so callers that do not surface Java source
+     * roots keep working; their catalogs carry file-level / {@code UNKNOWN} positions
+     * as before.
+     */
+    public RewriteContext(
+        List<SchemaInput> schemaInputs,
+        Set<String> schemaFileExtensions,
+        Path basedir,
+        Path outputDirectory,
+        Path outputResourcesDirectory,
+        String outputPackage,
+        String jooqPackage,
+        Map<String, String> namedReferences,
+        List<Path> classpathRoots,
+        ClassLoader codegenLoader
+    ) {
+        this(schemaInputs, schemaFileExtensions, basedir, outputDirectory, outputResourcesDirectory,
+            outputPackage, jooqPackage, namedReferences, classpathRoots, codegenLoader, List.of());
     }
 
     /**
@@ -87,7 +123,7 @@ public record RewriteContext(
     ) {
         this(schemaInputs, DEFAULT_SCHEMA_FILE_EXTENSIONS, basedir, outputDirectory,
             defaultResourcesDirectory(outputDirectory), outputPackage, jooqPackage,
-            namedReferences, classpathRoots, Thread.currentThread().getContextClassLoader());
+            namedReferences, classpathRoots, Thread.currentThread().getContextClassLoader(), List.of());
     }
 
     /**
@@ -107,7 +143,7 @@ public record RewriteContext(
     ) {
         this(schemaInputs, DEFAULT_SCHEMA_FILE_EXTENSIONS, basedir, outputDirectory,
             defaultResourcesDirectory(outputDirectory), outputPackage, jooqPackage,
-            namedReferences, List.of(), Thread.currentThread().getContextClassLoader());
+            namedReferences, List.of(), Thread.currentThread().getContextClassLoader(), List.of());
     }
 
     private static Path defaultResourcesDirectory(Path outputDirectory) {

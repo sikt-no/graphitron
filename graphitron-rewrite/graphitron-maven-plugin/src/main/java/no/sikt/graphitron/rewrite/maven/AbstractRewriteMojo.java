@@ -139,7 +139,8 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
             effectiveJooq,
             toNamedReferenceMap(namedReferences),
             resolveClasspathRoots(),
-            codegenLoader
+            codegenLoader,
+            resolveCompileSourceRoots()
         );
     }
 
@@ -217,6 +218,40 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
             Path path = Path.of(dir).toAbsolutePath().normalize();
             if (Files.isDirectory(path)) {
                 roots.add(path);
+            }
+        }
+        return new ArrayList<>(roots);
+    }
+
+    /**
+     * Compile source-root directories from every reactor project: the
+     * hand-written {@code src/main/java} roots plus any generated-sources roots
+     * a prior plugin registered (jOOQ output among them). The LSP catalog
+     * parses these to recover Java declaration positions and Javadoc for
+     * goto-definition / hover, and to refine jOOQ table / column positions from
+     * file-level to per-line.
+     *
+     * <p>Mirrors {@link #resolveClasspathRoots()}: scoped to reactor source, not
+     * third-party jars, and falls back to the current project's own source
+     * roots when the Maven session is unavailable (unit-tier callers). Only
+     * existing directories are kept, so the pre-{@code mvn compile} state where
+     * generated sources are absent contributes nothing and the catalog falls
+     * back to file-level / {@code UNKNOWN} positions.
+     */
+    private List<Path> resolveCompileSourceRoots() {
+        var roots = new LinkedHashSet<Path>();
+        Iterable<MavenProject> projects = session != null && session.getAllProjects() != null
+            ? session.getAllProjects()
+            : List.of(project);
+        for (MavenProject p : projects) {
+            List<String> sourceRoots = p.getCompileSourceRoots();
+            if (sourceRoots == null) continue;
+            for (String dir : sourceRoots) {
+                if (dir == null) continue;
+                Path path = Path.of(dir).toAbsolutePath().normalize();
+                if (Files.isDirectory(path)) {
+                    roots.add(path);
+                }
             }
         }
         return new ArrayList<>(roots);

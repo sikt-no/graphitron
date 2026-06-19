@@ -236,6 +236,52 @@ class HoversTest {
     }
 
     @Test
+    void serviceClassHoverShowsJavadocWhenPresent() {
+        var file = file("""
+            type Query {
+                x: Int @service(service: {className: "com.example.FilmService", method: "list"})
+            }
+            """);
+        var pos = pointAt(file, 1, "FilmService");
+
+        var catalog = new CompletionData(
+            List.of(), List.of(),
+            List.of(new CompletionData.ExternalReference(
+                "com.example.FilmService", "com.example.FilmService", "Lists films from the catalog.",
+                List.of(), List.of(), CompletionData.SourceLocation.UNKNOWN)));
+
+        var hover = Hovers.compute(file, catalog, LspSchemaSnapshot.unavailable(), pos).orElseThrow();
+        var md = hover.getContents().getRight().getValue();
+        assertThat(md).contains("**Class** `com.example.FilmService`");
+        assertThat(md).contains("Lists films from the catalog.");
+    }
+
+    @Test
+    void serviceMethodHoverShowsJavadocWhenPresent() {
+        var method = new CompletionData.Method(
+            "list", "List", "Returns the first N films.",
+            List.of(new CompletionData.Parameter("limit", "int", null, "")),
+            CompletionData.SourceLocation.UNKNOWN);
+        var catalog = new CompletionData(
+            List.of(), List.of(),
+            List.of(new CompletionData.ExternalReference(
+                "com.example.FilmService", "com.example.FilmService", "",
+                List.of(method), List.of(), CompletionData.SourceLocation.UNKNOWN)));
+        var file = file("""
+            type Query {
+                x: Int @service(service: {className: "com.example.FilmService", method: "list"})
+            }
+            """);
+        var pos = pointAt(file, 1, "list");
+
+        var hover = Hovers.compute(file, catalog, LspSchemaSnapshot.unavailable(), pos).orElseThrow();
+        var md = hover.getContents().getRight().getValue();
+        assertThat(md).contains("**Method** `list`");
+        assertThat(md).contains("Returns the first N films.");
+        assertThat(md).contains("List list(int limit)");
+    }
+
+    @Test
     void serviceMethodHoverShowsSignature() {
         var file = file("""
             type Query {

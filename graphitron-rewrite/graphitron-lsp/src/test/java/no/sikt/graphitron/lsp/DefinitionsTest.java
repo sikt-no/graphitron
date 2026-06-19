@@ -15,13 +15,16 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Goto-definition for known directive arguments. Maps the cursor to a
- * {@code Location} on the jOOQ-generated source tree pre-populated by
+ * {@code Location} on the consumer's Java tree pre-populated by
  * {@code CatalogBuilder}; the LSP just looks the location up.
  *
- * <p>Phase 4 covers the catalog-driven dispatch and the fall-throughs
- * (unknown name, unknown table, unknown nested field, missing source
- * location). Real source-line refinement waits until JavaParser is
- * adopted; here every entry's range is {@code (0:0)}.
+ * <p>Two families are covered: the jOOQ half ({@code @table} / {@code @field}
+ * / {@code @reference}) and its fall-throughs (unknown name, unknown table,
+ * unknown nested field, missing source location), and the service half (the
+ * class-name / method-name binding directives), whose locations the
+ * {@code SourceWalker} fills in from the consumer's sources. The catalog
+ * fixtures here carry explicit source locations; real source-line refinement
+ * is exercised at the pipeline tier in {@code CatalogBuilderSourceTest}.
  */
 class DefinitionsTest {
 
@@ -122,6 +125,141 @@ class DefinitionsTest {
         var file = file("type Foo @table(name: \"film\") { bar: Int }");
         var pos = pointAt(file, 0, "film");
         assertThat(Definitions.compute(file, unsourcedCatalog, LspSchemaSnapshot.unavailable(), pos)).isEmpty();
+    }
+
+    // ---- Service half: class-name / method-name binding directives ----
+
+    private static final String SVC_URI = "file:///fake/svc/PriceService.java";
+
+    @Test
+    void serviceClassNameJumpsToClassDeclaration() {
+        var file = file("""
+            type Query {
+                films: Int @service(service: {className: "com.example.PriceService", method: "price"})
+            }
+            """);
+        var pos = pointAt(file, 1, "com.example.PriceService");
+        var loc = Definitions.compute(file, serviceCatalog(), LspSchemaSnapshot.unavailable(), pos).orElseThrow();
+        assertThat(loc.getUri()).isEqualTo(SVC_URI);
+        assertThat(loc.getRange().getStart().getLine()).isEqualTo(10);
+    }
+
+    @Test
+    void serviceMethodJumpsToMethodDeclaration() {
+        var file = file("""
+            type Query {
+                films: Int @service(service: {className: "com.example.PriceService", method: "price"})
+            }
+            """);
+        var pos = pointAt(file, 1, "price");
+        var loc = Definitions.compute(file, serviceCatalog(), LspSchemaSnapshot.unavailable(), pos).orElseThrow();
+        assertThat(loc.getRange().getStart().getLine()).isEqualTo(12);
+    }
+
+    @Test
+    void externalFieldMethodJumpsToMethodDeclaration() {
+        var file = file("""
+            type Foo {
+                bar: Int @externalField(reference: {className: "com.example.PriceService", method: "price"})
+            }
+            """);
+        var pos = pointAt(file, 1, "price");
+        var loc = Definitions.compute(file, serviceCatalog(), LspSchemaSnapshot.unavailable(), pos).orElseThrow();
+        assertThat(loc.getRange().getStart().getLine()).isEqualTo(12);
+    }
+
+    @Test
+    void enumReferenceClassNameJumpsToClassDeclaration() {
+        var file = file("""
+            enum Color @enum(enumReference: {className: "com.example.PriceService"}) { RED }
+            """);
+        var pos = pointAt(file, 0, "com.example.PriceService");
+        var loc = Definitions.compute(file, serviceCatalog(), LspSchemaSnapshot.unavailable(), pos).orElseThrow();
+        assertThat(loc.getUri()).isEqualTo(SVC_URI);
+    }
+
+    @Test
+    void conditionMethodJumpsToMethodDeclaration() {
+        var file = file("""
+            type Foo {
+                bar: Int @condition(condition: {className: "com.example.PriceService", method: "price"})
+            }
+            """);
+        var pos = pointAt(file, 1, "price");
+        var loc = Definitions.compute(file, serviceCatalog(), LspSchemaSnapshot.unavailable(), pos).orElseThrow();
+        assertThat(loc.getRange().getStart().getLine()).isEqualTo(12);
+    }
+
+    @Test
+    void sourceRowFlatClassNameJumpsToClassDeclaration() {
+        var file = file("""
+            type Foo {
+                bar: Int @sourceRow(className: "com.example.PriceService", method: "price")
+            }
+            """);
+        var pos = pointAt(file, 1, "com.example.PriceService");
+        var loc = Definitions.compute(file, serviceCatalog(), LspSchemaSnapshot.unavailable(), pos).orElseThrow();
+        assertThat(loc.getUri()).isEqualTo(SVC_URI);
+    }
+
+    @Test
+    void tableMethodFlatMethodJumpsToMethodDeclaration() {
+        var file = file("""
+            type Foo {
+                bar: Int @tableMethod(className: "com.example.PriceService", method: "price")
+            }
+            """);
+        var pos = pointAt(file, 1, "price");
+        var loc = Definitions.compute(file, serviceCatalog(), LspSchemaSnapshot.unavailable(), pos).orElseThrow();
+        assertThat(loc.getRange().getStart().getLine()).isEqualTo(12);
+    }
+
+    @Test
+    void recordClassNameReturnsEmptyByCarveOut() {
+        // @record is deprecated/ignored; its className binds no class even
+        // though the coordinate is shared with @enum.
+        var file = file("""
+            type Foo @record(record: {className: "com.example.PriceService"}) { bar: Int }
+            """);
+        var pos = pointAt(file, 0, "com.example.PriceService");
+        assertThat(Definitions.compute(file, serviceCatalog(), LspSchemaSnapshot.unavailable(), pos)).isEmpty();
+    }
+
+    @Test
+    void unknownClassNameReturnsEmpty() {
+        var file = file("""
+            type Foo {
+                bar: Int @service(service: {className: "com.example.Ghost", method: "price"})
+            }
+            """);
+        var pos = pointAt(file, 1, "com.example.Ghost");
+        assertThat(Definitions.compute(file, serviceCatalog(), LspSchemaSnapshot.unavailable(), pos)).isEmpty();
+    }
+
+    @Test
+    void methodWithUnknownLocationReturnsEmpty() {
+        // The overload-ambiguous method left UNKNOWN by the walk yields no jump.
+        var file = file("""
+            type Foo {
+                bar: Int @service(service: {className: "com.example.PriceService", method: "ambiguous"})
+            }
+            """);
+        var pos = pointAt(file, 1, "ambiguous");
+        assertThat(Definitions.compute(file, serviceCatalog(), LspSchemaSnapshot.unavailable(), pos)).isEmpty();
+    }
+
+    private static CompletionData serviceCatalog() {
+        var classDef = new CompletionData.SourceLocation(SVC_URI, 10, 4);
+        var methodDef = new CompletionData.SourceLocation(SVC_URI, 12, 4);
+        var price = new CompletionData.Method(
+            "price", "Field", "", List.of(), methodDef);
+        // An overload-ambiguous method the walk could not pin: location UNKNOWN.
+        var ambiguous = new CompletionData.Method(
+            "ambiguous", "Object", "", List.of(), CompletionData.SourceLocation.UNKNOWN);
+        var ref = new CompletionData.ExternalReference(
+            "com.example.PriceService", "com.example.PriceService", "",
+            List.of(price, ambiguous), List.of(), classDef);
+        return new CompletionData(List.of(), List.of(), List.of(ref));
     }
 
     private static LspSchemaSnapshot fooFilmSnapshot() {
