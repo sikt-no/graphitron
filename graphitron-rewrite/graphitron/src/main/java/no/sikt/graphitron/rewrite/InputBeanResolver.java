@@ -36,6 +36,7 @@ import static no.sikt.graphitron.rewrite.BuildContext.ARG_TYPE_NAME;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_FIELD;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_NODE_ID;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_REFERENCE;
+import static no.sikt.graphitron.rewrite.BuildContext.DIR_TABLE;
 import static no.sikt.graphitron.rewrite.BuildContext.argString;
 
 /**
@@ -264,11 +265,34 @@ final class InputBeanResolver {
      * Walks the SDL fields binding each on the column axis: every {@code @nodeId(typeName:)} field is a
      * {@link CallSiteExtraction.RecordKeyDecode} (R195's wire-decode mechanism) whose decoded values
      * load into resolved target columns on this record — the record's own key (same-table identity,
-     * R311) or a foreign key's child columns (cross-table reference, R315); every other field names a
-     * column through {@code @field(name:)} (a resolved {@link CallSiteExtraction.ColumnBinding}). A
-     * record may carry several {@code @nodeId} fields. Rejections are R195/R97-shaped and surface at
-     * validate time as {@code UnclassifiedField} — the honest replacement for the bean path's misleading
-     * "has no fields matching".
+     * R311) or a foreign key's child columns (cross-table reference, R315); every other plain field names
+     * a column through {@code @field(name:)} (a resolved {@link CallSiteExtraction.ColumnBinding}). A
+     * record may carry several {@code @nodeId} fields.
+     *
+     * <p>A field whose SDL type is itself a directiveless nested grouping input flattens transparently
+     * onto the one backing table (R336): {@link #collectJooqBindings} recurses into the nested type's
+     * fields and keeps producing the same column-axis carriers, each carrying the full access path from
+     * the record's own {@code Map} down to the leaf (so {@code details.title} carries
+     * {@code ["details", "title"]}). This is the column-axis analogue of the {@code @table}-input nesting
+     * the filter axis already flattens.
+     *
+     * <p>Rejections are R195/R97-shaped and surface at validate time as {@code UnclassifiedField} — the
+     * honest replacement for the bean path's misleading "has no fields matching":
+     * <ul>
+     *   <li>the param record type is not in the jOOQ catalog;</li>
+     *   <li>a {@code @nodeId} field whose {@code typeName:} / {@code @reference} cannot resolve to target
+     *       columns on this record (R195/R315, see {@link #buildRecordKeyDecode});</li>
+     *   <li>a plain {@code @field} (at any nesting depth) resolving to no column on the table;</li>
+     *   <li>a nested grouping input that reaches itself (cyclic shape) — a single record cannot represent
+     *       a recursive input;</li>
+     *   <li>a list-shaped nested grouping field — a single record has one value per column, so a list of
+     *       column-groups is a cardinality contradiction;</li>
+     *   <li>a nested input carrying {@code @table} — a second DML target, not a column group to flatten
+     *       (compound multi-table mutations are R122's scope);</li>
+     *   <li>two plain {@code @field} leaves (in any nested group) resolving to the same column — two
+     *       fields cannot populate one column. Decode-vs-decode / decode-vs-column on a shared column stay
+     *       with R322's runtime value-agreement deferral (last-write-wins), unchanged.</li>
+     * </ul>
      */
     private JooqBuilt buildJooqRecord(GraphitronType.JooqTableRecordInputType jtr,
             graphql.schema.GraphQLInputObjectType iot, String paramName, String methodName,
@@ -283,34 +307,124 @@ final class InputBeanResolver {
         }
         var columnBindings = new ArrayList<CallSiteExtraction.ColumnBinding>();
         var keyDecodes = new ArrayList<CallSiteExtraction.RecordKeyDecode>();
+        // Seed the cycle guard with the param record's own input type name, so an immediate
+        // self-reference (a nested field typed as the outer input) is named at the first hop. The
+        // recursion is on SDL nested-input type names onto this one table, so it threads the
+        // SDL-type-name "expanding" discipline (ClassifyContext) rather than buildInputBean's
+        // Set<Class<?>> visited (D2): a different carrier family on a parallel axis.
+        Rejection rejection = collectJooqBindings(iot, table, where, List.of(),
+            ClassifyContext.root().expanding(iot.getName()), columnBindings, keyDecodes);
+        if (rejection != null) {
+            return new JooqBuilt.Fail(rejection);
+        }
+        // Plain-column collision (D3): two @field leaves (in any nested group) resolving to one column
+        // would last-write-wins silently. Reject, mirroring the member-axis binding-key collision reject.
+        // Decode-vs-decode / decode-vs-column overlaps are intentionally NOT checked here — those stay
+        // with R322's value-agreement deferral.
+        var byColumn = new LinkedHashMap<String, List<String>>();
+        for (var cb : columnBindings) {
+            List<String> prior = byColumn.putIfAbsent(cb.column().sqlName(), cb.path());
+            if (prior != null) {
+                return new JooqBuilt.Fail(Rejection.structural(where
+                    + ": input fields '" + dottedPath(prior) + "' and '" + dottedPath(cb.path())
+                    + "' both resolve to column '" + cb.column().sqlName() + "' on table '"
+                    + table.tableName() + "' — two fields cannot populate one column; remove one, or"
+                    + " point its @field(name:) at a different column"));
+            }
+        }
+        return new JooqBuilt.Ok(new CallSiteExtraction.JooqRecord(
+            table, columnBindings, List.copyOf(keyDecodes)));
+    }
+
+    /**
+     * Recursively walks the SDL fields of {@code iot} — the param record's input type at depth 1, or a
+     * nested directiveless grouping input deeper — appending column-axis carriers to {@code columnBindings}
+     * / {@code keyDecodes}. {@code pathPrefix} is the ordered enclosing nested-input field names (empty at
+     * depth 1); each carrier's {@code path} is {@code pathPrefix} + the leaf field name. {@code classifyCtx}
+     * carries the SDL-type-name "expanding" set for cycle detection (D2), the same idiom
+     * {@code BuildContext.classifyInputField} threads for the {@code @table}-input nesting. Returns the
+     * first {@link Rejection} encountered, or {@code null} on success (the bindings are accumulated into
+     * the caller-supplied lists).
+     *
+     * <p>This stays parallel to the member-axis recursion ({@code bindField → buildInputBean}) rather than
+     * routing through {@code BuildContext.classifyInputField}: that produces a different carrier family
+     * ({@code InputField.*}) on the filter axis and resolves different identity semantics. The two axes are
+     * the existing intentional split; this recursion is the column axis catching up at the nested level.
+     */
+    private Rejection collectJooqBindings(graphql.schema.GraphQLInputObjectType iot, TableRef table,
+            String where, List<String> pathPrefix, ClassifyContext classifyCtx,
+            List<CallSiteExtraction.ColumnBinding> columnBindings,
+            List<CallSiteExtraction.RecordKeyDecode> keyDecodes) {
         for (var f : iot.getFieldDefinitions()) {
+            List<String> path = append(pathPrefix, f.getName());
+            SdlElement sdlElt = peelSdlListNonNull(f.getType());
             if (f.hasAppliedDirective(DIR_NODE_ID)) {
                 // R315: multiple @nodeId fields are legal (an FK-reference record carries several FK
                 // references). Each resolves independently to its target columns on this record; when
                 // two decodes target the same column their runtime value-agreement is a data-dependent
                 // concern deferred to R322 (last-write-wins here). The legacy single-@nodeId gate is gone.
-                var built = buildRecordKeyDecode(f, table, where);
+                var built = buildRecordKeyDecode(f, path, table, where);
                 if (built instanceof KeyDecodeResult.Fail kf) {
-                    return new JooqBuilt.Fail(kf.rejection());
+                    return kf.rejection();
                 }
                 keyDecodes.add(((KeyDecodeResult.Ok) built).decode());
-                continue;
+            } else if (sdlElt.elementType() instanceof GraphQLInputObjectType nestedIot) {
+                // Nested directiveless grouping input → flatten its fields onto this table (R336).
+                if (sdlElt.list()) {
+                    return Rejection.structural(where
+                        + ": nested input field '" + dottedPath(path) + "' is list-shaped (a list of '"
+                        + nestedIot.getName() + "'), but a single backing record has one value per column"
+                        + " — a list of column-groups cannot flatten onto one record. Make the field"
+                        + " singular, or model the repetition as a separate list-valued mutation");
+                }
+                if (nestedIot.hasAppliedDirective(DIR_TABLE)) {
+                    return Rejection.structural(where
+                        + ": nested input field '" + dottedPath(path) + "' is typed '" + nestedIot.getName()
+                        + "' which carries @table — a nested @table input is a second DML target, not a"
+                        + " column group to flatten onto the param record's table (compound multi-table"
+                        + " mutations are R122's scope). Drop @table to flatten this group's columns onto"
+                        + " the parent, or model it as a separate mutation");
+                }
+                if (classifyCtx.isExpanding(nestedIot.getName())) {
+                    return Rejection.structural(where
+                        + ": nested input field '" + dottedPath(path) + "' reaches input type '"
+                        + nestedIot.getName() + "' which is already expanding — a cyclic input shape cannot"
+                        + " flatten onto a single record (the column-axis analogue of a recursive bean)");
+                }
+                Rejection nested = collectJooqBindings(nestedIot, table, where, path,
+                    classifyCtx.expanding(nestedIot.getName()), columnBindings, keyDecodes);
+                if (nested != null) {
+                    return nested;
+                }
+            } else {
+                String key = bindingKey(f);
+                var col = ctx.catalog.findColumn(table.tableName(), key);
+                if (col.isEmpty()) {
+                    return Rejection.structural(where
+                        + ": input field '" + dottedPath(path) + "' (binding key '" + key + "') resolves to"
+                        + " no column on table '" + table.tableName() + "' backing param record '"
+                        + table.recordClass() + "'"
+                        + BuildContext.candidateHint(key, ctx.catalog.columnSqlNamesOf(table.tableName())));
+                }
+                var ce = col.get();
+                columnBindings.add(new CallSiteExtraction.ColumnBinding(
+                    path, new ColumnRef(ce.sqlName(), ce.javaName(), ce.columnClass())));
             }
-            String key = bindingKey(f);
-            var col = ctx.catalog.findColumn(table.tableName(), key);
-            if (col.isEmpty()) {
-                return new JooqBuilt.Fail(Rejection.structural(where
-                    + ": input field '" + f.getName() + "' (binding key '" + key + "') resolves to no"
-                    + " column on table '" + table.tableName() + "' backing param record '"
-                    + table.recordClass() + "'"
-                    + BuildContext.candidateHint(key, ctx.catalog.columnSqlNamesOf(table.tableName()))));
-            }
-            var ce = col.get();
-            columnBindings.add(new CallSiteExtraction.ColumnBinding(
-                f.getName(), new ColumnRef(ce.sqlName(), ce.javaName(), ce.columnClass())));
         }
-        return new JooqBuilt.Ok(new CallSiteExtraction.JooqRecord(
-            table, columnBindings, List.copyOf(keyDecodes)));
+        return null;
+    }
+
+    /** Appends {@code element} to {@code prefix}, returning a new immutable list (the carrier's path). */
+    private static List<String> append(List<String> prefix, String element) {
+        var out = new ArrayList<String>(prefix.size() + 1);
+        out.addAll(prefix);
+        out.add(element);
+        return List.copyOf(out);
+    }
+
+    /** Renders an access path as a dotted SDL field reference (e.g. {@code details.title}) for messages. */
+    private static String dottedPath(List<String> path) {
+        return String.join(".", path);
     }
 
     private sealed interface KeyDecodeResult {
@@ -338,7 +452,7 @@ final class InputBeanResolver {
      * drives the emitter's throw-vs-conditional-set (D4), set identically for both branches.
      */
     private KeyDecodeResult buildRecordKeyDecode(graphql.schema.GraphQLInputObjectField f,
-            TableRef table, String where) {
+            List<String> path, TableRef table, String where) {
         var typeName = argString(f, DIR_NODE_ID, ARG_TYPE_NAME);
         if (typeName.isEmpty()) {
             return new KeyDecodeResult.Fail(Rejection.structural(where
@@ -378,7 +492,7 @@ final class InputBeanResolver {
             targetColumns = ((BuildContext.RecordFkTargets.Resolved) fkTargets).targetColumns();
         }
         return new KeyDecodeResult.Ok(new CallSiteExtraction.RecordKeyDecode(
-            f.getName(), resolved.encoderClass(), resolved.typeId(), targetColumns, nonNull));
+            path, resolved.encoderClass(), resolved.typeId(), targetColumns, nonNull));
     }
 
     /**
