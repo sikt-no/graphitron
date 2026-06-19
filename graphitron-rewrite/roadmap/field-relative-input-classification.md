@@ -1,13 +1,13 @@
 ---
 id: R327
 title: "Field-relative input classification (retire @table-on-input and the findReturnTablesForInput aggregate)"
-status: Backlog
+status: Spec
 bucket: architecture
 priority: 4
 theme: structural-refactor
 depends-on: []
 created: 2026-06-18
-last-updated: 2026-06-18
+last-updated: 2026-06-19
 ---
 
 # Field-relative input classification (retire @table-on-input and the findReturnTablesForInput aggregate)
@@ -87,6 +87,88 @@ that bit the consumer via the diverted path) is gone now that composite is suppo
 input-field validation field-relative *as part of this item's* classification rewrite, removing the
 divergence without adding speculative untestable code. Folded into this item's scope, not patched
 separately.
+
+## Spec
+
+### The mistake in `buildInputType` to fix
+
+`TypeBuilder.buildInputType` classifies an input type *globally* into `TableInputType` or a non-table
+`InputType` leaf via three ordered steps (`@table` → override-gate → `findReturnTablesForInput`
+aggregate). The design lead's critique, point by point:
+
+- **Step 1** (`@table` → `TableInputType`) is on the deprecation path, but is **kept untouched in
+  this item's first slice** (see slicing): it is the only signal that names the *mutation write
+  target*, a per-type fact, and `MutationInputResolver.resolveInput` (`MutationInputResolver.java:372`)
+  hard-depends on `instanceof TableInputType` + `tit.table()` with no call-site fallback.
+- **Step 2** (`isUsedWithOverrideCondition` → non-table) is **wrong**: it overloads a *per-field
+  validation modifier* (`override` = "the consumer owns this predicate, skip column-coverage on it")
+  into a *whole-type routing gate*, demoting the input to a different consumption bucket
+  (`PlainInputArg` rather than `TableInputArg`). "Has an override field" and "is table-bound" are
+  orthogonal axes; conflating them is the binary short-sightedness. The override flag is already
+  threaded field-relative at the call site (`FieldBuilder.classifyArgument:1017`, `enclosingOverride`),
+  so it has no business deciding the type's bucket. This demotion is what silently broke R330.
+- **Step 3** (`findReturnTablesForInput`) is the right idea (derive table from the consumer) at the
+  wrong altitude: a *global aggregate* over every consuming field that bails to non-table on `> 1` and
+  whose success "moves to" the step-1 outcome (`TableInputType`). It is exactly the "predicate over
+  pre-resolved data, evaluated globally" smell; the consuming field's resolved target (`rt`) is
+  already computed at the call site, so the aggregate recomputes what each call site already knows.
+
+### Two orthogonal axes hide in `@table`-on-input
+
+The architectural payload of this item is naming the split the current single directive splices
+together:
+
+| Axis | Altitude | Mechanism today | Target |
+|------|----------|-----------------|--------|
+| Query-side filter/lookup binding | per *(input, consuming field)* | global `buildInputType` verdict → `TableInputArg` vs `PlainInputArg` | per-call-site derivation from `rt` (this item) |
+| Mutation-side write target | per input type | `TableInputType.table()` consumed by `MutationInputResolver` | stays per-type (slice 4 migrates encoded-ID INSERT/UPSERT only) |
+
+Per-type emission is **not** threatened by the per-call-site query axis: the emitted record
+(`InputRecordShape`, `buildInputRecordShape:1451`) is table-*independent* (it walks SDL field Java
+types only, never `TableRef`), and the binding already lives on `ArgumentRef.InputTypeArg`, not on the
+type. Two call sites against two tables already produce two `PlainInputArg`s today. So "one input type
+reused across two tables" is the redesign's *safety* argument, not a hazard: the residual `@table`-input
+binding decision moves onto the same per-call-site seam the plain-input path already occupies.
+
+### Target invariant
+
+Query-side table-boundness is a property of the *(input type, consuming field)* pair, derived from the
+consuming field's resolved target table at the call site; `override` only suppresses per-field
+column-coverage validation and never changes the consumption bucket.
+
+### Slice plan
+
+1. **Classification-decision fix (first shippable slice).** Collapse steps 2 and 3 of `buildInputType`
+   onto the call-site derivation `PlainInputArg` already performs: remove the override-routing gate and
+   the global `findReturnTablesForInput` aggregate (including the `>1` bail). **Step 1 (`@table` →
+   `TableInputType`) is untouched** so the mutation consumer is unaffected. Independently verifiable at
+   the pipeline tier (SDL → classified `List<ArgumentRef>`); the existing `PlainInputArg` path is the
+   proof the call-site model works in isolation. Same commit retires/repoints the
+   `argument-resolution.adoc` paragraph documenting `isUsedWithOverrideCondition` as a live mechanism.
+2. **`@table`-on-input deprecation signal + removal.** Coordinated with R332 (announce) and the R97 /
+   R222 cluster; narrows the directive scope once the query axis no longer needs it.
+3. **INSERT/UPSERT write-target migration.** Extend the UPDATE/DELETE field-relative walker carrier
+   (R246/R266) to encoded-ID/scalar-return INSERT/UPSERT, so step 1 can finally move off the mutation
+   axis. Deferred because the write target is a *different axis*, not merely a later milestone.
+
+### Validator-mirror obligation (the gate on slice 1)
+
+Decoupling override from routing turns today's 1-D gate into a 2×2: `override` (yes/no) ×
+`column-resolves` (yes/no). Per "validator mirrors classifier invariants," each cell that implies a
+generator branch must fail at validate time if unimplemented, or the change silently shifts which
+schemas validate. The `InputFieldResolver` already lifts column-miss to `UnboundField` uniformly
+(R215), so the machinery exists; slice 1 must pin an explicit truth table mirroring
+`argument-resolution.adoc` §Truth table, with a pipeline-tier test per row:
+
+| override | column resolves | outcome |
+|----------|-----------------|---------|
+| false | true | implicit column predicate emitted (today's table-bound default) |
+| false | false | `UnboundField` → validator rejects (R215: implicit predicate required, no column) |
+| true | true | consumer condition owns the predicate; implicit suppressed |
+| true | false | consumer condition owns the predicate; column-miss admitted (the R330 / opptak shape) |
+
+The fourth row is the one step 2 used to reach by demoting the whole type; slice 1 must reach it
+field-relative and prove (execution tier) it generates the correct correlated predicate.
 
 ## Relation to R332 (the deprecation signal)
 
