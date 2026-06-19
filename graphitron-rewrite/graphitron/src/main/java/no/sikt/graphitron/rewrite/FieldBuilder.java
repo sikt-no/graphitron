@@ -4716,13 +4716,28 @@ class FieldBuilder {
 
     /**
      * Derives the {@link SourceKey} + {@link LoaderRegistration} for a {@code @table}-parent
-     * {@code @splitQuery} field. Single cardinality keys by the parent's FK columns at the first
-     * hop (parent-holds-FK); list cardinality keys by the parent's PK. The direction signal is
-     * cardinality alone — the {@code @splitQuery} schema contract ties Single ⇒ parent-holds-FK
-     * and List ⇒ child-holds-FK, so no table-identity comparison is needed. The keying is taken
-     * from {@code path.get(0)} only, so it is hop-count agnostic: a multi-hop single-cardinality
-     * path (e.g. {@code customer -> store -> address}) keys correctly by the first hop's FK
-     * source columns, and the emitter bridges the remaining hops back from the terminal table.
+     * {@code @splitQuery} field. When the first hop is an {@link JoinStep.FkJoin}, both
+     * cardinalities key by that hop's source-side columns ({@code fk.sourceSideColumns()}): for
+     * Single (parent-holds-FK) these are the parent's FK columns, and for List (child-holds-FK)
+     * {@link BuildContext#resolveFkSlots} orients the slot so the source side is the parent's
+     * <em>referenced</em> columns, which may be a non-PK unique key. Either way they are exactly
+     * the parent columns the emitter's correlation predicate pairs against
+     * ({@code SplitRowsMethodEmitter}'s {@code joinOnParentCols}, also read from
+     * {@code sourceSideColumns()} on the same first hop), so the {@code parentInput} VALUES
+     * columns and the predicate's parent-side columns are drawn from one column set. Keying off
+     * the parent PK when the FK references a non-PK column makes the two disagree, jOOQ resolves
+     * the absent {@code parentInput.field(...)} to {@code null}, and every parent silently
+     * returns zero rows (R338).
+     *
+     * <p>The {@code primaryKeyColumns()} fallback covers the non-FK first-hop shape
+     * ({@link JoinStep.ConditionJoin}), where the emitter's
+     * {@code ParentCorrelation.OnConditionJoin} arm correlates {@code parentInput} on the
+     * parent's own PK columns.
+     *
+     * <p>The keying is taken from {@code path.get(0)} only, so it is hop-count agnostic: a
+     * multi-hop single-cardinality path (e.g. {@code customer -> store -> address}) keys
+     * correctly by the first hop's FK source columns, and the emitter bridges the remaining hops
+     * back from the terminal table.
      *
      * <p>The {@link SourceKey} projection is {@link SourceKey.Wrap.Row} +
      * {@link SourceKey.Reader.ColumnRead} (catalog-FK column read on the parent); the
@@ -4737,7 +4752,7 @@ class FieldBuilder {
             TableRef parentTable, List<JoinStep> path, ReturnTypeRef.TableBoundReturnType returnType) {
         boolean isList = returnType.wrapper().isList();
         List<ColumnRef> entryColumns =
-            (!isList && !path.isEmpty() && path.get(0) instanceof JoinStep.FkJoin fk)
+            (!path.isEmpty() && path.get(0) instanceof JoinStep.FkJoin fk)
                 ? fk.sourceSideColumns()
                 : parentTable.primaryKeyColumns();
         SourceKey sourceKey = new SourceKey(

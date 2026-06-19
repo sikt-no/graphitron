@@ -1,7 +1,7 @@
 ---
 id: R338
 title: "Split-query correlation projects parent node/PK columns instead of the FK referenced columns"
-status: Ready
+status: In Review
 bucket: bug
 depends-on: []
 created: 2026-06-19

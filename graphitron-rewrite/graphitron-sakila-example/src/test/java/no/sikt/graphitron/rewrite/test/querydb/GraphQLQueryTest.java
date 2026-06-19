@@ -1519,6 +1519,34 @@ class GraphQLQueryTest {
         langs.element(2, as(MAP)).extractingByKey("films", as(LIST)).isEmpty();
     }
 
+    @Test
+    void splitTableField_fkReferencesNonPkUniqueKey_returnsChildRows() {
+        // R338: SplitParent.tags (@splitQuery) whose FK split_parent_tag.parent_code references
+        // split_parent.parent_code — a non-PK UNIQUE column, not the parent_id PK. The split-rows
+        // fetcher must project parent_code (the FK's referenced column) into parentInput and
+        // correlate on it. Before the fix, parentInput was keyed by the parent PK, the correlation
+        // predicate referenced an absent parentInput column, jOOQ resolved it to NULL, and every
+        // parent returned an empty list. The seed gives ALPHA two tags and BETA one.
+        QUERY_COUNT.set(0);
+        Map<String, Object> data = execute(
+            "{ splitParents { parentCode tags { tag } } }");
+        // 2 round-trips: the splitParents root + one batched DataLoader fetch for tags. Proves the
+        // batch fan-in still works while the per-parent scatter keys off the unique-key value.
+        assertThat(QUERY_COUNT.get()).isEqualTo(2);
+
+        var parents = assertThat(data).extractingByKey("splitParents", as(list(Map.class)));
+        parents.filteredOn(p -> "ALPHA".equals(p.get("parentCode")))
+            .singleElement(as(MAP))
+            .extractingByKey("tags", as(list(Map.class)))
+            .extracting(t -> t.get("tag"))
+            .containsExactlyInAnyOrder("a-one", "a-two");
+        parents.filteredOn(p -> "BETA".equals(p.get("parentCode")))
+            .singleElement(as(MAP))
+            .extractingByKey("tags", as(list(Map.class)))
+            .extracting(t -> t.get("tag"))
+            .containsExactly("b-one");
+    }
+
     @SuppressWarnings("unchecked")
     @Test
     void splitLookupTableField_filtersActorsPerFilm() {

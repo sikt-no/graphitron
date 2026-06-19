@@ -388,6 +388,35 @@ CREATE TABLE storage_bin (
     label   varchar(64) NOT NULL
 );
 
+-- R338 execution-tier fixture: a parent referenced through a *non-PK unique key*, plus a child
+-- whose FK targets that unique column (split_parent_tag.parent_code -> split_parent.parent_code,
+-- the UNIQUE column, not the parent_id PK). A @splitQuery list field on the parent must project
+-- the FK's referenced column (parent_code) into parentInput; keying off the parent PK made the
+-- emitted correlation predicate reference an absent parentInput column, jOOQ resolved it to NULL,
+-- and every parent silently returned zero rows. See split-query-non-pk-fk-referenced-column.md
+-- (R338). The seed gives ALPHA two tags and BETA one so the execution test asserts the child rows
+-- come back (not an empty list) and scatter per parent by the unique-key value, not the PK.
+CREATE TABLE split_parent (
+    parent_id   integer     PRIMARY KEY,
+    parent_code varchar(64) NOT NULL UNIQUE,
+    label       varchar(64) NOT NULL
+);
+
+CREATE TABLE split_parent_tag (
+    tag_id      integer     PRIMARY KEY,
+    parent_code varchar(64) NOT NULL REFERENCES split_parent(parent_code),
+    tag         varchar(64) NOT NULL
+);
+
+INSERT INTO split_parent (parent_id, parent_code, label) VALUES
+    (1, 'ALPHA', 'Alpha parent'),
+    (2, 'BETA',  'Beta parent');
+
+INSERT INTO split_parent_tag (tag_id, parent_code, tag) VALUES
+    (1, 'ALPHA', 'a-one'),
+    (2, 'ALPHA', 'a-two'),
+    (3, 'BETA',  'b-one');
+
 -- ===========================
 -- nodeidfixture schema
 -- ===========================
