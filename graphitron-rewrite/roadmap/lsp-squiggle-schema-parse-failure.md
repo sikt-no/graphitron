@@ -5,7 +5,7 @@ status: Backlog
 bucket: feature
 priority: 5
 theme: lsp
-depends-on: [schema-parse-failure-clean-dev-diagnostic]
+depends-on: []
 created: 2026-06-19
 last-updated: 2026-06-19
 ---
@@ -16,4 +16,4 @@ Follow-on to R344 (which fixed the dev-log noise). A syntactically invalid schem
 
 R344 positioned the transport for this: `SchemaParseException` (`graphitron/.../rewrite/SchemaParseException.java`) carries a nullable `SourceLocation location` and a `String brief`, which are the offending site this item needs to place a squiggle. This item is the consumer that justifies carrying those fields; until it lands, only `location` is non-derivable (the `brief` is a slice of `getMessage()`), so the implementer should decide whether to keep `brief` as a carried field or recompute it here.
 
-Scope sketch (decide deliberately at Spec): reshape `GraphQLRewriteGenerator.buildOutput()` so a parse failure returns a report-only output (empty/previous artifacts plus a `ValidationReport` carrying the parse error) instead of throwing, and add a parse-error carve-out to the `Diagnostics` silence policy so the syntax-error squiggle survives the `Built.Previous` demotion. This changes `buildOutput`'s throw-vs-report contract, so it is not a free fall-out of R344. See the "Design fork: LSP red squiggle" section of R344's spec (`schema-parse-failure-clean-dev-diagnostic.md`) for the full reasoning behind deferring it.
+Scope sketch (decide deliberately at Spec): reshape `GraphQLRewriteGenerator.buildOutput()` so a parse failure returns a report-only output (empty/previous artifacts plus a `ValidationReport` carrying the parse error) instead of throwing, and add a parse-error carve-out to the `Diagnostics` silence policy so the syntax-error squiggle survives the `Built.Previous` demotion. This changes `buildOutput`'s throw-vs-report contract, so it is not a free fall-out of R344. See the R344 entry in [`changelog.md`](changelog.md) (the spec is retired) for the full reasoning behind deferring it.
