@@ -1,7 +1,7 @@
 ---
 id: R336
 title: "Flatten nested input-object fields in jOOQ-record @service params"
-status: Ready
+status: In Progress
 bucket: architecture
 priority: 6
 theme: service
@@ -30,6 +30,8 @@ Independent In Review → Done review (reviewer session ≠ implementer session,
 **One blocking finding (single-clause doc fix):**
 
 * `CustomerRecordService` class javadoc (`graphitron-sakila-service/src/main/java/no/sikt/graphitron/rewrite/test/services/CustomerRecordService.java`) lists the observable matrix as "an omitted nested leaf stays `changed=false`, **a present-`null` nested leaf is `NULL` (changed=true)**, ...". That present-`null` clause is the pre-amendment three-way and is **factually wrong about what this very method observes**: the execution test `customerUpsert_explicitNullNestedLeaf_collapsesToOmitted` calls `describeCustomerUpsert` with `details.firstName = null` and asserts `first[changed=false,val=null]`. The javadoc was authored in `688a43c`, the same commit that corrected the spec Semantics, D4, and the emitter `openDescent` javadoc to the nested two-way; this fixture's class javadoc was the one site the correction missed. This trips "Documentation names only live tests/code" (rewrite-design-principles.adoc): a doc claim a live test refutes, frozen into the codebase just as the explanatory spec is deleted. **Fix:** rewrite the clause to match the test and the amendment, e.g. "a present-`null` nested leaf *also* stays `changed=false` (graphql-java drops an explicit-`null` field from a nested input-object value, so it collapses to omitted; a column is nullable only through a top-level field)". One-line edit, then re-advance to In Review. Reviewer-session ≠ implementer-session applies again next cycle.
+
+**Addressed (2026-06-19, In Review → In Progress → In Review):** the `CustomerRecordService` class javadoc clause was rewritten to the nested two-way ("a present-`null` nested leaf *also* stays `changed=false` …, a column is nullable only through a top-level field"), matching `customerUpsert_explicitNullNestedLeaf_collapsesToOmitted` (`first[changed=false,val=null]`). No code, schema, or test change; the implementation at `688a43c` is otherwise unchanged. Full pipeline re-verified green. In Review → Done reviewer must be a session other than this implementer one.
 
 ## Spec
 
