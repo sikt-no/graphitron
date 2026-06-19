@@ -2615,6 +2615,96 @@ public class TypeFetcherGenerator {
     }
 
     /**
+     * R322 (D3) on the single-row UPDATE SET path: emits the value-agreement preamble for every SET
+     * column written by more than one carrier where at least one is a {@code @nodeId} decode (the
+     * all-plain SET overlap is the validate-time {@link UpdateRowsWalker} reject, so it never reaches
+     * here). Without this, the single-row {@code emitSetMapPuts} would silently last-write-wins through
+     * {@code Map.put}. Emits nothing when there is no decode-involving SET overlap, so a non-overlapping
+     * UPDATE's SET emission is byte-identical.
+     *
+     * <p>Each participating decode group is decoded once into a preamble-local record (a deliberate
+     * second decode alongside {@code emitSetMapPuts}'s own, acceptable for the rare overlap and kept
+     * self-contained so the existing SET emission is untouched); a present-but-mismatched id decodes to
+     * {@code null} and is skipped here, with {@code emitSetMapPuts}'s decode local surfacing the mismatch
+     * throw as before. For each shared column the present writers' values are gathered and pairwise-checked
+     * against the first present through {@code requireColumnAgreement}, coerced via the column's DataType.
+     */
+    private static void emitSetAgreementPreamble(
+            CodeBlock.Builder block, List<SetGroup> setGroups, String mapLocal, String decodeLocalPrefix,
+            GeneratorUtils.ResolvedTableNames tablesOnly, TableRef tableRef) {
+        // column sqlName -> ordered contributors, each [groupIndex, slot].
+        var byColumn = new java.util.LinkedHashMap<String, List<int[]>>();
+        for (int gi = 0; gi < setGroups.size(); gi++) {
+            var cols = setGroups.get(gi).columns();
+            for (int s = 0; s < cols.size(); s++) {
+                byColumn.computeIfAbsent(cols.get(s).sqlName(), k -> new ArrayList<>()).add(new int[]{gi, s});
+            }
+        }
+        var sharedDecodeColumns = new ArrayList<java.util.Map.Entry<String, List<int[]>>>();
+        var decodeGroups = new LinkedHashSet<Integer>();
+        for (var e : byColumn.entrySet()) {
+            var contributors = e.getValue();
+            if (contributors.size() < 2) continue;
+            if (contributors.stream().noneMatch(c -> setGroups.get(c[0]).nidk() != null)) continue; // all-plain: rejected upstream
+            sharedDecodeColumns.add(e);
+            for (var c : contributors) {
+                if (setGroups.get(c[0]).nidk() != null) decodeGroups.add(c[0]);
+            }
+        }
+        if (sharedDecodeColumns.isEmpty()) return;
+
+        var listCn = ClassName.get("java.util", "List");
+        var arrayListCn = ClassName.get("java.util", "ArrayList");
+        // One re-decode local per participating decode group (reused across its slots).
+        for (int gi : decodeGroups) {
+            var sf = setGroups.get(gi);
+            var nidk = sf.nidk();
+            String local = decodeLocalPrefix + "Agree_" + gi;
+            block.addStatement("$T $L = ($L instanceof $T _sa$L) ? $T.$L(_sa$L) : null",
+                nidk.decodeMethod().returnType(), local,
+                ArgCallEmitter.nestedMapValueExpr(mapLocal, sf.accessPath()), String.class, gi,
+                nidk.decodeMethod().encoderClass(), nidk.decodeMethod().methodName(), gi);
+        }
+        int ci = 0;
+        for (var e : sharedDecodeColumns) {
+            var contributors = e.getValue();
+            var col = setGroups.get(contributors.get(0)[0]).columns().get(contributors.get(0)[1]);
+            String listName = decodeLocalPrefix + "SetAgree" + ci;
+            String label = "input fields " + contributors.stream()
+                .map(c -> "'" + String.join(".", setGroups.get(c[0]).accessPath()) + "'")
+                .distinct()
+                .collect(java.util.stream.Collectors.joining(", "));
+            ClassName encoderClass = contributors.stream()
+                .filter(c -> setGroups.get(c[0]).nidk() != null)
+                .map(c -> setGroups.get(c[0]).nidk().decodeMethod().encoderClass())
+                .findFirst().orElseThrow();
+            block.addStatement("$T<$T> $L = new $T<>()", listCn, Object.class, listName, arrayListCn);
+            int wi = 0;
+            for (var c : contributors) {
+                var sf = setGroups.get(c[0]);
+                var presence = nestedContainsKeyExpr(mapLocal, sf.accessPath(), "sa" + ci + "w" + (wi++));
+                if (sf.nidk() != null) {
+                    String local = decodeLocalPrefix + "Agree_" + c[0];
+                    block.beginControlFlow("if ($L && $L != null)", presence, local)
+                        .addStatement("$L.add($L.value$L())", listName, local, c[1] + 1)
+                        .endControlFlow();
+                } else {
+                    block.beginControlFlow("if ($L)", presence)
+                        .addStatement("$L.add($L)", listName, ArgCallEmitter.nestedMapValueExpr(mapLocal, sf.accessPath()))
+                        .endControlFlow();
+                }
+            }
+            String idx = listName + "Idx";
+            block.beginControlFlow("for (int $L = 1; $L < $L.size(); $L++)", idx, idx, listName, idx)
+                .addStatement("$T.requireColumnAgreement($S, $T.$L.$L.getDataType(), $L.get(0), $L.get($L))",
+                    encoderClass, label, tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName(),
+                    listName, listName, idx)
+                .endControlFlow();
+            ci++;
+        }
+    }
+
+    /**
      * R189: emits the UPSERT DO-UPDATE {@code setsUpdate.put(t.col, DSL.excluded(t.col))} statements
      * for each {@code SetField}, guarded by a presence check on the SDL field name. Walks
      * {@link #setFieldColumns} so composite and reference carriers emit one entry per target
@@ -2781,6 +2871,10 @@ public class TypeFetcherGenerator {
         var linkedHashMap = ClassName.get("java.util", "LinkedHashMap");
         var postInGuard = CodeBlock.builder();
         postInGuard.addStatement("$T<$T<?>, Object> sets = new $T<>()", MAP, fieldClass, linkedHashMap);
+        // R322 (D3): value-agreement preamble for any SET column written by more than one carrier with a
+        // @nodeId decode among them; the silent last-write-wins the Map.put below would otherwise allow.
+        // No-op (byte-identical) when there is no such overlap.
+        emitSetAgreementPreamble(postInGuard, setGroups, "in", "setKey", tablesOnly, tableRef);
         emitSetMapPuts(postInGuard, setGroups, "sets", "in", "in",
             "setKey", tablesOnly, tableRef);
         // Runtime PATCH guard: the carrier guarantees the schema has at least one settable column,

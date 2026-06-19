@@ -22,7 +22,8 @@ public sealed interface UpdateRowsError extends Rejection.AuthorError permits
     UpdateRowsError.NoSetFields,
     UpdateRowsError.MixedCarrierKeyMembership,
     UpdateRowsError.UnsupportedInputFieldShape,
-    UpdateRowsError.OverrideConditionNotSupported
+    UpdateRowsError.OverrideConditionNotSupported,
+    UpdateRowsError.PlainColumnCollision
 {
     /** LSP wire code under the {@code graphitron.update-rows.} namespace. */
     String lspCode();
@@ -142,5 +143,25 @@ public sealed interface UpdateRowsError extends Rejection.AuthorError permits
                 + "or wait for override-condition emit support to land.";
         }
         @Override public String lspCode() { return "graphitron.update-rows.override-condition-not-supported"; }
+    }
+
+    /**
+     * R322 (D2): two or more plain {@code @field} writers (no {@code @nodeId} decode among them) resolve
+     * to one SET column. On single-row UPDATE the second {@code Map.put} silently last-write-wins; reject
+     * at validate time, the UPDATE mirror of the INSERT-path / {@code @service} R336 reject. An overlap
+     * involving a decode is admitted and reconciled by the runtime value-agreement check (D3), so it does
+     * not reach this arm.
+     */
+    record PlainColumnCollision(
+        String fieldA,
+        String fieldB,
+        String column
+    ) implements UpdateRowsError {
+        @Override public String message() {
+            return "@mutation(typeName: UPDATE) input fields '" + fieldA + "' and '" + fieldB
+                + "' both resolve to column '" + column + "' — two fields cannot populate one column;"
+                + " remove one, or point its @field(name:) at a different column.";
+        }
+        @Override public String lspCode() { return "graphitron.update-rows.plain-column-collision"; }
     }
 }

@@ -1794,6 +1794,16 @@ input InsertEndorsementOverlapInput @table(name: "film_endorsement") {
     note: String @field(name: "note")
 }
 
+# R322 single-row UPDATE SET overlap: endorsementId (PK) is the matched-key WHERE; endorsed_film is the
+# SET column written by BOTH the plain @field (endorsedFilm) and the @nodeId FK reference (filmRef). The
+# single-row SET Map.put would silently last-write-wins; the value-agreement preamble throws on
+# disagreement instead. (Two plain @field's on one SET column reject at validate time in the walker.)
+input UpdateEndorsementOverlapInput @table(name: "film_endorsement") {
+    endorsementId: Int! @field(name: "endorsement_id")
+    filmRef: ID @nodeId(typeName: "Film")
+    endorsedFilm: Int @field(name: "endorsed_film")
+}
+
 # R75 Phase 1: single-record DML carrier payload type. The SDL author authors no Java class —
 # the type promotes to PojoResultType.NoBacking at type-classification time; the data field
 # classifies as ChildField.SingleRecordTableField; the mutation classifies as
@@ -2236,6 +2246,11 @@ type Mutation {
     # endorsed_film once (no "column specified more than once" crash) and requireColumnAgreement throws when
     # the two writers disagree; agreeing writers insert the agreed value.
     insertEndorsementOverlap(in: InsertEndorsementOverlapInput!): FilmEndorsement @mutation(typeName: INSERT)
+
+    # R322 single-row UPDATE SET value agreement: endorsed_film is SET by both endorsedFilm (@field) and
+    # filmRef (@nodeId FK reference). requireColumnAgreement throws on disagreement before the .set(sets)
+    # runs; agreeing writers update to the agreed value.
+    updateEndorsementOverlap(in: UpdateEndorsementOverlapInput!): FilmEndorsement @mutation(typeName: UPDATE)
 
     # R315 D4 execution pin: a nullable same-table identity (addressId: ID @nodeId(typeName: "Address"))
     # on a jOOQ AddressRecord @service param, resolving to the record's own serial PK (address_id).
