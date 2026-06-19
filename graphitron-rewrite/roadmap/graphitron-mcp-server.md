@@ -4,7 +4,7 @@ title: "Graphitron MCP server: live catalog discovery and docs RAG in graphitron
 status: Backlog
 bucket: feature
 theme: lsp
-depends-on: []
+depends-on: [mcp-server-skeleton]
 ---
 
 # Graphitron MCP server: live catalog discovery and docs RAG in graphitron:dev
