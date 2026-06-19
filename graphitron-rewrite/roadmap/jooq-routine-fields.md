@@ -1,7 +1,7 @@
 ---
 id: R300
 title: "First-class jOOQ routine support: read functions as target-shape provenance"
-status: Spec
+status: Ready
 bucket: feature
 priority: 5
 theme: service
