@@ -1,7 +1,7 @@
 ---
 id: R336
 title: "Flatten nested input-object fields in jOOQ-record @service params"
-status: In Review
+status: Ready
 bucket: architecture
 priority: 6
 theme: service
@@ -17,6 +17,19 @@ last-updated: 2026-06-19
 Reproduced in-tree against the test catalog: input `ModifyFilmInput { filmId: ID! @nodeId(typeName: "Film"), details: FilmDetailsInput! }` with `FilmDetailsInput { title: String @field(name: "title"), releaseYear: Int @field(name: "release_year") }` and a `@service` param typed `FilmRecord`. The outer input classifies correctly as `JooqTableRecordInputType` (table `film`); the field rejects as `UnclassifiedField` with "input field 'details' … resolves to no column on table 'film'". The nested `FilmDetailsInput` classifies as `PojoInputType` (null backing), consistent with how the `@table`-input path leaves a directiveless nested grouping type.
 
 This is the column-axis analogue of a gap the `@table`-input path already solved: a directiveless nested grouping input under a `@table` input flattens onto the parent table via `InputField.NestingField` + `CallSiteExtraction.NestedInputField`, whose leaf carries an access path (`["details", "title"]`) so the emitter descends `raw.get("details").get("title")` null-safely. The jOOQ-record `@service` path needs the same flatten on its own column axis.
+
+## Review feedback (In Review → Ready, 2026-06-19)
+
+Independent In Review → Done review (reviewer session ≠ implementer session, per the workflow reviewer rule). The implementation landed at `688a43c` (advance-to-In-Review at `e9b152a`) and is **otherwise approve-ready**, so the next pass is narrow:
+
+* **Alignment:** faithful. D1–D4 all shipped; no out-of-scope leakage (the `@table`-input nesting path, multi-table nesting, and nested-type reclassification are untouched; R337 still owns the classification wart).
+* **Architecture:** clean. The column-axis recursion (`collectJooqBindings`) runs parallel to the member-axis `buildInputBean` walk rather than routing through `classifyInputField`; it reuses the existing `ClassifyContext.expandingTypes` cycle guard rather than coining a third idiom; rejections are typed `Rejection`s through `JooqBuilt.Fail`; the emitted descent uses explicit types, statement-form `if`-blocks, and collision-free `camelJoin`-derived locals (no `var`, no `__`), byte-identical to the pre-R336 form at depth 1.
+* **Tests:** match this plan exactly. 8 pipeline cases (4 D1 paths + 4 D3 rejections by message substring) and 6 execution cases (lands-on-column + omitted sibling; present-`null` collapse asserted through the **variable** path; null group; skip-not-throw on an omitted nullable identity group; empty-input; malformed-id-in-present throws). No code-string assertions on generated bodies. All tiers green: compilation (generated `createCustomerRecord` compiles against the real jOOQ `CustomerRecord`), pipeline (29/0), execution (6/0).
+* **D4 amendment:** sound. Nested present-`null` collapsing to omitted is a real graphql-java coercion behaviour (explicit-`null` dropped from nested input-object values), and the Semantics / D4 / Test-plan sections reflect it honestly.
+
+**One blocking finding (single-clause doc fix):**
+
+* `CustomerRecordService` class javadoc (`graphitron-sakila-service/src/main/java/no/sikt/graphitron/rewrite/test/services/CustomerRecordService.java`) lists the observable matrix as "an omitted nested leaf stays `changed=false`, **a present-`null` nested leaf is `NULL` (changed=true)**, ...". That present-`null` clause is the pre-amendment three-way and is **factually wrong about what this very method observes**: the execution test `customerUpsert_explicitNullNestedLeaf_collapsesToOmitted` calls `describeCustomerUpsert` with `details.firstName = null` and asserts `first[changed=false,val=null]`. The javadoc was authored in `688a43c`, the same commit that corrected the spec Semantics, D4, and the emitter `openDescent` javadoc to the nested two-way; this fixture's class javadoc was the one site the correction missed. This trips "Documentation names only live tests/code" (rewrite-design-principles.adoc): a doc claim a live test refutes, frozen into the codebase just as the explanatory spec is deleted. **Fix:** rewrite the clause to match the test and the amendment, e.g. "a present-`null` nested leaf *also* stays `changed=false` (graphql-java drops an explicit-`null` field from a nested input-object value, so it collapses to omitted; a column is nullable only through a top-level field)". One-line edit, then re-advance to In Review. Reviewer-session ≠ implementer-session applies again next cycle.
 
 ## Spec
 
