@@ -77,13 +77,22 @@ consistent.)
 
 ## Correcting the carrier placement (the two `principles-architect` fixes)
 
-1. **`TargetShape` provenance is a slot R300 *creates*, not one it consumes.** The R316 pivot prose says
-   provenance "rides the target shape," but in landed code `TargetShape.Table` / `TargetShape.Column` are
-   payload-free; `@tableMethod`'s `MethodRef` rides the **leaf record** (`QueryField.QueryTableMethodTableField`)
-   and `target()` projects a bare `new TargetShape.Table()`. So R300 owns introducing the provenance
-   component for the routine sub-case (creating the slot at the `TargetShape` altitude, or following the
-   landed leaf-carrier precedent at the same altitude `@tableMethod` uses today). The spec must not lean on
-   a provenance slot that does not yet exist.
+1. **The provenance rides a new leaf, not a `TargetShape` payload slot (decision).** The R316 pivot prose
+   says provenance "rides the target shape," but in landed code `TargetShape.Table` / `TargetShape.Column`
+   are payload-free; `@tableMethod`'s `MethodRef` rides the **leaf record**
+   (`QueryField.QueryTableMethodTableField`) and `target()` projects a bare `new TargetShape.Table()`.
+   **R300 follows that landed leaf-carrier precedent rather than populating the deferred `TargetShape`
+   payload slice:** the table-valued read field is a new `GraphitronField` leaf
+   `QueryField.QueryRoutineTableField`, the routine analogue of `QueryTableMethodTableField`. It carries the
+   `RoutineRef` provenance + the `ReturnTypeRef`, and its `target()` projects a bare `new TargetShape.Table()`
+   exactly as `QueryTableMethodTableField` does today. `TargetShape.Table` **stays payload-free** (no
+   model-wide change; populating `TargetShape` provenance is R316's deferred slice, not R300's). Choosing
+   the leaf route keeps R300 consistent with the one provenance carrier the codebase actually has, and
+   confines R300's blast radius to one new leaf plus its dispatch entry.
+
+   The driving use case is a root `Query` field, so day-one mints only the root leaf. A child-positioned
+   read routine (the `ChildField.RecordTableMethodField` analogue) is a deferred follow-up; the resolver
+   produces a typed rejection for `@routine` on a non-root coordinate until that leaf lands.
 
 2. **The carrier is a new `RoutineRef`, not a reused `MethodRef`.** `@tableMethod` provenance is a
    `MethodRef.StaticOnly` (a reflected developer Java method). A jOOQ routine is a different resolution
@@ -104,6 +113,10 @@ Driven by `tilganger_for_feidebruker_med_fs_fiktivt_fnr`: a table-valued functio
   legacy-style `target:` / mode flag: the read shape (table-valued vs scalar) is **read off the routine's
   jOOQ kind**, not declared. (Naming and the `experimental_` prefix are settled here as `@routine` with no
   prefix; the carrier shape this item commits is the stabilising decision the prefix was waiting on.)
+  Reusing `argMapping` here is a deliberate exception to the "directive surfaces should not lean on
+  `ExternalCodeReference`'s shape" caution: routine IN-param binding is irreducibly a param→arg map with an
+  identity-bind default, which is *exactly and only* what `argMapping` expresses, so the vocabulary is the
+  minimal SDL surface for the job rather than the over-broad reach the caution targets.
 - **Routine catalog reflection on `JooqCatalog`.** The rewrite cannot depend on legacy `RoutineReflection`
   (it lives in an out-of-scope legacy module). `JooqCatalog` is the canonical permitted holder of raw jOOQ
   catalog types, so routine reflection (signature, IN/OUT params, return kind, generated `Routines` class +
@@ -112,11 +125,16 @@ Driven by `tilganger_for_feidebruker_med_fs_fiktivt_fnr`: a table-valued functio
 - **A `RoutineDirectiveResolver` in `FieldBuilder`** (per the existing per-directive resolver pattern:
   sealed `Resolved` result with success + `Rejected` arms), producing the `RoutineRef` provenance and the
   resolved `target` shape (`List(Table)` for the table-valued case).
-- **Emit**: the resolved Table provenance feeds the existing selection-aware
-  `select(fields).from(<routine call>).where(...).orderBy(...).fetch()` path. **Open spec detail to pin:**
-  whether selection narrowing applies to the routine's fixed `RETURNS TABLE` result columns or whether the
-  projection is `routine.*` (a function's result columns are a fixed projection, so selection-aware
-  threading needs an explicit decision rather than assuming the table-field default).
+- **Emit**: the `QueryRoutineTableField` fetcher mirrors `buildQueryTableMethodFetcher` — it declares the
+  routine-call `Table<R>` local (`Routines.foo(<bound IN params>)`) and feeds it to the existing
+  selection-aware `select(fields).from(<routine-call table>).where(...).orderBy(...).fetch()` path.
+  **Projection decision (selection narrowing applies):** the function executes its full body regardless,
+  but the wrapping `SELECT` projects **only the routine-result columns mapped to GraphQL subfields the
+  query selected**, exactly as a catalog table field narrows. This honours the rewrite's selection-aware
+  queries commitment rather than emitting `routine.*`. Concretely, for a query selecting only
+  `organisasjonskode` against `tilganger_for_feidebruker_med_fs_fiktivt_fnr`, the pipeline test asserts the
+  emitted shape is `select(<ROUTINE>.ORGANISASJONSKODE).from(<ROUTINE>.call(p_env, p_service_id, p_feide_id)).fetch()`
+  (the single narrowed column, not both result columns and not `*`).
 
 ## Validator mirror: reject the deferred forks (do not silently drop them)
 
@@ -138,8 +156,15 @@ replicate (translated to the rewrite's typed `Rejection` channel):
 
 - **Classification tier**: one fixture per rejection arm, translated from legacy's 26 `procedureCall*`
   validation fixtures (preserve them rather than re-deriving).
-- **Pipeline tier**: the table-valued read classifies to `Fetch` / `List(Table)` with `RoutineRef`
-  provenance; the deferred forks classify to the typed rejection.
+- **Pipeline tier**: the table-valued read classifies to `Fetch` / `List(Table)` carried by the new
+  `QueryRoutineTableField` leaf, and emits the narrowed `select(...).from(<ROUTINE>.call(...)).fetch()`
+  shape pinned above; the deferred forks classify to the typed rejection.
+- **Generator dispatch coverage**: the new `QueryField.QueryRoutineTableField` leaf is added to
+  `TypeFetcherGenerator.IMPLEMENTED_LEAVES`, keeping `GeneratorCoverageTest.everyGraphitronFieldLeafHasAKnownDispatchStatus`'s
+  four-way partition (`IMPLEMENTED_LEAVES` / `STUBBED_VARIANTS` / `NOT_DISPATCHED_LEAVES` / `PROJECTED_LEAVES`)
+  exhaustive. The deferred child-position and procedure-write leaves, if minted as leaves rather than
+  resolver-stage rejections, land in `STUBBED_VARIANTS` so the same partition test stays green and
+  `ValidateMojo` fails the build on those coordinates rather than the generator throwing at emit.
 - **Execution tier**: a real `RETURNS TABLE` routine in the Sakila (or fixtures) DB backing a list field,
   invoked end-to-end with arguments bound, asserting rows come back. This is the proof the catalog handle
   and FROM-attach actually run.
@@ -162,8 +187,10 @@ replicate (translated to the rewrite's typed `Rejection` channel):
 ## Relationships
 
 - **R316** (`source-operation-target-pivot`): supplies the `(source, operation, target)` model this item
-  builds on; the read-routine provenance extends `TargetShape`, the deferred procedure arm extends
-  `Operation`. R222 is the umbrella, not a blocker.
+  builds on. The read-routine field rides a new leaf carrying `RoutineRef` provenance (following the
+  landed `QueryTableMethodTableField` precedent) and projects a bare `TargetShape.Table()`; the deferred
+  procedure arm extends `Operation`. R300 does **not** populate R316's deferred `TargetShape` payload
+  slice. R222 is the umbrella, not a blocker.
 - **R95** (`routines-as-data-model-citizens`): the same feature from the data-model-citizen angle,
   superseded by this item; its error-catalog floor and 26-fixture inventory are absorbed above.
 - Legacy reference: PR sikt-no/graphitron#489 (`@experimental_procedureCall`) and the `ProcedureCallError`
