@@ -1,7 +1,7 @@
 package no.sikt.graphitron.rewrite;
 
 import no.sikt.graphitron.rewrite.schema.input.SchemaInput;
-import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
+import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -23,8 +23,12 @@ import static org.assertj.core.api.Assertions.catchThrowable;
  * {@code GraphQLRewriteGenerator.loadAttributedRegistry()} into {@link GraphQLRewriteGenerator#generate()}
  * with no translation step. The build-time pipeline therefore still fails on a broken schema,
  * carrying the attributed file:line:col message rather than a bare wrapper.
+ *
+ * <p>Unit tier, not pipeline: a parse failure short-circuits before any SDL is classified
+ * into a model or rendered to a {@code TypeSpec}, so this asserts an entry-point propagation
+ * invariant rather than SDL -> TypeSpec coverage.
  */
-@PipelineTier
+@UnitTier
 class SchemaParseExceptionPropagationTest {
 
     @Test
