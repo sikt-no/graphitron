@@ -25,7 +25,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R45` | Multi-tenant routing on top of the schema-driven ExecutionInput factory | Spec | 2026-05-20 | [plan](tenant-routing-and-execution-input.md) |
 | `R273` | Source NodeId metadata from @node + catalog PK (inferred from `implements Node`), and settle wrong-type/malformed mismatch semantics, retiring the legacy __NODE bare-ID arm | Spec | 2026-06-02 | [plan](nodeid-skip-mismatch-error-surfacing.md) |
 | `R332` | Mark @table on input types as deprecated (signal ahead of R97 removal) | Spec | 2026-06-19 <sub>created 2026-06-18</sub> | [plan](table-on-input-deprecation-signal.md) |
-| `R336` | Flatten nested input-object fields in jOOQ-record @service params | In Review | 2026-06-19 | [plan](nested-input-in-jooq-record-service-param.md) |
 | `R13` | Faceted search on `@asConnection` | Spec |  | [plan](faceted-search.md) |
 | `R63` | Type UPSERT dialect requirement on the model | Spec |  | [plan](dml-dialect-requirement-on-model.md) |
 | `R92` | Surface database CHECK constraints as Jakarta validation rules | Spec |  | [plan](catalog-check-constraint-validation.md) |
@@ -176,7 +175,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R202` [**Honor @field(name:) in @error type extra-field accessor matching against handler source class**](honor-field-directive-in-error-type-source-accessors.md) — Backlog, bug
 - `R45` [**Multi-tenant routing on top of the schema-driven ExecutionInput factory**](tenant-routing-and-execution-input.md) — Spec, architecture
 - `R54` [**Rename @externalField (parallel-support, deprecation, migration)**](rename-externalfield-directive.md) — Backlog, cleanup
-- `R336` [**Flatten nested input-object fields in jOOQ-record @service params**](nested-input-in-jooq-record-service-param.md) — In Review, architecture
 - `R192` [**Mojo-configured custom Bean Validation factory**](custom-validator-factory.md) — Backlog, architecture
 - `R46` [**Multi-tenant fan-out for `@service`**](service-multi-tenant-fanout.md) — Backlog, architecture, blocked by [tenant-routing-and-execution-input](tenant-routing-and-execution-input.md)
 - `R11` [**`DSLContext` on `@condition` / `@tableMethod` methods**](dslcontext-on-condition-tablemethod.md) — Backlog, architecture
