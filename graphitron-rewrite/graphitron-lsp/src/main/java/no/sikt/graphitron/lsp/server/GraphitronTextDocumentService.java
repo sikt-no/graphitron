@@ -4,6 +4,7 @@ import no.sikt.graphitron.lsp.code_action.CodeActions;
 import no.sikt.graphitron.lsp.completions.ArgNameCompletions;
 import no.sikt.graphitron.lsp.completions.ClassNameCompletions;
 import no.sikt.graphitron.lsp.completions.CompletionContext;
+import no.sikt.graphitron.lsp.completions.ExternalFieldCompletions;
 import no.sikt.graphitron.lsp.completions.FieldCompletions;
 import no.sikt.graphitron.lsp.completions.MethodCompletions;
 import no.sikt.graphitron.lsp.completions.NodeTypeCompletions;
@@ -206,6 +207,11 @@ public class GraphitronTextDocumentService implements TextDocumentService {
             var context = CompletionContext.from(locationOpt.get(), source);
             var classItems = ClassNameCompletions.generate(vocab, data, context);
             if (!classItems.isEmpty()) return classItems;
+            // @externalField narrows the method list to Field-returning lifters;
+            // runs ahead of the generic method provider so the narrowed list wins,
+            // and falls through to it when the class exposes no matching method.
+            var externalFieldItems = ExternalFieldCompletions.generate(vocab, data, context, directive, pos, source);
+            if (!externalFieldItems.isEmpty()) return externalFieldItems;
             var methodItems = MethodCompletions.generate(vocab, data, context, directive, pos, source);
             if (!methodItems.isEmpty()) return methodItems;
             var tableItems = TableCompletions.generate(vocab, data, context);
