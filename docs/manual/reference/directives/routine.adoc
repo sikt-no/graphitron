@@ -1,0 +1,63 @@
+= @routine
+:description: Back a field with a jOOQ database routine (a stored function or procedure).
+:!toc:
+
+Backs a field with a database *routine* rather than a catalog table. Day-one supports the table-valued read function (PostgreSQL `RETURNS TABLE` / `SETOF`): jOOQ generates such a function as a first-class catalog `Table<R>`, so the field's `@table`-bound element type resolves the routine-result columns exactly as a plain table type does, and the rewrite projects `Type.$fields(...)` against it with the same selection narrowing. The only difference from a plain catalog read is the `FROM` source: instead of the bare `Tables.X` singleton, the rewrite calls the schema's generated `Routines` convenience method with the routine's IN parameters bound from GraphQL field arguments.
+
+`@routine` is the seam for reading from a stored function whose result set parameterises on its inputs, such as an access-control function that returns the rows a caller may see. The read shape (table-valued) is read off the routine's jOOQ kind, not declared.
+
+== SDL signature
+
+[source,graphql]
+----
+directive @routine(
+    name:       String!
+    argMapping: String
+) on FIELD_DEFINITION
+----
+
+== Parameters
+
+[cols="1,1,1,3",options="header"]
+|===
+| Name | Type | Default | Description
+| `name` | `String!` | (required) | The database routine name, optionally schema-qualified (`schema.routine`). Must resolve to a table-valued function in the jOOQ catalog.
+| `argMapping` | `String` | (empty) | Maps routine IN parameters to GraphQL argument names (`routineParam: graphqlArg`, comma-separated). The routine parameter name is the jOOQ-generated (camelCased) name, e.g. `pEnv` for a `p_env` parameter. Unmentioned parameters bind to a GraphQL argument of the same name (identity).
+|===
+
+== Canonical example
+
+A table-valued access-control function backing a root list field. The `@table`-bound element type names the jOOQ-generated table-valued-function table; the three TEXT IN parameters bind from GraphQL arguments:
+
+[source,graphql]
+----
+type Tilgang @table(name: "tilganger_for_feidebruker_med_fs_fiktivt_fnr") {
+    organisasjonskode: Int
+    rollekode: String
+}
+
+type Query {
+    tilganger(env: String!, serviceId: String!, feideId: String!): [Tilgang!]!
+        @routine(
+            name:       "tilganger_for_feidebruker_med_fs_fiktivt_fnr"
+            argMapping: "pEnv: env, pServiceId: serviceId, pFeideId: feideId"
+        )
+}
+----
+
+The rewrite emits `select(Tilgang.$fields(...)).from(Routines.tilgangerForFeidebrukerMedFsFiktivtFnr(env, serviceId, feideId)).fetch()`. A query selecting only `organisasjonskode` projects only that routine-result column.
+
+== Constraints
+
+* The field's return type must be `@table`-bound, and that table must be the routine's result table. A non-`@table` return is rejected with `@routine requires a @table-annotated return type`; a mismatch with the routine's result table is rejected with `@routine could not be resolved — the field's @table type ... does not match the routine's result table ...`.
+* `name:` must resolve to a *table-valued function* in the jOOQ catalog. A name that resolves to nothing is rejected with `@routine could not be resolved — no table-valued function named ...`; a name that resolves to a plain table or view is rejected with `... resolves to a table or view, not a table-valued function`. The deferred scalar-read and procedure-write forks reject here today.
+* `@routine` is supported on root `Query` fields only; a child-positioned read routine is not yet implemented and is rejected at validate time.
+* `argMapping:` parameter names are the jOOQ-generated (camelCased) names. Binding a parameter to an argument the field does not declare is rejected with `@routine parameter ... binds to GraphQL argument ..., which is not an argument of this field`. Resolving the parameter names off the generated `Routines` method requires the consumer to compile their jOOQ sources with `-parameters`.
+
+== See also
+
+* xref:tableMethod.adoc[`@tableMethod`] is the developer-Java twin: where `@routine` binds a database routine, `@tableMethod` binds a static Java method returning a jOOQ table.
+* xref:table.adoc[`@table`] is the plain catalog-driven counterpart for a field always backed by the same table.
+* xref:service.adoc[`@service`] is the alternative when the developer supplies the entire fetcher rather than a routine-backed table.
+
+xref:../index.adoc[← Reference index]
