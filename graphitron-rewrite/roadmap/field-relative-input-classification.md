@@ -36,38 +36,57 @@ per field under the field-relative model. The change must be gated against the f
 verdict shifts, pinned as the intentional consequence (with execution-tier coverage proving the
 per-field table binding generates correct SQL).
 
-## Evidence: R330 is a concrete failure caused by the @table / plain-input fork
+## Evidence: R330 and the override-condition routing fork (correcting an earlier mis-attribution)
 
-R330 (FK-target `@nodeId` + `@condition(override)`) shipped a fix that was correct for `@table`
-inputs but silently broke on plain inputs, and the root cause is exactly the divergence this item
-retires. The model path is shared (`@table` `TableInputArg` and plain `PlainInputArg` both flow
-through `FieldBuilder.walkInputFieldConditions`), but the **validator** is not: the FK-target
-structural rejections live in `validateInputFieldRecursive`, reached only from
-`validateTableInputType` (the `@table` walk). Plain inputs are never walked. So an identical
-schema-author error (a composite-key FK-target `@condition` that the model could not yet emit)
-produced a clean build-time rejection on a `@table` input but a *silently generated broken call* on a
-plain input, which detonated at the consumer's `javac` (the real `SoknadsmangeltypeFilterInput` is a
-plain input). Behaviour forked on the presence of `@table` for something `@table` has no business
-gating. Two consequences for this item:
+An earlier draft of this note cited R330 (FK-target `@nodeId` + `@condition(override)`) as a
+`@table`-on-input failure ("behaviour forked on the presence of `@table`"). That was wrong, and the
+correction sharpens this item's actual thesis: **there is no intrinsic "plain input type".** An
+input's table-boundness is *derived*, and R330 was diverted off the table path by the override
+condition itself, not by the absence of `@table`.
 
-- It is direct evidence that `@table`-on-input is load-bearing in places it should not be (here, it
-  silently decides whether the validator even inspects a field), strengthening the retirement case.
-- A residual structural divergence is left behind deliberately: R330's validator FK-target checks
-  still run only on the `@table` walk (`validateTableInputType` → `validateInputFieldRecursive`),
-  never on plain inputs. After R330's composite fix this divergence is **inert**, not a live bug: the
-  one surviving check (every FK-target join hop must be an `FkJoin`, mirroring
-  `FkTargetConditionEmitter`'s emit-time guard) is unreachable for input conditions. `@nodeId` FK-target
-  paths are guaranteed all-`FkJoin` by `NodeIdLeafResolver.resolveFkJoinPath` (it rejects non-FK hops),
-  and a condition-only `@reference` path on an input field is rejected earlier at classification
-  ("condition-only `@reference` path: cannot resolve target table because the carrier field's return
-  type has no `@table` binding"), so no `FkTargetConditionFilter` with a non-`FkJoin` hop can be
-  constructed from any input. The composite rejection that *was* reachable (and that bit the consumer
-  via the plain-input path) is gone now that composite is supported. So a standalone "validate plain
-  inputs too" fix has no falsifiable behavior change and was correctly not shipped (confirmed by
-  attempting it: the negative case cannot be constructed). The right move is to make input-field
-  validation field-relative *as part of this item's* classification rewrite, so the structural check
-  fires once on `SqlGeneratingField.filters()` regardless of `@table`, removing the divergence without
-  adding speculative untestable code. Folded into this item's scope, not patched separately.
+`TypeBuilder.buildInputType` (`TypeBuilder.java:1333`) decides table-boundness in order:
+
+1. `@table` present → `TableInputType`.
+2. **else `isUsedWithOverrideCondition(name)` → non-table `InputType`** (`TypeBuilder.java:1348`,
+   logic at `:1582`). Fires when *any* field of the input carries `@condition(override:true)`, by
+   design: "the consumer supplies custom condition code, so the input's fields should not be
+   validated against table columns."
+3. else the `findReturnTablesForInput` aggregate (exactly one `@table`-returning consumer →
+   `TableInputType`; zero or more than one → non-table).
+
+The real `SoknadsmangeltypeFilterInput` has no `@table` *and* is used by exactly one
+`@table`-returning field (`soknadsmangeltyper: [Soknadsmangeltype!]`), so by rule 3 alone it would
+have been **promoted to `TableInputType`**. It is non-table only because rule 2 fires first: its
+`regelverksamlingId` field carries `@condition(override:true)`, the very directive R330 is about. So
+the input was diverted off the table path **by the override condition**, not by the absence of
+`@table`. Removing `@table`-on-input from the language would not change R330's routing at all; R330 is
+therefore **not** evidence for the `@table`-on-input retirement.
+
+What R330 *is* evidence for is this item's thesis from a different direction: the override diversion
+(rule 2) is too coarse. It is meant to skip *column-coverage* validation (correct: the consumer owns
+the predicate), but it also skips the FK-target **structural** check, because the validator
+structurally walks only `TableInputType` (`validateTableInputType` → `validateInputFieldRecursive`,
+`GraphitronSchemaValidator.java:370`); the non-table `InputType` leaves get an empty
+`validateInputType` (`:366`). So an identical schema-author error produced a build-time rejection
+when the type happened to be table-routed and a *silently generated broken call* when an override
+field diverted it off that path, detonating at the consumer's `javac`. The lesson for the
+field-relative rewrite: structural validation must key off the consuming field's resolved target (so
+it runs once on `SqlGeneratingField.filters()` regardless of how the type was routed), not off
+whether the type landed in the `TableInputType` bucket.
+
+The residual structural check left behind is **inert**, not a live bug: the one surviving guard
+(every FK-target join hop must be an `FkJoin`, mirroring `FkTargetConditionEmitter`'s emit-time
+precondition) is unreachable for input conditions. `@nodeId` FK-target paths are guaranteed
+all-`FkJoin` by `NodeIdLeafResolver` (it rejects non-FK hops), and a condition-only `@reference` path
+on an input field is rejected earlier at classification ("cannot resolve target table because the
+carrier field's return type has no `@table` binding"), so no `FkTargetConditionFilter` with a
+non-`FkJoin` hop can be constructed from any input. The composite rejection that *was* reachable (and
+that bit the consumer via the diverted path) is gone now that composite is supported. So a standalone
+"validate non-table inputs too" fix has no falsifiable behaviour change and was correctly not shipped
+(confirmed by attempting it: the negative case cannot be constructed). The right move is to make
+input-field validation field-relative *as part of this item's* classification rewrite, removing the
+divergence without adding speculative untestable code. Folded into this item's scope, not patched
+separately.
 
 ## Relation to R332 (the deprecation signal)
 
