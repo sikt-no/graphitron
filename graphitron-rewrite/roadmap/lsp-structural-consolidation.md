@@ -1,7 +1,7 @@
 ---
 id: R347
 title: "Consolidate graphitron-lsp navigation, dispatch, and result-building"
-status: Ready
+status: In Progress
 bucket: architecture
 priority: 5
 theme: lsp
@@ -99,22 +99,37 @@ named in the last column.
 
 ## Slices
 
-Each slice is behaviour-preserving and ships as its own spin-out roadmap item (with its own
-Spec → Ready → Done cycle); the order below names dependency edges, not a fixed schedule. Slice 1 is
-the beachhead and unblocks the rest; Slices 2-6 are largely independent once it lands. The
-acceptance bar for every slice is the same: **the existing `graphitron-lsp` test suite passes
-unchanged** (it is the behaviour oracle), and the slice deletes more code than it adds.
+Each slice is behaviour-preserving; the order below names dependency edges, not a fixed schedule.
+The slices land as sequential **phases of this item** (R347 carries `In Progress` until the last
+worthwhile slice ships); each phase's section collapses to a one-line "shipped" note as it lands.
+Slice 1 is the beachhead and unblocks the rest; Slices 2-6 are largely independent once it lands.
+The acceptance bar for every slice is the same: **the existing `graphitron-lsp` test suite passes
+unchanged** (it is the behaviour oracle), and the slice reduces duplication (deleting more than it
+adds, beachhead infrastructure aside).
 
-### Slice 1 (beachhead) — one navigation home
+### Slice 1 (beachhead) — one navigation home — SHIPPED
 
-Grow `Nodes` into the single tree-sitter navigation toolkit and introduce a `GraphqlNodeKind`
-constants holder (or extend `DeclarationKind`'s pattern to intra-declaration kinds). Move
-`childOfKind` and the recursive containment/descent helpers there, typed on node-kind constants
-rather than raw strings; delete the 11+ copies. This is the cheapest honest demonstration of the
-cut: it touches every feature file, fixes the two latent NPEs in one stroke, and converts a
-node-kind rename from a 69-site edit into a one-line constant change. It exercises the "shared
-primitive, not re-derived" principle on the most-duplicated primitive first, so the later slices
-inherit a navigation layer instead of forking one.
+Shipped: introduced `GraphqlNodeKind` (sibling to `DeclarationKind`, settling the open question in
+favour of a sibling so `DeclarationKind` keeps its declaration-only semantics) and grew `Nodes` into
+the single tree-sitter navigation toolkit (`childOfKind`, `nodeContains`, `sameNode`,
+`innermostObjectFieldContaining`). Deleted the 12 verbatim `childOfKind` copies, the 3
+`innermostObjectFieldContaining` near-duplicates, the 2 `nodeContains` copies and the stray
+`sameNode` / `findInnermostObjectField`; routed every structural node-kind comparison
+(`name`/`value`/`object_field`/… ) through `GraphqlNodeKind.matches(...)`.
+
+Learnings vs. the original sketch:
+
+- The latent-NPE count was **three**, not two: `Definitions:240` and `TypeContext:164` (the two
+  named in the table) plus an unguarded `argNode.getType()` in `TypeContext.stringArg`. All three
+  are fixed by the null-safe shared `childOfKind` / `matches`. `NodesTest` pins the null-safety
+  contract as the explicit regression oracle.
+- `GraphqlNodeKind` covers structural / intra-declaration kinds only. The lone declaration-kind
+  literal (`"scalar_type_definition"` in `ScalarTypeCompletions`) was left for the
+  `DeclarationKind`-consumer cleanup rather than blurring the sibling split; the `case "field"` /
+  `case "table"` directive-name switches stay for Slice 2.
+- Line accounting: tracked deletions exceed additions by 36 lines; including the new
+  `GraphqlNodeKind` the main source is roughly net-neutral (+17), with the duplication axis itself
+  collapsed (12 → 1, 3 → 1, 2 → 1).
 
 ### Slice 2 — one behavior dispatch, policy on the model
 

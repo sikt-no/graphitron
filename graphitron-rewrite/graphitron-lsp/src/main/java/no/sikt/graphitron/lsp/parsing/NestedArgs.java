@@ -5,6 +5,10 @@ import io.github.treesitter.jtreesitter.Point;
 
 import java.util.Optional;
 
+import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.NAME;
+import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.OBJECT_FIELD;
+import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.VALUE;
+
 /**
  * Resolves nested {@code key: value} positions inside a directive
  * argument. Used by per-directive completion providers whose argument
@@ -49,10 +53,10 @@ public final class NestedArgs {
     ) {
         for (Directives.Argument arg : directive.arguments()) {
             if (!arg.contains(pos)) continue;
-            Node innerObjectField = findInnermostObjectField(arg.value(), pos);
+            Node innerObjectField = Nodes.innermostObjectFieldContaining(arg.value(), pos);
             if (innerObjectField == null) continue;
-            Node nameNode = childOfKind(innerObjectField, "name");
-            Node valueNode = childOfKind(innerObjectField, "value");
+            Node nameNode = Nodes.childOfKind(innerObjectField, NAME);
+            Node valueNode = Nodes.childOfKind(innerObjectField, VALUE);
             if (nameNode == null || valueNode == null) continue;
             return Optional.of(new Nested(
                 arg,
@@ -80,8 +84,8 @@ public final class NestedArgs {
         Node argRoot = nested.outerArgument().value();
         Node cur = start.getParent().orElse(null);
         while (cur != null) {
-            if ("object_field".equals(cur.getType())) {
-                Node nameNode = childOfKind(cur, "name");
+            if (OBJECT_FIELD.matches(cur)) {
+                Node nameNode = Nodes.childOfKind(cur, NAME);
                 if (nameNode != null && fieldName.equals(Nodes.text(nameNode, source))) {
                     return true;
                 }
@@ -95,35 +99,4 @@ public final class NestedArgs {
         return false;
     }
 
-    /**
-     * Recursive descent through value-wrappers ({@code list_value},
-     * {@code object_value}, plain {@code value}) looking for the
-     * deepest {@code object_field} that contains {@code pos}.
-     */
-    private static Node findInnermostObjectField(Node node, Point pos) {
-        if (node == null || !Nodes.contains(node, pos)) {
-            return null;
-        }
-        Node best = null;
-        if ("object_field".equals(node.getType())) {
-            best = node;
-        }
-        for (int i = 0; i < node.getChildCount(); i++) {
-            Node child = node.getChild(i).orElse(null);
-            if (child == null) continue;
-            Node descendant = findInnermostObjectField(child, pos);
-            if (descendant != null) {
-                best = descendant;
-            }
-        }
-        return best;
-    }
-
-    private static Node childOfKind(Node parent, String kind) {
-        for (int i = 0; i < parent.getChildCount(); i++) {
-            Node child = parent.getChild(i).orElse(null);
-            if (child != null && kind.equals(child.getType())) return child;
-        }
-        return null;
-    }
 }

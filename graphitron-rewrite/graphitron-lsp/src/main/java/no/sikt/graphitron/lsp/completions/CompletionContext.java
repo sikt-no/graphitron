@@ -6,6 +6,8 @@ import no.sikt.graphitron.lsp.parsing.Positions;
 import no.sikt.graphitron.lsp.parsing.SchemaCoordinate;
 import org.eclipse.lsp4j.Range;
 
+import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.STRING_VALUE;
+
 /**
  * Per-cursor context handed to coordinate-driven completion providers.
  * Bundles the schema coordinate at the cursor with the LSP range each
@@ -49,7 +51,7 @@ public record CompletionContext(SchemaCoordinate coordinate, Range replaceRange,
     static Range replaceRangeFor(Node leaf, byte[] source) {
         int start = leaf.getStartByte();
         int end = leaf.getEndByte();
-        if ("string_value".equals(leaf.getType())) {
+        if (STRING_VALUE.matches(leaf)) {
             int length = end - start;
             // The bkegley GraphQL grammar surfaces both "..." and """..."""
             // as named kind "string_value"; discriminate by content.

@@ -6,6 +6,14 @@ import no.sikt.graphitron.rewrite.catalog.TypeClassification;
 
 import java.util.Optional;
 
+import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.ARGUMENT;
+import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.ARGUMENTS;
+import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.ARGUMENTS_DEFINITION;
+import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.FIELD_DEFINITION;
+import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.INPUT_VALUE_DEFINITION;
+import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.NAME;
+import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.VALUE;
+
 /**
  * Resolves the surrounding GraphQL-type-declaration context for a node. Per-directive completion
  * providers use this to figure out which {@code @table}-bound type a {@code @field(name:)} or
@@ -31,7 +39,7 @@ public final class TypeContext {
     public static Optional<Node> enclosingFieldDefinition(Node inner) {
         Node node = inner;
         while (node != null) {
-            if ("field_definition".equals(node.getType())) {
+            if (FIELD_DEFINITION.matches(node)) {
                 return Optional.of(node);
             }
             Node parent = node.getParent().orElse(null);
@@ -53,8 +61,7 @@ public final class TypeContext {
     public static Optional<Node> enclosingFieldOrInputValueDefinition(Node inner) {
         Node node = inner;
         while (node != null) {
-            String kind = node.getType();
-            if ("field_definition".equals(kind) || "input_value_definition".equals(kind)) {
+            if (FIELD_DEFINITION.matches(node) || INPUT_VALUE_DEFINITION.matches(node)) {
                 return Optional.of(node);
             }
             Node parent = node.getParent().orElse(null);
@@ -75,13 +82,13 @@ public final class TypeContext {
      * (the LSP carries no projection of user field arguments).
      */
     public static java.util.List<String> fieldArgumentNames(Node fieldDef, byte[] source) {
-        Node args = childOfKind(fieldDef, "arguments_definition");
+        Node args = Nodes.childOfKind(fieldDef, ARGUMENTS_DEFINITION);
         if (args == null) return java.util.List.of();
         var out = new java.util.ArrayList<String>();
         for (int i = 0; i < args.getChildCount(); i++) {
             Node child = args.getChild(i).orElse(null);
-            if (child == null || !"input_value_definition".equals(child.getType())) continue;
-            Node nameNode = childOfKind(child, "name");
+            if (child == null || !INPUT_VALUE_DEFINITION.matches(child)) continue;
+            Node nameNode = Nodes.childOfKind(child, NAME);
             if (nameNode != null) out.add(Nodes.text(nameNode, source));
         }
         return java.util.List.copyOf(out);
@@ -93,7 +100,7 @@ public final class TypeContext {
      * well-formed parse but defensive against partial-edit trees).
      */
     public static Optional<String> fieldNameOf(Node fieldDef, byte[] source) {
-        Node nameNode = childOfKind(fieldDef, "name");
+        Node nameNode = Nodes.childOfKind(fieldDef, NAME);
         if (nameNode == null) return Optional.empty();
         return Optional.of(Nodes.text(nameNode, source));
     }
@@ -136,7 +143,7 @@ public final class TypeContext {
      * {@code extend type Customer { ... }}). Reads the first {@code name} child.
      */
     public static Optional<String> declaredNameOf(Node typeDecl, byte[] source) {
-        Node nameNode = childOfKind(typeDecl, "name");
+        Node nameNode = Nodes.childOfKind(typeDecl, NAME);
         if (nameNode == null) return Optional.empty();
         return Optional.of(Nodes.text(nameNode, source));
     }
@@ -147,24 +154,16 @@ public final class TypeContext {
      * not a string literal.
      */
     public static String stringArg(Node directive, String argName, byte[] source) {
-        Node arguments = childOfKind(directive, "arguments");
+        Node arguments = Nodes.childOfKind(directive, ARGUMENTS);
         if (arguments == null) return null;
         for (int i = 0; i < arguments.getChildCount(); i++) {
             Node argNode = arguments.getChild(i).orElse(null);
-            if (!"argument".equals(argNode.getType())) continue;
-            Node keyNode = childOfKind(argNode, "name");
+            if (!ARGUMENT.matches(argNode)) continue;
+            Node keyNode = Nodes.childOfKind(argNode, NAME);
             if (keyNode == null || !argName.equals(Nodes.text(keyNode, source))) continue;
-            Node valueNode = childOfKind(argNode, "value");
+            Node valueNode = Nodes.childOfKind(argNode, VALUE);
             if (valueNode == null) return null;
             return Nodes.unquote(Nodes.text(valueNode, source));
-        }
-        return null;
-    }
-
-    private static Node childOfKind(Node parent, String kind) {
-        for (int i = 0; i < parent.getChildCount(); i++) {
-            Node child = parent.getChild(i).orElse(null);
-            if (kind.equals(child.getType())) return child;
         }
         return null;
     }

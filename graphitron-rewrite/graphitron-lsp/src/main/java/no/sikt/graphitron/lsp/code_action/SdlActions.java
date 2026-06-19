@@ -18,6 +18,11 @@ import java.util.Map;
 import java.util.Set;
 import java.util.stream.Stream;
 
+import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.NAME;
+import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.OBJECT_FIELD;
+import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.OBJECT_VALUE;
+import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.VALUE;
+
 /**
  * Registry of every {@link SdlAction} the LSP knows how to apply, plus
  * the allow-list for deprecations whose migration is intentionally
@@ -117,7 +122,7 @@ public final class SdlActions {
     private static Node enclosingObjectField(Node node) {
         Node cur = node;
         while (cur != null) {
-            if ("object_field".equals(cur.getType())) return cur;
+            if (OBJECT_FIELD.matches(cur)) return cur;
             cur = cur.getParent().orElse(null);
         }
         return null;
@@ -126,7 +131,7 @@ public final class SdlActions {
     private static Node enclosingObjectValue(Node node) {
         Node cur = node;
         while (cur != null) {
-            if ("object_value".equals(cur.getType())) return cur;
+            if (OBJECT_VALUE.matches(cur)) return cur;
             cur = cur.getParent().orElse(null);
         }
         return null;
@@ -135,8 +140,8 @@ public final class SdlActions {
     private static boolean hasObjectField(Node objectValue, String fieldName, byte[] source) {
         for (int i = 0; i < objectValue.getChildCount(); i++) {
             Node child = objectValue.getChild(i).orElse(null);
-            if (child == null || !"object_field".equals(child.getType())) continue;
-            Node fname = childOfKind(child, "name");
+            if (child == null || !OBJECT_FIELD.matches(child)) continue;
+            Node fname = Nodes.childOfKind(child, NAME);
             if (fname != null && fieldName.equals(Nodes.text(fname, source))) {
                 return true;
             }
@@ -153,7 +158,7 @@ public final class SdlActions {
     static RewriteResult rewriteNameToClassName(
         WorkspaceFile file, Node nameField, Map<String, String> namedReferences
     ) {
-        Node valueNode = childOfKind(nameField, "value");
+        Node valueNode = Nodes.childOfKind(nameField, VALUE);
         if (valueNode == null) {
             return new RewriteResult.Skip("malformed name field (no value)");
         }
@@ -169,13 +174,5 @@ public final class SdlActions {
         Position end = Positions.toLspPosition(file.source(), nameField.getEndByte());
         String replacement = "className: \"" + resolved + "\"";
         return new RewriteResult.Edit(new TextEdit(new Range(start, end), replacement));
-    }
-
-    private static Node childOfKind(Node parent, String kind) {
-        for (int i = 0; i < parent.getChildCount(); i++) {
-            Node child = parent.getChild(i).orElse(null);
-            if (child != null && kind.equals(child.getType())) return child;
-        }
-        return null;
     }
 }

@@ -18,6 +18,9 @@ import io.github.treesitter.jtreesitter.Point;
 
 import java.util.Optional;
 
+import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.NAME;
+import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.VALUE;
+
 /**
  * Resolves cursor positions on known directive arguments to source
  * locations in the consumer's Java tree, so the editor's
@@ -176,10 +179,10 @@ public final class Definitions {
     ) {
         for (var arg : directive.arguments()) {
             if (!"path".equals(Nodes.text(arg.key(), file.source()))) continue;
-            Node field = innermostObjectFieldContaining(arg.value(), pos);
+            Node field = Nodes.innermostObjectFieldContaining(arg.value(), pos);
             if (field == null) continue;
-            Node nameNode = childOfKind(field, "name");
-            Node valueNode = childOfKind(field, "value");
+            Node nameNode = Nodes.childOfKind(field, NAME);
+            Node valueNode = Nodes.childOfKind(field, VALUE);
             if (nameNode == null || valueNode == null) continue;
             if (!Nodes.contains(valueNode, pos)) continue;
             String fieldName = Nodes.text(nameNode, file.source());
@@ -226,22 +229,4 @@ public final class Definitions {
         return null;
     }
 
-    private static Node innermostObjectFieldContaining(Node node, Point pos) {
-        if (node == null || !Nodes.contains(node, pos)) return null;
-        Node best = null;
-        if ("object_field".equals(node.getType())) best = node;
-        for (int i = 0; i < node.getChildCount(); i++) {
-            Node descendant = innermostObjectFieldContaining(node.getChild(i).orElse(null), pos);
-            if (descendant != null) best = descendant;
-        }
-        return best;
-    }
-
-    private static Node childOfKind(Node parent, String kind) {
-        for (int i = 0; i < parent.getChildCount(); i++) {
-            Node child = parent.getChild(i).orElse(null);
-            if (kind.equals(child.getType())) return child;
-        }
-        return null;
-    }
 }

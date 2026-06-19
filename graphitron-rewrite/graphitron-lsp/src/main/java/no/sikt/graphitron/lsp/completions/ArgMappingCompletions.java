@@ -20,6 +20,8 @@ import org.eclipse.lsp4j.jsonrpc.messages.Either;
 
 import java.util.List;
 
+import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.STRING_VALUE;
+
 /**
  * Completion inside an {@code argMapping} string literal
  * ({@code "javaParam: graphqlArg, ..."}). The string-content cursor is
@@ -64,7 +66,7 @@ public final class ArgMappingCompletions {
         var locationOpt = vocabulary.locateAt(directive, pos, source);
         if (locationOpt.isEmpty()) return List.of();
         Node leaf = locationOpt.get().leafNode();
-        if (!"string_value".equals(leaf.getType())) return List.of();
+        if (!STRING_VALUE.matches(leaf)) return List.of();
 
         String raw = Nodes.text(leaf, source);
         int quote = openingQuoteLength(raw);

@@ -17,6 +17,10 @@ import org.eclipse.lsp4j.Range;
 
 import java.util.Optional;
 
+import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.FIELD_DEFINITION;
+import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.INPUT_VALUE_DEFINITION;
+import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.NAME;
+
 /**
  * R160 — classification-hover dispatch on SDL declaration coordinates. Parallel to
  * {@link Hovers}'s directive-argument-keyed dispatch: where {@link Hovers} keys on the
@@ -53,11 +57,10 @@ public final class DeclarationHovers {
      */
     public static Optional<DeclarationHover> findContaining(Node root, Point pos, byte[] source) {
         Node node = root.getDescendant(pos, pos).orElse(null);
-        if (node == null || !"name".equals(node.getType())) return Optional.empty();
+        if (node == null || !NAME.matches(node)) return Optional.empty();
         Node parent = node.getParent().orElse(null);
         if (parent == null) return Optional.empty();
-        String parentKind = parent.getType();
-        if ("field_definition".equals(parentKind) || "input_value_definition".equals(parentKind)) {
+        if (FIELD_DEFINITION.matches(parent) || INPUT_VALUE_DEFINITION.matches(parent)) {
             return fieldHover(node, parent, source);
         }
         if (DeclarationKind.of(parent).isPresent()) {
@@ -70,7 +73,7 @@ public final class DeclarationHovers {
         Node parent = fieldDef.getParent().orElse(null);
         while (parent != null) {
             if (DeclarationKind.of(parent).filter(DeclarationKind::isCarrier).isPresent()) {
-                Node typeName = childOfKind(parent, "name");
+                Node typeName = Nodes.childOfKind(parent, NAME);
                 if (typeName == null) return Optional.empty();
                 String parentTypeName = Nodes.text(typeName, source);
                 String fieldName = Nodes.text(nameNode, source);
@@ -324,13 +327,6 @@ public final class DeclarationHovers {
         return s == null ? "?" : s;
     }
 
-    private static Node childOfKind(Node parent, String kind) {
-        for (int i = 0; i < parent.getChildCount(); i++) {
-            Node child = parent.getChild(i).orElse(null);
-            if (child != null && kind.equals(child.getType())) return child;
-        }
-        return null;
-    }
 
     private static Hover hover(WorkspaceFile file, Node anchor, String markdown) {
         var content = new MarkupContent(MarkupKind.MARKDOWN, markdown);

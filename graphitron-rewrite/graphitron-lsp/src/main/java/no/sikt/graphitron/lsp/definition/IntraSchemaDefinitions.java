@@ -13,6 +13,9 @@ import io.github.treesitter.jtreesitter.Point;
 
 import java.util.Optional;
 
+import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.NAME;
+import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.NAMED_TYPE;
+
 /**
  * Goto-definition for intra-schema type references: the cursor sits on a GraphQL
  * type reference (the {@code Film} in {@code films: [Film!]!}, an {@code implements}
@@ -40,9 +43,9 @@ public final class IntraSchemaDefinitions {
         if (cursorFile == null || cursorFile.tree() == null) return Optional.empty();
 
         Node leaf = cursorFile.tree().getRootNode().getDescendant(pos, pos).orElse(null);
-        if (leaf == null || !"name".equals(leaf.getType())) return Optional.empty();
+        if (leaf == null || !NAME.matches(leaf)) return Optional.empty();
         Node parent = leaf.getParent().orElse(null);
-        if (parent == null || !"named_type".equals(parent.getType())) return Optional.empty();
+        if (parent == null || !NAMED_TYPE.matches(parent)) return Optional.empty();
 
         String typeName = Nodes.text(leaf, cursorFile.source());
         if (TypeNames.BUILTIN_SCALARS.contains(typeName)) return Optional.empty();
