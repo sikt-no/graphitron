@@ -1,7 +1,7 @@
 ---
 id: R340
 title: "LSP goto-definition for intra-schema type references"
-status: Ready
+status: In Review
 bucket: feature
 theme: lsp
 depends-on: []
