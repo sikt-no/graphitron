@@ -1,7 +1,7 @@
 ---
 id: R327
 title: "Field-relative input classification (retire @table-on-input and the findReturnTablesForInput aggregate)"
-status: Spec
+status: Ready
 bucket: architecture
 priority: 4
 theme: structural-refactor
@@ -168,7 +168,28 @@ schemas validate. The `InputFieldResolver` already lifts column-miss to `Unbound
 | true | false | consumer condition owns the predicate; column-miss admitted (the R330 / opptak shape) |
 
 The fourth row is the one step 2 used to reach by demoting the whole type; slice 1 must reach it
-field-relative and prove (execution tier) it generates the correct correlated predicate.
+field-relative and prove (execution tier) it generates the correct correlated predicate. The
+execution-tier evidence for this row already exists as
+`projectNotesByPlainFilter_plainInputCompositeFkTargetOverride_filtersByForeignTable` (and its
+`…Connection` sibling) in `GraphQLQueryTest`; slice 1 keeps it green rather than authoring it anew.
+
+This 2×2 (`override` × `column-resolves`) is a *new axis pair*, not the axis pair the existing
+`argument-resolution.adoc` §Truth table tabulates (`any-enclosing-override` × `@condition`
+presence/override). "Mirroring" here means landing the column-resolution axis in the same section as
+an adjacent table (or an explicit extension), not editing the six existing rows in place; the
+implementer should reconcile the two tables under one §Truth table heading so a reader sees both axes
+together.
+
+**`@lookupKey` interaction with the step-3 removal.** Removing the `findReturnTablesForInput`
+aggregate means a *non-`@table`* input previously promoted to `TableInputType` by the aggregate, and
+consumed with arg-level `@lookupKey`, would now classify `PlainInputArg`, where the `@lookupKey`
+binding path (`FieldBuilder.classifyArgument:974`, `buildLookupBindings`) does not run, silently
+dropping the lookup binding. No current fixture exercises this (every input-object `@lookupKey` arg
+pairs with an `@table` input, e.g. `FilmActorKey @table`, so step 1 keeps it `TableInputArg`), so it
+is not a fixture regression. Per "validator mirrors classifier invariants," slice 1 must nonetheless
+make `@lookupKey` on a now-plain input arg a *validate-time rejection* rather than a silent no-op, or
+confirm (and cite) the existing validator rule that requires `@table` on any `@lookupKey`-consumed
+input. Fold the chosen disposition into the validator-mirror set above.
 
 ## Relation to R332 (the deprecation signal)
 
