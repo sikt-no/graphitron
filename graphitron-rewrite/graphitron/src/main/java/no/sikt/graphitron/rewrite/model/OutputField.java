@@ -41,8 +41,9 @@ public sealed interface OutputField extends GraphitronField permits RootField, C
      * {@link SourceShape} whose arm is the arrival cardinality. Defaulted per arrival ({@link QueryField}
      * → {@link Source.Root.Query}, {@link MutationField} → {@link Source.Root.Mutation}, {@link ChildField}
      * → {@link Source.Child}); the {@code Query} / {@code Mutation} split under {@link Source.Root} is the
-     * legality gate over {@link #intent()} (write intents only on {@code Mutation}, {@code NodeResolve}
-     * only on {@code Query}). The arm is the emit-strategy dispatch ({@link Source.Child} → DataLoader,
+     * legality gate over {@link #operation()} (write operations only on {@code Mutation},
+     * {@link Operation.NodeResolve} only on {@code Query}). The arm is the emit-strategy dispatch
+     * ({@link Source.Child} → DataLoader,
      * {@link Source.Root} / {@link Source.OnlyChild} → direct).
      */
     Source source();

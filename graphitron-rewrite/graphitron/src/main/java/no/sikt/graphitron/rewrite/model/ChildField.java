@@ -46,7 +46,7 @@ public sealed interface ChildField extends OutputField
      * this leaf's identity ({@code RecordTableField} vs {@code TableField}, {@code RecordField} vs
      * {@code ColumnField}, the {@code SingleRecord*} / {@code Errors} payload fields), so the
      * leaf-exhaustive switch is that projection; a new leaf forces a source-shape decision the same
-     * way {@link #intent()} / {@link #mapping()} do.
+     * way {@link #operation()} / {@link #target()} do.
      *
      * <p>The invariant is pinned by {@code SourceShapeProjectionTest}: for every classified
      * {@code ChildField} the R281 corpus demonstrates, this leaf-derived value is cross-checked

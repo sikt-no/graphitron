@@ -16,9 +16,8 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 |---|---|---|---|---|
 | `R19` | Rebase and squash rewrite branch onto main | Ready |  | [plan](history-squash.md) |
 | `R222` | Dimensional model pivot: slots over cross-product permits | Spec | 2026-06-18 <sub>created 2026-05-21</sub> | [plan](dimensional-model-pivot.md) |
-| `R333` | Lower each schema coordinate to a DataFetcher and its QueryParts <sub>blocked by: [source-operation-target-pivot](source-operation-target-pivot.md)</sub> | Spec | 2026-06-19 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
+| `R333` | Lower each schema coordinate to a DataFetcher and its QueryParts | Spec | 2026-06-19 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
 | `R256` | Absorb the service walker substrate: typed per-arm errors + multi-arg ctors | Ready | 2026-05-30 <sub>created 2026-05-29</sub> | [plan](service-walker-substrate-absorption.md) |
-| `R316` | Pivot the field-dimensional model to (source, operation, target) <sub>blocked by: [dimensional-model-pivot](dimensional-model-pivot.md)</sub> | In Review | 2026-06-19 <sub>created 2026-06-16</sub> | [plan](source-operation-target-pivot.md) |
 | `R327` | Field-relative input classification (retire @table-on-input and the findReturnTablesForInput aggregate) | Spec | 2026-06-19 <sub>created 2026-06-18</sub> | [plan](field-relative-input-classification.md) |
 | `R308` | Fix the @service list-payload N+1 by deriving many-arrival for list-returning carriers | Spec | 2026-06-14 | [plan](service-list-payload-arrival.md) |
 | `R335` | Fold input/scalar/enum classification into the single classify-and-emit walk | Spec | 2026-06-19 | [plan](walk-classifies-input-surface.md) |
@@ -222,8 +221,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R256` [**Absorb the service walker substrate: typed per-arm errors + multi-arg ctors**](service-walker-substrate-absorption.md) — Ready, structural
 - `R222` [**Dimensional model pivot: slots over cross-product permits**](dimensional-model-pivot.md) — Spec, structural
 - `R334` [**Generated @condition arg extraction is an unreadable nested-ternary one-liner**](readable-condition-arg-extraction.md) — Backlog, Backlog
-- `R333` [**Lower each schema coordinate to a DataFetcher and its QueryParts**](coordinate-lowers-to-datafetcher-queryparts.md) — Spec, structural, blocked by [source-operation-target-pivot](source-operation-target-pivot.md)
-- `R316` [**Pivot the field-dimensional model to (source, operation, target)**](source-operation-target-pivot.md) — In Review, structural, blocked by [dimensional-model-pivot](dimensional-model-pivot.md)
+- `R333` [**Lower each schema coordinate to a DataFetcher and its QueryParts**](coordinate-lowers-to-datafetcher-queryparts.md) — Spec, structural
 - `R314` [**Dissolve the re-fetch (reentry) leaf fields: emit reentry by switching on the dimensional model**](dissolve-reentry-leaves-dimensional-emit.md) — Backlog, architecture, blocked by [dimensional-model-pivot](dimensional-model-pivot.md)
 - `R327` [**Field-relative input classification (retire @table-on-input and the findReturnTablesForInput aggregate)**](field-relative-input-classification.md) — Spec, architecture
 - `R308` [**Fix the @service list-payload N+1 by deriving many-arrival for list-returning carriers**](service-list-payload-arrival.md) — Spec, structural
