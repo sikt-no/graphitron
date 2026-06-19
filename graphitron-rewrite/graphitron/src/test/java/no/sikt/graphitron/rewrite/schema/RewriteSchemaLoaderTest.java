@@ -1,5 +1,7 @@
 package no.sikt.graphitron.rewrite.schema;
 
+import graphql.language.SourceLocation;
+import no.sikt.graphitron.rewrite.SchemaParseException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -12,6 +14,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.catchThrowable;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 
 /**
@@ -74,12 +77,13 @@ class RewriteSchemaLoaderTest {
     }
 
     @Test
-    void parseErrorMessageNamesOffendingFileAndLocation(@TempDir Path tmp) throws IOException {
+    void parseErrorThrowsSchemaParseExceptionNamingOffendingFileAndLocation(@TempDir Path tmp) throws IOException {
         // Two well-formed sources flank a malformed one; the parser sees one combined
         // input, but with trackData(true) on MultiSourceReader the SourceLocation on
         // the exception carries the source-relative file/line. RewriteSchemaLoader
-        // must surface that into the message; otherwise users get "line N column M"
-        // with no way to know which schema file is at fault.
+        // surfaces that as a typed SchemaParseException whose message names the file;
+        // otherwise users get "line N column M" with no way to know which schema file
+        // is at fault, buried under the dev-loop infrastructure stack trace.
         Path good = tmp.resolve("good.graphqls");
         Files.writeString(good, "type Foo { id: ID! }\n");
         Path broken = tmp.resolve("broken.graphqls");
@@ -90,21 +94,41 @@ class RewriteSchemaLoaderTest {
             strayTokenHere
             """);
 
-        assertThatThrownBy(() -> RewriteSchemaLoader.load(List.of(good.toString(), broken.toString())))
-            .isInstanceOf(RuntimeException.class)
-            .hasMessageContaining(broken.toString())
-            .hasMessageContaining("line ")
-            .hasMessageContaining("column ")
-            // Upstream's "Offending token 'X' at line N column M" tail is redundant
-            // once the file:line:column prefix is in place; we strip it.
-            .hasMessageNotContaining("Offending token");
+        Throwable thrown = catchThrowable(
+            () -> RewriteSchemaLoader.load(List.of(good.toString(), broken.toString())));
+
+        assertThat(thrown).isInstanceOf(SchemaParseException.class);
+        SchemaParseException ex = (SchemaParseException) thrown;
+
+        // The structured location is carried for the deferred LSP-squiggle surface;
+        // it names the offending file with source-relative coordinates.
+        SourceLocation location = ex.location();
+        assertThat(location).isNotNull();
+        assertThat(location.getSourceName()).isEqualTo(broken.toString());
+        assertThat(ex.brief()).isNotBlank();
+
+        // getMessage() is the file-attributed one-liner, NOT a wrapper / count string.
+        // The dev goal's quiet catch(RuntimeException) paths print getMessage() verbatim,
+        // so this format is what keeps file:line:col attribution on those paths. Pinning
+        // it to the location + brief is the regression guard for that contract.
+        String expected = "Schema parse failed in " + location.getSourceName()
+            + " at line " + location.getLine() + " column " + location.getColumn()
+            + ": " + ex.brief();
+        assertThat(ex.getMessage()).isEqualTo(expected);
+        // Upstream's "Offending token 'X' at line N column M" tail is redundant once the
+        // file:line:column prefix is in place; we strip it.
+        assertThat(ex.getMessage()).doesNotContain("Offending token");
     }
 
     @Test
-    void missingSourceThrowsRuntimeExceptionWithPathInMessage() {
+    void missingSourceThrowsBareRuntimeException_notSchemaParseException() {
+        // A missing / unreadable file is a genuine infrastructure failure, not an
+        // author-correctable syntax error; it must stay a bare RuntimeException so the
+        // dev loop keeps its diagnostic stack trace rather than the clean parse surface.
         String missing = "/nope/absolutely-does-not-exist.graphqls";
         assertThatThrownBy(() -> RewriteSchemaLoader.load(List.of(missing)))
             .isInstanceOf(RuntimeException.class)
+            .isNotInstanceOf(SchemaParseException.class)
             .hasMessageContaining(missing);
     }
 

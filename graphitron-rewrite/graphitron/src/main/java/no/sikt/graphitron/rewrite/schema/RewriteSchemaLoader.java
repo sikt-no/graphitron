@@ -7,6 +7,7 @@ import graphql.parser.ParserEnvironment;
 import graphql.parser.ParserOptions;
 import graphql.schema.idl.SchemaParser;
 import graphql.schema.idl.TypeDefinitionRegistry;
+import no.sikt.graphitron.rewrite.SchemaParseException;
 
 import java.io.IOException;
 import java.io.InputStreamReader;
@@ -72,7 +73,7 @@ public final class RewriteSchemaLoader {
                     .build());
             return new SchemaParser().buildRegistry(document);
         } catch (InvalidSyntaxException e) {
-            throw new RuntimeException(attributedMessage(e), e);
+            throw new SchemaParseException(attributedMessage(e), firstSentence(e.getMessage()), e.getLocation(), e);
         } catch (IOException e) {
             throw new RuntimeException("Schema parse failed", e);
         }

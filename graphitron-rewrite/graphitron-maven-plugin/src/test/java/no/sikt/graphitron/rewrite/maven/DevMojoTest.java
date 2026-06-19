@@ -1,8 +1,11 @@
 package no.sikt.graphitron.rewrite.maven;
 
+import no.sikt.graphitron.rewrite.RewriteContext;
+import no.sikt.graphitron.rewrite.schema.input.SchemaInput;
 import no.sikt.graphitron.rewrite.maven.dev.DevServer;
 import no.sikt.graphitron.rewrite.maven.watch.DebounceExecutor;
 import org.apache.maven.plugin.MojoExecutionException;
+import org.apache.maven.plugin.logging.SystemStreamLog;
 import org.apache.maven.project.MavenProject;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -11,7 +14,9 @@ import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
@@ -72,6 +77,82 @@ class DevMojoTest {
 
             Thread.sleep(150);
             assertThat(regens).hasValue(1);
+        }
+    }
+
+    @Test
+    void runGeneratorPass_malformedSchema_logsAttributedLineWithoutThrowable(@TempDir Path basedir) throws Exception {
+        // The bug this item fixes: a half-edited (syntactically invalid) schema dumped
+        // a ~30-frame infrastructure stack trace into the dev log on every keystroke.
+        // The parse arm now logs the attributed one-liner WITHOUT the throwable.
+        Path broken = basedir.resolve("broken.graphqls");
+        Files.writeString(broken, "type Query { films: [Film] }\nstrayTokenHere\n");
+
+        var log = new CapturingLog();
+        var mojo = new DevMojo();
+        mojo.setLog(log);
+
+        boolean ok = mojo.runGeneratorPass(contextFor(basedir, broken), "regen");
+
+        assertThat(ok).isFalse();
+        assertThat(log.errorThrowables)
+            .as("parse failure rides the clean surface: no stack trace logged")
+            .isEmpty();
+        assertThat(log.errors)
+            .anySatisfy(line -> assertThat(line)
+                .contains("regen failed: ")
+                .contains("Schema parse failed in")
+                .contains(broken.toString()));
+    }
+
+    @Test
+    void runGeneratorPass_missingSchema_takesInfrastructureArmWithThrowable(@TempDir Path basedir) {
+        // A missing / unreadable file is a bare RuntimeException, not a SchemaParseException,
+        // so the generic infrastructure arm runs and keeps logging WITH the throwable. This
+        // pins the catch-arm ordering: were the parse arm catching too broadly, no throwable
+        // would reach the log here.
+        Path missing = basedir.resolve("nope-missing.graphqls");
+
+        var log = new CapturingLog();
+        var mojo = new DevMojo();
+        mojo.setLog(log);
+
+        boolean ok = mojo.runGeneratorPass(contextFor(basedir, missing), "regen");
+
+        assertThat(ok).isFalse();
+        assertThat(log.errorThrowables)
+            .as("genuine infrastructure failure keeps its diagnostic stack trace")
+            .isNotEmpty();
+        assertThat(log.errors)
+            .anySatisfy(line -> assertThat(line).contains("failed (infrastructure)"));
+    }
+
+    private static RewriteContext contextFor(Path basedir, Path schemaFile) {
+        // Both failure modes occur during schema load, before any jOOQ catalog work,
+        // so the jooq package / output directory values are never exercised.
+        return new RewriteContext(
+            List.of(SchemaInput.plain(schemaFile.toString())),
+            basedir,
+            basedir.resolve("target/generated"),
+            "com.example.generated",
+            "com.example.jooq",
+            Map.of());
+    }
+
+    /** Maven {@link org.apache.maven.plugin.logging.Log} that records error calls instead of printing. */
+    private static final class CapturingLog extends SystemStreamLog {
+        final List<String> errors = new ArrayList<>();
+        final List<Throwable> errorThrowables = new ArrayList<>();
+
+        @Override
+        public void error(CharSequence content) {
+            errors.add(String.valueOf(content));
+        }
+
+        @Override
+        public void error(CharSequence content, Throwable error) {
+            errors.add(String.valueOf(content));
+            errorThrowables.add(error);
         }
     }
 
