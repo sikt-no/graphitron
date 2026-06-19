@@ -5,7 +5,6 @@ status: Spec
 bucket: structural
 priority: 3
 theme: structural-refactor
-depends-on: [source-operation-target-pivot]
 created: 2026-06-18
 last-updated: 2026-06-19
 ---
