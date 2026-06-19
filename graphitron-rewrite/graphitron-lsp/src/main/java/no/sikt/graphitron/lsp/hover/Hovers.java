@@ -26,6 +26,9 @@ import io.github.treesitter.jtreesitter.Point;
 import java.util.List;
 import java.util.Optional;
 
+import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.LIST_VALUE;
+import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.VALUE;
+
 /**
  * Hover content keyed on schema-coordinate behaviors. Cursor on a known
  * coordinate ({@code @table(name:)}, {@code ExternalCodeReference.method},
@@ -364,9 +367,9 @@ public final class Hovers {
     private static Node valueNodeFor(Directives.Directive directive, Point pos) {
         for (var arg : directive.arguments()) {
             if (!arg.contains(pos)) continue;
-            Node nested = innermostObjectFieldContaining(arg.value(), pos);
+            Node nested = Nodes.innermostObjectFieldContaining(arg.value(), pos);
             if (nested != null) {
-                Node valueNode = childOfKind(nested, "value");
+                Node valueNode = Nodes.childOfKind(nested, VALUE);
                 if (valueNode != null && Nodes.contains(valueNode, pos)) {
                     Node element = listElementContaining(valueNode, pos);
                     return element != null ? element : valueNode;
@@ -401,29 +404,10 @@ public final class Hovers {
 
     private static Node findListValue(Node node) {
         if (node == null) return null;
-        if ("list_value".equals(node.getType())) return node;
+        if (LIST_VALUE.matches(node)) return node;
         for (int i = 0; i < node.getChildCount(); i++) {
             Node child = node.getChild(i).orElse(null);
-            if (child != null && "list_value".equals(child.getType())) return child;
-        }
-        return null;
-    }
-
-    private static Node innermostObjectFieldContaining(Node node, Point pos) {
-        if (node == null || !Nodes.contains(node, pos)) return null;
-        Node best = null;
-        if ("object_field".equals(node.getType())) best = node;
-        for (int i = 0; i < node.getChildCount(); i++) {
-            Node descendant = innermostObjectFieldContaining(node.getChild(i).orElse(null), pos);
-            if (descendant != null) best = descendant;
-        }
-        return best;
-    }
-
-    private static Node childOfKind(Node parent, String kind) {
-        for (int i = 0; i < parent.getChildCount(); i++) {
-            Node child = parent.getChild(i).orElse(null);
-            if (child != null && kind.equals(child.getType())) return child;
+            if (LIST_VALUE.matches(child)) return child;
         }
         return null;
     }

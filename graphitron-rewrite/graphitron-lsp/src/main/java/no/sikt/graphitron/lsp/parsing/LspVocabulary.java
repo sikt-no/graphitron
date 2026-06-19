@@ -15,6 +15,14 @@ import io.github.treesitter.jtreesitter.Node;
 import io.github.treesitter.jtreesitter.Point;
 import no.sikt.graphitron.rewrite.schema.RewriteSchemaLoader;
 
+import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.ENUM_VALUE;
+import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.LIST_VALUE;
+import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.NAME;
+import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.OBJECT_FIELD;
+import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.OBJECT_VALUE;
+import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.STRING_VALUE;
+import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.VALUE;
+
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -178,9 +186,9 @@ public record LspVocabulary(
         if (objectValue == null) return Optional.empty();
         for (int i = 0; i < objectValue.getChildCount(); i++) {
             Node child = objectValue.getChild(i).orElse(null);
-            if (child == null || !"object_field".equals(child.getType())) continue;
-            Node nameNode = childOfKind(child, "name");
-            Node valueNode = childOfKind(child, "value");
+            if (child == null || !OBJECT_FIELD.matches(child)) continue;
+            Node nameNode = Nodes.childOfKind(child, NAME);
+            Node valueNode = Nodes.childOfKind(child, VALUE);
             if (nameNode == null || valueNode == null) continue;
             if (fieldName.equals(Nodes.text(nameNode, source))) {
                 String raw = Nodes.unquote(Nodes.text(valueNode, source));
@@ -192,7 +200,7 @@ public record LspVocabulary(
 
     private static Node enclosingObjectValue(Node node, Point pos) {
         if (node == null || !Nodes.contains(node, pos)) return null;
-        Node best = "object_value".equals(node.getType()) ? node : null;
+        Node best = OBJECT_VALUE.matches(node) ? node : null;
         for (int i = 0; i < node.getChildCount(); i++) {
             Node descendant = enclosingObjectValue(node.getChild(i).orElse(null), pos);
             if (descendant != null) best = descendant;
@@ -202,18 +210,13 @@ public record LspVocabulary(
 
     private static Node enclosingObjectValueOf(Node root, Node leafValue) {
         if (root == null) return null;
-        if (!nodeContains(root, leafValue)) return null;
-        Node best = "object_value".equals(root.getType()) ? root : null;
+        if (!Nodes.nodeContains(root, leafValue)) return null;
+        Node best = OBJECT_VALUE.matches(root) ? root : null;
         for (int i = 0; i < root.getChildCount(); i++) {
             Node descendant = enclosingObjectValueOf(root.getChild(i).orElse(null), leafValue);
             if (descendant != null) best = descendant;
         }
         return best;
-    }
-
-    private static boolean nodeContains(Node parent, Node child) {
-        return parent.getStartByte() <= child.getStartByte()
-            && parent.getEndByte() >= child.getEndByte();
     }
 
     /**
@@ -251,9 +254,9 @@ public record LspVocabulary(
 
     private void descendLeaves(Node node, String currentType, byte[] source, List<Leaf> out) {
         if (node == null) return;
-        if ("object_field".equals(node.getType())) {
-            Node nameNode = childOfKind(node, "name");
-            Node valueNode = childOfKind(node, "value");
+        if (OBJECT_FIELD.matches(node)) {
+            Node nameNode = Nodes.childOfKind(node, NAME);
+            Node valueNode = Nodes.childOfKind(node, VALUE);
             if (nameNode != null && valueNode != null) {
                 String fieldName = Nodes.text(nameNode, source);
                 var fieldCoord = new SchemaCoordinate.InputField(currentType, fieldName);
@@ -308,10 +311,10 @@ public record LspVocabulary(
     /** Returns the {@code list_value} reached from {@code node} via at most one wrapper, else null. */
     private static Node listValueOf(Node node) {
         if (node == null) return null;
-        if ("list_value".equals(node.getType())) return node;
+        if (LIST_VALUE.matches(node)) return node;
         for (int i = 0; i < node.getChildCount(); i++) {
             Node child = node.getChild(i).orElse(null);
-            if (child != null && "list_value".equals(child.getType())) return child;
+            if (LIST_VALUE.matches(child)) return child;
         }
         return null;
     }
@@ -460,9 +463,8 @@ public record LspVocabulary(
      */
     private static Node innermostLeafAt(Node node, Point pos) {
         if (node == null || !Nodes.contains(node, pos)) return null;
-        String type = node.getType();
-        if ("string_value".equals(type)) return node;
-        Node best = isLeafKind(type) ? node : null;
+        if (STRING_VALUE.matches(node)) return node;
+        Node best = isLeafKind(node) ? node : null;
         for (int i = 0; i < node.getChildCount(); i++) {
             Node descendant = innermostLeafAt(node.getChild(i).orElse(null), pos);
             if (descendant != null) best = descendant;
@@ -470,8 +472,8 @@ public record LspVocabulary(
         return best;
     }
 
-    private static boolean isLeafKind(String type) {
-        return "enum_value".equals(type) || "name".equals(type);
+    private static boolean isLeafKind(Node node) {
+        return ENUM_VALUE.matches(node) || NAME.matches(node);
     }
 
     /**
@@ -487,9 +489,9 @@ public record LspVocabulary(
 
     private static void descend(Node node, Point pos, byte[] source, List<String> out) {
         if (node == null || !Nodes.contains(node, pos)) return;
-        if ("object_field".equals(node.getType())) {
-            Node nameNode = childOfKind(node, "name");
-            Node valueNode = childOfKind(node, "value");
+        if (OBJECT_FIELD.matches(node)) {
+            Node nameNode = Nodes.childOfKind(node, NAME);
+            Node valueNode = Nodes.childOfKind(node, VALUE);
             // Only treat the cursor as on this field if it sits inside the
             // value, not the name. Cursor on the name is a separate case
             // (arg-name completion territory) and must not key as a
@@ -503,14 +505,6 @@ public record LspVocabulary(
         for (int i = 0; i < node.getChildCount(); i++) {
             descend(node.getChild(i).orElse(null), pos, source, out);
         }
-    }
-
-    private static Node childOfKind(Node parent, String kind) {
-        for (int i = 0; i < parent.getChildCount(); i++) {
-            Node child = parent.getChild(i).orElse(null);
-            if (child != null && kind.equals(child.getType())) return child;
-        }
-        return null;
     }
 
     /**

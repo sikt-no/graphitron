@@ -6,6 +6,8 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.function.Consumer;
 
+import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.NAME;
+
 /**
  * R216 — closed family of tree-sitter-graphql declaration kinds that the LSP cares about,
  * spanning both {@code *_type_definition} ("type Foo { ... }") and {@code *_type_extension}
@@ -128,19 +130,11 @@ public enum DeclarationKind {
         walkAll(root, decl -> {
             if (found[0] != null) return;
             if (of(decl).map(DeclarationKind::isExtension).orElse(true)) return;
-            Node name = childOfKind(decl, "name");
+            Node name = Nodes.childOfKind(decl, NAME);
             if (name != null && typeName.equals(Nodes.text(name, source))) {
                 found[0] = name;
             }
         });
         return Optional.ofNullable(found[0]);
-    }
-
-    private static Node childOfKind(Node parent, String kind) {
-        for (int i = 0; i < parent.getChildCount(); i++) {
-            Node child = parent.getChild(i).orElse(null);
-            if (child != null && kind.equals(child.getType())) return child;
-        }
-        return null;
     }
 }

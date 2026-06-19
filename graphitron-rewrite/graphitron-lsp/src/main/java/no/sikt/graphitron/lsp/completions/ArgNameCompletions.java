@@ -23,6 +23,11 @@ import org.eclipse.lsp4j.jsonrpc.messages.Either;
 import java.util.ArrayList;
 import java.util.List;
 
+import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.NAME;
+import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.OBJECT_FIELD;
+import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.OBJECT_VALUE;
+import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.VALUE;
+
 /**
  * Argument-name completion driven off the parsed registry rather than a
  * hand-coded directive list. Two cursor cases:
@@ -103,7 +108,7 @@ public final class ArgNameCompletions {
 
     private static Node innermostNameAt(Node node, Point pos) {
         if (node == null || !Nodes.contains(node, pos)) return null;
-        Node best = "name".equals(node.getType()) ? node : null;
+        Node best = NAME.matches(node) ? node : null;
         for (int i = 0; i < node.getChildCount(); i++) {
             Node descendant = innermostNameAt(node.getChild(i).orElse(null), pos);
             if (descendant != null) best = descendant;
@@ -218,7 +223,7 @@ public final class ArgNameCompletions {
      */
     private static Node innermostObjectValueAt(Node node, Point pos) {
         if (node == null || !Nodes.contains(node, pos)) return null;
-        Node best = "object_value".equals(node.getType()) ? node : null;
+        Node best = OBJECT_VALUE.matches(node) ? node : null;
         for (int i = 0; i < node.getChildCount(); i++) {
             Node descendant = innermostObjectValueAt(node.getChild(i).orElse(null), pos);
             if (descendant != null) best = descendant;
@@ -229,7 +234,7 @@ public final class ArgNameCompletions {
     private static boolean cursorInsideAnyObjectField(Node objectValue, Point pos) {
         for (int i = 0; i < objectValue.getChildCount(); i++) {
             Node child = objectValue.getChild(i).orElse(null);
-            if (child == null || !"object_field".equals(child.getType())) continue;
+            if (child == null || !OBJECT_FIELD.matches(child)) continue;
             if (Nodes.contains(child, pos)) return true;
         }
         return false;
@@ -252,12 +257,12 @@ public final class ArgNameCompletions {
 
     private static boolean descend(Node node, Node target, byte[] source, List<String> out) {
         if (node == null) return false;
-        if (sameNode(node, target)) return true;
-        if (!nodeContains(node, target)) return false;
-        if ("object_field".equals(node.getType())) {
-            Node nameNode = childOfKind(node, "name");
-            Node valueNode = childOfKind(node, "value");
-            if (nameNode != null && valueNode != null && nodeContains(valueNode, target)) {
+        if (Nodes.sameNode(node, target)) return true;
+        if (!Nodes.nodeContains(node, target)) return false;
+        if (OBJECT_FIELD.matches(node)) {
+            Node nameNode = Nodes.childOfKind(node, NAME);
+            Node valueNode = Nodes.childOfKind(node, VALUE);
+            if (nameNode != null && valueNode != null && Nodes.nodeContains(valueNode, target)) {
                 if (descend(valueNode, target, source, out)) {
                     out.add(0, Nodes.text(nameNode, source));
                     return true;
@@ -269,30 +274,5 @@ public final class ArgNameCompletions {
             if (descend(node.getChild(i).orElse(null), target, source, out)) return true;
         }
         return false;
-    }
-
-    private static boolean nodeContains(Node parent, Node child) {
-        return parent.getStartByte() <= child.getStartByte()
-            && parent.getEndByte() >= child.getEndByte();
-    }
-
-    /**
-     * Tree-sitter node identity: two {@link Node} handles obtained from
-     * different tree walks may not be reference-equal even when they
-     * point at the same syntactic node. Compare by byte range + grammar
-     * type instead, which uniquely identifies a node within a parse.
-     */
-    private static boolean sameNode(Node a, Node b) {
-        return a.getStartByte() == b.getStartByte()
-            && a.getEndByte() == b.getEndByte()
-            && a.getType().equals(b.getType());
-    }
-
-    private static Node childOfKind(Node parent, String kind) {
-        for (int i = 0; i < parent.getChildCount(); i++) {
-            Node child = parent.getChild(i).orElse(null);
-            if (child != null && kind.equals(child.getType())) return child;
-        }
-        return null;
     }
 }

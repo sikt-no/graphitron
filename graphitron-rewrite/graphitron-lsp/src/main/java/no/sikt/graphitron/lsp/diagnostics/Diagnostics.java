@@ -39,6 +39,11 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 
+import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.NAME;
+import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.OBJECT_FIELD;
+import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.STRING_VALUE;
+import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.VALUE;
+
 /**
  * Validates known directive coordinates against the catalog and emits LSP
  * diagnostics for values that do not resolve. Dispatch is coordinate-driven:
@@ -296,9 +301,9 @@ public final class Diagnostics {
         LspVocabulary vocabulary, WorkspaceFile file, List<Diagnostic> out
     ) {
         if (node == null) return;
-        if ("object_field".equals(node.getType())) {
-            Node nameNode = childOfKind(node, "name");
-            Node valueNode = childOfKind(node, "value");
+        if (OBJECT_FIELD.matches(node)) {
+            Node nameNode = Nodes.childOfKind(node, NAME);
+            Node valueNode = Nodes.childOfKind(node, VALUE);
             if (nameNode == null || valueNode == null) return;
             String fieldName = Nodes.text(nameNode, file.source());
             var inputType = vocabulary.registry().getTypeOrNull(currentType, InputObjectTypeDefinition.class);
@@ -386,13 +391,6 @@ public final class Diagnostics {
         }
     }
 
-    private static Node childOfKind(Node parent, String kind) {
-        for (int i = 0; i < parent.getChildCount(); i++) {
-            Node child = parent.getChild(i).orElse(null);
-            if (child != null && kind.equals(child.getType())) return child;
-        }
-        return null;
-    }
 
     private static void dispatch(
         Directives.Directive directive, LspVocabulary.Leaf leaf, LspVocabulary vocabulary,
@@ -880,7 +878,7 @@ public final class Diagnostics {
      */
     private static Node stringValueOf(Node node) {
         if (node == null) return null;
-        if ("string_value".equals(node.getType())) return node;
+        if (STRING_VALUE.matches(node)) return node;
         for (int i = 0; i < node.getChildCount(); i++) {
             Node found = stringValueOf(node.getChild(i).orElse(null));
             if (found != null) return found;

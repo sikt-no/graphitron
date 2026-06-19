@@ -21,6 +21,14 @@ import org.eclipse.lsp4j.Range;
 import java.util.ArrayList;
 import java.util.List;
 
+import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.DIRECTIVE;
+import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.DIRECTIVES;
+import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.FIELDS_DEFINITION;
+import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.FIELD_DEFINITION;
+import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.INPUT_FIELDS_DEFINITION;
+import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.INPUT_VALUE_DEFINITION;
+import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.NAME;
+
 /**
  * R160 — LSP inlay-hint provider. Two arms, each gated by an independent config toggle:
  * <ul>
@@ -74,7 +82,7 @@ public final class InlayHints {
             TypeContext.declaredNameOf(typeDef, file.source()).ifPresent(typeName -> {
                 var classification = built.typeClassificationsByName().get(typeName);
                 if (classification == null) return;
-                Node nameNode = childOfKind(typeDef, "name");
+                Node nameNode = Nodes.childOfKind(typeDef, NAME);
                 if (nameNode == null) return;
                 out.add(makeHint(
                     file, nameNode,
@@ -82,9 +90,9 @@ public final class InlayHints {
                     InlayHintKind.Type));
             });
             // Walk field-definition children for this type
-            Node fieldsContainer = childOfKind(typeDef, "fields_definition");
+            Node fieldsContainer = Nodes.childOfKind(typeDef, FIELDS_DEFINITION);
             if (fieldsContainer == null) {
-                fieldsContainer = childOfKind(typeDef, "input_fields_definition");
+                fieldsContainer = Nodes.childOfKind(typeDef, INPUT_FIELDS_DEFINITION);
             }
             if (fieldsContainer != null) {
                 String parentTypeName = TypeContext.declaredNameOf(typeDef, file.source()).orElse(null);
@@ -92,10 +100,9 @@ public final class InlayHints {
                     for (int i = 0; i < fieldsContainer.getChildCount(); i++) {
                         Node child = fieldsContainer.getChild(i).orElse(null);
                         if (child == null) continue;
-                        String kind = child.getType();
-                        if (!"field_definition".equals(kind) && !"input_value_definition".equals(kind)) continue;
+                        if (!FIELD_DEFINITION.matches(child) && !INPUT_VALUE_DEFINITION.matches(child)) continue;
                         if (!intersects(child, visibleRange)) continue;
-                        Node nameNode = childOfKind(child, "name");
+                        Node nameNode = Nodes.childOfKind(child, NAME);
                         if (nameNode == null) continue;
                         String fieldName = Nodes.text(nameNode, file.source());
                         var classification = built.fieldClassificationsByCoord()
@@ -161,7 +168,7 @@ public final class InlayHints {
             if (typeName == null) return;
             var classification = built.typeClassificationsByName().get(typeName);
             if (classification == null) return;
-            Node nameNode = childOfKind(typeDef, "name");
+            Node nameNode = Nodes.childOfKind(typeDef, NAME);
             if (nameNode == null) return;
             for (var entry : InferredDirectiveArgs.ENTRIES) {
                 var arm = entry.absentArm();
@@ -176,12 +183,12 @@ public final class InlayHints {
     }
 
     private static boolean typeCarriesDirective(Node typeDef, String directiveName, byte[] source) {
-        Node directives = childOfKind(typeDef, "directives");
+        Node directives = Nodes.childOfKind(typeDef, DIRECTIVES);
         if (directives == null) return false;
         for (int i = 0; i < directives.getChildCount(); i++) {
             Node child = directives.getChild(i).orElse(null);
-            if (child == null || !"directive".equals(child.getType())) continue;
-            Node nameNode = childOfKind(child, "name");
+            if (child == null || !DIRECTIVE.matches(child)) continue;
+            Node nameNode = Nodes.childOfKind(child, NAME);
             if (nameNode != null && directiveName.equals(Nodes.text(nameNode, source))) return true;
         }
         return false;
@@ -219,7 +226,7 @@ public final class InlayHints {
         if (typeName == null) return;
         String fieldName = TypeContext.fieldNameOf(enclosingField, file.source())
             .orElseGet(() -> {
-                Node nameNode = childOfKind(enclosingField, "name");
+                Node nameNode = Nodes.childOfKind(enclosingField, NAME);
                 return nameNode != null ? Nodes.text(nameNode, file.source()) : null;
             });
         if (fieldName == null) return;
@@ -244,7 +251,7 @@ public final class InlayHints {
         if (enclosingType == null) return;
         String typeName = TypeContext.declaredNameOf(enclosingType, file.source()).orElse(null);
         if (typeName == null) return;
-        Node nameNode = childOfKind(enclosingField, "name");
+        Node nameNode = Nodes.childOfKind(enclosingField, NAME);
         if (nameNode == null) return;
         String fieldName = Nodes.text(nameNode, file.source());
         var classification = built.fieldClassificationsByCoord()
@@ -293,7 +300,7 @@ public final class InlayHints {
     private static java.util.Optional<Node> enclosingInputValueDefinition(Node inner) {
         Node node = inner;
         while (node != null) {
-            if ("input_value_definition".equals(node.getType())) {
+            if (INPUT_VALUE_DEFINITION.matches(node)) {
                 return java.util.Optional.of(node);
             }
             Node parent = node.getParent().orElse(null);
@@ -303,14 +310,6 @@ public final class InlayHints {
             node = parent;
         }
         return java.util.Optional.empty();
-    }
-
-    private static Node childOfKind(Node parent, String kind) {
-        for (int i = 0; i < parent.getChildCount(); i++) {
-            Node child = parent.getChild(i).orElse(null);
-            if (child != null && kind.equals(child.getType())) return child;
-        }
-        return null;
     }
 
     private static boolean hasNamedArg(Directives.Directive directive, String argName, byte[] source) {
