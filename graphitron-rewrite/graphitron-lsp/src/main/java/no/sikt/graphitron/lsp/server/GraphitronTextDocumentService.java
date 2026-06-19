@@ -1,6 +1,7 @@
 package no.sikt.graphitron.lsp.server;
 
 import no.sikt.graphitron.lsp.code_action.CodeActions;
+import no.sikt.graphitron.lsp.completions.ArgMappingCompletions;
 import no.sikt.graphitron.lsp.completions.ArgNameCompletions;
 import no.sikt.graphitron.lsp.completions.ClassNameCompletions;
 import no.sikt.graphitron.lsp.completions.CompletionContext;
@@ -224,6 +225,9 @@ public class GraphitronTextDocumentService implements TextDocumentService {
             if (!scalarItems.isEmpty()) return scalarItems;
             var nodeTypeItems = NodeTypeCompletions.generate(vocab, data, context);
             if (!nodeTypeItems.isEmpty()) return nodeTypeItems;
+            var argMappingItems = ArgMappingCompletions.generate(
+                vocab, data, context, directive, pos, lspPos, source);
+            if (!argMappingItems.isEmpty()) return argMappingItems;
         }
         // Arg-name fallback: fires both when locateAt is empty (cursor on
         // arg-name / whitespace) and when locateAt produced no value

@@ -5,6 +5,8 @@ import graphql.language.InputObjectTypeDefinition;
 import graphql.language.InputValueDefinition;
 import graphql.language.NonNullType;
 import graphql.language.SourceLocation;
+import no.sikt.graphitron.lsp.parsing.ArgMapping;
+import no.sikt.graphitron.lsp.parsing.ArgMappingSupport;
 import no.sikt.graphitron.lsp.parsing.Behavior;
 import no.sikt.graphitron.lsp.parsing.DeclarationKind;
 import no.sikt.graphitron.lsp.parsing.Directives;
@@ -409,7 +411,8 @@ public final class Diagnostics {
                 validateClassName(directive, leaf.valueNode(), file, catalog, out);
             case Behavior.MethodNameBinding mnb ->
                 validateMethod(vocabulary, directive, leaf, mnb, file, catalog, out);
-            case Behavior.ArgMappingBinding ignored -> { /* sibling roadmap item */ }
+            case Behavior.ArgMappingBinding ignored ->
+                validateArgMapping(vocabulary, directive, leaf, file, catalog, out);
             case Behavior.ScalarTypeBinding ignored ->
                 validateScalarType(leaf.valueNode(), file, catalog, out);
             case Behavior.NodeTypeBinding ignored ->
@@ -748,6 +751,152 @@ public final class Diagnostics {
             }
         }
         return names;
+    }
+
+    /**
+     * Validates an {@code argMapping} string ({@code "javaParam: graphqlArg, ..."}):
+     *
+     * <ul>
+     *   <li>Structural: empty entry / stray comma, dangling {@code :} (missing
+     *       Java parameter or GraphQL argument), and an entry missing its
+     *       {@code :} altogether.</li>
+     *   <li>Left: a duplicate Java parameter, and a Java parameter that is not a
+     *       parameter of the resolved method (suppressed when the method's
+     *       parameter names are unavailable, i.e. compiled without
+     *       {@code -parameters}).</li>
+     *   <li>Right: a GraphQL argument whose first path segment is not an argument
+     *       of the enclosing field. Deeper R84 dot-path segments are not
+     *       validated (the LSP carries no projection of nested input-type
+     *       fields); only the head segment is checked.</li>
+     * </ul>
+     */
+    private static void validateArgMapping(
+        LspVocabulary vocabulary, Directives.Directive directive, LspVocabulary.Leaf leaf,
+        WorkspaceFile file, CompletionData catalog, List<Diagnostic> out
+    ) {
+        Node valueNode = stringValueOf(leaf.valueNode());
+        if (valueNode == null) return;
+        byte[] source = file.source();
+        String raw = Nodes.text(valueNode, source);
+        int quote = raw.length() >= 6 && raw.startsWith("\"\"\"") && raw.endsWith("\"\"\"") ? 3 : 1;
+        if (raw.length() < quote * 2) return;
+        String content = raw.substring(quote, raw.length() - quote);
+        int contentStart = valueNode.getStartByte() + quote;
+
+        var entries = ArgMapping.parse(content);
+        if (entries.isEmpty()) return; // blank content is identity for every parameter
+
+        Set<String> paramNames = resolveParameterNames(vocabulary, directive, valueNode, leaf.coord(), catalog, source);
+        List<String> fieldArgs = TypeContext.enclosingFieldDefinition(directive.outer())
+            .map(fd -> TypeContext.fieldArgumentNames(fd, source))
+            .orElse(List.of());
+
+        var seenJava = new LinkedHashSet<String>();
+        for (var entry : entries) {
+            if (!entry.hasColon() && entry.isBlank()) {
+                out.add(diagnostic(file, valueNode, DiagnosticSeverity.Warning,
+                    "Empty argMapping entry (stray comma)."));
+                continue;
+            }
+            if (!entry.hasColon()) {
+                out.add(byteDiagnostic(file, contentStart + entry.rawStart(), contentStart + entry.rawEnd(),
+                    DiagnosticSeverity.Warning, "Expected 'javaParam: graphqlArg' in argMapping entry."));
+                continue;
+            }
+            if (entry.java().isEmpty()) {
+                out.add(byteDiagnostic(file, contentStart + entry.rawStart(), contentStart + entry.rawEnd(),
+                    DiagnosticSeverity.Warning, "Missing Java parameter before ':' in argMapping."));
+            } else {
+                validateArgMappingJavaParam(entry.java(), contentStart, paramNames, seenJava, file, out);
+            }
+            if (entry.graphql().isEmpty()) {
+                out.add(byteDiagnostic(file, contentStart + entry.rawStart(), contentStart + entry.rawEnd(),
+                    DiagnosticSeverity.Warning, "Missing GraphQL argument after ':' in argMapping."));
+            } else {
+                validateArgMappingGraphqlArg(entry.graphql(), contentStart, fieldArgs, file, out);
+            }
+        }
+    }
+
+    private static void validateArgMappingJavaParam(
+        ArgMapping.Segment java, int contentStart, Set<String> paramNames,
+        Set<String> seenJava, WorkspaceFile file, List<Diagnostic> out
+    ) {
+        String name = java.text();
+        if (!seenJava.add(name)) {
+            out.add(byteDiagnostic(file, contentStart + java.start(), contentStart + java.end(),
+                DiagnosticSeverity.Warning, "Duplicate Java parameter '" + name + "' in argMapping."));
+            return;
+        }
+        if (paramNames != null && !paramNames.contains(name)) {
+            out.add(byteDiagnostic(file, contentStart + java.start(), contentStart + java.end(),
+                DiagnosticSeverity.Warning,
+                "Unknown Java parameter '" + name + "'; not a parameter of the referenced method."));
+        }
+    }
+
+    private static void validateArgMappingGraphqlArg(
+        ArgMapping.Segment graphql, int contentStart, List<String> fieldArgs,
+        WorkspaceFile file, List<Diagnostic> out
+    ) {
+        if (fieldArgs.isEmpty()) return; // no field args known (pre-build or argument-less field)
+        String value = graphql.text();
+        int dot = value.indexOf('.');
+        String head = dot >= 0 ? value.substring(0, dot) : value;
+        if (head.isEmpty() || fieldArgs.contains(head)) return;
+        // Flag only the head segment span so a valid dot-path with a typo'd
+        // first step underlines the offending step, not the whole path.
+        int headEnd = graphql.start() + head.length();
+        out.add(byteDiagnostic(file, contentStart + graphql.start(), contentStart + headEnd,
+            DiagnosticSeverity.Warning,
+            "Unknown GraphQL argument '" + head + "' on the enclosing field."));
+    }
+
+    /**
+     * Parameter-name set for the {@code argMapping}'s resolved method, or
+     * {@code null} when the unknown-parameter check must be suppressed: the
+     * method does not resolve, or its parameter names are unavailable (compiled
+     * without {@code -parameters}). An empty set means the method resolves with
+     * zero (named) parameters, so any mapping entry is unknown.
+     */
+    private static Set<String> resolveParameterNames(
+        LspVocabulary vocabulary, Directives.Directive directive, Node anchor,
+        SchemaCoordinate argMappingCoord, CompletionData catalog, byte[] source
+    ) {
+        var method = ArgMappingSupport.resolveMethod(vocabulary, directive, anchor, argMappingCoord, catalog, source);
+        if (method.isEmpty()) return null;
+        var params = method.get().parameters();
+        if (params.stream().anyMatch(p -> p.name() == null)) return null;
+        var names = new LinkedHashSet<String>();
+        for (var p : params) names.add(p.name());
+        return names;
+    }
+
+    /**
+     * Unwraps the grammar's {@code value} wrapper (emitted by the leaf walk) to
+     * the inner {@code string_value} token an {@code argMapping} carries, or
+     * returns {@code null} when the value is not a string (e.g. a half-typed
+     * unterminated literal that parses as an error node).
+     */
+    private static Node stringValueOf(Node node) {
+        if (node == null) return null;
+        if ("string_value".equals(node.getType())) return node;
+        for (int i = 0; i < node.getChildCount(); i++) {
+            Node found = stringValueOf(node.getChild(i).orElse(null));
+            if (found != null) return found;
+        }
+        return null;
+    }
+
+    private static Diagnostic byteDiagnostic(
+        WorkspaceFile file, int startByte, int endByte, DiagnosticSeverity severity, String message
+    ) {
+        var start = Positions.toLspPosition(file.source(), startByte);
+        var end = Positions.toLspPosition(file.source(), endByte);
+        var d = new Diagnostic(new Range(start, end), message);
+        d.setSeverity(severity);
+        d.setSource(SOURCE);
+        return d;
     }
 
     private static Diagnostic diagnostic(WorkspaceFile file, Node node, DiagnosticSeverity severity, String message) {

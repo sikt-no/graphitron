@@ -67,6 +67,27 @@ public final class TypeContext {
     }
 
     /**
+     * Names of the GraphQL arguments declared on a {@code field_definition}:
+     * the {@code name} child of each {@code input_value_definition} under the
+     * field's {@code arguments_definition}. Empty when the field has no
+     * argument list. Used by the {@code argMapping} right-side completion /
+     * diagnostics to resolve the candidate GraphQL arguments syntactically
+     * (the LSP carries no projection of user field arguments).
+     */
+    public static java.util.List<String> fieldArgumentNames(Node fieldDef, byte[] source) {
+        Node args = childOfKind(fieldDef, "arguments_definition");
+        if (args == null) return java.util.List.of();
+        var out = new java.util.ArrayList<String>();
+        for (int i = 0; i < args.getChildCount(); i++) {
+            Node child = args.getChild(i).orElse(null);
+            if (child == null || !"input_value_definition".equals(child.getType())) continue;
+            Node nameNode = childOfKind(child, "name");
+            if (nameNode != null) out.add(Nodes.text(nameNode, source));
+        }
+        return java.util.List.copyOf(out);
+    }
+
+    /**
      * R159 — reads the field-name child of a {@code field_definition} node. Returns
      * {@link Optional#empty()} when the node has no {@code name} child (shouldn't happen for a
      * well-formed parse but defensive against partial-edit trees).
