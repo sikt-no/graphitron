@@ -90,11 +90,11 @@ class JooqRecordServiceParamPipelineTest {
         assertThat(jr.table().recordClass().toString()).isEqualTo(FILM_RECORD_FQN);
         assertThat(jr.columnBindings())
             .as("the two plain @field columns bind on the column axis, each a resolved ColumnRef")
-            .extracting(cb -> cb.sdlFieldName() + "->" + cb.column().sqlName())
+            .extracting(cb -> cb.leaf() + "->" + cb.column().sqlName())
             .containsExactly("title->title", "releaseYear->release_year");
         assertThat(jr.keyDecodes()).as("the @nodeId field is the record's identity").hasSize(1);
         var kd = jr.keyDecodes().get(0);
-        assertThat(kd.sdlFieldName()).as("the decode carries its own Map key").isEqualTo("filmId");
+        assertThat(kd.leaf()).as("the decode carries its own Map key").isEqualTo("filmId");
         assertThat(kd.typeId()).isEqualTo("Film");
         assertThat(kd.targetColumns()).extracting(c -> c.sqlName()).containsExactly("film_id");
         assertThat(kd.nonNull()).as("filmId is ID! → non-null identity").isTrue();
@@ -346,7 +346,7 @@ class JooqRecordServiceParamPipelineTest {
         var jr = carrier(PURE_FK_SDL, "assignFilmActor", false);
         assertThat(jr.table().recordClass().toString()).isEqualTo(FILM_ACTOR_RECORD_FQN);
         assertThat(jr.keyDecodes())
-            .extracting(kd -> kd.sdlFieldName() + "->" + kd.targetColumns().get(0).sqlName())
+            .extracting(kd -> kd.leaf() + "->" + kd.targetColumns().get(0).sqlName())
             .containsExactlyInAnyOrder("filmId->film_id", "actorId->actor_id");
         assertThat(findSpec("QueryFetchers", PURE_FK_SDL).methodSpecs())
             .extracting(MethodSpec::name).contains("createFilmActorRecord");
@@ -373,12 +373,12 @@ class JooqRecordServiceParamPipelineTest {
         assertThat(jr.table().recordClass().toString()).isEqualTo(FILM_ENDORSEMENT_RECORD_FQN);
         assertThat(jr.keyDecodes()).hasSize(1);
         var kd = jr.keyDecodes().get(0);
-        assertThat(kd.sdlFieldName()).isEqualTo("filmId");
+        assertThat(kd.leaf()).isEqualTo("filmId");
         assertThat(kd.targetColumns())
             .as("decoded Film id lands on the renamed FK child column, not a same-named film_id")
             .extracting(c -> c.sqlName()).containsExactly("endorsed_film");
         assertThat(jr.columnBindings())
-            .extracting(cb -> cb.sdlFieldName() + "->" + cb.column().sqlName()).containsExactly("note->note");
+            .extracting(cb -> cb.leaf() + "->" + cb.column().sqlName()).containsExactly("note->note");
         assertThat(findSpec("QueryFetchers", ENDORSEMENT_FK_SDL).methodSpecs())
             .extracting(MethodSpec::name).contains("createFilmEndorsementRecord");
     }
@@ -430,7 +430,7 @@ class JooqRecordServiceParamPipelineTest {
         // target columns; one ColumnBinding.
         var jr = carrier(MIXED_SDL, "editEndorsement", false);
         assertThat(jr.keyDecodes()).hasSize(2);
-        var byField = jr.keyDecodes().stream().collect(toMap(kd -> kd.sdlFieldName(), kd -> kd));
+        var byField = jr.keyDecodes().stream().collect(toMap(kd -> kd.leaf(), kd -> kd));
         assertThat(byField.get("endorsementId").targetColumns())
             .as("same-table identity → the record's own PK").extracting(c -> c.sqlName()).containsExactly("endorsement_id");
         assertThat(byField.get("endorsementId").nonNull()).as("ID → nullable identity").isFalse();
@@ -438,7 +438,7 @@ class JooqRecordServiceParamPipelineTest {
             .as("cross-table FK reference → the FK child column").extracting(c -> c.sqlName()).containsExactly("endorsed_film");
         assertThat(byField.get("filmId").nonNull()).as("ID! → non-null reference").isTrue();
         assertThat(jr.columnBindings())
-            .extracting(cb -> cb.sdlFieldName() + "->" + cb.column().sqlName()).containsExactly("note->note");
+            .extracting(cb -> cb.leaf() + "->" + cb.column().sqlName()).containsExactly("note->note");
     }
 
     private static final String REORDERED_SDL = """
@@ -568,6 +568,211 @@ class JooqRecordServiceParamPipelineTest {
             .contains("multiple foreign keys")
             .contains("studierett_registrar_studieprogram_fkey")
             .contains("studierett_studieprogram_id_fkey");
+    }
+
+    // ===== R336: nested input-object flatten onto the param record's column axis =====
+
+    private static final String NESTED_FLATTEN_SDL = """
+        type Film implements Node @table(name: "film") @node { id: ID! title: String }
+        input ModifyFilmInput {
+            filmId: ID! @nodeId(typeName: "Film")
+            details: FilmDetailsInput!
+        }
+        input FilmDetailsInput {
+            title: String @field(name: "title")
+            releaseYear: Int @field(name: "release_year")
+        }
+        type Query {
+            modifyFilm(in: ModifyFilmInput!): String
+                @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "modifyFilmRecord"})
+        }
+        """;
+
+    @Test
+    void nestedGroupingInput_flattensColumnsWithTwoElementPaths() {
+        // R336: the directiveless FilmDetailsInput group flattens onto the film table. Each @field leaf
+        // binds on the column axis carrying the full access path ["details", "<leaf>"]; the top-level
+        // @nodeId identity keeps its single-element path. The flatten is transparent — the nested columns
+        // bind exactly as top-level ones would, recorded only on the path.
+        var jr = carrier(NESTED_FLATTEN_SDL, "modifyFilm", false);
+        assertThat(jr.table().recordClass().toString()).isEqualTo(FILM_RECORD_FQN);
+        assertThat(jr.columnBindings())
+            .extracting(cb -> String.join(".", cb.path()) + "->" + cb.column().sqlName())
+            .containsExactly("details.title->title", "details.releaseYear->release_year");
+        assertThat(jr.keyDecodes()).hasSize(1);
+        assertThat(jr.keyDecodes().get(0).path())
+            .as("the top-level identity keeps its single-element path").containsExactly("filmId");
+        assertThat(jr.keyDecodes().get(0).targetColumns()).extracting(c -> c.sqlName()).containsExactly("film_id");
+    }
+
+    @Test
+    void mixedTopLevelAndNestedColumns_bothBindOnTheirOwnPaths() {
+        // A top-level plain @field and a nested-group @field coexist: the top-level carries a
+        // single-element path, the nested one a two-element path. Pins that the flatten does not disturb
+        // the top-level form (depth-1 paths are byte-identical to pre-R336).
+        var sdl = """
+            type Film implements Node @table(name: "film") @node { id: ID! title: String }
+            input ModifyFilmMixedInput {
+                filmId: ID! @nodeId(typeName: "Film")
+                title: String @field(name: "title")
+                yearGroup: FilmYearInput!
+            }
+            input FilmYearInput { releaseYear: Int @field(name: "release_year") }
+            type Query {
+                modifyFilmMixed(in: ModifyFilmMixedInput!): String
+                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "modifyFilmRecord"})
+            }
+            """;
+        var jr = carrier(sdl, "modifyFilmMixed", false);
+        assertThat(jr.columnBindings())
+            .extracting(cb -> String.join(".", cb.path()) + "->" + cb.column().sqlName())
+            .containsExactly("title->title", "yearGroup.releaseYear->release_year");
+    }
+
+    @Test
+    void nestedNodeIdDecode_carriesAccessPath() {
+        // A @nodeId identity nested inside a directiveless grouping input: the RecordKeyDecode carries the
+        // full access path ["identity", "filmId"] and still resolves to the record's own key column.
+        var sdl = """
+            type Film implements Node @table(name: "film") @node { id: ID! title: String }
+            input WrappedIdentityInput {
+                identity: IdentityGroup!
+                title: String @field(name: "title")
+            }
+            input IdentityGroup { filmId: ID! @nodeId(typeName: "Film") }
+            type Query {
+                wrapIdentity(in: WrappedIdentityInput!): String
+                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "modifyFilmRecord"})
+            }
+            """;
+        var jr = carrier(sdl, "wrapIdentity", false);
+        assertThat(jr.keyDecodes()).hasSize(1);
+        assertThat(jr.keyDecodes().get(0).path()).containsExactly("identity", "filmId");
+        assertThat(jr.keyDecodes().get(0).targetColumns()).extracting(c -> c.sqlName()).containsExactly("film_id");
+        assertThat(jr.columnBindings())
+            .extracting(cb -> String.join(".", cb.path()) + "->" + cb.column().sqlName())
+            .containsExactly("title->title");
+    }
+
+    @Test
+    void deeplyNestedColumn_carriesFullPath() {
+        // Two levels of directiveless grouping: the leaf column's path is the whole chain
+        // ["outer", "inner", "title"]. Pins that the flatten recurses to arbitrary depth, not just one level.
+        var sdl = """
+            type Film implements Node @table(name: "film") @node { id: ID! title: String }
+            input DeepInput {
+                filmId: ID! @nodeId(typeName: "Film")
+                outer: OuterGroup!
+            }
+            input OuterGroup { inner: InnerGroup! }
+            input InnerGroup { title: String @field(name: "title") }
+            type Query {
+                modifyDeep(in: DeepInput!): String
+                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "modifyFilmRecord"})
+            }
+            """;
+        var jr = carrier(sdl, "modifyDeep", false);
+        assertThat(jr.columnBindings()).hasSize(1);
+        assertThat(jr.columnBindings().get(0).path()).containsExactly("outer", "inner", "title");
+        assertThat(jr.columnBindings().get(0).column().sqlName()).isEqualTo("title");
+    }
+
+    // ===== R336 rejections (D3 invariants, honest validate-time UnclassifiedField) =====
+
+    @Test
+    void cyclicNestedInput_rejects() {
+        // A directiveless nested field typed as the outer input reaches itself — a single record cannot
+        // represent a recursive input shape (the column-axis analogue of buildInputBean's recursive reject).
+        var sdl = """
+            type Film implements Node @table(name: "film") @node { id: ID! title: String }
+            input CycleInput {
+                filmId: ID! @nodeId(typeName: "Film")
+                self: CycleInput
+            }
+            type Query {
+                modifyCycle(in: CycleInput!): String
+                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "modifyFilmRecord"})
+            }
+            """;
+        var field = TestSchemaHelper.buildSchema(sdl).field("Query", "modifyCycle");
+        assertThat(field).isInstanceOf(UnclassifiedField.class);
+        assertThat(((UnclassifiedField) field).reason())
+            .contains("cyclic input shape")
+            .contains("CycleInput");
+    }
+
+    @Test
+    void listValuedNestedGrouping_rejects() {
+        // A list-shaped nested grouping field (details: [FilmDetailsInput!]) is a cardinality contradiction:
+        // a single backing record has one value per column, so a list of column-groups cannot flatten onto it.
+        var sdl = """
+            type Film implements Node @table(name: "film") @node { id: ID! title: String }
+            input ListNestInput {
+                filmId: ID! @nodeId(typeName: "Film")
+                details: [FilmDetailsInput!]
+            }
+            input FilmDetailsInput { title: String @field(name: "title") }
+            type Query {
+                modifyListNest(in: ListNestInput!): String
+                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "modifyFilmRecord"})
+            }
+            """;
+        var field = TestSchemaHelper.buildSchema(sdl).field("Query", "modifyListNest");
+        assertThat(field).isInstanceOf(UnclassifiedField.class);
+        assertThat(((UnclassifiedField) field).reason())
+            .contains("list-shaped")
+            .contains("one value per column");
+    }
+
+    @Test
+    void nestedTableInput_rejectsAsSecondDmlTarget() {
+        // A nested input carrying @table is a second DML target, not a column group to flatten — reject
+        // rather than silently erase the authored directive (compound multi-table mutations are R122's scope).
+        var sdl = """
+            type Film implements Node @table(name: "film") @node { id: ID! title: String }
+            type Language implements Node @table(name: "language") @node { id: ID! }
+            input ModifyWithTableInput {
+                filmId: ID! @nodeId(typeName: "Film")
+                nested: NestedTableInput!
+            }
+            input NestedTableInput @table(name: "language") { name: String @field(name: "name") }
+            type Query {
+                modifyWithTable(in: ModifyWithTableInput!): String
+                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "modifyFilmRecord"})
+            }
+            """;
+        var field = TestSchemaHelper.buildSchema(sdl).field("Query", "modifyWithTable");
+        assertThat(field).isInstanceOf(UnclassifiedField.class);
+        assertThat(((UnclassifiedField) field).reason())
+            .contains("@table")
+            .contains("second DML target")
+            .contains("R122");
+    }
+
+    @Test
+    void plainColumnCollisionAcrossNesting_rejects() {
+        // Two plain @field leaves — one top-level, one in a nested group — resolving to the same column
+        // would last-write-wins silently. Reject, naming both dotted paths and the column. (Decode-vs-decode
+        // / decode-vs-column overlaps stay with R322's value-agreement deferral, not checked here.)
+        var sdl = """
+            type Film implements Node @table(name: "film") @node { id: ID! title: String }
+            input NestedCollisionInput {
+                filmId: ID! @nodeId(typeName: "Film")
+                title: String @field(name: "title")
+                details: DetailsCollisionInput!
+            }
+            input DetailsCollisionInput { aka: String @field(name: "title") }
+            type Query {
+                modifyCollision(in: NestedCollisionInput!): String
+                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "modifyFilmRecord"})
+            }
+            """;
+        var field = TestSchemaHelper.buildSchema(sdl).field("Query", "modifyCollision");
+        assertThat(field).isInstanceOf(UnclassifiedField.class);
+        assertThat(((UnclassifiedField) field).reason())
+            .contains("both resolve to column 'title'")
+            .contains("two fields cannot populate one column")
+            .contains("details.aka");
     }
 
     // ===== Helpers =====

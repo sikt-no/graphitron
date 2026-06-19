@@ -1307,6 +1307,26 @@ input ModifyFilmRecordInput {
     releaseYear: Int @field(name: "release_year")
 }
 
+# R336: nested input-object fields flatten onto the param record's column axis. A CustomerRecord @service
+# param whose first_name / last_name come from a nested `details` grouping input, and whose @nodeId
+# identity lives inside a separate nested `identity` group. createCustomerRecord descends each enclosing
+# Map null-safely (raw.get("details") instanceof Map detailsMap ...) and binds the flattened columns /
+# identity exactly as if they were declared at top level. Both groups are nullable so the execution tier
+# can exercise the transparent-unpack matrix (omitted / explicit-null / set leaf; null / omitted group)
+# and the skip-not-throw rule (a non-null identity inside an omitted nullable group is skipped, not thrown).
+# CustomerRecord (not FilmRecord) avoids the per-record-class createFilmRecord dedup clash on QueryFetchers.
+input CustomerUpsertInput {
+    identity: CustomerIdentityGroup
+    details: CustomerDetailsGroup
+}
+input CustomerIdentityGroup {
+    customerId: ID! @nodeId(typeName: "Customer")
+}
+input CustomerDetailsGroup {
+    firstName: String @field(name: "first_name")
+    lastName: String @field(name: "last_name")
+}
+
 # R311 composite-key: a jOOQ FilmActorRecord param (composite PK actor_id, film_id) whose @nodeId
 # identity decodes both key columns in one fromArray call.
 input ModifyFilmActorRecordInput {
@@ -2180,5 +2200,18 @@ type Mutation {
         @service(service: {
             className: "no.sikt.graphitron.rewrite.test.services.AddressRecordService",
             method: "upsertAddress"
+        })
+
+    # R336 nested-flatten execution pin: createCustomerRecord flattens the nested `details` group's
+    # first_name / last_name onto the customer table and decodes the nested `identity.customerId` @nodeId
+    # into customer_id. describeCustomerUpsert reports the constructed record's changed-flags and values
+    # without writing, so one helper exercises the whole transparent-unpack matrix by varying the wire
+    # input: omitted vs explicit-null vs set nested leaf, null / omitted nullable group, and the
+    # skip-not-throw rule (omitted nullable identity group → customer_id skipped, no decode error; a
+    # malformed id in a present group still throws).
+    customerUpsert(in: CustomerUpsertInput!): String
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.CustomerRecordService",
+            method: "describeCustomerUpsert"
         })
 }

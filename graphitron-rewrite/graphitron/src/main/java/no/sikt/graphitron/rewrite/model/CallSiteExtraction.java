@@ -324,6 +324,13 @@ public sealed interface CallSiteExtraction
      * record's own key columns (R311), a cross-table FK-reference decode loads the foreign key's child
      * columns on this record (the common "status / history / junction row" shape).
      *
+     * <p>A field whose SDL type is itself a directiveless nested grouping input flattens transparently
+     * onto this one table (R336): the resolver recurses into the nested type's fields and keeps producing
+     * {@link ColumnBinding} / {@link RecordKeyDecode} carriers, each carrying the full access
+     * {@code path} from the record's own {@code Map} down to the leaf. The binding lists are therefore a
+     * flat projection of an arbitrarily-nested input onto the table's columns, with depth recorded only on
+     * the per-binding path; there is no nested-record sub-structure here.
+     *
      * <p>{@code table} is read straight off the param's classified
      * {@link GraphitronType.JooqTableRecordInputType}; the record class is {@code table.recordClass()}
      * (the two name the same class by construction, so no separate component is carried, mirroring
@@ -368,22 +375,41 @@ public sealed interface CallSiteExtraction
     }
 
     /**
-     * One plain ({@code @field}) input field bound on the column axis. {@code sdlFieldName} is the
-     * GraphQL input field name and the {@code Map} key the {@code create<Record>} helper reads the wire
-     * value from; {@code column} is the <em>resolved</em> {@link ColumnRef} (not a raw {@code @field(name:)}
-     * string) on the enclosing {@link JooqRecord#table()}, so the emitter reaches the typed
-     * {@code Tables.<T>.<col>} field with no re-parsing. Column-axis sibling to the member-axis
-     * {@link FieldBinding}; a genuinely different axis, hence a separate record. No list flag: a scalar
-     * column cannot take a list value, and the absence documents that.
+     * One plain ({@code @field}) input field bound on the column axis. {@code path} is the ordered,
+     * non-empty access path from the record's own input {@code Map} down to the leaf field: the last
+     * element is the leaf SDL field name (the {@code Map} key the {@code create<Record>} helper reads the
+     * wire value from), and any earlier elements are the enclosing nested-grouping-input field names a
+     * flatten descends through (R336). A top-level binding carries a single-element path; the nested
+     * {@code details.title} carries {@code ["details", "title"]}. This adopts the access-path
+     * representation {@link NestedInputField} settled (R186), scoped to the keys from the record's own
+     * {@code Map} down to the leaf (the outer argument name stays on the enclosing
+     * {@link no.sikt.graphitron.rewrite.model.ValueShape.JooqRecordInput}, not duplicated here).
+     *
+     * <p>{@code column} is the <em>resolved</em> {@link ColumnRef} (not a raw {@code @field(name:)} string)
+     * on the enclosing {@link JooqRecord#table()}, so the emitter reaches the typed {@code Tables.<T>.<col>}
+     * field with no re-parsing. Column-axis sibling to the member-axis {@link FieldBinding}; a genuinely
+     * different axis, hence a separate record. No list flag: a scalar column cannot take a list value, and
+     * the absence documents that.
      */
-    record ColumnBinding(String sdlFieldName, ColumnRef column) {
+    record ColumnBinding(List<String> path, ColumnRef column) {
         public ColumnBinding {
-            if (sdlFieldName == null || sdlFieldName.isEmpty()) {
-                throw new IllegalArgumentException("ColumnBinding sdlFieldName must be non-empty");
+            if (path == null || path.isEmpty()) {
+                throw new IllegalArgumentException("ColumnBinding path must be non-empty");
             }
+            for (var element : path) {
+                if (element == null || element.isEmpty()) {
+                    throw new IllegalArgumentException("ColumnBinding path elements must be non-empty");
+                }
+            }
+            path = List.copyOf(path);
             if (column == null) {
                 throw new IllegalArgumentException("ColumnBinding column must be non-null");
             }
+        }
+
+        /** The leaf SDL field name: the last path element, the {@code Map} key for the wire value. */
+        public String leaf() {
+            return path.get(path.size() - 1);
         }
     }
 
@@ -395,8 +421,13 @@ public sealed interface CallSiteExtraction
      *
      * <p>Unlike {@link NodeIdDecodeRecord} (which rides as a {@link FieldBinding} leaf and inherits its
      * {@code Map} key from {@link FieldBinding#sdlFieldName()}), a {@code RecordKeyDecode} sits directly
-     * on {@link JooqRecord} with no enclosing {@code FieldBinding}, so it carries its own
-     * {@code sdlFieldName} — the {@code Map} key the helper reads {@code raw.get("<idField>")} for.
+     * on {@link JooqRecord} with no enclosing {@code FieldBinding}, so it carries its own {@code path} —
+     * the ordered, non-empty access path from the record's own {@code Map} down to the {@code @nodeId}
+     * field. The last element is the leaf field name (the {@code Map} key the helper decodes
+     * {@code parentMap.get("<idField>")} from); earlier elements are enclosing nested-grouping-input field
+     * names a flatten descends through (R336). A top-level decode carries a single-element path; the same
+     * representation {@link ColumnBinding} uses, and the {@code @table}-input precedent {@link NestedInputField}
+     * settled (R186).
      *
      * <p>{@code targetColumns} is the resolved list of columns <em>on this record</em> the decoded
      * values load into, in node-key (decode) order (one entry for a single-key NodeType, N for a
@@ -415,12 +446,18 @@ public sealed interface CallSiteExtraction
      * method owns the insert/update, so the framework does not force even a same-table identity to be
      * non-null; a nullable identity is a legitimate service-side upsert input.
      */
-    record RecordKeyDecode(String sdlFieldName, ClassName encoderClass, String typeId,
+    record RecordKeyDecode(List<String> path, ClassName encoderClass, String typeId,
                            List<ColumnRef> targetColumns, boolean nonNull) {
         public RecordKeyDecode {
-            if (sdlFieldName == null || sdlFieldName.isEmpty()) {
-                throw new IllegalArgumentException("RecordKeyDecode sdlFieldName must be non-empty");
+            if (path == null || path.isEmpty()) {
+                throw new IllegalArgumentException("RecordKeyDecode path must be non-empty");
             }
+            for (var element : path) {
+                if (element == null || element.isEmpty()) {
+                    throw new IllegalArgumentException("RecordKeyDecode path elements must be non-empty");
+                }
+            }
+            path = List.copyOf(path);
             if (encoderClass == null) {
                 throw new IllegalArgumentException("RecordKeyDecode encoderClass must be non-null");
             }
@@ -431,6 +468,11 @@ public sealed interface CallSiteExtraction
                 throw new IllegalArgumentException("RecordKeyDecode targetColumns must be non-empty");
             }
             targetColumns = List.copyOf(targetColumns);
+        }
+
+        /** The leaf SDL field name: the last path element, the {@code Map} key for the wire id. */
+        public String leaf() {
+            return path.get(path.size() - 1);
         }
     }
 }

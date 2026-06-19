@@ -94,6 +94,14 @@ class GraphQLQueryTest {
         return result.getData();
     }
 
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> execute(String query, Map<String, Object> variables) {
+        var input = Graphitron.newExecutionInput(dsl, "test-user").query(query).variables(variables).build();
+        var result = graphql.execute(input);
+        assertThat(result.getErrors()).isEmpty();
+        return result.getData();
+    }
+
     /**
      * Executes a query and returns the {@link graphql.ExecutionResult} without asserting
      * on errors — for tests that expect a failure path (e.g. Relay first+last validation).
@@ -4322,6 +4330,95 @@ class GraphQLQueryTest {
         Map<String, Object> data = execute(
             "mutation { upsertAddress(in: {addressId: \"" + addressId2 + "\"}) }");
         assertThat(data).extractingByKey("upsertAddress").isEqualTo("set: pk=2");
+    }
+
+    // ===== R336: nested input-object fields flatten onto the param record's column axis =====
+
+    @Test
+    void customerUpsert_nestedLeafSet_landsOnColumn_omittedSiblingUntouched() {
+        // R336 transparent unpack: details.firstName is present and set (lands on first_name, changed=true),
+        // details.lastName is omitted within the same group (changed=false, untouched — the partial-update
+        // contract). The nested identity.customerId decodes into customer_id. Proves a nested leaf binds
+        // exactly as a top-level one would, with the value landing on the right column.
+        String customerId1 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Customer", 1);
+        Map<String, Object> data = execute(
+            "mutation { customerUpsert(in: {identity: {customerId: \"" + customerId1
+            + "\"}, details: {firstName: \"Ada\"}}) }");
+        assertThat(data).extractingByKey("customerUpsert")
+            .isEqualTo("customerId[changed=true,val=1] first[changed=true,val=Ada] last[changed=false,val=null]");
+    }
+
+    @Test
+    void customerUpsert_explicitNullNestedLeaf_collapsesToOmitted() {
+        // R336 graphql-java constraint on nested present-null: unlike a TOP-LEVEL field (where an explicit
+        // null is retained and writes NULL — see describeEndorsement_explicitNull_writesNull), graphql-java
+        // coercion DROPS an explicit-null field from a NESTED input-object value. The key never reaches the
+        // helper's Map, so containsKey is false and the column is left untouched (changed=false), exactly as
+        // if the leaf had been omitted. Verified here through the variable path (the production wire shape),
+        // so this is a real coercion limitation, not an inline-literal artifact: the present-null signal is
+        // destroyed before any generated code runs. The top-level three-way thus narrows to a nested two-way
+        // (omitted / explicit-null → untouched; value → set), consistent with the spec's own rule that a null
+        // nested *group* is treated as absent — here extended to the leaf.
+        String customerId1 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Customer", 1);
+        var details = new java.util.HashMap<String, Object>();
+        details.put("firstName", null);
+        var in = java.util.Map.<String, Object>of(
+            "identity", java.util.Map.of("customerId", customerId1),
+            "details", details);
+        Map<String, Object> data = execute(
+            "mutation($in: CustomerUpsertInput!) { customerUpsert(in: $in) }",
+            java.util.Map.of("in", in));
+        assertThat(data).extractingByKey("customerUpsert")
+            .isEqualTo("customerId[changed=true,val=1] first[changed=false,val=null] last[changed=false,val=null]");
+    }
+
+    @Test
+    void customerUpsert_nullNestedGroup_leavesEveryColumnUnderItUntouched() {
+        // R336: a null nullable `details` group is treated identically to absent — every column under it
+        // stays changed=false. The present identity group still decodes customer_id.
+        String customerId2 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Customer", 2);
+        Map<String, Object> data = execute(
+            "mutation { customerUpsert(in: {identity: {customerId: \"" + customerId2 + "\"}, details: null}) }");
+        assertThat(data).extractingByKey("customerUpsert")
+            .isEqualTo("customerId[changed=true,val=2] first[changed=false,val=null] last[changed=false,val=null]");
+    }
+
+    @Test
+    void customerUpsert_omittedNullableIdentityGroup_skipsNonNullIdentity_noThrow() {
+        // R336 skip-not-throw: the @nodeId identity (customer_id) is non-null (ID!) but lives inside a
+        // NULLABLE `identity` group. Omitting the group skips the identity entirely (changed=false) with NO
+        // decode error raised — graphql-java never coerces the absent group, so its non-null field is never
+        // required, and the generated helper's R195 throw lives in a descent block that is never entered.
+        // The nested details leaf still binds.
+        Map<String, Object> data = execute(
+            "mutation { customerUpsert(in: {details: {firstName: \"Grace\"}}) }");
+        assertThat(data).extractingByKey("customerUpsert")
+            .isEqualTo("customerId[changed=false,val=null] first[changed=true,val=Grace] last[changed=false,val=null]");
+    }
+
+    @Test
+    void customerUpsert_emptyInput_everythingUntouched_noThrow() {
+        // R336: both nullable groups omitted (in: {}) — customer_id skipped (skip-not-throw), all columns
+        // untouched. The most direct proof that an absent group descends into nothing and raises nothing.
+        Map<String, Object> data = execute("mutation { customerUpsert(in: {}) }");
+        assertThat(data).extractingByKey("customerUpsert")
+            .isEqualTo("customerId[changed=false,val=null] first[changed=false,val=null] last[changed=false,val=null]");
+    }
+
+    @Test
+    void customerUpsert_malformedIdInPresentIdentityGroup_throwsDecodeMismatch() {
+        // R336: skip-not-throw is about an ABSENT group, not a free pass. When the identity group IS present,
+        // a wrong-type NodeId (a Film id, not a Customer id) fails the decodeValues("Customer", …) type check
+        // inside the entered descent block and throws (R195). The mutation returns no value.
+        String filmId = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Film", 1);
+        graphql.ExecutionResult result = executeRaw(
+            "mutation { customerUpsert(in: {identity: {customerId: \"" + filmId + "\"}}) }");
+        assertThat(result.getErrors())
+            .as("a wrong-type NodeId in a present identity group is an authored-input error")
+            .isNotEmpty();
+        Map<String, Object> data = result.getData();
+        assertThat(data.get("customerUpsert"))
+            .as("the mutation does not succeed with a wrong-type NodeId").isNull();
     }
 
     // ===== R77 Phase B: missing-vs-null on single-row INSERT (containsKey-gated DEFAULT) =====

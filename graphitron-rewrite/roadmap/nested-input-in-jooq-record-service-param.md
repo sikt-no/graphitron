@@ -1,7 +1,7 @@
 ---
 id: R336
 title: "Flatten nested input-object fields in jOOQ-record @service params"
-status: Ready
+status: In Progress
 bucket: architecture
 priority: 6
 theme: service
@@ -22,13 +22,15 @@ This is the column-axis analogue of a gap the `@table`-input path already solved
 
 ### Semantics: transparent unpack
 
-A nested grouping input behaves exactly as if its fields were declared directly on the parent. For every leaf field, at any nesting depth:
+A nested grouping input behaves as if its fields were declared directly on the parent, *within the limit graphql-java's coercion imposes* (see the present-`null` note). For every leaf field, at any nesting depth:
 
 * **omitted** → its column is left `changed=false` (untouched, excluded from the INSERT/UPDATE the `@service` runs);
-* **present and `null`** → its column is set to `NULL` (`changed=true`);
+* **present and `null`** → at the **top level** its column is set to `NULL` (`changed=true`); at any **nested** depth it collapses to *omitted* (untouched), see the note below;
 * **present with a value** → its column is set to that value (`changed=true`).
 
-A nested group that is itself absent, `null`, or not a `Map` is treated identically to "absent": every column under it stays untouched, so `details: null`, an omitted `details`, and `details: {}` all reach the same outcome. This is the column-axis extension of the existing top-level three-way (`JooqRecordInstantiationEmitter.emitColumnBinding`): a top-level field and a nested field backing the same column behave identically.
+A nested group that is itself absent, `null`, or not a `Map` is treated identically to "absent": every column under it stays untouched, so `details: null`, an omitted `details`, and `details: {}` all reach the same outcome.
+
+**Nested present-`null` collapses to omitted (graphql-java constraint, verified in the execution tier).** The three-way above originally assumed `parentMap.containsKey(leaf)` distinguishes present-`null` from omitted at any depth, exactly as `raw.containsKey(...)` does at the top level. It does not: graphql-java's input coercion *drops* an explicit-`null` field from a **nested** input-object value (confirmed through both the literal and the variable wire paths), while retaining it on the top-level argument map. So inside a descended `Map` a present-`null` leaf never arrives as a key, `containsKey` is false, and the column is left untouched, indistinguishable from omitted. The top-level three-way (`JooqRecordInstantiationEmitter.emitColumnBinding`) therefore narrows to a nested two-way (`omitted`/`null` → untouched; value → set). This is a coercion limitation, not a choice in the emitted code (the generated `containsKey`/descent is byte-identical to the top-level form); it is consistent with the rule one paragraph up that a null nested *group* is treated as absent, here reaching down to the leaf. Nulling a column through a nested field is not expressible; null it through a top-level field, or set a non-`null` value.
 
 **Required-ness is owned by graphql-java, not by this flatten.** A nested grouping field's own nullability is the switch. A non-null group (`details: FilmDetailsInput!`) is mandatory: per the GraphQL spec a Non-Null argument or input-object field that is "not provided, ... or ... provided the literal value null" raises a request error at the execution boundary, and when the group *is* present its own non-null fields are enforced in turn. A nullable group is optional: the spec's required-field check ("if no default value is provided and the input object field's type is non-null, an error should be raised") is a step *inside* coercing an input-object value, so it fires only when the enclosing object is actually coerced; a nullable parent that is omitted or `null` is never descended into ("if the field is not required, then no entry is added to the coerced unordered map"). Consequence: by the time the generated `create<Record>` helper runs, graphql-java has already enforced every required field that should be present. The helper therefore **never throws for a missing nested field**; it skips a binding whose enclosing group is absent, and throws only on a *malformed id it actually attempts to decode* (R195, possible only when the group and the id are both present).
 
@@ -71,6 +73,8 @@ if (raw.get("details") instanceof Map<?, ?> detailsMap) {   // group present and
 
 This one construct realises every rule in *Semantics* at once: a `null`/absent group fails the `instanceof Map` and skips everything beneath it, and a non-null identity field under an *absent nullable* group is skipped rather than thrown (its R195 throw lives in the body, which is never entered). The descent reuses the `instanceof Map<?,?>` chain idiom already in `ArgCallEmitter` (generalised for paths deeper than two); the per-binding set/decode body is otherwise unchanged, reading `parentMap.containsKey(leaf)` / `parentMap.get(leaf)` exactly as today's code reads `raw.containsKey(sdlFieldName)` / `raw.get(sdlFieldName)`. At depth 1 the `path` is single-element, no wrapping block is emitted, and the output is byte-identical to today.
 
+The `containsKey` read is byte-identical to the top-level form but does **not** carry the top-level present-`null` semantics down: graphql-java drops an explicit-`null` field from a nested input-object value before the helper runs, so `parentMap.containsKey(leaf)` is false for a present-`null` nested leaf and the column is left untouched (see the *Semantics* present-`null` note). The emitted code is the same; only the data graphql-java hands it differs by depth.
+
 The per-binding local names must derive from the full `path`, not the leaf name alone: the bound parent-`Map` local (e.g. `detailsMap`) and all three leaf locals (`<x>Value`, `<x>Keys`, and `<x>Raw` on the nullable-decode arm). Otherwise two nested groups sharing a leaf name (`title`) would emit colliding `titleValue` / `titleRaw` locals in one helper body. Bindings sharing a parent group may share one wrapping descent block (grouped by parent path) or each re-descend; that is an In-Progress emitter nicety, not a contract.
 
 ### Untouched (verified clean)
@@ -82,7 +86,7 @@ The per-decode `nonNull` flag and its null-vs-set semantics are deliberately *no
 ### Test plan
 
 * **Pipeline tier** alongside `JooqRecordServiceParamPipelineTest`: assert the classified `JooqRecord` carries the expected `ColumnBinding` / `RecordKeyDecode` `path`s (flattened plain columns; a nested `@nodeId` decode; mixed top-level + nested). No body-string assertions on the descent chain.
-* **Execution tier**: a round-trip proving a nested `details.title` lands in the right column on the generated INSERT/UPDATE, plus the transparent-unpack semantics: an omitted nested leaf leaves its column `changed=false` (the partial-update contract, untouched by the service's UPDATE), a present-`null` nested leaf writes `NULL`, and a `null`/omitted nullable group leaves every column under it untouched.
+* **Execution tier**: a round-trip proving a nested `details.title` lands in the right column (the constructed record carries the flattened value), plus the transparent-unpack semantics: an omitted nested leaf leaves its column `changed=false` (the partial-update contract), a present-`null` nested leaf *also* leaves it untouched (the graphql-java nested-coercion constraint, asserted through the variable path so it is not an inline-literal artifact), and a `null`/omitted nullable group leaves every column under it untouched.
 * **Skip-not-throw**: a non-null identity field inside an omitted nullable group is skipped with no decode error raised (*Semantics*, required-ness rule); a *malformed* id in a *present* group still throws.
 * **Rejection tests** by message substring for each D3 invariant (cycle, list-valued nesting, nested `@table`, plain-column collision).
 
