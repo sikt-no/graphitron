@@ -52,11 +52,22 @@ gating. Two consequences for this item:
 
 - It is direct evidence that `@table`-on-input is load-bearing in places it should not be (here, it
   silently decides whether the validator even inspects a field), strengthening the retirement case.
-- A residual gap is left behind deliberately: R330's validator structural checks still run only on the
-  `@table` walk. The right fix is *not* to duplicate the walk onto plain inputs (that adds more of the
-  divergent code this item deletes) but to make input-field validation field-relative alongside the
-  classification, so every input's fields are walked once regardless of `@table`. Fold that into this
-  item's scope rather than patching it separately.
+- A residual structural divergence is left behind deliberately: R330's validator FK-target checks
+  still run only on the `@table` walk (`validateTableInputType` → `validateInputFieldRecursive`),
+  never on plain inputs. After R330's composite fix this divergence is **inert**, not a live bug: the
+  one surviving check (every FK-target join hop must be an `FkJoin`, mirroring
+  `FkTargetConditionEmitter`'s emit-time guard) is unreachable for input conditions. `@nodeId` FK-target
+  paths are guaranteed all-`FkJoin` by `NodeIdLeafResolver.resolveFkJoinPath` (it rejects non-FK hops),
+  and a condition-only `@reference` path on an input field is rejected earlier at classification
+  ("condition-only `@reference` path: cannot resolve target table because the carrier field's return
+  type has no `@table` binding"), so no `FkTargetConditionFilter` with a non-`FkJoin` hop can be
+  constructed from any input. The composite rejection that *was* reachable (and that bit the consumer
+  via the plain-input path) is gone now that composite is supported. So a standalone "validate plain
+  inputs too" fix has no falsifiable behavior change and was correctly not shipped (confirmed by
+  attempting it: the negative case cannot be constructed). The right move is to make input-field
+  validation field-relative *as part of this item's* classification rewrite, so the structural check
+  fires once on `SqlGeneratingField.filters()` regardless of `@table`, removing the divergence without
+  adding speculative untestable code. Folded into this item's scope, not patched separately.
 
 ## Relation to R332 (the deprecation signal)
 
