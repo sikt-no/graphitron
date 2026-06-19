@@ -1,7 +1,7 @@
 ---
 id: R322
 title: "Runtime value-agreement check for multiple @nodeId decodes onto shared columns"
-status: Spec
+status: Ready
 bucket: feature
 priority: 4
 theme: nodeid

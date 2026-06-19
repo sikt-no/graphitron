@@ -20,8 +20,8 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R256` | Absorb the service walker substrate: typed per-arm errors + multi-arg ctors | Ready | 2026-05-30 <sub>created 2026-05-29</sub> | [plan](service-walker-substrate-absorption.md) |
 | `R308` | Fix the @service list-payload N+1 by deriving many-arrival for list-returning carriers | Spec | 2026-06-14 | [plan](service-list-payload-arrival.md) |
 | `R335` | Fold input/scalar/enum classification into the single classify-and-emit walk | Spec | 2026-06-19 | [plan](walk-classifies-input-surface.md) |
-| `R322` | Runtime value-agreement check for multiple @nodeId decodes onto shared columns | Spec | 2026-06-19 <sub>created 2026-06-17</sub> | [plan](nodeid-shared-column-agreement.md) |
 | `R327` | Field-relative input classification (retire @table-on-input and the findReturnTablesForInput aggregate) | Ready | 2026-06-19 <sub>created 2026-06-18</sub> | [plan](field-relative-input-classification.md) |
+| `R322` | Runtime value-agreement check for multiple @nodeId decodes onto shared columns | Ready | 2026-06-19 <sub>created 2026-06-17</sub> | [plan](nodeid-shared-column-agreement.md) |
 | `R300` | First-class jOOQ routine support: read functions as target-shape provenance | Spec | 2026-06-19 <sub>created 2026-06-13</sub> | [plan](jooq-routine-fields.md) |
 | `R45` | Multi-tenant routing on top of the schema-driven ExecutionInput factory | Spec | 2026-05-20 | [plan](tenant-routing-and-execution-input.md) |
 | `R273` | Source NodeId metadata from @node + catalog PK (inferred from `implements Node`), and settle wrong-type/malformed mismatch semantics, retiring the legacy __NODE bare-ID arm | Spec | 2026-06-02 | [plan](nodeid-skip-mismatch-error-surfacing.md) |
@@ -162,7 +162,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 - `R136` [**Execution-tier coverage for FK-target/NodeType-keyColumns permutation**](nodeid-fk-permutation-execution-tier.md) — Backlog, validation
 - `R135` [**Multi-hop @nodeId pipeline test for FK-target/NodeType-keyColumns permutation**](multi-hop-nodeid-fk-permutation-test.md) — Backlog, validation
-- `R322` [**Runtime value-agreement check for multiple @nodeId decodes onto shared columns**](nodeid-shared-column-agreement.md) — Spec, feature
+- `R322` [**Runtime value-agreement check for multiple @nodeId decodes onto shared columns**](nodeid-shared-column-agreement.md) — Ready, feature
 - `R328` [**Self-FK @nodeId reference on Graphitron-owned DML mutation inputs**](self-fk-nodeid-mutation-input.md) — Backlog, feature
 - `R57` [**FK-target argument @nodeId, JOIN-with-translation emission**](nodeid-fk-target-arg-join-translation.md) — Backlog, architecture
 - `R273` [**Source NodeId metadata from @node + catalog PK (inferred from `implements Node`), and settle wrong-type/malformed mismatch semantics, retiring the legacy __NODE bare-ID arm**](nodeid-skip-mismatch-error-surfacing.md) — Spec, architecture
