@@ -1,13 +1,13 @@
 ---
 id: R316
 title: "Pivot the field-dimensional model to (source, operation, target)"
-status: In Progress
+status: In Review
 bucket: structural
 priority: 3
 theme: structural-refactor
 depends-on: [dimensional-model-pivot]
 created: 2026-06-16
-last-updated: 2026-06-18
+last-updated: 2026-06-19
 ---
 
 # Pivot the field-dimensional model to (source, operation, target)
@@ -559,6 +559,27 @@ emit re-platforming, out of scope here. `SourceShapeProjectionTest` becomes a `s
 projection test.
 
 ### Slice 5: Thoroughness gate
+
+**Landed.** A `principles-architect` self-check informed two forks. (1) The wrapper-invariant test
+takes reading (b): `WrapperAlgebraTest` pins the target half against the field's GraphQL output wrapper
+read straight off the parsed SDL (excluding connections, whose `Single(Connection)` decomposition is its
+own law, and the `single()`-built scalar-projection leaves that do not model output cardinality, the
+list-shaped scalar `OutputField.single`'s javadoc predicted), and pins the source half at the conservative
+`Child` (`Many` absorber) strength R305 builds, with `OnlyChild` (the `One` identity) and the true
+multi-level ancestor-product fold deferred to R279/R308 and documented, rather than introducing an unused
+fold helper. (2) The remnant guard (`RetiredDimensionTypesAreGoneTest`) is a type-resurrection backstop
+(deleted files, no model-package imports, distinctive names `Intent` / `SourceCardinality` absent as whole
+words, carve-outs retained), scoped to type references rather than bare-word prose so it cannot fire on
+legitimate historical javadoc. The coverage gate was already in place as
+`ClassifiedDslTest.everyDimensionValueIsExercised` (the disjoint-exhaustive partition over the `source` /
+`Operation` seals), so no new coverage test was needed. The test-comment prose
+(`ClassifiedCorpus` / `GraphitronSchemaBuilderTest`) and `code-generation-triggers.adoc`'s Field
+Classification section were swept onto the new vocabulary, and the R290/R299/R305 changelog entries
+carry forward notes. The other three `.adoc` files the bullet below names
+(`argument-resolution.adoc`, `typed-rejection.adoc`, `rewrite-design-principles.adoc`) turned out to carry
+no axis-model references; their `carrier` / `intent` / `mapping` occurrences are all colloquial (carrier
+objects, DTO->key mapping, "documents intent"), so only `code-generation-triggers.adoc` needed the sweep.
+Full reactor green (`mvn -f graphitron-rewrite/pom.xml install -Plocal-db`).
 
 The no-remnants mandate, made enforceable rather than aspirational:
 
