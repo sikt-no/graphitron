@@ -14,6 +14,14 @@ scalar LocalDate @scalarType(scalar: "graphql.scalars.ExtendedScalars.Date")
 # without error and survive multi-file aggregation + classification).
 directive @auth(role: String!) on FIELD_DEFINITION
 
+# R300: the result type of the table-valued read function tilganger_for_feidebruker_med_fs_fiktivt_fnr.
+# jOOQ generates the function as a catalog Table<R>, so the @table binding resolves the same way a
+# plain table type does and the routine-result columns map by name.
+type Tilgang @table(name: "tilganger_for_feidebruker_med_fs_fiktivt_fnr") {
+    organisasjonskode: Int
+    rollekode: String
+}
+
 type Query {
     customers(active: Boolean @field(name: "ACTIVEBOOL")): [Customer!]! @auth(role: "admin")
     # R190 fixture: the one @service(contextArguments: ...) site in the example schema.
@@ -36,6 +44,14 @@ type Query {
         maxRentalRate: Float @field(name: "RENTAL_RATE")
     ): [Film!]!
     filmById(film_id: [ID] @lookupKey): [Film!]!
+    # R300: @routine table-valued read function. Binds the three TEXT IN parameters of
+    # public.tilganger_for_feidebruker_med_fs_fiktivt_fnr from GraphQL arguments and reads the
+    # RETURNS TABLE result through the existing selection-narrowing projection.
+    tilganger(env: String!, serviceId: String!, feideId: String!): [Tilgang!]!
+        @routine(
+            name: "tilganger_for_feidebruker_med_fs_fiktivt_fnr"
+            argMapping: "pEnv: env, pServiceId: serviceId, pFeideId: feideId"
+        )
     # Relay Global Object Identification entry point — dispatches by typeId prefix
     # (extracted from the opaque base64 id) to the matching NodeType's table.
     # See plan-nodeid-directives.md "Query.node(id:) dispatch is core".
