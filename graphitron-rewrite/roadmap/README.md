@@ -23,6 +23,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R335` | Fold input/scalar/enum classification into the single classify-and-emit walk | Spec | 2026-06-19 | [plan](walk-classifies-input-surface.md) |
 | `R327` | Field-relative input classification (retire @table-on-input and the findReturnTablesForInput aggregate) | Ready | 2026-06-19 <sub>created 2026-06-18</sub> | [plan](field-relative-input-classification.md) |
 | `R322` | Runtime value-agreement check for multiple @nodeId decodes onto shared columns | In Review | 2026-06-19 <sub>created 2026-06-17</sub> | [plan](nodeid-shared-column-agreement.md) |
+| `R347` | Consolidate graphitron-lsp navigation, dispatch, and result-building | Spec | 2026-06-19 | [plan](lsp-structural-consolidation.md) |
 | `R45` | Multi-tenant routing on top of the schema-driven ExecutionInput factory | Spec | 2026-05-20 | [plan](tenant-routing-and-execution-input.md) |
 | `R273` | Source NodeId metadata from @node + catalog PK (inferred from `implements Node`), and settle wrong-type/malformed mismatch semantics, retiring the legacy __NODE bare-ID arm | Spec | 2026-06-02 | [plan](nodeid-skip-mismatch-error-surfacing.md) |
 | `R332` | Mark @table on input types as deprecated (signal ahead of R97 removal) | Spec | 2026-06-19 <sub>created 2026-06-18</sub> | [plan](table-on-input-deprecation-signal.md) |
@@ -280,6 +281,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 ### lsp
 
 - `R148` [**Advance SourceLocation past description so diagnostics point at the field, not the doc block**](source-location-skips-description.md) — Backlog, bug
+- `R347` [**Consolidate graphitron-lsp navigation, dispatch, and result-building**](lsp-structural-consolidation.md) — Spec, architecture
 - `R345` [**Surface schema parse failures as LSP red squiggles**](lsp-squiggle-schema-parse-failure.md) — Backlog, feature
 - `R123` [**Parent-context-aware schema coordinates for per-directive Behavior policy**](parent-context-aware-schema-coordinates.md) — Backlog, architecture
 - `R121` [**LSP diagnostic for redundant @splitQuery on @record-parent fields**](lsp-diagnostic-redundant-splitquery-on-record.md) — Backlog, feature
