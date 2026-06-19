@@ -37,7 +37,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R269` | Null-guard split-query key extraction for nullable to-one records | Spec | 2026-06-02 <sub>created 2026-06-01</sub> | [plan](nullable-to-one-record-into-npe.md) |
 | `R112` | Operation-driven test corpus, capability catalog, and runtime trace <sub>blocked by: [capability-catalog](capability-catalog.md)</sub> | Spec |  | [plan](operation-driven-test-corpus.md) |
 | `R339` | @defaultOrder(primaryKey: true) ignores direction and always sorts ASC | In Review | 2026-06-19 | [plan](default-order-primary-key-direction-ignored.md) |
-| `R338` | Split-query correlation projects parent node/PK columns instead of the FK referenced columns | In Review | 2026-06-19 | [plan](split-query-non-pk-fk-referenced-column.md) |
 
 ---
 
@@ -310,7 +309,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R304` [**Reify @error PayloadAccessor errors fetcher into a named method**](reify-error-payload-accessor-fetcher.md)
 - `R326` [**Render Mermaid diagrams on the published docs site**](render-mermaid-diagrams-on-docs-site.md)
 - `R51` [**Split PropertyField/RecordField on parent-kind instead of nullable column**](propertyfield-recordfield-nullable-column.md)
-- `R338` [**Split-query correlation projects parent node/PK columns instead of the FK referenced columns**](split-query-non-pk-fk-referenced-column.md)
 - `R219` [**Unify arity-unique and type-unique inference under a single JavaTypeKey-counted rule**](unify-inference-rule-by-javatypekey.md)
 - `R221` [**Validator walks PlainInputArg.fields() for UnboundField rejection**](validator-walks-plain-input-unbound-fields.md)
 - `R245` [**Wire @condition through to mutation WHERE (emit half + new placements)**](wire-condition-emit-on-mutations.md)
