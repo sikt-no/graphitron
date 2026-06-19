@@ -1,7 +1,7 @@
 ---
 id: R300
 title: "First-class jOOQ routine support: read functions as target-shape provenance"
-status: In Progress
+status: In Review
 bucket: feature
 priority: 5
 theme: service
@@ -37,6 +37,40 @@ GraphQL field, with the three `TEXT` IN parameters bound from GraphQL field argu
 > survives as a deferred, modeled-but-unpopulated `Operation` member. R95 (`routines-as-data-model-citizens`)
 > is the same feature from the data-model-citizen angle; it is **superseded by this item**, with its
 > error-catalog floor and fixture inventory pulled in below.
+
+## Shipped (day-one table-valued read slice)
+
+Landed in three slices: the fixture + jOOQ-regen foundation (`8249abb`), the model + directive +
+reflection + resolver + emitter vertical (`0643d3c`), and the execution-tier proof + docs + gates
+(`a141944`). Full reactor green (`mvn install -Plocal-db`), including an execution test that runs the
+driving function end-to-end and asserts selection narrowing.
+
+Three decisions diverged from the spec-as-reviewed, all settled by empirical jOOQ findings and a user
+steer during implementation:
+
+- **Emission rides the global `Routines` convenience method, not `<ROUTINE>.call(...)`.** jOOQ generates
+  the table-valued function as a catalog `Table<R>` *and* a static method on the schema's global
+  `Routines` class returning the configured table. The user steered to the `Routines` surface; the
+  emitter produces `select(Type.$fields(...)).from(Routines.<method>(<bound args>)).fetch()`, which is
+  the same SQL the pinned `.call(...)` shape would produce. The execution test (not a method-body
+  string assertion) is the behavioural proof, per "no code-string assertions on generated bodies".
+- **Discovery via the catalog; parameter metadata via the `Routines` method.** A table-valued function
+  is in `Schema.getTables()` tagged `TableOptions.function()`, so `JooqCatalog.resolveTableValuedFunction`
+  discovers it through the existing catalog path (no `AbstractRoutine` is generated for table-valued
+  functions, even with `<routines>true</routines>`). The IN-parameter order/types/names come from
+  reflecting the `Routines` table-form method; names depend on the consumer compiling jOOQ with
+  `-parameters` (the fixture does).
+- **Classification reuses `FieldClassification.QueryTableMethod`** (className = the generated `Routines`
+  class) to keep the slice from rippling into the LSP label/hover surface. A dedicated `QueryRoutine`
+  classification is a follow-up.
+
+**Deferred from the validator-mirror section (follow-ups, not done in this slice):** the explicit
+procedure-write `Operation` arm modeled-but-unpopulated with a `STUBBED_VARIANTS` entry, and the
+translation of legacy's 26 `procedureCall*` rejection fixtures. The deferred scalar-read and
+procedure-write forks already fail at validate time (not emit) because they do not resolve as
+table-valued functions: `JooqCatalog.resolveTableValuedFunction` returns `NotInCatalog` /
+`NotATableValuedFunction` and `RoutineDirectiveResolver` surfaces a typed rejection, which satisfies
+"validator mirrors classifier". A child-positioned `@routine` is a typed rejection at `classifyField`.
 
 ## The model fit: routines are the database twin of `@tableMethod` / `@externalField`
 
