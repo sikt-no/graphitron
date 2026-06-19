@@ -417,6 +417,24 @@ INSERT INTO split_parent_tag (tag_id, parent_code, tag) VALUES
     (2, 'ALPHA', 'a-two'),
     (3, 'BETA',  'b-one');
 
+-- R300 routine fixture: the driving table-valued read function. A side-effect-free
+-- PostgreSQL function with three TEXT IN parameters and RETURNS TABLE(...), the shape
+-- @routine binds day-one. jOOQ generates this as a table-valued-function Table class in
+-- the public-schema `tables` package (the .call(args) surface attached in FROM). The body
+-- is deterministic (a fixed VALUES set, guarded on a non-null arg) so the execution-tier
+-- test can assert exact rows come back with the IN params bound from GraphQL arguments.
+CREATE OR REPLACE FUNCTION public.tilganger_for_feidebruker_med_fs_fiktivt_fnr(
+    p_env        TEXT,
+    p_service_id TEXT,
+    p_feide_id   TEXT
+) RETURNS TABLE(organisasjonskode INTEGER, rollekode TEXT)
+LANGUAGE sql STABLE
+AS $$
+    SELECT t.organisasjonskode, t.rollekode
+    FROM (VALUES (184, 'admin'), (185, 'user')) AS t(organisasjonskode, rollekode)
+    WHERE p_feide_id IS NOT NULL
+$$;
+
 -- ===========================
 -- nodeidfixture schema
 -- ===========================
