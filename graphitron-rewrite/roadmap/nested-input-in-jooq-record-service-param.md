@@ -1,7 +1,7 @@
 ---
 id: R336
 title: "Flatten nested input-object fields in jOOQ-record @service params"
-status: Backlog
+status: Spec
 bucket: architecture
 priority: 6
 theme: service
@@ -27,6 +27,6 @@ This is the column-axis analogue of a gap the `@table`-input path already solved
 
 ## Notes from triage
 
-The secondary report observation, that the outer input "classified as PojoInput", did not reproduce: the record-param (outer) input is correctly `JooqTableRecordInputType`, and the reported error only fires on that classification path, so the outer must be classified that way at codegen. Only the nested grouping input is `PojoInput`. Whether a nested grouping input should remain `PojoInput` or gain a dedicated input-side "nesting projection" classification (the input analogue of `NestingType`) is a separate concern; relate to R171 (`input-like-type-sealed-parent`) if pursued.
+The secondary report observation, that the outer input "classified as PojoInput", did not reproduce: the record-param (outer) input is correctly `JooqTableRecordInputType`, and the reported error only fires on that classification path, so the outer must be classified that way at codegen. Only the nested grouping input is `PojoInput`. That nested grouping is semantically a column-projection of the parent's table (the input mirror of the output-side `NestingType`), and surfacing it as `PojoInput(null)` is a model/LSP-honesty wart split out as **R337** (`input-nesting-projection-classification`). This item does **not** depend on R337: the flatten below reads the nested type's SDL fields directly, so codegen works regardless of the nested type's classification.
 
 **Out of scope:** multi-table nesting; reclassifying the nested grouping type; any change to the `@table`-input nesting path.
