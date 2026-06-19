@@ -1,7 +1,7 @@
 ---
 id: R90
 title: "LSP Java-source surfacing: goto-definition, Javadoc, @externalField, argMapping"
-status: In Progress
+status: In Review
 bucket: Backlog
 priority: 17
 theme: lsp
@@ -44,6 +44,40 @@ external dependency (see "Parsing approach" below). A sibling Rust
 implementation (`alf/graphitron-lsp`, tree-sitter-java) validates the shape:
 walk the source roots, index class / method declaration ranges, then enrich
 the exported catalog off that index. We take the shape, not the code.
+
+## Implementation status (In Review)
+
+All four phases shipped; the plan body below is retained as the design record.
+
+- **Phase 1+2** shipped at `e1e499b`: `SourceWalker` (parse-only Compiler Tree
+  API, per-file mtime cache), `CompletionData.ExternalReference` / `Method`
+  gain a `SourceLocation`, `CatalogBuilder` joins the walk index in one pass
+  (jOOQ-half per-line column refinement + Javadoc, service-half class / method
+  positions + Javadoc, overload-ambiguous methods → `UNKNOWN`),
+  `Definitions.compute` service-half goto-definition arm, class / method
+  Javadoc in `Hovers`, `RewriteContext.compileSourceRoots` populated in
+  `AbstractRewriteMojo`.
+- **Phase 3** shipped at `045b89c`: `ExternalFieldCompletions` narrows the
+  `@externalField` method list to Field-returning single-parameter lifters.
+- **Phase 4** shipped at `d9a37d5`: `ArgMapping` decomposition, plus
+  `ArgMappingCompletions` and argMapping diagnostics.
+
+Two in-scope approximations, both bounded by the "out of scope" list below:
+
+1. **Phase 3 Table-parameter check.** The spec's "is a Table parameter" test
+   leans on `Parameter.source = ParamSource.Table`, but populating that
+   projection in the LSP catalog is generator-side work this item lists as out
+   of scope. The shipped filter uses the catalog-derivable signature shape
+   (single parameter + jOOQ `Field` return); confirming the parameter is
+   specifically a `Table` is a follow-on once the classifier-driven
+   `Parameter.source` projection reaches the LSP catalog.
+2. **Phase 4 nested dot-path.** R84 dot-paths on the right side are validated /
+   completed at the head segment only (against the enclosing field's GraphQL
+   arguments, read syntactically). Deep traversal into nested input-type fields
+   needs an input-field projection the snapshot does not carry for arbitrary
+   input types; the head-segment behaviour deferring on a `.` is the in-scope
+   subset. A follow-on can lift the nested traversal when that projection
+   exists.
 
 ## What changed from the original Backlog body
 

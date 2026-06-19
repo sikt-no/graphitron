@@ -349,6 +349,19 @@ The same trigger also refreshes validation: rename a Java class that an
 the editor surfaces the unresolved-class error without waiting for a
 schema save.
 
+Beyond diagnostics, the editor connection surfaces the Java side of the
+schema. Cmd/Ctrl-click (or your editor's go-to-definition) on a `@service`,
+`@externalField`, `@condition`, or `@enum` class or method name jumps to its
+Java source, and hover shows its Javadoc; the same works for `@table` and
+`@field`, jumping to the generated jOOQ table class and column. This needs
+the referenced sources to be on the build, which they are for the project's
+own source roots (hand-written and generated); references into dependency
+jars without attached sources fall back to no jump. Completion narrows to the
+right candidates per slot: `@externalField` offers the Field-returning lifter
+methods, and the `argMapping` string completes Java parameter names on the
+left of each `:` and the field's GraphQL arguments on the right, flagging
+unknown or duplicated entries.
+
 Stop the loop with Ctrl+C (a JVM shutdown hook closes the LSP socket,
 the watch service, and the debounce executor cleanly).
 
