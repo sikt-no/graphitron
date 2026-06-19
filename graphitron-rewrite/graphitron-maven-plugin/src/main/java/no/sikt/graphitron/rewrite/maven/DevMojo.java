@@ -6,6 +6,7 @@ import no.sikt.graphitron.lsp.parsing.LspVocabulary;
 import no.sikt.graphitron.lsp.state.Workspace;
 import no.sikt.graphitron.rewrite.GraphQLRewriteGenerator;
 import no.sikt.graphitron.rewrite.RewriteContext;
+import no.sikt.graphitron.rewrite.SchemaParseException;
 import no.sikt.graphitron.rewrite.ValidationFailedException;
 import no.sikt.graphitron.rewrite.ValidationReport;
 import no.sikt.graphitron.rewrite.maven.dev.DevServer;
@@ -282,7 +283,9 @@ public class DevMojo extends AbstractRewriteMojo {
      */
     private record InitialOutput(CompletionData catalog, LspSchemaSnapshot snapshot, ValidationReport report) {}
 
-    private boolean runGeneratorPass(RewriteContext ctx, String label) {
+    // Package-private so DevMojoTest can drive the catch-arm discrimination directly
+    // (a malformed schema vs a missing file) without standing up the full watch loop.
+    boolean runGeneratorPass(RewriteContext ctx, String label) {
         try {
             new GraphQLRewriteGenerator(ctx).generate();
             previousErrorKeys = Set.of();
@@ -292,6 +295,15 @@ public class DevMojo extends AbstractRewriteMojo {
             String tree = WatchErrorFormatter.format(e.errors(), previousErrorKeys);
             previousErrorKeys = WatchErrorFormatter.keysOf(e.errors());
             getLog().error("graphitron:dev: " + label + " failed validation\n" + tree);
+            return false;
+        } catch (SchemaParseException e) {
+            // An invalid intermediate schema mid-edit is expected and author-correctable;
+            // surface the attributed file:line:col one-liner without the throwable, so the
+            // dev log shows one clean line instead of the graphql-java + executor stack.
+            // Not a validator verdict, so it must not feed WatchErrorFormatter's delta
+            // tracker: reset so the next successful validation reports its full error set.
+            previousErrorKeys = null;
+            getLog().error("graphitron:dev: " + label + " failed: " + e.getMessage());
             return false;
         } catch (RuntimeException e) {
             previousErrorKeys = null;
