@@ -131,8 +131,8 @@ class GraphitronSchemaBuilderTest {
         // R281 slice 2: the pure `enum return type -> ColumnField` verdict (a bare isInstanceOf
         // assertion, no slot detail) migrated to the spec-by-example corpus, where it is the
         // `enum-column` ClassifiedCorpus example (Film.rating: Rating, asserted via
-        // @classified(carrier: Source, intent: Fetch, mapping: Column)). Corpus-only: it lands on the
-        // already-taught inline / Column coordinate; the enum-ness lives in the GraphQL-to-Java mapping, not the
+        // @classified(source: Child, operation: Fetch, target: Single, targetShape: Column)). Corpus-only: it lands on the
+        // already-taught inline / Column coordinate; the enum-ness lives in the GraphQL-to-Java conversion, not the
         // classification. The ColumnField leaf stays covered by the corpus and the slot-asserting
         // ColumnFieldCase rows above.
 
@@ -848,15 +848,15 @@ class GraphitronSchemaBuilderTest {
         // R281 slice 2: the plain `@splitQuery -> SplitTableField` verdict (a pure isInstanceOf
         // assertion, no slot detail) migrated to the spec-by-example corpus, where it is the
         // minimal pair against the inline TableField (the `child-table` ClassifiedCorpus
-        // example, City.countrySplit, asserted via @classified(carrier: Source, intent: Fetch, mapping: Table) and
+        // example, City.countrySplit, asserted via @classified(source: Child, operation: Fetch, target: Single, targetShape: Table) and
         // rendered into the Field Classification section of code-generation-triggers.adoc). The
         // SplitTableField leaf stays covered by the corpus and by the slot-asserting split cases below.
 
         // R281 slice 2: the pure `@splitQuery + @lookupKey -> SplitLookupTableField` verdict (a bare
         // isInstanceOf assertion, no slot detail) migrated to the spec-by-example corpus, where it is
         // the `split-lookup` ClassifiedCorpus example (Store.customers, asserted via
-        // @classified(carrier: Source, intent: Lookup, mapping: Table)). Corpus-only: it lands on the
-        // already-taught Source / Lookup / Table coordinate. The SplitLookupTableField leaf stays
+        // @classified(source: Child, operation: Lookup, target: List, targetShape: Table)). Corpus-only: it lands on the
+        // already-taught Child / Lookup / Table coordinate. The SplitLookupTableField leaf stays
         // covered by the corpus and by the slot-asserting / rejection cases below
         // (IMPLICIT_REFERENCE_SPLIT_LOOKUP_TABLE, SPLIT_LOOKUP_TABLE_SINGLE_CARDINALITY_REJECTED).
 
@@ -1562,8 +1562,8 @@ class GraphitronSchemaBuilderTest {
         // R281 slice 2: the plain `plain-object child on a @table parent -> NestingField` verdict
         // (PLAIN_OBJECT_TYPE and its list-wrapped twin LIST_OF_PLAIN_OBJECT_TYPE, both pure isInstanceOf
         // assertions with no slot detail) migrated to the spec-by-example corpus as the `nesting`
-        // ClassifiedCorpus example (Film.details, asserted via @classified(carrier: Source, intent:
-        // Nesting, mapping: Table)). The verdict is already taught by the child-table minimal pair, so
+        // ClassifiedCorpus example (Film.details, asserted via @classified(source: Child, operation:
+        // Nest, target: Single, targetShape: Table)). The verdict is already taught by the child-table minimal pair, so
         // the example is corpus-only (no doc render). The NestingField leaf stays covered by the corpus
         // and by the slot-asserting nested-projection cases below (nestedFields() shape, remap,
         // roll-up, multi-level).
@@ -1758,7 +1758,7 @@ class GraphitronSchemaBuilderTest {
         // R281 slice 2: the plain `@service on a @table parent returning a scalar -> ServiceRecordField`
         // verdict (a pure isInstanceOf assertion, no slot detail) migrated to the spec-by-example
         // corpus, where Film.rating in the `service` ClassifiedCorpus example is exactly this shape,
-        // asserted via @classified(carrier: Source, intent: QueryService, mapping: Record). Corpus-only (the `service`
+        // asserted via @classified(source: Child, operation: ServiceCall, target: Single, targetShape: Record). Corpus-only (the `service`
         // example carries no doc query). The ServiceRecordField leaf stays covered by the corpus and by
         // the slot-asserting service cases below.
 
@@ -2005,10 +2005,10 @@ class GraphitronSchemaBuilderTest {
         // R281 slice 2: the plain polymorphic child verdicts (TABLE_INTERFACE_FIELD ->
         // TableInterfaceField, INTERFACE_FIELD -> InterfaceField, both pure isInstanceOf assertions)
         // migrated to the spec-by-example corpus. Inventory.media (the `table-interface` example)
-        // classifies to TableInterfaceField, asserted via @classified(carrier: Source, intent: Fetch, mapping: Table)
+        // classifies to TableInterfaceField, asserted via @classified(source: Child, operation: Fetch, target: Single, targetShape: Table)
         // (inline: FK-correlatable, the inline verdict the adapter documents against the R288 generator
         // defect). Customer.address (the `interface` example) classifies to InterfaceField, asserted via
-        // @classified(carrier: Source, intent: Fetch, mapping: Table) and rendered into the Polymorphic fields
+        // @classified(source: Child, operation: Fetch, target: Single, targetShape: Interface) and rendered into the Polymorphic fields
         // section of code-generation-triggers.adoc. Both leaves stay covered by the corpus; the
         // InterfaceType / participant-shape cases below stay (they assert type-level slots).
 
@@ -2039,8 +2039,8 @@ class GraphitronSchemaBuilderTest {
 
         // R281 slice 2: the plain `field returning a union -> UnionField` verdict (a pure isInstanceOf
         // assertion) migrated to the spec-by-example corpus, where FilmActor.related (the `union`
-        // example) classifies to UnionField, asserted via @classified(carrier: Source, intent: Fetch,
-        // mapping: Table). Corpus-only (union selections need fragment rendering the QueryViewRenderer does not
+        // example) classifies to UnionField, asserted via @classified(source: Child, operation: Fetch,
+        // target: Single, targetShape: Union). Corpus-only (union selections need fragment rendering the QueryViewRenderer does not
         // yet support; R281 pre-migration-hardening item 3). The UnionField leaf stays covered by the
         // corpus; the union-with-nesting rejection case below stays.
 
@@ -2218,7 +2218,7 @@ class GraphitronSchemaBuilderTest {
         // verdict (a pure isInstanceOf assertion, no slot detail) migrated to the spec-by-example
         // corpus, where FilmDetails.language is the derived-re-query half of the record-handoff minimal
         // pair against the inline TableField Film.language (the `record-table` ClassifiedCorpus example,
-        // asserted via @classified(carrier: Source, intent: Fetch, mapping: Table) and rendered into the Field
+        // asserted via @classified(source: Child, operation: Fetch, target: Single, targetShape: Table) and rendered into the Field
         // Classification section of code-generation-triggers.adoc). The RecordTableField leaf stays
         // covered by the corpus and by the many slot-asserting record-table cases below (FK inference,
         // single cardinality, @splitQuery warning, @sourceRow lifters).
@@ -2289,8 +2289,8 @@ class GraphitronSchemaBuilderTest {
 
         // R281 slice 2: the plain `record-backed parent + non-table object return -> RecordField` verdict
         // (a pure isInstanceOf assertion, no slot detail) migrated to the spec-by-example corpus, where
-        // FilmDetails.stats is the record-object flavor of the Column-vs-Field mapping minimal pair (the
-        // `mapping` ClassifiedCorpus example, asserted via @classified(carrier: Source, intent: Fetch, mapping: Field) and
+        // FilmDetails.stats is the record-object flavor of the Column-vs-Field target-shape minimal pair (the
+        // `mapping` ClassifiedCorpus example, asserted via @classified(source: Child, operation: Fetch, target: Single, targetShape: Field, sourceShape: Record) and
         // rendered into the Field Classification section of code-generation-triggers.adoc). The
         // RecordField leaf stays covered by the corpus and by the slot-asserting record cases above.
 
@@ -2319,7 +2319,7 @@ class GraphitronSchemaBuilderTest {
         // R281 slice 2: the plain `@service + @table return -> ServiceTableField` verdict (a pure
         // isInstanceOf assertion, no slot detail) migrated to the spec-by-example corpus, where
         // Film.language in the `service` ClassifiedCorpus example classifies to ServiceTableField,
-        // asserted via @classified(carrier: Source, intent: QueryService, mapping: Table). Corpus-only (the
+        // asserted via @classified(source: Child, operation: ServiceCall, target: Single, targetShape: Table). Corpus-only (the
         // `service` example carries no doc query). The ServiceTableField leaf stays covered by the
         // corpus and by the slot-asserting service cases above (e.g. TABLE_TYPE_RETURN, the @reference
         // origin-defaulting cases).
@@ -5916,7 +5916,7 @@ class GraphitronSchemaBuilderTest {
     // R281 slice 2: the sole `@error parent path/message -> PropertyField` verdict (a pair of bare
     // isInstanceOf assertions, no slot detail) migrated to the spec-by-example corpus as the
     // `error-field` ClassifiedCorpus example (MyError.path / MyError.message, both asserted via
-    // @classified(carrier: Source, intent: Fetch, mapping: Field)). Corpus-only: it lands on the already-taught
+    // @classified(source: Child, operation: Fetch, target: Single, targetShape: Field, sourceShape: Record)). Corpus-only: it lands on the already-taught
     // inline / Field coordinate; both fields resolve off the developer-supplied @error class via graphql-java's
     // default PropertyDataFetcher. Since this was the only ErrorFieldCase constant, the whole enum and
     // its errorFieldClassification @EnumSource test retired with it. The PropertyField leaf stays
@@ -6317,8 +6317,10 @@ class GraphitronSchemaBuilderTest {
         // R281 slice 2: the plain `root field returning a @table type -> QueryTableField` verdict (a
         // pure isInstanceOf assertion, no slot detail) migrated to the spec-by-example corpus, where
         // Query.film and Query.films (the `catalog` example) and Query.city (the `child-table` example)
-        // all classify to QueryTableField, asserted via @classified(carrier: Query, intent: Fetch, mapping: Table /
-        // TableConnection) and rendered into code-generation-triggers.adoc. The QueryTableField leaf
+        // all classify to QueryTableField, asserted via @classified(source: Query, operation: Fetch,
+        // targetShape: Table); the connection coordinate (Query.films) is operation: Paginate with
+        // target(Single, Connection), the decomposition of the fused TableConnection mapping, and rendered
+        // into code-generation-triggers.adoc. The QueryTableField leaf
         // stays covered by the corpus and by the many slot-asserting root cases below (orderBy, filters,
         // ordering defaults, the languages projection cases).
 
@@ -6365,8 +6367,8 @@ class GraphitronSchemaBuilderTest {
         // QueryNodeField, NODES_QUERY_FIELD -> QueryNodesField, all pure isInstanceOf assertions)
         // migrated to the spec-by-example corpus. The `relay-node` example carries Query.node and
         // Query.internalFilmNode (both QueryNodeField, the canonical and federation-style-alias forms)
-        // and Query.nodes (QueryNodesField), each asserted via @classified(carrier: Query, intent: NodeResolve, mapping:
-        // Table). Corpus-only (Relay selections carry id arguments the QueryViewRenderer does not yet
+        // and Query.nodes (QueryNodesField), each asserted via @classified(source: Query, operation: NodeResolve,
+        // targetShape: Interface). Corpus-only (Relay selections carry id arguments the QueryViewRenderer does not yet
         // render; R281 pre-migration-hardening item 3). Both leaves stay covered by the corpus.
 
         ENTITY_QUERY_FIELD(
@@ -6385,8 +6387,8 @@ class GraphitronSchemaBuilderTest {
         // QueryTableInterfaceField, INTERFACE_QUERY_FIELD -> QueryInterfaceField, UNION_QUERY_FIELD ->
         // QueryUnionField, all pure isInstanceOf assertions) migrated to the spec-by-example corpus:
         // Query.topMedia (the `table-interface` example), Query.anyNamed (the `interface` example), and
-        // Query.search (the `union` example), each asserted via @classified(carrier: Query, intent: Fetch, mapping:
-        // Table). All three leaves stay covered by the corpus. Corpus-only except the interface, whose
+        // Query.search (the `union` example), each asserted via @classified(source: Query, operation: Fetch,
+        // targetShape: Table / Interface / Union respectively). All three leaves stay covered by the corpus. Corpus-only except the interface, whose
         // child form renders the Polymorphic fields doc example; union/table-interface root selections
         // need the fragment rendering tracked in R281 pre-migration-hardening item 3.
 
@@ -6410,15 +6412,15 @@ class GraphitronSchemaBuilderTest {
         // R281 slice 2: the pure `root @service into a non-table record-backed type -> QueryServiceRecordField`
         // verdict (a bare isInstanceOf assertion, no slot detail) migrated to the spec-by-example
         // corpus as the `query-service-record` ClassifiedCorpus example (Query.filmDetails, asserted
-        // via @classified(carrier: Query, intent: QueryService, mapping: Record)). Corpus-only: it lands on the
-        // already-taught QueryService / Record coordinate, the root analog of the SERVICE_RECORD child
+        // via @classified(source: Query, operation: ServiceCall, target: Single, targetShape: Record)). Corpus-only: it lands on the
+        // already-taught Query / ServiceCall / Record coordinate, the root analog of the SERVICE_RECORD child
         // verdict (Film.rating in the `service` example). The QueryServiceRecordField leaf stays
         // covered by the corpus and by the @ProjectionFor projection test below.
 
         // R281 slice 2: the pure DML write-then-project verdicts (a bare isInstanceOf assertion each,
         // no slot detail) migrated to the spec-by-example corpus. INSERT -> MutationInsertTableField is
-        // the `dml` ClassifiedCorpus example (createFilm, asserted via @classified(carrier: Mutation,
-        // intent: Insert, mapping: Table)); UPDATE -> MutationUpdateTableField is the `mutation-roots` example
+        // the `dml` ClassifiedCorpus example (createFilm, asserted via @classified(source: Mutation,
+        // operation: Insert, target: Single, targetShape: Table)); UPDATE -> MutationUpdateTableField is the `mutation-roots` example
         // (updateFilm, same verdict, the affected @table row projected back). Corpus-only. Both leaves
         // stay covered by the corpus and by the slot-asserting DmlReturnExpression / payload cases.
 
@@ -6499,9 +6501,9 @@ class GraphitronSchemaBuilderTest {
         // R281 slice 2: the pure @service-mutation verdicts (a bare isInstanceOf assertion each, no
         // slot detail) migrated to the spec-by-example corpus as the `mutation-roots` example. An
         // @service mutation returning a @table re-queries the catalog (externalMutation ->
-        // MutationServiceTableField, asserted via @classified(carrier: Mutation, intent: MutationService, mapping:
+        // MutationServiceTableField, asserted via @classified(source: Mutation, operation: ServiceCall, targetShape:
         // Table)); one returning a non-table record-backed type materializes it (externalRecord ->
-        // MutationServiceRecordField, @classified(carrier: Mutation, intent: MutationService, mapping: Record)). Corpus-only.
+        // MutationServiceRecordField, @classified(source: Mutation, operation: ServiceCall, targetShape: Record)). Corpus-only.
         // Both leaves stay covered by the corpus and by the slot-asserting carrier cases below.
 
         // Positive baseline: an @service mutation whose SDL return is a payload CARRIER with a
@@ -6650,7 +6652,7 @@ class GraphitronSchemaBuilderTest {
         // R281 slice 2: the pure single-record DML payload verdict (a bare isInstanceOf assertion, no
         // slot detail) migrated to the spec-by-example corpus as the `mutation-roots` example
         // (createFilmPayload: an INSERT returning a plain object carrier wrapping one @table data
-        // field, asserted via @classified(carrier: Mutation, intent: Insert, mapping: Record)). The carrier exposes the
+        // field, asserted via @classified(source: Mutation, operation: Insert, target: Single, targetShape: Record)). The carrier exposes the
         // RETURNING rows as a record, the follow-up projection being the data field's own re-fetch.
         // Corpus-only. The MutationDmlRecordField leaf stays covered by the corpus and the bulk /
         // cardinality-pairing cases (MUTATION_BULK_DML_RECORD_FIELD below) that assert slot detail.
