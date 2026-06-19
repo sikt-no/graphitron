@@ -11,28 +11,39 @@ last-updated: 2026-06-19
 
 # LSP Java-source surfacing: goto-definition, Javadoc, @externalField, argMapping
 
-Today the LSP resolves goto-definition for GraphQL type references
-(`IntraSchemaDefinitions`) and for the jOOQ-backed `@table` / `@field` /
-`@reference` directive arguments (`Definitions`, file-level only). The
-gap this item closes: the directives that name a *consumer* Java class or
-method, `@service`, `@externalField`, `@enum`, `@condition`, and the flat
-`@sourceRow` / `@tableMethod` `className` / `method` slots, have **no**
-goto-definition, no Javadoc on hover, and (for `@externalField`) no
-completion. They light up for completion / hover / diagnostics through
-`LspVocabulary`'s `ClassNameBinding` / `MethodNameBinding` behaviors, but
-there is nowhere to jump to and no description to show, because the catalog
-records `ExternalReference` / `Method` purely from compiled `.class`
-bytecode via `ClasspathScanner` (JDK `java.lang.classfile`), which carries
-no source path and no declaration line.
+This item is not a new LSP feature; it is an expansion of the catalog data
+the generator **already exports** to the LSP. `CatalogBuilder.build` already
+assembles the `CompletionData` snapshot the LSP queries, sourcing the jOOQ
+half from `JooqCatalog` and the service half from the classpath scan, and
+that snapshot already carries `SourceLocation` and `description` slots. Two
+gaps keep those slots from paying off:
 
-The unblocking insight: read the consumer's `.java` sources to recover
-declaration positions and Javadoc, and attach them to the catalog. The
-parser is the JDK's own Compiler Tree API, not an external dependency (see
-"Parsing approach" below). A sibling Rust implementation
-(`alf/graphitron-lsp`, tree-sitter-java) validates the overall shape:
-walk the source roots, index class / method declaration ranges, then
-dispatch goto-definition per directive off that index. We take the shape,
-not the code.
+- On the **jOOQ half**, `SourceLocation` is exported at file level only
+  (`0:0`); `CatalogBuilder`'s own javadoc records "line refinement deferred."
+- On the **service half**, the `ExternalReference` / `Method` records carry
+  no `SourceLocation` at all and no Javadoc, because they come purely from
+  compiled `.class` bytecode (`ClasspathScanner`, JDK `java.lang.classfile`),
+  which has no source path or declaration line.
+
+The consequence the user sees: goto-definition on the directives that name a
+*consumer* Java class or method, `@service`, `@externalField`, `@enum`,
+`@condition`, and the flat `@sourceRow` / `@tableMethod` `className` /
+`method` slots, has nowhere to jump and no Javadoc to show, even though those
+slots already light up for completion / hover / diagnostics through
+`LspVocabulary`'s `ClassNameBinding` / `MethodNameBinding` behaviors. Closing
+both gaps lights up `Definitions` and the hover formatters, which already
+read `SourceLocation` and `description`, with no new consumer-side plumbing.
+
+Both catalog halves are in scope: this expands the exported jOOQ-table data
+(file-level → per-line, plus Javadoc) and the exported service data (add the
+`SourceLocation` / Javadoc the jOOQ half already has). The one genuinely new
+mechanism is reading the consumer's `.java` sources to recover declaration
+positions and Javadoc, since neither the jOOQ `Catalog` API nor the bytecode
+scan carries them; the parser is the JDK's own Compiler Tree API, not an
+external dependency (see "Parsing approach" below). A sibling Rust
+implementation (`alf/graphitron-lsp`, tree-sitter-java) validates the shape:
+walk the source roots, index class / method declaration ranges, then enrich
+the exported catalog off that index. We take the shape, not the code.
 
 ## What changed from the original Backlog body
 
@@ -49,16 +60,19 @@ everything else is preserved.
    slug (`lsp-javaparser-...`) is left unchanged so the R18 cross-reference
    and any commit/changelog mentions still resolve; it is now historical,
    not descriptive.
-2. **Goto-definition for consumer Java refs is made an explicit, net-new
-   deliverable.** The Backlog body framed the definition work only as
-   "per-line refinement" of `Column.definition` / `Method.definition`,
-   which assumed a file-level definition already existed. It does not for
-   the consumer-Java directives: `ExternalReference` / `Method` carry no
-   `SourceLocation` at all, and `Definitions.compute` has no dispatch arm
-   for `@service` / `@externalField` / `@enum` / `@condition` / `@sourceRow`
-   / `@tableMethod`. So this is new capability, not refinement. The
-   refinement of the existing jOOQ-side `Column` definition is kept as a
-   secondary deliverable.
+2. **The definition work is restated as expanding the existing export
+   across both catalog halves, not as a new feature.** The Backlog body
+   framed it as "per-line refinement" of `Column.definition` /
+   `Method.definition`. That framing holds for the jOOQ half (`Column`
+   already exports a file-level `SourceLocation` to refine) and is the right
+   altitude for the whole item: we are populating already-exported slots,
+   not adding a feature. The one place the Backlog body was inaccurate is the
+   service half, where `Method.definition` did not yet exist as an exported
+   slot; `ExternalReference` / `Method` carry no `SourceLocation`. So the
+   service half adds the slot (matching the jOOQ half's existing shape) and
+   the `Definitions.compute` dispatch arm that reads it, while the jOOQ half
+   refines the slot it already exports. Same exported data, expanded on both
+   halves.
 
 No original requirement is dropped: Javadoc surfacing (Phase 1),
 `@externalField` completion (Phase 3), and argMapping completion +
