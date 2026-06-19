@@ -7,7 +7,7 @@ priority: 3
 theme: structural-refactor
 depends-on: [source-operation-target-pivot]
 created: 2026-06-18
-last-updated: 2026-06-18
+last-updated: 2026-06-19
 ---
 
 # Lower each schema coordinate to a DataFetcher and its QueryParts
@@ -256,6 +256,99 @@ every method-name reference in every emitted body resolves to a command the core
 emitter minting a callee name. If an emitter ever computes a callee name the core did not hand it, the cut
 has leaked. This is the test that *proves* "the shell assembles nothing" rather than asserting it.
 
+**J. Naming authority is a measured spectrum, and both ends already exist in-tree.** A 2026-06-19 trace
+of every emitted call edge sorts them by *where the callee name is derived*, which is what thread F's
+closure turns on:
+
+- **Regime 1, model-carried** (one derivation locus; both ends read it). The fetcher to rows-method edge
+  reads `BatchKeyField.rowsMethodName()` (`model/BatchKeyField.java:42`, whose javadoc states the contract
+  outright: "the fetcher and the rows method agree on this name"); the `$fields` to join/condition edges
+  read `MethodRef.methodName()` off a `{className, methodName}` model value (`JoinPathEmitter`); the
+  type-condition reads `GeneratedConditionField.methodName()`. This is exactly thread F's "core owns the
+  name on both ends," already shipped for these edges. `MethodRef` is the decoupling primitive: a call site
+  reads the name blind, knowing neither the producer nor the derivation.
+- **Regime 2, formula-reconstructed** (the string retyped at each end, no shared locus). `$fields` is a
+  literal at the definer (`TypeClassGenerator.java:216`) and a `$$fields` template literal independently
+  retyped at roughly eight call sites (`SelectMethodBody:112`, `InlineTableFieldEmitter:123`,
+  `TypeFetcherGenerator:753,765`, `SplitRowsMethodEmitter` in five places); `scatterByIdx` /
+  `scatterSingleByIdx` (literal at definer plus three calls); `<Type>Fetchers`, `<field>OrderBy`,
+  `<field>InputRows`, `create<Bean>` / `create<Record>` / `decode<Record>` (prefix/suffix formula at both
+  ends).
+- **The half-migrated seam.** `<field>Condition` is read from the model in `TypeConditionsGenerator`
+  (R1 end) but recomputed as `fieldName + "Condition"` in `QueryConditionsGenerator` (R2 end). One name, two
+  loci, one of which is the model: the migration is per-edge, and this is what a half-done edge looks like.
+
+The R2 set is the worklist for thread F's closure; the cut is "make every edge look like `MethodRef` /
+`rowsMethodName`, none like `$fields`." This makes thread I's invariant grep-able: every `$$fields`,
+`scatterByIdx`, `+ "Condition"`, `+ "OrderBy"`, `+ "Fetchers"` outside a single mint point is a current
+violation, so the test starts red and the migration drives it green edge by edge.
+
+**K. Seams, not the current emitters, define the target.** The emitter inventory below, and any pair table
+read off it, describe the *current* seam topology, which inlines heavily and is therefore not the
+destination. A **seam** is a named method call: the one place an edge (and a regime-1 name) can exist.
+Inlining is the absence of a seam, producer and consumer welded into one body. So "add a seam," "promote an
+inlined fragment to a core-minted node + edge," and "make a new pair possible" are one statement; the seam
+topology *is* the node/edge relation of thread H, and designing it is the content of the lowering.
+
+The current resolve side is asymmetric. The child path factors its query into a named unit (child fetcher
+to DataLoader to `rows<X>`, the rows-method being the `select` / `from` / `where` / `orderBy` / `$fields`
+assembly as a named method). The root path inlines that same assembly into the fetcher body
+(`SelectMethodBody`), with no `rows<X>`-equivalent to call. Root and child build the same query two ways;
+only child names it. **The decided target** (2026-06-19) closes that seam: both fetcher kinds become thin
+entry points delegating to one shared query unit, differing only in invocation strategy (root calls it
+directly; child calls it batched through a loader plus scatter). This generalizes the `SplitTableField` =
+`RecordTableField` shared-rows-method (the one existing instance of reuse-via-seam) into the organizing
+principle. Service-backed is the parallel arm: the fetcher delegates to a named service-call unit instead
+of inlining `service.method(...)`. The root path gains a level of indirection not required by runtime (no
+batching to justify it); paying it to buy uniformity, testability, and reuse is a deliberate, accepted
+trade.
+
+Target topology, uniform across root / child / service:
+
+- **DataFetcher** (thin entry; picks a strategy) delegates across a seam to either
+  - the **Query unit** (the SELECT launcher; today's rows-method, generalized), invoked *directly* (root)
+    or *batched through a DataLoader plus scatter* (child); or
+  - a **service-call unit** (the service-backed arm).
+- The **Query unit** composes across further seams into the **query-part units**: Projection (`$fields`),
+  Join, Condition, OrderBy, and so on.
+
+**Seam-placement rule.** A seam belongs wherever a unit is (a) chosen by a runtime strategy/dispatch,
+(b) reused across more than one caller, or (c) something we want to assert independently in the corpus or
+tests. Inline only a linear, single-use, non-varying construction. On the jOOQ side, where jOOQ's own
+in-language composition means a `QueryPart` can be an inline expression or a named method, we take the
+**looser reading** of (c): seam wherever the corpus might want to assert, accepting the parameter-threading
+cost (`env`, `dsl`, `table`, selection set across each seam), rather than reserving assertion for the
+query-unit level. The brake against one-method-per-`QueryPart` is that (a)/(b)/(c) must each be a real,
+named reason; "it is an expression" is not one. Testability is the through-line: an inlined fragment is
+assertable only through the whole query that contains it, a named query-part unit is independently
+assertable and is a clean regime-1 edge by construction, so "more seams," "more testable," and "more
+decoupled pairs" are the same axis.
+
+### Current seam topology (migration baseline)
+
+The pairs below are the whole-method nodes the current generator already cuts; they are the baseline the
+target seam topology is migrated *from*, not the target itself. The R1/R2 column is thread J's naming
+regime; the R2 rows plus the missing seams of thread K are the promotion worklist.
+
+| Pair (node) | Node it mints | Granularity | Whole-method emitter today | Outbound edges to pairs | Naming regime |
+|---|---|---|---|---|---|
+| Fetcher | `<Type>Fetchers.<field>(env)` | field, 1:1, total | `FetcherEmitter`, `DataLoaderFetcherEmitter` (body via `TypeFetcherGenerator`) | Projection (root), Rows-method (child), Bean/Record, OrderBy | class R2, method R1 |
+| Projection | `<Type>.$fields(sel, table, env)` | type-bound fold | `TypeClassGenerator` | Projection (recursive; cyclic), Condition/Join | R2 |
+| Rows-method | `rows<X>` / `load<X>` | anchor (SELECT launcher) | `SplitRowsMethodEmitter`, `MultiTablePolymorphicEmitter` | Projection, Scatter, InputRows | R1 |
+| Scatter | `scatter*ByIdx` | dedup-by-class | `SplitRowsMethodEmitter` | leaf | R2 |
+| Condition | `<field>Condition` | field | `TypeConditionsGenerator`, `QueryConditionsGenerator` | Join | R1 / R2 (half-migrated) |
+| Join | join-path helper (`MethodRef` target) | per join path | `JoinPathEmitter` | leaf | R1 |
+| InputRows | `<field>InputRows` | per lookup field | `LookupValuesJoinEmitter` | Join | R2 |
+| Bean/Record | `create<Bean>` / `create<Record>` / `decode<Record>` | dedup-by-class | `InputBeanInstantiationEmitter`, `JooqRecordInstantiationEmitter` | leaf | R2 |
+| OrderBy | `<field>OrderBy` | per orderable field | `OrderByResultClassGenerator` | leaf | R2 |
+
+The cyclic core is three pairs (Fetcher to Projection to Rows-method to Projection), thread F's cycle.
+**Pair = whole emitted method.** Emitters that render only an *arm* are sub-renderers that fold into a
+pair, not pairs: the three `Inline*` arms of `$fields`; `ServiceMethodCall` / `ChannelCatchArm` /
+`ChannelEarlyReturn` in the fetcher body; the `ArgCall` fragments. That partition resolves the
+node-relation granularity fork (one pair per emitted-method-kind), and the seam-placement rule of thread K
+governs *which* methods exist in the target.
+
 ### Emitter inventory (grounding for E and F)
 
 The twenty `*Emitter` classes divide by what they emit:
@@ -298,13 +391,13 @@ contribution.
 
 ## Open questions (to settle before / during Ready)
 
-- **Node-relation granularity** (the open fork from the session): is the node "one command per emitted
-  method", or something coarser that groups a method family under one command? Settle before sizing the
-  lowering, because it decides what the core enumerates.
-- **Edge inventory and naming authority** (the next read-only step): enumerate the distinct by-name call
-  patterns in the current output (`$fields` to `$fields`, fetcher to rows-method, rows-method to
-  `scatterByIdx`, `$fields` to decode-helper, ...) and, for each, find where the callee name is minted
-  today. That measures how much naming authority has to move into the core for thread F's closure to hold.
+- **Node-relation granularity** (the open fork from the session). **Resolved (thread K):** the node is one
+  pair per *whole emitted method*; arm-renderers fold into a pair. *Which* methods exist in the target is
+  governed by the seam-placement rule, not by a fixed count.
+- **Edge inventory and naming authority** (was the next read-only step). **Resolved (threads J/K):** the
+  2026-06-19 trace sorted every edge into regime 1 (model-carried, e.g. `rowsMethodName` / `MethodRef`,
+  the target pattern) and regime 2 (formula-reconstructed, e.g. `$fields` at roughly eight sites). The R2
+  set is the naming-authority worklist; "add a seam" promotes an inlined fragment to a regime-1 edge.
 - **Anchor addressing depth**: does a QueryPart's address name the enclosing anchor coordinate directly,
   and is the up-projection one-hop (immediate parent) or nearest-query-owning-ancestor with inline
   ancestors transparent (a split grandchild under an inline child threading its key to the grandparent's
@@ -327,7 +420,8 @@ contribution.
 ## Scope
 
 In scope: the model (the lowering to a referentially-closed method-call-graph, the normalization, the
-natural keys, the anchor/address primitive, the node and edge relations). Out of scope: the emit
+natural keys, the anchor/address primitive, the node and edge relations, the target seam topology and its
+placement rule). Out of scope: the emit
 re-platforming that consumes it (R314), and any rewrite of R316 slices 1-4 (they are the valid
 denormalized projection). No code in this item beyond what is needed to make the model executable as
 tests, if that is split out at Ready: the lowering function and its coverage, plus thread I's bidirectional

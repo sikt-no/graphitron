@@ -16,7 +16,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 |---|---|---|---|---|
 | `R19` | Rebase and squash rewrite branch onto main | Ready |  | [plan](history-squash.md) |
 | `R222` | Dimensional model pivot: slots over cross-product permits | Spec | 2026-06-18 <sub>created 2026-05-21</sub> | [plan](dimensional-model-pivot.md) |
-| `R333` | Lower each schema coordinate to a DataFetcher and its QueryParts <sub>blocked by: [source-operation-target-pivot](source-operation-target-pivot.md)</sub> | Spec | 2026-06-18 | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
+| `R333` | Lower each schema coordinate to a DataFetcher and its QueryParts <sub>blocked by: [source-operation-target-pivot](source-operation-target-pivot.md)</sub> | Spec | 2026-06-19 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
 | `R256` | Absorb the service walker substrate: typed per-arm errors + multi-arg ctors | Ready | 2026-05-30 <sub>created 2026-05-29</sub> | [plan](service-walker-substrate-absorption.md) |
 | `R316` | Pivot the field-dimensional model to (source, operation, target) <sub>blocked by: [dimensional-model-pivot](dimensional-model-pivot.md)</sub> | In Progress | 2026-06-18 <sub>created 2026-06-16</sub> | [plan](source-operation-target-pivot.md) |
 | `R308` | Fix the @service list-payload N+1 by deriving many-arrival for list-returning carriers | Spec | 2026-06-14 | [plan](service-list-payload-arrival.md) |
