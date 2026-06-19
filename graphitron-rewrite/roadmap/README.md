@@ -29,7 +29,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R63` | Type UPSERT dialect requirement on the model | Spec |  | [plan](dml-dialect-requirement-on-model.md) |
 | `R92` | Surface database CHECK constraints as Jakarta validation rules | Spec |  | [plan](catalog-check-constraint-validation.md) |
 | `R26` | Retire `graphitron-maven-plugin` + `graphitron-schema-transform` | In Progress |  | [plan](retire-maven-plugin.md) |
-| `R339` | @defaultOrder(primaryKey: true) ignores direction and always sorts ASC | Spec | 2026-06-19 | [plan](default-order-primary-key-direction-ignored.md) |
 | `R180` | Centralize ResultType column-read emission for @record parents | Spec | 2026-05-19 | [plan](record-parent-column-read-helper.md) |
 | `R242` | DML payload positional input/output alignment | Spec | 2026-06-15 <sub>created 2026-05-26</sub> | [plan](dml-payload-positional-alignment.md) |
 | `R115` | Enumerate the capabilities graphitron delivers | Spec |  | [plan](capability-catalog.md) |
@@ -37,6 +36,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R212` | IntelliJ plugin wrapping graphitron:dev LSP | Spec | 2026-05-21 | [plan](intellij-lsp-plugin.md) |
 | `R269` | Null-guard split-query key extraction for nullable to-one records | Spec | 2026-06-02 <sub>created 2026-06-01</sub> | [plan](nullable-to-one-record-into-npe.md) |
 | `R112` | Operation-driven test corpus, capability catalog, and runtime trace <sub>blocked by: [capability-catalog](capability-catalog.md)</sub> | Spec |  | [plan](operation-driven-test-corpus.md) |
+| `R339` | @defaultOrder(primaryKey: true) ignores direction and always sorts ASC | Ready | 2026-06-19 | [plan](default-order-primary-key-direction-ignored.md) |
 | `R338` | Split-query correlation projects parent node/PK columns instead of the FK referenced columns | Ready | 2026-06-19 | [plan](split-query-non-pk-fk-referenced-column.md) |
 
 ---
