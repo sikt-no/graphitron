@@ -1,7 +1,7 @@
 ---
 id: R322
 title: "Runtime value-agreement check for multiple @nodeId decodes onto shared columns"
-status: In Progress
+status: In Review
 bucket: feature
 priority: 4
 theme: nodeid
@@ -26,6 +26,24 @@ Two materialization paths decode `@nodeId`s onto a row's columns, and they fail 
 This item makes both safe with one shared agreement predicate plus, on the mutation path, the
 structural dedup that predicate presupposes. The build-time-decidable half (two plain `@field`s on
 one column) becomes a build-time rejection on both paths.
+
+## Implementation status
+
+Shipped: the shared agreement predicate (`NodeIdEncoder.requireColumnAgreement`, D3); the `@service`
+jOOQ-record path (D1 + D4, in `JooqRecordInstantiationEmitter` — overlap detected once, then a
+prepare / agree / load emission, byte-identical when no column overlaps); the `@mutation` INSERT path
+(D1 + D2 + D5: `insertColumnPlan` drives the column list, VALUES cells, and a coalesced per-column cell
+with the agreement check, single-row and bulk, plus the validate-time plain-field-vs-plain-field reject
+in `MutationInputResolver.rejectPlainColumnCollision`); and the single-row `@mutation` UPDATE SET path
+(`TypeFetcherGenerator.emitSetAgreementPreamble` before the SET `Map.put`s, plus the plain-field reject
+in `UpdateRowsWalker` via `UpdateRowsError.PlainColumnCollision`, which covers both single-row and bulk).
+
+Carved out to **R342**: the *bulk* UPDATE SET decode-involving overlap. Unlike the single-row SET
+`Map.put` silent last-write-wins this item closes, the bulk `UPDATE … FROM (VALUES …)` join fails
+*loud* (a duplicate column in the derived table), so it is self-announcing rather than a silent drop;
+closing it needs the INSERT-style structural dedup on the bulk-SET column/cell emission, not just the
+agreement check. With the single-row SET agreement and the all-plain reject in place, no *silent* drop
+remains on any mutation write path after this item.
 
 ## Current behavior (as found)
 
