@@ -24,7 +24,7 @@ import java.util.Optional;
  */
 public sealed interface QueryField extends RootField
     permits QueryField.QueryLookupTableField, QueryField.QueryTableField,
-            QueryField.QueryTableMethodTableField,
+            QueryField.QueryTableMethodTableField, QueryField.QueryRoutineTableField,
             QueryField.QueryNodeField, QueryField.QueryNodesField,
             QueryField.QueryTableInterfaceField, QueryField.QueryInterfaceField,
             QueryField.QueryUnionField,
@@ -40,6 +40,8 @@ public sealed interface QueryField extends RootField
             case QueryTableInterfaceField f -> OutputField.readOperation(f.returnType(), f.filters(), f.orderBy(), f.pagination());
             // Table-method / polymorphic roots carry no field-level filter surface.
             case QueryTableMethodTableField f -> OutputField.readOperation(f.returnType(), List.of(), new OrderBySpec.None(), null);
+            // Routine reads are Fetch over the routine-result table; no field-level filter surface day-one.
+            case QueryRoutineTableField f -> OutputField.readOperation(f.returnType(), List.of(), new OrderBySpec.None(), null);
             case QueryInterfaceField f -> OutputField.readOperation(f.returnType(), List.of(), new OrderBySpec.None(), null);
             case QueryUnionField f -> OutputField.readOperation(f.returnType(), List.of(), new OrderBySpec.None(), null);
             case QueryLookupTableField f -> new Operation.Lookup(f.lookupMapping());
@@ -56,6 +58,7 @@ public sealed interface QueryField extends RootField
             case QueryTableField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Table());
             case QueryLookupTableField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Table());
             case QueryTableMethodTableField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Table());
+            case QueryRoutineTableField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Table());
             case QueryTableInterfaceField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Table());
             case QueryServiceTableField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Table());
             case QueryServiceRecordField f -> OutputField.listOrSingle(f.returnType().wrapper(), new TargetShape.Record());
@@ -125,6 +128,32 @@ public sealed interface QueryField extends RootField
         MethodRef method,
         Optional<ErrorChannel> errorChannel
     ) implements QueryField, MethodBackedField, WithErrorChannel {
+        @Override public DomainReturnType domainReturnType() {
+            return new DomainReturnType.Record(returnType.table());
+        }
+    }
+
+    /**
+     * A root query field backed by a jOOQ database routine ({@code @routine}). Day-one models the
+     * table-valued read function: jOOQ generates it as a catalog {@code Table<R>}, so the return
+     * type is always a {@link ReturnTypeRef.TableBoundReturnType} (the routine-result type is
+     * {@code @table}-bound to the generated table-valued-function table class), and the existing
+     * selection-narrowing projection applies unchanged.
+     *
+     * <p>The only thing {@code @routine} changes versus a plain catalog read is the {@code FROM}
+     * source: instead of the bare {@code Tables.X} singleton, the emitter calls the schema's global
+     * {@code Routines} convenience method with the IN parameters bound from GraphQL arguments. That
+     * call site and its bindings ride {@link RoutineRef} (the database twin of {@code @tableMethod}'s
+     * {@link MethodRef}); {@code target()} projects a bare {@link TargetShape.Table}, exactly as
+     * {@link QueryTableMethodTableField} does. See R300.
+     */
+    record QueryRoutineTableField(
+        String parentTypeName,
+        String name,
+        SourceLocation location,
+        ReturnTypeRef.TableBoundReturnType returnType,
+        RoutineRef routine
+    ) implements QueryField {
         @Override public DomainReturnType domainReturnType() {
             return new DomainReturnType.Record(returnType.table());
         }

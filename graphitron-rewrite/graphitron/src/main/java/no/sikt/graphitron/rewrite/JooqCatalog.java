@@ -1,8 +1,10 @@
 package no.sikt.graphitron.rewrite;
 
 import no.sikt.graphitron.javapoet.ClassName;
+import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.ForeignKeyRef;
+import no.sikt.graphitron.rewrite.model.TableRef;
 import org.jooq.Catalog;
 import org.jooq.ForeignKey;
 import org.jooq.Schema;
@@ -160,6 +162,70 @@ public class JooqCatalog {
             .flatMap(this::entriesIn)
             .filter(e -> e.table().getClass() == jooqTableClass)
             .findFirst();
+    }
+
+    /**
+     * Resolves a {@code @routine(name:)} value against the catalog as a table-valued read function
+     * (R300 day-one). jOOQ models such a function as a first-class catalog {@code Table<R>} tagged
+     * {@code TableOptions.function()}, plus a convenience method on the schema's global
+     * {@code Routines} class that returns the configured table for use in {@code FROM}. This resolves
+     * both: the result table (so the caller binds the existing {@code @table} return-type machinery)
+     * and the {@code Routines}-class call surface with the routine's IN parameters in declaration
+     * order.
+     *
+     * <p>Outcomes:
+     * <ul>
+     *   <li>{@link RoutineResolution.Resolved} — the name resolved to a table-valued function and its
+     *       convenience method was found.</li>
+     *   <li>{@link RoutineResolution.NotInCatalog} — the name resolves to no table at all (covers the
+     *       deferred scalar-read / procedure-write forks, which jOOQ does not place in
+     *       {@code getTables()}, so they reject here rather than throwing at emit).</li>
+     *   <li>{@link RoutineResolution.NotATableValuedFunction} — the name resolves to a catalog object
+     *       that is not a function (a plain table / view).</li>
+     *   <li>{@link RoutineResolution.NoConvenienceMethod} — function table found, but no table-form
+     *       method on the generated {@code Routines} class (degenerate codegen).</li>
+     * </ul>
+     */
+    public RoutineResolution resolveTableValuedFunction(String routineName) {
+        var resolution = findTable(routineName);
+        if (!(resolution instanceof TableResolution.Resolved r)) {
+            return new RoutineResolution.NotInCatalog();
+        }
+        var entry = r.entry();
+        var table = entry.table();
+        if (!table.getOptions().type().isFunction()) {
+            return new RoutineResolution.NotATableValuedFunction();
+        }
+
+        String schemaPackage = table.getSchema().getClass().getPackageName();
+        Class<?> routinesClass;
+        try {
+            routinesClass = Class.forName(schemaPackage + ".Routines", true, codegenLoader);
+        } catch (ClassNotFoundException e) {
+            return new RoutineResolution.NoConvenienceMethod(
+                "no generated Routines class at " + schemaPackage + ".Routines");
+        }
+
+        // Pick the table-form convenience overload: returns the function table class, with value
+        // parameters (not org.jooq.Field expressions). The Field overload and the Result<...> execute
+        // form are skipped by these two filters.
+        var candidate = Arrays.stream(routinesClass.getMethods())
+            .filter(m -> m.getReturnType() == table.getClass())
+            .filter(m -> Arrays.stream(m.getParameterTypes())
+                .noneMatch(org.jooq.Field.class::isAssignableFrom))
+            .findFirst();
+        if (candidate.isEmpty()) {
+            return new RoutineResolution.NoConvenienceMethod(
+                "no table-form convenience method returning " + table.getClass().getName()
+                + " on " + routinesClass.getName());
+        }
+
+        var method = candidate.get();
+        var params = Arrays.stream(method.getParameters())
+            .map(p -> new RoutineParam(p.getName(), TypeName.get(p.getType())))
+            .toList();
+        return new RoutineResolution.Resolved(
+            ClassName.get(routinesClass), method.getName(), params, entry.toTableRef(routineName));
     }
 
     private List<TableEntry> findUnqualifiedTable(String unqualifiedSqlName) {
@@ -1011,6 +1077,29 @@ public class JooqCatalog {
         default Optional<TableEntry> asEntry() {
             return this instanceof Resolved r ? Optional.of(r.entry()) : Optional.empty();
         }
+    }
+
+    /**
+     * One routine IN parameter, in declaration order: the jOOQ-generated (camelCased) parameter
+     * name and its boxed Java type. Read off the table-form convenience method on the generated
+     * {@code Routines} class by {@link #resolveTableValuedFunction(String)}.
+     */
+    public record RoutineParam(String name, TypeName type) {}
+
+    /**
+     * Outcome of {@link #resolveTableValuedFunction(String)}. {@link Resolved} carries the call
+     * surface ({@code Routines} class + method + ordered params) and the routine-result
+     * {@link TableRef}; the three failure arms map to the typed validate-time rejections the
+     * {@code RoutineDirectiveResolver} surfaces.
+     */
+    public sealed interface RoutineResolution {
+        record Resolved(ClassName routinesClass, String methodName, List<RoutineParam> params, TableRef resultTable)
+            implements RoutineResolution {
+            public Resolved { params = List.copyOf(params); }
+        }
+        record NotInCatalog() implements RoutineResolution {}
+        record NotATableValuedFunction() implements RoutineResolution {}
+        record NoConvenienceMethod(String detail) implements RoutineResolution {}
     }
 
     /**

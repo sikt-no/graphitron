@@ -7089,6 +7089,28 @@ class GraphitronSchemaBuilderTest {
     }
 
     @Test
+    @ProjectionFor(QueryField.QueryRoutineTableField.class)
+    void queryRoutineProjectionCarriesRoutineCoordinates() {
+        // R300 — a @routine read projects onto the method-backed QueryTableMethod classification,
+        // with className = the generated Routines class. The routine resolves against the sakila-db
+        // fixture catalog (public.tilganger_for_feidebruker_med_fs_fiktivt_fnr).
+        var snapshot = buildSnapshot("""
+            type Tilgang @table(name: "tilganger_for_feidebruker_med_fs_fiktivt_fnr") {
+              organisasjonskode: Int
+              rollekode: String
+            }
+            type Query {
+              tilganger(env: String!, serviceId: String!, feideId: String!): [Tilgang!]!
+                @routine(name: "tilganger_for_feidebruker_med_fs_fiktivt_fnr", argMapping: "pEnv: env, pServiceId: serviceId, pFeideId: feideId")
+            }
+            """);
+        var p = (FieldClassification.QueryTableMethod) snapshot.fieldClassificationsByCoord().get("Query.tilganger");
+        assertThat(p.tableName()).isEqualToIgnoringCase("tilganger_for_feidebruker_med_fs_fiktivt_fnr");
+        assertThat(p.methodName()).isEqualTo("tilgangerForFeidebrukerMedFsFiktivtFnr");
+        assertThat(p.methodClassName()).endsWith(".Routines");
+    }
+
+    @Test
     @ProjectionFor({QueryField.QueryNodeField.class, QueryField.QueryNodesField.class})
     void queryNodeProjectionCarriesListMultiplicity() {
         var snapshot = buildSnapshot("""

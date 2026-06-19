@@ -88,6 +88,7 @@ class BuildContext {
     static final String DIR_REFERENCE           = "reference";
     static final String DIR_ERROR               = "error";
     static final String DIR_TABLE_METHOD        = "tableMethod";
+    static final String DIR_ROUTINE             = "routine";
     static final String DIR_DEFAULT_ORDER       = "defaultOrder";
     static final String DIR_SPLIT_QUERY         = "splitQuery";
     static final String DIR_SERVICE             = "service";

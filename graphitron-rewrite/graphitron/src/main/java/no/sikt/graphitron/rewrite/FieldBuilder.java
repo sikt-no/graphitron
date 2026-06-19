@@ -116,6 +116,7 @@ import static no.sikt.graphitron.rewrite.BuildContext.DIR_ORDER_BY;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_REFERENCE;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_SERVICE;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_SPLIT_QUERY;
+import static no.sikt.graphitron.rewrite.BuildContext.DIR_ROUTINE;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_TABLE_METHOD;
 import static no.sikt.graphitron.rewrite.BuildContext.argString;
 import static no.sikt.graphitron.rewrite.BuildContext.argStringList;
@@ -141,6 +142,7 @@ class FieldBuilder {
     private final ServiceCatalog svc;
     private final ServiceDirectiveResolver serviceResolver;
     private final TableMethodDirectiveResolver tableMethodResolver;
+    private final RoutineDirectiveResolver routineResolver;
     private final ExternalFieldDirectiveResolver externalFieldResolver;
     private final LookupKeyDirectiveResolver lookupKeyResolver;
     private final OrderByResolver orderByResolver;
@@ -168,6 +170,7 @@ class FieldBuilder {
         this.enumMappingResolver = new EnumMappingResolver(ctx);
         this.serviceResolver = new ServiceDirectiveResolver(ctx, svc, this, new InputBeanResolver(ctx));
         this.tableMethodResolver = new TableMethodDirectiveResolver(ctx, svc, this);
+        this.routineResolver = new RoutineDirectiveResolver(ctx, this);
         this.externalFieldResolver = new ExternalFieldDirectiveResolver(ctx, svc, this);
         this.lookupKeyResolver = new LookupKeyDirectiveResolver();
         this.orderByResolver = new OrderByResolver(ctx);
@@ -1806,6 +1809,14 @@ class FieldBuilder {
             }
         }
 
+        // R300 day-one mints only the root @routine leaf. A child-positioned read routine (the
+        // ChildField.RecordTableMethodField analogue) is a deferred follow-up; reject it at validate
+        // time rather than silently ignoring the directive.
+        if (!(parentType instanceof RootType) && fieldDef.hasAppliedDirective(DIR_ROUTINE)) {
+            return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(
+                "@routine is only supported on root Query fields; a child-positioned read routine is not yet implemented"));
+        }
+
         if (parentType instanceof RootType rootType) {
             return classifyRootField(fieldDef, parentTypeName);
         }
@@ -3314,6 +3325,15 @@ class FieldBuilder {
                     buildMethodBackedWithChannel(tb.returnType(), tb.method(),
                         parentTypeName, name, location, fieldDef,
                         ch -> new QueryField.QueryTableMethodTableField(parentTypeName, name, location, tb.returnType(), tb.method(), ch));
+            };
+        }
+
+        if (fieldDef.hasAppliedDirective(DIR_ROUTINE)) {
+            return switch (routineResolver.resolve(parentTypeName, fieldDef, true)) {
+                case RoutineDirectiveResolver.Resolved.Rejected r ->
+                    new UnclassifiedField(parentTypeName, name, location, fieldDef, r.rejection());
+                case RoutineDirectiveResolver.Resolved.TableBound tb ->
+                    new QueryField.QueryRoutineTableField(parentTypeName, name, location, tb.returnType(), tb.routine());
             };
         }
 
