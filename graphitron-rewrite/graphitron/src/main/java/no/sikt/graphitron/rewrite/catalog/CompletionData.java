@@ -148,11 +148,26 @@ public record CompletionData(
         String className,
         String description,
         List<Method> methods,
-        List<RecordComponent> recordComponents
+        List<RecordComponent> recordComponents,
+        SourceLocation definition
     ) {
         public ExternalReference {
             methods = List.copyOf(methods);
             recordComponents = List.copyOf(recordComponents);
+        }
+
+        /**
+         * Back-compatible factory (pre-{@code definition}) used by
+         * {@link ClasspathScanner} and unit-tier callers that have no source
+         * walker; the source location defaults to {@link SourceLocation#UNKNOWN}.
+         * {@link CatalogBuilder} rebuilds the record with a real location when
+         * the consumer's sources are on the build.
+         */
+        public ExternalReference(
+            String name, String className, String description,
+            List<Method> methods, List<RecordComponent> recordComponents
+        ) {
+            this(name, className, description, methods, recordComponents, SourceLocation.UNKNOWN);
         }
     }
 
@@ -166,13 +181,31 @@ public record CompletionData(
 
     /**
      * Method on an {@link ExternalReference}.
+     *
+     * @param definition source location of the method declaration in the
+     *                   consumer's Java source; {@link SourceLocation#UNKNOWN}
+     *                   when the source is not on the build or the
+     *                   {@code (className, methodName, paramCount)} join key is
+     *                   ambiguous (an overload collision), in which case
+     *                   goto-definition returns empty rather than jumping to a
+     *                   wrong line.
      */
     public record Method(
         String name,
         String returnType,
         String description,
-        List<Parameter> parameters
-    ) {}
+        List<Parameter> parameters,
+        SourceLocation definition
+    ) {
+        /**
+         * Back-compatible factory (pre-{@code definition}) used by
+         * {@link ClasspathScanner} and unit-tier callers that have no source
+         * walker; the source location defaults to {@link SourceLocation#UNKNOWN}.
+         */
+        public Method(String name, String returnType, String description, List<Parameter> parameters) {
+            this(name, returnType, description, parameters, SourceLocation.UNKNOWN);
+        }
+    }
 
     /**
      * Method parameter. {@code source} matches the rewrite-side

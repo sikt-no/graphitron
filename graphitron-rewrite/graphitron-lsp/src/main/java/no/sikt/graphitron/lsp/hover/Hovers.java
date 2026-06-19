@@ -437,7 +437,11 @@ public final class Hovers {
     }
 
     private static String formatClass(CompletionData.ExternalReference ref) {
-        return "**Class** `" + ref.className() + "`";
+        var sb = new StringBuilder("**Class** `").append(ref.className()).append("`");
+        if (!ref.description().isEmpty()) {
+            sb.append("\n\n").append(ref.description());
+        }
+        return sb.toString();
     }
 
     private static String formatMethod(
@@ -445,8 +449,11 @@ public final class Hovers {
     ) {
         var sb = new StringBuilder();
         sb.append("**Method** `").append(method.name()).append("`")
-          .append(" on `").append(ref.className()).append("`")
-          .append("\n\n```\n")
+          .append(" on `").append(ref.className()).append("`");
+        if (!method.description().isEmpty()) {
+            sb.append("\n\n").append(method.description());
+        }
+        sb.append("\n\n```\n")
           .append(method.returnType()).append(' ').append(method.name()).append('(');
         boolean missingNames = false;
         for (int i = 0; i < method.parameters().size(); i++) {
