@@ -112,4 +112,35 @@ public enum DeclarationKind {
             if (child != null) walkAll(child, sink);
         }
     }
+
+    /**
+     * Finds the {@code name} node of the canonical declaration of {@code typeName} in the tree
+     * rooted at {@code root}, or {@link Optional#empty()} if no such declaration exists.
+     *
+     * <p>"Canonical" means a {@code *_type_definition}, never a {@code *_type_extension}: this is
+     * the first consumer to fork on the def/ext axis the class otherwise treats uniformly, because
+     * goto-definition must land on the {@code type Foo} declaration, not an {@code extend type Foo}
+     * block. Returns the first matching definition in document order; a well-formed schema has at
+     * most one.
+     */
+    public static Optional<Node> findDefinition(Node root, byte[] source, String typeName) {
+        var found = new Node[1];
+        walkAll(root, decl -> {
+            if (found[0] != null) return;
+            if (of(decl).map(DeclarationKind::isExtension).orElse(true)) return;
+            Node name = childOfKind(decl, "name");
+            if (name != null && typeName.equals(Nodes.text(name, source))) {
+                found[0] = name;
+            }
+        });
+        return Optional.ofNullable(found[0]);
+    }
+
+    private static Node childOfKind(Node parent, String kind) {
+        for (int i = 0; i < parent.getChildCount(); i++) {
+            Node child = parent.getChild(i).orElse(null);
+            if (child != null && kind.equals(child.getType())) return child;
+        }
+        return null;
+    }
 }

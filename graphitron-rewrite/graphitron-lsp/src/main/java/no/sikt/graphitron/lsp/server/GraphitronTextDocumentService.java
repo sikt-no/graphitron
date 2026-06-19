@@ -11,6 +11,7 @@ import no.sikt.graphitron.lsp.completions.ReferenceCompletions;
 import no.sikt.graphitron.lsp.completions.ScalarTypeCompletions;
 import no.sikt.graphitron.lsp.completions.TableCompletions;
 import no.sikt.graphitron.lsp.definition.Definitions;
+import no.sikt.graphitron.lsp.definition.IntraSchemaDefinitions;
 import no.sikt.graphitron.lsp.diagnostics.Diagnostics;
 import no.sikt.graphitron.lsp.hover.Hovers;
 import no.sikt.graphitron.lsp.inlay.InlayHints;
@@ -143,6 +144,7 @@ public class GraphitronTextDocumentService implements TextDocumentService {
                 params.getPosition().getLine(),
                 params.getPosition().getCharacter()).tsPoint();
             return Definitions.compute(file, workspace.catalog(), workspace.snapshot(), pos)
+                .or(() -> IntraSchemaDefinitions.compute(workspace, params.getTextDocument().getUri(), pos))
                 .map(loc -> Either.<List<? extends Location>, List<? extends LocationLink>>forLeft(List.of(loc)))
                 .orElseGet(() -> Either.forLeft(List.of()));
         });
