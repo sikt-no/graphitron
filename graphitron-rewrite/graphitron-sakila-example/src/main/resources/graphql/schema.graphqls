@@ -1777,6 +1777,23 @@ input StorageBinAgreeInput {
     binIdText: String @field(name: "bin_id")
 }
 
+# R322 execution-tier fixture (the @mutation INSERT DML path): the @table type + INSERT input over
+# film_endorsement, where endorsed_film is written by BOTH a plain @field (endorsedFilm) AND the
+# @nodeId(typeName: "Film") FK reference (filmRef, which the film_endorsement -> film FK lands on
+# endorsed_film). Without the R322 dedup the INSERT column list would name endorsed_film twice and
+# Postgres raises "column specified more than once"; the dedup collapses it to one column + one coalesced
+# VALUES cell, and the value-agreement check throws GraphqlErrorException when the two writers disagree.
+# filmRef is nullable so an omitted endorsedFilm leaves the lone decode (the presence guard: no throw).
+type FilmEndorsement @table(name: "film_endorsement") {
+    endorsedFilm: Int @field(name: "endorsed_film")
+    note: String @field(name: "note")
+}
+input InsertEndorsementOverlapInput @table(name: "film_endorsement") {
+    filmRef: ID @nodeId(typeName: "Film")
+    endorsedFilm: Int @field(name: "endorsed_film")
+    note: String @field(name: "note")
+}
+
 # R75 Phase 1: single-record DML carrier payload type. The SDL author authors no Java class —
 # the type promotes to PojoResultType.NoBacking at type-classification time; the data field
 # classifies as ChildField.SingleRecordTableField; the mutation classifies as
@@ -2213,6 +2230,12 @@ type Mutation {
             className: "no.sikt.graphitron.rewrite.test.services.StorageBinRecordAgreementService",
             method: "agreeStorageBin"
         })
+
+    # R322 @mutation-INSERT-path value agreement + structural dedup: endorsed_film is written by both the
+    # plain @field (endorsedFilm) and the @nodeId(typeName: "Film") FK reference (filmRef). The dedup emits
+    # endorsed_film once (no "column specified more than once" crash) and requireColumnAgreement throws when
+    # the two writers disagree; agreeing writers insert the agreed value.
+    insertEndorsementOverlap(in: InsertEndorsementOverlapInput!): FilmEndorsement @mutation(typeName: INSERT)
 
     # R315 D4 execution pin: a nullable same-table identity (addressId: ID @nodeId(typeName: "Address"))
     # on a jOOQ AddressRecord @service param, resolving to the record's own serial PK (address_id).

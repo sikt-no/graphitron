@@ -1859,7 +1859,7 @@ public class TypeFetcherGenerator {
             if (hasDecodeLocals) {
                 dmlChain.add(".valuesOfRows(in.stream()\n").indent()
                     .add(".map(row -> {\n").indent()
-                    .add(buildInsertDecodeLocals(fields, "row", "insertKey"))
+                    .add(buildInsertDecodeLocals(fields, "row", "insertKey", tablesOnly, tableRef))
                     .add("return $T.row(\n", DSL).indent()
                     .add(buildPerCellValueList(fields, tablesOnly, tableRef, "row", "insertKey")).unindent()
                     .add(");\n").unindent()
@@ -1873,7 +1873,7 @@ public class TypeFetcherGenerator {
                     .add(".toList())\n").unindent();
             }
         } else {
-            postInGuard.add(buildInsertDecodeLocals(fields, "in", "insertKey"));
+            postInGuard.add(buildInsertDecodeLocals(fields, "in", "insertKey", tablesOnly, tableRef));
             dmlChain.add(".values(\n").indent()
                 .add(buildPerCellValueList(fields, tablesOnly, tableRef, "in", "insertKey")).unindent()
                 .add(")\n");
@@ -1931,6 +1931,12 @@ public class TypeFetcherGenerator {
             GeneratorUtils.ResolvedTableNames tablesOnly, TableRef tableRef,
             String mapLocal,
             String localPrefix) {
+        // R322: an INSERT with a column written by more than one carrier dedups to one cell per column,
+        // coalescing over the present writers via the per-column cell local emitted in the decode-locals
+        // prep. A non-overlapping INSERT keeps the one-leaf-one-cell walk below (byte-identical).
+        if (hasInsertOverlap(fields)) {
+            return buildPerCellValueListDeduped(fields, tablesOnly, tableRef, mapLocal, localPrefix);
+        }
         var b = CodeBlock.builder();
         boolean first = true;
         // R186: descend nested grouping inputs to a flat leaf list; each leaf carries its wire access
@@ -2026,6 +2032,12 @@ public class TypeFetcherGenerator {
     private static CodeBlock buildInsertColumnList(
             List<InputField> fields,
             GeneratorUtils.ResolvedTableNames tablesOnly, TableRef tableRef) {
+        // R322: an INSERT with an overlapping column emits that column once (the dedup that turns the
+        // Postgres "column specified more than once" crash into one column + one coalesced cell). A
+        // non-overlapping INSERT keeps the one-leaf-one-column walk below (byte-identical).
+        if (hasInsertOverlap(fields)) {
+            return buildInsertColumnListDeduped(fields, tablesOnly, tableRef);
+        }
         var b = CodeBlock.builder();
         boolean first = true;
         // R186: nested grouping inputs flatten in place; the column order matches the flattened
@@ -2070,6 +2082,61 @@ public class TypeFetcherGenerator {
         return b.build();
     }
 
+    /** R322: the INSERT column list driven off {@link #insertColumnPlan}, one entry per distinct column
+     *  (a shared column appears once). Used only when {@link #hasInsertOverlap}. */
+    private static CodeBlock buildInsertColumnListDeduped(List<InputField> fields,
+            GeneratorUtils.ResolvedTableNames tablesOnly, TableRef tableRef) {
+        var b = CodeBlock.builder();
+        boolean first = true;
+        for (var ic : insertColumnPlan(fields)) {
+            if (!first) b.add(", ");
+            first = false;
+            b.add("$T.$L.$L", tablesOnly.tablesClass(), tableRef.javaFieldName(), ic.column().javaName());
+        }
+        return b.build();
+    }
+
+    /** R322: the VALUES cell list driven off {@link #insertColumnPlan}, one cell per distinct column. A
+     *  shared column emits its pre-built coalesce local ({@code <prefix>Cell<ci>}, declared by
+     *  {@link #emitInsertAgreementPrep}); a disjoint column keeps the existing one-leaf-one-cell shape. */
+    private static CodeBlock buildPerCellValueListDeduped(List<InputField> fields,
+            GeneratorUtils.ResolvedTableNames tablesOnly, TableRef tableRef, String mapLocal, String localPrefix) {
+        var b = CodeBlock.builder();
+        var plan = insertColumnPlan(fields);
+        boolean first = true;
+        for (int ci = 0; ci < plan.size(); ci++) {
+            var ic = plan.get(ci);
+            if (!first) b.add(",\n");
+            first = false;
+            if (ic.shared()) {
+                b.add("$L", localPrefix + "Cell" + ci);
+            } else {
+                emitInsertCell(b, ic.writers().get(0), mapLocal, localPrefix, tablesOnly, tableRef);
+            }
+        }
+        return b.build();
+    }
+
+    /** R322: emits one disjoint-column VALUES cell, reproducing the per-carrier shape of
+     *  {@link #buildPerCellValueList}: a decode reads {@code <prefix>_<fi>.value<slot+1>()}, a plain field
+     *  reads the (possibly nested) map value; absent → {@code DSL.defaultValue}, present → typed bind. */
+    private static void emitInsertCell(CodeBlock.Builder b, InsertColWriter w, String mapLocal,
+            String localPrefix, GeneratorUtils.ResolvedTableNames tablesOnly, TableRef tableRef) {
+        CodeBlock presence = nestedContainsKeyExpr(mapLocal, w.path(), "ic" + w.leafIndex());
+        var col = w.column();
+        if (w.decode()) {
+            b.add("$L ? $T.val($L_$L.value$L(), $T.$L.$L.getDataType()) : $T.defaultValue($T.$L.$L.getDataType())",
+                presence, DSL, localPrefix, w.leafIndex(), w.slot() + 1,
+                tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName(),
+                DSL, tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName());
+        } else {
+            b.add("$L ? $T.val($L, $T.$L.$L.getDataType()) : $T.defaultValue($T.$L.$L.getDataType())",
+                presence, DSL, ArgCallEmitter.nestedMapValueExpr(mapLocal, w.path()),
+                tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName(),
+                DSL, tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName());
+        }
+    }
+
     /**
      * Builds the per-record NodeId decode locals for an INSERT/UPSERT INSERT-arm. For each
      * NodeId-bearing carrier ({@link InputField.ColumnField} with
@@ -2082,7 +2149,8 @@ public class TypeFetcherGenerator {
     private static CodeBlock buildInsertDecodeLocals(
             List<InputField> fields,
             String mapLocal,
-            String localPrefix) {
+            String localPrefix,
+            GeneratorUtils.ResolvedTableNames tablesOnly, TableRef tableRef) {
         var locals = CodeBlock.builder();
         ClassName graphqlErr = ClassName.get("graphql", "GraphqlErrorException");
         // R186: flat leaf order matches buildPerCellValueList so the decode-local index lines up; a
@@ -2113,7 +2181,124 @@ public class TypeFetcherGenerator {
                     "Decoded NodeId did not match the expected type for input field '" + sourceField + "'")
                 .endControlFlow();
         }
+        // R322: for any column written by more than one carrier, emit the value-agreement prep here (in
+        // the same scope as the decode locals, before the VALUES cells read them). Empty when there is no
+        // overlap, so a non-overlapping INSERT's prep is byte-identical to the decode-locals-only form.
+        emitInsertAgreementPrep(locals, fields, mapLocal, localPrefix, tablesOnly, tableRef);
         return locals.build();
+    }
+
+    /**
+     * R322 (D1 + D5): the per-column overlap plan for an INSERT. Walks {@link #flattenInsertLeaves} and
+     * appends one {@link InsertColWriter} per (carrier, slot) onto its target column, keyed by SQL name in
+     * first-encounter order. Each writer carries its leaf index (the decode-local suffix), wire access path,
+     * slot within the carrier's column tuple, resolved column, and whether it is a {@code @nodeId} decode.
+     * The two INSERT walks ({@link #buildInsertColumnList}, {@link #buildPerCellValueList}) and the agreement
+     * prep all derive from this one deterministic plan, so the column list, the VALUES cells, and the
+     * per-column cell locals stay positionally aligned by construction.
+     */
+    private record InsertColWriter(int leafIndex, List<String> path, int slot, ColumnRef column,
+                                   boolean decode, CallSiteExtraction.NodeIdDecodeKeys nidk) {}
+
+    /** One backing column on the INSERT plan with its ordered contributing writers. {@code shared()} when
+     *  two or more writers land on it (the R322 dedup + agreement case). */
+    private record InsertCol(ColumnRef column, List<InsertColWriter> writers) {
+        boolean shared() { return writers.size() >= 2; }
+    }
+
+    private static List<InsertCol> insertColumnPlan(List<InputField> fields) {
+        var leaves = flattenInsertLeaves(fields, List.of());
+        var byColumn = new java.util.LinkedHashMap<String, List<InsertColWriter>>();
+        for (int fi = 0; fi < leaves.size(); fi++) {
+            var f = leaves.get(fi).field();
+            var path = leaves.get(fi).path();
+            if (!(f instanceof InputField.SetField sf)) {
+                continue;
+            }
+            var cols = setFieldColumns(sf);
+            var nidk = setFieldNodeIdExtraction(sf);
+            for (int s = 0; s < cols.size(); s++) {
+                var col = cols.get(s);
+                byColumn.computeIfAbsent(col.sqlName(), k -> new ArrayList<>())
+                    .add(new InsertColWriter(fi, path, s, col, nidk != null, nidk));
+            }
+        }
+        var out = new ArrayList<InsertCol>();
+        byColumn.forEach((k, v) -> out.add(new InsertCol(v.get(0).column(), v)));
+        return out;
+    }
+
+    /** True when some backing column on the INSERT plan is written by more than one carrier (R322). */
+    private static boolean hasInsertOverlap(List<InputField> fields) {
+        return insertColumnPlan(fields).stream().anyMatch(InsertCol::shared);
+    }
+
+    /** The wire value a writer contributes to its column: a decode reads {@code <prefix>_<fi>.value<slot+1>()}
+     *  off the per-leaf decode record; a plain field reads the (possibly nested) map value. */
+    private static CodeBlock insertWriterValue(InsertColWriter w, String mapLocal, String localPrefix) {
+        if (w.decode()) {
+            return CodeBlock.of("$L_$L.value$L()", localPrefix, w.leafIndex(), w.slot() + 1);
+        }
+        return ArgCallEmitter.nestedMapValueExpr(mapLocal, w.path());
+    }
+
+    /**
+     * R322 (D5): emits the agreement prep for every shared column on the INSERT plan. For each, a
+     * {@code List<Object>} gathers the present writers' values (presence-guarded, so an omitted writer
+     * cannot conflict), {@code requireColumnAgreement} pairwise-checks them against the first present
+     * (coerced through the column's {@code DataType}), and a {@code Field<?> <prefix>Cell<ci>} local
+     * coalesces to {@code DSL.val} of the first present value or {@code DSL.defaultValue} when none is
+     * present. {@link #buildPerCellValueList} then emits that one local as the column's single VALUES cell.
+     * An overlap reaching here always has at least one decode (the all-plain overlap is the validate-time
+     * reject), so a {@code NodeIdEncoder} class is always available.
+     */
+    private static void emitInsertAgreementPrep(CodeBlock.Builder locals, List<InputField> fields,
+            String mapLocal, String localPrefix,
+            GeneratorUtils.ResolvedTableNames tablesOnly, TableRef tableRef) {
+        var fieldCn = ClassName.get("org.jooq", "Field");
+        var plan = insertColumnPlan(fields);
+        for (int ci = 0; ci < plan.size(); ci++) {
+            var ic = plan.get(ci);
+            if (!ic.shared()) {
+                continue;
+            }
+            var col = ic.column();
+            String listName = localPrefix + "Agree" + ci;
+            String cellName = localPrefix + "Cell" + ci;
+            String label = "input fields " + ic.writers().stream()
+                .map(w -> "'" + String.join(".", w.path()) + "'")
+                .distinct()
+                .collect(java.util.stream.Collectors.joining(", "));
+            ClassName encoderClass = ic.writers().stream()
+                .filter(InsertColWriter::decode)
+                .map(w -> w.nidk().decodeMethod().encoderClass())
+                .findFirst().orElseThrow();
+            locals.addStatement("$T<$T> $L = new $T<>()",
+                ClassName.get(List.class), Object.class, listName, ClassName.get(ArrayList.class));
+            int wi = 0;
+            for (var w : ic.writers()) {
+                locals.beginControlFlow("if ($L)", nestedContainsKeyExpr(mapLocal, w.path(), "ag" + ci + "w" + (wi++)))
+                    .addStatement("$L.add($L)", listName, insertWriterValue(w, mapLocal, localPrefix))
+                    .endControlFlow();
+            }
+            String idx = listName + "Idx";
+            locals.beginControlFlow("for (int $L = 1; $L < $L.size(); $L++)", idx, idx, listName, idx)
+                .addStatement("$T.requireColumnAgreement($S, $T.$L.$L.getDataType(), $L.get(0), $L.get($L))",
+                    encoderClass, label, tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName(),
+                    listName, listName, idx)
+                .endControlFlow();
+            // The cell is typed to the column's Java type (Field<ColType>, not Field<?>) so it matches the
+            // typed .values(Field<T1>, ...) overload the deduped INSERT column list produces.
+            var cellType = ParameterizedTypeName.get(fieldCn, ClassName.bestGuess(col.columnClass()));
+            locals.addStatement("$T $L", cellType, cellName);
+            locals.beginControlFlow("if ($L.isEmpty())", listName)
+                .addStatement("$L = $T.defaultValue($T.$L.$L.getDataType())",
+                    cellName, DSL, tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName())
+                .nextControlFlow("else")
+                .addStatement("$L = $T.val($L.get(0), $T.$L.$L.getDataType())",
+                    cellName, DSL, listName, tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName())
+                .endControlFlow();
+        }
     }
 
     /**
@@ -2863,7 +3048,7 @@ public class TypeFetcherGenerator {
             if (hasDecodeLocals) {
                 dmlChain.add(".valuesOfRows(in.stream()\n").indent()
                     .add(".map(row -> {\n").indent()
-                    .add(buildInsertDecodeLocals(fields, "row", "insertKey"))
+                    .add(buildInsertDecodeLocals(fields, "row", "insertKey", tablesOnly, tableRef))
                     .add("return $T.row(\n", DSL).indent()
                     .add(buildPerCellValueList(fields, tablesOnly, tableRef, "row", "insertKey")).unindent()
                     .add(");\n").unindent()
@@ -2880,7 +3065,7 @@ public class TypeFetcherGenerator {
             // Single-row decode locals lift into postInGuard. The if-not-empty block above
             // already wrote setsUpdate-side guards; appending the decode locals here keeps the
             // statement order (uniform-shape guard → setsUpdate construction → decode locals).
-            postInGuard.add(buildInsertDecodeLocals(fields, "in", "insertKey"));
+            postInGuard.add(buildInsertDecodeLocals(fields, "in", "insertKey", tablesOnly, tableRef));
             dmlChain.add(".values(\n").indent()
                 .add(buildPerCellValueList(fields, tablesOnly, tableRef, "in", "insertKey")).unindent()
                 .add(")\n");
@@ -4437,7 +4622,7 @@ public class TypeFetcherGenerator {
             if (hasDecodeLocals) {
                 chain.add(".valuesOfRows(in.stream()\n").indent()
                     .add(".map(row -> {\n").indent()
-                    .add(buildInsertDecodeLocals(fields, "row", "insertKey"))
+                    .add(buildInsertDecodeLocals(fields, "row", "insertKey", tablesOnly, tableRef))
                     .add("return $T.row(\n", DSL).indent()
                     .add(buildPerCellValueList(fields, tablesOnly, tableRef, "row", "insertKey")).unindent()
                     .add(");\n").unindent()
@@ -4451,7 +4636,7 @@ public class TypeFetcherGenerator {
                     .add(".toList())\n").unindent();
             }
         } else {
-            preGuard.add(buildInsertDecodeLocals(fields, "in", "insertKey"));
+            preGuard.add(buildInsertDecodeLocals(fields, "in", "insertKey", tablesOnly, tableRef));
             chain.add(".values(\n").indent()
                 .add(buildPerCellValueList(fields, tablesOnly, tableRef, "in", "insertKey")).unindent()
                 .add(")\n");
@@ -4511,7 +4696,7 @@ public class TypeFetcherGenerator {
                         + "only @lookupKey fields were provided")
                 .endControlFlow();
         }
-        preGuard.add(buildInsertDecodeLocals(fields, "in", "insertKey"));
+        preGuard.add(buildInsertDecodeLocals(fields, "in", "insertKey", tablesOnly, tableRef));
         var conflictCols = CodeBlock.builder();
         var conflictTargetColumns = new ArrayList<no.sikt.graphitron.rewrite.model.ColumnRef>();
         for (var g : tia.fieldBindings()) conflictTargetColumns.addAll(g.targetColumns());
@@ -4831,7 +5016,7 @@ public class TypeFetcherGenerator {
         var fields = tia.fields();
         var colList = buildInsertColumnList(fields, tablesOnly, tableRef);
         var body = CodeBlock.builder();
-        body.add(buildInsertDecodeLocals(fields, "row", "insertKey"));
+        body.add(buildInsertDecodeLocals(fields, "row", "insertKey", tablesOnly, tableRef));
         body.add("$T rec = txd.insertInto($L, ", recordRowType, tableLocal).add(colList).add(")\n")
             .add("    .values(\n").indent().indent()
             .add(buildPerCellValueList(fields, tablesOnly, tableRef, "row", "insertKey")).unindent().unindent()

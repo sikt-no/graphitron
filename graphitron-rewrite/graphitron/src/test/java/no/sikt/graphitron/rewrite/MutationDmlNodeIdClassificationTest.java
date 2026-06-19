@@ -81,6 +81,32 @@ class MutationDmlNodeIdClassificationTest {
     }
 
     @Test
+    void twoPlainFieldsOnOneColumn_rejected() {
+        // R322 (D2): two plain @field leaves resolving to one column is a pure schema fact with no runtime
+        // input that could reconcile them, and is avoidable — the mutation-path mirror of the @service R336
+        // reject, moving the failure from a Postgres "column specified more than once" crash to a
+        // validate-time UnclassifiedField. An overlap involving a @nodeId decode is admitted instead.
+        var schema = TestSchemaHelper.buildSchema("""
+            type Bar implements Node @table(name: "bar") @node(typeId: "Bar", keyColumns: ["id_1", "id_2"]) {
+                id: ID! @nodeId
+                name: String
+            }
+            input BarCollisionInput @table(name: "bar") {
+                name: String @field(name: "name")
+                alias: String @field(name: "name")
+            }
+            type Query { bar: Bar }
+            type Mutation { createBar(in: BarCollisionInput!): ID @mutation(typeName: INSERT) }
+            """, NODEID_CTX);
+
+        var f = (UnclassifiedField) schema.field("Mutation", "createBar");
+        assertThat(f.reason())
+            .contains("two fields cannot populate one column")
+            .contains("column 'name'")
+            .contains("'alias'");
+    }
+
+    @Test
     void idReturnOnMultiNodeTable_ambiguous_rejected() {
         // R317 slice 2: a table may legitimately back several @node types (distinct node ids), so
         // multiple-nodes-per-table is allowed at the type level. But a bare-ID mutation return uses

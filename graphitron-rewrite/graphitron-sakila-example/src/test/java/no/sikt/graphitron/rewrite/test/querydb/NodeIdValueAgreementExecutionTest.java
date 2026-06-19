@@ -14,24 +14,31 @@ import org.junit.jupiter.api.Test;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
 import java.util.Map;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * R322 execution-tier coverage: the runtime value-agreement check that fires when more than one writer
- * lands on a single row column. This class pins the {@code @service} jOOQ-record path (the
- * {@code createStorageBinRecord} helper's {@code NodeIdEncoder.requireColumnAgreement} call); the
- * mutation INSERT/UPDATE path is exercised by {@link DmlValueAgreementExecutionTest}.
+ * lands on a single row column, on both materialization paths.
  *
- * <p>The {@code agreeStorageBin} fixture is a {@link no.sikt.graphitron.rewrite.test.jooq.tables.records.StorageBinRecord}
- * {@code @service} param whose input carries two writers on {@code bin_id}: the same-table identity
- * {@code @nodeId(typeName: "StorageBin")} decode and a plain {@code @field}. Agreement is defined by the
- * destination column's coercion, so the four rows of the matrix the spec calls out are:
- * <ul>
- *   <li>agreement on a format-variant wire value ({@code "01"} coerces to the decoded {@code 1});</li>
- *   <li>disagreement (distinct values) throws and the service never runs;</li>
- *   <li>the presence guard (an omitted nullable writer leaves the lone decode and does not throw).</li>
- * </ul>
+ * <p>The {@code @service} jOOQ-record path uses the {@code agreeStorageBin} fixture: a
+ * {@link no.sikt.graphitron.rewrite.test.jooq.tables.records.StorageBinRecord} {@code @service} param whose
+ * input carries two writers on {@code bin_id} (the same-table identity {@code @nodeId(typeName:
+ * "StorageBin")} decode and a plain {@code @field}). The generated {@code createStorageBinRecord} helper
+ * calls {@code NodeIdEncoder.requireColumnAgreement} before loading.
+ *
+ * <p>The {@code @mutation} INSERT DML path uses the {@code insertEndorsementOverlap} fixture: a
+ * {@code film_endorsement} {@code @table} INSERT input where {@code endorsed_film} is written by both a
+ * plain {@code @field} and a {@code @nodeId(typeName: "Film")} FK reference. The structural dedup collapses
+ * the duplicate column (no Postgres "column specified more than once" crash) and the same agreement check
+ * fires on the coalesced cell.
+ *
+ * <p>Agreement is defined by the destination column's coercion, so across both fixtures the matrix the spec
+ * calls out is covered: agreement on a format-variant wire value ({@code "01"} coerces to the decoded
+ * {@code 1}); disagreement (distinct values) throws and nothing is written; agreeing writers materialize /
+ * insert the agreed value; and the presence guard (an omitted nullable writer leaves the lone decode and
+ * does not throw).
  */
 @ExecutionTier
 @SuppressWarnings("unchecked")
@@ -110,5 +117,62 @@ class NodeIdValueAgreementExecutionTest {
         Map<String, Object> data = execute(
             "mutation { agreeStorageBin(in: {binId: \"" + binId7 + "\"}) }");
         assertThat(data).extractingByKey("agreeStorageBin").isEqualTo("bin_id=7");
+    }
+
+    @Test
+    void mutationInsert_twoWritersAgree_dedupsColumnAndInsertsAgreedValue() {
+        // Both filmRef (@nodeId FK reference -> endorsed_film) and endorsedFilm (@field) target
+        // endorsed_film. The structural dedup emits endorsed_film once (no "column specified more than
+        // once" crash) and the agreement passes (both resolve to 1), so the row inserts with endorsed_film=1.
+        String note = "R322-" + UUID.randomUUID();
+        String film1 = NodeIdEncoder.encode("Film", 1);
+        try {
+            Map<String, Object> data = execute(
+                "mutation { insertEndorsementOverlap(in: {filmRef: \"" + film1 + "\", endorsedFilm: 1, note: \""
+                + note + "\"}) { endorsedFilm } }");
+            Map<String, Object> row = (Map<String, Object>) data.get("insertEndorsementOverlap");
+            assertThat(row).extractingByKey("endorsedFilm").isEqualTo(1);
+        } finally {
+            dsl.deleteFrom(DSL.table("film_endorsement")).where(DSL.field("note").eq(note)).execute();
+        }
+    }
+
+    @Test
+    void mutationInsert_twoWritersDisagree_throwsAndInsertsNothing() {
+        // filmRef resolves endorsed_film to 1; endorsedFilm supplies 2. requireColumnAgreement throws on the
+        // coalesced cell before the INSERT runs, so the statement errors and no row is written.
+        String note = "R322-" + UUID.randomUUID();
+        String film1 = NodeIdEncoder.encode("Film", 1);
+        try {
+            ExecutionResult result = executeRaw(
+                "mutation { insertEndorsementOverlap(in: {filmRef: \"" + film1 + "\", endorsedFilm: 2, note: \""
+                + note + "\"}) { endorsedFilm } }");
+            assertThat(result.getErrors())
+                .as("disagreeing writers on endorsed_film must surface a value-agreement error")
+                .isNotEmpty();
+            Map<String, Object> data = result.getData();
+            assertThat(data.get("insertEndorsementOverlap")).isNull();
+            assertThat(dsl.fetchCount(DSL.table("film_endorsement"), DSL.field("note").eq(note)))
+                .as("nothing is inserted when the writers disagree").isZero();
+        } finally {
+            dsl.deleteFrom(DSL.table("film_endorsement")).where(DSL.field("note").eq(note)).execute();
+        }
+    }
+
+    @Test
+    void mutationInsert_omittedNullableWriter_leavesLoneDecode_insertsDecodedValue() {
+        // endorsedFilm omitted, only the filmRef decode present. The presence guard means no agreement
+        // check fires, and the decoded FK value (1) is what lands on endorsed_film.
+        String note = "R322-" + UUID.randomUUID();
+        String film1 = NodeIdEncoder.encode("Film", 1);
+        try {
+            Map<String, Object> data = execute(
+                "mutation { insertEndorsementOverlap(in: {filmRef: \"" + film1 + "\", note: \""
+                + note + "\"}) { endorsedFilm } }");
+            Map<String, Object> row = (Map<String, Object>) data.get("insertEndorsementOverlap");
+            assertThat(row).extractingByKey("endorsedFilm").isEqualTo(1);
+        } finally {
+            dsl.deleteFrom(DSL.table("film_endorsement")).where(DSL.field("note").eq(note)).execute();
+        }
     }
 }

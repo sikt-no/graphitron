@@ -7,6 +7,8 @@ import graphql.schema.GraphQLNamedType;
 import graphql.schema.GraphQLNonNull;
 import graphql.schema.GraphQLType;
 import graphql.schema.GraphQLTypeUtil;
+import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
+import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.DmlKind;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
@@ -15,8 +17,13 @@ import no.sikt.graphitron.rewrite.model.InputField;
 import no.sikt.graphitron.rewrite.model.Rejection;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
 
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_MULTI_ROW;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_OVERRIDE;
@@ -438,6 +445,16 @@ final class MutationInputResolver {
             return admissionRejection;
         }
 
+        // R322 (D2): two or more plain @field writers on one column is a pure schema fact (no runtime
+        // input could make them agree) and is avoidable, so it is a validate-time reject — the mutation-
+        // path mirror of the @service R336 reject, moving the failure from a Postgres "column specified
+        // more than once" crash to an UnclassifiedField. An overlap involving a @nodeId decode is admitted
+        // and reconciled at runtime by the value-agreement check (D3), so it is not caught here.
+        var collisionRejection = rejectPlainColumnCollision(foundTia.fields(), foundTia.typeName());
+        if (collisionRejection != null) {
+            return collisionRejection;
+        }
+
         if (kind == DmlKind.UPDATE || kind == DmlKind.DELETE) {
             // R246 / R258 / R266: every UPDATE and DELETE is intercepted in FieldBuilder before this
             // call — UPDATE by classifyUpdateTableField / classifyUpdatePayloadField, DELETE by
@@ -591,5 +608,78 @@ final class MutationInputResolver {
                 + "': input field shape " + f.getClass().getSimpleName() + " is not yet supported"));
         }
         return null;
+    }
+
+    /**
+     * R322 (D2): rejects a column written by two or more plain {@code @field} writers (no {@code @nodeId}
+     * decode among them), recursing into nested grouping inputs so a buried leaf is held to the same rule.
+     * Such an overlap is a pure schema fact (both names resolve to one column with no runtime input) and is
+     * avoidable, so it is an author error caught at build time, the mutation-path mirror of the {@code @service}
+     * R336 reject. An overlap involving at least one decode is left to the runtime value-agreement check
+     * (FK topology can legitimately force a column to be written by two references), so it is admitted here.
+     * Returns the first offending column's rejection, or {@code null}.
+     */
+    private Resolved.Rejected rejectPlainColumnCollision(List<InputField> fields, String typeName) {
+        var pathsByColumn = new LinkedHashMap<String, List<String>>();
+        var columnsWithDecode = new HashSet<String>();
+        collectSetColumns(fields, List.of(), pathsByColumn, columnsWithDecode);
+        for (var e : pathsByColumn.entrySet()) {
+            String column = e.getKey();
+            List<String> paths = e.getValue();
+            if (paths.size() >= 2 && !columnsWithDecode.contains(column)) {
+                return new Resolved.Rejected(Rejection.structural(
+                    "@mutation input '" + typeName + "' fields '" + paths.get(0) + "' and '" + paths.get(1)
+                    + "' both resolve to column '" + column + "' — two fields cannot populate one column;"
+                    + " remove one, or point its @field(name:) at a different column"));
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Accumulates, per backing column, the dotted access paths of the SET-side carriers writing it and
+     * whether any of them is a {@code @nodeId} decode. Recurses into {@link InputField.NestingField}
+     * grouping inputs (R186), threading the access-path prefix. Value carriers source columns from
+     * {@code column() / columns()}, FK-reference carriers from {@code liftedSourceColumns()}; composite and
+     * reference carriers carry a decode by construction, a {@link InputField.ColumnField} only when its
+     * extraction is a {@link CallSiteExtraction.NodeIdDecodeKeys}.
+     */
+    private void collectSetColumns(List<InputField> fields, List<String> prefix,
+            Map<String, List<String>> pathsByColumn, Set<String> columnsWithDecode) {
+        for (var f : fields) {
+            if (f instanceof InputField.NestingField nf) {
+                var child = new ArrayList<>(prefix);
+                child.add(nf.name());
+                collectSetColumns(nf.fields(), child, pathsByColumn, columnsWithDecode);
+                continue;
+            }
+            List<ColumnRef> columns;
+            boolean decode;
+            switch (f) {
+                case InputField.ColumnField cf -> {
+                    columns = List.of(cf.column());
+                    decode = cf.extraction() instanceof CallSiteExtraction.NodeIdDecodeKeys;
+                }
+                case InputField.CompositeColumnField ccf -> { columns = ccf.columns(); decode = true; }
+                case InputField.ColumnReferenceField crf -> {
+                    columns = crf.liftedSourceColumns();
+                    decode = crf.extraction() instanceof CallSiteExtraction.NodeIdDecodeKeys;
+                }
+                case InputField.CompositeColumnReferenceField ccrf -> {
+                    columns = ccrf.liftedSourceColumns();
+                    decode = true;
+                }
+                default -> { continue; } // UnboundField and other non-column carriers contribute nothing
+            }
+            var dotted = new ArrayList<>(prefix);
+            dotted.add(f.name());
+            String path = String.join(".", dotted);
+            for (var column : columns) {
+                pathsByColumn.computeIfAbsent(column.sqlName(), k -> new ArrayList<>()).add(path);
+                if (decode) {
+                    columnsWithDecode.add(column.sqlName());
+                }
+            }
+        }
     }
 }
