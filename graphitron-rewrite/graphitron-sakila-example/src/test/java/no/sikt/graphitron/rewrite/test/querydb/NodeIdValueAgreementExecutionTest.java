@@ -175,4 +175,55 @@ class NodeIdValueAgreementExecutionTest {
             dsl.deleteFrom(DSL.table("film_endorsement")).where(DSL.field("note").eq(note)).execute();
         }
     }
+
+    @Test
+    void mutationUpdate_twoSetWritersAgree_updatesAgreedValue() {
+        // Single-row UPDATE: endorsed_film is SET by both endorsedFilm (@field) and filmRef (@nodeId FK
+        // reference). The single-row SET Map.put would silently last-write-wins; the agreement preamble
+        // lets the agreeing writers (both -> 2) update endorsed_film to 2.
+        String note = "R322-" + UUID.randomUUID();
+        int id = seedEndorsement(1, note);
+        String film2 = NodeIdEncoder.encode("Film", 2);
+        try {
+            Map<String, Object> data = execute(
+                "mutation { updateEndorsementOverlap(in: {endorsementId: " + id + ", filmRef: \"" + film2
+                + "\", endorsedFilm: 2}) { endorsedFilm } }");
+            Map<String, Object> row = (Map<String, Object>) data.get("updateEndorsementOverlap");
+            assertThat(row).extractingByKey("endorsedFilm").isEqualTo(2);
+        } finally {
+            dsl.deleteFrom(DSL.table("film_endorsement")).where(DSL.field("note").eq(note)).execute();
+        }
+    }
+
+    @Test
+    void mutationUpdate_twoSetWritersDisagree_throwsAndLeavesRowUnchanged() {
+        // filmRef resolves endorsed_film to 2; endorsedFilm supplies 3. The agreement preamble throws
+        // before .set(sets) runs, so the row is left at its seeded endorsed_film=1.
+        String note = "R322-" + UUID.randomUUID();
+        int id = seedEndorsement(1, note);
+        String film2 = NodeIdEncoder.encode("Film", 2);
+        try {
+            ExecutionResult result = executeRaw(
+                "mutation { updateEndorsementOverlap(in: {endorsementId: " + id + ", filmRef: \"" + film2
+                + "\", endorsedFilm: 3}) { endorsedFilm } }");
+            assertThat(result.getErrors())
+                .as("disagreeing SET writers on endorsed_film must surface a value-agreement error")
+                .isNotEmpty();
+            Integer persisted = dsl.select(DSL.field("endorsed_film", Integer.class))
+                .from(DSL.table("film_endorsement"))
+                .where(DSL.field("endorsement_id", Integer.class).eq(id))
+                .fetchOne().value1();
+            assertThat(persisted).as("the row is unchanged when the writers disagree").isEqualTo(1);
+        } finally {
+            dsl.deleteFrom(DSL.table("film_endorsement")).where(DSL.field("note").eq(note)).execute();
+        }
+    }
+
+    private int seedEndorsement(int endorsedFilm, String note) {
+        return dsl.insertInto(DSL.table("film_endorsement"))
+            .set(DSL.field("endorsed_film"), endorsedFilm)
+            .set(DSL.field("note"), note)
+            .returningResult(DSL.field("endorsement_id", Integer.class))
+            .fetchOne().value1();
+    }
 }

@@ -62,6 +62,14 @@ public final class UpdateRowsWalker {
      * input's own table, and the extraction shape the emitter reuses. */
     private record Contribution(String sdlFieldName, List<ColumnRef> columns, CallSiteExtraction extraction) {}
 
+    /** True when the carrier decodes a {@code @nodeId} (directly or behind a nested-input access path),
+     *  i.e. its value is only knowable at runtime — the R322 distinction between a runtime-agreement
+     *  overlap and the build-time plain-field collision. */
+    private static boolean isDecodeExtraction(CallSiteExtraction extraction) {
+        var leaf = extraction instanceof CallSiteExtraction.NestedInputField nif ? nif.leaf() : extraction;
+        return leaf instanceof CallSiteExtraction.NodeIdDecodeKeys;
+    }
+
     public WalkerResult<UpdateRows> walk(
         GraphQLFieldDefinition field,
         TableRef table,
@@ -125,6 +133,26 @@ public final class UpdateRowsWalker {
                 for (var col : c.columns()) {
                     setColumns.add(new SetColumn(c.sdlFieldName(), col, c.extraction()));
                 }
+            }
+        }
+        if (!errors.isEmpty()) {
+            return new WalkerResult.Err<>(errors);
+        }
+
+        // Stage 6b (R322, D2): two or more plain @field writers on one SET column silently
+        // last-write-wins through the single-row Map.put (and crashes the bulk VALUES-join with a
+        // duplicate derived column); reject at validate time, the UPDATE mirror of the INSERT-path
+        // reject. An overlap involving a @nodeId decode is admitted and reconciled by the runtime
+        // value-agreement check, so it is not caught here.
+        var setByColumn = new java.util.LinkedHashMap<String, List<SetColumn>>();
+        for (var sc : setColumns) {
+            setByColumn.computeIfAbsent(sc.targetColumn().sqlName(), k -> new ArrayList<>()).add(sc);
+        }
+        for (var e : setByColumn.entrySet()) {
+            var group = e.getValue();
+            if (group.size() >= 2 && group.stream().noneMatch(sc -> isDecodeExtraction(sc.extraction()))) {
+                errors.add(new UpdateRowsError.PlainColumnCollision(
+                    group.get(0).sdlFieldName(), group.get(1).sdlFieldName(), e.getKey()));
             }
         }
         if (!errors.isEmpty()) {

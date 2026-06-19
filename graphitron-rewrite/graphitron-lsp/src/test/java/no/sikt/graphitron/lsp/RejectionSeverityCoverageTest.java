@@ -212,6 +212,10 @@ class RejectionSeverityCoverageTest {
             return new no.sikt.graphitron.rewrite.model.UpdateRowsError.OverrideConditionNotSupported(
                 "syntheticName", new SourceLocation(1, 1));
         }
+        if (permit == no.sikt.graphitron.rewrite.model.UpdateRowsError.PlainColumnCollision.class) {
+            return new no.sikt.graphitron.rewrite.model.UpdateRowsError.PlainColumnCollision(
+                "name", "alias", "name");
+        }
         // R266: DeleteRowsError sub-seal of AuthorError. One sample per arm; Diagnostics.compute's
         // switch on Rejection.AuthorError catches the whole sub-family uniformly (Error severity),
         // and lspCodeOf forwards each arm's stable graphitron.delete-rows.* code.

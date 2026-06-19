@@ -107,6 +107,34 @@ class MutationDmlNodeIdClassificationTest {
     }
 
     @Test
+    void twoPlainFieldsOnOneUpdateSetColumn_rejected() {
+        // R322 (D2) on the UPDATE path: two plain @field's on one SET column silently last-write-wins via
+        // the single-row Map.put (and crashes the bulk VALUES-join); the UpdateRowsWalker rejects it, the
+        // UPDATE mirror of the INSERT-path reject. id_1/id_2 cover the PK (the WHERE); name/alias are the
+        // colliding SET writers.
+        var schema = TestSchemaHelper.buildSchema("""
+            type Bar implements Node @table(name: "bar") @node(typeId: "Bar", keyColumns: ["id_1", "id_2"]) {
+                id: ID! @nodeId
+                name: String
+            }
+            input BarUpdateCollisionInput @table(name: "bar") {
+                idOne: Int! @field(name: "id_1")
+                idTwo: Int! @field(name: "id_2")
+                name: String @field(name: "name")
+                alias: String @field(name: "name")
+            }
+            type Query { bar: Bar }
+            type Mutation { updateBar(in: BarUpdateCollisionInput!): Bar @mutation(typeName: UPDATE) }
+            """, NODEID_CTX);
+
+        var f = (UnclassifiedField) schema.field("Mutation", "updateBar");
+        assertThat(f.reason())
+            .contains("two fields cannot populate one column")
+            .contains("column 'name'")
+            .contains("'alias'");
+    }
+
+    @Test
     void idReturnOnMultiNodeTable_ambiguous_rejected() {
         // R317 slice 2: a table may legitimately back several @node types (distinct node ids), so
         // multiple-nodes-per-table is allowed at the type level. But a bare-ID mutation return uses
