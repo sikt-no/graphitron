@@ -1,7 +1,7 @@
 ---
 id: R339
 title: "@defaultOrder(primaryKey: true) ignores direction and always sorts ASC"
-status: Backlog
+status: Spec
 bucket: bug
 depends-on: []
 created: 2026-06-19
