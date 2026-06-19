@@ -38,7 +38,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R341` | MCP server skeleton: Streamable HTTP in graphitron:dev with a static about-prompt | Spec | 2026-06-19 | [plan](mcp-server-skeleton.md) |
 | `R269` | Null-guard split-query key extraction for nullable to-one records | Spec | 2026-06-02 <sub>created 2026-06-01</sub> | [plan](nullable-to-one-record-into-npe.md) |
 | `R112` | Operation-driven test corpus, capability catalog, and runtime trace <sub>blocked by: [capability-catalog](capability-catalog.md)</sub> | Spec |  | [plan](operation-driven-test-corpus.md) |
-| `R339` | @defaultOrder(primaryKey: true) ignores direction and always sorts ASC | In Review | 2026-06-19 | [plan](default-order-primary-key-direction-ignored.md) |
 
 ---
 
@@ -291,7 +290,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### (untagged)
 
-- `R339` [**@defaultOrder(primaryKey: true) ignores direction and always sorts ASC**](default-order-primary-key-direction-ignored.md)
 - `R207` [**Audit design-doc claims for implementation conformance**](design-doc-implementation-conformance-audit.md)
 - `R218` [**Carry inference provenance on ParamSource.Arg so resolved bindings audit cleanly**](binding-provenance-on-paramsource-arg.md)
 - `R180` [**Centralize ResultType column-read emission for @record parents**](record-parent-column-read-helper.md)
