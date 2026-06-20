@@ -9,6 +9,7 @@ import no.sikt.graphitron.lsp.parsing.ArgMapping;
 import no.sikt.graphitron.lsp.parsing.ArgMappingSupport;
 import no.sikt.graphitron.lsp.parsing.Behavior;
 import no.sikt.graphitron.lsp.parsing.DeclarationKind;
+import no.sikt.graphitron.lsp.parsing.DirectivePolicy;
 import no.sikt.graphitron.lsp.parsing.Directives;
 import no.sikt.graphitron.lsp.parsing.LspVocabulary;
 import no.sikt.graphitron.lsp.parsing.Nodes;
@@ -66,18 +67,6 @@ public final class Diagnostics {
 
     private static final String SOURCE = "graphitron-lsp";
     private static final String VALIDATOR_SOURCE = "graphitron-validator";
-
-    /**
-     * Directives whose {@code method} field is meaningful and should be
-     * validated against the resolved class. Directives outside this set
-     * (today: {@code @record} and {@code @enum}, where the binding wraps a
-     * type rather than a method invocation) skip method validation. Codifies
-     * the per-directive policy that the previous {@code VALIDATE_METHOD}
-     * set carried.
-     */
-    private static final Set<String> METHOD_VALIDATING_DIRECTIVES = Set.of(
-        "service", "condition", "externalField", "tableMethod", "reference", "sourceRow"
-    );
 
     /**
      * GraphQL spec built-in directives: present in user schemas, absent from
@@ -634,9 +623,9 @@ public final class Diagnostics {
     ) {
         // R307 carve-out: @record is deprecated/ignored, so its className slot binds no class
         // and an unknown-class diagnostic would be noise. The ExternalCodeReference.className
-        // coordinate is shared with @enum, so gate on the enclosing directive name (mirroring
-        // METHOD_VALIDATING_DIRECTIVES) rather than the coordinate.
-        if ("record".equals(Nodes.text(directive.nameNode(), file.source()))) return;
+        // coordinate is shared with @enum, so the carve-out keys on the directive name, not
+        // the coordinate (see DirectivePolicy).
+        if (!DirectivePolicy.bindsLiveClass(Nodes.text(directive.nameNode(), file.source()))) return;
         // Empty `externalReferences` means the classpath scan saw nothing
         // (typically: consumer hasn't run `mvn compile` yet). Reporting
         // every reference as unknown in that state would be noise; defer
@@ -658,10 +647,9 @@ public final class Diagnostics {
         Behavior.MethodNameBinding mnb,
         WorkspaceFile file, CompletionData catalog, List<Diagnostic> out
     ) {
-        String enclosingDirective = Nodes.text(directive.nameNode(), file.source());
         // @record / @enum bind ExternalCodeReference but the method slot
-        // wraps a type, not a method invocation; skip.
-        if (!METHOD_VALIDATING_DIRECTIVES.contains(enclosingDirective)) return;
+        // wraps a type, not a method invocation; skip (see DirectivePolicy).
+        if (!DirectivePolicy.bindsLiveMethod(Nodes.text(directive.nameNode(), file.source()))) return;
         if (catalog.externalReferences().isEmpty()) return;
 
         String methodName = Nodes.unquote(Nodes.text(leaf.valueNode(), file.source()));
@@ -718,9 +706,9 @@ public final class Diagnostics {
         WorkspaceFile file, CompletionData catalog, List<Diagnostic> out
     ) {
         // R307 carve-out: @record is deprecated/ignored — it binds no class, so the legacy
-        // ExternalCodeReference.name → className alias nudge is dead tooling for it. Gate on the
-        // enclosing directive name (mirroring METHOD_VALIDATING_DIRECTIVES and the className carve-out).
-        if ("record".equals(Nodes.text(directive.nameNode(), file.source()))) return;
+        // ExternalCodeReference.name → className alias nudge is dead tooling for it. Keys on the
+        // enclosing directive name (see DirectivePolicy).
+        if (!DirectivePolicy.bindsLiveClass(Nodes.text(directive.nameNode(), file.source()))) return;
         var classNameCoord = new SchemaCoordinate.InputField("ExternalCodeReference", "className");
         for (var leaf : leaves) {
             if (!(leaf.coord() instanceof SchemaCoordinate.InputField f)) continue;

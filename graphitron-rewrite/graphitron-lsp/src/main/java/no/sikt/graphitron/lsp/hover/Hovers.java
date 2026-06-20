@@ -3,6 +3,7 @@ package no.sikt.graphitron.lsp.hover;
 import graphql.language.Description;
 import no.sikt.graphitron.lsp.parsing.Behavior;
 import no.sikt.graphitron.lsp.parsing.DeclarationKind;
+import no.sikt.graphitron.lsp.parsing.DirectivePolicy;
 import no.sikt.graphitron.lsp.parsing.Directives;
 import no.sikt.graphitron.lsp.parsing.LspVocabulary;
 import no.sikt.graphitron.lsp.parsing.Nodes;
@@ -173,12 +174,12 @@ public final class Hovers {
         return switch (behavior.get()) {
             // R307 carve-out: @record is deprecated/ignored, so its className slot is not a live
             // binding and gets no live-binding hover. Its ExternalCodeReference.className coordinate
-            // is shared with @enum, so gate on the enclosing directive name (mirroring
-            // METHOD_VALIDATING_DIRECTIVES). Falls through to the SDL docstring hover at the call site.
+            // is shared with @enum, so the carve-out keys on the directive name (see DirectivePolicy).
+            // Falls through to the SDL docstring hover at the call site.
             case Behavior.ClassNameBinding ignored ->
-                "record".equals(Nodes.text(directive.nameNode(), file.source()))
-                    ? Optional.empty()
-                    : classNameHover(file, catalog, rangeNode);
+                DirectivePolicy.bindsLiveClass(Nodes.text(directive.nameNode(), file.source()))
+                    ? classNameHover(file, catalog, rangeNode)
+                    : Optional.empty();
             case Behavior.MethodNameBinding mnb ->
                 methodHover(vocabulary, directive, file, catalog, pos, rangeNode, mnb.classNameCoord());
             case Behavior.CatalogTableBinding ignored -> tableHover(file, catalog, rangeNode);

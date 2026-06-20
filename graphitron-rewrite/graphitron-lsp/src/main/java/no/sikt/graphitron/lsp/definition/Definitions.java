@@ -2,6 +2,7 @@ package no.sikt.graphitron.lsp.definition;
 
 import no.sikt.graphitron.lsp.parsing.Behavior;
 import no.sikt.graphitron.lsp.parsing.DeclarationKind;
+import no.sikt.graphitron.lsp.parsing.DirectivePolicy;
 import no.sikt.graphitron.lsp.parsing.Directives;
 import no.sikt.graphitron.lsp.parsing.LspVocabulary;
 import no.sikt.graphitron.lsp.parsing.Nodes;
@@ -13,33 +14,37 @@ import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
 import org.eclipse.lsp4j.Location;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
-import io.github.treesitter.jtreesitter.Node;
 import io.github.treesitter.jtreesitter.Point;
 
 import java.util.Optional;
 
-import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.NAME;
-import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.VALUE;
-
 /**
  * Resolves cursor positions on known directive arguments to source
  * locations in the consumer's Java tree, so the editor's
- * "go-to-definition" jumps to the declaration. Two families are served:
+ * "go-to-definition" jumps to the declaration. A single coordinate-driven
+ * dispatch (resolve the cursor coordinate via {@link LspVocabulary#locateAt},
+ * then switch on its {@link LspVocabulary#behaviorAt}, the same shape the
+ * completion / diagnostic / hover paths use) serves two families:
  *
  * <ul>
- *   <li><b>jOOQ half</b> ({@code @table}, {@code @field}, {@code @reference}):
+ *   <li><b>jOOQ half</b> ({@link Behavior.CatalogTableBinding} /
+ *       {@link Behavior.CatalogColumnBinding} / {@link Behavior.CatalogFkBinding},
+ *       reached from {@code @table}, {@code @field}, and {@code @reference(path:)}):
  *       jumps to the generated table class, column field, or FK constant.
  *       Positions are refined to the per-line declaration when the
  *       {@code SourceWalker} has parsed the generated sources; they fall back
  *       to the file head ({@code 0:0}) otherwise.</li>
- *   <li><b>service half</b> (the {@link Behavior.ClassNameBinding} /
- *       {@link Behavior.MethodNameBinding} directives: {@code @service},
+ *   <li><b>service half</b> ({@link Behavior.ClassNameBinding} /
+ *       {@link Behavior.MethodNameBinding}: {@code @service},
  *       {@code @externalField}, {@code @enum}, {@code @condition},
  *       {@code @sourceRow}, {@code @tableMethod}): jumps to the consumer's
- *       Java class or method declaration, reusing the same
- *       {@link LspVocabulary#behaviorAt} / {@link LspVocabulary#siblingStringAt}
- *       dispatch the completion / hover paths use.</li>
+ *       Java class or method declaration via {@link LspVocabulary#siblingStringAt}.</li>
  * </ul>
+ *
+ * <p>Because dispatch is on the cursor's resolved coordinate rather than the
+ * directive name, a class binding nested inside a jOOQ directive (e.g. a
+ * {@code condition.className} inside {@code @reference(path:)}) resolves through
+ * the service half rather than being silently ignored.
  *
  * <p>Returns {@link Optional#empty()} when the cursor is not on a
  * known directive arg, when the arg value does not resolve in the
@@ -71,37 +76,34 @@ public final class Definitions {
         var directiveOpt = Directives.findContaining(file.tree().getRootNode(), pos);
         if (directiveOpt.isEmpty()) return Optional.empty();
         var directive = directiveOpt.get();
-        String name = Nodes.text(directive.nameNode(), file.source());
-        return switch (name) {
-            case "table" -> tableDefinition(directive, file, catalog, pos);
-            case "field" -> fieldDefinition(directive, file, catalog, snapshot, pos);
-            case "reference" -> referenceDefinition(directive, file, catalog, pos);
-            default -> bindingDefinition(vocabulary, directive, file, catalog, pos);
-        };
-    }
-
-    /**
-     * Service-half goto-definition: resolves the cursor coordinate through the
-     * vocabulary overlay and, for a class-name or method-name binding, jumps to
-     * the consumer's Java declaration. Other coordinates (and unknown
-     * directives) return empty.
-     */
-    private static Optional<Location> bindingDefinition(
-        LspVocabulary vocabulary, Directives.Directive directive,
-        WorkspaceFile file, CompletionData catalog, Point pos
-    ) {
         var locationOpt = vocabulary.locateAt(directive, pos, file.source());
         if (locationOpt.isEmpty()) return Optional.empty();
         var location = locationOpt.get();
         var behaviorOpt = vocabulary.behaviorAt(location.coordinate());
         if (behaviorOpt.isEmpty()) return Optional.empty();
+        // One coordinate-driven dispatch for both halves, matching Diagnostics
+        // and Hovers. The switch is exhaustive over Behavior (no default) so a
+        // new binding arm forces a goto-definition decision here rather than
+        // silently resolving to nothing.
         return switch (behaviorOpt.get()) {
             case Behavior.ClassNameBinding ignored ->
                 classDefinition(location, catalog, file.source());
             case Behavior.MethodNameBinding mnb ->
                 methodDefinition(vocabulary, directive, location, catalog, pos,
                     mnb.classNameCoord(), file.source());
-            default -> Optional.empty();
+            case Behavior.CatalogTableBinding ignored ->
+                tableDefinition(location, catalog, file.source());
+            case Behavior.CatalogColumnBinding ignored ->
+                fieldDefinition(directive, location, catalog, snapshot, file.source());
+            case Behavior.CatalogFkBinding ignored ->
+                referenceKeyDefinition(catalog,
+                    Nodes.unquote(Nodes.text(location.leafNode(), file.source())));
+            // No Java declaration target: @argMapping content, @scalarType FQNs
+            // (handled by the class-name half when bound), and @nodeId typeNames
+            // point at SDL types, not consumer Java.
+            case Behavior.ArgMappingBinding ignored -> Optional.empty();
+            case Behavior.ScalarTypeBinding ignored -> Optional.empty();
+            case Behavior.NodeTypeBinding ignored -> Optional.empty();
         };
     }
 
@@ -109,8 +111,9 @@ public final class Definitions {
         LspVocabulary.CursorLocation location, CompletionData catalog, byte[] source
     ) {
         // @record's className is deprecated/ignored and binds no class; mirror
-        // the completion / hover carve-out (the coordinate is shared with @enum).
-        if ("record".equals(location.directiveName())) return Optional.empty();
+        // the completion / hover carve-out (the coordinate is shared with @enum,
+        // so the carve-out keys on the directive name; see DirectivePolicy).
+        if (!DirectivePolicy.bindsLiveClass(location.directiveName())) return Optional.empty();
         String fqn = Nodes.unquote(Nodes.text(location.leafNode(), source));
         if (fqn.isEmpty()) return Optional.empty();
         return catalog.externalReferences().stream()
@@ -142,28 +145,32 @@ public final class Definitions {
             .flatMap(Definitions::asLocation);
     }
 
+    /**
+     * Table goto-definition, shared by {@code @table(name:)} and
+     * {@code @reference(path: [{table:}])}, both of which resolve to
+     * {@link Behavior.CatalogTableBinding} on the cursor's coordinate.
+     */
     private static Optional<Location> tableDefinition(
-        Directives.Directive directive, WorkspaceFile file, CompletionData catalog, Point pos
+        LspVocabulary.CursorLocation location, CompletionData catalog, byte[] source
     ) {
-        Node argValue = stringArgValueAt(directive, "name", pos, file.source());
-        if (argValue == null) return Optional.empty();
-        String tableName = Nodes.unquote(Nodes.text(argValue, file.source()));
+        String tableName = Nodes.unquote(Nodes.text(location.leafNode(), source));
         return catalog.getTable(tableName)
-            .map(t -> t.definition())
+            .map(CompletionData.Table::definition)
             .flatMap(Definitions::asLocation);
     }
 
+    /**
+     * Column goto-definition for {@code @field(name:)}: resolves the enclosing
+     * type's table, then the named column within it.
+     */
     private static Optional<Location> fieldDefinition(
-        Directives.Directive directive, WorkspaceFile file, CompletionData catalog,
-        LspSchemaSnapshot snapshot, Point pos
+        Directives.Directive directive, LspVocabulary.CursorLocation location,
+        CompletionData catalog, LspSchemaSnapshot snapshot, byte[] source
     ) {
-        Node argValue = stringArgValueAt(directive, "name", pos, file.source());
-        if (argValue == null) return Optional.empty();
-        String columnName = Nodes.unquote(Nodes.text(argValue, file.source()));
-
+        String columnName = Nodes.unquote(Nodes.text(location.leafNode(), source));
         var typeDecl = DeclarationKind.enclosing(directive.outer());
         if (typeDecl.isEmpty()) return Optional.empty();
-        var tableName = TypeContext.tableNameOf(typeDecl.get(), file.source(), snapshot);
+        var tableName = TypeContext.tableNameOf(typeDecl.get(), source, snapshot);
         if (tableName.isEmpty()) return Optional.empty();
         var tableOpt = catalog.getTable(tableName.get());
         if (tableOpt.isEmpty()) return Optional.empty();
@@ -172,30 +179,6 @@ public final class Definitions {
             .findFirst()
             .map(CompletionData.Column::definition)
             .flatMap(Definitions::asLocation);
-    }
-
-    private static Optional<Location> referenceDefinition(
-        Directives.Directive directive, WorkspaceFile file, CompletionData catalog, Point pos
-    ) {
-        for (var arg : directive.arguments()) {
-            if (!"path".equals(Nodes.text(arg.key(), file.source()))) continue;
-            Node field = Nodes.innermostObjectFieldContaining(arg.value(), pos);
-            if (field == null) continue;
-            Node nameNode = Nodes.childOfKind(field, NAME);
-            Node valueNode = Nodes.childOfKind(field, VALUE);
-            if (nameNode == null || valueNode == null) continue;
-            if (!Nodes.contains(valueNode, pos)) continue;
-            String fieldName = Nodes.text(nameNode, file.source());
-            String value = Nodes.unquote(Nodes.text(valueNode, file.source()));
-            return switch (fieldName) {
-                case "key" -> referenceKeyDefinition(catalog, value);
-                case "table" -> catalog.getTable(value)
-                    .map(CompletionData.Table::definition)
-                    .flatMap(Definitions::asLocation);
-                default -> Optional.empty();
-            };
-        }
-        return Optional.empty();
     }
 
     private static Optional<Location> referenceKeyDefinition(CompletionData catalog, String fkName) {
@@ -215,18 +198,6 @@ public final class Definitions {
         }
         var pos = new Position(source.line(), source.column());
         return Optional.of(new Location(source.uri(), new Range(pos, pos)));
-    }
-
-    private static Node stringArgValueAt(
-        Directives.Directive directive, String argName, Point pos, byte[] source
-    ) {
-        for (var arg : directive.arguments()) {
-            if (!arg.contains(pos)) continue;
-            if (!argName.equals(Nodes.text(arg.key(), source))) continue;
-            if (!Nodes.contains(arg.value(), pos)) continue;
-            return arg.value();
-        }
-        return null;
     }
 
 }
