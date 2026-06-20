@@ -1,6 +1,7 @@
 package no.sikt.graphitron.lsp.completions;
 
 import no.sikt.graphitron.lsp.parsing.Behavior;
+import no.sikt.graphitron.lsp.parsing.DirectivePolicy;
 import no.sikt.graphitron.lsp.parsing.LspVocabulary;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import org.eclipse.lsp4j.CompletionItem;
@@ -26,14 +27,11 @@ import java.util.List;
  * <p>R307 carve-out: {@code @record} is deprecated and ignored, so its
  * {@code className} slot binds no Java class. Its
  * {@code ExternalCodeReference.className} coordinate is identical to
- * {@code @enum}'s, so the carve-out cannot key on the coordinate; it gates
- * on the enclosing directive name carried by {@link CompletionContext},
- * mirroring {@code Diagnostics.METHOD_VALIDATING_DIRECTIVES}.
+ * {@code @enum}'s, so the carve-out cannot key on the coordinate; it reads the
+ * enclosing directive name carried by {@link CompletionContext} through
+ * {@link DirectivePolicy#bindsLiveClass}.
  */
 public final class ClassNameCompletions {
-
-    /** Directive whose className slot is deprecated/ignored (R307). */
-    private static final String IGNORED_CLASSNAME_DIRECTIVE = "record";
 
     private ClassNameCompletions() {}
 
@@ -42,7 +40,7 @@ public final class ClassNameCompletions {
         CompletionData data,
         CompletionContext context
     ) {
-        if (IGNORED_CLASSNAME_DIRECTIVE.equals(context.directiveName())) {
+        if (!DirectivePolicy.bindsLiveClass(context.directiveName())) {
             return List.of();
         }
         var behavior = vocabulary.behaviorAt(context.coordinate());

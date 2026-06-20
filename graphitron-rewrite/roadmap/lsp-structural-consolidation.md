@@ -64,9 +64,9 @@ named in the last column.
 | `ClassNameCompletions:36`, `Diagnostics:641/725`, `Hovers:176`, `Definitions:110`; `ExternalFieldCompletions:25`
 | 2
 
-| Two features still dispatch on directive-name string switches, inconsistent with the coordinate-driven design everywhere else
+| Two features still dispatch on directive-name string switches, inconsistent with the coordinate-driven design everywhere else. `Definitions` retired in Slice 2; `InlayHints` moved to Slice 3 (it keys on `InferredDirectiveArgs.Entry`, not a coordinate `Behavior`, so it needs the provider-registry shape, not `behaviorAt`)
 | `Definitions.compute:72`, `InlayHints.collectInferredDirectiveHints:129`
-| 2
+| 2,3
 
 | 10 completion providers share no contract; dispatch is a 40-line manual waterfall with bespoke per-provider signatures and load-bearing ordering encoded only in a comment
 | `GraphitronTextDocumentService.coordinateBasedCompletions:197`
@@ -131,15 +131,36 @@ Learnings vs. the original sketch:
   `GraphqlNodeKind` the main source is roughly net-neutral (+17), with the duplication axis itself
   collapsed (12 → 1, 3 → 1, 2 → 1).
 
-### Slice 2 — one behavior dispatch, policy on the model
+### Slice 2 — one behavior dispatch, policy on the model — SHIPPED
 
-Make the `Behavior` switch authoritative: lift the per-consumer carve-outs onto the arm or a small
-`DirectivePolicy` so `"record"` and `METHOD_VALIDATING_DIRECTIVES` resolve from one place instead of
-scattered literals + "mirrors …" comments (e.g. `ClassNameBinding` carries a `bindsLiveClass` flag;
-a `DirectivePolicy.methodValidating(name)` predicate replaces the set). Route the jOOQ half of
-`Definitions.compute` and the `InlayHints` inferred-directive dispatch through `behaviorAt` / the
-overlay so all four consumers share one dispatch shape and the remaining directive-name string
-switches retire.
+Shipped: introduced `DirectivePolicy` (a string-keyed `final class` in `parsing`, sibling to
+`Behavior`; the user settled the fork in favour of a standalone table over arm-flags on `Behavior`,
+since the carve-outs key on directive *name* where a single coordinate is shared across directives).
+Two predicates, `bindsLiveClass(name)` (false only for `@record`, R307) and `bindsLiveMethod(name)`
+(the former `METHOD_VALIDATING_DIRECTIVES` set), now own the two constant sets; the five copy-pasted
+`"record".equals(...)` carve-outs (`ClassNameCompletions`, `Diagnostics` ×2, `Hovers`, `Definitions`)
+and the privately-owned method-validating set route through them. `DirectivePolicyTest` pins the
+contract. Collapsed `Definitions.compute` + `bindingDefinition` into one coordinate-driven dispatch
+(`locateAt` → `behaviorAt` → exhaustive `Behavior` switch, no `default`), so `Definitions` joins
+`Diagnostics` / `Hovers` on the shared dispatch shape and its `case "table"/"field"/"reference"`
+directive-name switch retires; the jOOQ-half helpers now read the cursor's leaf value. The
+exhaustive switch closes the latent gap where the old `default -> Optional.empty()` silently dropped
+the three catalog bindings.
+
+Learnings / scope vs. the sketch:
+
+- **Behaviour delta (beneficial, called out):** because `Definitions` now dispatches on the resolved
+  coordinate rather than the directive name, a class binding nested inside a jOOQ directive (e.g.
+  `condition.className` inside `@reference(path:)`) now resolves goto-definition through the service
+  half instead of being silently ignored. Net-additive; the existing 419-test oracle stays green.
+- **InlayHints switch deferred to Slice 3, not dropped.** The `switch(entry.directiveName())` in
+  `InlayHints.collectInferredDirectiveHints` keys on `InferredDirectiveArgs.Entry`, not a coordinate
+  `Behavior`, so the spec's "route through `behaviorAt`" mechanism does not apply. The clean
+  retirement (a present-arm strategy mirroring the existing sealed `AbsentArm`) cannot live on the
+  catalog `Entry`: `graphitron` cannot depend on `graphitron-lsp`, yet the present renderers need
+  LSP-only context (`WorkspaceFile`, `TypeContext`, the built snapshot). The only compile-safe home
+  is an LSP-side renderer registry asserted complete by test, which is exactly Slice 3's
+  provider-contract shape; moved there.
 
 ### Slice 3 — a completion-provider contract
 
@@ -148,6 +169,13 @@ registry (a `Map<Class<? extends Behavior>, CompletionProvider>` or a sealed swi
 behavior-guard that opens nearly every provider moves into the dispatcher; the load-bearing ordering
 becomes data, not a comment. Fold the verbatim `formatSignature` and the `CompletionItem`-build
 idiom into a `CompletionItems` factory and share the quote-length logic on `CompletionContext`.
+
+Also retire the `InlayHints.collectInferredDirectiveHints` `switch(entry.directiveName())` (moved
+here from Slice 2): it is the same "registry keyed by directive, asserted complete by test rather
+than a silent `default` arm" shape, the LSP-side mirror of the catalog's sealed `AbsentArm`. The
+present renderers stay LSP-side (they need `WorkspaceFile` / `TypeContext` / the built snapshot); the
+registry pairs each `InferredDirectiveArgs.Entry` with its renderer at one site, and a coverage test
+fails the build when an entry has no renderer (replacing today's silent no-op).
 
 ### Slice 4 — one result-builder
 
@@ -196,9 +224,11 @@ traversal groups. Lowest urgency; do it only if Slices 1-2 leave it still hard t
 - **Node-kind constants home**: extend `DeclarationKind` (which already centralizes declaration-level
   kinds) to cover intra-declaration kinds, or introduce a sibling `GraphqlNodeKind`? Leaning sibling,
   so `DeclarationKind` keeps its declaration-only semantics.
-- **Directive policy shape** (Slice 2): flags on `Behavior` arms vs. a standalone `DirectivePolicy`
-  predicate table. The arm-flag route keeps policy adjacent to dispatch but widens the records; the
-  table keeps records lean but adds a second lookup. Pick during Slice 2's own Spec.
+- **Directive policy shape** (Slice 2): SETTLED in favour of a standalone `DirectivePolicy`
+  predicate table over arm-flags on `Behavior`. The deciding reason was not record width but axis
+  orthogonality: the carve-outs key on directive *name* where a single `Behavior` coordinate is
+  shared across directives (`ExternalCodeReference.className` under both `@record` and `@enum`), so
+  the policy genuinely cannot hang off the arm.
 - **Slice independence**: confirm Slices 2-5 carry no hidden ordering once Slice 1 lands (expected
   yes; each touches a disjoint concern). If a real edge surfaces, file it as a `depends-on`.
 - **Whether Slice 6 is worth doing at all** after 1-2; defer the decision to the end.
