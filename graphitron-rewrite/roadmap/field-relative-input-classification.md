@@ -1,16 +1,84 @@
 ---
 id: R327
 title: "Field-relative input classification (retire @table-on-input and the findReturnTablesForInput aggregate)"
-status: Ready
+status: Spec
 bucket: architecture
 priority: 4
 theme: structural-refactor
-depends-on: []
+depends-on: [coordinate-lowers-to-datafetcher-queryparts]
 created: 2026-06-18
-last-updated: 2026-06-19
+last-updated: 2026-06-20
 ---
 
 # Field-relative input classification (retire @table-on-input and the findReturnTablesForInput aggregate)
+
+## Reopened 2026-06-20: reframed around R333 (read this first)
+
+Reopened Ready → Spec. An In Progress attempt to land the slice 1 below revealed that its
+framing was a local patch to a model that is wrong one layer down. This section is the current
+thesis; the sections from "## Evidence" onward are retained for their analysis (the R330
+attribution, the `buildInputType` mechanics, the two-axes split, the validator-mirror truth table
+all still hold), but the **slice plan and its "collapse onto `PlainInputArg`" mechanism are
+withdrawn**.
+
+**The reframing (from a design discussion with the design lead).** Input classification is
+*contextual*, a function of the consuming output field, not a global property of the input type.
+The same input type used by N output fields is N classifications, each bound to that field's
+table or record. The binding lives on the *argument* (the schema coordinate), never on the type.
+And there is no genuinely "plain" input: the consuming field's kind always supplies a binding
+target.
+
+- Consuming field is a `TableField` / inline table field (or a `ServiceTableField` where a
+  `@reference` / `@condition` is in play) → the input's fields bind against that field's **table**
+  (columns, FK-target refs, conditions).
+- Consuming field is a `ServiceField` / `ServiceTableField` params → the input's fields bind
+  against the **reflected service-method parameter** types. That is the existing `PojoInputType` /
+  `JavaRecordInputType` / `JooqRecordInputType` / `JooqTableRecordInputType`, which are bindings
+  against a Java parameter shape, not "plain".
+
+The only contextless artifact in the system is the `PojoInputType` with `fqClassName=null` that a
+query-only input falls into today (neither a table nor a backing class). That state is the bug, and
+it exists only because `buildInputType` is asked to classify globally with no consumer in view.
+Per-coordinate, it cannot occur: a declared input is always reachable from some output field
+(directly, or as a nested field of another input, recursively).
+
+**Why this points at R333.** This is the input-side instance of R333's normalization. R333
+("Lower each schema coordinate to a DataFetcher and its QueryParts") makes the schema coordinate
+`(parentType, fieldName)` the natural key and treats any per-type binding as a *denormalized view*
+of a per-coordinate lowering; the data's natural keys (columns, PK, FK) are the join graph, and a
+binding is a join *addressed to a coordinate's anchor*. The global `buildInputType` verdict
+(`TableInputType` vs `PojoInputType`, `@table`-on-input) is exactly such a denormalized view, the
+input-side twin of the leaf zoo R333 dissolves. R333 already lowers the input surface this way
+without naming it: its argument/input-granular node kind is the condition method, "a pure function
+of the field's typed argument values ... driven by the input surface, not by the field". Under that
+model, "is this input a `TableInputType`?" is not a question the system asks, and `@table`-on-input
+has nothing left to do. R333 normalizes the *output* leaf zoo exhaustively but never walks the input
+relation; this item is that missing instance.
+
+**Open planning fork (resolve in this Spec pass).**
+
+1. *Fold the input-relation normalization into R333, make R327 the behavioral consequence.* R333
+   grows a section doing for the input relation what it does for the output leaf zoo; R327 becomes
+   "retire `@table`-on-input", landing when R333's model is consumed, depending on R333 rather than
+   racing it. This is the honest home: R333 is the model, R327 is the behavior. (Recommended.)
+2. *Keep R327 narrow and R333-forward-compatible.* Scope it to the one move correct under today's
+   model and a strict subset of where R333 lands: bind a query input arg to the consuming field's
+   table on the **argument** (table = the field's `rt`), so the binding lives on the coordinate,
+   not the type. Leaves the global hierarchy, service inputs, and mutations untouched; kills the
+   null-`PojoInputType` state without pre-empting R333's addressing/naming decisions (still open at
+   R333 lines 391-417).
+
+**Exploration result (the withdrawn attempt, branch `claude/focused-bardeen-si3crx`,
+wip `f8290ff`).** Removing steps 2 & 3 of `buildInputType` and routing every non-`@table` input
+through `PlainInputArg` passed **all** execution-tier, compilation-tier, and pipeline tests, which
+confirms the binding is equivalent. But it (a) produced the meaningless null-class `PojoInputType`
+for shifted query inputs, and (b) broke the R144 implicit-table `@lookupKey` lookup capability
+(`LOOKUP_FIELD_IMPLICIT_TABLE_INPUT_TYPE_ARG_ADMITS_EVERY_FIELD`), because `PlainInputArg` carries
+filter semantics only, not the lookup shape. Both are symptoms of collapsing at the wrong layer:
+the type-level demotion throws away context the coordinate already has. That is the evidence this
+item is R333-shaped, not a `buildInputType` edit.
+
+---
 
 Split out of R317 slice 4 (the classify-and-emit collapse), which deferred this as the one
 non-byte-identical change so the collapse could stay a pure structural delta.
@@ -89,6 +157,13 @@ divergence without adding speculative untestable code. Folded into this item's s
 separately.
 
 ## Spec
+
+> **Superseded by the reframing above (2026-06-20).** The mechanism below ("collapse steps 2 & 3
+> onto `PlainInputArg`", the slice plan) is withdrawn: it patches the global `buildInputType`
+> verdict, but the verdict itself is the denormalized artifact R333 dissolves. The analysis in this
+> section (the three-step critique, the two orthogonal axes, the validator-mirror truth table)
+> remains accurate as a description of *today's* code and is kept as input to the replanning. Do not
+> implement this slice plan; the new plan is pending the fork resolution above.
 
 ### The mistake in `buildInputType` to fix
 
