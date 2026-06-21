@@ -1,6 +1,6 @@
 ---
 id: R349
-title: "LSP goto-definition silently fails for @service/@condition class refs when the source walk yields no index"
+title: "Decouple LSP source positions from the generator build; type the goto-definition outcome"
 status: Backlog
 bucket: bug
 priority: 5
@@ -10,7 +10,7 @@ created: 2026-06-21
 last-updated: 2026-06-21
 ---
 
-# LSP goto-definition silently fails for @service/@condition class refs when the source walk yields no index
+# Decouple LSP source positions from the generator build; type the goto-definition outcome
 
 Goto-definition on a `@service` / `@condition` / `@externalField` class or method
 reference returns no location in a live `graphitron:dev` session ("No definitions
@@ -49,49 +49,88 @@ cross-module shape: services in a different module, or services consumed as a bu
 dependency, so the module's source root is absent from the session's `getAllProjects()`
 source list even when its `target/classes` is present.
 
-## Why it is invisible and total (not partial like tables)
+## Root model: positions are parse-derived; they must not ride the build
 
-Tables survive the same missing-walk condition because `CatalogBuilder.buildTable`
-synthesizes a *file-level* fallback location (`0:0`) from the jOOQ output path on disk
-whenever the generated `.java` exists; external references have **no equivalent
-fallback**, so a missing walk degrades them from "jump to the class" all the way to
-"do nothing". The degradation is also completely silent: `SourceWalker.parse` returns
-an empty map when `ToolProvider.getSystemJavaCompiler()` is `null` (line ~209), with no
-log line, so a consumer whose `graphitron:dev` JVM is a JRE (or whose `JAVA_HOME`
-points at a JRE) loses all service-class navigation with no signal at all. This is the
-trigger for the field report and explains the "never worked" framing.
+Source positions come from parsing `.java` (`SourceWalker`, parse-only, no attribution,
+no classpath resolution), which is independent of compilation; a class is locatable the
+instant its source is on disk. goto-def is nonetheless gated on a build because the source
+walk runs only inside `CatalogBuilder.build`, which the dev server invokes on the
+generator / `.class` cadence (`buildOutputQuietly` at startup, `rebuildCatalog` /
+`regenerate` on triggers). So positions refresh on the wrong cadence and a locationless
+initial catalog stays locationless until something forces a rebuild. `SourceWalker`
+already caches per-file by `.java` mtime; that source-cadence machinery exists and is
+being suppressed by only ever invoking it inside `buildOutput`.
 
-## Confirmed cause and ruled-out triggers
+There is no "pillar" to invert. Bytecode and source are orthogonal axes joined on the
+FQN: bytecode (`ClasspathScanner`) carries what source cannot, accurate erased
+descriptors, overload arity, record components, and binary-only classes with no `.java`;
+source carries what bytecode cannot, positions, Javadoc, and parameter names (always, no
+`-parameters`). Making either the sole spine drops the other axis (a pure-source spine
+would drop binary-only classes from completion). The fix is to stop forcing both axes onto
+one record built on one cadence.
 
-- **Confirmed:** the service module's source root is not on the dev session's
-  `compileSourceRoots`, so `SourceWalker` never indexes those classes and their
-  locations stay `UNKNOWN`. Reproduced above. The mechanism (scan + walk + FQN-join +
-  request path) is otherwise correct.
-- **Ruled out:** no system Java compiler (the reporter's compiler was set and the walk
-  works); FQN-join mismatch (sakila top-level service FQNs match exactly).
+## Design
 
-The asymmetry to investigate in the mojo: `resolveClasspathRoots` and
-`resolveCompileSourceRoots` both iterate `session.getAllProjects()`, yet in the field
-case the classpath covered the service module while the source roots did not. Determine
-why (dev launched from a sub-module so `getAllProjects()` is narrowed; services consumed
-as a binary dependency whose sources are not a reactor module; generated-source roots
-not registered when dev runs outside the `generate-sources` phase) and bring the two
-into parity, or detect and report the gap.
+Two changes, both expressible at the pipeline tier:
 
-## Proposed fix
+1. **Type the resolution outcome (kills the silent no-op).**
+   `CompletionData.SourceLocation.UNKNOWN` is a sentinel (`uri=""`, `line=0`) that
+   conflates three distinct outcomes every consumer re-derives from `uri().isEmpty()`:
+   source *genuinely absent* (binary-only, a correct no-op), source *present but not
+   indexed yet* (the bug, recoverable), and *overload-ambiguous* (a deliberate no-op, per
+   `CompletionData.Method`'s contract). Lift it to a sealed outcome, e.g.
+   `sealed interface DefinitionTarget { record Located(...); record SourceAbsent(...);
+   record Ambiguous(...); }`, decided once by the producer and switched on exhaustively by
+   `Definitions` (and the hover path) instead of testing `uri().isEmpty()` at each site.
+   The not-yet-indexed / `SourceAbsent` arm is what can drive a non-silent signal rather
+   than a dead jump. This is the sealed-over-enum / "consumer switches on a typed outcome,
+   not a sentinel" discipline applied to the LSP request path.
 
-1. **Source-root / classpath-root parity** in the dev goal: any module whose compiled
-   classes are scanned for `@service` candidates should have its source root walked, so
-   a scannable class is always a locatable class.
-2. **Make the gap non-silent**: when an external reference is scanned but no source is
-   found for it (walk empty, or source root not covered), emit a one-time dev-goal
-   warning naming the unlocatable class(es), so the degradation surfaces instead of a
-   silent dead goto-def. (A file-level fallback like the table path is not available
-   here: without the walk there is no source file to point at.)
+2. **LSP-owned source-position index on the source cadence (makes positions
+   build-independent).** Stop baking positions into the generator's `CompletionData`. Keep
+   `CompletionData` as the structure-of-references artifact the codegen consumer wants
+   (bytecode-accurate signatures, overload arity, the FQN ref set, which the generator
+   reads and which never needed positions). Have the LSP own a source-position index
+   produced by `SourceWalker.walk(sourceRoots)` (`SourceWalker` and `Index` stay in
+   `graphitron`, so the `graphitron`-must-not-depend-on-`graphitron-lsp` boundary holds,
+   the LSP just drives the walk), keyed by the FQN / `MethodKey` / `FieldKey`
+   `SourceWalker.Index` already uses, refreshed by a source-root watcher in the dev goal
+   (sibling to the existing classpath watcher). `Definitions` joins "ref from catalog" with
+   "position from the source index" at request time on the FQN both already carry, the
+   same join `enrichExternalReferences` performs today, moved from build-time to
+   request-time and from the generator to the LSP.
 
-Acceptance: a pipeline-tier fixture asserting that a `@service` class scanned from a
-reactor module's `target/classes` resolves to a non-`UNKNOWN` location when that
-module's source root is on the build, and a test that the scanned-but-unlocatable case
-emits a signal rather than degrading silently. Out of scope for R347 (LSP-internal
-consolidation); this is the catalog feed.
+   `SourceWalker.CACHE` is `static` / process-wide; an LSP-driven index must either keep
+   that contract or move the cache to an instance the LSP owns. Decide explicitly in the
+   spec.
+
+## What this is not
+
+- **Not a table-style file-level fallback** (`0:0`) for external refs: without the walk
+  there is no source file to point at, and with the decoupling the walk is always
+  available when sources exist, so the genuine no-jump case is exactly `SourceAbsent`.
+- **Not a change to the codegen consumer:** it keeps consuming the bytecode-derived
+  structure and never reads positions.
+
+## Scope split
+
+- **R351 (stopgap, ship first):** dev-goal `compileSourceRoots` / `classpathRoots` parity
+  so a scanned class is always a walked class. Unblocks the field case immediately without
+  the decoupling.
+- **This item (R349, the durable fix):** the typed outcome (1) plus the LSP-owned
+  source-position index on the source cadence (2). With both, positions no longer ride the
+  build and a source-absent ref is a handled arm rather than a silent dead jump, so the
+  class of bug is structurally closed regardless of how roots are wired.
+
+## Acceptance
+
+- A sealed definition-outcome type with `Definitions` (and the hover path) switching
+  exhaustively; pipeline-tier tests that the `SourceAbsent` and `Ambiguous` arms are
+  reachable and produce the intended behaviours (no jump with a signal vs no jump silently
+  by design).
+- A source-position lookup the LSP refreshes on `.java` change independent of
+  `buildOutput`; a test that a position is available after a source edit without a catalog
+  rebuild.
+- Out of scope for R347 (LSP-internal consolidation); this is the catalog feed / LSP
+  request path.
 
