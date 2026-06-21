@@ -759,6 +759,51 @@ class MutationDmlNodeIdClassificationTest {
             .contains("@mutation(typeName: UPSERT) is not supported under the R144");
     }
 
+    // ===== R328: self-FK @nodeId @reference on @mutation INSERT inputs =====
+
+    @Test
+    void selfFkNodeIdReference_insert_admitsAsCompositeColumnReference_surfacingSharedColumn() {
+        // R328 (D1): the neutral CAMPUS shape on a Graphitron-owned INSERT. `email` has composite PK
+        // (mailbox_id, message_no). `inReplyTo` is a same-table @nodeId(typeName: "Email") @reference
+        // naming the self-FK email_in_reply_to_fk — admitted as a CompositeColumnReferenceField whose
+        // liftedSourceColumns are the self-FK's child columns (mailbox_id, in_reply_to_no), NOT the
+        // row's own PK. `mailboxRef` is the cross-table FK to mailbox (ColumnReferenceField over
+        // mailbox_id). The two reference carriers BOTH write mailbox_id — the shared-column overlap
+        // R322 dedups + agreement-checks at runtime (not a classify-time reject, because both writers
+        // carry a @nodeId decode). INSERT admits the composite reference carrier (the R130 carve-out
+        // gates only CompositeColumnField, never the reference carriers).
+        var schema = TestSchemaHelper.buildSchema("""
+            type Mailbox implements Node @table(name: "mailbox") @node { id: ID! @nodeId }
+            type Email implements Node @table(name: "email") @node { id: ID! @nodeId }
+            input InsertEmailReplyInput @table(name: "email") {
+                mailboxRef: ID! @nodeId(typeName: "Mailbox")
+                messageNo: Int! @field(name: "message_no")
+                inReplyTo: ID @nodeId(typeName: "Email") @reference(path: [{key: "email_in_reply_to_fk"}])
+            }
+            type Query { x: String }
+            type Mutation { insertEmailReply(in: InsertEmailReplyInput!): ID @mutation(typeName: INSERT) }
+            """);
+
+        var f = (MutationField.MutationInsertTableField) schema.field("Mutation", "insertEmailReply");
+        var fields = f.tableInputArg().fields();
+
+        var selfRef = (no.sikt.graphitron.rewrite.model.InputField.CompositeColumnReferenceField)
+            fields.stream().filter(x -> x.name().equals("inReplyTo")).findFirst().orElseThrow();
+        assertThat(selfRef.liftedSourceColumns())
+            .as("self-FK reference lifts the FK child columns on email's own table")
+            .extracting(ColumnRef::sqlName)
+            .containsExactly("mailbox_id", "in_reply_to_no");
+        assertThat(selfRef.extraction())
+            .isInstanceOf(no.sikt.graphitron.rewrite.model.CallSiteExtraction.NodeIdDecodeKeys.class);
+
+        var mailboxRef = (no.sikt.graphitron.rewrite.model.InputField.ColumnReferenceField)
+            fields.stream().filter(x -> x.name().equals("mailboxRef")).findFirst().orElseThrow();
+        assertThat(mailboxRef.liftedSourceColumns())
+            .as("cross-table FK reference shares the mailbox_id child column with the self-FK")
+            .extracting(ColumnRef::sqlName)
+            .containsExactly("mailbox_id");
+    }
+
     @Test
     void deleteIdCarrier_inputTableNotNodeBacked_rejects() {
         // R156: implicit Id recognition needs the input @table to be @node-backed. Qux has no

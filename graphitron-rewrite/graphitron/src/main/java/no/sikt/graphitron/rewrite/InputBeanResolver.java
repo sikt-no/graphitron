@@ -438,13 +438,16 @@ final class InputBeanResolver {
      * is the param record's own table (R311 identity) or a different table (R315 FK reference):
      *
      * <ul>
-     *   <li><b>Same table</b> (node table == record table) → the decode loads the record's own key
-     *       columns. An explicit {@code @reference} here can only name a self-FK (the out-of-scope
-     *       self-reference request) and is rejected, rather than silently taking the identity branch
-     *       with the authored directive ignored.</li>
-     *   <li><b>Different table</b> → the cross-table FK-reference case: the node-key columns map through
-     *       the foreign key (deduced when exactly one connects the two tables, else named by
-     *       {@code @reference(key:)}) to the FK's child columns on this record, via
+     *   <li><b>Same table, no {@code @reference}</b> (node table == record table) → the decode loads
+     *       the record's own key columns (own-PK identity).</li>
+     *   <li><b>Same table, with {@code @reference}</b> → a self-FK reference (R328): the
+     *       {@code @reference} names a same-table foreign key, and the node-key columns map through
+     *       it to the self-FK's child columns on this record (never the record's own PK), via
+     *       {@link BuildContext#resolveRecordFkTargetColumns} oriented with
+     *       {@code selfRefFkOnSource=true}.</li>
+     *   <li><b>Different table</b> → the cross-table FK-reference case (R315): the node-key columns
+     *       map through the foreign key (deduced when exactly one connects the two tables, else named
+     *       by {@code @reference(key:)}) to the FK's child columns on this record, via the same
      *       {@link BuildContext#resolveRecordFkTargetColumns}.</li>
      * </ul>
      *
@@ -468,20 +471,17 @@ final class InputBeanResolver {
         var resolved = (BuildContext.NodeIdRecordDecode.Resolved) resolution;
         boolean nonNull = GraphQLTypeUtil.isNonNull(f.getType());
         List<ColumnRef> targetColumns;
-        if (resolved.table().recordClass().equals(table.recordClass())) {
+        if (resolved.table().recordClass().equals(table.recordClass())
+                && !f.hasAppliedDirective(DIR_REFERENCE)) {
             // Same-table identity (R311): the decoded values are the record's own key columns.
-            if (f.hasAppliedDirective(DIR_REFERENCE)) {
-                return new KeyDecodeResult.Fail(Rejection.structural(where
-                    + ": @nodeId(typeName: \"" + typeName.get() + "\") on field '" + f.getName()
-                    + "' targets the param's own record '" + table.recordClass() + "', so its @reference"
-                    + " can only name a self-foreign-key — self-reference record population is out of"
-                    + " scope (legacy never solved it). Drop the @reference to populate the record's own"
-                    + " identity, or model the self-FK through a separate input"));
-            }
             targetColumns = resolved.keyColumns();
         } else {
-            // Cross-table FK reference (R315): map the node-key columns through the FK to the record's
-            // child columns.
+            // Cross-table FK reference (R315), or a same-table self-FK reference (R328): map the
+            // node-key columns through the FK to the record's child columns. A same-table @nodeId
+            // *with* @reference names a self-FK — resolveRecordFkTargetColumns orients it through
+            // resolveFkSlots(selfRefFkOnSource=true), landing the decoded keys on the self-FK's
+            // child columns on this record, never the record's own PK. Same-table *without*
+            // @reference is the identity branch above.
             var fkTargets = ctx.resolveRecordFkTargetColumns(
                 table, resolved.table().tableName(), resolved.keyColumns(), firstReferenceKey(f));
             if (fkTargets instanceof BuildContext.RecordFkTargets.Rejected fr) {

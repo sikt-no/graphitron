@@ -2368,8 +2368,11 @@ class BuildContext {
             fk = directional.get(0);
         }
         // Orient the FK against the record table as source: slot.sourceSide is the FK child column on
-        // the record, slot.targetSide is the referenced (node-key) column. selfRefFkOnSource is moot
-        // (a self-FK would mean record table == node table, the rejected out-of-scope self-reference).
+        // the record, slot.targetSide is the referenced (node-key) column. selfRefFkOnSource is live
+        // since R328: when the FK is a self-FK (record table == node table, e.g. CAMPUS's
+        // CAMPUS_EIER_CAMPUS_FK), the table-name comparison cannot decide orientation, so the
+        // selfRefFkOnSource=true hint places the FK on the record (source) side and the decoded
+        // node-key values land on the self-FK's child columns rather than the record's own PK.
         var slots = resolveFkSlots(fk, recordTable.tableName(), /*selfRefFkOnSource=*/true);
         var targetColumns = new ArrayList<ColumnRef>(nodeKeyColumns.size());
         for (var nodeKeyCol : nodeKeyColumns) {

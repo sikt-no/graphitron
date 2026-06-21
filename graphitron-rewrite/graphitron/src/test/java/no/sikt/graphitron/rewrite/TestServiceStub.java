@@ -739,4 +739,16 @@ class TestServiceStub {
             no.sikt.graphitron.rewrite.nodeidfixture.tables.records.ChildRefRecord in) {
         throw new UnsupportedOperationException();
     }
+
+    /**
+     * R328 self-FK reference pin (public catalog): an {@link EmailRecord} whose self-FK
+     * {@code email_in_reply_to_fk (mailbox_id, in_reply_to_no) -> (mailbox_id, message_no)} lets a
+     * same-table {@code @nodeId(typeName: "Email") @reference} populate the reply-pointer child columns
+     * (never the record's own composite PK). The decoded Email key lands on
+     * {@code (mailbox_id, in_reply_to_no)}.
+     */
+    public static String modifyEmailRecord(
+            no.sikt.graphitron.rewrite.test.jooq.tables.records.EmailRecord in) {
+        throw new UnsupportedOperationException();
+    }
 }

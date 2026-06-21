@@ -31,14 +31,19 @@ import static no.sikt.graphitron.rewrite.BuildContext.argString;
  * type backing the containing table):
  *
  * <ul>
- *   <li><b>Same-table</b> — {@code T.table()} equals the containing table. The argument supplies
- *       encoded ids of the containing table's own rows. This is a <em>lookup by definition</em>:
- *       cardinality is bounded by the input list, ordering reflects input membership, and there
- *       is no result set to seek through.</li>
+ *   <li><b>Same-table</b> — {@code T.table()} equals the containing table <em>and no
+ *       {@code @reference} is present</em>. The argument supplies encoded ids of the containing
+ *       table's own rows. This is a <em>lookup by definition</em>: cardinality is bounded by the
+ *       input list, ordering reflects input membership, and there is no result set to seek
+ *       through.</li>
  *   <li><b>FK-target</b> — {@code T.table()} is reachable from the containing table via a single
  *       foreign key (auto-discovered or pinned with {@code @reference(path:)}). The argument
  *       supplies encoded ids of a related table; the predicate is "row's FK column ∈ decoded
- *       keys". This is a <em>filter</em>.</li>
+ *       keys". This is a <em>filter</em>. A <em>self-FK</em> — {@code T.table()} equals the
+ *       containing table but an explicit {@code @reference} names a same-table foreign key — is a
+ *       FK-target too (R328): the decoded keys land on the self-FK's child columns, never the
+ *       row's own identity. The {@code @reference} is what disambiguates own-identity from
+ *       self-reference; absent it, the same-table case is own-PK identity above.</li>
  * </ul>
  *
  * <p>The same shape distinction explains the directive composition table:
@@ -266,7 +271,17 @@ final class NodeIdLeafResolver {
                 + "' (zero or multiple GraphQL types map to it)."));
         }
 
-        if (targetTableName.equalsIgnoreCase(containingTable.tableName())) {
+        // Same-table short-circuit (own-PK identity) only when @reference is absent. An explicit
+        // @reference on a same-table @nodeId names a self-FK: "this field points at a *different*
+        // row of the same table" (R328). Falling through to resolveFkJoinPath resolves that self-FK
+        // — parsePath orients it with selfRefFkOnSource=true, so liftedSourceColumns become the
+        // self-FK's child columns on the row's own table, the same DirectFk data shape a cross-table
+        // FK carries. This single gate is shared by every resolve() caller (the write-side
+        // input-field classifier, the read-side input-field filter arm, and the top-level @nodeId
+        // argument arm), so a same-table @nodeId @reference is admitted as a self-FK filter on the
+        // read side too (WHERE child_cols IN (decoded keys), no self-join) — by design.
+        if (targetTableName.equalsIgnoreCase(containingTable.tableName())
+                && !leaf.hasAppliedDirective(DIR_REFERENCE)) {
             return new Resolved.SameTable(refTypeName, decodeMethod, keys.keyColumns());
         }
 

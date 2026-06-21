@@ -465,24 +465,35 @@ class JooqRecordServiceParamPipelineTest {
     }
 
     @Test
-    void referenceOnSameTableNodeId_rejectsAsSelfReference() {
-        // An @reference on a @nodeId targeting the param's own table can only name a self-FK — out of
-        // scope. Reject rather than silently taking the identity branch and ignoring the directive.
+    void selfFkReferenceOnSameTableNodeId_admits_targetsSelfFkChildColumns() {
+        // R328 (D2): a same-table @nodeId(typeName: "Email") carrying an explicit @reference names the
+        // self-FK email_in_reply_to_fk. R315's same-table reject ("self-reference ... out of scope") is
+        // lifted; the case now routes through the same resolveRecordFkTargetColumns the cross-table
+        // branch uses, oriented with selfRefFkOnSource=true. The RecordKeyDecode targets the self-FK's
+        // child columns (mailbox_id, in_reply_to_no) on the record — NOT the record's own composite PK
+        // (mailbox_id, message_no). mailbox_id is the column shared with the cross-table email→mailbox
+        // FK; the runtime value-agreement reconciling a second writer on it is R322's, not asserted here.
         var sdl = """
-            type Film implements Node @table(name: "film") @node { id: ID! }
-            input SelfRefInput {
-                filmId: ID! @nodeId(typeName: "Film") @reference(path: [{key: "film_endorsement_endorsed_film_fkey"}])
+            type Email implements Node @table(name: "email") @node { id: ID! }
+            input ReplyEmailInput {
+                inReplyTo: ID! @nodeId(typeName: "Email") @reference(path: [{key: "email_in_reply_to_fk"}])
             }
             type Query {
-                selfRef(in: SelfRefInput!): String
-                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "modifyFilmRecord"})
+                replyEmail(in: ReplyEmailInput!): String
+                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "modifyEmailRecord"})
             }
             """;
-        var field = TestSchemaHelper.buildSchema(sdl).field("Query", "selfRef");
-        assertThat(field).isInstanceOf(UnclassifiedField.class);
-        assertThat(((UnclassifiedField) field).reason())
-            .contains("self-foreign-key")
-            .contains("out of scope");
+        var jr = carrier(sdl, "replyEmail", false);
+        assertThat(jr.table().recordClass().toString())
+            .isEqualTo("no.sikt.graphitron.rewrite.test.jooq.tables.records.EmailRecord");
+        assertThat(jr.keyDecodes()).hasSize(1);
+        var kd = jr.keyDecodes().get(0);
+        assertThat(kd.leaf()).isEqualTo("inReplyTo");
+        assertThat(kd.typeId()).isEqualTo("Email");
+        assertThat(kd.targetColumns())
+            .as("decoded Email key lands on the self-FK child columns, not the record's own PK")
+            .extracting(c -> c.sqlName())
+            .containsExactly("mailbox_id", "in_reply_to_no");
     }
 
     @Test

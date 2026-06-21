@@ -1820,6 +1820,32 @@ input UpdateEndorsementOverlapInput @table(name: "film_endorsement") {
     endorsedFilm: Int @field(name: "endorsed_film")
 }
 
+# R328 execution-tier fixture: a self-FK @nodeId reference on a Graphitron-owned INSERT — the neutral
+# `email` form of the CAMPUS self-FK case. email's composite PK is (mailbox_id, message_no). mailbox_id
+# is written by BOTH the cross-table @nodeId(typeName: "Mailbox") reference (mailboxRef, landing on
+# email.mailbox_id via the email -> mailbox FK) AND the self-FK @nodeId(typeName: "Email") @reference
+# (inReplyTo, landing on email_in_reply_to_fk's child columns (mailbox_id, in_reply_to_no)). R322's
+# per-column dedup collapses the doubled mailbox_id to one INSERT cell + a requireColumnAgreement check:
+# a reply lives in its parent's mailbox, so the two writers agree (insert) or disagree (throw, insert
+# nothing). inReplyTo is nullable so an omitted self-FK leaves the lone mailboxRef decode on mailbox_id
+# (the presence guard) and in_reply_to_no stays NULL.
+type Mailbox implements Node @table(name: "mailbox") @node {
+    id: ID! @nodeId
+    ownerName: String @field(name: "owner_name")
+}
+type Email implements Node @table(name: "email") @node {
+    id: ID! @nodeId
+    messageNo: Int @field(name: "message_no")
+    inReplyToNo: Int @field(name: "in_reply_to_no")
+    subject: String @field(name: "subject")
+}
+input InsertEmailReplyInput @table(name: "email") {
+    mailboxRef: ID! @nodeId(typeName: "Mailbox")
+    messageNo: Int! @field(name: "message_no")
+    subject: String @field(name: "subject")
+    inReplyTo: ID @nodeId(typeName: "Email") @reference(path: [{key: "email_in_reply_to_fk"}])
+}
+
 # R75 Phase 1: single-record DML carrier payload type. The SDL author authors no Java class —
 # the type promotes to PojoResultType.NoBacking at type-classification time; the data field
 # classifies as ChildField.SingleRecordTableField; the mutation classifies as
@@ -2267,6 +2293,13 @@ type Mutation {
     # filmRef (@nodeId FK reference). requireColumnAgreement throws on disagreement before the .set(sets)
     # runs; agreeing writers update to the agreed value.
     updateEndorsementOverlap(in: UpdateEndorsementOverlapInput!): FilmEndorsement @mutation(typeName: UPDATE)
+
+    # R328 self-FK @nodeId reference on a Graphitron-owned INSERT: inReplyTo (self-FK email_in_reply_to_fk)
+    # and mailboxRef (cross-table email -> mailbox FK) both write mailbox_id. R322's per-column dedup
+    # collapses the doubled column to one INSERT cell and requireColumnAgreement throws when the reply's
+    # decoded mailbox disagrees with mailboxRef; agreeing writers insert (in_reply_to_no carries the
+    # parent's message_no). An omitted inReplyTo leaves the lone mailboxRef decode (in_reply_to_no NULL).
+    insertEmailReply(in: InsertEmailReplyInput!): Email @mutation(typeName: INSERT)
 
     # R315 D4 execution pin: a nullable same-table identity (addressId: ID @nodeId(typeName: "Address"))
     # on a jOOQ AddressRecord @service param, resolving to the record's own serial PK (address_id).
