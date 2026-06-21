@@ -146,7 +146,7 @@ public class GraphitronTextDocumentService implements TextDocumentService {
                 params.getPosition().getLine(),
                 params.getPosition().getCharacter()).tsPoint();
             return Definitions.compute(workspace.vocabulary(), file, workspace.catalog(), workspace.snapshot(), pos)
-                .or(() -> IntraSchemaDefinitions.compute(workspace, params.getTextDocument().getUri(), pos))
+                .or(() -> IntraSchemaDefinitions.compute(workspace, workspace.snapshot(), params.getTextDocument().getUri(), pos))
                 .map(loc -> Either.<List<? extends Location>, List<? extends LocationLink>>forLeft(List.of(loc)))
                 .orElseGet(() -> Either.forLeft(List.of()));
         });

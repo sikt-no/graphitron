@@ -1,7 +1,7 @@
 ---
 id: R350
 title: "LSP goto-definition for GraphQL types only resolves declarations in open buffers; fall back to the TDR/snapshot for workspace-wide jumps"
-status: Ready
+status: In Review
 bucket: bug
 priority: 5
 theme: lsp
@@ -96,6 +96,31 @@ LspSchemaSnapshot, String, Point)` signature so the snapshot is injected as a pa
   the result is the live tree-sitter name span, not the snapshot position, even if both are present.
 - **Neither source.** Unknown type with an `Unavailable` (or non-matching `Built.Current`) snapshot
   and no open declaration returns empty, preserving the current no-op behaviour.
+
+## Implementation (In Progress → In Review, 2026-06-21)
+
+Shipped as specified.
+
+- **Producer.** `LspSchemaSnapshot.Built` gains `typeDefinitionLocations()` (`Map<String,
+  CompletionData.SourceLocation>`, keyed by SDL type name) plus a `typeDefinitionLocation(name)`
+  convenience lookup. Threaded through both leaf records' canonical constructors and
+  `Workspace.demoteSnapshot`; a new 5-arg convenience constructor on each record defaults the
+  map to `Map.of()` so every pre-existing 3-arg and 5-arg fixture compiles untouched.
+  `CatalogBuilder.buildSnapshot` populates it from `registry.types()` + `registry.scalars()`,
+  reducing graphql-java's 1-based `SourceLocation` to the 0-based coordinates every
+  goto-definition consumer reads (mirroring `SourceWalker`'s `-1`). Null-source definitions
+  (built-in scalars) and the bundled directive source are dropped; the bundled source-name is
+  exposed as `RewriteSchemaLoader.DIRECTIVES_SOURCE_NAME` rather than hard-coded.
+- **Consumer.** `IntraSchemaDefinitions.compute(Workspace, LspSchemaSnapshot, String, Point)`:
+  the open-buffer tree-sitter scan stays first and authoritative; on miss it falls back to
+  `built.typeDefinitionLocation(typeName)`. `GraphitronTextDocumentService` passes
+  `workspace.snapshot()` at the call site.
+- **Tests.** `IntraSchemaDefinitionTest` adds the three acceptance arms (snapshot fallback,
+  open-buffer precedence over a deliberately stale snapshot entry, neither-source no-op), each
+  injecting a `Built.Current` fixture. `CatalogBuilderSnapshotTest` adds a producer-side arm
+  driving the real `RewriteSchemaLoader.load` parse path (temp file) and asserting the map
+  carries user types/scalars at 0-based positions while dropping built-ins and bundled-directive
+  inputs/enums. Full `mvn install -Plocal-db` green.
 
 ## Reviewer note (Spec → Ready, 2026-06-21) — resolved
 

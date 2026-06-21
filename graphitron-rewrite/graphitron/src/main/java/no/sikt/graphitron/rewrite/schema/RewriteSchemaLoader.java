@@ -33,6 +33,18 @@ public final class RewriteSchemaLoader {
 
     private static final String DIRECTIVES_RESOURCE = "directives.graphqls";
 
+    /**
+     * The {@link MultiSourceReader} source-name under which the bundled
+     * {@code directives.graphqls} is registered (see {@link #addDirectivesSource}).
+     * graphql-java stamps this string onto the {@code SourceLocation} of every
+     * definition the bundled source contributes (the directive definitions plus the
+     * inputs/enums they reference). Consumers that walk the
+     * {@link TypeDefinitionRegistry} for user-authored declarations (the LSP's
+     * goto-definition type-location map) filter this source out: it is a classpath
+     * resource name, not a file path a consumer can open.
+     */
+    public static final String DIRECTIVES_SOURCE_NAME = DIRECTIVES_RESOURCE;
+
     private RewriteSchemaLoader() {}
 
     /**

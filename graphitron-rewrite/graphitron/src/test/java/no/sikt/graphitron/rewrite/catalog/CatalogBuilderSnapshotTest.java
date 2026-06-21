@@ -6,9 +6,13 @@ import graphql.schema.idl.SchemaParser;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.TableRef;
+import no.sikt.graphitron.rewrite.schema.RewriteSchemaLoader;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -247,6 +251,44 @@ class CatalogBuilderSnapshotTest {
 
         assertThat(snapshot.typesByName().get("Shape"))
             .isInstanceOf(TypeBackingShape.NoBacking.UnclassifiedInterface.class);
+    }
+
+    // ---- R350: type-definition source locations ----
+
+    @Test
+    void typeDefinitionLocationsCarryUserTypesAndScalarsButNotBuiltinsOrBundled(@TempDir Path dir) throws Exception {
+        // Drive the production parse path (MultiSourceReader + trackData) so SourceLocations
+        // carry a real sourceName; SchemaParser.parse(String) would leave it null. The loader
+        // also injects the bundled directives.graphqls, whose inputs/enums must be filtered.
+        var schemaFile = dir.resolve("schema.graphqls");
+        Files.writeString(schemaFile, """
+            type Query {
+              film: Film
+            }
+
+            type Film {
+              title: String
+            }
+
+            scalar DateTime
+            """);
+
+        var snapshot = CatalogBuilder.buildSnapshot(RewriteSchemaLoader.load(List.of(schemaFile.toString())));
+        var locations = snapshot.typeDefinitionLocations();
+
+        // User-authored object type: keyed by name, pointing at its declaring file at the
+        // declaration start, reduced to 0-based LSP coordinates.
+        var film = snapshot.typeDefinitionLocation("Film").orElseThrow();
+        assertThat(film.uri()).isEqualTo("file://" + schemaFile);
+        assertThat(film.line()).isEqualTo(4);   // "type Film" is the 5th line (0-based 4)
+        assertThat(film.column()).isZero();
+
+        // User-declared scalar is carried too.
+        assertThat(locations).containsKey("DateTime");
+
+        // Built-in scalars (null sourceName) and bundled-directive inputs/enums are dropped
+        // rather than emitted as dead file:// URIs.
+        assertThat(locations).doesNotContainKeys("String", "Int", "ErrorHandler", "MutationType");
     }
 
     private static GraphitronSchema schemaOf(String name, GraphitronType type) {
