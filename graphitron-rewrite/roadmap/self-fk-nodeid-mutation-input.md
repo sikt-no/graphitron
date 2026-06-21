@@ -1,7 +1,7 @@
 ---
 id: R328
 title: "Self-FK @nodeId reference on Graphitron-owned DML mutation inputs"
-status: Spec
+status: Ready
 bucket: feature
 priority: 4
 theme: nodeid
