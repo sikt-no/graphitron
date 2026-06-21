@@ -1,7 +1,7 @@
 ---
 id: R328
 title: "Self-FK @nodeId reference on Graphitron-owned DML mutation inputs"
-status: Ready
+status: In Review
 bucket: feature
 priority: 4
 theme: nodeid
@@ -126,6 +126,17 @@ the invariant with a test asserting **both paths admit the identical self-FK SDL
 CAMPUS/email mirror) and **both treat a same-table `@nodeId` *without* `@reference` as identity**.
 (A thin shared `BuildContext.isSelfFkReference(leaf, containingTable)` both sites call is an
 acceptable alternative if a future reviewer prefers code over a test; not required here.)
+
+One nuance the orientation-is-shared framing glosses: beyond orientation, the *node-key
+reconciliation* step (aligning the FK child columns to decode order) is itself duplicated — D1
+permutes via `permutationToKeyColumns`, D2 matches via a `targetSide`-name loop in
+`resolveRecordFkTargetColumns`. The email fixture's self-FK declares its child columns in node-key
+order, so the CAMPUS/email anti-drift case exercises both reconciliations only on the *identity*
+permutation. Because the reconciliation is orientation-agnostic, a **reordered** FK (the existing
+`reordered_fk_child -> reordered_pk_parent` fixture, whose FK references the parent PK in a
+different order than `__NODE_KEY_COLUMNS`) forces a non-identity permutation through both
+implementations; a second anti-drift case asserts they still land identical child columns, closing
+the reconciliation surface the orientation-sharing argument leaves open.
 
 ## Scope and boundaries
 

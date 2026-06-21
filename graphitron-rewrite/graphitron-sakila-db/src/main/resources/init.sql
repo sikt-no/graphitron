@@ -435,6 +435,39 @@ AS $$
     WHERE p_feide_id IS NOT NULL
 $$;
 
+-- R328 fixture: self-FK @nodeId reference on a Graphitron-owned DML input — the neutral
+-- `email` / `mailbox` form of the CAMPUS self-FK case. `email` has a composite PK
+-- (mailbox_id, message_no). Two foreign keys share the `mailbox_id` child column:
+--   * cross-table  `email.mailbox_id -> mailbox(mailbox_id)`        (admitted since R189)
+--   * self-FK      `email_in_reply_to_fk (mailbox_id, in_reply_to_no)
+--                       -> email(mailbox_id, message_no)`          (this item)
+-- An INSERT input that writes mailbox_id via a cross-table @nodeId(typeName:"Mailbox") AND
+-- via a self-FK @nodeId(typeName:"Email") @reference exercises R322's per-column dedup +
+-- value-agreement on the shared mailbox_id (a reply lives in its parent's mailbox, so the two
+-- writers must agree). MATCH SIMPLE means a NULL in_reply_to_no skips the self-FK check, so a
+-- root email needs no parent. Seeds one mailbox + one root email per owner so inserted replies
+-- satisfy both FKs; the execution test inserts replies with distinct message_no and cleans up.
+CREATE TABLE mailbox (
+    mailbox_id int PRIMARY KEY,
+    owner_name varchar(50)
+);
+
+CREATE TABLE email (
+    mailbox_id     int NOT NULL REFERENCES mailbox(mailbox_id),
+    message_no     int NOT NULL,
+    in_reply_to_no int,
+    subject        varchar(100),
+    PRIMARY KEY (mailbox_id, message_no),
+    CONSTRAINT email_in_reply_to_fk
+        FOREIGN KEY (mailbox_id, in_reply_to_no)
+        REFERENCES email (mailbox_id, message_no)
+);
+
+INSERT INTO mailbox (mailbox_id, owner_name) VALUES (5, 'alice'), (9, 'bob');
+INSERT INTO email (mailbox_id, message_no, in_reply_to_no, subject) VALUES
+    (5, 1, NULL, 'root-in-5'),
+    (9, 1, NULL, 'root-in-9');
+
 -- ===========================
 -- nodeidfixture schema
 -- ===========================
