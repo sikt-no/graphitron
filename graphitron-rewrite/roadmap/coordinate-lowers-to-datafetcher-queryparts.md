@@ -251,6 +251,26 @@ traversal, and the two field kinds differ only in which the field's other facts 
 Both are one edge-alteration seen against different fixed endpoints: `reference` parametrizes the edge
 between the enclosing query and the value, never the endpoints.
 
+The shape axis (Column vs Table) is independent of a second axis the reference also carries: **direction**.
+A reference is **to-one** when the foreign key sits on the parent's side (a *parent reference*: each parent
+row points at one destination row) or **to-many** when it sits on the child's side (a *child reference*:
+many destination rows point back at one parent). Direction sets the `target` **wrapper** by the same
+wrapper-from-direction rule table fields obey: to-one yields `Single`, to-many yields `List`. The two axes
+are orthogonal, a 2x2:
+
+| | to-one (parent reference) | to-many (child reference) |
+|---|---|---|
+| **Column** | `Single(Column)` ; `film.originalLanguageName` | `List(Column)` ; `film.actorNames: [String]` |
+| **Table** | `Single(Table)` ; `film.language` | `List(Table)` ; `actor.films` |
+
+Today's `ColumnReferenceField` is only the top-left corner (`OutputField.single(Column)`,
+`ChildField.java:133`); **`List(Column)` is the missing corner**, a list of one scalar drawn from the
+to-many child rows. With it, column-ref and table-ref differ *only* in `target.shape`, and `Single` / `List`
+differ *only* in direction; `resolvedTable` is the destination table B in every cell. A `List(Column)` child
+reference is not a cheap scalar variant: being to-many it needs the same machinery as a to-many table field
+(a `Child` source, an anchor, a rows-method, batched or aggregated), projecting one column instead of
+`$fields` ; it is "a to-many table field minus the nested projection."
+
 `reference` is **authored or inferred**, and the inference is total with a typed failure. `@reference`
 supplies it explicitly; absent that, it is inferred from the foreign keys between `source.table` and the
 destination ; **exactly one** FK and the path is inferred, **zero or more than one** and it is not
@@ -300,6 +320,30 @@ omits the table because this fact owns it). Consumers then read one fact instead
 - a field's `resolvedTable` is its children's `source.table` ; the table-level form of the wrapper algebra
   (a field's target shape becomes its children's source shape), and the actual carrier of the
   parent-to-child table flow.
+
+### Conditions key on the resolved table
+
+A `@condition` is a predicate, and predicates attach to **relations**, not to projections; the relation a
+field reads is its `resolvedTable`. So a `condition` operation keys on `resolvedTable`, not on `target`. The
+two choices coincide everywhere a condition is legal today, because `resolvedTable == target.table` for
+table fields, so this is the normalized statement of the current behavior (`filters` live on
+`TableTargetField` today, `ChildField.java:422`), not a change to it; it merely extends cleanly to the cases
+where `target` is a scalar that names no table.
+
+The condition's **semantic forks on `target.wrapper`, not on `target.shape`**:
+
+- **`List` (to-many)**: row-set filtering ; "which rows of `resolvedTable` contribute." Standard, no
+  parent-cardinality hazard (the set is already per-parent, batched or aggregated). True identically for
+  `List(Column)` and `List(Table)`. This is why allowing child references makes conditions obviously
+  sensible: a `List(Column)` child reference has a real relation to filter.
+- **`Single` (to-one)**: value-gating ; "null the value when the predicate fails." Correct only with the
+  predicate in the join's **ON clause** under a `LEFT JOIN`, so a failing predicate nulls the value rather
+  than dropping the parent row. This subtlety is a property of the `Single` wrapper, shared by
+  `Single(Table)` and `Single(Column)` alike ; it was never a column-reference quirk.
+
+So conditions over `resolvedTable` are first-class for every wrapper. The only open semantic is `Single`
+value-gating (the ON-clause placement and the parent-cardinality-preserved invariant), and it is owed for
+to-one table references regardless, so it is not new debt introduced by allowing column references.
 
 ## We are data modeling: the relational discipline, not a database engine
 
@@ -638,6 +682,15 @@ contribution.
   (sealed-variant type safety, the model's still-discovered column set, and the small fact count all argue
   against it). An incremental memoized-query engine for the LSP is reserved as a separate question, out of
   scope here.
+- **Condition placement and the `Single` value-gating semantic**. **Resolved (the resolved-table section):**
+  a `condition` keys on `resolvedTable`, and its semantic forks on `target.wrapper` (`List` = row-set
+  filtering, `Single` = value-gating). **Open residue:** the `Single` value-gating semantic itself, the
+  predicate's ON-clause placement under a `LEFT JOIN` and the parent-cardinality-preserved invariant. Owed
+  for to-one table references regardless, so allowing column-reference conditions adds no new debt here.
+- **The `List(Column)` corner**: the to-many child column reference is named but unmodeled (today's
+  `ColumnReferenceField` is only `Single(Column)`). Settle whether it lands as a wrapper variant of the
+  reference fact reusing the to-many table-field machinery (a `Child` source, an anchor, a rows-method,
+  projecting one column instead of `$fields`), or as its own leaf, before it is implemented.
 
 ## Scope
 
