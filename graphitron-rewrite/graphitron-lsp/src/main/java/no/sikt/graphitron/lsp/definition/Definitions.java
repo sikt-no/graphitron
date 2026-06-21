@@ -11,10 +11,13 @@ import no.sikt.graphitron.lsp.parsing.TypeContext;
 import no.sikt.graphitron.lsp.state.WorkspaceFile;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
+import no.sikt.graphitron.rewrite.catalog.SourceWalker;
 import org.eclipse.lsp4j.Location;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
 import io.github.treesitter.jtreesitter.Point;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.Optional;
 
@@ -46,14 +49,20 @@ import java.util.Optional;
  * {@code condition.className} inside {@code @reference(path:)}) resolves through
  * the service half rather than being silently ignored.
  *
- * <p>Returns {@link Optional#empty()} when the cursor is not on a
- * known directive arg, when the arg value does not resolve in the
- * catalog, or when the catalog entry has no source location
- * ({@link CompletionData.SourceLocation#UNKNOWN}: the source is not on the
- * build, or the method join key is overload-ambiguous), in which case the
- * editor stays put rather than jumping to a bogus location.
+ * <p>Returns {@link Optional#empty()} when the cursor is not on a known
+ * directive arg and when the arg value does not resolve to a known reference
+ * in the catalog. For the service half it also returns empty on the two
+ * no-jump arms of {@link DefinitionTarget} (source absent / overload
+ * ambiguous), but it decides those through an exhaustive switch on the typed
+ * outcome rather than a sentinel; positions for the service half come from the
+ * LSP-owned {@link SourceWalker.Index} at request time, not from the catalog.
+ * The jOOQ half ({@code @table} / {@code @field} / {@code @reference}) still
+ * reads its position from the catalog's {@code SourceLocation} (build cadence;
+ * see roadmap R352 for lifting it onto the source index too).
  */
 public final class Definitions {
+
+    private static final Logger LOGGER = LoggerFactory.getLogger(Definitions.class);
 
     private Definitions() {}
 
@@ -61,17 +70,18 @@ public final class Definitions {
      * Back-compatible overload that loads the bundled vocabulary; the
      * service-half binding arm uses the canonical overlay. Production callers
      * pass the workspace vocabulary through
-     * {@link #compute(LspVocabulary, WorkspaceFile, CompletionData, LspSchemaSnapshot, Point)}.
+     * {@link #compute(LspVocabulary, WorkspaceFile, CompletionData, SourceWalker.Index, LspSchemaSnapshot, Point)}.
      */
     public static Optional<Location> compute(
-        WorkspaceFile file, CompletionData catalog, LspSchemaSnapshot snapshot, Point pos
+        WorkspaceFile file, CompletionData catalog, SourceWalker.Index sourceIndex,
+        LspSchemaSnapshot snapshot, Point pos
     ) {
-        return compute(LspVocabulary.load(), file, catalog, snapshot, pos);
+        return compute(LspVocabulary.load(), file, catalog, sourceIndex, snapshot, pos);
     }
 
     public static Optional<Location> compute(
         LspVocabulary vocabulary, WorkspaceFile file, CompletionData catalog,
-        LspSchemaSnapshot snapshot, Point pos
+        SourceWalker.Index sourceIndex, LspSchemaSnapshot snapshot, Point pos
     ) {
         var directiveOpt = Directives.findContaining(file.tree().getRootNode(), pos);
         if (directiveOpt.isEmpty()) return Optional.empty();
@@ -87,9 +97,9 @@ public final class Definitions {
         // silently resolving to nothing.
         return switch (behaviorOpt.get()) {
             case Behavior.ClassNameBinding ignored ->
-                classDefinition(location, catalog, file.source());
+                classDefinition(location, catalog, sourceIndex, file.source());
             case Behavior.MethodNameBinding mnb ->
-                methodDefinition(vocabulary, directive, location, catalog, pos,
+                methodDefinition(vocabulary, directive, location, catalog, sourceIndex, pos,
                     mnb.classNameCoord(), file.source());
             case Behavior.CatalogTableBinding ignored ->
                 tableDefinition(location, catalog, file.source());
@@ -108,7 +118,8 @@ public final class Definitions {
     }
 
     private static Optional<Location> classDefinition(
-        LspVocabulary.CursorLocation location, CompletionData catalog, byte[] source
+        LspVocabulary.CursorLocation location, CompletionData catalog,
+        SourceWalker.Index sourceIndex, byte[] source
     ) {
         // @record's className is deprecated/ignored and binds no class; mirror
         // the completion / hover carve-out (the coordinate is shared with @enum,
@@ -116,33 +127,92 @@ public final class Definitions {
         if (!DirectivePolicy.bindsLiveClass(location.directiveName())) return Optional.empty();
         String fqn = Nodes.unquote(Nodes.text(location.leafNode(), source));
         if (fqn.isEmpty()) return Optional.empty();
-        return catalog.externalReferences().stream()
-            .filter(r -> r.className().equals(fqn))
-            .findFirst()
-            .map(CompletionData.ExternalReference::definition)
-            .flatMap(Definitions::asLocation);
+        // Unknown class name (not a scanned reference) is "not our target" —
+        // empty, distinct from the SourceAbsent arm of a known reference.
+        boolean known = catalog.externalReferences().stream()
+            .anyMatch(r -> r.className().equals(fqn));
+        if (!known) return Optional.empty();
+        return resolve(classTarget(fqn, sourceIndex), fqn);
     }
 
     private static Optional<Location> methodDefinition(
         LspVocabulary vocabulary, Directives.Directive directive,
         LspVocabulary.CursorLocation location, CompletionData catalog,
-        Point pos, SchemaCoordinate classNameCoord, byte[] source
+        SourceWalker.Index sourceIndex, Point pos, SchemaCoordinate classNameCoord, byte[] source
     ) {
         String methodName = Nodes.unquote(Nodes.text(location.leafNode(), source));
         if (methodName.isEmpty()) return Optional.empty();
-        var fqn = vocabulary.siblingStringAt(directive, pos, classNameCoord, source);
-        if (fqn.isEmpty()) return Optional.empty();
-        return catalog.externalReferences().stream()
-            .filter(r -> r.className().equals(fqn.get()))
-            .findFirst()
-            .flatMap(ref -> ref.methods().stream()
-                .filter(m -> m.name().equals(methodName))
-                .map(CompletionData.Method::definition)
-                // Skip overload entries the walk left UNKNOWN so a later
-                // resolvable overload of the same name still jumps.
-                .filter(loc -> loc != null && !loc.uri().isEmpty())
-                .findFirst())
-            .flatMap(Definitions::asLocation);
+        var fqnOpt = vocabulary.siblingStringAt(directive, pos, classNameCoord, source);
+        if (fqnOpt.isEmpty()) return Optional.empty();
+        String fqn = fqnOpt.get();
+        var ref = catalog.externalReferences().stream()
+            .filter(r -> r.className().equals(fqn))
+            .findFirst();
+        // Unknown class, or a known class with no method of this name, is "not
+        // our target" — empty, distinct from the typed no-jump arms below.
+        if (ref.isEmpty() || ref.get().methods().stream().noneMatch(m -> m.name().equals(methodName))) {
+            return Optional.empty();
+        }
+        return resolve(methodTarget(fqn, methodName, catalog, sourceIndex), fqn);
+    }
+
+    /**
+     * Pure FQN → position join for a class reference: {@link DefinitionTarget.Located}
+     * when the source index has the class, {@link DefinitionTarget.SourceAbsent}
+     * otherwise (class FQNs do not collide on a single overload key, so there is
+     * no {@code Ambiguous} arm for classes). Caller guards that {@code fqn} is a
+     * known reference. Public so the LSP tier can assert each arm directly.
+     */
+    public static DefinitionTarget classTarget(String fqn, SourceWalker.Index sourceIndex) {
+        var decl = sourceIndex.classes().get(fqn);
+        return decl != null
+            ? new DefinitionTarget.Located(decl.location())
+            : new DefinitionTarget.SourceAbsent();
+    }
+
+    /**
+     * Pure join for a method reference: for each catalog method of {@code methodName}
+     * on {@code fqn}, the {@code (fqn, name, arity)} key resolves against the source
+     * index. First {@link DefinitionTarget.Located} wins (so a later resolvable
+     * overload still jumps); else {@link DefinitionTarget.Ambiguous} when any
+     * candidate key was dropped as an overload collision; else
+     * {@link DefinitionTarget.SourceAbsent}. Caller guards that the class is known
+     * and carries at least one method of this name. Public for LSP-tier arm tests.
+     */
+    public static DefinitionTarget methodTarget(
+        String fqn, String methodName, CompletionData catalog, SourceWalker.Index sourceIndex
+    ) {
+        var ref = catalog.externalReferences().stream()
+            .filter(r -> r.className().equals(fqn))
+            .findFirst();
+        if (ref.isEmpty()) return new DefinitionTarget.SourceAbsent();
+        boolean sawAmbiguous = false;
+        for (var method : ref.get().methods()) {
+            if (!method.name().equals(methodName)) continue;
+            var key = new SourceWalker.MethodKey(fqn, methodName, method.parameters().size());
+            var decl = sourceIndex.methods().get(key);
+            if (decl != null) return new DefinitionTarget.Located(decl.location());
+            if (sourceIndex.ambiguousMethods().contains(key)) sawAmbiguous = true;
+        }
+        return sawAmbiguous ? new DefinitionTarget.Ambiguous() : new DefinitionTarget.SourceAbsent();
+    }
+
+    /**
+     * The single mapping from the typed service-half outcome to an editor
+     * jump. {@code SourceAbsent} is a non-silent no-jump (logged, since it is
+     * where the recoverable "source exists but isn't on a watched root" case
+     * lands); {@code Ambiguous} is a deliberate silent no-jump.
+     */
+    private static Optional<Location> resolve(DefinitionTarget target, String fqn) {
+        return switch (target) {
+            case DefinitionTarget.Located located -> asLocation(located.location());
+            case DefinitionTarget.SourceAbsent ignored -> {
+                LOGGER.debug("goto-definition: {} is a known reference but no source position is indexed; "
+                    + "is its declaring module's source root on the dev session?", fqn);
+                yield Optional.empty();
+            }
+            case DefinitionTarget.Ambiguous ignored -> Optional.empty();
+        };
     }
 
     /**

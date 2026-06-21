@@ -1,15 +1,18 @@
 package no.sikt.graphitron.lsp;
 
+import no.sikt.graphitron.lsp.definition.DefinitionTarget;
 import no.sikt.graphitron.lsp.definition.Definitions;
 import no.sikt.graphitron.lsp.state.WorkspaceFile;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
+import no.sikt.graphitron.rewrite.catalog.SourceWalker;
 import no.sikt.graphitron.rewrite.catalog.TypeClassification;
 import org.junit.jupiter.api.Test;
 import io.github.treesitter.jtreesitter.Point;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -37,7 +40,7 @@ class DefinitionsTest {
         var file = file("type Foo @table(name: \"film\") { bar: Int }");
         var pos = pointAt(file, 0, "film");
 
-        var loc = Definitions.compute(file, filmCatalog(), LspSchemaSnapshot.unavailable(), pos).orElseThrow();
+        var loc = Definitions.compute(file, filmCatalog(), SourceWalker.Index.EMPTY, LspSchemaSnapshot.unavailable(), pos).orElseThrow();
         assertThat(loc.getUri()).isEqualTo(FILM_URI);
         assertThat(loc.getRange().getStart().getLine()).isZero();
     }
@@ -46,7 +49,7 @@ class DefinitionsTest {
     void unknownTableReturnsEmpty() {
         var file = file("type Foo @table(name: \"GHOST\") { bar: Int }");
         var pos = pointAt(file, 0, "GHOST");
-        assertThat(Definitions.compute(file, filmCatalog(), LspSchemaSnapshot.unavailable(), pos)).isEmpty();
+        assertThat(Definitions.compute(file, filmCatalog(), SourceWalker.Index.EMPTY, LspSchemaSnapshot.unavailable(), pos)).isEmpty();
     }
 
     @Test
@@ -58,7 +61,7 @@ class DefinitionsTest {
             """);
         var pos = pointAt(file, 1, "title");
 
-        var loc = Definitions.compute(file, filmCatalog(), fooFilmSnapshot(), pos).orElseThrow();
+        var loc = Definitions.compute(file, filmCatalog(), SourceWalker.Index.EMPTY, fooFilmSnapshot(), pos).orElseThrow();
         // Phase 4 sends columns to the same file as the owning table; line
         // refinement waits for JavaParser.
         assertThat(loc.getUri()).isEqualTo(FILM_URI);
@@ -73,7 +76,7 @@ class DefinitionsTest {
             """);
         var pos = pointAt(file, 1, "FILM__FILM_LANGUAGE_ID_FKEY");
 
-        var loc = Definitions.compute(file, filmCatalog(), LspSchemaSnapshot.unavailable(), pos).orElseThrow();
+        var loc = Definitions.compute(file, filmCatalog(), SourceWalker.Index.EMPTY, LspSchemaSnapshot.unavailable(), pos).orElseThrow();
         assertThat(loc.getUri()).isEqualTo(KEYS_URI);
     }
 
@@ -86,7 +89,7 @@ class DefinitionsTest {
             """);
         var pos = pointAt(file, 1, "language");
 
-        var loc = Definitions.compute(file, filmCatalog(), LspSchemaSnapshot.unavailable(), pos).orElseThrow();
+        var loc = Definitions.compute(file, filmCatalog(), SourceWalker.Index.EMPTY, LspSchemaSnapshot.unavailable(), pos).orElseThrow();
         assertThat(loc.getUri()).isEqualTo(LANGUAGE_URI);
     }
 
@@ -95,7 +98,7 @@ class DefinitionsTest {
         var file = file("type Foo @table(name: \"film\") { bar: Int }");
         // Cursor on the @table directive name token, not on its argument.
         int col = "type Foo @t".length();
-        assertThat(Definitions.compute(file, filmCatalog(), LspSchemaSnapshot.unavailable(), new Point(0, col))).isEmpty();
+        assertThat(Definitions.compute(file, filmCatalog(), SourceWalker.Index.EMPTY, LspSchemaSnapshot.unavailable(), new Point(0, col))).isEmpty();
     }
 
     @Test
@@ -106,7 +109,7 @@ class DefinitionsTest {
             }
             """);
         var pos = pointAt(file, 1, "GHOST");
-        assertThat(Definitions.compute(file, filmCatalog(), fooFilmSnapshot(), pos)).isEmpty();
+        assertThat(Definitions.compute(file, filmCatalog(), SourceWalker.Index.EMPTY, fooFilmSnapshot(), pos)).isEmpty();
     }
 
     @Test
@@ -124,7 +127,7 @@ class DefinitionsTest {
         );
         var file = file("type Foo @table(name: \"film\") { bar: Int }");
         var pos = pointAt(file, 0, "film");
-        assertThat(Definitions.compute(file, unsourcedCatalog, LspSchemaSnapshot.unavailable(), pos)).isEmpty();
+        assertThat(Definitions.compute(file, unsourcedCatalog, SourceWalker.Index.EMPTY, LspSchemaSnapshot.unavailable(), pos)).isEmpty();
     }
 
     // ---- Service half: class-name / method-name binding directives ----
@@ -139,7 +142,7 @@ class DefinitionsTest {
             }
             """);
         var pos = pointAt(file, 1, "com.example.PriceService");
-        var loc = Definitions.compute(file, serviceCatalog(), LspSchemaSnapshot.unavailable(), pos).orElseThrow();
+        var loc = Definitions.compute(file, serviceCatalog(), serviceIndex(), LspSchemaSnapshot.unavailable(), pos).orElseThrow();
         assertThat(loc.getUri()).isEqualTo(SVC_URI);
         assertThat(loc.getRange().getStart().getLine()).isEqualTo(10);
     }
@@ -152,7 +155,7 @@ class DefinitionsTest {
             }
             """);
         var pos = pointAt(file, 1, "price");
-        var loc = Definitions.compute(file, serviceCatalog(), LspSchemaSnapshot.unavailable(), pos).orElseThrow();
+        var loc = Definitions.compute(file, serviceCatalog(), serviceIndex(), LspSchemaSnapshot.unavailable(), pos).orElseThrow();
         assertThat(loc.getRange().getStart().getLine()).isEqualTo(12);
     }
 
@@ -164,7 +167,7 @@ class DefinitionsTest {
             }
             """);
         var pos = pointAt(file, 1, "price");
-        var loc = Definitions.compute(file, serviceCatalog(), LspSchemaSnapshot.unavailable(), pos).orElseThrow();
+        var loc = Definitions.compute(file, serviceCatalog(), serviceIndex(), LspSchemaSnapshot.unavailable(), pos).orElseThrow();
         assertThat(loc.getRange().getStart().getLine()).isEqualTo(12);
     }
 
@@ -174,7 +177,7 @@ class DefinitionsTest {
             enum Color @enum(enumReference: {className: "com.example.PriceService"}) { RED }
             """);
         var pos = pointAt(file, 0, "com.example.PriceService");
-        var loc = Definitions.compute(file, serviceCatalog(), LspSchemaSnapshot.unavailable(), pos).orElseThrow();
+        var loc = Definitions.compute(file, serviceCatalog(), serviceIndex(), LspSchemaSnapshot.unavailable(), pos).orElseThrow();
         assertThat(loc.getUri()).isEqualTo(SVC_URI);
     }
 
@@ -186,7 +189,7 @@ class DefinitionsTest {
             }
             """);
         var pos = pointAt(file, 1, "price");
-        var loc = Definitions.compute(file, serviceCatalog(), LspSchemaSnapshot.unavailable(), pos).orElseThrow();
+        var loc = Definitions.compute(file, serviceCatalog(), serviceIndex(), LspSchemaSnapshot.unavailable(), pos).orElseThrow();
         assertThat(loc.getRange().getStart().getLine()).isEqualTo(12);
     }
 
@@ -198,7 +201,7 @@ class DefinitionsTest {
             }
             """);
         var pos = pointAt(file, 1, "com.example.PriceService");
-        var loc = Definitions.compute(file, serviceCatalog(), LspSchemaSnapshot.unavailable(), pos).orElseThrow();
+        var loc = Definitions.compute(file, serviceCatalog(), serviceIndex(), LspSchemaSnapshot.unavailable(), pos).orElseThrow();
         assertThat(loc.getUri()).isEqualTo(SVC_URI);
     }
 
@@ -210,7 +213,7 @@ class DefinitionsTest {
             }
             """);
         var pos = pointAt(file, 1, "price");
-        var loc = Definitions.compute(file, serviceCatalog(), LspSchemaSnapshot.unavailable(), pos).orElseThrow();
+        var loc = Definitions.compute(file, serviceCatalog(), serviceIndex(), LspSchemaSnapshot.unavailable(), pos).orElseThrow();
         assertThat(loc.getRange().getStart().getLine()).isEqualTo(12);
     }
 
@@ -222,7 +225,7 @@ class DefinitionsTest {
             type Foo @record(record: {className: "com.example.PriceService"}) { bar: Int }
             """);
         var pos = pointAt(file, 0, "com.example.PriceService");
-        assertThat(Definitions.compute(file, serviceCatalog(), LspSchemaSnapshot.unavailable(), pos)).isEmpty();
+        assertThat(Definitions.compute(file, serviceCatalog(), serviceIndex(), LspSchemaSnapshot.unavailable(), pos)).isEmpty();
     }
 
     @Test
@@ -233,33 +236,84 @@ class DefinitionsTest {
             }
             """);
         var pos = pointAt(file, 1, "com.example.Ghost");
-        assertThat(Definitions.compute(file, serviceCatalog(), LspSchemaSnapshot.unavailable(), pos)).isEmpty();
+        assertThat(Definitions.compute(file, serviceCatalog(), serviceIndex(), LspSchemaSnapshot.unavailable(), pos)).isEmpty();
     }
 
     @Test
     void methodWithUnknownLocationReturnsEmpty() {
-        // The overload-ambiguous method left UNKNOWN by the walk yields no jump.
+        // The overload-ambiguous method (Ambiguous arm) yields no jump.
         var file = file("""
             type Foo {
                 bar: Int @service(service: {className: "com.example.PriceService", method: "ambiguous"})
             }
             """);
         var pos = pointAt(file, 1, "ambiguous");
-        assertThat(Definitions.compute(file, serviceCatalog(), LspSchemaSnapshot.unavailable(), pos)).isEmpty();
+        assertThat(Definitions.compute(file, serviceCatalog(), serviceIndex(), LspSchemaSnapshot.unavailable(), pos)).isEmpty();
     }
 
+    // ---- Typed outcome (DefinitionTarget): each arm reachable ----
+
+    @Test
+    void classTargetLocatedWhenSourceIndexed() {
+        assertThat(Definitions.classTarget(SVC_FQN, serviceIndex()))
+            .isInstanceOf(DefinitionTarget.Located.class);
+    }
+
+    @Test
+    void classTargetSourceAbsentWhenNotIndexed() {
+        // Known reference (caller guards that), but no source walked for it: the
+        // recoverable "source exists but isn't on a watched root" case lands here.
+        assertThat(Definitions.classTarget(SVC_FQN, SourceWalker.Index.EMPTY))
+            .isInstanceOf(DefinitionTarget.SourceAbsent.class);
+    }
+
+    @Test
+    void methodTargetLocatedWhenSourceIndexed() {
+        assertThat(Definitions.methodTarget(SVC_FQN, "price", serviceCatalog(), serviceIndex()))
+            .isInstanceOf(DefinitionTarget.Located.class);
+    }
+
+    @Test
+    void methodTargetAmbiguousWhenOverloadCollision() {
+        assertThat(Definitions.methodTarget(SVC_FQN, "ambiguous", serviceCatalog(), serviceIndex()))
+            .isInstanceOf(DefinitionTarget.Ambiguous.class);
+    }
+
+    @Test
+    void methodTargetSourceAbsentWhenNotIndexed() {
+        assertThat(Definitions.methodTarget(SVC_FQN, "price", serviceCatalog(), SourceWalker.Index.EMPTY))
+            .isInstanceOf(DefinitionTarget.SourceAbsent.class);
+    }
+
+    private static final String SVC_FQN = "com.example.PriceService";
+
+    /**
+     * Catalog carries the bytecode-derived reference structure only; positions
+     * live in the source index. {@code price} resolves; {@code ambiguous} is an
+     * overload collision the source index dropped.
+     */
     private static CompletionData serviceCatalog() {
-        var classDef = new CompletionData.SourceLocation(SVC_URI, 10, 4);
-        var methodDef = new CompletionData.SourceLocation(SVC_URI, 12, 4);
-        var price = new CompletionData.Method(
-            "price", "Field", "", List.of(), methodDef);
-        // An overload-ambiguous method the walk could not pin: location UNKNOWN.
-        var ambiguous = new CompletionData.Method(
-            "ambiguous", "Object", "", List.of(), CompletionData.SourceLocation.UNKNOWN);
+        var price = new CompletionData.Method("price", "Field", "", List.of());
+        var ambiguous = new CompletionData.Method("ambiguous", "Object", "", List.of());
         var ref = new CompletionData.ExternalReference(
-            "com.example.PriceService", "com.example.PriceService", "",
-            List.of(price, ambiguous), List.of(), classDef);
+            SVC_FQN, SVC_FQN, "", List.of(price, ambiguous), List.of());
         return new CompletionData(List.of(), List.of(), List.of(ref));
+    }
+
+    /**
+     * The LSP-owned source-position index the service-half join reads. The
+     * class and {@code price} resolve to declarations; {@code ambiguous} sits in
+     * {@link SourceWalker.Index#ambiguousMethods()} (key dropped from
+     * {@code methods}), driving the {@link DefinitionTarget.Ambiguous} arm.
+     */
+    private static SourceWalker.Index serviceIndex() {
+        var classDecl = new SourceWalker.Decl(new CompletionData.SourceLocation(SVC_URI, 10, 4), "");
+        var priceDecl = new SourceWalker.Decl(new CompletionData.SourceLocation(SVC_URI, 12, 4), "");
+        return new SourceWalker.Index(
+            Map.of(SVC_FQN, classDecl),
+            Map.of(new SourceWalker.MethodKey(SVC_FQN, "price", 0), priceDecl),
+            Map.of(),
+            Set.of(new SourceWalker.MethodKey(SVC_FQN, "ambiguous", 0)));
     }
 
     private static LspSchemaSnapshot fooFilmSnapshot() {

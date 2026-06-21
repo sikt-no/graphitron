@@ -19,9 +19,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Pipeline coverage for the {@link CatalogBuilder} ↔ {@link SourceWalker}
- * join: per-line refinement and Javadoc lift on the jOOQ half (columns) and
- * the service half (external references + methods), plus the
- * source-roots-absent fallback to file-level / {@code UNKNOWN} positions.
+ * join. The jOOQ half (columns) still refines positions and lifts Javadoc on
+ * the build cadence, with a source-roots-absent fallback to file-level /
+ * {@code UNKNOWN} positions. The service half (external references + methods)
+ * lifts only Javadoc into {@code description} here (R349); its positions moved
+ * out of {@link CompletionData} onto the LSP-owned source index resolved at
+ * request time, so this tier asserts the description lift, and the position
+ * join is covered at the LSP tier in {@code DefinitionsTest}.
  */
 @PipelineTier
 class CatalogBuilderSourceTest {
@@ -67,10 +71,10 @@ class CatalogBuilderSourceTest {
         assertThat(filmId.description()).isEmpty();
     }
 
-    // ---- service half: external-reference + method location/Javadoc ----
+    // ---- service half: external-reference + method Javadoc (positions are LSP-tier) ----
 
     @Test
-    void externalReferenceAndMethodGetLocationAndJavadoc(
+    void externalReferenceAndMethodGetJavadocFromSourceRoot(
         @TempDir Path srcRoot, @TempDir Path classesRoot
     ) throws IOException {
         Path source = writeJava(srcRoot, "com/example/PriceService.java", """
@@ -91,24 +95,24 @@ class CatalogBuilderSourceTest {
         var ref = data.externalReferences().stream()
             .filter(r -> r.className().equals("com.example.PriceService"))
             .findFirst().orElseThrow();
-        assertThat(ref.definition().line()).isGreaterThan(0);
-        assertThat(ref.definition().uri()).endsWith("PriceService.java");
+        // Javadoc is lifted on the build cadence; positions live in the LSP
+        // source index, not on the catalog record.
         assertThat(ref.description()).isEqualTo("Computes prices.");
 
         var method = ref.methods().stream()
             .filter(m -> m.name().equals("price")).findFirst().orElseThrow();
-        assertThat(method.definition().line()).isGreaterThan(0);
         assertThat(method.description()).isEqualTo("Looks up a price.");
     }
 
     @Test
-    void externalReferenceLocationUnknownWhenNoSourceRoots(@TempDir Path classesRoot) throws IOException {
+    void externalReferenceHasNoSourceJavadocWhenNoSourceRoots(@TempDir Path classesRoot) throws IOException {
         // Compile from a throwaway source dir but do NOT pass it as a source
-        // root: the bytecode scan still finds the class, but with no walk its
-        // location stays UNKNOWN.
+        // root: the bytecode scan still finds the class (completion works), but
+        // with no walk there is no source-derived Javadoc to lift.
         Path srcRoot = Files.createTempDirectory("svc-src");
         Path source = writeJava(srcRoot, "com/example/NoSourceService.java", """
             package com.example;
+            /** Has Javadoc, but its source root is not walked. */
             public class NoSourceService {
                 public Object run() { return null; }
             }
@@ -123,7 +127,7 @@ class CatalogBuilderSourceTest {
         var ref = data.externalReferences().stream()
             .filter(r -> r.className().equals("com.example.NoSourceService"))
             .findFirst().orElseThrow();
-        assertThat(ref.definition()).isEqualTo(CompletionData.SourceLocation.UNKNOWN);
+        assertThat(ref.description()).isEmpty();
     }
 
     private static RewriteContext contextWith(

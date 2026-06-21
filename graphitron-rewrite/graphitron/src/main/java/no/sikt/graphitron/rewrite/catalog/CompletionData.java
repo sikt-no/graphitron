@@ -148,26 +148,11 @@ public record CompletionData(
         String className,
         String description,
         List<Method> methods,
-        List<RecordComponent> recordComponents,
-        SourceLocation definition
+        List<RecordComponent> recordComponents
     ) {
         public ExternalReference {
             methods = List.copyOf(methods);
             recordComponents = List.copyOf(recordComponents);
-        }
-
-        /**
-         * Back-compatible factory (pre-{@code definition}) used by
-         * {@link ClasspathScanner} and unit-tier callers that have no source
-         * walker; the source location defaults to {@link SourceLocation#UNKNOWN}.
-         * {@link CatalogBuilder} rebuilds the record with a real location when
-         * the consumer's sources are on the build.
-         */
-        public ExternalReference(
-            String name, String className, String description,
-            List<Method> methods, List<RecordComponent> recordComponents
-        ) {
-            this(name, className, description, methods, recordComponents, SourceLocation.UNKNOWN);
         }
     }
 
@@ -180,32 +165,21 @@ public record CompletionData(
     public record RecordComponent(String name, String displayType) {}
 
     /**
-     * Method on an {@link ExternalReference}.
-     *
-     * @param definition source location of the method declaration in the
-     *                   consumer's Java source; {@link SourceLocation#UNKNOWN}
-     *                   when the source is not on the build or the
-     *                   {@code (className, methodName, paramCount)} join key is
-     *                   ambiguous (an overload collision), in which case
-     *                   goto-definition returns empty rather than jumping to a
-     *                   wrong line.
+     * Method on an {@link ExternalReference}. Carries the bytecode-derived
+     * structure (name, return type, parameters); it holds no source position.
+     * goto-definition for a method resolves its position at request time by
+     * joining this method's {@code (className, name, paramCount)} key against
+     * the LSP-owned {@link SourceWalker.Index}, so a position that becomes
+     * available on a {@code .java} edit is seen without a generator rebuild.
+     * An overload collision the join key cannot disambiguate is a distinct
+     * outcome there, not a silent no-jump (see the LSP {@code DefinitionTarget}).
      */
     public record Method(
         String name,
         String returnType,
         String description,
-        List<Parameter> parameters,
-        SourceLocation definition
-    ) {
-        /**
-         * Back-compatible factory (pre-{@code definition}) used by
-         * {@link ClasspathScanner} and unit-tier callers that have no source
-         * walker; the source location defaults to {@link SourceLocation#UNKNOWN}.
-         */
-        public Method(String name, String returnType, String description, List<Parameter> parameters) {
-            this(name, returnType, description, parameters, SourceLocation.UNKNOWN);
-        }
-    }
+        List<Parameter> parameters
+    ) {}
 
     /**
      * Method parameter. {@code source} matches the rewrite-side

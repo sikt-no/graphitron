@@ -2,6 +2,7 @@ package no.sikt.graphitron.rewrite.maven;
 
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
+import no.sikt.graphitron.rewrite.catalog.SourceWalker;
 import no.sikt.graphitron.lsp.parsing.LspVocabulary;
 import no.sikt.graphitron.lsp.state.Workspace;
 import no.sikt.graphitron.rewrite.GraphQLRewriteGenerator;
@@ -48,6 +49,12 @@ import java.util.function.Consumer;
  *       consumer service / condition / record classes — whether declared
  *       in the schema module or a sibling reactor module — flow through
  *       the same rebuild trigger.</li>
+ *   <li>Watches every reactor project's compile source roots for
+ *       {@code .java} changes and refreshes the LSP's source-position index
+ *       on that source cadence, decoupled from the {@code .class} rebuild
+ *       (R349). Service-half goto-definition reads positions from this index,
+ *       so a declaration that moves in a hand-edited source file is jumpable
+ *       without waiting for a recompile.</li>
  * </ul>
  *
  * <p>Stop with Ctrl+C. See {@code getting-started.md}'s "Dev loop" for the
@@ -74,8 +81,10 @@ public class DevMojo extends AbstractRewriteMojo {
 
     private SchemaWatcher schemaWatcher;
     private SchemaWatcher classpathWatcher;
+    private SchemaWatcher sourceWatcher;
     private DebounceExecutor schemaDebounce;
     private DebounceExecutor classpathDebounce;
+    private DebounceExecutor sourceDebounce;
     private DevServer server;
     private Set<WatchErrorFormatter.DeltaKey> previousErrorKeys = null;
 
@@ -122,8 +131,13 @@ public class DevMojo extends AbstractRewriteMojo {
         Consumer<String> saveListener = buildSaveListener(
             initialCtx.schemaFileExtensions(), schemaDebounce, () -> regenerate(workspace));
         bindServer(workspace, saveListener);
+        // Seed the source-position index so service-half goto-definition works
+        // before the first .java edit; the source watcher refreshes it on the
+        // source cadence thereafter. Path-only read on initialCtx (no loader).
+        workspace.setSourceIndex(SourceWalker.walk(initialCtx.compileSourceRoots()));
         Set<Path> schemaRoots = startSchemaWatcher(initialCtx, workspace);
         startClasspathWatcher(initialCtx, workspace);
+        startSourceWatcher(initialCtx, workspace);
 
         Thread shutdown = new Thread(this::cleanup, "graphitron-dev-shutdown");
         Runtime.getRuntime().addShutdownHook(shutdown);
@@ -192,6 +206,46 @@ public class DevMojo extends AbstractRewriteMojo {
         Thread classpathThread = new Thread(classpathWatcher::run, "graphitron-dev-classpath");
         classpathThread.setDaemon(true);
         classpathThread.start();
+    }
+
+    /**
+     * Starts the {@code .java} source-root watcher (R349). Walks the same
+     * compile source roots the catalog build uses, but on the source cadence:
+     * a hand-edited service / condition source refreshes the LSP's
+     * source-position index without waiting for a {@code .class} rebuild. The
+     * walk is parse-only (no reflection, no classpath resolution), so it runs
+     * straight off the captured {@code ctx}'s path fields without a codegen
+     * scope, unlike the regenerate / rebuildCatalog triggers.
+     */
+    private void startSourceWatcher(RewriteContext ctx, Workspace workspace) throws MojoExecutionException {
+        Set<Path> roots = resolveSourceRoots(ctx);
+        if (roots.isEmpty()) {
+            getLog().info("graphitron:dev: skipping source watcher; "
+                + "no compile source roots resolved (goto-definition positions stay at startup walk)");
+            return;
+        }
+        this.sourceDebounce = new DebounceExecutor(debounceMs);
+        try {
+            this.sourceWatcher = new SchemaWatcher(
+                roots, sourceDebounce, () -> refreshSourceIndex(ctx, workspace), ".java");
+        } catch (IOException e) {
+            cleanup();
+            throw new MojoExecutionException(
+                "graphitron:dev: failed to start source watcher", e);
+        }
+        Thread sourceThread = new Thread(sourceWatcher::run, "graphitron-dev-source");
+        sourceThread.setDaemon(true);
+        sourceThread.start();
+    }
+
+    private void refreshSourceIndex(RewriteContext ctx, Workspace workspace) {
+        try {
+            workspace.setSourceIndex(SourceWalker.walk(ctx.compileSourceRoots()));
+            getLog().info("graphitron:dev: source change detected; refreshed goto-definition positions");
+        } catch (RuntimeException e) {
+            getLog().warn("graphitron:dev: source-position refresh failed; keeping previous: "
+                + e.getMessage());
+        }
     }
 
     private void regenerate(Workspace workspace) {
@@ -315,8 +369,10 @@ public class DevMojo extends AbstractRewriteMojo {
     private void cleanup() {
         if (schemaWatcher != null) schemaWatcher.close();
         if (classpathWatcher != null) classpathWatcher.close();
+        if (sourceWatcher != null) sourceWatcher.close();
         if (schemaDebounce != null) schemaDebounce.close();
         if (classpathDebounce != null) classpathDebounce.close();
+        if (sourceDebounce != null) sourceDebounce.close();
         if (server != null) server.close();
     }
 
@@ -347,6 +403,20 @@ public class DevMojo extends AbstractRewriteMojo {
             Path parent = file.getParent();
             if (parent != null) {
                 roots.add(parent);
+            }
+        }
+        return roots;
+    }
+
+    private static Set<Path> resolveSourceRoots(RewriteContext ctx) {
+        // Watch every reactor project's compile source roots (hand-written plus
+        // generated-sources) so service / condition / record sources in sibling
+        // modules also refresh goto-definition positions. Same roots the catalog
+        // build walks; here on the source cadence.
+        var roots = new LinkedHashSet<Path>();
+        for (Path root : ctx.compileSourceRoots()) {
+            if (java.nio.file.Files.isDirectory(root)) {
+                roots.add(root);
             }
         }
         return roots;

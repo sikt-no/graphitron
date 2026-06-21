@@ -88,16 +88,27 @@ public final class SourceWalker {
 
     /**
      * The merged index over every source root: classes keyed by FQN, methods
-     * keyed by {@link MethodKey} (overload-ambiguous keys removed, so an
-     * ambiguous lookup misses and the caller keeps {@code UNKNOWN}), and
-     * fields keyed by {@link FieldKey}.
+     * keyed by {@link MethodKey} (overload-ambiguous keys removed from
+     * {@code methods}, so a positional lookup misses), fields keyed by
+     * {@link FieldKey}, and the post-merge set of method keys that were
+     * dropped <em>because</em> they were overload-ambiguous.
+     *
+     * <p>{@code ambiguousMethods} is the certainty the merge already computed
+     * but used to discard: it lets a consumer tell "method genuinely not
+     * indexed" (key absent everywhere) from "method present but the
+     * {@code (class, name, arity)} key cannot pick one overload" (key in this
+     * set). The LSP goto-definition path switches the two onto distinct
+     * {@code DefinitionTarget} arms instead of collapsing both to a silent
+     * no-jump. The set is the union of intra-file and cross-file collisions,
+     * matching exactly the keys removed from {@code methods}.
      */
     public record Index(
         Map<String, Decl> classes,
         Map<MethodKey, Decl> methods,
-        Map<FieldKey, Decl> fields
+        Map<FieldKey, Decl> fields,
+        Set<MethodKey> ambiguousMethods
     ) {
-        public static final Index EMPTY = new Index(Map.of(), Map.of(), Map.of());
+        public static final Index EMPTY = new Index(Map.of(), Map.of(), Map.of(), Set.of());
 
         public boolean isEmpty() {
             return classes.isEmpty() && methods.isEmpty() && fields.isEmpty();
@@ -195,7 +206,9 @@ public final class SourceWalker {
         for (MethodKey k : ambiguousMethods) {
             methods.remove(k);
         }
-        return new Index(Map.copyOf(classes), Map.copyOf(methods), Map.copyOf(fields));
+        return new Index(
+            Map.copyOf(classes), Map.copyOf(methods),
+            Map.copyOf(fields), Set.copyOf(ambiguousMethods));
     }
 
     /**
