@@ -26,7 +26,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R273` | Source NodeId metadata from @node + catalog PK (inferred from `implements Node`), and settle wrong-type/malformed mismatch semantics, retiring the legacy __NODE bare-ID arm | Spec | 2026-06-02 | [plan](nodeid-skip-mismatch-error-surfacing.md) |
 | `R349` | Decouple LSP source positions from the generator build; type the goto-definition outcome | Ready | 2026-06-21 | [plan](lsp-external-ref-definition-fallback.md) |
 | `R347` | Consolidate graphitron-lsp navigation, dispatch, and result-building | In Progress | 2026-06-19 | [plan](lsp-structural-consolidation.md) |
-| `R350` | LSP goto-definition for GraphQL types only resolves declarations in open buffers; fall back to the TDR/snapshot for workspace-wide jumps | In Review | 2026-06-21 | [plan](lsp-type-definition-workspace-fallback.md) |
 | `R332` | Mark @table on input types as deprecated (signal ahead of R97 removal) | Spec | 2026-06-19 <sub>created 2026-06-18</sub> | [plan](table-on-input-deprecation-signal.md) |
 | `R13` | Faceted search on `@asConnection` | Spec |  | [plan](faceted-search.md) |
 | `R63` | Type UPSERT dialect requirement on the model | Spec |  | [plan](dml-dialect-requirement-on-model.md) |
@@ -284,7 +283,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R148` [**Advance SourceLocation past description so diagnostics point at the field, not the doc block**](source-location-skips-description.md) — Backlog, bug
 - `R347` [**Consolidate graphitron-lsp navigation, dispatch, and result-building**](lsp-structural-consolidation.md) — In Progress, architecture
 - `R349` [**Decouple LSP source positions from the generator build; type the goto-definition outcome**](lsp-external-ref-definition-fallback.md) — Ready, bug
-- `R350` [**LSP goto-definition for GraphQL types only resolves declarations in open buffers; fall back to the TDR/snapshot for workspace-wide jumps**](lsp-type-definition-workspace-fallback.md) — In Review, bug
 - `R345` [**Surface schema parse failures as LSP red squiggles**](lsp-squiggle-schema-parse-failure.md) — Backlog, feature
 - `R123` [**Parent-context-aware schema coordinates for per-directive Behavior policy**](parent-context-aware-schema-coordinates.md) — Backlog, architecture
 - `R121` [**LSP diagnostic for redundant @splitQuery on @record-parent fields**](lsp-diagnostic-redundant-splitquery-on-record.md) — Backlog, feature
