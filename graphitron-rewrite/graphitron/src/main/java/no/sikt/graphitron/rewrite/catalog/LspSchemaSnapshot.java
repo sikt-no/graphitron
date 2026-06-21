@@ -86,6 +86,20 @@ public sealed interface LspSchemaSnapshot permits LspSchemaSnapshot.Unavailable,
          */
         Map<String, TypeClassification> typeClassificationsByName();
 
+        /**
+         * R350 — per-named-type declaration location, keyed by the SDL type name; value is
+         * the canonical {@code type}/{@code scalar} declaration's source position
+         * (0-based LSP coordinates, matching every other goto-definition consumer of
+         * {@link CompletionData.SourceLocation}). Lets the LSP's intra-schema
+         * goto-definition resolve a type reference to its declaration even when the
+         * declaring file is not in an open buffer; the open-buffer tree-sitter scan stays
+         * authoritative and this is the workspace-wide fallback. Populated from the
+         * {@code TypeDefinitionRegistry} in {@code CatalogBuilder.buildSnapshot}; absent
+         * entries (built-in scalars, types declared in the bundled directive source) are
+         * not jumpable.
+         */
+        Map<String, CompletionData.SourceLocation> typeDefinitionLocations();
+
         default Optional<DirectiveShape> directive(String name) {
             return directives().stream().filter(d -> d.name().equals(name)).findFirst();
         }
@@ -115,6 +129,15 @@ public sealed interface LspSchemaSnapshot permits LspSchemaSnapshot.Unavailable,
         }
 
         /**
+         * R350 — convenience lookup; returns {@link Optional#empty()} when no declaration
+         * location is on file for {@code name} (built-in scalar, bundled-directive type,
+         * or a name the schema does not declare).
+         */
+        default Optional<CompletionData.SourceLocation> typeDefinitionLocation(String name) {
+            return Optional.ofNullable(typeDefinitionLocations().get(name));
+        }
+
+        /**
          * R159 — site-context classifier at LSP-time. Returns the
          * {@link FieldSourceSigil.SiteContext} arm that
          * {@link FieldSourceSigil#sourceSigilDefinedAt} dispatches on for the
@@ -137,7 +160,8 @@ public sealed interface LspSchemaSnapshot permits LspSchemaSnapshot.Unavailable,
             Map<String, TypeBackingShape> typesByName,
             Map<String, String> payloadDataFieldByType,
             Map<String, FieldClassification> fieldClassificationsByCoord,
-            Map<String, TypeClassification> typeClassificationsByName
+            Map<String, TypeClassification> typeClassificationsByName,
+            Map<String, CompletionData.SourceLocation> typeDefinitionLocations
         ) implements Built {
             public Current {
                 directives = List.copyOf(directives);
@@ -145,19 +169,37 @@ public sealed interface LspSchemaSnapshot permits LspSchemaSnapshot.Unavailable,
                 payloadDataFieldByType = Map.copyOf(payloadDataFieldByType);
                 fieldClassificationsByCoord = Map.copyOf(fieldClassificationsByCoord);
                 typeClassificationsByName = Map.copyOf(typeClassificationsByName);
+                typeDefinitionLocations = Map.copyOf(typeDefinitionLocations);
             }
 
             /**
              * Convenience constructor for callers (LSP unit tests, ad-hoc fixtures) that only
              * populate the directive surface, type-backing, and payload-data-field projections.
-             * Fills the R160 classification projections with empty maps.
+             * Fills the R160 classification projections and the R350 type-definition-location
+             * map with empty maps.
              */
             public Current(
                 List<DirectiveShape> directives,
                 Map<String, TypeBackingShape> typesByName,
                 Map<String, String> payloadDataFieldByType
             ) {
-                this(directives, typesByName, payloadDataFieldByType, Map.of(), Map.of());
+                this(directives, typesByName, payloadDataFieldByType, Map.of(), Map.of(), Map.of());
+            }
+
+            /**
+             * Convenience constructor for callers that populate the R160 classification
+             * projections but not the R350 type-definition-location map (the directive /
+             * classification fixtures predate goto-definition fallback).
+             */
+            public Current(
+                List<DirectiveShape> directives,
+                Map<String, TypeBackingShape> typesByName,
+                Map<String, String> payloadDataFieldByType,
+                Map<String, FieldClassification> fieldClassificationsByCoord,
+                Map<String, TypeClassification> typeClassificationsByName
+            ) {
+                this(directives, typesByName, payloadDataFieldByType,
+                    fieldClassificationsByCoord, typeClassificationsByName, Map.of());
             }
         }
 
@@ -166,7 +208,8 @@ public sealed interface LspSchemaSnapshot permits LspSchemaSnapshot.Unavailable,
             Map<String, TypeBackingShape> typesByName,
             Map<String, String> payloadDataFieldByType,
             Map<String, FieldClassification> fieldClassificationsByCoord,
-            Map<String, TypeClassification> typeClassificationsByName
+            Map<String, TypeClassification> typeClassificationsByName,
+            Map<String, CompletionData.SourceLocation> typeDefinitionLocations
         ) implements Built {
             public Previous {
                 directives = List.copyOf(directives);
@@ -174,19 +217,36 @@ public sealed interface LspSchemaSnapshot permits LspSchemaSnapshot.Unavailable,
                 payloadDataFieldByType = Map.copyOf(payloadDataFieldByType);
                 fieldClassificationsByCoord = Map.copyOf(fieldClassificationsByCoord);
                 typeClassificationsByName = Map.copyOf(typeClassificationsByName);
+                typeDefinitionLocations = Map.copyOf(typeDefinitionLocations);
             }
 
             /**
              * Convenience constructor for callers (LSP unit tests, ad-hoc fixtures) that only
              * populate the directive surface, type-backing, and payload-data-field projections.
-             * Fills the R160 classification projections with empty maps.
+             * Fills the R160 classification projections and the R350 type-definition-location
+             * map with empty maps.
              */
             public Previous(
                 List<DirectiveShape> directives,
                 Map<String, TypeBackingShape> typesByName,
                 Map<String, String> payloadDataFieldByType
             ) {
-                this(directives, typesByName, payloadDataFieldByType, Map.of(), Map.of());
+                this(directives, typesByName, payloadDataFieldByType, Map.of(), Map.of(), Map.of());
+            }
+
+            /**
+             * Convenience constructor for callers that populate the R160 classification
+             * projections but not the R350 type-definition-location map.
+             */
+            public Previous(
+                List<DirectiveShape> directives,
+                Map<String, TypeBackingShape> typesByName,
+                Map<String, String> payloadDataFieldByType,
+                Map<String, FieldClassification> fieldClassificationsByCoord,
+                Map<String, TypeClassification> typeClassificationsByName
+            ) {
+                this(directives, typesByName, payloadDataFieldByType,
+                    fieldClassificationsByCoord, typeClassificationsByName, Map.of());
             }
         }
     }

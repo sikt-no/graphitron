@@ -6,6 +6,7 @@ import graphql.language.InputValueDefinition;
 import graphql.language.ListType;
 import graphql.language.NonNullType;
 import graphql.language.NullValue;
+import graphql.language.SourceLocation;
 import graphql.language.StringValue;
 import graphql.language.Type;
 import graphql.language.TypeName;
@@ -30,6 +31,7 @@ import no.sikt.graphitron.rewrite.model.MutationField;
 import no.sikt.graphitron.rewrite.model.ParticipantRef;
 import no.sikt.graphitron.rewrite.model.QueryField;
 import no.sikt.graphitron.rewrite.model.TableRef;
+import no.sikt.graphitron.rewrite.schema.RewriteSchemaLoader;
 import org.jooq.ForeignKey;
 import org.jooq.Table;
 
@@ -120,8 +122,49 @@ public final class CatalogBuilder {
             : projectTypeClassifications(schema);
         return new LspSchemaSnapshot.Built.Current(
             directives, typesByName, payloadDataFieldByType,
-            fieldClassifications, typeClassifications
+            fieldClassifications, typeClassifications,
+            projectTypeDefinitionLocations(registry)
         );
+    }
+
+    /**
+     * R350 — projects each user-authored named type's declaration position so the LSP can
+     * resolve intra-schema goto-definition to a type whose declaring file is not in an open
+     * buffer. Keyed by the SDL type name. Covers the canonical definitions in
+     * {@link TypeDefinitionRegistry#types()} (objects, interfaces, unions, enums, inputs;
+     * type extensions are not canonical declarations and are not in this map) plus
+     * user-declared scalars in {@link TypeDefinitionRegistry#scalars()}.
+     *
+     * <p>Two sources are filtered out: definitions whose {@code SourceLocation} has a null
+     * {@code sourceName} (the spec built-in scalars graphql-java injects, with no file) and
+     * definitions contributed by the bundled {@code directives.graphqls} (its source-name is
+     * a classpath resource, not a file a consumer can open; this is where the directive
+     * inputs/enums such as {@code ErrorHandler} live). Both are non-jumpable, so they are
+     * dropped rather than emitted as dead {@code file://} URIs.
+     */
+    private static Map<String, CompletionData.SourceLocation> projectTypeDefinitionLocations(
+        TypeDefinitionRegistry registry
+    ) {
+        var out = new LinkedHashMap<String, CompletionData.SourceLocation>();
+        registry.types().forEach((name, def) -> putTypeLocation(out, name, def.getSourceLocation()));
+        registry.scalars().forEach((name, def) -> putTypeLocation(out, name, def.getSourceLocation()));
+        return Map.copyOf(out);
+    }
+
+    /**
+     * Reduces a graphql-java {@link SourceLocation} (1-based line/column) to the
+     * 0-based {@link CompletionData.SourceLocation} every goto-definition consumer reads
+     * (mirroring the {@code -1} adjustment in {@code SourceWalker}). Drops null-source and
+     * bundled-directive-source definitions; see {@link #projectTypeDefinitionLocations}.
+     */
+    private static void putTypeLocation(
+        Map<String, CompletionData.SourceLocation> out, String name, SourceLocation loc
+    ) {
+        if (loc == null || loc.getSourceName() == null) return;
+        if (RewriteSchemaLoader.DIRECTIVES_SOURCE_NAME.equals(loc.getSourceName())) return;
+        int line = Math.max(loc.getLine() - 1, 0);
+        int column = Math.max(loc.getColumn() - 1, 0);
+        out.put(name, new CompletionData.SourceLocation("file://" + loc.getSourceName(), line, column));
     }
 
     /**
