@@ -1,7 +1,7 @@
 ---
 id: R349
 title: "Decouple LSP source positions from the generator build; type the goto-definition outcome"
-status: Ready
+status: In Review
 bucket: bug
 priority: 5
 theme: lsp
@@ -106,8 +106,36 @@ Two changes (target tiers named under Acceptance):
    request-time and from the generator to the LSP.
 
    `SourceWalker.CACHE` is `static` / process-wide; an LSP-driven index must either keep
-   that contract or move the cache to an instance the LSP owns. Decide explicitly in the
-   spec.
+   that contract or move the cache to an instance the LSP owns. **Decision: keep it
+   static.** The cache is content-addressed by path + mtime, so it is correct regardless of
+   how many drivers walk through it, and after this change two drivers do: the build-cadence
+   `CatalogBuilder.build` (which still walks for jOOQ positions and for the Javadoc it lifts
+   into `description`) and the new source-cadence LSP watcher. Both walk overlapping file
+   sets, so the shared cache makes the second walk a near-free map merge rather than a
+   re-parse; that is a performance feature, not a coupling hazard, while the walk runs in two
+   places. The forcing function to move it to an instance is the build-cadence walk going
+   away entirely, deferred to R352 when the jOOQ half and hover also move onto the source
+   index; at that point the LSP is the sole walker and the cache moves with it.
+
+## Implementation scope (bounded to the service half; full decoupling is R352)
+
+The durable fix this item ships is scoped to the **service half** (the reported bug):
+`CompletionData.ExternalReference` / `Method` drop their `definition` field, and
+`Definitions` resolves class / method positions from the LSP-owned source index through the
+sealed `DefinitionTarget`. Three boundaries are drawn as deliberate transitional states,
+each filed as **R352**:
+
+- the **jOOQ half** (`Table` / `Column` / `Reference`) keeps its build-cadence
+  `SourceLocation` in `CompletionData`, since its positions come from walking generated
+  build artifacts that change only on a build;
+- **hover stays untouched**: `description` keeps being lifted from Javadoc on the build
+  cadence in `CatalogBuilder`, so a `SourceWalker.Decl`'s `javadoc` and `location` ride
+  different cadences (accepted transient hover/goto-def skew during a live edit);
+- the **static cache** stays shared (above).
+
+R352 retires `CompletionData.SourceLocation` entirely. Keeping R349 to the service half
+keeps the bug fix proportionate and leaves the jOOQ goto-def path, which works today,
+unperturbed.
 
 ## What this is not
 

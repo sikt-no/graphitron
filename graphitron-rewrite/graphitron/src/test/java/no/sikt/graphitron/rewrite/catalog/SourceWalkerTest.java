@@ -94,11 +94,17 @@ class SourceWalkerTest {
 
         var index = SourceWalker.walk(List.of(root));
 
-        assertThat(index.methods())
-            .doesNotContainKey(new SourceWalker.MethodKey("com.example.Overloaded", "filter", 1));
-        // A distinct-arity method is unaffected.
-        assertThat(index.methods())
-            .containsKey(new SourceWalker.MethodKey("com.example.Overloaded", "only", 1));
+        var filterKey = new SourceWalker.MethodKey("com.example.Overloaded", "filter", 1);
+        assertThat(index.methods()).doesNotContainKey(filterKey);
+        // The certainty the merge used to discard is now exposed: the dropped
+        // key is reported as ambiguous, so the LSP can distinguish it from a
+        // never-seen method (Ambiguous vs SourceAbsent) rather than collapsing
+        // both to a silent no-jump.
+        assertThat(index.ambiguousMethods()).contains(filterKey);
+        // A distinct-arity method is unaffected and is not ambiguous.
+        var onlyKey = new SourceWalker.MethodKey("com.example.Overloaded", "only", 1);
+        assertThat(index.methods()).containsKey(onlyKey);
+        assertThat(index.ambiguousMethods()).doesNotContain(onlyKey);
     }
 
     @Test

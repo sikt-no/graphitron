@@ -5,6 +5,7 @@ import no.sikt.graphitron.rewrite.GraphQLRewriteGenerator;
 import no.sikt.graphitron.rewrite.ValidationReport;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
+import no.sikt.graphitron.rewrite.catalog.SourceWalker;
 import no.sikt.graphitron.rewrite.maven.watch.DebounceExecutor;
 import no.sikt.graphitron.rewrite.maven.watch.DispatchTestSupport;
 import no.sikt.graphitron.rewrite.maven.watch.SchemaWatcher;
@@ -12,6 +13,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardWatchEventKinds;
 import java.nio.file.WatchEvent;
@@ -105,6 +107,47 @@ class CatalogRefreshTest {
         assertThat(rebuilds.get())
             .as(".graphqls write under a .class watcher must not fire")
             .isZero();
+    }
+
+    @Test
+    void javaSourceWriteRefreshesSourceIndexWithoutCatalogRebuild(@TempDir Path srcDir) throws Exception {
+        // R349 source cadence: a .java edit refreshes the LSP-owned source
+        // position index, decoupled from the .class catalog rebuild. The
+        // workspace's catalog must stay untouched (no buildOutput swap), proving
+        // positions ride the source cadence rather than the generator build.
+        var workspace = new Workspace(CompletionData.empty());
+        assertThat(workspace.sourceIndex().isEmpty()).isTrue();
+
+        Path javaFile = srcDir.resolve("com/example/PriceService.java");
+        Files.createDirectories(javaFile.getParent());
+        Files.writeString(javaFile, """
+            package com.example;
+            public class PriceService {
+                public Object price() { return null; }
+            }
+            """);
+
+        var fired = new CountDownLatch(1);
+        Runnable refresher = () -> {
+            workspace.setSourceIndex(SourceWalker.walk(List.of(srcDir)));
+            fired.countDown();
+        };
+
+        debounce = new DebounceExecutor(DEBOUNCE_MS);
+        watcher = new SchemaWatcher(Set.of(srcDir), debounce, refresher, ".java");
+
+        DispatchTestSupport.dispatch(watcher, javaFile.getParent(),
+            entryModifyEvent(Path.of("PriceService.java")));
+
+        assertThat(fired.await(WAIT_MS, TimeUnit.MILLISECONDS))
+            .as("source refresher must fire on .java write")
+            .isTrue();
+
+        // Position is observable through the workspace's volatile source index,
+        // without any catalog rebuild having run.
+        assertThat(workspace.sourceIndex().classes())
+            .containsKey("com.example.PriceService");
+        assertThat(workspace.catalog().tables()).isEmpty();
     }
 
     private static WatchEvent<?> entryCreateEvent(Path relative) {

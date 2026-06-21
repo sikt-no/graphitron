@@ -248,7 +248,7 @@ class HoversTest {
             List.of(), List.of(),
             List.of(new CompletionData.ExternalReference(
                 "com.example.FilmService", "com.example.FilmService", "Lists films from the catalog.",
-                List.of(), List.of(), CompletionData.SourceLocation.UNKNOWN)));
+                List.of(), List.of())));
 
         var hover = Hovers.compute(file, catalog, LspSchemaSnapshot.unavailable(), pos).orElseThrow();
         var md = hover.getContents().getRight().getValue();
@@ -260,13 +260,12 @@ class HoversTest {
     void serviceMethodHoverShowsJavadocWhenPresent() {
         var method = new CompletionData.Method(
             "list", "List", "Returns the first N films.",
-            List.of(new CompletionData.Parameter("limit", "int", null, "")),
-            CompletionData.SourceLocation.UNKNOWN);
+            List.of(new CompletionData.Parameter("limit", "int", null, "")));
         var catalog = new CompletionData(
             List.of(), List.of(),
             List.of(new CompletionData.ExternalReference(
                 "com.example.FilmService", "com.example.FilmService", "",
-                List.of(method), List.of(), CompletionData.SourceLocation.UNKNOWN)));
+                List.of(method), List.of())));
         var file = file("""
             type Query {
                 x: Int @service(service: {className: "com.example.FilmService", method: "list"})

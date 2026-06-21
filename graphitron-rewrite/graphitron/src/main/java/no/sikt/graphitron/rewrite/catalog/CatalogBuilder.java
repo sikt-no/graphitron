@@ -900,12 +900,20 @@ public final class CatalogBuilder {
     }
 
     /**
-     * Joins the bytecode-derived structure ({@link ClasspathScanner}: class /
-     * method names, signatures, record components) with the source-walk index
-     * (positions, Javadoc) in one pass. The method join key is
-     * {@code (className, methodName, paramCount)}; an overload collision leaves
-     * the key absent from the index, so the method keeps {@code UNKNOWN} rather
-     * than binding a wrong line. Records are rebuilt rather than mutated.
+     * Lifts source Javadoc into the {@code description} slot of each external
+     * reference and its methods, joining the bytecode-derived structure
+     * ({@link ClasspathScanner}: class / method names, signatures, record
+     * components) with the source-walk index by FQN and by the
+     * {@code (className, methodName, paramCount)} method key. Records are
+     * rebuilt rather than mutated.
+     *
+     * <p>Positions are deliberately <em>not</em> lifted here. The service half's
+     * goto-definition resolves a class / method position at request time by
+     * joining against the LSP-owned {@link SourceWalker.Index} (see the LSP
+     * {@code DefinitionTarget}), so positions ride the {@code .java} cadence and
+     * a declaration that moves between builds is seen without a generator
+     * rebuild. This method runs on the build cadence and supplies only the
+     * Javadoc {@code description} the hover path reads.
      */
     private static List<CompletionData.ExternalReference> enrichExternalReferences(
         List<CompletionData.ExternalReference> scanned, SourceWalker.Index sources
@@ -913,14 +921,13 @@ public final class CatalogBuilder {
         var out = new ArrayList<CompletionData.ExternalReference>(scanned.size());
         for (var ref : scanned) {
             var classDecl = sources.classes().get(ref.className());
-            var location = classDecl != null ? classDecl.location() : CompletionData.SourceLocation.UNKNOWN;
             var description = classDecl != null && !classDecl.javadoc().isEmpty()
                 ? classDecl.javadoc() : ref.description();
             var methods = ref.methods().stream()
                 .map(m -> enrichMethod(ref.className(), m, sources))
                 .toList();
             out.add(new CompletionData.ExternalReference(
-                ref.name(), ref.className(), description, methods, ref.recordComponents(), location));
+                ref.name(), ref.className(), description, methods, ref.recordComponents()));
         }
         return List.copyOf(out);
     }
@@ -930,11 +937,10 @@ public final class CatalogBuilder {
     ) {
         var key = new SourceWalker.MethodKey(className, method.name(), method.parameters().size());
         var decl = sources.methods().get(key);
-        var location = decl != null ? decl.location() : CompletionData.SourceLocation.UNKNOWN;
         var description = decl != null && !decl.javadoc().isEmpty()
             ? decl.javadoc() : method.description();
         return new CompletionData.Method(
-            method.name(), method.returnType(), description, method.parameters(), location);
+            method.name(), method.returnType(), description, method.parameters());
     }
 
     private static List<CompletionData.Table> buildTables(
