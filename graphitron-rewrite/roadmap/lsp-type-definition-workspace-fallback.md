@@ -1,7 +1,7 @@
 ---
 id: R350
 title: "LSP goto-definition for GraphQL types only resolves declarations in open buffers; fall back to the TDR/snapshot for workspace-wide jumps"
-status: Spec
+status: Ready
 bucket: bug
 priority: 5
 theme: lsp
