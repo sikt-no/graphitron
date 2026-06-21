@@ -71,20 +71,25 @@ one record built on one cadence.
 
 ## Design
 
-Two changes, both expressible at the pipeline tier:
+Two changes (target tiers named under Acceptance):
 
 1. **Type the resolution outcome (kills the silent no-op).**
-   `CompletionData.SourceLocation.UNKNOWN` is a sentinel (`uri=""`, `line=0`) that
-   conflates three distinct outcomes every consumer re-derives from `uri().isEmpty()`:
-   source *genuinely absent* (binary-only, a correct no-op), source *present but not
-   indexed yet* (the bug, recoverable), and *overload-ambiguous* (a deliberate no-op, per
-   `CompletionData.Method`'s contract). Lift it to a sealed outcome, e.g.
-   `sealed interface DefinitionTarget { record Located(...); record SourceAbsent(...);
-   record Ambiguous(...); }`, decided once by the producer and switched on exhaustively by
-   `Definitions` (and the hover path) instead of testing `uri().isEmpty()` at each site.
-   The not-yet-indexed / `SourceAbsent` arm is what can drive a non-silent signal rather
-   than a dead jump. This is the sealed-over-enum / "consumer switches on a typed outcome,
-   not a sentinel" discipline applied to the LSP request path.
+   `CompletionData.SourceLocation.UNKNOWN` is a sentinel (`uri=""`, `line=0`) that erases
+   three distinct outcomes behind one value: source *genuinely absent* (binary-only, a
+   correct no-op), source *present but not indexed yet* (the bug, recoverable), and
+   *overload-ambiguous* (a deliberate no-op, per `CompletionData.Method`'s contract). The
+   sole consumer, `Definitions`, collapses all three to "no jump" through one
+   `uri().isEmpty()` test (localized in `Definitions.asLocation`, `Definitions.java:196`,
+   with the overload-skip filter at `Definitions.java:143`), so the recoverable case is
+   indistinguishable from the two correct no-ops, which is why the not-yet-indexed failure
+   is silent. Lift it to a sealed outcome, e.g. `sealed interface DefinitionTarget { record
+   Located(...); record SourceAbsent(...); record Ambiguous(...); }`, decided once by the
+   producer and switched on exhaustively by `Definitions` (its sole consumer) in place of
+   the `uri().isEmpty()` sentinel test. The `SourceAbsent` arm is what drives a non-silent
+   response rather than a dead jump. This is the sealed-over-enum / "consumer switches on a
+   typed outcome, not a sentinel" discipline applied to the LSP request path. (Hover does
+   not read `SourceLocation`: `Hovers` / `DeclarationHovers` consume the Javadoc
+   `description`, not the position, so the hover path is untouched by this change.)
 
 2. **LSP-owned source-position index on the source cadence (makes positions
    build-independent).** Stop baking positions into the generator's `CompletionData`. Keep
@@ -124,13 +129,23 @@ Two changes, both expressible at the pipeline tier:
 
 ## Acceptance
 
-- A sealed definition-outcome type with `Definitions` (and the hover path) switching
-  exhaustively; pipeline-tier tests that the `SourceAbsent` and `Ambiguous` arms are
-  reachable and produce the intended behaviours (no jump with a signal vs no jump silently
-  by design).
-- A source-position lookup the LSP refreshes on `.java` change independent of
-  `buildOutput`; a test that a position is available after a source edit without a catalog
-  rebuild.
+These changes live in the LSP request path, the catalog/walker, and the dev goal, not in
+the SDL → classified-model → generated-TypeSpec pipeline, so the coverage is LSP-tier,
+catalog/walker-tier, and dev-goal integration, not `@PipelineTier`:
+
+- **Typed outcome (change 1), LSP-tier in `DefinitionsTest`:** the sealed
+  definition-outcome with `Definitions` switching exhaustively; tests that the
+  `SourceAbsent` and `Ambiguous` arms are reachable and produce the intended behaviours
+  (no jump with a signal vs no jump silently by design). The `Ambiguous` arm extends the
+  existing overload-ambiguity coverage there (`methodWithUnknownLocationReturnsEmpty`).
+- **LSP-owned source index (change 2), catalog/walker-tier:** `SourceWalkerTest` for the
+  index keyed by FQN / `MethodKey` / `FieldKey`; `CatalogBuilderSourceTest` for the
+  request-time join over real walked sources (the harness that already drives
+  `SourceWalker` against a compiled fixture). `CatalogBuilderSnapshotTest` if the snapshot
+  surface changes.
+- **Source cadence (change 2), dev-goal integration in `CatalogRefreshTest` /
+  `DevServerTest`:** a position is available after a `.java` edit without a `buildOutput`
+  catalog rebuild (the behaviour the source-root watcher provides).
 - Out of scope for R347 (LSP-internal consolidation); this is the catalog feed / LSP
   request path.
 
