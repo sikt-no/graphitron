@@ -1,7 +1,7 @@
 ---
 id: R349
 title: "Decouple LSP source positions from the generator build; type the goto-definition outcome"
-status: Spec
+status: Ready
 bucket: bug
 priority: 5
 theme: lsp
