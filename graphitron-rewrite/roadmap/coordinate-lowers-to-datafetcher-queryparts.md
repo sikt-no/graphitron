@@ -144,27 +144,103 @@ So graphitron is the lowering of a set of schema coordinates into a DataFetcher 
 relation, normalized, joined on the schema coordinate (model key) and on the database's own keys (the
 query graph). The leaf zoo is the fully-denormalized materialized view of that.
 
-## How `(source, operation, target)` survives the normalization
+## The normalized schema: two relations on the coordinate
 
-R316's triple is common vocabulary that carries well; it is a per-coordinate **summary row**, a
-denormalized join of the two entities' attributes. Normalization assigns each axis to the entity that
-owns it (nothing in R316 is wrong, it just gets distributed):
+R316's `(source, operation, target)` is common vocabulary that carries well, but it is a per-coordinate
+**summary row**: a denormalized join of the two entities' attributes, with `operation` crammed into a
+single slot. Stated in normalized form, the model is two relations keyed on the schema coordinate:
 
-| R316 axis | Owning entity | Notes |
+- **`(coordinate, source, target)`, exactly one row per coordinate** ; the **DataFetcher relation**.
+  Field-granular, total, 1:1. `source` is the arrival cardinality and parent shape; `target` is the
+  field's own output cardinality (the wrapper) and shape. Both are read straight off `field.getType()`
+  and the parent, so this row is the indisputable, schema-walkable fact about the coordinate.
+- **`(coordinate, operation)`, zero or more rows per coordinate** ; the **operation relation** (the
+  QueryPart-emitting methods, thread E's SQL-side commands). `operation` is not one forced verb but a
+  **set**: a single field can `select` and `join` and `condition` and `paginate` and `orderBy` at once.
+
+The coordinate `(parentType, fieldName)` is the foreign key joining them (the model's natural key from
+the natural-key section). The corpus directive sits on that key, so it already annotates the right thing;
+its verdict generalizes from one triple to one `(source, target)` row plus a *set* of operation rows.
+
+**`operation` is a set because its members are independently triggered by walkable schema facts.** A
+table-bound return type mints `select`; pagination args / a `Connection` mint `paginate`; `@condition` or
+filter inputs mint `condition`; a reference path mints `join`; `@orderBy` mints `orderBy`; `@service` mints
+`serviceCall`. The operation set is the **union** of independently-fired triggers. This is the schema-walk
+reading of the whole thesis: the leaf cross-product (`Split x Lookup x Composite x ...`) is what you get
+from collapsing independent operations into one slot, so they *multiply* into leaf variants; as a set they
+merely co-occur, and the cross-product dissolves **additively**. Composite falls out the same way ; `N`
+columns are `N` (or one `N`-ary) `select` operations, arity gone as a coordinate dimension.
+
+Normalization assigns each R316 axis to the relation that owns it (nothing in R316 is wrong, it just gets
+distributed):
+
+| R316 axis | Owning relation | Notes |
 |---|---|---|
-| `source` (Root / OnlyChild / Child) | DataFetcher | invocation cardinality; `Child` dispatches through a DataLoader |
-| `target` wrapper (Single / List) | DataFetcher | output cardinality |
-| `target` shape `Column` / `Table` | QueryPart | projection kind (a jOOQ `Field`, a table projection) |
-| `target` shape `Record` / `Field` | DataFetcher only | read off a Java object, no QueryPart |
-| `operation` `Fetch` / `Paginate` / `Lookup` / `Count` / `Facet` / DML | QueryPart | the SQL verb |
-| `operation` `ServiceCall` / `Nest` | DataFetcher only | no SQL |
-| composite arity | QueryPart | the number of column QueryParts |
-| split / re-fetch / new-query | QueryPart | which query a QueryPart is addressed to |
+| `source` (Root / OnlyChild / Child) | DataFetcher `(coordinate, source, target)` | invocation cardinality; `Child` dispatches through a DataLoader |
+| `target` wrapper (Single / List) | DataFetcher `(coordinate, source, target)` | output cardinality; the resolve-side contract |
+| `target` shape `Column` / `Table` | read by a `select` operation | projection kind (a jOOQ `Field`, a table projection); the shape stays on the resolve row, the operation reads it |
+| `target` shape `Record` / `Field` | DataFetcher only | read off a Java object; **zero operation rows** |
+| `operation` `Fetch` / `Paginate` / `Lookup` / `Count` / `Facet` / DML | one operation row each | the SQL verbs, now set members |
+| `operation` `ServiceCall` | one operation row (no SQL) | `serviceCall`; the DataFetcher delegates to it |
+| `operation` `Nest` | zero operation rows | a regroup with no SQL; the DataFetcher's existence is the fact |
+| composite arity | `select` operation | the number of projected columns, not a coordinate dimension |
+| split / re-fetch / new-query | operation `address` | which anchor's SELECT the operation lands in |
 
-The corpus directive sits on the schema coordinate (the natural key), so it already annotates the right
-thing; its verdict generalizes from one triple to the coordinate's full DataFetcher + QueryPart
-decomposition. R316 slices 1-4 are the denormalized, singleton-row view (one coordinate, one DataFetcher,
-at most one QueryPart's worth of facts) and stay valid as that projection.
+Two refinements the flat triple hid. First, **`target` straddles**: its wrapper (Single / List, the output
+cardinality) is a DataFetcher fact and stays on the resolve row, but its shape is consumed by the `select`
+operation; the model keeps the whole `target` on the resolve row (it is just the field's type) and lets
+`select` read it, rather than duplicating shape onto the operation. Watch the embeddable-`Column`-as-`Record`
+case: a target shape becoming a child's source shape is a coordinate-to-coordinate edge (the wrapper
+algebra), not an operation. Second, **multiplicity is 0..N, not 1..N**: a field that reads off an in-memory
+record (`target` shape `Record` / `Field`), and `Nest`, have a DataFetcher and an empty operation set; the
+DataFetcher's existence is the fact, and a no-op operation row would buy nothing.
+
+R316 slices 1-4 are the denormalized, singleton-row view (one coordinate, one DataFetcher, at most one
+operation's worth of facts) and stay valid as that projection ; they are the one-row case of the N-row
+operation relation.
+
+## We are data modeling: the relational discipline, not a database engine
+
+Everything above is data modeling, and it has quietly adopted the whole vocabulary of a relational
+database: keyed relations, a foreign key (the coordinate), normalization (1NF on composite, 3NF on the
+split key-projection), and **referential integrity** (thread I's closure-under-reference is exactly that
+constraint on the edge relation). Taken to its end this looks like rebuilding a database, which raises the
+question honestly: should the generator just *use* one? The answer is a deliberate split. **Adopt the
+relational model as design discipline; do not adopt a relational runtime.** The decision and its reasoning:
+
+- **The vocabulary is the win, and it is free.** Keys, joins, normalization, and referential integrity are
+  what make the leaf zoo dissolve; they cost nothing but clear thinking and are already in this doc. Keep
+  taking the *modeling* all the way.
+- **A query-engine runtime is the wrong tool here, for three reasons.** (1) It inverts the project's
+  deepest commitment. `rewrite-design-principles.adoc` is wall-to-wall *compile-time* typing of the model
+  (sealed hierarchies over enums, narrow component types, classification pinned at the parse boundary,
+  exhaustive switches that turn "added a variant" into a compile error). A SQL or Datalog layer makes the
+  model stringly-typed and moves exhaustiveness from `javac` to runtime ; spending the central asset to buy
+  what the type system already gives. (2) It buys the wrong thing. A database earns its keep at *scale* and
+  on *large recursive fact sets*; a schema has hundreds to low-thousands of coordinates, so the value we
+  want is expressiveness and integrity-checking, not throughput, and both are available without a runtime.
+  (3) It would freeze a still-discovered model: R222 / R316 / R333 are mid-pivot, and committing an engine
+  substrate now pins a schema whose column set is not yet stable. Note also that the relational model only
+  ever described the classification (front) half; the emit (back) half is imperative JavaPoet rendering
+  that no engine makes easier, so even the maximal version "databases" only half the generator.
+- **The chosen materialization is typed relations in the type system.** The two relations are typed, keyed
+  collections of records (a `Map<Coordinate, _>` for the DataFetcher relation; a one-to-many
+  `Coordinate -> operation*` for the operation relation), with explicit indexes where a join is hot. The
+  sealed-variant field model already *is* a denormalized materialized view over these; this decision keeps
+  it that way and formalizes the relations and the integrity check around it, rather than relocating them
+  onto an external store.
+- **Referential integrity is a typed check, and it is thread I's test.** "Every method-name an edge
+  references resolves to a node in the node relation" is the closure invariant written as integrity
+  validation over the in-memory relations. This is the single highest-leverage database feature, it needs
+  no database, and it earns its place twice (the model's integrity constraint *is* the falsifiable test).
+
+**Reserved, and explicitly not "a database":** if a pull toward a real engine ever becomes acute it will be
+an *incremental, demand-driven memoized query* architecture (the salsa / rust-analyzer model: edit the
+schema, recompute only the affected classifications), not a relational store. Its one concrete future
+trigger is LSP performance ; the LSP already does incremental parsing and marshals a `CatalogBuilder`
+snapshot to the editor, and incremental reclassification is the natural next want. That is a separate,
+later question tied to LSP perf, deliberately not conflated with "sit the generator on a database," and out
+of scope here.
 
 ## Query anchors and the two flows
 
@@ -449,16 +525,28 @@ contribution.
   *coordinate*: the synthetic key projection is a QueryPart, owned by the splitting coordinate and
   addressed elsewhere, never a fabricated SDL field.
 - **Corpus assertion shape**: the `@classified` verdict generalizes from one triple to the
-  `(DataFetcher, QueryPart*)` decomposition. Settle how the directive expresses a set (per-QueryPart
-  rows, or a value triple plus addressed supporting rows) before touching the R281 corpus again.
+  `(DataFetcher, QueryPart*)` decomposition. **Resolved by the normalized schema:** the directive asserts
+  one `(coordinate, source, target)` row plus a *set* of `(coordinate, operation)` rows, each operation
+  independently assertable (it is a regime-1 seam by construction). This is the same set framing the leaf
+  cross-product dissolves into; the residue is only the rendering of an operation set in the corpus, not
+  whether it is one or many rows.
+- **Materialization: discipline vs runtime**. **Resolved (data-modeling section):** adopt the relational
+  model as design discipline, materialized as typed keyed relations in the type system, with referential
+  integrity as a typed check (thread I's closure invariant); do **not** adopt a query-engine runtime
+  (sealed-variant type safety, the model's still-discovered column set, and the small fact count all argue
+  against it). An incremental memoized-query engine for the LSP is reserved as a separate question, out of
+  scope here.
 
 ## Scope
 
 In scope: the model (the lowering to a referentially-closed method-call-graph, the normalization, the
-natural keys, the anchor/address primitive, the node and edge relations, the target seam topology and its
-placement rule). Out of scope: the emit
-re-platforming that consumes it (R314), and any rewrite of R316 slices 1-4 (they are the valid
-denormalized projection). No code in this item beyond what is needed to make the model executable as
+natural keys, the anchor/address primitive, the node and edge relations, the two-relation normalized schema
+keyed on the coordinate, the target seam topology and its placement rule, and the decision to materialize
+the relations as typed in-type collections with a referential-integrity check rather than on a query
+engine). Out of scope: the emit
+re-platforming that consumes it (R314), any rewrite of R316 slices 1-4 (they are the valid
+denormalized projection), and any incremental-query engine for the LSP (a separate, later perf question).
+No code in this item beyond what is needed to make the model executable as
 tests, if that is split out at Ready: the lowering function and its coverage, plus thread I's bidirectional
 graph-closure invariant (every emitted method is one command's output; every callee name resolves to a
 committed command).
