@@ -162,6 +162,10 @@ with its facts, each its own functional dependency:
   off the parent's own table (a different table, or a column in a different table). Authored (`@reference`)
   or inferred from the unique foreign key; it lowers to a `join` operation, with `joinPath` as its resolved
   form. Detailed below in *The `reference` fact*.
+- **`coordinate -> resolvedTable`, derived, 0..1.** The catalog table the `@field` resolves against (a
+  column's owning table, or a nested field's rooted table). Derived from `source` and `reference`:
+  `reference.destination` when present, else `source.table`. Present for catalog-backed fields, absent for
+  record / service fields. Detailed below in *The resolved table*.
 
 `source` and `target` are two different facts, derived by two different walks (parent/edge versus the
 field's type), and they vary independently ; the same `target` `List(Table)` sits under a `Root` source or
@@ -265,6 +269,37 @@ and `ColumnReferenceField` (`:288`) are component-identical except the reference
 compaction. They are one `(source, target)` pair whose operation sets differ by exactly one `join` minted by
 the `reference` fact: `{select}` versus `{join, select}`. Not two leaf types ; the same coordinate facts
 plus one fact.
+
+### The resolved table
+
+`coordinate -> resolvedTable` is a **derived** fact: the catalog table a `@field` resolves against, the
+column's owning table for a column field or the rooted table for a nested field. It closes over `source`
+and `reference`:
+
+```
+resolvedTable = reference.isPresent() ? reference.destination : source.table
+```
+
+It is present for catalog-backed fields and absent for `Record` / `Field` / `serviceCall` fields that never
+touch a table. For a column field `target`'s shape (`Column`) names no table, so `resolvedTable` is the only
+carrier of it ; it is the generalization of `target.table` to the scalar case, which is why it must be
+derived rather than read off one fact.
+
+For a table field it coincides with `target.table`, and **that coincidence is an invariant:
+`resolvedTable == target.table` for every table field.** This is a referential-integrity check between the
+derived fact and the `target` fact: the `join`, when present, must terminate at exactly the table the nested
+type's `@table` names. A reference whose `joinPath` lands anywhere else is a classification fault, not a
+silently accepted mismatch.
+
+Naming it lifts a derivation otherwise recovered three ways (today `source.table` for `ColumnField`, the
+`joinPath` terminus for `ColumnReferenceField`, `target.table` for table fields ; `ColumnRef` deliberately
+omits the table because this fact owns it). Consumers then read one fact instead of each reconstructing it:
+
+- the `join` operation's **destination** is `resolvedTable` (when `reference` is present);
+- the `select` operation **projects from** `resolvedTable`;
+- a field's `resolvedTable` is its children's `source.table` ; the table-level form of the wrapper algebra
+  (a field's target shape becomes its children's source shape), and the actual carrier of the
+  parent-to-child table flow.
 
 ## We are data modeling: the relational discipline, not a database engine
 
