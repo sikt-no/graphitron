@@ -25,6 +25,10 @@ sets a ref's location and Javadoc together from the source-walk `classDecl`, and
 `SourceWalker.walk(compileSourceRoots)` yields no index for that class the location is
 left `UNKNOWN` and goto-def silently no-ops.
 
+## Reproduction (mechanism confirmed correct; the trigger is source-root coverage)
+
+Reproduced against the real sakila service module: `ClasspathScanner.scan([sakila-service/target/classes])` and `SourceWalker.walk([sakila-service/src/main/java])` both find `SampleQueryService`, the FQN-join matches, and the walk yields a real location (`SampleQueryService.java:27`). So the scan, walk, join, and request path are all correct. The JRE theory is ruled out (the field report's `getSystemJavaCompiler()` was non-null and the walk works). The failure occurs only when the live dev session builds the catalog with `compileSourceRoots` that does **not** cover the module holding the `@service`/`@condition` source: the compiled classes are on the classpath (`ClasspathScanner` finds them, so completion works), but their sources are never walked, so `enrichExternalReferences` leaves the location `UNKNOWN` and goto-def returns `[]`. This is the cross-module shape: services in a different module, dev launched from a sub-module, or services consumed as a built dependency, so the module's source root is absent from the session's `getAllProjects()` source list even when its `target/classes` is present.
+
 ## Why it is invisible and total (not partial like tables)
 
 Tables survive the same missing-walk condition because `CatalogBuilder.buildTable`
@@ -35,37 +39,39 @@ fallback**, so a missing walk degrades them from "jump to the class" all the way
 an empty map when `ToolProvider.getSystemJavaCompiler()` is `null` (line ~209), with no
 log line, so a consumer whose `graphitron:dev` JVM is a JRE (or whose `JAVA_HOME`
 points at a JRE) loses all service-class navigation with no signal at all. This is the
-leading suspected trigger for the field report and explains the "never worked"
-framing.
+trigger for the field report and explains the "never worked" framing.
 
-## Candidate triggers (to confirm; see the debugging breakpoints below)
+## Confirmed cause and ruled-out triggers
 
-- **No system Java compiler** (JRE, not JDK): `getSystemJavaCompiler()` returns `null`
-  → empty index → every external-ref location `UNKNOWN`. Prime suspect.
-- **`compileSourceRoots` does not cover the service module's `src/main/java`**: e.g.
-  the service classes are scannable as compiled `.class` in a reactor output dir but
-  their source root is not surfaced to the dev session.
-- **FQN-join mismatch**: `ClasspathScanner` keys refs by the bytecode FQN; `SourceWalker`
-  builds the class FQN from package + nested simple names. A mismatch (e.g. nested
-  declarations) would leave `sources.classes().get(ref.className())` null.
+- **Confirmed:** the service module's source root is not on the dev session's
+  `compileSourceRoots`, so `SourceWalker` never indexes those classes and their
+  locations stay `UNKNOWN`. Reproduced above. The mechanism (scan + walk + FQN-join +
+  request path) is otherwise correct.
+- **Ruled out:** no system Java compiler (the reporter's compiler was set and the walk
+  works); FQN-join mismatch (sakila top-level service FQNs match exactly).
 
-The single splitting breakpoint is `CatalogBuilder.enrichExternalReferences` (the
-`sources.classes().get(ref.className())` lookup): inspect `ref.className()` against
-`sources.classes().keySet()` to tell "walk produced nothing" from "key does not match";
-`SourceWalker.parse`'s `compiler == null` check confirms/denies the JRE theory.
+The asymmetry to investigate in the mojo: `resolveClasspathRoots` and
+`resolveCompileSourceRoots` both iterate `session.getAllProjects()`, yet in the field
+case the classpath covered the service module while the source roots did not. Determine
+why (dev launched from a sub-module so `getAllProjects()` is narrowed; services consumed
+as a binary dependency whose sources are not a reactor module; generated-source roots
+not registered when dev runs outside the `generate-sources` phase) and bring the two
+into parity, or detect and report the gap.
 
-## Proposed fix (two parts, independent of which trigger applies)
+## Proposed fix
 
-1. **File-level fallback for external references**, mirroring tables: when the walk
-   cannot pin a line, resolve the class to its source file (or, failing that, leave a
-   deliberate no-op) so a class still jumps to the top of its file instead of nowhere.
-2. **Make the source walk's failure non-silent**: when
-   `ToolProvider.getSystemJavaCompiler()` is `null` (or no source roots resolve), emit
-   a one-time warning through the dev goal so "running on a JRE" / "sources not on the
-   build" surfaces instead of degrading invisibly.
+1. **Source-root / classpath-root parity** in the dev goal: any module whose compiled
+   classes are scanned for `@service` candidates should have its source root walked, so
+   a scannable class is always a locatable class.
+2. **Make the gap non-silent**: when an external reference is scanned but no source is
+   found for it (walk empty, or source root not covered), emit a one-time dev-goal
+   warning naming the unlocatable class(es), so the degradation surfaces instead of a
+   silent dead goto-def. (A file-level fallback like the table path is not available
+   here: without the walk there is no source file to point at.)
 
-Acceptance: a service-class goto-definition fixture at the pipeline tier that asserts a
-non-`UNKNOWN` (at least file-level) location when the walk is unavailable, plus a test
-that the compiler-null / no-source-roots path surfaces a signal rather than an empty
-index. Out of scope for R347 (LSP-internal consolidation); this is the catalog feed.
+Acceptance: a pipeline-tier fixture asserting that a `@service` class scanned from a
+reactor module's `target/classes` resolves to a non-`UNKNOWN` location when that
+module's source root is on the build, and a test that the scanned-but-unlocatable case
+emits a signal rather than degrading silently. Out of scope for R347 (LSP-internal
+consolidation); this is the catalog feed.
 
