@@ -75,3 +75,29 @@ LSP-tier test: goto-definition on a type reference whose declaration lives in a 
 is *not* open resolves to that file's URI and the declaration position via the snapshot
 fallback, while the open-buffer path still wins (precise span, live edits) when the
 declaring file is open.
+
+## Reviewer note (Spec → Ready, 2026-06-21) — revision requested
+
+One gap to close before this is Ready: the spec does not pin *how*
+`IntraSchemaDefinitions.compute` obtains the snapshot, and the named acceptance test is
+not authorable against the current harness as a result.
+
+`IntraSchemaDefinitions.compute(Workspace, String, Point)` is the lone definition provider
+that takes the whole `Workspace` and reads only open buffers. Every sibling
+(`Definitions.compute`, `Diagnostics.compute`, the hover/completion arms) takes the
+`LspSchemaSnapshot` as an explicit parameter, and the production call site
+(`GraphitronTextDocumentService.java:149`) already passes `workspace.snapshot()` into the
+`.or()`-chained `Definitions.compute` right beside it. The existing
+`IntraSchemaDefinitionTest` harness only drives `Workspace.didOpen`; it has no seam to
+install a snapshot (the sole setter is `setBuildOutput(BuildArtifacts, ValidationReport)`,
+which is too heavy for a unit fixture). So the "declaration in a file that is *not* open,
+resolved via the snapshot fallback" test cannot be written as described.
+
+Recommended resolution: thread the snapshot into `IntraSchemaDefinitions.compute` as an
+explicit parameter (matching the sibling convention), update the
+`GraphitronTextDocumentService.java:149` call site to pass `workspace.snapshot()`, and
+state in Acceptance that the test injects the fallback via a `LspSchemaSnapshot.Built.Current`
+fixture carrying the type → `SourceLocation` map (the pattern `DefinitionsTest.fooFilmSnapshot()`
+already uses), with no open buffer for the declaration. Add the precedence assertion
+(open buffer still wins when the declaring file *is* open) as the second arm of the same
+test.
