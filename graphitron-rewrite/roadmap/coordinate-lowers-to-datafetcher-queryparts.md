@@ -162,10 +162,16 @@ with its facts, each its own functional dependency:
   off the parent's own table (a different table, or a column in a different table). Authored (`@reference`)
   or inferred from the unique foreign key; it lowers to a `join` operation, with `joinPath` as its resolved
   form. Detailed below in *The `reference` fact*.
+- **`coordinate -> referencedTable`, 0..1.** The reference's **destination** table, named in its own right.
+  Present exactly when `reference` is. Not the same as `source.table` (a self-referential FK makes them
+  coincide while a `join` is still minted). Detailed below in *The `reference` fact*.
 - **`coordinate -> resolvedTable`, derived, 0..1.** The catalog table the `@field` resolves against (a
-  column's owning table, or a nested field's rooted table). Derived from `source` and `reference`:
-  `reference.destination` when present, else `source.table`. Present for catalog-backed fields, absent for
-  record / service fields. Detailed below in *The resolved table*.
+  column's owning table, or a nested field's rooted table). A priority coalesce over three facts:
+  `referencedTable ?? source.table ?? target.table`. Present for every field that touches a table, absent
+  for record / service fields. Detailed below in *The resolved table*.
+- **The same facts apply to input fields**, keyed `(coordinate, path)` (the dotted path to the input field),
+  relative to the consuming output coordinate. Their facts roll up into the output coordinate's operation
+  set. Detailed below in *Input coordinates*.
 
 `source` and `target` are two different facts, derived by two different walks (parent/edge versus the
 field's type), and they vary independently ; the same `target` `List(Table)` sits under a `Root` source or
@@ -290,26 +296,49 @@ compaction. They are one `(source, target)` pair whose operation sets differ by 
 the `reference` fact: `{select}` versus `{join, select}`. Not two leaf types ; the same coordinate facts
 plus one fact.
 
+The reference's destination has a name of its own: **`referencedTable`**, a 0..1 fact present exactly when
+`reference` is, and the table `joinPath` terminates at. It is **not** `source.table`: a self-referential FK
+(`employee.manager_id -> employee`) makes the two coincide while `reference` is still present, so a `join` is
+still minted. The `join` is minted by `reference` **presence**, never by `referencedTable != source.table` ;
+comparing the tables would silently drop self-joins, so the model must not "optimize" the join away that
+way.
+
 ### The resolved table
 
 `coordinate -> resolvedTable` is a **derived** fact: the catalog table a `@field` resolves against, the
-column's owning table for a column field or the rooted table for a nested field. It closes over `source`
-and `reference`:
+column's owning table for a column field or the rooted table for a nested field. It is a priority coalesce
+over three facts, each arm defined exactly where it fires:
 
 ```
-resolvedTable = reference.isPresent() ? reference.destination : source.table
+resolvedTable = referencedTable ?? source.table ?? target.table
 ```
 
-It is present for catalog-backed fields and absent for `Record` / `Field` / `serviceCall` fields that never
-touch a table. For a column field `target`'s shape (`Column`) names no table, so `resolvedTable` is the only
-carrier of it ; it is the generalization of `target.table` to the scalar case, which is why it must be
-derived rather than read off one fact.
+- **`referencedTable`** first: the value is reachable only by a join (a column-reference field, or a
+  child / nested table field reached by an FK). For a child table field it shadows `source.table` and equals
+  `target.table`.
+- else **`source.table`**: the value lives on the parent's own row. A plain column field, and a **nesting
+  type** ; an object type that is **not** table-bound, whose field inherits the parent's table and shares its
+  row(s). That is the `Nest` case: still SQL-backed, no join, no `referencedTable`, and distinct from the
+  `Record` / `Field` shapes that read off a Java object.
+- else **`target.table`**: a **root table field** (`source = Root`). It has no source to reference from, so
+  it carries no `referencedTable` and enters via the FROM clause. `target.table` is defined only when
+  `target.shape == Table`, so this arm can fire only for root table fields.
 
-For a table field it coincides with `target.table`, and **that coincidence is an invariant:
-`resolvedTable == target.table` for every table field.** This is a referential-integrity check between the
-derived fact and the `target` fact: the `join`, when present, must terminate at exactly the table the nested
-type's `@table` names. A reference whose `joinPath` lands anywhere else is a classification fault, not a
-silently accepted mismatch.
+It is present for every field that touches a table and absent only for `Record` / `Field` / `serviceCall`
+fields that never do. Root and nesting fields are **mirror fall-outs** of `referencedTable` being 0..1: a
+root table field takes `resolvedTable` from the **target** side (no source to reference), a nesting field
+from the **source** side (same table as the parent), and in both `referencedTable` is simply absent. For a
+column field `target`'s shape (`Column`) names no table, so `resolvedTable` is the only carrier of it ; it is
+the generalization of `target.table` to the scalar case, which is why it must be derived rather than read off
+one fact.
+
+For a table field `resolvedTable == target.table` **always**, and whenever a `referencedTable` is present it
+equals them too ; the three-way `resolvedTable == referencedTable == target.table` is the with-reference
+(child / nested) reading, and a root table field simply drops the middle term. Read over present facts,
+**that coincidence is an invariant** and a cross-check between two independently-walked facts: the FK route's
+destination (`referencedTable`) and the declared output type (`target.table`). They are walked from different
+places, the foreign-key graph and the SDL return type, and must agree ; a mismatch is an `AuthorError`
+("`@reference` routes to X but the field returns Y"), not a silently accepted mismatch.
 
 Naming it lifts a derivation otherwise recovered three ways (today `source.table` for `ColumnField`, the
 `joinPath` terminus for `ColumnReferenceField`, `target.table` for table fields ; `ColumnRef` deliberately
@@ -330,6 +359,21 @@ table fields, so this is the normalized statement of the current behavior (`filt
 `TableTargetField` today, `ChildField.java:422`), not a change to it; it merely extends cleanly to the cases
 where `target` is a scalar that names no table.
 
+`condition` is a **0..N** relation, owned by the coordinate and *placed* on its `resolvedTable`: the
+coordinate fixes which conditions exist (the same table resolved at two coordinates carries different ones),
+`resolvedTable` is where each predicate lands. The rows **conjoin** (AND) into the WHERE, or into a
+`LEFT JOIN` ON clause for the `Single` value-gating case below. Each row has a **provenance**:
+
+- **authored** ; an `@condition`, an opaque jOOQ predicate the model knows only by method name ;
+- **generated** ; minted by an input table binding, the input-coordinate fact lowered (see *Input
+  coordinates*), structured as a column of `resolvedTable`, an input source, an operator, and
+  presence-gating.
+
+The two provenances mirror the `reference` fact's authored-or-inferred shape: `@condition` is to a generated
+condition what `@reference` is to an inferred `join`. The discovery thread's `GeneratedConditionFilter` (the
+body shape `eq` / `in` / `row(...).eq` "driven by the input surface, not by the field") is exactly the
+generated arm's resolved form, no longer a loose observation.
+
 The condition's **semantic forks on `target.wrapper`, not on `target.shape`**:
 
 - **`List` (to-many)**: row-set filtering ; "which rows of `resolvedTable` contribute." Standard, no
@@ -344,6 +388,67 @@ The condition's **semantic forks on `target.wrapper`, not on `target.shape`**:
 So conditions over `resolvedTable` are first-class for every wrapper. The only open semantic is `Single`
 value-gating (the ON-clause placement and the parent-cardinality-preserved invariant), and it is owed for
 to-one table references regardless, so it is not new debt introduced by allowing column references.
+
+Presence-gating is a **third, orthogonal gate**, carried only by the generated arm: an optional input absent
+emits nothing (`TRUE`), present emits `column OP value`. It governs *whether* a predicate fires (read from
+the input's nullability) ; the wrapper fork governs *how* a fired predicate applies. A single generated
+condition on a `Single` field is therefore both presence-gated (does it fire?) and value-gating (if it fires,
+it nulls rather than drops). Authored conditions carry no presence-gating ; the author expresses their own.
+
+### Input coordinates
+
+`@reference` and `@condition` apply to **input** fields too, so input fields are fact-bearers on the same
+footing as output fields, keyed `(coordinate, path)`: the consuming output coordinate plus the dotted `path`
+to the input field, rooted at the field's argument list (`where.title`, `filter.actor.lastName`). They key
+on the consuming coordinate, not on the GraphQL input type, for the same reason output facts do, the same
+`where` input resolves against `film` at one query and `actor` at another, so its bindings, inferred FKs, and
+`referencedTable` all depend on the use site.
+
+An input coordinate carries the same fact vocabulary, `source`, `target` (shape × wrapper), `reference`,
+`referencedTable`, `resolvedTable`, and obeys the same nesting algebra: a path-internal input object is
+`Table`-shaped and its `resolvedTable` becomes its children's `source.table` ; the leaves are `Column`-shaped
+and are the actual predicates. The input tree is a coordinate tree with the same facts, flowing toward a
+predicate rather than a projection.
+
+Input facts **roll up into the output coordinate's operation set** (the output coordinate is the query
+emitter):
+
+- an input coordinate's `reference` ⇒ a `join` on the output query. This is why input-side `@reference` is in
+  scope: a cross-table input filter is just the reference fact doing on the input side what it does on the
+  output side ;
+- an input coordinate's leaf `target` (a column of its `resolvedTable`) ⇒ a **generated** `condition`, with
+  operator from the input `target.wrapper` (`Single` ⇒ `eq`, `List` ⇒ `in`, multi-column path ⇒
+  `row(...).eq`) and presence-gating from the input's nullability.
+
+So an input field is a **shared fact source**, and the field-to-operation relation is **many-to-many**, not
+1:1. The same field can mint a generated condition **and** be consumed as an argument by an authored
+`@condition` ; both are live and conjoin. A flat triple forces each field into a single role and cannot
+express this ; the normalized model lets one field carry several facts. The raw relations are:
+
+- `generated_condition(coordinate, path)`, minted by a leaf binding ;
+- `authored_condition(coordinate, method, override)`, an `@condition` ;
+- `consumes(coordinate, method, path)`, which input fields the authored condition takes as arguments (read
+  off its parameter list).
+
+The resolved operation set is **union-then-suppress**, not a plain union. `@condition(override: true)` is a
+**suppression edge**: for the path it consumes it blankets that path and its **whole subtree** of generated
+operations, the generated conditions and the `join`s that input-side references in the subtree minted to
+serve them. (We start by reaping the entire generated subtree and will narrow only if a use case needs the
+join to stand for a hand-written predicate.) Authored `@condition` facts are never suppressed ; only
+auto-generated scaffolding is:
+
+```
+generated_op(c, p) is live iff
+  ¬∃ m, P. authored_condition(c, m, override=true) ∧ consumes(c, m, P) ∧ P ⊑ p
+
+conditions = authored_conditions ∪ { live generated conditions }
+```
+
+where `P ⊑ p` means `P == p` or `P` is an ancestor of `p` in the dotted-path tree. A generated op is
+suppressed iff consumed by **at least one** override condition ; `override: true` on a condition that
+consumes nothing is a no-op. The suppression is the same shape of declarative resolution as the
+`resolvedTable` coalesce: a function over the raw facts, computed once, not a special case threaded through
+emission.
 
 ## We are data modeling: the relational discipline, not a database engine
 
@@ -691,12 +796,19 @@ contribution.
   `ColumnReferenceField` is only `Single(Column)`). Settle whether it lands as a wrapper variant of the
   reference fact reusing the to-many table-field machinery (a `Child` source, an anchor, a rows-method,
   projecting one column instead of `$fields`), or as its own leaf, before it is implemented.
+- **Override suppression granularity**. **Started maximal:** `@condition(override: true)` blankets the
+  consumed path's entire generated subtree, the generated conditions **and** the `join`s minted to serve
+  them. Chosen for simplicity, on the bet that an overriding author owns that branch's SQL. **Open residue:**
+  narrow to conditions-only (leaving an input-side reference's `join` standing for a hand-written predicate to
+  use) only if a use case requires it ; the per-field, subtree-scoped rule is easy to relax that far.
 
 ## Scope
 
 In scope: the model (the lowering to a referentially-closed method-call-graph, the normalization, the
 natural keys, the anchor/address primitive, the node and edge relations, the coordinate-and-its-facts
-normalized schema (`source` / `target` / `operation` as independent functional dependencies, the DataFetcher
+normalized schema (`source` / `target` / `operation` as independent functional dependencies, plus the
+`reference` / `referencedTable` / derived `resolvedTable` facts and the `(coordinate, path)` input-coordinate
+fact family whose facts roll up into the output operation set, the DataFetcher
 and QueryPart-methods as views over them), the target seam topology and its placement rule, and the decision to materialize
 the relations as typed in-type collections with a referential-integrity check rather than on a query
 engine). Out of scope: the emit
