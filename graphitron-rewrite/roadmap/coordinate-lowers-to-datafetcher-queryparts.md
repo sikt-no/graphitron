@@ -144,23 +144,39 @@ So graphitron is the lowering of a set of schema coordinates into a DataFetcher 
 relation, normalized, joined on the schema coordinate (model key) and on the database's own keys (the
 query graph). The leaf zoo is the fully-denormalized materialized view of that.
 
-## The normalized schema: two relations on the coordinate
+## The normalized schema: the coordinate and its facts
 
 R316's `(source, operation, target)` is common vocabulary that carries well, but it is a per-coordinate
-**summary row**: a denormalized join of the two entities' attributes, with `operation` crammed into a
-single slot. Stated in normalized form, the model is two relations keyed on the schema coordinate:
+**summary row**: a denormalized join over several independent facts, with `operation` crammed into a single
+slot. The entity is the schema coordinate `(parentType, fieldName)`; the model is the coordinate together
+with its facts, each its own functional dependency:
 
-- **`(coordinate, source, target)`, exactly one row per coordinate** ; the **DataFetcher relation**.
-  Field-granular, total, 1:1. `source` is the arrival cardinality and parent shape; `target` is the
-  field's own output cardinality (the wrapper) and shape. Both are read straight off `field.getType()`
-  and the parent, so this row is the indisputable, schema-walkable fact about the coordinate.
-- **`(coordinate, operation)`, zero or more rows per coordinate** ; the **operation relation** (the
-  QueryPart-emitting methods, thread E's SQL-side commands). `operation` is not one forced verb but a
-  **set**: a single field can `select` and `join` and `condition` and `paginate` and `orderBy` at once.
+- **`coordinate -> source`, total, 1:1.** The arrival fact: whether a source object arrives and how many,
+  plus the parent shape. Read off the **parent and the edge into the field**, not off the field itself.
+- **`coordinate -> target`, total, 1:1.** The output fact: the field's own output cardinality (the wrapper)
+  and shape. Read off **`field.getType()`**.
+- **`coordinate -> operation`, 0..N.** The operation set (the QueryPart-emitting methods, thread E's
+  SQL-side commands). `operation` is not one forced verb but a **set**: a single field can `select` and
+  `join` and `condition` and `paginate` and `orderBy` at once.
 
-The coordinate `(parentType, fieldName)` is the foreign key joining them (the model's natural key from
-the natural-key section). The corpus directive sits on that key, so it already annotates the right thing;
-its verdict generalizes from one triple to one `(source, target)` row plus a *set* of operation rows.
+`source` and `target` are two different facts, derived by two different walks (parent/edge versus the
+field's type), and they vary independently ; the same `target` `List(Table)` sits under a `Root` source or
+a `Child` source. Earlier drafts bundled them into one `(coordinate, source, target)` row and named it "the
+DataFetcher relation"; that let the DataFetcher, which is a **view** (a node kind, per *the two library
+types are node kinds, not the top level*), masquerade as the top-level relation. The honest form keeps the
+coordinate as the entity and `source` / `target` / `operation` as its facts. **The DataFetcher is the view
+that joins `source` and `target`** (and dispatches the operation set); the QueryPart-emitting methods are
+views over operations.
+
+**The three splits do not all have the same forcing function, and the spec should not pretend they do.**
+`operation` *had* to split out: it is multi-valued, so one slot was a genuine 1NF / repeating-group fault.
+`source` and `target` are each single-valued and 1:1, so co-storing them was never a normalization
+violation; separating them is fact-independence (two FDs, two walks) and refusing to let a view name a
+relation, not a normal-form fix. Both separations are right; only `operation`'s is forced by a normal form.
+
+The corpus directive sits on the coordinate (the natural key), so it already annotates the right thing; its
+verdict generalizes from one triple to a `source` fact, a `target` fact, and a *set* of operation rows,
+each independently assertable.
 
 **`operation` is a set because its members are independently triggered by walkable schema facts.** A
 table-bound return type mints `select`; pagination args / a `Connection` mint `paginate`; `@condition` or
@@ -171,33 +187,34 @@ from collapsing independent operations into one slot, so they *multiply* into le
 merely co-occur, and the cross-product dissolves **additively**. Composite falls out the same way ; `N`
 columns are `N` (or one `N`-ary) `select` operations, arity gone as a coordinate dimension.
 
-Normalization assigns each R316 axis to the relation that owns it (nothing in R316 is wrong, it just gets
-distributed):
+Normalization assigns each R316 axis to the fact that owns it (nothing in R316 is wrong, it just gets
+distributed); the **read-by** column names the view that consumes the fact:
 
-| R316 axis | Owning relation | Notes |
-|---|---|---|
-| `source` (Root / OnlyChild / Child) | DataFetcher `(coordinate, source, target)` | invocation cardinality; `Child` dispatches through a DataLoader |
-| `target` wrapper (Single / List) | DataFetcher `(coordinate, source, target)` | output cardinality; the resolve-side contract |
-| `target` shape `Column` / `Table` | read by a `select` operation | projection kind (a jOOQ `Field`, a table projection); the shape stays on the resolve row, the operation reads it |
-| `target` shape `Record` / `Field` | DataFetcher only | read off a Java object; **zero operation rows** |
-| `operation` `Fetch` / `Paginate` / `Lookup` / `Count` / `Facet` / DML | one operation row each | the SQL verbs, now set members |
-| `operation` `ServiceCall` | one operation row (no SQL) | `serviceCall`; the DataFetcher delegates to it |
-| `operation` `Nest` | zero operation rows | a regroup with no SQL; the DataFetcher's existence is the fact |
-| composite arity | `select` operation | the number of projected columns, not a coordinate dimension |
-| split / re-fetch / new-query | operation `address` | which anchor's SELECT the operation lands in |
+| R316 axis | Owning fact | Read by | Notes |
+|---|---|---|---|
+| `source` (Root / OnlyChild / Child) | `coordinate -> source` | DataFetcher | invocation cardinality; `Child` dispatches through a DataLoader |
+| `target` wrapper (Single / List) | `coordinate -> target` | DataFetcher | output cardinality; the resolve-side contract |
+| `target` shape `Column` / `Table` | `coordinate -> target` | a `select` operation | projection kind (a jOOQ `Field`, a table projection); the fact lives on `target`, the operation reads it |
+| `target` shape `Record` / `Field` | `coordinate -> target` | DataFetcher only | read off a Java object; **zero operation rows** |
+| `operation` `Fetch` / `Paginate` / `Lookup` / `Count` / `Facet` / DML | `coordinate -> operation` | the operation's own method | the SQL verbs, now set members |
+| `operation` `ServiceCall` | `coordinate -> operation` | DataFetcher delegates to it | `serviceCall`; no SQL |
+| `operation` `Nest` | (none: empty set) | DataFetcher only | a regroup with no SQL; the DataFetcher's existence is the fact |
+| composite arity | `coordinate -> operation` | the `select` operation | the number of projected columns, not a coordinate dimension |
+| split / re-fetch / new-query | operation `address` | the addressed anchor's query | which anchor's SELECT the operation lands in |
 
-Two refinements the flat triple hid. First, **`target` straddles**: its wrapper (Single / List, the output
-cardinality) is a DataFetcher fact and stays on the resolve row, but its shape is consumed by the `select`
-operation; the model keeps the whole `target` on the resolve row (it is just the field's type) and lets
-`select` read it, rather than duplicating shape onto the operation. Watch the embeddable-`Column`-as-`Record`
-case: a target shape becoming a child's source shape is a coordinate-to-coordinate edge (the wrapper
-algebra), not an operation. Second, **multiplicity is 0..N, not 1..N**: a field that reads off an in-memory
-record (`target` shape `Record` / `Field`), and `Nest`, have a DataFetcher and an empty operation set; the
-DataFetcher's existence is the fact, and a no-op operation row would buy nothing.
+Two refinements the flat triple hid. First, **`target` is consumed by two views**: its wrapper (Single /
+List, the output cardinality) is read by the DataFetcher, its shape by the `select` operation. The fact
+itself stays whole on `coordinate -> target` (it is just the field's type); the two views read the parts
+they need rather than the shape being duplicated onto the operation. Watch the embeddable-`Column`-as-
+`Record` case: a target shape becoming a child's source shape is a coordinate-to-coordinate edge (the
+wrapper algebra), not an operation. Second, **operation multiplicity is 0..N, not 1..N**: a field that
+reads off an in-memory record (`target` shape `Record` / `Field`), and `Nest`, have a `source` and a
+`target` fact and an empty operation set; the DataFetcher's existence is the fact, and a no-op operation
+row would buy nothing.
 
-R316 slices 1-4 are the denormalized, singleton-row view (one coordinate, one DataFetcher, at most one
-operation's worth of facts) and stay valid as that projection ; they are the one-row case of the N-row
-operation relation.
+R316 slices 1-4 are the denormalized, singleton-row view (one coordinate, its `source` and `target` facts,
+at most one operation's worth of facts) and stay valid as that projection ; they are the empty-or-one case
+of the 0..N operation set.
 
 ## We are data modeling: the relational discipline, not a database engine
 
@@ -223,12 +240,12 @@ relational model as design discipline; do not adopt a relational runtime.** The 
   substrate now pins a schema whose column set is not yet stable. Note also that the relational model only
   ever described the classification (front) half; the emit (back) half is imperative JavaPoet rendering
   that no engine makes easier, so even the maximal version "databases" only half the generator.
-- **The chosen materialization is typed relations in the type system.** The two relations are typed, keyed
-  collections of records (a `Map<Coordinate, _>` for the DataFetcher relation; a one-to-many
-  `Coordinate -> operation*` for the operation relation), with explicit indexes where a join is hot. The
-  sealed-variant field model already *is* a denormalized materialized view over these; this decision keeps
-  it that way and formalizes the relations and the integrity check around it, rather than relocating them
-  onto an external store.
+- **The chosen materialization is typed relations in the type system.** The coordinate's facts are typed,
+  keyed collections of records (`Coordinate -> source` and `Coordinate -> target` as `Map<Coordinate, _>`,
+  `Coordinate -> operation*` as a one-to-many), with explicit indexes where a join is hot; the DataFetcher
+  and the QueryPart-methods are views computed over them. The sealed-variant field model already *is* a
+  denormalized materialized view over these facts; this decision keeps it that way and formalizes the
+  relations and the integrity check around it, rather than relocating them onto an external store.
 - **Referential integrity is a typed check, and it is thread I's test.** "Every method-name an edge
   references resolves to a node in the node relation" is the closure invariant written as integrity
   validation over the in-memory relations. This is the single highest-leverage database feature, it needs
@@ -526,8 +543,8 @@ contribution.
   addressed elsewhere, never a fabricated SDL field.
 - **Corpus assertion shape**: the `@classified` verdict generalizes from one triple to the
   `(DataFetcher, QueryPart*)` decomposition. **Resolved by the normalized schema:** the directive asserts
-  one `(coordinate, source, target)` row plus a *set* of `(coordinate, operation)` rows, each operation
-  independently assertable (it is a regime-1 seam by construction). This is the same set framing the leaf
+  the coordinate's `source` fact, its `target` fact, and a *set* of `operation` rows, each independently
+  assertable (an operation is a regime-1 seam by construction). This is the same set framing the leaf
   cross-product dissolves into; the residue is only the rendering of an operation set in the corpus, not
   whether it is one or many rows.
 - **Materialization: discipline vs runtime**. **Resolved (data-modeling section):** adopt the relational
@@ -540,8 +557,9 @@ contribution.
 ## Scope
 
 In scope: the model (the lowering to a referentially-closed method-call-graph, the normalization, the
-natural keys, the anchor/address primitive, the node and edge relations, the two-relation normalized schema
-keyed on the coordinate, the target seam topology and its placement rule, and the decision to materialize
+natural keys, the anchor/address primitive, the node and edge relations, the coordinate-and-its-facts
+normalized schema (`source` / `target` / `operation` as independent functional dependencies, the DataFetcher
+and QueryPart-methods as views over them), the target seam topology and its placement rule, and the decision to materialize
 the relations as typed in-type collections with a referential-integrity check rather than on a query
 engine). Out of scope: the emit
 re-platforming that consumes it (R314), any rewrite of R316 slices 1-4 (they are the valid
