@@ -1,7 +1,7 @@
 ---
 id: R350
 title: "LSP goto-definition for GraphQL types only resolves declarations in open buffers; fall back to the TDR/snapshot for workspace-wide jumps"
-status: Backlog
+status: Spec
 bucket: bug
 priority: 5
 theme: lsp
@@ -41,6 +41,33 @@ limited to open buffers.
 Open-buffer-first preserves correctness for files mid-edit; the snapshot is the
 workspace-wide fallback. Distinct from R349, which is the `@service`/class-ref
 (`CompletionData`) feed, not intra-schema type jumps.
+
+## Design notes
+
+- **Key and source.** Key the map on the SDL type name. Populate from
+  `TypeDefinitionRegistry.types()` (objects, interfaces, unions, enums, inputs; these are
+  canonical definitions, not extensions) plus `registry.scalars()`. Skip the bundled
+  `directives.graphqls` source (its `getSourceName()` is the classpath resource name, not a
+  file a consumer can open) and the built-in scalars; an entry whose `SourceLocation` has a
+  null `sourceName` is dropped rather than emitted as a dead `file://` URI.
+- **Reuse `CompletionData.SourceLocation`.** It already models `(uri, line, column)` and
+  lives in the same `catalog` package as the snapshot; the scalar helper at
+  `CatalogBuilder.java:1055` already produces `"file://" + loc.getSourceName()` from a
+  definition's `SourceLocation`. Reuse both rather than introducing a parallel location type.
+- **Snapshot constructor fan-out.** `LspSchemaSnapshot.Built` has two leaf records
+  (`Current`, `Previous`), each with a canonical constructor and a convenience constructor,
+  plus `Workspace.demoteSnapshot` which copies `Current` → `Previous`. Adding the map means
+  threading it through all of these; the convenience constructors (used by LSP unit-test
+  fixtures) default it to `Map.of()`, matching how they already default the R160 maps.
+- **Coordinate conversion.** graphql-java `SourceLocation` is 1-based line/column; LSP
+  `Position` is 0-based. The fallback `Location` points at the definition's start (the
+  `type`/`scalar` keyword), not the name node, since the precise name span is only available
+  from the tree-sitter open-buffer path. Reuse whatever 1-based→0-based adjustment the
+  existing definition arms apply so the convention stays in one place.
+- **Precedence.** Open-buffer scan stays first and authoritative; the snapshot fallback runs
+  only when no open buffer declares the type. A type declared in an open buffer that the
+  user is mid-editing must still resolve to the live tree-sitter span, not the last-built
+  snapshot position.
 
 ## Acceptance
 
