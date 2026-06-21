@@ -158,6 +158,10 @@ with its facts, each its own functional dependency:
 - **`coordinate -> operation`, 0..N.** The operation set (the QueryPart-emitting methods, thread E's
   SQL-side commands). `operation` is not one forced verb but a **set**: a single field can `select` and
   `join` and `condition` and `paginate` and `orderBy` at once.
+- **`coordinate -> reference`, 0..1.** The cross-table fact: present exactly when the field's value lives
+  off the parent's own table (a different table, or a column in a different table). Authored (`@reference`)
+  or inferred from the unique foreign key; it lowers to a `join` operation, with `joinPath` as its resolved
+  form. Detailed below in *The `reference` fact*.
 
 `source` and `target` are two different facts, derived by two different walks (parent/edge versus the
 field's type), and they vary independently ; the same `target` `List(Table)` sits under a `Root` source or
@@ -178,14 +182,16 @@ The corpus directive sits on the coordinate (the natural key), so it already ann
 verdict generalizes from one triple to a `source` fact, a `target` fact, and a *set* of operation rows,
 each independently assertable.
 
-**`operation` is a set because its members are independently triggered by walkable schema facts.** A
-table-bound return type mints `select`; pagination args / a `Connection` mint `paginate`; `@condition` or
-filter inputs mint `condition`; a reference path mints `join`; `@orderBy` mints `orderBy`; `@service` mints
-`serviceCall`. The operation set is the **union** of independently-fired triggers. This is the schema-walk
-reading of the whole thesis: the leaf cross-product (`Split x Lookup x Composite x ...`) is what you get
-from collapsing independent operations into one slot, so they *multiply* into leaf variants; as a set they
-merely co-occur, and the cross-product dissolves **additively**. Composite falls out the same way ; `N`
-columns are `N` (or one `N`-ary) `select` operations, arity gone as a coordinate dimension.
+**`operation` is a set because its members are triggered by separate, walkable facts.** Most are
+*input-triggered*, fired by an independent SDL or argument fact: a table-bound return type mints `select`,
+pagination args / a `Connection` mint `paginate`, `@condition` or filter inputs mint `condition`,
+`@orderBy` mints `orderBy`, `@service` mints `serviceCall`. One is *relational*: `join` is minted by the
+`reference` fact, that is, by the relationship between `source` and the value's table rather than by an
+independent input (see *The `reference` fact*). The operation set is the **union** of these triggers. This
+is the schema-walk reading of the whole thesis: the leaf cross-product (`Split x Lookup x Composite x ...`)
+is what you get from collapsing independent operations into one slot, so they *multiply* into leaf variants;
+as a set they merely co-occur, and the cross-product dissolves **additively**. Composite falls out the same
+way ; `N` columns are `N` (or one `N`-ary) `select` operations, arity gone as a coordinate dimension.
 
 Normalization assigns each R316 axis to the fact that owns it (nothing in R316 is wrong, it just gets
 distributed); the **read-by** column names the view that consumes the fact:
@@ -215,6 +221,50 @@ row would buy nothing.
 R316 slices 1-4 are the denormalized, singleton-row view (one coordinate, its `source` and `target` facts,
 at most one operation's worth of facts) and stay valid as that projection ; they are the empty-or-one case
 of the 0..N operation set.
+
+### The `reference` fact
+
+A field whose value lives off the parent's own table, reaching either a **different table** (a nested table
+field) or a **column in a different table** (a column-reference field), carries a `reference` fact. Same-table
+fields (a plain `ColumnField`) carry none. So `reference` present is exactly the condition that a `join`
+operation exists: the value's read-table differs from `source.table`.
+
+Naming the fact resolves the "alters the source / alters the path" puzzle, because it alters **neither
+`source` nor `target`**. The model's `source` is the *arrival* (the parent that reaches the resolver), and
+`@reference` never changes that ; an A-row still arrives. What it relocates is the table the value is *drawn
+from* (the read-table), which defaults to the parent's table. The puzzle was two senses of "source": the
+arrival (the model's `source`, untouched) versus the value's read-table (what `reference` moves).
+
+A foreign-key traversal needs a **destination table** and a **path**; `reference` always supplies the
+traversal, and the two field kinds differ only in which the field's other facts had already pinned:
+
+- **Column target** (`ColumnReferenceField`): a scalar names no table, so `reference` supplies both ; it
+  moves the read-table off the parent onto the destination. This is what reads as "altering the source".
+- **Table target** (`TableField` and kin): the destination is already pinned by the nested type's `@table`,
+  so `reference` supplies only the path, disambiguating which FK route reaches it. This is what reads as
+  "altering the path".
+
+Both are one edge-alteration seen against different fixed endpoints: `reference` parametrizes the edge
+between the enclosing query and the value, never the endpoints.
+
+`reference` is **authored or inferred**, and the inference is total with a typed failure. `@reference`
+supplies it explicitly; absent that, it is inferred from the foreign keys between `source.table` and the
+destination ; **exactly one** FK and the path is inferred, **zero or more than one** and it is not
+derivable, which is an `AuthorError` telling the author to supply `@reference` with the information needed
+to join (the LSP-surfaced rejection, not a silent guess).
+
+It lowers to the `join` operation; `joinPath` (`List<JoinStep>`) is its resolved form, never an independent
+axis. For a column-reference field it lowers into *two* places at once: the `target`'s column identity (the
+destination column) and the `join`'s path, and those must agree (the column's table is the join's
+destination). That agreement is a referential-integrity check between the `target` fact and the `join`
+operation, the FK-as-join-graph point made concrete.
+
+The worked example is the additive proof, visible in the leaf records. `ColumnField` (`ChildField.java:262`)
+and `ColumnReferenceField` (`:288`) are component-identical except the reference variant adds `joinPath`
+(and `parentCorrelation`): same `source` (`Table`), same `target` (`Single(Column)`), same column and
+compaction. They are one `(source, target)` pair whose operation sets differ by exactly one `join` minted by
+the `reference` fact: `{select}` versus `{join, select}`. Not two leaf types ; the same coordinate facts
+plus one fact.
 
 ## We are data modeling: the relational discipline, not a database engine
 
