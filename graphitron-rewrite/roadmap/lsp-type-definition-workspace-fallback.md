@@ -34,9 +34,10 @@ limited to open buffers.
    the registry's type definitions (objects, interfaces, unions, enums, inputs, scalars)
    and reading each definition's `SourceLocation`. The existing scalar helper
    (`CatalogBuilder.java:1055`, `"file://" + loc.getSourceName()`) is the pattern to reuse.
-2. In `IntraSchemaDefinitions.compute`, keep the open-buffer scan first (it yields a precise
-   tree-sitter name span and reflects unsaved edits), then fall back to the snapshot map
-   when no open buffer declares the type, returning a `Location` pointing at the on-disk file.
+2. Thread the snapshot into `IntraSchemaDefinitions.compute` as a parameter (see the
+   **Wiring** note), keep the open-buffer scan first (it yields a precise tree-sitter name
+   span and reflects unsaved edits), then fall back to the snapshot map when no open buffer
+   declares the type, returning a `Location` pointing at the on-disk file.
 
 Open-buffer-first preserves correctness for files mid-edit; the snapshot is the
 workspace-wide fallback. Distinct from R349, which is the `@service`/class-ref
@@ -68,36 +69,41 @@ workspace-wide fallback. Distinct from R349, which is the `@service`/class-ref
   only when no open buffer declares the type. A type declared in an open buffer that the
   user is mid-editing must still resolve to the live tree-sitter span, not the last-built
   snapshot position.
+- **Wiring (test seam).** `IntraSchemaDefinitions.compute(Workspace, String, Point)` is today
+  the only definition provider that takes the whole `Workspace` and reads only open buffers;
+  every sibling takes the snapshot as a parameter. `Definitions.compute(WorkspaceFile,
+  CompletionData, LspSchemaSnapshot, Point)` is the convention, and `DefinitionsTest` exercises
+  it by passing a `Built.Current` fixture (`fooFilmSnapshot()`) straight in. `IntraSchemaDefinitionTest`
+  has no equivalent seam: every case builds a bare `new Workspace()` and the only way to install
+  a snapshot on a live `Workspace` is `setBuildOutput`, which demands full `BuildArtifacts`. So
+  the snapshot must be a `compute` parameter, not reached through `Workspace`. New signature:
+  `IntraSchemaDefinitions.compute(Workspace workspace, LspSchemaSnapshot snapshot, String cursorUri,
+  Point pos)` (the `Workspace` stays, since the open-buffer scan still needs `openUris()`). The
+  production call site at `GraphitronTextDocumentService.java:149` already holds
+  `workspace.snapshot()` and passes it, mirroring the `Definitions.compute` call on the line above.
 
 ## Acceptance
 
-LSP-tier test: goto-definition on a type reference whose declaration lives in a file that
-is *not* open resolves to that file's URI and the declaration position via the snapshot
-fallback, while the open-buffer path still wins (precise span, live edits) when the
-declaring file is open.
+LSP-tier test in `IntraSchemaDefinitionTest`, authored against the new `compute(Workspace,
+LspSchemaSnapshot, String, Point)` signature so the snapshot is injected as a parameter (a
+`Built.Current` fixture carrying the type-location map), matching how `DefinitionsTest` injects
+`fooFilmSnapshot()`:
 
-## Reviewer note (Spec → Ready, 2026-06-21) — revision requested
+- **Snapshot fallback.** A type reference whose declaration is *not* in any open buffer, with a
+  `Built.Current` snapshot mapping that type to a file URI + position, resolves to that URI and
+  position. Asserting against the injected fixture, no `setBuildOutput`/`BuildArtifacts` needed.
+- **Open-buffer precedence.** When the declaring file *is* open, the open-buffer path still wins:
+  the result is the live tree-sitter name span, not the snapshot position, even if both are present.
+- **Neither source.** Unknown type with an `Unavailable` (or non-matching `Built.Current`) snapshot
+  and no open declaration returns empty, preserving the current no-op behaviour.
 
-One gap to close before this is Ready: the spec does not pin *how*
-`IntraSchemaDefinitions.compute` obtains the snapshot, and the named acceptance test is
-not authorable against the current harness as a result.
+## Reviewer note (Spec → Ready, 2026-06-21) — resolved
 
-`IntraSchemaDefinitions.compute(Workspace, String, Point)` is the lone definition provider
-that takes the whole `Workspace` and reads only open buffers. Every sibling
-(`Definitions.compute`, `Diagnostics.compute`, the hover/completion arms) takes the
-`LspSchemaSnapshot` as an explicit parameter, and the production call site
-(`GraphitronTextDocumentService.java:149`) already passes `workspace.snapshot()` into the
-`.or()`-chained `Definitions.compute` right beside it. The existing
-`IntraSchemaDefinitionTest` harness only drives `Workspace.didOpen`; it has no seam to
-install a snapshot (the sole setter is `setBuildOutput(BuildArtifacts, ValidationReport)`,
-which is too heavy for a unit fixture). So the "declaration in a file that is *not* open,
-resolved via the snapshot fallback" test cannot be written as described.
-
-Recommended resolution: thread the snapshot into `IntraSchemaDefinitions.compute` as an
-explicit parameter (matching the sibling convention), update the
-`GraphitronTextDocumentService.java:149` call site to pass `workspace.snapshot()`, and
-state in Acceptance that the test injects the fallback via a `LspSchemaSnapshot.Built.Current`
-fixture carrying the type → `SourceLocation` map (the pattern `DefinitionsTest.fooFilmSnapshot()`
-already uses), with no open buffer for the declaration. Add the precedence assertion
-(open buffer still wins when the declaring file *is* open) as the second arm of the same
-test.
+The reviewer requested that the spec pin *how* `IntraSchemaDefinitions.compute` obtains the
+snapshot, since the named acceptance test was not authorable against the current harness
+(the provider took the whole `Workspace` and read only open buffers, with no seam to inject
+a snapshot). Resolved in this spec: the **Wiring (test seam)** design note pins the
+`compute(Workspace, LspSchemaSnapshot, String, Point)` signature and the
+`GraphitronTextDocumentService.java:149` call site passing `workspace.snapshot()`, and the
+Acceptance arms above inject a `Built.Current` fixture directly, matching
+`DefinitionsTest.fooFilmSnapshot()`.
