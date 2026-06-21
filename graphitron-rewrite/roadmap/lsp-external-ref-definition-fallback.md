@@ -27,7 +27,27 @@ left `UNKNOWN` and goto-def silently no-ops.
 
 ## Reproduction (mechanism confirmed correct; the trigger is source-root coverage)
 
-Reproduced against the real sakila service module: `ClasspathScanner.scan([sakila-service/target/classes])` and `SourceWalker.walk([sakila-service/src/main/java])` both find `SampleQueryService`, the FQN-join matches, and the walk yields a real location (`SampleQueryService.java:27`). So the scan, walk, join, and request path are all correct. The JRE theory is ruled out (the field report's `getSystemJavaCompiler()` was non-null and the walk works). The failure occurs only when the live dev session builds the catalog with `compileSourceRoots` that does **not** cover the module holding the `@service`/`@condition` source: the compiled classes are on the classpath (`ClasspathScanner` finds them, so completion works), but their sources are never walked, so `enrichExternalReferences` leaves the location `UNKNOWN` and goto-def returns `[]`. This is the cross-module shape: services in a different module, dev launched from a sub-module, or services consumed as a built dependency, so the module's source root is absent from the session's `getAllProjects()` source list even when its `target/classes` is present.
+Reproduced end-to-end on the real sakila service module by driving the full
+`CatalogBuilder.build` (the two inputs the dev server feeds it) and then
+`Definitions.compute`, both modes:
+
+- **classes + sources on the build:** the `SampleQueryService` external ref gets a
+  real location and goto-def returns `SampleQueryService.java:27`.
+- **classes on the classpath but the source root NOT on `compileSourceRoots`** (the
+  field-report shape): the ref is still present (so completion works) but its
+  `definition()` is `UNKNOWN` (uri="", line=0) and goto-def returns `Optional.empty()`.
+
+So the scan, walk, FQN-join, and request path are all correct; the symptom is purely a
+function of whether the `@service` class's source directory is among
+`compileSourceRoots`. The JRE theory is ruled out (the field report's
+`getSystemJavaCompiler()` was non-null and the walk works). The failure occurs only when
+the live dev session builds the catalog with `compileSourceRoots` that does **not** cover
+the module holding the `@service`/`@condition` source: the compiled classes are on the
+classpath (`ClasspathScanner` finds them, so completion works), but their sources are
+never walked, so `enrichExternalReferences` leaves the location `UNKNOWN`. This is the
+cross-module shape: services in a different module, or services consumed as a built
+dependency, so the module's source root is absent from the session's `getAllProjects()`
+source list even when its `target/classes` is present.
 
 ## Why it is invisible and total (not partial like tables)
 
