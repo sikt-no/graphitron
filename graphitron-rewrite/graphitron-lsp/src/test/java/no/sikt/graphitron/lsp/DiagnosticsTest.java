@@ -1371,7 +1371,7 @@ class DiagnosticsTest {
 
     private static CompletionData nodeCatalog() {
         var film = new CompletionData.Table(
-            "film", "", CompletionData.SourceLocation.UNKNOWN,
+            "film", "", null,
             List.of(
                 CompletionData.Column.of("FILM_ID", "Integer", false, ""),
                 CompletionData.Column.of("TITLE", "String", false, "")
@@ -1443,7 +1443,7 @@ class DiagnosticsTest {
 
     private static CompletionData filmCatalog() {
         var film = new CompletionData.Table(
-            "film", "", CompletionData.SourceLocation.UNKNOWN,
+            "film", "", null,
             List.of(
                 CompletionData.Column.of("FILM_ID", "Integer", false, ""),
                 CompletionData.Column.of("TITLE", "String", false, "")
@@ -1453,7 +1453,7 @@ class DiagnosticsTest {
             )
         );
         var language = new CompletionData.Table(
-            "language", "", CompletionData.SourceLocation.UNKNOWN, List.of(), List.of()
+            "language", "", null, List.of(), List.of()
         );
         return new CompletionData(List.of(film, language), List.of(), List.of());
     }
@@ -1466,7 +1466,7 @@ class DiagnosticsTest {
      */
     private static CompletionData filmAndLanguageCatalogWithLanguageName() {
         var film = new CompletionData.Table(
-            "film", "", CompletionData.SourceLocation.UNKNOWN,
+            "film", "", null,
             List.of(
                 CompletionData.Column.of("FILM_ID", "Integer", false, ""),
                 CompletionData.Column.of("TITLE", "String", false, "")
@@ -1476,7 +1476,7 @@ class DiagnosticsTest {
             )
         );
         var language = new CompletionData.Table(
-            "language", "", CompletionData.SourceLocation.UNKNOWN,
+            "language", "", null,
             List.of(
                 CompletionData.Column.of("LANGUAGE_ID", "Integer", false, ""),
                 CompletionData.Column.of("NAME", "String", false, "")

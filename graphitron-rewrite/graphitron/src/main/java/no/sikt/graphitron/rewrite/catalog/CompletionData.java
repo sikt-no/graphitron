@@ -64,62 +64,73 @@ public record CompletionData(
     }
 
     /**
-     * Database table: name, optional Javadoc-derived description, source
-     * location, columns, and FK relations to other tables.
+     * Database table: name, optional Javadoc-derived description, the
+     * fully-qualified name of the jOOQ-generated table class, columns, and FK
+     * relations to other tables.
+     *
+     * @param classFqn fully-qualified name of the generated jOOQ table class
+     *                 (e.g. {@code <jooqPackage>.tables.Film}), or {@code null}
+     *                 when the table is not resolvable in the catalog. The LSP
+     *                 goto-definition / hover paths join this FQN against the
+     *                 LSP-owned {@link SourceWalker.Index} at request time, so the
+     *                 table / column position rides the {@code .java} source
+     *                 cadence rather than the generator build cadence (R352,
+     *                 mirroring the service half R349 introduced). The catalog
+     *                 itself holds no source position.
      */
     public record Table(
         String name,
         String description,
-        SourceLocation definition,
+        String classFqn,
         List<Column> columns,
         List<Reference> references
     ) {}
 
     /**
-     * Column on a table.
+     * Column on a table. Holds no source position: goto-definition joins the
+     * {@code (owning-table classFqn, name)} key against the LSP-owned
+     * {@link SourceWalker.Index} at request time (R352).
      *
      * @param name        jOOQ Java field name (e.g. {@code "FILM_ID"}), not the SQL column name
      *                    (e.g. {@code "film_id"}). LSP completions suggest this form; diagnostics
      *                    accept SQL names via case-insensitive matching but emit a Warning.
      * @param description Javadoc for the column (e.g. lifted from
      *                    {@code COMMENT ON COLUMN}); empty if absent.
-     * @param definition  source location of the column declaration in the
-     *                    jOOQ-generated table class; {@link SourceLocation#UNKNOWN}
-     *                    when the source is not on disk.
      */
     public record Column(
         String name,
         String graphqlType,
         boolean nullable,
-        String description,
-        SourceLocation definition
+        String description
     ) {
-        /** Test-friendly factory: location defaults to {@link SourceLocation#UNKNOWN}. */
+        /** Test-friendly factory alias for the canonical constructor. */
         public static Column of(String name, String graphqlType, boolean nullable, String description) {
-            return new Column(name, graphqlType, nullable, description, SourceLocation.UNKNOWN);
+            return new Column(name, graphqlType, nullable, description);
         }
     }
 
     /**
-     * FK relation between tables.
+     * FK relation between tables. Holds no source position: goto-definition
+     * joins the {@code (keysClassFqn, keyName)} field key against the LSP-owned
+     * {@link SourceWalker.Index} at request time (R352).
      *
-     * @param targetTable other table name
-     * @param keyName     jOOQ Java field name of the FK ({@code <TABLE>__<FK>})
-     * @param inverse     {@code true} if the other table holds the FK
-     * @param definition  source location of the FK declaration in the
-     *                    jOOQ-generated {@code Keys} class;
-     *                    {@link SourceLocation#UNKNOWN} when the source is
-     *                    not on disk.
+     * @param targetTable  other table name
+     * @param keyName      jOOQ Java field name of the FK ({@code <TABLE>__<FK>}),
+     *                     a static field on the generated {@code Keys} class
+     * @param inverse      {@code true} if the other table holds the FK
+     * @param keysClassFqn fully-qualified name of the generated jOOQ
+     *                     {@code Keys} class (e.g. {@code <jooqPackage>.Keys}),
+     *                     or {@code null} when not resolvable
      */
     public record Reference(
         String targetTable,
         String keyName,
         boolean inverse,
-        SourceLocation definition
+        String keysClassFqn
     ) {
-        /** Test-friendly factory: location defaults to {@link SourceLocation#UNKNOWN}. */
+        /** Test-friendly factory: no {@code Keys} class FQN (no goto-definition target). */
         public static Reference of(String targetTable, String keyName, boolean inverse) {
-            return new Reference(targetTable, keyName, inverse, SourceLocation.UNKNOWN);
+            return new Reference(targetTable, keyName, inverse, null);
         }
     }
 

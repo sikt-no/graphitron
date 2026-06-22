@@ -20,10 +20,12 @@ import java.net.URLClassLoader;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 /**
@@ -195,58 +197,69 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
     }
 
     /**
-     * Compile-output directories from every reactor project. The LSP catalog
-     * scans each one for service / condition / record class candidates, so a
-     * consumer running {@code mvn graphitron:dev} from one module sees
-     * services declared in sibling modules of the same reactor.
-     *
-     * <p>Falls back to the current project's own output directory when the
-     * Maven session is unavailable (e.g. unit-tier callers that bypass the
-     * full lifecycle); the result there is identical to pre-multi-module
-     * behaviour. External jars on the compile classpath ({@code ~/.m2}) are
-     * intentionally not scanned: services live in reactor source code, not
-     * third-party libraries.
+     * The reactor projects whose roots the LSP scans: every project in the
+     * Maven session, so a consumer running {@code mvn graphitron:dev} from one
+     * module sees services / tables declared in sibling modules of the same
+     * reactor. Falls back to the current project alone when the session is
+     * unavailable (unit-tier callers that bypass the full lifecycle), which
+     * matches pre-multi-module behaviour.
      */
-    private List<Path> resolveClasspathRoots() {
-        var roots = new LinkedHashSet<Path>();
-        Iterable<MavenProject> projects = session != null && session.getAllProjects() != null
+    private Iterable<MavenProject> reactorProjects() {
+        return session != null && session.getAllProjects() != null
             ? session.getAllProjects()
             : List.of(project);
-        for (MavenProject p : projects) {
+    }
+
+    /**
+     * Compile-output directories from every reactor project. The LSP catalog
+     * scans each one for service / condition / record class candidates.
+     * External jars on the compile classpath ({@code ~/.m2}) are intentionally
+     * not scanned: services live in reactor source code, not third-party
+     * libraries.
+     */
+    private List<Path> resolveClasspathRoots() {
+        return collectExistingDirs(reactorProjects(), p -> {
             String dir = p.getBuild() == null ? null : p.getBuild().getOutputDirectory();
-            if (dir == null) continue;
-            Path path = Path.of(dir).toAbsolutePath().normalize();
-            if (Files.isDirectory(path)) {
-                roots.add(path);
-            }
-        }
-        return new ArrayList<>(roots);
+            return dir == null ? List.of() : List.of(dir);
+        });
     }
 
     /**
      * Compile source-root directories from every reactor project: the
      * hand-written {@code src/main/java} roots plus any generated-sources roots
-     * a prior plugin registered (jOOQ output among them). The LSP catalog
-     * parses these to recover Java declaration positions and Javadoc for
-     * goto-definition / hover, and to refine jOOQ table / column positions from
-     * file-level to per-line.
+     * a prior plugin registered (jOOQ output among them). The LSP parses these
+     * to recover Java declaration positions and Javadoc for goto-definition /
+     * hover on both halves.
      *
-     * <p>Mirrors {@link #resolveClasspathRoots()}: scoped to reactor source, not
-     * third-party jars, and falls back to the current project's own source
-     * roots when the Maven session is unavailable (unit-tier callers). Only
+     * <p>Resolved over the same {@link #reactorProjects()} set as
+     * {@link #resolveClasspathRoots()} through the shared
+     * {@link #collectExistingDirs} traversal, so the scan path and the walk path
+     * cannot drift in which modules they cover: a class scanned for completion
+     * is a class whose source root is walked for goto-definition (R351). Only
      * existing directories are kept, so the pre-{@code mvn compile} state where
-     * generated sources are absent contributes nothing and the catalog falls
-     * back to file-level / {@code UNKNOWN} positions.
+     * generated sources are absent contributes nothing.
      */
     private List<Path> resolveCompileSourceRoots() {
+        return collectExistingDirs(reactorProjects(),
+            p -> p.getCompileSourceRoots() == null ? List.of() : p.getCompileSourceRoots());
+    }
+
+    /**
+     * Shared traversal behind {@link #resolveClasspathRoots()} and
+     * {@link #resolveCompileSourceRoots()}: for each project, normalise the
+     * directories {@code extractor} pulls off it to absolute paths and keep the
+     * existing ones, de-duplicated in encounter order. Package-private so the
+     * classpath/source root parity can be pinned with a unit test over
+     * hand-built projects, without standing up a {@link MavenSession}.
+     */
+    static List<Path> collectExistingDirs(
+        Iterable<MavenProject> projects, Function<MavenProject, Collection<String>> extractor
+    ) {
         var roots = new LinkedHashSet<Path>();
-        Iterable<MavenProject> projects = session != null && session.getAllProjects() != null
-            ? session.getAllProjects()
-            : List.of(project);
         for (MavenProject p : projects) {
-            List<String> sourceRoots = p.getCompileSourceRoots();
-            if (sourceRoots == null) continue;
-            for (String dir : sourceRoots) {
+            Collection<String> dirs = extractor.apply(p);
+            if (dirs == null) continue;
+            for (String dir : dirs) {
                 if (dir == null) continue;
                 Path path = Path.of(dir).toAbsolutePath().normalize();
                 if (Files.isDirectory(path)) {

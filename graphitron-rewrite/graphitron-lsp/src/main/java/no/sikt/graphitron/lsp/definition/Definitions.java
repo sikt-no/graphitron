@@ -33,10 +33,10 @@ import java.util.Optional;
  *   <li><b>jOOQ half</b> ({@link Behavior.CatalogTableBinding} /
  *       {@link Behavior.CatalogColumnBinding} / {@link Behavior.CatalogFkBinding},
  *       reached from {@code @table}, {@code @field}, and {@code @reference(path:)}):
- *       jumps to the generated table class, column field, or FK constant.
- *       Positions are refined to the per-line declaration when the
- *       {@code SourceWalker} has parsed the generated sources; they fall back
- *       to the file head ({@code 0:0}) otherwise.</li>
+ *       jumps to the generated table class, column field, or FK constant. The
+ *       position comes from the LSP-owned {@link SourceWalker.Index} at request
+ *       time, joined by the table / {@code Keys} class FQN the catalog carries,
+ *       so it rides the {@code .java} source cadence (R352).</li>
  *   <li><b>service half</b> ({@link Behavior.ClassNameBinding} /
  *       {@link Behavior.MethodNameBinding}: {@code @service},
  *       {@code @externalField}, {@code @enum}, {@code @condition},
@@ -51,14 +51,13 @@ import java.util.Optional;
  *
  * <p>Returns {@link Optional#empty()} when the cursor is not on a known
  * directive arg and when the arg value does not resolve to a known reference
- * in the catalog. For the service half it also returns empty on the two
- * no-jump arms of {@link DefinitionTarget} (source absent / overload
- * ambiguous), but it decides those through an exhaustive switch on the typed
- * outcome rather than a sentinel; positions for the service half come from the
- * LSP-owned {@link SourceWalker.Index} at request time, not from the catalog.
- * The jOOQ half ({@code @table} / {@code @field} / {@code @reference}) still
- * reads its position from the catalog's {@code SourceLocation} (build cadence;
- * see roadmap R352 for lifting it onto the source index too).
+ * in the catalog. Both halves resolve positions from the LSP-owned
+ * {@link SourceWalker.Index} at request time (not from the catalog) and route
+ * the join outcome through one exhaustive switch on the typed
+ * {@link DefinitionTarget}: a {@code Located} jumps, a {@code SourceAbsent}
+ * (known reference, source not on a walked root) and an {@code Ambiguous}
+ * (overload collision, service half only) are non-jumps decided by the type,
+ * not a sentinel.
  */
 public final class Definitions {
 
@@ -102,11 +101,11 @@ public final class Definitions {
                 methodDefinition(vocabulary, directive, location, catalog, sourceIndex, pos,
                     mnb.classNameCoord(), file.source());
             case Behavior.CatalogTableBinding ignored ->
-                tableDefinition(location, catalog, file.source());
+                tableDefinition(location, catalog, sourceIndex, file.source());
             case Behavior.CatalogColumnBinding ignored ->
-                fieldDefinition(directive, location, catalog, snapshot, file.source());
+                fieldDefinition(directive, location, catalog, sourceIndex, snapshot, file.source());
             case Behavior.CatalogFkBinding ignored ->
-                referenceKeyDefinition(catalog,
+                referenceKeyDefinition(catalog, sourceIndex,
                     Nodes.unquote(Nodes.text(location.leafNode(), file.source())));
             // No Java declaration target: @argMapping content, @scalarType FQNs
             // (handled by the class-name half when bound), and @nodeId typeNames
@@ -216,26 +215,50 @@ public final class Definitions {
     }
 
     /**
+     * Pure join for a jOOQ field reference (column or FK constant): the
+     * {@code (declaringClassFqn, fieldName)} key resolves against the source
+     * index. {@link DefinitionTarget.Located} when present, else
+     * {@link DefinitionTarget.SourceAbsent} (a {@code null} FQN, i.e. an
+     * unresolvable table / {@code Keys} class, lands here too). jOOQ fields do
+     * not collide on a single overload key, so there is no {@code Ambiguous} arm.
+     */
+    private static DefinitionTarget fieldTarget(
+        String declaringClassFqn, String fieldName, SourceWalker.Index sourceIndex
+    ) {
+        if (declaringClassFqn == null) return new DefinitionTarget.SourceAbsent();
+        var decl = sourceIndex.fields().get(new SourceWalker.FieldKey(declaringClassFqn, fieldName));
+        return decl != null
+            ? new DefinitionTarget.Located(decl.location())
+            : new DefinitionTarget.SourceAbsent();
+    }
+
+    /**
      * Table goto-definition, shared by {@code @table(name:)} and
      * {@code @reference(path: [{table:}])}, both of which resolve to
-     * {@link Behavior.CatalogTableBinding} on the cursor's coordinate.
+     * {@link Behavior.CatalogTableBinding} on the cursor's coordinate. The
+     * generated table class is a class in the source index, so this reuses the
+     * {@link #classTarget} join on the table's {@code classFqn}.
      */
     private static Optional<Location> tableDefinition(
-        LspVocabulary.CursorLocation location, CompletionData catalog, byte[] source
+        LspVocabulary.CursorLocation location, CompletionData catalog,
+        SourceWalker.Index sourceIndex, byte[] source
     ) {
         String tableName = Nodes.unquote(Nodes.text(location.leafNode(), source));
-        return catalog.getTable(tableName)
-            .map(CompletionData.Table::definition)
-            .flatMap(Definitions::asLocation);
+        var tableOpt = catalog.getTable(tableName);
+        if (tableOpt.isEmpty()) return Optional.empty();
+        String classFqn = tableOpt.get().classFqn();
+        return resolve(classTarget(classFqn, sourceIndex), classFqn);
     }
 
     /**
      * Column goto-definition for {@code @field(name:)}: resolves the enclosing
-     * type's table, then the named column within it.
+     * type's table, then the named column within it, then joins the
+     * {@code (table classFqn, column name)} field key against the source index.
      */
     private static Optional<Location> fieldDefinition(
         Directives.Directive directive, LspVocabulary.CursorLocation location,
-        CompletionData catalog, LspSchemaSnapshot snapshot, byte[] source
+        CompletionData catalog, SourceWalker.Index sourceIndex,
+        LspSchemaSnapshot snapshot, byte[] source
     ) {
         String columnName = Nodes.unquote(Nodes.text(location.leafNode(), source));
         var typeDecl = DeclarationKind.enclosing(directive.outer());
@@ -244,18 +267,23 @@ public final class Definitions {
         if (tableName.isEmpty()) return Optional.empty();
         var tableOpt = catalog.getTable(tableName.get());
         if (tableOpt.isEmpty()) return Optional.empty();
-        return tableOpt.get().columns().stream()
+        var table = tableOpt.get();
+        var columnOpt = table.columns().stream()
             .filter(c -> c.name().equalsIgnoreCase(columnName))
-            .findFirst()
-            .map(CompletionData.Column::definition)
-            .flatMap(Definitions::asLocation);
+            .findFirst();
+        // Unknown column is "not our target" (empty), distinct from a known
+        // column whose source is not indexed (SourceAbsent, also a non-jump).
+        if (columnOpt.isEmpty()) return Optional.empty();
+        return resolve(fieldTarget(table.classFqn(), columnOpt.get().name(), sourceIndex), table.classFqn());
     }
 
-    private static Optional<Location> referenceKeyDefinition(CompletionData catalog, String fkName) {
+    private static Optional<Location> referenceKeyDefinition(
+        CompletionData catalog, SourceWalker.Index sourceIndex, String fkName
+    ) {
         for (var table : catalog.tables()) {
             for (var ref : table.references()) {
                 if (ref.keyName().equals(fkName)) {
-                    return asLocation(ref.definition());
+                    return resolve(fieldTarget(ref.keysClassFqn(), fkName, sourceIndex), fkName);
                 }
             }
         }

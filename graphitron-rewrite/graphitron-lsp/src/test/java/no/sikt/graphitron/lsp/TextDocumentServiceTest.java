@@ -197,7 +197,7 @@ class TextDocumentServiceTest {
             List.of(new CompletionData.Table(
                 "film",
                 "Movies the rental store carries",
-                CompletionData.SourceLocation.UNKNOWN,
+                null,
                 List.of(),
                 List.of()
             )),
@@ -231,15 +231,22 @@ class TextDocumentServiceTest {
 
     @Test
     void definitionRequestRoundTripsCatalogUri() throws Exception {
-        var filmDef = new CompletionData.SourceLocation("file:///fake/jooq/Film.java", 0, 0);
+        // Goto-definition joins the table's classFqn against the LSP-owned source
+        // index at request time; the catalog carries the FQN, the index the position.
+        String filmFqn = "fake.jooq.tables.Film";
         var catalog = new CompletionData(
             List.of(new CompletionData.Table(
-                "film", "", filmDef, List.of(), List.of()
+                "film", "", filmFqn, List.of(), List.of()
             )),
             List.of(),
             List.of()
         );
-        var server = new GraphitronLanguageServer(new no.sikt.graphitron.lsp.state.Workspace(catalog));
+        var workspace = new no.sikt.graphitron.lsp.state.Workspace(catalog);
+        workspace.setSourceIndex(new no.sikt.graphitron.rewrite.catalog.SourceWalker.Index(
+            java.util.Map.of(filmFqn, new no.sikt.graphitron.rewrite.catalog.SourceWalker.Decl(
+                new CompletionData.SourceLocation("file:///fake/jooq/Film.java", 0, 0), "")),
+            java.util.Map.of(), java.util.Map.of(), java.util.Set.of()));
+        var server = new GraphitronLanguageServer(workspace);
         var proxy = startServer(server);
         proxy.initialize(new InitializeParams()).get(5, TimeUnit.SECONDS);
 
@@ -346,7 +353,7 @@ class TextDocumentServiceTest {
         return new CompletionData.Table(
             name,
             "",
-            CompletionData.SourceLocation.UNKNOWN,
+            null,
             List.of(),
             List.of()
         );

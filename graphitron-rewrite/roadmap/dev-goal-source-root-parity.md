@@ -1,47 +1,55 @@
 ---
 id: R351
-title: "graphitron:dev walks every scanned modules sources (compileSourceRoots / classpathRoots parity)"
-status: Backlog
+title: "Complete the LSP goto-definition decoupling: source-root parity + jOOQ half on the source index"
+status: In Progress
 bucket: bug
 priority: 4
 theme: lsp
 depends-on: []
 created: 2026-06-21
-last-updated: 2026-06-21
+last-updated: 2026-06-22
 ---
 
-# graphitron:dev walks every scanned modules sources (compileSourceRoots / classpathRoots parity)
+# Complete the LSP goto-definition decoupling: source-root parity + jOOQ half on the source index
 
-The dev goal's two root-resolution paths are not in parity. `resolveClasspathRoots`
-(`AbstractRewriteMojo`) collects every reactor module's `target/classes` and feeds it to
-`ClasspathScanner`, so a `@service`/`@condition` class compiled anywhere in the reactor is
-*scannable* (appears in completion). But the source positions for those classes come from
-`SourceWalker.walk(ctx.compileSourceRoots())`, and `compileSourceRoots` does not reliably
-cover the same set of modules: a class can be on the scan path (classes present) while its
-`src/main/java` is absent from the walk path (sources not walked), so it resolves in
-completion but has no goto-definition / hover position.
+Closes out the goto-definition story R349 started. R349 typed the service-half
+outcome (`DefinitionTarget`) and moved service-half positions onto an LSP-owned,
+source-cadence `SourceWalker.Index`. This item finishes the job so jump-to-definition
+works for the jOOQ half too and the two halves resolve through one shape. It absorbs
+what was filed separately as R352 (jOOQ-half decoupling) rather than leaving a thin
+parity fix and a dangling architecture item.
 
-This is the concrete, reproduced trigger behind R349's field report: completion works,
-goto-def silently returns nothing. It is a small, mojo-local fix and the fastest way to
-unblock affected users, so it can ship ahead of R349's deeper decoupling.
+## Delivered
 
-## Scope
+1. **Source-root parity, made structural.** `resolveClasspathRoots` (the scan path) and
+   `resolveCompileSourceRoots` (the walk path) in `AbstractRewriteMojo` already iterated
+   the same `session.getAllProjects()` set, but as two parallel loops that could drift.
+   They now share one traversal (`collectExistingDirs`, package-private and unit-tested
+   over hand-built projects), so a class scanned for completion provably has its source
+   root walked for goto-definition. A startup diagnostic in `DevMojo` logs the
+   classpath-root / source-root / external-reference counts, so the
+   "completion works but goto-definition returns nothing" report self-diagnoses.
 
-- Make the dev goal's source-root resolution cover the same module set its classpath-root
-  resolution does: any module whose compiled classes are scanned for `@service` candidates
-  should have its source root walked. The likely shape is a `resolveCompileSourceRoots`
-  that mirrors `resolveClasspathRoots` over `session.getAllProjects()` (a sibling already
-  exists; confirm it iterates the same projects and that generated-source roots registered
-  by prior plugins are included), so a scanned class is always a walkable class.
-- Pin it with a test at the appropriate tier. The resolution itself is mojo-local and not
-  reachable from the pipeline tier; an integration/execution-tier check that a multi-module
-  reactor surfaces every scanned module's source root is the honest level. The
-  catalog-level consequence (a scanned ref gets a non-absent position when its module's
-  source is on the build) is already covered by the R349 work and `CatalogBuilderSourceTest`.
+2. **jOOQ half on the source index.** `CompletionData.Table` / `Column` / `Reference` no
+   longer carry a `SourceLocation`; `Table` carries the generated table class FQN and
+   `Reference` the `Keys` class FQN. `Definitions` resolves the jOOQ `@table` / `@field` /
+   `@reference` arms by joining those FQNs against the LSP-owned `SourceWalker.Index` at
+   request time and routes them through the same exhaustive `DefinitionTarget` switch the
+   service half uses. The jOOQ goto-definition position now rides the `.java` source
+   cadence, exactly mirroring R349, and the file-head (`0:0`) synthesis is retired (a known
+   table whose source is not on a walked root lands on `SourceAbsent`, a clean non-jump).
+   `CatalogBuilder` stops synthesising jOOQ positions; it still lifts Javadoc into the
+   build-cadence `description` slots, as it does for the service half.
 
-## Relationship to R349
+## Deferred (was R352 parts 2-3), not blocking jump-to-definition
 
-This is the stopgap; R349 is the durable fix. Even with perfect root parity, positions
-still ride the generator build cadence (R349's decoupling addresses that) and a
-genuinely source-absent class still needs the typed-outcome handling R349 introduces. Ship
-this first to stop the bleeding; R349 makes the bleeding structurally impossible.
+These do not change whether you can jump; they only remove transient hover-vs-goto skew
+during a live edit, and the description-cadence change ripples into the completion path
+(jOOQ column comments are not recoverable at runtime, so moving `description` onto the
+source index means threading the index through `FieldCompletions` / `Hovers`). Left as
+follow-up:
+
+- Hover / `description` onto the source cadence so hover and goto-definition cannot read
+  two snapshots of the same `Decl` mid-edit.
+- Static `SourceWalker.CACHE` → an instance the LSP owns. Only lands cleanly once the above
+  removes the last build-cadence walk from `CatalogBuilder`, leaving the LSP the sole walker.

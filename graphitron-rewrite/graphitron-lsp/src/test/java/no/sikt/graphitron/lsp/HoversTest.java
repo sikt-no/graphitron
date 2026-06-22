@@ -514,7 +514,7 @@ class HoversTest {
     private static CompletionData nodeCatalog() {
         var film = new CompletionData.Table(
             "film", "Movies",
-            CompletionData.SourceLocation.UNKNOWN,
+            null,
             List.of(CompletionData.Column.of("film_id", "Integer", false, "")),
             List.of()
         );
@@ -720,7 +720,7 @@ class HoversTest {
     private static CompletionData filmAndLanguageCatalogWithLanguageName() {
         var film = new CompletionData.Table(
             "film", "Movies",
-            CompletionData.SourceLocation.UNKNOWN,
+            null,
             List.of(
                 CompletionData.Column.of("film_id", "Integer", false, ""),
                 CompletionData.Column.of("title", "String", false, "")
@@ -729,7 +729,7 @@ class HoversTest {
         );
         var language = new CompletionData.Table(
             "language", "Languages",
-            CompletionData.SourceLocation.UNKNOWN,
+            null,
             List.of(
                 CompletionData.Column.of("language_id", "Integer", false, ""),
                 CompletionData.Column.of("lang_name", "String", false, "")
@@ -747,7 +747,7 @@ class HoversTest {
         var film = new CompletionData.Table(
             "film",
             "Movies the rental store carries",
-            CompletionData.SourceLocation.UNKNOWN,
+            null,
             List.of(
                 CompletionData.Column.of("film_id", "Integer", false, ""),
                 CompletionData.Column.of("title", "String", false, "")
@@ -758,7 +758,7 @@ class HoversTest {
         );
         var language = new CompletionData.Table(
             "language", "Spoken languages",
-            CompletionData.SourceLocation.UNKNOWN,
+            null,
             List.of(CompletionData.Column.of("language_id", "Integer", false, "")),
             List.of()
         );

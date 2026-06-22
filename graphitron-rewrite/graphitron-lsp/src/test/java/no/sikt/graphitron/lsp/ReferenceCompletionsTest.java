@@ -152,7 +152,7 @@ class ReferenceCompletionsTest {
 
     private static CompletionData filmCatalog() {
         var film = new CompletionData.Table(
-            "film", "", CompletionData.SourceLocation.UNKNOWN,
+            "film", "", null,
             List.of(),
             List.of(
                 CompletionData.Reference.of("language", "FILM__FILM_LANGUAGE_ID_FKEY", false),
@@ -160,10 +160,10 @@ class ReferenceCompletionsTest {
             )
         );
         var language = new CompletionData.Table(
-            "language", "", CompletionData.SourceLocation.UNKNOWN, List.of(), List.of()
+            "language", "", null, List.of(), List.of()
         );
         var filmActor = new CompletionData.Table(
-            "film_actor", "", CompletionData.SourceLocation.UNKNOWN, List.of(), List.of()
+            "film_actor", "", null, List.of(), List.of()
         );
         return new CompletionData(List.of(film, language, filmActor), List.of(), List.of());
     }

@@ -82,7 +82,7 @@ class CompletionTextEditTest {
         Point cursor = new Point(0, innerStart + 1);
 
         var data = new CompletionData(
-            List.of(new CompletionData.Table("film", "", CompletionData.SourceLocation.UNKNOWN, List.of(), List.of())),
+            List.of(new CompletionData.Table("film", "", null, List.of(), List.of())),
             List.of(), List.of());
         var items = runValueProvider(source, cursor,
             (ctx, dir, bytes) -> TableCompletions.generate(VOCAB, data, ctx));
@@ -104,7 +104,7 @@ class CompletionTextEditTest {
         Point cursor = new Point(line, innerStart + 1);
 
         var data = new CompletionData(
-            List.of(new CompletionData.Table("film", "", CompletionData.SourceLocation.UNKNOWN,
+            List.of(new CompletionData.Table("film", "", null,
                 List.of(CompletionData.Column.of("title", "String", false, "")),
                 List.of())),
             List.of(), List.of());
@@ -132,9 +132,9 @@ class CompletionTextEditTest {
         int innerStart = lines[line].indexOf("\"FILM__\"") + 1;
         Point cursor = new Point(line, innerStart + 2);
 
-        var film = new CompletionData.Table("film", "", CompletionData.SourceLocation.UNKNOWN, List.of(),
+        var film = new CompletionData.Table("film", "", null, List.of(),
             List.of(CompletionData.Reference.of("language", "FILM__FILM_LANGUAGE_ID_FKEY", false)));
-        var language = new CompletionData.Table("language", "", CompletionData.SourceLocation.UNKNOWN, List.of(), List.of());
+        var language = new CompletionData.Table("language", "", null, List.of(), List.of());
         var data = new CompletionData(List.of(film, language), List.of(), List.of());
 
         var fooFilmSnapshot = new LspSchemaSnapshot.Built.Current(

@@ -23,11 +23,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p>Two families are covered: the jOOQ half ({@code @table} / {@code @field}
  * / {@code @reference}) and its fall-throughs (unknown name, unknown table,
- * unknown nested field, missing source location), and the service half (the
- * class-name / method-name binding directives), whose locations the
- * {@code SourceWalker} fills in from the consumer's sources. The catalog
- * fixtures here carry explicit source locations; real source-line refinement
- * is exercised at the pipeline tier in {@code CatalogBuilderSourceTest}.
+ * unknown nested field, source not indexed), and the service half (the
+ * class-name / method-name binding directives). Both resolve positions from
+ * the LSP-owned {@code SourceWalker.Index} at request time, joined by the FQNs
+ * the catalog carries; the catalog itself holds no source positions.
  */
 class DefinitionsTest {
 
@@ -35,12 +34,17 @@ class DefinitionsTest {
     private static final String LANGUAGE_URI = "file:///fake/jooq/Language.java";
     private static final String KEYS_URI = "file:///fake/jooq/Keys.java";
 
+    private static final String FILM_FQN = "fake.jooq.tables.Film";
+    private static final String LANGUAGE_FQN = "fake.jooq.tables.Language";
+    private static final String KEYS_FQN = "fake.jooq.Keys";
+    private static final int TITLE_LINE = 6;
+
     @Test
     void tableDefinitionMapsToTableSourceUri() {
         var file = file("type Foo @table(name: \"film\") { bar: Int }");
         var pos = pointAt(file, 0, "film");
 
-        var loc = Definitions.compute(file, filmCatalog(), SourceWalker.Index.EMPTY, LspSchemaSnapshot.unavailable(), pos).orElseThrow();
+        var loc = Definitions.compute(file, filmCatalog(), filmIndex(), LspSchemaSnapshot.unavailable(), pos).orElseThrow();
         assertThat(loc.getUri()).isEqualTo(FILM_URI);
         assertThat(loc.getRange().getStart().getLine()).isZero();
     }
@@ -49,11 +53,11 @@ class DefinitionsTest {
     void unknownTableReturnsEmpty() {
         var file = file("type Foo @table(name: \"GHOST\") { bar: Int }");
         var pos = pointAt(file, 0, "GHOST");
-        assertThat(Definitions.compute(file, filmCatalog(), SourceWalker.Index.EMPTY, LspSchemaSnapshot.unavailable(), pos)).isEmpty();
+        assertThat(Definitions.compute(file, filmCatalog(), filmIndex(), LspSchemaSnapshot.unavailable(), pos)).isEmpty();
     }
 
     @Test
-    void fieldDefinitionMapsToTableSourceUri() {
+    void fieldDefinitionMapsToColumnSourcePosition() {
         var file = file("""
             type Foo @table(name: "film") {
                 bar: Int @field(name: "title")
@@ -61,10 +65,10 @@ class DefinitionsTest {
             """);
         var pos = pointAt(file, 1, "title");
 
-        var loc = Definitions.compute(file, filmCatalog(), SourceWalker.Index.EMPTY, fooFilmSnapshot(), pos).orElseThrow();
-        // Phase 4 sends columns to the same file as the owning table; line
-        // refinement waits for JavaParser.
+        var loc = Definitions.compute(file, filmCatalog(), filmIndex(), fooFilmSnapshot(), pos).orElseThrow();
         assertThat(loc.getUri()).isEqualTo(FILM_URI);
+        // The column's own per-line field position from the source index.
+        assertThat(loc.getRange().getStart().getLine()).isEqualTo(TITLE_LINE);
     }
 
     @Test
@@ -76,7 +80,7 @@ class DefinitionsTest {
             """);
         var pos = pointAt(file, 1, "FILM__FILM_LANGUAGE_ID_FKEY");
 
-        var loc = Definitions.compute(file, filmCatalog(), SourceWalker.Index.EMPTY, LspSchemaSnapshot.unavailable(), pos).orElseThrow();
+        var loc = Definitions.compute(file, filmCatalog(), filmIndex(), LspSchemaSnapshot.unavailable(), pos).orElseThrow();
         assertThat(loc.getUri()).isEqualTo(KEYS_URI);
     }
 
@@ -89,7 +93,7 @@ class DefinitionsTest {
             """);
         var pos = pointAt(file, 1, "language");
 
-        var loc = Definitions.compute(file, filmCatalog(), SourceWalker.Index.EMPTY, LspSchemaSnapshot.unavailable(), pos).orElseThrow();
+        var loc = Definitions.compute(file, filmCatalog(), filmIndex(), LspSchemaSnapshot.unavailable(), pos).orElseThrow();
         assertThat(loc.getUri()).isEqualTo(LANGUAGE_URI);
     }
 
@@ -98,7 +102,7 @@ class DefinitionsTest {
         var file = file("type Foo @table(name: \"film\") { bar: Int }");
         // Cursor on the @table directive name token, not on its argument.
         int col = "type Foo @t".length();
-        assertThat(Definitions.compute(file, filmCatalog(), SourceWalker.Index.EMPTY, LspSchemaSnapshot.unavailable(), new Point(0, col))).isEmpty();
+        assertThat(Definitions.compute(file, filmCatalog(), filmIndex(), LspSchemaSnapshot.unavailable(), new Point(0, col))).isEmpty();
     }
 
     @Test
@@ -109,25 +113,17 @@ class DefinitionsTest {
             }
             """);
         var pos = pointAt(file, 1, "GHOST");
-        assertThat(Definitions.compute(file, filmCatalog(), SourceWalker.Index.EMPTY, fooFilmSnapshot(), pos)).isEmpty();
+        assertThat(Definitions.compute(file, filmCatalog(), filmIndex(), fooFilmSnapshot(), pos)).isEmpty();
     }
 
     @Test
-    void unknownLocationProducesEmpty() {
-        // Same shape as filmCatalog but without source URIs; every
-        // location collapses to UNKNOWN, so goto-def returns empty.
-        var unsourcedCatalog = new CompletionData(
-            List.of(new CompletionData.Table(
-                "film", "", CompletionData.SourceLocation.UNKNOWN,
-                List.of(CompletionData.Column.of("title", "String", false, "")),
-                List.of()
-            )),
-            List.of(),
-            List.of()
-        );
+    void tableKnownButSourceNotIndexedProducesEmpty() {
+        // A known table whose generated source is not on a walked root: the jOOQ
+        // half lands on the SourceAbsent arm (a non-jump), the same way the
+        // service half does, rather than synthesising a file-head jump.
         var file = file("type Foo @table(name: \"film\") { bar: Int }");
         var pos = pointAt(file, 0, "film");
-        assertThat(Definitions.compute(file, unsourcedCatalog, SourceWalker.Index.EMPTY, LspSchemaSnapshot.unavailable(), pos)).isEmpty();
+        assertThat(Definitions.compute(file, filmCatalog(), SourceWalker.Index.EMPTY, LspSchemaSnapshot.unavailable(), pos)).isEmpty();
     }
 
     // ---- Service half: class-name / method-name binding directives ----
@@ -336,26 +332,49 @@ class DefinitionsTest {
         return new WorkspaceFile(1, source);
     }
 
+    /**
+     * Catalog carries the jOOQ-derived structure plus the generated class FQNs
+     * (table {@code classFqn}, {@code Keys} FQN on the reference); positions live
+     * in the source index, joined by those FQNs at request time.
+     */
     private static CompletionData filmCatalog() {
-        var filmDef = new CompletionData.SourceLocation(FILM_URI, 0, 0);
-        var langDef = new CompletionData.SourceLocation(LANGUAGE_URI, 0, 0);
-        var keysDef = new CompletionData.SourceLocation(KEYS_URI, 0, 0);
-
         var film = new CompletionData.Table(
-            "film", "", filmDef,
+            "film", "", FILM_FQN,
             List.of(
-                new CompletionData.Column("film_id", "Integer", false, "", filmDef),
-                new CompletionData.Column("title", "String", false, "", filmDef)
+                new CompletionData.Column("film_id", "Integer", false, ""),
+                new CompletionData.Column("title", "String", false, "")
             ),
             List.of(
-                new CompletionData.Reference("language", "FILM__FILM_LANGUAGE_ID_FKEY", false, keysDef)
+                new CompletionData.Reference("language", "FILM__FILM_LANGUAGE_ID_FKEY", false, KEYS_FQN)
             )
         );
         var language = new CompletionData.Table(
-            "language", "", langDef,
+            "language", "", LANGUAGE_FQN,
             List.of(),
             List.of()
         );
         return new CompletionData(List.of(film, language), List.of(), List.of());
+    }
+
+    /**
+     * The LSP-owned source index the jOOQ half joins against: the generated
+     * table classes by FQN, the column fields and the {@code Keys} FK constant
+     * by {@link SourceWalker.FieldKey}. Mirrors what the {@code SourceWalker}
+     * produces from the generated jOOQ sources when they are on a walked root.
+     */
+    private static SourceWalker.Index filmIndex() {
+        var filmClass = new SourceWalker.Decl(new CompletionData.SourceLocation(FILM_URI, 0, 0), "");
+        var langClass = new SourceWalker.Decl(new CompletionData.SourceLocation(LANGUAGE_URI, 0, 0), "");
+        var filmIdField = new SourceWalker.Decl(new CompletionData.SourceLocation(FILM_URI, 5, 4), "");
+        var titleField = new SourceWalker.Decl(new CompletionData.SourceLocation(FILM_URI, TITLE_LINE, 4), "");
+        var fkField = new SourceWalker.Decl(new CompletionData.SourceLocation(KEYS_URI, 8, 4), "");
+        return new SourceWalker.Index(
+            Map.of(FILM_FQN, filmClass, LANGUAGE_FQN, langClass),
+            Map.of(),
+            Map.of(
+                new SourceWalker.FieldKey(FILM_FQN, "film_id"), filmIdField,
+                new SourceWalker.FieldKey(FILM_FQN, "title"), titleField,
+                new SourceWalker.FieldKey(KEYS_FQN, "FILM__FILM_LANGUAGE_ID_FKEY"), fkField),
+            Set.of());
     }
 }

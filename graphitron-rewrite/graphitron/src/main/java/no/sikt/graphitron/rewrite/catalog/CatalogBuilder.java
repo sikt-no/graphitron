@@ -35,8 +35,6 @@ import no.sikt.graphitron.rewrite.schema.RewriteSchemaLoader;
 import org.jooq.ForeignKey;
 import org.jooq.Table;
 
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -56,17 +54,16 @@ import java.util.Optional;
  * on every classpath-watcher trigger; this class is the workhorse behind
  * that call.
  *
- * <p>Source-location URIs follow the jOOQ Maven plugin's default output
- * layout under {@code <basedir>/target/generated-sources/jooq/}: each
- * table maps to {@code <pkgPath>/tables/<ClassName>.java} and FK references
- * map to {@code <pkgPath>/Keys.java}. When the consumer's source roots are on
- * the build, the {@link SourceWalker} refines table / column positions from
- * the file head ({@code 0:0}) to the per-line declaration and lifts Javadoc
- * into the {@code description} slots; the file-level synthesis stays as the
- * fallback for the pre-{@code mvn compile} state. URIs that do not exist on
- * disk are reduced to {@link CompletionData.SourceLocation#UNKNOWN} so
- * goto-definition silently no-ops on consumers with non-default jOOQ output
- * paths.
+ * <p>The catalog carries the generated jOOQ table class FQN
+ * ({@code <jooqPackage>.tables.<ClassName>}) on each {@link CompletionData.Table}
+ * and the {@code Keys} class FQN ({@code <jooqPackage>.Keys}) on each
+ * {@link CompletionData.Reference}, but no source positions: the LSP joins those
+ * FQNs against its own {@link SourceWalker.Index} at request time, so jOOQ
+ * goto-definition / hover ride the {@code .java} source cadence rather than the
+ * generator build cadence (R352, mirroring the service half R349 introduced).
+ * The single source walk here lifts Javadoc into the {@code description} slots
+ * only; when no source roots are on the build the descriptions fall back to the
+ * SQL comment (tables) or empty (columns).
  */
 public final class CatalogBuilder {
 
@@ -802,16 +799,20 @@ public final class CatalogBuilder {
     }
 
     public static CompletionData build(JooqCatalog jooq, GraphQLSchema assembled, RewriteContext ctx) {
-        Path jooqSourceRoot = ctx.basedir().resolve("target/generated-sources/jooq");
-        String jooqPkgPath = ctx.jooqPackage().replace('.', '/');
-        // Single source walk feeds both halves: per-line table / column positions and
-        // Javadoc on the jOOQ half, and class / method positions and Javadoc on the
-        // service half. Empty when no source roots are on the build (unit tier,
-        // validate-only), in which case every enriched slot stays at its file-level /
-        // UNKNOWN fallback.
+        // FQN of the generated jOOQ Keys class (jOOQ emits it at the package
+        // root). Both the table classFqn and this Keys FQN are the join keys the
+        // LSP resolves against the source index at request time; the catalog
+        // carries no source positions of its own (R352).
+        String keysClassFqn = ctx.jooqPackage() + ".Keys";
+        // Single source walk supplies the Javadoc lifted into descriptions for
+        // both halves (jOOQ tables / columns, service classes / methods). Source
+        // *positions* are not read here: goto-definition / hover join FQNs against
+        // the LSP-owned source index on the .java cadence. Empty when no source
+        // roots are on the build (unit tier, validate-only), in which case the
+        // descriptions stay at their bytecode / SQL-comment fallback.
         SourceWalker.Index sources = SourceWalker.walk(ctx.compileSourceRoots());
         return new CompletionData(
-            buildTables(jooq, jooqSourceRoot, jooqPkgPath, sources),
+            buildTables(jooq, keysClassFqn, sources),
             buildScalars(assembled),
             buildExternalReferences(ctx, sources),
             ctx.namedReferences(),
@@ -950,80 +951,71 @@ public final class CatalogBuilder {
     }
 
     private static List<CompletionData.Table> buildTables(
-        JooqCatalog jooq, Path sourceRoot, String pkgPath, SourceWalker.Index sources
+        JooqCatalog jooq, String keysClassFqn, SourceWalker.Index sources
     ) {
         var tables = new ArrayList<CompletionData.Table>();
         for (String tableName : jooq.allTableSqlNames()) {
-            tables.add(buildTable(jooq, tableName, sourceRoot, pkgPath, sources));
+            tables.add(buildTable(jooq, tableName, keysClassFqn, sources));
         }
         return List.copyOf(tables);
     }
 
     private static CompletionData.Table buildTable(
-        JooqCatalog jooq, String tableName, Path sourceRoot, String pkgPath, SourceWalker.Index sources
+        JooqCatalog jooq, String tableName, String keysClassFqn, SourceWalker.Index sources
     ) {
         Optional<JooqCatalog.TableEntry> entryOpt = jooq.findTable(tableName).asEntry();
         Table<?> jooqTable = entryOpt.map(JooqCatalog.TableEntry::table).orElse(null);
 
         // Fully-qualified name of the generated jOOQ table class, e.g.
-        // <jooqPackage>.tables.Film; the source walk keys class / field
-        // declarations by this FQN.
+        // <jooqPackage>.tables.Film; the LSP keys class / field declarations by
+        // this FQN when it resolves goto-definition against the source index.
         String classFqn = jooqTable == null ? null : jooqTable.getClass().getName();
 
-        var fileLocation = jooqTable == null
-            ? CompletionData.SourceLocation.UNKNOWN
-            : tableSourceLocation(sourceRoot, pkgPath, jooqTable);
-
+        // Description still rides the build cadence (SQL comment, else the class
+        // Javadoc from the walk); positions do not. This mirrors the service half.
         var classDecl = classFqn == null ? null : sources.classes().get(classFqn);
-        // Per-line table position from the walk when present; the file-level
-        // synthesis stays as the fallback for the pre-`mvn compile` state where
-        // the generated sources do not exist yet.
-        var tableDefinition = classDecl != null ? classDecl.location() : fileLocation;
-
         String sqlComment = commentOf(jooqTable);
         String tableDescription = !sqlComment.isEmpty()
             ? sqlComment
             : (classDecl != null ? classDecl.javadoc() : "");
 
         var columns = jooq.allColumnsOf(tableName).stream()
-            .map(c -> buildColumn(c, classFqn, tableDefinition, sources))
+            .map(c -> buildColumn(c, classFqn, sources))
             .toList();
 
         var references = jooqTable == null
             ? List.<CompletionData.Reference>of()
-            : buildReferencesFor(jooq, jooqTable, sourceRoot, pkgPath);
+            : buildReferencesFor(jooq, jooqTable, keysClassFqn);
 
         return new CompletionData.Table(
             tableName,
             tableDescription,
-            tableDefinition,
+            classFqn,
             columns,
             references
         );
     }
 
     /**
-     * Builds one column, refining its position to the per-line field
-     * declaration when the source walk has it (keyed by the jOOQ Java field
-     * name, matching {@link CompletionData.Column#name()}), and lifting the
-     * field's Javadoc into {@code description}. Falls back to the owning
-     * table's location when the field is not indexed (sources absent).
+     * Builds one column, lifting the field's Javadoc into {@code description}
+     * from the source walk (keyed by the jOOQ Java field name, matching
+     * {@link CompletionData.Column#name()}); empty when the field is not indexed
+     * (sources absent). The column carries no source position: goto-definition
+     * joins {@code (owning-table classFqn, name)} against the LSP-owned source
+     * index at request time.
      */
     private static CompletionData.Column buildColumn(
-        JooqCatalog.ColumnEntry c, String classFqn,
-        CompletionData.SourceLocation tableDefinition, SourceWalker.Index sources
+        JooqCatalog.ColumnEntry c, String classFqn, SourceWalker.Index sources
     ) {
         var fieldDecl = classFqn == null
             ? null
             : sources.fields().get(new SourceWalker.FieldKey(classFqn, c.javaName()));
-        var location = fieldDecl != null ? fieldDecl.location() : tableDefinition;
         var description = fieldDecl != null ? fieldDecl.javadoc() : "";
         return new CompletionData.Column(
             c.javaName(),
             c.columnClass(),
             c.nullable(),
-            description,
-            location
+            description
         );
     }
 
@@ -1036,13 +1028,12 @@ public final class CatalogBuilder {
      * resolvable.
      */
     private static List<CompletionData.Reference> buildReferencesFor(
-        JooqCatalog jooq, Table<?> table, Path sourceRoot, String pkgPath
+        JooqCatalog jooq, Table<?> table, String keysClassFqn
     ) {
-        var keysLocation = keysSourceLocation(sourceRoot, pkgPath);
         var refs = new ArrayList<CompletionData.Reference>();
         for (ForeignKey<?, ?> fk : table.getReferences()) {
             String targetTable = fk.getKey().getTable().getName();
-            refs.add(new CompletionData.Reference(targetTable, keyConstant(jooq, fk), false, keysLocation));
+            refs.add(new CompletionData.Reference(targetTable, keyConstant(jooq, fk), false, keysClassFqn));
         }
         // Inbound: any FK on another table that points at this one.
         String thisName = table.getName();
@@ -1052,30 +1043,11 @@ public final class CatalogBuilder {
             if (other == null) continue;
             for (ForeignKey<?, ?> fk : other.getReferences()) {
                 if (fk.getKey().getTable().getName().equalsIgnoreCase(thisName)) {
-                    refs.add(new CompletionData.Reference(otherName, keyConstant(jooq, fk), true, keysLocation));
+                    refs.add(new CompletionData.Reference(otherName, keyConstant(jooq, fk), true, keysClassFqn));
                 }
             }
         }
         return List.copyOf(refs);
-    }
-
-    private static CompletionData.SourceLocation tableSourceLocation(
-        Path sourceRoot, String pkgPath, Table<?> jooqTable
-    ) {
-        Path tableFile = sourceRoot
-            .resolve(pkgPath)
-            .resolve("tables")
-            .resolve(jooqTable.getClass().getSimpleName() + ".java");
-        return Files.exists(tableFile)
-            ? new CompletionData.SourceLocation(tableFile.toUri().toString(), 0, 0)
-            : CompletionData.SourceLocation.UNKNOWN;
-    }
-
-    private static CompletionData.SourceLocation keysSourceLocation(Path sourceRoot, String pkgPath) {
-        Path keysFile = sourceRoot.resolve(pkgPath).resolve("Keys.java");
-        return Files.exists(keysFile)
-            ? new CompletionData.SourceLocation(keysFile.toUri().toString(), 0, 0)
-            : CompletionData.SourceLocation.UNKNOWN;
     }
 
     private static String keyConstant(JooqCatalog jooq, ForeignKey<?, ?> fk) {
