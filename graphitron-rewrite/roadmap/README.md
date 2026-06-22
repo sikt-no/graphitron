@@ -25,7 +25,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R353` | LSP goto-definition from an SDL type/field name to its backing Java class and member <sub>blocked by: [lsp-structural-consolidation](lsp-structural-consolidation.md)</sub> | Spec | 2026-06-22 <sub>created 2026-06-21</sub> | [plan](lsp-backing-class-member-navigation.md) |
 | `R45` | Multi-tenant routing on top of the schema-driven ExecutionInput factory | Spec | 2026-05-20 | [plan](tenant-routing-and-execution-input.md) |
 | `R273` | Source NodeId metadata from @node + catalog PK (inferred from `implements Node`), and settle wrong-type/malformed mismatch semantics, retiring the legacy __NODE bare-ID arm | Spec | 2026-06-02 | [plan](nodeid-skip-mismatch-error-surfacing.md) |
-| `R342` | Structural dedup for bulk UPDATE SET columns written by overlapping carriers | Spec | 2026-06-22 <sub>created 2026-06-19</sub> | [plan](bulk-update-set-shared-column-dedup.md) |
+| `R342` | Structural dedup for bulk UPDATE SET columns written by overlapping carriers | Ready | 2026-06-22 <sub>created 2026-06-19</sub> | [plan](bulk-update-set-shared-column-dedup.md) |
 | `R347` | Consolidate graphitron-lsp navigation, dispatch, and result-building | In Progress | 2026-06-19 | [plan](lsp-structural-consolidation.md) |
 | `R332` | Mark @table on input types as deprecated (signal ahead of R97 removal) | Spec | 2026-06-19 <sub>created 2026-06-18</sub> | [plan](table-on-input-deprecation-signal.md) |
 | `R13` | Faceted search on `@asConnection` | Spec |  | [plan](faceted-search.md) |
@@ -168,7 +168,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R135` [**Multi-hop @nodeId pipeline test for FK-target/NodeType-keyColumns permutation**](multi-hop-nodeid-fk-permutation-test.md) — Backlog, validation
 - `R57` [**FK-target argument @nodeId, JOIN-with-translation emission**](nodeid-fk-target-arg-join-translation.md) — Backlog, architecture
 - `R273` [**Source NodeId metadata from @node + catalog PK (inferred from `implements Node`), and settle wrong-type/malformed mismatch semantics, retiring the legacy __NODE bare-ID arm**](nodeid-skip-mismatch-error-surfacing.md) — Spec, architecture
-- `R342` [**Structural dedup for bulk UPDATE SET columns written by overlapping carriers**](bulk-update-set-shared-column-dedup.md) — Spec, feature
+- `R342` [**Structural dedup for bulk UPDATE SET columns written by overlapping carriers**](bulk-update-set-shared-column-dedup.md) — Ready, feature
 - `R356` [**Unify the per-column shared-column overlap analysis across mutation write paths**](unify-shared-column-overlap-analysis.md) — Backlog, architecture, blocked by [bulk-update-set-shared-column-dedup](bulk-update-set-shared-column-dedup.md)
 - `R24` [**`NodeIdReferenceField` JOIN-projection form**](nodeidreferencefield-join-projection-form.md) — Backlog, cleanup
 

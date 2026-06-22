@@ -1,7 +1,7 @@
 ---
 id: R342
 title: "Structural dedup for bulk UPDATE SET columns written by overlapping carriers"
-status: Spec
+status: Ready
 bucket: feature
 priority: 5
 theme: nodeid
