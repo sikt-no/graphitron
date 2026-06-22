@@ -119,13 +119,21 @@ must be as safe to emit as the path it replaces.
   also gate on `mapToJavaTypeName`.
 - **`mapToJavaTypeName(field) != null` is the leaf-type predicate**, the same null-is-no-match
   discipline `unambiguousReachablePath` uses. It returns `null` for named-input-object, enum,
-  and unclassified-scalar leaves, so R355 only ever binds **canonical scalar leaves** (the
-  user's `BigDecimal` case). A depth-1 field that is itself an input object or an enum does
-  not match and stays explicit. State this as a scope fact, not an accident.
-- **`liftsList` must be computed, not hardcoded.** `rewrapForNested` preserves `arg.path()`
-  and rewrites only the extraction, so a wrong `liftsList` on the synthesised `Step` emits a
-  wrong traversal silently in the input-field-`@condition` case. Compute it with the same
-  `isListShaped` (strip non-null, test for list) `ArgBindingMap.of` uses.
+  and unclassified-scalar leaves, so R355 only ever binds **canonical-scalar-typed leaves** (the
+  user's `BigDecimal` case, or a list thereof: `mapToJavaTypeName` preserves list depth, so a
+  `[BigDecimal]` field binds a `List<BigDecimal>` param with `liftsList=true`, identical to the
+  explicit path). A depth-1 field that is itself a named input object or an enum does not match
+  and stays explicit. State this as a scope fact, not an accident.
+- **`liftsList` must be computed, not hardcoded** — so the synthesised `Step` is *byte-identical*
+  to the explicit-`argMapping` one. Compute it with the same `isListShaped` (strip non-null, test
+  for list) `ArgBindingMap.of` uses; the pipeline PathExpr-equality test below is what pins it (a
+  flag that diverged from `isListShaped` surfaces there as a `PathExpr` mismatch). The flag is
+  *not* load-bearing at emit for the depth-1 leaf R355 produces: `ArgCallEmitter.extractionForArg`
+  carries only the segment *name* into `NestedInputField` and `hasIntermediateListSegment` skips
+  the terminal segment, so a wrong leaf `liftsList` is a classified-model divergence, never a
+  silent wrong traversal. The obligation is therefore model-equality, not an emit consequence —
+  which is why the pin must be a list-shaped depth-1 field: a scalar field's `liftsList` is
+  `false` either way, so only a list field distinguishes a computed flag from a hardcoded one.
 
 ## Placement, slot set, and the R219 interaction
 
@@ -147,7 +155,11 @@ must be as safe to emit as the path it replaces.
   that suppresses R355's descent.
 - **Reaches every `@condition` scope.** Arg/field-level (`ConditionResolver.resolveArg` /
   `resolveField`) and input-field-level (`BuildContext.buildInputFieldCondition`) all pass
-  `slotTypes` into `reflectTableMethod`, so the one inference change covers all three.
+  `slotTypes` into `reflectTableMethod`, so the one inference change covers all three. The named
+  tests exercise the input-field-level scope only; that suffices because the inference branches
+  on `slotTypes` and parameter shape, never on the `@condition` coordinate — the scopes differ
+  solely in upstream `slotTypes` assembly, which this item does not touch. (The path-step
+  `@condition` in `resolveConditionRef` carries no `slotTypes` and is unaffected, as with R214.)
 
 ## Tests
 
@@ -159,8 +171,11 @@ must be as safe to emit as the path it replaces.
   `SokVerdiRange`-shaped two-`BigDecimal` input field; assert the inferred `ConditionFilter`
   params carry the *same* `PathExpr` chain the explicit-`argMapping` sibling produces
   (classifier-output equality, not emitted body strings, per the body-string ban). A second
-  case: an ambiguous name across two input-object args falls through to the existing
-  rejection / suggestion.
+  case pins the computed `liftsList`: a depth-1 **list** field (`[BigDecimal]` bound to a
+  `List<BigDecimal>` param) whose inferred `Step` must carry `liftsList=true`, again equal to
+  its explicit-`argMapping` sibling — the scalar case above leaves `liftsList=false` either way,
+  so only this case separates a computed flag from a hardcoded one. A third case: an ambiguous
+  name across two input-object args falls through to the existing rejection / suggestion.
 - **Execution.** A round-trip on a two-`BigDecimal`-field fixture (alongside
   `InputFieldConditionFixtures`) confirming the no-`argMapping` form filters identically to
   the explicit-`argMapping` form. This is the test that proves the narrowed acceptance is
