@@ -7,7 +7,7 @@ priority: 6
 theme: model-cleanup
 depends-on: []
 created: 2026-06-18
-last-updated: 2026-06-19
+last-updated: 2026-06-22
 ---
 
 # Mark @table on input types as deprecated (signal ahead of R97 removal)
@@ -43,7 +43,7 @@ forward-compatible with it. So today the picture is uneven: one path hard-reject
 the intended direction. This item closes that gap with a deprecation signal over
 input-type usages, with one carve-out (the encoded-ID / scalar-return
 INSERT/UPSERT case; see "Scope constraint" below) that the signal must not flag
-until its replacement mechanism (R327) lands.
+until its replacement mechanism (R97 Phase 2b) lands.
 
 ## Why a separate item from R97
 
@@ -57,32 +57,33 @@ while the replacement is still being built, and it shrinks the eventual R97
 migration. This item is the signaling precursor and should be folded into the
 removal owner (or retired) if that owner lands its own deprecation warning first.
 
-Note that "the removal owner" is not cleanly R97 alone; see the cluster section
-below. R97 names the consumer-derived resolution + `argMapping` grouping, but the
-field-relative mechanism that actually retires `@table`-on-input is R327's, and
-the directive-scope narrowing is claimed by both R97 Phase 3 and R222 Stage 7.
-Decisions (D2) settle this: the user-facing message names no `R<n>` at all (it
+The removal owner is now R97: as of 2026-06-22 it absorbed R327
+(`field-relative-input-classification`, the field-relative derivation that
+retires `@table`-on-input) into its consumer-derived resolution, so the
+consumer-derived-tables item and the mechanism that actually retires the
+directive are the same item. The only residual ownership overlap is with R222
+Stage 7 (directive-scope narrowing); see the cluster section below. Decisions
+(D2) settle the surfacing: the user-facing message names no `R<n>` at all (it
 gives a replacement instruction); the internal code-comment pointer names the
-mechanism (R327 / R222 Stage 7), not R97 alone.
+mechanism (R97 / R222 Stage 7).
 
 ## Related items: the `@table`-on-input cluster
 
-Three other live items converge on `@table`-on-input. They were filed
-independently and do not all cross-reference each other. The Decisions and
-Roadmap-coordination sections below reconcile the ownership: the user-facing
-signal names no owner (D2); the internal pointer names the mechanism (R327 /
-R222 Stage 7), not the contested R97.
+Two other live items converge on `@table`-on-input (a third, R327, folded into
+R97 on 2026-06-22). They were filed independently and do not all cross-reference
+each other. The Decisions and Roadmap-coordination sections below reconcile the
+ownership: the user-facing signal names no owner (D2); the internal pointer names
+the mechanism (R97 / R222 Stage 7).
 
-- **R97** (`consumer-derived-input-tables`, Backlog, architecture). The original
-  full-lifecycle item: consumer-derived table resolution + `argMapping` grouping
-  (GG-376) + a Phase 2 build warning + Phase 3 directive-scope removal. Its
-  redundancy proof walks only the `createFilm(in: ...): Film @table` happy path.
-- **R327** (`field-relative-input-classification`, Ready, architecture). The
-  concrete, reachable-now mechanism: derive an input's table-boundness from the
-  consuming field's resolved target (via `lookAheadVerdict`) instead of the
-  global `@table` + `findReturnTablesForInput` aggregate. Split out of R317
-  slice 4. This is the item that actually retires `@table`-on-input; R97's
-  "consumer-derived tables" is the same idea under a different name.
+- **R97** (`consumer-derived-input-tables`, Backlog, architecture). The
+  full-lifecycle removal owner, and now also the mechanism: consumer-derived
+  table resolution + `argMapping` grouping (GG-376) + a Phase 2 build warning +
+  Phase 2b INSERT/UPSERT write-target migration + Phase 3 directive-scope
+  removal. It absorbed R327's field-relative derivation (derive an input's
+  table-boundness from the consuming field's resolved target via
+  `lookAheadVerdict`, retiring the global `@table` + `findReturnTablesForInput`
+  aggregate; split out of R317 slice 4) into Phase 2, so the consumer-derived
+  resolution and the directive's actual retirement are one item.
 - **R222** (`dimensional-model-pivot`, **Spec**, structural). The umbrella that
   already declares it absorbs R97: Stage 5 removes `findReturnTablesForInput`,
   Stage 7 narrows `@table` / `@record(class:)` / `@value` out of `INPUT_OBJECT`
@@ -91,18 +92,18 @@ R222 Stage 7), not the contested R97.
   Phase 1) is explicitly left separable.
 
 Overlap map (what a Spec author will collide with): `findReturnTablesForInput`
-removal is claimed by both R327 and R222 Stage 5; directive-scope narrowing by
-R97 Phase 3, R222 Stage 7, and R327; the deprecation signal itself by this item
-**and** R97 Phase 2. The genuinely separable piece is `argMapping` grouping
-(R222 says so twice). The field-relative mechanism (R327) is the load-bearing
-migration step the directive narrowing depends on.
+removal is claimed by both R97 (Phase 2) and R222 Stage 5; directive-scope
+narrowing by R97 Phase 3 and R222 Stage 7; the deprecation signal itself by this
+item **and** R97 Phase 2. The genuinely separable piece is `argMapping` grouping
+(R222 says so twice). R97's field-relative mechanism (Phase 2 / 2b) is the
+load-bearing migration step the directive narrowing depends on.
 
 ## Scope constraint: the encoded-ID INSERT/UPSERT carve-out
 
 A blanket "`@table` on input is deprecated, remove it" signal is **wrong** for
 one class of mutation, and the signal carves it out. The carve-out is computable
 from today's model (Decisions, D3), so it ships in this item and does **not** gate
-R332 behind R327.
+R332 behind R97 Phase 2b.
 
 The write-target table is sourced per verb today (the `MutationField.DmlTableField`
 sealed supertype and its four leaves):
@@ -125,12 +126,13 @@ single-`@table`-field payload case the model already reads
 INSERT/UPSERT returning an
 **encoded ID or scalar** (`createFilm(...): ID`): the return type carries no
 `@table`, so there is nothing to collapse to, and `@table`-on-input is currently
-the *only* signal naming the write target. R327 has not yet migrated those arms.
+the *only* signal naming the write target. R97 Phase 2b has not yet migrated
+those arms.
 
 Consequence for this item: the deprecation signal must **not** fire on inputs
-feeding encoded-ID / scalar-return INSERT/UPSERT until R327 closes that
+feeding encoded-ID / scalar-return INSERT/UPSERT until R97 Phase 2b closes that
 derivation, or it instructs authors to remove the only mechanism that works.
-(Secondary correction for whoever writes R327/R97/R222 prose: the table comes
+(Secondary correction for whoever writes R97 / R222 prose: the table comes
 from the consuming field's *resolved target*, not literally its *return type*;
 the "consumer's `@table` return" wording papers over the encoded-ID case.)
 `argMapping` grouping does not plug this; it binds input fields to params /
@@ -158,13 +160,13 @@ edit already surfaces on LSP hover for free (the LSP reads `directives.graphqls`
 carve-out LSP-side without the `MutationField` model in hand, out of proportion to a nudge.
 
 **D2. User-facing surfaces cite no roadmap ID; they give a replacement instruction.**
-R97 / R327 / R222 are internal, churn, and (per the cluster section above) contest
+R97 / R222 are internal, churn, and (per the cluster section above) overlap on
 ownership; a schema author cannot navigate them. The description and docs say *what
 replaces `@table`-on-input* in consumer terms ("the consuming mutation field's resolved
 target determines the write table; remove the directive"), not "see R97." The internal
 "which item removes the scope" pointer lives only in code comments and this roadmap item,
-and names the *mechanism* (R327's field-relative derivation / R222 Stage 7's directive
-narrowing), not R97 alone. This mirrors the existing `@record` description, which names
+and names the *mechanism* (R97's field-relative derivation / R222 Stage 7's directive
+narrowing). This mirrors the existing `@record` description, which names
 its build warning and a replacement but no `R<n>`.
 
 **D3. The carve-out is computed from the existing model; R332 stays `depends-on: []`.**
@@ -172,12 +174,12 @@ The carve-out set is the SDL input type names that are the `tableInputArg().type
 of a `MutationInsertTableField` / `MutationUpsertTableField` whose `returnExpression()`
 is a `DmlReturnExpression.Encoded*` arm. Every part is already pre-resolved on the
 classified model (the encoded-vs-projected axis is a settled `DmlReturnExpression` arm;
-the leaf already names its input type), so no `lookAheadVerdict`, reflection, or R327 is
-needed. Conservative rule for the type-level coarseness (one input feeding both an encoded
+the leaf already names its input type), so no `lookAheadVerdict`, reflection, or R97's
+field-relative mechanism is needed. Conservative rule for the type-level coarseness (one input feeding both an encoded
 INSERT and a projected consumer): suppress the warning if *any* consumer is an encoded
 INSERT/UPSERT. The failure modes are asymmetric: a false suppress costs an author one extra
 release carrying a directive; a false fire tells an author to delete the only signal naming
-their write target and breaks their build. Per-`(input, consumer)` precision is R327's axis.
+their write target and breaks their build. Per-`(input, consumer)` precision is R97's axis.
 
 **D4. The build warning is unconditional, not suppressible.** A nudge that can be switched
 off defeats the "stop adding new usages" purpose, and there is no build-breakage to suppress
@@ -201,7 +203,7 @@ Flat file list; the only ordering constraint is "the warning pass reads the clas
   `ctx.addWarning(new BuildWarning(message, inputType.getSourceLocation()))`. Inline emission in
   `TypeBuilder.buildInputType` is wrong: it lacks the consuming-field view the carve-out needs.
 - **`encodedWriteTargetInputTypes(...)`** — a single named helper returning `Set<String>`. This
-  is the find-usages anchor R327 slice 3 retires (see Roadmap coordination); keep it named
+  is the find-usages anchor R97 Phase 2b retires (see Roadmap coordination); keep it named
   rather than inlining the stream.
 - **`docs/manual/reference/deprecations.adoc`** — add a row (draft below); widen the "Deprecated
   whole directives" section intro to cover a deprecation the spec cannot mark inline on a
@@ -217,7 +219,7 @@ Flat file list; the only ordering constraint is "the warning pass reads the clas
 ## Tests
 
 - **Pipeline tier** (the carve-out is the load-bearing behavior, and this test is what fails
-  when R327 moves the INSERT/UPSERT arms):
+  when R97 Phase 2b moves the INSERT/UPSERT arms):
   - encoded INSERT/UPSERT (`createFilm(in: FilmInput @table): ID`) → assert **no** `@table`-on-input
     deprecation warning names `FilmInput`.
   - a non-carved usage (projected `... : Film`, or a query / UPDATE / DELETE `@table`-on-input) →
@@ -231,16 +233,16 @@ Flat file list; the only ordering constraint is "the warning pass reads the clas
 
 ## Roadmap coordination
 
-- **R327 slice 3** (the INSERT/UPSERT write-target migration) is what empties the carve-out:
+- **R97 Phase 2b** (the INSERT/UPSERT write-target migration) is what empties the carve-out:
   once the write target is field-relative, encoded INSERT/UPSERT inputs no longer need `@table`,
-  so they should warn too. R327 slice 3 retires `encodedWriteTargetInputTypes(...)` and lets the
-  warning fire on those inputs. This is a forward edge R327 → R332's code, so R332's
-  `depends-on: []` is correct; R327's plan should carry the "retires `encodedWriteTargetInputTypes`"
+  so they should warn too. R97 Phase 2b retires `encodedWriteTargetInputTypes(...)` and lets the
+  warning fire on those inputs. This is a forward edge R97 → R332's code, so R332's
+  `depends-on: []` is correct; R97's plan carries the "retires `encodedWriteTargetInputTypes`"
   note.
-- The internal removal pointer in code comments names R327 / R222 Stage 7, not R97 alone (R97's
-  ownership is contested across R222 / R327, per the cluster section).
-- Per the "signaling precursor" framing above, fold or retire this item when R327 / R222 Stage 7
-  lands the scope removal and the warning generalizes.
+- The internal removal pointer in code comments names R97 / R222 Stage 7 (R97's ownership now
+  also covers the field-relative mechanism, per the cluster section).
+- Per the "signaling precursor" framing above, fold or retire this item when R97 Phase 3 / R222
+  Stage 7 lands the scope removal and the warning generalizes.
 
 ## User-facing surfaces (first-client draft)
 
@@ -282,4 +284,4 @@ Deprecated on input types: applying `@table` to an input (`INPUT_OBJECT`) is dep
 - A dedicated LSP per-usage deprecation diagnostic (a squiggle on the `@table`-on-input
   application). The description prose already surfaces on LSP hover; a per-usage diagnostic
   re-implements the carve-out LSP-side without the `MutationField` model and is deferred to
-  the field-relative model (R327) or a follow-on. See Decisions, D1.
+  the field-relative model (R97 Phase 2) or a follow-on. See Decisions, D1.

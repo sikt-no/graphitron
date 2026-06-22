@@ -169,10 +169,11 @@ or is folded with one that does:
 
 - **R317** (Done): the parent. R335 extends R317's single-walk thesis from the output surface to the
   whole surface; it does not reopen any R317 mechanism.
-- **R327** (field-relative input classification): orthogonal but adjacent, both touch input
-  classification. R327 changes *how* an input's table-boundness is derived (field-relative, retiring
-  the `findReturnTablesForInput` aggregate); R335 changes *where and when* an input is classified (on
-  the walk, reachability-pruned, vs the pre-walk all-declared sweep). No hard ordering; whichever lands
+- **R97** (`consumer-derived-input-tables`, which absorbed R327's field-relative input
+  classification on 2026-06-22): orthogonal but adjacent, both touch input classification. R97 changes
+  *how* an input's table-boundness is derived (consumer-derived, retiring the
+  `findReturnTablesForInput` aggregate); R335 changes *where and when* an input is classified (on the
+  walk, reachability-pruned, vs the pre-walk all-declared sweep). No hard ordering; whichever lands
   first, the other rebases onto the moved call site. Note the interplay in whichever ships second.
 - **warn-on-pruned-unreachable-types** (Backlog): R335 widens the pruned surface from output types to
   all kinds; that item's warning should grow to cover the leaves R335 starts pruning. Out of scope here.
