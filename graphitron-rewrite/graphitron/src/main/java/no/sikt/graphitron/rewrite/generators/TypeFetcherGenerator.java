@@ -209,6 +209,7 @@ public class TypeFetcherGenerator {
         ChildField.SplitLookupTableField.class,
         ChildField.PropertyField.class,
         ChildField.RecordField.class,
+        ChildField.RecordCompositeField.class,
         ChildField.RecordTableField.class,
         ChildField.RecordLookupTableField.class,
         ChildField.SingleRecordIdField.class,
@@ -555,6 +556,10 @@ public class TypeFetcherGenerator {
                 // emitters parameterised by perKeyType). The "no-op" arm here keeps the switch
                 // exhaustive without re-emitting; the variant has IMPLEMENTED_LEAVES membership.
                 case ChildField.RecordField ignored             -> { /* accessor / column read reified by FetcherEmitter.bind, collected below */ }
+                // R329 — the @service record-composite carrier's data field: the Outcome/source
+                // narrowing + verbatim projection of the producer's composite record(s) is reified by
+                // FetcherEmitter.bind into a named (DataFetchingEnvironment env) method, collected below.
+                case ChildField.RecordCompositeField ignored    -> { /* source passthrough reified by FetcherEmitter.bind, collected below */ }
                 case ChildField.ComputedField ignored           -> { /* alias-pickup read reified by FetcherEmitter.bind; projected via TypeClassGenerator.$fields() */ }
                 case ChildField.PropertyField ignored           -> { /* accessor / column read reified by FetcherEmitter.bind, collected below */ }
                 case ChildField.ErrorsField ignored             -> { /* LocalContext / WrapperArm reified by FetcherEmitter.bind; PayloadAccessor still PropertyDataFetcher.fetching */ }
@@ -1459,9 +1464,19 @@ public class TypeFetcherGenerator {
      * everything else faithfully reflects the developer method's reflected return type.
      */
     private static TypeName computeMutationServiceRecordReturnType(MutationField.MutationServiceRecordField msrf) {
-        boolean isList = msrf.returnType().wrapper().isList();
         if (msrf.returnType() instanceof ReturnTypeRef.ResultReturnType r && r.fqClassName() != null) {
             ClassName recordCls = ClassName.bestGuess(r.fqClassName());
+            // R329: read the arrival cardinality from the reflected method return, not the SDL payload
+            // wrapper. A two-level record-composite carrier has a single payload wrapper but a
+            // List<composite> producer return (the per-element composite is the fqClassName, with the
+            // list cardinality on the data field); the SDL wrapper would understate it and the fetcher
+            // would declare `composite` for a `List<composite>` value. The reflected return is the exact
+            // type the service yields, so the fetcher and its Outcome wrapping must match it. For the
+            // single-level / plain-DTO payloads the two agree (single wrapper, single return).
+            boolean methodReturnsList =
+                msrf.serviceMethodCall().javaReturnType() instanceof ParameterizedTypeName p
+                    && p.rawType().equals(LIST);
+            boolean isList = methodReturnsList || msrf.returnType().wrapper().isList();
             return isList ? ParameterizedTypeName.get(LIST, recordCls) : recordCls;
         }
         return msrf.serviceMethodCall().javaReturnType();

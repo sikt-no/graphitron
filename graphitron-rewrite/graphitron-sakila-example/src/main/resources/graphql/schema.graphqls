@@ -530,6 +530,32 @@ type FilmReviewPayload {
     errors: [FilmReviewError]
 }
 
+# R329 fixture (service-record-composite-payload-carrier.md): the two-level @service record-composite
+# carrier. FilmsWithActorsService.create returns List<FilmWithActors> (one FilmRecord + a
+# List<ActorRecord> per element); the payload's `results` data field is a source-passthrough projection
+# of that list (a RecordCompositeField — no re-fetch, no DataLoader), and the intermediate result type's
+# @field-mapped @table children re-fetch Film / Actor through the record-backed accessor path off the
+# composite's filmRecord() / actorRecords() accessors. The errors field rides the Outcome WrapperArm.
+type FilmsWithActorsError @error(handlers: [{
+        handler: GENERIC,
+        className: "java.lang.IllegalArgumentException"
+    }]) {
+    path: [String!]!
+    message: String!
+}
+
+union FilmsWithActorsErr = FilmsWithActorsError
+
+type FilmWithActorsResult {
+    film: Film! @field(name: "filmRecord")
+    actors: [Actor!] @field(name: "actorRecords")
+}
+
+type FilmsWithActorsPayload {
+    results: [FilmWithActorsResult]
+    errors: [FilmsWithActorsErr]
+}
+
 # R154 fixture: setter-shape sibling of FilmReviewPayload. The backing class is a hand-rolled
 # POJO with a public no-arg constructor and Java-bean setters; the carrier classifier resolves
 # R154's MutableBean construction shape against it.
@@ -2189,6 +2215,19 @@ type Mutation {
         @service(service: {
             className: "no.sikt.graphitron.rewrite.test.services.FilmReviewService",
             method: "submit"
+        })
+
+    # R329 fixture (service-record-composite-payload-carrier.md): a two-level @service carrier whose
+    # producer returns List<FilmWithActors> — a consumer composite bundling one FilmRecord plus a
+    # List<ActorRecord>. The payload's data field (FilmsWithActorsPayload.results) is a source-passthrough
+    # projection of the producer's composite list (RecordCompositeField, no re-fetch); the intermediate
+    # result type's @field-mapped @table children (film / actors) re-fetch through the record-backed
+    # accessor path off the composite's filmRecord() / actorRecords(). A filmId of -1 throws, exercising
+    # the Outcome error arm (data renders null, errors populated). See FilmsWithActorsService.create.
+    createFilmsWithActors(filmIds: [Int!]!): FilmsWithActorsPayload
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.FilmsWithActorsService",
+            method: "create"
         })
 
     # R268 fixture (errorchannel-arm-switch-table-data-fields.md): a root @service Outcome
