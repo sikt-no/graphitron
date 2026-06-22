@@ -3716,10 +3716,10 @@ class FieldBuilder {
         }
 
         // R246 walker: PK-or-UK identification + SET/WHERE partition over the already-classified
-        // input fields (the translator concession; see UpdateRowsWalker). The list flag lets the
-        // walker defer a self-FK @reference on the bulk (list-input) form to R342 (R354).
+        // input fields (the translator concession; see UpdateRowsWalker). Cardinality-independent
+        // (R342): the bulk vs single-row split is the emitter's, driven by inputArg.list() below.
         var walkerResult = new no.sikt.graphitron.rewrite.walker.UpdateRowsWalker()
-            .walk(fieldDef, foundTit.table(), foundTit.inputFields(), ctx.catalog, list, inputArg.name());
+            .walk(fieldDef, foundTit.table(), foundTit.inputFields(), ctx.catalog, inputArg.name());
         var enc = encodeReturn;
         return switch (walkerResult) {
             case no.sikt.graphitron.rewrite.model.WalkerResult.Ok<no.sikt.graphitron.rewrite.model.UpdateRows> ok ->
@@ -3864,10 +3864,10 @@ class FieldBuilder {
             ? Optional.of(p.channel()) : Optional.empty();
 
         // R246 walker: PK-or-UK identification + SET/WHERE partition over the already-classified
-        // input fields. On Err, preserve the typed UpdateRowsError arm verbatim. The list flag lets
-        // the walker defer a self-FK @reference on the bulk (list-input) form to R342 (R354).
+        // input fields. On Err, preserve the typed UpdateRowsError arm verbatim. Cardinality-independent
+        // (R342): the bulk vs single-row split is the emitter's, driven by inputArg.list() below.
         var walkerResult = new no.sikt.graphitron.rewrite.walker.UpdateRowsWalker()
-            .walk(fieldDef, foundTit.table(), foundTit.inputFields(), ctx.catalog, inputArg.list(), inputArg.name());
+            .walk(fieldDef, foundTit.table(), foundTit.inputFields(), ctx.catalog, inputArg.name());
         var channel = dmlChannel;
         return switch (walkerResult) {
             case no.sikt.graphitron.rewrite.model.WalkerResult.Ok<no.sikt.graphitron.rewrite.model.UpdateRows> ok -> {

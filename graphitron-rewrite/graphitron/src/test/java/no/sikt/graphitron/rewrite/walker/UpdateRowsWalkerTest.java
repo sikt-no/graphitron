@@ -51,7 +51,7 @@ class UpdateRowsWalkerTest {
             columnField("filmId", col(PUBLIC, "film", "film_id")),
             columnField("title", col(PUBLIC, "film", "title")),
             columnField("description", col(PUBLIC, "film", "description"))
-        ), PUBLIC, false, "input");
+        ), PUBLIC, "input");
 
         var carrier = ok(result);
         assertThat(carrier.matchedKey()).isInstanceOf(MatchedKey.PrimaryKey.class);
@@ -65,7 +65,7 @@ class UpdateRowsWalkerTest {
     void pkOnlyMatch_noExtraColumns_rejectsWithNoSetFields() {
         var result = walker.walk(null, table("film"), List.of(
             columnField("filmId", col(PUBLIC, "film", "film_id"))
-        ), PUBLIC, false, "input");
+        ), PUBLIC, "input");
 
         assertThat(only(result)).isInstanceOf(UpdateRowsError.NoSetFields.class);
     }
@@ -75,7 +75,7 @@ class UpdateRowsWalkerTest {
         var result = walker.walk(null, table("parent_node"), List.of(
             columnField("altKey", col(NODE_FIXTURE_CATALOG, "parent_node", "alt_key")),
             columnField("name", col(NODE_FIXTURE_CATALOG, "parent_node", "name"))
-        ), NODE_FIXTURE_CATALOG, false, "input");
+        ), NODE_FIXTURE_CATALOG, "input");
 
         var carrier = ok(result);
         assertThat(carrier.matchedKey()).isInstanceOf(MatchedKey.UniqueKey.class);
@@ -89,7 +89,7 @@ class UpdateRowsWalkerTest {
             columnField("pkId", col(NODE_FIXTURE_CATALOG, "parent_node", "pk_id")),
             columnField("altKey", col(NODE_FIXTURE_CATALOG, "parent_node", "alt_key")),
             columnField("name", col(NODE_FIXTURE_CATALOG, "parent_node", "name"))
-        ), NODE_FIXTURE_CATALOG, false, "input");
+        ), NODE_FIXTURE_CATALOG, "input");
 
         var carrier = ok(result);
         assertThat(carrier.matchedKey()).isInstanceOf(MatchedKey.PrimaryKey.class);
@@ -104,7 +104,7 @@ class UpdateRowsWalkerTest {
         var result = walker.walk(null, table("film"), List.of(
             columnField("title", col(PUBLIC, "film", "title")),
             columnField("description", col(PUBLIC, "film", "description"))
-        ), PUBLIC, false, "input");
+        ), PUBLIC, "input");
 
         var err = only(result);
         assertThat(err).isInstanceOf(UpdateRowsError.NoUniqueKeyCoverage.class);
@@ -125,7 +125,7 @@ class UpdateRowsWalkerTest {
                 col(PUBLIC, "film_actor", "actor_id"),
                 col(PUBLIC, "film_actor", "last_update"))),
             columnField("filmId", col(PUBLIC, "film_actor", "film_id"))
-        ), PUBLIC, false, "input");
+        ), PUBLIC, "input");
 
         var err = only(result);
         assertThat(err).isInstanceOf(UpdateRowsError.MixedCarrierKeyMembership.class);
@@ -150,7 +150,7 @@ class UpdateRowsWalkerTest {
                 col(PUBLIC, "email", "mailbox_id"),
                 col(PUBLIC, "email", "in_reply_to_no"))),
             columnField("subject", col(PUBLIC, "email", "subject"))
-        ), PUBLIC, false, "input");
+        ), PUBLIC, "input");
 
         var carrier = ok(result);
         assertThat(carrier.matchedKey()).isInstanceOf(MatchedKey.PrimaryKey.class);
@@ -183,7 +183,7 @@ class UpdateRowsWalkerTest {
                 col(PUBLIC, "email", "mailbox_id"),
                 col(PUBLIC, "email", "in_reply_to_no"))),
             columnField("subject", col(PUBLIC, "email", "subject"))
-        ), PUBLIC, false, "input");
+        ), PUBLIC, "input");
 
         var err = only(result);
         assertThat(err).isInstanceOf(UpdateRowsError.NoUniqueKeyCoverage.class);
@@ -191,10 +191,12 @@ class UpdateRowsWalkerTest {
     }
 
     @Test
-    void selfFkReference_onBulkInput_rejectsUnsupportedShape() {
-        // R354: a self-FK @reference on a bulk (list-input) UPDATE is deferred to R342; its shared
-        // column would land in the UPDATE … FROM (VALUES …) derived table. The walker rejects with
-        // a clear message naming the self-FK field.
+    void selfFkReference_formerlyBulkRejected_nowAdmitsAndRoutesAllSet() {
+        // R342: the bulk self-FK reject (R354's Stage 2b) is gone. The walker is cardinality-independent —
+        // a self-FK @reference routes its lifted columns wholly to SET regardless of the @table arg's list
+        // shape (the bulk vs single-row split is the emitter's). This is the same email shape the bulk
+        // reject used to fence off; it now admits, with the shared mailbox_id in both partitions for the
+        // emit-time WHERE∩SET agreement (the duplicate v-column collapsed by the bulk SET dedup).
         var result = walker.walk(null, table("email"), List.of(
             compositeColumnField("id", List.of(
                 col(PUBLIC, "email", "mailbox_id"),
@@ -203,13 +205,37 @@ class UpdateRowsWalkerTest {
                 col(PUBLIC, "email", "mailbox_id"),
                 col(PUBLIC, "email", "in_reply_to_no"))),
             columnField("subject", col(PUBLIC, "email", "subject"))
-        ), PUBLIC, true, "input");
+        ), PUBLIC, "input");
 
-        var err = only(result);
-        assertThat(err).isInstanceOf(UpdateRowsError.UnsupportedInputFieldShape.class);
-        var shape = (UpdateRowsError.UnsupportedInputFieldShape) err;
-        assertThat(shape.fieldName()).isEqualTo("inReplyTo");
-        assertThat(shape.message()).contains("bulk");
+        var carrier = ok(result);
+        assertThat(carrier.matchedKey()).isInstanceOf(MatchedKey.PrimaryKey.class);
+        // WHERE: id's two PK columns; SET: the self-FK's columns (whole, incl. the shared mailbox_id) + subject.
+        assertThat(carrier.keyColumns()).extracting(k -> k.targetColumn().sqlName())
+            .containsExactlyInAnyOrder("mailbox_id", "message_no");
+        assertThat(carrier.setColumns()).extracting(s -> s.targetColumn().sqlName())
+            .containsExactlyInAnyOrder("mailbox_id", "in_reply_to_no", "subject");
+        // mailbox_id is genuinely in both partitions (the WHERE∩SET overlap the emit agreement reconciles).
+        assertThat(carrier.keyColumns()).anyMatch(k -> k.targetColumn().sqlName().equals("mailbox_id"));
+        assertThat(carrier.setColumns()).anyMatch(s -> s.targetColumn().sqlName().equals("mailbox_id"));
+    }
+
+    @Test
+    void decodeInvolvingSetOverlap_admitsWithoutPlainCollision() {
+        // R342: two SET writers on one column where at least one is a @nodeId decode (the
+        // endorsement-style overlap) is admitted — NOT a PlainColumnCollision — and deferred to the
+        // emit-time value agreement the bulk SET dedup runs. (Two plain writers on one SET column is the
+        // Stage 6b collision reject; a decode among them lifts it to the runtime agreement instead.)
+        var result = walker.walk(null, table("film"), List.of(
+            columnField("filmId", col(PUBLIC, "film", "film_id")),
+            columnField("languageId", col(PUBLIC, "film", "language_id")),
+            decodeColumnField("languageRef", col(PUBLIC, "film", "language_id"))
+        ), PUBLIC, "input");
+
+        var carrier = ok(result);
+        assertThat(carrier.setColumns()).extracting(s -> s.targetColumn().sqlName())
+            .containsExactly("language_id", "language_id");
+        assertThat(carrier.setColumns()).extracting(s -> s.sdlFieldName())
+            .containsExactlyInAnyOrder("languageId", "languageRef");
     }
 
     @Test
@@ -217,7 +243,7 @@ class UpdateRowsWalkerTest {
         var result = walker.walk(null, table("film"), List.of(
             listNestingField("nested"),
             unboundField("orphan", false)
-        ), PUBLIC, false, "input");
+        ), PUBLIC, "input");
 
         var errors = errors(result);
         assertThat(errors).hasSize(2);
@@ -231,7 +257,7 @@ class UpdateRowsWalkerTest {
         var loc = new SourceLocation(7, 3);
         var result = walker.walk(null, table("film"), List.of(
             unboundFieldAt("syntheticName", true, loc)
-        ), PUBLIC, false, "input");
+        ), PUBLIC, "input");
 
         var err = only(result);
         assertThat(err).isInstanceOf(UpdateRowsError.OverrideConditionNotSupported.class);
@@ -245,7 +271,7 @@ class UpdateRowsWalkerTest {
         var result = walker.walk(null, table("film_list"), List.of(
             columnField("title", col(PUBLIC, "film_list", "title")),
             columnField("category", col(PUBLIC, "film_list", "category"))
-        ), PUBLIC, false, "input");
+        ), PUBLIC, "input");
 
         var err = only(result);
         assertThat(err).isInstanceOf(UpdateRowsError.NoUniqueKeyCoverage.class);
@@ -259,7 +285,7 @@ class UpdateRowsWalkerTest {
                 col(NODE_FIXTURE_CATALOG, "bar", "id_1"),
                 col(NODE_FIXTURE_CATALOG, "bar", "id_2"))),
             columnField("name", col(NODE_FIXTURE_CATALOG, "bar", "name"))
-        ), NODE_FIXTURE_CATALOG, false, "input");
+        ), NODE_FIXTURE_CATALOG, "input");
 
         var carrier = ok(result);
         assertThat(carrier.matchedKey()).isInstanceOf(MatchedKey.PrimaryKey.class);
@@ -277,7 +303,7 @@ class UpdateRowsWalkerTest {
             columnReferenceField("filmRef", List.of(col(PUBLIC, "film", "film_id"))),
             // ... and a reference carrier on a non-key column lands in the SET half.
             columnReferenceField("languageRef", List.of(col(PUBLIC, "film", "language_id")))
-        ), PUBLIC, false, "input");
+        ), PUBLIC, "input");
 
         var carrier = ok(result);
         assertThat(carrier.keyColumns()).extracting(k -> k.targetColumn().sqlName()).containsExactly("film_id");
@@ -322,6 +348,13 @@ class UpdateRowsWalkerTest {
     private static InputField.ColumnField columnField(String name, ColumnRef column) {
         return new InputField.ColumnField("In", name, loc(), "Scalar", true, false,
             column, Optional.empty(), new CallSiteExtraction.Direct());
+    }
+
+    // A single-column @nodeId-decode carrier: a ColumnField whose value is only knowable at runtime, so an
+    // overlap involving it is decode-involving (admitted, deferred to agreement) rather than a plain collision.
+    private static InputField.ColumnField decodeColumnField(String name, ColumnRef column) {
+        return new InputField.ColumnField("In", name, loc(), "ID", true, false,
+            column, Optional.empty(), dummyDecode(List.of(column)));
     }
 
     private static InputField.CompositeColumnField compositeColumnField(String name, List<ColumnRef> columns) {

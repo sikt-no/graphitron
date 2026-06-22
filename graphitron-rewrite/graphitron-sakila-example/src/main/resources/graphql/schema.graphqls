@@ -2381,6 +2381,14 @@ type Mutation {
     # runs; agreeing writers update to the agreed value.
     updateEndorsementOverlap(in: UpdateEndorsementOverlapInput!): FilmEndorsement @mutation(typeName: UPDATE)
 
+    # R342 bulk UPDATE SET value agreement: the list-input (UPDATE ... FROM (VALUES ...)) sibling of
+    # updateEndorsementOverlap. endorsed_film is SET by both endorsedFilm (@field) and filmRef (@nodeId FK
+    # reference). The bulk SET dedup collapses the doubled v-column to one (no duplicate derived-table
+    # column crash) and runs the value agreement per row: agreeing rows update the agreed value, a
+    # disagreeing row throws and rolls the batch back. An asymmetric row (only one writer supplied) still
+    # updates the column from the present writer.
+    updateEndorsementsOverlap(in: [UpdateEndorsementOverlapInput!]!): [FilmEndorsement!]! @mutation(typeName: UPDATE)
+
     # R328 self-FK @nodeId reference on a Graphitron-owned INSERT: inReplyTo (self-FK email_in_reply_to_fk)
     # and mailboxRef (cross-table email -> mailbox FK) both write mailbox_id. R322's per-column dedup
     # collapses the doubled column to one INSERT cell and requireColumnAgreement throws when the reply's
@@ -2395,6 +2403,14 @@ type Mutation {
     # write a no-op; disagree (parent in a different mailbox) → throw, nothing updated; inReplyTo omitted →
     # update subject only.
     updateEmailReply(in: UpdateEmailReplyInput!): Email @mutation(typeName: UPDATE)
+
+    # R342 bulk self-FK UPDATE: the list-input sibling of updateEmailReply (the bulk shape R354 fenced off
+    # at the walker and R342 unblocks). mailbox_id is both a WHERE column (from id) and a SET column (from
+    # the self-FK inReplyTo), so the bulk v-table would name it twice; the dedup supplies it once (from the
+    # WHERE side) and the per-row WHERE∩SET agreement asserts the id-decoded and inReplyTo-decoded mailboxes
+    # match before the DML. Agree → repoint in_reply_to_no (mailbox_id SET a no-op); disagree → throw per row,
+    # batch rolls back; inReplyTo omitted on a row → that row updates subject only.
+    updateEmailReplies(in: [UpdateEmailReplyInput!]!): [Email!]! @mutation(typeName: UPDATE)
 
     # R315 D4 execution pin: a nullable same-table identity (addressId: ID @nodeId(typeName: "Address"))
     # on a jOOQ AddressRecord @service param, resolving to the record's own serial PK (address_id).

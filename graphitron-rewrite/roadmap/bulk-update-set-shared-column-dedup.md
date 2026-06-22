@@ -1,7 +1,7 @@
 ---
 id: R342
 title: "Structural dedup for bulk UPDATE SET columns written by overlapping carriers"
-status: Ready
+status: In Review
 bucket: feature
 priority: 5
 theme: nodeid
@@ -24,6 +24,35 @@ list-input UPDATE, today rejected at validate time rather than emitted.
 This item makes the bulk UPDATE SET path dedup shared backing columns and run the value-agreement
 check (the bulk analogue of R322's INSERT dedup, `insertColumnPlan` + `emitInsertAgreementPrep`), and
 in doing so lifts R354's bulk self-FK reject into working emission.
+
+## Implementation notes (shipped, In Review)
+
+Landed as designed below, with one design fork resolved during In Progress (consulted
+`principles-architect`):
+
+- **`setColumnPlan(List<SetGroup>)`** drives the three bulk SET emitters (within-SET dedup, the
+  endorsement case). `emitSetBulkCellAdds` hoists per-row decode locals into a Phase-1 helper
+  (`emitBulkSetDecodeLocals`, INSERT-style instanceof guard + presence-gated throw) so a composite
+  group's cells and a shared column's gather all read one decode; the shared-column branch emits the
+  coalesced `DSL.val(firstPresent)` cell with a pairwise `requireColumnAgreement`, reusing R354's
+  `appendAgreementValue`.
+- **Cross-partition (self-FK WHERE∩SET) fork.** The spec's "the dedup handles it" was ambiguous, since
+  `setColumnPlan` only sees SET groups. Resolved as: the two v-*populating* emitters
+  (`emitSetVColNameAdds`, `emitSetBulkCellAdds`) skip a SET column already supplied as a WHERE/lookup
+  v-column; `emitSetVFieldPuts` keeps the no-op `sets.put` (reads the WHERE v-column, keeps `sets`
+  non-empty); and a new `emitBulkKeySetAgreement` emits the per-row check **reusing** the already-present
+  per-row decode locals (`bulkKey<gi>` WHERE-side, `bulkSetKey_<gi>` SET-side) rather than re-decoding.
+  Per `principles-architect` Q2 this is the cleaner generated output (two decodes/row, not three) and
+  the stronger correctness story (the agreement guards the values actually used); the single-decode rule
+  the spec stresses is load-bearing for the within-SET *cell* but advisory for the cross-partition check
+  (which produces no cell). Verified by reading the emitted fetchers for both shapes.
+- **Walker.** Stage 2b deleted; the now-dead `list` parameter dropped from `walk` (two `FieldBuilder`
+  call sites + the class javadoc updated). `UnsupportedInputFieldShape` retains its other producers.
+- **Tests.** `UpdateRowsWalkerTest`: the bulk self-FK reject test inverted to admit-and-route-all-SET,
+  plus a decode-involving-overlap-admits-without-`PlainColumnCollision` test (15 pass). New
+  `BulkUpdateSetAgreementExecutionTest` (7 execution-tier tests: within-SET agree/disagree/asymmetric
+  ×2, self-FK agree/disagree/omitted). Schema fixtures `updateEndorsementsOverlap` /
+  `updateEmailReplies` exercise the compilation tier. Full `mvn install -Plocal-db` reactor green.
 
 ## Current behavior (as found, post-R322/R354)
 

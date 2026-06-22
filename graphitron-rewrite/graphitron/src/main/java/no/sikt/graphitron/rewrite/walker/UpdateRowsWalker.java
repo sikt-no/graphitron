@@ -39,10 +39,9 @@ import java.util.Set;
  * over the already-classified {@link InputField} permits the upstream classifier produced. The
  * follow-up that retires the intermediate and reflects from SDL directly is tracked as a Backlog
  * item ({@code updaterows-walker-sdl-substrate}). The {@code field} parameter is reserved for that
- * future direct-SDL substrate; the current translator does not read it. The {@code list} parameter
- * is caller-supplied cardinality (the {@code @table} arg's list shape), not raw SDL: the walker reads
- * it only to defer a self-FK {@code @reference} on the bulk (list-input) form to R342 (R354), the
- * same way {@code DeleteRowsWalker} reads {@code multiRow}.
+ * future direct-SDL substrate; the current translator does not read it. The walk is
+ * cardinality-independent: a self-FK {@code @reference} routes its columns wholly to SET on both the
+ * single-row and bulk (list-input) forms (R354 + R342), so the caller's list shape never reaches here.
  *
  * <p>The new logic this walker owns — PK-or-UK subset matching, SET/WHERE partition by key
  * membership, empty-SET rejection, and the override-condition rejection — is fully expressible over
@@ -81,7 +80,6 @@ public final class UpdateRowsWalker {
         TableRef table,
         List<InputField> inputFields,
         JooqCatalog catalog,
-        boolean list,
         String outerArgName
     ) {
         var errors = new ArrayList<Rejection.AuthorError>();
@@ -97,26 +95,10 @@ public final class UpdateRowsWalker {
             return new WalkerResult.Err<>(errors);
         }
 
-        // Stage 2b (R354): a self-FK @reference on a bulk (list-input) UPDATE is deferred. The
-        // self-FK's shared column lands in the UPDATE ... SET c = v.c FROM (VALUES …) derived
-        // table, which is R342's duplicate-v-column dedup territory (it carries the bulk SET
-        // dedup + the writer-abstraction lift). R354 ships the single-row form and rejects the
-        // bulk form with a clear message rather than emitting a silently-wrong derived table.
-        if (list) {
-            for (var c : contributions) {
-                if (c.selfReference()) {
-                    errors.add(new UpdateRowsError.UnsupportedInputFieldShape(
-                        c.sdlFieldName(), "self-FK @reference on a bulk UPDATE",
-                        "a self-FK @reference on a bulk (list-input) @mutation(typeName: UPDATE) is not "
-                        + "yet supported; its shared column would land in the UPDATE … FROM (VALUES …) "
-                        + "derived table (deferred to R342). Use a single-row UPDATE input, or wait for "
-                        + "bulk self-FK support."));
-                }
-            }
-            if (!errors.isEmpty()) {
-                return new WalkerResult.Err<>(errors);
-            }
-        }
+        // R342: the bulk self-FK reject that used to live here (Stage 2b) is gone. A self-FK
+        // @reference on a bulk (list-input) UPDATE routes exactly as the single-row form does — its
+        // shared column lands in the UPDATE … SET c = v.c FROM (VALUES …) derived table, which the
+        // bulk SET dedup now collapses to one v-column with a per-row WHERE∩SET agreement check.
 
         // Stage 3: union of every admitted field's target columns (all carriers, for diagnostics),
         // plus the identity-only subset (non-self-FK carriers) the key match is computed over.
