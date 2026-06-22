@@ -802,6 +802,56 @@ class MutationDmlNodeIdClassificationTest {
             .as("cross-table FK reference shares the mailbox_id child column with the self-FK")
             .extracting(ColumnRef::sqlName)
             .containsExactly("mailbox_id");
+        assertThat(selfRef.selfReference())
+            .as("the same-table @nodeId @reference is marked as a self-FK on the carrier")
+            .isTrue();
+        assertThat(mailboxRef.selfReference())
+            .as("the cross-table FK reference is NOT a self-FK")
+            .isFalse();
+    }
+
+    @Test
+    void selfFkNodeIdReference_update_routesSelfFkToSet_sharedColumnInBothPartitions() {
+        // R354: the UPDATE sibling of the INSERT self-FK case. `id` (own @nodeId, own-PK
+        // short-circuit) identifies the row → WHERE (mailbox_id, message_no). `inReplyTo` is the
+        // self-FK @nodeId @reference; its lifted child columns (mailbox_id, in_reply_to_no) route
+        // WHOLLY to SET — a self-FK is a write of "who this row points at", never identity, so the
+        // shared mailbox_id is a SET write (not reclassified to WHERE). mailbox_id thus appears in
+        // BOTH keyColumns (from id) and setColumns (from inReplyTo); the emit-side cross-partition
+        // agreement reconciles it.
+        var schema = TestSchemaHelper.buildSchema("""
+            type Mailbox implements Node @table(name: "mailbox") @node { id: ID! @nodeId }
+            type Email implements Node @table(name: "email") @node {
+                id: ID! @nodeId
+                inReplyToNo: Int @field(name: "in_reply_to_no")
+                subject: String @field(name: "subject")
+            }
+            input UpdateEmailReplyInput @table(name: "email") {
+                id: ID! @nodeId(typeName: "Email")
+                subject: String @field(name: "subject")
+                inReplyTo: ID @nodeId(typeName: "Email") @reference(path: [{key: "email_in_reply_to_fk"}])
+            }
+            type Query { x: String }
+            type Mutation { updateEmailReply(in: UpdateEmailReplyInput!): Email @mutation(typeName: UPDATE) }
+            """);
+
+        var f = (MutationField.MutationUpdateTableField) schema.field("Mutation", "updateEmailReply");
+        var updateRows = (no.sikt.graphitron.rewrite.model.UpdateRows.Identified) f.updateRows();
+
+        // WHERE: id's own PK columns.
+        assertThat(updateRows.keyColumns()).extracting(k -> k.targetColumn().sqlName())
+            .containsExactlyInAnyOrder("mailbox_id", "message_no");
+        assertThat(updateRows.keyColumns()).extracting(k -> k.sdlFieldName()).containsOnly("id");
+        // SET: inReplyTo's whole lifted tuple (mailbox_id, in_reply_to_no) plus subject.
+        var inReplyToSet = updateRows.setColumns().stream()
+            .filter(s -> s.sdlFieldName().equals("inReplyTo")).toList();
+        assertThat(inReplyToSet).extracting(s -> s.targetColumn().sqlName())
+            .containsExactly("mailbox_id", "in_reply_to_no");
+        assertThat(updateRows.setColumns()).extracting(s -> s.targetColumn().sqlName())
+            .contains("subject");
+        // mailbox_id present in both partitions.
+        assertThat(updateRows.keyColumns()).anyMatch(k -> k.targetColumn().sqlName().equals("mailbox_id"));
+        assertThat(updateRows.setColumns()).anyMatch(s -> s.targetColumn().sqlName().equals("mailbox_id"));
     }
 
     @Test

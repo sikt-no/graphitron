@@ -39,7 +39,10 @@ import java.util.Set;
  * over the already-classified {@link InputField} permits the upstream classifier produced. The
  * follow-up that retires the intermediate and reflects from SDL directly is tracked as a Backlog
  * item ({@code updaterows-walker-sdl-substrate}). The {@code field} parameter is reserved for that
- * future direct-SDL substrate; the current translator does not read it.
+ * future direct-SDL substrate; the current translator does not read it. The {@code list} parameter
+ * is caller-supplied cardinality (the {@code @table} arg's list shape), not raw SDL: the walker reads
+ * it only to defer a self-FK {@code @reference} on the bulk (list-input) form to R342 (R354), the
+ * same way {@code DeleteRowsWalker} reads {@code multiRow}.
  *
  * <p>The new logic this walker owns — PK-or-UK subset matching, SET/WHERE partition by key
  * membership, empty-SET rejection, and the override-condition rejection — is fully expressible over
@@ -59,8 +62,11 @@ import java.util.Set;
 public final class UpdateRowsWalker {
 
     /** A reshaped, column-bearing input field: the SDL field name, its target columns on the
-     * input's own table, and the extraction shape the emitter reuses. */
-    private record Contribution(String sdlFieldName, List<ColumnRef> columns, CallSiteExtraction extraction) {}
+     * input's own table, the extraction shape the emitter reuses, and whether the carrier is a
+     * self-FK reference (R354). A self-FK carrier's columns route wholly to the SET partition and
+     * never count toward WHERE-key coverage; every other carrier partitions by key membership. */
+    private record Contribution(String sdlFieldName, List<ColumnRef> columns, CallSiteExtraction extraction,
+                                boolean selfReference) {}
 
     /** True when the carrier decodes a {@code @nodeId} (directly or behind a nested-input access path),
      *  i.e. its value is only knowable at runtime — the R322 distinction between a runtime-agreement
@@ -75,6 +81,7 @@ public final class UpdateRowsWalker {
         TableRef table,
         List<InputField> inputFields,
         JooqCatalog catalog,
+        boolean list,
         String outerArgName
     ) {
         var errors = new ArrayList<Rejection.AuthorError>();
@@ -90,20 +97,49 @@ public final class UpdateRowsWalker {
             return new WalkerResult.Err<>(errors);
         }
 
-        // Stage 3: union of every admitted field's target columns.
+        // Stage 2b (R354): a self-FK @reference on a bulk (list-input) UPDATE is deferred. The
+        // self-FK's shared column lands in the UPDATE ... SET c = v.c FROM (VALUES …) derived
+        // table, which is R342's duplicate-v-column dedup territory (it carries the bulk SET
+        // dedup + the writer-abstraction lift). R354 ships the single-row form and rejects the
+        // bulk form with a clear message rather than emitting a silently-wrong derived table.
+        if (list) {
+            for (var c : contributions) {
+                if (c.selfReference()) {
+                    errors.add(new UpdateRowsError.UnsupportedInputFieldShape(
+                        c.sdlFieldName(), "self-FK @reference on a bulk UPDATE",
+                        "a self-FK @reference on a bulk (list-input) @mutation(typeName: UPDATE) is not "
+                        + "yet supported; its shared column would land in the UPDATE … FROM (VALUES …) "
+                        + "derived table (deferred to R342). Use a single-row UPDATE input, or wait for "
+                        + "bulk self-FK support."));
+                }
+            }
+            if (!errors.isEmpty()) {
+                return new WalkerResult.Err<>(errors);
+            }
+        }
+
+        // Stage 3: union of every admitted field's target columns (all carriers, for diagnostics),
+        // plus the identity-only subset (non-self-FK carriers) the key match is computed over.
         var inputColumns = new ArrayList<ColumnRef>();
         var inputColumnSqlNames = new LinkedHashSet<String>();
+        var identityColumnSqlNames = new LinkedHashSet<String>();
         for (var c : contributions) {
             for (var col : c.columns()) {
                 if (inputColumnSqlNames.add(col.sqlName())) {
                     inputColumns.add(col);
                 }
+                if (!c.selfReference()) {
+                    identityColumnSqlNames.add(col.sqlName());
+                }
             }
         }
 
         // Stage 4-5: PK-or-UK identification via the shared matcher (R266 extraction). Find the
-        // first candidate key (PK preferred) whose column set the input covers.
-        MatchedKey matchedKey = MatchedKeys.firstCovered(catalog, table, inputColumnSqlNames).orElse(null);
+        // first candidate key (PK preferred) whose column set the input covers — over the identity
+        // (non-self-FK) columns only (R354). A self-FK points at a sibling row, so it can never
+        // pin the row it lives on; a PK column reachable only through a self-FK fails coverage
+        // (NoUniqueKeyCoverage), matching the semantic "your identity fields do not pin a key".
+        MatchedKey matchedKey = MatchedKeys.firstCovered(catalog, table, identityColumnSqlNames).orElse(null);
         if (matchedKey == null) {
             return new WalkerResult.Err<>(List.of(
                 new UpdateRowsError.NoUniqueKeyCoverage(
@@ -111,11 +147,22 @@ public final class UpdateRowsWalker {
         }
 
         // Stage 6: partition each admitted field into the WHERE (matched-key) or SET (everything
-        // else) half; mixed-membership composite carriers reject.
+        // else) half. A self-FK reference carrier (R354) routes wholly to SET regardless of key
+        // membership — its columns are a pointer to a sibling row, never this row's identity, so a
+        // shared key column it writes is an ordinary SET write (the FK forces it equal to the WHERE
+        // value, agreement-checked at emit). Every other carrier partitions by membership; a
+        // genuine straddle (a cross-table FK reference whose lifted columns span the key boundary)
+        // still rejects with MixedCarrierKeyMembership.
         var keySqlNames = sqlNameSet(matchedKey.columns());
         var setColumns = new ArrayList<SetColumn>();
         var keyColumns = new ArrayList<KeyColumn>();
         for (var c : contributions) {
+            if (c.selfReference()) {
+                for (var col : c.columns()) {
+                    setColumns.add(new SetColumn(c.sdlFieldName(), col, c.extraction()));
+                }
+                continue;
+            }
             var inKey = new ArrayList<ColumnRef>();
             var outsideKey = new ArrayList<ColumnRef>();
             for (var col : c.columns()) {
@@ -187,13 +234,13 @@ public final class UpdateRowsWalker {
         for (var f : fields) {
             switch (f) {
                 case InputField.ColumnField c -> classifyColumnCarrier(
-                    c.name(), c.list(), List.of(c.column()), wrap(c.extraction(), prefix, c.name(), outerArgName), c.condition(), c.location(), errors, contributions);
+                    c.name(), c.list(), List.of(c.column()), wrap(c.extraction(), prefix, c.name(), outerArgName), false, c.condition(), c.location(), errors, contributions);
                 case InputField.CompositeColumnField c -> classifyColumnCarrier(
-                    c.name(), c.list(), c.columns(), wrap(c.extraction(), prefix, c.name(), outerArgName), c.condition(), c.location(), errors, contributions);
+                    c.name(), c.list(), c.columns(), wrap(c.extraction(), prefix, c.name(), outerArgName), false, c.condition(), c.location(), errors, contributions);
                 case InputField.ColumnReferenceField c -> classifyColumnCarrier(
-                    c.name(), c.list(), c.liftedSourceColumns(), wrap(c.extraction(), prefix, c.name(), outerArgName), c.condition(), c.location(), errors, contributions);
+                    c.name(), c.list(), c.liftedSourceColumns(), wrap(c.extraction(), prefix, c.name(), outerArgName), c.selfReference(), c.condition(), c.location(), errors, contributions);
                 case InputField.CompositeColumnReferenceField c -> classifyColumnCarrier(
-                    c.name(), c.list(), c.liftedSourceColumns(), wrap(c.extraction(), prefix, c.name(), outerArgName), c.condition(), c.location(), errors, contributions);
+                    c.name(), c.list(), c.liftedSourceColumns(), wrap(c.extraction(), prefix, c.name(), outerArgName), c.selfReference(), c.condition(), c.location(), errors, contributions);
                 case InputField.UnboundField u -> {
                     if (u.condition().isPresent() && u.condition().get().override()) {
                         errors.add(new UpdateRowsError.OverrideConditionNotSupported(u.name(), u.location()));
@@ -258,7 +305,7 @@ public final class UpdateRowsWalker {
      */
     private void classifyColumnCarrier(
         String name, boolean list, List<ColumnRef> columns, CallSiteExtraction extraction,
-        Optional<ArgConditionRef> condition, SourceLocation location,
+        boolean selfReference, Optional<ArgConditionRef> condition, SourceLocation location,
         List<Rejection.AuthorError> errors, List<Contribution> contributions
     ) {
         if (list) {
@@ -279,7 +326,7 @@ public final class UpdateRowsWalker {
             }
             return;
         }
-        contributions.add(new Contribution(name, columns, extraction));
+        contributions.add(new Contribution(name, columns, extraction, selfReference));
     }
 
     private static Set<String> sqlNameSet(List<ColumnRef> columns) {

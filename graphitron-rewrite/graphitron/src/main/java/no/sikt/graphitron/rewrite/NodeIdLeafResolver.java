@@ -175,6 +175,14 @@ final class NodeIdLeafResolver {
              *                             table, positionally aligned with {@code keyColumns}
              * @param joinPath             FK path from the containing table to {@code T.table()};
              *                             length-1 single-hop or length-&ge;2 identity-carrying chain
+             * @param selfReference        {@code true} when {@code T.table()} equals the containing
+             *                             table — a self-FK (R328): the {@code @reference} names a
+             *                             foreign key back to the row's own table, so the lifted
+             *                             columns point at a sibling row, never the row's own
+             *                             identity. R354 routes such a carrier wholly to the UPDATE
+             *                             SET partition; a cross-table FK ({@code false}) partitions
+             *                             by key membership. The fact is decided here, the single
+             *                             site that already discriminates same-table from cross-table.
              */
             record DirectFk(
                     String refTypeName,
@@ -183,7 +191,8 @@ final class NodeIdLeafResolver {
                     List<ColumnRef> keyColumns,
                     List<ColumnRef> fkSourceColumns,
                     List<ColumnRef> liftedSourceColumns,
-                    List<JoinStep> joinPath)
+                    List<JoinStep> joinPath,
+                    boolean selfReference)
                 implements FkTarget {}
 
             /**
@@ -307,9 +316,14 @@ final class NodeIdLeafResolver {
         int[] permutation = permutationToKeyColumns(terminalHop.targetSideColumns(), keys.keyColumns());
         if (permutation != null) {
             List<ColumnRef> liftedAligned = permute(joinPath.liftedSourceColumns(), permutation);
+            // Self-FK: T.table() equals the containing table, reached here only because an explicit
+            // @reference was present (the no-@reference same-table case short-circuited to SameTable
+            // above). The lifted columns are the self-FK's child columns on the row's own table,
+            // a pointer to a sibling, never the row's identity. R354 reads this off the carrier.
+            boolean selfReference = targetTableName.equalsIgnoreCase(containingTable.tableName());
             return new Resolved.FkTarget.DirectFk(
                 refTypeName, targetTable, decodeMethod, keys.keyColumns(),
-                firstHop.sourceSideColumns(), liftedAligned, joinPath.path());
+                firstHop.sourceSideColumns(), liftedAligned, joinPath.path(), selfReference);
         }
         return new Resolved.FkTarget.TranslatedFk(
             refTypeName, targetTable, decodeMethod, keys.keyColumns(), joinPath.path());

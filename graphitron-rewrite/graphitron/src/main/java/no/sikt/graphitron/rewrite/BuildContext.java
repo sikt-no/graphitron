@@ -1847,9 +1847,11 @@ class BuildContext {
                     // Plain (non-@nodeId) @reference: the predicate fires against the resolved
                     // column directly. liftedSourceColumns carries that single column so the
                     // emitter has one slot to read for both nodeId and non-nodeId carriers.
+                    // selfReference=false: the self-FK fact (R354's all-SET routing) is decided only
+                    // at the @nodeId discrimination site; a bare @reference is not a self-FK carrier.
                     return new InputFieldResolution.Resolved(new InputField.ColumnReferenceField(
                         parentTypeName, name, locationOf(field), typeName, nonNull, list,
-                        col, path.elements(), List.of(col), cond,
+                        col, path.elements(), List.of(col), false, cond,
                         new no.sikt.graphitron.rewrite.model.CallSiteExtraction.Direct()));
                 })
                 .orElseGet(() -> new InputFieldResolution.Unresolved(name, columnName,
@@ -2102,12 +2104,12 @@ class BuildContext {
                     return new InputFieldResolution.Resolved(new InputField.ColumnReferenceField(
                         parentTypeName, name, locationOf(field), typeName, nonNull, list,
                         direct.keyColumns().get(0), direct.joinPath(),
-                        direct.liftedSourceColumns(), cond, extraction));
+                        direct.liftedSourceColumns(), direct.selfReference(), cond, extraction));
                 }
                 return new InputFieldResolution.Resolved(new InputField.CompositeColumnReferenceField(
                     parentTypeName, name, locationOf(field), typeName, nonNull, list,
                     direct.keyColumns(), direct.joinPath(),
-                    direct.liftedSourceColumns(), cond, extraction));
+                    direct.liftedSourceColumns(), direct.selfReference(), cond, extraction));
             }
             case NodeIdLeafResolver.Resolved.FkTarget.TranslatedFk translated -> {
                 return new InputFieldResolution.Unresolved(name, null,
@@ -2153,13 +2155,15 @@ class BuildContext {
                 + " via KjerneJooqGenerator");
         }
         var extraction = new no.sikt.graphitron.rewrite.model.CallSiteExtraction.SkipMismatchedElement(decodeMethod);
+        // selfReference=false: this shim resolves the id-reference qualifier-reverse-map to a
+        // cross-table FK target; the self-FK case routes through the @nodeId resolver, never here.
         if (targetKeyColumns.size() == 1) {
             return new InputFieldResolution.Resolved(new InputField.ColumnReferenceField(parentTypeName, name, location,
-                typeName, nonNull, list, targetKeyColumns.get(0), joinPath, liftedSourceColumns, cond,
+                typeName, nonNull, list, targetKeyColumns.get(0), joinPath, liftedSourceColumns, false, cond,
                 extraction));
         }
         return new InputFieldResolution.Resolved(new InputField.CompositeColumnReferenceField(parentTypeName, name, location,
-            typeName, nonNull, list, targetKeyColumns, joinPath, liftedSourceColumns, cond, extraction));
+            typeName, nonNull, list, targetKeyColumns, joinPath, liftedSourceColumns, false, cond, extraction));
     }
 
     /**

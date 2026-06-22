@@ -1,7 +1,7 @@
 ---
 id: R354
 title: "Self-FK @nodeId on UPDATE: classify the self-FK reference as all-SET and agreement-check the shared key column"
-status: Ready
+status: In Review
 bucket: feature
 priority: 5
 theme: nodeid

@@ -95,6 +95,15 @@ public sealed interface InputField extends GraphitronField
      *     resolved column-equality path) and arity-1 {@link CallSiteExtraction.NodeIdDecodeKeys}
      *     (input-side {@code @nodeId(typeName: T)} reference); arity &ge; 2 routes to
      *     {@link CompositeColumnReferenceField}.
+     * @param selfReference {@code true} when this carrier is a <em>self-FK</em> reference — a
+     *     same-table {@code @nodeId @reference} whose {@code @reference} names a foreign key back to
+     *     the carrier's own table (R328). The decoded keys land on the self-FK's child columns, a
+     *     pointer to a sibling row, never the row's own identity. R354 reads this to route a self-FK's
+     *     lifted columns wholly to the UPDATE SET partition (a self-FK is a write of "who this row
+     *     points at", never identity), in contrast to a cross-table FK reference whose lifted column
+     *     can legitimately be the row's own identity. The fact is decided once at the {@code @nodeId}
+     *     discrimination site ({@link no.sikt.graphitron.rewrite.NodeIdLeafResolver}); every non-self-FK
+     *     construction site sets {@code false}.
      */
     record ColumnReferenceField(
         String parentTypeName,
@@ -106,6 +115,7 @@ public sealed interface InputField extends GraphitronField
         ColumnRef column,
         List<JoinStep> joinPath,
         List<ColumnRef> liftedSourceColumns,
+        boolean selfReference,
         Optional<ArgConditionRef> condition,
         CallSiteExtraction extraction
     ) implements InputField, LookupKeyField, SetField {
@@ -159,6 +169,11 @@ public sealed interface InputField extends GraphitronField
      * {@link CompositeColumnField}.
      *
      * <p>The arity-1 case lands on the single-column {@link ColumnReferenceField}.
+     *
+     * <p>{@code selfReference} carries the same self-FK fact as {@link ColumnReferenceField#selfReference()}:
+     * {@code true} for a composite same-table {@code @nodeId @reference} (e.g. {@code email}'s
+     * {@code inReplyTo}, whose {@code email_in_reply_to_fk} child columns are
+     * {@code (mailbox_id, in_reply_to_no)}), driving R354's all-SET routing on UPDATE.
      */
     record CompositeColumnReferenceField(
         String parentTypeName,
@@ -170,6 +185,7 @@ public sealed interface InputField extends GraphitronField
         List<ColumnRef> columns,
         List<JoinStep> joinPath,
         List<ColumnRef> liftedSourceColumns,
+        boolean selfReference,
         Optional<ArgConditionRef> condition,
         CallSiteExtraction.NodeIdDecodeKeys extraction
     ) implements InputField, LookupKeyField, SetField {
