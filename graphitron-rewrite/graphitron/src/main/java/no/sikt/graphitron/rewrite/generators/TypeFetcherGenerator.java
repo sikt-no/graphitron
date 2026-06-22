@@ -2932,23 +2932,89 @@ public class TypeFetcherGenerator {
         }
     }
 
+    /** R342: one writer contributing to a bulk-SET backing column — which {@link SetGroup} (by index),
+     *  the slot within that group's column tuple, and the resolved column. The {@code [groupIndex, slot]}
+     *  shape mirrors the contributor grouping {@link #emitSetAgreementPreamble} already builds, and the
+     *  {@link InsertColWriter} the INSERT path uses. */
+    private record SetColWriter(int groupIndex, int slot, ColumnRef column) {}
+
+    /** R342: one backing column on the bulk-SET plan with its ordered contributing writers.
+     *  {@code shared()} when two or more writers land on it (the decode-involving within-SET overlap the
+     *  dedup collapses to one v-column with a coalesced, agreement-checked cell). */
+    private record SetCol(ColumnRef column, List<SetColWriter> writers) {
+        boolean shared() { return writers.size() >= 2; }
+    }
+
     /**
-     * R189: appends {@code vColNames.add(t.col.getName())} statements for each {@code SetField},
-     * guarded by {@code firstKeys.contains(name)}. One entry per target column on
-     * {@link #setFieldColumns}.
+     * R342: the per-column plan for the bulk UPDATE SET clause, the SET analogue of
+     * {@link #insertColumnPlan}. Groups the set groups' columns by backing-column {@code sqlName} into an
+     * ordered writer list (each carrying its source {@link SetGroup} index, the slot within that group's
+     * column tuple, and the {@link ColumnRef}), keyed in first-encounter order. The three bulk SET
+     * emitters ({@link #emitSetVColNameAdds}, {@link #emitSetBulkCellAdds}, {@link #emitSetVFieldPuts})
+     * all walk this one deterministic plan, so the {@code v(…)} column-name list, the per-row cells, and
+     * the {@code sets.put} entries emit exactly one entry per distinct column and cannot drift out of
+     * positional alignment. A column with two or more writers is {@code shared()}.
+     */
+    private static List<SetCol> setColumnPlan(List<SetGroup> setGroups) {
+        var byColumn = new java.util.LinkedHashMap<String, List<SetColWriter>>();
+        for (int gi = 0; gi < setGroups.size(); gi++) {
+            var cols = setGroups.get(gi).columns();
+            for (int s = 0; s < cols.size(); s++) {
+                var col = cols.get(s);
+                byColumn.computeIfAbsent(col.sqlName(), k -> new ArrayList<>())
+                    .add(new SetColWriter(gi, s, col));
+            }
+        }
+        var out = new ArrayList<SetCol>();
+        byColumn.forEach((k, v) -> out.add(new SetCol(v.get(0).column(), v)));
+        return out;
+    }
+
+    /**
+     * R342: the first-row presence gate for a bulk-SET plan column. A disjoint column keeps its single
+     * writer's gate ({@link #firstRowSetPresenceExpr}, byte-identical to the pre-dedup per-group gate); a
+     * shared column's gate is the <em>disjunction</em> of its contributing writers' first-row presence, so
+     * the v-column-name list, the per-row cell, and the SET-map entry all appear together iff any writer
+     * is present. The uniform-shape guard makes the present-writer set uniform across rows, so projecting
+     * the first row's disjunction onto every row is safe. {@code saltPrefix} uniquifies the nested
+     * pattern variables across the three emitters' peer expressions.
+     */
+    private static CodeBlock setColumnPresenceGate(List<SetGroup> setGroups, SetCol sc, String saltPrefix) {
+        var writers = sc.writers();
+        if (writers.size() == 1) {
+            return firstRowSetPresenceExpr(setGroups.get(writers.get(0).groupIndex()).accessPath(), saltPrefix);
+        }
+        var b = CodeBlock.builder();
+        for (int i = 0; i < writers.size(); i++) {
+            if (i > 0) b.add(" || ");
+            var path = setGroups.get(writers.get(i).groupIndex()).accessPath();
+            b.add("($L)", firstRowSetPresenceExpr(path, saltPrefix + "w" + i));
+        }
+        return b.build();
+    }
+
+    /**
+     * R189 / R342: appends {@code vColNames.add(t.col.getName())} for each distinct bulk-SET plan column,
+     * gated on the column's first-row presence ({@link #setColumnPresenceGate}). One entry per distinct
+     * column (was: one per group-column). A column already supplied by the WHERE side
+     * ({@code lookupSqlNames}, the self-FK cross-partition case) is skipped here — the lookup-key v-column
+     * already carries it, and re-adding would reintroduce the duplicate-{@code v}-column crash R342 removes.
      */
     private static void emitSetVColNameAdds(
             CodeBlock.Builder block,
             List<SetGroup> setFields,
+            Set<String> lookupSqlNames,
             GeneratorUtils.ResolvedTableNames tablesOnly,
             TableRef tableRef) {
-        for (int sfi = 0; sfi < setFields.size(); sfi++) {
-            var sf = setFields.get(sfi);
-            block.beginControlFlow("if ($L)", firstRowSetPresenceExpr(sf.accessPath(), "vc" + sfi));
-            for (var col : sf.columns()) {
-                block.addStatement("vColNames.add($T.$L.$L.getName())",
-                    tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName());
+        var plan = setColumnPlan(setFields);
+        for (int ci = 0; ci < plan.size(); ci++) {
+            var sc = plan.get(ci);
+            if (lookupSqlNames.contains(sc.column().sqlName())) {
+                continue; // cross-partition: the WHERE side already added this v-column.
             }
+            block.beginControlFlow("if ($L)", setColumnPresenceGate(setFields, sc, "vc" + ci));
+            block.addStatement("vColNames.add($T.$L.$L.getName())",
+                tablesOnly.tablesClass(), tableRef.javaFieldName(), sc.column().javaName());
             block.endControlFlow();
         }
     }
@@ -2968,40 +3034,85 @@ public class TypeFetcherGenerator {
     }
 
     /**
-     * R189: emits {@code cells.add(DSL.val(value, t.col.getDataType()))} statements for each
-     * {@code SetField} on the bulk-UPDATE per-row {@code cells} list, guarded by the first-row
-     * presence gate ({@link #firstRowSetPresenceExpr}). NodeId-decoded carriers declare a per-row
-     * decode local inside the conditional and read {@code decodeLocal.value<i+1>()} per slot; direct
-     * carriers read the per-row value (R186: a null-safe nested descent for a nested leaf, plain
-     * {@code row.get(name)} for a top-level one).
+     * R189 / R342: emits the bulk-UPDATE per-row {@code cells.add(...)} list off the {@link #setColumnPlan}
+     * (one cell per distinct column), guarded by the first-row presence gate
+     * ({@link #setColumnPresenceGate}). Two phases share one per-row decode:
+     *
+     * <ol>
+     *   <li><b>Decode locals</b> ({@link #emitBulkSetDecodeLocals}) — one {@code Record<N>} per
+     *       NodeId-bearing {@link SetGroup}, declared once per row (INSERT-style: instanceof guard,
+     *       presence-gated throw), so a composite group's columns and any shared-column gather all read the
+     *       same decode, never re-decoding per writer.</li>
+     *   <li><b>Cells</b> — one {@code cells.add} per plan column: a <b>disjoint</b> column reproduces the
+     *       pre-dedup per-writer shape (decode reads {@code <prefix>_<gi>.value<slot+1>()}, plain reads the
+     *       per-row value); a <b>within-SET shared</b> column gathers the present writers' values (reusing
+     *       R354's {@link #appendAgreementValue}), pairwise-checks them through
+     *       {@code NodeIdEncoder.requireColumnAgreement}, and adds the single coalesced
+     *       {@code DSL.val(firstPresent, col.getDataType())} cell — {@link #emitInsertAgreementPrep}'s
+     *       coalesced-cell shape transplanted into the row loop (no {@code DSL.defaultValue} branch, since
+     *       the conditional gate guarantees a present writer).</li>
+     * </ol>
+     *
+     * <p>A column already supplied by the WHERE side ({@code lookupSqlNames}, the self-FK cross-partition
+     * case) is skipped here — the lookup-key v-column already carries its cell; the WHERE∩SET value check
+     * is {@link #emitBulkKeySetAgreement}, run alongside.
      */
     private static void emitSetBulkCellAdds(
             CodeBlock.Builder block,
             List<SetGroup> setFields,
+            Set<String> lookupSqlNames,
             String decodeLocalPrefix,
             GeneratorUtils.ResolvedTableNames tablesOnly,
             TableRef tableRef) {
-        for (int sfi = 0; sfi < setFields.size(); sfi++) {
-            var sf = setFields.get(sfi);
-            var cols = sf.columns();
-            var nidk = sf.nidk();
-            var path = sf.accessPath();
-            block.beginControlFlow("if ($L)", firstRowSetPresenceExpr(path, "bc" + sfi));
-            String recLocal = null;
-            if (nidk != null) {
-                recLocal = decodeLocalPrefix + "_" + sfi;
-                appendDecodeLocal(block, recLocal, nidk, ArgCallEmitter.nestedMapValueExpr("row", path),
-                    path.get(path.size() - 1));
+        emitBulkSetDecodeLocals(block, setFields, decodeLocalPrefix);
+        var listCn = ClassName.get("java.util", "List");
+        var arrayListCn = ClassName.get("java.util", "ArrayList");
+        var plan = setColumnPlan(setFields);
+        for (int ci = 0; ci < plan.size(); ci++) {
+            var sc = plan.get(ci);
+            var col = sc.column();
+            if (lookupSqlNames.contains(col.sqlName())) {
+                continue; // cross-partition: the WHERE side already added this cell.
             }
-            for (int ci = 0; ci < cols.size(); ci++) {
-                var col = cols.get(ci);
-                if (nidk != null) {
+            block.beginControlFlow("if ($L)", setColumnPresenceGate(setFields, sc, "bc" + ci));
+            if (sc.shared()) {
+                String listName = decodeLocalPrefix + "SetAgree" + ci;
+                String label = "input fields " + sc.writers().stream()
+                    .map(w -> "'" + String.join(".", setFields.get(w.groupIndex()).accessPath()) + "'")
+                    .distinct()
+                    .collect(java.util.stream.Collectors.joining(", "));
+                // A within-SET shared column reaching here always has at least one @nodeId decode writer
+                // (the all-plain overlap is the UpdateRowsWalker PlainColumnCollision reject), so an
+                // encoder class is always available.
+                ClassName encoderClass = sc.writers().stream()
+                    .map(w -> setFields.get(w.groupIndex()))
+                    .filter(g -> g.nidk() != null)
+                    .map(g -> g.nidk().decodeMethod().encoderClass())
+                    .findFirst().orElseThrow();
+                block.addStatement("$T<$T> $L = new $T<>()", listCn, Object.class, listName, arrayListCn);
+                int wi = 0;
+                for (var w : sc.writers()) {
+                    appendAgreementValue(block, setFields.get(w.groupIndex()), w.slot(), "row",
+                        decodeLocalPrefix + "_" + w.groupIndex(), listName, "bsa" + ci + "w" + (wi++));
+                }
+                String idx = listName + "Idx";
+                block.beginControlFlow("for (int $L = 1; $L < $L.size(); $L++)", idx, idx, listName, idx)
+                    .addStatement("$T.requireColumnAgreement($S, $T.$L.$L.getDataType(), $L.get(0), $L.get($L))",
+                        encoderClass, label, tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName(),
+                        listName, listName, idx)
+                    .endControlFlow();
+                block.addStatement("cells.add($T.val($L.get(0), $T.$L.$L.getDataType()))",
+                    DSL, listName, tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName());
+            } else {
+                var w = sc.writers().get(0);
+                var g = setFields.get(w.groupIndex());
+                if (g.nidk() != null) {
                     block.addStatement("cells.add($T.val($L.value$L(), $T.$L.$L.getDataType()))",
-                        DSL, recLocal, ci + 1,
+                        DSL, decodeLocalPrefix + "_" + w.groupIndex(), w.slot() + 1,
                         tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName());
                 } else {
                     block.addStatement("cells.add($T.val($L, $T.$L.$L.getDataType()))",
-                        DSL, ArgCallEmitter.nestedMapValueExpr("row", path),
+                        DSL, ArgCallEmitter.nestedMapValueExpr("row", g.accessPath()),
                         tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName());
                 }
             }
@@ -3010,24 +3121,136 @@ public class TypeFetcherGenerator {
     }
 
     /**
-     * R189: emits {@code sets.put(t.col, v.field(t.col))} statements for each {@code SetField}
-     * on the bulk-UPDATE join-on-v-column SET map, guarded by the first-row presence gate
-     * ({@link #firstRowSetPresenceExpr}). One entry per target column on {@link #setFieldColumns}.
+     * R342: emits the per-row decode locals for the bulk SET clause — one {@code Record<N>} per
+     * {@link SetGroup} carrying a {@code @nodeId}, declared once per row. Mirrors
+     * {@link #buildInsertDecodeLocals}: the local is declared unconditionally with an {@code instanceof
+     * String} guard (absent / non-string wire value → {@code null}) and a presence-gated null-check throw
+     * (a present-but-mismatched id surfaces the same {@code GraphqlErrorException} as the single-row path).
+     * Declaring it once at the top of the row body — rather than inside each cell's presence gate as the
+     * pre-R342 emitter did — is what lets a composite group's several cells and a shared column's gather
+     * all read one decode without re-decoding per writer.
+     */
+    private static void emitBulkSetDecodeLocals(
+            CodeBlock.Builder block, List<SetGroup> setFields, String decodeLocalPrefix) {
+        ClassName graphqlErr = ClassName.get("graphql", "GraphqlErrorException");
+        for (int gi = 0; gi < setFields.size(); gi++) {
+            var sf = setFields.get(gi);
+            var nidk = sf.nidk();
+            if (nidk == null) continue;
+            var path = sf.accessPath();
+            String recLocal = decodeLocalPrefix + "_" + gi;
+            block.addStatement("$T $L = ($L instanceof $T _s$L) ? $T.$L(_s$L) : null",
+                nidk.decodeMethod().returnType(), recLocal,
+                ArgCallEmitter.nestedMapValueExpr("row", path), String.class, recLocal,
+                nidk.decodeMethod().encoderClass(), nidk.decodeMethod().methodName(), recLocal);
+            block.beginControlFlow("if ($L && $L == null)",
+                    nestedContainsKeyExpr("row", path, "bsid" + gi), recLocal)
+                .addStatement("throw $T.newErrorException().message($S).build()", graphqlErr,
+                    "Decoded NodeId did not match the expected type for input field '" + sf.name() + "'")
+                .endControlFlow();
+        }
+    }
+
+    /**
+     * R189 / R342: emits {@code sets.put(t.col, v.field(t.col))} off the {@link #setColumnPlan} (one put
+     * per distinct column), guarded by {@link #setColumnPresenceGate}. Unlike the two v-populating
+     * emitters, this one does <em>not</em> skip a cross-partition column (one shared with the WHERE key,
+     * the self-FK case): {@code v.field(t.col)} resolves to the lookup-key v-column the WHERE side added,
+     * so the put is a no-op set of the column to its own joined value — matching the single-row SET-map
+     * semantics and keeping {@code sets} non-empty so the empty-SET runtime guard does not fire on a valid
+     * self-FK input. Do not "tidy up" this put; removing it reintroduces the empty-SET throw on the
+     * minimal self-FK shape.
      */
     private static void emitSetVFieldPuts(
             CodeBlock.Builder block,
             List<SetGroup> setFields,
             GeneratorUtils.ResolvedTableNames tablesOnly,
             TableRef tableRef) {
-        for (int sfi = 0; sfi < setFields.size(); sfi++) {
-            var sf = setFields.get(sfi);
-            block.beginControlFlow("if ($L)", firstRowSetPresenceExpr(sf.accessPath(), "vf" + sfi));
-            for (var col : sf.columns()) {
-                block.addStatement("sets.put($T.$L.$L, v.field($T.$L.$L))",
-                    tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName(),
-                    tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName());
-            }
+        var plan = setColumnPlan(setFields);
+        for (int ci = 0; ci < plan.size(); ci++) {
+            var sc = plan.get(ci);
+            block.beginControlFlow("if ($L)", setColumnPresenceGate(setFields, sc, "vf" + ci));
+            block.addStatement("sets.put($T.$L.$L, v.field($T.$L.$L))",
+                tablesOnly.tablesClass(), tableRef.javaFieldName(), sc.column().javaName(),
+                tablesOnly.tablesClass(), tableRef.javaFieldName(), sc.column().javaName());
             block.endControlFlow();
+        }
+    }
+
+    /**
+     * R342: the bulk-path WHERE∩SET value-agreement, the per-row analogue of the single-row
+     * {@link #emitKeySetAgreementPreamble}. A self-FK {@code @reference} routes its lifted columns wholly
+     * to SET while the row identity comes from the WHERE key, so a column the self-FK shares with the
+     * identity field (e.g. {@code email.mailbox_id}) sits in both partitions. The shared column reaches
+     * {@code v} once from the WHERE side (the SET emitters skip it), is SET to that joined value (a no-op),
+     * and this check asserts the two writers agreed before the DML — the FK forces them equal, a malformed
+     * input could disagree.
+     *
+     * <p>Unlike the single-row preamble, this re-uses the per-row decode locals already emitted in the row
+     * loop — the WHERE-side {@code bulkKey<gi>} / {@code bulkKey<gi>_<bi>} ({@link #emitLookupKeyDecodeLocals})
+     * and the SET-side {@code <decodeLocalPrefix>_<gi>} ({@link #emitBulkSetDecodeLocals}) — rather than
+     * re-decoding, so the generated row body decodes each id once. Both locals are non-null by the time
+     * this runs (their declarations throw on a present-but-mismatched id), so the check is a single
+     * {@code requireColumnAgreement} call gated on the self-FK field's first-row presence; an omitted
+     * nullable self-FK skips it. Emits nothing (byte-identical) when there is no WHERE∩SET overlap.
+     */
+    private static void emitBulkKeySetAgreement(
+            CodeBlock.Builder block,
+            List<InputColumnBindingGroup> keyGroups,
+            List<SetGroup> setGroups,
+            String keyDecodeLocalPrefix,
+            String setDecodeLocalPrefix,
+            GeneratorUtils.ResolvedTableNames tablesOnly,
+            TableRef tableRef) {
+        // WHERE-side value expression + source field name per key-column sqlName, reading the per-row
+        // decode locals emitLookupKeyDecodeLocals declared (mirrors emitLookupKeyCellAdds' value read).
+        record KeySide(CodeBlock value, String fieldName, CallSiteExtraction.NodeIdDecodeKeys nidk) {}
+        var keyByColumn = new java.util.LinkedHashMap<String, KeySide>();
+        for (int gi = 0; gi < keyGroups.size(); gi++) {
+            switch (keyGroups.get(gi)) {
+                case InputColumnBindingGroup.MapGroup mg -> {
+                    for (int bi = 0; bi < mg.bindings().size(); bi++) {
+                        var binding = mg.bindings().get(bi);
+                        var leaf = leafExtractionOf(binding.extraction());
+                        CodeBlock value = leaf instanceof CallSiteExtraction.NodeIdDecodeKeys
+                            ? CodeBlock.of("$L_$L.value1()", keyDecodeLocalPrefix + gi, bi)
+                            : ArgCallEmitter.nestedMapValueExpr("row", accessPathOf(binding.fieldName(), binding.extraction()));
+                        keyByColumn.putIfAbsent(binding.targetColumn().sqlName(),
+                            new KeySide(value, binding.fieldName(),
+                                leaf instanceof CallSiteExtraction.NodeIdDecodeKeys n ? n : null));
+                    }
+                }
+                case InputColumnBindingGroup.DecodedRecordGroup drg -> {
+                    for (var binding : drg.bindings()) {
+                        keyByColumn.putIfAbsent(binding.targetColumn().sqlName(),
+                            new KeySide(CodeBlock.of("$L.value$L()", keyDecodeLocalPrefix + gi, binding.index() + 1),
+                                drg.sourceFieldName(), drg.extraction()));
+                    }
+                }
+            }
+        }
+        for (int gi = 0; gi < setGroups.size(); gi++) {
+            var sg = setGroups.get(gi);
+            for (int s = 0; s < sg.columns().size(); s++) {
+                var col = sg.columns().get(s);
+                var keySide = keyByColumn.get(col.sqlName());
+                if (keySide == null) continue; // not a WHERE∩SET column.
+                CodeBlock setValue = sg.nidk() != null
+                    ? CodeBlock.of("$L_$L.value$L()", setDecodeLocalPrefix, gi, s + 1)
+                    : ArgCallEmitter.nestedMapValueExpr("row", sg.accessPath());
+                // A WHERE∩SET column always carries a @nodeId decode on at least one side (a self-FK SET
+                // reference; the key field is typically a @nodeId too), so an encoder class is available.
+                ClassName encoderClass = sg.nidk() != null
+                    ? sg.nidk().decodeMethod().encoderClass()
+                    : keySide.nidk().decodeMethod().encoderClass();
+                String label = "input fields '" + keySide.fieldName() + "', '"
+                    + String.join(".", sg.accessPath()) + "'";
+                block.beginControlFlow("if ($L)", firstRowSetPresenceExpr(sg.accessPath(), "ksa" + gi + "_" + s));
+                block.addStatement("$T.requireColumnAgreement($S, $T.$L.$L.getDataType(), $L, $L)",
+                    encoderClass, label, tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName(),
+                    keySide.value(), setValue);
+                block.endControlFlow();
+            }
         }
     }
 
@@ -3147,6 +3370,11 @@ public class TypeFetcherGenerator {
         // every column appears once at slot index i in vColNames / cells / WHERE.
         var lookupTargetColumns = new ArrayList<no.sikt.graphitron.rewrite.model.ColumnRef>();
         for (var g : groups) lookupTargetColumns.addAll(g.targetColumns());
+        // R342: SET columns whose backing column is already a WHERE/lookup-key v-column (the self-FK
+        // cross-partition overlap). The two v-populating SET emitters skip these so the column appears in
+        // v once; emitBulkKeySetAgreement checks the WHERE and SET writers agreed.
+        var lookupSqlNames = new LinkedHashSet<String>();
+        for (var col : lookupTargetColumns) lookupSqlNames.add(col.sqlName());
 
         var postInGuard = CodeBlock.builder();
         postInGuard.addStatement("$T<?> firstKeys = in.get(0).keySet()", SET);
@@ -3165,7 +3393,7 @@ public class TypeFetcherGenerator {
             postInGuard.addStatement("vColNames.add($T.$L.$L.getName())",
                 tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName());
         }
-        emitSetVColNameAdds(postInGuard, setGroups, tablesOnly, tableRef);
+        emitSetVColNameAdds(postInGuard, setGroups, lookupSqlNames, tablesOnly, tableRef);
 
         // Build per-row v-table cells imperatively, mirroring the column-name walk above so
         // the cell positions line up by construction. DSL.row(Field<?>...) packages the cells;
@@ -3184,7 +3412,10 @@ public class TypeFetcherGenerator {
             var g = groups.get(gi);
             emitLookupKeyCellAdds(postInGuard, g, gi, "row", tablesOnly, tableRef);
         }
-        emitSetBulkCellAdds(postInGuard, setGroups, "bulkSetKey", tablesOnly, tableRef);
+        emitSetBulkCellAdds(postInGuard, setGroups, lookupSqlNames, "bulkSetKey", tablesOnly, tableRef);
+        // R342: WHERE∩SET per-row value agreement (self-FK shared column), reusing the bulkKey / bulkSetKey
+        // decode locals declared above this in the loop body. No-op when there is no cross-partition overlap.
+        emitBulkKeySetAgreement(postInGuard, groups, setGroups, "bulkKey", "bulkSetKey", tablesOnly, tableRef);
         postInGuard.addStatement("vRows.add($T.row(cells.toArray(new $T<?>[0])))", DSL, fieldClass);
         postInGuard.endControlFlow();
         postInGuard.addStatement("$T<?> v = $T.values(vRows.toArray(new $T[0])).as($S, vColNames.toArray(new String[0]))",
