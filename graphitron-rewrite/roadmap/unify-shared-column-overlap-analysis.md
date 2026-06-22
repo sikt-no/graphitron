@@ -5,7 +5,7 @@ status: Backlog
 bucket: architecture
 priority: 6
 theme: nodeid
-depends-on: [bulk-update-set-shared-column-dedup]
+depends-on: []
 created: 2026-06-22
 last-updated: 2026-06-22
 ---
