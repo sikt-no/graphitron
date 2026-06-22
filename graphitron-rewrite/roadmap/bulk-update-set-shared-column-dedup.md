@@ -145,6 +145,13 @@ All in `graphitron/src/main/java/no/sikt/graphitron/rewrite/`.
   - Delete Stage 2b's bulk self-FK `UnsupportedInputFieldShape` reject (`:105`-`:119`). Stages 4-5/6
     (`:131`-`:184`) already route self-FK columns wholly to SET regardless of cardinality. Leave the
     plain-collision reject (`:194`) untouched.
+  - With Stage 2b gone, `walk`'s `list` parameter has no remaining reader (it gated only Stage 2b; the
+    list-typed-carrier reject in `classifyColumnCarrier` reads *that* method's own `list`, `:307`/`:311`,
+    not this one). Drop the parameter and update the two call sites (`FieldBuilder` `:3722`, `:3870`);
+    the sibling `field` parameter stays (reserved for the SDL-substrate follow-up). Regardless of
+    keep-or-drop, the class javadoc (`:42`-`:45`) goes false and must be updated: it states the walker
+    "reads it only to defer a self-FK `@reference` on the bulk (list-input) form to R342," which is the
+    exact deferral this item removes.
   - If removing Stage 2b leaves `UnsupportedInputFieldShape` with no remaining producer, do not delete
     the variant blindly (it is a general shape-reject): confirm `RejectionSeverityCoverageTest` still
     has a reaching case, and if not, surface the orphaning to the reviewer as part of the item.
