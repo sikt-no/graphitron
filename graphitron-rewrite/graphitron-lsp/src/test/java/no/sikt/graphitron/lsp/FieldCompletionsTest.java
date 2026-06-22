@@ -530,7 +530,7 @@ class FieldCompletionsTest {
 
     private static CompletionData filmAndLanguageCatalog() {
         var film = new CompletionData.Table(
-            "FILM", "Movies", CompletionData.SourceLocation.UNKNOWN,
+            "FILM", "Movies", null,
             List.of(
                 CompletionData.Column.of("FILM_ID", "Integer", false, ""),
                 CompletionData.Column.of("TITLE", "String", false, "")
@@ -538,7 +538,7 @@ class FieldCompletionsTest {
             List.of()
         );
         var language = new CompletionData.Table(
-            "LANGUAGE", "Languages", CompletionData.SourceLocation.UNKNOWN,
+            "LANGUAGE", "Languages", null,
             List.of(
                 CompletionData.Column.of("LANGUAGE_ID", "Integer", false, ""),
                 CompletionData.Column.of("NAME", "String", false, "")
@@ -575,7 +575,7 @@ class FieldCompletionsTest {
             List.of(new CompletionData.Table(
                 "FILM",
                 "Movies the rental store carries",
-                CompletionData.SourceLocation.UNKNOWN,
+                null,
                 List.of(
                     CompletionData.Column.of("FILM_ID", "Integer", false, ""),
                     CompletionData.Column.of("TITLE", "String", false, ""),

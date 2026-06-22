@@ -131,10 +131,17 @@ public class DevMojo extends AbstractRewriteMojo {
         Consumer<String> saveListener = buildSaveListener(
             initialCtx.schemaFileExtensions(), schemaDebounce, () -> regenerate(workspace));
         bindServer(workspace, saveListener);
-        // Seed the source-position index so service-half goto-definition works
-        // before the first .java edit; the source watcher refreshes it on the
-        // source cadence thereafter. Path-only read on initialCtx (no loader).
+        // Seed the source-position index so goto-definition works before the
+        // first .java edit; the source watcher refreshes it on the source
+        // cadence thereafter. Path-only read on initialCtx (no loader).
         workspace.setSourceIndex(SourceWalker.walk(initialCtx.compileSourceRoots()));
+        // Diagnostic so a "completion works but goto-definition returns nothing"
+        // report can be traced to a module whose classes are scanned but whose
+        // source root is not walked (R351): the two counts should track each other.
+        getLog().info("graphitron:dev: scanning " + initialCtx.classpathRoots().size()
+            + " reactor classpath root(s), " + initialCtx.compileSourceRoots().size()
+            + " source root(s); " + workspace.catalog().externalReferences().size()
+            + " external reference(s) indexed");
         Set<Path> schemaRoots = startSchemaWatcher(initialCtx, workspace);
         startClasspathWatcher(initialCtx, workspace);
         startSourceWatcher(initialCtx, workspace);

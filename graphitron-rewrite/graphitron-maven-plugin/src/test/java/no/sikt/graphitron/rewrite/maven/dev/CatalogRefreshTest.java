@@ -56,7 +56,7 @@ class CatalogRefreshTest {
             List.of(new CompletionData.Table(
                 "FILM",
                 "Movies the rental store carries",
-                CompletionData.SourceLocation.UNKNOWN,
+                null,
                 List.of(),
                 List.of()
             )),

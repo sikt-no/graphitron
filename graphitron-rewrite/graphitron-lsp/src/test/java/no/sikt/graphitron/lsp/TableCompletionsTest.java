@@ -126,7 +126,7 @@ class TableCompletionsTest {
         return new CompletionData.Table(
             name,
             description,
-            CompletionData.SourceLocation.UNKNOWN,
+            null,
             List.of(),
             List.of()
         );

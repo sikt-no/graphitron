@@ -35,7 +35,7 @@ class DevServerTest {
     void bindsRandomPortAndServesCompletion() throws Exception {
         var catalog = new CompletionData(
             List.of(new CompletionData.Table(
-                "FILM", "", CompletionData.SourceLocation.UNKNOWN, List.of(), List.of())),
+                "FILM", "", null, List.of(), List.of())),
             List.of(),
             List.of()
         );

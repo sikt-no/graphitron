@@ -19,21 +19,21 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Pipeline coverage for the {@link CatalogBuilder} ↔ {@link SourceWalker}
- * join. The jOOQ half (columns) still refines positions and lifts Javadoc on
- * the build cadence, with a source-roots-absent fallback to file-level /
- * {@code UNKNOWN} positions. The service half (external references + methods)
- * lifts only Javadoc into {@code description} here (R349); its positions moved
- * out of {@link CompletionData} onto the LSP-owned source index resolved at
- * request time, so this tier asserts the description lift, and the position
- * join is covered at the LSP tier in {@code DefinitionsTest}.
+ * join. Both halves now lift only Javadoc into {@code description} on the build
+ * cadence (jOOQ columns / tables, service references / methods); source
+ * positions moved out of {@link CompletionData} onto the LSP-owned source index
+ * resolved at request time (R349 for the service half, R352 for the jOOQ half).
+ * The catalog carries the generated table {@code classFqn} the LSP joins on, so
+ * this tier asserts the description lift plus the FQN, and the position join is
+ * covered at the LSP tier in {@code DefinitionsTest}.
  */
 @PipelineTier
 class CatalogBuilderSourceTest {
 
-    // ---- jOOQ half: column refinement + Javadoc from a synthetic source root ----
+    // ---- jOOQ half: column Javadoc + table classFqn from a synthetic source root ----
 
     @Test
-    void columnPositionRefinedAndJavadocLiftedFromSourceRoot(@TempDir Path srcRoot) throws IOException {
+    void columnJavadocLiftedAndTableClassFqnCarriedFromSourceRoot(@TempDir Path srcRoot) throws IOException {
         // A stand-in for the generated jOOQ table source whose FQN matches the
         // real compiled Film class the fixture catalog resolves.
         writeJava(srcRoot, "no/sikt/graphitron/rewrite/test/jooq/tables/Film.java", """
@@ -49,15 +49,17 @@ class CatalogBuilderSourceTest {
             TestSchemaHelper.buildBundle("type Query { x: Int }").assembled(),
             contextWith(srcRoot, List.of(), List.of(srcRoot)));
 
-        var filmId = data.getTable("film").orElseThrow().columns().stream()
+        var film = data.getTable("film").orElseThrow();
+        // The catalog carries the generated table class FQN the LSP joins on.
+        assertThat(film.classFqn()).endsWith(".tables.Film");
+        var filmId = film.columns().stream()
             .filter(c -> c.name().equals("FILM_ID")).findFirst().orElseThrow();
-        assertThat(filmId.definition().line()).isGreaterThan(0);
-        assertThat(filmId.definition().uri()).endsWith("Film.java");
+        // Javadoc still lifts on the build cadence; the position is LSP-tier.
         assertThat(filmId.description()).isEqualTo("The film identifier column.");
     }
 
     @Test
-    void columnPositionStaysFileLevelWhenNoSourceRoots() {
+    void columnHasNoSourceJavadocWhenNoSourceRoots() {
         var data = CatalogBuilder.build(
             new JooqCatalog(DEFAULT_JOOQ_PACKAGE),
             TestSchemaHelper.buildBundle("type Query { x: Int }").assembled(),
@@ -65,9 +67,7 @@ class CatalogBuilderSourceTest {
 
         var filmId = data.getTable("film").orElseThrow().columns().stream()
             .filter(c -> c.name().equals("FILM_ID")).findFirst().orElseThrow();
-        // No walk: the per-line refinement never runs, so the column carries the
-        // table's file-level / UNKNOWN location and no source-derived Javadoc.
-        assertThat(filmId.definition().line()).isZero();
+        // No walk: no source-derived Javadoc to lift.
         assertThat(filmId.description()).isEmpty();
     }
 
