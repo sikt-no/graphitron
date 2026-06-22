@@ -1,7 +1,7 @@
 ---
 id: R329
 title: "Re-admit @service carrier payloads with a record-composite data field (land R75 Phase 3)"
-status: Spec
+status: Ready
 bucket: architecture
 priority: 7
 theme: mutations-errors
