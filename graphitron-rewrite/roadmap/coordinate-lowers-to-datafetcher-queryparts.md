@@ -11,6 +11,39 @@ last-updated: 2026-06-22
 
 # Lower each schema coordinate to a DataFetcher and its QueryParts
 
+## In one paragraph
+
+Every GraphQL field has a **coordinate**, its `(parentType, fieldName)`, and Graphitron's job is to
+turn each coordinate into the Java that resolves it. Today it does so by mapping each coordinate to one
+large "leaf" object that welds together everything the field needs at once, and those leaves multiply
+into a cross-product (`Split` x `Lookup` x `Composite` x ...) that this spec exists to dissolve. The
+dissolution has two halves.
+
+- **Front half, the facts.** Instead of one fat leaf per field, store a handful of small, independent
+  *facts* about the coordinate, each found by its own walk: where the source object arrives from
+  (`source`), what the field returns (`target`), which operations it triggers (`operation`: select,
+  join, paginate, condition, ...), whether its value crosses a table (`reference`), and how to read the
+  value back out (the read-side facts). Adding a capability adds a fact, not a new leaf type.
+- **Back half, the method graph.** Instead of one tangled method per field, emit a *graph of small Java
+  methods* that call each other by name, where each method sits at its own natural granularity (one per
+  field, one per type, one per query launcher, ...). The points where one method calls another are
+  **seams**. The graph must be closed: every name a method calls is a method we also emit.
+
+The two halves meet at the `operation` relation: a coordinate's facts decide which seams its query
+composes. A worked example is `film.language`: one coordinate, whose facts are a `source` (a `Film` row
+arrives), a `target` (it returns one `Language`), and a `reference` (the value lives on another table,
+reached by a foreign key); together those trigger a `join` and a `select`. No leaf type encodes "single
+table field reached by a reference"; the facts do, and they add rather than multiply.
+
+This item is the **model**: the facts, the method graph, and the integrity check that ties them
+together. Re-platforming the generator's emit onto the model is a separate item, **R314**. Suggested
+reading order is this orientation, then the front half (*The normalized schema: the coordinate and its
+facts*), then the back half (*Operations are realized by seams*). The lettered **Discovery** threads
+(A-K) at the end record how the model was derived by walking the current emitters; they are the
+evidence, referenced throughout, not prerequisites to read first.
+
+## The unit is the emitted method
+
 The shipped field model (R290/R299/R305/R316) carries a hidden 1:1 assumption: **one schema coordinate
 == one graphitron field** (one `OutputField` leaf). That assumption is the root cause of the leaf
 cross-product (`Split` x `Lookup` x `Record` x `Composite` x ...): whenever a single SDL field has to
@@ -29,44 +62,6 @@ below records that chain, each step pinned to a current emitter with line number
 earlier, narrower headline ("a coordinate lowers to one `DataFetcher` plus one or more `org.jooq.QueryPart`s")
 that named the SQL-side unit a level too fine. That earlier framing is kept in Discovery as the path in,
 not as the model.
-
-## Seam worklist (living table)
-
-This is the working surface for the spec's central open decision: **which seams (named method-call edges)
-exist in the target lowering.** Each row is one candidate node; the table is iterated as decisions land,
-and it is the denormalized roll-up of three things defined downstream in this doc, so read the columns
-against them: the **naming regime** is thread J (R1 = name minted once and read on both ends, R2 = formula
-reconstructed at each end), the **seam verdict** applies the seam-placement rule of thread K (a seam belongs
-where a unit is (a) chosen by a runtime strategy/dispatch, (b) reused across more than one caller, or (c)
-something we want to assert independently in the corpus or tests; inline only a linear, single-use,
-non-varying construction), and "folds into X" means the row is an arm-renderer that is part of node X, not a
-node of its own (thread K's pair partition). The acceptance test for the finished table is thread I's
-bidirectional closure invariant.
-
-Rows 1 to 9 are the seams the generator already cuts (the migration baseline; full detail in *Current seam
-topology* below). Rows 10 to 11 are the decided new seams (the 2026-06-19 target topology of thread K). Rows
-12 to 16 are the open surface: fragments inlined today whose promotion-or-inline verdict is what we iterate.
-This table is the back-half view of the coordinate's `operation` relation; *Operations are realized by seams*
-below draws the member-to-seam crosswalk that wires the two together.
-
-| # | Candidate node | Today's emitter | Granularity | Regime (J) | Seam verdict (rule a/b/c) | Naming target / open issue |
-|---|---|---|---|---|---|---|
-| 1 | `<Type>Fetchers.<field>(env)` | `FetcherEmitter`, `DataLoaderFetcherEmitter` | field, 1:1, total | class R2, method R1 | seam (a): picks root / child / service strategy | lift class name to R1 |
-| 2 | `<Type>.$fields(sel, table, env)` | `TypeClassGenerator` | type-bound fold | R2 | seam (b, c): reused + assertable | lift to R1 (the `$$fields` literal at ~8 sites) |
-| 3 | `rows<X>` / `load<X>` | `SplitRowsMethodEmitter`, `MultiTablePolymorphicEmitter` | anchor (SELECT launcher) | R1 | seam (a, b): batched/direct dispatch + reuse | settled (`rowsMethodName`) |
-| 4 | `scatter*ByIdx` | `SplitRowsMethodEmitter` | dedup-by-class | R2 | seam (b): class-level reuse | lift to R1 |
-| 5 | `<field>Condition(...)` | `TypeConditionsGenerator`, `QueryConditionsGenerator` | field / method | R1 + R2 (half-migrated) | seam (c): assertable | finish lift (`QueryConditionsGenerator` end) |
-| 6 | join-path helper | `JoinPathEmitter` | per join path | R1 | seam (b): reused | settled (`MethodRef`) |
-| 7 | `<field>InputRows` | `LookupValuesJoinEmitter` | per lookup field | R2 | seam (c): assertable | lift to R1 |
-| 8 | `create<Bean>` / `create<Record>` / `decode<Record>` | `InputBeanInstantiationEmitter`, `JooqRecordInstantiationEmitter` | dedup-by-class | R2 | seam (b): class-level reuse | lift to R1 |
-| 9 | `<field>OrderBy` | `OrderByResultClassGenerator` | per orderable field | R2 | seam (c): assertable | lift to R1 |
-| 10 | Root Query unit (the root `rows<X>`-equivalent) | inlined in `SelectMethodBody` today | anchor | new | seam (b): one query unit shared by root and child | new R1 edge; the decided 2026-06-19 target (closes the root/child asymmetry) |
-| 11 | Service-call unit | inlined via `ServiceMethodCallEmitter` today | per service-backed field | new | seam (a): service vs query strategy | new R1 edge; the service-backed arm of the same delegation |
-| 12 | Inline column-reference arm | `InlineColumnReferenceFieldEmitter` | arm of `$fields` | n/a | folds into Projection (row 2); promote under looser-(c)? | OPEN: assert separately vs inline (linear, single-use projection) |
-| 13 | Inline table-field arm | `InlineTableFieldEmitter` | arm of `$fields` | n/a | folds into Projection; emits the `Y.$fields` edge | edge name lift tracked under row 2 |
-| 14 | Inline lookup table-field arm | `InlineLookupTableFieldEmitter` | arm of `$fields` | n/a | folds into Projection | same as row 13 |
-| 15 | Channel catch / early-return arms | `ChannelCatchArmEmitter`, `ChannelEarlyReturnEmitter` | arm of fetcher body | n/a | folds into Fetcher (row 1) | OPEN: assert the error channel independently? |
-| 16 | `ArgCall` fragment | `ArgCallEmitter` | fragment | n/a | folds into Condition / Query unit | inline (linear, single-use) unless a caller reuses it |
 
 ## The method call graph is the granularity
 
@@ -621,12 +616,50 @@ snapshot to the editor, and incremental reclassification is the natural next wan
 later question tied to LSP perf, deliberately not conflated with "sit the generator on a database," and out
 of scope here.
 
+## Seam worklist (living table)
+
+This is the working surface for the spec's central open decision: **which seams (named method-call edges)
+exist in the target lowering.** Each row is one candidate node; the table is iterated as decisions land,
+and it is the denormalized roll-up of three things defined downstream in this doc, so read the columns
+against them: the **naming regime** is thread J (R1 = name minted once and read on both ends, R2 = formula
+reconstructed at each end), the **seam verdict** applies the seam-placement rule of thread K (a seam belongs
+where a unit is (a) chosen by a runtime strategy/dispatch, (b) reused across more than one caller, or (c)
+something we want to assert independently in the corpus or tests; inline only a linear, single-use,
+non-varying construction), and "folds into X" means the row is an arm-renderer that is part of node X, not a
+node of its own (thread K's pair partition). The acceptance test for the finished table is thread I's
+bidirectional closure invariant.
+
+Rows 1 to 9 are the seams the generator already cuts (the migration baseline; full detail in *Current seam
+topology* below). Rows 10 to 11 are the decided new seams (the 2026-06-19 target topology of thread K). Rows
+12 to 16 are the open surface: fragments inlined today whose promotion-or-inline verdict is what we iterate.
+This table is the back-half view of the coordinate's `operation` relation; *Operations are realized by seams*
+below draws the member-to-seam crosswalk that wires the two together.
+
+| # | Candidate node | Today's emitter | Granularity | Regime (J) | Seam verdict (rule a/b/c) | Naming target / open issue |
+|---|---|---|---|---|---|---|
+| 1 | `<Type>Fetchers.<field>(env)` | `FetcherEmitter`, `DataLoaderFetcherEmitter` | field, 1:1, total | class R2, method R1 | seam (a): picks root / child / service strategy | lift class name to R1 |
+| 2 | `<Type>.$fields(sel, table, env)` | `TypeClassGenerator` | type-bound fold | R2 | seam (b, c): reused + assertable | lift to R1 (the `$$fields` literal at ~8 sites) |
+| 3 | `rows<X>` / `load<X>` | `SplitRowsMethodEmitter`, `MultiTablePolymorphicEmitter` | anchor (SELECT launcher) | R1 | seam (a, b): batched/direct dispatch + reuse | settled (`rowsMethodName`) |
+| 4 | `scatter*ByIdx` | `SplitRowsMethodEmitter` | dedup-by-class | R2 | seam (b): class-level reuse | lift to R1 |
+| 5 | `<field>Condition(...)` | `TypeConditionsGenerator`, `QueryConditionsGenerator` | field / method | R1 + R2 (half-migrated) | seam (c): assertable | finish lift (`QueryConditionsGenerator` end) |
+| 6 | join-path helper | `JoinPathEmitter` | per join path | R1 | seam (b): reused | settled (`MethodRef`) |
+| 7 | `<field>InputRows` | `LookupValuesJoinEmitter` | per lookup field | R2 | seam (c): assertable | lift to R1 |
+| 8 | `create<Bean>` / `create<Record>` / `decode<Record>` | `InputBeanInstantiationEmitter`, `JooqRecordInstantiationEmitter` | dedup-by-class | R2 | seam (b): class-level reuse | lift to R1 |
+| 9 | `<field>OrderBy` | `OrderByResultClassGenerator` | per orderable field | R2 | seam (c): assertable | lift to R1 |
+| 10 | Root Query unit (the root `rows<X>`-equivalent) | inlined in `SelectMethodBody` today | anchor | new | seam (b): one query unit shared by root and child | new R1 edge; the decided 2026-06-19 target (closes the root/child asymmetry) |
+| 11 | Service-call unit | inlined via `ServiceMethodCallEmitter` today | per service-backed field | new | seam (a): service vs query strategy | new R1 edge; the service-backed arm of the same delegation |
+| 12 | Inline column-reference arm | `InlineColumnReferenceFieldEmitter` | arm of `$fields` | n/a | folds into Projection (row 2); promote under looser-(c)? | OPEN: assert separately vs inline (linear, single-use projection) |
+| 13 | Inline table-field arm | `InlineTableFieldEmitter` | arm of `$fields` | n/a | folds into Projection; emits the `Y.$fields` edge | edge name lift tracked under row 2 |
+| 14 | Inline lookup table-field arm | `InlineLookupTableFieldEmitter` | arm of `$fields` | n/a | folds into Projection | same as row 13 |
+| 15 | Channel catch / early-return arms | `ChannelCatchArmEmitter`, `ChannelEarlyReturnEmitter` | arm of fetcher body | n/a | folds into Fetcher (row 1) | OPEN: assert the error channel independently? |
+| 16 | `ArgCall` fragment | `ArgCallEmitter` | fragment | n/a | folds into Condition / Query unit | inline (linear, single-use) unless a caller reuses it |
+
 ## Operations are realized by seams: wiring the two halves
 
 The two relational pictures in this spec are one model seen from its two ends, joined by the `operation`
 relation. The **front half** (the normalized schema above) keys facts on the coordinate and reads each
-operation off a trigger fact. The **back half** (the seam worklist up top, and the method-call graph of
-threads E to K) is the emitted side: named methods and the calls between them. A coordinate's `operation` set
+operation off a trigger fact. The **back half** (the seam worklist just above, and the method-call graph
+of threads E to K) is the emitted side: named methods and the calls between them. A coordinate's `operation` set
 *is* the set of QueryPart-emitting seams its query unit composes; the seam worklist is the back-half **view**
 of the `operation` relation, the same way the DataFetcher is the view that joins `source` and `target`.
 
