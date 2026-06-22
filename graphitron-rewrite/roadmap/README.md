@@ -22,7 +22,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R327` | Field-relative input classification (retire @table-on-input and the findReturnTablesForInput aggregate) <sub>blocked by: [coordinate-lowers-to-datafetcher-queryparts](coordinate-lowers-to-datafetcher-queryparts.md)</sub> | Spec | 2026-06-20 <sub>created 2026-06-18</sub> | [plan](field-relative-input-classification.md) |
 | `R308` | Fix the @service list-payload N+1 by deriving many-arrival for list-returning carriers | Spec | 2026-06-14 | [plan](service-list-payload-arrival.md) |
 | `R335` | Fold input/scalar/enum classification into the single classify-and-emit walk | Spec | 2026-06-19 | [plan](walk-classifies-input-surface.md) |
-| `R355` | Infer depth-1 nested @condition arg bindings by name without argMapping | Ready | 2026-06-22 | [plan](infer-nested-condition-arg-by-name.md) |
+| `R355` | Infer depth-1 nested @condition arg bindings by name without argMapping | In Review | 2026-06-22 | [plan](infer-nested-condition-arg-by-name.md) |
 | `R353` | LSP goto-definition from an SDL type/field name to its backing Java class and member <sub>blocked by: [lsp-structural-consolidation](lsp-structural-consolidation.md)</sub> | Spec | 2026-06-22 <sub>created 2026-06-21</sub> | [plan](lsp-backing-class-member-navigation.md) |
 | `R45` | Multi-tenant routing on top of the schema-driven ExecutionInput factory | Spec | 2026-05-20 | [plan](tenant-routing-and-execution-input.md) |
 | `R273` | Source NodeId metadata from @node + catalog PK (inferred from `implements Node`), and settle wrong-type/malformed mismatch semantics, retiring the legacy __NODE bare-ID arm | Spec | 2026-06-02 | [plan](nodeid-skip-mismatch-error-surfacing.md) |
@@ -232,7 +232,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R308` [**Fix the @service list-payload N+1 by deriving many-arrival for list-returning carriers**](service-list-payload-arrival.md) — Spec, structural
 - `R171` [**Fold InputType and TableInputType under sealed parent InputLikeType**](input-like-type-sealed-parent.md) — Backlog, architecture
 - `R335` [**Fold input/scalar/enum classification into the single classify-and-emit walk**](walk-classifies-input-surface.md) — Spec, architecture
-- `R355` [**Infer depth-1 nested @condition arg bindings by name without argMapping**](infer-nested-condition-arg-by-name.md) — Ready, feature
+- `R355` [**Infer depth-1 nested @condition arg bindings by name without argMapping**](infer-nested-condition-arg-by-name.md) — In Review, feature
 - `R103` [**Lift jOOQ column defaults onto input fields connected to that column**](lift-jooq-column-defaults-onto-inputs.md) — Backlog, architecture
 - `R249` [**Nested @argMapping syntax via GraphQLSelectionParser**](nested-argmapping-syntax.md) — Backlog, feature
 - `R302` [**Rename ChildField to SourceField (carrier-named field hierarchy)**](rename-childfield-to-sourcefield.md) — Backlog, structural

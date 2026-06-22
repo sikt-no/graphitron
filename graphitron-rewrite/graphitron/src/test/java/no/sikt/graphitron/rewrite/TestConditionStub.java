@@ -146,6 +146,38 @@ class TestConditionStub {
     }
 
     /**
+     * R355 fixture: input-field {@code @condition} method whose two scalar parameters descend by
+     * name into a nested {@code @condition}-slot input object ({@code SokVerdiRange { fra, til }}),
+     * with no {@code argMapping}. Mirrors the motivating {@code searchVektingstallRange} shape.
+     * Used to assert the inferred {@link no.sikt.graphitron.rewrite.PathExpr} chain equals the one
+     * the explicit-{@code argMapping} sibling produces.
+     */
+    public static Condition searchVerdiRange(org.jooq.Table<?> table,
+            java.math.BigDecimal fra, java.math.BigDecimal til) {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
+     * R355 fixture: input-field {@code @condition} method whose single list parameter descends by
+     * name into a list-shaped nested input-object field ({@code verdier: [BigDecimal]}). Pins the
+     * computed {@code liftsList=true} on the inferred depth-1 {@code Step}.
+     */
+    public static Condition searchVerdiList(org.jooq.Table<?> table,
+            java.util.List<java.math.BigDecimal> verdier) {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
+     * R355 fixture: field-level {@code @condition} method whose parameter name matches a nested
+     * field present in two distinct input-object arguments, so the depth-1 inference finds two
+     * candidates across slots and yields, leaving {@code fra} unbound for the existing
+     * name-mismatch rejection.
+     */
+    public static Condition searchVerdiAmbiguous(org.jooq.Table<?> table, java.math.BigDecimal fra) {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
      * R232 fixture: intermediate-hop {@code @condition} method with concrete jOOQ table
      * parameters. {@link no.sikt.graphitron.rewrite.BuildContext#resolveConditionJoinTarget}
      * resolves the target table by reflecting on the second parameter type and looking it up

@@ -91,4 +91,24 @@ public final class InputFieldConditionFixtures {
         return table.NAME.eq("Atlas");
     }
 
+    /**
+     * R355: input-field {@code @condition} on an input-object field
+     * ({@code RentalRateRange { fra, til }}) whose two {@code BigDecimal} parameters bind one
+     * level in to the same-named nested fields BY NAME, with no {@code argMapping}. Filters films
+     * whose {@code rental_rate} falls in {@code [fra, til]}; a {@code null} bound is unconstrained
+     * on that side. Paired with an explicit-{@code argMapping} sibling query to prove the inferred
+     * form filters identically. Resolving through {@code table.field(Film.FILM.RENTAL_RATE)} keeps
+     * the predicate anchored in the caller's aliased table.
+     */
+    public static Condition rentalRateRange(Table<?> table, java.math.BigDecimal fra, java.math.BigDecimal til) {
+        Condition c = DSL.noCondition();
+        if (fra != null) {
+            c = c.and(table.field(Film.FILM.RENTAL_RATE).ge(fra));
+        }
+        if (til != null) {
+            c = c.and(table.field(Film.FILM.RENTAL_RATE).le(til));
+        }
+        return c;
+    }
+
 }

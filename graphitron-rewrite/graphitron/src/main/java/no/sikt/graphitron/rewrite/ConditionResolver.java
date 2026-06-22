@@ -163,12 +163,42 @@ final class ConditionResolver {
         for (var p : src.params()) {
             if (p instanceof MethodRef.Param.Typed typed && p.source() instanceof ParamSource.Arg arg) {
                 rewritten.add(new MethodRef.Param.Typed(typed.name(), typed.typeName(), typed.javaType(),
-                    new ParamSource.Arg(new CallSiteExtraction.NestedInputField(outerArgName, leafPath),
+                    new ParamSource.Arg(
+                        new CallSiteExtraction.NestedInputField(outerArgName, nestedPath(leafPath, arg.path())),
                         arg.path())));
             } else {
                 rewritten.add(p);
             }
         }
         return new ConditionFilter(src.className(), src.methodName(), List.copyOf(rewritten));
+    }
+
+    /**
+     * Builds the full Map-traversal path for a rewrapped condition argument: {@code leafPath} (the
+     * walk's path from the outer argument down to the input field that carries the
+     * {@code @condition}) followed by the parameter's own descent into that input field's value —
+     * the segments of {@code argPath} after its head. The head segment names the input field
+     * itself, which is already the last element of {@code leafPath}, so it is dropped to avoid
+     * duplication.
+     *
+     * <p>For a single-name binding ({@code argPath} is a bare {@link PathExpr.Head}) the tail is
+     * empty and the result is {@code leafPath} unchanged — the byte-identical behaviour every
+     * pre-R355 input-field {@code @condition} relied on, where the bound parameter reads the input
+     * field's own scalar value. A multi-segment {@code argPath} (an explicit
+     * {@code argMapping: "p: field.sub"} or the depth-1 binding R355 infers when {@code p} matches
+     * a nested field by name) appends the descent so the emitted
+     * {@link CallSiteExtraction.NestedInputField} reads {@code outerArg.…field.sub} rather than
+     * stopping at the wrapper input object and casting the whole {@code Map} to the leaf type.
+     */
+    private static List<String> nestedPath(List<String> leafPath, PathExpr argPath) {
+        var segments = argPath.segments();
+        if (segments.size() == 1) {
+            return leafPath;
+        }
+        var full = new ArrayList<>(leafPath);
+        for (int i = 1; i < segments.size(); i++) {
+            full.add(segments.get(i).name());
+        }
+        return full;
     }
 }

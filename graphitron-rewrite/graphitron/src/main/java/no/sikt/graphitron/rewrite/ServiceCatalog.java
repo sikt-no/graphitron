@@ -1137,7 +1137,69 @@ class ServiceCatalog {
             if (anyReachableNestedMatch(paramEntry.getKey(), unclaimedSlotNames, slotTypes)) continue;
             augmented.put(paramEntry.getValue().get(0), PathExpr.head(slots.get(0)));
         }
+
+        // R355: name-based depth-1 unpacking, on the residual parameters still unbound after the
+        // arity-unique and type-unique branches. For a parameter whose name matches exactly one
+        // direct field — by name AND mapped Java type — of a single unclaimed input-object slot,
+        // bind it one level in to that nested field. The synthesised PathExpr is byte-identical to
+        // the one a hand-written `argMapping: "p: slot.field"` produces (head = the slot, one Step
+        // = the field, liftsList via ArgBindingMap.isListShaped), so downstream emission is
+        // unchanged; the rule only fills in the path the author would otherwise have written. The
+        // disambiguator is the parameter name, orthogonal to the type-count axis above, so this is
+        // a distinct name-keyed branch rather than a splice into the count rule (R219). Identity
+        // binding is handled earlier in ArgBindingMap.of, so a parameter that matched a slot by its
+        // own name is already bound and skipped here. Zero or >1 candidates leave the parameter
+        // unbound, so the per-parameter rejection (with its unambiguousReachablePath argMapping
+        // suggestion) still fires.
+        for (var p : unboundParams) {
+            if (augmented.containsKey(p.getName())) continue;
+            PathExpr nested = inferNestedFieldByName(
+                p.getName(), p.getParameterizedType().getTypeName(), unclaimedSlotNames, slotTypes);
+            if (nested != null) {
+                augmented.put(p.getName(), nested);
+            }
+        }
         return augmented;
+    }
+
+    /**
+     * R355 depth-1 name-based descent. For an unbound Java parameter named {@code paramName} with
+     * parameterized-type name {@code paramJavaTypeName}, scans every unclaimed slot whose unwrapped
+     * (non-null) GraphQL type is a {@link GraphQLInputObjectType} and looks for the direct field
+     * named {@code paramName} whose {@link #mapToJavaTypeName mapped Java type} is non-null and
+     * equals {@code paramJavaTypeName}. Returns the {@link PathExpr.Step} binding — head = the
+     * slot, one segment = the field, {@code liftsList} via {@link ArgBindingMap#isListShaped} —
+     * when exactly one such {@code (slot, field)} candidate exists across all unclaimed slots;
+     * returns {@code null} for zero or more than one so the caller leaves the parameter unbound.
+     *
+     * <p>Strips only non-null wrappers off the slot, mirroring {@link #searchSlotForMatchingPath}:
+     * a list-shaped slot is not a {@link GraphQLInputObjectType} and is skipped, so a list-shaped
+     * intermediate is never descended through. Routing the leaf through {@link #mapToJavaTypeName}
+     * means a field whose type is a named input object, enum, or unclassified scalar (mapped type
+     * {@code null}) never matches: R355 binds only canonical-scalar-typed leaves (a scalar or a
+     * list thereof), the same null-is-no-match discipline the {@code unambiguousReachablePath}
+     * suggestion uses. Requiring both the name and the type to match keeps this branch exactly as
+     * confident as its arity-unique / type-unique siblings, which also gate on
+     * {@link #mapToJavaTypeName}.
+     */
+    PathExpr inferNestedFieldByName(String paramName, String paramJavaTypeName,
+            List<String> unclaimedSlotNames, Map<String, GraphQLInputType> slotTypes) {
+        PathExpr match = null;
+        for (var slotName : unclaimedSlotNames) {
+            GraphQLType walk = slotTypes.get(slotName);
+            while (walk instanceof GraphQLNonNull nn) {
+                walk = nn.getWrappedType();
+            }
+            if (!(walk instanceof GraphQLInputObjectType inputObj)) continue;
+            var field = inputObj.getField(paramName);
+            if (field == null) continue;
+            String mapped = mapToJavaTypeName(field.getType());
+            if (mapped == null || !mapped.equals(paramJavaTypeName)) continue;
+            if (match != null) return null; // more than one candidate across slots → ambiguous
+            match = PathExpr.step(PathExpr.head(slotName), field.getName(),
+                ArgBindingMap.isListShaped(field.getType()));
+        }
+        return match;
     }
 
     /**

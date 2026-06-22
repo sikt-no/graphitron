@@ -2401,6 +2401,28 @@ class GraphQLQueryTest {
 
     @Test
     @SuppressWarnings("unchecked")
+    void inputFieldCondition_nestedArgInferredByName_filtersSameAsExplicitArgMapping() {
+        // R355: rentalRateRange(table, fra, til) carries no argMapping; the fra/til params bind one
+        // level into RentalRateRange.{fra,til} by name. The range [2.00, 3.00] selects exactly the
+        // three 2.99 films (ADAPTATION HOLES, AFFAIR PREJUDICE, AGENT TRUMAN): >= 2.0 excludes
+        // ACADEMY DINOSAUR (0.99) and <= 3.0 excludes ACE GOLDFINGER (4.99). The unique 3-film
+        // result proves BOTH bounds bind to the right nested field — a swapped or dropped bound
+        // would yield 0 or 4 films. This is the test that proves the narrowed acceptance is
+        // correct, not merely non-erroring.
+        String query = "{ %s(filter: {rentalRateRange: {fra: 2.0, til: 3.0}}) { title } }";
+        List<Map<String, Object>> inferred = (List<Map<String, Object>>) execute(
+            query.formatted("filmsByRentalRateRange")).get("filmsByRentalRateRange");
+        List<Map<String, Object>> explicit = (List<Map<String, Object>>) execute(
+            query.formatted("filmsByRentalRateRangeExplicit")).get("filmsByRentalRateRangeExplicit");
+
+        assertThat(inferred).extracting(f -> f.get("title"))
+            .containsExactlyInAnyOrder("ADAPTATION HOLES", "AFFAIR PREJUDICE", "AGENT TRUMAN");
+        // The no-argMapping form filters identically to the explicit-argMapping form.
+        assertThat(inferred).containsExactlyInAnyOrderElementsOf(explicit);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
     void inputFieldCondition_plainInput_filmTable_filtersByFilmId() {
         // PlainFilmIdInput → PojoInputType → PlainInputArg at the call site. filmId resolves
         // against film → ColumnField with condition is classified, walkInputFieldConditions
