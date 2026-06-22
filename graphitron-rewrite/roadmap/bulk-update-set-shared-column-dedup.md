@@ -75,6 +75,22 @@ alignment. Each emitter then emits exactly one entry per distinct column:
   the present writers' values, run `NodeIdEncoder.requireColumnAgreement` pairwise against the first
   present writer, and `cells.add` the single coalesced typed `DSL.val(firstPresent, col.getDataType())`.
 
+The presence gate the three emitters apply to a column must be lifted to the plan as well. Today each
+emitter gates a group on its own first-row presence (`firstRowSetPresenceExpr`); a disjoint column
+keeps that single-writer gate unchanged, but a shared column's gate becomes the *disjunction* of its
+contributing writers' first-row presence, and `emitSetVColNameAdds`, `emitSetVFieldPuts`, and
+`emitSetBulkCellAdds` must all read the same gate so the `v(…)` column-name list, the per-row cells,
+and the `sets.put` entries stay positionally aligned. A column written by a plain `@field` *or* a
+nullable `@nodeId` FK can have either writer omitted; the uniform-shape guard (`buildUniformShapeGuard`
++ `buildNestedShapeGuards`, run before the column list is built) makes the present-writer set uniform
+across rows, so projecting the first row's disjunction onto every row's cell is safe. This is the one
+place the INSERT analogy does not carry: `insertColumnPlan` lists every column unconditionally
+(`DSL.defaultValue` when absent), but the bulk UPDATE SET list is conditional (PATCH semantics, hence
+the `DSL.val(firstPresent)` above and not `defaultValue`). A gate keyed on a single writer would drop a
+shared column from `v(…)` while still emitting its cell (or the reverse), reintroducing the arity
+mismatch / duplicate-or-missing-`v`-column crash this item removes, or leave the per-row gather empty so
+`DSL.val(firstPresent)` throws.
+
 The agreement must produce the column's single cell, not run as a side preamble. The bulk derived
 table forbids the single-row path's last-write-wins `Map.put` affordance (a second `cells.add`
 re-introduces the duplicate-column crash), so this mirrors `emitInsertAgreementPrep`'s coalesced-cell
@@ -155,6 +171,9 @@ All in `graphitron/src/main/java/no/sikt/graphitron/rewrite/`.
   - If removing Stage 2b leaves `UnsupportedInputFieldShape` with no remaining producer, do not delete
     the variant blindly (it is a general shape-reject): confirm `RejectionSeverityCoverageTest` still
     has a reaching case, and if not, surface the orphaning to the reviewer as part of the item.
+    (Confirmed at spec time: the variant retains producers at `UpdateRowsWalker`
+    `:248`/`:256`/`:262`/`:273`/`:312`/`:322`, so removing Stage 2b does not orphan it; this bullet is a
+    guard against an unexpected regression, not an expected action.)
 
 ## Tests
 
@@ -166,6 +185,13 @@ Per the tiers in `rewrite-design-principles.adoc`.
     duplicate-`v`-column crash), a disagreeing row throws and the transaction rolls back. Reuse the
     R322 `film_endorsement` / `endorsed_film` overlap shape, lifted to a list input
     (`NodeIdValueAgreementExecutionTest` is the single-element / INSERT sibling).
+  - **Asymmetric presence** on that same overlap shape: a list where only one of the two overlapping
+    writers (the plain `@field` or the `@nodeId` FK) is supplied. The shared column must still update
+    from the present writer, with no missing-or-duplicate `v(…)` column. The both-present agreement
+    test above cannot reach this: a presence gate keyed on the wrong writer drops the column silently
+    here (there is no duplicate-column crash to announce it), the exact silent-drop class R322 closed
+    on the other write surfaces. This is the behavioural pin on the shared-column disjunction gate
+    (see Design).
   - The self-FK bulk WHERE ∩ SET case: lift `SelfFkNodeIdUpdateExecutionTest`'s `email` / `mailbox`
     self-FK fixture to a list input (a list-typed `@table` arg as `updateFilms` already uses, no `multiRow`); agreeing rows repoint, a disagreeing row throws
     per row, an omitted nullable leaves the lone decode. This pins that deleting Stage 2b yields
@@ -174,7 +200,9 @@ Per the tiers in `rewrite-design-principles.adoc`.
 - **Pipeline (`@PipelineTier`).** `UpdateRowsWalker` admits the self-FK bulk shape (no longer rejects
   at Stage 2b) and routes its columns all-SET; the decode-involving bulk SET overlap classifies
   without a `PlainColumnCollision` (it is decode-involving, deferred to the runtime agreement). A
-  structural assertion on the walker result, not a fetcher-body string.
+  structural assertion on the walker result, not a fetcher-body string. This inverts the existing
+  `UpdateRowsWalkerTest.selfFkReference_onBulkInput_rejectsUnsupportedShape` (`:194`) from a
+  reject-assertion into the admit-and-route-all-SET assertion, rather than adding a parallel test.
 - **Compilation (`@CompilationTier`).** `graphitron-sakila-example` compiles a bulk self-FK and a bulk
   plain+FK-overlap UPDATE input against the real jOOQ types at Java 17 (the full
   `mvn install -Plocal-db` reactor).
