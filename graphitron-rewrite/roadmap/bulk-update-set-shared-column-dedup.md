@@ -27,16 +27,20 @@ in doing so lifts R354's bulk self-FK reject into working emission.
 
 ## Current behavior (as found, post-R322/R354)
 
-The bulk UPDATE renders `UPDATE t SET c = v.c FROM (VALUES …) AS v(col1, col2, …) WHERE …`. The
-column-name list `v(…)` is built by `TypeFetcherGenerator.emitSetVColNameAdds` (`:2925`), the per-row
-cells by `emitSetBulkCellAdds` (`:2963`), and the SET assignment by `emitSetVFieldPuts` (`:3002`), all
+The bulk UPDATE renders `UPDATE t SET c = v.c FROM (VALUES …) AS v(col1, col2, …) WHERE …`. The bulk
+path is selected purely by a list-typed `@table` argument: `FieldBuilder.classifyUpdateTableField` sets
+`boolean list = inputArg.list()` (`:3691`) and routes to `buildBulkUpdateFetcher`. It is *not*
+`@mutation(multiRow:)`, which R246 rejects outright on UPDATE (`FieldBuilder` `:3518`) before the walker
+runs, so `multiRow: true` never reaches this path. The column-name list `v(…)` is built by
+`TypeFetcherGenerator.emitSetVColNameAdds` (`:2940`), the per-row
+cells by `emitSetBulkCellAdds` (`:2978`), and the SET assignment by `emitSetVFieldPuts` (`:3017`), all
 walking `List<SetGroup>` per group with no cross-group column dedup (the shape the INSERT path had
-before R322's `insertColumnPlan`). `SetGroup` (`:2415`, built by `setGroupsOf` at `:2558`) is keyed by
+before R322's `insertColumnPlan`). `SetGroup` (`:2430`, built by `setGroupsOf` at `:2573`) is keyed by
 *access path*, so a `@nodeId` decode and a plain `@field` that both land on one backing column are two
 separate groups, and each adds that column independently. Two bulk shapes are unhandled:
 
 - **Decode-involving SET overlap.** Two SET carriers write one column (e.g. a plain `@field` plus a
-  `@nodeId` FK reference whose lifted child column coincides) on a `multiRow: true` list input. The
+  `@nodeId` FK reference whose lifted child column coincides) on a list-input (list-typed `@table` arg) UPDATE. The
   column name is added to `v(…)` twice, producing a duplicate column in the derived table: a loud
   Postgres / jOOQ error, not a silent drop. R322's all-plain reject
   (`UpdateRowsError.PlainColumnCollision` in `UpdateRowsWalker`, `:194`) already covers the
@@ -49,7 +53,7 @@ separate groups, and each adds that column independently. Two bulk shapes are un
 
 The cleanest framing is by the agreement surfaces the single-row path already has and the bulk path
 lacks entirely: the single-row UPDATE runs *both* `emitSetAgreementPreamble` (within-SET overlap,
-`:2698`) and R354's `emitKeySetAgreementPreamble` (cross-partition WHERE ∩ SET, `:2796`); the bulk
+`:2713`) and R354's `emitKeySetAgreementPreamble` (cross-partition WHERE ∩ SET, `:2811`); the bulk
 path runs neither. The two deferred shapes above are exactly those two missing surfaces, within-SET
 and WHERE ∩ SET, and one dedup plan supplies both.
 
@@ -60,7 +64,7 @@ mirroring `insertColumnPlan`: group the set groups' columns by backing-column `s
 ordered list of contributing writers (each carrying its source `SetGroup` index, the slot within that
 group's decode, and the `ColumnRef`), keeping every column but marking those with two-or-more writers
 `shared`. The contributor grouping is the `[groupIndex, slot]` shape `emitSetAgreementPreamble`
-(`:2698`) already builds; this item promotes it to a reusable plan the three emitters read off, so the
+(`:2713`) already builds; this item promotes it to a reusable plan the three emitters read off, so the
 column-name list, the per-row cells, and the `sets.put` entries cannot drift out of positional
 alignment. Each emitter then emits exactly one entry per distinct column:
 
@@ -74,9 +78,9 @@ alignment. Each emitter then emits exactly one entry per distinct column:
 The agreement must produce the column's single cell, not run as a side preamble. The bulk derived
 table forbids the single-row path's last-write-wins `Map.put` affordance (a second `cells.add`
 re-introduces the duplicate-column crash), so this mirrors `emitInsertAgreementPrep`'s coalesced-cell
-shape (`:2321`) transplanted into the row loop, not `emitSetAgreementPreamble`'s
+shape (`:2336`) transplanted into the row loop, not `emitSetAgreementPreamble`'s
 check-then-let-the-puts-run shape. R354's existing `appendAgreementValue` / `emitAgreementDecodeLocal`
-helpers (`:2864`-`:2889`) are the reusable "read this writer's per-row value into the gather list"
+helpers (`:2879`-`:2891`) are the reusable "read this writer's per-row value into the gather list"
 half; the bulk path coalesces the gathered list into the cell rather than discarding it after the
 check. The per-row decode local must be emitted once per row and read by both the gather list and the
 cell (as INSERT reads `<prefix>_<fi>.value<slot+1>()` off the one per-leaf decode record), not
@@ -128,12 +132,12 @@ All in `graphitron/src/main/java/no/sikt/graphitron/rewrite/`.
 - **`generators/TypeFetcherGenerator.java`**
   - Add `setColumnPlan(List<SetGroup>)` returning per-column ordered writers (source group index +
     slot + `ColumnRef`), each column flagged `shared` when it has two-or-more writers. Model it on
-    `insertColumnPlan` (`:2275`) and the `[groupIndex, slot]` contributor grouping already in
-    `emitSetAgreementPreamble` (`:2698`).
-  - Rewrite `emitSetVColNameAdds` (`:2925`), `emitSetBulkCellAdds` (`:2963`), and `emitSetVFieldPuts`
-    (`:3002`) to walk the plan, one entry per distinct column. `emitSetBulkCellAdds` grows the
+    `insertColumnPlan` (`:2290`) and the `[groupIndex, slot]` contributor grouping already in
+    `emitSetAgreementPreamble` (`:2713`).
+  - Rewrite `emitSetVColNameAdds` (`:2940`), `emitSetBulkCellAdds` (`:2978`), and `emitSetVFieldPuts`
+    (`:3017`) to walk the plan, one entry per distinct column. `emitSetBulkCellAdds` grows the
     shared-column coalesced-cell-with-agreement branch (reusing `appendAgreementValue` /
-    `emitAgreementDecodeLocal`, `:2864`-`:2889`); disjoint columns stay byte-identical, and the
+    `emitAgreementDecodeLocal`, `:2879`-`:2891`); disjoint columns stay byte-identical, and the
     no-overlap bulk UPDATE emits exactly as it does today.
   - Confirm the per-row decode local is emitted once per row and shared by the gather list and the
     cell (no per-writer re-decode).
@@ -150,13 +154,13 @@ All in `graphitron/src/main/java/no/sikt/graphitron/rewrite/`.
 Per the tiers in `rewrite-design-principles.adoc`.
 
 - **Execution (`@ExecutionTier`), the primary and load-bearing net.**
-  - A bulk (`multiRow: true`, list input) UPDATE whose SET column is written by both a plain `@field`
+  - A bulk (list-input, list-typed `@table` arg, no `multiRow`) UPDATE whose SET column is written by both a plain `@field`
     and a `@nodeId` FK reference: agreeing rows update the agreed value (proving the dedup, no
     duplicate-`v`-column crash), a disagreeing row throws and the transaction rolls back. Reuse the
     R322 `film_endorsement` / `endorsed_film` overlap shape, lifted to a list input
     (`NodeIdValueAgreementExecutionTest` is the single-element / INSERT sibling).
   - The self-FK bulk WHERE ∩ SET case: lift `SelfFkNodeIdUpdateExecutionTest`'s `email` / `mailbox`
-    self-FK fixture to a `multiRow: true` list input; agreeing rows repoint, a disagreeing row throws
+    self-FK fixture to a list input (a list-typed `@table` arg as `updateFilms` already uses, no `multiRow`); agreeing rows repoint, a disagreeing row throws
     per row, an omitted nullable leaves the lone decode. This pins that deleting Stage 2b yields
     correct emission, not the reintroduced crash (the validator-mirror gate: the reject is replaced by
     working emission, not just unblocked).
