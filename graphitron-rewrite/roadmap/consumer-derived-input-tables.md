@@ -31,6 +31,41 @@ GG-376's fan-out use cases without introducing a new directive.
 Closes JIRA GG-376 (the proposed `@param` directive becomes
 `argMapping` grouping in this item's design).
 
+## Why there is nothing to classify (the fact-model framing)
+
+R327 (`field-relative-input-classification`, folded here 2026-06-22) reached
+this item from R333's fact-based model and supplies its load-bearing rationale.
+The decisive point: **in the fact model the input type is not an entity.** A
+schema coordinate (R333) lowers to a graph of output-field *facts* (a condition,
+a write target, a projection); the input merely *supplies the data those facts
+consume*. So "what table is this input bound to?" is not a question the input
+answers, it is a property of the consuming field's fact (its condition binds the
+input's values to columns; the mutation field's write-target fact derives the
+table). The global `buildInputType` verdict (`TableInputType` vs
+`PojoInputType`, the `@table`-on-input directive, the `findReturnTablesForInput`
+aggregate) exists only because today we classify the input *as an entity, with no
+consumer in view*; under the fact model it has nothing left to decide and
+retires. The contextless artifact this produces, a `PojoInputType` with
+`fqClassName=null` for a query-only input that is neither a table nor a backing
+class, is the tell that the entity framing is wrong: per-coordinate it cannot
+occur, because a declared input is always reachable from some consuming field
+(directly, or as a nested field of another input, recursively).
+
+**Deferred: input-as-entity until Jakarta validation.** Modelling the input type
+as a first-class entity *is* warranted for exactly one use case, and it is
+already filed: the Jakarta-validation cluster R92 (`catalog-check-constraint-validation`,
+Spec) and R98 (`multi-source-input-validation`). There a constraint (a DB `CHECK`
+lifted to `@Pattern`/`@Min`, an SDL-declared rule, a Jakarta annotation) is a fact
+*about the input itself*, true regardless of which field consumes it, and so
+cannot be reduced to an output-field fact. That is the boundary: until R92/R98,
+the input is data for output facts and this item's consumer-derived resolution is
+the whole story; from R92/R98 on, the input acquires its own facts and earns an
+entity in the model. This item must not pre-empt that by inventing an input
+relation early (the withdrawn R327 attempt that did, branch
+`claude/focused-bardeen-si3crx` wip `f8290ff`, passed every execution/compile/pipeline
+test but produced the meaningless null-class verdict and broke R144's `@lookupKey`
+lookup, the evidence that the entity altitude is wrong for the general case).
+
 ## What `@table` on input drives today
 
 | Consumer                                       | What it does                                                          |
@@ -183,6 +218,35 @@ extensions):
   `argMapping` grouping subsumes that proposal: fan-out is expressed
   via grouping entries on the existing directive rather than a new
   one. The closure note on GG-376 should reference R97.
+- **R333 (`coordinate-lowers-to-datafetcher-queryparts`)** — the fact-based
+  model this item's rationale rests on (see "Why there is nothing to classify").
+  R333 lowers a schema coordinate to a graph of output-field facts; this item is
+  the statement that the input supplies data to those facts and is not itself a
+  modeled relation. Conceptual ancestor, not a hard build dependency: the phases
+  here land on today's call-site resolution, which already resolves input fields
+  against the consumer's `rt`.
+- **R92 / R98 (Jakarta validation)** — the boundary where the deferral ends.
+  R92 (`catalog-check-constraint-validation`, Spec) and R98
+  (`multi-source-input-validation`) are where the input acquires facts of its own
+  (constraints true regardless of consumer) and earns a first-class entity. This
+  item must not pre-empt that model; it covers the input-as-data era up to that
+  point.
+- **R332 (`table-on-input-deprecation-signal`)** — the user-facing announce of
+  the deprecation this item performs. R332 announces; R97 removes. R332's
+  encoded-ID INSERT/UPSERT carve-out is gated on this item's Phase 2b; coordinate
+  so R332's warning fires on those inputs once Phase 2b lands.
+- **R337 (`input-nesting-projection-classification`)** — the honest *surfacing*
+  of a nested-grouping projection (the LSP label / `TypeClassification` that today
+  reads `PojoInput(null)`). R337 is a redirect parked behind this item; the
+  null-backed `PojoInputType` it targets is dissolved by the consumer-derived
+  resolution here. If this item lands but leaves that surfacing on the
+  `PojoInput(null)` label, R337 revives narrowly for the surfacing residual only.
+- **R327 (`field-relative-input-classification`, folded here 2026-06-22)** — split
+  out of R317 slice 4 as the one non-byte-identical change, reframed around R333,
+  then folded into this item. Its surviving analysis lives in the fact-model
+  framing, the Phase 2 `findReturnTablesForInput` / override-routing retirement and
+  validator-mirror obligation, and the Phase 2b write-target migration above. R327
+  is discarded; this item is its home.
 
 ## Architectural principle this codifies
 
@@ -240,6 +304,37 @@ sakila fixture; existing single-source `argMapping` is unchanged.
   table from the consuming field's return type. The branch produces
   the same `TableInputType` model variant as today, just from a
   different source.
+- **Retire the `findReturnTablesForInput` global aggregate**
+  (`TypeBuilder.buildInputType`, the third of its three ordered steps).
+  It is the right idea (derive the table from the consumer) at the wrong
+  altitude: a global aggregate over *every* consuming field that bails to
+  non-table on more than one distinct table (the `> 1` bail), so an input
+  reused across two tables silently classifies non-table everywhere. The
+  consuming field's resolved target (`rt`) is already computed at the call
+  site (`lookAheadVerdict` resolves a field's target registry-free at the
+  edge since R317), so the aggregate recomputes what each call site already
+  knows. Consumer-derived resolution replaces it per call site; the `> 1`
+  case stops being a silent demotion and becomes two correct per-consumer
+  bindings (the "reuse across consumers" row above), or a classify-time
+  rejection naming the offending consumer's table.
+- **Decouple the override-condition gate from type routing**
+  (`buildInputType` step 2, `isUsedWithOverrideCondition`). Today, if *any*
+  field of an input carries `@condition(override:true)`, the whole input is
+  routed off the table path into a non-table `InputType`. That overloads a
+  *per-field validation modifier* (`override` = "the consumer owns this
+  predicate, skip column-coverage on it") into a *whole-type routing gate*.
+  "Has an override field" and "is table-bound" are orthogonal axes; the
+  override flag is already threaded field-relative at the call site
+  (`FieldBuilder.classifyArgument`, `enclosingOverride`), so it has no
+  business deciding the type's bucket. This conflation is what silently
+  broke R330 (`SoknadsmangeltypeFilterInput` would have resolved to a
+  table by the consumer, but an override field diverted it, and the
+  diverted non-table path skipped the FK-target *structural* check, so an
+  identical schema-author error was rejected at build time on the
+  table-routed path and silently miscompiled on the diverted one). The fix
+  is the consumer-derived resolution above plus the field-relative
+  validation below: `override` only suppresses per-field column-coverage,
+  never the structural check and never the routing.
 - `MutationInputResolver`, `EnumMappingResolver`,
   `FieldBuilder.classifyChildField`, and
   `GraphitronSchemaValidator.validateTableInputType` continue to
@@ -258,6 +353,73 @@ sakila fixture; existing single-source `argMapping` is unchanged.
 Acceptance: every sakila fixture compiles unchanged; the warning
 fires on every `@table`-decorated input; LSP hover shows the
 resolved table.
+
+#### Validator-mirror obligation (gate on Phase 2)
+
+Decoupling `override` from routing turns today's 1-D gate into a 2x2:
+`override` (yes/no) x `column-resolves` (yes/no). Per "validator mirrors
+classifier invariants," each cell that implies a generator branch must fail at
+validate time if unimplemented, or the change silently shifts which schemas
+validate. The `InputFieldResolver` already lifts a column-miss to `UnboundField`
+uniformly (R215), so the machinery exists; Phase 2 must pin an explicit truth
+table mirroring `argument-resolution.adoc` §Truth table, with a pipeline-tier
+test per row:
+
+| override | column resolves | outcome |
+|----------|-----------------|---------|
+| false | true | implicit column predicate emitted (today's table-bound default) |
+| false | false | `UnboundField` → validator rejects (R215: implicit predicate required, no column) |
+| true | true | consumer condition owns the predicate; implicit suppressed |
+| true | false | consumer condition owns the predicate; column-miss admitted (the R330 / opptak shape) |
+
+The fourth row is the one the old step-2 gate reached by demoting the whole
+type; Phase 2 must reach it field-relative and prove (execution tier) it
+generates the correct correlated predicate. The execution-tier evidence already
+exists as `projectNotesByPlainFilter_plainInputCompositeFkTargetOverride_filtersByForeignTable`
+(and its `…Connection` sibling) in `GraphQLQueryTest`; keep it green rather than
+authoring it anew. Reconcile this `override` x `column-resolves` table with the
+existing `argument-resolution.adoc` §Truth table (which tabulates
+`any-enclosing-override` x `@condition` presence) under one heading, so a reader
+sees both axes together.
+
+**`@lookupKey` on a now-resolved input.** Removing the `findReturnTablesForInput`
+aggregate means a non-`@table` input previously promoted by the aggregate and
+consumed with arg-level `@lookupKey` must still reach the `@lookupKey` binding
+path (`FieldBuilder.classifyArgument`, `buildLookupBindings`) via the
+consumer-derived table, not silently drop the lookup. No current fixture
+exercises this (every input-object `@lookupKey` arg pairs with an `@table` input
+today, e.g. `FilmActorKey`), so it is not a regression, but Phase 2 must either
+route `@lookupKey` through the consumer-derived table or make `@lookupKey` on an
+unresolved input a validate-time rejection rather than a no-op. Fold the chosen
+disposition into the validator-mirror set above.
+
+### Phase 2b: INSERT/UPSERT write-target migration (a different axis)
+
+Phase 2's consumer-derived resolution covers the *query-side* binding (filters,
+conditions, lookups) and the mutations whose write target *is* derivable from
+the return type. It does **not** cover one mutation shape, and this phase is
+that gap: INSERT/UPSERT mutations whose return type is an encoded ID or scalar
+(`createFilm(...): ID`). For those, `@table`-on-input is currently the *only*
+signal naming the write target, because the return type is a bare `ID` with no
+`@table` to derive from. Per `MutationField.DmlTableField`, INSERT/UPSERT
+"carry the `@table` `TableInputArg` that drives the statement directly," while
+UPDATE/DELETE already moved to a field-relative walker carrier (R246/R266).
+
+Extend the UPDATE/DELETE field-relative walker pattern to encoded-ID/scalar-return
+INSERT/UPSERT, so the write target comes from the consuming mutation field's
+resolved target rather than its return type. This is the gate that lets Phase 3
+finally narrow the directive scope: until the INSERT/UPSERT arms are
+field-relative, `@table`-on-input cannot be removed for them. It is also the gate
+R332's carve-out waits on: R332 (`table-on-input-deprecation-signal`) must *not*
+flag these inputs as deprecated until this phase lands, and it tracks the
+`encodedWriteTargetInputTypes(...)` find-usages anchor that this phase retires
+(once the write target is field-relative, encoded INSERT/UPSERT inputs no longer
+need `@table`, so the deprecation warning should fire on them too). Plan note:
+this phase retires `encodedWriteTargetInputTypes`.
+
+Acceptance: an encoded-ID-return INSERT and UPSERT sakila fixture emit correct
+DML with `@table` removed from the input; `encodedWriteTargetInputTypes` is gone;
+R332's deprecation warning fires on the previously-carved-out inputs.
 
 ### Phase 3: remove the directive declaration
 
