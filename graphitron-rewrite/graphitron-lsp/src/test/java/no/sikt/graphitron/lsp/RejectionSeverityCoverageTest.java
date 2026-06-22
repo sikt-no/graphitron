@@ -199,6 +199,9 @@ class RejectionSeverityCoverageTest {
                     "film_pkey"));
         }
         if (permit == no.sikt.graphitron.rewrite.model.UpdateRowsError.MixedCarrierKeyMembership.class) {
+            // Models a cross-table FK reference whose lifted columns straddle the matched key — the
+            // only carrier shape that still reaches this arm after R354 (a self-FK reference routes
+            // wholly to SET instead of straddling).
             return new no.sikt.graphitron.rewrite.model.UpdateRowsError.MixedCarrierKeyMembership(
                 "ref",
                 List.of(new no.sikt.graphitron.rewrite.model.ColumnRef("actor_id", "ACTOR_ID", "java.lang.Integer")),

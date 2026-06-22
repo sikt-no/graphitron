@@ -1846,6 +1846,20 @@ input InsertEmailReplyInput @table(name: "email") {
     inReplyTo: ID @nodeId(typeName: "Email") @reference(path: [{key: "email_in_reply_to_fk"}])
 }
 
+# R354: the UPDATE sibling of InsertEmailReplyInput. `id` (own @nodeId, no @reference) identifies the
+# row to update → WHERE (mailbox_id, message_no). `inReplyTo` is the self-FK @nodeId @reference; its
+# lifted child columns (mailbox_id, in_reply_to_no) route WHOLLY to SET — a self-FK is a write of "who
+# this row points at" (its parent), never the row's own identity. mailbox_id is then both a WHERE column
+# (from id) and a SET column (from inReplyTo); the FK forces them equal, and the generated fetcher emits
+# a cross-partition requireColumnAgreement check before the UPDATE (agree → repoint in_reply_to_no with
+# the mailbox_id SET a no-op; disagree → throw, nothing written). An omitted inReplyTo updates subject
+# only (the presence guard, no agreement check).
+input UpdateEmailReplyInput @table(name: "email") {
+    id: ID! @nodeId(typeName: "Email")
+    subject: String @field(name: "subject")
+    inReplyTo: ID @nodeId(typeName: "Email") @reference(path: [{key: "email_in_reply_to_fk"}])
+}
+
 # R75 Phase 1: single-record DML carrier payload type. The SDL author authors no Java class —
 # the type promotes to PojoResultType.NoBacking at type-classification time; the data field
 # classifies as ChildField.SingleRecordTableField; the mutation classifies as
@@ -2300,6 +2314,14 @@ type Mutation {
     # decoded mailbox disagrees with mailboxRef; agreeing writers insert (in_reply_to_no carries the
     # parent's message_no). An omitted inReplyTo leaves the lone mailboxRef decode (in_reply_to_no NULL).
     insertEmailReply(in: InsertEmailReplyInput!): Email @mutation(typeName: INSERT)
+
+    # R354 self-FK @nodeId reference on a Graphitron-owned single-row UPDATE: `id` pins the row by its
+    # own PK (mailbox_id, message_no) → WHERE; the self-FK `inReplyTo` routes its child columns
+    # (mailbox_id, in_reply_to_no) wholly to SET. mailbox_id sits in both partitions, reconciled by a
+    # cross-partition requireColumnAgreement before the UPDATE. Agree → repoint in_reply_to_no, mailbox_id
+    # write a no-op; disagree (parent in a different mailbox) → throw, nothing updated; inReplyTo omitted →
+    # update subject only.
+    updateEmailReply(in: UpdateEmailReplyInput!): Email @mutation(typeName: UPDATE)
 
     # R315 D4 execution pin: a nullable same-table identity (addressId: ID @nodeId(typeName: "Address"))
     # on a jOOQ AddressRecord @service param, resolving to the record's own serial PK (address_id).
