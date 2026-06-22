@@ -1,7 +1,7 @@
 ---
 id: R355
 title: "Infer depth-1 nested @condition arg bindings by name without argMapping"
-status: Ready
+status: In Review
 bucket: feature
 priority: 4
 theme: structural-refactor

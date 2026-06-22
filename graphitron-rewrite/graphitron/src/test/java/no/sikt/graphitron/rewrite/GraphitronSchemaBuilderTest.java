@@ -3985,6 +3985,116 @@ class GraphitronSchemaBuilderTest {
                     .isEqualTo("filmId");
             }),
 
+        INFER_NESTED_CONDITION_ARG_BY_NAME(
+            "R355: @condition on an input-object input field with NO argMapping — the method's "
+                + "fra/til params bind one level in to the same-named nested fields, producing the "
+                + "depth-1 PathExpr the explicit-argMapping sibling produces (liftsList=false scalar leaves)",
+            """
+            scalar BigDecimal
+            input SokVerdiRange { fra: BigDecimal  til: BigDecimal }
+            input FilmVerdiFilter @table(name: "film") {
+              range: SokVerdiRange
+                @condition(condition: {className: "no.sikt.graphitron.rewrite.TestConditionStub", method: "searchVerdiRange"}, override: true)
+            }
+            type Film @table(name: "film") { filmId: Int! @field(name: "film_id") }
+            type Query { films(filter: FilmVerdiFilter): [Film!]! }
+            """,
+            schema -> {
+                var f = (QueryField.QueryTableField) schema.field("Query", "films");
+                var cond = (ConditionFilter) f.filters().stream()
+                    .filter(x -> x instanceof ConditionFilter).findFirst().orElseThrow();
+                assertThat(cond.methodName()).isEqualTo("searchVerdiRange");
+                // Classifier-output equality (not emitted body strings): the inferred PathExpr is
+                // byte-identical to what argMapping "fra: range.fra, til: range.til" yields — the
+                // INFER_NESTED_CONDITION_ARG_EXPLICIT_ARGMAPPING_EQUIVALENT case asserts the same values.
+                var argPaths = cond.params().stream()
+                    .filter(p -> p.source() instanceof no.sikt.graphitron.rewrite.model.ParamSource.Arg)
+                    .collect(java.util.stream.Collectors.toMap(
+                        no.sikt.graphitron.rewrite.model.MethodRef.Param::name,
+                        p -> ((no.sikt.graphitron.rewrite.model.ParamSource.Arg) p.source()).path()));
+                assertThat(argPaths).hasSize(2)
+                    .containsEntry("fra", PathExpr.step(PathExpr.head("range"), "fra", false))
+                    .containsEntry("til", PathExpr.step(PathExpr.head("range"), "til", false));
+            }),
+
+        INFER_NESTED_CONDITION_ARG_EXPLICIT_ARGMAPPING_EQUIVALENT(
+            "R355: the explicit-argMapping sibling of INFER_NESTED_CONDITION_ARG_BY_NAME — the same "
+                + "schema with argMapping spelled out produces the identical PathExpr chain, pinning "
+                + "that the inference fills in exactly the path the author would otherwise write",
+            """
+            scalar BigDecimal
+            input SokVerdiRange { fra: BigDecimal  til: BigDecimal }
+            input FilmVerdiFilter @table(name: "film") {
+              range: SokVerdiRange
+                @condition(condition: {className: "no.sikt.graphitron.rewrite.TestConditionStub", method: "searchVerdiRange", argMapping: "fra: range.fra, til: range.til"}, override: true)
+            }
+            type Film @table(name: "film") { filmId: Int! @field(name: "film_id") }
+            type Query { films(filter: FilmVerdiFilter): [Film!]! }
+            """,
+            schema -> {
+                var f = (QueryField.QueryTableField) schema.field("Query", "films");
+                var cond = (ConditionFilter) f.filters().stream()
+                    .filter(x -> x instanceof ConditionFilter).findFirst().orElseThrow();
+                var argPaths = cond.params().stream()
+                    .filter(p -> p.source() instanceof no.sikt.graphitron.rewrite.model.ParamSource.Arg)
+                    .collect(java.util.stream.Collectors.toMap(
+                        no.sikt.graphitron.rewrite.model.MethodRef.Param::name,
+                        p -> ((no.sikt.graphitron.rewrite.model.ParamSource.Arg) p.source()).path()));
+                assertThat(argPaths).hasSize(2)
+                    .containsEntry("fra", PathExpr.step(PathExpr.head("range"), "fra", false))
+                    .containsEntry("til", PathExpr.step(PathExpr.head("range"), "til", false));
+            }),
+
+        INFER_NESTED_CONDITION_ARG_LIST_LIFTS_LIST(
+            "R355: a depth-1 list field [BigDecimal] bound to a List<BigDecimal> param infers a Step "
+                + "whose liftsList is COMPUTED true (via ArgBindingMap.isListShaped) — the scalar case "
+                + "above leaves it false either way, so only this case separates computed from hardcoded",
+            """
+            scalar BigDecimal
+            input SokVerdiListRange { verdier: [BigDecimal] }
+            input FilmVerdiListFilter @table(name: "film") {
+              range: SokVerdiListRange
+                @condition(condition: {className: "no.sikt.graphitron.rewrite.TestConditionStub", method: "searchVerdiList"}, override: true)
+            }
+            type Film @table(name: "film") { filmId: Int! @field(name: "film_id") }
+            type Query { films(filter: FilmVerdiListFilter): [Film!]! }
+            """,
+            schema -> {
+                var f = (QueryField.QueryTableField) schema.field("Query", "films");
+                var cond = (ConditionFilter) f.filters().stream()
+                    .filter(x -> x instanceof ConditionFilter).findFirst().orElseThrow();
+                assertThat(cond.methodName()).isEqualTo("searchVerdiList");
+                var argPaths = cond.params().stream()
+                    .filter(p -> p.source() instanceof no.sikt.graphitron.rewrite.model.ParamSource.Arg)
+                    .collect(java.util.stream.Collectors.toMap(
+                        no.sikt.graphitron.rewrite.model.MethodRef.Param::name,
+                        p -> ((no.sikt.graphitron.rewrite.model.ParamSource.Arg) p.source()).path()));
+                assertThat(argPaths).hasSize(1)
+                    .containsEntry("verdier", PathExpr.step(PathExpr.head("range"), "verdier", true));
+            }),
+
+        INFER_NESTED_CONDITION_ARG_AMBIGUOUS_FALLS_THROUGH(
+            "R355: a parameter name matching a nested field in TWO input-object args is ambiguous "
+                + "(two candidates across slots) → inference yields, leaving 'fra' unbound, so the "
+                + "existing name-mismatch rejection fires rather than an arbitrary binding",
+            """
+            scalar BigDecimal
+            input VerdiRangeA { fra: BigDecimal }
+            input VerdiRangeB { fra: BigDecimal }
+            type Film @table(name: "film") { filmId: Int! @field(name: "film_id") }
+            type Query {
+              films(rangeA: VerdiRangeA, rangeB: VerdiRangeB): [Film!]!
+                @condition(condition: {className: "no.sikt.graphitron.rewrite.TestConditionStub", method: "searchVerdiAmbiguous"}, override: true)
+            }
+            """,
+            schema -> {
+                var f = (no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField)
+                    schema.field("Query", "films");
+                assertThat(f.reason())
+                    .contains("parameter 'fra'")
+                    .contains("is not a GraphQL argument and not a context key");
+            }),
+
         PLAIN_INPUT_ARG_FIELD_CONDITION_EMITTED(
             "@condition on a plain input field, classified per call-site → condition emitted at the matching "
                 + "call site; R205 Path B rejects the mismatched call site rather than silently dropping it",

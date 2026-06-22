@@ -786,13 +786,13 @@ class ServiceCatalogTest {
     }
 
     @Test
-    void reflectServiceMethod_typeUnique_topLevelPlusNestedReachable_yieldsAsAmbiguous() {
-        // R214 ambiguity floor: when a top-level slot and a reachable nested field both map
-        // to the unbound parameter's Java type, there are two possible mappings — the user's
-        // rule says fall back to name-based matching. The type-unique branch must yield so
-        // the existing unambiguousReachablePath suggestion can render the dot-path
-        // alternative; binding silently to the top-level slot would hide that the developer
-        // might have intended the nested binding.
+    void reflectServiceMethod_typeUniqueTopLevelPlusNameMatchedNested_R355BindsNestedByName() {
+        // R214 set this case up to YIELD ("the user's rule says fall back to name-based matching")
+        // so a later name-based rule could resolve it; R355 is that rule. The param `filmId`
+        // matches the top-level slot `id` by type only (name mismatch), but matches the nested
+        // `input.filmId` by BOTH name and type. The type-unique branch yields (a reachable nested
+        // match exists), then R355's depth-1 name search binds `filmId` to `input.filmId` — exactly
+        // the `argMapping: "filmId: input.filmId"` the pre-R355 rejection used only to suggest.
         var filmInput = graphql.schema.GraphQLInputObjectType.newInputObject()
             .name("FilmInput")
             .field(graphql.schema.GraphQLInputObjectField.newInputObjectField()
@@ -806,11 +806,13 @@ class ServiceCatalogTest {
         var result = newCatalog().reflectServiceMethod(
             STUB_CLASS, "getByFilmId", argByJavaName, Set.of(), List.of(), null, slot);
 
-        assertThat(result.failed()).isTrue();
-        assertThat(result.rejection().message())
-            .contains("parameter 'filmId'")
-            .contains("does not match any GraphQL argument")
-            .contains("argMapping: \"filmId: input.filmId\"");
+        assertThat(result.failed()).isFalse();
+        var param = result.ref().params().stream()
+            .filter(p -> p.source() instanceof ParamSource.Arg)
+            .findFirst().orElseThrow();
+        assertThat(param.name()).isEqualTo("filmId");
+        assertThat(((ParamSource.Arg) param.source()).path())
+            .isEqualTo(PathExpr.step(PathExpr.head("input"), "filmId", false));
     }
 
     @Test
@@ -878,6 +880,74 @@ class ServiceCatalogTest {
         assertThat(result.rejection().message())
             .contains("parameter 'second'")
             .contains("not a GraphQL argument");
+    }
+
+    // ===== R355: name-based depth-1 nested-field inference =====
+
+    /** Builds an input-object slot type with one field of the given GraphQL type. */
+    private static graphql.schema.GraphQLInputObjectType inputObject(String name, String fieldName,
+            graphql.schema.GraphQLInputType fieldType) {
+        return graphql.schema.GraphQLInputObjectType.newInputObject()
+            .name(name)
+            .field(graphql.schema.GraphQLInputObjectField.newInputObjectField()
+                .name(fieldName).type(fieldType).build())
+            .build();
+    }
+
+    @Test
+    void inferNestedFieldByName_singleMatchingScalarField_returnsDepth1Step() {
+        // One unclaimed input-object slot with a direct field whose name AND mapped Java type
+        // match the unbound parameter → the depth-1 Step a hand-written
+        // argMapping: "fra: range.fra" would produce, with liftsList=false for a scalar leaf.
+        var slot = new java.util.LinkedHashMap<String, graphql.schema.GraphQLInputType>();
+        slot.put("range", inputObject("VerdiRange", "fra", graphql.Scalars.GraphQLInt));
+
+        var result = newCatalog().inferNestedFieldByName(
+            "fra", "java.lang.Integer", List.of("range"), slot);
+
+        assertThat(result).isEqualTo(PathExpr.step(PathExpr.head("range"), "fra", false));
+    }
+
+    @Test
+    void inferNestedFieldByName_listShapedField_computesLiftsListTrue() {
+        // A [Int] field binds a List<Integer> parameter; the Step's liftsList flag is computed
+        // via ArgBindingMap.isListShaped (true), byte-identical to the explicit-argMapping Step.
+        var slot = new java.util.LinkedHashMap<String, graphql.schema.GraphQLInputType>();
+        slot.put("range", inputObject("VerdiRange", "verdier",
+            graphql.schema.GraphQLList.list(graphql.Scalars.GraphQLInt)));
+
+        var result = newCatalog().inferNestedFieldByName(
+            "verdier", "java.util.List<java.lang.Integer>", List.of("range"), slot);
+
+        assertThat(result).isEqualTo(PathExpr.step(PathExpr.head("range"), "verdier", true));
+    }
+
+    @Test
+    void inferNestedFieldByName_nameMatchesButTypeDiffers_returnsNull() {
+        // The slot has a field named like the parameter, but its mapped Java type (Integer) does
+        // not equal the parameter's (String) — name+type must both match, so no binding.
+        var slot = new java.util.LinkedHashMap<String, graphql.schema.GraphQLInputType>();
+        slot.put("range", inputObject("VerdiRange", "fra", graphql.Scalars.GraphQLInt));
+
+        var result = newCatalog().inferNestedFieldByName(
+            "fra", "java.lang.String", List.of("range"), slot);
+
+        assertThat(result).isNull();
+    }
+
+    @Test
+    void inferNestedFieldByName_twoSlotsEachWithMatchingField_returnsNullAsAmbiguous() {
+        // Two unclaimed input-object slots each carry a field named (and typed) like the
+        // parameter → two candidates across slots → ambiguous → null, so the per-parameter
+        // rejection / suggestion still fires.
+        var slot = new java.util.LinkedHashMap<String, graphql.schema.GraphQLInputType>();
+        slot.put("rangeA", inputObject("VerdiRangeA", "fra", graphql.Scalars.GraphQLInt));
+        slot.put("rangeB", inputObject("VerdiRangeB", "fra", graphql.Scalars.GraphQLInt));
+
+        var result = newCatalog().inferNestedFieldByName(
+            "fra", "java.lang.Integer", List.of("rangeA", "rangeB"), slot);
+
+        assertThat(result).isNull();
     }
 
     @Test

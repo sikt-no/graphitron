@@ -7,6 +7,10 @@ interface Node { id: ID! }
 # "Date" and Graphitron.buildSchema(...) threw "type LocalDate not found in schema".
 scalar LocalDate @scalarType(scalar: "graphql.scalars.ExtendedScalars.Date")
 
+# R355 execution fixture: a numeric scalar (resolved via the extended-scalars convention layer)
+# used by the nested-@condition-arg range filter below.
+scalar BigDecimal
+
 # R139 compile-tier fixture: a user-declared directive whose application
 # pulls the build pipeline through the same path the LSP's snapshot
 # producer relies on. R139 itself emits no generated code; this fixture
@@ -129,6 +133,11 @@ type Query {
     # and called at runtime. In Phase 4, filmId arrives as null (nested-arg access
     # deferred), so the method returns noCondition() and all films are returned.
     filmsWithInputFieldCondition(filter: FilmConditionInput): [Film!]!
+    # R355: depth-1 nested @condition-arg inference. rentalRateRange(table, fra, til) binds fra/til
+    # one level into RentalRateRange.{fra,til} BY NAME with no argMapping; the *Explicit sibling
+    # spells the argMapping out. Both filter film.rental_rate into [fra, til] identically.
+    filmsByRentalRateRange(filter: FilmRentalRangeFilter): [Film!]!
+    filmsByRentalRateRangeExplicit(filter: FilmRentalRangeFilterExplicit): [Film!]!
     # argres Phase 4: @condition on a plain input field (no @table).
     # PlainFilmIdInput.filmId resolves against film → condition wired and called at runtime.
     # R205 retired the Language-side counterpart: Path B now rejects mismatched call sites
@@ -1253,6 +1262,31 @@ input FilmConditionInput @table(name: "film") {
             className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
             method: "filmIdCondition"
         })
+}
+
+# R355: a @condition on an input-OBJECT field whose method descends one level into the nested
+# scalar fields. The method searchVerdiRange-style signature is rentalRateRange(table, fra, til);
+# fra/til match RentalRateRange.{fra,til} by name. override:true so the wrapper's nested fields
+# need not map to columns (the method owns the predicate entirely).
+input RentalRateRange { fra: BigDecimal  til: BigDecimal }
+
+input FilmRentalRangeFilter @table(name: "film") {
+    rentalRateRange: RentalRateRange
+        @condition(condition: {
+            className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
+            method: "rentalRateRange"
+        }, override: true)
+}
+
+# Explicit-argMapping sibling: the same method bound with the argMapping the author would
+# otherwise write. R355 makes filmsByRentalRateRange (no argMapping) produce the identical binding.
+input FilmRentalRangeFilterExplicit @table(name: "film") {
+    rentalRateRange: RentalRateRange
+        @condition(condition: {
+            className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
+            method: "rentalRateRange",
+            argMapping: "fra: rentalRateRange.fra, til: rentalRateRange.til"
+        }, override: true)
 }
 
 # argres Phase 4: plain input (no @table). Used on Film and Language queries,
