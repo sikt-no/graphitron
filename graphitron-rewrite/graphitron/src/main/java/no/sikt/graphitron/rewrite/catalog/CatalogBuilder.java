@@ -61,9 +61,9 @@ import java.util.Optional;
  * FQNs against its own {@link SourceWalker.Index} at request time, so jOOQ
  * goto-definition / hover ride the {@code .java} source cadence rather than the
  * generator build cadence (R352, mirroring the service half R349 introduced).
- * The single source walk here lifts Javadoc into the {@code description} slots
- * only; when no source roots are on the build the descriptions fall back to the
- * SQL comment (tables) or empty (columns).
+ * This builder does not walk sources at all: the {@code description} slots carry
+ * the build-derivable fallback only (the table's SQL comment; empty for columns
+ * and services), and the LSP overlays the source Javadoc when its index has it.
  */
 public final class CatalogBuilder {
 
@@ -801,20 +801,18 @@ public final class CatalogBuilder {
     public static CompletionData build(JooqCatalog jooq, GraphQLSchema assembled, RewriteContext ctx) {
         // FQN of the generated jOOQ Keys class (jOOQ emits it at the package
         // root). Both the table classFqn and this Keys FQN are the join keys the
-        // LSP resolves against the source index at request time; the catalog
-        // carries no source positions of its own (R352).
+        // LSP resolves against its source index at request time; the catalog
+        // carries no source positions and no source-derived Javadoc (R352).
         String keysClassFqn = ctx.jooqPackage() + ".Keys";
-        // Single source walk supplies the Javadoc lifted into descriptions for
-        // both halves (jOOQ tables / columns, service classes / methods). Source
-        // *positions* are not read here: goto-definition / hover join FQNs against
-        // the LSP-owned source index on the .java cadence. Empty when no source
-        // roots are on the build (unit tier, validate-only), in which case the
-        // descriptions stay at their bytecode / SQL-comment fallback.
-        SourceWalker.Index sources = SourceWalker.walk(ctx.compileSourceRoots());
+        // No source walk here: goto-definition and hover both resolve positions
+        // and Javadoc from the LSP-owned source index on the .java cadence. The
+        // descriptions this builder sets are the build-derivable fallback only
+        // (the jOOQ table's SQL comment; nothing for columns / services), which
+        // the LSP overlays the source Javadoc onto when its index has it.
         return new CompletionData(
-            buildTables(jooq, keysClassFqn, sources),
+            buildTables(jooq, keysClassFqn),
             buildScalars(assembled),
-            buildExternalReferences(ctx, sources),
+            buildExternalReferences(ctx),
             ctx.namedReferences(),
             buildNodeMetadata(assembled)
         );
@@ -895,92 +893,39 @@ public final class CatalogBuilder {
      * {@link RewriteContext}'s six-arg overload still get the same scope
      * pre-multi-module support shipped.
      */
-    private static List<CompletionData.ExternalReference> buildExternalReferences(
-        RewriteContext ctx, SourceWalker.Index sources
-    ) {
+    private static List<CompletionData.ExternalReference> buildExternalReferences(RewriteContext ctx) {
         var roots = ctx.classpathRoots().isEmpty()
             ? List.of(ctx.basedir().resolve("target/classes"))
             : ctx.classpathRoots();
-        var scanned = ClasspathScanner.scan(roots, ctx.jooqPackage());
-        if (sources.isEmpty()) return scanned;
-        return enrichExternalReferences(scanned, sources);
+        // Bytecode-derived structure only; the class / method Javadoc the hover
+        // path renders is overlaid from the LSP source index at request time.
+        return ClasspathScanner.scan(roots, ctx.jooqPackage());
     }
 
-    /**
-     * Lifts source Javadoc into the {@code description} slot of each external
-     * reference and its methods, joining the bytecode-derived structure
-     * ({@link ClasspathScanner}: class / method names, signatures, record
-     * components) with the source-walk index by FQN and by the
-     * {@code (className, methodName, paramCount)} method key. Records are
-     * rebuilt rather than mutated.
-     *
-     * <p>Positions are deliberately <em>not</em> lifted here. The service half's
-     * goto-definition resolves a class / method position at request time by
-     * joining against the LSP-owned {@link SourceWalker.Index} (see the LSP
-     * {@code DefinitionTarget}), so positions ride the {@code .java} cadence and
-     * a declaration that moves between builds is seen without a generator
-     * rebuild. This method runs on the build cadence and supplies only the
-     * Javadoc {@code description} the hover path reads.
-     */
-    private static List<CompletionData.ExternalReference> enrichExternalReferences(
-        List<CompletionData.ExternalReference> scanned, SourceWalker.Index sources
-    ) {
-        var out = new ArrayList<CompletionData.ExternalReference>(scanned.size());
-        for (var ref : scanned) {
-            var classDecl = sources.classes().get(ref.className());
-            var description = classDecl != null && !classDecl.javadoc().isEmpty()
-                ? classDecl.javadoc() : ref.description();
-            var methods = ref.methods().stream()
-                .map(m -> enrichMethod(ref.className(), m, sources))
-                .toList();
-            out.add(new CompletionData.ExternalReference(
-                ref.name(), ref.className(), description, methods, ref.recordComponents()));
-        }
-        return List.copyOf(out);
-    }
-
-    private static CompletionData.Method enrichMethod(
-        String className, CompletionData.Method method, SourceWalker.Index sources
-    ) {
-        var key = new SourceWalker.MethodKey(className, method.name(), method.parameters().size());
-        var decl = sources.methods().get(key);
-        var description = decl != null && !decl.javadoc().isEmpty()
-            ? decl.javadoc() : method.description();
-        return new CompletionData.Method(
-            method.name(), method.returnType(), description, method.parameters());
-    }
-
-    private static List<CompletionData.Table> buildTables(
-        JooqCatalog jooq, String keysClassFqn, SourceWalker.Index sources
-    ) {
+    private static List<CompletionData.Table> buildTables(JooqCatalog jooq, String keysClassFqn) {
         var tables = new ArrayList<CompletionData.Table>();
         for (String tableName : jooq.allTableSqlNames()) {
-            tables.add(buildTable(jooq, tableName, keysClassFqn, sources));
+            tables.add(buildTable(jooq, tableName, keysClassFqn));
         }
         return List.copyOf(tables);
     }
 
-    private static CompletionData.Table buildTable(
-        JooqCatalog jooq, String tableName, String keysClassFqn, SourceWalker.Index sources
-    ) {
+    private static CompletionData.Table buildTable(JooqCatalog jooq, String tableName, String keysClassFqn) {
         Optional<JooqCatalog.TableEntry> entryOpt = jooq.findTable(tableName).asEntry();
         Table<?> jooqTable = entryOpt.map(JooqCatalog.TableEntry::table).orElse(null);
 
         // Fully-qualified name of the generated jOOQ table class, e.g.
         // <jooqPackage>.tables.Film; the LSP keys class / field declarations by
-        // this FQN when it resolves goto-definition against the source index.
+        // this FQN when it resolves goto-definition / hover against the source index.
         String classFqn = jooqTable == null ? null : jooqTable.getClass().getName();
 
-        // Description still rides the build cadence (SQL comment, else the class
-        // Javadoc from the walk); positions do not. This mirrors the service half.
-        var classDecl = classFqn == null ? null : sources.classes().get(classFqn);
-        String sqlComment = commentOf(jooqTable);
-        String tableDescription = !sqlComment.isEmpty()
-            ? sqlComment
-            : (classDecl != null ? classDecl.javadoc() : "");
+        // Build-derivable description only: the jOOQ table's SQL comment. The
+        // generated class Javadoc (and column / service Javadoc) is overlaid from
+        // the source index by the LSP, so it rides the .java cadence.
+        String tableDescription = commentOf(jooqTable);
 
         var columns = jooq.allColumnsOf(tableName).stream()
-            .map(c -> buildColumn(c, classFqn, sources))
+            .map(c -> buildColumn(c))
             .toList();
 
         var references = jooqTable == null
@@ -997,25 +942,19 @@ public final class CatalogBuilder {
     }
 
     /**
-     * Builds one column, lifting the field's Javadoc into {@code description}
-     * from the source walk (keyed by the jOOQ Java field name, matching
-     * {@link CompletionData.Column#name()}); empty when the field is not indexed
-     * (sources absent). The column carries no source position: goto-definition
-     * joins {@code (owning-table classFqn, name)} against the LSP-owned source
-     * index at request time.
+     * Builds one column from the jOOQ catalog structure. Carries no source
+     * position and no source-derived Javadoc: goto-definition and hover both
+     * join {@code (owning-table classFqn, name)} against the LSP-owned source
+     * index at request time. The {@code description} is the build-derivable
+     * fallback, which for a column is empty (jOOQ column comments are not
+     * recoverable from the runtime catalog).
      */
-    private static CompletionData.Column buildColumn(
-        JooqCatalog.ColumnEntry c, String classFqn, SourceWalker.Index sources
-    ) {
-        var fieldDecl = classFqn == null
-            ? null
-            : sources.fields().get(new SourceWalker.FieldKey(classFqn, c.javaName()));
-        var description = fieldDecl != null ? fieldDecl.javadoc() : "";
+    private static CompletionData.Column buildColumn(JooqCatalog.ColumnEntry c) {
         return new CompletionData.Column(
             c.javaName(),
             c.columnClass(),
             c.nullable(),
-            description
+            ""
         );
     }
 

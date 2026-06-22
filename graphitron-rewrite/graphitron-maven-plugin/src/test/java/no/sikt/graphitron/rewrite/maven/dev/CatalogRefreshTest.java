@@ -5,7 +5,6 @@ import no.sikt.graphitron.rewrite.GraphQLRewriteGenerator;
 import no.sikt.graphitron.rewrite.ValidationReport;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
-import no.sikt.graphitron.rewrite.catalog.SourceWalker;
 import no.sikt.graphitron.rewrite.maven.watch.DebounceExecutor;
 import no.sikt.graphitron.rewrite.maven.watch.DispatchTestSupport;
 import no.sikt.graphitron.rewrite.maven.watch.SchemaWatcher;
@@ -129,7 +128,8 @@ class CatalogRefreshTest {
 
         var fired = new CountDownLatch(1);
         Runnable refresher = () -> {
-            workspace.setSourceIndex(SourceWalker.walk(List.of(srcDir)));
+            // Real production path: the workspace owns the walker and the index.
+            workspace.refreshSourceIndex(List.of(srcDir));
             fired.countDown();
         };
 

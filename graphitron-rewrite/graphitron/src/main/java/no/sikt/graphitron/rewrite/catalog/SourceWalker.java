@@ -48,15 +48,17 @@ import java.util.stream.Stream;
  * symbols (an unresolved {@code import} or type reference does not stop the
  * file from yielding declaration positions).
  *
- * <p><b>Hot-path caching contract.</b> {@link CatalogBuilder} runs hot: it is
- * rebuilt on every classpath-watcher trigger, and the watcher fires on
- * {@code .class} changes. Source positions change only when a {@code .java}
- * changes, never when a {@code .class} is recompiled, so the index is cached
- * per source file (keyed by absolute path, invalidated by last-modified time)
- * and only changed files are re-parsed. A trigger that touches no {@code .java}
- * re-parses nothing. The cache is content-addressed (path + mtime), so it is
- * safe to share process-wide across rebuilds and across distinct workspaces;
- * tests parse under per-test temp directories and never collide.
+ * <p><b>Hot-path caching contract.</b> The walk is driven on the {@code .java}
+ * (source) cadence by the dev goal's source-root watcher, which refreshes the
+ * LSP-owned index on every source change. Source positions change only when a
+ * {@code .java} changes, so the index is cached per source file (keyed by
+ * absolute path, invalidated by last-modified time) and only changed files are
+ * re-parsed; a refresh that touches no parsed file re-parses nothing. The cache
+ * is an <em>instance</em> field, owned by the same party that owns the index
+ * (the LSP {@code Workspace}, R352): there is no process-wide static cache to
+ * couple distinct cadences or distinct workspaces. Construct one
+ * {@code SourceWalker} per long-lived index owner and reuse it across refreshes
+ * so the cache stays warm.
  *
  * <p><b>Doc-comment retention.</b> {@link Trees#getDocComment(TreePath)}
  * returns the Javadoc only when the parse keeps doc comments. The
@@ -66,10 +68,8 @@ import java.util.stream.Stream;
  */
 public final class SourceWalker {
 
-    private SourceWalker() {}
-
-    /** Process-wide per-file cache: absolute path -> (mtime, parsed file index). */
-    private static final Map<Path, CacheEntry> CACHE = new ConcurrentHashMap<>();
+    /** Per-instance per-file cache: absolute path -> (mtime, parsed file index). */
+    private final Map<Path, CacheEntry> cache = new ConcurrentHashMap<>();
 
     private record CacheEntry(long mtime, FileIndex index) {}
 
@@ -132,7 +132,7 @@ public final class SourceWalker {
      * merged {@link Index}. Returns {@link Index#EMPTY} when there are no roots
      * or no system Java compiler (e.g. running on a JRE).
      */
-    public static Index walk(List<Path> sourceRoots) {
+    public Index walk(List<Path> sourceRoots) {
         if (sourceRoots == null || sourceRoots.isEmpty()) return Index.EMPTY;
 
         var files = new ArrayList<Path>();
@@ -152,7 +152,7 @@ public final class SourceWalker {
         var perFile = new LinkedHashMap<Path, FileIndex>();
         var toParse = new ArrayList<Path>();
         for (Path f : files) {
-            CacheEntry ce = CACHE.get(f);
+            CacheEntry ce = cache.get(f);
             long mtime = mtimeOf(f);
             if (ce != null && ce.mtime() == mtime) {
                 perFile.put(f, ce.index());
@@ -164,16 +164,11 @@ public final class SourceWalker {
             var parsed = parse(toParse);
             for (Path f : toParse) {
                 FileIndex idx = parsed.getOrDefault(f, FileIndex.EMPTY);
-                CACHE.put(f, new CacheEntry(mtimeOf(f), idx));
+                cache.put(f, new CacheEntry(mtimeOf(f), idx));
                 perFile.put(f, idx);
             }
         }
         return merge(perFile.values());
-    }
-
-    /** Clears the per-file cache. Test seam; not used in production. */
-    static void clearCache() {
-        CACHE.clear();
     }
 
     private static long mtimeOf(Path f) {

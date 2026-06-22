@@ -9,6 +9,7 @@ import no.sikt.graphitron.lsp.parsing.LspVocabulary;
 import no.sikt.graphitron.lsp.parsing.Positions;
 import org.eclipse.lsp4j.TextDocumentContentChangeEvent;
 
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -42,6 +43,11 @@ public final class Workspace {
     private final List<String> toRecalculate = new ArrayList<>();
     private final LspVocabulary vocabulary;
     private volatile CompletionData catalog;
+    // The LSP is the sole source walker (R352): the walker (and its per-file
+    // cache) lives here, alongside the index it produces, so "who refreshes this,
+    // on what cadence" is answerable from the index's owner. There is no
+    // process-wide static cache shared with the generator build cadence.
+    private final SourceWalker sourceWalker = new SourceWalker();
     private volatile SourceWalker.Index sourceIndex = SourceWalker.Index.EMPTY;
     private volatile LspSchemaSnapshot snapshot = LspSchemaSnapshot.unavailable();
     private volatile ValidationReport validationReport = ValidationReport.empty();
@@ -151,6 +157,18 @@ public final class Workspace {
      */
     public void setSourceIndex(SourceWalker.Index index) {
         this.sourceIndex = index == null ? SourceWalker.Index.EMPTY : index;
+    }
+
+    /**
+     * Walks {@code sourceRoots} with the workspace-owned {@link SourceWalker}
+     * (warm per-file cache) and atomically swaps in the resulting index. This is
+     * the only walk the LSP performs: the dev goal's source-root watcher calls it
+     * at startup and on every {@code .java} change, on the source cadence,
+     * independent of the catalog / {@code .class} build cadence. Re-parses only
+     * the files whose modification time changed since the previous refresh.
+     */
+    public void refreshSourceIndex(List<Path> sourceRoots) {
+        setSourceIndex(sourceWalker.walk(sourceRoots));
     }
 
     /**

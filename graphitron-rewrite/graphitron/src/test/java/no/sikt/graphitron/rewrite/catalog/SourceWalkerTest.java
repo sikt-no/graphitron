@@ -34,7 +34,7 @@ class SourceWalkerTest {
             }
             """);
 
-        var index = SourceWalker.walk(List.of(root));
+        var index = new SourceWalker().walk(List.of(root));
 
         var clazz = index.classes().get("com.example.Widgets");
         assertThat(clazz).isNotNull();
@@ -69,7 +69,7 @@ class SourceWalkerTest {
             }
             """);
 
-        var index = SourceWalker.walk(List.of(root));
+        var index = new SourceWalker().walk(List.of(root));
 
         assertThat(index.classes().get("com.example.Documented").javadoc()).isEqualTo("Class doc.");
         assertThat(index.fields().get(new SourceWalker.FieldKey("com.example.Documented", "COL")).javadoc())
@@ -92,7 +92,7 @@ class SourceWalkerTest {
             }
             """);
 
-        var index = SourceWalker.walk(List.of(root));
+        var index = new SourceWalker().walk(List.of(root));
 
         var filterKey = new SourceWalker.MethodKey("com.example.Overloaded", "filter", 1);
         assertThat(index.methods()).doesNotContainKey(filterKey);
@@ -120,7 +120,7 @@ class SourceWalkerTest {
             }
             """);
 
-        var index = SourceWalker.walk(List.of(root));
+        var index = new SourceWalker().walk(List.of(root));
 
         assertThat(index.fields()).containsKey(new SourceWalker.FieldKey("com.example.Scopes", "FIELD"));
         assertThat(index.fields()).doesNotContainKey(new SourceWalker.FieldKey("com.example.Scopes", "param"));
@@ -141,7 +141,7 @@ class SourceWalkerTest {
             }
             """);
 
-        var index = SourceWalker.walk(List.of(root));
+        var index = new SourceWalker().walk(List.of(root));
 
         assertThat(index.classes()).containsKey("com.example.Good");
         assertThat(index.methods())
@@ -150,13 +150,15 @@ class SourceWalkerTest {
 
     @Test
     void emptyRootsYieldEmptyIndex(@TempDir Path empty) {
-        assertThat(SourceWalker.walk(List.of()).isEmpty()).isTrue();
-        assertThat(SourceWalker.walk(List.of(empty)).isEmpty()).isTrue();
+        assertThat(new SourceWalker().walk(List.of()).isEmpty()).isTrue();
+        assertThat(new SourceWalker().walk(List.of(empty)).isEmpty()).isTrue();
     }
 
     @Test
     void reparsesAfterContentChange(@TempDir Path root) throws IOException {
-        SourceWalker.clearCache();
+        // One walker across both walks so the per-file mtime cache is exercised:
+        // the second walk must re-parse because the file's modification time moved.
+        var walker = new SourceWalker();
         Path file = write(root, "com/example/Mutable.java", """
             package com.example;
             public class Mutable {
@@ -164,7 +166,7 @@ class SourceWalkerTest {
             }
             """);
 
-        var first = SourceWalker.walk(List.of(root));
+        var first = walker.walk(List.of(root));
         assertThat(first.methods())
             .containsKey(new SourceWalker.MethodKey("com.example.Mutable", "before", 0));
 
@@ -178,11 +180,45 @@ class SourceWalkerTest {
         Files.setLastModifiedTime(file, java.nio.file.attribute.FileTime.fromMillis(
             Files.getLastModifiedTime(file).toMillis() + 5000));
 
-        var second = SourceWalker.walk(List.of(root));
+        var second = walker.walk(List.of(root));
         assertThat(second.methods())
             .containsKey(new SourceWalker.MethodKey("com.example.Mutable", "after", 0));
         assertThat(second.methods())
             .doesNotContainKey(new SourceWalker.MethodKey("com.example.Mutable", "before", 0));
+    }
+
+    @Test
+    void instancesDoNotShareCache(@TempDir Path root) throws IOException {
+        // R352: the cache is per-instance, not process-wide static. A stale entry
+        // from one walker must never leak into another. Walker A warms its cache,
+        // the file content changes while keeping the same mtime, then a fresh
+        // walker B parses the file anew and sees the new content, proving B does
+        // not read A's cache (a static cache keyed by path+mtime would wrongly
+        // serve A's stale entry here).
+        Path file = write(root, "com/example/Isolated.java", """
+            package com.example;
+            public class Isolated {
+                public Object alpha() { return null; }
+            }
+            """);
+        long mtime = Files.getLastModifiedTime(file).toMillis();
+
+        var a = new SourceWalker().walk(List.of(root));
+        assertThat(a.methods())
+            .containsKey(new SourceWalker.MethodKey("com.example.Isolated", "alpha", 0));
+
+        Files.writeString(file, """
+            package com.example;
+            public class Isolated {
+                public Object beta() { return null; }
+            }
+            """);
+        Files.setLastModifiedTime(file, java.nio.file.attribute.FileTime.fromMillis(mtime));
+
+        var b = new SourceWalker().walk(List.of(root));
+        assertThat(b.methods())
+            .as("a fresh walker must parse the file itself, not read another instance's cache")
+            .containsKey(new SourceWalker.MethodKey("com.example.Isolated", "beta", 0));
     }
 
     private static Path write(Path root, String relative, String content) throws IOException {

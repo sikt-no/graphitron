@@ -51,7 +51,7 @@ class TableCompletionsTest {
 
         var locOpt = VOCAB.locateAt(directive, cursor, bytes);
         var items = locOpt
-            .map(loc -> TableCompletions.generate(VOCAB, data, no.sikt.graphitron.lsp.completions.CompletionContext.from(loc, bytes)))
+            .map(loc -> TableCompletions.generate(VOCAB, data, no.sikt.graphitron.rewrite.catalog.SourceWalker.Index.EMPTY, no.sikt.graphitron.lsp.completions.CompletionContext.from(loc, bytes)))
             .orElseGet(List::of);
 
         assertThat(items).hasSize(2);
@@ -90,7 +90,7 @@ class TableCompletionsTest {
 
         var locOpt = VOCAB.locateAt(directive, cursor, bytes);
         var items = locOpt
-            .map(loc -> TableCompletions.generate(VOCAB, data, no.sikt.graphitron.lsp.completions.CompletionContext.from(loc, bytes)))
+            .map(loc -> TableCompletions.generate(VOCAB, data, no.sikt.graphitron.rewrite.catalog.SourceWalker.Index.EMPTY, no.sikt.graphitron.lsp.completions.CompletionContext.from(loc, bytes)))
             .orElseGet(List::of);
 
         assertThat(items).extracting(i -> i.getLabel()).containsExactlyInAnyOrder("FILM", "ACTOR");
@@ -116,7 +116,7 @@ class TableCompletionsTest {
         var data = new CompletionData(List.of(table("FILM", "")), List.of(), List.of());
         var locOpt = VOCAB.locateAt(directive, cursor, bytes);
         var items = locOpt
-            .map(loc -> TableCompletions.generate(VOCAB, data, no.sikt.graphitron.lsp.completions.CompletionContext.from(loc, bytes)))
+            .map(loc -> TableCompletions.generate(VOCAB, data, no.sikt.graphitron.rewrite.catalog.SourceWalker.Index.EMPTY, no.sikt.graphitron.lsp.completions.CompletionContext.from(loc, bytes)))
             .orElseGet(List::of);
 
         assertThat(items).isEmpty();

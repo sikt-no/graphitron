@@ -38,18 +38,24 @@ parity fix and a dangling architecture item.
    service half uses. The jOOQ goto-definition position now rides the `.java` source
    cadence, exactly mirroring R349, and the file-head (`0:0`) synthesis is retired (a known
    table whose source is not on a walked root lands on `SourceAbsent`, a clean non-jump).
-   `CatalogBuilder` stops synthesising jOOQ positions; it still lifts Javadoc into the
-   build-cadence `description` slots, as it does for the service half.
 
-## Deferred (was R352 parts 2-3), not blocking jump-to-definition
+3. **Hover / `description` onto the source cadence (was R352 part 2).** `CatalogBuilder` no
+   longer walks sources at all; the catalog's `description` carries only the build-derivable
+   fallback (the jOOQ table's SQL comment; empty for columns and services). A `Descriptions`
+   helper overlays the source-derived Javadoc from the LSP-owned index at request time, and
+   `Hovers` plus the `FieldCompletions` / `TableCompletions` detail read through it. Hover and
+   goto-definition now consult the one index, so they cannot show two snapshots of the same
+   declaration mid-edit.
 
-These do not change whether you can jump; they only remove transient hover-vs-goto skew
-during a live edit, and the description-cadence change ripples into the completion path
-(jOOQ column comments are not recoverable at runtime, so moving `description` onto the
-source index means threading the index through `FieldCompletions` / `Hovers`). Left as
-follow-up:
+4. **Static `SourceWalker.CACHE` → an instance the LSP owns (was R352 part 3).** With the
+   build no longer walking, the LSP is the sole walker. The per-file cache moved from a
+   process-wide static onto a `SourceWalker` instance held by `Workspace`, alongside the
+   `volatile sourceIndex` it produces; `Workspace.refreshSourceIndex` is the one walk entry
+   point, called by the dev goal's source-root watcher. No static state couples the two
+   cadences or distinct workspaces.
 
-- Hover / `description` onto the source cadence so hover and goto-definition cannot read
-  two snapshots of the same `Decl` mid-edit.
-- Static `SourceWalker.CACHE` → an instance the LSP owns. Only lands cleanly once the above
-  removes the last build-cadence walk from `CatalogBuilder`, leaving the LSP the sole walker.
+End-to-end coverage walks real `.java` sources through the real `Workspace` /
+`SourceWalker` / `Hovers` / `Definitions` (`SourceCadenceHoverAndDefinitionTest`), asserting
+hover and goto move together across a source edit with no catalog rebuild; the build-boundary
+decoupling is pinned in `CatalogBuilderSourceTest` (the build does not lift source Javadoc),
+and the per-instance cache in `SourceWalkerTest`.

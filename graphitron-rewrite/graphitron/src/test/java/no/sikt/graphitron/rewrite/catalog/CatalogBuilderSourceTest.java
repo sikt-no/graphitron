@@ -18,24 +18,24 @@ import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Pipeline coverage for the {@link CatalogBuilder} ↔ {@link SourceWalker}
- * join. Both halves now lift only Javadoc into {@code description} on the build
- * cadence (jOOQ columns / tables, service references / methods); source
- * positions moved out of {@link CompletionData} onto the LSP-owned source index
- * resolved at request time (R349 for the service half, R352 for the jOOQ half).
- * The catalog carries the generated table {@code classFqn} the LSP joins on, so
- * this tier asserts the description lift plus the FQN, and the position join is
- * covered at the LSP tier in {@code DefinitionsTest}.
+ * Pipeline coverage that pins the R352 decoupling at the build boundary:
+ * {@link CatalogBuilder} no longer walks {@code .java} sources at all. It
+ * carries the generated table / {@code Keys} class FQNs (the join keys the LSP
+ * uses) and only the build-derivable {@code description} (the jOOQ table's SQL
+ * comment; empty for columns and services). The source-derived Javadoc and
+ * positions are surfaced at the LSP tier from the source index on the
+ * {@code .java} cadence; that end-to-end behaviour is covered in
+ * {@code SourceCadenceHoverAndDefinitionTest} (LSP module) and the
+ * {@code DefinitionsTest} arms. These tests deliberately place real, documented
+ * sources on the build and assert the build does <em>not</em> lift them, so a
+ * regression that re-introduces a build-cadence walk fails here.
  */
 @PipelineTier
 class CatalogBuilderSourceTest {
 
-    // ---- jOOQ half: column Javadoc + table classFqn from a synthetic source root ----
-
     @Test
-    void columnJavadocLiftedAndTableClassFqnCarriedFromSourceRoot(@TempDir Path srcRoot) throws IOException {
-        // A stand-in for the generated jOOQ table source whose FQN matches the
-        // real compiled Film class the fixture catalog resolves.
+    void tableCarriesGeneratedClassFqnAndBuildDoesNotLiftColumnJavadoc(@TempDir Path srcRoot) throws IOException {
+        // A documented stand-in for the generated jOOQ table source, on the build.
         writeJava(srcRoot, "no/sikt/graphitron/rewrite/test/jooq/tables/Film.java", """
             package no.sikt.graphitron.rewrite.test.jooq.tables;
             public class Film {
@@ -54,27 +54,14 @@ class CatalogBuilderSourceTest {
         assertThat(film.classFqn()).endsWith(".tables.Film");
         var filmId = film.columns().stream()
             .filter(c -> c.name().equals("FILM_ID")).findFirst().orElseThrow();
-        // Javadoc still lifts on the build cadence; the position is LSP-tier.
-        assertThat(filmId.description()).isEqualTo("The film identifier column.");
-    }
-
-    @Test
-    void columnHasNoSourceJavadocWhenNoSourceRoots() {
-        var data = CatalogBuilder.build(
-            new JooqCatalog(DEFAULT_JOOQ_PACKAGE),
-            TestSchemaHelper.buildBundle("type Query { x: Int }").assembled(),
-            no.sikt.graphitron.common.configuration.TestConfiguration.testContext());
-
-        var filmId = data.getTable("film").orElseThrow().columns().stream()
-            .filter(c -> c.name().equals("FILM_ID")).findFirst().orElseThrow();
-        // No walk: no source-derived Javadoc to lift.
+        // Decoupling: even with the documented source on the build, the build does
+        // not lift its Javadoc. The column description is the build-derivable
+        // fallback (empty); the Javadoc surfaces at the LSP tier from the index.
         assertThat(filmId.description()).isEmpty();
     }
 
-    // ---- service half: external-reference + method Javadoc (positions are LSP-tier) ----
-
     @Test
-    void externalReferenceAndMethodGetJavadocFromSourceRoot(
+    void buildDoesNotLiftServiceOrMethodJavadocEvenWithSourceOnBuild(
         @TempDir Path srcRoot, @TempDir Path classesRoot
     ) throws IOException {
         Path source = writeJava(srcRoot, "com/example/PriceService.java", """
@@ -95,39 +82,13 @@ class CatalogBuilderSourceTest {
         var ref = data.externalReferences().stream()
             .filter(r -> r.className().equals("com.example.PriceService"))
             .findFirst().orElseThrow();
-        // Javadoc is lifted on the build cadence; positions live in the LSP
-        // source index, not on the catalog record.
-        assertThat(ref.description()).isEqualTo("Computes prices.");
-
+        // Bytecode-derived structure only: the scan finds the class and method
+        // (completion works), but their Javadoc is not lifted at build time. The
+        // LSP overlays it from the source index at request time.
+        assertThat(ref.description()).isEmpty();
         var method = ref.methods().stream()
             .filter(m -> m.name().equals("price")).findFirst().orElseThrow();
-        assertThat(method.description()).isEqualTo("Looks up a price.");
-    }
-
-    @Test
-    void externalReferenceHasNoSourceJavadocWhenNoSourceRoots(@TempDir Path classesRoot) throws IOException {
-        // Compile from a throwaway source dir but do NOT pass it as a source
-        // root: the bytecode scan still finds the class (completion works), but
-        // with no walk there is no source-derived Javadoc to lift.
-        Path srcRoot = Files.createTempDirectory("svc-src");
-        Path source = writeJava(srcRoot, "com/example/NoSourceService.java", """
-            package com.example;
-            /** Has Javadoc, but its source root is not walked. */
-            public class NoSourceService {
-                public Object run() { return null; }
-            }
-            """);
-        compile(source, classesRoot);
-
-        var data = CatalogBuilder.build(
-            new JooqCatalog(DEFAULT_JOOQ_PACKAGE),
-            TestSchemaHelper.buildBundle("type Query { x: Int }").assembled(),
-            contextWith(classesRoot, List.of(classesRoot), List.of()));
-
-        var ref = data.externalReferences().stream()
-            .filter(r -> r.className().equals("com.example.NoSourceService"))
-            .findFirst().orElseThrow();
-        assertThat(ref.description()).isEmpty();
+        assertThat(method.description()).isEmpty();
     }
 
     private static RewriteContext contextWith(

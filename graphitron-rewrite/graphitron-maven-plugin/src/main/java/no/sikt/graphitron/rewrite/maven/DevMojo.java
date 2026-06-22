@@ -2,7 +2,6 @@ package no.sikt.graphitron.rewrite.maven;
 
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
-import no.sikt.graphitron.rewrite.catalog.SourceWalker;
 import no.sikt.graphitron.lsp.parsing.LspVocabulary;
 import no.sikt.graphitron.lsp.state.Workspace;
 import no.sikt.graphitron.rewrite.GraphQLRewriteGenerator;
@@ -131,10 +130,11 @@ public class DevMojo extends AbstractRewriteMojo {
         Consumer<String> saveListener = buildSaveListener(
             initialCtx.schemaFileExtensions(), schemaDebounce, () -> regenerate(workspace));
         bindServer(workspace, saveListener);
-        // Seed the source-position index so goto-definition works before the
-        // first .java edit; the source watcher refreshes it on the source
-        // cadence thereafter. Path-only read on initialCtx (no loader).
-        workspace.setSourceIndex(SourceWalker.walk(initialCtx.compileSourceRoots()));
+        // Seed the source-position index so goto-definition / hover work before
+        // the first .java edit; the source watcher refreshes it on the source
+        // cadence thereafter. The walk (and its cache) is owned by the workspace.
+        // Path-only read on initialCtx (no loader).
+        workspace.refreshSourceIndex(initialCtx.compileSourceRoots());
         // Diagnostic so a "completion works but goto-definition returns nothing"
         // report can be traced to a module whose classes are scanned but whose
         // source root is not walked (R351): the two counts should track each other.
@@ -247,7 +247,7 @@ public class DevMojo extends AbstractRewriteMojo {
 
     private void refreshSourceIndex(RewriteContext ctx, Workspace workspace) {
         try {
-            workspace.setSourceIndex(SourceWalker.walk(ctx.compileSourceRoots()));
+            workspace.refreshSourceIndex(ctx.compileSourceRoots());
             getLog().info("graphitron:dev: source change detected; refreshed goto-definition positions");
         } catch (RuntimeException e) {
             getLog().warn("graphitron:dev: source-position refresh failed; keeping previous: "

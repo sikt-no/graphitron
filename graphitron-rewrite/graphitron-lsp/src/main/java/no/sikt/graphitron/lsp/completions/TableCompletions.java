@@ -1,6 +1,8 @@
 package no.sikt.graphitron.lsp.completions;
 
+import no.sikt.graphitron.lsp.Descriptions;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
+import no.sikt.graphitron.rewrite.catalog.SourceWalker;
 import no.sikt.graphitron.lsp.parsing.Behavior;
 import no.sikt.graphitron.lsp.parsing.LspVocabulary;
 import org.eclipse.lsp4j.CompletionItem;
@@ -28,6 +30,7 @@ public final class TableCompletions {
     public static List<CompletionItem> generate(
         LspVocabulary vocabulary,
         CompletionData data,
+        SourceWalker.Index sourceIndex,
         CompletionContext context
     ) {
         var behavior = vocabulary.behaviorAt(context.coordinate());
@@ -35,16 +38,19 @@ public final class TableCompletions {
             return List.of();
         }
         return data.tables().stream()
-            .map(t -> toCompletionItem(t, context))
+            .map(t -> toCompletionItem(t, context, sourceIndex))
             .toList();
     }
 
-    private static CompletionItem toCompletionItem(CompletionData.Table table, CompletionContext context) {
+    private static CompletionItem toCompletionItem(
+        CompletionData.Table table, CompletionContext context, SourceWalker.Index sourceIndex
+    ) {
         var item = new CompletionItem(table.name());
         item.setKind(CompletionItemKind.Class);
-        if (!table.description().isEmpty()) {
+        String description = Descriptions.ofTable(table, sourceIndex);
+        if (!description.isEmpty()) {
             item.setDocumentation(Either.forRight(
-                new MarkupContent(MarkupKind.PLAINTEXT, table.description())
+                new MarkupContent(MarkupKind.PLAINTEXT, description)
             ));
         }
         item.setTextEdit(Either.forLeft(new TextEdit(context.replaceRange(), table.name())));
