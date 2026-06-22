@@ -221,7 +221,18 @@ R281 corpus pins the dimensional verdict, not the emitted body:
 - One `ClassifiedCorpus` entry pinning the payload's classification (it no longer
   dangles) and the data field's `(source, operation, target)` verdict.
 - If a new leaf lands, a `@classified` coordinate on it so `VariantCoverageTest`
-  covers it.
+  covers it, plus its placement in `TypeFetcherGenerator`'s four-way dispatch
+  partition (which arm is the implementer's call) so
+  `GeneratorCoverageTest.everyGraphitronFieldLeafHasAKnownDispatchStatus` stays
+  exhaustive over the `GraphitronField` leaves.
+- Validator-tier coverage, in the per-shape `*ValidationTest` style, for each of
+  the three near-miss rejections the validator-mirror section adds: mismatched
+  producer, a `@field`-mapped child that is neither `@table`-backed nor a
+  resolvable accessor on the composite, and the re-leveled cardinality mismatch.
+  The `ClassifiedCorpus` pins positive classification only; build-time rejections
+  are asserted at the validator tier (as `ConstructorFieldValidationTest` does),
+  so the admitted shape and its near-misses are pinned together rather than the
+  rejections riding as unpinned prose.
 - One execution-tier round-trip in `GraphQLQueryTest` for the `List<composite>`
   projection and the error arm rendering `data: null`.
 - The sakila-example cross-module compile is the type-correctness backstop for
@@ -248,8 +259,8 @@ run against the test catalog. A natural analog: a payload bundling one
   reusing `Transport.WrapperArm`.
 - `GraphitronSchemaValidator`: restate the classify-time rejections that imply
   unimplemented generator arms.
-- Corpus and fixtures: the Sakila analog and the `ClassifiedCorpus` plus
-  execution entries above.
+- Corpus and fixtures: the Sakila analog and the `ClassifiedCorpus`, the
+  validator-tier rejection fixtures, plus the execution entries above.
 
 ## Open question to settle in implementation
 
