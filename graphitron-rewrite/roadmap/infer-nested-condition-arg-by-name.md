@@ -71,30 +71,38 @@ produces, so downstream emission (`ConditionResolver.rewrapForNested` →
 `CallSiteExtraction.NestedInputField`, and `ArgCallEmitter`'s segment walk) is byte-for-byte
 unchanged. The rule only fills in the path the author would otherwise have written.
 
-## Depth-1 is a boundary, not a cap awaiting a follow-up
+## Why depth 1, and why that is a boundary rather than a cap awaiting a follow-up
 
-The sealed `PathExpr.Step` is recursive, `ArgBindingMap.of` already resolves N-segment
-overrides, `searchSlotForMatchingPath` already recurses to arbitrary depth for the
-*suggestion*, and `ArgCallEmitter` already emits arbitrary-depth Map traversal with
-intermediate-list streaming. So depth-N inference would be nearly free mechanically, and a
-hard depth number invites the "why not depth 2" churn the R219 review (finding 2) already
-called a discontinuity. This item nonetheless scopes inference to **depth 1 by design**, and
-names depth-N as a deliberate non-goal rather than a deferred increment:
+Mechanically, depth-N inference would be nearly free: `PathExpr.Step` is recursive,
+`ArgBindingMap.of` already resolves N-segment overrides, `searchSlotForMatchingPath` already
+recurses to arbitrary depth for the *suggestion*, and `ArgCallEmitter` already emits
+arbitrary-depth Map traversal. So the answer to "why not depth 2" is not implementation cost.
+It is that depth-1 is the smallest scope that covers the real cases while keeping the
+inference's central question, "is this binding unambiguous?", trivial to answer:
 
-- Auto-binding silently rewrites the call the author wrote. A one-hop descent is exactly the
-  case where the parameter name unambiguously names a *direct* field of the slot, so the
-  binding stays legible at the call site. A multi-hop descent (`a.b.c.fraVerdi`) is where the
-  parameter name alone no longer tells a reader where the value comes from without walking
-  the type tree; that path should be **documented explicitly** via `argMapping`, which is
-  what `argMapping` (and R249's richer nested syntax) exist for.
-- Uniqueness, not depth, is the soundness boundary; the depth-1 scope is a *legibility*
-  choice layered on top. The Spec records this so the Spec → Ready reviewer reads depth-1 as
-  intentional, not arbitrary.
+- **Deeper descent drags in complex and recursive input types.** Past one hop the search has
+  to walk a tree that can be self-referential (`input Filter { and: [Filter], field: String }`),
+  so it needs cycle-guarding (the `visited` set `searchSlotForMatchingPath` already carries),
+  and "is there exactly one field named `p` of type `T`?" becomes *path-dependent*: the same
+  leaf can be reachable by several routes, and uniqueness now means uniqueness across a graph,
+  not a list. That is exactly the kind of judgement that is hard for both the tool and a
+  human reviewer to trust when the result is an auto-bound, silently-rewritten call. At depth
+  1 the question collapses to "is there one direct field of the slot named `p` with type `T`?"
+  No recursion, no cycle guard, no multi-path uniqueness.
+- **Depth 1 covers the overwhelming majority of real cases.** The motivating shape, a
+  condition parameter pulling a direct field out of its filter input (`SokVerdiRange.fraVerdi`),
+  is a one-hop descent. Any fixed depth is somewhat arbitrary, but 1 is the smallest that
+  covers the common case, so it is the right place to stop until a concrete deeper case
+  actually appears.
+- **Supporting: legibility.** A one-hop descent is also where the parameter name still
+  plainly names its source field at the call site; a multi-hop path is where the name alone
+  no longer tells a reader where the value came from.
 
-Considered and not taken: a uniqueness-bounded full-depth rule that reuses
-`searchSlotForMatchingPath`'s recursion (drop the depth bound, add the leaf-name predicate).
-It is a strictly localized change if a reviewer prefers it; the reason to hold the line at
-depth 1 is the legibility argument above, not implementation cost.
+Depth ≥ 2 is therefore handled by **explicit `argMapping`** (and R249's richer nested syntax)
+*by design*, not by a future inference increment: making the descent explicit is the feature,
+because that is where the schema should document the path. The bound is a single guard in the
+search, so if a real deep-nesting case ever justifies revisiting, lifting it is localized;
+but the default answer for depth ≥ 2 is and remains explicit `argMapping`.
 
 ## Name and type must both match (the removed-rejection obligation)
 
