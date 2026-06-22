@@ -38,7 +38,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R115` | Enumerate the capabilities graphitron delivers | Spec |  | [plan](capability-catalog.md) |
 | `R109` | How-to recipe and Sakila fixture for grouped collections via Field<Result<R>> @externalField + multiset | Spec |  | [plan](list-valued-external-field-multiset.md) |
 | `R212` | IntelliJ plugin wrapping graphitron:dev LSP | Spec | 2026-05-21 | [plan](intellij-lsp-plugin.md) |
-| `R341` | MCP server skeleton: Streamable HTTP in graphitron:dev with a static about-prompt | Spec | 2026-06-19 | [plan](mcp-server-skeleton.md) |
+| `R341` | MCP server skeleton: Streamable HTTP in graphitron:dev with a static about-prompt | Spec | 2026-06-22 <sub>created 2026-06-19</sub> | [plan](mcp-server-skeleton.md) |
 | `R269` | Null-guard split-query key extraction for nullable to-one records | Spec | 2026-06-02 <sub>created 2026-06-01</sub> | [plan](nullable-to-one-record-into-npe.md) |
 | `R112` | Operation-driven test corpus, capability catalog, and runtime trace <sub>blocked by: [capability-catalog](capability-catalog.md)</sub> | Spec |  | [plan](operation-driven-test-corpus.md) |
 
