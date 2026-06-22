@@ -492,24 +492,24 @@ public class GraphitronSchemaBuilder {
     }
 
     /**
-     * R317 slice 3b — registers the {@link GraphitronType.JooqTableRecordType} verdict for a
-     * producer-backed single-record carrier at the producing edge (the field returning it), replacing
-     * the deleted post-type-pass {@code TypeBuilder.promoteSingleRecordPayloads} SDL scan. {@code name}
-     * is the field's unwrapped return-type name; the verdict fires only when
-     * {@link TypeBuilder#carrierTableBinding} resolves a producer-bound table (a DML {@code RETURNING}
-     * or {@code @service} method returns it), which is registry-free, so registering it at whichever
-     * edge first returns the carrier is order-independent. The {@code contains} guard keeps it
-     * idempotent: the carrier's own later visit, and any sibling field returning the same carrier, see
-     * the verdict already present. A directiveless object that no producer returns gets {@code null}
-     * here and stays a nesting / orphan target, decided at its embedding edge ({@link #registerNestingTypesIn}).
+     * R317 slice 3b — registers the {@link GraphitronType.ResultType} verdict for a producer-backed
+     * carrier at the producing edge (the field returning it), replacing the deleted post-type-pass
+     * {@code TypeBuilder.promoteSingleRecordPayloads} SDL scan. {@code name} is the field's unwrapped
+     * return-type name; the verdict fires only when {@link TypeBuilder#carrierVerdict} resolves a
+     * producer-backed carrier (a DML {@code RETURNING} / single-level {@code @service} {@code @table}
+     * carrier → {@link GraphitronType.JooqTableRecordType}, or — R329 — a two-level {@code @service}
+     * record-composite carrier → a class-backed {@link GraphitronType.ResultType}), which is
+     * registry-free, so registering it at whichever edge first returns the carrier is
+     * order-independent. The {@code contains} guard keeps it idempotent: the carrier's own later visit,
+     * and any sibling field returning the same carrier, see the verdict already present. A
+     * directiveless object that no producer returns gets {@code null} here and stays a nesting /
+     * orphan target, decided at its embedding edge ({@link #registerNestingTypesIn}).
      */
     private static void registerProducerBackedCarrier(BuildContext ctx, TypeBuilder typeBuilder, String name) {
         if (ctx.typeRegistry.contains(name)) return;
-        var carrierTable = typeBuilder.carrierTableBinding(name);
-        if (carrierTable == null) return;
-        var objType = ctx.schema.getObjectType(name);
-        ctx.typeRegistry.register(name, new GraphitronType.JooqTableRecordType(
-            name, BuildContext.locationOf(objType), null, carrierTable));
+        var verdict = typeBuilder.carrierVerdict(name);
+        if (verdict == null) return;
+        ctx.typeRegistry.register(name, verdict);
     }
 
     /**

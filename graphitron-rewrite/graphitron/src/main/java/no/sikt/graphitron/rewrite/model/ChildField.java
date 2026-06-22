@@ -21,6 +21,7 @@ public sealed interface ChildField extends OutputField
             ChildField.NestingField,
             ChildField.ServiceRecordField,
             ChildField.RecordField,
+            ChildField.RecordCompositeField,
             ChildField.ComputedField, ChildField.PropertyField,
             ChildField.SingleRecordIdField,
             ChildField.SingleRecordIdFieldFromReturning,
@@ -80,6 +81,7 @@ public sealed interface ChildField extends OutputField
             case RecordLookupTableField ignored -> SourceShape.Record;
             case RecordTableMethodField ignored -> SourceShape.Record;
             case RecordField ignored -> SourceShape.Record;
+            case RecordCompositeField ignored -> SourceShape.Record;
             case PropertyField ignored -> SourceShape.Record;
             case SingleRecordIdField ignored -> SourceShape.Record;
             case SingleRecordIdFieldFromReturning ignored -> SourceShape.Record;
@@ -115,6 +117,9 @@ public sealed interface ChildField extends OutputField
             case ServiceRecordField f -> OutputField.serviceCall(f.method());
             // Record / passthrough scalar reads.
             case RecordField ignored -> OutputField.bareFetch();
+            // R329 — the @service record-composite carrier's data field: a bare source-passthrough
+            // projection of the producer's in-memory composite record(s), no filter surface.
+            case RecordCompositeField ignored -> OutputField.bareFetch();
             case PropertyField ignored -> OutputField.bareFetch();
             case ComputedField ignored -> OutputField.bareFetch();
             // Structural nesting (asserted, not derived from an absent join-path).
@@ -149,6 +154,10 @@ public sealed interface ChildField extends OutputField
             // Java-side shapes: listOrSingle (never Connection, mapping stays flat Record / Field).
             case ServiceRecordField f -> OutputField.listOrSingle(f.returnType().wrapper(), new TargetShape.Record());
             case RecordField f -> OutputField.listOrSingle(f.returnType().wrapper(), new TargetShape.Field());
+            // R329 — the composite carrier's data field projects the producer's record composite(s):
+            // a Record-shaped, list-or-single target (the element is a record-backed result type,
+            // not a scalar Field and not a @table), distinguishing this leaf from RecordField.
+            case RecordCompositeField f -> OutputField.listOrSingle(f.returnType().wrapper(), new TargetShape.Record());
             case PropertyField ignored -> OutputField.single(new TargetShape.Field());
             // @externalField inlines a jOOQ Field<X> into the parent SELECT; the shape stays Column.
             case ComputedField f -> OutputField.listOrSingle(f.returnType().wrapper(), new TargetShape.Column());
@@ -887,6 +896,59 @@ public sealed interface ChildField extends OutputField
     ) implements ChildField {
         @Override public DomainReturnType domainReturnType() {
             return new DomainReturnType.Plain(OBJECT_CLASS);
+        }
+    }
+
+    /**
+     * R329 — the single data field on an {@code @service} record-composite carrier payload. The
+     * {@code @service} method returns a consumer-authored composite (a POJO bundling several jOOQ
+     * records, e.g. one {@code FilmRecord} plus a {@code List<ActorRecord>}) as
+     * {@code List<Composite>} (list arrival) or one {@code Composite} (single arrival), optionally
+     * wrapped in the typed {@code Outcome} when the payload carries an errors field. This data field
+     * is a <em>source passthrough projection</em>: its fetcher reads the producer's in-memory
+     * record(s) straight off {@code env.getSource()} (narrowing {@code Outcome.Success.value()} under
+     * {@link SourceKey.Reader.SourceEnvelope#OUTCOME_SUCCESS}) and returns them verbatim, with no
+     * DataLoader, no re-fetch, and no SQL. graphql-java then maps each composite element onto the
+     * data field's element SDL type ({@code returnType}), whose {@code @field}-mapped {@code @table}
+     * children resolve through the record-backed accessor path off the composite.
+     *
+     * <p>Sibling of {@link RecordTableField} (the {@code @table}-element carrier data field, a
+     * PK-keyed re-fetch) and {@link RecordField} (a scalar / accessor read). It differs on the axes
+     * the model already separates: its {@link #target()} is {@code listOrSingle(Record)} (the element
+     * is a record-backed result type, not a {@code @table} {@code wrap(Table)} and not a scalar
+     * {@code Field}), and its {@link #domainReturnType()} is {@code Plain(compositeClass)} (the
+     * per-element composite class, there being no single table to name). Carries no
+     * {@code SourceKey} / {@code LoaderRegistration} (a passthrough, not a batched load) and no
+     * {@code MethodRef} (the producing {@code @service} call is on the parent mutation field, not on
+     * this data field, distinguishing it from {@link ServiceRecordField}).
+     *
+     * <p>{@code returnType} is the data field's element result type ({@link ReturnTypeRef.ResultReturnType}),
+     * carrying the arrival cardinality on its {@code wrapper()} and the composite's binary class name
+     * on its {@code fqClassName()}. {@code envelope} is the source-envelope fork ({@code DIRECT} for a
+     * bare producer return, {@code OUTCOME_SUCCESS} for an errors-bearing carrier whose producer flips
+     * to the typed {@code Outcome} wrapper) — carried on the leaf rather than recomputed at emit
+     * because the passthrough fetcher and the {@code OutcomeChildArmSwitch} validator both read it. The
+     * sibling errors field rides {@link Transport.WrapperArm}, unchanged.
+     */
+    record RecordCompositeField(
+        String parentTypeName,
+        String name,
+        SourceLocation location,
+        ReturnTypeRef.ResultReturnType returnType,
+        SourceKey.Reader.SourceEnvelope envelope
+    ) implements ChildField {
+        public RecordCompositeField {
+            java.util.Objects.requireNonNull(returnType, "returnType");
+            java.util.Objects.requireNonNull(envelope, "envelope");
+            if (returnType.fqClassName() == null) {
+                throw new IllegalArgumentException(
+                    "RecordCompositeField requires a non-null returnType.fqClassName() (the composite "
+                    + "class the producer returns); the element result type must have bound on the "
+                    + "result axis before this leaf is built");
+            }
+        }
+        @Override public DomainReturnType domainReturnType() {
+            return new DomainReturnType.Plain(ClassName.bestGuess(returnType.fqClassName()));
         }
     }
 

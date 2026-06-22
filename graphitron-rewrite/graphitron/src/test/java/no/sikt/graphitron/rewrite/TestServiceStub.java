@@ -751,4 +751,36 @@ class TestServiceStub {
             no.sikt.graphitron.rewrite.test.jooq.tables.records.EmailRecord in) {
         throw new UnsupportedOperationException();
     }
+
+    // ===== R329 @service record-composite payload carrier fixtures =====
+
+    /**
+     * R329 list arm: returns {@code List<}{@link TestFilmWithActorsDto}{@code >} — the consumer's
+     * record-composite (one {@code FilmRecord} + a {@code List<ActorRecord>}) bundled per element.
+     * Drives the two-level {@code @service} carrier whose payload data field is a list of an
+     * intermediate result type bound to {@link TestFilmWithActorsDto}; the data field projects the
+     * producer's list verbatim (no re-fetch), the result type's {@code @field}-mapped {@code @table}
+     * children resolve through the record-backed accessor path off the composite.
+     */
+    public static java.util.List<TestFilmWithActorsDto> createFilmsWithActors() {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
+     * R329 single arm: returns one {@link TestFilmWithActorsDto} — the single-cardinality sibling of
+     * {@link #createFilmsWithActors}. The payload's data field is a single intermediate result type
+     * bound to {@link TestFilmWithActorsDto}.
+     */
+    public static TestFilmWithActorsDto createFilmWithActors() {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
+     * R329 near-miss: returns {@code List<FilmRecord>} (a jOOQ {@code TableRecord}, not a
+     * record-composite). Pointed at a composite-carrier payload whose data field's element binds to
+     * {@link TestFilmWithActorsDto}, the producer-return-element mismatch must reject loudly.
+     */
+    public static java.util.List<no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord> createFilmsWrongComposite() {
+        throw new UnsupportedOperationException();
+    }
 }

@@ -312,6 +312,12 @@ public final class CatalogBuilder {
                 new FieldClassification.RecordOrProperty(
                     f.column() != null ? f.column().sqlName() : f.columnName(),
                     accessorName(f.accessor()));
+            // R329 — the @service record-composite carrier's data field is a record-backed
+            // source passthrough (no column, no accessor): project it onto the record-backed
+            // RecordOrProperty label (FallThrough LSP arm, no column resolution). A dedicated
+            // LSP label/hover variant is a follow-up; the projection is not user-facing-incorrect.
+            case ChildField.RecordCompositeField f ->
+                new FieldClassification.RecordOrProperty(f.name(), null);
             case ChildField.PropertyField f ->
                 new FieldClassification.RecordOrProperty(
                     f.column() != null ? f.column().sqlName() : f.columnName(),

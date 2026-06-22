@@ -381,6 +381,16 @@ public final class FetcherEmitter {
             return envDependent(field.name(), fetchersClass,
                 buildSingleRecordIdFetcherValue(serviceIdCarrier, outputPackage));
         }
+        if (field instanceof ChildField.RecordCompositeField composite) {
+            // R329: the @service record-composite carrier's data field. The producer returned the
+            // consumer composite(s) (one Composite for single arrival, List<Composite> for list
+            // arrival) verbatim, optionally wrapped in Outcome (errors-bearing payload); this fetcher
+            // narrows Outcome.Success then returns the composite(s) straight off env.getSource() — no
+            // re-fetch, no DataLoader. graphql-java maps each composite onto the element result type,
+            // whose @field-mapped @table children resolve through their own record-backed fetchers.
+            return envDependent(field.name(), fetchersClass,
+                buildRecordCompositeFetcherValue(composite, outputPackage));
+        }
         if (field instanceof ChildField.ErrorsField ef) {
             // Switch on the field's resolved Transport: PayloadAccessor reads the errors list
             // off the parent payload via graphql-java's PropertyDataFetcher (record accessor /
@@ -573,6 +583,33 @@ public final class FetcherEmitter {
             }
             body.add(");\n");
         }
+        return body.build();
+    }
+
+    /**
+     * R329 — data-fetcher value for a {@link ChildField.RecordCompositeField}: the source-passthrough
+     * projection of an {@code @service} carrier's composite record(s). Mirrors
+     * {@link #emitRecordSourceLocal}'s envelope fork (narrow {@code Outcome.Success} under
+     * {@code OUTCOME_SUCCESS}, read {@code env.getSource()} verbatim under {@code DIRECT}), binding the
+     * typed {@code source} local to {@code List<Composite>} (list arrival) or {@code Composite} (single
+     * arrival), then returns it unchanged. No database access and no DataLoader: the producer's
+     * composite record(s) are already in memory; graphql-java maps each element onto the data field's
+     * element result type, whose {@code @field}-mapped {@code @table} children resolve through their
+     * own record-backed fetchers. The {@code ErrorList} arm of {@link #emitRecordSourceLocal} falls
+     * through to {@code return null}, rendering {@code data: null} on the error arm.
+     */
+    private static CodeBlock buildRecordCompositeFetcherValue(
+            ChildField.RecordCompositeField field, String outputPackage) {
+        boolean isList = field.returnType().wrapper().isList();
+        boolean outcomeWrapped =
+            field.envelope() == SourceKey.Reader.SourceEnvelope.OUTCOME_SUCCESS;
+        ClassName compositeClass = ClassName.bestGuess(field.returnType().fqClassName());
+        TypeName sourceType = isList
+            ? ParameterizedTypeName.get(ClassName.get("java.util", "List"), compositeClass)
+            : compositeClass;
+        var body = CodeBlock.builder();
+        emitRecordSourceLocal(body, sourceType, outcomeWrapped, outputPackage);
+        body.add("    return source;\n");
         return body.build();
     }
 

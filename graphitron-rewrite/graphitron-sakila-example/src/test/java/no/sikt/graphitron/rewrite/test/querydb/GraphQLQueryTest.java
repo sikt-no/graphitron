@@ -4989,6 +4989,58 @@ class GraphQLQueryTest {
         payload.containsEntry("errors", null);
     }
 
+    // ===== R329: @service record-composite payload carrier =====
+    //
+    // createFilmsWithActors returns List<FilmWithActors> — a consumer composite bundling one FilmRecord
+    // plus a List<ActorRecord>. The payload's `results` data field is a source-passthrough projection of
+    // that list (RecordCompositeField — no re-fetch); the intermediate result type's @field-mapped
+    // @table children re-fetch Film / Actor through the record-backed accessor path off the composite's
+    // filmRecord() / actorRecords(). A filmId of -1 throws, exercising the Outcome error arm.
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void createFilmsWithActors_listCompositeProjection_roundTrips() {
+        // Happy path: the producer returns two composites; graphql-java maps each onto
+        // FilmWithActorsResult and re-fetches the film + its actors off the composite's records.
+        Map<String, Object> data = execute("""
+            mutation {
+                createFilmsWithActors(filmIds: [1, 2]) {
+                    results { film { title } actors { firstName } }
+                    errors { __typename }
+                }
+            }
+            """);
+        var payload = assertThat(data).extractingByKey("createFilmsWithActors", as(MAP));
+        payload.containsEntry("errors", null);
+        var results = payload.extractingByKey("results", as(list(Map.class))).hasSize(2);
+        var first = results.element(0, as(MAP));
+        first.extractingByKey("film", as(MAP)).extractingByKey("title").isNotNull();
+        first.extractingByKey("actors", as(LIST)).isNotEmpty();
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void createFilmsWithActors_errorArm_rendersResultsNull() {
+        // filmId -1 throws IllegalArgumentException; the MutationServiceRecordField try/catch ships
+        // Outcome.ErrorList. The `results` passthrough narrows Outcome.Success, sees the ErrorList arm,
+        // and returns null (data: null); the sibling errors field reads ErrorList.errors().
+        Map<String, Object> data = execute("""
+            mutation {
+                createFilmsWithActors(filmIds: [-1]) {
+                    results { film { title } }
+                    errors { __typename ... on FilmsWithActorsError { message } }
+                }
+            }
+            """);
+        var payload = assertThat(data).extractingByKey("createFilmsWithActors", as(MAP));
+        payload.containsEntry("results", null);
+        payload.extractingByKey("errors", as(list(Map.class)))
+            .hasSize(1)
+            .element(0, as(MAP))
+            .containsEntry("__typename", "FilmsWithActorsError")
+            .containsEntry("message", "invalid film id: -1");
+    }
+
     // ===== R268 arm-switch: @table DataLoader data field under a root @service Outcome payload =====
     //
     // submitFilmReviewWithFilm returns a FilmReviewWithFilmPayload whose `film` field is a

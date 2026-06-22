@@ -2526,6 +2526,39 @@ class GraphitronSchemaBuilderTest {
         assertThat(rl.hasLookupKey()).isTrue();
     }
 
+    @Test
+    @ProjectionFor(ChildField.RecordCompositeField.class)
+    void serviceRecordCompositeCarrierDataFieldProjectsAsRecordOrProperty() {
+        // R329 — the @service record-composite carrier's data field (a source-passthrough projection
+        // of the producer's in-memory composite list) classifies as RecordCompositeField; its LSP
+        // projection is the record-backed RecordOrProperty label (no column, no accessor — the field
+        // name stands in as the label).
+        var s = buildSnapshot("""
+            type Film @table(name: "film") { title: String }
+            type Actor @table(name: "actor") { firstName: String @field(name: "first_name") }
+            type DbErr @error(handlers: [{handler: DATABASE}]) { path: [String!]!  message: String! }
+            union CreateError = DbErr
+            type CreateFilmsResult {
+                film: Film! @field(name: "filmRecord")
+                actors: [Actor] @field(name: "actorRecords")
+            }
+            type CreateFilmsPayload {
+                results: [CreateFilmsResult]
+                errors: [CreateError]
+            }
+            type Query { x: String }
+            type Mutation {
+                createFilms: CreateFilmsPayload
+                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "createFilmsWithActors"})
+            }
+            """);
+        var rc = (FieldClassification.RecordOrProperty)
+            s.fieldClassificationsByCoord().get("CreateFilmsPayload.results");
+        assertThat(rc).isNotNull();
+        assertThat(rc.columnName()).isEqualTo("results");
+        assertThat(rc.accessorName()).isNull();
+    }
+
     // ===== @sourceRow classifier matrix (R110) =====
 
     /**

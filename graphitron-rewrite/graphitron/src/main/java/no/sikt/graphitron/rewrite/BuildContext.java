@@ -663,6 +663,33 @@ class BuildContext {
     }
 
     /**
+     * Whether {@code payloadTypeName} is the (unwrapped) return type of a root {@code @service} field
+     * on Query or Mutation. Read straight off the assembled schema, so it is independent of
+     * field-classification order. The single producer of this fact, shared by
+     * {@code FieldBuilder.isRootServiceProducedPayload} (which selects the payload-side errors
+     * {@code WrapperArm} transport) and {@code TypeBuilder.carrierBinding} (R329 — which gates the
+     * record-composite {@code ClassBacked} carrier recognition on the payload actually being
+     * {@code @service}-produced, so an orphan payload whose data-field element happens to bind via an
+     * unrelated producer is not mistaken for a carrier); the two cannot drift.
+     */
+    public boolean isServiceProducedPayload(String payloadTypeName) {
+        return hasServiceFieldReturning(schema.getQueryType(), payloadTypeName)
+            || hasServiceFieldReturning(schema.getMutationType(), payloadTypeName);
+    }
+
+    private static boolean hasServiceFieldReturning(GraphQLObjectType root, String payloadTypeName) {
+        if (root == null) return false;
+        for (var f : root.getFieldDefinitions()) {
+            if (f.hasAppliedDirective(DIR_SERVICE)
+                    && payloadTypeName.equals(
+                        ((GraphQLNamedType) GraphQLTypeUtil.unwrapAll(f.getType())).getName())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
      * R310 — the would-admit-but-for-the-directive probe. Answers exactly the question the
      * misdirected "use ID or a @table type" diagnostic fails to: would {@code payloadSdlName} classify
      * as a DML carrier were it not for a forbidden directive on its data field, and if so, which

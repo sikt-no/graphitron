@@ -1951,19 +1951,10 @@ class FieldBuilder {
      * field's {@link ErrorChannel.Mapped} channel agree because both derive from this same fact.
      */
     private boolean isRootServiceProducedPayload(String payloadTypeName) {
-        return hasServiceFieldReturning(ctx.schema.getQueryType(), payloadTypeName)
-            || hasServiceFieldReturning(ctx.schema.getMutationType(), payloadTypeName);
-    }
-
-    private static boolean hasServiceFieldReturning(GraphQLObjectType root, String payloadTypeName) {
-        if (root == null) return false;
-        for (var f : root.getFieldDefinitions()) {
-            if (f.hasAppliedDirective(DIR_SERVICE)
-                && payloadTypeName.equals(((GraphQLNamedType) GraphQLTypeUtil.unwrapAll(f.getType())).getName())) {
-                return true;
-            }
-        }
-        return false;
+        // R329 — delegate to the single producer of this fact on BuildContext, shared with
+        // TypeBuilder.carrierBinding's composite-carrier gate, so the payload-side WrapperArm
+        // transport and the carrier recognition cannot drift.
+        return ctx.isServiceProducedPayload(payloadTypeName);
     }
 
     private ChildField.Transport transportForParent(GraphQLFieldDefinition fieldDef,
@@ -2729,12 +2720,26 @@ class FieldBuilder {
      * arm is universal passthrough: the service method must return the SDL payload class
      * directly. This check makes the constraint explicit at classify time rather than at
      * runtime via a ClassCastException.
+     *
+     * <p>R329 — for a two-level record-composite carrier ({@link TypeBuilder.CarrierBinding.ClassBacked}),
+     * the payload's backing class names the per-element composite, and the method returns
+     * {@code List<composite>} (or {@code composite}) keyed on the carrier's <em>data field</em>
+     * cardinality, not the payload field's wrapper (which is always a single object). The expected
+     * cardinality is re-levelled to the data field, mirroring {@code RecordBindingResolver}'s
+     * {@code ProducerBindLevel.BindsDataFieldElement}; a single-data-field carrier whose producer
+     * returns a {@code List} (or vice versa) is the cardinality near-miss, named here.
      */
-    private static String checkServiceReturnMatchesPayload(
+    private String checkServiceReturnMatchesPayload(
             ReturnTypeRef returnType, no.sikt.graphitron.rewrite.model.MethodRef method) {
         if (!(returnType instanceof ReturnTypeRef.ResultReturnType result)) return null;
         if (result.fqClassName() == null) return null;
         boolean isList = returnType.wrapper().isList();
+        if (typeBuilder.carrierBinding(result.returnTypeName()) instanceof TypeBuilder.CarrierBinding.ClassBacked
+                && ctx.scanStructuralServiceCarrierPayload(result.returnTypeName())
+                    instanceof BuildContext.DmlPayloadScan.Admit admit
+                && admit.element() instanceof BuildContext.DmlElementKind.RecordElement) {
+            isList = GraphQLTypeUtil.unwrapNonNull(admit.dataField().getType()) instanceof GraphQLList;
+        }
         var payloadClassName = ClassName.bestGuess(result.fqClassName());
         no.sikt.graphitron.javapoet.TypeName sdlPayloadTypeName = isList
             ? no.sikt.graphitron.javapoet.ParameterizedTypeName.get(
@@ -3472,7 +3477,7 @@ class FieldBuilder {
                     // richer, shape-specific guidance.
                     String payloadName = s.returnType().returnTypeName();
                     if (ctx.schema.getType(payloadName) instanceof graphql.schema.GraphQLObjectType
-                            && typeBuilder.carrierTableBinding(payloadName) == null
+                            && typeBuilder.carrierBinding(payloadName) instanceof TypeBuilder.CarrierBinding.NotACarrier
                             && ctx.scanStructuralServiceCarrierPayload(payloadName)
                                 instanceof BuildContext.DmlPayloadScan.Admit admit) {
                         yield new UnclassifiedField(parentTypeName, name, location, fieldDef,
@@ -4329,6 +4334,36 @@ class FieldBuilder {
                 return new ChildField.SingleRecordIdField(parentTypeName, name, location,
                     scalarReturn, idSourceKey,
                     new no.sikt.graphitron.rewrite.model.CallSiteCompaction.NodeIdEncodeKeys(nodeType.encodeMethod()));
+            }
+        }
+
+        // R329: the @service record-composite carrier's data field — a source-passthrough projection
+        // of the producer's in-memory composite record(s) (single or list arrival). The parent payload
+        // classifies as a class-backed ResultType (the per-element composite class) via
+        // TypeBuilder.carrierBinding's ClassBacked arm; this field is the carrier's single non-@table
+        // object data field, recognized by the same scanStructuralServiceCarrierPayload RecordElement
+        // Admit the binding consumes (one recognizer, two consumers). Intercepted here, before the
+        // generic object arm below, so the passthrough does not fall through to recordFieldOrUnclassified
+        // — which would reject it for the absence of a same-named accessor on the composite. The
+        // element result type's @field-mapped @table children resolve through the standard
+        // record-backed path; only this data field is the new leaf.
+        if (typeBuilder.carrierBinding(parentTypeName) instanceof TypeBuilder.CarrierBinding.ClassBacked
+                && ctx.scanStructuralServiceCarrierPayload(parentTypeName)
+                    instanceof BuildContext.DmlPayloadScan.Admit compositeAdmit
+                && compositeAdmit.element() instanceof BuildContext.DmlElementKind.RecordElement
+                && compositeAdmit.dataField().getName().equals(name)) {
+            String rawCompositeType = baseTypeName(fieldDef);
+            String compositeElementType = ctx.isConnectionType(rawCompositeType)
+                ? ctx.connectionElementTypeName(rawCompositeType) : rawCompositeType;
+            var compositeReturn = ctx.resolveReturnType(compositeElementType, buildWrapper(fieldDef));
+            if (compositeReturn instanceof ReturnTypeRef.ResultReturnType rrt && rrt.fqClassName() != null) {
+                // The source envelope (DIRECT vs OUTCOME_SUCCESS) is carried on the leaf rather than
+                // recomputed at emit: an errors-bearing carrier routes the producer through the typed
+                // Outcome wrapper, so the passthrough narrows Outcome.Success before projecting.
+                var envelope = carrierPayloadHasErrorsField(parentTypeName)
+                    ? SourceKey.Reader.SourceEnvelope.OUTCOME_SUCCESS
+                    : SourceKey.Reader.SourceEnvelope.DIRECT;
+                return new ChildField.RecordCompositeField(parentTypeName, name, location, rrt, envelope);
             }
         }
 

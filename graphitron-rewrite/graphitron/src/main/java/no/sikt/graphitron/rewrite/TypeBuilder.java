@@ -278,23 +278,89 @@ class TypeBuilder {
      * own scan; DML carriers keep the strict forbidden-directive set, {@code @service} carriers tolerate
      * {@code @splitQuery} on the data field.
      *
-     * <p>Sole producer of the carrier-table fact, shared by
-     * {@link GraphitronSchemaBuilder#classifyFieldsOfObject} (slice 3b: registers the
-     * {@link GraphitronType.JooqTableRecordType} at the carrier's visit) and
+     * <p>Sole producer of the carrier fact, shared by
+     * {@link GraphitronSchemaBuilder#classifyFieldsOfObject} (slice 3b: registers the carrier's
+     * {@link ResultType} verdict at the carrier's visit via {@link #carrierVerdict}) and
      * {@link #isDirectivelessNestingTarget} (which excludes producer-backed carriers from the nesting
-     * verdict), so the two cannot drift. A carrier-shaped payload that no producer returns (orphan) has
-     * no table to bind to; it stays a {@link NestingType} and is rejected by the soundness pass.
+     * verdict), so the two cannot drift. A carrier-shaped payload that no producer returns (orphan) is
+     * {@link CarrierBinding.NotACarrier}; it stays a {@link NestingType} and is rejected by the
+     * soundness pass.
+     *
+     * <p>R329 — the recognizer is sealed over the two backing shapes a producer-backed carrier can
+     * have: a {@link CarrierBinding.TableBacked} table record (the DML {@code RETURNING} / single-level
+     * {@code @service} {@code @table}-data-field carrier, classified {@link GraphitronType.JooqTableRecordType})
+     * and a {@link CarrierBinding.ClassBacked} record-composite element class (the two-level
+     * {@code @service} carrier whose non-{@code @table} object data field's element bound to a consumer
+     * composite on the result axis, classified as the matching class-backed {@link ResultType}). One
+     * recognizer, two projections ({@link #carrierVerdict} builds the type; {@link #isDirectivelessNestingTarget}
+     * and the orphan-carrier guard read {@link CarrierBinding.NotACarrier}); the structural
+     * {@code RecordElement} {@code Admit} from {@link BuildContext#scanStructuralServiceCarrierPayload}
+     * is the single shape signal both this and the emit-side data-field interception consume.
      */
-    TableRef carrierTableBinding(String name) {
+    sealed interface CarrierBinding
+        permits CarrierBinding.TableBacked, CarrierBinding.ClassBacked, CarrierBinding.NotACarrier {
+        /** DML {@code RETURNING} / single-level {@code @service} carrier: backed by a jOOQ table record. */
+        record TableBacked(TableRef table) implements CarrierBinding {}
+        /** R329 two-level {@code @service} carrier: backed by the per-element composite class. */
+        record ClassBacked(Class<?> recordClass) implements CarrierBinding {}
+        /** Not a producer-backed carrier (orphan, or not carrier-shaped at all). */
+        record NotACarrier() implements CarrierBinding {}
+    }
+
+    CarrierBinding carrierBinding(String name) {
         if (ctx.scanStructuralDmlPayload(name) instanceof BuildContext.DmlPayloadScan.Admit) {
             var table = dmlEmittedBinding(name).map(b -> b.tableRef()).orElse(null);
-            if (table != null) return table;
+            if (table != null) return new CarrierBinding.TableBacked(table);
         }
-        if (ctx.scanStructuralServiceCarrierPayload(name) instanceof BuildContext.DmlPayloadScan.Admit) {
+        if (ctx.scanStructuralServiceCarrierPayload(name) instanceof BuildContext.DmlPayloadScan.Admit admit) {
             var table = serviceEmittedBinding(name).map(b -> b.tableRef()).orElse(null);
-            if (table != null) return table;
+            if (table != null) return new CarrierBinding.TableBacked(table);
+            // R329: the composite carrier — a RecordElement data field whose element type bound to a
+            // consumer composite on the result axis. The payload's backing is that element class
+            // (the element-naming convention: the per-element class, with the arrival cardinality on
+            // the data field), mirroring how a bulk @table carrier above names the element table.
+            // Two gates keep the scan's structural RecordElement Admit (which fires for any record-
+            // backed DTO with a single object field) from over-recognizing: the payload must NOT be a
+            // directly result-axis-bound result type (a plain @service-returned DTO whose object field
+            // is an accessor read — resolveResult(name) present), and it must be returned by an
+            // @service field (an orphan payload whose data-field element binds via an unrelated
+            // producer is not a carrier). Both are BindsDataFieldElement's preconditions, read off the
+            // binding fixed point + schema, not re-derived.
+            if (admit.element() instanceof BuildContext.DmlElementKind.RecordElement
+                    && bindings.resolveResult(name).isEmpty()
+                    && ctx.isServiceProducedPayload(name)) {
+                String elementSdl = ((GraphQLNamedType) GraphQLTypeUtil.unwrapAll(
+                    admit.dataField().getType())).getName();
+                Class<?> cls = bindings.resolveResult(elementSdl).orElse(null);
+                if (cls != null) return new CarrierBinding.ClassBacked(cls);
+            }
         }
-        return null;
+        return new CarrierBinding.NotACarrier();
+    }
+
+    /**
+     * R329 — the {@link GraphitronType} verdict a producer-backed carrier payload classifies as, or
+     * {@code null} when {@code name} is not such a carrier ({@link CarrierBinding.NotACarrier}). The
+     * single projection of {@link #carrierBinding} into a registered type, shared by
+     * {@link #lookAheadVerdict} (the registry-free look-ahead) and
+     * {@link GraphitronSchemaBuilder} (the producing-edge registration), so the carrier verdict cannot
+     * drift between the two. {@link CarrierBinding.TableBacked} → {@link GraphitronType.JooqTableRecordType};
+     * {@link CarrierBinding.ClassBacked} → the matching class-backed {@link ResultType}.
+     */
+    GraphitronType carrierVerdict(String name) {
+        var binding = carrierBinding(name);
+        if (binding instanceof CarrierBinding.NotACarrier) return null;
+        // A non-NotACarrier binding implies the structural scan admitted, which requires the type to
+        // be a GraphQLObjectType; getObjectType is safe here (it asserts object-ness, and a union /
+        // interface reached as a field return — e.g. an errors-shaped union — is NotACarrier above).
+        var objType = ctx.schema.getObjectType(name);
+        return switch (binding) {
+            case CarrierBinding.TableBacked tb ->
+                new GraphitronType.JooqTableRecordType(name, locationOf(objType), null, tb.table());
+            case CarrierBinding.ClassBacked cb ->
+                buildResultTypeFromClass(name, locationOf(objType), cb.recordClass());
+            case CarrierBinding.NotACarrier ignored -> null;
+        };
     }
 
     /**
@@ -316,7 +382,7 @@ class TypeBuilder {
         if (!(ctx.schema.getType(name) instanceof GraphQLObjectType obj)) return false;
         if (bindings.rejection(name).isPresent()) return false;
         if (classifyType(obj) != null) return false;
-        return carrierTableBinding(name) == null;
+        return carrierBinding(name) instanceof CarrierBinding.NotACarrier;
     }
 
     /**
@@ -359,10 +425,7 @@ class TypeBuilder {
         }
         var verdict = classifyType(named);
         if (verdict != null) return verdict;
-        var carrierTable = carrierTableBinding(typeName);
-        if (carrierTable == null) return null;
-        var objType = ctx.schema.getObjectType(typeName);
-        return new GraphitronType.JooqTableRecordType(typeName, locationOf(objType), null, carrierTable);
+        return carrierVerdict(typeName);
     }
 
     private void validateNodeTypeIdUniqueness() {
@@ -1239,6 +1302,16 @@ class TypeBuilder {
         Class<?> cls = bindings.resolveResult(name).orElseThrow(() -> new IllegalStateException(
             "buildResultType reached for '" + name + "' without a reflected producer binding; "
             + "classifyType must gate on bindings.resolveResult(name).isPresent()"));
+        return buildResultTypeFromClass(name, location, cls);
+    }
+
+    /**
+     * Constructs the {@link ResultType} sub-type for an SDL type backed by a known {@code Class}.
+     * Shared by {@link #buildResultType} (the result-axis binding) and {@link #carrierVerdict}'s
+     * R329 {@code ClassBacked} carrier arm, where the backing class is the carrier payload's
+     * per-element composite class rather than the payload's own (absent) result-axis binding.
+     */
+    private GraphitronType buildResultTypeFromClass(String name, SourceLocation location, Class<?> cls) {
         String className = cls.getName();
         if (cls.isRecord()) {
             return new GraphitronType.JavaRecordType(name, location, className);

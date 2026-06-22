@@ -297,12 +297,98 @@ final class RecordBindingResolver {
      */
     private void groundProducerResult(GraphQLFieldDefinition field, Class<?> reflectedElement,
             boolean reflectedIsMulti, java.util.function.Supplier<ProducerBinding> binding) {
-        String resultSdl = unwrappedTypeName(field.getType());
-        if (resultSdl == null || isTableBackedSdlType(resultSdl)) return;
-        boolean sdlIsList = GraphQLTypeUtil.unwrapNonNull(field.getType()) instanceof GraphQLList;
-        if (sdlIsList != reflectedIsMulti) return;
         if (reflectedElement == null || !shouldBind(reflectedElement)) return;
-        addResultObservation(resultSdl, binding.get());
+        switch (producerBindLevel(field, reflectedElement, reflectedIsMulti)) {
+            case ProducerBindLevel.BindsWrapper ignored ->
+                addResultObservation(unwrappedTypeName(field.getType()), binding.get());
+            case ProducerBindLevel.BindsDataFieldElement b -> {
+                String elementSdl = unwrappedTypeName(b.dataField().getType());
+                if (elementSdl != null) addResultObservation(elementSdl, binding.get());
+            }
+            case ProducerBindLevel.NoBind ignored -> { }
+        }
+    }
+
+    /**
+     * R329 — which SDL level a reflected producer return binds to, computed once and projected by
+     * the result-axis observation. The cardinality decision lives here as one verdict rather than as
+     * two complementary comparisons (the old {@code sdlIsList != reflectedIsMulti} reject and the
+     * carrier-recognition admit) that would desynchronise into a dangle or a double-bind.
+     *
+     * <ul>
+     *   <li>{@link BindsWrapper}: the producer's reflected return element backs the SDL return type
+     *       itself, when their cardinalities agree. The single-level case: a direct producer return
+     *       ({@code films: [Film]} ← {@code List<FilmRecord>}) or a {@code @table}-data-field carrier
+     *       payload ({@code FilmPayload} ← {@code FilmRecord}, where {@code film} keeps its
+     *       {@code @table} / {@code ServiceEmitted} grounding).</li>
+     *   <li>{@link BindsDataFieldElement}: the two-level record-composite carrier. The payload has a
+     *       single non-{@code @table} object data field whose element type the reflected return feeds,
+     *       and the reflected element is <em>not</em> a property of the wrapper's reflected class (no
+     *       accessor for the data field name). The element binds the data field's element SDL type
+     *       (the intermediate result type), not the wrapper. The binding is grounded regardless of
+     *       cardinality agreement; a single-vs-list mismatch between the data field and the producer
+     *       return is named precisely at the producing {@code @service} field (re-levelled
+     *       {@code checkServiceReturnMatchesPayload}), not silently dropped here.</li>
+     *   <li>{@link NoBind}: the SDL return is {@code @table}-bound (keeps its {@code RootTable}
+     *       grounding), or the wrapper cardinality does not match and the payload is not a
+     *       record-composite carrier.</li>
+     * </ul>
+     */
+    private sealed interface ProducerBindLevel
+        permits ProducerBindLevel.BindsWrapper, ProducerBindLevel.BindsDataFieldElement,
+                ProducerBindLevel.NoBind {
+        record BindsWrapper() implements ProducerBindLevel {}
+        record BindsDataFieldElement(GraphQLFieldDefinition dataField) implements ProducerBindLevel {}
+        record NoBind() implements ProducerBindLevel {}
+    }
+
+    private ProducerBindLevel producerBindLevel(GraphQLFieldDefinition field,
+            Class<?> reflectedElement, boolean reflectedIsMulti) {
+        String resultSdl = unwrappedTypeName(field.getType());
+        if (resultSdl == null || isTableBackedSdlType(resultSdl)) return new ProducerBindLevel.NoBind();
+        // R329 two-level carrier: a payload with a single non-@table object data field whose element
+        // the reflected return feeds. Distinguished from a plain result wrapper (whose data field IS
+        // a property of the reflected class) by the absence of an accessor for the data-field name on
+        // the reflected element; distinguished from the @table-data-field carrier by the data field
+        // being non-@table (the @table case is skipped in singleNonTableObjectDataField and keeps its
+        // BindsWrapper / ServiceEmitted grounding).
+        GraphQLFieldDefinition dataField = singleNonTableObjectDataField(resultSdl);
+        if (dataField != null && findAccessorReturnType(reflectedElement, dataField.getName()) == null) {
+            // The reflected element feeds the data field, not the wrapper. Bind the data field's
+            // element type regardless of cardinality agreement: the re-levelled cardinality check at
+            // the producing @service field ({@code FieldBuilder.checkServiceReturnMatchesPayload})
+            // names a single-vs-list near-miss with a precise message, rather than leaving the element
+            // unbound (a generic dangling-type-reference failure that hides the cardinality cause).
+            return new ProducerBindLevel.BindsDataFieldElement(dataField);
+        }
+        boolean sdlIsList = GraphQLTypeUtil.unwrapNonNull(field.getType()) instanceof GraphQLList;
+        return sdlIsList == reflectedIsMulti
+            ? new ProducerBindLevel.BindsWrapper()
+            : new ProducerBindLevel.NoBind();
+    }
+
+    /**
+     * R329 — the single data field of a candidate two-level carrier payload: a payload SDL field
+     * whose unwrapped type is a GraphQL Object that does not carry {@code @table}. Returns null when
+     * there is not exactly one such field. Errors-shaped fields (a union of / interface implemented by
+     * {@code @error} types) are naturally excluded by the {@link GraphQLObjectType} check, mirroring
+     * {@link #groundServicePayloadBinding}'s structural read; this runs during the binding phase,
+     * before the error index exists, so it reads {@code ctx.schema} directly. The {@code @table}-typed
+     * object data field (the single-level carrier) is skipped so that shape keeps its existing
+     * {@code BindsWrapper} + {@code ServiceEmitted} grounding.
+     */
+    private GraphQLFieldDefinition singleNonTableObjectDataField(String payloadSdl) {
+        if (!(ctx.schema.getType(payloadSdl) instanceof GraphQLObjectType payloadObj)) return null;
+        GraphQLFieldDefinition found = null;
+        for (var f : payloadObj.getFieldDefinitions()) {
+            String unwrapped = unwrappedTypeName(f.getType());
+            if (unwrapped == null) continue;
+            if (!(ctx.schema.getType(unwrapped) instanceof GraphQLObjectType fieldObj)) continue;
+            if (fieldObj.hasAppliedDirective(DIR_TABLE)) continue;
+            if (found != null) return null;
+            found = f;
+        }
+        return found;
     }
 
     /**

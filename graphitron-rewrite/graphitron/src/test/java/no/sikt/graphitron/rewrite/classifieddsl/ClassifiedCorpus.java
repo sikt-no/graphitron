@@ -604,6 +604,50 @@ public final class ClassifiedCorpus {
             """),
 
         /*
+         * R329 — the @service record-composite carrier: a mutation whose @service producer returns a
+         * list of a consumer-authored composite (one FilmRecord plus a List<ActorRecord>). The payload
+         * is a two-level carrier: a data field that is a list of an intermediate result type
+         * (CreateFilmsResult, reflection-bound to the composite class → JavaRecordType), whose
+         * @field-mapped @table children read off the composite through the record-backed accessor path
+         * (RecordTableField). The data field itself is a source-passthrough projection of the producer's
+         * in-memory composite list — no re-fetch, no DataLoader (RecordCompositeField, source Child(Record),
+         * operation Fetch, target List(Record)). The errors field rides the Outcome WrapperArm. The payload
+         * no longer dangles: it classifies as JavaRecordType naming the per-element composite class, with
+         * the arrival cardinality on the data field (the element-naming convention the bulk @table carrier
+         * also uses).
+         */
+        new Example("service-record-composite-carrier", """
+            type Film @table(name: "film") @classifiedType(as: TableType) {
+              title: String @classified(source: Child, operation: Fetch, target: Single, targetShape: Column)
+            }
+            type Actor @table(name: "actor") @classifiedType(as: TableType) {
+              firstName: String @field(name: "first_name") @classified(source: Child, operation: Fetch, target: Single, targetShape: Column)
+            }
+            type CreateFilmsError @error(handlers: [{handler: DATABASE}]) {
+              path: [String!]!
+              message: String!
+            }
+            union CreateFilmsErr = CreateFilmsError
+            type CreateFilmsResult @classifiedType(as: JavaRecordType) {
+              film: Film! @field(name: "filmRecord")
+                @classified(source: Child, operation: Fetch, target: Single, targetShape: Table, sourceShape: Record)
+              actors: [Actor] @field(name: "actorRecords")
+                @classified(source: Child, operation: Fetch, target: List, targetShape: Table, sourceShape: Record)
+            }
+            type CreateFilmsPayload @classifiedType(as: JavaRecordType) {
+              results: [CreateFilmsResult]
+                @classified(source: Child, operation: Fetch, target: List, targetShape: Record, sourceShape: Record)
+              errors: [CreateFilmsErr]
+            }
+            type Query { x: String }
+            type Mutation {
+              createFilms: CreateFilmsPayload
+                @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "createFilmsWithActors"})
+                @classified(source: Mutation, operation: ServiceCall, target: Single, targetShape: Record)
+            }
+            """),
+
+        /*
          * DML payload-carrier mutations (UPDATE and its bulk sibling, plus the bulk INSERT carrier).
          * Each returns a plain object wrapping one @table data field and exposes the affected rows as a
          * record, so the mutation field is source Mutation, target Record, with the write verb as the
