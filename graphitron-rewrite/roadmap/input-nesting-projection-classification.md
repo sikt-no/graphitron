@@ -5,29 +5,29 @@ status: Backlog
 bucket: architecture
 priority: 4
 theme: model-cleanup
-depends-on: []
+depends-on: [field-relative-input-classification]
 created: 2026-06-19
-last-updated: 2026-06-19
+last-updated: 2026-06-22
 ---
 
 # Input-side nesting-projection classification (NestingType mirror)
 
-A directiveless SDL `input` type that is nested under a table-bound parent (a `@table` input, or a jOOQ-record `@service` param once R336 lands) is semantically a *projection of columns on the parent's table*: its fields resolve against the parent's `TableRef`, it has no table of its own and no Java backing. Today such a type classifies as `GraphitronType.PojoInputType` with `fqClassName = null`. That is a misnomer. `PojoInputType` is overloaded: with a non-null `fqClassName` it is a genuine POJO backing (a `@service` param typed as a plain Java class), but the `null`-backed branch in `TypeBuilder.buildNonTableInputType` (`TypeBuilder.java:1419-1421`) is a catch-all "no backing class could be reflected" bucket. A column-grouping projection is not a POJO; surfacing it as `PojoInput` in the model and in the LSP (hover + inlay) leaks a reflection fallback into what reads like a semantic category.
+**Deferred in favor of R327 (`field-relative-input-classification`).** This item proposed to fix the null-backed `PojoInputType` mislabel for nested grouping inputs by *adding* a new per-type `GraphitronType` variant (an input mirror of the output `NestingType`). R327's 2026-06-20 reframing claims the same artifact from the opposite direction and supersedes that mechanism, so R337 is parked as a redirect rather than spec'd. Revive it only for the narrow residual below, and only if R327 lands without covering it.
 
-The output side already models this correctly. `GraphitronType.NestingType` (`GraphitronType.java:388-414`) is exactly "a directiveless SDL type embedded under a `@table`-bound parent … inherits the parent's `@table` and maps to the same database row; its fields are columns on the embedding table." It is assigned **only at the embedding edge** (when the field walk builds a `ChildField.NestingField`), because the type pass visiting a directiveless type standalone cannot know whether anything nests it. The input side has the field-level half of this already, `InputField.NestingField` built by `classifyInputField` (`BuildContext.java:1857-1899`), which resolves the nested fields against the same `resolvedTable`, but it never gives the nested *type* a matching classification, so the type falls to `PojoInput(null)`.
+## The artifact (unchanged, still real)
 
-This item introduces the input mirror of `NestingType`, an input-side nesting-projection classification assigned at the embedding edge, so a nested grouping input surfaces honestly in the model, the `TypeClassification` projection, and the LSP. It is pre-existing and broader than any one consumption path: the same `PojoInput(null)` mislabel applies to nested groupings under `@table` inputs today and to the R336 jOOQ-record flatten once it lands, so the honest classification should land once and cover both edges.
+A directiveless SDL `input` type nested under a table-bound parent (a `@table` input, or a jOOQ-record `@service` param via the R336 flatten, now Done) is semantically a *projection of columns on the parent's table*: its fields resolve against the parent's `TableRef`, it has no table of its own and no Java backing. Today it classifies as `GraphitronType.PojoInputType` with `fqClassName = null` (the `bindings.resolveInput(name)`-empty branch in `TypeBuilder.buildNonTableInputType`). Calling a column-grouping projection a "POJO" is a misnomer that leaks a reflection fallback into the model and the LSP (hover + inlay).
 
-## Scope sketch (firm up in Spec)
+## Why deferred, not spec'd
 
-* Add the input nesting-projection variant to `GraphitronType` (under the `InputType` sealed parent, or alongside it) and decide its `HasInputRecordShape` participation. Note the embedding-edge assignment pattern from `GraphitronSchemaBuilder.registerNestingTypesIn` (the output `NestingType` precedent): leave the directiveless input unclassified in the type pass, assign the projection at the edge.
-* Wire the assignment at both embedding edges: the `@table`-input `NestingField` path and the R336 jOOQ-record flatten path.
-* Project it through `CatalogBuilder.projectTypeClassification` into a new `TypeClassification` variant, and render it in `LspClassificationLabels` + `DeclarationHovers` (R217: projection-record simple names are user-visible strings).
-* Decide whether a still-unbound directiveless input (one that nests nothing and binds nothing, e.g. the `NO_CLASS` case and the R205 plain-filter case) stays `PojoInput(null)` or also moves off it. The narrow scope is just the *nesting projection*; the broader "split the `PojoInput(null)` catch-all" is a judgment call for Spec.
-* Tests: classification cases in `GraphitronSchemaBuilderTest`, variant/projection coverage, LSP label coverage.
+R337's plan was a *type-level* relabel: introduce a new variant and assign it instead of `PojoInput(null)`. The relabel is codegen-neutral, the nested grouping's record class still emits via `HasInputRecordShape`, and both flatten paths (the `@table`-input `classifyInputField` recursion and the R336 `InputBeanResolver` recursion) read the raw graphql-java `Map`, never the typed record, so the work really is just "add a variant + the two exhaustive `GraphitronType` switch arms (`projectTypeClassification`, `projectType`) + an LSP label/hover + tests."
 
-## Relations
+But R327 (Spec, reopened and reframed 2026-06-20, the day after this item was filed) settles that input classification is **contextual**, a function of the consuming field/coordinate, not a global property of the type, and names the null-backed `PojoInputType` explicitly as **"the bug"**: it "exists only because `buildInputType` is asked to classify globally with no consumer in view. Per-coordinate, it cannot occur." R327's fix is to *dissolve* the per-type verdict (routed through R333's coordinate-lowering), not to add another per-type label. R337's mechanism is the exact type-level altitude R327 diagnoses as wrong, and R327 records a withdrawn attempt that failed because "the type-level demotion throws away context the coordinate already has." Adding R337's variant now is model surface (a `GraphitronType` permit, a `TypeClassification` permit, `HasInputRecordShape` / `InputType` membership, LSP labels, pinned tests) that R327 / R333 would then have to remove: negative work against the agreed direction.
 
-Sibling to **R336** (the functional flatten of nested input fields in jOOQ-record `@service` params). R336 does **not** depend on this: its flatten reads the nested type's SDL fields directly, the way the `@table`-input path recurses inline, so codegen works regardless of the nested type's classification. This item is purely model/LSP honesty. Relate to **R171** (`input-like-type-sealed-parent`): if the input-like types gain a sealed parent, the nesting-projection variant should sit in that hierarchy.
+## Residual this redirect guards
 
-**Out of scope:** the functional flatten (that is R336); changing how nested fields resolve to columns; the output-side `NestingType`.
+R327's reframing is scoped to query-filter binding, `@table`-on-input retirement, and the mutation write-target axis; it does not *explicitly* name the honest **surfacing** of a nested-grouping projection (the LSP hover / inlay and the `TypeClassification` label that today reads `PojoInput`). If R327 / R333 land their per-coordinate model but leave that surfacing on the null-`PojoInput` label, revive R337 narrowly as "surface the projection honestly on the lowered coordinate," with no new per-type variant. Until then this file is a redirect.
+
+## Disposition
+
+Backlog tombstone (per `workflow.adoc`): kept as a redirect during R327's lifecycle, `depends-on` R327. Delete this file when R327 reaches Done if the surfacing residual is subsumed there; otherwise re-scope to the residual only at that point. Out of scope regardless: the functional flatten (R336, Done), how nested fields resolve to columns, and the output-side `NestingType`.
