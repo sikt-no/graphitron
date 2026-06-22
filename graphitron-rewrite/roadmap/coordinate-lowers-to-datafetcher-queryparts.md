@@ -46,6 +46,8 @@ bidirectional closure invariant.
 Rows 1 to 9 are the seams the generator already cuts (the migration baseline; full detail in *Current seam
 topology* below). Rows 10 to 11 are the decided new seams (the 2026-06-19 target topology of thread K). Rows
 12 to 16 are the open surface: fragments inlined today whose promotion-or-inline verdict is what we iterate.
+This table is the back-half view of the coordinate's `operation` relation; *Operations are realized by seams*
+below draws the member-to-seam crosswalk that wires the two together.
 
 | # | Candidate node | Today's emitter | Granularity | Regime (J) | Seam verdict (rule a/b/c) | Naming target / open issue |
 |---|---|---|---|---|---|---|
@@ -453,8 +455,8 @@ emission.
 ## We are data modeling: the relational discipline, not a database engine
 
 Everything above is data modeling, and it has quietly adopted the whole vocabulary of a relational
-database: keyed relations, a foreign key (the coordinate), normalization (1NF on composite, 3NF on the
-split key-projection), and **referential integrity** (thread I's closure-under-reference is exactly that
+database: keyed relations, a foreign key (the coordinate), normalization (1NF on both repeating groups, the
+composite columns and the `operation` slot; 3NF on the split key-projection), and **referential integrity** (thread I's closure-under-reference is exactly that
 constraint on the edge relation). Taken to its end this looks like rebuilding a database, which raises the
 question honestly: should the generator just *use* one? The answer is a deliberate split. **Adopt the
 relational model as design discipline; do not adopt a relational runtime.** The decision and its reasoning:
@@ -492,6 +494,53 @@ trigger is LSP performance ; the LSP already does incremental parsing and marsha
 snapshot to the editor, and incremental reclassification is the natural next want. That is a separate,
 later question tied to LSP perf, deliberately not conflated with "sit the generator on a database," and out
 of scope here.
+
+## Operations are realized by seams: wiring the two halves
+
+The two relational pictures in this spec are one model seen from its two ends, joined by the `operation`
+relation. The **front half** (the normalized schema above) keys facts on the coordinate and reads each
+operation off a trigger fact. The **back half** (the seam worklist up top, and the method-call graph of
+threads E to K) is the emitted side: named methods and the calls between them. A coordinate's `operation` set
+*is* the set of QueryPart-emitting seams its query unit composes; the seam worklist is the back-half **view**
+of the `operation` relation, the same way the DataFetcher is the view that joins `source` and `target`.
+
+The back-half seams sort into three layers, and only the middle one is the operation relation:
+
+- **The DataFetcher view** (worklist row 1). Reads the `source` and `target` facts and dispatches; it is a
+  view over facts, not an operation. The `nest`-only coordinate (empty operation set) bottoms out here: the
+  DataFetcher regroups in memory and emits no SQL seam.
+- **The dispatch targets**: the **Query unit** (the SELECT launcher; rows 3 and the decided root row 10) and
+  the **Service-call unit** (row 11). The Query unit is the host the SQL operation set renders *into*; the
+  Service-call unit *is* the `serviceCall` operation realized as a unit.
+- **The operation seams** the Query unit composes (one per operation-set member; the crosswalk below), plus
+  the **boundary helpers** (scatter row 4, bean/record row 8) that marshal across the resolve/SQL boundary
+  and, like the DataFetcher, are views not operations (which is why they carry no trigger fact).
+
+The member-to-seam crosswalk (the column the worklist deferred to here):
+
+| `operation` member | Trigger fact (front half) | Realizing seam (worklist row) | Naming regime |
+|---|---|---|---|
+| `select` (projection) | table-bound `target` | Projection `$fields` (2) | R2, lift to R1 |
+| `select` (launch / FROM) | a `source` anchor | Query unit / rows-method (3; root 10) | R1 child, new for root |
+| `paginate` | pagination args / `Connection` | applied within the Query unit (3, 10) | with the query unit |
+| `join` | the `reference` fact | join-path helper (6); lookup `InputRows` (7) | R1 (6), R2 (7) |
+| `condition` | `@condition` / filter inputs | Condition (5) | R1 + R2 (half-migrated) |
+| `orderBy` | `@orderBy` | OrderBy (9) | R2, lift to R1 |
+| `serviceCall` | `@service` | Service-call unit (11) | new |
+| `nest` (empty set) | non-table nesting | no seam; DataFetcher (1) regroups | n/a |
+
+Two things the crosswalk makes visible. First, `select` lands on **two** seams (the projected column list in
+`$fields`, and the FROM/launch in the Query unit), the back-half echo of `target` being read by two views in
+the front half (wrapper by the DataFetcher, shape by the `select` operation). Second, the additive
+dissolution is now end-to-end: a coordinate's operation set is a *union* of rows, each row is one seam, and
+"more facts trigger more operations" is "more seams composed into the one Query unit," never a new leaf
+variant. Composite's `N` columns are `N` `select` contributions into the same Projection seam; arity is gone
+from both halves at once.
+
+The bridge also closes thread I over both halves: the front half commits the operation set (which seams must
+exist), the back half commits the names (regime 1), and referential integrity is that every operation
+resolves to a committed seam and every seam traces back to an operation or a view. Thread I's falsifiable
+test asserts that round-trip.
 
 ## Query anchors and the two flows
 
