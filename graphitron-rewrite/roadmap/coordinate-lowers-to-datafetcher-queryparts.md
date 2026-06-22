@@ -6,7 +6,7 @@ bucket: structural
 priority: 3
 theme: structural-refactor
 created: 2026-06-18
-last-updated: 2026-06-21
+last-updated: 2026-06-22
 ---
 
 # Lower each schema coordinate to a DataFetcher and its QueryParts
@@ -174,6 +174,10 @@ with its facts, each its own functional dependency:
 - **The same facts apply to input fields**, keyed `(coordinate, path)` (the dotted path to the input field),
   relative to the consuming output coordinate. Their facts roll up into the output coordinate's operation
   set. Detailed below in *Input coordinates*.
+- **Two further facts are *read-side*.** Every fact above is build-side (it constructs the query or
+  operation) ; these read a value back out of the object at `env.getSource()`: a type-level **source object**
+  fact (the cast-target record shape) and a field-level **accessor** fact (a locator paired with a
+  transform). Detailed below in *Reading the source object*.
 
 `source` and `target` are two different facts, derived by two different walks (parent/edge versus the
 field's type), and they vary independently ; the same `target` `List(Table)` sits under a `Root` source or
@@ -451,6 +455,128 @@ suppressed iff consumed by **at least one** override condition ; `override: true
 consumes nothing is a no-op. The suppression is the same shape of declarative resolution as the
 `resolvedTable` coalesce: a function over the raw facts, computed once, not a special case threaded through
 emission.
+
+### Reading the source object
+
+Every fact above is **build-side**: it constructs the SELECT, the joins, the conditions, the `operation`. But
+every output field is wired to exactly one `DataFetcher`, and a `DataFetcher` ultimately **returns a value to
+graphql-java**. Some fetchers obtain that value by *producing* it (running the `operation`: a query, a
+`@service` call, a DML write) ; others obtain it by *reading* it out of the object already at
+`env.getSource()`. The read is its own fact family, the read-side complement of the build-side schema, and it
+is what this section names.
+
+**Two phases, consume then produce.** "Producer" and "reader" are not disjoint field sets ; they are two
+phases inside one fetcher, in a fixed order:
+
+- **consume** ; read this field's source object (the object its *parent* deposited at `env.getSource()`) ;
+- **produce** ; run the `operation`, depositing a new object ;
+- the deposited object is the source object this field's *children* consume.
+
+A pure reader is the degenerate case with no produce phase (the consumed value is the answer) ; a root
+producer the other (no source arrives). Everything else does both, and the order is load-bearing: a re-fetch
+reads the parent row's foreign key (consume) *before* it launches the child SELECT keyed on it (produce). So
+one field touches **two** source-object facts about two different types: its **parent** type's (consumed) and
+its **return** type's (produced, which is its children's source object).
+
+This also dissolves a tension from the leaf walk: a bare column read and a bare scalar read both carry
+`operation = Fetch`, and the catalog-versus-Java split rode entirely on `sourceShape`. That is because
+`sourceShape` is not a sibling of `operation` at all ; it is **read-side**. `operation` is the build-side verb
+(how to *produce* a value) ; the source-object shape is the read-side fact (how to *read* one). They sat in
+one list but belong to different families.
+
+#### The source object is type-level
+
+`GraphitronType` is "the authoritative source of source context for all fields defined on it." The source
+object is therefore a **type-level** fact: every field on a type reads off the same kind of object, fixed by
+the type's classification, not the field. The field-level `sourceShape()` / `domainReturnType()` are
+**projections**, cross-checked against the type (`SourceShapeProjectionTest`) so a field cannot diverge from
+the type it claims.
+
+Its value is a **record shape**, and **never a table**. A table is a build-side relation ; what arrives at
+`env.getSource()` is always a row / record (or a scalar, or a Java object), never a relation. So "Table" is
+not one of its values. The arms are the cast targets the read needs:
+
+- a **jOOQ record** source casts to the generic `org.jooq.Record` (reads go through `get(Field<T>)`, so the
+  concrete `FilmRecord` is never needed ; the typed-vs-sparse `TableRecord` / `Record` distinction is a
+  producer concern) ;
+- a **Java** source casts to its backing class (`FilmDto`) ;
+- a **scalar** is "already the value," no cast.
+
+`DomainReturnType` (`Record` / `TableRecord` / `Plain`, no `Table` arm) is the carrier ; `SourceShape`
+(`Table` / `Record`) is not, because it fuses three things the read keeps apart: record-ness, catalog
+provenance, and table-boundness.
+
+**Table-boundness is a separate fact.** For a table-bound type the record shape is *derivable* from the
+`TableRef`, but the source-object fact carries it **materialized**, so a reader consumes one fact rather than
+walking "table-bound ⟹ jOOQ record ⟹ read by `Field`." This is the `resolvedTable` lift one level up (derive
+once at classify time, store it, never re-derive at the read site). The build side keeps the `TableRef` ; the
+read side keeps the record shape ; provenance is consulted by neither.
+
+**The uniform-producer axiom.** Different fields can produce the same SDL type (a `@table` type reached by a
+SELECT and by a `@service`). We **assert** all producers of a type deposit the **same** shape ; disagreement
+is an `AuthorError` (the shipped `validateUniformDomainReturnType` / `MultiProducerDomainTypeDisagreement`
+guard). This is the precondition that lets the fact be type-level: one shape per type means the child reads
+against one known shape, the cast is unconditional, and the accessor stays monomorphic. Drop it and the source
+object becomes a `(type × producer)` fact and every read turns polymorphic. **Deferred:** producer-
+polymorphism is named but out of scope, the same "assert the simplifying invariant now" move as
+override-suppression-maximal and the `List(Column)` deferral.
+
+(`NestingType` is the transparent exception: it owns no table, inheriting the *embedding* type's row, so the
+same nested type under `Film` versus `Actor` sees `FilmRecord` versus `ActorRecord`. The fact stays
+type-level, owned by the embedding `TableBackedType` ; the model copes by reading nesting children by *name*
+off the generic `org.jooq.Record`, the identity all embedding sites share.)
+
+#### The accessor is field-level
+
+Where the source object keys on the type, the **accessor** keys on the field: each field pulls its own value
+out of the (now cast) source object. It is a **sealed family**, each arm carrying only its own facts, gated by
+the source object, replacing the nullable `column`-xor-`accessor` slots on today's `RecordField` /
+`PropertyField` with arm identity. It decomposes into a **locator** and a **transform**.
+
+**The locator** says *where* the raw value(s) live, one leaf read or `N` for a composite:
+
+- **typed jOOQ field** ; the FQN of the `Field<T>` constant to extract. Provenance-blind: a jOOQ-generated
+  `FILM.TITLE` and a graphitron-generated field read identically via `record.get(thatField)`, which collapses
+  the present `ColumnField`-read and `ComputedField` / `@externalField`-read into one arm and retires the
+  `ColumnRef`-omits-its-table awkwardness (the accessor holds the table-qualified reference, so the read needs
+  no table fact).
+- **Java record component** / **POJO getter** / **public-field read** ; the resolved Java accessor (today's
+  `AccessorResolution.Resolved`).
+- **by-name jOOQ field** (`DSL.field("title")`) ; the untyped fallback when no constant resolved (the
+  nesting-reuse case).
+- **whole-object passthrough** (`env -> env.getSource()`) ; the value *is* the source object (the
+  `NestingField` identity read).
+- **localContext** / **`Outcome.ErrorList` arm** ; where an errors list lives (today's `ErrorsField.Transport`).
+
+**The transform** establishes the **function** applied to the locator's read(s). `Direct` is the identity (a
+bare read, no call) ; `NodeIdEncode` establishes the per-type `encode<T>` helper ; `EnumValueOf` /
+`JooqConvert` establish those ; `decode` is the input-side mirror. The accessor is uniformly `function(args)`:
+the **transform names the function**, the **locator names the arguments**. A composite key is one transform
+over an `N`-read locator, dissolving `CompositeColumnField` / `CompositeColumnReferenceField` on the read side
+the way the spec dissolves composite on the projection side: the `N`-column repeating group becomes `N`
+argument reads under one `encode`, arity gone as a leaf dimension.
+
+This is the shipped shape on both polarities, the corroboration that the locator / transform split is real:
+
+- output ; `ColumnField` carries `column` (locator) and `compaction` (transform) ; `CallSiteCompaction.Direct`
+  names no function, `NodeIdEncodeKeys` carries the `HelperRef.Encode`. `CompositeColumnField` is the same
+  with an `N`-read locator (`columns`) and one `NodeIdEncodeKeys`.
+- input ; `ValueShape.Scalar` carries `sdlPath` (locator) and `leafTransform` (`CallSiteExtraction`: `Direct`
+  / `EnumValueOf` / `JooqConvert` / `NodeIdDecodeKeys`, the function). Same shape, other direction.
+
+**Deferred:** the composition is **depth-1** (a function over leaf reads), which covers nodeId including the
+composite case. Full recursion (`f(g(read))`, a transform whose arguments are themselves transformed
+accessors) is named but unbuilt ; model the flat form now, nest only if a use case needs it.
+
+#### Composition
+
+A read is **cast then access**: the source-object fact emits the unconditional conversion of `env.getSource()`,
+the accessor reads off the converted object. The source object **gates** the legal locator arms (a jOOQ-record
+source admits the typed-field and by-name arms ; a Java source the component / getter / field arms ;
+passthrough is shape-agnostic), and the transform is orthogonal (any locator wrapped by any function, or
+none). So the read side is two facts, a type-level **source object** (the cast target) and a field-level
+**accessor** (a gated locator paired with a function-naming transform), standing as the read-side complement
+of the build-side `source` / `target` / `operation` / `reference` / `resolvedTable` / `condition` family.
 
 ## We are data modeling: the relational discipline, not a database engine
 
@@ -850,6 +976,13 @@ contribution.
   them. Chosen for simplicity, on the bet that an overriding author owns that branch's SQL. **Open residue:**
   narrow to conditions-only (leaving an input-side reference's `join` standing for a hand-written predicate to
   use) only if a use case requires it ; the per-field, subtree-scoped rule is easy to relax that far.
+- **Read-side facts** (the source object and the accessor). **Resolved (the *Reading the source object*
+  section):** the read decomposes into a type-level **source object** fact (a cast-target record shape, never a
+  table ; table-boundness is a separate build fact) and a field-level **accessor** fact (a locator gated by the
+  source object, paired with a transform that names the function it calls). **Open residue / deferred:**
+  producer-polymorphism (a type with disagreeing producer shapes) is asserted away by the uniform-producer
+  axiom, and deep accessor recursion (`f(g(read))`) is modeled flat at depth-1 ; both are named but unbuilt,
+  to revisit only if a use case forces them.
 
 ## Scope
 
@@ -857,7 +990,8 @@ In scope: the model (the lowering to a referentially-closed method-call-graph, t
 natural keys, the anchor/address primitive, the node and edge relations, the coordinate-and-its-facts
 normalized schema (`source` / `target` / `operation` as independent functional dependencies, plus the
 `reference` / `referencedTable` / derived `resolvedTable` facts and the `(coordinate, path)` input-coordinate
-fact family whose facts roll up into the output operation set, the DataFetcher
+fact family whose facts roll up into the output operation set, the read-side **source object** (type-level
+cast target) and **accessor** (field-level locator + transform) facts, the DataFetcher
 and QueryPart-methods as views over them), the target seam topology and its placement rule, and the decision to materialize
 the relations as typed in-type collections with a referential-integrity check rather than on a query
 engine). Out of scope: the emit
