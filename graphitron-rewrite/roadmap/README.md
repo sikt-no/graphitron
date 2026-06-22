@@ -22,6 +22,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R327` | Field-relative input classification (retire @table-on-input and the findReturnTablesForInput aggregate) <sub>blocked by: [coordinate-lowers-to-datafetcher-queryparts](coordinate-lowers-to-datafetcher-queryparts.md)</sub> | Spec | 2026-06-20 <sub>created 2026-06-18</sub> | [plan](field-relative-input-classification.md) |
 | `R308` | Fix the @service list-payload N+1 by deriving many-arrival for list-returning carriers | Spec | 2026-06-14 | [plan](service-list-payload-arrival.md) |
 | `R335` | Fold input/scalar/enum classification into the single classify-and-emit walk | Spec | 2026-06-19 | [plan](walk-classifies-input-surface.md) |
+| `R353` | LSP goto-definition from an SDL type/field name to its backing Java class and member <sub>blocked by: [lsp-structural-consolidation](lsp-structural-consolidation.md)</sub> | Spec | 2026-06-22 <sub>created 2026-06-21</sub> | [plan](lsp-backing-class-member-navigation.md) |
 | `R45` | Multi-tenant routing on top of the schema-driven ExecutionInput factory | Spec | 2026-05-20 | [plan](tenant-routing-and-execution-input.md) |
 | `R273` | Source NodeId metadata from @node + catalog PK (inferred from `implements Node`), and settle wrong-type/malformed mismatch semantics, retiring the legacy __NODE bare-ID arm | Spec | 2026-06-02 | [plan](nodeid-skip-mismatch-error-surfacing.md) |
 | `R347` | Consolidate graphitron-lsp navigation, dispatch, and result-building | In Progress | 2026-06-19 | [plan](lsp-structural-consolidation.md) |
@@ -283,6 +284,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R148` [**Advance SourceLocation past description so diagnostics point at the field, not the doc block**](source-location-skips-description.md) — Backlog, bug
 - `R352` [**Complete LSP position decoupling: lift jOOQ half and hover descriptions onto the source index**](complete-lsp-position-decoupling.md) — Backlog, architecture
 - `R347` [**Consolidate graphitron-lsp navigation, dispatch, and result-building**](lsp-structural-consolidation.md) — In Progress, architecture
+- `R353` [**LSP goto-definition from an SDL type/field name to its backing Java class and member**](lsp-backing-class-member-navigation.md) — Spec, feature, blocked by [lsp-structural-consolidation](lsp-structural-consolidation.md)
 - `R345` [**Surface schema parse failures as LSP red squiggles**](lsp-squiggle-schema-parse-failure.md) — Backlog, feature
 - `R123` [**Parent-context-aware schema coordinates for per-directive Behavior policy**](parent-context-aware-schema-coordinates.md) — Backlog, architecture
 - `R121` [**LSP diagnostic for redundant @splitQuery on @record-parent fields**](lsp-diagnostic-redundant-splitquery-on-record.md) — Backlog, feature
