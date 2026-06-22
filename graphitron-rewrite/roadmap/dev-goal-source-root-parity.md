@@ -1,7 +1,7 @@
 ---
 id: R351
 title: "Complete the LSP goto-definition decoupling: source-root parity + jOOQ half on the source index"
-status: In Progress
+status: In Review
 bucket: bug
 priority: 4
 theme: lsp
