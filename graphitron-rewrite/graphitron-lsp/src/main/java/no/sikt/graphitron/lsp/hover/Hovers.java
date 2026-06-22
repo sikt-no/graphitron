@@ -10,12 +10,14 @@ import no.sikt.graphitron.lsp.parsing.Nodes;
 import no.sikt.graphitron.lsp.parsing.Positions;
 import no.sikt.graphitron.lsp.parsing.SchemaCoordinate;
 import no.sikt.graphitron.lsp.parsing.TypeContext;
+import no.sikt.graphitron.lsp.Descriptions;
 import no.sikt.graphitron.lsp.state.DirectiveResolution;
 import no.sikt.graphitron.lsp.state.WorkspaceFile;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.rewrite.catalog.DirectiveShape;
 import no.sikt.graphitron.rewrite.catalog.FieldClassification;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
+import no.sikt.graphitron.rewrite.catalog.SourceWalker;
 import no.sikt.graphitron.rewrite.catalog.TypeBackingShape;
 import org.eclipse.lsp4j.Hover;
 import org.eclipse.lsp4j.MarkupContent;
@@ -52,7 +54,9 @@ public final class Hovers {
     ) {
         // The bundled vocabulary is the only one in scope today; the
         // workspace's vocabulary is wired through GraphitronTextDocumentService.
-        return compute(LspVocabulary.load(), file, catalog, snapshot, pos, false);
+        // An empty source index means descriptions fall back to the catalog's
+        // build-derivable text (the production path passes the live index).
+        return compute(LspVocabulary.load(), file, catalog, SourceWalker.Index.EMPTY, snapshot, pos, false);
     }
 
     /**
@@ -65,12 +69,19 @@ public final class Hovers {
         LspVocabulary vocabulary, WorkspaceFile file, CompletionData catalog,
         LspSchemaSnapshot snapshot, Point pos
     ) {
-        return compute(vocabulary, file, catalog, snapshot, pos, false);
+        return compute(vocabulary, file, catalog, SourceWalker.Index.EMPTY, snapshot, pos, false);
     }
 
+    /**
+     * Canonical hover entry point. {@code sourceIndex} is the LSP-owned source
+     * index hover reads class / method / column Javadoc from at request time
+     * (R352), overlaying it onto the catalog's build-derivable description so
+     * hover and goto-definition cannot disagree mid-edit.
+     */
     public static Optional<Hover> compute(
         LspVocabulary vocabulary, WorkspaceFile file, CompletionData catalog,
-        LspSchemaSnapshot snapshot, Point pos, boolean classificationHoverEnabled
+        SourceWalker.Index sourceIndex, LspSchemaSnapshot snapshot, Point pos,
+        boolean classificationHoverEnabled
     ) {
         var directiveOpt = Directives.findContaining(file.tree().getRootNode(), pos);
         if (directiveOpt.isEmpty()) {
@@ -100,7 +111,7 @@ public final class Hovers {
 
         if (coordOpt.isPresent() && rangeNode != null) {
             var coord = coordOpt.get();
-            var richer = richerHover(vocabulary, coord, directive, file, catalog, snapshot, pos, rangeNode);
+            var richer = richerHover(vocabulary, coord, directive, file, catalog, sourceIndex, snapshot, pos, rangeNode);
             if (richer.isPresent()) return richer;
             // SDL docstring on the coordinate. Empty if the parsed
             // definition has no description (rare in directives.graphqls).
@@ -167,7 +178,7 @@ public final class Hovers {
     private static Optional<Hover> richerHover(
         LspVocabulary vocabulary, SchemaCoordinate coord,
         Directives.Directive directive, WorkspaceFile file, CompletionData catalog,
-        LspSchemaSnapshot snapshot, Point pos, Node rangeNode
+        SourceWalker.Index sourceIndex, LspSchemaSnapshot snapshot, Point pos, Node rangeNode
     ) {
         var behavior = vocabulary.behaviorAt(coord);
         if (behavior.isEmpty()) return Optional.empty();
@@ -178,12 +189,12 @@ public final class Hovers {
             // Falls through to the SDL docstring hover at the call site.
             case Behavior.ClassNameBinding ignored ->
                 DirectivePolicy.bindsLiveClass(Nodes.text(directive.nameNode(), file.source()))
-                    ? classNameHover(file, catalog, rangeNode)
+                    ? classNameHover(file, catalog, sourceIndex, rangeNode)
                     : Optional.empty();
             case Behavior.MethodNameBinding mnb ->
-                methodHover(vocabulary, directive, file, catalog, pos, rangeNode, mnb.classNameCoord());
-            case Behavior.CatalogTableBinding ignored -> tableHover(file, catalog, rangeNode);
-            case Behavior.CatalogColumnBinding ignored -> columnHover(directive, file, catalog, snapshot, rangeNode);
+                methodHover(vocabulary, directive, file, catalog, sourceIndex, pos, rangeNode, mnb.classNameCoord());
+            case Behavior.CatalogTableBinding ignored -> tableHover(file, catalog, sourceIndex, rangeNode);
+            case Behavior.CatalogColumnBinding ignored -> columnHover(directive, file, catalog, sourceIndex, snapshot, rangeNode);
             case Behavior.CatalogFkBinding ignored -> fkHover(file, catalog, rangeNode);
             case Behavior.ArgMappingBinding ignored -> Optional.empty();
             case Behavior.ScalarTypeBinding ignored -> Optional.empty();
@@ -234,17 +245,17 @@ public final class Hovers {
     }
 
     private static Optional<Hover> classNameHover(
-        WorkspaceFile file, CompletionData catalog, Node valueNode
+        WorkspaceFile file, CompletionData catalog, SourceWalker.Index sourceIndex, Node valueNode
     ) {
         String fqn = Nodes.unquote(Nodes.text(valueNode, file.source()));
         if (fqn.isEmpty()) return Optional.empty();
-        return findExternal(catalog, fqn).map(ref -> hover(file, valueNode, formatClass(ref)));
+        return findExternal(catalog, fqn).map(ref -> hover(file, valueNode, formatClass(ref, sourceIndex)));
     }
 
     private static Optional<Hover> methodHover(
         LspVocabulary vocabulary,
         Directives.Directive directive, WorkspaceFile file, CompletionData catalog,
-        Point pos, Node valueNode, SchemaCoordinate classNameCoord
+        SourceWalker.Index sourceIndex, Point pos, Node valueNode, SchemaCoordinate classNameCoord
     ) {
         String methodName = Nodes.unquote(Nodes.text(valueNode, file.source()));
         if (methodName.isEmpty()) return Optional.empty();
@@ -255,19 +266,19 @@ public final class Hovers {
         return refOpt.get().methods().stream()
             .filter(m -> m.name().equals(methodName))
             .findFirst()
-            .map(method -> hover(file, valueNode, formatMethod(refOpt.get(), method)));
+            .map(method -> hover(file, valueNode, formatMethod(refOpt.get(), method, sourceIndex)));
     }
 
     private static Optional<Hover> tableHover(
-        WorkspaceFile file, CompletionData catalog, Node valueNode
+        WorkspaceFile file, CompletionData catalog, SourceWalker.Index sourceIndex, Node valueNode
     ) {
         String name = Nodes.unquote(Nodes.text(valueNode, file.source()));
-        return catalog.getTable(name).map(t -> hover(file, valueNode, formatTable(t)));
+        return catalog.getTable(name).map(t -> hover(file, valueNode, formatTable(t, sourceIndex)));
     }
 
     private static Optional<Hover> columnHover(
         Directives.Directive directive, WorkspaceFile file, CompletionData catalog,
-        LspSchemaSnapshot snapshot, Node valueNode
+        SourceWalker.Index sourceIndex, LspSchemaSnapshot snapshot, Node valueNode
     ) {
         String memberName = Nodes.unquote(Nodes.text(valueNode, file.source()));
         if (!(snapshot instanceof LspSchemaSnapshot.Built built)) return Optional.empty();
@@ -289,7 +300,7 @@ public final class Hovers {
             if (classification.isPresent()) {
                 switch (classification.get().lspColumnDispatch()) {
                     case FieldClassification.LspColumnDispatch.Resolve(var tableName) -> {
-                        return tableColumnHover(catalog, tableName, memberName, file, valueNode);
+                        return tableColumnHover(catalog, tableName, memberName, file, valueNode, sourceIndex);
                     }
                     case FieldClassification.LspColumnDispatch.Silent ignored -> { return Optional.empty(); }
                     case FieldClassification.LspColumnDispatch.FallThrough ignored -> { /* fall through */ }
@@ -302,24 +313,25 @@ public final class Hovers {
             case TypeBackingShape.RecordBacking r -> slotHover(r.components(), memberName, file, valueNode);
             case TypeBackingShape.PojoBacking p -> slotHover(p.accessors(), memberName, file, valueNode);
             case TypeBackingShape.JooqRecordBacking.WithTable j ->
-                tableColumnHover(catalog, j.tableName(), memberName, file, valueNode);
+                tableColumnHover(catalog, j.tableName(), memberName, file, valueNode, sourceIndex);
             case TypeBackingShape.JooqRecordBacking.Standalone ignored -> Optional.empty();
             case TypeBackingShape.TableBacking t ->
-                tableColumnHover(catalog, t.tableName(), memberName, file, valueNode);
+                tableColumnHover(catalog, t.tableName(), memberName, file, valueNode, sourceIndex);
             case TypeBackingShape.NoBacking ignored -> Optional.empty();
         };
     }
 
     private static Optional<Hover> tableColumnHover(
         CompletionData catalog, String tableName, String columnName,
-        WorkspaceFile file, Node valueNode
+        WorkspaceFile file, Node valueNode, SourceWalker.Index sourceIndex
     ) {
         var tableOpt = catalog.getTable(tableName);
         if (tableOpt.isEmpty()) return Optional.empty();
-        return tableOpt.get().columns().stream()
+        var table = tableOpt.get();
+        return table.columns().stream()
             .filter(c -> c.name().equalsIgnoreCase(columnName))
             .findFirst()
-            .map(column -> hover(file, valueNode, formatColumn(tableName, column)));
+            .map(column -> hover(file, valueNode, formatColumn(table, column, sourceIndex)));
     }
 
     private static Optional<Hover> slotHover(
@@ -421,22 +433,24 @@ public final class Hovers {
             .findFirst();
     }
 
-    private static String formatClass(CompletionData.ExternalReference ref) {
+    private static String formatClass(CompletionData.ExternalReference ref, SourceWalker.Index sourceIndex) {
         var sb = new StringBuilder("**Class** `").append(ref.className()).append("`");
-        if (!ref.description().isEmpty()) {
-            sb.append("\n\n").append(ref.description());
+        String description = Descriptions.ofClass(ref, sourceIndex);
+        if (!description.isEmpty()) {
+            sb.append("\n\n").append(description);
         }
         return sb.toString();
     }
 
     private static String formatMethod(
-        CompletionData.ExternalReference ref, CompletionData.Method method
+        CompletionData.ExternalReference ref, CompletionData.Method method, SourceWalker.Index sourceIndex
     ) {
         var sb = new StringBuilder();
         sb.append("**Method** `").append(method.name()).append("`")
           .append(" on `").append(ref.className()).append("`");
-        if (!method.description().isEmpty()) {
-            sb.append("\n\n").append(method.description());
+        String description = Descriptions.ofMethod(ref, method, sourceIndex);
+        if (!description.isEmpty()) {
+            sb.append("\n\n").append(description);
         }
         sb.append("\n\n```\n")
           .append(method.returnType()).append(' ').append(method.name()).append('(');
@@ -459,11 +473,12 @@ public final class Hovers {
         return sb.toString();
     }
 
-    private static String formatTable(CompletionData.Table table) {
+    private static String formatTable(CompletionData.Table table, SourceWalker.Index sourceIndex) {
         var sb = new StringBuilder();
         sb.append("**Table** `").append(table.name()).append("`");
-        if (!table.description().isEmpty()) {
-            sb.append("\n\n").append(table.description());
+        String description = Descriptions.ofTable(table, sourceIndex);
+        if (!description.isEmpty()) {
+            sb.append("\n\n").append(description);
         }
         sb.append("\n\n").append(table.columns().size()).append(" column")
             .append(table.columns().size() == 1 ? "" : "s")
@@ -472,14 +487,17 @@ public final class Hovers {
         return sb.toString();
     }
 
-    private static String formatColumn(String tableName, CompletionData.Column column) {
+    private static String formatColumn(
+        CompletionData.Table table, CompletionData.Column column, SourceWalker.Index sourceIndex
+    ) {
         var sb = new StringBuilder();
         sb.append("**Column** `").append(column.name()).append("`")
-          .append(" on `").append(tableName).append("`")
+          .append(" on `").append(table.name()).append("`")
           .append("\n\nType: `").append(column.graphqlType()).append("`")
           .append(column.nullable() ? " (nullable)" : " (not null)");
-        if (!column.description().isEmpty()) {
-            sb.append("\n\n").append(column.description());
+        String description = Descriptions.ofColumn(table, column, sourceIndex);
+        if (!description.isEmpty()) {
+            sb.append("\n\n").append(description);
         }
         return sb.toString();
     }

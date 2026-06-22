@@ -173,7 +173,7 @@ public class GraphitronTextDocumentService implements TextDocumentService {
                 params.getPosition().getLine(),
                 params.getPosition().getCharacter()).tsPoint();
             return Hovers.compute(workspace.vocabulary(), file, workspace.catalog(),
-                workspace.snapshot(), pos,
+                workspace.sourceIndex(), workspace.snapshot(), pos,
                 workspace.inlayHintConfig().hoverClassification()).orElse(null);
         });
     }
@@ -216,9 +216,9 @@ public class GraphitronTextDocumentService implements TextDocumentService {
             if (!externalFieldItems.isEmpty()) return externalFieldItems;
             var methodItems = MethodCompletions.generate(vocab, data, context, directive, pos, source);
             if (!methodItems.isEmpty()) return methodItems;
-            var tableItems = TableCompletions.generate(vocab, data, context);
+            var tableItems = TableCompletions.generate(vocab, data, workspace.sourceIndex(), context);
             if (!tableItems.isEmpty()) return tableItems;
-            var fieldItems = FieldCompletions.generate(vocab, data, workspace.snapshot(), context, directive, source);
+            var fieldItems = FieldCompletions.generate(vocab, data, workspace.sourceIndex(), workspace.snapshot(), context, directive, source);
             if (!fieldItems.isEmpty()) return fieldItems;
             var refItems = ReferenceCompletions.generate(vocab, data, workspace.snapshot(), context, directive, source);
             if (!refItems.isEmpty()) return refItems;

@@ -5,9 +5,11 @@ import no.sikt.graphitron.lsp.parsing.DeclarationKind;
 import no.sikt.graphitron.lsp.parsing.Directives;
 import no.sikt.graphitron.lsp.parsing.LspVocabulary;
 import no.sikt.graphitron.lsp.parsing.TypeContext;
+import no.sikt.graphitron.lsp.Descriptions;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.rewrite.catalog.FieldClassification;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
+import no.sikt.graphitron.rewrite.catalog.SourceWalker;
 import no.sikt.graphitron.rewrite.catalog.TypeBackingShape;
 import org.eclipse.lsp4j.CompletionItem;
 import org.eclipse.lsp4j.CompletionItemKind;
@@ -43,6 +45,7 @@ public final class FieldCompletions {
     public static List<CompletionItem> generate(
         LspVocabulary vocabulary,
         CompletionData data,
+        SourceWalker.Index sourceIndex,
         LspSchemaSnapshot snapshot,
         CompletionContext context,
         Directives.Directive directive,
@@ -63,12 +66,12 @@ public final class FieldCompletions {
         var fieldName = TypeContext.enclosingFieldOrInputValueDefinition(directive.outer())
             .flatMap(fd -> TypeContext.fieldNameOf(fd, source))
             .orElse(null);
-        return completionsFor(data, snapshot, context, typeName.get(), fieldName);
+        return completionsFor(data, sourceIndex, snapshot, context, typeName.get(), fieldName);
     }
 
     private static List<CompletionItem> completionsFor(
-        CompletionData data, LspSchemaSnapshot snapshot, CompletionContext context,
-        String typeName, String fieldName
+        CompletionData data, SourceWalker.Index sourceIndex, LspSchemaSnapshot snapshot,
+        CompletionContext context, String typeName, String fieldName
     ) {
         if (!(snapshot instanceof LspSchemaSnapshot.Built built)) {
             return List.of();
@@ -94,7 +97,7 @@ public final class FieldCompletions {
             if (classification.isPresent()) {
                 switch (classification.get().lspColumnDispatch()) {
                     case FieldClassification.LspColumnDispatch.Resolve(var tableName) -> {
-                        return mergeWithSigil(sigilItems, tableColumnItems(data, tableName, context));
+                        return mergeWithSigil(sigilItems, tableColumnItems(data, sourceIndex, tableName, context));
                     }
                     case FieldClassification.LspColumnDispatch.Silent ignored -> {
                         return mergeWithSigil(sigilItems, List.of());
@@ -108,9 +111,9 @@ public final class FieldCompletions {
         var rest = switch (backing) {
             case TypeBackingShape.RecordBacking r -> memberSlotItems(r.components(), context);
             case TypeBackingShape.PojoBacking p -> memberSlotItems(p.accessors(), context);
-            case TypeBackingShape.JooqRecordBacking.WithTable j -> tableColumnItems(data, j.tableName(), context);
+            case TypeBackingShape.JooqRecordBacking.WithTable j -> tableColumnItems(data, sourceIndex, j.tableName(), context);
             case TypeBackingShape.JooqRecordBacking.Standalone ignored -> List.<CompletionItem>of();
-            case TypeBackingShape.TableBacking t -> tableColumnItems(data, t.tableName(), context);
+            case TypeBackingShape.TableBacking t -> tableColumnItems(data, sourceIndex, t.tableName(), context);
             case TypeBackingShape.NoBacking ignored -> List.<CompletionItem>of();
         };
         return mergeWithSigil(sigilItems, rest);
@@ -136,11 +139,11 @@ public final class FieldCompletions {
     }
 
     private static List<CompletionItem> tableColumnItems(
-        CompletionData data, String tableName, CompletionContext context
+        CompletionData data, SourceWalker.Index sourceIndex, String tableName, CompletionContext context
     ) {
         return data.getTable(tableName)
             .map(t -> t.columns().stream()
-                .map(c -> toColumnItem(c, context))
+                .map(c -> toColumnItem(t, c, context, sourceIndex))
                 .toList())
             .orElse(List.of());
     }
@@ -151,12 +154,16 @@ public final class FieldCompletions {
         return slots.stream().map(s -> toMemberSlotItem(s, context)).toList();
     }
 
-    private static CompletionItem toColumnItem(CompletionData.Column column, CompletionContext context) {
+    private static CompletionItem toColumnItem(
+        CompletionData.Table table, CompletionData.Column column,
+        CompletionContext context, SourceWalker.Index sourceIndex
+    ) {
         var item = new CompletionItem(column.name());
         item.setKind(CompletionItemKind.Field);
-        if (!column.description().isEmpty()) {
+        String description = Descriptions.ofColumn(table, column, sourceIndex);
+        if (!description.isEmpty()) {
             item.setDocumentation(Either.forRight(
-                new MarkupContent(MarkupKind.PLAINTEXT, column.description())
+                new MarkupContent(MarkupKind.PLAINTEXT, description)
             ));
         }
         item.setDetail(column.graphqlType() + (column.nullable() ? " (nullable)" : ""));

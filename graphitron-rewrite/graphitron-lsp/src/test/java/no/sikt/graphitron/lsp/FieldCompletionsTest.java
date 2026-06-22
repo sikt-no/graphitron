@@ -567,7 +567,7 @@ class FieldCompletionsTest {
         var locOpt = VOCAB.locateAt(directive, cursor, bytes);
         if (locOpt.isEmpty()) return List.of();
         var context = no.sikt.graphitron.lsp.completions.CompletionContext.from(locOpt.get(), bytes);
-        return FieldCompletions.generate(VOCAB, data, snapshot, context, directive, bytes);
+        return FieldCompletions.generate(VOCAB, data, no.sikt.graphitron.rewrite.catalog.SourceWalker.Index.EMPTY, snapshot, context, directive, bytes);
     }
 
     private static CompletionData filmCatalog() {

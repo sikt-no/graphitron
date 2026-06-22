@@ -85,7 +85,7 @@ class CompletionTextEditTest {
             List.of(new CompletionData.Table("film", "", null, List.of(), List.of())),
             List.of(), List.of());
         var items = runValueProvider(source, cursor,
-            (ctx, dir, bytes) -> TableCompletions.generate(VOCAB, data, ctx));
+            (ctx, dir, bytes) -> TableCompletions.generate(VOCAB, data, no.sikt.graphitron.rewrite.catalog.SourceWalker.Index.EMPTY, ctx));
 
         assertTextEditRange(items, "film",
             new Range(new Position(0, innerStart), new Position(0, innerStart + "fi".length())));
@@ -114,7 +114,7 @@ class CompletionTextEditTest {
             java.util.Map.of()
         );
         var items = runValueProvider(source, cursor,
-            (ctx, dir, bytes) -> FieldCompletions.generate(VOCAB, data, snapshot, ctx, dir, bytes));
+            (ctx, dir, bytes) -> FieldCompletions.generate(VOCAB, data, no.sikt.graphitron.rewrite.catalog.SourceWalker.Index.EMPTY, snapshot, ctx, dir, bytes));
 
         assertTextEditRange(items, "title",
             new Range(new Position(line, innerStart), new Position(line, innerStart + "ti".length())));
