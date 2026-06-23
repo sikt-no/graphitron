@@ -22,10 +22,10 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R346` | Regenerate and guard the generated supported-directives migration doc against directive-set drift | Ready | 2026-06-19 | [plan](supported-directives-regen-guard.md) |
 | `R308` | Fix the @service list-payload N+1 by deriving many-arrival for list-returning carriers | Spec | 2026-06-14 | [plan](service-list-payload-arrival.md) |
 | `R335` | Fold input/scalar/enum classification into the single classify-and-emit walk | Spec | 2026-06-19 | [plan](walk-classifies-input-surface.md) |
-| `R358` | Guard table-name comparisons against case-sensitivity drift <sub>blocked by: [payload-list-dto-recordfield-source](payload-list-dto-recordfield-source.md)</sub> | Spec | 2026-06-23 | [plan](table-name-comparison-case-guard.md) |
 | `R353` | LSP goto-definition from an SDL type/field name to its backing Java class and member <sub>blocked by: [lsp-structural-consolidation](lsp-structural-consolidation.md)</sub> | Spec | 2026-06-22 <sub>created 2026-06-21</sub> | [plan](lsp-backing-class-member-navigation.md) |
 | `R45` | Multi-tenant routing on top of the schema-driven ExecutionInput factory | Spec | 2026-05-20 | [plan](tenant-routing-and-execution-input.md) |
 | `R273` | Source NodeId metadata from @node + catalog PK (inferred from `implements Node`), and settle wrong-type/malformed mismatch semantics, retiring the legacy __NODE bare-ID arm | Spec | 2026-06-02 | [plan](nodeid-skip-mismatch-error-surfacing.md) |
+| `R358` | Guard table-name comparisons against case-sensitivity drift <sub>blocked by: [payload-list-dto-recordfield-source](payload-list-dto-recordfield-source.md)</sub> | Ready | 2026-06-23 | [plan](table-name-comparison-case-guard.md) |
 | `R347` | Consolidate graphitron-lsp navigation, dispatch, and result-building | In Progress | 2026-06-19 | [plan](lsp-structural-consolidation.md) |
 | `R332` | Mark @table on input types as deprecated (signal ahead of R97 removal) | Spec | 2026-06-22 <sub>created 2026-06-18</sub> | [plan](table-on-input-deprecation-signal.md) |
 | `R13` | Faceted search on `@asConnection` | Spec |  | [plan](faceted-search.md) |
@@ -235,7 +235,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R236` [**BuildContext nested-input candidate-hint draws from path-origin table instead of @reference terminal table**](validator-reference-candidate-hint-terminal-table.md) — Backlog, bug
 - `R231` [**Emit text-mapped-enum fields as the GraphQL enum type, not String**](emit-text-mapped-enum-fields-as-enum-type.md) — Backlog, architecture
 - `R133` [**Flip leaf-coverage profile activation to opt-in**](leaf-coverage-profile-opt-in.md) — Backlog, cleanup
-- `R358` [**Guard table-name comparisons against case-sensitivity drift**](table-name-comparison-case-guard.md) — Spec, cleanup, blocked by [payload-list-dto-recordfield-source](payload-list-dto-recordfield-source.md)
+- `R358` [**Guard table-name comparisons against case-sensitivity drift**](table-name-comparison-case-guard.md) — Ready, cleanup, blocked by [payload-list-dto-recordfield-source](payload-list-dto-recordfield-source.md)
 - `R69` [**Implement @experimental_constructType**](experimental-construct-type.md) — Backlog, feature
 - `R282` [**Scope unknownForeignKeyRejection FK candidate hint to the structurally relevant FKs**](fk-key-hint-sibling-scope.md) — Backlog, bug
 - `R72` [**Slim ServiceCatalog down to a lookup primitive**](slim-servicecatalog-to-lookup.md) — Backlog, architecture

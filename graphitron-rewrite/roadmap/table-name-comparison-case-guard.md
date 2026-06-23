@@ -1,7 +1,7 @@
 ---
 id: R358
 title: "Guard table-name comparisons against case-sensitivity drift"
-status: Spec
+status: Ready
 bucket: cleanup
 priority: 5
 theme: structural-refactor
@@ -86,7 +86,7 @@ Named deliberately so the guard is not mistaken for a total invariant (per the a
 
 - **Other comparison spellings.** `Objects.equals(a, b)`, `==` on interned strings, `Set.contains`, `switch` on a name — none present today, none guarded. A syntactic guard pins spellings, and spellings are open-ended; this guard is a tripwire for the spelling that bit, not a proof that no same-table comparison can ever drift.
 - **The lookup-key consumption mode.** `nodeIdMetadata(...)`, `nodes.forTable(...)` take `tableName()` as a raw key and case-fold internally. Safe today; not a comparison, so not guarded. Canonicalising `tableName()` at construction would subsume both modes but deletes the case-preservation invariant; out of scope (see Alternatives).
-- **The `ColumnRef.sqlName()` sibling.** Structurally identical defect on the *column* identity string: one live `.sqlName().equals(` (`GraphitronSchemaValidator.java:883`) alongside seven `equalsIgnoreCase` sites. R358 scopes to `tableName` only; **file the `sqlName` case as its own Backlog item** rather than let it fall into the blind spot silently. (`:883`'s operands may, like `:3105`, be non-divergent; that item makes the per-site call.)
+- **The `ColumnRef.sqlName()` sibling.** Structurally identical defect on the *column* identity string: one live `.sqlName().equals(` (`GraphitronSchemaValidator.java:883`) alongside six `equalsIgnoreCase` comparison sites (`FieldBuilder.java:5724`, `TypeBuilder.java:1273`, `BuildContext.java:2411`, `NodeIdLeafResolver.java:353/499/538`); the catalog-internal `findColumn` lookup (`JooqCatalog.java:813`) is the column analogue of `findTable`, the already-case-insensitive layer, not a comparison site. R358 scopes to `tableName` only; **file the `sqlName` case as its own Backlog item** rather than let it fall into the blind spot silently. (`:883`'s operands may, like `:3105`, be non-divergent; that item makes the per-site call.)
 
 ## Alternatives considered
 
