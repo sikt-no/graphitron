@@ -352,6 +352,45 @@ omits the table because this fact owns it). Consumers then read one fact instead
   (a field's target shape becomes its children's source shape), and the actual carrier of the
   parent-to-child table flow.
 
+### The table expression
+
+`resolvedTable` is the table's **class**: its columns, its record shape, what `$fields` projects. How that
+table **enters the query** is a separate, total fact paired with it:
+
+> **`tableExpr(coordinate) → arm`**, present exactly when `resolvedTable` is, total over its arms:
+> - **`Catalog`** (the default): the static generated reference (`Tables.FILM`). No payload, derivable from
+>   `resolvedTable`.
+> - **`MethodCall(method, argBindings)`** (`@tableMethod`): a developer's static Java method returning that
+>   table class, parameterized by the field's GraphQL arguments.
+> - **`RoutineCall(routine, argBindings)`** (`@routine`): a jOOQ table-valued function, parameterized the same
+>   way.
+
+It is **total, not 0..1**: every table-touching coordinate has a `tableExpr`, and the absence of a directive
+is the `Catalog` arm, not a missing fact (the same shape as `source` and `target`, total facts with arms).
+So the table-identity question (`resolvedTable`, the class) and the table-rendering question (`tableExpr`, the
+expression) split cleanly: `resolvedTable` drives projection, the source-object record shape, and the locator
+reads, all class-level and indifferent to the arm; only the FROM clause reads `tableExpr`. The `argBindings`
+on the override arms are the field's GraphQL arguments feeding the call's parameters, the same input-coordinate
+/ argMapping machinery `@service` and `@condition` use; the arms differ only in emission (a Java
+`Table`-returning call spliced in versus a SQL table-valued function in the FROM).
+
+**Composition with `reference`.** The two are orthogonal and meet only at `resolvedTable`'s class. `reference`
+owns the path and ON predicate (parent columns + the class's FK metadata), terminating at `resolvedTable`;
+`tableExpr` renders `resolvedTable` wherever it enters, the FROM at a root field, or the terminal join step's
+table at a child. Disjoint inputs (FK / parent columns versus field arguments), disjoint pieces of the query.
+The classifier already builds the child case this way: `@tableMethod` reuses the `@reference` path parser and
+then asserts the path's terminus equals the method's return table (`FieldBuilder.java:5503-5512`). That
+assertion is the composition, a referential-integrity constraint of the same family as `resolvedTable`'s
+coincidence invariant:
+
+> the `reference` path's terminus class `==` the `tableExpr` call's return class `==` `resolvedTable`.
+
+Because it holds, the reference's FK columns resolve on the call's result exactly as on the static table, and
+the terminal join step renders its table via `tableExpr` instead of `Tables.X`. At a root field there is no
+`reference`, and `tableExpr` is the FROM directly. (A DTO parent reaches a `@tableMethod` child through a
+DataLoader-keyed batch lifted from the parent object, `sourceKey` / `parentCorrelation`, rather than a
+parent-table join; that is the `@sourceRow` machinery, gap 5, orthogonal to `tableExpr` itself.)
+
 ### Conditions key on the resolved table
 
 A `@condition` is a predicate, and predicates attach to **relations**, not to projections; the relation a
@@ -1121,6 +1160,7 @@ Owned by an existing fact:
 | Directive(s) | Owning fact |
 |---|---|
 | `@table` | `source.table` / `target.table` / `resolvedTable` |
+| `@tableMethod` / `@routine` | `tableExpr` (the FROM expression for `resolvedTable`) |
 | `@field` | the **locator** (output) / column binding (input) / `EnumValue.runtimeValue` |
 | `@externalField` | the locator's typed-jOOQ-field arm |
 | `@reference` | the `reference` fact (path, `referencedTable`, `joinPath`) |
@@ -1141,9 +1181,11 @@ The gaps, in resolution order:
    axis: the read is a **locator** plus references to `Column` and **node facts**; the scalar / enum
    conversions are column facts lifted at the boundary, and `@nodeId` is node facts. See *Reading the source
    object* / *Node facts* / *Enum facts*.
-2. **`resolvedTable` provenance** (`@tableMethod`, `@routine`). **Next.** `resolvedTable` assumes a static
-   catalog table, but `@tableMethod` supplies it from a Java method's return and `@routine` makes the FROM a
-   table-valued function. Needs a provenance arm: `catalog | tableMethod | routine`.
+2. **Table expression** (`@tableMethod`, `@routine`). **Resolved (this session).** `resolvedTable` is the
+   table *class* and is unchanged; a separate **total** fact `tableExpr` renders how it enters the query,
+   arms `Catalog` (default, the static `Tables.X`) | `MethodCall` | `RoutineCall`, read only by the FROM
+   clause. It composes with `reference` orthogonally (path / ON predicate versus table rendering), bound by
+   the terminus-class equality constraint. See *The table expression*.
 3. **Polymorphic type resolution** (`@discriminate` / `@discriminator`). **Open.** The source-object fact is
    asserted monomorphic (one shape per type, uniform-producer axiom), but a discriminated interface / union is
    one producer whose concrete type is chosen by a column value, so the cast target becomes conditional.
@@ -1223,7 +1265,7 @@ The gaps, in resolution order:
 In scope: the model (the lowering to a referentially-closed method-call-graph, the normalization, the
 natural keys, the anchor/address primitive, the node and edge relations, the coordinate-and-its-facts
 normalized schema (`source` / `target` / `operation` as independent functional dependencies, plus the
-`reference` / `referencedTable` / derived `resolvedTable` facts and the `(coordinate, path)` input-coordinate
+`reference` / `referencedTable` / derived `resolvedTable` / `tableExpr` facts and the `(coordinate, path)` input-coordinate
 fact family whose facts roll up into the output operation set, the read-side **source object** (type-level
 cast target) and **accessor** (field-level locator, no transform axis) facts, the **node facts** (`NodeType` /
 `NodeKeyColumn` plus the per-coordinate key projections, with the codec entailed and identity-carrying paths
