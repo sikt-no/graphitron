@@ -171,8 +171,9 @@ with its facts, each its own functional dependency:
   set. Detailed below in *Input coordinates*.
 - **Two further facts are *read-side*.** Every fact above is build-side, constructing the query or
   operation. These two instead read a value back out of the object at `env.getSource()`: a type-level
-  **source object** fact (the cast-target record shape) and a field-level **accessor** fact (a locator
-  paired with a transform). Detailed below in *Reading the source object*.
+  **source object** fact (the cast-target record shape) and a field-level **accessor** fact (a
+  **locator**; the read's encoding is not a separate transform but follows from the `Column` or **node**
+  facts the locator points at). Detailed below in *Reading the source object* and *Node facts*.
 
 `source` and `target` are two different facts, derived by two different walks (parent/edge versus the
 field's type), and they vary independently: the same `target` `List(Table)` sits under a `Root` source or
@@ -526,7 +527,9 @@ off the generic `org.jooq.Record`, the identity all embedding sites share.)
 Where the source object keys on the type, the **accessor** keys on the field: each field pulls its own value
 out of the (now cast) source object. It is a **sealed family**, each arm carrying only its own facts, gated by
 the source object, replacing the nullable `column`-xor-`accessor` slots on today's `RecordField` /
-`PropertyField` with arm identity. It decomposes into a **locator** and a **transform**.
+`PropertyField` with arm identity. It is a **locator**. There is **no transform axis**: how a read is
+encoded is not a function carried on the field but a consequence of the facts the locator points at,
+worked through after the locator arms below.
 
 **The locator** says *where* the raw value(s) live, one leaf read or `N` for a composite:
 
@@ -543,35 +546,118 @@ the source object, replacing the nullable `column`-xor-`accessor` slots on today
   `NestingField` identity read).
 - **localContext** / **`Outcome.ErrorList` arm**: where an errors list lives (today's `ErrorsField.Transport`).
 
-**The transform** establishes the **function** applied to the locator's read(s). `Direct` is the identity (a
-bare read, no call). `NodeIdEncode` establishes the per-type `encode<T>` helper, `EnumValueOf` and
-`JooqConvert` establish those, and `decode` is the input-side mirror. The accessor is uniformly `function(args)`:
-the **transform names the function**, the **locator names the arguments**. A composite key is one transform
-over an `N`-read locator, dissolving `CompositeColumnField` / `CompositeColumnReferenceField` on the read side
-the way the spec dissolves composite on the projection side: the `N`-column repeating group becomes `N`
-argument reads under one `encode`, arity gone as a leaf dimension.
+**There is no transform fact; what looked like one dissolves into facts that already exist.** Earlier drafts
+paired the locator with a *transform* (`Direct` / `NodeIdEncode` / `EnumValueOf` / `JooqConvert`), copied
+from today's `CallSiteCompaction` / `CallSiteExtraction` arms. None of those is a function the coordinate
+carries:
 
-This is the shipped shape on both polarities, the corroboration that the locator / transform split is real:
+- `Direct` is identity: the *absence* of any conversion fact, a bare read.
+- `EnumValueOf` and `JooqConvert` are **`Column` facts**, not transforms. The wire→SDL coercion is
+  graphql-java's, type-level (an `ID` arrives as `String`, an enum name as its registered `value`); the
+  SDL→storage step is entailed by the column's own Java type / `DataType`. An enum's Java type is type-level
+  (one `@enum` class per SDL enum), so the typed value is **lifted at the graphql-java boundary** (register
+  the jOOQ constant as the enum value's `value`) and the read is `Direct`; the only model obligation is a
+  comparability check that the SDL enum's value set matches the column enum's constants. `ID`'s Java type is
+  per-column, so it cannot be lifted type-level; the bind goes through the column's `DataType`, again driven
+  by the column fact, not a carried function. (Generalizing this off the `ID`-only trigger is R261.)
+- `NodeIdEncode` / `decode` is **node facts** (*Node facts*, below): the codec is entailed by a node's key
+  definition, nothing the field carries.
 
-- **output**: `ColumnField` carries `column` (locator) and `compaction` (transform); `CallSiteCompaction.Direct`
-  names no function, `NodeIdEncodeKeys` carries the `HelperRef.Encode`. `CompositeColumnField` is the same
-  with an `N`-read locator (`columns`) and one `NodeIdEncodeKeys`.
-- **input**: `ValueShape.Scalar` carries `sdlPath` (locator) and `leafTransform` (`CallSiteExtraction`: `Direct`
-  / `EnumValueOf` / `JooqConvert` / `NodeIdDecodeKeys`, the function). Same shape, other direction.
-
-**Deferred:** the composition is **depth-1** (a function over leaf reads), which covers nodeId including the
-composite case. Full recursion (`f(g(read))`, a transform whose arguments are themselves transformed
-accessors) is named but unbuilt; model the flat form now, nest only if a use case needs it.
+So the read side is a **locator** plus references to `Column` and node facts; the `compaction` /
+`leafTransform` slots on today's carriers (`ColumnField.compaction`, `ValueShape.Scalar.leafTransform`) are
+the conflation the normalized model takes apart, the locator is `column` / `sdlPath`, and `NodeId*` routes to
+node facts while `Direct` / `EnumValueOf` / `JooqConvert` carry no read-time step at all. A composite key is
+not a composite transform but an `N`-read locator feeding one node codec: the `N`-column repeating group
+becomes `N` source columns under one node key, arity gone as a leaf dimension, dissolving
+`CompositeColumnField` / `CompositeColumnReferenceField` on the read side the same way the spec dissolves
+composite on the projection side.
 
 #### Composition
 
 A read is **cast then access**: the source-object fact emits the unconditional conversion of `env.getSource()`,
 the accessor reads off the converted object. The source object **gates** the legal locator arms (a jOOQ-record
 source admits the typed-field and by-name arms, a Java source the component / getter / field arms, and
-passthrough is shape-agnostic), and the transform is orthogonal (any locator wrapped by any function, or
-none). So the read side is two facts, a type-level **source object** (the cast target) and a field-level
-**accessor** (a gated locator paired with a function-naming transform), standing as the read-side complement
-of the build-side `source` / `target` / `operation` / `reference` / `resolvedTable` / `condition` family.
+passthrough is shape-agnostic). So the read side is two facts, a type-level **source object** (the cast
+target) and a field-level **accessor** (a gated locator), with any encoding entailed by the `Column` or node
+facts the locator points at rather than carried as a third thing. They stand as the read-side complement of
+the build-side `source` / `target` / `operation` / `reference` / `resolvedTable` / `condition` family.
+
+### Node facts
+
+`@nodeId` looked like a *transform* (a function applied to a read) but it is not: there is no function to
+carry. encode/decode is **entailed** by a node's identity definition, the way `joinPath` is entailed by a
+`reference`. Given a node type and its key columns the codec is fully determined; the coordinate does not
+*have* an encode step, it *references a node*, and the node's facts are the codec. So `@nodeId` is the residue
+that made "transform" look like an axis, and naming it as node facts is what lets the axis go.
+
+A node is a GraphQL object type carrying `@node`. Its identity is the type-level pair:
+
+| Relation | PK | Attributes |
+|---|---|---|
+| `NodeType` | `type` | `typeId`, `table` |
+| `NodeKeyColumn` | `(type, ordinal)` | `column` |
+
+`type` is the object type, the natural key `@nodeId(typeName:)` references. `typeId` is the user-providable
+wire discriminator (`@node(typeId:)`, defaulting to the type name, so total and non-null) stamped into the
+encoded id. `table` is the backing table the key columns live on. `NodeKeyColumn` is the ordered key
+(`@node(keyColumns:)`, defaulting to the primary key); the repeating group is its own relation per 1NF.
+Together they define encode (read the columns in ordinal order, stamp `typeId`, base64) and decode (the
+inverse); the codec is a view over them, not a stored function, and is direction-agnostic, the coordinate's
+polarity picks encode or decode.
+
+**A coordinate's id read projects the node key onto its row.** A `@nodeId` coordinate names a node type
+(explicit `typeName:` or the deduction rule), so `type` is the coordinate's own fact, reached through the
+coordinate, not repeated per projection row. What the coordinate must resolve is *which local columns carry
+that node's key*:
+
+| Relation | PK | Attributes |
+|---|---|---|
+| `NodeKeyProjection` | `(coordinate, ordinal)` | `sourceColumn` |
+| `InputNodeKeyProjection` | `(coordinate, path, ordinal)` | `column` |
+
+`NodeKeyProjection` is the **read-side locator** for an output id: the source-table column carrying each key
+position, `ordinal` aligning to the coordinate's `NodeKeyColumn`. `InputNodeKeyProjection` is its input-side
+sibling, the same payload (a column per ordinal) at a different grain, an input field is keyed
+`(coordinate, path)` (the dotted path within the consuming output coordinate's argument structure, per *Input
+coordinates*), so it cannot share the output relation without forcing a null `path` (no-null discipline).
+Both are **present exactly when the key projects**, all-`N`-ordinals-or-none, since a half-projected key is
+useless to the codec.
+
+**Whether the key projects is one derived fact, not a stored boolean.** The projection is derived by composing
+foreign-key column pairings along the path from the source table to the node's table:
+
+| Relation (catalog) | PK | Attributes |
+|---|---|---|
+| `ForeignKey` | `fk` | `childTable`, `parentTable` |
+| `ForeignKeyColumn` | `(fk, ordinal)` | `childColumn`, `parentColumn` |
+
+The path is resolved exactly as the `reference` fact resolves its `joinPath`: the unique foreign-key chain is
+inferred, `@reference` disambiguates, ambiguity-without-`@reference` is an `AuthorError`. With the path in
+hand each `NodeKeyColumn(type, i)` projects to a source column by following the pairing back through the
+chain, aligning on **parent-column identity, not raw FK ordinal** (the FK's own order need not equal the
+node-key order). The composition is total, so the projection exists, exactly when the path is
+**identity-carrying**:
+
+- **one hop is always identity-carrying**: an FK's child columns hold the referenced key by definition, so
+  the parent's identity is already in the source row.
+- **multi-hop is identity-carrying iff the containment closure holds**: at every intermediate table the
+  outgoing FK's child columns sit inside the key the incoming FK targets, so each ancestor's key is embedded
+  in the next descendant's. This is the *identifying relationship* (the FK is part of the key), and chaining
+  it lets one source row carry the keys of ancestors several hops away.
+
+So `identityCarrying` is not stored, it *is* the presence of the projection (`∃ NodeKeyProjection(coordinate,
+*)`). When present, the id read is pure column projection, **no `operation` minted**, entirely read-side. When
+**absent** the far key is not in the row, so we lack the fact and must use the other strategy: keep the
+resolved path and mint build-side SQL, a `join` to read the key for an output id, an `EXISTS` / semijoin to
+constrain it for an input filter. A non-projectable node id is just *a reference plus a codec*, riding the
+`reference` fact's `join` machinery. (Deferred: the partial-projection hybrid, some key columns local and some
+joined, is collapsed to all-or-none for now.)
+
+One integrity constraint binds the halves: on the terminating hop the set of
+`ForeignKeyColumn(fk, *).parentColumn` must equal `NodeKeyColumn(type, *).column`, the path targets exactly
+the node's key. This is the directive's own "the foreign key must match the key defined in the referenced
+type's `@node`-configuration", now a typed referential-integrity check rather than a runtime assumption, the
+same discipline as the column's-table-equals-the-join's-destination check on the `reference` fact.
 
 ## We are data modeling: the relational discipline, not a database engine
 
@@ -1009,13 +1095,16 @@ contribution.
   them. Chosen for simplicity, on the bet that an overriding author owns that branch's SQL. **Open residue:**
   narrow to conditions-only (leaving an input-side reference's `join` standing for a hand-written predicate to
   use) only if a use case requires it. The per-field, subtree-scoped rule is easy to relax that far.
-- **Read-side facts** (the source object and the accessor). **Resolved (the *Reading the source object*
-  section):** the read decomposes into a type-level **source object** fact (a cast-target record shape, never a
-  table, with table-boundness a separate build fact) and a field-level **accessor** fact (a locator gated by the
-  source object, paired with a transform that names the function it calls). **Open residue / deferred:**
-  producer-polymorphism (a type with disagreeing producer shapes) is asserted away by the uniform-producer
-  axiom, and deep accessor recursion (`f(g(read))`) is modeled flat at depth-1; both are named but unbuilt,
-  to revisit only if a use case forces them.
+- **Read-side facts** (the source object and the accessor). **Resolved (the *Reading the source object* and
+  *Node facts* sections):** the read decomposes into a type-level **source object** fact (a cast-target record
+  shape, never a table, with table-boundness a separate build fact) and a field-level **accessor** fact (a
+  locator gated by the source object). There is **no transform axis**: what looked like one is `Column` facts
+  (scalar / enum coercion, entailed by the column type and lifted at the graphql-java boundary) and **node
+  facts** (the `@nodeId` codec, entailed by a node's key definition; the key projection is the read-side
+  locator, and a non-identity-carrying path rides the `reference` fact's `join` / `EXISTS`). **Open residue /
+  deferred:** producer-polymorphism (a type with disagreeing producer shapes) is asserted away by the
+  uniform-producer axiom, and the partial node-key projection (some key columns local, some joined) is
+  collapsed to all-or-none; both named but to revisit only if a use case forces them.
 
 ## Scope
 
@@ -1024,7 +1113,9 @@ natural keys, the anchor/address primitive, the node and edge relations, the coo
 normalized schema (`source` / `target` / `operation` as independent functional dependencies, plus the
 `reference` / `referencedTable` / derived `resolvedTable` facts and the `(coordinate, path)` input-coordinate
 fact family whose facts roll up into the output operation set, the read-side **source object** (type-level
-cast target) and **accessor** (field-level locator + transform) facts, the DataFetcher
+cast target) and **accessor** (field-level locator, no transform axis) facts, the **node facts** (`NodeType` /
+`NodeKeyColumn` plus the per-coordinate key projections, with the codec entailed and identity-carrying paths
+deciding whether the read stays projection-only or rides a `join`), the DataFetcher
 and QueryPart-methods as views over them), the target seam topology and its placement rule, and the decision to materialize
 the relations as typed in-type collections with a referential-integrity check rather than on a query
 engine). Out of scope: the emit
