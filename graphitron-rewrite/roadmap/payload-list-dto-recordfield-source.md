@@ -1,7 +1,7 @@
 ---
 id: R357
 title: "Case-insensitive @table-name match in record-composite carrier accessor resolution"
-status: Ready
+status: In Review
 bucket: bug
 priority: 2
 theme: service
@@ -66,6 +66,8 @@ The two operands name the same table in different case, because `TableRef.tableN
 This explains the two red herrings recorded on the original ticket: `@sourceRow` "works" only because it passes an explicit `className` and never reaches this comparison; and renaming the SDL field to match the getter exactly *also* failed because the name match is never reached — the table-name guard drops the accessor first (proving the original "fqClassName was never grounded" hypothesis wrong: the DTO **is** grounded; the accessor is discarded one step later).
 
 ## Implementation
+
+**Landed (In Review).** The one-line `equals` → `equalsIgnoreCase` change shipped at `FieldBuilder.java:5116` (the planned `:5114` shifted by two lines after a javadoc clarification on `collectAccessorMatches` noting why the two operands disagree on case). The pipeline-tier test landed as a fourth method, `caseMismatchedTableName_classifiesCompositeChildrenAsRecordTableField`, in `ServiceRecordCompositeCarrierPipelineTest`. Verified the test fails pre-fix (both children fall to `UnclassifiedField` with the three-option `resolveRecordParentSource` author error) and passes post-fix; full reactor green (`mvn -f graphitron-rewrite/pom.xml install -Plocal-db`).
 
 One-line change at `FieldBuilder.java:5114`, matching the case-insensitive idiom the codebase already uses for table-name comparison everywhere else (`TypeBuilder.java:799`, `GraphitronSchemaValidator.java:669`, `NodeIdLeafResolver.java:292/323`, `FieldBuilder.java:5720`, `BuildContext.java:2393`):
 

@@ -5082,7 +5082,9 @@ class FieldBuilder {
      * which already threads the directive value through {@link #resolveRecordAccessor}.
      * {@code fieldName} is retained for the cardinality-mismatch text, which quotes the SDL
      * field name rather than the accessor base. When {@code expectedSqlName} is non-null, only
-     * matches whose element table's SQL name equals it are kept (table-bound case); when null,
+     * matches whose element table's SQL name equals it (case-insensitively, since
+     * {@code TableRef.tableName()} preserves the verbatim directive casing on one resolution path
+     * and the jOOQ {@code Table.getName()} casing on the other) are kept (table-bound case); when null,
      * every {@code TableRecord} element matches and the caller (polymorphic-hub case) discovers
      * the hub from the unique surviving match.
      *
@@ -5111,7 +5113,7 @@ class FieldBuilder {
 
             var elementTableRef = svc.resolveTableByRecordClass(axis.elementClass());
             if (elementTableRef.isEmpty()) continue;
-            if (expectedSqlName != null && !elementTableRef.get().tableName().equals(expectedSqlName)) continue;
+            if (expectedSqlName != null && !elementTableRef.get().tableName().equalsIgnoreCase(expectedSqlName)) continue;
 
             if (fieldIsList) {
                 if (axis.container() == ServiceCatalog.ContainerKind.LIST

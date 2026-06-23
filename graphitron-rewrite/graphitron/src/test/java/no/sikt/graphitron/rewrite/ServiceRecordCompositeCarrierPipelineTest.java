@@ -24,6 +24,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  * the {@code WrapperArm} transport. The driving shape reduces to a Sakila-catalog analog (FilmRecord +
  * List&lt;ActorRecord&gt;) returned by {@link TestServiceStub#createFilmsWithActors} /
  * {@link TestServiceStub#createFilmWithActors}.
+ *
+ * <p>R357 adds the casing-mismatch sibling ({@link #caseMismatchedTableName_classifiesCompositeChildrenAsRecordTableField}):
+ * the same carrier whose {@code @table} children declare {@code @table(name:)} in a case that differs from
+ * the lowercase jOOQ catalog name still resolves both children through the accessor path.
  */
 @PipelineTier
 class ServiceRecordCompositeCarrierPipelineTest {
@@ -140,5 +144,63 @@ class ServiceRecordCompositeCarrierPipelineTest {
         assertThat(data).isInstanceOf(ChildField.RecordCompositeField.class);
         assertThat(((ChildField.RecordCompositeField) data).envelope())
             .isEqualTo(SourceKey.Reader.SourceEnvelope.DIRECT);
+    }
+
+    /**
+     * R357 — the casing-mismatch sibling of {@link #listArrival_classifiesPayloadResultAndDataField}. The
+     * driving utdanningsregisteret schema writes every {@code @table(name:)} in legacy Oracle-style
+     * UPPERCASE while the Postgres jOOQ catalog is lowercase. The same record-composite carrier, with the
+     * result type's {@code @table} children declared {@code @table(name: "FILM")} / {@code @table(name:
+     * "ACTOR")} against the lowercase Sakila {@code film} / {@code actor} tables, must still resolve both
+     * children through the record-backed accessor path. A single case-sensitive table-name comparison in
+     * {@code collectAccessorMatches} dropped the matched accessor under a casing mismatch (the verbatim
+     * {@code @table(name:)} casing on one operand, the jOOQ {@code Table.getName()} casing on the other),
+     * falling the field through to the misleading three-option {@code resolveRecordParentSource} author
+     * error; the comparison is now case-insensitive, the idiom the codebase uses for table-name comparison
+     * everywhere else.
+     *
+     * <p>Pre-fix both children classify as {@code UnclassifiedField}; post-fix both are
+     * {@code RecordTableField} (to-one {@code ONE}, to-many {@code MANY}) with empty diagnostics. Asserts
+     * the classification verdict, not the case-insensitivity mechanism (an implementation detail); the
+     * verdict under a casing mismatch is the behaviour.
+     */
+    @Test
+    void caseMismatchedTableName_classifiesCompositeChildrenAsRecordTableField() {
+        var schema = TestSchemaHelper.buildSchema("""
+            type Film @table(name: "FILM") { title: String }
+            type Actor @table(name: "ACTOR") { firstName: String @field(name: "first_name") }
+            type DbErr @error(handlers: [{handler: DATABASE}]) { path: [String!]!  message: String! }
+            union CreateError = DbErr
+            type CreateFilmsResult {
+                film: Film! @field(name: "filmRecord")
+                actors: [Actor] @field(name: "actorRecords")
+            }
+            type CreateFilmsPayload {
+                results: [CreateFilmsResult]
+                errors: [CreateError]
+            }
+            type Query { x: String }
+            type Mutation {
+                createFilms: CreateFilmsPayload
+                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "createFilmsWithActors"})
+            }
+            """);
+
+        // The to-one child resolves through the record-backed accessor path despite the @table(name:)
+        // casing ("FILM") differing from the lowercase jOOQ catalog name ("film").
+        var film = schema.field("CreateFilmsResult", "film");
+        assertThat(film).isInstanceOf(ChildField.RecordTableField.class);
+        var filmRtf = (ChildField.RecordTableField) film;
+        assertThat(filmRtf.sourceKey().target().tableName()).isEqualToIgnoringCase("film");
+        assertThat(filmRtf.sourceKey().cardinality()).isEqualTo(SourceKey.Cardinality.ONE);
+
+        // The to-many child likewise resolves (list cardinality), not dropped to UnclassifiedField.
+        var actors = schema.field("CreateFilmsResult", "actors");
+        assertThat(actors).isInstanceOf(ChildField.RecordTableField.class);
+        var actorsRtf = (ChildField.RecordTableField) actors;
+        assertThat(actorsRtf.sourceKey().target().tableName()).isEqualToIgnoringCase("actor");
+        assertThat(actorsRtf.sourceKey().cardinality()).isEqualTo(SourceKey.Cardinality.MANY);
+
+        assertThat(schema.diagnostics()).isEmpty();
     }
 }
