@@ -5,7 +5,7 @@ status: Spec
 bucket: cleanup
 priority: 5
 theme: structural-refactor
-depends-on: [payload-list-dto-recordfield-source]
+depends-on: []
 created: 2026-06-23
 last-updated: 2026-06-23
 ---
