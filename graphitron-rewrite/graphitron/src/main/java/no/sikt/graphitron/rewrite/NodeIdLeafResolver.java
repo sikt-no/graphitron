@@ -289,7 +289,7 @@ final class NodeIdLeafResolver {
         // input-field classifier, the read-side input-field filter arm, and the top-level @nodeId
         // argument arm), so a same-table @nodeId @reference is admitted as a self-FK filter on the
         // read side too (WHERE child_cols IN (decoded keys), no self-join) — by design.
-        if (targetTableName.equalsIgnoreCase(containingTable.tableName())
+        if (containingTable.sameTable(targetTableName)
                 && !leaf.hasAppliedDirective(DIR_REFERENCE)) {
             return new Resolved.SameTable(refTypeName, decodeMethod, keys.keyColumns());
         }
@@ -320,7 +320,7 @@ final class NodeIdLeafResolver {
             // @reference was present (the no-@reference same-table case short-circuited to SameTable
             // above). The lifted columns are the self-FK's child columns on the row's own table,
             // a pointer to a sibling, never the row's identity. R354 reads this off the carrier.
-            boolean selfReference = targetTableName.equalsIgnoreCase(containingTable.tableName());
+            boolean selfReference = containingTable.sameTable(targetTableName);
             return new Resolved.FkTarget.DirectFk(
                 refTypeName, targetTable, decodeMethod, keys.keyColumns(),
                 firstHop.sourceSideColumns(), liftedAligned, joinPath.path(), selfReference);

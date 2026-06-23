@@ -23,36 +23,53 @@ import static org.assertj.core.api.Assertions.assertThat;
  * {@code FieldBuilder.resolveCarrierIdEncoder} was one explicit {@code @nodeId(typeName:)} hop from
  * the same defect.
  *
- * <p>The guard scans the rewrite source tree and forbids the case-sensitive
- * {@code tableName().equals(...)} spelling. The established comparison sites use
- * {@code equalsIgnoreCase}, which {@code .equals(} does not match, so they pass untouched. This is a
- * tripwire for the spelling that bit, not a proof that no same-table comparison can ever drift (see
- * R358's "Scope and residual blind spots"). R358 Phase 2 routes every comparison through
- * {@code TableRef.sameTable} / {@code denotesSameTableAs} and tightens this scan to a structural
- * backstop.
+ * <p>R358 Phase 2 moves the canonical identity comparison onto the type
+ * ({@link no.sikt.graphitron.rewrite.model.TableRef#sameTable(String)} /
+ * {@code denotesSameTableAs(TableRef)}), so every consumer routes through one case-insensitive
+ * predicate instead of re-deriving the case-folding contract the jOOQ catalog already guarantees.
+ * This guard is then a backstop on a predicate that is correct by construction: it forbids
+ * <em>any</em> raw {@code tableName()} comparison, either operand orientation, either case-sensitivity.
+ * The single legitimate home for a raw comparison is the predicate's own body in
+ * {@code model/TableRef.java}, excluded here (the {@code UnifiedEmissionPinsTest}
+ * "exclude the unified emitter itself" pattern).
+ *
+ * <p>The scan is orientation-complete and spelling-closed for the comparison mode, not a total
+ * invariant: other spellings ({@code Objects.equals}, {@code ==}, {@code Set.contains}) and the
+ * lookup-key consumption mode are out of scope (see R358's "Scope and residual blind spots").
  *
  * <p>The scanned-file count is asserted nonzero: a copy of the precedent's
  * ({@code UnifiedEmissionPinsTest}) non-recursive {@code Files.list} over the wrong subtree would
  * scan zero {@code .java} files and pass vacuously, an enforced-but-checking-nothing guard.
  *
- * <p>If a case-sensitive comparison is ever legitimately required, touching this assertion is the
- * deliberate architectural review point the guard exists to create.
+ * <p>If a raw {@code tableName()} comparison is ever legitimately required, it belongs on
+ * {@code TableRef} (excluded here); touching this assertion is the deliberate architectural review
+ * point the guard exists to create.
  */
 @UnitTier
 class TableNameComparisonCaseGuardTest {
 
     private static final Path REWRITE_ROOT = Path.of("src/main/java/no/sikt/graphitron/rewrite");
 
+    /** The predicate's home: the one file allowed to compare {@code tableName} directly. */
+    private static final Path PREDICATE_HOME = Path.of("model", "TableRef.java");
+
     /**
-     * Case-sensitive left-operand {@code X.tableName().equals(...)}. The trailing {@code (} excludes
-     * {@code equalsIgnoreCase(}, the idiom every other table-name comparison site uses.
+     * Left-operand {@code X.tableName().equals(...)} / {@code .equalsIgnoreCase(...)}. No trailing
+     * {@code (}, so both the case-sensitive footgun and its case-insensitive sibling trip.
      */
-    private static final Pattern CASE_SENSITIVE_LEFT =
-        Pattern.compile("\\.tableName\\(\\)\\s*\\.equals\\(");
+    private static final Pattern LEFT_OPERAND =
+        Pattern.compile("\\.tableName\\(\\)\\s*\\.equals");
+
+    /**
+     * Right-operand {@code someString.equals[IgnoreCase](... .tableName())}, bounded to one statement
+     * by {@code [^;\n]*} so it never spans into the next call.
+     */
+    private static final Pattern RIGHT_OPERAND =
+        Pattern.compile("\\.equals(IgnoreCase)?\\([^;\\n]*\\.tableName\\(\\)");
 
     @Test
-    void noCaseSensitiveTableNameComparison() throws IOException {
-        var scan = scan(CASE_SENSITIVE_LEFT);
+    void noRawTableNameComparison() throws IOException {
+        var scan = scan(LEFT_OPERAND, RIGHT_OPERAND);
 
         assertThat(scan.scannedFiles())
             .as("the guard must scan the rewrite source tree recursively; a zero .java count means "
@@ -61,10 +78,11 @@ class TableNameComparisonCaseGuardTest {
             .isPositive();
 
         assertThat(scan.violations())
-            .as("TableRef.tableName() is the case-preserved verbatim @table echo; comparing it with "
-                + "case-sensitive .equals silently mis-decides on the same logical table under an "
-                + "UPPERCASE @table over a lowercase jOOQ catalog (the R357 bug). Compare with "
-                + "equalsIgnoreCase (or TableRef.sameTable once R358 Phase 2 lands). Offending sites:\n"
+            .as("TableRef.tableName() is the case-preserved verbatim @table echo; the same logical "
+                + "table can surface in two casings, so a raw tableName() comparison silently "
+                + "mis-decides under an UPPERCASE @table over a lowercase jOOQ catalog (the R357 bug). "
+                + "Compare table identity through TableRef.sameTable(String) / "
+                + "denotesSameTableAs(TableRef) instead. Offending sites:\n"
                 + String.join("\n", scan.violations()))
             .isEmpty();
     }
@@ -77,6 +95,7 @@ class TableNameComparisonCaseGuardTest {
             javaFiles = paths
                 .filter(Files::isRegularFile)
                 .filter(p -> p.getFileName().toString().endsWith(".java"))
+                .filter(p -> !p.endsWith(PREDICATE_HOME))
                 .sorted()
                 .toList();
         }
