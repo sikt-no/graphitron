@@ -1,7 +1,7 @@
 ---
 id: R341
 title: "MCP server skeleton: Streamable HTTP in graphitron:dev with a static about-prompt"
-status: Spec
+status: Ready
 bucket: feature
 theme: lsp
 depends-on: []
