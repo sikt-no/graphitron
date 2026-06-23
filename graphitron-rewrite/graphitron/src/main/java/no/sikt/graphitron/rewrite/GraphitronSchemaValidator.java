@@ -666,7 +666,7 @@ public class GraphitronSchemaValidator {
         // Every JoinStep permit implements HasTargetTable post-R232 (FkJoin and LiftedHop via
         // WithTarget; ConditionJoin directly). The comparison is uniform across permits.
         var lastStep = (JoinStep.HasTargetTable) path.getLast();
-        if (!lastStep.targetTable().tableName().equalsIgnoreCase(targetTable.tableName())) {
+        if (!lastStep.targetTable().denotesSameTableAs(targetTable)) {
             errors.add(new ValidationError(
                 fieldName,
                 Rejection.structural("Field '" + fieldName + "': @reference path does not lead to the table of type '" + typeName + "'"),

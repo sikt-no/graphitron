@@ -2390,7 +2390,7 @@ class BuildContext {
         } else {
             var directional = catalog.findForeignKeysBetweenTables(recordTable.tableName(), nodeTableSqlName)
                 .stream()
-                .filter(k -> k.getTable().getName().equalsIgnoreCase(recordTable.tableName()))
+                .filter(k -> recordTable.sameTable(k.getTable().getName()))
                 .toList();
             if (directional.size() != 1) {
                 return new RecordFkTargets.Rejected(

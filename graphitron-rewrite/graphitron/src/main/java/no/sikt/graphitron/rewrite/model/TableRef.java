@@ -50,4 +50,20 @@ public record TableRef(
     public boolean hasPrimaryKey() {
         return !primaryKeyColumns.isEmpty();
     }
+
+    /**
+     * True when {@code other} names this table, compared case-insensitively. {@code tableName()}
+     * stays the verbatim {@code @table(name:)} echo for diagnostics; this is the canonical identity
+     * comparison, so consumers never re-establish the case-folding contract the jOOQ catalog already
+     * guarantees (and never drift to a case-sensitive {@code .equals}, the R357 bug). Null-safe:
+     * a null {@code other} is not this table.
+     */
+    public boolean sameTable(String other) {
+        return other != null && tableName.equalsIgnoreCase(other);
+    }
+
+    /** True when {@code other} denotes the same table as this ref (case-insensitive, null-safe). */
+    public boolean denotesSameTableAs(TableRef other) {
+        return other != null && sameTable(other.tableName());
+    }
 }

@@ -3102,11 +3102,10 @@ class FieldBuilder {
                     return new IdEncoderResolution.UnknownNodeType(explicitTypeName.get());
                 }
                 NodeType targetNodeType = targetNode.get();
-                // R358: compare case-insensitively. tableName() is the case-preserved verbatim
-                // @table echo, but tableSqlName (the carrier's table) can arrive in jOOQ's lowercase
-                // casing on the @service record-composite path while targetNodeType's @table is a
-                // verbatim UPPERCASE Oracle-style name; the same logical table must still match.
-                if (!targetNodeType.table().tableName().equalsIgnoreCase(tableSqlName)) {
+                // R358: sameTable (case-insensitive) — the carrier's table (tableSqlName) can arrive
+                // in jOOQ's lowercase casing on the @service record-composite path while
+                // targetNodeType's verbatim @table is a UPPERCASE Oracle-style name.
+                if (!targetNodeType.table().sameTable(tableSqlName)) {
                     return new IdEncoderResolution.TableMismatch(targetNodeType);
                 }
                 return new IdEncoderResolution.Resolved(targetNodeType);
@@ -4423,7 +4422,7 @@ class FieldBuilder {
             }
 
             if (!joinPath.isEmpty() && joinPath.getLast() instanceof JoinStep.FkJoin lastFk
-                && !lastFk.targetTable().tableName().equalsIgnoreCase(targetTableName)) {
+                && !lastFk.targetTable().sameTable(targetTableName)) {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(
                     "@tableMethod @reference path: last hop lands on '" + lastFk.targetTable().tableName()
                     + "' but @tableMethod's return type is bound to table '" + targetTableName + "'"));
@@ -5117,7 +5116,7 @@ class FieldBuilder {
 
             var elementTableRef = svc.resolveTableByRecordClass(axis.elementClass());
             if (elementTableRef.isEmpty()) continue;
-            if (expectedSqlName != null && !elementTableRef.get().tableName().equalsIgnoreCase(expectedSqlName)) continue;
+            if (expectedSqlName != null && !elementTableRef.get().sameTable(expectedSqlName)) continue;
 
             if (fieldIsList) {
                 if (axis.container() == ServiceCatalog.ContainerKind.LIST
@@ -5507,7 +5506,7 @@ class FieldBuilder {
                     }
                     var pathElements = tableMethodPath.elements();
                     if (!pathElements.isEmpty() && pathElements.getLast() instanceof JoinStep.FkJoin lastFk
-                        && !lastFk.targetTable().tableName().equalsIgnoreCase(targetTableName)) {
+                        && !lastFk.targetTable().sameTable(targetTableName)) {
                         yield new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(
                             "@tableMethod @reference path: last hop lands on '" + lastFk.targetTable().tableName()
                             + "' but @tableMethod's return type is bound to table '" + targetTableName + "'"));
@@ -5723,7 +5722,7 @@ class FieldBuilder {
                                                           List<ColumnRef> targetKeyColumns) {
         if (joinPath.size() != 1) return null;
         if (!(joinPath.get(0) instanceof JoinStep.FkJoin fk)) return null;
-        if (!fk.originTable().tableName().equalsIgnoreCase(parentTable.tableName())) return null;
+        if (!fk.originTable().denotesSameTableAs(parentTable)) return null;
         if (fk.slotCount() != targetKeyColumns.size()) return null;
         List<ColumnRef> targetSide = fk.targetSideColumns();
         for (int i = 0; i < targetSide.size(); i++) {

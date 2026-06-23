@@ -796,7 +796,7 @@ class TypeBuilder {
             if (parsed.hasError()) continue;
             if (parsed.elements().size() != 1) continue;
             if (!(parsed.elements().get(0) instanceof JoinStep.FkJoin fk)) continue;
-            if (fk.targetTable().tableName().equalsIgnoreCase(interfaceTable.tableName())) continue;
+            if (fk.targetTable().denotesSameTableAs(interfaceTable)) continue;
 
             // Resolve the column on the target table that the field maps to. @field(name:) is the
             // primary signal; fall back to the GraphQL field name when the directive is absent.
