@@ -15,14 +15,13 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | ID | Item | Status | Updated | Plan |
 |---|---|---|---|---|
 | `R19` | Rebase and squash rewrite branch onto main | Ready |  | [plan](history-squash.md) |
-| `R357` | Case-insensitive @table-name match in record-composite carrier accessor resolution | In Review | 2026-06-23 | [plan](payload-list-dto-recordfield-source.md) |
 | `R222` | Dimensional model pivot: slots over cross-product permits | Spec | 2026-06-18 <sub>created 2026-05-21</sub> | [plan](dimensional-model-pivot.md) |
 | `R333` | Lower each schema coordinate to a DataFetcher and its QueryParts | Spec | 2026-06-22 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
 | `R256` | Absorb the service walker substrate: typed per-arm errors + multi-arg ctors | Ready | 2026-05-30 <sub>created 2026-05-29</sub> | [plan](service-walker-substrate-absorption.md) |
 | `R346` | Regenerate and guard the generated supported-directives migration doc against directive-set drift | Ready | 2026-06-19 | [plan](supported-directives-regen-guard.md) |
 | `R308` | Fix the @service list-payload N+1 by deriving many-arrival for list-returning carriers | Spec | 2026-06-14 | [plan](service-list-payload-arrival.md) |
 | `R335` | Fold input/scalar/enum classification into the single classify-and-emit walk | Spec | 2026-06-19 | [plan](walk-classifies-input-surface.md) |
-| `R358` | Guard table-name comparisons against case-sensitivity drift <sub>blocked by: [payload-list-dto-recordfield-source](payload-list-dto-recordfield-source.md)</sub> | Spec | 2026-06-23 | [plan](table-name-comparison-case-guard.md) |
+| `R358` | Guard table-name comparisons against case-sensitivity drift | Spec | 2026-06-23 | [plan](table-name-comparison-case-guard.md) |
 | `R353` | LSP goto-definition from an SDL type/field name to its backing Java class and member <sub>blocked by: [lsp-structural-consolidation](lsp-structural-consolidation.md)</sub> | Spec | 2026-06-22 <sub>created 2026-06-21</sub> | [plan](lsp-backing-class-member-navigation.md) |
 | `R45` | Multi-tenant routing on top of the schema-driven ExecutionInput factory | Spec | 2026-05-20 | [plan](tenant-routing-and-execution-input.md) |
 | `R273` | Source NodeId metadata from @node + catalog PK (inferred from `implements Node`), and settle wrong-type/malformed mismatch semantics, retiring the legacy __NODE bare-ID arm | Spec | 2026-06-02 | [plan](nodeid-skip-mismatch-error-surfacing.md) |
@@ -171,7 +170,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### service
 
-- `R357` [**Case-insensitive @table-name match in record-composite carrier accessor resolution**](payload-list-dto-recordfield-source.md) — In Review, bug
 - `R201` [**Honor @field(name:) in @error payload construction shape resolution**](honor-field-directive-in-payload-construction-shape.md) — Backlog, bug
 - `R202` [**Honor @field(name:) in @error type extra-field accessor matching against handler source class**](honor-field-directive-in-error-type-source-accessors.md) — Backlog, bug
 - `R45` [**Multi-tenant routing on top of the schema-driven ExecutionInput factory**](tenant-routing-and-execution-input.md) — Spec, architecture
@@ -235,7 +233,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R236` [**BuildContext nested-input candidate-hint draws from path-origin table instead of @reference terminal table**](validator-reference-candidate-hint-terminal-table.md) — Backlog, bug
 - `R231` [**Emit text-mapped-enum fields as the GraphQL enum type, not String**](emit-text-mapped-enum-fields-as-enum-type.md) — Backlog, architecture
 - `R133` [**Flip leaf-coverage profile activation to opt-in**](leaf-coverage-profile-opt-in.md) — Backlog, cleanup
-- `R358` [**Guard table-name comparisons against case-sensitivity drift**](table-name-comparison-case-guard.md) — Spec, cleanup, blocked by [payload-list-dto-recordfield-source](payload-list-dto-recordfield-source.md)
+- `R358` [**Guard table-name comparisons against case-sensitivity drift**](table-name-comparison-case-guard.md) — Spec, cleanup
 - `R69` [**Implement @experimental_constructType**](experimental-construct-type.md) — Backlog, feature
 - `R282` [**Scope unknownForeignKeyRejection FK candidate hint to the structurally relevant FKs**](fk-key-hint-sibling-scope.md) — Backlog, bug
 - `R72` [**Slim ServiceCatalog down to a lookup primitive**](slim-servicecatalog-to-lookup.md) — Backlog, architecture
