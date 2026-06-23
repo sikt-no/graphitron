@@ -1,7 +1,7 @@
 ---
 id: R357
 title: "Case-insensitive @table-name match in record-composite carrier accessor resolution"
-status: Spec
+status: Ready
 bucket: bug
 priority: 2
 theme: service
