@@ -1108,6 +1108,55 @@ contribution.
   becomes "lower every coordinate to its DataFetcher + QueryParts" rather than leaf-by-leaf surgery. This
   spec likely reframes R314's plan or feeds it directly; sequence to be decided.
 
+## Directive coverage
+
+Every active directive declares a behavior the model must lower, so the model is complete exactly when every
+directive's effect has an owning fact. This is the audit that drives the remaining work: walk the directives,
+map each to its owning fact, and the ones with no home are the gaps. (The retired directives, `@record` /
+`@notGenerated` / `@multitableReference` / `@enum` (R360), are parser-only stubs the classifier rejects; they
+own nothing by design.)
+
+Owned by an existing fact:
+
+| Directive(s) | Owning fact |
+|---|---|
+| `@table` | `source.table` / `target.table` / `resolvedTable` |
+| `@field` | the **locator** (output) / column binding (input) / `EnumValue.runtimeValue` |
+| `@externalField` | the locator's typed-jOOQ-field arm |
+| `@reference` | the `reference` fact (path, `referencedTable`, `joinPath`) |
+| `@service` | `operation: serviceCall` |
+| `@condition` | `operation: condition` (+ override suppression) |
+| `@lookupKey` | `operation: Lookup` |
+| `@mutation` | `operation: DML` |
+| `@asConnection` | `operation: paginate` |
+| `@orderBy` / `@defaultOrder` / `@order` / `@index` | `operation: orderBy` (sort-key source a sub-fact) |
+| `@splitQuery` | the operation **address** (split / new-query anchor) |
+| `@node` / `@nodeId` | **node facts** (`NodeType` / `NodeKeyColumn` / projections) |
+| `@field` on `ENUM_VALUE` | **enum facts** (`EnumValue.runtimeValue`, derived `EnumBacking`) |
+| `@scalarType` | the column's `javaType` + boundary coercion (registration is a synthesis concern) |
+
+The gaps, in resolution order:
+
+1. **Transform-definition** (the read-side "transform"). **Resolved (this session).** There is no transform
+   axis: the read is a **locator** plus references to `Column` and **node facts**; the scalar / enum
+   conversions are column facts lifted at the boundary, and `@nodeId` is node facts. See *Reading the source
+   object* / *Node facts* / *Enum facts*.
+2. **`resolvedTable` provenance** (`@tableMethod`, `@routine`). **Next.** `resolvedTable` assumes a static
+   catalog table, but `@tableMethod` supplies it from a Java method's return and `@routine` makes the FROM a
+   table-valued function. Needs a provenance arm: `catalog | tableMethod | routine`.
+3. **Polymorphic type resolution** (`@discriminate` / `@discriminator`). **Open.** The source-object fact is
+   asserted monomorphic (one shape per type, uniform-producer axiom), but a discriminated interface / union is
+   one producer whose concrete type is chosen by a column value, so the cast target becomes conditional.
+   Distinct from the deferred producer-polymorphism.
+4. **Error mapping** (`@error`). **Open.** Exception-to-GraphQL-error handler mapping (DATABASE / GENERIC /
+   VALIDATION) on payload types; a cross-cutting operation-side behavior with no fact. The read side has an
+   `Outcome.ErrorList` locator arm, but the mapping itself is unmodeled.
+5. **DTO-parent join-key lifter** (`@sourceRow`). **Open.** When the parent is a class-backed DTO with no jOOQ
+   FK metadata, a Java method lifts the parent-side join-key tuple, a provenance sub-fact of the
+   `reference` / `join` parent-side key (the `parentCorrelation` source), parallel to authored-vs-inferred.
+6. **`@experimental_constructType`.** **Deferred (experimental).** A per-field column-selection construction
+   map for non-resolvable federation entities; an explicit defer rather than a fact to build now.
+
 ## Open questions (to settle before / during Ready)
 
 - **Node-relation granularity** (the open fork from the session). **Resolved (thread K):** the node is one
