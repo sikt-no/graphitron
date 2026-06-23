@@ -3102,7 +3102,11 @@ class FieldBuilder {
                     return new IdEncoderResolution.UnknownNodeType(explicitTypeName.get());
                 }
                 NodeType targetNodeType = targetNode.get();
-                if (!targetNodeType.table().tableName().equals(tableSqlName)) {
+                // R358: compare case-insensitively. tableName() is the case-preserved verbatim
+                // @table echo, but tableSqlName (the carrier's table) can arrive in jOOQ's lowercase
+                // casing on the @service record-composite path while targetNodeType's @table is a
+                // verbatim UPPERCASE Oracle-style name; the same logical table must still match.
+                if (!targetNodeType.table().tableName().equalsIgnoreCase(tableSqlName)) {
                     return new IdEncoderResolution.TableMismatch(targetNodeType);
                 }
                 return new IdEncoderResolution.Resolved(targetNodeType);
