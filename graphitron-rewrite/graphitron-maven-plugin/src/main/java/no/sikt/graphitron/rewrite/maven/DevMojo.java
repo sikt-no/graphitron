@@ -10,6 +10,7 @@ import no.sikt.graphitron.rewrite.SchemaParseException;
 import no.sikt.graphitron.rewrite.ValidationFailedException;
 import no.sikt.graphitron.rewrite.ValidationReport;
 import no.sikt.graphitron.rewrite.maven.dev.DevServer;
+import no.sikt.graphitron.mcp.GraphitronMcpServer;
 import no.sikt.graphitron.rewrite.maven.watch.DebounceExecutor;
 import no.sikt.graphitron.rewrite.maven.watch.SchemaWatcher;
 import no.sikt.graphitron.rewrite.maven.watch.WatchErrorFormatter;
@@ -67,10 +68,17 @@ import java.util.function.Consumer;
 public class DevMojo extends AbstractRewriteMojo {
 
     static final int DEFAULT_PORT = 8487;
+    static final int DEFAULT_MCP_PORT = 8488;
     static final String LOOPBACK_HOST = "127.0.0.1";
 
     @Parameter(property = "graphitron.dev.port", defaultValue = "8487")
     int port;
+
+    // The MCP server's loopback port. Deliberately NOT a @Parameter: it stays non-overridable for
+    // users in the skeleton (a configurable port is deferred; see R341), while remaining settable
+    // from DevMojoTest so the bind-failure case can inject a taken ephemeral port instead of the
+    // well-known 8488. Mirrors DEFAULT_PORT/port.
+    int mcpPort = DEFAULT_MCP_PORT;
 
     @Parameter(property = "graphitron.dev.debounceMs", defaultValue = "300")
     long debounceMs;
@@ -84,7 +92,10 @@ public class DevMojo extends AbstractRewriteMojo {
     private DebounceExecutor schemaDebounce;
     private DebounceExecutor classpathDebounce;
     private DebounceExecutor sourceDebounce;
-    private DevServer server;
+    // Package-private so DevMojoTest can assert the LSP socket is closed when a partial bind
+    // (the MCP server failing after the LSP succeeds) is unwound in bindServer.
+    DevServer server;
+    private GraphitronMcpServer mcpServer;
     private Set<WatchErrorFormatter.DeltaKey> previousErrorKeys = null;
 
     @Override
@@ -151,6 +162,10 @@ public class DevMojo extends AbstractRewriteMojo {
 
         getLog().info("graphitron:dev: LSP listening on " + LOOPBACK_HOST + ":" + server.port()
             + "; watching " + schemaRoots + "; Ctrl+C to stop");
+        String mcpUrl = "http://" + LOOPBACK_HOST + ":" + mcpServer.port() + "/mcp";
+        getLog().info("graphitron:dev: MCP server on " + mcpUrl + " (Streamable HTTP, loopback only)");
+        getLog().info("graphitron:dev: connect an agent with: "
+            + "claude mcp add --transport http graphitron " + mcpUrl);
         try {
             schemaWatcher.run();
         } finally {
@@ -173,6 +188,18 @@ public class DevMojo extends AbstractRewriteMojo {
         } catch (IOException e) {
             throw new MojoExecutionException(
                 "graphitron:dev: failed to bind " + LOOPBACK_HOST + ":" + port, e);
+        }
+        // The MCP server is a sibling of the LSP DevServer in the same JVM. A failed MCP bind must
+        // not leak the LSP socket already bound above, so close it before rethrowing. Jetty wraps a
+        // taken port as a plain IOException (not BindException), so a single arm covers it; the
+        // message names the MCP port and gives recovery guidance, mirroring the LSP arm's contract.
+        try {
+            this.mcpServer = new GraphitronMcpServer(new InetSocketAddress(LOOPBACK_HOST, mcpPort));
+        } catch (IOException e) {
+            this.server.close();
+            throw new MojoExecutionException(
+                "graphitron:dev: MCP port " + mcpPort + " is already in use (or could not be bound). "
+                    + "Stop the other graphitron:dev session occupying it, then retry.", e);
         }
     }
 
@@ -381,6 +408,7 @@ public class DevMojo extends AbstractRewriteMojo {
         if (classpathDebounce != null) classpathDebounce.close();
         if (sourceDebounce != null) sourceDebounce.close();
         if (server != null) server.close();
+        if (mcpServer != null) mcpServer.close();
     }
 
     private static String banner(String label) {

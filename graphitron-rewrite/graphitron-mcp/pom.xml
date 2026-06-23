@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>no.sikt</groupId>
+        <artifactId>graphitron-rewrite-parent</artifactId>
+        <version>10-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>graphitron-mcp</artifactId>
+    <name>${project.groupId}:${project.artifactId}</name>
+
+    <!--
+      The MCP server embedded in the `graphitron:dev` JVM. Hosts the MCP Java SDK's servlet-based
+      Streamable HTTP transport in embedded Jetty 12 (loopback only). This module is the
+      dependency-quarantine seam for the live-data discovery tools (R118): heavy native deps
+      land here, not on graphitron-maven-plugin's own compile surface.
+
+      Published like graphitron-lsp (a Maven plugin resolves its declared dependencies from the
+      consumer's repositories at execution time), so this module must NOT carry
+      <maven.deploy.skip>. The skeleton serves static content only and depends on neither
+      `graphitron` nor `graphitron-lsp`.
+    -->
+
+    <dependencies>
+        <dependency>
+            <groupId>io.modelcontextprotocol.sdk</groupId>
+            <artifactId>mcp</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.eclipse.jetty.ee10</groupId>
+            <artifactId>jetty-ee10-servlet</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-api</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.assertj</groupId>
+            <artifactId>assertj-core</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>ch.qos.logback</groupId>
+            <artifactId>logback-classic</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!--
+          The integration tests drive the live server with the SDK's own HttpClient-based
+          Streamable HTTP client transport (HttpClientStreamableHttpTransport, McpClient),
+          which ships in the core `mcp` artifact pulled above; no extra coordinate needed.
+        -->
+    </dependencies>
+
+</project>

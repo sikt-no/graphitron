@@ -2,6 +2,7 @@ package no.sikt.graphitron.rewrite.maven;
 
 import no.sikt.graphitron.rewrite.RewriteContext;
 import no.sikt.graphitron.rewrite.schema.input.SchemaInput;
+import no.sikt.graphitron.mcp.GraphitronMcpServer;
 import no.sikt.graphitron.rewrite.maven.dev.DevServer;
 import no.sikt.graphitron.rewrite.maven.watch.DebounceExecutor;
 import org.apache.maven.plugin.MojoExecutionException;
@@ -37,8 +38,11 @@ class DevMojoTest {
     @Test
     void defaultsMatchPlanContract() {
         // The literals here lock the user-facing design constants from
-        // plan-graphitron-lsp.md (port 8487, loopback bind).
+        // plan-graphitron-lsp.md (port 8487, loopback bind) and R341 (MCP port 8488).
+        // This pins the Java source of truth for the MCP port so it cannot silently drift
+        // from the design; the static copies (.mcp.json, docs) are accepted drift per R341.
         assertThat(DevMojo.DEFAULT_PORT).isEqualTo(8487);
+        assertThat(DevMojo.DEFAULT_MCP_PORT).isEqualTo(8488);
         assertThat(DevMojo.LOOPBACK_HOST).isEqualTo("127.0.0.1");
     }
 
@@ -51,12 +55,40 @@ class DevMojoTest {
             uri -> {})) {
             int taken = blocker.port();
 
-            var mojo = mojoFor(basedir, taken);
+            var mojo = mojoFor(basedir, taken, DevMojo.DEFAULT_MCP_PORT);
 
             assertThatThrownBy(mojo::execute)
                 .isInstanceOf(MojoExecutionException.class)
                 .hasMessageContaining(String.valueOf(taken))
                 .hasMessageContaining("-Dgraphitron.dev.port=N");
+        }
+    }
+
+    @Test
+    void mcpBindFailureSurfacesMojoMessageAndClosesLspSocket(@TempDir Path basedir) throws Exception {
+        // The LSP binds a free ephemeral port (port 0) and succeeds; the MCP bind then lands on a
+        // port already held by another graphitron:dev session. The Mojo must surface a
+        // MojoExecutionException naming the MCP port, and must close the already-bound LSP socket
+        // so the partial startup leaks nothing. This pins the failure-contract parity with the LSP
+        // bind that R341 promotes into scope: the user-visible MojoExecutionException, not the
+        // server-level IOException GraphitronMcpServerTest covers.
+        try (var mcpBlocker = new GraphitronMcpServer(
+            new InetSocketAddress(InetAddress.getLoopbackAddress(), 0))) {
+            int takenMcpPort = mcpBlocker.port();
+
+            var mojo = mojoFor(basedir, 0, takenMcpPort);
+
+            assertThatThrownBy(mojo::execute)
+                .isInstanceOf(MojoExecutionException.class)
+                .hasMessageContaining("MCP port")
+                .hasMessageContaining(String.valueOf(takenMcpPort));
+
+            assertThat(mojo.server)
+                .as("the LSP DevServer was constructed before the MCP bind failed")
+                .isNotNull();
+            assertThat(mojo.server.isClosed())
+                .as("partial bind unwound: the LSP socket must be closed, not leaked")
+                .isTrue();
         }
     }
 
@@ -156,7 +188,7 @@ class DevMojoTest {
         }
     }
 
-    private static DevMojo mojoFor(Path basedir, int port) throws Exception {
+    private static DevMojo mojoFor(Path basedir, int port, int mcpPort) throws Exception {
         // Need a schema input on disk so buildContext() doesn't trip
         // before the bind path runs.
         Files.createDirectories(basedir.resolve("schema"));
@@ -173,6 +205,7 @@ class DevMojoTest {
         binding.pattern = "schema/example.graphqls";
         mojo.schemaInputs = List.of(binding);
         mojo.port = port;
+        mojo.mcpPort = mcpPort;
         mojo.debounceMs = 100;
         mojo.skipInitial = true; // we don't have a real catalog for buildContext to chew on
         return mojo;
