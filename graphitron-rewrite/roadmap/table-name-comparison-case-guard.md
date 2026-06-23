@@ -1,7 +1,7 @@
 ---
 id: R358
 title: "Guard table-name comparisons against case-sensitivity drift"
-status: Ready
+status: Spec
 bucket: cleanup
 priority: 5
 theme: structural-refactor
@@ -30,7 +30,7 @@ Verified against `graphitron/src/main/java/no/sikt/graphitron/rewrite/`.
 **Case-sensitive `.tableName().equals(` (the violations):**
 
 - `FieldBuilder.java:5114` — `elementTableRef.get().tableName().equals(expectedSqlName)`. The R357 bug; **R357 converts this**. Listed here only because the Phase 1 guard must see zero of these once R357 lands.
-- `FieldBuilder.java:3105` — `targetNodeType.table().tableName().equals(tableSqlName)`. **Not a live bug** (both operands flow from the same verbatim `resolveTable(@table-name)` path for the same node type, so they cannot diverge in case), but it violates the idiom and trips the guard. **R358 converts it.**
+- `FieldBuilder.java:3105` — `targetNodeType.table().tableName().equals(tableSqlName)`. An earlier draft classed this **inert** ("both operands share verbatim provenance, so they cannot diverge in case"); that does not hold. `targetNodeType` is resolved **by name** (`ctx.nodes.forName(explicitTypeName)`, `:3100`), not from the carrier; and the carrier operand (`tableSqlName = tableToMatch.tableName()`) is `inputArg.table()` (`:4003`) or `binding.tableRef()` (`:4312`) — the record-composite `@service` carrier path R357 showed can carry lowercase jOOQ casing against a verbatim UPPERCASE `@table`. So `:3105` is plausibly a **latent instance of the R357 bug**, one explicit `@nodeId(typeName:)` hop away, not a provably-inert site. **R358 converts it** — the correct fix whether or not the divergent shape is reachable; the reachability obligation this places on the implementer is in Tests.
 
 **Case-insensitive `equalsIgnoreCase` table-name comparisons (the established idiom, eight sites, two orientations):**
 
@@ -76,7 +76,7 @@ After Phase 2 the guard is a backstop on a predicate that is correct by construc
 
 ## Tests
 
-- **Phase 1 — the guard is its own test.** `TableNameComparisonCaseGuardTest` (`@UnitTier`): asserts zero case-sensitive matches and a nonzero scanned-file count (the vacuous-pass tripwire). No behavioural fixture: `:3105` cannot diverge in case, so converting it changes no observable output; R357 already owns the pipeline-tier proof that the case-mismatch shape classifies (`ServiceRecordCompositeCarrierPipelineTest`, UPPERCASE `@table` over lowercase jOOQ).
+- **Phase 1 — the guard is its own test.** `TableNameComparisonCaseGuardTest` (`@UnitTier`): asserts zero case-sensitive matches and a nonzero scanned-file count (the vacuous-pass tripwire). On `:3105` the conversion to `equalsIgnoreCase` is a defensive fix for a shape that may be reachable (see the drift inventory), so the implementer must **either** (a) confirm from call-site provenance that case-divergence cannot reach `:3105` at *both* `:4003` and `:4312`, and drop a one-line comment at `:3105` recording why `equalsIgnoreCase` is load-bearing there, **or** (b) add a focused pipeline fixture (explicit `@nodeId(typeName:)` with UPPERCASE `@table` over lowercase jOOQ on the carrier path) pinning the classification. R357's `ServiceRecordCompositeCarrierPipelineTest` proves the case-mismatch shape on a *different* site (`:5114`/`:5116`), so it does not substitute for (b).
 - **Phase 2 — predicate + behaviour preservation.** A focused `@UnitTier` test on `sameTable` / `denotesSameTableAs` (matching/ mismatched casing both directions, null arg). The ~10 migrated sites are behaviour-preserving, covered by the existing pipeline suite plus R357's case-mismatch fixture; no new pipeline fixture. The strengthened guard is the structural net.
 - **Smoke:** full reactor green, `mvn -f graphitron-rewrite/pom.xml install -Plocal-db`.
 
