@@ -425,6 +425,32 @@ class MutationDmlNodeIdClassificationTest {
     }
 
     @Test
+    void bulkDeleteIdCarrier_explicitNodeId_caseMismatchedTable_admits() {
+        // R358: the @nodeId(typeName: "Bar") carrier resolves the Bar NodeType by name; Bar's
+        // verbatim @table is the Oracle-style UPPERCASE "BAR" while the carrier (the input @table)
+        // is the lowercase jOOQ name "bar". resolveCarrierIdEncoder must compare the two
+        // case-insensitively — a case-sensitive .equals reads this as an @nodeId pinned to a
+        // different table and rejects the carrier, a latent instance of the R357 casing bug one
+        // explicit @nodeId hop away. Pins the admission verdict (encodeBar wired, no diagnostics),
+        // not the case-insensitivity mechanism.
+        var schema = TestSchemaHelper.buildSchema("""
+            type Bar implements Node @table(name: "BAR") @node(keyColumns: ["id_1", "id_2"]) {
+                id: ID! @nodeId
+                name: String
+            }
+            input DeleteBarInput @table(name: "bar") { id: ID! @nodeId }
+            type DeletedBarsPayload { deletedIds: [ID!] @nodeId(typeName: "Bar") }
+            type Query { x: String }
+            type Mutation { deleteBars(in: [DeleteBarInput!]!): DeletedBarsPayload @mutation(typeName: DELETE) }
+            """, NODEID_CTX);
+
+        var dataField = (no.sikt.graphitron.rewrite.model.ChildField.SingleRecordIdFieldFromReturning)
+            schema.field("DeletedBarsPayload", "deletedIds");
+        assertThat(dataField.encode().encodeMethod().methodName()).isEqualTo("encodeBar");
+        assertThat(schema.diagnostics()).isEmpty();
+    }
+
+    @Test
     void singleDeleteIdCarrier_singlePk_implicit_admits() {
         var schema = TestSchemaHelper.buildSchema("""
             type Baz implements Node @table(name: "baz") @node(keyColumns: ["id"]) {
