@@ -1,7 +1,7 @@
 ---
 id: R358
 title: "Guard table-name comparisons against case-sensitivity drift"
-status: In Progress
+status: In Review
 bucket: cleanup
 priority: 5
 theme: structural-refactor
