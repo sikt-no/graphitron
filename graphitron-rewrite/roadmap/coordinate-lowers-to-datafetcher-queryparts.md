@@ -362,17 +362,15 @@ table **enters the query** is a separate, total fact paired with it:
 >   `resolvedTable`.
 > - **`MethodCall(method, argBindings)`** (`@tableMethod`): a developer's static Java method returning that
 >   table class, parameterized by the field's GraphQL arguments.
-> - **`RoutineCall(routine, argBindings)`** (`@routine`): a jOOQ table-valued function, parameterized the same
->   way.
 
 It is **total, not 0..1**: every table-touching coordinate has a `tableExpr`, and the absence of a directive
 is the `Catalog` arm, not a missing fact (the same shape as `source` and `target`, total facts with arms).
 So the table-identity question (`resolvedTable`, the class) and the table-rendering question (`tableExpr`, the
 expression) split cleanly: `resolvedTable` drives projection, the source-object record shape, and the locator
 reads, all class-level and indifferent to the arm; only the FROM clause reads `tableExpr`. The `argBindings`
-on the override arms are the field's GraphQL arguments feeding the call's parameters, the same input-coordinate
-/ argMapping machinery `@service` and `@condition` use; the arms differ only in emission (a Java
-`Table`-returning call spliced in versus a SQL table-valued function in the FROM).
+on the `MethodCall` arm are the field's GraphQL arguments feeding the method's parameters, the same
+input-coordinate / argMapping machinery `@service` and `@condition` use; it differs from `Catalog` only in
+emission (a Java `Table`-returning call spliced in instead of a static reference).
 
 **Composition with `reference`.** The two are orthogonal and meet only at `resolvedTable`'s class. `reference`
 owns the path and ON predicate (parent columns + the class's FK metadata), terminating at `resolvedTable`;
@@ -385,11 +383,23 @@ coincidence invariant:
 
 > the `reference` path's terminus class `==` the `tableExpr` call's return class `==` `resolvedTable`.
 
-Because it holds, the reference's FK columns resolve on the call's result exactly as on the static table, and
-the terminal join step renders its table via `tableExpr` instead of `Tables.X`. At a root field there is no
-`reference`, and `tableExpr` is the FROM directly. (A DTO parent reaches a `@tableMethod` child through a
+Because it holds, the reference's FK columns resolve on the method's result exactly as on the static table,
+and the terminal join step renders its table via `tableExpr` instead of `Tables.X`. At a root field there is
+no `reference`, and `tableExpr` is the FROM directly. (A DTO parent reaches a `@tableMethod` child through a
 DataLoader-keyed batch lifted from the parent object, `sourceKey` / `parentCorrelation`, rather than a
 parent-table join; that is the `@sourceRow` machinery, gap 5, orthogonal to `tableExpr` itself.)
+
+**`@routine` is out of scope for `tableExpr`, and unresolved.** A routine does not produce the projected
+table; it produces a *different*, FK-less table whose columns are designed to join to the target the field
+projects. So a routine is not "how `resolvedTable` is rendered" (the `tableExpr` question), it is a separate
+FROM node joined to `resolvedTable`, and the join is FK-less (a name-based / natural join), since a routine
+result carries no foreign keys. The honest model is the FROM as a **join graph**: nodes materialized by
+`tableExpr`, one node projected (`resolvedTable`), edges of kind `FkJoin` (catalog FK, today's `reference`)
+or `NaturalJoin` (shared column names), with a routine an auxiliary node reached by `NaturalJoin`. That
+generalization (auxiliary non-projected nodes, FK-less join edges, the projection-vs-FROM-graph split) is
+**not yet designed**; see *Open questions*. Both `@routine` and `@tableMethod` are currently **unused**, so
+this is a design decision rather than behavior to preserve, and the current `@routine` code, which makes the
+routine result the projected type, is the broken shape we are explicitly not modeling.
 
 ### Conditions key on the resolved table
 
@@ -1160,7 +1170,7 @@ Owned by an existing fact:
 | Directive(s) | Owning fact |
 |---|---|
 | `@table` | `source.table` / `target.table` / `resolvedTable` |
-| `@tableMethod` / `@routine` | `tableExpr` (the FROM expression for `resolvedTable`) |
+| `@tableMethod` | `tableExpr` (the FROM expression for `resolvedTable`) |
 | `@field` | the **locator** (output) / column binding (input) / `EnumValue.runtimeValue` |
 | `@externalField` | the locator's typed-jOOQ-field arm |
 | `@reference` | the `reference` fact (path, `referencedTable`, `joinPath`) |
@@ -1181,11 +1191,13 @@ The gaps, in resolution order:
    axis: the read is a **locator** plus references to `Column` and **node facts**; the scalar / enum
    conversions are column facts lifted at the boundary, and `@nodeId` is node facts. See *Reading the source
    object* / *Node facts* / *Enum facts*.
-2. **Table expression** (`@tableMethod`, `@routine`). **Resolved (this session).** `resolvedTable` is the
-   table *class* and is unchanged; a separate **total** fact `tableExpr` renders how it enters the query,
-   arms `Catalog` (default, the static `Tables.X`) | `MethodCall` | `RoutineCall`, read only by the FROM
-   clause. It composes with `reference` orthogonally (path / ON predicate versus table rendering), bound by
-   the terminus-class equality constraint. See *The table expression*.
+2. **Table expression and the FROM graph** (`@tableMethod`, `@routine`). **Split.** `@tableMethod` is
+   *resolved*: `resolvedTable` stays the table *class*, and a total fact `tableExpr` (arms `Catalog` |
+   `MethodCall`) renders how it enters the query, read only by the FROM, composing with `reference` via the
+   terminus-class equality. See *The table expression*. `@routine` is **open**: it produces an FK-less table
+   meant to join to a *different* target, so it is an auxiliary FROM node, not a `tableExpr` arm, and needs
+   the FROM-as-join-graph generalization (auxiliary nodes, `NaturalJoin` edges). Undesigned; both directives
+   are unused, so this is greenfield. See *Open questions*.
 3. **Polymorphic type resolution** (`@discriminate` / `@discriminator`). **Open.** The source-object fact is
    asserted monomorphic (one shape per type, uniform-producer axiom), but a discriminated interface / union is
    one producer whose concrete type is chosen by a column value, so the cast target becomes conditional.
@@ -1201,6 +1213,17 @@ The gaps, in resolution order:
 
 ## Open questions (to settle before / during Ready)
 
+- **`@routine` and the FROM-as-join-graph (no answer yet).** A routine produces an FK-less table whose
+  columns are designed to join to a *different* projected target, so it is not a `tableExpr` arm (which
+  renders the projected table) but an **auxiliary FROM node**. Modeling it honestly likely generalizes the
+  FROM to a **join graph**: nodes materialized by `tableExpr`, one node projected (`resolvedTable`), edges of
+  kind `FkJoin` (catalog FK, today's `reference` is the FK-path facet) or `NaturalJoin` (shared column names,
+  the FK-less join), with a routine an auxiliary `NaturalJoin` node. This also surfaces a
+  projection-vs-FROM-graph split: `resolvedTable` currently doubles as "the projected node" and "the only
+  node." **Open:** the auxiliary non-projected node, the `NaturalJoin` edge, and the projection / FROM-graph
+  separation are all undesigned. Both `@routine` and `@tableMethod` are currently unused, so this is
+  greenfield, not behavior to preserve; the existing `@routine` code (routine result = projected type) is
+  broken by design and is not the target. Likely its own Backlog item once the shape settles.
 - **Node-relation granularity** (the open fork from the session). **Resolved (thread K):** the node is one
   pair per *whole emitted method*; arm-renderers fold into a pair. *Which* methods exist in the target is
   governed by the seam-placement rule, not by a fixed count.
