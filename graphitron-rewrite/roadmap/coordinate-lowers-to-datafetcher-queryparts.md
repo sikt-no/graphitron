@@ -553,13 +553,12 @@ carries:
 
 - `Direct` is identity: the *absence* of any conversion fact, a bare read.
 - `EnumValueOf` and `JooqConvert` are **`Column` facts**, not transforms. The wire→SDL coercion is
-  graphql-java's, type-level (an `ID` arrives as `String`, an enum name as its registered `value`); the
-  SDL→storage step is entailed by the column's own Java type / `DataType`. An enum's Java type is type-level
-  (one `@enum` class per SDL enum), so the typed value is **lifted at the graphql-java boundary** (register
-  the jOOQ constant as the enum value's `value`) and the read is `Direct`; the only model obligation is a
-  comparability check that the SDL enum's value set matches the column enum's constants. `ID`'s Java type is
-  per-column, so it cannot be lifted type-level; the bind goes through the column's `DataType`, again driven
-  by the column fact, not a carried function. (Generalizing this off the `ID`-only trigger is R261.)
+  graphql-java's, type-level (an `ID` arrives as `String`, an enum literal as its registered `value`); the
+  SDL→storage step is entailed by the column's own Java type / `DataType`. An enum's backing type is uniform
+  across its use sites, so the conversion lifts to the graphql-java boundary and the read is `Direct` (see
+  *Enum facts*); `ID`'s backing is per-column, so it cannot lift type-level and the bind goes through the
+  column's `DataType`, again driven by the column fact, not a carried function. (Generalizing this off the
+  `ID`-only trigger is R261.)
 - `NodeIdEncode` / `decode` is **node facts** (*Node facts*, below): the codec is entailed by a node's key
   definition, nothing the field carries.
 
@@ -658,6 +657,70 @@ One integrity constraint binds the halves: on the terminating hop the set of
 the node's key. This is the directive's own "the foreign key must match the key defined in the referenced
 type's `@node`-configuration", now a typed referential-integrity check rather than a runtime assumption, the
 same discipline as the column's-table-equals-the-join's-destination check on the `reference` fact.
+
+### Enum facts
+
+An enum is **a scalar whose backing type is uniform across its use sites**, and that one property is what
+sets it apart from `ID`. `ID` is a single scalar shared by columns of many Java types, so its conversion is
+per-column (`JooqConvert`, *the accessor is field-level* above); an SDL enum maps to one backing type
+everywhere it is used, so its conversion lifts to the graphql-java boundary, runs once at schema synthesis,
+and the read is `Direct`. No per-coordinate transform reappears.
+
+Like a node id, an enum does **not** bind to a column directly. The column comes from the coordinate's own
+facts, an output field's `resolvedTable` + `@field` / `reference`, or, when the enum is an argument or
+input-object field, the input-coordinate facts keyed `(coordinate, path)` relative to the consuming output
+field. The enum contributes only its value set; the column binding is the shared leaf machinery, mediated by
+the output field for inputs exactly as the rest of the input facts are.
+
+So the enum's own facts are authored, and everything about its storage form is derived:
+
+| Relation | PK | Attributes | Provenance |
+|---|---|---|---|
+| `EnumType` | `name` | | authored (SDL) |
+| `EnumValue` | `(enumType, sdlName)` | `runtimeValue` | authored (SDL) |
+| `EnumBacking` | `enumType` | `backingType` | derived (roll-up of producer `javaType`) |
+| `EnumConstant` | `(javaClass, name)` | | catalog, only when `backingType` is a Java enum |
+
+`runtimeValue` is the `@field(name:)` form, total, defaulting to `sdlName`. `EnumBacking` is the **roll-up**
+of the Java types of the producers the enum's coordinates resolve (a column `javaType`, a `@service`
+signature type, an accessor return type), the same producer-reflection that retired `@record`. It is total
+for a reachable enum and its `backingType` is one of:
+
+- **a Java enum** (a Postgres-enum column, or a Java-enum service type),
+- **String** (a varchar column; the former "text-mapped" case, now just one backing),
+- **a numeric type** (an integer column).
+
+`@enum` is retired with it: the backing is inferred authoritatively from the producer, so an authored class
+can only contradict the truth, the same reasoning that retired `@record`. The directive stays declared for
+the parser; the classifier rejects any application with a migration message. (The code retirement is its own
+Backlog item; this is the model decision.)
+
+**The lift renders the value into the backing type once, at synthesis.** Because `backingType` is uniform,
+schema synthesis registers, per `EnumValue`, the `runtimeValue` rendered into `backingType` as the
+graphql-java enum `value`:
+
+- Java enum → `E.valueOf(runtimeValue)`
+- numeric → `runtimeValue` parsed to the numeric type
+- String → `runtimeValue` itself
+
+graphql-java then matches that object in both directions (`GraphQLEnumType` maps a name to any `Object`; the
+round-trip is pinned for the String case by `EnumSerializationExecutionTest` and the matching is
+object-generic), so the input arrives already typed and the output column value serializes by equality. The
+read is `Direct` for every backing.
+
+Two constraints carry the soundness, both relational rather than reflective at the read site:
+
+- **Convertibility:** each `runtimeValue` is valid in `backingType`, the `EnumConstant` name match for a Java
+  enum, parseability for a numeric, trivial for String. This generalizes the comparability check; only the
+  Java-enum case needs `EnumConstant`.
+- **One enum, one type:** every producer the enum resolves to has the same `backingType`, which licenses the
+  type-level roll-up and the single registered `value`. Two use sites resolving to different backings is a
+  genuine schema error (a typed rejection), not a config artifact.
+
+So enum handling is the enum's authored value set (`EnumType` / `EnumValue`) plus a derived, total
+`EnumBacking` over the producer types, riding the shared column-binding machinery, with convertibility and
+one-enum-one-type as the checks and the conversion lifted to a synthesis-time rendering. There is no
+`EnumValueOf` fact and no `@enum` directive.
 
 ## We are data modeling: the relational discipline, not a database engine
 
@@ -1115,7 +1178,8 @@ normalized schema (`source` / `target` / `operation` as independent functional d
 fact family whose facts roll up into the output operation set, the read-side **source object** (type-level
 cast target) and **accessor** (field-level locator, no transform axis) facts, the **node facts** (`NodeType` /
 `NodeKeyColumn` plus the per-coordinate key projections, with the codec entailed and identity-carrying paths
-deciding whether the read stays projection-only or rides a `join`), the DataFetcher
+deciding whether the read stays projection-only or rides a `join`), the **enum facts** (authored value set
+plus a derived `EnumBacking` backing-type roll-up driving a synthesis-time lift, `@enum` retired), the DataFetcher
 and QueryPart-methods as views over them), the target seam topology and its placement rule, and the decision to materialize
 the relations as typed in-type collections with a referential-integrity check rather than on a query
 engine). Out of scope: the emit
