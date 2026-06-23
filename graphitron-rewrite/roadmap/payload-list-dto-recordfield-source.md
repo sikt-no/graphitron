@@ -1,26 +1,28 @@
 ---
 id: R357
-title: "Derive batch-key source for accessor-keyed @table record fields on a compound DTO in a @service payload list-element"
-status: Backlog
+title: "Case-insensitive @table-name match in record-composite carrier accessor resolution"
+status: Spec
 bucket: bug
-priority: 5
+priority: 2
 theme: service
 depends-on: []
 created: 2026-06-23
 last-updated: 2026-06-23
 ---
 
-# Derive batch-key source for accessor-keyed @table record fields on a compound DTO in a @service payload list-element
+# Case-insensitive @table-name match in record-composite carrier accessor resolution
 
-A `@service`-carrier mutation that returns a single payload whose data field is a **list of free-form compound DTOs** — each DTO exposing two or more `@table`-typed fields backed by populated jOOQ `TableRecord` accessors — fails classification: every such field is rejected with the `resolveRecordParentSource` three-option author error (`FieldBuilder.java:4942`, *"RecordTableField on a free-form DTO parent requires a typed accessor or @sourceRow to lift the batch key; the catalog has no FK metadata for the parent class …"*). The shape is structurally the `PojoResultType.Backed` + `Reader.AccessorCall` path R269 relies on and the `@field(name:)`-remapped accessor path R191 shipped, yet neither the FK-derivation nor the typed-accessor derivation fires here, so the only escape hatch is a hand-written `@sourceRow` `RowN` lifter per field (which forces a redundant key-driven re-fetch of rows the service already populated in memory). Discovered during the `utdanningsregisteret` Graphitron 10 migration.
+A `@service`-carrier mutation returning a payload whose data field is a **list of free-form compound DTOs** (each DTO exposing `@table`-typed fields backed by populated jOOQ `TableRecord` accessors) misclassifies every such field as `UnclassifiedField` with the `resolveRecordParentSource` three-option author error (`FieldBuilder.java:4942`, *"RecordTableField on a free-form DTO parent requires a typed accessor or @sourceRow …"*) — **but only when the SDL `@table(name:)` casing differs from the jOOQ table's `getName()` casing.** The driving `utdanningsregisteret` schema writes every `@table(name:)` in legacy Oracle-style UPPERCASE while the Postgres jOOQ tables are lowercase, so the bug fires there; the identical shape with matching casing (R329's fixtures) classifies cleanly.
+
+This item was originally filed as a classification-coverage gap ("derive batch-key source for accessor-keyed fields"). Instrumentation against the real schema reframed it: the R329 record-composite carrier path **already** grounds the DTO and resolves its accessors correctly. A single case-sensitive string comparison drops the match. This is a one-line bug, not a missing classification path. Discovered during the `utdanningsregisteret` Graphitron 10 migration.
 
 ## Repro
 
-`utdanningsregisteret-graphql-spec` `schema_beta.graphql`:
+`utdanningsregisteret-graphql-spec` `schema_beta.graphql` (`@table(name:)` values are UPPERCASE; the jOOQ catalog is lowercase Postgres):
 
 ```graphql
 type Mutation {
-  opprettUtdanningsspesifikasjonMedUtdanningsmulighet(input: [...]!): OpprettUtdanningsspesifikasjonMedUtdanningsmulighetPayload
+  opprettUtdanningsspesifikasjonOgUtdanningsmulighet(input: [...]!): OpprettUtdanningsspesifikasjonMedUtdanningsmulighetPayload
     @service(service: {className: "no.utdanningsregisteret.utdanning.UtdanningsspesifikasjonOgUtdanningsmulighetService", method: "opprettUtdanningsspesifikasjonOgUtdanningsmulighet"})
 }
 
@@ -35,37 +37,64 @@ type OpprettUtdanningsspesifikasjonMedUtdanningsmulighetResult {        # free-f
 }
 ```
 
-- Service method signature: `List<OpprettUtdanningsspesifikasjonOgUtdanningsmulighetResultRecord> opprettUtdanningsspesifikasjonOgUtdanningsmulighet(...)` — i.e. the carrier produces a `List<ResultRecord>` that lands in the payload's single `results` list field.
-- The DTO `OpprettUtdanningsspesifikasjonOgUtdanningsmulighetResultRecord` is a plain POJO (no-arg ctor + all-fields ctor + bean accessors) exposing exactly the typed accessors the error text asks for: `UtdanningsspesifikasjonRecord getUtdanningsspesifikasjonRecord()` and `List<UtdanningsmulighetRecord> getUtdanningsmulighetRecords()` — both element types are real jOOQ `TableRecord`s, and both are fully populated by the service (the spesifikasjon record carries its generated `utdanningsspesifikasjonsnr` after insert).
+- Service method: `List<OpprettUtdanningsspesifikasjonOgUtdanningsmulighetResultRecord> opprettUtdanningsspesifikasjonOgUtdanningsmulighet(...)`.
+- The DTO is a plain POJO (no-arg ctor + all-fields ctor + bean accessors) exposing `UtdanningsspesifikasjonRecord getUtdanningsspesifikasjonRecord()` and `List<UtdanningsmulighetRecord> getUtdanningsmulighetRecords()` — both element types are real jOOQ `TableRecord`s, both fully populated by the service.
 
-## What is proven
+## Root cause (confirmed)
 
-Reproduced against `graphitron-maven-plugin:10-SNAPSHOT` via `mvn graphitron:generate`:
+Verified end-to-end against the real schema and reproduced minimally on the Sakila catalog. The classification machinery works for this shape:
 
-1. **The DTO class is inferred and on the codegen classpath.** Pointing `@sourceRow(className: "…ResultRecord", method: "bogusLifterProbe")` at the field changes the error to *"no static method named 'bogusLifterProbe' on class 'no.utdanningsregisteret.records.OpprettUtdanningsspesifikasjonOgUtdanningsmulighetResultRecord'"* — so `Class.forName` against the DTO succeeds and `@sourceRow` is the recognised, working escape hatch.
-2. **The failure is not the R191 name-remap axis.** Renaming the SDL fields to match the getters exactly (`utdanningsspesifikasjonRecord` / `utdanningsmulighetRecords`, dropping `@field`) produces the **identical** error. The accessor scan never gets as far as comparing names.
-3. **`@sourceRow` is the only path that compiles** — and it mandates a hand-written `RowN` key lifter per field plus, for the to-many `utdanningsmuligheter`, a composing `@reference` to express the FK path; both then drive a key-keyed re-fetch of rows already in hand.
+1. `RecordBindingResolver` grounds `…Result` → the DTO class via the R329 two-level carrier path (`BindsDataFieldElement(results)`); no fold rejection.
+2. `…Result` classifies as `PojoResultType.Backed` with the correct `fqClassName`.
+3. `collectAccessorMatches` (`FieldBuilder.java:5093`) finds `getUtdanningsspesifikasjonRecord` / `getUtdanningsmulighetRecords`, classifies cardinality (SINGLE / LIST), and resolves their element tables.
 
-## Root cause (leading hypothesis; Spec to confirm the exact site)
+The single failing step is the element-table guard at **`FieldBuilder.java:5114`**:
 
-`resolveRecordParentSource` (`FieldBuilder.java:4923`) emits the error at `:4942` only when both `deriveFkRecordParentSource` (`:4868`, catalog-FK arm — correctly null for a non-`@table` parent) and `deriveAccessorRecordParentSource` (`:4977`) decline. The accessor helper returns `AccessorDerivation.None` at `:4990` when the parent `ResultType`'s `fqClassName` is null (the case the class doc at `:4658` flags: *"PojoResultType with a null fqClassName falls through"*), before `collectAccessorMatches` (`:5093`) is ever reached. The renamed-field result (proof #2) is consistent with `collectAccessorMatches` not being reached at all — i.e. the **compound DTO in the payload's list-element position is classified as a `PojoResultType` whose backing `fqClassName` was never grounded**, so the accessor derivation has no class to reflect over even though the class exists (proof #1).
+```java
+if (expectedSqlName != null && !elementTableRef.get().tableName().equals(expectedSqlName)) continue;
+```
 
-The provenance gap is the suspected origin: the carrier produces `List<ResultRecord>`, but that element backing is not propagated onto the `results` list field's element type (`OpprettUtdanningsspesifikasjonMedUtdanningsmulighetResult`) the way a direct single-payload data field is grounded (R276's `groundProducerResult` / cardinality-match path). Spec should confirm whether the fix lives in the grounding step (populate the element `PojoResultType.fqClassName` from the carrier's `List<X>` element) or in the list-element classification seat, and whether the to-one and to-many fields on the same DTO need distinct handling.
+The two operands name the same table in different case, because `TableRef.tableName()` is **not case-canonical**: it carries whatever string was passed to `JooqCatalog.TableEntry.toTableRef(...)`, and the two `ServiceCatalog` resolution paths pass different things:
+
+| operand | source | value (ureg) |
+|---|---|---|
+| `expectedSqlName` (= `tb.table().tableName()`, `FieldBuilder.java:5003`) | `resolveTable(@table-name)` → `toTableRef(sqlName)`, the **verbatim `@table(name:)` string** (`ServiceCatalog.java:57-58`) | `UTDANNINGSSPESIFIKASJON` |
+| `elementTableRef.tableName()` | `resolveTableByRecordClass(…)` → `toTableRef(e.table().getName())`, the **jOOQ `Table.getName()`** (`ServiceCatalog.java:61-63`) | `utdanningsspesifikasjon` |
+
+`JooqCatalog.findTable` is case-insensitive (`equalsIgnoreCase`, `JooqCatalog.java:142`), which is why the UPPERCASE `@table` resolves at all; only this one downstream comparison is case-sensitive, so the accessor is dropped, `collectAccessorMatches` returns `[]`, and the field falls through to the misleading three-option error. This construction pair (verbatim `resolveTable` vs jOOQ-canonical `resolveTableByRecordClass`) is the only one in the model that mixes the two casing sources, which is why it is the only site that bit.
+
+This explains the two red herrings recorded on the original ticket: `@sourceRow` "works" only because it passes an explicit `className` and never reaches this comparison; and renaming the SDL field to match the getter exactly *also* failed because the name match is never reached — the table-name guard drops the accessor first (proving the original "fqClassName was never grounded" hypothesis wrong: the DTO **is** grounded; the accessor is discarded one step later).
+
+## Implementation
+
+One-line change at `FieldBuilder.java:5114`, matching the case-insensitive idiom the codebase already uses for table-name comparison everywhere else (`TypeBuilder.java:799`, `GraphitronSchemaValidator.java:669`, `NodeIdLeafResolver.java:292/323`, `FieldBuilder.java:5720`, `BuildContext.java:2393`):
+
+```java
+if (expectedSqlName != null && !elementTableRef.get().tableName().equalsIgnoreCase(expectedSqlName)) continue;
+```
+
+Verified: with this change the minimal Sakila reproduction (below) flips both children from `UnclassifiedField` to `RecordTableField`, and `mvn -pl :utdanningsregisteret-graphql-spec graphitron:generate` on the real spec goes from the two author errors to BUILD SUCCESS, classifying via the intended `Reader.AccessorCall` path (no `@sourceRow`, no redundant re-fetch).
+
+## Tests
+
+**Pipeline tier (the load-bearing net).** A `@service` record-composite carrier whose result type's `@table` children declare `@table(name:)` in a case that differs from the lowercase jOOQ catalog name classifies both children as `RecordTableField` (to-one `ONE`, to-many `MANY`) with empty diagnostics — not `UnclassifiedField`. The minimal reproduction reuses R329's `TestFilmWithActorsDto` carrier (`TestServiceStub.createFilmsWithActors`) with the SDL types declared `@table(name: "FILM")` / `@table(name: "ACTOR")` (UPPERCASE) against the lowercase Sakila `film` / `actor` tables; pre-fix both children are `UnclassifiedField`, post-fix both `RecordTableField`. Sits alongside `ServiceRecordCompositeCarrierPipelineTest`. Assert the classification **verdict**, not the presence of `equalsIgnoreCase` in any generated/source string — the casing-sensitivity is an implementation detail; the verdict under a casing mismatch is the behaviour.
+
+No new execution-tier fixture: the fix changes only whether classification succeeds, not emit, and `graphitron-sakila-example`'s R329 `GraphQLQueryTest` already round-trips the `AccessorCall` path end-to-end. Full reactor green (`mvn -f graphitron-rewrite/pom.xml install -Plocal-db`, incl. `graphitron-lsp`) is the smoke check.
+
+## Design notes
+
+- **Comparison-site fix, not canonicalization.** Making `TableRef.tableName()` case-canonical at construction would fix all sites at once but deletes a documented invariant: `TableRef`'s `tableName()` is deliberately case-preserved from the directive value (`TableRef.java:14-16`, `JooqCatalog.java:984-987`) so author-facing diagnostics echo what the user wrote (e.g. the `@table`-mismatch error at `FieldBuilder.java:4280-4286`). Canonicalizing trades a localized bug for a cross-cutting change to error text. The case-insensitive comparison idiom is already established at eight sites; `:5114` is an oversight against it, and the fix restores consistency.
+- **The sibling `.equals` at `FieldBuilder.java:3105` is out of scope, and is not a live bug.** It is the only other `.tableName().equals(` in the builder, but both its operands (`targetNodeType.table().tableName()` and the `ServiceEmitted` binding's `tableRef().tableName()`) flow from the same verbatim `resolveTable(@table-name)` path for the same node type, so they cannot diverge in case. Aligning it to the idiom is left to the follow-up rather than touched here as an untested change.
+- **Follow-up filed (see Relations).** The deeper shape is that `TableRef.tableName()` has two construction paths that disagree on case, and comparison correctness depends on every site remembering `equalsIgnoreCase`. The follow-up adds a unit-tier guard test that fails on any `.tableName().equals(` (converting `:3105` in the process) and optionally lifts a typed `TableRef`-owned same-table comparison. Out of scope here to keep this a tight bug-fix slice.
 
 ## Relations
 
-- **R191** (shipped) — honors `@field(name:)` in `collectAccessorMatches` on free-form `@record` parents; its negative case `ACCESSOR_ROWKEYED_FIELD_NAME_REJECTS_WITHOUT_DIRECTIVE` falls through to this same three-option error. This item is the case where the accessor path fails *upstream of* the name match.
-- **R269** (Spec) — the `PojoResultType.Backed` + `Reader.AccessorCall` to-one/to-many record-parent path this shape should classify into; R269 null-guards it. Confirms the target path exists and works for direct (`SingleRecordTableField*`) payload parents.
-- **R305** (shipped) / **R308** (Spec) — the `@service`-carrier arrival cluster. R308 fixes the *list-of-payloads* carrier (`@service: [Payload]`); this item is the sibling *single-payload-of-list-of-compound-DTOs* shape, which R305 lists as out of scope and R308 does not cover.
-- **`compound-entity-mutations`** — the compound-result mutation shape this exercises (one operation creating a spesifikasjon plus its muligheter, returned as one DTO).
+- **R329** (shipped) — the `@service` record-composite payload carrier this rides on; it grounds `…Result` to the composite class and resolves the `@table` children through the `AccessorCall` path. Its fixtures (`ServiceRecordCompositeCarrierPipelineTest`) use lowercase `@table(name:)`, so they never reach this case-sensitivity guard; this item is the casing-mismatch case R329 did not cover. Same driving mutation (`opprettUtdanningsspesifikasjonOgUtdanningsmulighet`).
+- **`table-name-comparison-case-guard`** (Backlog) — the structural follow-up for the `TableRef.tableName()` case-canonicality trap (guard test + optional typed same-table comparison); subsumes the `:3105` idiom-alignment.
+- **R191 / R269 / R305 / R308** — the accessor-keyed record-parent and `@service`-carrier cluster the original framing referenced. The confirmed root cause is orthogonal (a case-sensitive string comparison, not a coverage gap), so they are background, not dependencies.
 
 ## Out of scope
 
-- Eliminating the redundant re-fetch for in-hand records (whether a record-source `@table` field on a DTO should serialize the embedded record instead of re-querying by key) — that is the broader source-arrival emit question (R305 / R314 territory), not this classification fix.
-- The `@field(name:)` name-remap mechanics themselves (R191, shipped).
-
-## Acceptance (sketch)
-
-- **Pipeline tier**: a fixture with a `@service` carrier returning `List<CompoundDto>` into a `Payload { results: [Compound] }`, where `Compound` is a free-form POJO exposing a to-one `@table` accessor and a to-many `List<...Record>` accessor, classifies both fields as `RecordTableField` with `Reader.AccessorCall` (cardinality `ONE` / `MANY`) — no `UnclassifiedField`, structural assertions only.
-- **Execution tier (`graphitron-sakila-example`)**: the compound payload round-trips both record fields through the batched key path end-to-end.
-- Full reactor green (`mvn -f graphitron-rewrite/pom.xml install -Plocal-db`, incl. `graphitron-lsp`).
+- Canonicalizing `TableRef.tableName()` (would change diagnostic casing; see Design notes).
+- The `:3105` idiom-alignment and the typed same-table comparison helper / guard test — the `table-name-comparison-case-guard` follow-up.
+- The original "derive batch-key source" framing: grounding and accessor derivation already work; nothing to derive.
