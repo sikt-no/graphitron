@@ -41,7 +41,7 @@ The xref:code-generation-triggers.adoc[Code Generation Triggers] page is a zoome
 
 == Modules
 
-`graphitron-rewrite/` is a nested monorepo with its own parent pom (`graphitron-rewrite-parent`, `10-SNAPSHOT`). Nine modules cover the generator, its inputs, its consumers, and the tooling that wraps both ends:
+`graphitron-rewrite/` is a nested monorepo with its own parent pom (`graphitron-rewrite-parent`, `10-SNAPSHOT`). Ten modules cover the generator, its inputs, its consumers, and the tooling that wraps both ends:
 
 [cols="1,3"]
 |===
@@ -71,6 +71,9 @@ The xref:code-generation-triggers.adoc[Code Generation Triggers] page is a zoome
 | `graphitron-lsp`
 | Editor LSP server for `.graphqls` authoring.
 
+| `graphitron-mcp`
+| MCP server embedded in the `dev` Mojo: serves ambient context and an `about` prompt to an MCP-aware agent over loopback Streamable HTTP. The dependency-quarantine seam for the live discovery tools (R118).
+
 | `roadmap-tool`
 | Regenerates `graphitron-rewrite/roadmap/README.md` from per-item front-matter.
 |===
@@ -81,4 +84,4 @@ Per-module READMEs are deliberately not maintained; this table is the orientatio
 
 Trunk runs at `10-SNAPSHOT`; releases are cut from tag-driven GitHub Releases. The `.github/workflows/maven-publish.yml` workflow accepts `v<MAJOR>.<MINOR>.<PATCH>` and `v<MAJOR>.<MINOR>.<PATCH>-RC<n>`, sets the version across the rewrite reactor, signs (sources + javadoc + GPG), and pushes to Maven Central via the `central-publishing-maven-plugin` with `autoPublish=true`. Maven version ordering treats `10.0.0-RC1` as strictly less than `10.0.0`, so consumers asking for `[10.0.0,)` won't pick up RCs by accident. Snapshots aren't published; the rewrite parent declares no `<snapshotRepository>`, so an accidental `mvn deploy` on `10-SNAPSHOT` fails fast.
 
-Publishable surface: `graphitron-javapoet`, `graphitron`, `graphitron-lsp`, `graphitron-maven-plugin`. Test fixtures and example consumers (`graphitron-fixtures-codegen`, `graphitron-sakila-db`, `graphitron-sakila-service`, `graphitron-sakila-example`, `roadmap-tool`, `docs`) carry `<maven.deploy.skip>true</maven.deploy.skip>`.
+Publishable surface: `graphitron-javapoet`, `graphitron`, `graphitron-lsp`, `graphitron-mcp`, `graphitron-maven-plugin`. `graphitron-mcp` is published like `graphitron-lsp` because the plugin declares a compile-scope dependency on it and a Maven plugin resolves its declared dependencies from the consumer's repositories at execution time; it must not join the `maven.deploy.skip` list. Test fixtures and example consumers (`graphitron-fixtures-codegen`, `graphitron-sakila-db`, `graphitron-sakila-service`, `graphitron-sakila-example`, `roadmap-tool`, `docs`) carry `<maven.deploy.skip>true</maven.deploy.skip>`.

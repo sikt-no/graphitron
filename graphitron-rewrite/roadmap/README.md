@@ -37,7 +37,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R212` | IntelliJ plugin wrapping graphitron:dev LSP | Spec | 2026-05-21 | [plan](intellij-lsp-plugin.md) |
 | `R269` | Null-guard split-query key extraction for nullable to-one records | Spec | 2026-06-02 <sub>created 2026-06-01</sub> | [plan](nullable-to-one-record-into-npe.md) |
 | `R112` | Operation-driven test corpus, capability catalog, and runtime trace <sub>blocked by: [capability-catalog](capability-catalog.md)</sub> | Spec |  | [plan](operation-driven-test-corpus.md) |
-| `R341` | MCP server skeleton: Streamable HTTP in graphitron:dev with a static about-prompt | Ready | 2026-06-23 <sub>created 2026-06-19</sub> | [plan](mcp-server-skeleton.md) |
+| `R341` | MCP server skeleton: Streamable HTTP in graphitron:dev with a static about-prompt | In Review | 2026-06-23 <sub>created 2026-06-19</sub> | [plan](mcp-server-skeleton.md) |
 
 ---
 
@@ -285,7 +285,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R118` [**Graphitron MCP server: live catalog discovery and docs RAG in graphitron:dev**](graphitron-mcp-server.md) — Backlog, feature, blocked by [mcp-server-skeleton](mcp-server-skeleton.md)
 - `R212` [**IntelliJ plugin wrapping graphitron:dev LSP**](intellij-lsp-plugin.md) — Spec, feature
 - `R99` [**LSP classpath scan misses sibling modules when dev goal runs from a sub-module**](lsp-submodule-sibling-classpath.md) — Backlog, feature
-- `R341` [**MCP server skeleton: Streamable HTTP in graphitron:dev with a static about-prompt**](mcp-server-skeleton.md) — Ready, feature
+- `R341` [**MCP server skeleton: Streamable HTTP in graphitron:dev with a static about-prompt**](mcp-server-skeleton.md) — In Review, feature
 - `R152` [**Scope @nodeId(typeName:) hover column lookup to the @node type's @table**](lsp-nodetype-hover-column-scoping.md) — Backlog, bug
 
 ### (untagged)

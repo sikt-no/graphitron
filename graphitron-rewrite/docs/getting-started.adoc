@@ -324,6 +324,25 @@ matching port in the editor config. The Mojo fails fast on bind conflict
 with a message naming the override property; no silent rebind to a
 different port the editor would not know about.
 
+*Agent users (MCP).* Alongside the LSP, `mvn graphitron:dev` runs an MCP
+server on `http://127.0.0.1:8488/mcp` (Streamable HTTP, loopback only). An
+MCP-aware agent (Claude Code, Cursor) connected to it gets ambient context
+about your graphitron project and a `+/mcp__graphitron__about+` slash command
+that explains the dev loop.
+
+The `graphitron-sakila-example` project ships a committed `.mcp.json` pointing
+at this URL, so cloning it needs zero MCP configuration. For your own project,
+the dev server prints a copy-pasteable line on startup:
+
+----
+claude mcp add --transport http graphitron http://127.0.0.1:8488/mcp
+----
+
+The port is fixed at `8488` (the LSP's is `8487`). If `8488` is already taken
+(a second `graphitron:dev` for another project), the dev server fails fast with
+a message naming the conflict rather than silently rebinding, so a stale
+`.mcp.json` never points an agent at the wrong project's server.
+
 What the loop does on each schema save:
 
 . Re-runs the generator. Idempotent writes mean only the files whose
@@ -363,20 +382,21 @@ left of each `:` and the field's GraphQL arguments on the right, flagging
 unknown or duplicated entries.
 
 Stop the loop with Ctrl+C (a JVM shutdown hook closes the LSP socket,
-the watch service, and the debounce executor cleanly).
+the MCP server, the watch service, and the debounce executor cleanly).
 
 === How this is wired (for contributors)
 
 This subsection is contributor-level material; consumers can skip it. It explains the runtime framing of the `dev` Mojo: which components live in one JVM, what each watches, and why the seams sit where they do for anyone extending the dev-loop surface.
 
-The `dev` goal runs four cooperating components in one JVM:
+The `dev` goal runs five cooperating components in one JVM:
 
 * *LSP server* binds the TCP port (default `8487`) and speaks LSP to whatever editor or agent connects. It serves diagnostics, hover, completion, and go-to-definition off the most recent classified `GraphitronSchema` and the validator's report on it. State is in-memory only; no LSP cache lives on disk. Its `didSave` notification is the primary fast path into the generator dispatch when an editor is attached.
+* *MCP server* binds a second loopback port (`8488`) and speaks the Model Context Protocol over Streamable HTTP to an MCP-aware agent. Today it serves static content only, the handshake `instructions` string plus an `about` prompt, so it does not read the warm `Workspace` or feed the generator dispatch; it is the transport-and-lifecycle seam the live catalog/schema discovery tools (R118) build on. It lives in its own `graphitron-mcp` module so that item's heavy native dependencies stay off the plugin's own compile surface. Hosted in embedded Jetty; the literal `8488` is pinned by a `DevMojoTest` assertion on `DevMojo.DEFAULT_MCP_PORT`.
 * *Schema watcher* is a `WatchService` over the consumer's `.graphqls` source roots; the headless fallback when no editor is attached. On a save, it debounces same-file events that arrive in clusters (some editors emit several `MODIFY` events per save) and signals the generator dispatch. The LSP `didSave` path feeds the same debounce, so the two routes coalesce on a single regen when both fire.
 * *Classpath watcher* is a `WatchService` over the consumer's compiled jOOQ output (`target/classes/<jooqPackage>/`). When `mvn compile` in another terminal lands new `.class` files for jOOQ tables and columns, the watcher signals the generator dispatch the same way a schema save does. This is what lets a jOOQ schema regen pick up automatically without a `dev`-session restart.
 * *Generator dispatch* is the lifecycle thread that consumes wake-up events from either watcher, loads the (possibly-updated) classpath, runs the generator over the (possibly-updated) `.graphqls` sources, and feeds the resulting `GraphitronSchema` and emit results to the LSP server's in-memory state and to disk via the idempotent writer.
 
-One JVM, one socket, one process tree. There's no daemon, no client/server split, no shared cache directory. The Mojo binds, watches, regenerates, and serves; on Ctrl+C the JVM shutdown hook closes the LSP socket, the `WatchService` instances, and the debounce executor cleanly.
+One JVM, two loopback ports (LSP and MCP), one process tree. There's no daemon, no client/server split, no shared cache directory. The Mojo binds, watches, regenerates, and serves; on Ctrl+C the JVM shutdown hook closes the LSP socket, the MCP server, the `WatchService` instances, and the debounce executor cleanly.
 
 The idempotent-write coupling is what makes the loop usable as an editor backend. Because `JavaFile.writeToPath` writes only files whose rendered content actually changed (SHA-256 comparison) and deletes orphans in rewrite-owned sub-packages, a schema edit that touches one type rewrites that type's files and leaves every other generated file byte-identical on disk. The IDE's incremental compiler, Quarkus `quarkus:dev`, and Spring Boot DevTools all detect changes by mtime; unchanged files keep their mtimes, so only the actually-changed files trigger an IDE recompile. Two effects fall out: editor latency is proportional to the edit (not to the schema size), and `git diff` after a `dev` session shows only what a human-readable summary of the schema edit would predict.
 
@@ -386,6 +406,7 @@ The idempotent-write coupling is what makes the loop usable as an editor backend
 flowchart TD
     subgraph JVM["dev JVM (one process)"]
         Editor["editor / agent"] -. LSP/TCP :8487 .-> LSP["LSP server"]
+        Editor -. MCP/HTTP :8488 .-> MCP["MCP server<br/>(static context +<br/>about prompt)"]
         LSP -- didSave<br/>(primary) --> Disp["generator dispatch"]
         SW["schema watcher<br/>(.graphqls,<br/>headless fallback)"] -- debounced<br/>save events --> Disp
         CW["classpath watcher<br/>(target/classes/&lt;jooq&gt;)"] -- .class change<br/>events --> Disp

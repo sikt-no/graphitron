@@ -31,6 +31,11 @@
             <artifactId>graphitron-lsp</artifactId>
             <version>${project.version}</version>
         </dependency>
+        <dependency>
+            <groupId>no.sikt</groupId>
+            <artifactId>graphitron-mcp</artifactId>
+            <version>${project.version}</version>
+        </dependency>
 
         <dependency>
             <groupId>org.apache.maven</groupId>

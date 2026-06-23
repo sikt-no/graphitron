@@ -17,6 +17,7 @@
         <module>graphitron-fixtures-codegen</module>
         <module>graphitron-sakila-db</module>
         <module>graphitron-sakila-service</module>
+        <module>graphitron-mcp</module>
         <module>graphitron-maven-plugin</module>
         <module>graphitron-sakila-example</module>
         <module>graphitron-lsp</module>
@@ -33,6 +34,8 @@
         <version.ch.qos.logback>1.5.32</version.ch.qos.logback>
         <version.postgresql>42.7.10</version.postgresql>
         <version.testcontainers.postgresql>2.0.4</version.testcontainers.postgresql>
+        <version.io.modelcontextprotocol>2.0.0</version.io.modelcontextprotocol>
+        <version.org.eclipse.jetty>12.0.36</version.org.eclipse.jetty>
 
         <jooqPackage>no.sikt.graphitron.rewrite.test.jooq</jooqPackage>
     </properties>
@@ -43,6 +46,38 @@
                 <groupId>org.junit</groupId>
                 <artifactId>junit-bom</artifactId>
                 <version>${version.org.junit}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <!--
+              MCP Java SDK (graphitron-mcp). The core `mcp` artifact ships the servlet-based
+              Streamable HTTP server transport and the HttpClient-based client transport; the
+              Spring transports moved to org.springframework.ai in 2.x and are not pulled here.
+            -->
+            <dependency>
+                <groupId>io.modelcontextprotocol.sdk</groupId>
+                <artifactId>mcp-bom</artifactId>
+                <version>${version.io.modelcontextprotocol}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <!--
+              Jetty 12 hosts the MCP servlet transport (graphitron-mcp). The EE10 (jakarta.servlet 6)
+              artifacts live in a separate BOM from the core jetty-bom; both are imported so the
+              jakarta-namespace servlet set the SDK's HttpServlet base class needs resolves cleanly,
+              rather than the EE8/javax split.
+            -->
+            <dependency>
+                <groupId>org.eclipse.jetty</groupId>
+                <artifactId>jetty-bom</artifactId>
+                <version>${version.org.eclipse.jetty}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <dependency>
+                <groupId>org.eclipse.jetty.ee10</groupId>
+                <artifactId>jetty-ee10-bom</artifactId>
+                <version>${version.org.eclipse.jetty}</version>
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>

@@ -73,6 +73,15 @@ public final class DevServer implements AutoCloseable {
         return socket.getLocalPort();
     }
 
+    /**
+     * Whether {@link #close()} has run. Public so {@code DevMojoTest}, which sits in the parent
+     * {@code maven} package, can assert the LSP socket was released when a later bind (the MCP
+     * server) fails partway through {@code DevMojo.bindServer} and the partial startup is unwound.
+     */
+    public boolean isClosed() {
+        return closed.get();
+    }
+
     public Workspace workspace() {
         return workspace;
     }
