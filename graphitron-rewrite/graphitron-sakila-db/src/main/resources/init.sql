@@ -223,7 +223,13 @@ INSERT INTO city (city, country_id) VALUES
 INSERT INTO address (address, district, city_id) VALUES
     ('47 MySakila Drive',   'Alberta', 1),
     ('28 MySQL Boulevard',  'Lazio',   2),
-    ('23 Workhaven Lane',   'Alberta', 1);
+    ('23 Workhaven Lane',   'Alberta', 1),
+    -- address_id 4: intentionally occupant-free (no store/staff/customer references it). The R367
+    -- execution test points AddressOccupantCarrier at this hub so the single-cardinality polymorphic
+    -- fetcher's empty-stage-1 null-payload arm is exercised (a non-null carrier over an empty hub),
+    -- not the null-carrier short-circuit. District is distinct from 'Alberta'/'Lazio' so it cannot
+    -- perturb the district-filter tests.
+    ('1 Empty Hub Road',    'Tasmania', 1);
 
 INSERT INTO store (address_id) VALUES (1), (2);
 

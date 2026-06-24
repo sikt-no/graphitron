@@ -718,8 +718,8 @@ type Address implements Node @table(name: "address") @node {
 union AddressOccupant = Customer | Staff
 
 # R367 fixture: record-backed (Pojo) parent for a single-cardinality polymorphic child. Produced by
-# Query.addressOccupantCarrier, which returns AddressOccupantCarrierService.Carrier (a plain Java
-# record holding an AddressRecord), so this type binds as a PojoResultType. firstOccupant is the
+# Query.addressOccupantCarrier, which returns the top-level AddressOccupantCarrier record (a plain
+# Java record holding an AddressRecord), so this type binds as a PojoResultType. firstOccupant is the
 # single-cardinality sibling of Address.occupants: the @field(name: "address") remap points the
 # accessor-derivation at the carrier's address() accessor, whose AddressRecord return is the hub.
 # The single-cardinality multi-table polymorphic fetcher takes the R367 record-backed-parent arm
