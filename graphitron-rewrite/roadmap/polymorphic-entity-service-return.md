@@ -1,7 +1,7 @@
 ---
 id: R365
 title: "Support returning a polymorphic entity (interface/union) from a @service mutation"
-status: Spec
+status: Ready
 bucket: bug
 priority: 5
 theme: interface-union
