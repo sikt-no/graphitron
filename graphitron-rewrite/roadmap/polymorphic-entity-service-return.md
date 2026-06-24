@@ -128,9 +128,16 @@ Add a build-time rule in `validateQueryInterfaceField` / `validateQueryUnionFiel
   build instead of silently mis-dispatching a returned record to the wrong arm.
 
 The validation error is the **floor** and is in scope day one (it closes a real misdispatch hole and
-guards R363's query path over the same interfaces). Whether the `@discriminator`-based same-table
-*dispatch* lands here or as a follow-up is an implementer call to pin at Spec; the directive plumbing
-already exists, so leaning on it is preferred over inventing a new discriminator signal.
+guards R363's query path over the same interfaces). The `@discriminator`-based same-table *dispatch* is
+**pinned out of scope for this item** and deferred to a follow-up: the 9.3 surface this restores is
+bare interface/union returns over distinct-table participants, and the floor already rejects the
+same-table case at build time rather than misdispatching it, so dispatch is an additive capability
+beyond the regression, not part of it. Keeping it out matches route (a)'s "smallest guard surface"
+rationale. When the follow-up lands, it leans on the existing directive plumbing
+(`@discriminator(value:)` already read into `ParticipantRef.TableBound.discriminatorValue` for all
+participants; `@discriminate(on:)` parsed today only on the single-table `TableInterfaceType` path at
+`TypeBuilder.java:1337`, to be read for the colliding subset too) rather than inventing a new
+discriminator signal.
 
 Front-matter `depends-on` stays empty under route (a). Wire `depends-on: R366, R367` only if the 9.3
 baseline forces the payload shape (route (b)).
@@ -155,14 +162,24 @@ baseline forces the payload shape (route (b)).
   selected columns against real PostgreSQL, returning the polymorphic entity end-to-end (the 9.3
   regression actually works). Exercise at least two distinct-table branches so a misdispatch is
   observable.
-- **Execution tier (conditional, only if same-table `@discriminator` dispatch is taken in scope here
-  rather than deferred).** Two same-table participants carrying `@discriminate(on:)` +
-  `@discriminator(value:)` dispatch by the discriminator column value read off the returned record.
-  Omit if the implementer defers same-table dispatch to a follow-up (the validation floor above still
-  applies).
+Same-table `@discriminator` *dispatch* is out of scope (see "Discriminability" above), so its
+execution-tier test belongs to that follow-up, not this item; the floor's rejection test above is what
+guards the same-table case here.
 
 Phrase any test the implementer adds as code it creates, not as an already-existing assertion, per
 "Documentation names only live tests/code".
+
+## Out of scope
+
+- **Route (b): the `{ field, errors }` payload + `errors: [Error]` envelope shape.** A follow-up that
+  falls out on top of route (a) once R366 (Done) and R367 (In Review) land; it is not on this item's
+  critical path and does not pull `depends-on` onto this item.
+- **Same-table `@discriminator`-based dispatch.** Only the build-time validation floor for same-table
+  participants ships here; resolving a returned record to the right arm by discriminator column value
+  is the deferred follow-up described under "Discriminability".
+- **Union members beyond the `@error`/table-bound shapes route (a) already classifies.** The
+  union-member rule (`TypeBuilder.java:767`) and the dangling-payload classifier
+  (`GraphitronSchemaBuilder.java:584-593`) stay untouched; relaxing them is route (b)'s concern.
 
 ## Cross-links
 
@@ -205,3 +222,9 @@ error from both the `@service`-return and query arms, execution-tier end-to-end 
 and a conditional execution test for same-table `@discriminator` dispatch). The design is otherwise
 complete; the next `Spec → Ready` sign-off must come from a session other than this one (which authored
 this revision), per the reviewer rule.
+
+Follow-up tightening (same pass): resolved the one remaining hedge by **pinning same-table
+`@discriminator` dispatch out of scope** (floor-only day one; dispatch is the deferred follow-up) so no
+"decide at Spec" instruction carries into implementation, made the conditional Tests bullet
+unconditional to match, and added an explicit `## Out of scope` section (route (b) payload/errors
+envelope; same-table dispatch; the untouched union-member and dangling-payload guards).
