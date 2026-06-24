@@ -36,6 +36,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R115` | Enumerate the capabilities graphitron delivers | Spec |  | [plan](capability-catalog.md) |
 | `R109` | How-to recipe and Sakila fixture for grouped collections via Field<Result<R>> @externalField + multiset | Spec |  | [plan](list-valued-external-field-multiset.md) |
 | `R212` | IntelliJ plugin wrapping graphitron:dev LSP | Spec | 2026-05-21 | [plan](intellij-lsp-plugin.md) |
+| `R361` | MCP shared-model seam: hand the live Workspace into GraphitronMcpServer and declare the tools capability | Spec | 2026-06-24 | [plan](mcp-shared-model-seam.md) |
 | `R269` | Null-guard split-query key extraction for nullable to-one records | Spec | 2026-06-02 <sub>created 2026-06-01</sub> | [plan](nullable-to-one-record-into-npe.md) |
 | `R112` | Operation-driven test corpus, capability catalog, and runtime trace <sub>blocked by: [capability-catalog](capability-catalog.md)</sub> | Spec |  | [plan](operation-driven-test-corpus.md) |
 
@@ -286,6 +287,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R118` [**Graphitron MCP server programme: agent-facing schema, catalog, code, and docs tools in graphitron:dev**](graphitron-mcp-server.md) — Backlog, feature
 - `R212` [**IntelliJ plugin wrapping graphitron:dev LSP**](intellij-lsp-plugin.md) — Spec, feature
 - `R99` [**LSP classpath scan misses sibling modules when dev goal runs from a sub-module**](lsp-submodule-sibling-classpath.md) — Backlog, feature
+- `R361` [**MCP shared-model seam: hand the live Workspace into GraphitronMcpServer and declare the tools capability**](mcp-shared-model-seam.md) — Spec, feature
 - `R152` [**Scope @nodeId(typeName:) hover column lookup to the @node type's @table**](lsp-nodetype-hover-column-scoping.md) — Backlog, bug
 
 ### (untagged)
