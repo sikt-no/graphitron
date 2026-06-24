@@ -790,13 +790,35 @@ public sealed interface ChildField extends OutputField
          * class for {@code ResultReturnType} with non-null {@code fqClassName}, the standard
          * Java type for the five GraphQL spec built-ins via the
          * {@code no.sikt.graphitron.rewrite.ScalarTypeResolver}). When the helper returns
-         * {@code null} the fallback is the reflected outer return type on
-         * {@link MethodRef#returnType()}, which throws at request time when wrong, surfacing
-         * the case to revisit.
+         * {@code null} (a non-built-in scalar leaf: an enum, or an unregistered custom scalar)
+         * the per-key {@code V} is peeled off the reflected outer return type on
+         * {@link MethodRef#returnType()} via {@link RowsMethodShape#perKeyFromOuter}, so the
+         * rows method's declared type is the flat {@code Map<K, V>} matching the service contract
+         * rather than a doubly-nested {@code Map<K, Map<K, V>>} (R364). Falls back to the whole
+         * reflected type only when the shape isn't peelable, which
+         * {@code ServiceDirectiveResolver.validateChildServiceReturnType} rejects at classify time.
          */
         public no.sikt.graphitron.javapoet.TypeName elementType() {
             no.sikt.graphitron.javapoet.TypeName strict = RowsMethodShape.strictPerKeyType(returnType());
             if (strict != null) return strict;
+            // Non-built-in scalar leaf (an enum, or an unregistered custom scalar): strictPerKeyType
+            // can't name V from the schema, but the service method already declares the outer
+            // Map<K, V> / List<V>, so peel V off it. Handing back the whole map instead let
+            // outerRowsReturnType wrap it once more, emitting Map<K, Map<K, V>> that doesn't compile
+            // (R364). Falls back to the reflected outer type only when the shape isn't peelable, which
+            // the resolver's validateChildServiceReturnType now rejects at classify time. Other
+            // null-perKey returns (a backing-less ResultReturnType) keep the legacy whole-type fallback.
+            if (returnType() instanceof ReturnTypeRef.ScalarReturnType) {
+                // loaderRegistration().container() is the field-level projection of the service
+                // method's Sourced param container (FieldBuilder.buildServiceLoaderRegistration
+                // stores sourced.container() verbatim), the same axis
+                // ServiceDirectiveResolver.validateChildServiceReturnType peels with, so emitter
+                // and validator can't disagree on isMapped.
+                boolean isMapped = loaderRegistration() != null
+                    && loaderRegistration().container() == LoaderRegistration.Container.MAPPED_SET;
+                var peeled = RowsMethodShape.perKeyFromOuter(method().returnType(), returnType(), isMapped);
+                if (peeled != null) return peeled;
+            }
             return method().returnType();
         }
         @Override public DomainReturnType domainReturnType() {

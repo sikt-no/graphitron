@@ -339,12 +339,21 @@ final class ServiceDirectiveResolver {
      * on the generated {@code return ServiceClass.method(...)} line.
      *
      * <p>The construction defers to {@link RowsMethodShape}; the emitter calls the same helper
-     * for {@code .returns(...)}, so the two cannot drift. Returns {@code null} (skip) when the
-     * per-key element type cannot be derived from the schema
-     * ({@link ReturnTypeRef.ResultReturnType} with no backing class, custom scalars / enums
-     * until the typed-context-value-registry lands, {@link ReturnTypeRef.PolymorphicReturnType}
-     * which is rejected separately), or when no {@link MethodRef.Param.Sourced} parameter is
-     * present (validator surfaces that absence).
+     * for {@code .returns(...)}, so the two cannot drift. For a schema-named leaf (the five spec
+     * built-ins, a table-bound or class-backed return) the {@link TypeName#equals} check is a true
+     * strict-equality check on the whole shape. For a non-built-in scalar leaf (an enum, or an
+     * unregistered custom scalar) the schema cannot name {@code V}, so the leaf is peeled from the
+     * developer's declared outer type ({@link RowsMethodShape#perKeyFromOuter}) and fed straight
+     * back into the reconstruction (R364, the same resolution the emitter's {@code elementType()}
+     * uses). Because the leaf round-trips through the same return type it is then compared against,
+     * the {@code equals} check for that branch is effectively a key-type check; the container raw
+     * type and list-nesting are gated by {@code perKeyFromOuter} returning non-null, and the leaf
+     * itself is accepted as whatever the method yields (the typed-context-value registry, tracked
+     * under {@code emit-text-mapped-enum-fields-as-enum-type}, will tighten the leaf later). A
+     * shape too malformed to peel is rejected rather than left to miscompile. Returns {@code null}
+     * (skip) when the schema carries no derivable shape at all ({@link ReturnTypeRef.ResultReturnType} with no backing class,
+     * {@link ReturnTypeRef.PolymorphicReturnType} which is rejected separately), or when no
+     * {@link MethodRef.Param.Sourced} parameter is present (validator surfaces that absence).
      */
     private static String validateChildServiceReturnType(ReturnTypeRef returnType, MethodRef method) {
         MethodRef.Param.Sourced sourced = method.params().stream()
@@ -354,10 +363,31 @@ final class ServiceDirectiveResolver {
             .orElse(null);
         if (sourced == null) return null;
 
-        TypeName perKey = RowsMethodShape.strictPerKeyType(returnType);
-        if (perKey == null) return null;
         boolean isMapped = sourced.container() == LoaderRegistration.Container.MAPPED_SET;
         TypeName keyElementType = SourceKey.keyElementType(sourced.wrap(), sourced.columns());
+
+        TypeName perKey = RowsMethodShape.strictPerKeyType(returnType);
+        if (perKey == null) {
+            // Only a non-built-in scalar leaf (an enum, or an unregistered custom scalar) is
+            // recoverable: the schema can't name V, but the developer's method declares the outer
+            // Map<K, V> / List<V>, so recover V by peeling and re-derive the expected outer type
+            // from it (R364, the same leaf resolution the emitter's elementType() uses). This still
+            // rejects a wrong key type or a missing list-nesting level; the leaf itself is accepted
+            // as whatever the method yields (the typed-context-value registry will tighten it
+            // later). A shape too malformed to peel (a List where a Map is required, a raw type) is
+            // rejected here rather than left to miscompile on the generated return line. Other
+            // null-perKey returns (a backing-less ResultReturnType, a polymorphic type) carry no
+            // derivable shape and stay skipped.
+            if (!(returnType instanceof ReturnTypeRef.ScalarReturnType)) return null;
+            perKey = RowsMethodShape.perKeyFromOuter(method.returnType(), returnType, isMapped);
+            if (perKey == null) {
+                return "method '" + method.methodName() + "' in class '" + method.className()
+                    + "' must return a " + (isMapped ? "'java.util.Map'" : "'java.util.List'")
+                    + "-shaped batch result keyed by '" + TypeNames.simple(keyElementType)
+                    + "' to match the field's declared return type — got '"
+                    + TypeNames.simple(method.returnType()) + "'";
+            }
+        }
         TypeName expected = RowsMethodShape.outerRowsReturnType(
             perKey, returnType, keyElementType, isMapped);
         if (method.returnType().equals(expected)) return null;
