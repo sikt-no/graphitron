@@ -5,7 +5,7 @@ status: Spec
 bucket: feature
 priority: 5
 theme: lsp
-depends-on: [lsp-structural-consolidation]
+depends-on: []
 created: 2026-06-21
 last-updated: 2026-06-24
 ---
@@ -92,6 +92,12 @@ not a directive argument), goto-definition jumps to the Java the model bound tha
      catalog, sourceIndex)` join helper, yielding a `DefinitionTarget` (the accessor's
      `Located` position, or `SourceAbsent` / `Ambiguous`).
    - *Field name* on `RecordBacking` -> per decision D1.
+   - *Field name* on `JooqRecordBacking.Standalone` -> the public `Definitions.classTarget(fqClassName,
+     sourceIndex)` join helper (the same target as the type-name arm on this shape). A `Standalone`
+     jOOQ record carries no table (so no column join) and no member-key projection (the completion /
+     hover arms decline it: `FieldCompletions` returns an empty list, `Hovers` returns empty), so by
+     the same data-availability reasoning as D1 the field-name cursor degrades to the backing class
+     rather than no-jumping. Pinned by test (D3).
    - *Field name* / *type name* on `NoBacking.Root` / `NoBacking.UnbackedResult` /
      `NoBacking.UnclassifiedInterface` -> `Optional.empty()` (no Java target).
 
@@ -150,8 +156,9 @@ end-to-end against a realistic schema + catalog snapshot. No per-arm unit tests 
 type name on a reflection-bound record/POJO type (-> class, and the `SourceAbsent` -> empty degrade
 when the source root is not walked), field name on a `@table` column (-> column), field name on a
 POJO accessor (-> accessor method),
-field name on a record component (-> backing class, per D1), and a `NoBacking` declaration name
-(-> empty).
+field name on a record component (-> backing class, per D1), field name on a `Standalone` jOOQ
+record (-> backing class, the no-table/no-member degrade in design point 2), and a `NoBacking`
+declaration name (-> empty).
 
 ## Out of scope
 
@@ -163,9 +170,12 @@ field name on a record component (-> backing class, per D1), and a `NoBacking` d
 
 ## Dependencies
 
-- **R347** (`lsp-structural-consolidation`, In Progress): if it lands a shared declaration-name
-  trigger classifier, R353 consumes it (design point 1); otherwise R353 factors the classifier out
-  of `DeclarationHovers`. Coordinate to avoid a third copy of the leaf-walk.
+- **R347** (`lsp-structural-consolidation`, In Progress): coordination, **not** a `depends-on`. If
+  R347 lands a shared declaration-name trigger classifier, R353 consumes it (design point 1);
+  otherwise R353 factors the classifier out of `DeclarationHovers` itself. Either path is
+  self-contained, so R353 is not blocked on R347 landing; the `depends-on` was dropped from the
+  front-matter so the README stops rendering R353 as "blocked by" an in-progress item. Coordinate to
+  avoid a third copy of the leaf-walk.
 
 ## Builds on
 
