@@ -1,7 +1,7 @@
 ---
 id: R367
 title: "Single-cardinality polymorphic child on a record-backed parent (resolve the dangling deferred-rejection doc)"
-status: In Progress
+status: In Review
 bucket: feature
 priority: 6
 theme: interface-union
