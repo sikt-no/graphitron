@@ -105,11 +105,17 @@ class AddressOccupantCarrierSingleCardinalityTest {
             }
             """);
 
+        // address_id 4 is seeded occupant-free (init.sql), so byId(4) returns a NON-NULL carrier
+        // (the hub exists). This is the case that matters: it drives the empty-stage-1
+        // null-payload arm (result.length == 0 ? null in buildScalarPerParentFetcher), not the
+        // null-carrier short-circuit. The carrier must be present and firstOccupant null.
         var carrier = (Map<String, Object>) data.get("addressOccupantCarrier");
         assertThat(carrier)
-            .as("address_id 4 has a hub row but no Customer/Staff occupants, so the "
-                + "single-cardinality polymorphic child resolves to null")
+            .as("address_id 4 is a non-null hub with no Customer/Staff occupants")
+            .isNotNull()
             .containsKey("firstOccupant");
-        assertThat(carrier.get("firstOccupant")).isNull();
+        assertThat(carrier.get("firstOccupant"))
+            .as("empty stage-1 over the occupant-free hub resolves the child to null")
+            .isNull();
     }
 }

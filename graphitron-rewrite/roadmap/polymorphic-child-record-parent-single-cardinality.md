@@ -1,7 +1,7 @@
 ---
 id: R367
 title: "Single-cardinality polymorphic child on a record-backed parent (resolve the dangling deferred-rejection doc)"
-status: Ready
+status: In Review
 bucket: feature
 priority: 6
 theme: interface-union
@@ -119,6 +119,25 @@ cardinalities route through `derivePolymorphicHubSource`, the nested-class hazar
 out to R370, and the two pipeline-tier classification tests pass (10/10). Only the execution-tier
 fixture is broken. Once the seed is fixed and the full `install -Plocal-db` is green, this is ready
 for another In Review -> Done pass (reviewer session != implementer session applies again).
+
+## Rework addressed (Ready -> In Progress -> In Review, 2026-06-24)
+
+- **Seed.** `init.sql` now seeds a fourth, occupant-free address (`address_id 4`, district
+  `Tasmania`, no store/staff/customer referencing it). The local DB was re-seeded from a single clean
+  `init.sql` run to reproduce CI; addresses are now exactly `1..4` with `4` empty.
+- **Test exercises the empty-payload arm.** `byId(4)` now returns a non-null carrier over the empty
+  hub, so `firstOccupant` drives the `result.length == 0 ? null` arm of `buildScalarPerParentFetcher`
+  (not the null-carrier short-circuit); the test asserts the carrier is non-null and the child is
+  null, with comments stating that intent. The populated-address assertion (`address_id 3` ->
+  Staff `Mike`, `staff_id 1` ahead of `customer_id 3`) holds on the fresh seed.
+- **Stale SDL comment.** The `AddressOccupantCarrier` comment now names the top-level
+  `AddressOccupantCarrier` record, not a nested `AddressOccupantCarrierService.Carrier`.
+- **Verification.** `graphitron-sakila-example install -Plocal-db` is green on the fresh seed (457
+  tests, 0 failures), with the current-trunk maven-plugin (post-R369). `graphitron` is green (2216).
+  The full-reactor `install -Plocal-db` could not be run end-to-end in this sandbox because
+  `graphitron-lsp`'s native libtree-sitter cannot be fetched through the scoped git proxy (an
+  environment limit, unrelated to R367); the lsp/mcp/maven-plugin jars were installed skipping only
+  their own tests.
 
 ## Cross-links
 
