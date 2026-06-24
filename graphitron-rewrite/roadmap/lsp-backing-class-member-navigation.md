@@ -1,7 +1,7 @@
 ---
 id: R353
 title: "LSP goto-definition from an SDL type/field name to its backing Java class and member"
-status: Spec
+status: Ready
 bucket: feature
 priority: 5
 theme: lsp
