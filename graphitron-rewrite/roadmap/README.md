@@ -23,7 +23,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R308` | Fix the @service list-payload N+1 by deriving many-arrival for list-returning carriers | Spec | 2026-06-14 | [plan](service-list-payload-arrival.md) |
 | `R335` | Fold input/scalar/enum classification into the single classify-and-emit walk | Spec | 2026-06-19 | [plan](walk-classifies-input-surface.md) |
 | `R369` | graphitron:dev walks generated-sources of scanned reactor modules so goto-definition reaches jOOQ tables in sibling modules | Spec | 2026-06-24 | [plan](dev-walks-generated-sources-of-scanned-modules.md) |
-| `R366` | Emit batch (loadMany) dispatch for list-cardinality polymorphic @splitQuery on record parents | In Review | 2026-06-24 | [plan](multitable-polymorphic-list-batch-load-dispatch.md) |
 | `R364` | Fix @service split-query rows-method return type for enum and non-built-in scalar fields | In Review | 2026-06-24 | [plan](service-split-nonbuiltin-scalar-return-type.md) |
 | `R45` | Multi-tenant routing on top of the schema-driven ExecutionInput factory | Spec | 2026-05-20 | [plan](tenant-routing-and-execution-input.md) |
 | `R273` | Source NodeId metadata from @node + catalog PK (inferred from `implements Node`), and settle wrong-type/malformed mismatch semantics, retiring the legacy __NODE bare-ID arm | Spec | 2026-06-02 | [plan](nodeid-skip-mismatch-error-surfacing.md) |
@@ -169,7 +168,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 ### interface-union
 
 - `R363` [**Lower @field filter inputs and @condition onto multitable-interface queries**](multitable-interface-query-filter-lowering.md) — Spec, bug
-- `R366` [**Emit batch (loadMany) dispatch for list-cardinality polymorphic @splitQuery on record parents**](multitable-polymorphic-list-batch-load-dispatch.md) — In Review, bug
 - `R365` [**Support returning a polymorphic entity (interface/union) from a @service mutation**](polymorphic-entity-service-return.md) — Spec, bug
 - `R370` [**Record-backed parent with a nested backing class emits a non-compiling $-qualified cast**](nested-backing-class-accessor-cast.md) — Backlog, bug
 - `R367` [**Single-cardinality polymorphic child on a record-backed parent (resolve the dangling deferred-rejection doc)**](polymorphic-child-record-parent-single-cardinality.md) — In Review, feature
