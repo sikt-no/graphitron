@@ -1,7 +1,7 @@
 ---
 id: R365
 title: "Support returning a polymorphic entity (interface/union) from a @service mutation"
-status: In Review
+status: Ready
 bucket: bug
 priority: 5
 theme: interface-union
@@ -228,3 +228,48 @@ Follow-up tightening (same pass): resolved the one remaining hedge by **pinning 
 "decide at Spec" instruction carries into implementation, made the conditional Tests bullet
 unconditional to match, and added an explicit `## Out of scope` section (route (b) payload/errors
 envelope; same-table dispatch; the untouched union-member and dangling-payload guards).
+
+## In Review → Ready: rework requested (2026-06-24, reviewer session ≠ implementer)
+
+Route (a) was implemented across all tiers (validation floor at 3366be, classifier + emitter at
+976e0a3, execution-tier fixture + emitter fix at 0e82f71) and the build is green for everything R365
+touches: `graphitron` 2223 tests and `graphitron-sakila-example` 459 tests (incl.
+`ServicePolymorphicReturnExecutionTest`, the 9.3 distinct-table round-trip) both pass; the only
+failures are `graphitron-lsp` / `graphitron-mcp` native-runtime (`GraphqlLanguage` / libtree-sitter),
+the documented web-sandbox caveat, on files R365 does not touch. The distinct-table regression — the
+item's actual deliverable — is faithfully restored.
+
+**One blocking finding: the discriminability floor does not close the same-table misdispatch hole it
+claims to, and the emitter asserts an invariant the validator does not provide.**
+
+- The floor (`GraphitronSchemaValidator.validateMultiTableParticipants`) errors only when
+  `anyMissingDiscriminator` is true. Two participants on the **same table that each carry
+  `@discriminator(value:)`** pass the floor — its own unit test
+  `wellFormed_sameTableParticipantsWithDiscriminator_noFloorError` asserts this.
+- The case is reachable from plain SDL: `TypeBuilder` reads `@discriminator(value:)` into
+  `discriminatorValue` *unconditionally* for every table-bound participant of a plain multitable
+  interface/union (no `@discriminate(on:)` needed). Such a schema classifies to
+  `QueryServicePolymorphicField` / `MutationServicePolymorphicField`, passes validation, and reaches
+  the emitter.
+- `MultiTablePolymorphicEmitter.buildServiceDispatchBlock` then emits an
+  `if (rec instanceof X) … else if (rec instanceof X)` chain over two identical record classes; the
+  second arm is dead, so every record of that table routes to the **first** participant — a silent
+  misdispatch (wrong `__typename`, wrong by-PK fetch). The method's own comment claims "the floor
+  guarantees distinct record classes across participants, so the if/else-if chain assigns each record
+  to exactly one arm", which is false for this subset.
+- This violates **"Validator mirrors classifier invariants"** and **"Classifier guarantees shape
+  emitter assumptions"** (rewrite-design-principles.adoc), and contradicts this spec's own claim
+  (under "Discriminability") that "the floor already rejects the same-table case at build time rather
+  than misdispatching it". A deferred/unimplemented dispatch branch must **fail the build**, not
+  miscompile.
+
+**Fix for the next pass:** in the shared `validateMultiTableParticipants` same-table branch, also
+reject the with-`@discriminator` subset (a deferred "same-table polymorphic dispatch not yet
+supported" rejection) until dispatch-by-value lands; correct the `MultiTablePolymorphicEmitter`
+invariant comment; and flip `wellFormed_sameTableParticipantsWithDiscriminator_noFloorError` to expect
+the deferred rejection. Note the **R363 query path shares this blind spot** (the spec says as much) and
+would be guarded by the same single-site change. Everything else — the distinct-table classifier and
+emitter, the collapsed `QueryServicePolymorphicField` / `MutationServicePolymorphicField` variant
+(exercised end-to-end over both a union and an interface), the child-`@service` deferred reject mirrored
+in classifier and validator, and the unit / pipeline / execution coverage — is sound and should carry
+forward unchanged.
