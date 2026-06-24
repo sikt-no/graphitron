@@ -1,7 +1,7 @@
 ---
 id: R362
 title: "MCP catalog tools: catalog.tables / catalog.describe over a build-time CatalogFacts projection (R361 D1)"
-status: Ready
+status: In Review
 bucket: feature
 theme: lsp
 depends-on: []

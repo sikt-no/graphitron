@@ -6,6 +6,7 @@ import io.modelcontextprotocol.server.McpSyncServer;
 import io.modelcontextprotocol.server.transport.HttpServletStreamableServerTransportProvider;
 import io.modelcontextprotocol.spec.McpSchema;
 import no.sikt.graphitron.lsp.state.Workspace;
+import no.sikt.graphitron.rewrite.catalog.CatalogFacts;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
 import org.eclipse.jetty.ee10.servlet.ServletContextHandler;
 import org.eclipse.jetty.ee10.servlet.ServletHolder;
@@ -19,9 +20,12 @@ import java.io.InputStream;
 import java.io.UncheckedIOException;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
@@ -93,7 +97,7 @@ public final class GraphitronMcpServer implements AutoCloseable {
             .instructions(instructions)
             .capabilities(McpSchema.ServerCapabilities.builder().prompts(false).tools(false).build())
             .prompts(aboutPrompt(aboutText))
-            .tools(statusTool(workspace))
+            .tools(statusTool(workspace), catalogTablesTool(workspace), catalogDescribeTool(workspace))
             .build();
 
         this.httpServer = new Server();
@@ -228,6 +232,237 @@ public final class GraphitronMcpServer implements AutoCloseable {
             .addTextContent(summary)
             .structuredContent(Map.copyOf(fields))
             .build();
+    }
+
+    /** Default {@code catalog.tables} page size: well under MCP response limits, paged by cursor. */
+    private static final int DEFAULT_TABLES_LIMIT = 100;
+
+    /**
+     * R362 — {@code catalog.tables}: lists the database tables the schema wires to, reading
+     * {@link Workspace#catalogFacts()} off the live handle on every call so answers reflect the
+     * latest build. Optional {@code schema} (exact, case-insensitive) and {@code name}
+     * (case-insensitive substring on the SQL table name) filters; {@code limit} + opaque
+     * {@code cursor} page the stable schema-qualified-name ordering, with a {@code nextCursor} on
+     * the result until the last page.
+     */
+    private static McpServerFeatures.SyncToolSpecification catalogTablesTool(Workspace workspace) {
+        var tool = McpSchema.Tool.builder("catalog.tables", Map.of(
+                "type", "object",
+                "properties", Map.of(
+                    "schema", Map.of("type", "string",
+                        "description", "Filter to one schema (exact, case-insensitive)."),
+                    "name", Map.of("type", "string",
+                        "description", "Case-insensitive substring filter on the SQL table name."),
+                    "limit", Map.of("type", "integer",
+                        "description", "Maximum tables per page (default " + DEFAULT_TABLES_LIMIT + ")."),
+                    "cursor", Map.of("type", "string",
+                        "description", "Opaque page cursor from a prior call's nextCursor."))))
+            .title("List catalog tables")
+            .description("Lists the database tables the GraphQL schema wires to, with optional "
+                + "schema and SQL-name-substring filters, paged via an opaque cursor. Each table "
+                + "carries its schema, SQL name, and comment when jOOQ codegen captured one. SQL "
+                + "names drive discovery; use catalog.describe for a single table's columns, keys, "
+                + "indexes, and foreign keys.")
+            .build();
+        return McpServerFeatures.SyncToolSpecification.builder()
+            .tool(tool)
+            .callHandler((exchange, request) -> catalogTablesResult(workspace.catalogFacts(), request.arguments()))
+            .build();
+    }
+
+    static McpSchema.CallToolResult catalogTablesResult(CatalogFacts facts, Map<String, Object> args) {
+        Optional<String> schema = stringArg(args, "schema");
+        Optional<String> name = stringArg(args, "name");
+        int limit = intArg(args, "limit", DEFAULT_TABLES_LIMIT);
+        if (limit < 1) limit = DEFAULT_TABLES_LIMIT;
+        int offset = decodeCursor(stringArg(args, "cursor").orElse(null));
+
+        var all = facts.tables(schema, name);
+        int from = Math.min(offset, all.size());
+        int to = Math.min(from + limit, all.size());
+        var page = all.subList(from, to);
+
+        var tableList = new ArrayList<Map<String, Object>>(page.size());
+        for (var t : page) {
+            var entry = new LinkedHashMap<String, Object>();
+            entry.put("schema", t.schema());
+            entry.put("name", t.name());
+            t.comment().ifPresent(c -> entry.put("comment", c));
+            tableList.add(entry);
+        }
+
+        var fields = new LinkedHashMap<String, Object>();
+        fields.put("tables", tableList);
+        boolean hasMore = to < all.size();
+        if (hasMore) {
+            fields.put("nextCursor", encodeCursor(to));
+        }
+
+        String summary = "catalog.tables: " + all.size() + " table(s)"
+            + schema.map(s -> " in schema '" + s + "'").orElse("")
+            + name.map(n -> " matching '" + n + "'").orElse("")
+            + "; showing " + page.size() + (hasMore ? " (more available)" : "") + ".";
+        return McpSchema.CallToolResult.builder()
+            .addTextContent(summary)
+            .structuredContent(fields)
+            .build();
+    }
+
+    /**
+     * R362 — {@code catalog.describe}: one table's columns (SQL and Java names, SQL types,
+     * nullability, comments when codegen captured them), primary / unique keys, indexes, and foreign
+     * keys in both directions with their column pairs. Reads {@link Workspace#catalogFacts()} live.
+     * {@code table} accepts a bare or schema-qualified SQL name; {@code schema} is the alternative to
+     * inline qualification. An unqualified name two schemas carry returns a structured {@code ambiguous}
+     * result; an unknown name returns {@code notFound}.
+     */
+    private static McpServerFeatures.SyncToolSpecification catalogDescribeTool(Workspace workspace) {
+        var tool = McpSchema.Tool.builder("catalog.describe", Map.of(
+                "type", "object",
+                "properties", Map.of(
+                    "table", Map.of("type", "string",
+                        "description", "Bare or schema-qualified SQL table name (e.g. \"film\" or \"public.film\")."),
+                    "schema", Map.of("type", "string",
+                        "description", "Schema for the table; the alternative to inline qualification.")),
+                "required", List.of("table")))
+            .title("Describe a catalog table")
+            .description("Describes one database table: columns (SQL and Java names, SQL types, "
+                + "nullability, and comments when jOOQ codegen captured them), the primary key, "
+                + "unique keys, indexes, and foreign keys in and out (with their column pairs). "
+                + "Foreign-key endpoints name neighbouring tables by their schema-qualified SQL name. "
+                + "Column comments appear only when codegen ran with comments enabled; their absence "
+                + "reflects codegen configuration, not a missing database comment. An ambiguous "
+                + "unqualified name returns the candidate schemas to re-call qualified.")
+            .build();
+        return McpServerFeatures.SyncToolSpecification.builder()
+            .tool(tool)
+            .callHandler((exchange, request) -> catalogDescribeResult(workspace.catalogFacts(), request.arguments()))
+            .build();
+    }
+
+    static McpSchema.CallToolResult catalogDescribeResult(CatalogFacts facts, Map<String, Object> args) {
+        String table = stringArg(args, "table").orElse("");
+        Optional<String> schema = stringArg(args, "schema");
+
+        var fields = new LinkedHashMap<String, Object>();
+        String summary = switch (facts.resolve(table, schema)) {
+            case CatalogFacts.TableResolution.Resolved r -> {
+                fields.put("resolution", "resolved");
+                mapResolvedTable(fields, r.table());
+                yield "catalog.describe: " + r.table().qualifiedName() + " ("
+                    + r.table().columns().size() + " column(s)).";
+            }
+            case CatalogFacts.TableResolution.Ambiguous a -> {
+                fields.put("resolution", "ambiguous");
+                fields.put("schemas", List.copyOf(a.schemas()));
+                yield "catalog.describe: table '" + table + "' is ambiguous, carried by schemas "
+                    + a.schemas() + "; re-call qualified (e.g. \"" + a.schemas().get(0) + "." + table + "\").";
+            }
+            case CatalogFacts.TableResolution.NotFound ignored -> {
+                fields.put("resolution", "notFound");
+                fields.put("table", table);
+                yield "catalog.describe: table '" + table + "' was not found in the catalog.";
+            }
+        };
+        return McpSchema.CallToolResult.builder()
+            .addTextContent(summary)
+            .structuredContent(fields)
+            .build();
+    }
+
+    /** Maps a resolved {@link CatalogFacts.Table} onto the {@code catalog.describe} structured fields. */
+    private static void mapResolvedTable(Map<String, Object> fields, CatalogFacts.Table table) {
+        fields.put("schema", table.schema());
+        fields.put("name", table.name());
+        table.comment().ifPresent(c -> fields.put("comment", c));
+
+        var columns = new ArrayList<Map<String, Object>>(table.columns().size());
+        for (var c : table.columns()) {
+            var col = new LinkedHashMap<String, Object>();
+            col.put("sqlName", c.sqlName());
+            col.put("javaName", c.javaName());
+            col.put("sqlType", c.sqlType());
+            col.put("nullable", c.nullable());
+            c.comment().ifPresent(cm -> col.put("comment", cm));
+            columns.add(col);
+        }
+        fields.put("columns", columns);
+
+        table.primaryKey().ifPresent(pk -> fields.put("primaryKey", mapKey(pk)));
+        fields.put("uniqueKeys", table.uniqueKeys().stream().map(GraphitronMcpServer::mapKey).toList());
+        fields.put("indexes", table.indexes().stream()
+            .map(i -> Map.<String, Object>of("name", i.name(), "columns", i.columns()))
+            .toList());
+
+        var foreignKeys = new LinkedHashMap<String, Object>();
+        foreignKeys.put("outgoing", table.foreignKeys().outgoing().stream()
+            .map(fk -> {
+                var m = new LinkedHashMap<String, Object>();
+                m.put("constraintName", fk.constraintName());
+                m.put("targetTable", fk.targetTable());
+                m.put("columns", fk.columns());
+                m.put("targetColumns", fk.targetColumns());
+                return (Map<String, Object>) m;
+            })
+            .toList());
+        foreignKeys.put("incoming", table.foreignKeys().incoming().stream()
+            .map(fk -> {
+                var m = new LinkedHashMap<String, Object>();
+                m.put("constraintName", fk.constraintName());
+                m.put("sourceTable", fk.sourceTable());
+                m.put("columns", fk.columns());
+                m.put("targetColumns", fk.targetColumns());
+                return (Map<String, Object>) m;
+            })
+            .toList());
+        fields.put("foreignKeys", foreignKeys);
+    }
+
+    private static Map<String, Object> mapKey(CatalogFacts.Key key) {
+        var m = new LinkedHashMap<String, Object>();
+        m.put("constraintName", key.constraintName());
+        m.put("columns", key.columns());
+        return m;
+    }
+
+    private static Optional<String> stringArg(Map<String, Object> args, String name) {
+        if (args == null) return Optional.empty();
+        Object value = args.get(name);
+        return value instanceof String s && !s.isBlank() ? Optional.of(s) : Optional.empty();
+    }
+
+    private static int intArg(Map<String, Object> args, String name, int fallback) {
+        if (args == null) return fallback;
+        Object value = args.get(name);
+        if (value instanceof Number n) return n.intValue();
+        if (value instanceof String s) {
+            try {
+                return Integer.parseInt(s.trim());
+            } catch (NumberFormatException ignored) {
+                return fallback;
+            }
+        }
+        return fallback;
+    }
+
+    /**
+     * Opaque page cursor: a base64-encoded offset into the stable ordering. Opaque so the wire
+     * contract does not promise offset semantics; a malformed or absent cursor decodes to offset 0.
+     */
+    private static String encodeCursor(int offset) {
+        return Base64.getUrlEncoder().withoutPadding()
+            .encodeToString(Integer.toString(offset).getBytes(StandardCharsets.UTF_8));
+    }
+
+    private static int decodeCursor(String cursor) {
+        if (cursor == null || cursor.isBlank()) return 0;
+        try {
+            int offset = Integer.parseInt(
+                new String(Base64.getUrlDecoder().decode(cursor), StandardCharsets.UTF_8));
+            return Math.max(offset, 0);
+        } catch (IllegalArgumentException ignored) {
+            return 0;
+        }
     }
 
     /**

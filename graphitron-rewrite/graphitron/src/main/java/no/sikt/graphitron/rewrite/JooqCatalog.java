@@ -228,6 +228,19 @@ public class JooqCatalog {
             ClassName.get(routinesClass), method.getName(), params, entry.toTableRef(routineName));
     }
 
+    /**
+     * Enumerate every table in the catalog as a {@link TableEntry}, in schema-then-table order
+     * (the generated {@code Tables} class field order within each schema). Used by the R362
+     * {@code CatalogFacts} build pass, which walks every table once while the codegen loader is
+     * open and reduces each to resolved-immutable facts. Returns the live {@link Table} handles;
+     * callers must consume them within the same build pass and never retain them past the loader's
+     * lifetime.
+     */
+    public List<TableEntry> allTableEntries() {
+        if (catalog == null) return List.of();
+        return catalog.schemaStream().flatMap(this::entriesIn).toList();
+    }
+
     private List<TableEntry> findUnqualifiedTable(String unqualifiedSqlName) {
         if (catalog == null) return List.of();
         return catalog.schemaStream()
@@ -591,26 +604,34 @@ public class JooqCatalog {
      * no primary key and no unique key (the degenerate {@code NoUniqueKeyCoverage} case).
      */
     public java.util.List<KeyEntry> candidateKeys(String tableSqlName) {
-        return findTable(tableSqlName).asEntry().map(te -> {
-            var table = te.table();
-            var out = new ArrayList<KeyEntry>();
-            var seenColumnSets = new java.util.HashSet<java.util.Set<String>>();
-            var pk = table.getPrimaryKey();
-            if (pk != null) {
-                var cols = resolveKeyColumns(table, pk);
-                if (seenColumnSets.add(sqlNameSet(cols))) {
-                    out.add(new KeyEntry(true, pk.getName(), cols));
-                }
+        return findTable(tableSqlName).asEntry()
+            .map(te -> candidateKeys(te.table()))
+            .orElse(java.util.List.of());
+    }
+
+    /**
+     * Table-scoped overload of {@link #candidateKeys(String)}: enumerates a resolved table's
+     * row-identifying candidate keys directly, without a (potentially ambiguous) SQL-name lookup.
+     * Used by the R362 {@code CatalogFacts} build pass, which already holds the live {@link Table}.
+     */
+    public java.util.List<KeyEntry> candidateKeys(Table<?> table) {
+        var out = new ArrayList<KeyEntry>();
+        var seenColumnSets = new java.util.HashSet<java.util.Set<String>>();
+        var pk = table.getPrimaryKey();
+        if (pk != null) {
+            var cols = resolveKeyColumns(table, pk);
+            if (seenColumnSets.add(sqlNameSet(cols))) {
+                out.add(new KeyEntry(true, pk.getName(), cols));
             }
-            for (org.jooq.UniqueKey<?> uk : table.getKeys()) {
-                var cols = resolveKeyColumns(table, uk);
-                if (cols.isEmpty()) continue;
-                if (seenColumnSets.add(sqlNameSet(cols))) {
-                    out.add(new KeyEntry(false, uk.getName(), cols));
-                }
+        }
+        for (org.jooq.UniqueKey<?> uk : table.getKeys()) {
+            var cols = resolveKeyColumns(table, uk);
+            if (cols.isEmpty()) continue;
+            if (seenColumnSets.add(sqlNameSet(cols))) {
+                out.add(new KeyEntry(false, uk.getName(), cols));
             }
-            return java.util.List.copyOf(out);
-        }).orElse(java.util.List.of());
+        }
+        return java.util.List.copyOf(out);
     }
 
     private java.util.List<ColumnEntry> resolveKeyColumns(Table<?> table, org.jooq.UniqueKey<?> key) {
@@ -793,6 +814,102 @@ public class JooqCatalog {
                 })
                 .toList())
             .orElse(java.util.List.of());
+    }
+
+    /**
+     * R362 — full column facts for the catalog-discovery projection: adds the SQL data-type name
+     * ({@code DataType.getTypeName()}) and the column comment ({@code Field.getComment()}) to the
+     * {@link ColumnEntry} shape. Reads the same reflective field set {@link #allColumnsOf(String)}
+     * does, so column order matches. The comment is empty when jOOQ codegen captured none. All
+     * values are resolved-immutable, safe to retain past the codegen loader's lifetime.
+     */
+    public java.util.List<ColumnFacts> columnFactsOf(Table<?> table) {
+        return Arrays.stream(table.getClass().getFields())
+            .filter(f -> org.jooq.Field.class.isAssignableFrom(f.getType()))
+            .map(f -> {
+                var col = (org.jooq.Field<?>) instanceFieldValue(f, table);
+                String comment = col.getComment();
+                return new ColumnFacts(
+                    col.getName(),
+                    f.getName(),
+                    col.getDataType().getTypeName(),
+                    col.getDataType().nullable(),
+                    comment == null ? "" : comment);
+            })
+            .toList();
+    }
+
+    /**
+     * R362 — every index on a table as a resolved-immutable (name, SQL-column-names) pair, in index
+     * declaration order with columns in index-field order. Each index column is resolved through
+     * {@link #findColumn(Table, String)} so the SQL name is canonical, falling back to the raw
+     * sort-field name when (degenerately) unresolvable.
+     */
+    public java.util.List<IndexFacts> indexFactsOf(Table<?> table) {
+        return table.getIndexes().stream()
+            .map(idx -> new IndexFacts(
+                idx.getName(),
+                idx.getFields().stream()
+                    .map(sf -> findColumn(table, sf.getName()).map(ColumnEntry::sqlName).orElse(sf.getName()))
+                    .toList()))
+            .toList();
+    }
+
+    /**
+     * R362 — the outgoing foreign keys of a table reduced to resolved-immutable facts: the SQL
+     * constraint name, the schema-qualified source and target table IDs, and the source / target
+     * column SQL-name lists. Unlike {@link ForeignKeyRef} (constraint name + {@code Keys}
+     * {@link ClassName} + constant, no column pairs), this carries the column pairs the
+     * {@code catalog.describe} wire shape promises, pulled from the live {@link ForeignKey} during
+     * the build pass and reduced to {@link String} immediately. The build pass groups these
+     * catalog-wide to derive each table's incoming edges.
+     */
+    @SuppressWarnings("unchecked")
+    public java.util.List<ForeignKeyFacts> foreignKeyFactsOf(Table<?> table) {
+        return ((List<ForeignKey<?, ?>>) (List<?>) table.getReferences()).stream()
+            .map(fk -> new ForeignKeyFacts(
+                fk.getName(),
+                qualifiedName(fk.getTable()),
+                qualifiedName(fk.getKey().getTable()),
+                fk.getFields().stream().map(org.jooq.Field::getName).toList(),
+                fk.getKey().getFields().stream().map(org.jooq.Field::getName).toList()))
+            .toList();
+    }
+
+    private static String qualifiedName(Table<?> table) {
+        return table.getSchema().getName() + "." + table.getName();
+    }
+
+    /**
+     * R362 — a column's full discovery facts: SQL name, jOOQ Java field name, SQL data-type name,
+     * nullability, and comment (empty when codegen captured none). The resolved-immutable superset
+     * of {@link ColumnEntry} the {@code CatalogFacts} projection needs; see {@link #columnFactsOf}.
+     */
+    public record ColumnFacts(String sqlName, String javaName, String sqlType, boolean nullable, String comment) {}
+
+    /**
+     * R362 — an index's name and its SQL column names in index order. See {@link #indexFactsOf}.
+     */
+    public record IndexFacts(String name, java.util.List<String> columns) {
+        public IndexFacts { columns = java.util.List.copyOf(columns); }
+    }
+
+    /**
+     * R362 — a foreign key reduced to resolved-immutable facts: SQL constraint name, schema-qualified
+     * source / target table IDs, and the source / target column SQL-name lists. See
+     * {@link #foreignKeyFactsOf}.
+     */
+    public record ForeignKeyFacts(
+        String constraintName,
+        String sourceTable,
+        String targetTable,
+        java.util.List<String> columns,
+        java.util.List<String> targetColumns
+    ) {
+        public ForeignKeyFacts {
+            columns = java.util.List.copyOf(columns);
+            targetColumns = java.util.List.copyOf(targetColumns);
+        }
     }
 
     /**
