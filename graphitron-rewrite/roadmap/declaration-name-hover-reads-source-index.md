@@ -1,7 +1,7 @@
 ---
 id: R371
 title: "Declaration-name hover surfaces jOOQ class/column Javadoc by reading the source index, parity with goto-definition"
-status: Ready
+status: In Progress
 bucket: bug
 priority: 4
 theme: lsp
