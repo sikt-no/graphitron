@@ -27,7 +27,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R365` | Support returning a polymorphic entity (interface/union) from a @service mutation | Spec | 2026-06-24 | [plan](polymorphic-entity-service-return.md) |
 | `R347` | Consolidate graphitron-lsp navigation, dispatch, and result-building | In Progress | 2026-06-19 | [plan](lsp-structural-consolidation.md) |
 | `R332` | Mark @table on input types as deprecated (signal ahead of R97 removal) | Spec | 2026-06-22 <sub>created 2026-06-18</sub> | [plan](table-on-input-deprecation-signal.md) |
-| `R367` | Single-cardinality polymorphic child on a record-backed parent (resolve the dangling deferred-rejection doc) | In Review | 2026-06-24 | [plan](polymorphic-child-record-parent-single-cardinality.md) |
 | `R13` | Faceted search on `@asConnection` | Spec |  | [plan](faceted-search.md) |
 | `R63` | Type UPSERT dialect requirement on the model | Spec |  | [plan](dml-dialect-requirement-on-model.md) |
 | `R92` | Surface database CHECK constraints as Jakarta validation rules | Spec |  | [plan](catalog-check-constraint-validation.md) |
@@ -168,7 +167,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R363` [**Lower @field filter inputs and @condition onto multitable-interface queries**](multitable-interface-query-filter-lowering.md) — Spec, bug
 - `R365` [**Support returning a polymorphic entity (interface/union) from a @service mutation**](polymorphic-entity-service-return.md) — Spec, bug
 - `R370` [**Record-backed parent with a nested backing class emits a non-compiling $-qualified cast**](nested-backing-class-accessor-cast.md) — Backlog, bug
-- `R367` [**Single-cardinality polymorphic child on a record-backed parent (resolve the dangling deferred-rejection doc)**](polymorphic-child-record-parent-single-cardinality.md) — In Review, feature
 
 ### nodeid
 
