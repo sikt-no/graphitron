@@ -1,7 +1,7 @@
 ---
 id: R362
 title: "MCP catalog tools: catalog.tables / catalog.describe over a build-time CatalogFacts projection (R361 D1)"
-status: Spec
+status: Ready
 bucket: feature
 theme: lsp
 depends-on: []
@@ -70,10 +70,16 @@ booleans, enums, `List<record>`, and graphitron-javapoet `ClassName` (loader-ind
 never retain a `Table<?>`, `ForeignKey<?,?>`, `org.jooq.Field`, or `Class<?>`, or it silently
 becomes (B) in (A)'s clothing: a live reflection handle that `NoClassDefFoundError`s after
 `withCodegenScope` closes the loader. `JooqCatalog`'s `ColumnEntry` (javaName + sqlName +
-columnClass + nullable), `KeyEntry` (PK/unique flag + keyName + columns), and `ForeignKeyRef`
-(constraint name + `Keys` `ClassName` + constant) are already exactly this shape, so the projection
-is a mechanical map from accessors `JooqCatalog` already exposes (`allColumnsOf`, `candidateKeys`,
-`findIndexColumns` / `Table.getIndexes`, `getReferences` + `findForeignKeyByName`).
+columnClass + nullable) and `KeyEntry` (PK/unique flag + keyName + columns) are already exactly this
+shape, so those arms are a mechanical map from accessors `JooqCatalog` already exposes (`allColumnsOf`,
+`candidateKeys`, `findIndexColumns` / `Table.getIndexes`). The FK arm is the one exception:
+`ForeignKeyRef` carries only (constraint name + `Keys` `ClassName` + constant), *not* the
+`columns` / `targetColumns` pairs the `catalog.describe` wire shape promises. So `CatalogFacts`'s FK
+record adds explicit column-list fields; it does not re-nest `ForeignKeyRef`. The pairs are pulled
+from the live `ForeignKey<?,?>` during the same build pass and reduced to `String` immediately
+(`fk.getFields()` → source SQL names, `fk.getKey().getFields()` → target SQL names,
+`fk.getKey().getTable().getName()` → target table), all reachable via `getReferences()` /
+`findForeignKeyByName` and all resolved-immutable per the invariant.
 
 ## The cadence cost, named explicitly
 
@@ -125,8 +131,10 @@ fields are mapped off `CatalogFacts`; the MCP view never re-derives a fork the b
   `schema` filters to one schema (case-insensitive); `name` is a case-insensitive substring filter
   on the SQL table name. Output: an ordered list of `{schema, name, comment?}` plus `nextCursor?`.
 - **`catalog.describe`** — input `{table: string, schema?: string}`. `table` accepts a bare or
-  schema-qualified SQL name; `schema` is the alternative to inline qualification. Resolution reuses
-  the `JooqCatalog.TableResolution` semantics already projected into `CatalogFacts`: a unique match
+  schema-qualified SQL name; `schema` is the alternative to inline qualification. Resolution mirrors
+  the `JooqCatalog.TableResolution` *semantics* over a parallel `CatalogFacts`-owned type whose
+  `Resolved` arm wraps the frozen `CatalogFacts.Table` (never the live `JooqCatalog.TableEntry`,
+  which holds a `Table<?>` and would reintroduce the loader leak): a unique match
   returns the table; an unqualified name carried by two or more schemas returns a structured
   *ambiguous* result naming the candidate schemas (so the agent re-calls qualified) rather than an
   arbitrary pick; an unknown name returns a structured *not-found*. Output for a resolved table:
@@ -158,8 +166,11 @@ untouched. Named explicitly so a reviewer does not flag a missing validator arm.
 - **`graphitron/src/main/java/no/sikt/graphitron/rewrite/catalog/CatalogFacts.java` (new).** The
   frozen projection: a `CatalogFacts` record holding a map (or ordered list) of `Table` facts keyed
   by schema-qualified SQL name, with nested `Column`, `Key`, `Index`, and `ForeignKey` records, all
-  resolved-immutable-value only (see the load-bearing invariant). A `TableResolution`-shaped lookup
-  surfaces resolved / ambiguous / not-found so the tool maps each to its wire arm.
+  resolved-immutable-value only (see the load-bearing invariant). The `ForeignKey` record carries its
+  own `columns` / `targetColumns` SQL-name lists (not a re-nested `ForeignKeyRef`, which lacks them).
+  A `TableResolution`-shaped lookup, parallel to `JooqCatalog.TableResolution` but with its `Resolved`
+  arm wrapping the frozen `CatalogFacts.Table`, surfaces resolved / ambiguous / not-found so the tool
+  maps each to its wire arm.
 - **`CatalogBuilder`.** A `buildCatalogFacts(JooqCatalog)` pass, run from `build` (or alongside it)
   while the loader is open, mapping `allColumnsOf` / `candidateKeys` / index + reference accessors
   into `CatalogFacts`. Independent of the assembled GraphQL schema (raw DB truth), so it takes only
