@@ -153,6 +153,19 @@ public class DevMojo extends AbstractRewriteMojo {
             + " reactor classpath root(s), " + initialCtx.compileSourceRoots().size()
             + " source root(s); " + workspace.catalog().externalReferences().size()
             + " external reference(s) indexed");
+        // Name any module the auto-include could not close: scanned for completion
+        // (its target/classes is on disk) but contributing no walked source root, so
+        // goto-definition / hover on its declarations is a silent no-jump (R369). The
+        // common residue is a table arriving only as a dependency JAR with no .java.
+        var unwalked = unwalkedScannedModules();
+        if (!unwalked.isEmpty()) {
+            getLog().warn("graphitron:dev: " + unwalked.size()
+                + " scanned reactor module(s) contribute no walked source root, so "
+                + "goto-definition / hover on their declarations returns nothing: "
+                + String.join(", ", unwalked)
+                + ". Build a module to put its generated sources on disk; a table that "
+                + "arrives only as a dependency JAR has no source to walk (see R369).");
+        }
         Set<Path> schemaRoots = startSchemaWatcher(initialCtx, workspace);
         startClasspathWatcher(initialCtx, workspace);
         startSourceWatcher(initialCtx, workspace);

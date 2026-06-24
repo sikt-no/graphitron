@@ -1,7 +1,7 @@
 ---
 id: R369
 title: "graphitron:dev walks generated-sources of scanned reactor modules so goto-definition reaches jOOQ tables in sibling modules"
-status: In Progress
+status: In Review
 bucket: bug
 priority: 4
 theme: lsp
@@ -19,6 +19,41 @@ schema module that runs `graphitron:dev`. The table class is known to the catalo
 (its module's `target/classes` is on the scanned classpath, so the FQN and
 `classFqn` resolve), but its source position is absent, so every arm lands on
 `DefinitionTarget.SourceAbsent` -> `Optional.empty()` (a silent no-jump).
+
+## Implementation (shipped)
+
+All in `graphitron-maven-plugin`:
+
+- `AbstractRewriteMojo.generatedSourceRoots(MavenProject)`: disk scan of the
+  existing immediate subdirectories of `${build.directory}/generated-sources/`,
+  sorted for determinism, empty when no build dir or no such dir.
+- `AbstractRewriteMojo.compileSourceRootsOf(MavenProject)`: the single per-module
+  "what is walked" definition (hand-written `getCompileSourceRoots()` ∪
+  `generatedSourceRoots`). `resolveCompileSourceRoots()` now routes through it, so
+  the resolver and the diagnostic share one answer; the stale javadoc was rewritten.
+- `AbstractRewriteMojo.unwalkedScannedModules(Iterable<MavenProject>)` (pure, plus a
+  session-bound instance overload); `DevMojo.execute()` renders a `WARN` naming any
+  residual scanned-but-unwalked module after the existing count line.
+- Tests: `AbstractRewriteMojoTest` (+4: disk discovery, empty cases, the widening
+  regression, dedup, `unwalkedScannedModules`); `SourceWalkerTest` (+1: the D1
+  disjoint-package collision guard leaving a table jump `Located`, not `Ambiguous`).
+
+**Learning, parity is module-coverage not count equality.** The root-cause section
+reads the startup diagnostic's "4 classpath / 3 source root(s)" gap as the symptom,
+but raw count equality is not the R351 invariant: a module with both a hand-written
+and a generated root contributes two source roots against its one `target/classes`,
+so the counts legitimately diverge post-fix. The real invariant, every scanned
+module has at least one walked source root, is what `unwalkedScannedModules` pins;
+the test asserts that set is empty for the generated-only sibling, not a count match.
+
+**Verification caveat.** The full pipeline could not run `graphitron-lsp` /
+`DevServerTest` in the agent sandbox: the tree-sitter native runtime install clones
+`github.com/tree-sitter/tree-sitter`, which the egress policy denies (403), so
+`GraphqlLanguage` / the LSP completion socket fail to initialise. Those failures
+predate and are orthogonal to this change. Verified instead: the full tree compiles
+(`install -DskipTests`), and the three affected test classes pass with tests on
+(`AbstractRewriteMojoTest` 9/9, `DevMojoTest` 6/6, `SourceWalkerTest` 9/9). A
+reviewer with the native runtime should run the full `mvn install -Plocal-db`.
 
 ## Root cause
 

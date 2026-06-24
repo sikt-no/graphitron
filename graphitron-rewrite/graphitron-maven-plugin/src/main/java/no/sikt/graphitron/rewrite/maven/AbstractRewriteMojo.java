@@ -27,6 +27,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 /**
  * Shared configuration surface for {@link GenerateMojo} and {@link ValidateMojo}.
@@ -226,22 +227,93 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
 
     /**
      * Compile source-root directories from every reactor project: the
-     * hand-written {@code src/main/java} roots plus any generated-sources roots
-     * a prior plugin registered (jOOQ output among them). The LSP parses these
-     * to recover Java declaration positions and Javadoc for goto-definition /
-     * hover on both halves.
+     * hand-written {@code src/main/java} roots plus the generated-sources roots
+     * discovered on disk by {@link #generatedSourceRoots(MavenProject)} (jOOQ
+     * output among them). The LSP parses these to recover Java declaration
+     * positions and Javadoc for goto-definition / hover on both halves.
      *
      * <p>Resolved over the same {@link #reactorProjects()} set as
      * {@link #resolveClasspathRoots()} through the shared
      * {@link #collectExistingDirs} traversal, so the scan path and the walk path
      * cannot drift in which modules they cover: a class scanned for completion
-     * is a class whose source root is walked for goto-definition (R351). Only
-     * existing directories are kept, so the pre-{@code mvn compile} state where
-     * generated sources are absent contributes nothing.
+     * is a class whose source root is walked for goto-definition (R351).
+     *
+     * <p>The generated-sources half is taken from disk rather than from
+     * {@code project.getCompileSourceRoots()}, which only carries a
+     * generated-sources root once the owning module's codegen plugin has
+     * executed in <em>this</em> session. A sibling jOOQ module scanned for
+     * completion (its {@code target/classes} exists from a prior build) but not
+     * built this session would otherwise contribute zero source roots, leaving
+     * its table classes jumpable in completion but dead on goto-definition. The
+     * disk scan is lifecycle-independent, the same property the classpath side
+     * already has, so it restores parity for that case (R369). A root the plugin
+     * also registered collapses with the discovered one in
+     * {@link #collectExistingDirs} (dedup by normalised absolute path), so the
+     * widening is a no-op under a full-lifecycle goal.
      */
     private List<Path> resolveCompileSourceRoots() {
-        return collectExistingDirs(reactorProjects(),
-            p -> p.getCompileSourceRoots() == null ? List.of() : p.getCompileSourceRoots());
+        return collectExistingDirs(reactorProjects(), AbstractRewriteMojo::compileSourceRootsOf);
+    }
+
+    /**
+     * The walked source roots for one project: its hand-written
+     * {@code getCompileSourceRoots()} unioned with the disk-discovered
+     * {@link #generatedSourceRoots(MavenProject) generatedSourceRoots}. The
+     * single per-module definition of "what is walked", shared by
+     * {@link #resolveCompileSourceRoots()} and
+     * {@link #unwalkedScannedModules(Iterable)} so the resolver and the
+     * unwalked-module diagnostic cannot disagree on the answer. De-duplication
+     * of overlapping entries is left to {@link #collectExistingDirs}.
+     */
+    static Collection<String> compileSourceRootsOf(MavenProject p) {
+        var roots = new ArrayList<String>();
+        if (p.getCompileSourceRoots() != null) {
+            roots.addAll(p.getCompileSourceRoots());
+        }
+        roots.addAll(generatedSourceRoots(p));
+        return roots;
+    }
+
+    /**
+     * The existing immediate subdirectories of
+     * {@code ${project.build.directory}/generated-sources/} (for example
+     * {@code target/generated-sources/jooq}, {@code .../graphitron},
+     * {@code .../annotations}).
+     *
+     * <p>Discovered from disk by convention, not parsed out of any code
+     * generator's plugin configuration (D1): the {@code generated-sources/<tool>}
+     * layout is what every generator follows, while the plugin coordinate and its
+     * configurable {@code <directory>} are not, so a POM-config scan would be
+     * plugin-specific and fragile. Over-inclusion (annotation-processor output,
+     * graphitron's own emitted resolvers) is cheap for the parse-only
+     * {@code SourceWalker} and harmless for the class / field maps; the one
+     * method-map hazard (a cross-file {@code (FQN, name, arity)} collision routing
+     * to {@code Ambiguous}) cannot arise because graphitron emits into the
+     * consumer's {@code outputPackage}, disjoint from the jOOQ table package the
+     * catalog joins against.
+     *
+     * <p>Returns an empty list when the project has no build directory or no
+     * {@code generated-sources} directory on disk. Sorted for a deterministic
+     * order across filesystems.
+     */
+    static List<String> generatedSourceRoots(MavenProject project) {
+        var build = project.getBuild();
+        if (build == null || build.getDirectory() == null) {
+            return List.of();
+        }
+        Path generatedSources = Path.of(build.getDirectory()).resolve("generated-sources");
+        if (!Files.isDirectory(generatedSources)) {
+            return List.of();
+        }
+        try (Stream<Path> entries = Files.list(generatedSources)) {
+            return entries
+                .filter(Files::isDirectory)
+                .map(Path::toString)
+                .sorted()
+                .toList();
+        } catch (IOException e) {
+            return List.of();
+        }
     }
 
     /**
@@ -268,6 +340,55 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
             }
         }
         return new ArrayList<>(roots);
+    }
+
+    /** The scanned-but-unwalked reactor modules for the current session; see
+     *  {@link #unwalkedScannedModules(Iterable)}. {@code DevMojo} renders these
+     *  as a startup {@code WARN}. */
+    List<String> unwalkedScannedModules() {
+        return unwalkedScannedModules(reactorProjects());
+    }
+
+    /**
+     * Reactor modules whose compile output ({@code target/classes}) is scanned
+     * for the LSP catalog but which contribute no walked source root, so a class
+     * found for completion has no source position and every goto-definition /
+     * hover on its declarations is a silent no-jump.
+     *
+     * <p>This is the residue the {@link #generatedSourceRoots(MavenProject)}
+     * auto-include cannot close: the auto-include fixes the reactor-source case
+     * (a sibling whose generated sources are on disk) outright; this names what
+     * remains, for example a table class that arrives only as a published
+     * dependency JAR with no {@code .java} to walk.
+     *
+     * <p>The determination is a per-module set difference, not the count
+     * comparison the {@code graphitron:dev} startup line does, and
+     * {@link #collectExistingDirs} deliberately flattens away the owning-project
+     * provenance that difference needs. So it lives here as a pure function over
+     * the projects, unit-pinned the way {@link #collectExistingDirs} is; the
+     * Mojo only renders the result. "Walked" is decided by
+     * {@link #compileSourceRootsOf(MavenProject)}, the same definition
+     * {@link #resolveCompileSourceRoots()} uses, so the two cannot disagree.
+     * Returns the offending modules' {@link MavenProject#getId() ids} in reactor
+     * order.
+     */
+    static List<String> unwalkedScannedModules(Iterable<MavenProject> projects) {
+        var unwalked = new ArrayList<String>();
+        for (MavenProject p : projects) {
+            boolean scanned = p.getBuild() != null
+                && p.getBuild().getOutputDirectory() != null
+                && Files.isDirectory(
+                    Path.of(p.getBuild().getOutputDirectory()).toAbsolutePath().normalize());
+            if (!scanned) {
+                continue;
+            }
+            boolean walked = !collectExistingDirs(
+                List.of(p), AbstractRewriteMojo::compileSourceRootsOf).isEmpty();
+            if (!walked) {
+                unwalked.add(p.getId());
+            }
+        }
+        return unwalked;
     }
 
     /**
