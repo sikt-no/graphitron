@@ -6,11 +6,12 @@ import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
+import no.sikt.graphitron.rewrite.model.ColumnOverlap;
+import no.sikt.graphitron.rewrite.model.ColumnOverlap.OverlapColumn;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 
 import javax.lang.model.element.Modifier;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -82,8 +83,8 @@ final class JooqRecordInstantiationEmitter {
         // last-write-wins to the same value) but disagreeing ones would silently drop a caller value.
         // Detect the overlap once and, when present, route through the agreement-checked emission.
         var writers = writersOf(jr);
-        var overlap = analyzeOverlap(writers);
-        if (overlap.isEmpty()) {
+        var plan = ColumnOverlap.groupByColumn(writers.stream().map(WriterView::new).toList());
+        if (plan.stream().noneMatch(OverlapColumn::shared)) {
             // No overlap: byte-identical to the pre-R322 two-loop form (pay-for-what-you-use).
             // Plain @field columns: each loaded only when its wire key is present, so an omitted
             // nullable column stays changed=false (excluded from INSERT/UPDATE). A non-null (`!`) field
@@ -98,7 +99,7 @@ final class JooqRecordInstantiationEmitter {
                 emitKeyDecode(b, kd, tablesClass, tableField);
             }
         } else {
-            emitWithAgreement(b, writers, overlap, tablesClass, tableField);
+            emitWithAgreement(b, writers, plan, tablesClass, tableField);
         }
 
         return b.addStatement("return rec").build();
@@ -200,9 +201,18 @@ final class JooqRecordInstantiationEmitter {
         List<String> path() { return plain != null ? plain.path() : decode.path(); }
     }
 
-    /** One writer's contribution to a single column: the {@code slot} index within the writer's column
-     *  tuple (always 0 for a plain field) and the resolved {@link ColumnRef}. */
-    private record SlotRef(Writer writer, int slot, ColumnRef column) {}
+    /** R356: adapts a {@link Writer} into the shared {@link ColumnOverlap.ColumnWriter} view so the
+     *  per-column overlap grouping is the one {@link ColumnOverlap#groupByColumn} the six DML write-path
+     *  sites share. A plain field's single column or a decode's target columns (already in decode-record
+     *  slot order); the label is the dotted access path. The emission downcasts {@code Contributor.writer()}
+     *  back to this view to reach the wrapped {@link Writer} (its base local and decode shape). */
+    private record WriterView(Writer w) implements ColumnOverlap.ColumnWriter {
+        @Override public List<ColumnRef> targetColumns() {
+            return w.isDecode() ? w.decode().targetColumns() : List.of(w.plain().column());
+        }
+        @Override public boolean decode() { return w.isDecode(); }
+        @Override public String label() { return dottedPath(w.path()); }
+    }
 
     /** The record's writers in emission order: plain {@code @field} columns first, then {@code @nodeId}
      *  decodes, each tagged with a collision-free local-name base. */
@@ -220,48 +230,24 @@ final class JooqRecordInstantiationEmitter {
     }
 
     /**
-     * D1: maps each backing column to its ordered list of contributing writers, then keeps only the
-     * columns with two or more writers (the overlaps). A decode contributes one {@link SlotRef} per
-     * target column (carrying that column's slot index); a plain field contributes one at slot 0. The
-     * map preserves writer-encounter order so the agreement label and the "first present writer"
-     * pairwise base are stable.
-     */
-    private static LinkedHashMap<String, List<SlotRef>> analyzeOverlap(List<Writer> writers) {
-        var byColumn = new LinkedHashMap<String, List<SlotRef>>();
-        for (var w : writers) {
-            if (w.isDecode()) {
-                var cols = w.decode().targetColumns();
-                for (int s = 0; s < cols.size(); s++) {
-                    byColumn.computeIfAbsent(cols.get(s).sqlName(), k -> new ArrayList<>())
-                        .add(new SlotRef(w, s, cols.get(s)));
-                }
-            } else {
-                var col = w.plain().column();
-                byColumn.computeIfAbsent(col.sqlName(), k -> new ArrayList<>())
-                    .add(new SlotRef(w, 0, col));
-            }
-        }
-        var overlaps = new LinkedHashMap<String, List<SlotRef>>();
-        byColumn.forEach((k, v) -> { if (v.size() >= 2) overlaps.put(k, v); });
-        return overlaps;
-    }
-
-    /**
      * D4: the agreement-checked emission for a record with at least one overlapping column. Reads every
      * writer's wire value(s) into named locals (prepare), checks the present writers on each overlapping
      * column agree (agreement), then loads every present writer onto the record (load). Because the loads
      * last-write-wins to the same value once agreement holds, load order is immaterial; building all
      * writers' locals up front is what makes the plain-field value and the decode {@code String[]} slot
-     * co-available for the per-column check.
+     * co-available for the per-column check. The shared {@link ColumnOverlap} plan keeps every column
+     * (size-one included); the agreement check fires only on the {@code shared()} ones.
      */
     private static void emitWithAgreement(MethodSpec.Builder b, List<Writer> writers,
-            LinkedHashMap<String, List<SlotRef>> overlap, ClassName tablesClass, String tableField) {
+            List<OverlapColumn> plan, ClassName tablesClass, String tableField) {
         for (var w : writers) {
             emitPrepare(b, w, tablesClass, tableField);
         }
         int ci = 0;
-        for (var slots : overlap.values()) {
-            emitAgreement(b, slots, tablesClass, tableField, "agree" + (ci++));
+        for (var oc : plan) {
+            if (oc.shared()) {
+                emitAgreement(b, oc, tablesClass, tableField, "agree" + (ci++));
+            }
         }
         for (var w : writers) {
             emitLoadPrepared(b, w, tablesClass, tableField);
@@ -384,23 +370,25 @@ final class JooqRecordInstantiationEmitter {
      * actually-present writers enter the list, so an omitted nullable writer cannot conflict, and the check
      * fires only when two or more are present. The label names the conflicting SDL fields, not the column.
      */
-    private static void emitAgreement(MethodSpec.Builder b, List<SlotRef> slots,
+    private static void emitAgreement(MethodSpec.Builder b, OverlapColumn oc,
             ClassName tablesClass, String tableField, String listName) {
-        String label = "input fields " + slots.stream()
-            .map(s -> "'" + dottedPath(s.writer().path()) + "'")
+        String label = "input fields " + oc.contributors().stream()
+            .map(c -> "'" + c.writer().label() + "'")
             .distinct()
             .collect(Collectors.joining(", "));
         // An overlap reaching the agreement check always has at least one decode (the all-plain overlap
         // is the build-time reject), so a NodeIdEncoder class is always available for the call.
-        ClassName encoderClass = slots.stream()
-            .filter(s -> s.writer().isDecode())
-            .map(s -> s.writer().decode().encoderClass())
+        ClassName encoderClass = oc.contributors().stream()
+            .map(c -> ((WriterView) c.writer()).w())
+            .filter(Writer::isDecode)
+            .map(w -> w.decode().encoderClass())
             .findFirst().orElseThrow();
-        ColumnRef col = slots.get(0).column();
+        ColumnRef col = oc.column();
         b.addStatement("$T<$T> $L = new $T<>()", LIST, Object.class, listName, ARRAY_LIST);
-        for (var s : slots) {
-            b.beginControlFlow("if ($LPresent)", s.writer().base());
-            b.addStatement("$L.add($L)", listName, agreeValueExpr(s));
+        for (var c : oc.contributors()) {
+            Writer w = ((WriterView) c.writer()).w();
+            b.beginControlFlow("if ($LPresent)", w.base());
+            b.addStatement("$L.add($L)", listName, agreeValueExpr(w, c.slot()));
             b.endControlFlow();
         }
         String idx = listName + "Idx";
@@ -412,16 +400,15 @@ final class JooqRecordInstantiationEmitter {
 
     /** The value a writer contributes to a shared column, read from its prepared locals: a plain field's
      *  raw value, a non-null decode's slot, or a nullable decode's null (present-null) / slot. */
-    private static CodeBlock agreeValueExpr(SlotRef s) {
-        Writer w = s.writer();
+    private static CodeBlock agreeValueExpr(Writer w, int slot) {
         String base = w.base();
         if (!w.isDecode()) {
             return CodeBlock.of("$LValue", base);
         }
         if (w.decode().nonNull()) {
-            return CodeBlock.of("$LKeys[$L]", base, s.slot());
+            return CodeBlock.of("$LKeys[$L]", base, slot);
         }
-        return CodeBlock.of("$LPresentNull ? null : $LKeys[$L]", base, base, s.slot());
+        return CodeBlock.of("$LPresentNull ? null : $LKeys[$L]", base, base, slot);
     }
 
     /** Renders an access path as a dotted SDL field reference (e.g. {@code details.title}) for the

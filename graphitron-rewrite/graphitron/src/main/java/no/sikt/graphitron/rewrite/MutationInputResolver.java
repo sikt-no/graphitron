@@ -8,6 +8,7 @@ import graphql.schema.GraphQLNonNull;
 import graphql.schema.GraphQLType;
 import graphql.schema.GraphQLTypeUtil;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
+import no.sikt.graphitron.rewrite.model.ColumnOverlap;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.DmlKind;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
@@ -18,12 +19,8 @@ import no.sikt.graphitron.rewrite.model.Rejection;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
 
 import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
 
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_MULTI_ROW;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_OVERRIDE;
@@ -620,37 +617,40 @@ final class MutationInputResolver {
      * Returns the first offending column's rejection, or {@code null}.
      */
     private Resolved.Rejected rejectPlainColumnCollision(List<InputField> fields, String typeName) {
-        var pathsByColumn = new LinkedHashMap<String, List<String>>();
-        var columnsWithDecode = new HashSet<String>();
-        collectSetColumns(fields, List.of(), pathsByColumn, columnsWithDecode);
-        for (var e : pathsByColumn.entrySet()) {
-            String column = e.getKey();
-            List<String> paths = e.getValue();
-            if (paths.size() >= 2 && !columnsWithDecode.contains(column)) {
+        var writers = new ArrayList<ColumnOverlap.ColumnWriter>();
+        collectSetColumns(fields, List.of(), writers);
+        for (var oc : ColumnOverlap.groupByColumn(writers)) {
+            if (oc.shared() && oc.allPlain()) {
                 return new Resolved.Rejected(Rejection.structural(
-                    "@mutation input '" + typeName + "' fields '" + paths.get(0) + "' and '" + paths.get(1)
-                    + "' both resolve to column '" + column + "' — two fields cannot populate one column;"
-                    + " remove one, or point its @field(name:) at a different column"));
+                    "@mutation input '" + typeName + "' fields '" + oc.contributors().get(0).writer().label()
+                    + "' and '" + oc.contributors().get(1).writer().label()
+                    + "' both resolve to column '" + oc.column().sqlName() + "' — two fields cannot populate one"
+                    + " column; remove one, or point its @field(name:) at a different column"));
             }
         }
         return null;
     }
 
+    /** R356: one SET-side carrier as a {@link ColumnOverlap.ColumnWriter}; the dotted access path is the
+     *  reject-message label. The same shared grouping the emitters trigger value-agreement on (R322/R342)
+     *  yields the all-plain collision the validator rejects on, so reject and agreement read one fold. */
+    private record InputFieldWriter(List<ColumnRef> targetColumns, boolean decode, String label)
+            implements ColumnOverlap.ColumnWriter {}
+
     /**
-     * Accumulates, per backing column, the dotted access paths of the SET-side carriers writing it and
-     * whether any of them is a {@code @nodeId} decode. Recurses into {@link InputField.NestingField}
-     * grouping inputs (R186), threading the access-path prefix. Value carriers source columns from
-     * {@code column() / columns()}, FK-reference carriers from {@code liftedSourceColumns()}; composite and
-     * reference carriers carry a decode by construction, a {@link InputField.ColumnField} only when its
-     * extraction is a {@link CallSiteExtraction.NodeIdDecodeKeys}.
+     * Accumulates the SET-side carriers writing the input's own columns as {@link ColumnOverlap.ColumnWriter}s,
+     * recursing into {@link InputField.NestingField} grouping inputs (R186) and threading the access-path
+     * prefix. Value carriers source columns from {@code column() / columns()}, FK-reference carriers from
+     * {@code liftedSourceColumns()}; composite and reference carriers carry a decode by construction, a
+     * {@link InputField.ColumnField} only when its extraction is a {@link CallSiteExtraction.NodeIdDecodeKeys}.
      */
     private void collectSetColumns(List<InputField> fields, List<String> prefix,
-            Map<String, List<String>> pathsByColumn, Set<String> columnsWithDecode) {
+            List<ColumnOverlap.ColumnWriter> writers) {
         for (var f : fields) {
             if (f instanceof InputField.NestingField nf) {
                 var child = new ArrayList<>(prefix);
                 child.add(nf.name());
-                collectSetColumns(nf.fields(), child, pathsByColumn, columnsWithDecode);
+                collectSetColumns(nf.fields(), child, writers);
                 continue;
             }
             List<ColumnRef> columns;
@@ -673,13 +673,7 @@ final class MutationInputResolver {
             }
             var dotted = new ArrayList<>(prefix);
             dotted.add(f.name());
-            String path = String.join(".", dotted);
-            for (var column : columns) {
-                pathsByColumn.computeIfAbsent(column.sqlName(), k -> new ArrayList<>()).add(path);
-                if (decode) {
-                    columnsWithDecode.add(column.sqlName());
-                }
-            }
+            writers.add(new InputFieldWriter(columns, decode, String.join(".", dotted)));
         }
     }
 }

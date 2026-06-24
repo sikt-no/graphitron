@@ -26,7 +26,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R353` | LSP goto-definition from an SDL type/field name to its backing Java class and member | Ready | 2026-06-24 <sub>created 2026-06-21</sub> | [plan](lsp-backing-class-member-navigation.md) |
 | `R347` | Consolidate graphitron-lsp navigation, dispatch, and result-building | In Progress | 2026-06-19 | [plan](lsp-structural-consolidation.md) |
 | `R332` | Mark @table on input types as deprecated (signal ahead of R97 removal) | Spec | 2026-06-22 <sub>created 2026-06-18</sub> | [plan](table-on-input-deprecation-signal.md) |
-| `R356` | Unify the per-column shared-column overlap analysis across mutation write paths | Spec | 2026-06-24 <sub>created 2026-06-22</sub> | [plan](unify-shared-column-overlap-analysis.md) |
+| `R356` | Unify the per-column shared-column overlap analysis across mutation write paths | In Review | 2026-06-24 <sub>created 2026-06-22</sub> | [plan](unify-shared-column-overlap-analysis.md) |
 | `R13` | Faceted search on `@asConnection` | Spec |  | [plan](faceted-search.md) |
 | `R63` | Type UPSERT dialect requirement on the model | Spec |  | [plan](dml-dialect-requirement-on-model.md) |
 | `R92` | Surface database CHECK constraints as Jakarta validation rules | Spec |  | [plan](catalog-check-constraint-validation.md) |
@@ -165,7 +165,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R135` [**Multi-hop @nodeId pipeline test for FK-target/NodeType-keyColumns permutation**](multi-hop-nodeid-fk-permutation-test.md) — Backlog, validation
 - `R57` [**FK-target argument @nodeId, JOIN-with-translation emission**](nodeid-fk-target-arg-join-translation.md) — Backlog, architecture
 - `R273` [**Source NodeId metadata from @node + catalog PK (inferred from `implements Node`), and settle wrong-type/malformed mismatch semantics, retiring the legacy __NODE bare-ID arm**](nodeid-skip-mismatch-error-surfacing.md) — Spec, architecture
-- `R356` [**Unify the per-column shared-column overlap analysis across mutation write paths**](unify-shared-column-overlap-analysis.md) — Spec, architecture
+- `R356` [**Unify the per-column shared-column overlap analysis across mutation write paths**](unify-shared-column-overlap-analysis.md) — In Review, architecture
 - `R24` [**`NodeIdReferenceField` JOIN-projection form**](nodeidreferencefield-join-projection-form.md) — Backlog, cleanup
 
 ### service
