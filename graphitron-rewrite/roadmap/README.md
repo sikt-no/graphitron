@@ -23,7 +23,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R308` | Fix the @service list-payload N+1 by deriving many-arrival for list-returning carriers | Spec | 2026-06-14 | [plan](service-list-payload-arrival.md) |
 | `R335` | Fold input/scalar/enum classification into the single classify-and-emit walk | Spec | 2026-06-19 | [plan](walk-classifies-input-surface.md) |
 | `R366` | Emit batch (loadMany) dispatch for list-cardinality polymorphic @splitQuery on record parents | Ready | 2026-06-24 | [plan](multitable-polymorphic-list-batch-load-dispatch.md) |
-| `R364` | Fix @service split-query rows-method return type for enum and non-built-in scalar fields | Ready | 2026-06-24 | [plan](service-split-nonbuiltin-scalar-return-type.md) |
+| `R364` | Fix @service split-query rows-method return type for enum and non-built-in scalar fields | In Progress | 2026-06-24 | [plan](service-split-nonbuiltin-scalar-return-type.md) |
 | `R45` | Multi-tenant routing on top of the schema-driven ExecutionInput factory | Spec | 2026-05-20 | [plan](tenant-routing-and-execution-input.md) |
 | `R273` | Source NodeId metadata from @node + catalog PK (inferred from `implements Node`), and settle wrong-type/malformed mismatch semantics, retiring the legacy __NODE bare-ID arm | Spec | 2026-06-02 | [plan](nodeid-skip-mismatch-error-surfacing.md) |
 | `R365` | Support returning a polymorphic entity (interface/union) from a @service mutation | Spec | 2026-06-24 | [plan](polymorphic-entity-service-return.md) |
@@ -181,7 +181,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### service
 
-- `R364` [**Fix @service split-query rows-method return type for enum and non-built-in scalar fields**](service-split-nonbuiltin-scalar-return-type.md) — Ready, bug
+- `R364` [**Fix @service split-query rows-method return type for enum and non-built-in scalar fields**](service-split-nonbuiltin-scalar-return-type.md) — In Progress, bug
 - `R201` [**Honor @field(name:) in @error payload construction shape resolution**](honor-field-directive-in-payload-construction-shape.md) — Backlog, bug
 - `R202` [**Honor @field(name:) in @error type extra-field accessor matching against handler source class**](honor-field-directive-in-error-type-source-accessors.md) — Backlog, bug
 - `R45` [**Multi-tenant routing on top of the schema-driven ExecutionInput factory**](tenant-routing-and-execution-input.md) — Spec, architecture
