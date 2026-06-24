@@ -103,4 +103,45 @@ public final class RowsMethodShape {
             ? ParameterizedTypeName.get(LIST, ParameterizedTypeName.get(LIST, perKey))
             : ParameterizedTypeName.get(LIST, perKey);
     }
+
+    /**
+     * Inverse of {@link #outerRowsReturnType}: recovers the per-key element type {@code V} from a
+     * known outer rows-method type. Used when {@link #strictPerKeyType} can't name {@code V} from
+     * the schema, a non-built-in scalar leaf (an enum, or an unregistered custom scalar) returns
+     * {@code null} there, but the developer's service method already declares the outer
+     * {@code Map<K, V>} / {@code List<V>} shape, so {@code V} is the leaf that shape yields. Peeling
+     * it (rather than handing back the whole map) keeps {@code ServiceRecordField.elementType()}'s
+     * value out of {@code outerRowsReturnType}'s wrapping path, so the rows method's declared type is the flat
+     * {@code Map<K, V>} that matches the service contract instead of a doubly-nested
+     * {@code Map<K, Map<K, V>>} (R364).
+     *
+     * <p>Returns {@code null} when {@code outer} isn't the parameterized container the
+     * {@code (isMapped, isList)} pair expects (a {@code List} where a {@code Map} is required, a
+     * missing list-nesting level, a raw type). Callers that emit ({@code elementType()}) fall back
+     * to the whole declared type so a shape validation missed surfaces as the same request-time
+     * failure as before; the validator treats {@code null} as a rejection.
+     */
+    public static TypeName perKeyFromOuter(TypeName outer, ReturnTypeRef returnType, boolean isMapped) {
+        boolean isList = returnType.wrapper().isList();
+        // Strip the outer container: mapped → Map<K, valuePerKey> (V rides the value arg);
+        // positional → List<valuePerKey> (V rides the element arg).
+        TypeName valuePerKey = isMapped ? typeArgAt(outer, MAP, 1) : typeArgAt(outer, LIST, 0);
+        if (valuePerKey == null) return null;
+        // Strip the list-cardinality wrap outerRowsReturnType applies for list-valued fields.
+        return isList ? typeArgAt(valuePerKey, LIST, 0) : valuePerKey;
+    }
+
+    /**
+     * The {@code index}-th type argument of {@code type} when it is a {@link ParameterizedTypeName}
+     * over {@code expectedRaw} with enough arguments; {@code null} otherwise. The structural guard
+     * lets {@link #perKeyFromOuter} reject a malformed outer shape rather than peel the wrong slot.
+     */
+    private static TypeName typeArgAt(TypeName type, ClassName expectedRaw, int index) {
+        if (type instanceof ParameterizedTypeName p
+                && p.rawType().equals(expectedRaw)
+                && p.typeArguments().size() > index) {
+            return p.typeArguments().get(index);
+        }
+        return null;
+    }
 }

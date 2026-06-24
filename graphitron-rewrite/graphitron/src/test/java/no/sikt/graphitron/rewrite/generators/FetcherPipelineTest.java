@@ -756,6 +756,59 @@ class FetcherPipelineTest {
         assertThat(languageFetchers.methodSpecs()).extracting(MethodSpec::name).contains("loadFilms");
     }
 
+    @Test
+    void serviceField_enumLeaf_mapped_rowsMethodReturnsFlatMapNotDoublyNested() {
+        // R364: a non-built-in scalar leaf (enum, or an unregistered custom scalar) used to fall
+        // the per-key element type back to the service method's whole Map<KeyRecord, V>, which
+        // outerRowsReturnType then wrapped once more — emitting Map<Row1<Integer>,
+        // Map<Row1<Integer>, String>> and failing to compile. The enum leaf is the DB text
+        // (String); the per-key V is that String, so the rows method must be the flat
+        // Map<Row1<Integer>, String>. The Int sibling below resolves through the spec-built-in
+        // path and was always flat; the pair confirms the fix touches only the non-built-in leaf.
+        var languageFetchers = findSpec("LanguageFetchers", """
+            type Language @table(name: "language") { languageId: Int @field(name: "language_id") }
+            enum Rating { G PG R }
+            type Query { language: Language }
+            extend type Language {
+                rating: Rating @service(
+                    service: {className: "no.sikt.graphitron.rewrite.generators.TestFilmService", method: "getRatingMapped"}
+                )
+                rank: Int @service(
+                    service: {className: "no.sikt.graphitron.rewrite.generators.TestFilmService", method: "getRankMapped"}
+                )
+            }
+            """);
+        assertThat(method(languageFetchers, "loadRating").returnType().toString())
+            .isEqualTo("java.util.Map<org.jooq.Row1<java.lang.Integer>, java.lang.String>");
+        assertThat(method(languageFetchers, "loadRank").returnType().toString())
+            .isEqualTo("java.util.Map<org.jooq.Row1<java.lang.Integer>, java.lang.Integer>");
+    }
+
+    @Test
+    void serviceField_enumLeaf_mapped_wrongContainer_rejectedAtClassifyTime() {
+        // R364 step 2: the validator no longer skips a non-built-in scalar leaf. A mapped (Set-keyed)
+        // enum field whose method returns a bare List — unpeelable into the expected Map<K, V> —
+        // is rejected at classify time rather than left to miscompile on the generated return line.
+        var schema = buildSchema("""
+            type Language @table(name: "language") { languageId: Int @field(name: "language_id") }
+            enum Rating { G PG R }
+            type Query { language: Language }
+            extend type Language {
+                rating: Rating @service(
+                    service: {className: "no.sikt.graphitron.rewrite.generators.TestFilmService", method: "getRatingWrongContainer"}
+                )
+            }
+            """);
+        var rating = schema.field("Language", "rating");
+        assertThat(rating).isInstanceOf(no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField.class);
+        var reason = ((no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField) rating).rejection().message();
+        assertThat(reason)
+            .contains("getRatingWrongContainer")
+            .contains("'java.util.Map'")
+            .contains("Row1<Integer>")
+            .contains("List<String>");
+    }
+
     // ===== Helpers =====
 
     private List<String> generate(String sdl) {
