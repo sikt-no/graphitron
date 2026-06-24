@@ -1,7 +1,7 @@
 ---
 id: R371
 title: "Declaration-name hover surfaces jOOQ class/column Javadoc by reading the source index, parity with goto-definition"
-status: Backlog
+status: Spec
 bucket: bug
 priority: 4
 theme: lsp
@@ -47,18 +47,131 @@ real Sakila jOOQ sources with `SourceWalker` indexes
 contractually the uppercase jOOQ Java identifier (`CompletionData.java:94`), which is
 exactly the `SourceWalker.FieldKey` the lookup needs, so no case handling is required.
 
-**Sketch (for Spec):** thread `CompletionData` + `SourceWalker.Index` into
-`DeclarationHovers.compute`/`render`; for a `TypeDeclarationHover` whose classification
-carries a table/`fqClassName`, overlay `Descriptions.ofTable` / `classJavadoc`; for a
-`FieldDeclarationHover` classified as a column, overlay `Descriptions.ofColumn` keyed by
-`catalog.getTable(tableName).classFqn()`. Mirror the `DeclarationDefinitions` join so the
-hover and goto triggers cannot drift. Coverage: a pipeline/LSP-tier assertion that hover
-on a table type name and a `@field` column name returns the jOOQ Javadoc (the existing
-`InlayHintsTest`/hover tests are the precedent), plus a unit assertion on the overlay
-keyed off a hand-built index. Note the LSP test tier needs the tree-sitter native
-runtime, which is egress-blocked in agent sandboxes.
+## Design
 
-**Open scoping question for the author:** confirm with the reporter whether the empty
-hover is on the declaration name (this item) or also on the `@table(name:)` /
-`@field(name:)` directive value (which should already work via `Descriptions`); if the
-latter is also empty, widen scope.
+Thread `CompletionData catalog` + `SourceWalker.Index sourceIndex` into
+`DeclarationHovers.compute` (the call site in `Hovers.compute`,
+`Hovers.java:90-91`, already holds both — it passes them to `richerHover` on
+the directive arm but drops them on the declaration arm). The classification
+label `render` produces today is unchanged; the overlay is an additive
+Javadoc block resolved through the projection goto already uses.
+
+1. **Type-name arm — resolve the Javadoc coordinate via `TypeBackingShape`,
+   not `TypeClassification`.** After the classification label, look up
+   `built.typesByName().get(typeName)` (the `TypeBackingShape` projection
+   `DeclarationDefinitions.typeNameTarget` consumes for goto) and switch on it:
+   `TableBacking` / `JooqRecordBacking.WithTable` -> `Descriptions.ofTable` on
+   `catalog.getTable(tableName)`; the `fqClassName`-bearing arms
+   (`RecordBacking` / `PojoBacking` / record-input) ->
+   `Descriptions.classJavadoc(fqn)`; `Standalone` / `NoBacking` -> no overlay.
+   This is the same switch goto uses, so the two arms cannot point at different
+   declarations. Resolving off `TypeClassification` instead (its
+   `JooqTableRecord.tableName()` "may be null when the catalog is unavailable")
+   would re-introduce a null-table fork that `JooqRecordBacking.{WithTable,Standalone}`
+   already resolved at the type level, and would be a second projection answering
+   "what Java does this type bind to" (D1).
+
+2. **Field-name arm — resolve the column the same way goto's
+   `DeclarationDefinitions.fieldNameTarget` does** (`TypeBackingShape` +
+   `effectiveMemberName`), then overlay `Descriptions.ofColumn` keyed by the
+   resolved `(classFqn, column.name())`. This guarantees the hover Javadoc
+   describes exactly the column goto jumps to (D2).
+
+3. **Factor the coordinate resolution so the parity is mechanical.** Lift the
+   "declaration coordinate -> (table | class, member?)" join that
+   `DeclarationDefinitions` performs into a function both arms call (so the
+   goto target and the hover overlay read one answer), or, minimally, have the
+   hover arm switch on the identical `TypeBackingShape` projection. Prefer the
+   shared function so "cannot drift" is enforced by construction, per
+   "Documentation names only live tests/code".
+
+## Decisions
+
+**D1 - resolve the type-arm Javadoc coordinate through `TypeBackingShape`, the
+projection goto consumes, not `TypeClassification`.** `Built` ships two parallel
+projections: `typesByName()` (`TypeBackingShape`, "what Java backing") and
+`typeClassificationsByName()` (`TypeClassification`, the classification label).
+The label render stays on the latter; the Javadoc-coordinate path joins the
+former so hover and goto resolve the same backing arm and the `WithTable` /
+`Standalone` null-table split is honoured rather than re-derived.
+
+**D2 - the declaration-name field hover matches goto's backing-based column
+resolution, not the directive-value arm's `lspColumnDispatch`.** Goto's field
+arm resolves columns via `TypeBackingShape` + `effectiveMemberName`; the
+directive-VALUE hover arm (`Hovers.columnHover`) resolves via
+`FieldClassification.lspColumnDispatch().Resolve(tableName)`, which for a
+`@reference`-path field points at the *terminal* table (R233/R343), a
+*different* column than goto's enclosing-backing column. The declaration-name
+hover must agree with goto (its sibling on the same coordinate), so it adopts
+goto's backing resolution. The two hover arms answering "`@reference` field
+column" from different authorities is pre-existing and **out of scope** here;
+named as a candidate follow-up (unify the column-resolution authority across
+the three consumers).
+
+**D3 - test on the pure coordinate-resolution + overlay, not the tree-sitter
+hover tier.** The behaviour has two falsifiable, tree-sitter-free pieces: the
+coordinate join (a pure function over the `Built` projection) and the
+`Descriptions` overlay (already pure; the directive-value arm exercises it).
+Only the trigger (`SdlDeclaration.findContaining`) is tree-sitter-bound, and it
+is shared with goto and already covered. Assertion lives on the resolution +
+overlay over a hand-built `Built` fixture (the convenience constructors at
+`LspSchemaSnapshot.java:181-203` build one without tree-sitter) plus a
+`SourceWalker.Index` fixture.
+
+## Candidate follow-up (out of scope)
+
+A single projected `(table | class, member?)` carrier on `LspSchemaSnapshot.Built`,
+built once in `CatalogBuilder` and consumed by goto's `DeclarationDefinitions`,
+the directive-value hover arm, and this declaration-name hover arm, would
+collapse all three request-time joins to one build-side answer (the
+"same predicate, multiple consumers" smell across the LSP). Larger blast radius
+than this bug fix; filed-as-candidate rather than folded in, so R371 stays a
+localized wiring fix. The unified `@reference` column authority (D2) rides on
+this.
+
+## Test plan
+
+- Unit (`@UnitTier`, no tree-sitter): over a hand-built `LspSchemaSnapshot.Built`
+  + `SourceWalker.Index`, assert the declaration-name hover overlay returns the
+  jOOQ class Javadoc for a table-backed type name and the column Javadoc for a
+  column-backed field name; assert empty overlay for `Standalone` / `NoBacking`.
+- Drift guard: assert the type-name hover and goto (`DeclarationDefinitions`)
+  resolve the *same* `TypeBackingShape` arm for a given declaration (mechanical
+  "cannot drift", satisfying the live-tests-pin-invariants principle). If the
+  shared resolution function (Design 3) lands, this is a direct call assertion;
+  otherwise it asserts both arms agree on the resolved table/class.
+- No code-string assertion on generated bodies (none involved; this is LSP
+  request-time rendering).
+- Note: the live `DeclarationHovers` LSP tier (`InlayHintsTest`-style) needs the
+  tree-sitter native runtime, egress-blocked in agent sandboxes; a reviewer with
+  the runtime can add the editor-level assertion, but the falsifiable signal does
+  not depend on it.
+
+## Scope
+
+In: Javadoc overlay on the declaration-name hover coordinate (SDL type-name and
+field-name tokens), resolved through goto's backing projection.
+
+Out: the directive-value hover arm (`@table(name:)` / `@field(name:)` values;
+already overlays via `Descriptions`); the `@reference` field-column resolution
+divergence between hover arms (D2, pre-existing); the shared projected carrier
+(candidate follow-up above).
+
+## Builds on
+
+- **R369** (Done): made the generated jOOQ sources reach the walked index in the
+  multi-module layout, so goto-definition on the declaration name works; that
+  exposed this hover-arm gap.
+- **R352 / R90** (Done): the LSP-owned `SourceWalker.Index` and the `Descriptions`
+  source-Javadoc overlay this arm will reuse.
+- **R160** (Done): the `DeclarationHovers` classification-hover arm being extended.
+- **R233 / R343** (Done): the `lspColumnDispatch` terminal-table resolution that
+  D2 deliberately does not adopt for the declaration coordinate.
+
+## Open scoping question for the reviewer
+
+Confirm with the reporter whether the empty hover is on the declaration name
+(this item) or also on the `@table(name:)` / `@field(name:)` directive value
+(which already overlays via `Descriptions` and tested sound at the data layer);
+if the directive-value arm is also empty, that is a separate defect and widens
+scope beyond this item.
