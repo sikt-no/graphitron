@@ -7,7 +7,7 @@ priority: 5
 theme: lsp
 depends-on: [lsp-structural-consolidation]
 created: 2026-06-21
-last-updated: 2026-06-22
+last-updated: 2026-06-24
 ---
 
 # LSP goto-definition from an SDL type/field name to its backing Java class and member
@@ -32,10 +32,14 @@ should not have to target. Most of the data already exists: `LspSchemaSnapshot.B
 projects a `TypeBackingShape` per SDL type carrying the backing class FQN
 (`RecordBacking`/`PojoBacking`/`JooqRecordBacking.fqClassName`) or the jOOQ table name
 (`TableBacking`/`JooqRecordBacking.WithTable.tableName`) plus a `MemberSlot(name, displayType)`
-list; `CompletionData` holds source locations for jOOQ tables and columns, and (since R349, commit
-`1db8756`) the consumer-class / method positions live in the LSP-owned `SourceWalker.Index`,
-resolved through the public `Definitions.classTarget` / `methodTarget` join helpers and the sealed
-`DefinitionTarget`.
+list; and every Java position the dispatch needs (jOOQ table class, column, consumer class, POJO
+accessor) now resolves through the LSP-owned `SourceWalker.Index` via the sealed `DefinitionTarget`
+and the join helpers in `Definitions` (`classTarget` / `methodTarget` are public; the column/FK
+join `fieldTarget` is currently private). The catalog (`CompletionData`) supplies the structural
+join keys (table names, column names, class FQNs); the index supplies the positions. R349 (commit
+`1db8756`) moved the consumer-class / method positions onto the index, and the jOOQ table/column
+positions have since followed: `CompletionData.SourceLocation` now survives only on `TypeData`
+(scalar types), with no `Table.definition()` / `Column.definition()` accessor remaining.
 
 ## Goal
 
@@ -67,13 +71,23 @@ not a directive argument), goto-definition jumps to the Java the model bound tha
    future `TypeBackingShape` permit forces a goto-def decision rather than silently resolving to
    empty. All arms, including the three `NoBacking` arms, are named:
    - *Type name* on `TableBacking` / `JooqRecordBacking.WithTable` -> `catalog.getTable(tableName)`,
-     then `Table.definition()` (jOOQ half, still a catalog-borne `SourceLocation`).
+     then `Definitions.classTarget(table.classFqn(), sourceIndex)` -> `DefinitionTarget`. This is the
+     same source-index join `Definitions.tableDefinition` already uses for the `@table(name:)`
+     directive arm; the generated table class is a class in the index, not a catalog-borne
+     `SourceLocation`.
    - *Type name* on `RecordBacking` / `PojoBacking` / `JooqRecordBacking.Standalone` -> the public
      `Definitions.classTarget(fqClassName, sourceIndex)` join helper R349 added, yielding a
      `DefinitionTarget` (`Located` -> jump, `SourceAbsent` -> empty). The consumer-class position
      no longer lives on `CompletionData`; it is resolved against the LSP-owned `SourceWalker.Index`.
-   - *Field name* on `TableBacking` / `JooqRecordBacking.WithTable` -> reuse the existing
-     `Definitions.fieldDefinition` column path (`getTable(...).columns()` -> `Column.definition()`).
+   - *Field name* on `TableBacking` / `JooqRecordBacking.WithTable` -> resolve the enclosing type's
+     table, find the named column, and join `(table.classFqn(), columnName)` against the source index
+     -> `DefinitionTarget`. This is the join `Definitions.fieldDefinition` already performs internally
+     via the private `fieldTarget`. Because `fieldDefinition` is directive-parameterized (it reads the
+     table from the `@field` directive's enclosing type via `DeclarationKind.enclosing(directive.outer())`)
+     and `fieldTarget` is private, this arm needs the column-by-name -> `DefinitionTarget` join exposed:
+     a small refactor factoring the table+column lookup out of `fieldDefinition`, or widening
+     `fieldTarget` to package visibility, so a field-name trigger with no directive cursor can call it.
+     There is no `Column.definition()` accessor.
    - *Field name* on `PojoBacking` -> the public `Definitions.methodTarget(fqClassName, memberName,
      catalog, sourceIndex)` join helper, yielding a `DefinitionTarget` (the accessor's
      `Located` position, or `SourceAbsent` / `Ambiguous`).
@@ -88,13 +102,15 @@ not a directive argument), goto-definition jumps to the Java the model bound tha
    classifier-separated triggers; the `.or()` ordering is acceptable so long as the shared trigger
    classification (point 1) keeps ownership of a NAME node explicit rather than fall-through.
 
-4. **Honour the two empty-resolution contracts already in place.** The jOOQ-half arms
-   (`Table.definition()` / `Column.definition()`) resolve through `Definitions.asLocation`, where a
-   `SourceLocation.UNKNOWN` (empty URI) yields `Optional.empty()` so the editor stays put. The
-   service-half arms resolve through the sealed `DefinitionTarget` R349 introduced: `Located` jumps,
-   `SourceAbsent` / `Ambiguous` yield empty. Both are existing contracts this item reuses, not new
-   ones; `DeclarationDefinitions` maps each arm's outcome to `Optional<Location>` exactly as
-   `Definitions.resolve` already does.
+4. **Honour the single empty-resolution contract already in place.** Every arm resolves through the
+   sealed `DefinitionTarget`: `classTarget` / the column join / `methodTarget` each return `Located`
+   (jump), `SourceAbsent`, or `Ambiguous`, and `Definitions.resolve` maps that to `Optional<Location>`
+   (`Located` -> `asLocation`, which itself yields `Optional.empty()` on an empty-URI
+   `SourceLocation`; `SourceAbsent` / `Ambiguous` -> empty so the editor stays put). This is the
+   contract R349 and the table/column position migration settled on; `DeclarationDefinitions` reuses
+   it unchanged rather than reintroducing a separate catalog-borne `asLocation` path. (A `catalog.getTable`
+   / column miss, i.e. a name the catalog does not know, is still a plain `Optional.empty()` before
+   the join is even attempted, distinct from a known target whose source is `SourceAbsent`.)
 
 ## Decisions
 
@@ -112,12 +128,16 @@ follow-up Backlog item**, which would upgrade the record arm from class-precise 
 component-precise without changing the dispatch
 shape.
 
-**D2 - builds on R349, which has landed.** R349 (commit `1db8756`, Done) decoupled the
-service-half positions onto the LSP-owned `SourceWalker.Index` and replaced the `UNKNOWN` sentinel
-with the sealed `DefinitionTarget`. The `RecordBacking`/`PojoBacking`/`Standalone` *type-name* arms
-and the `PojoBacking` *field-name* arm therefore route through R349's public `classTarget` /
-`methodTarget` join helpers rather than the removed `ExternalReference.definition()` /
-`Method.definition()` accessors. R353 is **correct regardless of source coverage**: when a backing
+**D2 - builds on R349 (and the table/column position migration that followed it).** R349 (commit
+`1db8756`, Done) decoupled the consumer-class / method positions onto the LSP-owned
+`SourceWalker.Index` and replaced the `UNKNOWN` sentinel with the sealed `DefinitionTarget`. Since
+then the jOOQ table and column positions have likewise moved onto the index: `Definitions.tableDefinition`
+resolves the `@table` jump through `classTarget(table.classFqn(), sourceIndex)` and `fieldDefinition`
+resolves the `@field` jump through the `(classFqn, columnName)` `fieldTarget` join, both yielding a
+`DefinitionTarget`. No catalog-borne `Table.definition()` / `Column.definition()` /
+`ExternalReference.definition()` / `Method.definition()` accessor survives; `CompletionData.SourceLocation`
+remains only on `TypeData` (scalar types). Every R353 arm therefore routes through a source-index
+`DefinitionTarget` join. R353 is **correct regardless of source coverage**: when a backing
 class's source root is not walked the join returns `DefinitionTarget.SourceAbsent` -> empty (design
 point 4), and when it is indexed the same arm jumps. R349 is no longer a `depends-on` (it is Done);
 the relationship is "builds on", pinned by R353's own test (D3).
@@ -151,6 +171,8 @@ field name on a record component (-> backing class, per D1), and a `NoBacking` d
 
 - **R349** (Done, commit `1db8756`): supplies the public `Definitions.classTarget` /
   `methodTarget` join helpers, the sealed `DefinitionTarget`, and the LSP-owned
-  `SourceWalker.Index` (`Workspace.sourceIndex()`) that the reflection-bound class arms and the
-  POJO accessor arm resolve through (see D2). Not a `depends-on`: it has already landed.
+  `SourceWalker.Index` (`Workspace.sourceIndex()`) that every R353 arm resolves through (the
+  table-class and column arms via `tableDefinition` / `fieldDefinition`'s source-index joins, the
+  reflection-bound class arms via `classTarget`, the POJO accessor arm via `methodTarget`; see D2).
+  Not a `depends-on`: it has already landed.
 
