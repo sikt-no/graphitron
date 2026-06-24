@@ -89,6 +89,16 @@ public final class ServiceMethodCallEmitter {
         return out;
     }
 
+    /**
+     * Whether {@link #emit} declares a {@code DSLContext dsl} local for this call (because the
+     * method binds a {@code DSLContext} arg or is instance-shaped). A caller that needs a
+     * {@code dsl} local in scope after the service call (e.g. the route (a) polymorphic fetcher,
+     * which auto-fetches by PK) consults this to avoid double-declaring it.
+     */
+    public static boolean declaresDslLocal(ServiceMethodCall call) {
+        return anyFromDsl(allEntries(call)) || call instanceof ServiceMethodCall.Instance;
+    }
+
     private static List<MappingEntry> allEntries(ServiceMethodCall call) {
         if (call instanceof ServiceMethodCall.Instance inst) {
             List<MappingEntry> all = new ArrayList<>(inst.ctorArgs().size() + inst.methodArgs().size());

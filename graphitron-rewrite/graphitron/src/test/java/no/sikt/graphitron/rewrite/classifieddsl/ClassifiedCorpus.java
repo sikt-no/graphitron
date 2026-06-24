@@ -354,6 +354,44 @@ public final class ClassifiedCorpus {
             """,
             "{ filmActor { related { ... on Film { title } ... on Actor { firstName } } } }"),
 
+        /*
+         * R365 route (a): a root @service field returning a multitable union (QueryServicePolymorphicField,
+         * single cardinality). The service hands back a PK-populated TableRecord per branch; the verdict is
+         * source Query, operation ServiceCall (the developer method replaces the catalog read), and target
+         * Single. The target shape is Interface for both interface and union returns (one variant carries
+         * both, routing through the shared __typename-column TypeResolver). Distinct-table participants
+         * (film, actor) so record-class dispatch is well-defined. Corpus-only: it adds the
+         * QueryServicePolymorphicField leaf and lands on the Query / ServiceCall coordinate.
+         */
+        new Example("query-service-polymorphic", """
+            type Film @table(name: "film") { title: String }
+            type Actor @table(name: "actor") { firstName: String @field(name: "FIRST_NAME") }
+            union FilmOrActor @classifiedType(as: UnionType) = Film | Actor
+            type Query {
+              searchService: FilmOrActor
+                @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getFilm"})
+                @classified(source: Query, operation: ServiceCall, target: Single, targetShape: Interface)
+            }
+            """),
+
+        /*
+         * R365 route (a): mutation analogue (MutationServicePolymorphicField), list cardinality. The
+         * service returns a Result<FilmRecord>; the fetcher dispatches each returned record on its runtime
+         * class. Verdict: source Mutation, operation ServiceCall, target List. Corpus-only: adds the
+         * MutationServicePolymorphicField leaf and lands on the Mutation / ServiceCall coordinate.
+         */
+        new Example("mutation-service-polymorphic", """
+            type Film @table(name: "film") { title: String }
+            type Actor @table(name: "actor") { firstName: String @field(name: "FIRST_NAME") }
+            union FilmOrActor @classifiedType(as: UnionType) = Film | Actor
+            type Query { film: Film }
+            type Mutation {
+              doSearch: [FilmOrActor]
+                @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getFilms"})
+                @classified(source: Mutation, operation: ServiceCall, target: List, targetShape: Interface)
+            }
+            """),
+
         new Example("table-interface", """
             interface MediaItem @table(name: "film") @discriminate(on: "kind") @classifiedType(as: TableInterfaceType) { title: String }
             type Film implements MediaItem @table(name: "film") @discriminator(value: "film") { title: String }
