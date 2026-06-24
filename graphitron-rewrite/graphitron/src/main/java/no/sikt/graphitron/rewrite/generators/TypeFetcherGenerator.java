@@ -29,6 +29,8 @@ import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.InputColumnBinding;
 import no.sikt.graphitron.rewrite.model.InputColumnBindingGroup;
 import no.sikt.graphitron.rewrite.model.InputField;
+import no.sikt.graphitron.rewrite.model.ColumnOverlap;
+import no.sikt.graphitron.rewrite.model.ColumnOverlap.OverlapColumn;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.KeyColumn;
 import no.sikt.graphitron.rewrite.model.SetColumn;
@@ -2169,10 +2171,10 @@ public class TypeFetcherGenerator {
             GeneratorUtils.ResolvedTableNames tablesOnly, TableRef tableRef) {
         var b = CodeBlock.builder();
         boolean first = true;
-        for (var ic : insertColumnPlan(fields)) {
+        for (var oc : insertColumnPlan(fields)) {
             if (!first) b.add(", ");
             first = false;
-            b.add("$T.$L.$L", tablesOnly.tablesClass(), tableRef.javaFieldName(), ic.column().javaName());
+            b.add("$T.$L.$L", tablesOnly.tablesClass(), tableRef.javaFieldName(), oc.column().javaName());
         }
         return b.build();
     }
@@ -2186,13 +2188,13 @@ public class TypeFetcherGenerator {
         var plan = insertColumnPlan(fields);
         boolean first = true;
         for (int ci = 0; ci < plan.size(); ci++) {
-            var ic = plan.get(ci);
+            var oc = plan.get(ci);
             if (!first) b.add(",\n");
             first = false;
-            if (ic.shared()) {
+            if (oc.shared()) {
                 b.add("$L", localPrefix + "Cell" + ci);
             } else {
-                emitInsertCell(b, ic.writers().get(0), mapLocal, localPrefix, tablesOnly, tableRef);
+                emitInsertCell(b, oc.contributors().get(0), mapLocal, localPrefix, tablesOnly, tableRef);
             }
         }
         return b.build();
@@ -2201,18 +2203,20 @@ public class TypeFetcherGenerator {
     /** R322: emits one disjoint-column VALUES cell, reproducing the per-carrier shape of
      *  {@link #buildPerCellValueList}: a decode reads {@code <prefix>_<fi>.value<slot+1>()}, a plain field
      *  reads the (possibly nested) map value; absent → {@code DSL.defaultValue}, present → typed bind. */
-    private static void emitInsertCell(CodeBlock.Builder b, InsertColWriter w, String mapLocal,
+    private static void emitInsertCell(CodeBlock.Builder b, ColumnOverlap.Contributor c, String mapLocal,
             String localPrefix, GeneratorUtils.ResolvedTableNames tablesOnly, TableRef tableRef) {
-        CodeBlock presence = nestedContainsKeyExpr(mapLocal, w.path(), "ic" + w.leafIndex());
-        var col = w.column();
-        if (w.decode()) {
+        var v = (SetGroupWriter) c.writer();
+        var path = v.group().accessPath();
+        CodeBlock presence = nestedContainsKeyExpr(mapLocal, path, "ic" + v.index());
+        var col = c.column();
+        if (c.writer().decode()) {
             b.add("$L ? $T.val($L_$L.value$L(), $T.$L.$L.getDataType()) : $T.defaultValue($T.$L.$L.getDataType())",
-                presence, DSL, localPrefix, w.leafIndex(), w.slot() + 1,
+                presence, DSL, localPrefix, v.index(), c.slot() + 1,
                 tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName(),
                 DSL, tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName());
         } else {
             b.add("$L ? $T.val($L, $T.$L.$L.getDataType()) : $T.defaultValue($T.$L.$L.getDataType())",
-                presence, DSL, ArgCallEmitter.nestedMapValueExpr(mapLocal, w.path()),
+                presence, DSL, ArgCallEmitter.nestedMapValueExpr(mapLocal, path),
                 tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName(),
                 DSL, tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName());
         }
@@ -2270,57 +2274,36 @@ public class TypeFetcherGenerator {
     }
 
     /**
-     * R322 (D1 + D5): the per-column overlap plan for an INSERT. Walks {@link #flattenInsertLeaves} and
-     * appends one {@link InsertColWriter} per (carrier, slot) onto its target column, keyed by SQL name in
-     * first-encounter order. Each writer carries its leaf index (the decode-local suffix), wire access path,
-     * slot within the carrier's column tuple, resolved column, and whether it is a {@code @nodeId} decode.
-     * The two INSERT walks ({@link #buildInsertColumnList}, {@link #buildPerCellValueList}) and the agreement
-     * prep all derive from this one deterministic plan, so the column list, the VALUES cells, and the
-     * per-column cell locals stay positionally aligned by construction.
+     * R322 (D1 + D5) / R356: the per-column overlap plan for an INSERT. Adapts each {@code SetField} leaf
+     * (descending {@link InputField.NestingField} via {@link #flattenInsertLeaves}) into a
+     * {@link SetGroupWriter} carrying its leaf index (the decode-local suffix {@link #buildInsertDecodeLocals}
+     * emits, {@code <prefix>_<fi>}) and feeds them to the shared {@link ColumnOverlap#groupByColumn}. The two
+     * INSERT walks ({@link #buildInsertColumnList}, {@link #buildPerCellValueList}) and the agreement prep all
+     * derive from this one deterministic plan, so the column list, the VALUES cells, and the per-column cell
+     * locals stay positionally aligned by construction.
      */
-    private record InsertColWriter(int leafIndex, List<String> path, int slot, ColumnRef column,
-                                   boolean decode, CallSiteExtraction.NodeIdDecodeKeys nidk) {}
-
-    /** One backing column on the INSERT plan with its ordered contributing writers. {@code shared()} when
-     *  two or more writers land on it (the R322 dedup + agreement case). */
-    private record InsertCol(ColumnRef column, List<InsertColWriter> writers) {
-        boolean shared() { return writers.size() >= 2; }
-    }
-
-    private static List<InsertCol> insertColumnPlan(List<InputField> fields) {
+    private static List<SetGroupWriter> insertSetGroupWriters(List<InputField> fields) {
         var leaves = flattenInsertLeaves(fields, List.of());
-        var byColumn = new java.util.LinkedHashMap<String, List<InsertColWriter>>();
+        var out = new ArrayList<SetGroupWriter>();
         for (int fi = 0; fi < leaves.size(); fi++) {
             var f = leaves.get(fi).field();
             var path = leaves.get(fi).path();
             if (!(f instanceof InputField.SetField sf)) {
                 continue;
             }
-            var cols = setFieldColumns(sf);
-            var nidk = setFieldNodeIdExtraction(sf);
-            for (int s = 0; s < cols.size(); s++) {
-                var col = cols.get(s);
-                byColumn.computeIfAbsent(col.sqlName(), k -> new ArrayList<>())
-                    .add(new InsertColWriter(fi, path, s, col, nidk != null, nidk));
-            }
+            out.add(new SetGroupWriter(fi,
+                new SetGroup(sf.name(), setFieldColumns(sf), setFieldNodeIdExtraction(sf), path)));
         }
-        var out = new ArrayList<InsertCol>();
-        byColumn.forEach((k, v) -> out.add(new InsertCol(v.get(0).column(), v)));
         return out;
+    }
+
+    private static List<OverlapColumn> insertColumnPlan(List<InputField> fields) {
+        return ColumnOverlap.groupByColumn(insertSetGroupWriters(fields));
     }
 
     /** True when some backing column on the INSERT plan is written by more than one carrier (R322). */
     private static boolean hasInsertOverlap(List<InputField> fields) {
-        return insertColumnPlan(fields).stream().anyMatch(InsertCol::shared);
-    }
-
-    /** The wire value a writer contributes to its column: a decode reads {@code <prefix>_<fi>.value<slot+1>()}
-     *  off the per-leaf decode record; a plain field reads the (possibly nested) map value. */
-    private static CodeBlock insertWriterValue(InsertColWriter w, String mapLocal, String localPrefix) {
-        if (w.decode()) {
-            return CodeBlock.of("$L_$L.value$L()", localPrefix, w.leafIndex(), w.slot() + 1);
-        }
-        return ArgCallEmitter.nestedMapValueExpr(mapLocal, w.path());
+        return insertColumnPlan(fields).stream().anyMatch(OverlapColumn::shared);
     }
 
     /**
@@ -2339,28 +2322,33 @@ public class TypeFetcherGenerator {
         var fieldCn = ClassName.get("org.jooq", "Field");
         var plan = insertColumnPlan(fields);
         for (int ci = 0; ci < plan.size(); ci++) {
-            var ic = plan.get(ci);
-            if (!ic.shared()) {
+            var oc = plan.get(ci);
+            if (!oc.shared()) {
                 continue;
             }
-            var col = ic.column();
+            var col = oc.column();
             String listName = localPrefix + "Agree" + ci;
             String cellName = localPrefix + "Cell" + ci;
-            String label = "input fields " + ic.writers().stream()
-                .map(w -> "'" + String.join(".", w.path()) + "'")
+            String label = "input fields " + oc.contributors().stream()
+                .map(c -> "'" + c.writer().label() + "'")
                 .distinct()
                 .collect(java.util.stream.Collectors.joining(", "));
-            ClassName encoderClass = ic.writers().stream()
-                .filter(InsertColWriter::decode)
-                .map(w -> w.nidk().decodeMethod().encoderClass())
+            ClassName encoderClass = oc.contributors().stream()
+                .map(c -> ((SetGroupWriter) c.writer()).group())
+                .filter(g -> g.nidk() != null)
+                .map(g -> g.nidk().decodeMethod().encoderClass())
                 .findFirst().orElseThrow();
             locals.addStatement("$T<$T> $L = new $T<>()",
                 ClassName.get(List.class), Object.class, listName, ClassName.get(ArrayList.class));
             int wi = 0;
-            for (var w : ic.writers()) {
-                locals.beginControlFlow("if ($L)", nestedContainsKeyExpr(mapLocal, w.path(), "ag" + ci + "w" + (wi++)))
-                    .addStatement("$L.add($L)", listName, insertWriterValue(w, mapLocal, localPrefix))
-                    .endControlFlow();
+            // R356: the present-writer gather flows through the shared value-read seam
+            // (appendAgreementValue); the INSERT decode local <prefix>_<fi> is non-null whenever present
+            // (buildInsertDecodeLocals throws on a present-but-mismatched id before this prep runs), so the
+            // seam's extra `&& decodeLocal != null` guard is always-true here.
+            for (var c : oc.contributors()) {
+                var v = (SetGroupWriter) c.writer();
+                appendAgreementValue(locals, v.group(), c.slot(), mapLocal,
+                    localPrefix + "_" + v.index(), listName, "ag" + ci + "w" + (wi++));
             }
             String idx = listName + "Idx";
             locals.beginControlFlow("for (int $L = 1; $L < $L.size(); $L++)", idx, idx, listName, idx)
@@ -2429,6 +2417,32 @@ public class TypeFetcherGenerator {
      */
     private record SetGroup(String name, List<ColumnRef> columns,
                             CallSiteExtraction.NodeIdDecodeKeys nidk, List<String> accessPath) {}
+
+    /**
+     * R356: adapts a {@link SetGroup} (with its stable {@code index}, used to name the per-group decode
+     * local) into the shared {@link ColumnOverlap.ColumnWriter} view. The INSERT plan (site 2) and the two
+     * UPDATE-SET plan sites (sites 4 and 6), and the cross-partition site 5, build these and feed them to
+     * {@link ColumnOverlap#groupByColumn} / the value-read seam. The emission downcasts
+     * {@code Contributor.writer()} back to this view to reach the wrapped {@link SetGroup} (for the
+     * value-read seam, which takes a {@code SetGroup}) and the {@code index} (the decode-local suffix). The
+     * {@code columns()} order is the decode-record slot order, satisfying the {@link ColumnOverlap.ColumnWriter}
+     * invariant.
+     */
+    private record SetGroupWriter(int index, SetGroup group) implements ColumnOverlap.ColumnWriter {
+        @Override public List<ColumnRef> targetColumns() { return group.columns(); }
+        @Override public boolean decode() { return group.nidk() != null; }
+        @Override public String label() { return String.join(".", group.accessPath()); }
+    }
+
+    /** R356: the {@link SetGroupWriter} views for an UPDATE-SET plan, one per {@link SetGroup}, the view's
+     *  {@code index} being its position in {@code setGroups} (the decode-local suffix sites 4 / 5 / 6 use). */
+    private static List<SetGroupWriter> setGroupWriters(List<SetGroup> setGroups) {
+        var out = new ArrayList<SetGroupWriter>();
+        for (int gi = 0; gi < setGroups.size(); gi++) {
+            out.add(new SetGroupWriter(gi, setGroups.get(gi)));
+        }
+        return out;
+    }
 
     /**
      * R246: adapt a legacy {@code List<InputField.SetField>} (the payload-returning DML record
@@ -2713,67 +2727,45 @@ public class TypeFetcherGenerator {
     private static void emitSetAgreementPreamble(
             CodeBlock.Builder block, List<SetGroup> setGroups, String mapLocal, String decodeLocalPrefix,
             GeneratorUtils.ResolvedTableNames tablesOnly, TableRef tableRef) {
-        // column sqlName -> ordered contributors, each [groupIndex, slot].
-        var byColumn = new java.util.LinkedHashMap<String, List<int[]>>();
-        for (int gi = 0; gi < setGroups.size(); gi++) {
-            var cols = setGroups.get(gi).columns();
-            for (int s = 0; s < cols.size(); s++) {
-                byColumn.computeIfAbsent(cols.get(s).sqlName(), k -> new ArrayList<>()).add(new int[]{gi, s});
-            }
-        }
-        var sharedDecodeColumns = new ArrayList<java.util.Map.Entry<String, List<int[]>>>();
-        var decodeGroups = new LinkedHashSet<Integer>();
-        for (var e : byColumn.entrySet()) {
-            var contributors = e.getValue();
-            if (contributors.size() < 2) continue;
-            if (contributors.stream().noneMatch(c -> setGroups.get(c[0]).nidk() != null)) continue; // all-plain: rejected upstream
-            sharedDecodeColumns.add(e);
-            for (var c : contributors) {
-                if (setGroups.get(c[0]).nidk() != null) decodeGroups.add(c[0]);
-            }
-        }
+        // R356: the per-column grouping is the shared ColumnOverlap.groupByColumn; this site forks on
+        // shared() && !allPlain() (a decode-involving overlap; the all-plain overlap is the upstream
+        // UpdateRowsWalker reject) and routes its re-decode / present-value read through the value-read
+        // seam (emitAgreementDecodeLocal / appendAgreementValue).
+        var plan = ColumnOverlap.groupByColumn(setGroupWriters(setGroups));
+        var sharedDecodeColumns = plan.stream().filter(oc -> oc.shared() && !oc.allPlain()).toList();
         if (sharedDecodeColumns.isEmpty()) return;
 
         var listCn = ClassName.get("java.util", "List");
         var arrayListCn = ClassName.get("java.util", "ArrayList");
         // One re-decode local per participating decode group (reused across its slots).
+        var decodeGroups = new LinkedHashSet<Integer>();
+        for (var oc : sharedDecodeColumns) {
+            for (var c : oc.contributors()) {
+                if (c.writer().decode()) decodeGroups.add(((SetGroupWriter) c.writer()).index());
+            }
+        }
         for (int gi : decodeGroups) {
-            var sf = setGroups.get(gi);
-            var nidk = sf.nidk();
-            String local = decodeLocalPrefix + "Agree_" + gi;
-            block.addStatement("$T $L = ($L instanceof $T _sa$L) ? $T.$L(_sa$L) : null",
-                nidk.decodeMethod().returnType(), local,
-                ArgCallEmitter.nestedMapValueExpr(mapLocal, sf.accessPath()), String.class, gi,
-                nidk.decodeMethod().encoderClass(), nidk.decodeMethod().methodName(), gi);
+            emitAgreementDecodeLocal(block, setGroups.get(gi), mapLocal, decodeLocalPrefix + "Agree_" + gi, "" + gi);
         }
         int ci = 0;
-        for (var e : sharedDecodeColumns) {
-            var contributors = e.getValue();
-            var col = setGroups.get(contributors.get(0)[0]).columns().get(contributors.get(0)[1]);
+        for (var oc : sharedDecodeColumns) {
+            var col = oc.column();
             String listName = decodeLocalPrefix + "SetAgree" + ci;
-            String label = "input fields " + contributors.stream()
-                .map(c -> "'" + String.join(".", setGroups.get(c[0]).accessPath()) + "'")
+            String label = "input fields " + oc.contributors().stream()
+                .map(c -> "'" + c.writer().label() + "'")
                 .distinct()
                 .collect(java.util.stream.Collectors.joining(", "));
-            ClassName encoderClass = contributors.stream()
-                .filter(c -> setGroups.get(c[0]).nidk() != null)
-                .map(c -> setGroups.get(c[0]).nidk().decodeMethod().encoderClass())
+            ClassName encoderClass = oc.contributors().stream()
+                .map(c -> ((SetGroupWriter) c.writer()).group())
+                .filter(g -> g.nidk() != null)
+                .map(g -> g.nidk().decodeMethod().encoderClass())
                 .findFirst().orElseThrow();
             block.addStatement("$T<$T> $L = new $T<>()", listCn, Object.class, listName, arrayListCn);
             int wi = 0;
-            for (var c : contributors) {
-                var sf = setGroups.get(c[0]);
-                var presence = nestedContainsKeyExpr(mapLocal, sf.accessPath(), "sa" + ci + "w" + (wi++));
-                if (sf.nidk() != null) {
-                    String local = decodeLocalPrefix + "Agree_" + c[0];
-                    block.beginControlFlow("if ($L && $L != null)", presence, local)
-                        .addStatement("$L.add($L.value$L())", listName, local, c[1] + 1)
-                        .endControlFlow();
-                } else {
-                    block.beginControlFlow("if ($L)", presence)
-                        .addStatement("$L.add($L)", listName, ArgCallEmitter.nestedMapValueExpr(mapLocal, sf.accessPath()))
-                        .endControlFlow();
-                }
+            for (var c : oc.contributors()) {
+                var v = (SetGroupWriter) c.writer();
+                appendAgreementValue(block, v.group(), c.slot(), mapLocal,
+                    decodeLocalPrefix + "Agree_" + v.index(), listName, "sa" + ci + "w" + (wi++));
             }
             String idx = listName + "Idx";
             block.beginControlFlow("for (int $L = 1; $L < $L.size(); $L++)", idx, idx, listName, idx)
@@ -2793,12 +2785,14 @@ public class TypeFetcherGenerator {
      * {@code email_in_reply_to_fk} shares {@code mailbox_id} with the PK) appears in BOTH partitions.
      * The FK constraint forces the two equal for any well-formed input, but a malformed input could
      * disagree, so this checks agreement before the DML runs. This is the WHERE↔SET boundary R322's
-     * same-clause {@link #emitSetAgreementPreamble} never crossed; R354 adds it as a separate (fifth)
-     * instantiation of the gather-and-compare scaffold around the shared {@code requireColumnAgreement}
-     * rather than unifying the two — the carrier-agnostic writer lift stays R342's. The
-     * {@link #emitAgreementDecodeLocal} / {@link #appendAgreementValue} helpers below are the seam that
-     * lift would generalize: {@link #emitSetAgreementPreamble}'s inline re-decode and present-value
-     * append are the duplicated halves R342 would route through these two.
+     * same-clause {@link #emitSetAgreementPreamble} never crossed; it is a different operation from the
+     * within-clause grouping, intersecting two partitions rather than grouping one, so R356 leaves it a
+     * named sibling: it adopts the shared {@link SetGroupWriter} leaf view and the value-read seam
+     * ({@link #emitAgreementDecodeLocal} / {@link #appendAgreementValue}, which R356 generalized to also
+     * serve sites 2 and 4) but keeps its bespoke intersection walk, since a single site with no drift
+     * partner does not earn an extracted {@code intersectByColumn} primitive (and routing it through
+     * {@code groupByColumn} would either widen the contributor with a partition tag the within-clause
+     * sites never set, or fold each partition twice and intersect, which is not what it does).
      *
      * <p>For each column present in both a key group and a set group: each side is re-decoded into a
      * self-contained preamble-local record (presence-guarded; a present-but-mismatched id decodes to
@@ -2812,29 +2806,31 @@ public class TypeFetcherGenerator {
             CodeBlock.Builder block, List<SetGroup> keyGroups, List<SetGroup> setGroups,
             String mapLocal, String decodeLocalPrefix,
             GeneratorUtils.ResolvedTableNames tablesOnly, TableRef tableRef) {
-        // key column sqlName -> first key contributor [groupIndex, slot].
-        var keyByColumn = new java.util.LinkedHashMap<String, int[]>();
-        for (int gi = 0; gi < keyGroups.size(); gi++) {
-            var cols = keyGroups.get(gi).columns();
+        // R356: both partitions adapt into the shared SetGroupWriter leaf view; the bespoke intersection
+        // then reads each view's wrapped group / index. The first key contributor per column.
+        record KeyHit(SetGroupWriter writer, int slot) {}
+        var keyWriters = setGroupWriters(keyGroups);
+        var keyByColumn = new java.util.LinkedHashMap<String, KeyHit>();
+        for (var kw : keyWriters) {
+            var cols = kw.group().columns();
             for (int s = 0; s < cols.size(); s++) {
-                keyByColumn.putIfAbsent(cols.get(s).sqlName(), new int[]{gi, s});
+                keyByColumn.putIfAbsent(cols.get(s).sqlName(), new KeyHit(kw, s));
             }
         }
-        // shared columns: a set-group column that is also a key column. Each carries its key
-        // contributor and set contributor as [keyGi, keySlot, setGi, setSlot].
-        var shared = new ArrayList<int[]>();
-        var sharedColumns = new ArrayList<ColumnRef>();
+        // shared columns: a set-group column that is also a key column, carrying its key contributor and
+        // its set contributor (the view + slot on each side) and the resolved column.
+        record SharedHit(KeyHit key, SetGroupWriter setWriter, int setSlot, ColumnRef column) {}
+        var shared = new ArrayList<SharedHit>();
         var keyDecodeGroups = new LinkedHashSet<Integer>();
         var setDecodeGroups = new LinkedHashSet<Integer>();
-        for (int setGi = 0; setGi < setGroups.size(); setGi++) {
-            var cols = setGroups.get(setGi).columns();
+        for (var sw : setGroupWriters(setGroups)) {
+            var cols = sw.group().columns();
             for (int setSlot = 0; setSlot < cols.size(); setSlot++) {
-                var kc = keyByColumn.get(cols.get(setSlot).sqlName());
-                if (kc == null) continue;
-                shared.add(new int[]{kc[0], kc[1], setGi, setSlot});
-                sharedColumns.add(cols.get(setSlot));
-                if (keyGroups.get(kc[0]).nidk() != null) keyDecodeGroups.add(kc[0]);
-                if (setGroups.get(setGi).nidk() != null) setDecodeGroups.add(setGi);
+                var kh = keyByColumn.get(cols.get(setSlot).sqlName());
+                if (kh == null) continue;
+                shared.add(new SharedHit(kh, sw, setSlot, cols.get(setSlot)));
+                if (kh.writer().group().nidk() != null) keyDecodeGroups.add(kh.writer().index());
+                if (sw.group().nidk() != null) setDecodeGroups.add(sw.index());
             }
         }
         if (shared.isEmpty()) return;
@@ -2849,10 +2845,10 @@ public class TypeFetcherGenerator {
             emitAgreementDecodeLocal(block, setGroups.get(gi), mapLocal, decodeLocalPrefix + "AgreeS_" + gi, "ksaS" + gi);
         }
         for (int ci = 0; ci < shared.size(); ci++) {
-            var s = shared.get(ci);
-            var keyGroup = keyGroups.get(s[0]);
-            var setGroup = setGroups.get(s[2]);
-            var col = sharedColumns.get(ci);
+            var sh = shared.get(ci);
+            var keyGroup = sh.key().writer().group();
+            var setGroup = sh.setWriter().group();
+            var col = sh.column();
             String listName = decodeLocalPrefix + "Agree" + ci;
             String label = "input fields '" + String.join(".", keyGroup.accessPath()) + "', '"
                 + String.join(".", setGroup.accessPath()) + "'";
@@ -2862,8 +2858,10 @@ public class TypeFetcherGenerator {
                 ? setGroup.nidk().decodeMethod().encoderClass()
                 : keyGroup.nidk().decodeMethod().encoderClass();
             block.addStatement("$T<$T> $L = new $T<>()", listCn, Object.class, listName, arrayListCn);
-            appendAgreementValue(block, keyGroup, s[1], mapLocal, decodeLocalPrefix + "AgreeK_" + s[0], listName, "ksaK" + ci);
-            appendAgreementValue(block, setGroup, s[3], mapLocal, decodeLocalPrefix + "AgreeS_" + s[2], listName, "ksaS" + ci);
+            appendAgreementValue(block, keyGroup, sh.key().slot(), mapLocal,
+                decodeLocalPrefix + "AgreeK_" + sh.key().writer().index(), listName, "ksaK" + ci);
+            appendAgreementValue(block, setGroup, sh.setSlot(), mapLocal,
+                decodeLocalPrefix + "AgreeS_" + sh.setWriter().index(), listName, "ksaS" + ci);
             String idx = listName + "Idx";
             block.beginControlFlow("for (int $L = 1; $L < $L.size(); $L++)", idx, idx, listName, idx)
                 .addStatement("$T.requireColumnAgreement($S, $T.$L.$L.getDataType(), $L.get(0), $L.get($L))",
@@ -2932,42 +2930,17 @@ public class TypeFetcherGenerator {
         }
     }
 
-    /** R342: one writer contributing to a bulk-SET backing column — which {@link SetGroup} (by index),
-     *  the slot within that group's column tuple, and the resolved column. The {@code [groupIndex, slot]}
-     *  shape mirrors the contributor grouping {@link #emitSetAgreementPreamble} already builds, and the
-     *  {@link InsertColWriter} the INSERT path uses. */
-    private record SetColWriter(int groupIndex, int slot, ColumnRef column) {}
-
-    /** R342: one backing column on the bulk-SET plan with its ordered contributing writers.
-     *  {@code shared()} when two or more writers land on it (the decode-involving within-SET overlap the
-     *  dedup collapses to one v-column with a coalesced, agreement-checked cell). */
-    private record SetCol(ColumnRef column, List<SetColWriter> writers) {
-        boolean shared() { return writers.size() >= 2; }
-    }
-
     /**
-     * R342: the per-column plan for the bulk UPDATE SET clause, the SET analogue of
-     * {@link #insertColumnPlan}. Groups the set groups' columns by backing-column {@code sqlName} into an
-     * ordered writer list (each carrying its source {@link SetGroup} index, the slot within that group's
-     * column tuple, and the {@link ColumnRef}), keyed in first-encounter order. The three bulk SET
-     * emitters ({@link #emitSetVColNameAdds}, {@link #emitSetBulkCellAdds}, {@link #emitSetVFieldPuts})
-     * all walk this one deterministic plan, so the {@code v(…)} column-name list, the per-row cells, and
-     * the {@code sets.put} entries emit exactly one entry per distinct column and cannot drift out of
-     * positional alignment. A column with two or more writers is {@code shared()}.
+     * R342 / R356: the per-column plan for the bulk UPDATE SET clause, the SET analogue of
+     * {@link #insertColumnPlan}, now the shared {@link ColumnOverlap#groupByColumn} over {@link SetGroupWriter}
+     * views (each carrying its source {@link SetGroup} index, the decode-local suffix). The three bulk SET
+     * emitters ({@link #emitSetVColNameAdds}, {@link #emitSetBulkCellAdds}, {@link #emitSetVFieldPuts}) all
+     * walk this one deterministic plan, so the {@code v(…)} column-name list, the per-row cells, and the
+     * {@code sets.put} entries emit exactly one entry per distinct column and cannot drift out of positional
+     * alignment. A column with two or more writers is {@code shared()}.
      */
-    private static List<SetCol> setColumnPlan(List<SetGroup> setGroups) {
-        var byColumn = new java.util.LinkedHashMap<String, List<SetColWriter>>();
-        for (int gi = 0; gi < setGroups.size(); gi++) {
-            var cols = setGroups.get(gi).columns();
-            for (int s = 0; s < cols.size(); s++) {
-                var col = cols.get(s);
-                byColumn.computeIfAbsent(col.sqlName(), k -> new ArrayList<>())
-                    .add(new SetColWriter(gi, s, col));
-            }
-        }
-        var out = new ArrayList<SetCol>();
-        byColumn.forEach((k, v) -> out.add(new SetCol(v.get(0).column(), v)));
-        return out;
+    private static List<OverlapColumn> setColumnPlan(List<SetGroup> setGroups) {
+        return ColumnOverlap.groupByColumn(setGroupWriters(setGroups));
     }
 
     /**
@@ -2979,15 +2952,15 @@ public class TypeFetcherGenerator {
      * the first row's disjunction onto every row is safe. {@code saltPrefix} uniquifies the nested
      * pattern variables across the three emitters' peer expressions.
      */
-    private static CodeBlock setColumnPresenceGate(List<SetGroup> setGroups, SetCol sc, String saltPrefix) {
-        var writers = sc.writers();
-        if (writers.size() == 1) {
-            return firstRowSetPresenceExpr(setGroups.get(writers.get(0).groupIndex()).accessPath(), saltPrefix);
+    private static CodeBlock setColumnPresenceGate(OverlapColumn sc, String saltPrefix) {
+        var contributors = sc.contributors();
+        if (contributors.size() == 1) {
+            return firstRowSetPresenceExpr(((SetGroupWriter) contributors.get(0).writer()).group().accessPath(), saltPrefix);
         }
         var b = CodeBlock.builder();
-        for (int i = 0; i < writers.size(); i++) {
+        for (int i = 0; i < contributors.size(); i++) {
             if (i > 0) b.add(" || ");
-            var path = setGroups.get(writers.get(i).groupIndex()).accessPath();
+            var path = ((SetGroupWriter) contributors.get(i).writer()).group().accessPath();
             b.add("($L)", firstRowSetPresenceExpr(path, saltPrefix + "w" + i));
         }
         return b.build();
@@ -3012,7 +2985,7 @@ public class TypeFetcherGenerator {
             if (lookupSqlNames.contains(sc.column().sqlName())) {
                 continue; // cross-partition: the WHERE side already added this v-column.
             }
-            block.beginControlFlow("if ($L)", setColumnPresenceGate(setFields, sc, "vc" + ci));
+            block.beginControlFlow("if ($L)", setColumnPresenceGate(sc, "vc" + ci));
             block.addStatement("vColNames.add($T.$L.$L.getName())",
                 tablesOnly.tablesClass(), tableRef.javaFieldName(), sc.column().javaName());
             block.endControlFlow();
@@ -3074,26 +3047,27 @@ public class TypeFetcherGenerator {
             if (lookupSqlNames.contains(col.sqlName())) {
                 continue; // cross-partition: the WHERE side already added this cell.
             }
-            block.beginControlFlow("if ($L)", setColumnPresenceGate(setFields, sc, "bc" + ci));
+            block.beginControlFlow("if ($L)", setColumnPresenceGate(sc, "bc" + ci));
             if (sc.shared()) {
                 String listName = decodeLocalPrefix + "SetAgree" + ci;
-                String label = "input fields " + sc.writers().stream()
-                    .map(w -> "'" + String.join(".", setFields.get(w.groupIndex()).accessPath()) + "'")
+                String label = "input fields " + sc.contributors().stream()
+                    .map(c -> "'" + c.writer().label() + "'")
                     .distinct()
                     .collect(java.util.stream.Collectors.joining(", "));
                 // A within-SET shared column reaching here always has at least one @nodeId decode writer
                 // (the all-plain overlap is the UpdateRowsWalker PlainColumnCollision reject), so an
                 // encoder class is always available.
-                ClassName encoderClass = sc.writers().stream()
-                    .map(w -> setFields.get(w.groupIndex()))
+                ClassName encoderClass = sc.contributors().stream()
+                    .map(c -> ((SetGroupWriter) c.writer()).group())
                     .filter(g -> g.nidk() != null)
                     .map(g -> g.nidk().decodeMethod().encoderClass())
                     .findFirst().orElseThrow();
                 block.addStatement("$T<$T> $L = new $T<>()", listCn, Object.class, listName, arrayListCn);
                 int wi = 0;
-                for (var w : sc.writers()) {
-                    appendAgreementValue(block, setFields.get(w.groupIndex()), w.slot(), "row",
-                        decodeLocalPrefix + "_" + w.groupIndex(), listName, "bsa" + ci + "w" + (wi++));
+                for (var c : sc.contributors()) {
+                    var v = (SetGroupWriter) c.writer();
+                    appendAgreementValue(block, v.group(), c.slot(), "row",
+                        decodeLocalPrefix + "_" + v.index(), listName, "bsa" + ci + "w" + (wi++));
                 }
                 String idx = listName + "Idx";
                 block.beginControlFlow("for (int $L = 1; $L < $L.size(); $L++)", idx, idx, listName, idx)
@@ -3104,11 +3078,12 @@ public class TypeFetcherGenerator {
                 block.addStatement("cells.add($T.val($L.get(0), $T.$L.$L.getDataType()))",
                     DSL, listName, tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName());
             } else {
-                var w = sc.writers().get(0);
-                var g = setFields.get(w.groupIndex());
+                var c = sc.contributors().get(0);
+                var v = (SetGroupWriter) c.writer();
+                var g = v.group();
                 if (g.nidk() != null) {
                     block.addStatement("cells.add($T.val($L.value$L(), $T.$L.$L.getDataType()))",
-                        DSL, decodeLocalPrefix + "_" + w.groupIndex(), w.slot() + 1,
+                        DSL, decodeLocalPrefix + "_" + v.index(), c.slot() + 1,
                         tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName());
                 } else {
                     block.addStatement("cells.add($T.val($L, $T.$L.$L.getDataType()))",
@@ -3169,7 +3144,7 @@ public class TypeFetcherGenerator {
         var plan = setColumnPlan(setFields);
         for (int ci = 0; ci < plan.size(); ci++) {
             var sc = plan.get(ci);
-            block.beginControlFlow("if ($L)", setColumnPresenceGate(setFields, sc, "vf" + ci));
+            block.beginControlFlow("if ($L)", setColumnPresenceGate(sc, "vf" + ci));
             block.addStatement("sets.put($T.$L.$L, v.field($T.$L.$L))",
                 tablesOnly.tablesClass(), tableRef.javaFieldName(), sc.column().javaName(),
                 tablesOnly.tablesClass(), tableRef.javaFieldName(), sc.column().javaName());

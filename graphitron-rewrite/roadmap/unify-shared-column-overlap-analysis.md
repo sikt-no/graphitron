@@ -1,7 +1,7 @@
 ---
 id: R356
 title: "Unify the per-column shared-column overlap analysis across mutation write paths"
-status: Spec
+status: In Review
 bucket: architecture
 priority: 6
 theme: nodeid
