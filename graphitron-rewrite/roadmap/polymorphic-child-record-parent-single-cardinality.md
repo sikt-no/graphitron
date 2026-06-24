@@ -1,7 +1,7 @@
 ---
 id: R367
 title: "Single-cardinality polymorphic child on a record-backed parent (resolve the dangling deferred-rejection doc)"
-status: In Review
+status: Ready
 bucket: feature
 priority: 6
 theme: interface-union
@@ -79,6 +79,46 @@ Kept `feature` (not re-bucketed `bug`). The multi-table polymorphic interface/un
 rewrite-era; the generator explicitly deferred this shape rather than regressing a behavior 9.3 had,
 so this is a genuine capability gap, not a parity regression. (Contrast R365, whose polymorphic
 `@service` return shape did exist in 9.3.) The Spec reviewer signed the item off as `feature`.
+
+## Review feedback (In Review -> Ready, 2026-06-24)
+
+Independent reviewer, In Review -> Done gate. **Rework: the build is red.** The canonical
+command `mvn -f graphitron-rewrite/pom.xml install -Plocal-db` fails on a clean DB, and CI has
+been failing on every commit since `25794eb8` (R367 -> In Review). Reproduced locally and confirmed
+in CI run 28104926051.
+
+**Blocker, the execution test references an address that the seed does not contain.**
+`AddressOccupantCarrierSingleCardinalityTest.firstOccupant_recordBackedParentWithNoOccupants_resolvesNull`
+(`graphitron-sakila-example/.../AddressOccupantCarrierSingleCardinalityTest.java:102,112`) queries
+`addressOccupantCarrier(addressId: 4)`, but `init.sql`
+(`graphitron-sakila-db/src/main/resources/init.sql:223-226`) seeds only addresses 1, 2, 3. So
+`AddressOccupantCarrierService.byId(4)` fetches nothing and returns a null carrier; the field
+resolves to null; and the `assertThat(carrier).containsKey("firstOccupant")` at line 112 fails with
+"Expecting actual not to be null". The test passed only in the authoring session because earlier
+DML execution tests had created an address_id 4 row in that session's persistent native DB (the row
+does not exist on a fresh seed, and is order-dependent in the full suite).
+
+Two things to fix on the next pass:
+1. **Seed an occupant-free address.** All three seeded addresses already have a Customer or Staff
+   (addr 1: customers Mary, Barbara; addr 2: staff Jon, customers Patricia, Elizabeth; addr 3: staff
+   Mike, customer Linda), so there is no existing empty hub to point at. Add an address_id 4 row with
+   zero customers/staff to `init.sql` and keep the test on it; that makes the build deterministic.
+2. **Make the test actually exercise the empty-stage-1 path it documents.** As written, even when
+   address 4 exists, the "no occupants" case it claims to cover (hub present, stage 1 empty ->
+   `result.length == 0 ? null` in `buildScalarPerParentFetcher`) is the path that matters; confirm
+   the carrier is non-null over an occupant-free hub so the assertion covers the empty-payload arm
+   rather than the null-carrier short-circuit.
+
+**Minor (fold in):** the SDL comment on `AddressOccupantCarrier`
+(`graphitron-sakila-example/.../schema.graphqls`, "returns AddressOccupantCarrierService.Carrier (a
+plain Java record...)") names a nested `.Carrier` type that does not exist; the carrier is the
+top-level `AddressOccupantCarrier`.
+
+The production diff itself looks sound: the deferral arm and dangling slug are removed, both
+cardinalities route through `derivePolymorphicHubSource`, the nested-class hazard is correctly scoped
+out to R370, and the two pipeline-tier classification tests pass (10/10). Only the execution-tier
+fixture is broken. Once the seed is fixed and the full `install -Plocal-db` is green, this is ready
+for another In Review -> Done pass (reviewer session != implementer session applies again).
 
 ## Cross-links
 
