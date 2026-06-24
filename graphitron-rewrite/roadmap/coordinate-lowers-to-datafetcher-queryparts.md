@@ -441,9 +441,31 @@ Two consequences of FK-less targets:
 - **Name-match carries an integrity check**: the routine's result columns must expose the key's columns *by
   name*, the join-domain analogue of the enum comparability check, verified at build, not a runtime surprise.
 
+**The source side has a provenance too, the dual of the target arms.** The first `on`'s source-side columns
+normally come from `source.table`, the parent's own row. When the parent is a **class-backed DTO** with no
+table (a `@service` return, a POJO or Java record), there are no parent columns to read, so `@sourceRow`
+supplies an authored Java method that **lifts** the key tuple out of the DTO. The source-side key thus has its
+own provenance, gated by the **source object** shape (*Reading the source object*):
+
+| source-side key | parent | provenance |
+|---|---|---|
+| `RecordColumns` | jOOQ-backed (a record / `source.table`) | inferred (catalog) |
+| `Lift(lifterRef)` | class-backed (a DTO) | **authored** (`@sourceRow`, un-inferable) |
+
+`Lift` changes only *where the source-side values come from*, not the path or the evidence: the lifted columns
+are real catalog columns (the first FK hop's source-side columns, or the leaf PK when there is no
+`@reference`), so the FK chain navigates from them exactly as for a jOOQ parent, and the resolver reuses
+`parsePath` with a null start (`SourceRowDirectiveResolver.java:265`). The lift's `RowN` arity and column types
+must equal that derived tuple, the same integrity-check family. The no-`@reference` case is the trivial path
+where the lifted tuple *is* the leaf PK (fetch the child directly); `@reference` present walks the FK chain
+from the lifted columns. Unlike `@enum`, `@sourceRow` cannot be retired, a DTO's key extraction is opaque Java,
+not catalog-inferable, so the directive stays as the authoring surface while the model absorbs it as the
+`Lift` arm, the mirror of the `RoutineCall` target arm.
+
 So the `@reference` path *is* the join graph, and the old flat `JoinStep` variants are the two axes: `FkJoin`
 = (`Catalog` target, `ColumnPairs` from FK); `ConditionJoin` = (target, `Predicate`). New capability is a new
-*target* arm (`RoutineCall`) or a new `on` derivation (PK/UK name-match), not a new step type. A routine node
+*target* arm (`RoutineCall`), a new *source-side* provenance (`Lift`), or a new `on` derivation (PK/UK
+name-match), not a new step type. A routine node
 can sit anywhere: the projected terminus (its result is the field's type, a function-backed query), an
 intermediate, or the root start; the only constraint is that joins *adjacent* to it are FK-less (a
 name-matched `key:` or a `condition:`). The `@oneOf` SDL surface for the path element (target `table` |
@@ -1220,6 +1242,7 @@ Owned by an existing fact:
 | `@table` | `source.table` / `target.table` / `resolvedTable` |
 | `@tableMethod` | `tableExpr` `MethodCall` (the projected node's FROM expression) |
 | `@routine` | `tableExpr` `RoutineCall` as a `@reference` join-target node (the join path) |
+| `@sourceRow` | the source-side key provenance `Lift(lifterRef)` (the join path) |
 | `@field` | the **locator** (output) / column binding (input) / `EnumValue.runtimeValue` |
 | `@externalField` | the locator's typed-jOOQ-field arm |
 | `@reference` | the `reference` fact (path, `referencedTable`, `joinPath`) |
@@ -1256,9 +1279,12 @@ The gaps, in resolution order:
 4. **Error mapping** (`@error`). **Open.** Exception-to-GraphQL-error handler mapping (DATABASE / GENERIC /
    VALIDATION) on payload types; a cross-cutting operation-side behavior with no fact. The read side has an
    `Outcome.ErrorList` locator arm, but the mapping itself is unmodeled.
-5. **DTO-parent join-key lifter** (`@sourceRow`). **Open.** When the parent is a class-backed DTO with no jOOQ
-   FK metadata, a Java method lifts the parent-side join-key tuple, a provenance sub-fact of the
-   `reference` / `join` parent-side key (the `parentCorrelation` source), parallel to authored-vs-inferred.
+5. **DTO-parent join-key lifter** (`@sourceRow`). **Resolved (this session).** The source-side dual of the
+   routine target: the parent-side join key has a provenance gated by the source-object shape, `RecordColumns`
+   (jOOQ parent, inferred) or `Lift(lifterRef)` (class-backed DTO, authored via `@sourceRow`). It changes only
+   where the source-side values come from, the columns are real catalog columns and `@reference` navigates the
+   FK chain unchanged. Absorbed into the join-path model but **not retired**, a DTO's key extraction is opaque
+   Java, not inferable. See *The join path*.
 6. **`@experimental_constructType`.** **Deferred (experimental).** A per-field column-selection construction
    map for non-resolvable federation entities; an explicit defer rather than a fact to build now.
 
