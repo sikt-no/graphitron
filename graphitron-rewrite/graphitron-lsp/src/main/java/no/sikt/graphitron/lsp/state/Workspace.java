@@ -2,6 +2,7 @@ package no.sikt.graphitron.lsp.state;
 
 import no.sikt.graphitron.rewrite.GraphQLRewriteGenerator;
 import no.sikt.graphitron.rewrite.ValidationReport;
+import no.sikt.graphitron.rewrite.catalog.CatalogFacts;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
 import no.sikt.graphitron.rewrite.catalog.SourceWalker;
@@ -43,6 +44,10 @@ public final class Workspace {
     private final List<String> toRecalculate = new ArrayList<>();
     private final LspVocabulary vocabulary;
     private volatile CompletionData catalog;
+    // R362 — the catalog-discovery projection the MCP catalog.* tools read. Swapped alongside the
+    // catalog and snapshot in setBuildOutput, so a single set of volatile reads observes one
+    // consistent build state. Defaults to empty until the first build.
+    private volatile CatalogFacts catalogFacts = CatalogFacts.empty();
     // The LSP is the sole source walker (R352): the walker (and its per-file
     // cache) lives here, alongside the index it produces, so "who refreshes this,
     // on what cadence" is answerable from the index's owner. There is no
@@ -130,6 +135,17 @@ public final class Workspace {
 
     public CompletionData catalog() {
         return catalog;
+    }
+
+    /**
+     * R362 — the catalog-discovery projection the MCP {@code catalog.tables} / {@code catalog.describe}
+     * tools read off the live handle on every call. Refreshes on the catalog (classpath) build
+     * cadence through {@link #setBuildOutput}, the same swap the catalog and snapshot ride. Stays
+     * {@link CatalogFacts#empty()} until the first successful build. {@code volatile} so the swap is
+     * observable on the next request without taking the file lock, mirroring {@link #catalog}.
+     */
+    public CatalogFacts catalogFacts() {
+        return catalogFacts;
     }
 
     /**
@@ -239,6 +255,7 @@ public final class Workspace {
     public void setBuildOutput(GraphQLRewriteGenerator.BuildArtifacts artifacts, ValidationReport report) {
         this.catalog = artifacts.catalog();
         this.snapshot = artifacts.snapshot();
+        this.catalogFacts = artifacts.catalogFacts();
         this.validationReport = report;
         markAllForRecalculation();
     }

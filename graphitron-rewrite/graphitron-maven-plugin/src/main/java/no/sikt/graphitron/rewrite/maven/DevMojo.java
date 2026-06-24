@@ -1,5 +1,6 @@
 package no.sikt.graphitron.rewrite.maven;
 
+import no.sikt.graphitron.rewrite.catalog.CatalogFacts;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
 import no.sikt.graphitron.lsp.parsing.LspVocabulary;
@@ -130,7 +131,7 @@ public class DevMojo extends AbstractRewriteMojo {
         var workspace = new Workspace(initial.catalog(), LspVocabulary.load());
         if (initial.snapshot() instanceof LspSchemaSnapshot.Built.Current current) {
             workspace.setBuildOutput(
-                new GraphQLRewriteGenerator.BuildArtifacts(initial.catalog(), current),
+                new GraphQLRewriteGenerator.BuildArtifacts(initial.catalog(), current, initial.catalogFacts()),
                 initial.report());
         }
         // Build the debounce and save-listener before bindServer so DevServer
@@ -367,11 +368,13 @@ public class DevMojo extends AbstractRewriteMojo {
     private InitialOutput buildOutputQuietly(RewriteContext ctx) {
         try {
             var output = new GraphQLRewriteGenerator(ctx).buildOutput();
-            return new InitialOutput(output.artifacts().catalog(), output.artifacts().snapshot(), output.report());
+            return new InitialOutput(output.artifacts().catalog(), output.artifacts().snapshot(),
+                output.artifacts().catalogFacts(), output.report());
         } catch (RuntimeException e) {
             getLog().warn("graphitron:dev: initial catalog build failed; "
                 + "starting with empty catalog: " + e.getMessage());
-            return new InitialOutput(CompletionData.empty(), LspSchemaSnapshot.unavailable(), ValidationReport.empty());
+            return new InitialOutput(CompletionData.empty(), LspSchemaSnapshot.unavailable(),
+                CatalogFacts.empty(), ValidationReport.empty());
         }
     }
 
@@ -382,7 +385,8 @@ public class DevMojo extends AbstractRewriteMojo {
      * via an {@code instanceof} check at the call site before constructing
      * {@link GraphQLRewriteGenerator.BuildArtifacts}.
      */
-    private record InitialOutput(CompletionData catalog, LspSchemaSnapshot snapshot, ValidationReport report) {}
+    private record InitialOutput(CompletionData catalog, LspSchemaSnapshot snapshot,
+                                 CatalogFacts catalogFacts, ValidationReport report) {}
 
     // Package-private so DevMojoTest can drive the catch-arm discrimination directly
     // (a malformed schema vs a missing file) without standing up the full watch loop.
