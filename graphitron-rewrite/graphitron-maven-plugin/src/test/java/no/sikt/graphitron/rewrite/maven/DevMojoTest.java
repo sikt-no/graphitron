@@ -2,6 +2,7 @@ package no.sikt.graphitron.rewrite.maven;
 
 import no.sikt.graphitron.rewrite.RewriteContext;
 import no.sikt.graphitron.rewrite.schema.input.SchemaInput;
+import no.sikt.graphitron.lsp.state.Workspace;
 import no.sikt.graphitron.mcp.GraphitronMcpServer;
 import no.sikt.graphitron.rewrite.maven.dev.DevServer;
 import no.sikt.graphitron.rewrite.maven.watch.DebounceExecutor;
@@ -72,8 +73,10 @@ class DevMojoTest {
         // so the partial startup leaks nothing. This pins the failure-contract parity with the LSP
         // bind that R341 promotes into scope: the user-visible MojoExecutionException, not the
         // server-level IOException GraphitronMcpServerTest covers.
+        // The Workspace handed in is orthogonal to this test: it exercises only the bind-failure
+        // unwind, which is driven by the address, so an empty workspace suffices.
         try (var mcpBlocker = new GraphitronMcpServer(
-            new InetSocketAddress(InetAddress.getLoopbackAddress(), 0))) {
+            new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), new Workspace())) {
             int takenMcpPort = mcpBlocker.port();
 
             var mojo = mojoFor(basedir, 0, takenMcpPort);

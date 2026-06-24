@@ -194,7 +194,7 @@ public class DevMojo extends AbstractRewriteMojo {
         // taken port as a plain IOException (not BindException), so a single arm covers it; the
         // message names the MCP port and gives recovery guidance, mirroring the LSP arm's contract.
         try {
-            this.mcpServer = new GraphitronMcpServer(new InetSocketAddress(LOOPBACK_HOST, mcpPort));
+            this.mcpServer = new GraphitronMcpServer(new InetSocketAddress(LOOPBACK_HOST, mcpPort), workspace);
         } catch (IOException e) {
             this.server.close();
             throw new MojoExecutionException(

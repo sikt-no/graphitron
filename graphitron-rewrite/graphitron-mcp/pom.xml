@@ -22,11 +22,22 @@
 
       Published like graphitron-lsp (a Maven plugin resolves its declared dependencies from the
       consumer's repositories at execution time), so this module must NOT carry
-      <maven.deploy.skip>. The skeleton serves static content only and depends on neither
-      `graphitron` nor `graphitron-lsp`.
+      <maven.deploy.skip>.
+
+      R361 adds the compile edge on graphitron-lsp (transitively graphitron): the server now holds
+      the live Workspace and reads LspSchemaSnapshot off it. The edge is acyclic (plugin ->
+      {graphitron, lsp, mcp}; mcp -> lsp -> graphitron; lsp / graphitron never depend on mcp) and
+      orthogonal to this module's dependency-quarantine purpose, which is to keep the heavy native
+      RAG stack (slices 8-10) off graphitron-maven-plugin's compile surface.
     -->
 
     <dependencies>
+        <dependency>
+            <groupId>no.sikt</groupId>
+            <artifactId>graphitron-lsp</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+
         <dependency>
             <groupId>io.modelcontextprotocol.sdk</groupId>
             <artifactId>mcp</artifactId>
