@@ -67,6 +67,12 @@ now assert successful `AccessorKeyedSingle` classification; an execution-tier te
 through `Query.addressOccupantCarrier` and pins that `firstOccupant` resolves the first
 `Customer|Staff` by sort order (Staff for a populated address) and null for a hub with no occupants.
 
+Scope: end-to-end support is for **top-level** backing classes (the execution fixture
+`AddressOccupantCarrier` is top-level). A *nested* backing class still classifies but emits a
+non-compiling `Outer$Nested` cast; that is a pre-existing hazard shared with the list arm (both build
+the `AccessorRef` from a binary `fqClassName` via `ClassName.bestGuess`), tracked separately as R370,
+not introduced here.
+
 ## Feature-equivalence flag
 
 Kept `feature` (not re-bucketed `bug`). The multi-table polymorphic interface/union machinery is

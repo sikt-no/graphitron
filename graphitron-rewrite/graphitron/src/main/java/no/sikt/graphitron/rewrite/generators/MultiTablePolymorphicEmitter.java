@@ -351,6 +351,12 @@ public final class MultiTablePolymorphicEmitter {
      * than projecting a batch key and joining a {@code VALUES} table, so it needs only
      * {@code parentSourceKey} (the {@code AccessorRef}), not the parent {@code ResultType} the
      * batched key extraction threads through.
+     *
+     * <p>The record-backed arm is sound for a top-level backing class. A nested backing class
+     * casts as {@code Outer$Nested} (the {@code AccessorRef} is built from a binary {@code
+     * fqClassName} via {@code ClassName.bestGuess}, which does not split on {@code $}) and does not
+     * compile; that is a pre-existing hazard shared with the list arm's
+     * {@code buildAccessorKeySingle} / {@code buildAccessorKeyMany}, tracked as R370.
      */
     private static MethodSpec buildScalarPerParentFetcher(
             TypeFetcherEmissionContext ctx,
