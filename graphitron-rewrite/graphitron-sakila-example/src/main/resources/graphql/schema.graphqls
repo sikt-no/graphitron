@@ -400,6 +400,18 @@ type Query {
             method: "recentlyCreatedFilmsBatched"
         })
 
+    # R366 compilation-tier fixture: free-form record-backed payload whose typed
+    # List<AddressRecord> accessor drives a list-cardinality multi-table polymorphic child
+    # (OccupantsBatchPayload.occupants). The classifier derives Reader.AccessorCall +
+    # Cardinality.MANY, which routes through MultiTablePolymorphicEmitter.buildBatchedListFetcher.
+    # Pre-R366 that emitter hardcoded loader.load(key, env) against the MANY extraction's
+    # loop-local key and failed javac; this fixture forces the loader.loadMany dispatch to compile.
+    occupantsBatch: [OccupantsBatchPayload!]!
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.OccupantsBatchPayloadService",
+            method: "occupantsBatch"
+        })
+
     # R12 fixture (error-handling-parity.md): query-side @error end-to-end. Drives the
     # GraphitronSchema.java emit path (per-@error path/message DataFetchers, source-class
     # union TypeResolver, and ErrorRouter.dispatch via the per-fetcher catch arm) through
@@ -454,6 +466,18 @@ type CreateFilmsPayload {
     # AccessorKeyedMany(LIST). Each parent contributes N keys (one per FilmRecord); loadMany
     # supplies one record per element-PK key, returned as List<Record> matching the field shape.
     films: [Film!]!
+}
+
+# R366 fixture: free-form record-backed payload whose typed List<AddressRecord> accessor
+# (addresses()) is the polymorphic hub for a list-cardinality multi-table polymorphic child.
+# The `occupants` field remaps to the accessor via @field(name:) and resolves to the
+# AddressOccupant = Customer | Staff union (both FK back to address). The classifier produces
+# SourceKey(Reader.AccessorCall, Cardinality.MANY); the list arm routes through
+# MultiTablePolymorphicEmitter.buildBatchedListFetcher, whose load site must dispatch
+# loader.loadMany(keys, …) (not loader.load(key, …)) for the MANY key extraction. The compile
+# of this type's generated fetcher is the R366 assertion.
+type OccupantsBatchPayload {
+    occupants: [AddressOccupant!]! @field(name: "addresses")
 }
 
 # R110 Story 1 fixture: third-party-style DTO whose backing class carries the customer's
