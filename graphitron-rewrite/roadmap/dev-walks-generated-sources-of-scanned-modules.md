@@ -1,7 +1,7 @@
 ---
 id: R369
 title: "graphitron:dev walks generated-sources of scanned reactor modules so goto-definition reaches jOOQ tables in sibling modules"
-status: Spec
+status: Ready
 bucket: bug
 priority: 4
 theme: lsp
