@@ -74,6 +74,27 @@ class QueryUnionFieldValidationTest {
     }
 
     @Test
+    void rejects_sameTableParticipantsWithoutDiscriminator() {
+        // R365 discriminability floor, union arm: two members backed by the same table share a
+        // recordClass and cannot be told apart from a returned record's Java type without a
+        // @discriminator. The shared validateMultiTableParticipants helper rejects it here too.
+        var participants = List.<ParticipantRef>of(
+            new ParticipantRef.TableBound("Film", FILM, null),
+            new ParticipantRef.TableBound("FilmVariant", FILM, null));
+        var union = new GraphitronType.UnionType("Document", null, participants);
+        var field = new QueryUnionField("Query", "search", null,
+            new ReturnTypeRef.PolymorphicReturnType("Document", new FieldWrapper.List(false, false)),
+            participants);
+        var sch = new GraphitronSchema(
+            java.util.Map.of(
+                "Document", union,
+                "Query", new GraphitronType.RootType("Query", null)),
+            java.util.Map.of(graphql.schema.FieldCoordinates.coordinates("Query", "search"), field));
+        assertHasKind(validate(sch), RejectionKind.AUTHOR_ERROR,
+            "maps types 'Film' and 'FilmVariant' to the same table");
+    }
+
+    @Test
     void rejects_mismatchedPkArityAcrossParticipants() {
         var participants = List.<ParticipantRef>of(
             new ParticipantRef.TableBound("Film", FILM, null),

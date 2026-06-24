@@ -476,6 +476,35 @@ public class GraphitronSchemaValidator {
             }
         }
 
+        // Same-table discriminability floor (R365): record-class dispatch tells participants apart
+        // by table identity, so two participants backed by the same table share a recordClass and a
+        // returned record cannot be discriminated from its Java type alone. Require a @discriminator
+        // on a same-table collision; absent one, fail the build rather than silently misdispatch a
+        // returned record to the wrong arm. This guards both route (a)'s @service-return fetcher and
+        // R363's multitable query path over the same interfaces. Same-table @discriminator *dispatch*
+        // is a deferred follow-up; this floor is the day-one invariant (see R365 "Discriminability").
+        var byRecordClass = new java.util.LinkedHashMap<no.sikt.graphitron.javapoet.ClassName,
+            List<no.sikt.graphitron.rewrite.model.ParticipantRef.TableBound>>();
+        for (var tb : tableBound) {
+            byRecordClass.computeIfAbsent(tb.table().recordClass(), k -> new java.util.ArrayList<>()).add(tb);
+        }
+        for (var group : byRecordClass.values()) {
+            if (group.size() < 2) continue;
+            boolean anyMissingDiscriminator = group.stream().anyMatch(tb -> tb.discriminatorValue() == null);
+            if (anyMissingDiscriminator) {
+                errors.add(new ValidationError(
+                    qualifiedName,
+            Rejection.structural("Field '" + qualifiedName + "': interface/union maps types '"
+                        + group.get(0).typeName() + "' and '" + group.get(1).typeName()
+                        + "' to the same table '" + group.get(0).table().tableName()
+                        + "' with no @discriminator to tell them apart; add @discriminate(on:)"
+                        + " + @discriminator(value:), or split the types"),
+                    location
+                ));
+                return; // one collision is enough; subsequent ones are noise
+            }
+        }
+
         // Deferred follow-up (R102 spec body, "carried forward"): spec called for lifting the
         // emit-time single-column participant-PK check at MultiTablePolymorphicEmitter.java:824
         // (the connection-rows method picks the first PK column to type sortField, silently
