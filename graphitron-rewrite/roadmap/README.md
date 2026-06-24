@@ -20,17 +20,17 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R333` | Lower each schema coordinate to a DataFetcher and its QueryParts | Spec | 2026-06-22 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
 | `R256` | Absorb the service walker substrate: typed per-arm errors + multi-arg ctors | Ready | 2026-05-30 <sub>created 2026-05-29</sub> | [plan](service-walker-substrate-absorption.md) |
 | `R346` | Regenerate and guard the generated supported-directives migration doc against directive-set drift | Ready | 2026-06-19 | [plan](supported-directives-regen-guard.md) |
-| `R366` | Emit batch (loadMany) dispatch for list-cardinality polymorphic @splitQuery on record parents | Spec | 2026-06-24 | [plan](multitable-polymorphic-list-batch-load-dispatch.md) |
-| `R364` | Fix @service split-query rows-method return type for enum and non-built-in scalar fields | Spec | 2026-06-24 | [plan](service-split-nonbuiltin-scalar-return-type.md) |
 | `R308` | Fix the @service list-payload N+1 by deriving many-arrival for list-returning carriers | Spec | 2026-06-14 | [plan](service-list-payload-arrival.md) |
 | `R335` | Fold input/scalar/enum classification into the single classify-and-emit walk | Spec | 2026-06-19 | [plan](walk-classifies-input-surface.md) |
+| `R366` | Emit batch (loadMany) dispatch for list-cardinality polymorphic @splitQuery on record parents | Ready | 2026-06-24 | [plan](multitable-polymorphic-list-batch-load-dispatch.md) |
+| `R364` | Fix @service split-query rows-method return type for enum and non-built-in scalar fields | Ready | 2026-06-24 | [plan](service-split-nonbuiltin-scalar-return-type.md) |
 | `R45` | Multi-tenant routing on top of the schema-driven ExecutionInput factory | Spec | 2026-05-20 | [plan](tenant-routing-and-execution-input.md) |
 | `R273` | Source NodeId metadata from @node + catalog PK (inferred from `implements Node`), and settle wrong-type/malformed mismatch semantics, retiring the legacy __NODE bare-ID arm | Spec | 2026-06-02 | [plan](nodeid-skip-mismatch-error-surfacing.md) |
 | `R365` | Support returning a polymorphic entity (interface/union) from a @service mutation | Spec | 2026-06-24 | [plan](polymorphic-entity-service-return.md) |
 | `R347` | Consolidate graphitron-lsp navigation, dispatch, and result-building | In Progress | 2026-06-19 | [plan](lsp-structural-consolidation.md) |
 | `R353` | LSP goto-definition from an SDL type/field name to its backing Java class and member | In Review | 2026-06-24 <sub>created 2026-06-21</sub> | [plan](lsp-backing-class-member-navigation.md) |
 | `R332` | Mark @table on input types as deprecated (signal ahead of R97 removal) | Spec | 2026-06-22 <sub>created 2026-06-18</sub> | [plan](table-on-input-deprecation-signal.md) |
-| `R367` | Single-cardinality polymorphic child on a record-backed parent (resolve the dangling deferred-rejection doc) | Spec | 2026-06-24 | [plan](polymorphic-child-record-parent-single-cardinality.md) |
+| `R367` | Single-cardinality polymorphic child on a record-backed parent (resolve the dangling deferred-rejection doc) | Ready | 2026-06-24 | [plan](polymorphic-child-record-parent-single-cardinality.md) |
 | `R13` | Faceted search on `@asConnection` | Spec |  | [plan](faceted-search.md) |
 | `R63` | Type UPSERT dialect requirement on the model | Spec |  | [plan](dml-dialect-requirement-on-model.md) |
 | `R92` | Surface database CHECK constraints as Jakarta validation rules | Spec |  | [plan](catalog-check-constraint-validation.md) |
@@ -168,9 +168,9 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 ### interface-union
 
 - `R363` [**Lower @field filter inputs and @condition onto multitable-interface queries**](multitable-interface-query-filter-lowering.md) — Spec, bug
-- `R366` [**Emit batch (loadMany) dispatch for list-cardinality polymorphic @splitQuery on record parents**](multitable-polymorphic-list-batch-load-dispatch.md) — Spec, bug
+- `R366` [**Emit batch (loadMany) dispatch for list-cardinality polymorphic @splitQuery on record parents**](multitable-polymorphic-list-batch-load-dispatch.md) — Ready, bug
 - `R365` [**Support returning a polymorphic entity (interface/union) from a @service mutation**](polymorphic-entity-service-return.md) — Spec, bug
-- `R367` [**Single-cardinality polymorphic child on a record-backed parent (resolve the dangling deferred-rejection doc)**](polymorphic-child-record-parent-single-cardinality.md) — Spec, feature
+- `R367` [**Single-cardinality polymorphic child on a record-backed parent (resolve the dangling deferred-rejection doc)**](polymorphic-child-record-parent-single-cardinality.md) — Ready, feature
 
 ### nodeid
 
@@ -182,7 +182,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### service
 
-- `R364` [**Fix @service split-query rows-method return type for enum and non-built-in scalar fields**](service-split-nonbuiltin-scalar-return-type.md) — Spec, bug
+- `R364` [**Fix @service split-query rows-method return type for enum and non-built-in scalar fields**](service-split-nonbuiltin-scalar-return-type.md) — Ready, bug
 - `R201` [**Honor @field(name:) in @error payload construction shape resolution**](honor-field-directive-in-payload-construction-shape.md) — Backlog, bug
 - `R202` [**Honor @field(name:) in @error type extra-field accessor matching against handler source class**](honor-field-directive-in-error-type-source-accessors.md) — Backlog, bug
 - `R45` [**Multi-tenant routing on top of the schema-driven ExecutionInput factory**](tenant-routing-and-execution-input.md) — Spec, architecture

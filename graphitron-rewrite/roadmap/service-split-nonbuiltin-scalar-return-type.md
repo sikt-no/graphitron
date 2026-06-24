@@ -1,7 +1,7 @@
 ---
 id: R364
 title: "Fix @service split-query rows-method return type for enum and non-built-in scalar fields"
-status: Spec
+status: Ready
 bucket: bug
 priority: 4
 theme: service
