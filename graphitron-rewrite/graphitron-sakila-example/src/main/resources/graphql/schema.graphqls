@@ -358,6 +358,16 @@ type Query {
     # Document = Film | Actor exercises QueryUnionField on the same fetcher path.
     documents: [Document!]!
 
+    # R365 route (a): a @service field returning a polymorphic entity. The service hands back a
+    # PK-populated TableRecord per branch; the generated fetcher dispatches on the runtime record
+    # class (FilmRecord → Film, ActorRecord → Actor), tags __typename, and auto-fetches the
+    # selected columns by PK. searchOneService is single cardinality (Film branch);
+    # documentsService is list cardinality exercising both distinct-table branches.
+    searchOneService: Searchable @service(service: {
+        className: "no.sikt.graphitron.rewrite.test.services.PolymorphicSearchService", method: "searchOne"})
+    documentsService: [Document!]! @service(service: {
+        className: "no.sikt.graphitron.rewrite.test.services.PolymorphicSearchService", method: "searchDocuments"})
+
     # stub-interface-union-fetchers.md Track B (B4a): polymorphic connection. Same Searchable
     # interface as Query.search, but wrapped in @asConnection so the schema-transform exposes
     # SearchableConnection / SearchableEdge / pageInfo / totalCount. The polymorphic emitter
