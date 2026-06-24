@@ -42,32 +42,62 @@ below, or another) so the restored API matches rather than inventing a new one.
 
 ## Plan
 
-This is the largest item in the cluster and is design-led, not a localized patch. Pin the restored
-surface against the confirmed 9.3 behaviour, then decompose.
+This is the largest item in the cluster and is design-led, not a localized patch. The route is
+**pinned to (a) — auto-fetch extended to polymorphic returns** (rationale below); a single
+investigation gate (the 9.3 baseline) remains before implementation, and it constrains *fidelity of
+the restored surface*, not the mechanism.
 
-1. **Establish the 9.3 baseline (gate before Spec sign-off).** Capture exactly which shape 9.3
-   accepted (interface return directly? union with a record carrier? a payload with `errors`?) and the
-   resolver it generated. The restored 10.x surface must match that contract, not a new invention.
-2. **Choose the mechanism.** Two routes:
-   - (a) **Auto-fetch of `@service`-returned records, extended to polymorphic returns.** Aligns with
-     the maintainer stance (a `@service` returns PK-populated `TableRecord`s and Graphitron fetches the
-     rest): the service returns the concrete record per branch and Graphitron resolves it to the right
-     participant via the `__typename` / PK machinery the multitable query path already uses, with no
-     `@splitQuery` payload field. `ServiceDirectiveResolver.projectReturnType`
-     (`ServiceDirectiveResolver.java:220-225`) currently rejects `PolymorphicReturnType` outright; this
-     route replaces the reject with a resolved polymorphic-return arm.
-   - (b) **Payload field carrying `[Applikasjon] @splitQuery` + `errors: [Error]`.** Depends on R366
-     (list-cardinality emit) and R367 (single-cardinality record-parent arm) landing first; the
-     `errors` envelope rides the existing `ErrorChannel` wiring.
-   Recommend (a) as primary, with (b) falling out once R366/R367 land. Pin the route at Spec with
-   principles-architect.
-3. **Relax the adjacent guards only if route (b)/union shapes are in scope.** The union-member rule
-   (`TypeBuilder.java:767`, the non-error `@record` carrier is what trips it) and the dangling-payload
-   classifier (`GraphitronSchemaBuilder.java:584-593`) need touching only for the union/payload shapes;
-   route (a) leaves both alone.
+### Pinned route: (a) auto-fetch of `@service`-returned records, extended to polymorphic returns
 
-Front-matter `depends-on` is left empty because the recommended route (a) has no hard dependency;
-route (b) would add R366 + R367. Resolve the route at Spec before wiring `depends-on`.
+The service returns the concrete PK-populated `TableRecord` per branch, and Graphitron resolves it to
+the right participant and fetches the rest — no `@splitQuery` payload field, no `errors`-envelope
+wiring required for the base shape. This is pinned over the alternative for three reasons:
+
+- **Aligns with the documented maintainer stance** ("a `@service` returns PK-populated `TableRecord`s
+  and Graphitron fetches the rest"), and reuses the `__typename` / PK participant-resolution machinery
+  the multitable *query* path already has in `MultiTablePolymorphicEmitter`.
+- **No hard dependency.** Route (b) (payload field carrying `[Applikasjon] @splitQuery` +
+  `errors: [Error]`) depends on **R366** (list-cardinality emit) and **R367** (single-cardinality
+  record-parent arm) landing first; route (a) depends on neither, so it can ship independently and
+  unblocks the reported regression sooner.
+- **Smallest guard surface.** Route (a) touches only the `PolymorphicReturnType` arm of
+  `projectReturnType`. It leaves the union-member rule (`TypeBuilder.java:767`) and the
+  dangling-payload classifier (`GraphitronSchemaBuilder.java:584-593`) untouched — those only need
+  relaxing for the union/payload shapes route (b) introduces.
+
+Route (b) is retained as a **follow-up**, not an alternative: once R366 + R367 land, the payload +
+`errors`-envelope shape falls out on top of route (a) and can be added then. It is not on this item's
+critical path.
+
+### Remaining gate before implementation: confirm the 9.3 baseline (fidelity, not mechanism)
+
+The mechanism is settled; what must still be captured is the *exact restored surface* so 10.x matches
+9.3 rather than inventing a new contract. This is an investigation gate, not a design fork — capture,
+before writing code:
+
+1. Which return shape 9.3 actually accepted: the interface/union directly (single? list?), a union
+   with a `@record` success carrier, or a `{ field, errors }` payload object.
+2. The resolver 9.3 generated for it (how it dispatched to the concrete type, whether it auto-fetched
+   or required the service to return a fully-populated record).
+3. Whether 9.3 supported the typed-error envelope on this shape, or only the bare polymorphic return.
+
+If 9.3's accepted shape was the bare interface/union return, route (a) restores it directly. If 9.3's
+shape was the `{ field, errors }` payload, that is route (b) territory and this item gains
+`depends-on: R366, R367` — so the baseline finding is also what decides whether `depends-on` stays
+empty.
+
+### Implementation (route (a))
+
+`ServiceDirectiveResolver.projectReturnType` (`ServiceDirectiveResolver.java:214-225`) currently
+yields `Resolved.Rejected(Rejection.deferred("@service returning a polymorphic type is not yet
+supported", ""))` for the `PolymorphicReturnType` arm whenever `liftToErrorsField` returns null.
+Replace that reject with a resolved polymorphic-return arm that carries the participant set and the
+service method, and emit a fetcher that resolves each returned record to its participant via the
+existing `MultiTablePolymorphicEmitter` `__typename` / PK path. The all-`@error` nullable-list
+"errors channel" (`liftToErrorsField`) continues to lift as today; this widens the *non*-errors arm.
+
+Front-matter `depends-on` stays empty under route (a). Wire `depends-on: R366, R367` only if the 9.3
+baseline forces the payload shape (route (b)).
 
 ## Cross-links
 
@@ -75,3 +105,13 @@ route (b) would add R366 + R367. Resolve the route at Spec before wiring `depend
   (single-cardinality polymorphic child on a record-backed parent is rejected) are the concrete
   emitter blockers on the payload route; both must land for shape (b).
 - Related to the `mutations-errors` theme items on payload/error-envelope construction.
+
+## Spec-review revisions (2026-06-24)
+
+Reviewer (Spec gate, session ≠ author) pinned route (a) (auto-fetch extended to polymorphic returns)
+as the mechanism — it has no hard dependency, reuses the multitable query path's participant
+resolution, and leaves the union-member and dangling-payload guards untouched — and recast route (b)
+as a post-R366/R367 follow-up rather than a live alternative. The remaining 9.3-baseline gate was
+narrowed from "choose the mechanism" to "confirm the restored surface's fidelity (and whether it
+forces `depends-on: R366, R367`)". The baseline still requires a real 9.3 artifact to confirm, so this
+stays in Spec; a fresh session signs it off to Ready once the baseline is captured.

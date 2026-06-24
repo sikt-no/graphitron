@@ -58,40 +58,80 @@ The fix mirrors the single-table discriminator interface (`QueryTableInterfaceFi
 carries and applies a filter surface (`QueryField.java:184-199`); the two multitable polymorphic
 variants are the only catalog-bound query fields without it.
 
-1. **Model: add the filter surface to the polymorphic variants.** Give
-   `QueryField.QueryInterfaceField` and `QueryField.QueryUnionField` (`QueryField.java:207-240`) the
-   `List<WhereFilter> filters` and `OrderBySpec orderBy` components the table-bound variants carry, and
-   have them `implements ... SqlGeneratingField` as `QueryTableInterfaceField` does. Pagination already
-   flows through the connection wrapper, so day-one scope can stop at `filters` + `orderBy`.
-2. **`operation()`: stop hardcoding empties.** Lines 45-46 pass `List.of(), new OrderBySpec.None()`;
-   pass `f.filters()` / `f.orderBy()` exactly as the `QueryTableInterfaceField` arm (line 40) does.
-3. **Builder: lower the arguments per participant.** In `FieldBuilder` (interface/union arms around
-   3385-3394) call `resolveTableFieldComponents(fieldDef, ...)` to parse field arguments,
-   `@field`-mapped inputs, and `@condition` into `WhereFilter`s, and surface its `Rejected` outcome so
-   a bad `@condition` method name fails the build. Each `WhereFilter` binds against each participant's
-   table in step 4.
-4. **Emitter: thread the predicate into every UNION branch.** `buildStage1Block` /
-   `buildStage1ConnectionBlock` already have the per-branch hook: `branchParentFkWhere`
-   (`MultiTablePolymorphicEmitter.java:708-732`) returns a `.where(...)` predicate the branch loop
-   ANDs in (lines 668-687). Extend it (or add a sibling `branchFilterWhere`) to emit the lowered filter
-   predicate per participant against the `stage1_<Type>` alias, combined with the existing parent-FK
-   predicate via `.and(...)`, exactly as `branchProjection` / `branchParentFkWhere` resolve columns
-   today.
+**Resolved design decision (Spec review): the filter surface is per-participant, not a single shared
+list.** A `GeneratedConditionFilter` names a *table-specific* generated condition method and column
+constants (`WhereFilter.java`): the same logical `@field` filter on `ORGANISASJONSKODE` resolves to
+`FeideApplikasjonConditions.…(FEIDE_APPLIKASJON.ORGANISASJONSKODE, …)` for one participant and
+`MaskinportenApplikasjonConditions.…(MASKINPORTEN_APPLIKASJON.…)` for another — *different*
+`WhereFilter`s. So the builder lowers the filter arguments once **per participant table**, against
+each participant's own `TableRef`, and the model carries the resolved filters keyed by participant.
+This single decision settles the three questions the original draft left open:
 
-**Design fork (flag to principles-architect):** a filter input maps to a column by `@field` name, and
-that column must exist on every participant (the `Applikasjon` filter `ORGANISASJONSKODE` is present
-on all three). Decide whether a filter naming a column absent from one participant is a validation
-error or silently scopes to the participants that have it. Recommend a validation error, so the
-multitable filter contract is "every participant carries the filtered column", matching the 9.x
-behaviour this regression refers to.
+- **Which layer rejects a column absent from a participant — builder or validator?** The classifier
+  (builder). Lowering the filter against a participant whose table lacks the `@field`-named column
+  makes that participant's `resolveTableFieldComponents` return `TableFieldComponents.Rejected` (the
+  existing `unknownColumn` typed rejection), which fails the build naming the participant and column.
+  No separate validator pass is invented; per "Validator mirrors classifier invariants" the validator
+  already surfaces classifier rejections. The contract — "every participant carries the filtered
+  column" (the 9.x behaviour) — is thus enforced at classify time, not as a runtime scope-narrowing.
+- **Column-type compatibility across participants.** Falls out of the same per-participant lowering:
+  each participant's arg→column binding is validated against that participant's column `DataType`
+  (`DSL.val(rawValue, col.getDataType())` binds per branch). A same-named column with an incompatible
+  type on one participant surfaces as that participant's rejection, not a latent per-branch bind hole.
+- **`@condition` scope (day one).** Out of scope for this slice, and **rejected — not silently
+  dropped**. A developer `@condition` method takes a single concrete jOOQ `Table` first parameter; a
+  multitable field has N participant tables, so per-participant `@condition` lowering needs an emitted
+  per-participant adapter — real design deferred to a follow-up item. Day one lowers `@field`-mapped
+  column filters (the reported data-correctness bug) and rejects a `@condition` on the multitable path
+  with a typed rejection, closing the silent-pass hole the Mechanism section flags.
+
+1. **Model: add the per-participant filter surface.** Give `QueryField.QueryInterfaceField` and
+   `QueryField.QueryUnionField` (`QueryField.java:207-240`) a *per-participant* filter carrier (e.g.
+   the resolved `List<WhereFilter>` alongside each `ParticipantRef.TableBound`, or a
+   `Map<typeName, List<WhereFilter>>`; the exact carrier is the implementer's call, but it must be
+   per-participant — a single shared `List<WhereFilter>` cannot serve table-specific generated
+   condition methods) plus `OrderBySpec orderBy`, and have them `implements SqlGeneratingField` as
+   `QueryTableInterfaceField` does. `orderBy` is subject to the same "column present on every
+   participant" rule, lowered per participant. Pagination already flows through the connection
+   wrapper, so day-one scope is `filters` + `orderBy`.
+2. **`operation()`: stop hardcoding empties.** Lines 45-46 pass `List.of(), new OrderBySpec.None()`;
+   pass the lowered per-participant filters / `f.orderBy()` exactly as the `QueryTableInterfaceField`
+   arm (line 40) does.
+3. **Builder: lower the arguments per participant; reject `@condition`.** In `FieldBuilder`
+   (interface/union arms around 3385-3394), for each participant call
+   `resolveTableFieldComponents(fieldDef, participant.table(), elementTypeName, …)`, collect the
+   per-participant filters, and surface any participant's `Rejected` as the field's rejection (a
+   column absent from one participant, or a type mismatch, fails the build naming the participant).
+   Separately, if the field carries a `@condition`, return a typed rejection ("`@condition` on a
+   multitable interface/union is not yet supported"). If that rejection is produced via
+   `Rejection.deferred(slug)`, **file the follow-up roadmap item first so the slug resolves** — do not
+   ship the dangling-pointer bug R367 exists to fix.
+4. **Emitter: thread each participant's filters into its own UNION branch.** The branch loop
+   (`MultiTablePolymorphicEmitter.java:668-687`) already ANDs in `branchParentFkWhere`
+   (`:708-732`). Extend the loop (or add a sibling `branchFilterWhere`) to AND each participant's
+   lowered filters into its `stage1_<Type>` branch `.where(...)`, combined with the existing parent-FK
+   predicate via `.and(...)`. Each participant's filters were generated against its own table, so they
+   bind cleanly to that branch's alias — the same way `branchProjection` / `branchParentFkWhere`
+   resolve columns today.
 
 ## Tests
 
 - Pipeline tier: a `@field`-mapped filter input on a root `QueryInterfaceField` / `QueryUnionField`
-  classifies into a model that carries the predicate.
+  classifies into a model carrying a per-participant predicate for each participant.
+- Pipeline tier (rejection): a filter naming a column absent from (or type-incompatible on) one
+  participant fails classification with a typed rejection naming that participant and column.
 - Execution tier: the query applies `WHERE <col> IN (...)` per branch and returns only matching rows.
-- Validation: a `@condition` naming a non-existent method is rejected at `validate`.
+- Validation: a `@condition` on a multitable interface/union field is rejected at build (this also
+  covers the previously-silent non-existent-method case, since any `@condition` on the path rejects).
 
 ## Cross-links
 
 Shares `MultiTablePolymorphicEmitter` with R366 (list-cardinality polymorphic split-query emit).
+
+## Spec-review revisions (2026-06-24)
+
+Reviewer (Spec gate, session ≠ author) resolved the original draft's open design fork rather than
+carrying it into Ready: filters are lowered **per participant**, which makes the absent-column case a
+classifier rejection (not a runtime scope-narrowing or a separate validator pass), folds column-type
+compatibility into the same per-participant binding, and scopes `@condition` out of day one with a
+typed rejection in place of the silent drop. A fresh session must still sign this off to Ready.
