@@ -14,6 +14,7 @@ import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.ParticipantRef;
 import no.sikt.graphitron.rewrite.model.QueryField;
+import no.sikt.graphitron.rewrite.model.ServiceMethodCall;
 import no.sikt.graphitron.rewrite.model.SourceKey;
 import no.sikt.graphitron.rewrite.model.TableRef;
 
@@ -123,6 +124,160 @@ public final class MultiTablePolymorphicEmitter {
             methods.add(buildPerTypenameSelect(fieldName, participant, false, outputPackage));
         }
         return methods;
+    }
+
+    /**
+     * Route (a) entry point (R365): a root {@code @service} field returning a multitable
+     * interface/union. Unlike {@link #emitMethods}, there is no stage-1 discovery UNION ALL — the
+     * service hands back the concrete PK-populated {@code TableRecord}s directly, so the Java type
+     * of each returned record <em>is</em> the discriminator. The main fetcher calls the service,
+     * dispatches each returned record on its runtime class against the participant set to build the
+     * same {@code (idx, pks)} buckets stage 2 consumes, then reuses {@link #buildPerTypenameSelect}
+     * verbatim to auto-fetch the selected columns by PK and tag each row with the {@code __typename}
+     * literal the schema-class TypeResolver routes on.
+     */
+    public static List<MethodSpec> emitServiceMethods(
+            TypeFetcherEmissionContext ctx,
+            String fieldName,
+            ServiceMethodCall serviceCall,
+            List<ParticipantRef> participants,
+            boolean isList,
+            String outputPackage) {
+        var tableBoundParticipants = participants.stream()
+            .filter(p -> p instanceof ParticipantRef.TableBound)
+            .map(p -> (ParticipantRef.TableBound) p)
+            .toList();
+        var methods = new ArrayList<MethodSpec>();
+        methods.add(buildServiceMainFetcher(ctx, fieldName, serviceCall, tableBoundParticipants, isList, outputPackage));
+        for (var participant : tableBoundParticipants) {
+            methods.add(buildPerTypenameSelect(fieldName, participant, false, outputPackage));
+        }
+        return methods;
+    }
+
+    /**
+     * Route (a) main fetcher (R365). Emits the service call, normalises its return into a flat
+     * {@code List<Record>} in input order, dispatches each record on its runtime class against the
+     * participant set into {@code (idx, pks)} buckets, then dispatches per typename to the shared
+     * stage-2 {@link #buildPerTypenameSelect} helper. The record-class dispatch is the discriminator
+     * (no synthesized {@code __typename} column or PK round-trip needed to identify the type, unlike
+     * the query path whose UNION-ALL projection erases the Java type); the participant's table is
+     * used only for the by-PK auto-fetch in stage 2.
+     */
+    private static MethodSpec buildServiceMainFetcher(
+            TypeFetcherEmissionContext ctx,
+            String fieldName, ServiceMethodCall serviceCall,
+            List<ParticipantRef.TableBound> participants, boolean isList, String outputPackage) {
+
+        var listOfRecord = ParameterizedTypeName.get(LIST, RECORD);
+        TypeName valueType = isList ? listOfRecord : RECORD;
+
+        var builder = MethodSpec.methodBuilder(fieldName)
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(syncResultType(valueType))
+            .addParameter(ENV, "env");
+
+        builder.beginControlFlow("try");
+
+        // Service call: declares `<reflectedReturnType> result = ServiceClass.method(args);` and a
+        // `dsl` local iff the method binds a DSLContext / is instance-shaped. Stage 2's by-PK
+        // auto-fetch needs a `dsl` local, so declare one here when the service call did not.
+        ServiceMethodCallEmitter.emit(serviceCall, outputPackage).forEach(builder::addStatement);
+        if (!ServiceMethodCallEmitter.declaresDslLocal(serviceCall)) {
+            builder.addStatement("$T dsl = $L.getDslContext(env)", DSL_CONTEXT, ctx.graphitronContextCall());
+        }
+
+        // Normalise the service return into a flat List<Record> in input order. Records that match
+        // no participant fall through the dispatch chain below and are skipped.
+        builder.addStatement("$T records = new $T<>()", listOfRecord, ARRAY_LIST);
+        builder.beginControlFlow("if (result != null)");
+        if (isList) {
+            builder.beginControlFlow("for (Object o : result)");
+            builder.addStatement("if (o != null) records.add(($T) o)", RECORD);
+            builder.endControlFlow();
+        } else {
+            builder.addStatement("records.add(($T) result)", RECORD);
+        }
+        builder.endControlFlow();
+
+        if (participants.isEmpty()) {
+            if (isList) {
+                builder.addStatement("$T payload = $T.of()", listOfRecord, LIST);
+            } else {
+                builder.addStatement("$T payload = ($T) null", RECORD, RECORD);
+            }
+            builder.addCode(returnSyncSuccess(valueType, "payload"));
+            builder.nextControlFlow("catch ($T e)", Exception.class);
+            builder.addCode(redactCatchArm(outputPackage));
+            builder.endControlFlow();
+            return builder.build();
+        }
+
+        builder.addStatement("Object[] dispatched = new Object[records.size()]");
+        builder.addCode(buildServiceDispatchBlock(participants, fieldName));
+
+        if (isList) {
+            builder.addStatement("$T payload = new $T<>(records.size())", listOfRecord, ARRAY_LIST);
+            builder.beginControlFlow("for (Object o : dispatched)");
+            builder.addStatement("if (o instanceof $T r) payload.add(r)", RECORD);
+            builder.endControlFlow();
+        } else {
+            builder.addStatement("$T payload = dispatched.length == 0 ? null : ($T) dispatched[0]", RECORD, RECORD);
+        }
+        builder.addCode(returnSyncSuccess(valueType, "payload"));
+        builder.nextControlFlow("catch ($T e)", Exception.class);
+        builder.addCode(redactCatchArm(outputPackage));
+        builder.endControlFlow();
+        return builder.build();
+    }
+
+    /**
+     * Builds the route (a) record-class dispatch (R365): groups the service-returned
+     * {@code records} into {@code byType} {@code (idx, pks)} buckets by matching each record's
+     * runtime class against each participant's {@code recordClass}, then dispatches per typename to
+     * the shared stage-2 {@link #buildPerTypenameSelect} helper (scattering into {@code dispatched}).
+     * The {@code (idx, pks)} binding shape is byte-identical to {@link #buildPerTypenameDispatcher}'s
+     * so the per-typename helpers are reused unchanged. The validator's same-table discriminability
+     * floor guarantees distinct record classes across participants, so the if/else-if chain assigns
+     * each record to exactly one arm.
+     */
+    private static CodeBlock buildServiceDispatchBlock(
+            List<ParticipantRef.TableBound> participants, String fieldName) {
+        var b = CodeBlock.builder();
+        var listOfObjArray = ParameterizedTypeName.get(LIST, ArrayTypeName.of(ClassName.get(Object.class)));
+        var byTypeMap = ParameterizedTypeName.get(MAP, ClassName.get(String.class), listOfObjArray);
+        b.addStatement("$T byType = new $T<>()", byTypeMap, LINKED_HASH_MAP);
+        b.beginControlFlow("for (int i = 0; i < records.size(); i++)");
+        b.addStatement("$T rec = records.get(i)", RECORD);
+        for (int p = 0; p < participants.size(); p++) {
+            var participant = participants.get(p);
+            var recordCls = participant.table().recordClass();
+            var pks = CodeBlock.builder().add("new Object[]{");
+            var pkCols = participant.table().primaryKeyColumns();
+            for (int s = 0; s < pkCols.size(); s++) {
+                if (s > 0) pks.add(", ");
+                pks.add("rec.get($T.$L.$L)", participant.table().constantsClass(),
+                    participant.table().javaFieldName(), pkCols.get(s).javaName());
+            }
+            pks.add("}");
+            if (p == 0) {
+                b.beginControlFlow("if (rec instanceof $T)", recordCls);
+            } else {
+                b.nextControlFlow("else if (rec instanceof $T)", recordCls);
+            }
+            b.addStatement("byType.computeIfAbsent($S, k -> new $T<>()).add(new Object[]{i, $L})",
+                participant.typeName(), ARRAY_LIST, pks.build());
+        }
+        b.endControlFlow();
+        b.endControlFlow();
+        for (var participant : participants) {
+            String typeName = participant.typeName();
+            b.beginControlFlow("if (byType.containsKey($S))", typeName);
+            b.addStatement("$L(byType.get($S), env, dsl, dispatched)",
+                perTypenameMethodName(fieldName, typeName), typeName);
+            b.endControlFlow();
+        }
+        return b.build();
     }
 
     /**

@@ -180,12 +180,14 @@ public class GraphitronSchemaValidator {
             case no.sikt.graphitron.rewrite.model.QueryField.QueryUnionField f         -> validateQueryUnionField(f, errors);
             case no.sikt.graphitron.rewrite.model.QueryField.QueryServiceTableField f       -> validateQueryServiceTableField(f, types, errors);
             case no.sikt.graphitron.rewrite.model.QueryField.QueryServiceRecordField f      -> validateQueryServiceRecordField(f, types, errors);
+            case no.sikt.graphitron.rewrite.model.QueryField.QueryServicePolymorphicField f -> validateQueryServicePolymorphicField(f, errors);
             case no.sikt.graphitron.rewrite.model.MutationField.MutationInsertTableField f     -> validateMutationInsertTableField(f, errors);
             case no.sikt.graphitron.rewrite.model.MutationField.MutationUpdateTableField f     -> validateMutationUpdateTableField(f, errors);
             case no.sikt.graphitron.rewrite.model.MutationField.MutationDeleteTableField f     -> validateMutationDeleteTableField(f, errors);
             case no.sikt.graphitron.rewrite.model.MutationField.MutationUpsertTableField f     -> validateMutationUpsertTableField(f, errors);
             case no.sikt.graphitron.rewrite.model.MutationField.MutationServiceTableField f    -> validateMutationServiceTableField(f, errors);
             case no.sikt.graphitron.rewrite.model.MutationField.MutationServiceRecordField f   -> validateMutationServiceRecordField(f, errors);
+            case no.sikt.graphitron.rewrite.model.MutationField.MutationServicePolymorphicField f -> validateMutationServicePolymorphicField(f, errors);
             case no.sikt.graphitron.rewrite.model.MutationField.MutationDmlRecordField f       -> {} // R75 Phase 1 — narrow ResultReturnType + DELETE-rejecting compact ctor pin the structural shape; admission-time checks (table-equality, etc.) live in the mutation-field classifier and the trigger function
             case no.sikt.graphitron.rewrite.model.MutationField.MutationBulkDmlRecordField f   -> {} // R141 — same structural pinning as MutationDmlRecordField plus list-input + list-data-field invariants on the compact ctor; admission-time checks (table-equality, Invariant #16) live in the classifier and the trigger function
             case no.sikt.graphitron.rewrite.model.MutationField.MutationUpdatePayloadField f   -> {} // R258 — narrow ResultReturnType + non-Optional InputArgRef / UpdateRows slots pin the structural shape; admission-time checks (PK-or-UK partition, table-equality) live in the @mutation classifier (classifyUpdatePayloadField) and the UpdateRowsWalker
@@ -620,6 +622,13 @@ public class GraphitronSchemaValidator {
     }
     private void validateQueryServiceRecordField(no.sikt.graphitron.rewrite.model.QueryField.QueryServiceRecordField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
     }
+    private void validateQueryServicePolymorphicField(no.sikt.graphitron.rewrite.model.QueryField.QueryServicePolymorphicField field, List<ValidationError> errors) {
+        // R365 route (a): the @service-return arm shares the multitable participant invariants with
+        // the query interface/union path (PK presence, uniform PK arity, and the same-table
+        // discriminability floor), so the build error fires from the @service-return arm too.
+        validateCardinality(field.qualifiedName(), field.location(), field.returnType().wrapper(), errors);
+        validateMultiTableParticipants(field.qualifiedName(), field.location(), field.participants(), errors);
+    }
     private void validateMutationInsertTableField(no.sikt.graphitron.rewrite.model.MutationField.MutationInsertTableField field, List<ValidationError> errors) {}
     private void validateMutationUpdateTableField(no.sikt.graphitron.rewrite.model.MutationField.MutationUpdateTableField field, List<ValidationError> errors) {}
     private void validateMutationDeleteTableField(no.sikt.graphitron.rewrite.model.MutationField.MutationDeleteTableField field, List<ValidationError> errors) {}
@@ -628,6 +637,12 @@ public class GraphitronSchemaValidator {
         // Unresolved service method is caught by the builder (UnclassifiedField).
     }
     private void validateMutationServiceRecordField(no.sikt.graphitron.rewrite.model.MutationField.MutationServiceRecordField field, List<ValidationError> errors) {}
+    private void validateMutationServicePolymorphicField(no.sikt.graphitron.rewrite.model.MutationField.MutationServicePolymorphicField field, List<ValidationError> errors) {
+        // R365 route (a): mutation analogue of validateQueryServicePolymorphicField; same shared
+        // multitable participant invariants, including the same-table discriminability floor.
+        validateCardinality(field.qualifiedName(), field.location(), field.returnType().wrapper(), errors);
+        validateMultiTableParticipants(field.qualifiedName(), field.location(), field.participants(), errors);
+    }
     private void validateColumnField(no.sikt.graphitron.rewrite.model.ChildField.ColumnField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
         if (!(types.get(field.parentTypeName()) instanceof GraphitronType.TableBackedType)) {
             errors.add(new ValidationError(

@@ -34,8 +34,8 @@ import static no.sikt.graphitron.rewrite.BuildContext.baseTypeName;
  *   <li>Method lookup, arg-binding parse, return-type classification.</li>
  *   <li>Strict return-type validation against {@link MethodRef} reflection (root only).</li>
  *   <li>Root invariants (Connection wrapper rejection, {@code Sources} parameter rejection).</li>
- *   <li>Errors-channel lift on a polymorphic-of-{@code @error} return type, with the
- *       byte-identical "polymorphic-not-supported" rejection as the fallback.</li>
+ *   <li>Errors-channel lift on a polymorphic-of-{@code @error} return type, with a
+ *       {@link Resolved.Polymorphic} resolution (R365, route (a)) as the non-errors fallback.</li>
  * </ul>
  *
  * <p>Each classify arm projects {@link Resolved.Success} into its specific {@code GraphitronField}
@@ -65,8 +65,11 @@ final class ServiceDirectiveResolver {
      *   <li>{@link ErrorsLifted} — the polymorphic return type lifted into an
      *       {@code ErrorsField} (or a structural rejection of the lift). The carried
      *       {@link GraphitronField} is the caller's terminal value for this arm.</li>
+     *   <li>{@link Polymorphic} — a multitable interface/union return resolved to route (a)'s
+     *       record-class-dispatch fetcher (R365). Carries the {@link MethodRef} and the typed
+     *       {@link ReturnTypeRef.PolymorphicReturnType}; the classify site attaches participants.</li>
      *   <li>{@link Rejected} — every error path: directive-parse failure, method-reflection
-     *       failure, root-invariants failure, polymorphic-not-supported. Carries the
+     *       failure, root-invariants failure. Carries the
      *       {@link RejectionKind} and message the caller surfaces verbatim.</li>
      * </ul>
      */
@@ -78,6 +81,14 @@ final class ServiceDirectiveResolver {
         record TableBound(ReturnTypeRef.TableBoundReturnType returnType, MethodRef method) implements Success {}
         record Result(ReturnTypeRef.ResultReturnType returnType, MethodRef method) implements Success {}
         record Scalar(ReturnTypeRef.ScalarReturnType returnType, MethodRef method) implements Success {}
+        /**
+         * A multitable interface/union return (R365, route (a)). The service hands back a
+         * PK-populated {@code TableRecord} per branch; the fetcher dispatches on each returned
+         * record's runtime class to pick the participant, then auto-fetches the selected columns
+         * by PK. The participant set is attached at the classify site from the resolved
+         * interface/union type.
+         */
+        record Polymorphic(ReturnTypeRef.PolymorphicReturnType returnType, MethodRef method) implements Success {}
         /** Polymorphic return type lifted to an {@code ErrorsField} (or rejected by lift rules). */
         record ErrorsLifted(GraphitronField field) implements Resolved {}
         /** Any failed resolution path; caller surfaces as {@code UnclassifiedField}. */
@@ -219,9 +230,12 @@ final class ServiceDirectiveResolver {
             case ReturnTypeRef.ScalarReturnType s -> new Resolved.Scalar(s, method);
             case ReturnTypeRef.PolymorphicReturnType p -> {
                 GraphitronField lifted = fb.liftToErrorsField(fieldDef, parentTypeName, p);
+                // The all-@error nullable-list "errors channel" still lifts as before; route (a)
+                // (R365) widens the non-errors arm so a multitable interface/union return resolves
+                // to a polymorphic-return arm instead of the old "not yet supported" rejection.
                 yield lifted != null
                     ? new Resolved.ErrorsLifted(lifted)
-                    : new Resolved.Rejected(Rejection.deferred("@service returning a polymorphic type is not yet supported", ""));
+                    : new Resolved.Polymorphic(p, method);
             }
         };
     }

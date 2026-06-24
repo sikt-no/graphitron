@@ -3253,6 +3253,21 @@ class FieldBuilder {
             Rejection.deferred("fields on '" + parentTypeName + "' (Subscription is not supported)", ""));
     }
 
+    /**
+     * Resolves the participant set for a multitable interface/union return type, used by the
+     * route (a) {@code @service}-polymorphic classify arms. Reads the same participant list that
+     * {@link QueryField.QueryInterfaceField} / {@link QueryField.QueryUnionField} carry, off the
+     * resolved {@link InterfaceType} / {@link UnionType} verdict. Returns an empty list when the
+     * name resolves to neither (defensive; the resolver only reaches a polymorphic arm for an
+     * interface/union return type).
+     */
+    private List<no.sikt.graphitron.rewrite.model.ParticipantRef> polymorphicParticipants(String typeName) {
+        var verdict = typeBuilder.lookAheadVerdict(typeName);
+        if (verdict instanceof InterfaceType it) return it.participants();
+        if (verdict instanceof UnionType ut) return ut.participants();
+        return List.of();
+    }
+
     private GraphitronField classifyQueryField(GraphQLFieldDefinition fieldDef, String parentTypeName) {
         String name = fieldDef.getName();
         SourceLocation location = locationOf(fieldDef);
@@ -3276,6 +3291,10 @@ class FieldBuilder {
                 case ServiceDirectiveResolver.Resolved.Scalar s ->
                     buildServiceField(s.returnType(), s.method(), parentTypeName, name, location, fieldDef, (ch, smc) ->
                         new QueryField.QueryServiceRecordField(parentTypeName, name, location, s.returnType(), smc, ch));
+                case ServiceDirectiveResolver.Resolved.Polymorphic p ->
+                    buildServiceField(p.returnType(), p.method(), parentTypeName, name, location, fieldDef, (ch, smc) ->
+                        new QueryField.QueryServicePolymorphicField(parentTypeName, name, location, p.returnType(),
+                            polymorphicParticipants(p.returnType().returnTypeName()), smc, ch));
             };
         }
 
@@ -3489,6 +3508,10 @@ class FieldBuilder {
                     yield buildServiceField(s.returnType(), s.method(), parentTypeName, name, location, fieldDef, (ch, smc) ->
                         new MutationField.MutationServiceRecordField(parentTypeName, name, location, s.returnType(), smc, ch));
                 }
+                case ServiceDirectiveResolver.Resolved.Polymorphic p ->
+                    buildServiceField(p.returnType(), p.method(), parentTypeName, name, location, fieldDef, (ch, smc) ->
+                        new MutationField.MutationServicePolymorphicField(parentTypeName, name, location, p.returnType(),
+                            polymorphicParticipants(p.returnType().returnTypeName()), smc, ch));
             };
         }
 
@@ -4534,6 +4557,15 @@ class FieldBuilder {
                             "@service on a record-backed parent is not yet supported; the batch key "
                             + "must be lifted through the parent chain to the rooted @table",
                             "service-record-field"));
+                // R365 route (a) restores polymorphic returns on root @service fields only; a
+                // child @service on a class-backed parent returning an interface/union is doubly
+                // out of scope (record-backed-parent batch key + polymorphic dispatch).
+                case ServiceDirectiveResolver.Resolved.Polymorphic p ->
+                    new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                        Rejection.deferred(
+                            "child @service returning a polymorphic type (interface/union) is not yet supported"
+                            + " — route (a) restores it on root @service fields only",
+                            "polymorphic-entity-service-return"));
             };
         }
 
@@ -5462,6 +5494,15 @@ class FieldBuilder {
                         ch -> new ServiceRecordField(parentTypeName, name, location, s.returnType(),
                             servicePath.elements(), s.method(), sk, lr, ch));
                 }
+                // R365 route (a) restores polymorphic returns on ROOT @service fields only.
+                // Child @service on a @table parent returning an interface/union stays out of
+                // scope (no DataLoader-batched record-class-dispatch path yet); reject at build
+                // time rather than emit a stub, per "Validator mirrors classifier invariants".
+                case ServiceDirectiveResolver.Resolved.Polymorphic p ->
+                    new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.deferred(
+                        "child @service returning a polymorphic type (interface/union) is not yet supported"
+                        + " — route (a) restores it on root @service fields only",
+                        "polymorphic-entity-service-return"));
             };
         }
 

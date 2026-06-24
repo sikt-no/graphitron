@@ -373,6 +373,16 @@ public final class CatalogBuilder {
                     false,
                     null,
                     errorChannelName(f.errorChannel()));
+            case QueryField.QueryServicePolymorphicField f ->
+                // R365 route (a): a @service field returning a multitable interface/union. The
+                // @service nature is the salient hover fact; tableBound=false / tableName=null
+                // mirrors the record variant (the return is a polymorphic type, not a single @table).
+                new FieldClassification.QueryService(
+                    f.serviceMethodCall().fqClassName(),
+                    f.serviceMethodCall().methodName(),
+                    false,
+                    null,
+                    errorChannelName(f.errorChannel()));
 
             // --- MutationField permits ---
             case MutationField.MutationInsertTableField f -> dmlMutation(f.tableInputArg(), no.sikt.graphitron.rewrite.model.DmlKind.INSERT, f.errorChannel());
@@ -402,6 +412,14 @@ public final class CatalogBuilder {
                         ? f.returnType().table().tableName() : null,
                     errorChannelName(f.errorChannel()));
             case MutationField.MutationServiceRecordField f ->
+                new FieldClassification.MutationService(
+                    f.serviceMethodCall().fqClassName(),
+                    f.serviceMethodCall().methodName(),
+                    false,
+                    null,
+                    errorChannelName(f.errorChannel()));
+            case MutationField.MutationServicePolymorphicField f ->
+                // R365 route (a): mutation analogue of QueryServicePolymorphicField.
                 new FieldClassification.MutationService(
                     f.serviceMethodCall().fqClassName(),
                     f.serviceMethodCall().methodName(),

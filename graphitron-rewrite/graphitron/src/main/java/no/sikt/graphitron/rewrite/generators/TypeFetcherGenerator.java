@@ -193,6 +193,7 @@ public class TypeFetcherGenerator {
         QueryField.QueryRoutineTableField.class,
         QueryField.QueryServiceTableField.class,
         QueryField.QueryServiceRecordField.class,
+        QueryField.QueryServicePolymorphicField.class,
         MutationField.MutationInsertTableField.class,
         MutationField.MutationUpdateTableField.class,
         MutationField.MutationDeleteTableField.class,
@@ -205,6 +206,7 @@ public class TypeFetcherGenerator {
         MutationField.MutationBulkDeletePayloadField.class,
         MutationField.MutationServiceTableField.class,
         MutationField.MutationServiceRecordField.class,
+        MutationField.MutationServicePolymorphicField.class,
         ChildField.ServiceTableField.class,
         ChildField.ServiceRecordField.class,
         ChildField.SplitTableField.class,
@@ -440,6 +442,11 @@ public class TypeFetcherGenerator {
                 case QueryField.QueryRoutineTableField f      -> builder.addMethod(buildQueryRoutineFetcher(ctx, f, outputPackage));
                 case QueryField.QueryServiceTableField f      -> builder.addMethod(buildQueryServiceTableFetcher(ctx, f, outputPackage));
                 case QueryField.QueryServiceRecordField f     -> builder.addMethod(buildQueryServiceRecordFetcher(ctx, f, outputPackage));
+                case QueryField.QueryServicePolymorphicField f ->
+                    MultiTablePolymorphicEmitter
+                        .emitServiceMethods(ctx, f.name(), f.serviceMethodCall(), f.participants(),
+                            f.returnType().wrapper().isList(), outputPackage)
+                        .forEach(builder::addMethod);
                 // Stub variants — see STUBBED_VARIANTS
                 case QueryField.QueryTableInterfaceField f    -> builder.addMethod(buildQueryTableInterfaceFieldFetcher(ctx, f, outputPackage));
                 case QueryField.QueryInterfaceField f -> {
@@ -472,6 +479,11 @@ public class TypeFetcherGenerator {
                 case MutationField.MutationUpsertTableField f  -> builder.addMethod(buildMutationUpsertFetcher(ctx, f, outputPackage));
                 case MutationField.MutationServiceTableField f -> builder.addMethod(buildMutationServiceTableFetcher(ctx, f, outputPackage));
                 case MutationField.MutationServiceRecordField f -> builder.addMethod(buildMutationServiceRecordFetcher(ctx, f, outputPackage));
+                case MutationField.MutationServicePolymorphicField f ->
+                    MultiTablePolymorphicEmitter
+                        .emitServiceMethods(ctx, f.name(), f.serviceMethodCall(), f.participants(),
+                            f.returnType().wrapper().isList(), outputPackage)
+                        .forEach(builder::addMethod);
                 case MutationField.MutationDmlRecordField f    -> builder.addMethod(buildMutationDmlRecordFetcher(ctx, f, outputPackage));
                 case MutationField.MutationBulkDmlRecordField f -> builder.addMethod(buildMutationBulkDmlRecordFetcher(ctx, f, outputPackage));
                 case MutationField.MutationUpdatePayloadField f -> builder.addMethod(buildMutationUpdatePayloadFetcher(ctx, f, outputPackage));

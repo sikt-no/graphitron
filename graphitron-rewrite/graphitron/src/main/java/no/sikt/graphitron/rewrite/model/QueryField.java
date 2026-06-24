@@ -28,7 +28,8 @@ public sealed interface QueryField extends RootField
             QueryField.QueryNodeField, QueryField.QueryNodesField,
             QueryField.QueryTableInterfaceField, QueryField.QueryInterfaceField,
             QueryField.QueryUnionField,
-            QueryField.QueryServiceTableField, QueryField.QueryServiceRecordField {
+            QueryField.QueryServiceTableField, QueryField.QueryServiceRecordField,
+            QueryField.QueryServicePolymorphicField {
 
     /** Every {@code QueryField} leaf is on the {@code Query} root, so the source is {@link Source.Root.Query}. */
     @Override default Source source() { return new Source.Root.Query(); }
@@ -49,6 +50,7 @@ public sealed interface QueryField extends RootField
             case QueryNodesField ignored -> new Operation.NodeResolve();
             case QueryServiceTableField f -> OutputField.serviceCall(f.serviceMethodCall());
             case QueryServiceRecordField f -> OutputField.serviceCall(f.serviceMethodCall());
+            case QueryServicePolymorphicField f -> OutputField.serviceCall(f.serviceMethodCall());
         };
     }
 
@@ -66,6 +68,10 @@ public sealed interface QueryField extends RootField
             // Interface / Union (its payload modeled-but-unpopulated this slice); mapping() derives Table.
             case QueryInterfaceField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Interface());
             case QueryUnionField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Union());
+            // Service-polymorphic returns route through the same __typename-column TypeResolver
+            // whether the SDL type is an interface or a union (GraphitronSchemaClassGenerator treats
+            // both identically), so one variant carries both; the shape is Interface for either.
+            case QueryServicePolymorphicField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Interface());
             case QueryNodeField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Interface());
             case QueryNodesField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Interface());
         };
@@ -290,6 +296,38 @@ public sealed interface QueryField extends RootField
     ) implements QueryField, ServiceField, WithErrorChannel {
         @Override public DomainReturnType domainReturnType() {
             return new DomainReturnType.Plain(OutputField.peelToClassName(serviceMethodCall.javaReturnType()));
+        }
+    }
+
+    /**
+     * A root query field backed by a developer-provided service method that returns a multitable
+     * {@link GraphitronType.InterfaceType} or {@link GraphitronType.UnionType} (R365, route (a)).
+     *
+     * <p>The service hands back a PK-populated jOOQ {@code TableRecord} per branch. The emitted
+     * fetcher dispatches on each returned record's runtime class against the participant set
+     * (matching {@link ParticipantRef.TableBound#table()}'s record class), tags the matched
+     * participant's {@code __typename}, and auto-fetches the selected columns by PK against that
+     * participant's table. One variant carries both the interface and union cases: by the time the
+     * participant set is resolved, the implementor-vs-member distinction is fully discharged, and
+     * both route through the same {@code __typename}-column TypeResolver.
+     *
+     * <p>{@code participants} is the resolved participant set, attached at the classify site from
+     * the interface/union type (the same source {@link QueryInterfaceField} uses).
+     */
+    record QueryServicePolymorphicField(
+        String parentTypeName,
+        String name,
+        SourceLocation location,
+        ReturnTypeRef.PolymorphicReturnType returnType,
+        List<ParticipantRef> participants,
+        ServiceMethodCall serviceMethodCall,
+        Optional<ErrorChannel> errorChannel
+    ) implements QueryField, ServiceField, WithErrorChannel {
+        public QueryServicePolymorphicField {
+            participants = List.copyOf(participants);
+        }
+        @Override public DomainReturnType domainReturnType() {
+            return new DomainReturnType.Plain(OutputField.OBJECT_CLASS);
         }
     }
 }

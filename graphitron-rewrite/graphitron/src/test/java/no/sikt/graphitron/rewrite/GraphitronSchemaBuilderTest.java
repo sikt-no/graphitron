@@ -1869,6 +1869,42 @@ class GraphitronSchemaBuilderTest {
         assertThat(tableBound.methodName()).isEqualTo("getLanguage");
     }
 
+    @Test
+    @ProjectionFor({QueryField.QueryServicePolymorphicField.class, MutationField.MutationServicePolymorphicField.class})
+    void servicePolymorphicProjectionCarriesParticipantsAndMethod() {
+        // R365 route (a): a root @service field returning a multitable union resolves to the
+        // polymorphic-return arm (no longer rejected), carrying the resolved participant set and the
+        // service method. Distinct-table participants (film, actor) so record-class dispatch is
+        // well-defined. The Query arm is single cardinality; the Mutation arm is list cardinality.
+        var schema = build("""
+            type Film @table(name: "film") { title: String }
+            type Actor @table(name: "actor") { firstName: String @field(name: "FIRST_NAME") }
+            union FilmOrActor = Film | Actor
+            type Query {
+              searchOne: FilmOrActor
+                @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getFilm"})
+            }
+            type Mutation {
+              searchMany: [FilmOrActor]
+                @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getFilms"})
+            }
+            """);
+
+        var q = schema.field("Query", "searchOne");
+        assertThat(q).isInstanceOf(QueryField.QueryServicePolymorphicField.class);
+        var qp = (QueryField.QueryServicePolymorphicField) q;
+        assertThat(qp.serviceMethodCall().methodName()).isEqualTo("getFilm");
+        assertThat(qp.participants()).hasSize(2);
+        assertThat(qp.returnType().wrapper().isList()).isFalse();
+
+        var m = schema.field("Mutation", "searchMany");
+        assertThat(m).isInstanceOf(MutationField.MutationServicePolymorphicField.class);
+        var mp = (MutationField.MutationServicePolymorphicField) m;
+        assertThat(mp.serviceMethodCall().methodName()).isEqualTo("getFilms");
+        assertThat(mp.participants()).hasSize(2);
+        assertThat(mp.returnType().wrapper().isList()).isTrue();
+    }
+
     // ===== ComputedField =====
 
     enum ComputedFieldCase implements ClassificationCase {

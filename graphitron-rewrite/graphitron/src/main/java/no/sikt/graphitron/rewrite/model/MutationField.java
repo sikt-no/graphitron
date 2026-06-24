@@ -3,6 +3,7 @@ package no.sikt.graphitron.rewrite.model;
 import graphql.language.SourceLocation;
 import no.sikt.graphitron.rewrite.ArgumentRef;
 
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -16,7 +17,8 @@ import java.util.Optional;
  */
 public sealed interface MutationField extends RootField, WithErrorChannel
     permits MutationField.DmlTableField, MutationField.MutationServiceTableField,
-            MutationField.MutationServiceRecordField, MutationField.MutationDmlRecordField,
+            MutationField.MutationServiceRecordField, MutationField.MutationServicePolymorphicField,
+            MutationField.MutationDmlRecordField,
             MutationField.MutationBulkDmlRecordField,
             MutationField.MutationUpdatePayloadField, MutationField.MutationBulkUpdatePayloadField,
             MutationField.MutationDeletePayloadField, MutationField.MutationBulkDeletePayloadField {
@@ -33,6 +35,7 @@ public sealed interface MutationField extends RootField, WithErrorChannel
             case MutationDeleteTableField f -> new Operation.Delete(f.inputArg(), f.deleteRows());
             case MutationServiceTableField f -> OutputField.serviceCall(f.serviceMethodCall());
             case MutationServiceRecordField f -> OutputField.serviceCall(f.serviceMethodCall());
+            case MutationServicePolymorphicField f -> OutputField.serviceCall(f.serviceMethodCall());
             // The record-backed DML carriers read their verb off the DmlKind discriminator.
             case MutationDmlRecordField f -> dmlOperation(f.kind(), f.tableInputArg());
             case MutationBulkDmlRecordField f -> dmlOperation(f.kind(), f.tableInputArg());
@@ -55,6 +58,9 @@ public sealed interface MutationField extends RootField, WithErrorChannel
             case MutationUpsertTableField f -> OutputField.dmlTarget(f.returnExpression());
             case MutationServiceTableField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Table());
             case MutationServiceRecordField f -> OutputField.listOrSingle(f.returnType().wrapper(), new TargetShape.Record());
+            // Same single-variant rationale as QueryServicePolymorphicField: both interface and
+            // union returns route through the shared __typename-column TypeResolver.
+            case MutationServicePolymorphicField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Interface());
             case MutationDmlRecordField f -> OutputField.listOrSingle(f.returnType().wrapper(), new TargetShape.Record());
             case MutationBulkDmlRecordField f -> OutputField.listOrSingle(f.returnType().wrapper(), new TargetShape.Record());
             case MutationUpdatePayloadField f -> OutputField.listOrSingle(f.returnType().wrapper(), new TargetShape.Record());
@@ -282,6 +288,31 @@ public sealed interface MutationField extends RootField, WithErrorChannel
          */
         @Override public DomainReturnType domainReturnType() {
             return new DomainReturnType.TableRecord(OutputField.peelToClassName(serviceMethodCall.javaReturnType()));
+        }
+    }
+
+    /**
+     * A mutation field backed by a developer-provided service method that returns a multitable
+     * {@link GraphitronType.InterfaceType} or {@link GraphitronType.UnionType} (R365, route (a)).
+     * The mutation analogue of {@link QueryField.QueryServicePolymorphicField}: the service hands
+     * back a PK-populated jOOQ {@code TableRecord} per branch, and the emitted fetcher dispatches on
+     * each returned record's runtime class against the participant set, tags {@code __typename}, and
+     * auto-fetches the selected columns by PK. One variant carries both interface and union returns.
+     */
+    record MutationServicePolymorphicField(
+        String parentTypeName,
+        String name,
+        SourceLocation location,
+        ReturnTypeRef.PolymorphicReturnType returnType,
+        List<ParticipantRef> participants,
+        ServiceMethodCall serviceMethodCall,
+        Optional<ErrorChannel> errorChannel
+    ) implements MutationField, ServiceField {
+        public MutationServicePolymorphicField {
+            participants = List.copyOf(participants);
+        }
+        @Override public DomainReturnType domainReturnType() {
+            return new DomainReturnType.Plain(OutputField.OBJECT_CLASS);
         }
     }
 
