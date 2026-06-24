@@ -43,9 +43,10 @@ below, or another) so the restored API matches rather than inventing a new one.
 ## Plan
 
 This is the largest item in the cluster and is design-led, not a localized patch. The route is
-**pinned to (a) — auto-fetch extended to polymorphic returns** (rationale below); a single
-investigation gate (the 9.3 baseline) remains before implementation, and it constrains *fidelity of
-the restored surface*, not the mechanism.
+**pinned to (a) — auto-fetch extended to polymorphic returns** (rationale below). The 9.3-baseline
+fidelity gate that previously blocked sign-off is **confirmed by the maintainer** (see below): route
+(a)'s bare interface/union return faithfully restores the 9.3 contract, so the design is complete and
+`depends-on` stays empty.
 
 ### Pinned route: (a) auto-fetch of `@service`-returned records, extended to polymorphic returns
 
@@ -73,22 +74,15 @@ Route (b) is retained as a **follow-up**, not an alternative: once R366 + R367 l
 `errors`-envelope shape falls out on top of route (a) and can be added then. It is not on this item's
 critical path.
 
-### Remaining gate before implementation: confirm the 9.3 baseline (fidelity, not mechanism)
+### 9.3 baseline: confirmed by maintainer
 
-The mechanism is settled; what must still be captured is the *exact restored surface* so 10.x matches
-9.3 rather than inventing a new contract. This is an investigation gate, not a design fork — capture,
-before writing code:
-
-1. Which return shape 9.3 actually accepted: the interface/union directly (single? list?), a union
-   with a `@record` success carrier, or a `{ field, errors }` payload object.
-2. The resolver 9.3 generated for it (how it dispatched to the concrete type, whether it auto-fetched
-   or required the service to return a fully-populated record).
-3. Whether 9.3 supported the typed-error envelope on this shape, or only the bare polymorphic return.
-
-If 9.3's accepted shape was the bare interface/union return, route (a) restores it directly. If 9.3's
-shape was the `{ field, errors }` payload, that is route (b) territory and this item gains
-`depends-on: R366, R367` — so the baseline finding is also what decides whether `depends-on` stays
-empty.
+The mechanism was always settled; what had to be confirmed was the *exact restored surface* so 10.x
+matches 9.3 rather than inventing a new contract. **Confirmed (2026-06-24, maintainer):** route (a)'s
+bare interface/union return is the faithful restoration of the 9.3 behaviour. The accepted shape is
+the interface/union returned directly (not the `{ field, errors }` payload object), so this item does
+**not** take `depends-on: R366, R367`; the payload shape (route (b)) remains a separate follow-up.
+With the surface confirmed, this is no longer design-led — it is implementation-ready pending a
+Spec → Ready sign-off by a fresh session.
 
 ### Implementation (route (a))
 
@@ -155,8 +149,10 @@ as the mechanism — it has no hard dependency, reuses the multitable query path
 resolution, and leaves the union-member and dangling-payload guards untouched — and recast route (b)
 as a post-R366/R367 follow-up rather than a live alternative. The remaining 9.3-baseline gate was
 narrowed from "choose the mechanism" to "confirm the restored surface's fidelity (and whether it
-forces `depends-on: R366, R367`)". The baseline still requires a real 9.3 artifact to confirm, so this
-stays in Spec; a fresh session signs it off to Ready once the baseline is captured.
+forces `depends-on: R366, R367`)". The 9.3 baseline is now **confirmed by the
+maintainer** (route (a)'s bare interface/union return), closing the last open gate. The design is
+complete; the item stays in Spec only because the Spec → Ready sign-off must come from a session other
+than this one (which authored these revisions), per the reviewer rule.
 
 Also scoped in: a discriminability rule for route (a) — participants must be distinguishable, by
 distinct table (record-class dispatch) or by `@discriminator` when they share a table; same-table
