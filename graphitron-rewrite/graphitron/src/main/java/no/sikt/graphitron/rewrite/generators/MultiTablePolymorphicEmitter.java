@@ -74,6 +74,7 @@ public final class MultiTablePolymorphicEmitter {
 
     private static final ClassName ARRAY_LIST          = ClassName.get("java.util", "ArrayList");
     private static final ClassName LINKED_HASH_MAP     = ClassName.get("java.util", "LinkedHashMap");
+    private static final ClassName COLLECTIONS         = ClassName.get("java.util", "Collections");
     private static final ClassName MAP                 = ClassName.get("java.util", "Map");
     private static final ClassName FIELD               = ClassName.get("org.jooq", "Field");
     private static final ClassName SORT_FIELD          = ClassName.get("org.jooq", "SortField");
@@ -826,6 +827,19 @@ public final class MultiTablePolymorphicEmitter {
      * {@code rows<Field>(List<RowN<…>>, env)} batch loader returning {@code List<List<Record>>}
      * (one bucket per parent in the batch). Same async-tail shape as the connection arm; only the
      * value type differs ({@code List<Record>} per parent vs. {@code ConnectionResult}).
+     *
+     * <p>The load site forks on the parent key's
+     * {@link no.sikt.graphitron.rewrite.model.SourceKey.Cardinality}, matching what
+     * {@link GeneratorUtils#buildRecordParentKeyExtraction} declared:
+     * {@link no.sikt.graphitron.rewrite.model.SourceKey.Cardinality#ONE} readers (catalog-FK
+     * {@code ColumnRead} on a {@code @table} parent, accessor-single on a record parent) declare a
+     * single {@code key} and dispatch {@code loader.load(key, env)};
+     * {@link no.sikt.graphitron.rewrite.model.SourceKey.Cardinality#MANY} readers (accessor-many,
+     * produced-record-many on a Pojo / {@code @record} carrier) declare a {@code List<key> keys}
+     * and dispatch {@code loader.loadMany(keys, …)}, then concat the one-bucket-per-element
+     * {@code List<List<Record>>} into the field's single flat {@code List<Record>}. Without this
+     * fork the MANY arm emitted {@code loader.load(key, env)} against an out-of-scope loop-local
+     * {@code key} and failed javac (R366).
      */
     private static MethodSpec buildBatchedListFetcher(
             TypeFetcherEmissionContext ctx,
@@ -866,10 +880,26 @@ public final class MultiTablePolymorphicEmitter {
 
         builder.addCode(GeneratorUtils.buildRecordParentKeyExtraction(parentSourceKey, parentResultType));
 
-        builder.addCode(CodeBlock.builder()
-            .add("return loader.load(key, env)\n")
-            .add("    ").add(asyncWrapTail(valueType, outputPackage)).add(";\n")
-            .build());
+        // Dispatch on the parent key's cardinality, mirroring how
+        // TypeFetcherGenerator.buildRecordBasedDataFetcher branches load vs loadMany. The key
+        // extraction above declares a single {@code key} for the ONE readers (ColumnRead,
+        // AccessorCall-single) and a {@code List<key> keys} for the MANY readers
+        // (AccessorCall-many, ProducedRecordRead-many); the load site must match.
+        if (parentSourceKey.cardinality() == SourceKey.Cardinality.MANY) {
+            // loadMany yields one List<Record> bucket per element key (the loader value is
+            // List<Record>, not Record, on this polymorphic path). The field surface is a single
+            // flat list, so concat the per-element buckets in key order before the async tail.
+            builder.addCode(CodeBlock.builder()
+                .add("return loader.loadMany(keys, $T.nCopies(keys.size(), env))\n", COLLECTIONS)
+                .add("    .thenApply(buckets -> buckets.stream().flatMap($T::stream).toList())\n", LIST)
+                .add("    ").add(asyncWrapTail(valueType, outputPackage)).add(";\n")
+                .build());
+        } else {
+            builder.addCode(CodeBlock.builder()
+                .add("return loader.load(key, env)\n")
+                .add("    ").add(asyncWrapTail(valueType, outputPackage)).add(";\n")
+                .build());
+        }
 
         return builder.build();
     }

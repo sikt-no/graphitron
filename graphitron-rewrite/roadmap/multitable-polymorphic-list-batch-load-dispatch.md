@@ -1,7 +1,7 @@
 ---
 id: R366
 title: "Emit batch (loadMany) dispatch for list-cardinality polymorphic @splitQuery on record parents"
-status: Ready
+status: In Progress
 bucket: bug
 priority: 4
 theme: interface-union
