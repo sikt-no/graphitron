@@ -135,6 +135,35 @@ already exists, so leaning on it is preferred over inventing a new discriminator
 Front-matter `depends-on` stays empty under route (a). Wire `depends-on: R366, R367` only if the 9.3
 baseline forces the payload shape (route (b)).
 
+## Tests
+
+- **Pipeline tier (positive, interface + union).** A `@service` field returning a multitable
+  interface, and a second returning a union, over *distinct-table* participants, each classify into a
+  resolved polymorphic-return arm (no longer `Resolved.Rejected`) carrying the participant set and the
+  service method, and generate a fetcher `TypeSpec` that dispatches on the returned record's runtime
+  class against each `ParticipantRef.TableBound.table().recordClass()`, sets `__typename` to the
+  matched participant, and auto-fetches selected columns by PK against that participant's table. Both
+  single and list cardinality.
+- **Pipeline tier (validation floor).** An interface/union whose participant set maps two types to the
+  *same* table with no `@discriminator` fails classification/validation with the cited build error
+  ("... maps types '`<A>`' and '`<B>`' to the same table '`<T>`' with no `@discriminator` ..."). This
+  test is the live pin for the new invariant (per "Validator mirrors classifier invariants"); it must
+  fail when the floor is relaxed. Assert it fires from the `@service`-return arm *and* from
+  `validateQueryInterfaceField` / `validateQueryUnionField` (the shared R363 query path).
+- **Execution tier.** A `@service` mutation that returns the concrete PK-populated `TableRecord` per
+  branch resolves to the correct participant, exposes the right `__typename`, and auto-fetches the
+  selected columns against real PostgreSQL, returning the polymorphic entity end-to-end (the 9.3
+  regression actually works). Exercise at least two distinct-table branches so a misdispatch is
+  observable.
+- **Execution tier (conditional, only if same-table `@discriminator` dispatch is taken in scope here
+  rather than deferred).** Two same-table participants carrying `@discriminate(on:)` +
+  `@discriminator(value:)` dispatch by the discriminator column value read off the returned record.
+  Omit if the implementer defers same-table dispatch to a follow-up (the validation floor above still
+  applies).
+
+Phrase any test the implementer adds as code it creates, not as an already-existing assertion, per
+"Documentation names only live tests/code".
+
 ## Cross-links
 
 - R366 (list-cardinality polymorphic `@splitQuery` emits non-compiling code) and R367
@@ -158,3 +187,21 @@ Also scoped in: a discriminability rule for route (a) — participants must be d
 distinct table (record-class dispatch) or by `@discriminator` when they share a table; same-table
 participants with no `@discriminator` are a build-time validation error rather than a silent
 misdispatch. This also guards R363's query path over the same interfaces.
+
+## Spec-review revisions (2026-06-24, second pass)
+
+Reviewer (Spec gate, session ≠ prior committer) verified all code citations resolve as named
+(`ServiceDirectiveResolver.projectReturnType` reject at :224, `TypeBuilder.java` :767 / :918 / :753-757
+/ :1337, `GraphitronSchemaBuilder.rejectDanglingTypeReferences` :584-593, `ParticipantRef.TableBound`
+with `table().recordClass()` / `typeName()` / `discriminatorValue`, the `validateQueryInterfaceField`
+/ `validateQueryUnionField` validator arms) and confirmed the route-(a) pin, the empty `depends-on`,
+and the closed 9.3-baseline gate are sound. The item was **held in Spec for one revision**: it carried
+no `## Tests` section, unlike both sibling specs (R363, R367) at comparable stages, and it introduces a
+*new build-time invariant* (same-table participants without `@discriminator` → validation error) that
+the "Validator mirrors classifier invariants" and broader "Documentation names only live tests/code"
+principles require a live test to pin. Added a `## Tests` section (pipeline positive for
+interface + union over distinct tables, pipeline validation-floor pin for the same-table-no-discriminator
+error from both the `@service`-return and query arms, execution-tier end-to-end for the 9.3 regression,
+and a conditional execution test for same-table `@discriminator` dispatch). The design is otherwise
+complete; the next `Spec → Ready` sign-off must come from a session other than this one (which authored
+this revision), per the reviewer rule.
