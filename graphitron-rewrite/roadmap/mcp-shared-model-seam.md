@@ -1,7 +1,7 @@
 ---
 id: R361
 title: "MCP shared-model seam: hand the live Workspace into GraphitronMcpServer and declare the tools capability"
-status: Spec
+status: Ready
 bucket: feature
 theme: lsp
 depends-on: []
