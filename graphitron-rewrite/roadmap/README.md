@@ -25,7 +25,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R45` | Multi-tenant routing on top of the schema-driven ExecutionInput factory | Spec | 2026-05-20 | [plan](tenant-routing-and-execution-input.md) |
 | `R273` | Source NodeId metadata from @node + catalog PK (inferred from `implements Node`), and settle wrong-type/malformed mismatch semantics, retiring the legacy __NODE bare-ID arm | Spec | 2026-06-02 | [plan](nodeid-skip-mismatch-error-surfacing.md) |
 | `R347` | Consolidate graphitron-lsp navigation, dispatch, and result-building | In Progress | 2026-06-19 | [plan](lsp-structural-consolidation.md) |
-| `R365` | Support returning a polymorphic entity (interface/union) from a @service mutation | In Progress | 2026-06-24 | [plan](polymorphic-entity-service-return.md) |
+| `R365` | Support returning a polymorphic entity (interface/union) from a @service mutation | In Review | 2026-06-24 | [plan](polymorphic-entity-service-return.md) |
 | `R332` | Mark @table on input types as deprecated (signal ahead of R97 removal) | Spec | 2026-06-22 <sub>created 2026-06-18</sub> | [plan](table-on-input-deprecation-signal.md) |
 | `R13` | Faceted search on `@asConnection` | Spec |  | [plan](faceted-search.md) |
 | `R63` | Type UPSERT dialect requirement on the model | Spec |  | [plan](dml-dialect-requirement-on-model.md) |
@@ -165,7 +165,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 ### interface-union
 
 - `R363` [**Lower @field filter inputs and @condition onto multitable-interface queries**](multitable-interface-query-filter-lowering.md) — Spec, bug
-- `R365` [**Support returning a polymorphic entity (interface/union) from a @service mutation**](polymorphic-entity-service-return.md) — In Progress, bug
+- `R365` [**Support returning a polymorphic entity (interface/union) from a @service mutation**](polymorphic-entity-service-return.md) — In Review, bug
 - `R370` [**Record-backed parent with a nested backing class emits a non-compiling $-qualified cast**](nested-backing-class-accessor-cast.md) — Backlog, bug
 
 ### nodeid
