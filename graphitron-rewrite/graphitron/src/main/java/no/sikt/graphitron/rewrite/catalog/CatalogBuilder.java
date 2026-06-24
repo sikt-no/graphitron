@@ -837,6 +837,87 @@ public final class CatalogBuilder {
     }
 
     /**
+     * R362 — builds the frozen {@link CatalogFacts} projection the {@code catalog.tables} /
+     * {@code catalog.describe} MCP tools read. Runs in the same build pass as {@link #build}, while
+     * the codegen loader is open, and reduces every live jOOQ handle to resolved-immutable values
+     * (see {@link CatalogFacts}'s load-bearing invariant). Independent of the assembled GraphQL
+     * schema: this is raw DB truth, so it takes only the {@link JooqCatalog}.
+     *
+     * <p>Single pass over the catalog's tables (the same order {@link JooqCatalog#allTableEntries}
+     * fixes), plus one catalog-wide FK enumeration grouped by endpoint so each table's incoming
+     * edges are derived without a per-table O(tables) rescan. Tables are keyed by their
+     * schema-qualified SQL name (the stable table ID); FK endpoints name neighbours by that same ID.
+     */
+    public static CatalogFacts buildCatalogFacts(JooqCatalog jooq) {
+        var entries = jooq.allTableEntries();
+
+        // One catalog-wide FK enumeration, grouped by schema-qualified endpoint. Outgoing edges key
+        // off the FK's source table; incoming edges off its target table. Reducing here avoids the
+        // O(tables) inbound rescan-per-table CompletionData's buildReferencesFor does.
+        var outgoingBySource = new LinkedHashMap<String, List<CatalogFacts.OutgoingForeignKey>>();
+        var incomingByTarget = new LinkedHashMap<String, List<CatalogFacts.IncomingForeignKey>>();
+        for (var entry : entries) {
+            for (var fk : jooq.foreignKeyFactsOf(entry.table())) {
+                outgoingBySource
+                    .computeIfAbsent(fk.sourceTable(), k -> new ArrayList<>())
+                    .add(new CatalogFacts.OutgoingForeignKey(
+                        fk.constraintName(), fk.targetTable(), fk.columns(), fk.targetColumns()));
+                incomingByTarget
+                    .computeIfAbsent(fk.targetTable(), k -> new ArrayList<>())
+                    .add(new CatalogFacts.IncomingForeignKey(
+                        fk.constraintName(), fk.sourceTable(), fk.columns(), fk.targetColumns()));
+            }
+        }
+
+        var tables = new LinkedHashMap<String, CatalogFacts.Table>();
+        for (var entry : entries) {
+            var table = entry.table();
+            String schema = table.getSchema().getName();
+            String name = table.getName();
+            String qualified = schema + "." + name;
+
+            var columns = jooq.columnFactsOf(table).stream()
+                .map(c -> new CatalogFacts.Column(
+                    c.sqlName(), c.javaName(), c.sqlType(), c.nullable(), optional(c.comment())))
+                .toList();
+
+            var keys = jooq.candidateKeys(table);
+            Optional<CatalogFacts.Key> primaryKey = keys.stream()
+                .filter(JooqCatalog.KeyEntry::primary)
+                .findFirst()
+                .map(CatalogBuilder::toKey);
+            var uniqueKeys = keys.stream()
+                .filter(k -> !k.primary())
+                .map(CatalogBuilder::toKey)
+                .toList();
+
+            var indexes = jooq.indexFactsOf(table).stream()
+                .map(i -> new CatalogFacts.Index(i.name(), i.columns()))
+                .toList();
+
+            var foreignKeys = new CatalogFacts.ForeignKeys(
+                outgoingBySource.getOrDefault(qualified, List.of()),
+                incomingByTarget.getOrDefault(qualified, List.of()));
+
+            tables.put(qualified, new CatalogFacts.Table(
+                schema, name, optional(table.getComment()),
+                columns, primaryKey, uniqueKeys, indexes, foreignKeys));
+        }
+        return new CatalogFacts(tables);
+    }
+
+    private static CatalogFacts.Key toKey(JooqCatalog.KeyEntry key) {
+        return new CatalogFacts.Key(
+            key.keyName(),
+            key.columns().stream().map(JooqCatalog.ColumnEntry::sqlName).toList());
+    }
+
+    /** Empty for {@code null} / blank so absent comments degrade to omitted, not empty-string-valued. */
+    private static Optional<String> optional(String value) {
+        return value == null || value.isBlank() ? Optional.empty() : Optional.of(value);
+    }
+
+    /**
      * Walks every {@code GraphQLObjectType} in {@code assembled} and records
      * pre-deduction values from each one's {@code @node} directive. Presence
      * in the returned map is the predicate the LSP's {@code @nodeId(typeName:)}

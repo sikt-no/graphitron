@@ -2,4 +2,6 @@ You are connected to a live `mvn graphitron:dev` session for a graphitron projec
 
 graphitron is a code generator: it turns a GraphQL schema plus jOOQ-generated database models into Java resolvers. The developer authors `.graphqls` schema files and graphitron regenerates the Java sources on every save. Alongside this MCP server, the dev session runs a language server (LSP) on a loopback port that backs schema authoring in the editor: diagnostics, hover, completion, and go-to-definition between the schema and the generated Java.
 
+To discover the database the schema wires to, use the `catalog.tables` tool (list tables, with optional schema and SQL-name filters, paged via an opaque cursor) and the `catalog.describe` tool (one table's columns, keys, indexes, and foreign keys in and out). SQL names are the discovery keys, and tables are identified by their schema-qualified SQL name. Table and column comments surface only when the project's jOOQ codegen ran with comments enabled, so a name-only result reflects codegen configuration rather than a missing database comment.
+
 Run the `about` prompt for an explainer of the project and the dev loop. The graphitron documentation site is the reference for the directive vocabulary, the generation pipeline, and the schema conventions.
