@@ -106,6 +106,105 @@ class AbstractRewriteMojoTest {
         assertThat(roots).containsExactly(real.toAbsolutePath().normalize());
     }
 
+    @Test
+    void generatedSourceRoots_discoversExistingSubdirsOnDisk(@TempDir Path root) throws Exception {
+        // target/generated-sources/{jooq,graphitron,annotations} all exist on disk; a stray
+        // file under generated-sources is not a root; the result is the three dirs, sorted.
+        Path target = root.resolve("target");
+        Path jooq = Files.createDirectories(target.resolve("generated-sources/jooq"));
+        Path graphitron = Files.createDirectories(target.resolve("generated-sources/graphitron"));
+        Path annotations = Files.createDirectories(target.resolve("generated-sources/annotations"));
+        Files.writeString(target.resolve("generated-sources/marker.txt"), "x");
+        var project = projectWithBuild(target.toString(), null);
+
+        var roots = AbstractRewriteMojo.generatedSourceRoots(project);
+
+        assertThat(roots).containsExactlyInAnyOrder(
+            annotations.toString(), graphitron.toString(), jooq.toString());
+        assertThat(roots).doesNotContain(target.resolve("generated-sources/marker.txt").toString());
+    }
+
+    @Test
+    void generatedSourceRoots_emptyWhenNoBuildOrNoGeneratedSourcesDir(@TempDir Path root) {
+        // No build at all (hand-built unit-tier project) -> empty.
+        assertThat(AbstractRewriteMojo.generatedSourceRoots(new MavenProject())).isEmpty();
+        // A build directory with no generated-sources subdir -> empty.
+        var project = projectWithBuild(root.resolve("target").toString(), null);
+        assertThat(AbstractRewriteMojo.generatedSourceRoots(project)).isEmpty();
+    }
+
+    @Test
+    void compileSourceRoots_includeGeneratedSourcesAbsentFromCompileSourceRoots(@TempDir Path root) throws Exception {
+        // The core regression: a module whose getCompileSourceRoots() carries only
+        // src/main/java but whose target/generated-sources/jooq exists on disk (the
+        // sibling never built this session). The resolved walked roots must include
+        // the jooq dir; pre-fix they would be just src/main/java.
+        Path src = Files.createDirectories(root.resolve("src/main/java"));
+        Path target = root.resolve("target");
+        Path jooq = Files.createDirectories(target.resolve("generated-sources/jooq"));
+        var project = projectWithBuild(target.toString(), null);
+        project.addCompileSourceRoot(src.toString());
+
+        var walked = AbstractRewriteMojo.collectExistingDirs(
+            List.of(project), AbstractRewriteMojo::compileSourceRootsOf);
+
+        assertThat(walked).contains(
+            src.toAbsolutePath().normalize(), jooq.toAbsolutePath().normalize());
+    }
+
+    @Test
+    void compileSourceRoots_dedupGeneratedRootAlreadyRegisteredByPlugin(@TempDir Path root) throws Exception {
+        // Full-lifecycle goal: the plugin already appended target/generated-sources/jooq
+        // to getCompileSourceRoots(). The disk discovery finds the same dir; collectExistingDirs
+        // collapses them so it is walked exactly once (no double-walk).
+        Path target = root.resolve("target");
+        Path jooq = Files.createDirectories(target.resolve("generated-sources/jooq"));
+        var project = projectWithBuild(target.toString(), null);
+        project.addCompileSourceRoot(jooq.toString());
+
+        var walked = AbstractRewriteMojo.collectExistingDirs(
+            List.of(project), AbstractRewriteMojo::compileSourceRootsOf);
+
+        assertThat(walked).containsExactly(jooq.toAbsolutePath().normalize());
+    }
+
+    @Test
+    void unwalkedScannedModules_namesModuleScannedWithNoWalkedSourceRoot(@TempDir Path root) throws Exception {
+        // bare: target/classes exists (scanned) but no source root at all -> reported.
+        Path bareClasses = Files.createDirectories(root.resolve("bare/target/classes"));
+        var bare = projectWithBuild(root.resolve("bare/target").toString(), bareClasses.toString());
+        bare.setGroupId("test"); bare.setArtifactId("bare"); bare.setVersion("1.0");
+
+        // walked: target/classes plus src/main/java -> not reported.
+        Path walkedClasses = Files.createDirectories(root.resolve("walked/target/classes"));
+        Files.createDirectories(root.resolve("walked/src/main/java"));
+        var walked = projectWithBuild(root.resolve("walked/target").toString(), walkedClasses.toString());
+        walked.addCompileSourceRoot(root.resolve("walked/src/main/java").toString());
+        walked.setGroupId("test"); walked.setArtifactId("walked"); walked.setVersion("1.0");
+
+        // generated-only: target/classes plus an on-disk generated-sources/jooq but no
+        // hand-written source root -> NOT reported, because the auto-include covers it (R369).
+        Path genClasses = Files.createDirectories(root.resolve("gen/target/classes"));
+        Files.createDirectories(root.resolve("gen/target/generated-sources/jooq"));
+        var gen = projectWithBuild(root.resolve("gen/target").toString(), genClasses.toString());
+        gen.setGroupId("test"); gen.setArtifactId("gen"); gen.setVersion("1.0");
+
+        var reported = AbstractRewriteMojo.unwalkedScannedModules(List.of(bare, walked, gen));
+
+        assertThat(reported).containsExactly(bare.getId());
+    }
+
+    private static MavenProject projectWithBuild(String directory, String outputDirectory) {
+        var project = new MavenProject();
+        var build = new Build();
+        build.setDirectory(directory);
+        if (outputDirectory != null) {
+            build.setOutputDirectory(outputDirectory);
+        }
+        project.setBuild(build);
+        return project;
+    }
+
     private static ValidationError error(String coordinate, String message, String file, int line, int col) {
         return new ValidationError(coordinate, Rejection.invalidSchema(message),
             new SourceLocation(line, col, file));

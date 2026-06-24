@@ -108,6 +108,46 @@ class SourceWalkerTest {
     }
 
     @Test
+    void disjointGeneratorPackagesKeepTableJumpLocatedNotAmbiguous(@TempDir Path root) throws IOException {
+        // R369 / D1: once graphitron's own output root (target/generated-sources/graphitron)
+        // is walked alongside the jOOQ root, a method that shares a simple name + arity with a
+        // jOOQ table declaration must NOT route the table jump to Ambiguous. It cannot, because
+        // graphitron emits into the consumer's outputPackage, disjoint by construction from the
+        // jOOQ table package, so the (FQN, name, arity) keys never collide. This pins that
+        // disjointness rather than leaving it as an unpinned prose claim.
+        Path jooq = root.resolve("generated-sources/jooq");
+        Path graphitron = root.resolve("generated-sources/graphitron");
+        write(jooq, "com/example/jooq/tables/Actor.java", """
+            package com.example.jooq.tables;
+            /** The ACTOR table. */
+            public class Actor {
+                public Object as(String alias) { return null; }
+            }
+            """);
+        write(graphitron, "com/example/generated/ActorResolver.java", """
+            package com.example.generated;
+            public class ActorResolver {
+                public Object as(String alias) { return null; }
+            }
+            """);
+
+        var index = new SourceWalker().walk(List.of(jooq, graphitron));
+
+        // The table class resolves to a single position: a Located jump.
+        var table = index.classes().get("com.example.jooq.tables.Actor");
+        assertThat(table).isNotNull();
+        assertThat(table.location().uri()).endsWith("Actor.java");
+        // The shared simple name `as(String)` exists under both FQNs, neither dropped to
+        // ambiguous, because the package prefixes differ.
+        var tableMethod = new SourceWalker.MethodKey("com.example.jooq.tables.Actor", "as", 1);
+        var resolverMethod = new SourceWalker.MethodKey("com.example.generated.ActorResolver", "as", 1);
+        assertThat(index.methods()).containsKey(tableMethod).containsKey(resolverMethod);
+        assertThat(index.ambiguousMethods())
+            .as("disjoint output / jOOQ packages keep method keys distinct")
+            .doesNotContain(tableMethod, resolverMethod);
+    }
+
+    @Test
     void doesNotIndexParametersOrLocalsAsFields(@TempDir Path root) throws IOException {
         write(root, "com/example/Scopes.java", """
             package com.example;
