@@ -168,6 +168,59 @@ divergence between hover arms (D2, pre-existing); the shared projected carrier
 - **R233 / R343** (Done): the `lspColumnDispatch` terminal-table resolution that
   D2 deliberately does not adopt for the declaration coordinate.
 
+## Reviewer findings (Spec → Ready, 2026-06-24) — revisions requested
+
+Status stays Spec. The wiring approach is sound and well-motivated, the data
+layer is verified, and D1/D2/D3 are thoughtful. Four issues block hand-off; the
+first two are material.
+
+**F1 (blocking) — `Standalone` dropped from the type-arm overlay contradicts the
+parity invariant.** Design §1 / D1 puts `JooqRecordBacking.Standalone` in the
+"no overlay" bucket with `NoBacking`. But goto's `DeclarationDefinitions.typeNameTarget`
+maps `Standalone -> classTarget(s.fqClassName())` (`DeclarationDefinitions.java:82`):
+goto *jumps into* the standalone jOOQ record class. Under the spec as written,
+hover shows nothing where goto jumps, recreating the exact asymmetry R371 exists
+to remove, for standalone jOOQ records, and making the title's "parity with
+goto-definition" false for that arm. The claim "this is the same switch goto uses,
+so the two arms cannot point at different declarations" (Design §1) is therefore
+not honoured by the enumeration. *Revision:* move `JooqRecordBacking.Standalone`
+into the `classJavadoc(fqClassName)` overlay bucket; only `NoBacking.*` stays
+no-overlay.
+
+**F2 (blocking) — the named resolution method is private.** D1 names
+`Descriptions.classJavadoc(fqn)` as the resolution path for the `fqClassName`-bearing
+arms, but `Descriptions.classJavadoc` is `private` (`Descriptions.java:69`) with
+signature `(String fqn, SourceWalker.Index)`. The only public class-Javadoc entry,
+`Descriptions.ofClass`, takes a `CompletionData.ExternalReference`, which the
+`TypeBackingShape` `fqClassName` arms do not carry. Per "Documentation names only
+live tests/code", a plan must name a callable API. *Revision:* pick the access
+shape (promote `classJavadoc` to public, or add a public `(String fqn, Index)`
+overload) and state it.
+
+**F3 (completeness) — the field arm covers only the column case; the type arm
+covers every backing.** Design §2 / D2 names only `Descriptions.ofColumn`
+(table/column). Goto's `fieldNameTarget` (`DeclarationDefinitions.java:92-118`)
+also resolves `PojoBacking -> accessor method`, `RecordBacking -> component`, and
+`Standalone -> backing class`. The type arm (§1) includes `RecordBacking`/`PojoBacking`;
+the field arm silently omits them, and there is no existing `Descriptions` helper
+for a record-component field Javadoc (`ofColumn` is `Table`/`Column`-keyed).
+*Revision:* either specify per-variant field overlays for goto-parity
+(`PojoBacking -> Descriptions.ofMethod`; `RecordBacking ->` a new component-field
+helper; `Standalone ->` class Javadoc), or explicitly restrict the field-name
+hover to the table/column arm and list the rest as out of scope — and reconcile
+that choice with the type arm, which is currently broader.
+
+**F4 (test adequacy) — the drift guard as worded does not catch the divergence it
+targets.** Test plan bullet 2 asserts hover and goto "resolve the same
+`TypeBackingShape` arm." Both already switch on `built.typeBacking(name)`, so they
+*always* select the same arm; the divergence is in the per-arm outcome (F1).
+*Revision:* assert overlay-presence parity against goto's jump-presence, per
+variant (goto yields a `Location` ⇒ hover yields a non-empty overlay), so F1's
+gap fails the test.
+
+*Minor:* "record-input" in D1's "(`RecordBacking` / `PojoBacking` / record-input)"
+is not a `TypeBackingShape` variant; map it to an existing variant or drop it.
+
 ## Open scoping question for the reviewer
 
 Confirm with the reporter whether the empty hover is on the declaration name
