@@ -724,7 +724,7 @@ public final class CatalogBuilder {
             .filter(r -> r.className().equals(fqClassName))
             .findFirst()
             .map(r -> r.recordComponents().stream()
-                .map(rc -> new TypeBackingShape.MemberSlot(rc.name(), rc.displayType()))
+                .map(rc -> new TypeBackingShape.MemberSlot(rc.name(), rc.displayType(), rc.name()))
                 .toList())
             .orElse(List.of());
         return new TypeBackingShape.RecordBacking(fqClassName, slots);
@@ -756,7 +756,7 @@ public final class CatalogBuilder {
         } else {
             return null;
         }
-        return new TypeBackingShape.MemberSlot(field, method.returnType());
+        return new TypeBackingShape.MemberSlot(field, method.returnType(), method.name());
     }
 
     private static String lowercaseFirst(String s) {

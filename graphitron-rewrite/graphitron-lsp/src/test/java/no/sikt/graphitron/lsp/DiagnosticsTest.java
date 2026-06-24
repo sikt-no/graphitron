@@ -119,8 +119,8 @@ class DiagnosticsTest {
             java.util.Map.of("FilmInput", new no.sikt.graphitron.rewrite.catalog.TypeBackingShape.RecordBacking(
                 "com.example.FilmDto",
                 java.util.List.of(
-                    new no.sikt.graphitron.rewrite.catalog.TypeBackingShape.MemberSlot("filmId", "Integer"),
-                    new no.sikt.graphitron.rewrite.catalog.TypeBackingShape.MemberSlot("title", "String")
+                    new no.sikt.graphitron.rewrite.catalog.TypeBackingShape.MemberSlot("filmId", "Integer", "filmId"),
+                    new no.sikt.graphitron.rewrite.catalog.TypeBackingShape.MemberSlot("title", "String", "title")
                 )
             )),
         Map.of());
@@ -142,7 +142,7 @@ class DiagnosticsTest {
             java.util.List.of(),
             java.util.Map.of("FilmInput", new no.sikt.graphitron.rewrite.catalog.TypeBackingShape.RecordBacking(
                 "com.example.FilmDto",
-                java.util.List.of(new no.sikt.graphitron.rewrite.catalog.TypeBackingShape.MemberSlot("title", "String"))
+                java.util.List.of(new no.sikt.graphitron.rewrite.catalog.TypeBackingShape.MemberSlot("title", "String", "title"))
             )),
         Map.of());
         var diags = compute(file, filmCatalog(), snapshot);

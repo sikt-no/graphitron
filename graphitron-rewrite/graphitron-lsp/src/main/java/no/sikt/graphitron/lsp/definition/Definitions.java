@@ -202,7 +202,7 @@ public final class Definitions {
      * where the recoverable "source exists but isn't on a watched root" case
      * lands); {@code Ambiguous} is a deliberate silent no-jump.
      */
-    private static Optional<Location> resolve(DefinitionTarget target, String fqn) {
+    static Optional<Location> resolve(DefinitionTarget target, String fqn) {
         return switch (target) {
             case DefinitionTarget.Located located -> asLocation(located.location());
             case DefinitionTarget.SourceAbsent ignored -> {
@@ -222,7 +222,7 @@ public final class Definitions {
      * unresolvable table / {@code Keys} class, lands here too). jOOQ fields do
      * not collide on a single overload key, so there is no {@code Ambiguous} arm.
      */
-    private static DefinitionTarget fieldTarget(
+    static DefinitionTarget fieldTarget(
         String declaringClassFqn, String fieldName, SourceWalker.Index sourceIndex
     ) {
         if (declaringClassFqn == null) return new DefinitionTarget.SourceAbsent();

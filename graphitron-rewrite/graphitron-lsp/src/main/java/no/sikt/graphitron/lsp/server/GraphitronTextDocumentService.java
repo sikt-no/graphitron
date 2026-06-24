@@ -12,6 +12,7 @@ import no.sikt.graphitron.lsp.completions.NodeTypeCompletions;
 import no.sikt.graphitron.lsp.completions.ReferenceCompletions;
 import no.sikt.graphitron.lsp.completions.ScalarTypeCompletions;
 import no.sikt.graphitron.lsp.completions.TableCompletions;
+import no.sikt.graphitron.lsp.definition.DeclarationDefinitions;
 import no.sikt.graphitron.lsp.definition.Definitions;
 import no.sikt.graphitron.lsp.definition.IntraSchemaDefinitions;
 import no.sikt.graphitron.lsp.diagnostics.Diagnostics;
@@ -148,6 +149,8 @@ public class GraphitronTextDocumentService implements TextDocumentService {
             return Definitions.compute(workspace.vocabulary(), file, workspace.catalog(),
                     workspace.sourceIndex(), workspace.snapshot(), pos)
                 .or(() -> IntraSchemaDefinitions.compute(workspace, workspace.snapshot(), params.getTextDocument().getUri(), pos))
+                .or(() -> DeclarationDefinitions.compute(file, workspace.catalog(),
+                    workspace.sourceIndex(), workspace.snapshot(), pos))
                 .map(loc -> Either.<List<? extends Location>, List<? extends LocationLink>>forLeft(List.of(loc)))
                 .orElseGet(() -> Either.forLeft(List.of()));
         });
