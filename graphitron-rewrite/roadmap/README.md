@@ -27,8 +27,8 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R45` | Multi-tenant routing on top of the schema-driven ExecutionInput factory | Spec | 2026-05-20 | [plan](tenant-routing-and-execution-input.md) |
 | `R273` | Source NodeId metadata from @node + catalog PK (inferred from `implements Node`), and settle wrong-type/malformed mismatch semantics, retiring the legacy __NODE bare-ID arm | Spec | 2026-06-02 | [plan](nodeid-skip-mismatch-error-surfacing.md) |
 | `R365` | Support returning a polymorphic entity (interface/union) from a @service mutation | Spec | 2026-06-24 | [plan](polymorphic-entity-service-return.md) |
-| `R353` | LSP goto-definition from an SDL type/field name to its backing Java class and member | Ready | 2026-06-24 <sub>created 2026-06-21</sub> | [plan](lsp-backing-class-member-navigation.md) |
 | `R347` | Consolidate graphitron-lsp navigation, dispatch, and result-building | In Progress | 2026-06-19 | [plan](lsp-structural-consolidation.md) |
+| `R353` | LSP goto-definition from an SDL type/field name to its backing Java class and member | In Review | 2026-06-24 <sub>created 2026-06-21</sub> | [plan](lsp-backing-class-member-navigation.md) |
 | `R332` | Mark @table on input types as deprecated (signal ahead of R97 removal) | Spec | 2026-06-22 <sub>created 2026-06-18</sub> | [plan](table-on-input-deprecation-signal.md) |
 | `R367` | Single-cardinality polymorphic child on a record-backed parent (resolve the dangling deferred-rejection doc) | Spec | 2026-06-24 | [plan](polymorphic-child-record-parent-single-cardinality.md) |
 | `R356` | Unify the per-column shared-column overlap analysis across mutation write paths | In Review | 2026-06-24 <sub>created 2026-06-22</sub> | [plan](unify-shared-column-overlap-analysis.md) |
@@ -293,7 +293,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 - `R148` [**Advance SourceLocation past description so diagnostics point at the field, not the doc block**](source-location-skips-description.md) — Backlog, bug
 - `R347` [**Consolidate graphitron-lsp navigation, dispatch, and result-building**](lsp-structural-consolidation.md) — In Progress, architecture
-- `R353` [**LSP goto-definition from an SDL type/field name to its backing Java class and member**](lsp-backing-class-member-navigation.md) — Ready, feature
+- `R353` [**LSP goto-definition from an SDL type/field name to its backing Java class and member**](lsp-backing-class-member-navigation.md) — In Review, feature
 - `R345` [**Surface schema parse failures as LSP red squiggles**](lsp-squiggle-schema-parse-failure.md) — Backlog, feature
 - `R123` [**Parent-context-aware schema coordinates for per-directive Behavior policy**](parent-context-aware-schema-coordinates.md) — Backlog, architecture
 - `R121` [**LSP diagnostic for redundant @splitQuery on @record-parent fields**](lsp-diagnostic-redundant-splitquery-on-record.md) — Backlog, feature

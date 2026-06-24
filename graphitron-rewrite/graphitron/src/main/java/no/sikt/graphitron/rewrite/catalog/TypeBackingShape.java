@@ -37,9 +37,22 @@ public sealed interface TypeBackingShape
      * component / accessor name the SDL author writes into
      * {@code @field(name:)}; {@code displayType} is the rendered Java type
      * (e.g. {@code "String"}, {@code "Integer"}, {@code "List<String>"}) used
-     * in hover output.
+     * in hover output; {@code accessorMethodName} is the arity-0 Java accessor
+     * the member resolves to in source.
+     *
+     * <p>{@code name} and {@code accessorMethodName} coincide for record
+     * components (the component {@code firstName} is its own accessor), but
+     * diverge for POJO bean accessors: a {@code getFirstName()} method projects
+     * to {@code name = "firstName"} (what the author writes) while
+     * {@code accessorMethodName = "getFirstName"} (the Java method goto-definition
+     * keys the source index by). Goto-definition is the only consumer of
+     * {@code accessorMethodName}; completion / hover / diagnostic arms read only
+     * {@code name} / {@code displayType}. The split lives here, at the projection
+     * site that already has both strings, rather than being re-derived by the
+     * LSP from {@code name} (the bean rule has exactly one home, in
+     * {@code CatalogBuilder}).
      */
-    record MemberSlot(String name, String displayType) {}
+    record MemberSlot(String name, String displayType, String accessorMethodName) {}
 
     /**
      * Type backed by a Java {@code record} class. {@code fqClassName} is the

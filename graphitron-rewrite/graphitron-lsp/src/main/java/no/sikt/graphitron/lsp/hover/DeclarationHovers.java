@@ -3,9 +3,8 @@ package no.sikt.graphitron.lsp.hover;
 import io.github.treesitter.jtreesitter.Node;
 import io.github.treesitter.jtreesitter.Point;
 import no.sikt.graphitron.lsp.inlay.LspClassificationLabels;
-import no.sikt.graphitron.lsp.parsing.DeclarationKind;
-import no.sikt.graphitron.lsp.parsing.Nodes;
 import no.sikt.graphitron.lsp.parsing.Positions;
+import no.sikt.graphitron.lsp.parsing.SdlDeclaration;
 import no.sikt.graphitron.lsp.state.WorkspaceFile;
 import no.sikt.graphitron.rewrite.catalog.FieldClassification;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
@@ -16,10 +15,6 @@ import org.eclipse.lsp4j.MarkupKind;
 import org.eclipse.lsp4j.Range;
 
 import java.util.Optional;
-
-import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.FIELD_DEFINITION;
-import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.INPUT_VALUE_DEFINITION;
-import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.NAME;
 
 /**
  * R160 — classification-hover dispatch on SDL declaration coordinates. Parallel to
@@ -52,39 +47,19 @@ public final class DeclarationHovers {
     }
 
     /**
-     * Walks the AST from the leaf {@code pos} sits inside outward, looking for a
-     * declaration-name token of a kind we know how to hover.
+     * Classifies the declaration name {@code pos} sits on, mapping the shared
+     * {@link SdlDeclaration} trigger onto this feature's hover-content family.
+     * The leaf-walk-and-classify itself lives in {@link SdlDeclaration} so the
+     * hover and goto-definition triggers cannot drift apart; this method only
+     * adapts the result.
      */
     public static Optional<DeclarationHover> findContaining(Node root, Point pos, byte[] source) {
-        Node node = root.getDescendant(pos, pos).orElse(null);
-        if (node == null || !NAME.matches(node)) return Optional.empty();
-        Node parent = node.getParent().orElse(null);
-        if (parent == null) return Optional.empty();
-        if (FIELD_DEFINITION.matches(parent) || INPUT_VALUE_DEFINITION.matches(parent)) {
-            return fieldHover(node, parent, source);
-        }
-        if (DeclarationKind.of(parent).isPresent()) {
-            return Optional.of(new DeclarationHover.TypeDeclarationHover(node, Nodes.text(node, source)));
-        }
-        return Optional.empty();
-    }
-
-    private static Optional<DeclarationHover> fieldHover(Node nameNode, Node fieldDef, byte[] source) {
-        Node parent = fieldDef.getParent().orElse(null);
-        while (parent != null) {
-            if (DeclarationKind.of(parent).filter(DeclarationKind::isCarrier).isPresent()) {
-                Node typeName = Nodes.childOfKind(parent, NAME);
-                if (typeName == null) return Optional.empty();
-                String parentTypeName = Nodes.text(typeName, source);
-                String fieldName = Nodes.text(nameNode, source);
-                return Optional.of(new DeclarationHover.FieldDeclarationHover(
-                    nameNode, parentTypeName, fieldName));
-            }
-            Node grandparent = parent.getParent().orElse(null);
-            if (grandparent == null || grandparent.equals(parent)) return Optional.empty();
-            parent = grandparent;
-        }
-        return Optional.empty();
+        return SdlDeclaration.findContaining(root, pos, source).map(decl -> switch (decl) {
+            case SdlDeclaration.TypeName t ->
+                new DeclarationHover.TypeDeclarationHover(t.nameNode(), t.typeName());
+            case SdlDeclaration.FieldName f ->
+                new DeclarationHover.FieldDeclarationHover(f.nameNode(), f.parentTypeName(), f.fieldName());
+        });
     }
 
     private static Optional<Hover> render(

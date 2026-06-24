@@ -164,8 +164,8 @@ class FieldCompletionsTest {
         var snapshot = new LspSchemaSnapshot.Built.Current(
             List.of(),
             Map.of("FilmInput", new TypeBackingShape.RecordBacking("com.example.FilmDto", List.of(
-                new TypeBackingShape.MemberSlot("filmId", "Integer"),
-                new TypeBackingShape.MemberSlot("title", "String")
+                new TypeBackingShape.MemberSlot("filmId", "Integer", "filmId"),
+                new TypeBackingShape.MemberSlot("title", "String", "title")
             ))),
         Map.of());
         var items = run(filmCatalog(), snapshot, source, cursor);
@@ -188,8 +188,8 @@ class FieldCompletionsTest {
         var snapshot = new LspSchemaSnapshot.Built.Current(
             List.of(),
             Map.of("FilmPojo", new TypeBackingShape.PojoBacking("com.example.FilmPojo", List.of(
-                new TypeBackingShape.MemberSlot("filmId", "Integer"),
-                new TypeBackingShape.MemberSlot("title", "String")
+                new TypeBackingShape.MemberSlot("filmId", "Integer", "getFilmId"),
+                new TypeBackingShape.MemberSlot("title", "String", "getTitle")
             ))),
         Map.of());
         var items = run(filmCatalog(), snapshot, source, cursor);

@@ -1,7 +1,7 @@
 ---
 id: R353
 title: "LSP goto-definition from an SDL type/field name to its backing Java class and member"
-status: Ready
+status: In Review
 bucket: feature
 priority: 5
 theme: lsp
@@ -32,10 +32,12 @@ should not have to target. Most of the data already exists: `LspSchemaSnapshot.B
 projects a `TypeBackingShape` per SDL type carrying the backing class FQN
 (`RecordBacking`/`PojoBacking`/`JooqRecordBacking.fqClassName`) or the jOOQ table name
 (`TableBacking`/`JooqRecordBacking.WithTable.tableName`) plus a `MemberSlot(name, displayType)`
-list; and every Java position the dispatch needs (jOOQ table class, column, consumer class, POJO
-accessor) now resolves through the LSP-owned `SourceWalker.Index` via the sealed `DefinitionTarget`
-and the join helpers in `Definitions` (`classTarget` / `methodTarget` are public; the column/FK
-join `fieldTarget` is currently private). The catalog (`CompletionData`) supplies the structural
+list (R353 widens the slot with the member's arity-0 `accessorMethodName`, see D1); and every Java
+position the dispatch needs (jOOQ table class, column, consumer class, record component, POJO
+accessor) resolves through the LSP-owned `SourceWalker.Index` via the sealed `DefinitionTarget`
+and the join helpers in `Definitions` (`classTarget` / `methodTarget` are public; the column /
+record-component / FK join `fieldTarget` and the `resolve` mapper are widened to package-private
+for the new provider). The catalog (`CompletionData`) supplies the structural
 join keys (table names, column names, class FQNs); the index supplies the positions. R349 (commit
 `1db8756`) moved the consumer-class / method positions onto the index, and the jOOQ table/column
 positions have since followed: `CompletionData.SourceLocation` now survives only on `TypeData`
@@ -50,21 +52,23 @@ not a directive argument), goto-definition jumps to the Java the model bound tha
   class; for reflection-bound types (`RecordBacking`/`PojoBacking`/`JooqRecordBacking.Standalone`),
   the consumer's Java class. This is the *only* navigation handle for reflection-bound types,
   which carry no class-naming directive.
-- **Field name** -> the backing member: a jOOQ column, a POJO accessor, or (degraded, see decision
-  D1) the backing class for a Java record component.
+- **Field name** -> the backing member: a jOOQ column, a Java record component, or a POJO accessor
+  (all member-precise, see decision D1). A field on a standalone jOOQ record, which carries no table
+  and no member key, degrades to the backing class.
 
 ## Design
 
 1. **New provider `DeclarationDefinitions`** (sibling to `IntraSchemaDefinitions`, in
    `graphitron-lsp/.../definition/`). It keys on the cursor sitting on a declaration-name token,
-   the same trigger `DeclarationHovers` already uses. It must **not** re-derive "is this leaf a
-   declaration name?" with its own guards: reuse the leaf-walk-and-classify primitive that
-   `DeclarationHovers.findContaining` performs (NAME node -> parent kind -> type-declaration vs.
-   field/input-value declaration). If R347 (LSP structural consolidation, In Progress) lands a
-   shared classifier for this, consume it; otherwise factor the classification out of
-   `DeclarationHovers` into a shared home so the hover trigger and the goto-def trigger cannot
-   drift. The Java-target resolution body stays separate from `IntraSchemaDefinitions`'
-   SDL-target body; only the trigger classification is shared.
+   the same trigger `DeclarationHovers` already uses. The leaf-walk-and-classify primitive (NAME
+   node -> parent kind -> type-declaration vs. field/input-value declaration) is factored out of
+   `DeclarationHovers` into a shared home, `parsing/SdlDeclaration` (sealed over `TypeName` /
+   `FieldName`, with the `findContaining` walk). Both the hover trigger and the goto-def trigger
+   call it, so they cannot drift; `DeclarationHovers.findContaining` becomes a thin adapter mapping
+   `SdlDeclaration` to its hover-content family. (R347, LSP structural consolidation, has not landed
+   a shared classifier; `SdlDeclaration` is the home it would consolidate toward, so coordinate to
+   avoid a third copy of the walk.) The Java-target resolution body stays separate from
+   `IntraSchemaDefinitions`' SDL-target body; only the trigger classification is shared.
 
 2. **Dispatch on the resolved `TypeBackingShape`** from `snapshot.typeBacking(typeName)` via an
    **exhaustive switch with no `default`** (mirroring `Definitions.compute` over `Behavior`), so a
@@ -79,25 +83,34 @@ not a directive argument), goto-definition jumps to the Java the model bound tha
      `Definitions.classTarget(fqClassName, sourceIndex)` join helper R349 added, yielding a
      `DefinitionTarget` (`Located` -> jump, `SourceAbsent` -> empty). The consumer-class position
      no longer lives on `CompletionData`; it is resolved against the LSP-owned `SourceWalker.Index`.
+
+   For every *field name* arm, the bound column / member is named by the field's `@field(name:)`
+   override when it carries one, else by the SDL field name itself; `DeclarationDefinitions` reads the
+   override off the field-definition node (`Directives.findAll` + `TypeContext.stringArg`), falling
+   back to the field name. This is the per-declaration analogue of the directive value
+   `Definitions.fieldDefinition` reads when the cursor is on the `@field(name:)` string.
+
    - *Field name* on `TableBacking` / `JooqRecordBacking.WithTable` -> resolve the enclosing type's
-     table, find the named column, and join `(table.classFqn(), columnName)` against the source index
-     -> `DefinitionTarget`. This is the join `Definitions.fieldDefinition` already performs internally
-     via the private `fieldTarget`. Because `fieldDefinition` is directive-parameterized (it reads the
-     table from the `@field` directive's enclosing type via `DeclarationKind.enclosing(directive.outer())`)
-     and `fieldTarget` is private, this arm needs the column-by-name -> `DefinitionTarget` join exposed:
-     a small refactor factoring the table+column lookup out of `fieldDefinition`, or widening
-     `fieldTarget` to package visibility, so a field-name trigger with no directive cursor can call it.
-     There is no `Column.definition()` accessor.
-   - *Field name* on `PojoBacking` -> the public `Definitions.methodTarget(fqClassName, memberName,
-     catalog, sourceIndex)` join helper, yielding a `DefinitionTarget` (the accessor's
-     `Located` position, or `SourceAbsent` / `Ambiguous`).
-   - *Field name* on `RecordBacking` -> per decision D1.
+     table, find the named column (case-insensitive), and join `(table.classFqn(), columnName)` against
+     the source index via `Definitions.fieldTarget`, the same join `Definitions.fieldDefinition`
+     performs for the `@field` directive arm. `fieldTarget` and `resolve` are widened to
+     package-private so the sibling provider reuses them; there is no `Column.definition()` accessor.
+   - *Field name* on `PojoBacking` -> find the `MemberSlot` whose `name()` matches the bound member,
+     then `Definitions.methodTarget(fqClassName, slot.accessorMethodName(), catalog, sourceIndex)`
+     (the accessor's `Located` position, or `SourceAbsent` / `Ambiguous`). The bean rule maps a
+     `getFirstName` method to the slot `name = "firstName"` the author writes; the source index keys
+     methods by the real method name, so the slot carries `accessorMethodName = "getFirstName"` for
+     the join. See D1.
+   - *Field name* on `RecordBacking` -> find the `MemberSlot` whose `name()` matches the bound member,
+     then `Definitions.fieldTarget(fqClassName, slot.name(), sourceIndex)`. A record component is its
+     own arity-0 accessor and the parse-only `SourceWalker` indexes it as a *field* (the implicit
+     accessor is synthesised later, so it is absent from the parse tree), so the component name is its
+     own field key. Member-precise; see D1.
    - *Field name* on `JooqRecordBacking.Standalone` -> the public `Definitions.classTarget(fqClassName,
      sourceIndex)` join helper (the same target as the type-name arm on this shape). A `Standalone`
      jOOQ record carries no table (so no column join) and no member-key projection (the completion /
-     hover arms decline it: `FieldCompletions` returns an empty list, `Hovers` returns empty), so by
-     the same data-availability reasoning as D1 the field-name cursor degrades to the backing class
-     rather than no-jumping. Pinned by test (D3).
+     hover arms decline it: `FieldCompletions` returns an empty list, `Hovers` returns empty), so the
+     field-name cursor degrades to the backing class rather than no-jumping. Pinned by test (D3).
    - *Field name* / *type name* on `NoBacking.Root` / `NoBacking.UnbackedResult` /
      `NoBacking.UnclassifiedInterface` -> `Optional.empty()` (no Java target).
 
@@ -120,19 +133,32 @@ not a directive argument), goto-definition jumps to the Java the model bound tha
 
 ## Decisions
 
-**D1 - member fidelity for Java records (scope-limiting, decided, not a runtime fork).**
-`CompletionData.RecordComponent` and the projection's `MemberSlot` carry no `SourceLocation`.
-Rather than leave an "add a location or degrade" fork at the dispatch site, R353 *decides*:
-field-name on a `RecordBacking` resolves to the **backing class declaration** (the same
-`Definitions.classTarget(fqClassName, sourceIndex)` target as the type name on that type). POJO
-accessors keep their member-precise position through `Definitions.methodTarget(...)` because the
-source index already keys methods by `(fqn, name, arity)`; the record/POJO divergence reflects a
-real data-availability difference (the `MemberSlot` projection carries no member key for record
-components), not an unmade decision, and is pinned by test (D3). Threading a member-precise
-location through `RecordComponent` (and onto `MemberSlot`) from the source walk is **split into a
-follow-up Backlog item**, which would upgrade the record arm from class-precise to
-component-precise without changing the dispatch
-shape.
+**D1 - member-precise resolution for both records and POJOs, via one widened slot key.**
+Resolution is by source-index *key*, not by a carried `SourceLocation` (the R349 contract), so the
+relevant question for member precision is whether the slot hands the consumer the key the index is
+keyed by. It does not, as projected: `MemberSlot(name, displayType)` carries the name the SDL author
+writes, which for a POJO bean accessor is the property name (`getFirstName` projects to `firstName`)
+while the source index keys methods by the real method name (`getFirstName`). Passing the slot name
+to `methodTarget` therefore never matches, and the arm silently no-jumps. (The original draft of
+this decision had the record/POJO data-availability difference inverted: it degraded records, which
+in fact resolve cleanly, and left POJOs member-precise, which in fact fail.)
+
+R353 *decides*: widen the slot to `MemberSlot(name, displayType, accessorMethodName)`, populated at
+the one projection site that already holds both strings (`CatalogBuilder.projectPojo` /
+`projectRecord`), so the bean rule keeps its single home and the LSP never re-derives it. Both axes
+are then member-precise:
+
+- **POJO** -> `Definitions.methodTarget(fqClassName, slot.accessorMethodName(), catalog, sourceIndex)`;
+  the index keys the accessor by its real method name and arity 0.
+- **Record** -> `Definitions.fieldTarget(fqClassName, slot.name(), sourceIndex)`; a component is its
+  own arity-0 accessor that the parse-only `SourceWalker` indexes as a *field* (the implicit accessor
+  is synthesised after parsing, so `visitMethod` never sees it; `visitVariable` records the component
+  as a field). For records `name == accessorMethodName`, so the existing field key suffices.
+
+Goto-def is the only consumer of `accessorMethodName`; the completion / hover / diagnostic arms read
+only `name` / `displayType`, so widening the record is backward-compatible for them. This retires the
+follow-up "member-precise record components" Backlog item the prior draft deferred: there is nothing
+left to upgrade. Both arms are pinned by test (D3).
 
 **D2 - builds on R349 (and the table/column position migration that followed it).** R349 (commit
 `1db8756`, Done) decoupled the consumer-class / method positions onto the LSP-owned
@@ -152,17 +178,29 @@ the relationship is "builds on", pinned by R353's own test (D3).
 catalog/snapshot -> resolved `Location`), so the primary signal lives at the pipeline tier
 alongside `IntraSchemaDefinitionTest` / `DefinitionsTest`, asserting the resolved `Location`
 end-to-end against a realistic schema + catalog snapshot. No per-arm unit tests on
-`DeclarationDefinitions` internals. Cases to pin: type name on a `@table` type (-> table class),
-type name on a reflection-bound record/POJO type (-> class, and the `SourceAbsent` -> empty degrade
-when the source root is not walked), field name on a `@table` column (-> column), field name on a
-POJO accessor (-> accessor method),
-field name on a record component (-> backing class, per D1), field name on a `Standalone` jOOQ
-record (-> backing class, the no-table/no-member degrade in design point 2), and a `NoBacking`
-declaration name (-> empty).
+`DeclarationDefinitions` internals. Cases pinned in `DeclarationDefinitionsTest`: type name on a
+`@table` type (-> table class), type name on a reflection-bound record / POJO / standalone-jOOQ type
+(-> class, plus the `SourceAbsent` -> empty degrade when the source root is not walked), field name
+on a `@table` column (-> column), field name with a `@field(name:)` override (-> the overridden
+column), field name on a POJO accessor (-> accessor method), field name on a record component
+(-> component, member-precise per D1), field name on a `Standalone` jOOQ record (-> backing class,
+the no-table/no-member degrade in design point 2), unknown member (-> empty), a `NoBacking`
+declaration name (-> empty), a cursor on a directive argument (-> not a trigger, empty), and an
+unavailable snapshot (-> empty).
+
+## Implementation (landed)
+
+- `graphitron`: `TypeBackingShape.MemberSlot` gains `accessorMethodName`; `CatalogBuilder.projectPojo`
+  passes `method.name()`, `projectRecord` passes `rc.name()`.
+- `graphitron-lsp`: new `parsing/SdlDeclaration` (shared trigger classifier); `DeclarationHovers`
+  reduced to an adapter over it; new `definition/DeclarationDefinitions` (the provider);
+  `Definitions.fieldTarget` / `resolve` widened to package-private; the provider chained into
+  `GraphitronTextDocumentService.definition` via a third `.or()`.
+- Tests: `DeclarationDefinitionsTest` (pipeline, one case per backing shape per axis); `MemberSlot`
+  constructor call sites updated across `FieldCompletionsTest` / `HoversTest` / `DiagnosticsTest`.
 
 ## Out of scope
 
-- Member-precise source locations for Java record components (follow-up Backlog item, see D1).
 - Any change to the directive-argument goto-def in `Definitions` or the SDL-target resolution in
   `IntraSchemaDefinitions`; this item only adds the declaration-name -> Java-target path.
 - Hover / completion / inlay behaviour on declaration names (already covered by `DeclarationHovers`
@@ -170,12 +208,13 @@ declaration name (-> empty).
 
 ## Dependencies
 
-- **R347** (`lsp-structural-consolidation`, In Progress): coordination, **not** a `depends-on`. If
-  R347 lands a shared declaration-name trigger classifier, R353 consumes it (design point 1);
-  otherwise R353 factors the classifier out of `DeclarationHovers` itself. Either path is
-  self-contained, so R353 is not blocked on R347 landing; the `depends-on` was dropped from the
-  front-matter so the README stops rendering R353 as "blocked by" an in-progress item. Coordinate to
-  avoid a third copy of the leaf-walk.
+- **R347** (`lsp-structural-consolidation`, In Progress): coordination, **not** a `depends-on`. R347
+  had not landed a shared declaration-name trigger classifier when R353 shipped, so R353 factored the
+  leaf-walk out of `DeclarationHovers` into `parsing/SdlDeclaration` (design point 1), the home R347's
+  consolidation would otherwise build. The work was self-contained, so R353 was not blocked on R347;
+  the `depends-on` was dropped from the front-matter so the README stops rendering R353 as "blocked
+  by" an in-progress item. R347 should consume `SdlDeclaration` rather than add a third copy of the
+  walk.
 
 ## Builds on
 

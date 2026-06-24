@@ -88,7 +88,7 @@ class HoversTest {
             List.of(),
             java.util.Map.of("FilmInput", new TypeBackingShape.RecordBacking(
                 "com.example.FilmDto",
-                List.of(new TypeBackingShape.MemberSlot("title", "String"))
+                List.of(new TypeBackingShape.MemberSlot("title", "String", "title"))
             )),
         Map.of());
         var hover = Hovers.compute(file, filmCatalog(), snapshot, pos).orElseThrow();
