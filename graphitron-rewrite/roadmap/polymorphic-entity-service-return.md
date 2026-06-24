@@ -54,8 +54,12 @@ the right participant and fetches the rest — no `@splitQuery` payload field, n
 wiring required for the base shape. This is pinned over the alternative for three reasons:
 
 - **Aligns with the documented maintainer stance** ("a `@service` returns PK-populated `TableRecord`s
-  and Graphitron fetches the rest"), and reuses the `__typename` / PK participant-resolution machinery
-  the multitable *query* path already has in `MultiTablePolymorphicEmitter`.
+  and Graphitron fetches the rest"). Participant resolution is *direct*: the returned jOOQ
+  `TableRecord` carries its own type identity, so the concrete participant is read off the record's
+  runtime class (matched against each `ParticipantRef.TableBound.table().recordClass()`). No
+  synthesized `__typename` discriminator column or PK round-trip is needed to *identify* the type —
+  unlike the multitable *query* path, whose discriminator exists only to recover the Java type that
+  UNION-ALL row projection erases.
 - **No hard dependency.** Route (b) (payload field carrying `[Applikasjon] @splitQuery` +
   `errors: [Error]`) depends on **R366** (list-cardinality emit) and **R367** (single-cardinality
   record-parent arm) landing first; route (a) depends on neither, so it can ship independently and
@@ -92,9 +96,16 @@ empty.
 yields `Resolved.Rejected(Rejection.deferred("@service returning a polymorphic type is not yet
 supported", ""))` for the `PolymorphicReturnType` arm whenever `liftToErrorsField` returns null.
 Replace that reject with a resolved polymorphic-return arm that carries the participant set and the
-service method, and emit a fetcher that resolves each returned record to its participant via the
-existing `MultiTablePolymorphicEmitter` `__typename` / PK path. The all-`@error` nullable-list
-"errors channel" (`liftToErrorsField`) continues to lift as today; this widens the *non*-errors arm.
+service method, and emit a fetcher that, for each returned `TableRecord`, **dispatches on its runtime
+record class** against the participant set (`ParticipantRef.TableBound` already pairs
+`table().recordClass()` with `typeName()`) to pick the participant arm, sets the GraphQL `__typename`
+to that participant's type, and auto-fetches the selected columns by PK against that participant's
+table. The Java type of the returned record *is* the discriminator, so this needs neither the query
+path's synthesized `__typename` column nor its PK-based type reconstruction — those exist only because
+UNION-ALL projection erases the Java type, which a returned typed record does not. The participant's
+`table()` is still used, but only for the by-PK auto-fetch, not for type identification. The
+all-`@error` nullable-list "errors channel" (`liftToErrorsField`) continues to lift as today; this
+widens the *non*-errors arm.
 
 Front-matter `depends-on` stays empty under route (a). Wire `depends-on: R366, R367` only if the 9.3
 baseline forces the payload shape (route (b)).
