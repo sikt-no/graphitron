@@ -173,7 +173,7 @@ public final class MultiTablePolymorphicEmitter {
                 participantJoinPaths, parentSourceKey, outputPackage));
         } else {
             methods.add(buildScalarPerParentFetcher(ctx, fieldName, tableBoundParticipants,
-                participantJoinPaths, isList, outputPackage));
+                participantJoinPaths, parentSourceKey, isList, outputPackage));
         }
         for (var participant : tableBoundParticipants) {
             methods.add(buildPerTypenameSelect(fieldName, participant, false,
@@ -324,15 +324,39 @@ public final class MultiTablePolymorphicEmitter {
     /**
      * Child non-list per-parent fetcher. Single-cardinality multi-table polymorphic child fields
      * have nothing to batch (one record per parent invocation; nothing to dedup), so this stays
-     * inline per parent: opens with {@code Record parentRecord = (Record) env.getSource()},
-     * runs stage 1 with per-branch parent-FK {@code WHERE}, dispatches per typename, returns the
-     * single typed Record. List-cardinality children use the DataLoader-batched
-     * {@link #buildBatchedListFetcher} / {@link #buildBatchedListRowsMethod} path instead.
+     * inline per parent, runs stage 1 with per-branch parent-FK {@code WHERE}, dispatches per
+     * typename, and returns the single typed Record. List-cardinality children use the
+     * DataLoader-batched {@link #buildBatchedListFetcher} / {@link #buildBatchedListRowsMethod}
+     * path instead.
+     *
+     * <p>The per-branch {@code WHERE} (see {@link #branchParentFkWhere}) reads the hub-side FK
+     * value off a {@code parentRecord} local whose binding depends on the parent's classification:
+     *
+     * <ul>
+     *   <li><b>Table-backed parent</b> ({@link GraphitronType.JooqTableRecordType}; {@link
+     *       SourceKey.Reader.ColumnRead}): {@code Record parentRecord = (Record) env.getSource()}.
+     *       The parent record is the hub itself; its FK columns are read by name.</li>
+     *   <li><b>Record-backed parent</b> ({@link GraphitronType.PojoResultType} / {@link
+     *       GraphitronType.JavaRecordType}; {@link SourceKey.Reader.AccessorCall} at {@link
+     *       SourceKey.Cardinality#ONE}): {@code Record parentRecord = ((Backing) env.getSource())
+     *       .<accessor>()}, where {@code Backing} and the accessor name come straight off the
+     *       {@link no.sikt.graphitron.rewrite.model.AccessorRef}. The single-cardinality typed
+     *       accessor returns the hub {@code TableRecord} directly; its FK columns are read by name
+     *       exactly as the table-backed arm does. A null accessor return yields a null payload
+     *       (no hub, no polymorphic child).</li>
+     * </ul>
+     *
+     * <p>Mirrors the list arm's {@link GeneratorUtils#buildRecordParentKeyExtraction} accessor
+     * handling, but inline: single cardinality reads the hub record's FK columns directly rather
+     * than projecting a batch key and joining a {@code VALUES} table, so it needs only
+     * {@code parentSourceKey} (the {@code AccessorRef}), not the parent {@code ResultType} the
+     * batched key extraction threads through.
      */
     private static MethodSpec buildScalarPerParentFetcher(
             TypeFetcherEmissionContext ctx,
             String fieldName, List<ParticipantRef.TableBound> participants,
             Map<String, List<JoinStep>> participantJoinPaths,
+            SourceKey parentSourceKey,
             boolean isList, String outputPackage) {
 
         var listOfRecord = ParameterizedTypeName.get(LIST, RECORD);
@@ -344,7 +368,6 @@ public final class MultiTablePolymorphicEmitter {
             .addParameter(ENV, "env");
 
         builder.beginControlFlow("try");
-        builder.addStatement("$T parentRecord = ($T) env.getSource()", RECORD, RECORD);
         builder.addStatement("$T dsl = $L.getDslContext(env)", DSL_CONTEXT, ctx.graphitronContextCall());
 
         if (participants.isEmpty()) {
@@ -358,6 +381,25 @@ public final class MultiTablePolymorphicEmitter {
             builder.addCode(redactCatchArm(outputPackage));
             builder.endControlFlow();
             return builder.build();
+        }
+
+        if (parentSourceKey != null
+                && parentSourceKey.reader() instanceof SourceKey.Reader.AccessorCall ac) {
+            // Record-backed parent: the typed single-cardinality accessor returns the hub
+            // TableRecord whose FK columns branchParentFkWhere reads by name. A null hub means no
+            // polymorphic child for this parent. Reaching here implies cardinality ONE: emitMethods
+            // routes list-cardinality AccessorCall parents to the batched buildBatchedListFetcher,
+            // so the accessor return is a single TableRecord (not a List), assignable to Record.
+            var accessor = ac.accessor();
+            builder.addStatement("$T parentRecord = (($T) env.getSource()).$L()",
+                RECORD, accessor.parentBackingClass(), accessor.methodName());
+            builder.beginControlFlow("if (parentRecord == null)");
+            builder.addStatement("$T payload = ($T) null", RECORD, RECORD);
+            builder.addCode(returnSyncSuccess(valueType, "payload"));
+            builder.endControlFlow();
+        } else {
+            // Table-backed parent: env.getSource() is the hub jOOQ Record itself.
+            builder.addStatement("$T parentRecord = ($T) env.getSource()", RECORD, RECORD);
         }
 
         builder.addCode(buildStage1Block(participants, participantJoinPaths));

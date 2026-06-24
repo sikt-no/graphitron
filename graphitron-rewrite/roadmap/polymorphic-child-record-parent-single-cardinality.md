@@ -1,7 +1,7 @@
 ---
 id: R367
 title: "Single-cardinality polymorphic child on a record-backed parent (resolve the dangling deferred-rejection doc)"
-status: Ready
+status: In Progress
 bucket: feature
 priority: 6
 theme: interface-union
@@ -41,35 +41,38 @@ emit against a record parent.
 
 ## Plan
 
-The reject site spells out the fix (`FieldBuilder.java:5292-5295`): "widen
+The reject site spelled out the fix (`FieldBuilder.java:5292-5295`): "widen
 `MultiTablePolymorphicEmitter.buildScalarPerParentFetcher` to consume parentKey + parentResultType
 analogously to the list arm."
 
-1. **Give the single-cardinality fetcher a record-parent arm.** `buildScalarPerParentFetcher`
-   (`MultiTablePolymorphicEmitter.java:331`) reads parent context as
-   `Record parentRecord = (Record) env.getSource()` and ignores `parentKey` / `parentResultType`, so a
-   Pojo / JavaRecord parent would `ClassCastException`. Thread `parentSourceKey` + `parentResultType`
-   into it (as `buildBatchedListFetcher` already receives them) and extract the key via
-   `GeneratorUtils.buildRecordParentKeyExtraction` for the `ONE`-cardinality readers
-   (`buildFkRowKey`, `buildAccessorKeySingle`, ...) instead of casting the source to `Record`.
-2. **Remove the deferred-rejection arm.** Once the emitter handles the record parent, delete the
-   `!fieldIsList` reject in `FieldBuilder` (`FieldBuilder.java:5284-5296`) so the classifier produces
-   the now-supported shape; the `derivePolymorphicHubSource` call the list arm already uses
-   (line 5297) becomes the single-cardinality path too.
-3. **The dangling pointer is resolved by this file existing** (slug
-   `polymorphic-child-record-parent-single-cardinality`), so the generator's "see
-   graphitron-rewrite/roadmap/...md" link now lands. No message change needed; when the item ships and
-   the file is deleted, swap the `Rejection.deferred` slug for a changelog reference at that time.
+1. **Give the single-cardinality fetcher a record-parent arm.** Shipped.
+   `buildScalarPerParentFetcher` now takes `parentSourceKey` and, when the
+   parent is record-backed (`Reader.AccessorCall`), binds `parentRecord` to the accessor's returned
+   hub `TableRecord` (`((Backing) env.getSource()).<accessor>()`) instead of casting the source to a
+   jOOQ `Record`. A null accessor return yields a null payload. The table-backed arm keeps the
+   `(Record) env.getSource()` cast. The hub record exposes the FK columns `branchParentFkWhere`
+   already reads by name, so the single-cardinality correlation needed no change beyond the parent
+   binding (simpler than the list arm's `VALUES`-join, which exists only to batch).
+2. **Remove the deferred-rejection arm.** Shipped. The `!fieldIsList` reject in `FieldBuilder` is
+   gone; both cardinalities route through `derivePolymorphicHubSource`.
+3. **The dangling pointer is resolved.** The `Rejection.deferred(..., planSlug:
+   "polymorphic-child-record-parent-single-cardinality")` call was the only reference to the slug and
+   was removed with the reject arm, so there is no remaining link to swap for a changelog reference on
+   Done.
 
-Coordinate with R366 (shared `GeneratorUtils` record-parent key-extraction path). Re-bucket to `bug`
-if 9.3 parity confirms this shape worked there.
+Tests: the two pipeline-tier deferral assertions
+(`RecordParentMultiTablePolymorphicPipelineTest.child{Interface,Union}Field_recordParent_accessorKeyedSingle`)
+now assert successful `AccessorKeyedSingle` classification; an execution-tier test
+(`AddressOccupantCarrierSingleCardinalityTest`) drives a Pojo carrier holding an `AddressRecord` hub
+through `Query.addressOccupantCarrier` and pins that `firstOccupant` resolves the first
+`Customer|Staff` by sort order (Staff for a populated address) and null for a hub with no occupants.
 
 ## Feature-equivalence flag
 
-Treated as a feature gap because the generator explicitly defers it, but if this single-cardinality
-shape worked in graphitron 9.3 (as the polymorphic `@service` return shape in R365 did), it is a
-regression under the feature-equivalence goal and should be re-bucketed `bug`. Check 9.3 parity at
-Spec.
+Kept `feature` (not re-bucketed `bug`). The multi-table polymorphic interface/union machinery is
+rewrite-era; the generator explicitly deferred this shape rather than regressing a behavior 9.3 had,
+so this is a genuine capability gap, not a parity regression. (Contrast R365, whose polymorphic
+`@service` return shape did exist in 9.3.) The Spec reviewer signed the item off as `feature`.
 
 ## Cross-links
 
