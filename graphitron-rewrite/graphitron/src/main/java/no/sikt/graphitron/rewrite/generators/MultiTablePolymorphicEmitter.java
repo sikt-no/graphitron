@@ -190,15 +190,21 @@ public final class MultiTablePolymorphicEmitter {
         // Normalise the service return into a flat List<Record> in input order. Records that match
         // no participant fall through the dispatch chain below and are skipped.
         builder.addStatement("$T records = new $T<>()", listOfRecord, ARRAY_LIST);
-        builder.beginControlFlow("if (result != null)");
         if (isList) {
+            builder.beginControlFlow("if (result != null)");
             builder.beginControlFlow("for (Object o : result)");
             builder.addStatement("if (o != null) records.add(($T) o)", RECORD);
             builder.endControlFlow();
+            builder.endControlFlow();
         } else {
-            builder.addStatement("records.add(($T) result)", RECORD);
+            // Route the single value through an Object local so the downcast to Record is never
+            // flagged redundant under -Werror, whatever the method's declared single return type
+            // (Record, a TableRecord subtype, or Object).
+            builder.addStatement("Object single = result");
+            builder.beginControlFlow("if (single != null)");
+            builder.addStatement("records.add(($T) single)", RECORD);
+            builder.endControlFlow();
         }
-        builder.endControlFlow();
 
         if (participants.isEmpty()) {
             if (isList) {
