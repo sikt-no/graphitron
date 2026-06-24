@@ -107,6 +107,37 @@ UNION-ALL projection erases the Java type, which a returned typed record does no
 all-`@error` nullable-list "errors channel" (`liftToErrorsField`) continues to lift as today; this
 widens the *non*-errors arm.
 
+### Discriminability: same-table participants need a `@discriminator`
+
+Record-class dispatch tells participants apart by **table identity**, so it only works when each
+table-bound participant maps to a *distinct* table. Two participant types backed by the same table
+share a `recordClass`, so a returned record matches both arms and cannot be discriminated from its
+Java type alone. (The multitable *query* path R363 lowers onto has the same blind spot: two UNION
+branches over one table would tag every row of that table with both `__typename`s. So this rule is a
+shared invariant of multitable polymorphism, not route-(a)-specific.)
+
+Add a build-time rule in `validateQueryInterfaceField` / `validateQueryUnionField` (and the
+`@service`-return arm), with three outcomes:
+
+- **Distinct tables** → discriminate by record class (the base case above). No directive needed.
+- **Same-table participants WITH a discriminator** → discriminate by the discriminator column value.
+  The directives already exist: `@discriminator(value:)` is read into
+  `ParticipantRef.TableBound.discriminatorValue` for *all* participants by `buildParticipantList`
+  (`TypeBuilder.java:753-757`), so the per-type values are available. The discriminator *column*
+  `@discriminate(on:)` is currently parsed only on the single-table `TableInterfaceType` path
+  (`TypeBuilder.java:1337`); the multitable path would need to read it for the colliding subset too.
+  The fetcher then reads that column off the returned record and matches the value to each
+  participant's `@discriminator(value:)`.
+- **Same-table participants WITHOUT a discriminator** → **validation error**, e.g. "interface/union
+  '`<X>`' maps types '`<A>`' and '`<B>`' to the same table '`<T>`' with no `@discriminator` to tell
+  them apart; add `@discriminate(on:)` + `@discriminator(value:)`, or split the types." This fails the
+  build instead of silently mis-dispatching a returned record to the wrong arm.
+
+The validation error is the **floor** and is in scope day one (it closes a real misdispatch hole and
+guards R363's query path over the same interfaces). Whether the `@discriminator`-based same-table
+*dispatch* lands here or as a follow-up is an implementer call to pin at Spec; the directive plumbing
+already exists, so leaning on it is preferred over inventing a new discriminator signal.
+
 Front-matter `depends-on` stays empty under route (a). Wire `depends-on: R366, R367` only if the 9.3
 baseline forces the payload shape (route (b)).
 
@@ -126,3 +157,8 @@ as a post-R366/R367 follow-up rather than a live alternative. The remaining 9.3-
 narrowed from "choose the mechanism" to "confirm the restored surface's fidelity (and whether it
 forces `depends-on: R366, R367`)". The baseline still requires a real 9.3 artifact to confirm, so this
 stays in Spec; a fresh session signs it off to Ready once the baseline is captured.
+
+Also scoped in: a discriminability rule for route (a) — participants must be distinguishable, by
+distinct table (record-class dispatch) or by `@discriminator` when they share a table; same-table
+participants with no `@discriminator` are a build-time validation error rather than a silent
+misdispatch. This also guards R363's query path over the same interfaces.
