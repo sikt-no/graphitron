@@ -95,6 +95,46 @@ class QueryInterfaceFieldValidationTest {
     }
 
     @Test
+    void rejects_sameTableParticipantsWithoutDiscriminator() {
+        // R365 discriminability floor: two participant types backed by the same table share a
+        // recordClass, so a returned record cannot be discriminated from its Java type alone.
+        // Without a @discriminator this is a build error rather than a silent misdispatch.
+        var participants = List.<ParticipantRef>of(
+            new ParticipantRef.TableBound("Film", FILM, null),
+            new ParticipantRef.TableBound("FilmVariant", FILM, null));
+        var iface = new GraphitronType.InterfaceType("Searchable", null, participants);
+        var field = new QueryInterfaceField("Query", "search", null,
+            new ReturnTypeRef.PolymorphicReturnType("Searchable", new FieldWrapper.List(false, false)),
+            participants);
+        var sch = new GraphitronSchema(
+            java.util.Map.of(
+                "Searchable", iface,
+                "Query", new GraphitronType.RootType("Query", null)),
+            java.util.Map.of(graphql.schema.FieldCoordinates.coordinates("Query", "search"), field));
+        assertHasKind(validate(sch), RejectionKind.AUTHOR_ERROR,
+            "maps types 'Film' and 'FilmVariant' to the same table");
+    }
+
+    @Test
+    void wellFormed_sameTableParticipantsWithDiscriminator_noFloorError() {
+        // Same-table participants are allowed once every colliding type carries a @discriminator
+        // (the value plumbing exists; resolving by it is the deferred follow-up). The floor passes.
+        var participants = List.<ParticipantRef>of(
+            new ParticipantRef.TableBound("Film", FILM, "F"),
+            new ParticipantRef.TableBound("FilmVariant", FILM, "V"));
+        var iface = new GraphitronType.InterfaceType("Searchable", null, participants);
+        var field = new QueryInterfaceField("Query", "search", null,
+            new ReturnTypeRef.PolymorphicReturnType("Searchable", new FieldWrapper.List(false, false)),
+            participants);
+        var sch = new GraphitronSchema(
+            java.util.Map.of(
+                "Searchable", iface,
+                "Query", new GraphitronType.RootType("Query", null)),
+            java.util.Map.of(graphql.schema.FieldCoordinates.coordinates("Query", "search"), field));
+        assertThat(validate(sch)).isEmpty();
+    }
+
+    @Test
     void rejects_mismatchedPkArityAcrossParticipants() {
         // Film has arity 1, Bar has arity 2 — stage-1 column count mismatch.
         var participants = List.<ParticipantRef>of(
