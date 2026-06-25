@@ -58,8 +58,7 @@ public sealed interface MutationField extends RootField, WithErrorChannel
             case MutationUpsertTableField f -> OutputField.dmlTarget(f.returnExpression());
             case MutationServiceTableField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Table());
             case MutationServiceRecordField f -> OutputField.listOrSingle(f.returnType().wrapper(), new TargetShape.Record());
-            // Same single-variant rationale as QueryServicePolymorphicField: both interface and
-            // union returns route through the shared __typename-column TypeResolver.
+            // Interface-only service-polymorphic return (union/table-interface rejected at classify).
             case MutationServicePolymorphicField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Interface());
             case MutationDmlRecordField f -> OutputField.listOrSingle(f.returnType().wrapper(), new TargetShape.Record());
             case MutationBulkDmlRecordField f -> OutputField.listOrSingle(f.returnType().wrapper(), new TargetShape.Record());
@@ -293,11 +292,12 @@ public sealed interface MutationField extends RootField, WithErrorChannel
 
     /**
      * A mutation field backed by a developer-provided service method that returns a multitable
-     * {@link GraphitronType.InterfaceType} or {@link GraphitronType.UnionType} (R365, route (a)).
-     * The mutation analogue of {@link QueryField.QueryServicePolymorphicField}: the service hands
-     * back a PK-populated jOOQ {@code TableRecord} per branch, and the emitted fetcher dispatches on
-     * each returned record's runtime class against the participant set, tags {@code __typename}, and
-     * auto-fetches the selected columns by PK. One variant carries both interface and union returns.
+     * {@link GraphitronType.InterfaceType} over distinct-table participants (R365, route (a)). The
+     * mutation analogue of {@link QueryField.QueryServicePolymorphicField}: the service hands back a
+     * PK-populated jOOQ {@code TableRecord} per branch, and the emitted fetcher dispatches on each
+     * returned record's runtime class against the participant set, tags {@code __typename}, and
+     * auto-fetches the selected columns by PK. Interface only — a union return is permanently
+     * unsupported and a single-table discriminated interface is deferred, both rejected at classify.
      */
     record MutationServicePolymorphicField(
         String parentTypeName,

@@ -478,13 +478,13 @@ public class GraphitronSchemaValidator {
             }
         }
 
-        // Same-table discriminability floor (R365): record-class dispatch tells participants apart
-        // by table identity, so two participants backed by the same table share a recordClass and a
-        // returned record cannot be discriminated from its Java type alone. Require a @discriminator
-        // on a same-table collision; absent one, fail the build rather than silently misdispatch a
-        // returned record to the wrong arm. This guards both route (a)'s @service-return fetcher and
-        // R363's multitable query path over the same interfaces. Same-table @discriminator *dispatch*
-        // is a deferred follow-up; this floor is the day-one invariant (see R365 "Discriminability").
+        // Same-table discriminability floor (R365): same-table polymorphism must be modeled as a
+        // single-table discriminated interface (TableInterfaceType: @table @discriminate). Two
+        // participants of a *plain* multitable interface/union backed by the same table share a
+        // recordClass, so record-class dispatch (route (a)) and the stage-1 __typename UNION-ALL
+        // (R363 query path) cannot tell them apart — with or without a @discriminator. Reject at
+        // build time rather than misdispatch (validator mirrors classifier invariants); one shared
+        // site guards both the @service-return fetcher and the query path.
         var byRecordClass = new java.util.LinkedHashMap<no.sikt.graphitron.javapoet.ClassName,
             List<no.sikt.graphitron.rewrite.model.ParticipantRef.TableBound>>();
         for (var tb : tableBound) {
@@ -492,19 +492,16 @@ public class GraphitronSchemaValidator {
         }
         for (var group : byRecordClass.values()) {
             if (group.size() < 2) continue;
-            boolean anyMissingDiscriminator = group.stream().anyMatch(tb -> tb.discriminatorValue() == null);
-            if (anyMissingDiscriminator) {
-                errors.add(new ValidationError(
-                    qualifiedName,
-            Rejection.structural("Field '" + qualifiedName + "': interface/union maps types '"
-                        + group.get(0).typeName() + "' and '" + group.get(1).typeName()
-                        + "' to the same table '" + group.get(0).table().tableName()
-                        + "' with no @discriminator to tell them apart; add @discriminate(on:)"
-                        + " + @discriminator(value:), or split the types"),
-                    location
-                ));
-                return; // one collision is enough; subsequent ones are noise
-            }
+            errors.add(new ValidationError(
+                qualifiedName,
+        Rejection.structural("Field '" + qualifiedName + "': interface/union maps types '"
+                    + group.get(0).typeName() + "' and '" + group.get(1).typeName()
+                    + "' to the same table '" + group.get(0).table().tableName()
+                    + "'; model same-table polymorphism as a single-table discriminated interface"
+                    + " (@table @discriminate), or split the types"),
+                location
+            ));
+            return; // one collision is enough; subsequent ones are noise
         }
 
         // Deferred follow-up (R102 spec body, "carried forward"): spec called for lifting the

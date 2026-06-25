@@ -243,9 +243,10 @@ public final class MultiTablePolymorphicEmitter {
      * runtime class against each participant's {@code recordClass}, then dispatches per typename to
      * the shared stage-2 {@link #buildPerTypenameSelect} helper (scattering into {@code dispatched}).
      * The {@code (idx, pks)} binding shape is byte-identical to {@link #buildPerTypenameDispatcher}'s
-     * so the per-typename helpers are reused unchanged. The validator's same-table discriminability
-     * floor guarantees distinct record classes across participants, so the if/else-if chain assigns
-     * each record to exactly one arm.
+     * so the per-typename helpers are reused unchanged. The validator rejects every same-table
+     * participant collision up front as an author error (same-table polymorphism must be a
+     * single-table discriminated interface, or the types split), so every participant reaching here
+     * has a distinct record class and the if/else-if chain assigns each record to exactly one arm.
      */
     private static CodeBlock buildServiceDispatchBlock(
             List<ParticipantRef.TableBound> participants, String fieldName) {

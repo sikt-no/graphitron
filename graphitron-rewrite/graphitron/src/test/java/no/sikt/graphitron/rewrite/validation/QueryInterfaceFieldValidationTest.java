@@ -116,9 +116,11 @@ class QueryInterfaceFieldValidationTest {
     }
 
     @Test
-    void wellFormed_sameTableParticipantsWithDiscriminator_noFloorError() {
-        // Same-table participants are allowed once every colliding type carries a @discriminator
-        // (the value plumbing exists; resolving by it is the deferred follow-up). The floor passes.
+    void rejects_sameTableParticipantsWithDiscriminator() {
+        // R365 floor: same-table polymorphism belongs in a single-table discriminated interface
+        // (TableInterfaceType), not a plain multitable interface/union — even when every colliding
+        // type carries a @discriminator, record-class dispatch can't tell them apart (shared
+        // recordClass). Same AUTHOR_ERROR as the no-discriminator case (use TableInterfaceType or split).
         var participants = List.<ParticipantRef>of(
             new ParticipantRef.TableBound("Film", FILM, "F"),
             new ParticipantRef.TableBound("FilmVariant", FILM, "V"));
@@ -131,7 +133,8 @@ class QueryInterfaceFieldValidationTest {
                 "Searchable", iface,
                 "Query", new GraphitronType.RootType("Query", null)),
             java.util.Map.of(graphql.schema.FieldCoordinates.coordinates("Query", "search"), field));
-        assertThat(validate(sch)).isEmpty();
+        assertHasKind(validate(sch), RejectionKind.AUTHOR_ERROR,
+            "maps types 'Film' and 'FilmVariant' to the same table");
     }
 
     @Test

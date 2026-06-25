@@ -3268,6 +3268,35 @@ class FieldBuilder {
         return List.of();
     }
 
+    /**
+     * R365 route (a) supports a {@code @service} field returning a multitable <em>interface</em>
+     * only. A {@code @service} returning a union is permanently unsupported (union polymorphism is a
+     * generated-query-path capability; the service path never grew it), so reject it as an author
+     * error rather than emit record-class dispatch over union members.
+     */
+    private GraphitronField rejectServiceUnionReturn(String parentTypeName, String name,
+            SourceLocation location, GraphQLFieldDefinition fieldDef, String returnTypeName) {
+        return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(
+            "@service must return a multitable interface; returning a union ('" + returnTypeName
+            + "') is not supported"));
+    }
+
+    /**
+     * A {@code @service} returning a single-table discriminated interface ({@code TableInterfaceType}:
+     * {@code @table @discriminate}) resolves to the table-bound service path, which auto-fetches by PK
+     * but emits no per-row discriminator dispatch, so it cannot set the right {@code __typename} per
+     * row. Reject as deferred (no backlog item) rather than silently misclassify the rows; route (a)
+     * supports distinct-table multitable-interface returns only.
+     */
+    private GraphitronField deferServiceTableInterface(String parentTypeName, String name,
+            SourceLocation location, GraphQLFieldDefinition fieldDef, String returnTypeName) {
+        return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.deferred(
+            "@service returning a single-table discriminated interface ('" + returnTypeName
+            + "', @table @discriminate) is not yet supported — the service path emits no per-row"
+            + " discriminator dispatch; use a distinct-table multitable interface, or split the type",
+            ""));
+    }
+
     private GraphitronField classifyQueryField(GraphQLFieldDefinition fieldDef, String parentTypeName) {
         String name = fieldDef.getName();
         SourceLocation location = locationOf(fieldDef);
@@ -3282,19 +3311,27 @@ class FieldBuilder {
                 case ServiceDirectiveResolver.Resolved.Rejected r ->
                     new UnclassifiedField(parentTypeName, name, location, fieldDef, r.rejection());
                 case ServiceDirectiveResolver.Resolved.ErrorsLifted e -> e.field();
-                case ServiceDirectiveResolver.Resolved.TableBound tb ->
-                    buildServiceField(tb.returnType(), tb.method(), parentTypeName, name, location, fieldDef, (ch, smc) ->
+                case ServiceDirectiveResolver.Resolved.TableBound tb -> {
+                    if (typeBuilder.lookAheadVerdict(tb.returnType().returnTypeName()) instanceof TableInterfaceType) {
+                        yield deferServiceTableInterface(parentTypeName, name, location, fieldDef, tb.returnType().returnTypeName());
+                    }
+                    yield buildServiceField(tb.returnType(), tb.method(), parentTypeName, name, location, fieldDef, (ch, smc) ->
                         new QueryField.QueryServiceTableField(parentTypeName, name, location, tb.returnType(), smc, ch));
+                }
                 case ServiceDirectiveResolver.Resolved.Result r ->
                     buildServiceField(r.returnType(), r.method(), parentTypeName, name, location, fieldDef, (ch, smc) ->
                         new QueryField.QueryServiceRecordField(parentTypeName, name, location, r.returnType(), smc, ch));
                 case ServiceDirectiveResolver.Resolved.Scalar s ->
                     buildServiceField(s.returnType(), s.method(), parentTypeName, name, location, fieldDef, (ch, smc) ->
                         new QueryField.QueryServiceRecordField(parentTypeName, name, location, s.returnType(), smc, ch));
-                case ServiceDirectiveResolver.Resolved.Polymorphic p ->
-                    buildServiceField(p.returnType(), p.method(), parentTypeName, name, location, fieldDef, (ch, smc) ->
+                case ServiceDirectiveResolver.Resolved.Polymorphic p -> {
+                    if (typeBuilder.lookAheadVerdict(p.returnType().returnTypeName()) instanceof UnionType) {
+                        yield rejectServiceUnionReturn(parentTypeName, name, location, fieldDef, p.returnType().returnTypeName());
+                    }
+                    yield buildServiceField(p.returnType(), p.method(), parentTypeName, name, location, fieldDef, (ch, smc) ->
                         new QueryField.QueryServicePolymorphicField(parentTypeName, name, location, p.returnType(),
                             polymorphicParticipants(p.returnType().returnTypeName()), smc, ch));
+                }
             };
         }
 
@@ -3431,9 +3468,13 @@ class FieldBuilder {
                 case ServiceDirectiveResolver.Resolved.Rejected r ->
                     new UnclassifiedField(parentTypeName, name, location, fieldDef, r.rejection());
                 case ServiceDirectiveResolver.Resolved.ErrorsLifted e -> e.field();
-                case ServiceDirectiveResolver.Resolved.TableBound tb ->
-                    buildServiceField(tb.returnType(), tb.method(), parentTypeName, name, location, fieldDef, (ch, smc) ->
+                case ServiceDirectiveResolver.Resolved.TableBound tb -> {
+                    if (typeBuilder.lookAheadVerdict(tb.returnType().returnTypeName()) instanceof TableInterfaceType) {
+                        yield deferServiceTableInterface(parentTypeName, name, location, fieldDef, tb.returnType().returnTypeName());
+                    }
+                    yield buildServiceField(tb.returnType(), tb.method(), parentTypeName, name, location, fieldDef, (ch, smc) ->
                         new MutationField.MutationServiceTableField(parentTypeName, name, location, tb.returnType(), smc, ch));
+                }
                 case ServiceDirectiveResolver.Resolved.Result r -> {
                     // R159: when the @service mutation returns a payload type whose
                     // data field opts into the $source sigil, verify the producer's reflected
@@ -3508,10 +3549,14 @@ class FieldBuilder {
                     yield buildServiceField(s.returnType(), s.method(), parentTypeName, name, location, fieldDef, (ch, smc) ->
                         new MutationField.MutationServiceRecordField(parentTypeName, name, location, s.returnType(), smc, ch));
                 }
-                case ServiceDirectiveResolver.Resolved.Polymorphic p ->
-                    buildServiceField(p.returnType(), p.method(), parentTypeName, name, location, fieldDef, (ch, smc) ->
+                case ServiceDirectiveResolver.Resolved.Polymorphic p -> {
+                    if (typeBuilder.lookAheadVerdict(p.returnType().returnTypeName()) instanceof UnionType) {
+                        yield rejectServiceUnionReturn(parentTypeName, name, location, fieldDef, p.returnType().returnTypeName());
+                    }
+                    yield buildServiceField(p.returnType(), p.method(), parentTypeName, name, location, fieldDef, (ch, smc) ->
                         new MutationField.MutationServicePolymorphicField(parentTypeName, name, location, p.returnType(),
                             polymorphicParticipants(p.returnType().returnTypeName()), smc, ch));
+                }
             };
         }
 
