@@ -2079,6 +2079,14 @@ type DeletedFilmsIdPayload {
 }
 
 type Mutation {
+    # R365 route (a), the item's headline shape: a @service MUTATION returning a multitable
+    # interface. Same record-class dispatch as the Query fields, but exercises the
+    # MutationServicePolymorphicField emit + registration + runtime path end-to-end (the Query
+    # fields cannot reach the Mutation coordinate). The service is read-only here; the mutation
+    # framing is what pins the mutation-root path.
+    searchManyMutation: [Searchable!]! @service(service: {
+        className: "no.sikt.graphitron.rewrite.test.services.PolymorphicSearchService", method: "searchDocuments"})
+
     # R22 Phase 2: INSERT emitter with TableBoundReturnType return. The fetcher emits
     # `dsl.insertInto(film, title, language_id).values(...).returningResult(<$fields>).fetchOne(r -> r)`.
     createFilm(in: FilmCreateInput!): Film @mutation(typeName: INSERT)

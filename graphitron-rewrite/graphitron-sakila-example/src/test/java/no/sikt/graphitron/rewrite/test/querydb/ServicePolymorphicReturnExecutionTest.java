@@ -97,6 +97,32 @@ class ServicePolymorphicReturnExecutionTest {
     }
 
     @Test
+    void searchManyMutation_dispatchesBothBranchesByRecordClass() {
+        // The item's headline shape: a @service MUTATION returning a multitable interface. Same
+        // record-class dispatch as the query arm, but pins the MutationServicePolymorphicField
+        // emit + registration + runtime path end-to-end.
+        String expectedFilmTitle = dsl.select(Tables.FILM.TITLE).from(Tables.FILM)
+            .where(Tables.FILM.FILM_ID.eq(1)).fetchOne(Tables.FILM.TITLE);
+        String expectedActorFirstName = dsl.select(Tables.ACTOR.FIRST_NAME).from(Tables.ACTOR)
+            .where(Tables.ACTOR.ACTOR_ID.eq(1)).fetchOne(Tables.ACTOR.FIRST_NAME);
+
+        Map<String, Object> data = execute("""
+            mutation { searchManyMutation {
+                __typename
+                ... on Film { filmId title }
+                ... on Actor { actorId firstName }
+            } }
+            """);
+
+        var docs = (List<Map<String, Object>>) data.get("searchManyMutation");
+        assertThat(docs).hasSize(2);
+        var film = docs.stream().filter(d -> "Film".equals(d.get("__typename"))).findFirst().orElseThrow();
+        var actor = docs.stream().filter(d -> "Actor".equals(d.get("__typename"))).findFirst().orElseThrow();
+        assertThat(film.get("title")).isEqualTo(expectedFilmTitle);
+        assertThat(actor.get("firstName")).isEqualTo(expectedActorFirstName);
+    }
+
+    @Test
     void searchOneService_singleCardinalityRoutesToFilm() {
         String expectedFilmTitle = dsl.select(Tables.FILM.TITLE).from(Tables.FILM)
             .where(Tables.FILM.FILM_ID.eq(1)).fetchOne(Tables.FILM.TITLE);
