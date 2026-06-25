@@ -40,6 +40,8 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 
+import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.DESCRIPTION;
+import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.ENUM_VALUE;
 import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.NAME;
 import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.OBJECT_FIELD;
 import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.STRING_VALUE;
@@ -168,11 +170,11 @@ public final class Diagnostics {
         return switch (snapshot) {
             case LspSchemaSnapshot.Unavailable ignored -> List.of();
             case LspSchemaSnapshot.Built.Previous ignored -> List.of();
-            case LspSchemaSnapshot.Built.Current ignored -> validatorDiagnosticsForCurrent(uri, report);
+            case LspSchemaSnapshot.Built.Current ignored -> validatorDiagnosticsForCurrent(uri, file, report);
         };
     }
 
-    private static List<Diagnostic> validatorDiagnosticsForCurrent(String uri, ValidationReport report) {
+    private static List<Diagnostic> validatorDiagnosticsForCurrent(String uri, WorkspaceFile file, ValidationReport report) {
         if (!report.sourceUris().contains(uri)) {
             return List.of();
         }
@@ -180,13 +182,13 @@ public final class Diagnostics {
         for (ValidationError error : report.errors()) {
             var loc = error.location();
             if (!matchesOpenFile(uri, loc)) continue;
-            out.add(validatorDiagnostic(loc, severityOf(error.rejection()), error.message(),
+            out.add(validatorDiagnostic(file, loc, severityOf(error.rejection()), error.message(),
                 lspCodeOf(error.rejection())));
         }
         for (BuildWarning warning : report.warnings()) {
             var loc = warning.location();
             if (!matchesOpenFile(uri, loc)) continue;
-            out.add(validatorDiagnostic(loc, DiagnosticSeverity.Warning, warning.message(), null));
+            out.add(validatorDiagnostic(file, loc, DiagnosticSeverity.Warning, warning.message(), null));
         }
         return out;
     }
@@ -247,17 +249,85 @@ public final class Diagnostics {
      * right balance.
      */
     private static Diagnostic validatorDiagnostic(
-        SourceLocation loc, DiagnosticSeverity severity, String message, String code
+        WorkspaceFile file, SourceLocation loc, DiagnosticSeverity severity, String message, String code
     ) {
-        var start = new Position(loc.getLine() - 1, Math.max(0, loc.getColumn() - 1));
-        var end = new Position(loc.getLine() - 1, Integer.MAX_VALUE);
-        var d = new Diagnostic(new Range(start, end), message);
+        var d = new Diagnostic(signatureRange(file, loc), message);
         d.setSeverity(severity);
         d.setSource(VALIDATOR_SOURCE);
         if (code != null) {
             d.setCode(code);
         }
         return d;
+    }
+
+    /**
+     * The range to highlight for a validator finding at {@code loc}. graphql-java anchors a
+     * <em>described</em> definition's {@code getSourceLocation()} at the opening delimiter of its
+     * documentation block, not the type/field name, because the description is the AST node's first
+     * token. An error on a documented definition would otherwise underline the doc block rather than
+     * the declaration the author must fix. When {@code loc} lands inside a tree-sitter
+     * {@code description} node we re-anchor to the enclosing definition's name; otherwise (the common
+     * no-doc case, or any tree shape we don't recognise) we fall back to the column-to-end-of-line
+     * range straight from {@code loc}.
+     *
+     * <p>The tree-sitter walk is exact for every documentation style: single-line {@code "..."},
+     * inline block {@code """..."""}, and multi-line block. It needs no line arithmetic over the
+     * graphql-java description content, which cannot distinguish an inline block from an own-line
+     * one (both report {@code multiLine=true} with no interior newlines) and is the dominant style
+     * in this codebase's directive schema.
+     */
+    private static Range signatureRange(WorkspaceFile file, SourceLocation loc) {
+        var reanchored = descriptionNameRange(file, loc);
+        if (reanchored != null) {
+            return reanchored;
+        }
+        var start = new Position(loc.getLine() - 1, Math.max(0, loc.getColumn() - 1));
+        var end = new Position(loc.getLine() - 1, Integer.MAX_VALUE);
+        return new Range(start, end);
+    }
+
+    /**
+     * Range of the name of the definition documented by the {@code description} node containing
+     * {@code loc}, or {@code null} when {@code loc} is not inside a description (or the file has no
+     * usable tree). The enclosing definition is the description node's parent; its identifying child
+     * is a {@code name} for every definition kind except {@code enum_value_definition}, which carries
+     * an {@code enum_value} instead.
+     */
+    private static Range descriptionNameRange(WorkspaceFile file, SourceLocation loc) {
+        if (file == null || file.tree() == null) {
+            return null;
+        }
+        var resolved = Positions.resolve(file.source(), loc.getLine() - 1, Math.max(0, loc.getColumn() - 1));
+        Node leaf = file.tree().getRootNode().getDescendant(resolved.tsPoint(), resolved.tsPoint()).orElse(null);
+        Node description = enclosingDescription(leaf);
+        if (description == null) {
+            return null;
+        }
+        Node def = description.getParent().orElse(null);
+        if (def == null) {
+            return null;
+        }
+        Node name = Nodes.childOfKind(def, NAME);
+        if (name == null) {
+            name = Nodes.childOfKind(def, ENUM_VALUE);
+        }
+        if (name == null) {
+            return null;
+        }
+        return new Range(
+            Positions.toLspPosition(file.source(), name.getStartByte()),
+            Positions.toLspPosition(file.source(), name.getEndByte()));
+    }
+
+    /** Nearest {@code description} ancestor of {@code node} (inclusive), or {@code null}. */
+    private static Node enclosingDescription(Node node) {
+        while (node != null) {
+            if (DESCRIPTION.matches(node)) {
+                return node;
+            }
+            node = node.getParent().orElse(null);
+        }
+        return null;
     }
 
     /**

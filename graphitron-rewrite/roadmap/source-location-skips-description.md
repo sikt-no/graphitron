@@ -1,23 +1,37 @@
 ---
 id: R148
-title: "Advance SourceLocation past description so diagnostics point at the field, not the doc block"
-status: Backlog
+title: "Re-anchor LSP validator diagnostics past the description so they point at the field, not the doc block"
+status: In Review
 bucket: bug
 priority: 5
 theme: lsp
 depends-on: []
 created: 2026-05-12
-last-updated: 2026-05-12
+last-updated: 2026-06-25
 ---
 
-# Advance SourceLocation past description so diagnostics point at the field, not the doc block
+# Re-anchor LSP validator diagnostics past the description so they point at the field, not the doc block
 
-graphql-java's `FieldDefinition.getSourceLocation()` (and the same call on type, input-field, and enum-value definitions) returns the start of the *description block* when one is present, not the line of the field name. Build-time validator logs and the R147 LSP diagnostic surface both inherit this: an error on a documented field highlights the opening `"""` of the doc block rather than the field, which is misleading in the console and visually wrong in the editor squiggle.
+graphql-java's `FieldDefinition.getSourceLocation()` (and the same call on type, input-field, and enum-value definitions) returns the start of the *description block* when one is present, not the line of the field name, because the description is the AST node's first token. The R147 LSP diagnostic surface inherits this: an error on a documented field underlines the opening `"""` of the doc block rather than the field, which is visually wrong in the editor squiggle.
 
-The fix lives in the `BuildContext.locationOf(...)` family (`graphitron-rewrite/graphitron/src/main/java/no/sikt/graphitron/rewrite/BuildContext.java:320-353`) plus the inline `def.getSourceLocation()` call in `validateConnectionType` (`graphitron-rewrite/graphitron/src/main/java/no/sikt/graphitron/rewrite/GraphitronSchemaValidator.java:224-225`). A helper that walks past the description gives every validator error site the right location without touching the call sites.
+## Why the originally-planned `BuildContext.locationOf` heuristic was abandoned
 
-Mechanically: when `def.getDescription() != null`, take `description.getSourceLocation()` as the start and advance past the description. Two delimiter forms to handle: single-line `"..."` (advance by 1 line) and block string `"""..."""` (advance by `2 + newlineCountIn(description.getContent())` lines). Column resets to 1 on the new line. Test coverage: one unit test per delimiter form (single-line, single-line block, multi-line block) plus a "no description" pass-through case, asserting the returned `SourceLocation` line/column match what an editor would highlight.
+The first plan advanced the `SourceLocation` past the description with line arithmetic over `description.getContent()` (single-line `"..."` → +1 line; block `"""..."""` → `2 + newlineCount` lines). Verifying that against graphql-java 25 showed it cannot work:
 
-Out of scope: comments (`#`) between the description and the field declaration. graphql-java's parser doesn't surface comment tokens on AST nodes, so any heuristic past the description is approximate. v1 of the fix assumes no comments in that gap; if it becomes a problem in practice, the precise fix is a tree-sitter pass over the source range, which is meaningful infrastructure for a one-line offset bug.
+- The block formula was off by one (own-line blocks advance by `3 + newlineCount`, not `2 + newlineCount`).
+- More fundamentally, graphql-java's processed `content` cannot distinguish an inline block `"""text"""` (the name is on the *next* line, advance +1) from an own-line block (`"""` / `text` / `"""`, advance +3): both report `multiLine=true` with zero interior newlines. The raw source extent graphql-java needs to tell them apart is discarded at parse time.
+- Inline `"""text"""` is the dominant documentation style in this codebase's directive schema (`directives.graphqls`), so a content-newline heuristic would mis-place the *common* case, not an edge case.
 
-Non-goals: changing the `SourceLocation` shape itself, threading column-precise field-name offsets (still 1 because graphql-java doesn't expose the name token's column), or back-porting to legacy build-log paths outside the rewrite module.
+`BuildContext` also has no raw SDL source to scan, so a correct fix could not live there.
+
+## Implemented fix (LSP, tree-sitter)
+
+The LSP already holds the raw source and a tree-sitter parse, so it re-anchors precisely without any line arithmetic. In `Diagnostics.signatureRange` / `descriptionNameRange` (`graphitron-rewrite/graphitron-lsp/src/main/java/no/sikt/graphitron/lsp/diagnostics/Diagnostics.java`): resolve the validator `SourceLocation` to a tree-sitter point; if it lands inside a `description` node, re-anchor the diagnostic range to the enclosing definition's `name` (or `enum_value` for enum-value definitions); otherwise fall back to the prior column-to-end-of-line range straight from the location. This is exact for every documentation form (single-line, inline block, multi-line block) and handles interspersed comments/blank lines for free, because it reads the real parse tree rather than reconstructing offsets. The fix is location-source-agnostic: every validator error/warning routed through `validatorDiagnostic` is re-anchored, so no `BuildContext` or `GraphitronSchemaValidator` call site changes.
+
+A `DESCRIPTION("description")` constant was added to `GraphqlNodeKind` for the node-kind test.
+
+Coverage (`ValidatorDiagnosticsTest`): one test per documentation form (own-line block on a type, inline block on a field, single-line on a type) asserting the range covers the *name* token, plus a "no description" pass-through case asserting the column-to-end-of-line fallback is preserved.
+
+## Out of scope
+
+The build-time console / watch-mode formatter (`graphitron-core`) still anchors at the doc block: it has neither tree-sitter nor the raw source, so a correct fix there would require threading the SDL text into `BuildContext`. That is a separate, lower-priority surface (the complaint is the editor squiggle) and is left as a follow-up. Non-goals: changing the `SourceLocation` shape itself, or back-porting to legacy build-log paths outside the rewrite module.

@@ -33,7 +33,8 @@ public enum GraphqlNodeKind {
     OBJECT_VALUE("object_value"),
     LIST_VALUE("list_value"),
     STRING_VALUE("string_value"),
-    ENUM_VALUE("enum_value");
+    ENUM_VALUE("enum_value"),
+    DESCRIPTION("description");
 
     private final String id;
 
