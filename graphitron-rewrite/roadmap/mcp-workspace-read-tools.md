@@ -6,7 +6,7 @@ bucket: feature
 theme: lsp
 depends-on: []
 created: 2026-06-24
-last-updated: 2026-06-24
+last-updated: 2026-06-25
 ---
 
 # MCP structured read-tools over the live Workspace: services/conditions/records, schema, diagnostics, directives (R118 slices 3-6)
@@ -32,8 +32,11 @@ The four reads, each over a `Workspace` projection R361 / R349 / R352 already re
   richest of the four; the one that may later grow an optional semantic method-search sibling (R118
   slice 11).
 - **Slice 4, schema tool** (`schema`): current types/fields, classifications, backing shapes,
-  `@node` metadata, and definition locations off `Workspace.snapshot()` (`LspSchemaSnapshot`). The
-  data is "the work itself", least stable, never embedded, always served live and structured.
+  and definition locations off `Workspace.snapshot()` (`LspSchemaSnapshot`), joined with `@node`
+  metadata off `Workspace.catalog().nodeMetadata()` (`CompletionData.NodeMetadata`; the snapshot
+  carries no `@node` projection). The data is "the work itself", least stable, never embedded,
+  always served live and structured. The snapshot+catalog join is same-cadence (see D3 below), not
+  the cross-cadence join the code tools carry.
 - **Slice 5, diagnostics tool** (`diagnostics`): current validation errors/warnings off
   `Workspace.validationReport()`, closing the authoring loop (an agent edits, then reads its own
   diagnostics back).
@@ -96,15 +99,18 @@ reader. This is shared-classification-on-the-shared-record (the two-consumers-ev
 predicate case the model-field rule wants computed once), not the god-record case R362 rejected. The
 distinction is stated here so the Spec does not appear to contradict its sibling.
 
-**Blast-radius note, owned not hidden.** This is the one place R368 touches the shared LSP model
-(`CompletionData.Method` + `ClasspathScanner`), so slice 3 is *not* purely additive / MCP-only the
-way R362 was. The change is small (one typed field, one boundary computation) and existing LSP
-readers are untouched (they keep reading `name` / `returnType` / `parameters`), but the Spec names
-the wider blast radius rather than implying MCP-only isolation.
+**Blast-radius note, owned not hidden.** R368 touches the shared LSP model in *two* places, so it
+is not the MCP-only-additive item R362 was. (1) Slice 3 widens `CompletionData.Method` +
+`ClasspathScanner` with the `returnsCondition` fact. (2) Slice 6 widens `DirectiveShape` with an
+applicable-locations field (see the directives-resource section). Both widenings are small and
+additive: one new field plus a boundary computation each, with a back-compat constructor so existing
+callers compile unchanged, and existing LSP readers untouched (slice 3 readers keep reading `name` /
+`returnType` / `parameters`; slice 6 readers keep reading `name` / `args` / `description`). The Spec
+names both rather than implying MCP-only isolation.
 
 ## Cross-cutting concerns, resolved
 
-### Cross-field consistency (R361 D3): single-projection reads, two distinct stories
+### Cross-field consistency (R361 D3): same-cadence reads, one cross-cadence join
 
 `setBuildOutput` swaps the `Workspace`'s `snapshot` / `validationReport` / `catalog` fields
 non-atomically; `volatile` gives per-field visibility but no consistent multi-field read. Per-tool
@@ -113,9 +119,14 @@ real complexity bought to defend a window that closes on the next dev-loop tick,
 *discovery* reads for an agent, not a transactional API. But the Spec separates two consistency
 stories the slices conflate, because they have different shapes:
 
-1. **`schema` (snapshot) vs `diagnostics` (validationReport): same cadence.** `setBuildOutput`
-   writes both in one call on the same trigger; the worst case is "diagnostics one build-tick behind
-   schema", and each tool reads exactly one field. No correlation mechanism, no lock.
+1. **`schema` and `diagnostics`: all build-cadence, swapped together.** `setBuildOutput` writes
+   `catalog`, `snapshot`, and `validationReport` in one call on the same trigger. `diagnostics`
+   reads one field (`validationReport`); `schema` reads `snapshot` *and* joins
+   `catalog().nodeMetadata()` for the `@node` arm, so it is not a single-projection read, but both
+   fields it touches are written in that same `setBuildOutput` call, so the join is same-cadence.
+   The only window is a reader interleaving its volatile reads with a `setBuildOutput` between them
+   (worst case: one field one build-tick behind another); it closes on the next dev-loop tick. No
+   correlation mechanism, no lock.
 2. **Code tools join `catalog()` (build cadence) with `sourceIndex()` (`.java` source cadence):
    different triggers by design.** The two fields are refreshed by `setBuildOutput` vs
    `setSourceIndex` (the R349 / R352 decoupling). A method present in the scan can legitimately have
@@ -162,9 +173,25 @@ capability and a resource specification; the Spec confirms the resource wiring (
 **The resource is a frozen spine plus a live overlay, named explicitly.** Its content is
 `Workspace.vocabulary()` (the frozen bundled grammar) unioned with user-declared directives off
 `Workspace.snapshot()` (`LspSchemaSnapshot.Built.directives()`, live). Re-reads reflect the latest
-snapshot. The Spec confirms `Built.directives()` exposes `DirectiveShape` carrying args / applicable
-locations / descriptions in a shape the resource can render, degrading to the bundled grammar alone
-when no build has succeeded.
+snapshot, degrading to the bundled grammar alone when no build has succeeded.
+
+**`DirectiveShape` is widened to carry applicable locations (the slice-6 shared-model change).**
+`DirectiveShape` today is `(name, args, description)` and carries *no* applicable-locations field;
+the resource is specified to show locations ("`on OBJECT | INTERFACE`"), so the data has to come
+from somewhere. The bundled grammar's locations are reachable off `vocabulary()`'s
+`TypeDefinitionRegistry` (`DirectiveDefinition.getDirectiveLocations()`), but the *user-declared*
+directives reach the resource only as `DirectiveShape` off the snapshot, which threw the locations
+away at projection time. So a uniform cheat-sheet (locations for bundled *and* user-declared
+directives) requires the locations to ride `DirectiveShape`. The lift: add a `locations` field to
+`DirectiveShape`, populated in `CatalogBuilder.buildSnapshot` from `def.getDirectiveLocations()` (the
+`DirectiveDefinition` is already in hand at the one construction site), projected to a renderable
+form. The widening is additive: a back-compat constructor defaulting `locations` to empty keeps the
+single production caller and the ~10 LSP/snapshot test fixtures that build `DirectiveShape` compiling
+unchanged, and the existing hover / diagnostic / arg-completion readers (which read `name` / `args` /
+`description`) are untouched. The resource then renders locations uniformly off `DirectiveShape` for
+both halves of the union. This is the one place slice 6 stops being a pure read projection; it is
+named here and re-stated in Implementation and the blast-radius note so a reviewer sees the second
+shared-model touch owned, not smuggled.
 
 ### Paging
 
@@ -200,8 +227,9 @@ this item adds (`Condition` detection) is computed at the parse boundary, not in
   type (returns its fields in full); absent, lists types paged. Output per type:
   `{typeRef, typeClassification, backingShape, node?, fields: [{fieldRef, classification, ...}],
   definitionLocation?}` where `typeClassification` / `backingShape` map off `typeClassificationsByName`
-  / `typesByName`, `fields` off `fieldClassificationsByCoord` keyed by `Type.field`, `node` off the
-  `@node` metadata, and `definitionLocation` off `typeDefinitionLocations`. The mapping is an
+  / `typesByName`, `fields` off `fieldClassificationsByCoord` keyed by `Type.field`, `node` off
+  `catalog().nodeMetadata()` (the snapshot has no `@node` projection; this is the same-cadence
+  snapshot+catalog join named in D3), and `definitionLocation` off `typeDefinitionLocations`. The mapping is an
   exhaustive `switch` over the `LspSchemaSnapshot` / `TypeBackingShape` / classification sealed
   permits with no `default`, mirroring `statusResult`, so a new arm forces a compile-time choice.
 - **`diagnostics`** -- input `{severity?: "error"|"warning", coordinate?: string, limit?: int,
@@ -221,21 +249,34 @@ Resource:
 
 ## What this item does *not* change
 
-No new generator branch and no new validate-time rejection. Slices 4/5/6 are pure read projections of
-*already-classified* data (the snapshot's classifications, the validation report's rejections, the
-bundled grammar). **Re-stating the validator-mirrors-classifier carve-out with slice 3's scanner lift
-in view:** the one classification this item adds is `Condition` detection in `ClasspathScanner`,
-descriptive metadata for a discovery tool. It gates no emission and adds no validate-time arm, so
-validator-mirrors-classifier still does not apply; the carve-out is re-derived here rather than
-inherited verbatim from R362, because the scanner lift means the claim is no longer trivially true.
-Named explicitly so a reviewer does not flag a missing validator arm.
+No new generator branch and no new validate-time rejection. Slices 4 and 5 are pure read projections
+of *already-classified* data (the snapshot's classifications, the validation report's rejections).
+Slice 6 is *almost* pure-read: it reads the bundled grammar and the snapshot's directives, but it
+also widens `DirectiveShape` with the applicable-locations field above; that is a model-shape
+addition, not a new classification or validate-time arm. **Re-stating the
+validator-mirrors-classifier carve-out with the two shared-model lifts in view:** the one
+classification this item adds is `Condition` detection in `ClasspathScanner`, descriptive metadata
+for a discovery tool; the `DirectiveShape` locations field is a re-projection of data the parsed
+`DirectiveDefinition` already carries, not a new verdict. Neither gates emission or adds a
+validate-time arm, so validator-mirrors-classifier still does not apply; the carve-out is re-derived
+here rather than inherited verbatim from R362, because the scanner lift means the claim is no longer
+trivially true. Named explicitly so a reviewer does not flag a missing validator arm.
 
 ## Implementation
 
 - **`ClasspathScanner` + `CompletionData.Method`.** Compute `desc.returnType()` against
   `org.jooq.Condition` in `readMethods` before `displayName()` erases the package; carry the result
-  as a typed `Method`-level fact (`returnsCondition` boolean or a small `ReturnKind`). Existing LSP
-  readers are untouched. This is the only shared-model change.
+  as a typed `Method`-level fact (`returnsCondition` boolean or a small `ReturnKind`). The match is
+  an exact return-type FQN compare (`Lorg/jooq/Condition;`), not assignability: the parse-only scan
+  resolves no type hierarchy, and the jOOQ idiom is to return `Condition` directly, so exact match is
+  both sufficient and all the scanner can do. Existing LSP readers are untouched. This is one of two
+  shared-model changes (the other is the `DirectiveShape` widening below).
+- **`DirectiveShape` + `CatalogBuilder.buildSnapshot`.** Add a `locations` field to `DirectiveShape`
+  (renderable form of `DirectiveDefinition.getDirectiveLocations()`), populated at the one production
+  construction site (`CatalogBuilder.buildSnapshot`, which already holds the `DirectiveDefinition`).
+  Add a back-compat constructor defaulting `locations` to empty so the existing test fixtures and
+  any caller that does not supply locations compile unchanged. Existing readers (`Hovers`,
+  `Diagnostics`, `ArgNameCompletions`) are untouched.
 - **`Workspace`.** No new field. `catalog()` / `sourceIndex()` / `snapshot()` / `validationReport()`
   / `vocabulary()` accessors already expose every projection the tools read.
 - **`GraphitronMcpServer`.** Register `services` / `conditions` / `records` / `schema` /
@@ -259,11 +300,18 @@ Per the tiers in `rewrite-design-principles.adoc`.
   with the MCP SDK client (mirroring `GraphitronMcpServerTest`): `services` / `conditions` / `records`
   return the categorised structured shapes with method refs and (where indexed) locations, and the
   not-yet-indexed arm yields a location-absent entry rather than an error; `schema` returns types with
-  classifications / backing shapes / `@node` / field coordinates and pages; `diagnostics` returns the
-  mapped errors/warnings on a schema with a known rejection and reports snapshot freshness alongside;
-  the `directives` resource lists the bundled grammar and a user-declared directive from a built
-  snapshot. Assert the mapped `structuredContent`, the way `statusResult` is tested, not
-  generated-string assertions.
+  classifications / backing shapes / field coordinates and pages, and surfaces the `@node` arm from
+  the catalog join (a built snapshot whose catalog carries `NodeMetadata` for a `@node` type yields
+  the `node` block; a non-`@node` type omits it); `diagnostics` returns the mapped errors/warnings on
+  a schema with a known rejection and reports snapshot freshness alongside; the `directives` resource
+  lists the bundled grammar and a user-declared directive from a built snapshot. Assert the mapped
+  `structuredContent`, the way `statusResult` is tested, not generated-string assertions.
+- **Directive applicable-locations round-trip (slice-6 widening):** a `DirectiveShape` built from a
+  `DirectiveDefinition` with an explicit `on ...` location set carries those locations through
+  `CatalogBuilder.buildSnapshot` into the snapshot, and the `directives` resource renders them for
+  *both* a bundled directive (off `vocabulary()`) and a user-declared directive (off the snapshot) —
+  the case the widening exists to cover. Pin that the back-compat constructor defaults `locations` to
+  empty so an un-located fixture is location-absent, not malformed.
 - **Stable-ID round-trip:** a focused assertion that the `methodRef` / field coordinate IDs a tool
   emits are the same IDs the join keys / `fieldClassificationsByCoord` use, pinning the grammar slice
   7 will walk.
