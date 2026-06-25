@@ -719,9 +719,64 @@ class FieldBuilder {
                 return new ParticipantFiltersResult.Rejected(rj.rejection());
             }
             var tfc = (TableFieldComponents.Ok) components;
+            var unsupported = firstUnsupportedFilterArg(tfc.filters());
+            if (unsupported != null) {
+                return new ParticipantFiltersResult.Rejected(Rejection.structural(
+                    "filter argument '" + unsupported + "' on a multitable interface/union is not yet "
+                    + "supported: the polymorphic branch emitter handles plain scalar and enum column "
+                    + "filters, but not jOOQ-converted (e.g. ID-typed), @nodeId-decoded, nested-input, "
+                    + "or developer @condition filters (participant '" + tb.typeName() + "')"));
+            }
             result.add(new ParticipantFilters(tb, tfc.filters()));
         }
         return new ParticipantFiltersResult.Ok(List.copyOf(result));
+    }
+
+    /**
+     * Returns the name of the first filter argument whose extraction the multitable branch emitter
+     * ({@code MultiTablePolymorphicEmitter.branchFilterWhere}) cannot emit, or {@code null} if every
+     * filter is branch-safe. The branch path reuses the single-table condition-term emission without
+     * a {@code CompositeDecodeHelperRegistry} or nested-input lift context, so it supports only the
+     * registry-free, local-free extractions ({@code Direct}, {@code EnumValueOf}, {@code ContextArg},
+     * {@code JooqConvert}); {@code NodeIdDecodeKeys} / {@code NestedInputField} / {@code InputBean}
+     * need plumbing this slice does not carry. Rejecting at classify time keeps the failure a clean
+     * build error rather than an emitter {@code IllegalStateException} or uncompilable output
+     * ("classifier guarantees shape emitter assumptions").
+     */
+    private static String firstUnsupportedFilterArg(List<WhereFilter> filters) {
+        for (var filter : filters) {
+            // Only Graphitron-generated column filters are emittable on the branch path. A developer
+            // @condition (ConditionFilter / FkTargetConditionFilter, e.g. from a nested-input
+            // @condition the field/arg-level hasCondition guard does not reach) needs the
+            // adapter/registry plumbing the polymorphic branch does not carry.
+            if (!(filter instanceof GeneratedConditionFilter)) {
+                return filter.callParams().isEmpty()
+                    ? "@condition" : filter.callParams().get(0).name();
+            }
+            for (var param : filter.callParams()) {
+                if (!isBranchSafeExtraction(param.extraction())) {
+                    return param.name();
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
+     * The polymorphic branch emitter ({@code MultiTablePolymorphicEmitter.branchFilterWhere}) emits a
+     * filter term with no {@code CompositeDecodeHelperRegistry}, no nested-input lift context, and no
+     * pre-declared extraction locals, so it supports only the registry-free, local-free extractions.
+     * {@code JooqConvert} is excluded because its emission goes through a jOOQ {@code DataType.convert}
+     * call that is deprecated-for-removal and trips the consumer's {@code -Werror}; {@code
+     * NodeIdDecodeKeys} / {@code NestedInputField} / {@code InputBean} need plumbing this slice does
+     * not carry. Rejecting at classify time keeps the failure a clean build error rather than an
+     * emitter {@code IllegalStateException} or uncompilable output ("classifier guarantees shape
+     * emitter assumptions").
+     */
+    private static boolean isBranchSafeExtraction(CallSiteExtraction extraction) {
+        return extraction instanceof CallSiteExtraction.Direct
+            || extraction instanceof CallSiteExtraction.EnumValueOf
+            || extraction instanceof CallSiteExtraction.ContextArg;
     }
 
     // ===== Object-return child field classification =====

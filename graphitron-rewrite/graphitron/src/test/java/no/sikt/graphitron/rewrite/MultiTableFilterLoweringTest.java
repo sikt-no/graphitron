@@ -109,6 +109,26 @@ class MultiTableFilterLoweringTest {
     }
 
     @Test
+    void idTypedFilter_unsupportedExtraction_rejectedStructural() {
+        // store_id is a shared int column on both participants, so this is NOT an absent-column
+        // rejection: an ID-typed @field arg lowers to a jOOQ-converted extraction the polymorphic
+        // branch emitter does not support day-one, so it is rejected at classify time rather than
+        // emitting deprecated-API / uncompilable code.
+        var schema = TestSchemaHelper.buildSchema(CUSTOMER_STAFF + """
+            union Occupant = Customer | Staff
+            type Query {
+                occupants(storeId: [ID!] @field(name: "store_id")): [Occupant!]!
+            }
+            """);
+        var field = schema.field("Query", "occupants");
+        assertThat(field).isInstanceOf(GraphitronField.UnclassifiedField.class);
+        var unc = (GraphitronField.UnclassifiedField) field;
+        assertThat(unc.kind()).isEqualTo(RejectionKind.AUTHOR_ERROR);
+        assertThat(unc.rejection()).isInstanceOf(Rejection.AuthorError.Structural.class);
+        assertThat(unc.reason()).contains("storeId");
+    }
+
+    @Test
     void fieldLevelCondition_rejectedStructuralNotDeferred() {
         var schema = TestSchemaHelper.buildSchema(CUSTOMER_STAFF + """
             union Occupant = Customer | Staff
