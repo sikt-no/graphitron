@@ -17,9 +17,9 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R363` | Lower @field filter inputs and @condition onto multitable-interface queries | Spec | 2026-06-24 | [plan](multitable-interface-query-filter-lowering.md) |
 | `R19` | Rebase and squash rewrite branch onto main | Ready |  | [plan](history-squash.md) |
 | `R222` | Dimensional model pivot: slots over cross-product permits | Spec | 2026-06-18 <sub>created 2026-05-21</sub> | [plan](dimensional-model-pivot.md) |
-| `R376` | Goto-definition on a service-backed or computed field name | Spec | 2026-06-25 | [plan](goto-definition-on-service-backed-field-name.md) |
 | `R333` | Lower each schema coordinate to a DataFetcher and its QueryParts | Spec | 2026-06-22 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
 | `R256` | Absorb the service walker substrate: typed per-arm errors + multi-arg ctors | Ready | 2026-05-30 <sub>created 2026-05-29</sub> | [plan](service-walker-substrate-absorption.md) |
+| `R376` | Goto-definition on a service-backed or computed field name | Ready | 2026-06-25 | [plan](goto-definition-on-service-backed-field-name.md) |
 | `R346` | Regenerate and guard the generated supported-directives migration doc against directive-set drift | Ready | 2026-06-19 | [plan](supported-directives-regen-guard.md) |
 | `R308` | Fix the @service list-payload N+1 by deriving many-arrival for list-returning carriers | Spec | 2026-06-14 | [plan](service-list-payload-arrival.md) |
 | `R335` | Fold input/scalar/enum classification into the single classify-and-emit walk | Spec | 2026-06-19 | [plan](walk-classifies-input-surface.md) |
@@ -286,7 +286,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### lsp
 
-- `R376` [**Goto-definition on a service-backed or computed field name**](goto-definition-on-service-backed-field-name.md) — Spec, feature
+- `R376` [**Goto-definition on a service-backed or computed field name**](goto-definition-on-service-backed-field-name.md) — Ready, feature
 - `R148` [**Advance SourceLocation past description so diagnostics point at the field, not the doc block**](source-location-skips-description.md) — Backlog, bug
 - `R347` [**Consolidate graphitron-lsp navigation, dispatch, and result-building**](lsp-structural-consolidation.md) — In Progress, architecture
 - `R345` [**Surface schema parse failures as LSP red squiggles**](lsp-squiggle-schema-parse-failure.md) — Backlog, feature

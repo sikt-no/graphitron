@@ -1,7 +1,7 @@
 ---
 id: R376
 title: "Goto-definition on a service-backed or computed field name"
-status: Spec
+status: Ready
 bucket: feature
 priority: 3
 theme: lsp
