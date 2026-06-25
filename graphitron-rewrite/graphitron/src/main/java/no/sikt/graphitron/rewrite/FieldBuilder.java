@@ -67,6 +67,7 @@ import no.sikt.graphitron.rewrite.model.MethodRef;
 import no.sikt.graphitron.rewrite.model.MutationField;
 import no.sikt.graphitron.rewrite.model.OrderBySpec;
 import no.sikt.graphitron.rewrite.model.PaginationSpec;
+import no.sikt.graphitron.rewrite.model.ParticipantFilters;
 import no.sikt.graphitron.rewrite.model.ParticipantRef;
 import no.sikt.graphitron.rewrite.model.QueryField;
 import no.sikt.graphitron.rewrite.model.Rejection;
@@ -104,6 +105,7 @@ import static no.sikt.graphitron.rewrite.BuildContext.ARG_METHOD;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_NAME;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_TYPE_NAME;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_AS_CONNECTION;
+import static no.sikt.graphitron.rewrite.BuildContext.DIR_CONDITION;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_SOURCE_ROW;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_EXTERNAL_FIELD;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_FIELD;
@@ -624,27 +626,102 @@ class FieldBuilder {
      */
     private TableFieldComponents resolveTableFieldComponents(
             GraphQLFieldDefinition fieldDef, TableRef table, String returnTypeName, NodeIdArgPlan plan) {
-        // @asConnection + a required same-table @nodeId leaf is hygiene-flagged but allowed:
-        // the result is always bounded by the mandatory input id list, so the connection's
-        // page equals the input set. Production schemas legitimately compose this shape (the
-        // wire format is `WHERE pk IN (decoded_ids)` with seek pagination on top, which is
-        // what consumers expect); the warn surfaces the redundancy without blocking the
-        // build. Optional same-table @nodeId leaves are silent — caller-omitted drops the
-        // PK-IN filter and paginates the full table; caller-supplied narrows to a bounded
-        // set and paginates within it. Required-ness is conjunctive across the path: the
-        // warn fires iff the outer arg and every nested input wrapper down to the leaf
-        // are all non-null. ∃-required across all hits, not first-hit-wins.
-        if (fieldDef.hasAppliedDirective(DIR_AS_CONNECTION)
-                && plan.firstRequiredSameTableHit() != null) {
-            ctx.addWarning(new BuildWarning(
-                formatAsConnectionSameTableWarning(plan.firstRequiredSameTableHit(), fieldDef.getName()),
-                locationOf(fieldDef)));
+        return resolveTableFieldComponents(fieldDef, table, returnTypeName, plan, true);
+    }
+
+    /**
+     * @param emitAsConnectionAdvisory when {@code false}, the {@code @asConnection} same-table
+     *        advisory is suppressed. The multi-table polymorphic path calls this once per
+     *        participant table, so it suppresses here and emits the advisory at most once across
+     *        participants via {@link #warnAsConnectionSameTable} instead.
+     */
+    private TableFieldComponents resolveTableFieldComponents(
+            GraphQLFieldDefinition fieldDef, TableRef table, String returnTypeName, NodeIdArgPlan plan,
+            boolean emitAsConnectionAdvisory) {
+        if (emitAsConnectionAdvisory) {
+            warnAsConnectionSameTable(fieldDef, plan);
         }
         var classifyErrors = new ArrayList<String>();
         var refs = classifyArguments(fieldDef, table, plan, classifyErrors);
         var rejections = new ArrayList<Rejection>();
         for (String e : classifyErrors) rejections.add(Rejection.structural(e));
         return projectForFilter(refs, fieldDef, table, returnTypeName, rejections);
+    }
+
+    /**
+     * Emits the {@code @asConnection} + required-same-table-{@code @nodeId} hygiene advisory.
+     *
+     * <p>@asConnection + a required same-table @nodeId leaf is hygiene-flagged but allowed:
+     * the result is always bounded by the mandatory input id list, so the connection's
+     * page equals the input set. Production schemas legitimately compose this shape (the
+     * wire format is {@code WHERE pk IN (decoded_ids)} with seek pagination on top, which is
+     * what consumers expect); the warn surfaces the redundancy without blocking the
+     * build. Optional same-table @nodeId leaves are silent — caller-omitted drops the
+     * PK-IN filter and paginates the full table; caller-supplied narrows to a bounded
+     * set and paginates within it. Required-ness is conjunctive across the path: the
+     * warn fires iff the outer arg and every nested input wrapper down to the leaf
+     * are all non-null. ∃-required across all hits, not first-hit-wins.
+     */
+    private void warnAsConnectionSameTable(GraphQLFieldDefinition fieldDef, NodeIdArgPlan plan) {
+        if (fieldDef.hasAppliedDirective(DIR_AS_CONNECTION)
+                && plan.firstRequiredSameTableHit() != null) {
+            ctx.addWarning(new BuildWarning(
+                formatAsConnectionSameTableWarning(plan.firstRequiredSameTableHit(), fieldDef.getName()),
+                locationOf(fieldDef)));
+        }
+    }
+
+    /** Outcome of lowering {@code @field} filters across a multi-table polymorphic field's participants (R363). */
+    private sealed interface ParticipantFiltersResult {
+        record Ok(List<ParticipantFilters> participantFilters) implements ParticipantFiltersResult {}
+        record Rejected(Rejection rejection) implements ParticipantFiltersResult {}
+    }
+
+    /** True iff the field, or any of its arguments, carries a developer {@code @condition} directive. */
+    private static boolean hasCondition(GraphQLFieldDefinition fieldDef) {
+        if (fieldDef.hasAppliedDirective(DIR_CONDITION)) return true;
+        for (var arg : fieldDef.getArguments()) {
+            if (arg.hasAppliedDirective(DIR_CONDITION)) return true;
+        }
+        return false;
+    }
+
+    /**
+     * Lowers {@code @field}-mapped filter arguments once per table-bound participant of a multi-table
+     * polymorphic root query field, each against the participant's own table so the generated
+     * condition method and column constants are table-specific (R363). The condition class is named
+     * after the participant ({@code <Participant>Conditions}), not the interface/union, so the per-
+     * participant methods do not collide. A column absent from (or type-incompatible on) one
+     * participant surfaces as that participant's classifier rejection, failing the build. The
+     * {@code @asConnection} same-table advisory is emitted at most once across participants.
+     *
+     * <p>Callers must reject a field- or argument-level {@code @condition} before invoking this:
+     * {@link #resolveTableFieldComponents} itself lowers a {@code @condition} into a
+     * {@code ConditionFilter} bound to the table it is handed, so running it across N participant
+     * tables would pin the developer's single-table method to the wrong table on N-1 branches.
+     */
+    private ParticipantFiltersResult lowerParticipantFilters(
+            GraphQLFieldDefinition fieldDef, List<ParticipantRef> participants) {
+        var result = new ArrayList<ParticipantFilters>();
+        boolean advisoryEmitted = false;
+        for (var p : participants) {
+            if (!(p instanceof ParticipantRef.TableBound tb)) {
+                continue; // Unbound participants carry no table to lower filters against.
+            }
+            var plan = buildNodeIdArgPlan(fieldDef, tb.table());
+            if (!advisoryEmitted && fieldDef.hasAppliedDirective(DIR_AS_CONNECTION)
+                    && plan.firstRequiredSameTableHit() != null) {
+                warnAsConnectionSameTable(fieldDef, plan);
+                advisoryEmitted = true;
+            }
+            var components = resolveTableFieldComponents(fieldDef, tb.table(), tb.typeName(), plan, false);
+            if (components instanceof TableFieldComponents.Rejected rj) {
+                return new ParticipantFiltersResult.Rejected(rj.rejection());
+            }
+            var tfc = (TableFieldComponents.Ok) components;
+            result.add(new ParticipantFilters(tb, tfc.filters()));
+        }
+        return new ParticipantFiltersResult.Ok(List.copyOf(result));
     }
 
     // ===== Object-return child field classification =====
@@ -3438,15 +3515,37 @@ class FieldBuilder {
                 tableInterfaceType.discriminatorColumn(), knownValues, tableInterfaceType.participants(),
                 tfc.filters(), tfc.orderBy(), tfc.pagination());
         }
+        if (elementType instanceof InterfaceType || elementType instanceof UnionType) {
+            // R363: reject @condition on the multitable path BEFORE the per-participant lowering.
+            // resolveTableFieldComponents lowers a @condition into a ConditionFilter bound to the
+            // table it is handed; running it per participant would pin the developer's single-table
+            // method to a different participant table on each branch (a consumer-compile failure),
+            // so the guard must precede the loop. A structural (non-deferred) rejection: nothing in
+            // the build pins a deferred planSlug to a roadmap file, so a slug would dangle.
+            if (hasCondition(fieldDef)) {
+                return new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                    Rejection.structural("@condition on a multitable interface/union is not yet supported"));
+            }
+        }
         if (elementType instanceof InterfaceType interfaceType) {
+            var lowered = lowerParticipantFilters(fieldDef, interfaceType.participants());
+            if (lowered instanceof ParticipantFiltersResult.Rejected rj) {
+                return new UnclassifiedField(parentTypeName, name, location, fieldDef, rj.rejection());
+            }
             return new QueryField.QueryInterfaceField(parentTypeName, name, location,
                 new ReturnTypeRef.PolymorphicReturnType(elementTypeName, buildWrapper(fieldDef)),
-                interfaceType.participants());
+                interfaceType.participants(),
+                ((ParticipantFiltersResult.Ok) lowered).participantFilters());
         }
         if (elementType instanceof UnionType unionType) {
+            var lowered = lowerParticipantFilters(fieldDef, unionType.participants());
+            if (lowered instanceof ParticipantFiltersResult.Rejected rj) {
+                return new UnclassifiedField(parentTypeName, name, location, fieldDef, rj.rejection());
+            }
             return new QueryField.QueryUnionField(parentTypeName, name, location,
                 new ReturnTypeRef.PolymorphicReturnType(elementTypeName, buildWrapper(fieldDef)),
-                unionType.participants());
+                unionType.participants(),
+                ((ParticipantFiltersResult.Ok) lowered).participantFilters());
         }
 
         return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural("return type '" + elementTypeName + "' is not a @table, interface, or union Graphitron type; " +

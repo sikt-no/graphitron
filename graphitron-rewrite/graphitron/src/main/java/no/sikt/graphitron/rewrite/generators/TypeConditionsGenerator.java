@@ -15,6 +15,7 @@ import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.GeneratedConditionFilter;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.LookupField;
+import no.sikt.graphitron.rewrite.model.QueryField;
 import no.sikt.graphitron.rewrite.model.SqlGeneratingField;
 
 import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.*;
@@ -24,7 +25,6 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Optional;
 
 /**
  * Generates one {@code <TypeName>Conditions.java} per type that has fields with a
@@ -42,10 +42,11 @@ public class TypeConditionsGenerator {
         var filtersByClass = new LinkedHashMap<String, List<GeneratedConditionFilter>>();
         for (var type : schema.types().values()) {
             for (var field : schema.fieldsOf(type.name())) {
-                extractGeneratedConditionFilter(field).ifPresent(gcf ->
+                for (var gcf : extractGeneratedConditionFilters(field)) {
                     filtersByClass
                         .computeIfAbsent(gcf.className(), k -> new ArrayList<>())
-                        .add(gcf));
+                        .add(gcf);
+                }
             }
         }
 
@@ -55,17 +56,42 @@ public class TypeConditionsGenerator {
             .toList();
     }
 
-    private static Optional<GeneratedConditionFilter> extractGeneratedConditionFilter(GraphitronField field) {
+    private static List<GeneratedConditionFilter> extractGeneratedConditionFilters(GraphitronField field) {
+        // R363: multi-table polymorphic root fields are not SqlGeneratingField (their return type is
+        // polymorphic, not table-bound); their @field filters live per-participant, each lowered
+        // against the participant's own table with a participant-named conditions class. Emit one
+        // method per participant's GeneratedConditionFilter.
+        if (field instanceof QueryField.QueryInterfaceField f) {
+            return extractParticipantConditionFilters(f.participantFilters());
+        }
+        if (field instanceof QueryField.QueryUnionField f) {
+            return extractParticipantConditionFilters(f.participantFilters());
+        }
         // LookupField variants have their lookup-key args emitted via VALUES + JOIN by
         // LookupValuesJoinEmitter; they do not need a generated condition method.
         // Note: a lookup field with a mixed non-lookup-key column filter is not yet supported
         // (no such schema exists today); that case would need to emit the non-key filter here.
-        if (field instanceof LookupField) return Optional.empty();
-        if (!(field instanceof SqlGeneratingField sgf)) return Optional.empty();
+        if (field instanceof LookupField) return List.of();
+        if (!(field instanceof SqlGeneratingField sgf)) return List.of();
         return sgf.filters().stream()
             .filter(f -> f instanceof GeneratedConditionFilter)
             .map(f -> (GeneratedConditionFilter) f)
-            .findFirst();
+            .findFirst()
+            .map(List::of)
+            .orElse(List.of());
+    }
+
+    private static List<GeneratedConditionFilter> extractParticipantConditionFilters(
+            List<no.sikt.graphitron.rewrite.model.ParticipantFilters> participantFilters) {
+        var out = new ArrayList<GeneratedConditionFilter>();
+        for (var pf : participantFilters) {
+            pf.filters().stream()
+                .filter(f -> f instanceof GeneratedConditionFilter)
+                .map(f -> (GeneratedConditionFilter) f)
+                .findFirst()
+                .ifPresent(out::add);
+        }
+        return out;
     }
 
     private static TypeSpec generateConditionsClass(String fqClassName, List<GeneratedConditionFilter> filters,

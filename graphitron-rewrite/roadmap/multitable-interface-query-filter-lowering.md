@@ -1,7 +1,7 @@
 ---
 id: R363
 title: "Lower @field filter inputs and @condition onto multitable-interface queries"
-status: Ready
+status: In Review
 bucket: bug
 priority: 2
 theme: interface-union
@@ -198,6 +198,33 @@ This single decision settles the three questions the original draft left open:
   covers the previously-silent non-existent-method case, since any `@condition` on the path rejects).
   The test asserts the rejection *kind* (`structural`), not merely that some rejection fires, so the
   no-dangling-slug decision is pinned.
+
+## Implementation (shipped, In Review)
+
+All four steps landed as planned. Files: `model/ParticipantFilters.java` (new field-local carrier),
+`model/QueryField.java` (new `participantFilters` component on `QueryInterfaceField` /
+`QueryUnionField`), `FieldBuilder.java` (per-participant lowering + early `@condition` structural
+reject before the loop + `@asConnection` advisory deduped across participants),
+`TypeConditionsGenerator.java` (walks the polymorphic fields' per-participant filters),
+`MultiTablePolymorphicEmitter.java` + `TypeFetcherGenerator.java` (thread a typename-keyed filter
+map into both branch loops). Tests: `MultiTableFilterLoweringTest` (pipeline: per-participant
+lowering for interface + union; absent-column rejection; field- and arg-level `@condition` rejected
+as `structural`, not deferred) and `MultiTableFilterExecutionTest` (execution: list + `@asConnection`
+forms, filter ANDed per branch, only matching rows returned). Full `install -Plocal-db` green.
+
+Two mechanics the plan's steps under-specified, both serving the plan's stated per-participant design
+(surfaced during implementation):
+
+- **Step 3 passes `participant.typeName()`, not `elementTypeName`, to `resolveTableFieldComponents`.**
+  The generated conditions class is `<returnTypeName>Conditions` (`FieldBuilder.java:1479`); passing
+  the interface/union `elementTypeName` would collide all participants on one
+  `<Interface>Conditions.<field>Condition` with conflicting table-param types. `participant.typeName()`
+  yields the per-participant `FeideApplikasjonConditions` the design section already named.
+- **`TypeConditionsGenerator` is wired to the polymorphic fields.** It discovers work via
+  `SqlGeneratingField.filters()`, which these fields (correctly) do not implement, so it now also
+  walks `QueryInterfaceField` / `QueryUnionField` `participantFilters` and emits one composer method
+  per participant. The `QueryConditions` env-adapter is not on the branch path (the emitter calls the
+  composer directly via `FkTargetConditionEmitter.emitTerm`), so only this one generator needed wiring.
 
 ## Cross-links
 

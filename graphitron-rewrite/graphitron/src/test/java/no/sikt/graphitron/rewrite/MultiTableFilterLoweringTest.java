@@ -1,0 +1,150 @@
+package no.sikt.graphitron.rewrite;
+
+import no.sikt.graphitron.rewrite.model.BodyParam;
+import no.sikt.graphitron.rewrite.model.GeneratedConditionFilter;
+import no.sikt.graphitron.rewrite.model.GraphitronField;
+import no.sikt.graphitron.rewrite.model.ParticipantFilters;
+import no.sikt.graphitron.rewrite.model.QueryField;
+import no.sikt.graphitron.rewrite.model.Rejection;
+import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
+import org.junit.jupiter.api.Test;
+
+import java.util.List;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+/**
+ * R363: a {@code @field}-mapped filter input on a root multitable interface / union query field is
+ * lowered <em>per participant</em>, each against the participant's own table, and the model carries
+ * the resolved filters in a field-local {@link ParticipantFilters} list. A column absent from one
+ * participant fails classification, and a {@code @condition} on the path is rejected with a
+ * non-deferred ({@code structural}) rejection.
+ */
+@PipelineTier
+class MultiTableFilterLoweringTest {
+
+    // customer and staff both carry a `first_name varchar` column; `username` is staff-only.
+    private static final String CUSTOMER_STAFF =
+        """
+        type Customer @table(name: "customer") { firstName: String @field(name: "first_name") }
+        type Staff @table(name: "staff") { firstName: String @field(name: "first_name") }
+        """;
+
+    @Test
+    void unionField_fieldFilter_lowersPerParticipant() {
+        var schema = TestSchemaHelper.buildSchema(CUSTOMER_STAFF + """
+            union Occupant = Customer | Staff
+            type Query {
+                occupants(firstName: [String!] @field(name: "first_name")): [Occupant!]!
+            }
+            """);
+        var field = schema.field("Query", "occupants");
+        assertThat(field).isInstanceOf(QueryField.QueryUnionField.class);
+        var union = (QueryField.QueryUnionField) field;
+        assertPerParticipantFirstNameFilter(union.participantFilters());
+    }
+
+    @Test
+    void interfaceField_fieldFilter_lowersPerParticipant() {
+        var schema = TestSchemaHelper.buildSchema("""
+            interface Occupant { firstName: String }
+            type Customer implements Occupant @table(name: "customer") { firstName: String @field(name: "first_name") }
+            type Staff implements Occupant @table(name: "staff") { firstName: String @field(name: "first_name") }
+            type Query {
+                occupants(firstName: [String!] @field(name: "first_name")): [Occupant!]!
+            }
+            """);
+        var field = schema.field("Query", "occupants");
+        assertThat(field).isInstanceOf(QueryField.QueryInterfaceField.class);
+        var iface = (QueryField.QueryInterfaceField) field;
+        assertPerParticipantFirstNameFilter(iface.participantFilters());
+    }
+
+    /**
+     * Each participant carries its own {@link GeneratedConditionFilter}: a table-specific
+     * {@code <Participant>Conditions} class (so the two participants do not collide), a
+     * {@code first_name IN (...)} body param, and the participant's own table.
+     */
+    private static void assertPerParticipantFirstNameFilter(List<ParticipantFilters> participantFilters) {
+        assertThat(participantFilters)
+            .as("one filter carrier per table-bound participant")
+            .hasSize(2);
+        for (var pf : participantFilters) {
+            var gcf = pf.filters().stream()
+                .filter(f -> f instanceof GeneratedConditionFilter)
+                .map(f -> (GeneratedConditionFilter) f)
+                .findFirst()
+                .orElseThrow(() -> new AssertionError(
+                    "participant '" + pf.participant().typeName() + "' carries no GeneratedConditionFilter: "
+                        + pf.filters()));
+            assertThat(gcf.className())
+                .as("conditions class is named after the participant, not the interface/union, "
+                    + "so the two participants do not collide on one class")
+                .endsWith(pf.participant().typeName() + "Conditions");
+            assertThat(gcf.methodName()).isEqualTo("occupantsCondition");
+            assertThat(gcf.tableRef().tableName())
+                .isEqualTo(pf.participant().table().tableName());
+            assertThat(gcf.bodyParams())
+                .anySatisfy(bp -> {
+                    assertThat(bp).isInstanceOf(BodyParam.In.class);
+                    assertThat(((BodyParam.In) bp).column().sqlName()).isEqualTo("first_name");
+                });
+        }
+    }
+
+    @Test
+    void filterColumnAbsentOnOneParticipant_failsClassification() {
+        // `username` is a staff-only column; lowering it against the customer participant fails.
+        var schema = TestSchemaHelper.buildSchema(CUSTOMER_STAFF + """
+            union Occupant = Customer | Staff
+            type Query {
+                occupants(username: [String!] @field(name: "username")): [Occupant!]!
+            }
+            """);
+        var field = schema.field("Query", "occupants");
+        assertThat(field).isInstanceOf(GraphitronField.UnclassifiedField.class);
+        var unc = (GraphitronField.UnclassifiedField) field;
+        assertThat(unc.kind()).isEqualTo(RejectionKind.AUTHOR_ERROR);
+        assertThat(unc.reason()).contains("username");
+    }
+
+    @Test
+    void fieldLevelCondition_rejectedStructuralNotDeferred() {
+        var schema = TestSchemaHelper.buildSchema(CUSTOMER_STAFF + """
+            union Occupant = Customer | Staff
+            type Query {
+                occupants: [Occupant!]! @condition(condition: {
+                    className: "no.sikt.graphitron.rewrite.TestConditionStub", method: "anyMethod"})
+            }
+            """);
+        assertConditionRejectedStructural(schema.field("Query", "occupants"));
+    }
+
+    @Test
+    void argLevelCondition_rejectedStructuralNotDeferred() {
+        var schema = TestSchemaHelper.buildSchema(CUSTOMER_STAFF + """
+            union Occupant = Customer | Staff
+            type Query {
+                occupants(firstName: String @condition(condition: {
+                    className: "no.sikt.graphitron.rewrite.TestConditionStub", method: "anyMethod"})): [Occupant!]!
+            }
+            """);
+        assertConditionRejectedStructural(schema.field("Query", "occupants"));
+    }
+
+    /**
+     * The {@code @condition} rejection must be a non-deferred {@code structural} author error: a
+     * deferred rejection would pin a dangling {@code planSlug}, the hazard R363 avoids. Asserting the
+     * <em>kind</em> (not merely that some rejection fires) pins that decision.
+     */
+    private static void assertConditionRejectedStructural(GraphitronField field) {
+        assertThat(field).isInstanceOf(GraphitronField.UnclassifiedField.class);
+        var unc = (GraphitronField.UnclassifiedField) field;
+        assertThat(unc.kind())
+            .as("structural rejection is an AUTHOR_ERROR, never DEFERRED (no dangling slug)")
+            .isEqualTo(RejectionKind.AUTHOR_ERROR);
+        assertThat(unc.rejection())
+            .isInstanceOf(Rejection.AuthorError.Structural.class);
+        assertThat(unc.reason()).contains("@condition");
+    }
+}
