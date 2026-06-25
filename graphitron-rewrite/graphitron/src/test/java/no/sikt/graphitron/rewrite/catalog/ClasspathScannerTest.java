@@ -164,6 +164,46 @@ class ClasspathScannerTest {
     }
 
     @Test
+    void classifiesJooqConditionReturnExactlyByFqn(@TempDir Path classes) throws IOException {
+        // R368: returnsCondition is set only for a method whose un-erased return type is exactly
+        // org.jooq.Condition. A consumer's own type named Condition (here com.example.Condition)
+        // must NOT be mis-tagged — that is the false positive the FQN lift defends against, which a
+        // simple-name match on the erased "Condition" display name would fail.
+        var fqn = "com.example.MyService";
+        var realCondition = ClassDesc.of("org.jooq.Condition");
+        var fakeCondition = ClassDesc.of("com.example.Condition");
+        var stringDesc = ClassDesc.of("java.lang.String");
+        byte[] bytes = ClassFile.of().build(ClassDesc.of(fqn), cb -> cb
+            .withFlags(ClassFile.ACC_PUBLIC | ClassFile.ACC_INTERFACE | ClassFile.ACC_ABSTRACT)
+            .withMethod("realCondition", java.lang.constant.MethodTypeDesc.of(realCondition),
+                ClassFile.ACC_PUBLIC | ClassFile.ACC_ABSTRACT, mb -> {})
+            .withMethod("fakeCondition", java.lang.constant.MethodTypeDesc.of(fakeCondition),
+                ClassFile.ACC_PUBLIC | ClassFile.ACC_ABSTRACT, mb -> {})
+            .withMethod("plain", java.lang.constant.MethodTypeDesc.of(stringDesc),
+                ClassFile.ACC_PUBLIC | ClassFile.ACC_ABSTRACT, mb -> {}));
+        writeRawClassBytes(classes, fqn, bytes);
+
+        var refs = ClasspathScanner.scan(classes, JOOQ_PKG);
+
+        assertThat(refs).hasSize(1);
+        var methods = refs.get(0).methods();
+        // Both the real jOOQ Condition and the consumer's own Condition erase to the simple display
+        // name "Condition", so returnType alone cannot tell them apart.
+        assertThat(methods).filteredOn(m -> m.name().equals("realCondition")).singleElement()
+            .satisfies(m -> {
+                assertThat(m.returnType()).isEqualTo("Condition");
+                assertThat(m.returnsCondition()).isTrue();
+            });
+        assertThat(methods).filteredOn(m -> m.name().equals("fakeCondition")).singleElement()
+            .satisfies(m -> {
+                assertThat(m.returnType()).isEqualTo("Condition");
+                assertThat(m.returnsCondition()).isFalse();
+            });
+        assertThat(methods).filteredOn(m -> m.name().equals("plain")).singleElement()
+            .satisfies(m -> assertThat(m.returnsCondition()).isFalse());
+    }
+
+    @Test
     void skipsConstructorAndClassInitMethods(@TempDir Path classes) throws IOException {
         writePublicClass(classes, "com.example.Plain");
 

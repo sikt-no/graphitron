@@ -184,13 +184,33 @@ public record CompletionData(
      * available on a {@code .java} edit is seen without a generator rebuild.
      * An overload collision the join key cannot disambiguate is a distinct
      * outcome there, not a silent no-jump (see the LSP {@code DefinitionTarget}).
+     *
+     * <p>{@code returnsCondition} is the parse-boundary classification of
+     * whether this method's return type is jOOQ's {@code org.jooq.Condition}
+     * (R368). {@link ClasspathScanner} computes it from the <em>un-erased</em>
+     * return descriptor before {@code returnType} loses its package, so the
+     * fact is exact (a consumer's own type named {@code Condition} does not
+     * match). The MCP {@code conditions} tool and any future LSP
+     * {@code @condition} arm read this pre-classified value rather than
+     * re-deriving a fragile simple-name predicate from {@code returnType}.
      */
     public record Method(
         String name,
         String returnType,
         String description,
-        List<Parameter> parameters
-    ) {}
+        List<Parameter> parameters,
+        boolean returnsCondition
+    ) {
+        /**
+         * Back-compat constructor defaulting {@code returnsCondition} to
+         * {@code false} (a non-condition method). Keeps existing LSP / test
+         * callers that build {@link Method} without the R368 classification
+         * compiling unchanged.
+         */
+        public Method(String name, String returnType, String description, List<Parameter> parameters) {
+            this(name, returnType, description, parameters, false);
+        }
+    }
 
     /**
      * Method parameter. {@code source} matches the rewrite-side

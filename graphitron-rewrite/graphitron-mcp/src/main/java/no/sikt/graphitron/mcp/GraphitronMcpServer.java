@@ -6,7 +6,9 @@ import io.modelcontextprotocol.server.McpSyncServer;
 import io.modelcontextprotocol.server.transport.HttpServletStreamableServerTransportProvider;
 import io.modelcontextprotocol.spec.McpSchema;
 import no.sikt.graphitron.lsp.state.Workspace;
+import no.sikt.graphitron.rewrite.catalog.CatalogBuilder;
 import no.sikt.graphitron.rewrite.catalog.CatalogFacts;
+import no.sikt.graphitron.rewrite.catalog.DirectiveShape;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
 import org.eclipse.jetty.ee10.servlet.ServletContextHandler;
 import org.eclipse.jetty.ee10.servlet.ServletHolder;
@@ -21,7 +23,6 @@ import java.io.UncheckedIOException;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -88,16 +89,31 @@ public final class GraphitronMcpServer implements AutoCloseable {
             .mcpEndpoint(MCP_ENDPOINT)
             .build();
 
+        // R368 — the bundled directive grammar projected once off the frozen vocabulary registry
+        // (shape, not state). The directives resource unions this with the live snapshot's
+        // user-declared directives on every read; the bundled half never changes, so it is computed
+        // here rather than per read. The projection carries applicable locations via the R368
+        // DirectiveShape widening.
+        List<DirectiveShape> bundledDirectives =
+            CatalogBuilder.buildSnapshot(workspace.vocabulary().registry()).directives();
+
         // Build the sync server before mounting the servlet: this wires the session factory into
         // the transport provider, so it is ready before Jetty accepts the first request. The
-        // tools(false) boolean is the listChanged capability; the seam never mutates the tool
-        // list at runtime, so it stays false even though the tools read live state.
+        // tools(false) / resources(false, false) booleans are the listChanged (and, for resources,
+        // subscribe) capabilities; the seam never mutates the tool or resource list at runtime, so
+        // they stay false even though the tools and resource read live state.
         this.mcpServer = McpServer.sync(transportProvider)
             .serverInfo(SERVER_NAME, version())
             .instructions(instructions)
-            .capabilities(McpSchema.ServerCapabilities.builder().prompts(false).tools(false).build())
+            .capabilities(McpSchema.ServerCapabilities.builder()
+                .prompts(false).tools(false).resources(false, false).build())
             .prompts(aboutPrompt(aboutText))
-            .tools(statusTool(workspace), catalogTablesTool(workspace), catalogDescribeTool(workspace))
+            .tools(
+                statusTool(workspace),
+                catalogTablesTool(workspace), catalogDescribeTool(workspace),
+                servicesTool(workspace), conditionsTool(workspace), recordsTool(workspace),
+                schemaTool(workspace), diagnosticsTool(workspace))
+            .resources(directivesResource(workspace, bundledDirectives))
             .build();
 
         this.httpServer = new Server();
@@ -271,19 +287,14 @@ public final class GraphitronMcpServer implements AutoCloseable {
     }
 
     static McpSchema.CallToolResult catalogTablesResult(CatalogFacts facts, Map<String, Object> args) {
-        Optional<String> schema = stringArg(args, "schema");
-        Optional<String> name = stringArg(args, "name");
-        int limit = intArg(args, "limit", DEFAULT_TABLES_LIMIT);
-        if (limit < 1) limit = DEFAULT_TABLES_LIMIT;
-        int offset = decodeCursor(stringArg(args, "cursor").orElse(null));
+        Optional<String> schema = McpWire.stringArg(args, "schema");
+        Optional<String> name = McpWire.stringArg(args, "name");
 
         var all = facts.tables(schema, name);
-        int from = Math.min(offset, all.size());
-        int to = Math.min(from + limit, all.size());
-        var page = all.subList(from, to);
+        var paged = McpWire.page(all, args, DEFAULT_TABLES_LIMIT);
 
-        var tableList = new ArrayList<Map<String, Object>>(page.size());
-        for (var t : page) {
+        var tableList = new ArrayList<Map<String, Object>>(paged.items().size());
+        for (var t : paged.items()) {
             var entry = new LinkedHashMap<String, Object>();
             entry.put("schema", t.schema());
             entry.put("name", t.name());
@@ -293,15 +304,13 @@ public final class GraphitronMcpServer implements AutoCloseable {
 
         var fields = new LinkedHashMap<String, Object>();
         fields.put("tables", tableList);
-        boolean hasMore = to < all.size();
-        if (hasMore) {
-            fields.put("nextCursor", encodeCursor(to));
-        }
+        paged.nextCursor().ifPresent(c -> fields.put("nextCursor", c));
 
         String summary = "catalog.tables: " + all.size() + " table(s)"
             + schema.map(s -> " in schema '" + s + "'").orElse("")
             + name.map(n -> " matching '" + n + "'").orElse("")
-            + "; showing " + page.size() + (hasMore ? " (more available)" : "") + ".";
+            + "; showing " + paged.items().size()
+            + (paged.nextCursor().isPresent() ? " (more available)" : "") + ".";
         return McpSchema.CallToolResult.builder()
             .addTextContent(summary)
             .structuredContent(fields)
@@ -341,8 +350,8 @@ public final class GraphitronMcpServer implements AutoCloseable {
     }
 
     static McpSchema.CallToolResult catalogDescribeResult(CatalogFacts facts, Map<String, Object> args) {
-        String table = stringArg(args, "table").orElse("");
-        Optional<String> schema = stringArg(args, "schema");
+        String table = McpWire.stringArg(args, "table").orElse("");
+        Optional<String> schema = McpWire.stringArg(args, "schema");
 
         var fields = new LinkedHashMap<String, Object>();
         String summary = switch (facts.resolve(table, schema)) {
@@ -425,44 +434,168 @@ public final class GraphitronMcpServer implements AutoCloseable {
         return m;
     }
 
-    private static Optional<String> stringArg(Map<String, Object> args, String name) {
-        if (args == null) return Optional.empty();
-        Object value = args.get(name);
-        return value instanceof String s && !s.isBlank() ? Optional.of(s) : Optional.empty();
-    }
+    // ---- R368: code tools (services / conditions / records) ----
 
-    private static int intArg(Map<String, Object> args, String name, int fallback) {
-        if (args == null) return fallback;
-        Object value = args.get(name);
-        if (value instanceof Number n) return n.intValue();
-        if (value instanceof String s) {
-            try {
-                return Integer.parseInt(s.trim());
-            } catch (NumberFormatException ignored) {
-                return fallback;
-            }
-        }
-        return fallback;
+    /** Common {@code {name?, limit?, cursor?}} input schema shared by the three code tools. */
+    private static Map<String, Object> nameLimitCursorSchema(String nameDescription) {
+        return Map.of(
+            "type", "object",
+            "properties", Map.of(
+                "name", Map.of("type", "string", "description", nameDescription),
+                "limit", Map.of("type", "integer",
+                    "description", "Maximum entries per page (default " + CodeTools.DEFAULT_LIMIT + ")."),
+                "cursor", Map.of("type", "string",
+                    "description", "Opaque page cursor from a prior call's nextCursor.")));
     }
 
     /**
-     * Opaque page cursor: a base64-encoded offset into the stable ordering. Opaque so the wire
-     * contract does not promise offset semantics; a malformed or absent cursor decodes to offset 0.
+     * {@code services}: the consumer service / condition-host classes the schema wires to, each with
+     * its callable methods (condition-returning methods included; the same class is both a service
+     * host and a condition host). Reads {@link Workspace#catalog()} external references joined with
+     * {@link Workspace#sourceIndex()} for class source locations, both live on every call.
      */
-    private static String encodeCursor(int offset) {
-        return Base64.getUrlEncoder().withoutPadding()
-            .encodeToString(Integer.toString(offset).getBytes(StandardCharsets.UTF_8));
+    private static McpServerFeatures.SyncToolSpecification servicesTool(Workspace workspace) {
+        var tool = McpSchema.Tool.builder("services",
+                nameLimitCursorSchema("Case-insensitive substring filter on the class FQN."))
+            .title("List service classes")
+            .description("Lists the consumer Java classes the schema wires to as services, each with "
+                + "its public methods (name, return type, parameters) and stable method-ref IDs "
+                + "(fqcn#method/arity). Condition-returning methods appear here too; the conditions "
+                + "tool is the condition-filtered view. Each class carries its source location when "
+                + "the .java source index has it; an absent location reflects an un-rewalked source "
+                + "(the source cadence is independent of the build cadence), not a missing class.")
+            .build();
+        return McpServerFeatures.SyncToolSpecification.builder()
+            .tool(tool)
+            .callHandler((exchange, request) -> CodeTools.servicesResult(
+                workspace.catalog().externalReferences(), workspace.sourceIndex(), request.arguments()))
+            .build();
     }
 
-    private static int decodeCursor(String cursor) {
-        if (cursor == null || cursor.isBlank()) return 0;
-        try {
-            int offset = Integer.parseInt(
-                new String(Base64.getUrlDecoder().decode(cursor), StandardCharsets.UTF_8));
-            return Math.max(offset, 0);
-        } catch (IllegalArgumentException ignored) {
-            return 0;
-        }
+    /**
+     * {@code conditions}: the methods whose typed {@code returnsCondition} fact is set (return type
+     * is jOOQ {@code org.jooq.Condition}), classified at the parse boundary in
+     * {@code ClasspathScanner}. Same live reads and source-location join as {@code services}, keyed
+     * per method.
+     */
+    private static McpServerFeatures.SyncToolSpecification conditionsTool(Workspace workspace) {
+        var tool = McpSchema.Tool.builder("conditions",
+                nameLimitCursorSchema("Case-insensitive substring filter on the owning class FQN."))
+            .title("List condition methods")
+            .description("Lists the consumer methods returning a jOOQ Condition (classified exactly "
+                + "from the un-erased return type, so a consumer's own type named Condition is not "
+                + "mistaken for one), each with its owning class, parameters, and stable method-ref "
+                + "ID. Each carries its source location when the .java source index has it; an absent "
+                + "location reflects an un-rewalked source or an overload the (class, name, arity) key "
+                + "could not disambiguate, not an error.")
+            .build();
+        return McpServerFeatures.SyncToolSpecification.builder()
+            .tool(tool)
+            .callHandler((exchange, request) -> CodeTools.conditionsResult(
+                workspace.catalog().externalReferences(), workspace.sourceIndex(), request.arguments()))
+            .build();
+    }
+
+    /**
+     * {@code records}: the consumer classes with a non-empty record-component list (a Java
+     * {@code record} / POJO backing), each with its components and a class source location.
+     */
+    private static McpServerFeatures.SyncToolSpecification recordsTool(Workspace workspace) {
+        var tool = McpSchema.Tool.builder("records",
+                nameLimitCursorSchema("Case-insensitive substring filter on the class FQN."))
+            .title("List record classes")
+            .description("Lists the consumer Java record classes the schema can bind to, each with "
+                + "its components (name, display type) and source location when the .java source "
+                + "index has it.")
+            .build();
+        return McpServerFeatures.SyncToolSpecification.builder()
+            .tool(tool)
+            .callHandler((exchange, request) -> CodeTools.recordsResult(
+                workspace.catalog().externalReferences(), workspace.sourceIndex(), request.arguments()))
+            .build();
+    }
+
+    // ---- R368: schema tool ----
+
+    /**
+     * {@code schema}: the current SDL types, their classifications, backing shapes, field
+     * classifications, and definition locations off {@link Workspace#snapshot()}, joined with
+     * {@code @node} metadata off {@link Workspace#catalog()} (same build cadence). Both reads are
+     * live on every call; the snapshot + catalog join is same-cadence (R361 D3).
+     */
+    private static McpServerFeatures.SyncToolSpecification schemaTool(Workspace workspace) {
+        var tool = McpSchema.Tool.builder("schema", Map.of(
+                "type", "object",
+                "properties", Map.of(
+                    "type", Map.of("type", "string",
+                        "description", "Narrow to one SDL type, returning its fields in full."),
+                    "limit", Map.of("type", "integer",
+                        "description", "Maximum types per page (default " + SchemaView.DEFAULT_LIMIT + ")."),
+                    "cursor", Map.of("type", "string",
+                        "description", "Opaque page cursor from a prior call's nextCursor."))))
+            .title("Describe the schema")
+            .description("Lists the current GraphQL types with their classification, backing shape, "
+                + "field classifications (keyed by the Type.field coordinate), @node metadata, and "
+                + "definition location, paged via an opaque cursor; pass type to narrow to one. "
+                + "Reflects the latest successful build snapshot, reporting its availability and "
+                + "freshness; types are empty until the first build succeeds.")
+            .build();
+        return McpServerFeatures.SyncToolSpecification.builder()
+            .tool(tool)
+            .callHandler((exchange, request) -> SchemaView.schemaResult(
+                workspace.snapshot(), workspace.catalog().nodeMetadata(), request.arguments()))
+            .build();
+    }
+
+    // ---- R368: diagnostics tool ----
+
+    /**
+     * {@code diagnostics}: the current validation errors and warnings off
+     * {@link Workspace#validationReport()}, with the live snapshot's availability / freshness
+     * reported alongside so an agent can tell whether the diagnostics are current relative to the
+     * schema it just read.
+     */
+    private static McpServerFeatures.SyncToolSpecification diagnosticsTool(Workspace workspace) {
+        var tool = McpSchema.Tool.builder("diagnostics", Map.of(
+                "type", "object",
+                "properties", Map.of(
+                    "severity", Map.of("type", "string",
+                        "description", "Filter to one severity: \"error\" or \"warning\"."),
+                    "coordinate", Map.of("type", "string",
+                        "description", "Filter to one schema coordinate (a type name or Type.field)."),
+                    "limit", Map.of("type", "integer",
+                        "description", "Maximum entries per page (default " + DiagnosticsTool.DEFAULT_LIMIT + ")."),
+                    "cursor", Map.of("type", "string",
+                        "description", "Opaque page cursor from a prior call's nextCursor."))))
+            .title("List schema diagnostics")
+            .description("Lists the current validation errors and warnings (severity, coordinate, "
+                + "message, rejection kind, location), paged via an opaque cursor, with optional "
+                + "severity and coordinate filters. Reports the snapshot's availability and freshness "
+                + "alongside so you can tell whether the diagnostics are current relative to the "
+                + "schema. Closes the authoring loop: edit, then read your own diagnostics back.")
+            .build();
+        return McpServerFeatures.SyncToolSpecification.builder()
+            .tool(tool)
+            .callHandler((exchange, request) -> DiagnosticsTool.diagnosticsResult(
+                workspace.validationReport(), workspace.snapshot(), request.arguments()))
+            .build();
+    }
+
+    // ---- R368: directives resource ----
+
+    /**
+     * The {@code directives} resource: the directive-vocabulary cheat-sheet, composed from the
+     * bundled grammar (frozen, projected once at construction) unioned with the live snapshot's
+     * user-declared directives. A resource, not a tool, because the directive grammar is shape, not
+     * state. Re-reads reflect the latest snapshot, degrading to the bundled grammar alone when no
+     * build has succeeded.
+     */
+    private static McpServerFeatures.SyncResourceSpecification directivesResource(
+        Workspace workspace, List<DirectiveShape> bundledDirectives
+    ) {
+        return new McpServerFeatures.SyncResourceSpecification(
+            DirectivesResource.resource(),
+            (exchange, request) -> DirectivesResource.read(bundledDirectives, workspace.snapshot()));
     }
 
     /**
