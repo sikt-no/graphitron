@@ -264,7 +264,134 @@ class ValidatorDiagnosticsTest {
             .isEqualTo(Path.of(path).toUri().toString());
     }
 
+    /**
+     * graphql-java anchors a described type's location at the opening {@code """} of its doc block.
+     * The diagnostic must underline the type name, not the doc block. Own-line block form.
+     */
+    @Test
+    void ownLineBlockDescription_reanchorsToTypeName() {
+        var path = "/tmp/schema.graphqls";
+        var uri = ValidationReport.canonicalUri(path);
+        var source = """
+            ""\"
+            A documented type.
+            ""\"
+            type Foo {
+              bar: Int
+            }
+            """;
+        // Type Foo's graphql-java location is the description start: line 1, col 1.
+        var error = new ValidationError(
+            "Foo", Rejection.structural("error on a documented type"),
+            new SourceLocation(1, 1, path));
+        var report = ValidationReport.from(List.of(error), List.of());
+
+        var diags = Diagnostics.compute(uri, file(source), CompletionData.empty(), CURRENT_SNAPSHOT, report);
+
+        // "type Foo {" is line index 3; "Foo" spans characters 5..8.
+        assertThat(diags).singleElement().satisfies(d -> {
+            assertThat(d.getRange().getStart().getLine()).isEqualTo(3);
+            assertThat(d.getRange().getStart().getCharacter()).isEqualTo(5);
+            assertThat(d.getRange().getEnd().getLine()).isEqualTo(3);
+            assertThat(d.getRange().getEnd().getCharacter()).isEqualTo(8);
+        });
+    }
+
+    /**
+     * Inline block form {@code """..."""} — the case a content-newline heuristic over graphql-java's
+     * description cannot place (it is indistinguishable from an own-line block) and the dominant
+     * style in the directive schema. The tree-sitter walk lands on the field name exactly.
+     */
+    @Test
+    void inlineBlockDescription_reanchorsToFieldName() {
+        var path = "/tmp/schema.graphqls";
+        var uri = ValidationReport.canonicalUri(path);
+        var source = """
+            type Foo {
+              ""\"An inline documented field.""\"
+              bar: Int
+            }
+            """;
+        // Field bar's graphql-java location is the inline description start: line 2, col 3.
+        var error = new ValidationError(
+            "Foo.bar", Rejection.structural("error on a documented field"),
+            new SourceLocation(2, 3, path));
+        var report = ValidationReport.from(List.of(error), List.of());
+
+        var diags = Diagnostics.compute(uri, file(source), CompletionData.empty(), CURRENT_SNAPSHOT, report);
+
+        // "  bar: Int" is line index 2; "bar" spans characters 2..5.
+        assertThat(diags).singleElement().satisfies(d -> {
+            assertThat(d.getRange().getStart().getLine()).isEqualTo(2);
+            assertThat(d.getRange().getStart().getCharacter()).isEqualTo(2);
+            assertThat(d.getRange().getEnd().getLine()).isEqualTo(2);
+            assertThat(d.getRange().getEnd().getCharacter()).isEqualTo(5);
+        });
+    }
+
+    /** Single-line {@code "..."} description form. */
+    @Test
+    void singleLineDescription_reanchorsToTypeName() {
+        var path = "/tmp/schema.graphqls";
+        var uri = ValidationReport.canonicalUri(path);
+        var source = """
+            "A single-line documented type."
+            type Foo {
+              bar: Int
+            }
+            """;
+        // Type Foo's graphql-java location is the description start: line 1, col 1.
+        var error = new ValidationError(
+            "Foo", Rejection.structural("error on a documented type"),
+            new SourceLocation(1, 1, path));
+        var report = ValidationReport.from(List.of(error), List.of());
+
+        var diags = Diagnostics.compute(uri, file(source), CompletionData.empty(), CURRENT_SNAPSHOT, report);
+
+        // "type Foo {" is line index 1; "Foo" spans characters 5..8.
+        assertThat(diags).singleElement().satisfies(d -> {
+            assertThat(d.getRange().getStart().getLine()).isEqualTo(1);
+            assertThat(d.getRange().getStart().getCharacter()).isEqualTo(5);
+            assertThat(d.getRange().getEnd().getLine()).isEqualTo(1);
+            assertThat(d.getRange().getEnd().getCharacter()).isEqualTo(8);
+        });
+    }
+
+    /**
+     * No description: graphql-java already reports the declaration line, so the diagnostic keeps the
+     * column-to-end-of-line range straight from the location. Pins that the re-anchor is inert
+     * outside doc blocks.
+     */
+    @Test
+    void noDescription_keepsColumnToEndOfLineRange() {
+        var path = "/tmp/schema.graphqls";
+        var uri = ValidationReport.canonicalUri(path);
+        var source = """
+            type Foo {
+              bar: Int
+            }
+            """;
+        // Field bar with no doc block: graphql-java reports the name line: line 2, col 3.
+        var error = new ValidationError(
+            "Foo.bar", Rejection.structural("error on an undocumented field"),
+            new SourceLocation(2, 3, path));
+        var report = ValidationReport.from(List.of(error), List.of());
+
+        var diags = Diagnostics.compute(uri, file(source), CompletionData.empty(), CURRENT_SNAPSHOT, report);
+
+        assertThat(diags).singleElement().satisfies(d -> {
+            assertThat(d.getRange().getStart().getLine()).isEqualTo(1);
+            assertThat(d.getRange().getStart().getCharacter()).isEqualTo(2);
+            assertThat(d.getRange().getEnd().getLine()).isEqualTo(1);
+            assertThat(d.getRange().getEnd().getCharacter()).isEqualTo(Integer.MAX_VALUE);
+        });
+    }
+
     private static WorkspaceFile file() {
         return new WorkspaceFile(1, "type Foo { x: Int }\n");
+    }
+
+    private static WorkspaceFile file(String source) {
+        return new WorkspaceFile(1, source);
     }
 }
