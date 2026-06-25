@@ -110,11 +110,16 @@ public class TypeConditionsGenerator {
                 }
                 case BodyParam.In in -> {
                     String col = in.column().javaName();
+                    // Empty-list guard: an empty list contributes no predicate, so the filter
+                    // narrows by nothing (DSL.noCondition() identity) rather than emitting
+                    // `IN ()`, which jOOQ renders as the constant `false` and would zero the
+                    // query. The null-arity sibling of this guard is the `!= null` branch below.
                     if (in.nonNull()) {
-                        builder.addStatement("condition = condition.and(table.$L.in($L))", col, in.name());
-                    } else {
-                        builder.addStatement("if ($L != null) condition = condition.and(table.$L.in($L))",
+                        builder.addStatement("if (!$L.isEmpty()) condition = condition.and(table.$L.in($L))",
                             in.name(), col, in.name());
+                    } else {
+                        builder.addStatement("if ($L != null && !$L.isEmpty()) condition = condition.and(table.$L.in($L))",
+                            in.name(), in.name(), col, in.name());
                     }
                 }
                 case BodyParam.RowEq req -> {
@@ -132,13 +137,16 @@ public class TypeConditionsGenerator {
                 case BodyParam.RowIn rin -> {
                     // DSL.row(table.c1, ..., table.cN).in(rows) — typed Row<N>.in takes
                     // Collection<? extends Row<N><T1, ..., TN>>.
+                    // Empty-list guard mirrors the In arm: an empty composite-key list (a
+                    // client sending [] for a composite @nodeId filter decodes to an empty
+                    // row list) narrows by nothing rather than rendering `IN () = false`.
                     var cols = buildTypedCols(rin.columns());
                     if (rin.nonNull()) {
-                        builder.addStatement("condition = condition.and($T.row($L).in($L))",
-                            DSL, cols, rin.name());
-                    } else {
-                        builder.addStatement("if ($L != null) condition = condition.and($T.row($L).in($L))",
+                        builder.addStatement("if (!$L.isEmpty()) condition = condition.and($T.row($L).in($L))",
                             rin.name(), DSL, cols, rin.name());
+                    } else {
+                        builder.addStatement("if ($L != null && !$L.isEmpty()) condition = condition.and($T.row($L).in($L))",
+                            rin.name(), rin.name(), DSL, cols, rin.name());
                     }
                 }
             }
