@@ -10,66 +10,32 @@ It is not relevant when building locally or in CI.
 - **Docker is unavailable.** `dockerd` fails to start because iptables/nft is not supported
   (kernel too old). Use native PostgreSQL instead of TestContainers wherever possible.
 
-## One-Time Environment Preparation
+## Automatic setup (SessionStart hook)
 
-### Maven settings
+`.claude/scripts/session-start-web-env.sh` runs at the start of every web session and brings the
+sandbox to a buildable state. Each step is idempotent and no-ops on local development. It:
 
-If `~/.m2/settings.xml` contains stale proxy entries, replace it with an empty settings file:
+- **Installs JDK 25 and makes it the default.** The parent pom's enforcer requires Java >= 25, but
+  older sandbox images default to Java 21 and pin it via `/etc/profile.d/java.sh`. The hook installs
+  `openjdk-25-jdk-headless` if absent and retargets the alternatives plus that profile file, so
+  `JAVA_HOME` resolves to `/usr/lib/jvm/java-25-openjdk-amd64` in every new shell.
+- **Brings up PostgreSQL for `-Plocal-db`.** Starts the cluster, sets the `postgres`/`postgres`
+  password (JDBC connects over 127.0.0.1 with scram-sha-256, while `sudo -u postgres` uses peer
+  auth), and creates + seeds the `rewrite_test` database from
+  `graphitron-rewrite/graphitron-sakila-db/src/main/resources/init.sql`.
+- **Clears a stale Maven proxy.** Replaces `~/.m2/settings.xml` with an empty settings file if it
+  still carries the legacy `21.0.0.129` proxy that blocks Maven Central.
+- **Builds libtree-sitter `0.26.9`.** `graphitron-lsp`'s jtreesitter 0.26 resolves runtime symbols
+  against an OS-installed `libtree-sitter`; apt's is 0.20.x, which predates `ts_language_abi_version`.
+  The hook fetches the release tarball over HTTPS and builds it. It uses the tarball rather than
+  `git clone` because in repo-scoped web sessions the git protocol is rewritten to a proxy path that
+  `403`s on third-party repos; plain HTTPS to `github.com` is unaffected. CI
+  (`.github/workflows/rewrite-build.yml`) clones the same `v0.26.9` directly (it has unrestricted
+  GitHub access), so the sandbox and CI exercise the same runtime version.
 
-```bash
-mkdir -p ~/.m2
-cat > ~/.m2/settings.xml << 'XMLEOF'
-<settings xmlns="http://maven.apache.org/SETTINGS/1.2.0"
-          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-          xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.2.0 https://maven.apache.org/xsd/settings-1.2.0.xsd">
-</settings>
-XMLEOF
-```
-
-### PostgreSQL setup
-
-```bash
-pg_ctlcluster 16 main start
-sudo -u postgres psql -c "ALTER USER postgres PASSWORD 'postgres';"
-sudo -u postgres psql -c "CREATE DATABASE rewrite_test;"
-sudo -u postgres psql -d rewrite_test \
-  -f graphitron-rewrite/graphitron-sakila-db/src/main/resources/init.sql
-```
-
-The `ALTER USER` step is required because JDBC connects via 127.0.0.1 using scram-sha-256
-authentication, while `sudo -u postgres psql` uses peer auth. The `local-db` Maven profile
-uses `postgres`/`postgres` credentials.
-
-### libtree-sitter runtime
-
-`graphitron-lsp`'s `NativeLibraryBundleTest` loads the grammar binary from
-`graphitron-tree-sitter-natives`; jtreesitter 0.26 then resolves runtime symbols against an
-OS-installed `libtree-sitter`. Ubuntu apt's `libtree-sitter0` is pinned to 0.20.x which
-predates `ts_language_abi_version`, so the modern runtime must be built from upstream source
-at the version matching the natives jar's parser ABI.
-
-The `SessionStart` hook (`.claude/scripts/session-start-web-env.sh`) does this automatically:
-if `libtree-sitter.so.0.26` is not already on the loader path it fetches the release tarball
-and builds it, so every web session has the runtime without manual steps.
-
-If you ever need to do it by hand, fetch the **release tarball over HTTPS** rather than
-`git clone`: in repo-scoped web sessions the proxy serves only the repos in this session's
-GitHub scope, so `git clone https://github.com/tree-sitter/tree-sitter` (a non-scoped repo)
-is refused with a `403`. Plain HTTPS to `github.com` is unaffected.
-
-```bash
-VERSION=v0.26.9
-TMPDIR=$(mktemp -d) && trap "rm -rf $TMPDIR" EXIT
-curl -fsSL "https://github.com/tree-sitter/tree-sitter/archive/refs/tags/${VERSION}.tar.gz" \
-  -o "$TMPDIR/ts.tgz"
-tar -xzf "$TMPDIR/ts.tgz" -C "$TMPDIR"
-make -C "$TMPDIR/tree-sitter-${VERSION#v}"
-sudo make -C "$TMPDIR/tree-sitter-${VERSION#v}" install
-sudo ldconfig
-```
-
-CI (`.github/workflows/rewrite-build.yml`) clones the same `v0.26.9` source directly, it has
-unrestricted GitHub access, so the web sandbox and CI exercise the same runtime version.
+Each step prints a one-line status message on success or failure. If a step fails, re-run the script
+by hand (`.claude/scripts/session-start-web-env.sh`) or apply that step manually from its description
+above.
 
 ## Building graphitron-rewrite
 
@@ -113,13 +79,9 @@ rewrite version (10-SNAPSHOT), distinct from the legacy 9-SNAPSHOT coord.
 - The `local-db` profile is defined in `graphitron-sakila-db/pom.xml`
   and switches jOOQ codegen from `ContainerDatabaseDriver` to
   `org.postgresql.Driver` at `localhost:5432/rewrite_test`.
-- Maven is at `/opt/maven/bin/mvn`; Java 25 is the default JVM. Both are
-  pre-installed. Older sandbox images may still default to Java 21; in that case
-  install JDK 25 with `sudo apt-get install -y openjdk-25-jdk-headless` (lands at
-  `/usr/lib/jvm/java-25-openjdk-amd64`) and either run
-  `sudo update-alternatives --set java /usr/lib/jvm/java-25-openjdk-amd64/bin/java`
-  or export `JAVA_HOME=/usr/lib/jvm/java-25-openjdk-amd64`. The parent pom's
-  enforcer rule fails fast with a clear message if the JVM is older than 25.
+- Maven is at `/opt/maven/bin/mvn`; the SessionStart hook ensures Java 25 is the
+  default JVM (see [Automatic setup](#automatic-setup-sessionstart-hook)). The parent
+  pom's enforcer rule fails fast with a clear message if the JVM is older than 25.
 - The legacy repo-root `mvn install` still works as before, but it no longer
   builds the rewrite tree (dropped from the root reactor as part of the
   aggregator-standalone work).
