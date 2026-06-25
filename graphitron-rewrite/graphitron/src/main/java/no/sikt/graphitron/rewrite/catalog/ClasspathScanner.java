@@ -47,6 +47,9 @@ import java.util.stream.Stream;
  */
 public final class ClasspathScanner {
 
+    /** JVM field descriptor of {@code org.jooq.Condition}; the exact return-type match for R368's condition fact. */
+    private static final String JOOQ_CONDITION_DESCRIPTOR = "Lorg/jooq/Condition;";
+
     private ClasspathScanner() {}
 
     /**
@@ -152,6 +155,15 @@ public final class ClasspathScanner {
             // `<clinit>` in the constant pool; skip both.
             if (name.startsWith("<")) continue;
             var desc = m.methodTypeSymbol();
+            // Classify the return type against jOOQ's Condition here, at the
+            // parse boundary, from the un-erased descriptor — before displayName()
+            // drops the package below and a simple-name match could no longer
+            // tell org.jooq.Condition from a consumer's own type named Condition
+            // (R368). Exact descriptor compare, not assignability: the parse-only
+            // scan resolves no type hierarchy, and the jOOQ idiom returns
+            // Condition directly, so exact match is both sufficient and all the
+            // scanner can do.
+            boolean returnsCondition = JOOQ_CONDITION_DESCRIPTOR.equals(desc.returnType().descriptorString());
             String returnType = displayName(desc.returnType());
             var paramNames = readParameterNames(m, desc.parameterList().size());
             var parameters = new ArrayList<CompletionData.Parameter>();
@@ -164,7 +176,7 @@ public final class ClasspathScanner {
                     ""
                 ));
             }
-            methods.add(new CompletionData.Method(name, returnType, "", List.copyOf(parameters)));
+            methods.add(new CompletionData.Method(name, returnType, "", List.copyOf(parameters), returnsCondition));
         }
         return List.copyOf(methods);
     }

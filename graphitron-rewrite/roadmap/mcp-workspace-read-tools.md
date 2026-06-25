@@ -1,7 +1,7 @@
 ---
 id: R368
 title: "MCP structured read-tools over the live Workspace: services/conditions/records, schema, diagnostics, directives (R118 slices 3-6)"
-status: Ready
+status: In Review
 bucket: feature
 theme: lsp
 depends-on: []
