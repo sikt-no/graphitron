@@ -169,12 +169,20 @@
                     <version>3.5.6</version>
                     <configuration>
                         <useModulePath>false</useModulePath>
+                        <!-- Capture each test class's stdout/stderr (Logback ConsoleAppender output,
+                             stack traces) into target/surefire-reports/<TestClass>-output.txt instead
+                             of the reactor console. Keeps a passing run quiet; the full output stays on
+                             disk and the failure report points at the file for any class that fails. -->
+                        <redirectTestOutputToFile>true</redirectTestOutputToFile>
                     </configuration>
                 </plugin>
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-failsafe-plugin</artifactId>
                     <version>3.5.6</version>
+                    <configuration>
+                        <redirectTestOutputToFile>true</redirectTestOutputToFile>
+                    </configuration>
                 </plugin>
                 <plugin>
                     <groupId>org.jooq</groupId>
