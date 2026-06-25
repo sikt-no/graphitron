@@ -35,10 +35,10 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R115` | Enumerate the capabilities graphitron delivers | Spec |  | [plan](capability-catalog.md) |
 | `R109` | How-to recipe and Sakila fixture for grouped collections via Field<Result<R>> @externalField + multiset | Spec |  | [plan](list-valued-external-field-multiset.md) |
 | `R212` | IntelliJ plugin wrapping graphitron:dev LSP | Spec | 2026-05-21 | [plan](intellij-lsp-plugin.md) |
-| `R374` | MCP cross-reference edges: forward edges + stable node IDs, then a reverse-edge index for impact analysis (R118 slice 7) | Spec | 2026-06-25 | [plan](mcp-cross-reference-edges.md) |
 | `R269` | Null-guard split-query key extraction for nullable to-one records | Spec | 2026-06-02 <sub>created 2026-06-01</sub> | [plan](nullable-to-one-record-into-npe.md) |
 | `R112` | Operation-driven test corpus, capability catalog, and runtime trace <sub>blocked by: [capability-catalog](capability-catalog.md)</sub> | Spec |  | [plan](operation-driven-test-corpus.md) |
 | `R372` | MCP RAG foundation: in-process ONNX embedder behind a graphitron Embedder seam + Lucene HNSW behind EmbeddingStore (R118 slice 8) | Ready | 2026-06-25 | [plan](mcp-rag-foundation.md) |
+| `R374` | MCP cross-reference edges: forward edges + stable node IDs, then a reverse-edge index for impact analysis (R118 slice 7) | Ready | 2026-06-25 | [plan](mcp-cross-reference-edges.md) |
 
 ---
 
@@ -293,7 +293,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R212` [**IntelliJ plugin wrapping graphitron:dev LSP**](intellij-lsp-plugin.md) — Spec, feature
 - `R99` [**LSP classpath scan misses sibling modules when dev goal runs from a sub-module**](lsp-submodule-sibling-classpath.md) — Backlog, feature
 - `R372` [**MCP RAG foundation: in-process ONNX embedder behind a graphitron Embedder seam + Lucene HNSW behind EmbeddingStore (R118 slice 8)**](mcp-rag-foundation.md) — Ready, feature
-- `R374` [**MCP cross-reference edges: forward edges + stable node IDs, then a reverse-edge index for impact analysis (R118 slice 7)**](mcp-cross-reference-edges.md) — Spec, feature
+- `R374` [**MCP cross-reference edges: forward edges + stable node IDs, then a reverse-edge index for impact analysis (R118 slice 7)**](mcp-cross-reference-edges.md) — Ready, feature
 - `R152` [**Scope @nodeId(typeName:) hover column lookup to the @node type's @table**](lsp-nodetype-hover-column-scoping.md) — Backlog, bug
 
 ### (untagged)
