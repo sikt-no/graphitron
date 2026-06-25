@@ -17,7 +17,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R363` | Lower @field filter inputs and @condition onto multitable-interface queries | Spec | 2026-06-25 <sub>created 2026-06-24</sub> | [plan](multitable-interface-query-filter-lowering.md) |
 | `R19` | Rebase and squash rewrite branch onto main | Ready |  | [plan](history-squash.md) |
 | `R222` | Dimensional model pivot: slots over cross-product permits | Spec | 2026-06-18 <sub>created 2026-05-21</sub> | [plan](dimensional-model-pivot.md) |
-| `R333` | Lower each schema coordinate to a DataFetcher and its QueryParts | Spec | 2026-06-22 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
+| `R333` | The Graphitron data model | Spec | 2026-06-25 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
 | `R256` | Absorb the service walker substrate: typed per-arm errors + multi-arg ctors | Ready | 2026-05-30 <sub>created 2026-05-29</sub> | [plan](service-walker-substrate-absorption.md) |
 | `R346` | Regenerate and guard the generated supported-directives migration doc against directive-set drift | Ready | 2026-06-19 | [plan](supported-directives-regen-guard.md) |
 | `R308` | Fix the @service list-payload N+1 by deriving many-arrival for list-returning carriers | Spec | 2026-06-14 | [plan](service-list-payload-arrival.md) |
@@ -232,7 +232,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R256` [**Absorb the service walker substrate: typed per-arm errors + multi-arg ctors**](service-walker-substrate-absorption.md) — Ready, structural
 - `R222` [**Dimensional model pivot: slots over cross-product permits**](dimensional-model-pivot.md) — Spec, structural
 - `R334` [**Generated @condition arg extraction is an unreadable nested-ternary one-liner**](readable-condition-arg-extraction.md) — Backlog, Backlog
-- `R333` [**Lower each schema coordinate to a DataFetcher and its QueryParts**](coordinate-lowers-to-datafetcher-queryparts.md) — Spec, structural
+- `R333` [**The Graphitron data model**](coordinate-lowers-to-datafetcher-queryparts.md) — Spec, structural
 - `R314` [**Dissolve the re-fetch (reentry) leaf fields: emit reentry by switching on the dimensional model**](dissolve-reentry-leaves-dimensional-emit.md) — Backlog, architecture, blocked by [dimensional-model-pivot](dimensional-model-pivot.md)
 - `R308` [**Fix the @service list-payload N+1 by deriving many-arrival for list-returning carriers**](service-list-payload-arrival.md) — Spec, structural
 - `R171` [**Fold InputType and TableInputType under sealed parent InputLikeType**](input-like-type-sealed-parent.md) — Backlog, architecture
