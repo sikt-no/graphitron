@@ -122,8 +122,12 @@ Two supporting changes:
   as-is would make goto jump while the overlay returns empty, violating `overlayIsPresentExactlyWhenGotoJumps`
   (`DeclarationHoverOverlayParityTest.java:101-125`). Widen to `SourceMethod(fqClassName, methodName, paramCount)`,
   stamped in `resolve()` (which has the catalog: the accessor arm sets `0`, the method-backed arm reads
-  the bound method's parameter count). Both projections then build the identical `MethodKey` and share
-  the identical fallback, so they cannot diverge and the arity-0 hardcode is deleted, not special-cased.
+  the parameter count off the catalog method of that name). When the class lists a single method of that
+  name, that is the bound arity and the jump is precise; when the name is overloaded by arity the
+  classification does not record which overload bound, so `resolve()` takes the first catalog candidate's
+  arity and the name-level fallback below guarantees a jump if that exact key was dropped. Both projections
+  then build the identical `MethodKey` and share the identical fallback, so they cannot diverge and the
+  arity-0 hardcode is deleted, not special-cased.
 - **A non-dropping name-level lookup on `SourceWalker.Index`.** The arity-keyed `methods()` map drops
   collided keys entirely (`:201-203`), so the fallback would still miss a same-arity-collided method.
   Add a lookup keyed by `(class, name)`, first declaration wins, never dropped, so a jump is always
@@ -179,6 +183,11 @@ resolution fixes the latent defect at its source for a bounded cost.
 - **Fallback tiebreak determinism**: the fallback only fires for the same-arity-collision case; when it
   does, define "first declaration" as source order within a file and first-file-wins across the merge
   (the walker's natural visit order). Confirm that is deterministic across the index merge in `SourceWalker`.
+- **Arity for an arity-overloaded service name**: `FieldClassification` carries `methodName` but not the
+  resolved overload's signature, so for a name with several arities `resolve()` cannot recover the bound
+  one and takes the first catalog candidate (the name-level fallback still guarantees a jump, just maybe
+  to a sibling). Accept this degradation for a rare case, or record the bound arity in `FieldClassification`
+  upstream if the precision is judged worth a build-tier change (currently out of scope).
 - **Short class-name binding**: a directive `className:` may be a simplified name when the package is
   imported in `externalReferences` config; resolution against `externalReferences().className()` /
   the FQN-keyed source index is a pre-existing limitation of the directive-arg path, inherited here,
