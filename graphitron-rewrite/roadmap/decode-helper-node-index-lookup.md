@@ -1,7 +1,7 @@
 ---
 id: R377
 title: "decode<typeId> mismatch: resolve decode helper via NodeIndex when multiple @table types share a table"
-status: Spec
+status: Ready
 bucket: correctness
 priority: 2
 theme: nodeid
