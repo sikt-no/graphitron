@@ -83,6 +83,13 @@ hedge as a **test double, not a shipping backend**:
   payload)`), hybrid search (`search(queryVector, queryText, k)` returning scored hits with their
   payloads + stable IDs), and load-from-path; nothing in the signature names Lucene segments, BM25
   tuning, or HNSW parameters. Backend choice never reaches a consumer.
+- **Hybrid fusion, decided for V0: reciprocal-rank fusion (RRF).** `LuceneEmbeddingStore` runs the
+  KNN vector query and the BM25 text query separately and fuses their two ranked lists by RRF
+  (`score = Σ 1/(k + rank)`, fixed `k`), rather than normalizing and linearly combining raw KNN
+  distances against BM25 scores. RRF is parameter-light (one constant, no per-corpus score
+  calibration) and is the simplest thing that makes the "BM25 hybrid surfaces a lexical match" test
+  deterministic. It is a Lucene-internal detail behind the seam; the fusion choice never reaches a
+  consumer and can change without touching slices 9/10.
 
 The store is pure Java; the native footprint is the embedder alone (the ONNX Runtime JNI + per-
 platform natives). That is precisely the dependency this module was created to quarantine (R341),
@@ -96,15 +103,24 @@ the warm-state machine the consuming tools report through. Resolving the Backlog
 switch posture:
 
 ```
-sealed interface WarmState permits Warming, Ready, Failed {}
-record Warming()                         implements WarmState {}
-record Ready(EmbeddingStore store)       implements WarmState {}   // the usable handle
-record Failed(Throwable cause)           implements WarmState {}   // dev keeps running
+sealed interface WarmState<T> permits Warming, Ready, Failed {}
+record Warming<T>()                implements WarmState<T> {}
+record Ready<T>(T handle)          implements WarmState<T> {}   // the warmed handle
+record Failed<T>(Throwable cause)  implements WarmState<T> {}   // dev keeps running
 ```
 
-- **The state carries exactly its own data.** `Ready` carries the searchable store handle; `Failed`
-  carries the cause for diagnostics; `Warming` carries nothing. A bare enum / `isReady()` would force
-  each consumer to re-fetch the handle and re-derive the degradation message, and they would drift.
+The type is **generic over the warmed handle** because slice 8 drives two distinct warms with the
+same machinery (see the async-warm harness below): the shared embedder warm is a
+`WarmState<Embedder>` and each per-corpus index warm is a `WarmState<EmbeddingStore>`. A non-generic
+`Ready(EmbeddingStore)` would have no slot for the warmed `Embedder` and would force the embedder
+warm into a second, drifting type; the type parameter is what lets one sealed shape + one harness
+cover both. The degradation helper reads any `WarmState<?>` and only branches on Warming / Failed,
+so it is handle-agnostic.
+
+- **The state carries exactly its own data.** `Ready` carries the warmed handle (`T` = the `Embedder`
+  for the shared warm, the `EmbeddingStore` for an index warm); `Failed` carries the cause for
+  diagnostics; `Warming` carries nothing. A bare enum / `isReady()` would force each consumer to
+  re-fetch the handle and re-derive the degradation message, and they would drift.
 - **One shared degradation helper.** Slice 8 owns the single method that produces the standard
   "index warming, use the structured tools meanwhile" payload from a non-`Ready` state. Slices 9/10
   call it; they do not each re-author the wording.
@@ -112,14 +128,23 @@ record Failed(Throwable cause)           implements WarmState {}   // dev keeps 
   type, the async-warm harness, and the degradation-payload helper. Slices 9/10 own the per-tool
   response shape (how `docs.search` vs `catalog.search` frames their own result) and call the helper
   for the not-ready case. No `docs.search`-shaped response builder belongs in slice 8.
-- **The async-warm harness.** A small harness takes a loader callable (load the embedder, build or
-  load a store) and runs it on a background daemon thread, transitioning `Warming → Ready` on success
-  and `Warming → Failed(cause)` on any throwable, exposing the current `WarmState` via a `volatile`
-  read (the per-field visibility posture R361 already uses). The **embedder load is one shared warm**
-  (the bge ONNX load is heavy and shared across docs + catalog); each **per-corpus index is its own
-  warm** using the same harness + `WarmState` type, so the embedder loads once and each index warms
-  independently. `graphitron:dev` reaches its watch loop without waiting on any of them, and a RAG
-  failure sets `Failed` and leaves dev running structured-only, it never takes down the dev loop.
+- **The async-warm harness.** A generic `AsyncWarm<T>` takes a loader callable returning `T` (load
+  the embedder; build or load a store) and runs it on a background daemon thread, transitioning
+  `Warming → Ready(handle)` on success and `Warming → Failed(cause)` on any throwable, exposing the
+  current `WarmState<T>` via a `volatile` read (the per-field visibility posture R361 already uses).
+  The **embedder load is one shared warm** (`AsyncWarm<Embedder>`; the bge ONNX load is heavy and
+  shared across docs + catalog); each **per-corpus index is its own warm** (`AsyncWarm<EmbeddingStore>`,
+  same harness), so the embedder loads once and each index warms independently.
+- **Cross-warm ordering, stated so the implementer does not invent it.** An index warm that must
+  *build* an index by embedding documents (slice 10's catalog corpus) depends on the embedder being
+  `Ready`; its loader callable awaits the shared embedder warm's `Ready(Embedder)` **on its own
+  background thread** before embedding, so the dependency never reaches the dev thread. An index warm
+  that only *loads* a prebuilt index (slice 9's bundled docs index) needs the embedder only at query
+  time, so it does not block on the embedder warm at build time. Slice 8 exposes the shared embedder
+  warm's `WarmState<Embedder>` (the readable handle + an await-Ready affordance) for the consumers to
+  sequence against; it does not own which consumer awaits. `graphitron:dev` reaches its watch loop
+  without waiting on any warm, and a RAG failure sets `Failed` and leaves dev running structured-only,
+  it never takes down the dev loop.
 
 ## Dependency quarantine, the payoff this slice exercises
 
@@ -144,11 +169,13 @@ All new code under `graphitron-mcp/src/main/java/no/sikt/graphitron/mcp/rag/`:
 - **`EmbeddingStore.java` (new).** The write / hybrid-search / load-from-path seam of D2, payloads
   + stable IDs only, no backend detail in the signature.
 - **`LuceneEmbeddingStore.java` (new).** The Lucene HNSW implementation (BM25 + KNN hybrid in one
-  index), the sole shipping backend.
-- **`WarmState.java` (new).** The sealed lifecycle of D3 (`Warming` / `Ready` / `Failed`) and the
-  shared degradation-payload helper.
-- **`AsyncWarm.java` (new).** The background-daemon-thread harness that drives a loader callable to a
-  `WarmState`, used once for the shared embedder and once per consumer index.
+  index, fused by RRF per D2), the sole shipping backend.
+- **`WarmState.java` (new).** The generic sealed lifecycle of D3 (`WarmState<T>` over
+  `Warming` / `Ready` / `Failed`) and the handle-agnostic degradation-payload helper.
+- **`AsyncWarm.java` (new).** The generic background-daemon-thread harness (`AsyncWarm<T>`) that
+  drives a loader callable returning `T` to a `WarmState<T>`, instantiated once as
+  `AsyncWarm<Embedder>` for the shared embedder and once per consumer index as
+  `AsyncWarm<EmbeddingStore>`.
 
 `GraphitronMcpServer` is **not** modified by this slice: it registers no tool here. The seams are
 constructed and warmed by the consuming slices (9/10) when they register their tools; slice 8 only
@@ -167,10 +194,12 @@ not either/or:**
     prefix is applied on the `embedQuery` path only and never on `embedDocuments`.
   - **Store round-trip:** write a few payloads with planted vectors, then `search` returns the
     nearest by KNN and the BM25 hybrid surfaces a lexical match, each carrying its stable ID + payload.
-  - **WarmState transitions:** the harness drives `Warming → Ready` on a succeeding loader and
-    `Warming → Failed(cause)` on a throwing loader; a read during warm sees `Warming`; the
-    degradation helper returns the standard payload for both non-`Ready` states. Exhaustive switch
-    over the sealed permits with no `default`, so a new arm forces a compile-time choice.
+  - **WarmState transitions:** `AsyncWarm<T>` drives `Warming → Ready(handle)` on a succeeding loader
+    and `Warming → Failed(cause)` on a throwing loader, covering both instantiations (a
+    `WarmState<Embedder>` and a `WarmState<EmbeddingStore>`) so the type parameter is exercised, not
+    just asserted; a read during warm sees `Warming`; the degradation helper returns the standard
+    payload for both non-`Ready` states. Exhaustive switch over the sealed permits with no `default`,
+    so a new arm forces a compile-time choice.
 - **Infrastructure tier (slow-tagged), real ONNX.** One test that actually loads `bge-small-en-v1.5-q`
   and embeds a string, asserting the dimension is 384 and that two related sentences score closer than
   two unrelated ones. Tagged so the default CI run skips it (the analogue of the sakila-example
