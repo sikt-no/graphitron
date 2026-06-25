@@ -200,11 +200,19 @@ not either/or:**
     just asserted; a read during warm sees `Warming`; the degradation helper returns the standard
     payload for both non-`Ready` states. Exhaustive switch over the sealed permits with no `default`,
     so a new arm forces a compile-time choice.
-- **Infrastructure tier (slow-tagged), real ONNX.** One test that actually loads `bge-small-en-v1.5-q`
+- **Infrastructure tier (real ONNX), runs in CI.** One test that actually loads `bge-small-en-v1.5-q`
   and embeds a string, asserting the dimension is 384 and that two related sentences score closer than
-  two unrelated ones. Tagged so the default CI run skips it (the analogue of the sakila-example
-  compile being a cross-module backstop); it is the cross-check that the real native binding +
-  `--enable-native-access=ALL-UNNAMED` works.
+  two unrelated ones. It **runs in CI's default `mvn verify -Plocal-db`** as the native-binding
+  backstop, the analogue of the sakila-example compile that also runs on every CI build; this is the
+  cross-check that the real native binding + `--enable-native-access=ALL-UNNAMED` works, so it has to
+  execute somewhere, and CI is that somewhere. The model ships bundled in the langchain4j bge jar (no
+  per-test network fetch), so the cost is a one-time dependency download plus a ~1-3s ONNX load on a
+  build that already runs Testcontainers Postgres and builds tree-sitter from source; the slow test is
+  noise against that. It additionally carries a plain `@Tag("slow")` (not a tier meta-annotation, which
+  the four-tier `TierAnnotationEnforcementTest` does not police outside `graphitron` /
+  `graphitron-sakila-example` anyway) purely so a developer's fast inner loop can exclude it with
+  `-DexcludedGroups=slow`, mirroring how `-DexcludedGroups=execution` skips Postgres locally. The tag
+  is a local-loop convenience, not a CI skip: CI runs everything.
 
 ## What this slice does *not* change
 
