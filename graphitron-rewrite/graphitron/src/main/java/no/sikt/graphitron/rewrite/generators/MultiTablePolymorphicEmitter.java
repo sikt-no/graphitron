@@ -163,6 +163,14 @@ public final class MultiTablePolymorphicEmitter {
      * (no synthesized {@code __typename} column or PK round-trip needed to identify the type, unlike
      * the query path whose UNION-ALL projection erases the Java type); the participant's table is
      * used only for the by-PK auto-fetch in stage 2.
+     *
+     * <p><b>Drop contract.</b> Two kinds of returned record produce no output node and are dropped
+     * silently: (a) a record whose runtime class matches no participant falls through the dispatch
+     * chain; (b) a matched record whose primary key matches no live row makes stage 2's
+     * {@code JOIN input ON t.PK = input.PK} yield nothing, so {@code result[idx]} stays null. Both
+     * are service-contract violations (the service is expected to return live, participant-typed,
+     * PK-populated records). For a list return the surviving payload is simply shorter; for a single
+     * non-null return the null payload surfaces as a graphql-java non-null violation.
      */
     private static MethodSpec buildServiceMainFetcher(
             TypeFetcherEmissionContext ctx,

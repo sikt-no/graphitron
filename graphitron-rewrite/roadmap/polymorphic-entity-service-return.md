@@ -301,3 +301,16 @@ interface. New pins: builder negatives for union-rejected and table-interface-de
 tests assert `AUTHOR_ERROR` for both same-table subsets. This supersedes the earlier
 "Discriminability" wording that framed same-table-with-`@discriminator` as a deferred dispatch
 follow-up: it is now an author error redirecting to `TableInterfaceType`.
+
+### Self-review follow-ups (2026-06-25)
+
+Adversarial self-review (+ independent architect pass) before the next gate surfaced two
+non-blocking gaps, now fixed: (1) the `MutationServicePolymorphicField` emit + registration +
+runtime path had no fixture (only classification), despite the item's headline being a `@service`
+*mutation* — added `Mutation.searchManyMutation: [Searchable!]!` to the sakila schema and a mutation
+execution assertion (`searchManyMutation_dispatchesBothBranchesByRecordClass`), exercising the
+mutation-root path end-to-end over both distinct-table branches; (2) the route-(a) fetcher silently
+drops a returned record whose runtime class matches no participant *or* whose PK matches no live row
+— documented this drop contract in `MultiTablePolymorphicEmitter.buildServiceMainFetcher`'s javadoc
+(service-contract violation; shortens a list payload, nulls a single non-null return). The floor's
+same-table unit test was already flipped to assert `AUTHOR_ERROR` for both subsets.
