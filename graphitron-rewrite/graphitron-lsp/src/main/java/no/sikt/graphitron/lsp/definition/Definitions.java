@@ -159,9 +159,8 @@ public final class Definitions {
     /**
      * Pure FQN → position join for a class reference: {@link DefinitionTarget.Located}
      * when the source index has the class, {@link DefinitionTarget.SourceAbsent}
-     * otherwise (class FQNs do not collide on a single overload key, so there is
-     * no {@code Ambiguous} arm for classes). Caller guards that {@code fqn} is a
-     * known reference. Public so the LSP tier can assert each arm directly.
+     * otherwise. Caller guards that {@code fqn} is a known reference. Public so the
+     * LSP tier can assert each arm directly.
      */
     public static DefinitionTarget classTarget(String fqn, SourceWalker.Index sourceIndex) {
         var decl = sourceIndex.classes().get(fqn);
@@ -235,8 +234,7 @@ public final class Definitions {
      * {@code (declaringClassFqn, fieldName)} key resolves against the source
      * index. {@link DefinitionTarget.Located} when present, else
      * {@link DefinitionTarget.SourceAbsent} (a {@code null} FQN, i.e. an
-     * unresolvable table / {@code Keys} class, lands here too). jOOQ fields do
-     * not collide on a single overload key, so there is no {@code Ambiguous} arm.
+     * unresolvable table / {@code Keys} class, lands here too).
      */
     static DefinitionTarget fieldTarget(
         String declaringClassFqn, String fieldName, SourceWalker.Index sourceIndex
