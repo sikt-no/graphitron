@@ -149,6 +149,100 @@ completeness audit, directive by directive, is *Directive coverage* near the end
 lowering, these facts (front) and the method graph that consumes them (back), meet at the `operation`
 relation, detailed throughout the rest of this document.
 
+## The natural keys
+
+The model's spine is its natural keys, and the entity key is not ad-hoc: it is the GraphQL specification's
+**`SchemaCoordinate`**, the same coordinate this document is named for. The spec already standardizes the
+grammar for addressing every element of a schema, so the model adopts it rather than inventing a key.
+(Earlier sections sketch the coordinate as `(parentType, fieldName)`, and the ER diagram draws it that way;
+that is shorthand. The precise form is below.)
+
+**The coordinate is a `SchemaCoordinate`, stored decomposed into its grammar columns.** The spec's five
+productions are five coordinate kinds, each carrying exactly the `Name` positions of its production, and the
+coordinate *kind* is just which production matched:
+
+| Kind | Columns | Canonical string |
+|---|---|---|
+| `TypeCoordinate` | `typeName` | `Foo` |
+| `MemberCoordinate` | `typeName`, `memberName` | `Foo.bar` |
+| `ArgumentCoordinate` | `typeName`, `memberName`, `argumentName` | `Foo.bar(baz:)` |
+| `DirectiveCoordinate` | `directiveName` | `@foo` |
+| `DirectiveArgumentCoordinate` | `directiveName`, `argumentName` | `@foo(bar:)` |
+
+The columns are what the model keys, joins, and indexes on: every member of a type is a prefix scan on
+`typeName`, every argument of a field a prefix scan on `(typeName, memberName)`. The canonical string is a
+**derived render** over the columns, never the stored key. Spec fidelity earns three things from one render
+function: the string is the spec's own serialization, it is the stable id the model-context surface hands an
+agent to traverse between answers, and it is the per-coordinate key the language server files its
+classification under. One coordinate system, one render, three readers, no second id grammar to maintain.
+
+`MemberCoordinate` is a single key covering what earlier drafts split into three: an output field
+(`Film.language`), an input-object field (`FilmWhereInput.title`), and an **enum value** (`Color.RED`, the
+`EnumValue` key the enum facts carry). All three are `Name.Name`; they were never distinct key spaces. The
+directive productions make directives **first-class addressable elements**, not merely things that annotate
+other coordinates: a directive definition is `@foo`, its argument `@foo(bar:)`.
+
+**Input fields are member coordinates of their own input type, not a path under the consuming field.** The
+spec is definition-keyed and has no dotted-path coordinate, so a nested input field is addressed as a
+`MemberCoordinate` of its input type (`FilmWhereInput.actor`, then `ActorWhereInput.lastName`), and the
+use-site "path" earlier drafts wrote as `(typeName, fieldName, inputPath)` is not a coordinate at all: it is
+a **derived traversal** through the coordinate graph, an `ArgumentCoordinate` followed by a chain of
+input-type member coordinates. This is where the authored / derived split lands precisely. The authored
+facts (`@field`, `@reference`, `@nodeId` on an input field) live at the definition member coordinate, which
+is where the editor edits them: the cursor sits inside the input type's definition, consumed by many fields,
+so the definition coordinate is the only key available. The use-site resolution (which table the input binds
+against, the inferred FK, the generated condition's column) depends on the consuming field, so it is a
+**derived join** over `(input member coordinate, consuming coordinate)`. Definition-keyed authored fact,
+use-keyed derived binding: the provenance axis, stated in the spec's own grammar.
+
+**Everything beyond the spec's coordinate set is a relation over coordinates, never a new coordinate kind or
+an extra column.** A directive *application* (a `@reference` written at `Film.language`) is an **edge**
+joining the host coordinate to the directive coordinate and carrying the applied argument values; the
+*Directive coverage* audit is exactly that edge set, and "this `@reference` lowers to a `join` fact" is one
+edge resolving to facts. The use-site binding above is a derived relation. Neither becomes a sixth coordinate
+kind. The coordinate stays a faithful, column-decomposed `SchemaCoordinate`; the model's extensions sit
+outside the key.
+
+### The two referenced namespaces
+
+A coordinate's facts point into two external namespaces, and they are one shape seen from two angles: **the
+jOOQ catalog** (tables, columns, foreign keys, primary and unique keys, indexes) keyed by jOOQ identity, and
+**the Java surface** (classes, methods, parameters, record components) keyed by Java identity. Both are
+generated from source we write, the catalog by jOOQ codegen from the DDL, the Java surface by `javac` from
+the consumer's classes, so both are **complete and authoritative within a snapshot and both lag their source
+identically**: an un-regenerated migration leaves the catalog stale exactly as an un-recompiled class leaves
+the Java surface stale. There is no completeness or authority difference between them; that lifecycle is
+common, the snapshot / freshness property applying uniformly to both.
+
+Both back the same family of reads, distinguished only by which consumer reads them:
+
+| Read | Access pattern | Reader |
+|---|---|---|
+| resolve | unique-key lookup | code generation |
+| validate | membership | diagnostics |
+| complete | prefix-key scan | completion |
+| describe | the description attribute | hover, the knowledge surface |
+| locate | join to the position relation | go-to-definition |
+| invert | reverse index | impact analysis, find-references |
+
+Code generation does only `resolve`; the model described the catalog as if that were the only read because
+code generation was the only consumer in view. The other five are what absorbing the language server and the
+knowledge surface adds, and they are one shape over both namespaces.
+
+The two differ in exactly one way, and it is structural, not about authority. **The catalog is a relation
+graph the model traverses**: tables are linked by foreign keys, the `reference` fact's `joinPath` walks them,
+node-key projection follows the foreign-key column pairings hop by hop. **The Java surface is a flat
+namespace the model binds into**: a class contains methods and a method contains parameters, but there are no
+edges between methods for a fact to traverse; a fact lands on a node and stops. The catalog's heaviest
+machinery has no Java analog because the Java surface has nothing to traverse.
+
+A Java method's natural key is its **signature**, the name plus the ordered parameter types, because a method
+name alone is not unique in a class (overloads) the way a column name is unique on its table. Arity (a count
+of parameters) is a lossy projection of that signature and is not the key; a position join that comes back
+"ambiguous" is an artifact of keying on the projection rather than the signature, and it disappears once the
+signature is the key. Parameter names are not part of the identity (they cannot disambiguate overloads); they
+ride along as payload the model already carries for argument mapping and hover.
+
 ## What the model enables: three consumers
 
 One model, three readers. Each consumer is a **projection** over the same facts; none owns a private model,
