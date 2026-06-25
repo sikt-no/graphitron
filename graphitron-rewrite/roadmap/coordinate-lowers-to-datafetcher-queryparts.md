@@ -874,11 +874,66 @@ the read side that recovers the type and the build side that produces the rows.
 
 So discrimination is a read-side type-recovery fact with a two-arm signal (`RecordClass` |
 `DiscriminatorColumn`), the arm forced by whether the concrete type survives, collides, or is erased, gated by
-the discriminability invariant. It is distinct from the deferred *producer*-polymorphism (many producers of
-one type disagreeing on shape); here one type's concrete subtype varies per row, resolved before any read. The
-per-participant **filter** surface a polymorphic *query* carries (a WHERE lowered against each participant's
-own table) is a separate axis, the condition / join-path model applied once per participant, not part of type
-recovery.
+the discriminability invariant.
+
+#### Two signal domains: rows and exceptions
+
+Everything above is the **row domain**: the polymorphic value is a SQL row and the signal reads off it. The
+*same* type-recovery fact governs a second domain, the **exception domain**, where the polymorphic value is a
+caught `Throwable` and the recovered concrete types are the `@error` types of a payload's error union. This is
+what `@error` lowers to. An `@error` type is a **source object** like any other (its `path` / `message` /
+extra fields are **accessors** reading off the caught exception, which is why the extras must be reflectively
+readable off the handler's exception class, the same readability check a DTO source object carries); *which*
+error type is the discrimination, dual of `DiscriminatorColumn` but keyed on an exception signal rather than a
+column value. The monomorphic axiom holds unchanged: the concrete error type is recovered first, then read
+monomorphically off the matched exception.
+
+The exception-domain signal is a **partition**, not a cascade. The cell predicate generalizes from the row
+domain's `column = value` to one of:
+
+- **`ExceptionClass(className → type)`** (the GENERIC handler): a thrown exception lands in this cell when it
+  is `instanceof className`.
+- **`SqlState(state → type)`** / **`VendorCode(code → type)`** (the DATABASE handler): the `SQLException`'s
+  state / vendor code equals an exact scalar, the exception-domain analog of an exact discriminator column
+  value, disjoint by construction.
+- **`Validation(→ type)`**: the synthesized `GraphQLError` cell.
+
+Three things keep this a partition rather than an authored-order cascade, none of which needs a priority
+ordinal:
+
+- An optional **`matches`** message-substring is a per-cell **refinement filter**, at most one per cell: a
+  non-match falls through to the total complement, never to a sibling cell. `matches` only narrows a cell, it
+  never splits one signal into two types (splitting the DATABASE domain is what the exact `SqlState` /
+  `VendorCode` keys are for; splitting GENERIC by message is the fragile pattern this disallows).
+- **Subtype overlap** (a cell on `IntegrityConstraintViolationException` alongside one on `SQLException`) is
+  resolved by a fixed **most-specific-class-wins** rule, a partial order on the handled classes, not by listing
+  order. Well-defined as a build check: the handled exception classes form a tree under assignability; two
+  unrelated classes both matching one thrown class is the only rejection.
+- **Cause-chain depth** (an outer wrapper and an inner cause landing in different cells) is resolved by the
+  fixed **outermost-first** walk of `getCause()`, the same category of fixed-strategy realization as "read the
+  discriminator column", not a per-coordinate fact.
+
+The partition is **total** via a `redact` complement: a `Throwable` matching no cell is logged with a
+correlation id and surfaced as one generic error, the privacy contract. That totality is a fact (a
+reviewer-checkable invariant); the walk and the logging are realization. Referential integrity mirrors the row
+domain: a GENERIC `className` must resolve to a real `Throwable` subclass (the dual of "a join column must name
+a real catalog column"), and the discriminability invariant carries over as the disjointness build check
+above.
+
+The signal partition recovers *which* error type. Where the recovered errors then **go** is a separate,
+operation-side fact, the **error guard**: an operation that can throw (DML / `serviceCall` / `Lookup` /
+`tableMethod`) carries `errorGuard(channel, handlerSet)`, where `channel` is the transport arm (an outcome
+wrapper, a developer payload class with a bound errors slot, or a DML local-context sentinel) and `handlerSet`
+is the interned partition keyed by the reachable error-type set (interned because distinct coordinates sharing
+an error union share one emitted dispatch table). The guard is the one genuinely new sub-fact `@error`
+contributes; the recovery itself is discrimination, and the errors-field read is an accessor whose locator arm
+is "the errors list off the channel."
+
+It is distinct from the deferred *producer*-polymorphism (many producers of
+one type disagreeing on shape); here one type's concrete subtype varies per row (or per thrown exception),
+resolved before any read. The per-participant **filter** surface a polymorphic *query* carries (a WHERE
+lowered against each participant's own table) is a separate axis, the condition / join-path model applied once
+per participant, not part of type recovery.
 
 ## We are data modeling: the relational discipline, not a database engine
 
@@ -1283,6 +1338,7 @@ Owned by an existing fact:
 | `@routine` | `tableExpr` `RoutineCall` as a `@reference` join-target node (the join path) |
 | `@sourceRow` | the source-side key provenance `Lift(lifterRef)` (the join path) |
 | `@discriminate` / `@discriminator` | the discrimination fact (type recovery, `RecordClass` \| `DiscriminatorColumn`) |
+| `@error` | the discrimination fact (exception-domain partition) + operation-side `errorGuard` (channel, interned handler set) |
 | `@field` | the **locator** (output) / column binding (input) / `EnumValue.runtimeValue` |
 | `@externalField` | the locator's typed-jOOQ-field arm |
 | `@reference` | the `reference` fact (path, `referencedTable`, `joinPath`) |
@@ -1319,9 +1375,15 @@ The gaps, in resolution order:
    participants, or a `UNION ALL`-erased read whose synthesized `__typename` only undoes the erasure), gated by
    the discriminability invariant (same-table-without-discriminator is a build error). Distinct from the
    deferred producer-polymorphism. See *Discrimination*.
-4. **Error mapping** (`@error`). **Open.** Exception-to-GraphQL-error handler mapping (DATABASE / GENERIC /
-   VALIDATION) on payload types; a cross-cutting operation-side behavior with no fact. The read side has an
-   `Outcome.ErrorList` locator arm, but the mapping itself is unmodeled.
+4. **Error mapping** (`@error`). **Resolved (in model).** Not a new axis: it is **discrimination in a second
+   signal domain**. The polymorphic value is a caught `Throwable` and the recovered types are the payload's
+   `@error` types; an `@error` type is a source object whose fields read off the exception (accessor), and
+   *which* error type is a partition over an exception signal (`ExceptionClass` | `SqlState` | `VendorCode` |
+   `Validation`), the dual of `DiscriminatorColumn`. It stays a **partition** (no authored ordinal): `matches`
+   is a per-cell refinement filter, subtype overlap resolves by most-specific-class-wins, cause-depth by a
+   fixed outermost-first walk, and the partition is total via a `redact` complement. The one genuinely new
+   sub-fact is operation-side, `errorGuard(channel, interned handlerSet)`, on throwing operations. See
+   *Discrimination*.
 5. **DTO-parent join-key lifter** (`@sourceRow`). **Resolved (this session).** The source-side dual of the
    routine target: the parent-side join key has a provenance gated by the source-object shape, `RecordColumns`
    (jOOQ parent, inferred) or `Lift(lifterRef)` (class-backed DTO, authored via `@sourceRow`). It changes only
