@@ -36,6 +36,12 @@ public class NodeIdFixtureGenerator extends JavaGenerator {
     private static final Map<String, Metadata> METADATA = Map.of(
         "bar", new Metadata("Bar", List.of("ID_1", "ID_2")),
         "baz", new Metadata("Baz", List.of("ID")),
+        // R377: a customized numeric typeId ("10154") distinct from any GraphQL type name. With a
+        // @node type plus a nesting-projection @table type over this table, the decode helper must
+        // resolve through the @node-only NodeIndex (decode<TypeName>); the old findGraphQLTypeForTable
+        // detour returned empty (two object types) and fell back to decode10154, which the encoder
+        // never emits. No existing fixture had a numeric/custom typeId.
+        "shared_node", new Metadata("10154", List.of("ID")),
         "studieprogram", new Metadata("Studieprogram", List.of("STUDIEPROGRAM_ID")),
         // Composite-PK NodeType in the public (sakila-derived) schema, used by
         // GraphQLQueryTest's filmActorByNodeId round-trip for the LookupArg.DecodedRecord

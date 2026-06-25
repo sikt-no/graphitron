@@ -2195,44 +2195,63 @@ class BuildContext {
 
     /**
      * Resolves the {@code decode<TypeName>} {@link no.sikt.graphitron.rewrite.model.HelperRef.Decode}
-     * for the NodeType backing the given SQL table, or {@code null} when no unique mapping exists.
+     * for the NodeType backing the given SQL table, or {@code null} when no usable mapping exists.
      * Used by the {@code @nodeId} synthesis shim and other input-side classifier paths that need
      * the per-Node decode helper but only have the SQL table name in scope.
      *
-     * <p>Prefers reading from {@link no.sikt.graphitron.rewrite.model.GraphitronType.NodeType#decodeMethod()}
-     * when the {@code types} map is populated (post-first-pass). Falls back to inline
-     * construction via the canonical {@code outputPackage + ".util" + "NodeIdEncoder"} +
-     * {@code "decode" + typeName} formula otherwise; both BuildContext and TypeBuilder compute
-     * the same name string from the GraphQL type name, so drift is bounded.
+     * <p>Resolves through the {@code @node}-only {@link NodeIndex} by-table view, which is exactly
+     * the right domain: it sees only {@code @node} types, not the nesting-projection {@code @table}
+     * types that share the same rows. {@link no.sikt.graphitron.rewrite.model.GraphitronType.NodeType#decodeMethod()}
+     * is keyed on the GraphQL type name, matching {@code NodeIdEncoderClassGenerator}'s emitted
+     * {@code decode<TypeName>} helper. Three outcomes:
+     *
+     * <ul>
+     *   <li>Exactly one {@code @node} backs the table: return its {@code decodeMethod()}.</li>
+     *   <li>Two or more {@code @node} types back it and the call site did not disambiguate with
+     *       {@code @nodeId(typeName:)}: return {@code null} so the caller emits a validate-time
+     *       rejection rather than a {@code decode<typeId>} call the encoder never generates.</li>
+     *   <li>No {@code @node} backs it (orphan-input / synthesis-shim case): fall back to the
+     *       metadata's {@code typeId} as the helper suffix. Only reachable through the synthesis
+     *       shim, on a retirement track (see
+     *       graphitron-rewrite/roadmap/retire-synthesis-shims.md).</li>
+     * </ul>
+     *
+     * <p>Pre-R377 this routed through {@code findGraphQLTypeForTable}, an all-{@code @table} index,
+     * which counted the nesting-projection types and so returned empty (ambiguous) for a table
+     * backed by a {@code @node} plus a projection type. That sent decode resolution to the typeId
+     * fallback, which agrees with the encoder only when {@code typeId} equals the type name; a
+     * customized numeric {@code @node(typeId:)} then emitted a {@code decode<typeId>} call javac
+     * could not resolve.
      */
     no.sikt.graphitron.rewrite.model.HelperRef.Decode resolveDecodeHelperForTable(
             String sqlTableName,
-            String fallbackTypeNameOrTypeId,
+            String fallbackTypeId,
             java.util.List<no.sikt.graphitron.rewrite.model.ColumnRef> keyColumns) {
+        // The NodeIndex's by-table view sees only @node types (not the nesting-projection @table
+        // types that share the rows), so it is the authoritative decode source. decodeMethod() is
+        // keyed on the GraphQL type name, matching NodeIdEncoderClassGenerator's emitted helper —
+        // unlike the typeId-suffixed fallback below, which agrees with the encoder only when typeId
+        // equals the type name.
+        var nodesForTable = nodes.forTable(sqlTableName);
+        if (nodesForTable.size() == 1) {
+            return nodesForTable.get(0).decodeMethod();
+        }
+        if (!nodesForTable.isEmpty()) {
+            // Two or more @node types back this table and the call site did not disambiguate with
+            // @nodeId(typeName:). There is no implicit decode helper; return null so the caller emits
+            // a validate-time rejection rather than a decode<typeId> call the encoder never generates.
+            return null;
+        }
+        // No @node backs this table (orphan-input / synthesis-shim case: an `input Foo @table(...)`
+        // with catalog NodeId metadata but no @node SDL type). Fall back to the metadata's typeId as
+        // the helper suffix; only reachable through the synthesis shim, on a retirement track (see
+        // graphitron-rewrite/roadmap/retire-synthesis-shims.md).
+        if (fallbackTypeId == null || fallbackTypeId.isBlank()) return null;
         var encoderClass = no.sikt.graphitron.javapoet.ClassName.get(
             ctx.outputPackage() + ".util",
             no.sikt.graphitron.rewrite.generators.util.NodeIdEncoderClassGenerator.CLASS_NAME);
-        var typeNameOpt = findGraphQLTypeForTable(sqlTableName);
-        if (typeNameOpt.isPresent()) {
-            String typeName = typeNameOpt.get();
-            // R317 slice 4 — node lookup through the pure NodeIndex (a fixed point built before the
-            // walk), not types.get: the node may not be registered yet during the walk.
-            var ntOpt = nodes.forName(typeName);
-            if (ntOpt.isPresent()) {
-                return ntOpt.get().decodeMethod();
-            }
-            return new no.sikt.graphitron.rewrite.model.HelperRef.Decode(encoderClass, "decode" + typeName, keyColumns);
-        }
-        // No unique @table-annotated GraphQL object type backs this table (e.g. orphan-input
-        // schemas where only an `input Foo @table(name: "bar")` exists). Fall back to the
-        // metadata's typeId (the wire-format identifier) as the helper-method suffix; this
-        // matches NodeType.encodeMethod / decodeMethod resolution in the default case where
-        // typeId equals the GraphQL type name. The customized-typeId / no-NodeType combination
-        // is only reachable through the synthesis shim, which is on a retirement track (see
-        // graphitron-rewrite/roadmap/retire-synthesis-shims.md).
-        if (fallbackTypeNameOrTypeId == null || fallbackTypeNameOrTypeId.isBlank()) return null;
         return new no.sikt.graphitron.rewrite.model.HelperRef.Decode(
-            encoderClass, "decode" + fallbackTypeNameOrTypeId, keyColumns);
+            encoderClass, "decode" + fallbackTypeId, keyColumns);
     }
 
     /**

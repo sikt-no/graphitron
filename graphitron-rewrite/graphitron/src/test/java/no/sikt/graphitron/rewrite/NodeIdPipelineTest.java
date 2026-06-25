@@ -47,6 +47,11 @@ import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
  *       ({@code pk_id}), forcing the rooted-at-parent JOIN-with-projection path.</li>
  *   <li>{@code child_ref} — plain table; FK {@code parent_alt_key -> parent_node.alt_key} is
  *       the rooted-at-parent fixture's drive surface.</li>
+ *   <li>{@code shared_node} — single-key NodeType table whose {@code __NODE_TYPE_ID} is the
+ *       customized numeric {@code "10154"} (distinct from any GraphQL type name). The R377 case
+ *       puts a {@code @node} plus a nesting-projection {@code @table} type over it to pin that the
+ *       decode helper resolves through the {@code @node}-only {@link NodeIndex} ({@code decode<TypeName>}),
+ *       not the typeId fallback ({@code decode10154}).</li>
  * </ul>
  */
 @PipelineTier
@@ -417,6 +422,65 @@ class NodeIdPipelineTest {
                 assertThat(tit.inputFields()).hasSize(1);
                 assertThat(tit.inputFields().get(0))
                     .isInstanceOf(no.sikt.graphitron.rewrite.model.InputField.UnboundField.class);
+            }),
+
+        R377_DECODE_VIA_NODE_INDEX_NOT_TYPEID(
+            "R377: a @node with a customized numeric @node(typeId: \"10154\") plus a nesting-projection "
+                + "@table type over the same table. The decode helper for an @nodeId(typeName:) input "
+                + "field resolves through the @node-only NodeIndex to decodeSharedNode (keyed on the "
+                + "GraphQL type name, matching the encoder), NOT the typeId fallback decode10154 the old "
+                + "all-@table findGraphQLTypeForTable detour produced when two object types backed the table.",
+            """
+            type SharedNode implements Node @table(name: "shared_node") @node(typeId: "10154") { id: ID! }
+            type SharedNodeProjection @table(name: "shared_node") { label: String }
+            input SharedSelector @table(name: "shared_node") { id: ID! @nodeId(typeName: "SharedNode") }
+            type Query { x: String }
+            """,
+            schema -> {
+                var t = (GraphitronType.TableInputType) schema.type("SharedSelector");
+                var f = (InputField.ColumnField) t.inputFields().get(0);
+                assertThat(f.column().sqlName()).isEqualTo("id");
+                var skip = (no.sikt.graphitron.rewrite.model.CallSiteExtraction.SkipMismatchedElement) f.extraction();
+                assertThat(skip.decodeMethod().methodName()).isEqualTo("decodeSharedNode");
+                assertThat(skip.decodeMethod().methodName()).isNotEqualTo("decode10154");
+            }),
+
+        R377_MULTI_NODE_REJECTS(
+            "R377: two @node types with distinct typeIds on one table, plus a bare-ID @table input "
+                + "that triggers the @nodeId synthesis shim without @nodeId(typeName:). The decode "
+                + "helper cannot be resolved implicitly (two nodes back the table), so the input "
+                + "rejects at build time with the 'zero or multiple' message rather than emitting a "
+                + "phantom decode<typeId> call. Sibling to MULTIPLE_NODE_TYPES_PER_TABLE_ALLOWED, which "
+                + "pins that both types still classify as NodeType.",
+            """
+            type FooA implements Node @table(name: "bar") @node(typeId: "FooA") { id: ID! }
+            type FooB implements Node @table(name: "bar") @node(typeId: "FooB") { id: ID! }
+            input Selector @table(name: "bar") { id: ID! }
+            type Query { a: FooA b: FooB }
+            """,
+            schema -> {
+                var t = (GraphitronType.UnclassifiedType) schema.type("Selector");
+                assertThat(t.reason()).contains("zero or multiple GraphQL types map to it");
+            }),
+
+        R377_ORPHAN_INPUT_TYPEID_FALLBACK(
+            "R377: a @table input over a metadata-carrying table with NO @node SDL type (orphan-input "
+                + "/ synthesis-shim case). With no @node backing the table the decode helper falls back "
+                + "to the metadata's typeId suffix (decodeBaz, since baz's __NODE_TYPE_ID is 'Baz'). "
+                + "Pins that dropping the old branch 1 preserves the orphan-input path rather than "
+                + "silently changing it.",
+            """
+            input Foo @table(name: "baz") { bazRef: ID! }
+            type Query { x: String }
+            """,
+            schema -> {
+                // bazRef has no matching column, so the @nodeId synthesis shim fires (baz carries
+                // node metadata). With no @node SDL type over baz the helper takes the typeId
+                // fallback: baz's __NODE_TYPE_ID is "Baz", so decodeBaz.
+                var t = (GraphitronType.TableInputType) schema.type("Foo");
+                var f = (InputField.ColumnField) t.inputFields().get(0);
+                var skip = (no.sikt.graphitron.rewrite.model.CallSiteExtraction.SkipMismatchedElement) f.extraction();
+                assertThat(skip.decodeMethod().methodName()).isEqualTo("decodeBaz");
             }),
 
         LIST_VARIANT(

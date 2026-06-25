@@ -1,13 +1,13 @@
 ---
 id: R377
 title: "decode<typeId> mismatch: resolve decode helper via NodeIndex when multiple @table types share a table"
-status: Ready
+status: In Review
 bucket: correctness
 priority: 2
 theme: nodeid
 depends-on: []
 created: 2026-06-25
-last-updated: 2026-06-25
+last-updated: 2026-06-26
 ---
 
 # decode<typeId> mismatch: resolve decode helper via NodeIndex when multiple @table types share a table
@@ -87,6 +87,16 @@ Three points the implementer must settle, each load-bearing:
 - **Pipeline (multi-node rejection):** two `@node` types on one table, a call site that needs the implicit decode helper without `@nodeId(typeName:)`. Assert it rejects at validate time (the `Unresolved` / `Rejected` / `UnclassifiedArg` carrier with the "zero or multiple" message), not a resolved carrier. Sibling to the existing `MULTIPLE_NODE_TYPES_PER_TABLE_ALLOWED` case (NodeIdPipelineTest.java:222), which pins that both types still *classify* as `NodeType`.
 - **Pipeline (orphan-input fallback):** a `@table` (non-`@node`) type over a metadata-carrying table reached through the synthesis shim still resolves to the typeId fallback (or rejects), pinning whatever branch-1 collapse decision is made in Design point 3 so it is observable rather than silent.
 - **Compilation backstop (`graphitron-sakila-example`):** the pipeline tier produces a structurally well-formed `TypeSpec` even when it names `decode10154`, so the *javac* failure that is the actual bug is only caught by a cross-module compile. Add a node type with a customized numeric `@node(typeId:)` over a table that is also backed by a projection type to the example schema, so `graphitron-sakila-example`'s `<release>17</release>` compile is the end-to-end guard. If the existing Sakila schema already has a multi-`@table`-over-one-table shape, extend it; otherwise add the minimal pair.
+
+## Implementation notes (as built, In Review)
+
+- **`resolveDecodeHelperForTable` rewritten to the three-outcome shape** through `nodes.forTable(sqlTableName)`; param renamed `fallbackTypeNameOrTypeId` → `fallbackTypeId`; javadoc rewritten to describe node-index-first resolution. `findGraphQLTypeForTable` is no longer consulted here but stays for its one remaining caller (the id-reference synthesis shim, `BuildContext.java:1949`).
+- **Design point 1 (case-folding) done:** `NodeIndex.byTable` is keyed on `tableName().toLowerCase(Locale.ROOT)` at construction (`TypeBuilder.buildClassificationIndices`) and `NodeIndex.forTable` lowercases its lookup arg; both javadocs note the case-fold.
+- **Design point 3 decided: branch 1 dropped entirely.** The orphan-input pipeline test confirms a non-`@node` `@table` input over a metadata-carrying table still resolves to the typeId fallback (`decodeBaz`), so no consumer depended on the old unique-`@table`-type-name spelling; the narrowed-branch-1 fallback was not needed.
+- **Pipeline tests** added to `NodeIdPipelineTest.InputCase`: `R377_DECODE_VIA_NODE_INDEX_NOT_TYPEID` (primary, asserts `decodeSharedNode` not `decode10154`), `R377_MULTI_NODE_REJECTS` (two `@node` on `bar` + bare-ID synthesis-shim input → `UnclassifiedType` with the "zero or multiple" message), `R377_ORPHAN_INPUT_TYPEID_FALLBACK`. The orphan test's input field is named `bazRef` (not `id`): `baz` has a literal `id` column that resolves through the direct-column path before the synthesis shim, so a non-column field name is required to reach the shim.
+- **Fixture:** `nodeidfixture.shared_node(id, label)` added to `init.sql` with `NodeIdFixtureGenerator.METADATA` entry `"shared_node" -> Metadata("10154", List.of("ID"))`; `jooq.codegen.schema.version` bumped to force regeneration.
+- **Compilation backstop:** reuses `film_endorsement` (already backed by the `FilmEndorsement` projection object type) rather than adding a new example DB table. A new `FilmEndorsementNode implements Node @node(typeId: "920534")` over the same table plus a same-table `endorsementsByNodeId(ids: [ID!]! @nodeId(typeName: "FilmEndorsementNode")): [FilmEndorsementNode!]!` query gives a decode call site over a two-object-type table; a regression emits `decode920534` and fails the module's `<release>17</release>` javac. `FixtureWarningsGateTest`'s pinned line (212 → 221) updated for the inserted query; the warning count is unchanged (the additions emit no new advisories).
+- **Build:** full `mvn -f graphitron-rewrite/pom.xml install -Plocal-db` green on Java 25. (In `-Plocal-db` sessions the local Postgres is seeded once at session start, so the new `shared_node` table had to be applied to the running DB and the catalog module clean-rebuilt for jOOQ to pick it up.)
 
 ## Out of scope
 

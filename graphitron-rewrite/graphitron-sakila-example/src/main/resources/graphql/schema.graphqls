@@ -189,6 +189,15 @@ type Query {
     # same rail as ordinary scalar filter args. Add `@lookupKey` to opt back into the lookup
     # shape (see filmsByNodeIdArgWithLookupKey below if exercised).
     filmsByNodeIdArg(ids: [ID!]! @nodeId(typeName: "Film")): [Film!]!
+    # R377 compilation backstop: same-table @nodeId arg over film_endorsement, which is backed by
+    # TWO object types — the FilmEndorsement projection (below) and the FilmEndorsementNode @node.
+    # The @node carries a customized numeric @node(typeId: "920534") distinct from its type name, so
+    # the decode helper must resolve through the @node-only NodeIndex to decodeFilmEndorsementNode.
+    # The pre-R377 all-@table detour returned empty for a two-object-type table and fell back to
+    # decode920534, which NodeIdEncoder never emits — a javac error this module's <release>17</release>
+    # compile catches end-to-end (the pipeline tier emits a structurally valid TypeSpec even when it
+    # names the phantom helper). See decode-helper-node-index-lookup.md (R377).
+    endorsementsByNodeId(ids: [ID!]! @nodeId(typeName: "FilmEndorsementNode")): [FilmEndorsementNode!]!
     # R106: same-table @nodeId composed with a sibling scalar filter. The query emits
     # `WHERE film_id IN (?) AND title = ?` — one statement, no N×M derived-table shape. The
     # filter sibling exercises the lift's promise: sibling args compose with the @nodeId
@@ -1917,6 +1926,18 @@ input StorageBinAgreeInput {
 # filmRef is nullable so an omitted endorsedFilm leaves the lone decode (the presence guard: no throw).
 type FilmEndorsement @table(name: "film_endorsement") {
     endorsedFilm: Int @field(name: "endorsed_film")
+    note: String @field(name: "note")
+}
+
+# R377 compilation backstop: a @node over film_endorsement with a customized numeric typeId
+# ("920534") distinct from the type name. film_endorsement is ALSO backed by the FilmEndorsement
+# projection object type above, so two object types back one table — exactly the shape that made
+# the old findGraphQLTypeForTable detour return empty and fall back to the typeId-named decode
+# helper. The endorsementsByNodeId query (in Query) decodes against this node; with a regression
+# the call site emits decode920534, which the encoder never generates, failing javac. The @node
+# keys on the endorsement_id PK; `id` is the encoded NodeId surface.
+type FilmEndorsementNode implements Node @table(name: "film_endorsement") @node(typeId: "920534") {
+    id: ID! @nodeId
     note: String @field(name: "note")
 }
 input InsertEndorsementOverlapInput @table(name: "film_endorsement") {
