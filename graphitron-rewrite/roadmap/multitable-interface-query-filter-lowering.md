@@ -106,11 +106,19 @@ This single decision settles the three questions the original draft left open:
    `QueryField.QueryUnionField` (`QueryField.java:212-245`) a *per-participant* filter carrier. The
    carrier must be per-participant: the same logical `@field` filter resolves to a *different*
    table-specific `WhereFilter` per participant, so a single shared `List<WhereFilter>` cannot serve
-   it. Prefer co-locating the resolved `List<WhereFilter>` on each `ParticipantRef.TableBound` (or a
-   small per-participant record) over a parallel `Map<typeName, List<WhereFilter>>` keyed by a
-   stringly typename, which invites key-set / participant-set drift the co-located shape makes
-   unrepresentable. No `orderBy` slot this slice (see Scope above; R382). Pagination already flows
-   through the connection wrapper, so day-one scope is `filters` only.
+   it. The carrier is **field-local** — a small new record pairing each table-bound participant with
+   its filters (e.g. `record ParticipantFilters(ParticipantRef.TableBound participant,
+   List<WhereFilter> filters)`), held in a `List` on the field. **Do not add a `filters` component to
+   `ParticipantRef.TableBound` itself.** That type is type-scoped and shared: `participants()` comes
+   from the cached `InterfaceType` / `UnionType` verdict, so the same interface backing two query
+   fields shares those `ParticipantRef` instances, and filters are a per-*field* concern. Loading them
+   onto the shared participant would force every other `TableBound` construction site (single-table
+   `TableInterfaceType`, `QueryServicePolymorphicField`, child fields) to thread an empty list, and
+   diverges from the codebase's own precedent — `QueryTableInterfaceField` carries a *separate*
+   field-level `filters`, not filters-on-participants. A field-local pairing also keys on the
+   participant object, not a stringly typename, so it cannot drift from the participant set. No
+   `orderBy` slot this slice (see Scope above; R382). Pagination already flows through the connection
+   wrapper, so day-one scope is `filters` only.
 
    **Do *not* make these fields `implements SqlGeneratingField`.** The mirror with
    `QueryTableInterfaceField` ends here: that field is single-table (one `TableBoundReturnType` plus a
@@ -146,11 +154,21 @@ This single decision settles the three questions the original draft left open:
    column absent from one participant, or a type mismatch, fails the build naming the participant).
    Watch the side effects of running `resolveTableFieldComponents` N times: it also emits the
    `@asConnection` same-table `@nodeId` advisory warning, so guard against emitting that warning once
-   per participant (lower it once, or dedupe). Separately, if the field carries a `@condition`, return
+   per participant (lower it once, or dedupe).
+
+   **Reject `@condition` *before* the per-participant loop, not after.** If the field carries a
+   `@condition` (field-level `fieldDef.hasAppliedDirective(DIR_CONDITION)` or any argument-level
+   `arg.hasAppliedDirective(DIR_CONDITION)`), return
    `Rejection.structural("@condition on a multitable interface/union is not yet supported")` — a
-   non-deferred kind, no slug (see the `@condition` design decision above). Keep this rejection on the
-   classify side (FieldBuilder), not bolted into the validator, consistent with where the multitable
-   participant invariants already live.
+   non-deferred kind, no slug (see the `@condition` design decision above) — as an early return at the
+   top of the arm. This ordering is load-bearing: `resolveTableFieldComponents` *itself* lowers a
+   `@condition` into a `ConditionFilter` bound to whatever table it is handed, so calling it once per
+   participant before the guard would silently produce N `ConditionFilter`s, each pinning the
+   developer's single-table method (e.g. `cond(FeideApplikasjon, …)`) to a *different* participant
+   table — which fails at consumer compile instead of giving the clean rejection. Guarding after the
+   loop reintroduces exactly the wrong-table lowering the rejection exists to prevent. Keep this
+   rejection on the classify side (FieldBuilder), not bolted into the validator, consistent with where
+   the multitable participant invariants already live.
 4. **Emitter: thread each participant's filters into its own UNION branch.** The non-connection branch
    loop (`MultiTablePolymorphicEmitter.buildStage1Block`, ~`:872-910`) already ANDs in
    `branchParentFkWhere` (~`:927-951`); the connection branch loop (`buildStage1ConnectionBlock`,
@@ -238,6 +256,27 @@ corrected two single-table-shaped surfaces the plan proposed to reuse on the pol
 - **Tests: execution coverage names both emit paths.** The non-connection (`buildStage1Block`, ANDs
   into an existing branch `.where`) and `@asConnection` (`buildStage1ConnectionBlock`, gains a
   brand-new branch `.where`) paths start in different states; the connection path is the net-new emit.
+
+A fresh session must still sign this off to Ready (this reviewer's substantive edits disqualify it
+from the approval).
+
+## Spec-review revisions (2026-06-25, third pass)
+
+Fourth reviewer (Spec gate, session ≠ last committer) reviewed the third pass's corrections (verified
+sound against source) and tightened two implementation details before handing off:
+
+- **Step 3: reject `@condition` *before* the per-participant loop, not after.**
+  `resolveTableFieldComponents` itself lowers a `@condition` into a `ConditionFilter` bound to the
+  table it is handed, so running it once per participant before the guard would silently emit N
+  `ConditionFilter`s, each pinning the developer's single-table method to a different participant
+  table (a consumer-compile failure, not the intended clean rejection). The guard is now specified as
+  an early return keyed on field- or argument-level `DIR_CONDITION`.
+- **Step 1: carrier is field-local, not a component on `ParticipantRef.TableBound`.** The prior nudge
+  ("co-locate on each `ParticipantRef.TableBound`") loaded a per-field concern onto a type-scoped,
+  shared model type (`participants()` comes from the cached interface/union verdict; the same
+  interface backs multiple fields), which would force empty-list threading through every other
+  `TableBound` construction site and diverge from `QueryTableInterfaceField`'s separate field-level
+  `filters` precedent. Now specified as a small field-local `(participant, filters)` pairing record.
 
 A fresh session must still sign this off to Ready (this reviewer's substantive edits disqualify it
 from the approval).
