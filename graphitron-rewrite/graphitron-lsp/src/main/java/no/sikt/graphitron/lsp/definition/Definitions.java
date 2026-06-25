@@ -55,9 +55,10 @@ import java.util.Optional;
  * {@link SourceWalker.Index} at request time (not from the catalog) and route
  * the join outcome through one exhaustive switch on the typed
  * {@link DefinitionTarget}: a {@code Located} jumps, a {@code SourceAbsent}
- * (known reference, source not on a walked root) and an {@code Ambiguous}
- * (overload collision, service half only) are non-jumps decided by the type,
- * not a sentinel.
+ * (known reference, source not on a walked root) is a non-jump decided by the
+ * type, not a sentinel. A same-arity overload collision is no longer a non-jump:
+ * it falls back to the never-dropped name-level view and lands on a declaration
+ * adjacent to the overload set.
  */
 public final class Definitions {
 
@@ -172,11 +173,15 @@ public final class Definitions {
     /**
      * Pure join for a method reference: for each catalog method of {@code methodName}
      * on {@code fqn}, the {@code (fqn, name, arity)} key resolves against the source
-     * index. First {@link DefinitionTarget.Located} wins (so a later resolvable
-     * overload still jumps); else {@link DefinitionTarget.Ambiguous} when any
-     * candidate key was dropped as an overload collision; else
-     * {@link DefinitionTarget.SourceAbsent}. Caller guards that the class is known
-     * and carries at least one method of this name. Public for LSP-tier arm tests.
+     * index. First {@link DefinitionTarget.Located} wins (so the correct overload, or
+     * a later resolvable one, jumps). When every arity key is absent or was dropped as
+     * a same-arity overload collision, the resolution falls back to the never-dropped
+     * name-level view ({@link SourceWalker.Index#methodByName}): landing on any
+     * declaration of the name gets the developer adjacent to the overload set, which
+     * beats declining. Only when the class carries no declaration of the name at all
+     * is the outcome {@link DefinitionTarget.SourceAbsent}. Caller guards that the
+     * class is known and carries at least one method of this name. Public for
+     * LSP-tier arm tests.
      */
     public static DefinitionTarget methodTarget(
         String fqn, String methodName, CompletionData catalog, SourceWalker.Index sourceIndex
@@ -185,22 +190,34 @@ public final class Definitions {
             .filter(r -> r.className().equals(fqn))
             .findFirst();
         if (ref.isEmpty()) return new DefinitionTarget.SourceAbsent();
-        boolean sawAmbiguous = false;
         for (var method : ref.get().methods()) {
             if (!method.name().equals(methodName)) continue;
             var key = new SourceWalker.MethodKey(fqn, methodName, method.parameters().size());
             var decl = sourceIndex.methods().get(key);
             if (decl != null) return new DefinitionTarget.Located(decl.location());
-            if (sourceIndex.ambiguousMethods().contains(key)) sawAmbiguous = true;
         }
-        return sawAmbiguous ? new DefinitionTarget.Ambiguous() : new DefinitionTarget.SourceAbsent();
+        return sourceIndex.methodByName(fqn, methodName)
+            .<DefinitionTarget>map(d -> new DefinitionTarget.Located(d.location()))
+            .orElseGet(DefinitionTarget.SourceAbsent::new);
+    }
+
+    /**
+     * Goto projection of {@link SourceWalker.Index#resolveMethod}: the editor jump
+     * for the method a {@link no.sikt.graphitron.lsp.parsing.DeclTarget.SourceMethod}
+     * names, sharing the index's arity-then-name resolution with the declaration-name
+     * hover overlay so the two stay structurally in lockstep.
+     */
+    public static Optional<Location> methodLocation(
+        SourceWalker.Index sourceIndex, String fqn, String methodName, int paramCount
+    ) {
+        return sourceIndex.resolveMethod(fqn, methodName, paramCount).flatMap(d -> asLocation(d.location()));
     }
 
     /**
      * The single mapping from the typed service-half outcome to an editor
      * jump. {@code SourceAbsent} is a non-silent no-jump (logged, since it is
      * where the recoverable "source exists but isn't on a watched root" case
-     * lands); {@code Ambiguous} is a deliberate silent no-jump.
+     * lands).
      */
     static Optional<Location> resolve(DefinitionTarget target, String fqn) {
         return switch (target) {
@@ -210,7 +227,6 @@ public final class Definitions {
                     + "is its declaring module's source root on the dev session?", fqn);
                 yield Optional.empty();
             }
-            case DefinitionTarget.Ambiguous ignored -> Optional.empty();
         };
     }
 
