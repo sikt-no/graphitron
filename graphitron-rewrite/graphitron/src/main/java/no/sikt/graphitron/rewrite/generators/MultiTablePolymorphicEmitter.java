@@ -21,7 +21,6 @@ import no.sikt.graphitron.rewrite.model.WhereFilter;
 
 import javax.lang.model.element.Modifier;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
@@ -823,9 +822,6 @@ public final class MultiTablePolymorphicEmitter {
             b.addStatement("$T $L = $T.$L", jooqTableClass, alias, participant.table().constantsClass(), participant.table().javaFieldName());
         }
 
-        // R363: declare FK-target @nodeId override aliases (if any) before the union expression.
-        var fkTargetAliases = declareBranchFilterAliases(b, participants, participantFilters);
-
         var tableWildcard = ParameterizedTypeName.get(TABLE, WildcardTypeName.subtypeOf(Object.class));
         b.add("$T $L =\n", tableWildcard, CONNECTION_PAGES_LOCAL);
         for (int p = 0; p < participants.size(); p++) {
@@ -833,7 +829,7 @@ public final class MultiTablePolymorphicEmitter {
             String alias = "stage1_" + participant.typeName();
             // Root connection has no parent-FK restriction, so the branch WHERE is the @field filter
             // predicate alone (R363). buildStage1ConnectionBlock previously emitted no per-branch WHERE.
-            CodeBlock branchWhere = branchFilterWhere(ctx, participant, participantFilters, fkTargetAliases);
+            CodeBlock branchWhere = branchFilterWhere(ctx, participant, participantFilters);
             if (p == 0) {
                 b.add("    dsl.select($L)\n", branchProjection(participant, alias));
                 b.add("        .from($L)\n", alias);
@@ -907,9 +903,6 @@ public final class MultiTablePolymorphicEmitter {
             b.addStatement("$T $L = $T.$L", jooqTableClass, alias, participant.table().constantsClass(), participant.table().javaFieldName());
         }
 
-        // R363: declare FK-target @nodeId override aliases (if any) before the union expression.
-        var fkTargetAliases = declareBranchFilterAliases(b, participants, participantFilters);
-
         var resultBound = ParameterizedTypeName.get(RESULT,
             WildcardTypeName.subtypeOf(RECORD));
         b.add("$T stage1 = ", resultBound);
@@ -920,7 +913,7 @@ public final class MultiTablePolymorphicEmitter {
             // (R363, root fields); either may be null, in which case the other stands alone.
             CodeBlock branchWhere = andWhere(
                 branchParentFkWhere(participant, participantJoinPaths),
-                branchFilterWhere(ctx, participant, participantFilters, fkTargetAliases));
+                branchFilterWhere(ctx, participant, participantFilters));
             if (p == 0) {
                 b.add("dsl.select($L)\n", branchProjection(participant, alias));
                 b.add("    .from($L)\n", alias);
@@ -984,43 +977,26 @@ public final class MultiTablePolymorphicEmitter {
     }
 
     /**
-     * Declares the FK-target {@code @nodeId} override aliases for every participant's filters (R363),
-     * appended as statements to {@code b} before the stage-1 union expression. Returns a per-typename
-     * map of the filter -&gt; hop-alias bindings {@link #branchFilterWhere} reads back. Plain column
-     * filters (the common {@code @field}-mapped case) contribute nothing.
-     */
-    private static Map<String, Map<WhereFilter, List<String>>> declareBranchFilterAliases(
-            CodeBlock.Builder b, List<ParticipantRef.TableBound> participants,
-            Map<String, List<WhereFilter>> participantFilters) {
-        var byTypename = new HashMap<String, Map<WhereFilter, List<String>>>();
-        for (var participant : participants) {
-            var filters = participantFilters.getOrDefault(participant.typeName(), List.of());
-            if (filters.isEmpty()) continue;
-            String alias = "stage1_" + participant.typeName();
-            byTypename.put(participant.typeName(),
-                FkTargetConditionEmitter.declareAliases(b, filters, alias, false));
-        }
-        return byTypename;
-    }
-
-    /**
      * Builds the {@code @field} filter predicate for one stage-1 branch by ANDing each lowered
      * {@link WhereFilter} as a condition term bound to the branch alias {@code stage1_<Type>} (R363),
      * or {@code null} when the participant has no filters. Reuses
      * {@link FkTargetConditionEmitter#emitTerm} so a participant's filters bind to its own table
      * exactly as the single-table fetcher path does — each participant's filters were lowered against
      * its own table, with a participant-named {@code <Participant>Conditions} method.
+     *
+     * <p>The classifier ({@code FieldBuilder.lowerParticipantFilters}) admits only branch-safe
+     * {@link GeneratedConditionFilter}s with registry-free, local-free extractions, so this path
+     * needs no {@code CompositeDecodeHelperRegistry}, no lift context, and no FK-target aliases —
+     * unsupported filter shapes are rejected at build time before reaching here.
      */
     private static CodeBlock branchFilterWhere(TypeFetcherEmissionContext ctx,
-            ParticipantRef.TableBound participant, Map<String, List<WhereFilter>> participantFilters,
-            Map<String, Map<WhereFilter, List<String>>> fkTargetAliases) {
+            ParticipantRef.TableBound participant, Map<String, List<WhereFilter>> participantFilters) {
         var filters = participantFilters.getOrDefault(participant.typeName(), List.of());
         if (filters.isEmpty()) return null;
         String alias = "stage1_" + participant.typeName();
-        var aliasesForParticipant = fkTargetAliases.getOrDefault(participant.typeName(), Map.of());
         var b = CodeBlock.builder();
         for (int i = 0; i < filters.size(); i++) {
-            var term = FkTargetConditionEmitter.emitTerm(ctx, filters.get(i), alias, null, null, aliasesForParticipant);
+            var term = FkTargetConditionEmitter.emitTerm(ctx, filters.get(i), alias, null, null, Map.of());
             if (i == 0) {
                 b.add("$L", term);
             } else {

@@ -226,6 +226,19 @@ Two mechanics the plan's steps under-specified, both serving the plan's stated p
   per participant. The `QueryConditions` env-adapter is not on the branch path (the emitter calls the
   composer directly via `FkTargetConditionEmitter.emitTerm`), so only this one generator needed wiring.
 
+- **Day-one extraction scope is `Direct` / `EnumValueOf` / `ContextArg` (self-review finding).** The
+  branch emitter reuses `emitTerm` without a `CompositeDecodeHelperRegistry`, lift context, or
+  pre-declared extraction locals, so the classifier (`FieldBuilder.firstUnsupportedFilterArg`) admits
+  only those registry-free, local-free extractions and structurally rejects the rest:
+  `JooqConvert` (ID-typed / converted columns — its emission routes through a deprecated-for-removal
+  `DataType.convert` that trips the consumer `-Werror`), `NodeIdDecodeKeys` (needs the registry), and
+  nested-input / developer `@condition` filters (`ConditionFilter` / `FkTargetConditionFilter`,
+  including the nested-input `@condition` the field/arg-level guard does not reach). This keeps the
+  reported plain-scalar-column case working and fails the rest loudly at build time rather than
+  emitting an `IllegalStateException`, deprecated, or uncompilable code. The rejection is structural
+  (no slug), consistent with the `@condition` decision; lifting these extraction kinds onto the
+  polymorphic path is follow-up work (R383).
+
 ## Cross-links
 
 Shares `MultiTablePolymorphicEmitter` with R366 (list-cardinality polymorphic split-query emit).
