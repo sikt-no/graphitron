@@ -245,29 +245,54 @@ ride along as payload the model already carries for argument mapping and hover.
 
 ## What the model enables: three consumers
 
-One model, three readers. Each consumer is a **projection** over the same facts; none owns a private model,
-and a fact added for one is visible to all three.
+One base, three consumers, and the consumers do not all read it at the same depth. The facts are the base
+relations; everything a consumer reads is a **view** computed over them. The model already ships this
+layering, so R333's job here is to name it and to keep it from fracturing into separate models as the leaf
+zoo dissolves.
 
-- **Code generation.** The `DataFetcher` and the QueryPart-emitting methods are *views* over the facts: the
-  DataFetcher joins `source` and `target` and dispatches the operation set, and each operation renders into a
-  query unit through a named **seam**. The seam topology (*Seam worklist* / *Operations are realized by
-  seams*) is the back-half view of the `operation` relation, and the build's correctness test is thread I's
-  **referential-integrity closure**: every method name an edge calls resolves to a node we also emit.
-  Re-platforming the emit onto this model is R314.
-- **The language server.** The same facts answer the editor's questions directly: hover and
-  go-to-definition read `resolvedTable` / `reference` / the node and accessor facts; diagnostics are the
-  model's integrity checks (discriminability, join-name match, the closure invariant) surfaced as the author
-  types. The LSP already marshals this classification to the editor; a demand-driven, memoized
-  reclassification (the salsa / rust-analyzer model, reserved in *We are data modeling*) is its performance
-  path, not a second model.
-- **MCP.** The facts are a queryable knowledge surface: a model-context server projects them so an agent can
-  ask what a coordinate lowers to, which tables back a type, or what a directive resolves against, and be
-  answered from the authoritative model rather than re-deriving it from source. The catalog-describe and
-  retrieval foundations are the first cuts of that surface.
+**The layering, as it ships today.** Between the facts and the consumers sit two layers of view:
+
+- **The classifier (the denormalized leaves).** `GraphitronField` and its permits (`ChildField`,
+  `QueryField`, `MutationField`, `InputField`) and `GraphitronType`. This is the leaf zoo, and it is a
+  denormalized view over the facts (the argument of *Normalization: the leaf zoo is a denormalized view*).
+  **Code generation reads it directly**: the `DataFetcher` joins `source` and `target` and dispatches the
+  operation set, each operation rendering through a named seam, and thread I's referential-integrity closure
+  is the build's correctness test.
+- **The projections.** `FieldClassification`, `TypeClassification`, `TypeBackingShape`, `CompletionData`,
+  `CatalogFacts`: a second view, built from the classifier by an exhaustive, compile-checked switch
+  (`CatalogBuilder.projectFieldClassification` and its siblings) and sized to the questions the editor and
+  the agent ask (hover payloads, completion candidates, catalog descriptions). **The language server and the
+  model-context server read these**, the former to validate / complete / describe / locate as the author
+  types, the latter to describe / locate / invert for an agent navigating the schema (the six reads of *The
+  two referenced namespaces*).
+
+So "one model, three readers" is not aspirational, it is implemented, with a compile-enforced seam tying the
+projections to the classifier. What it is *not* is three co-equal readers of one flat fact set: there is a
+base, there are views, the views stack two deep, and the consumers enter at different depths.
+
+**Code generation is the narrowest view, not the model.** It reads the *resolved* values (the `resolvedTable`
+coalesce, the inferred FK, the rolled-up enum backing) and demands a total, integrity-clean snapshot before
+it runs. It does not select the columns the other two live on: the authored form behind each resolved value,
+the description text, the source position. Those columns are in the base regardless; code generation simply
+does not project them. Calling code generation "the model" was the original error; it is the projection that
+selects the fewest columns and imposes the strictest precondition, no more privileged than the others.
+Re-platforming the emit onto the facts is R314.
+
+**The invariant that keeps it one model: the projection seam re-sources from the facts.** Today
+`CatalogBuilder.projectFieldClassification` switches over the classifier's leaf permits to build
+`FieldClassification`. When the leaf zoo dissolves into facts, that switch must re-source, from the leaf
+permits to the facts, and its compile-time coverage guarantee must move with it. This is the single
+load-bearing requirement of widening the model to three consumers. Miss it and the dissolution proceeds on
+the code-generation side while the projections still need the old leaf permits, so the leaves are kept alive
+as a shim purely to feed the editor and the agent, and the leaf zoo we set out to dissolve returns as a
+second model whose only job is the projection layer. Facts, revived leaves, and projections is three models.
+The fix is to point the projection seam at the facts and let its coverage switch fail to compile until every
+projection re-sources, the same falsifiable-closure discipline thread I applies to the emit.
 
 The shared discipline is *We are data modeling*: the facts are typed, keyed relations in the type system,
 materialized as in-memory collections guarded by a referential-integrity check, not sat on a query-engine
-runtime. The three consumers read views; the model is one.
+runtime. The three consumers read views over one base; the base carries every column some view needs, and no
+consumer owns a private model.
 
 ## The unit is the emitted method
 
