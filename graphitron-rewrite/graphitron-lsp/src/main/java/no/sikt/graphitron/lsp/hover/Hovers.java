@@ -87,8 +87,10 @@ public final class Hovers {
         if (directiveOpt.isEmpty()) {
             // R160 — no directive at the cursor; try the classification-hover arm on SDL
             // declaration coordinates (field-definition / type-definition name tokens).
+            // R371 — pass the catalog and source index so the arm overlays the bound
+            // jOOQ class / column / member Javadoc beneath the classification block.
             if (classificationHoverEnabled) {
-                return DeclarationHovers.compute(file, snapshot, pos);
+                return DeclarationHovers.compute(file, catalog, sourceIndex, snapshot, pos);
             }
             return Optional.empty();
         }
