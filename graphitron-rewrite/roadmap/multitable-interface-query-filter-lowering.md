@@ -1,7 +1,7 @@
 ---
 id: R363
 title: "Lower @field filter inputs and @condition onto multitable-interface queries"
-status: Spec
+status: Ready
 bucket: bug
 priority: 2
 theme: interface-union
