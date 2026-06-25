@@ -45,8 +45,10 @@ throughout, not prerequisites to read first.
 
 ## The model
 
-The entity is the schema **coordinate** `(parentType, fieldName)`. The model is that coordinate together
-with a small set of **facts**, each an independent functional dependency found by its own walk. The leaf
+The entity is the schema **coordinate**, the GraphQL spec's `SchemaCoordinate` stored decomposed into its
+grammar columns (the key system is *The natural keys* below; `Foo.bar` is the output-field case). The model
+is that coordinate together with a small set of **facts**, each an independent functional dependency found
+by its own walk. The leaf
 zoo, the per-field "graphitron field", and the two library types (`DataFetcher`, `QueryPart`) are
 denormalized views over these facts; a capability is added by adding a fact, not a new leaf type. The whole
 model at a glance:
@@ -61,6 +63,8 @@ erDiagram
     COORDINATE ||--|| ACCESSOR : "value read by"
     COORDINATE ||--o| DISCRIMINATION : "recovers concrete type"
     COORDINATE }o--|| SOURCE_OBJECT : "cast target (type-level)"
+    COORDINATE ||--o{ CAPABILITY_TAG : "@capability (reserved)"
+    COORDINATE ||--o| SOURCE_LOCATION : "locate (joined at request time, not stored)"
 
     REFERENCE ||--|| REFERENCED_TABLE : "destination"
     REFERENCE ||--|{ JOIN_STEP : "linearized join graph"
@@ -71,9 +75,15 @@ erDiagram
     ACCESSOR ||--o| NODE : "@nodeId codec"
     ACCESSOR ||--o| ENUM : "enum coercion"
 
+    CAPABILITY_TAG }o--|| SLUG : "names (slug namespace)"
+
     COORDINATE {
-        string parentType PK
-        string fieldName PK
+        enum kind "Type | Member | Argument | Directive | DirectiveArgument"
+        string typeName PK "Type / Member / Argument kinds"
+        string memberName PK "Member / Argument: output field, input field, or enum value"
+        string argumentName PK "Argument kind"
+        string directiveName PK "Directive / DirectiveArgument kinds"
+        string canonical "derived render: Foo / Foo.bar / Foo.bar(baz:) / @foo(bar:)"
     }
     SOURCE {
         enum kind "Root | OnlyChild | Child"
@@ -88,10 +98,10 @@ erDiagram
         anchor address "which query unit it lands in"
     }
     REFERENCE {
-        path path "authored @reference or inferred FK"
+        path path "authored @reference or inferred FK (coalesced view)"
     }
     RESOLVED_TABLE {
-        table table "derived: referencedTable then source then target"
+        table table "derived view: referencedTable then source then target"
     }
     JOIN_STEP {
         int stepIndex
@@ -105,7 +115,7 @@ erDiagram
         bool tableBound
     }
     ACCESSOR {
-        locator locator "field-level read"
+        locator locator "field-level value read"
     }
     NODE {
         string type
@@ -122,6 +132,18 @@ erDiagram
     ERROR_GUARD {
         enum channel "Outcome | PayloadClass | LocalContext"
         ref handlerSet "interned partition"
+    }
+    CAPABILITY_TAG {
+        slug slug "@capability / @exemplifies edge; reserved, not yet shipped"
+    }
+    SLUG {
+        string name PK "capability catalog: third referenced namespace"
+        string definition
+    }
+    SOURCE_LOCATION {
+        string uri "value of locate; partial (absent for built-ins)"
+        int line
+        int column
     }
 ```
 
@@ -143,6 +165,8 @@ The catalog, each row a fact with its own deep-dive below:
 | `enum` | accessor refinement, 0..1 | `@field` on `ENUM_VALUE` | the authored value set and a derived backing type |
 | `discrimination` | 0..1 | `@discriminate` / `@discriminator` / `@error` | concrete-type recovery, over the **row** or **exception** signal domain |
 | `errorGuard` | operation sub-fact | `@error` | on a throwing operation: a transport channel and an interned handler partition |
+| `capabilityTag` | 0..N (reserved) | `@capability` / `@exemplifies` | tags the coordinate with a stable slug from the capability catalog; knowledge-surface only, not yet shipped |
+| `sourceLocation` | 0..1, joined not stored | joined against `SourceWalker.Index` at request time | the `locate` value; a fact *about* the coordinate, keyed by the coordinate, never itself a key |
 
 **The model is closed.** Every active directive's effect has an owning fact in this catalog; the
 completeness audit, directive by directive, is *Directive coverage* near the end. The two halves of the
@@ -154,8 +178,8 @@ relation, detailed throughout the rest of this document.
 The model's spine is its natural keys, and the entity key is not ad-hoc: it is the GraphQL specification's
 **`SchemaCoordinate`**, the same coordinate this document is named for. The spec already standardizes the
 grammar for addressing every element of a schema, so the model adopts it rather than inventing a key.
-(Earlier sections sketch the coordinate as `(parentType, fieldName)`, and the ER diagram draws it that way;
-that is shorthand. The precise form is below.)
+(Later sections still sketch the coordinate as `(parentType, fieldName)` for readability; that is shorthand
+for the `MemberCoordinate` output-field case. The ER diagram in *The model* draws the full key.)
 
 **The coordinate is a `SchemaCoordinate`, stored decomposed into its grammar columns.** The spec's five
 productions are five coordinate kinds, each carrying exactly the `Name` positions of its production, and the
