@@ -1,13 +1,13 @@
 ---
 id: R365
 title: "Support returning a polymorphic entity (interface/union) from a @service mutation"
-status: Ready
+status: In Review
 bucket: bug
 priority: 5
 theme: interface-union
 depends-on: []
 created: 2026-06-24
-last-updated: 2026-06-24
+last-updated: 2026-06-25
 ---
 
 # Support returning a polymorphic entity (interface/union) from a @service mutation
@@ -273,3 +273,31 @@ emitter, the collapsed `QueryServicePolymorphicField` / `MutationServicePolymorp
 (exercised end-to-end over both a union and an interface), the child-`@service` deferred reject mirrored
 in classifier and validator, and the unit / pipeline / execution coverage — is sound and should carry
 forward unchanged.
+
+## Rework resolution (2026-06-25, landed b28fe15)
+
+The blocking finding above is fixed, with a scope refinement from the maintainer that supersedes the
+reviewer's literal suggestion and the "carry the union forward" note:
+
+- **Same-table participants in a plain multitable interface/union → `AUTHOR_ERROR` (both subsets).**
+  Rather than a *deferred* rejection for the with-`@discriminator` subset, the whole same-table case
+  is an author error: same-table polymorphism must be modeled as a single-table discriminated
+  interface (`@table @discriminate`, i.e. `TableInterfaceType`) or the types split. Record-class
+  dispatch can never tell same-table participants apart, and discriminator-value dispatch is *not* a
+  planned route-(a) capability, so there is no follow-up to defer to (no backlog item). One shared
+  `validateMultiTableParticipants` site guards route (a) and R363's query path alike; the emitter's
+  distinct-record-class invariant now holds.
+- **`@service` returning a union → permanently unsupported.** Union polymorphism is a
+  generated-query-path capability that the service path was never meant to grow; a union `@service`
+  return is rejected at classify (`AUTHOR_ERROR`). The route-(a) variant is therefore interface-only,
+  and the corpus / projection / execution coverage moved off the union `Document` onto the
+  `Searchable` interface (the distinct-table two-branch round-trip is preserved).
+- **`@service` returning a single-table discriminated interface (`TableInterfaceType`) → deferred**
+  (no per-row discriminator dispatch on the service path), rejected rather than silently emitted; no
+  backlog item.
+
+Net: route (a) is scoped to exactly one shape — a `@service` returning a distinct-table multitable
+interface. New pins: builder negatives for union-rejected and table-interface-deferred; floor unit
+tests assert `AUTHOR_ERROR` for both same-table subsets. This supersedes the earlier
+"Discriminability" wording that framed same-table-with-`@discriminator` as a deferred dispatch
+follow-up: it is now an author error redirecting to `TableInterfaceType`.
