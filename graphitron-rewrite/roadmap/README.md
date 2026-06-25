@@ -14,7 +14,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 | ID | Item | Status | Updated | Plan |
 |---|---|---|---|---|
-| `R363` | Lower @field filter inputs and @condition onto multitable-interface queries | Spec | 2026-06-24 | [plan](multitable-interface-query-filter-lowering.md) |
+| `R363` | Lower @field filter inputs and @condition onto multitable-interface queries | Spec | 2026-06-25 <sub>created 2026-06-24</sub> | [plan](multitable-interface-query-filter-lowering.md) |
 | `R19` | Rebase and squash rewrite branch onto main | Ready |  | [plan](history-squash.md) |
 | `R222` | Dimensional model pivot: slots over cross-product permits | Spec | 2026-06-18 <sub>created 2026-05-21</sub> | [plan](dimensional-model-pivot.md) |
 | `R333` | Lower each schema coordinate to a DataFetcher and its QueryParts | Spec | 2026-06-22 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |

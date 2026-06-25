@@ -7,7 +7,7 @@ priority: 2
 theme: interface-union
 depends-on: []
 created: 2026-06-24
-last-updated: 2026-06-24
+last-updated: 2026-06-25
 ---
 
 # Lower @field filter inputs and @condition onto multitable-interface queries
@@ -103,21 +103,42 @@ This single decision settles the three questions the original draft left open:
   expresses without a slug, so no follow-up item need exist for the rejection to be honest.
 
 1. **Model: add the per-participant filter surface.** Give `QueryField.QueryInterfaceField` and
-   `QueryField.QueryUnionField` (`QueryField.java:212-245`) a *per-participant* filter carrier and
-   have them `implements SqlGeneratingField` as `QueryTableInterfaceField` does. The carrier must be
-   per-participant: the same logical `@field` filter resolves to a *different* table-specific
-   `WhereFilter` per participant, so a single shared `List<WhereFilter>` cannot serve it. Prefer
-   co-locating the resolved `List<WhereFilter>` on each `ParticipantRef.TableBound` (or a small
-   per-participant record) over a parallel `Map<typeName, List<WhereFilter>>` keyed by a stringly
-   typename, which invites key-set / participant-set drift the co-located shape makes
+   `QueryField.QueryUnionField` (`QueryField.java:212-245`) a *per-participant* filter carrier. The
+   carrier must be per-participant: the same logical `@field` filter resolves to a *different*
+   table-specific `WhereFilter` per participant, so a single shared `List<WhereFilter>` cannot serve
+   it. Prefer co-locating the resolved `List<WhereFilter>` on each `ParticipantRef.TableBound` (or a
+   small per-participant record) over a parallel `Map<typeName, List<WhereFilter>>` keyed by a
+   stringly typename, which invites key-set / participant-set drift the co-located shape makes
    unrepresentable. No `orderBy` slot this slice (see Scope above; R382). Pagination already flows
    through the connection wrapper, so day-one scope is `filters` only.
-2. **`operation()`: stop hardcoding the empty filter list.** The interface/union arms
-   (`QueryField.java:46-47`) pass `List.of(), new OrderBySpec.None()`; pass the lowered
-   per-participant filters in place of `List.of()` (keep `new OrderBySpec.None()` — `orderBy` is
-   R382). Note the per-participant filter shape may not fit `OutputField.readOperation`'s existing
-   single-`List<WhereFilter>` parameter as-is; reconciling that signature (or routing the
-   per-participant filters to the emitter outside `operation()`, see step 4) is part of this step.
+
+   **Do *not* make these fields `implements SqlGeneratingField`.** The mirror with
+   `QueryTableInterfaceField` ends here: that field is single-table (one `TableBoundReturnType` plus a
+   discriminator column), but the multitable variants carry `ReturnTypeRef.PolymorphicReturnType`.
+   `SqlGeneratingField.returnType()` returns `TableBoundReturnType`, a *sibling* variant of
+   `PolymorphicReturnType`, so a record whose `returnType()` accessor returns the polymorphic type
+   cannot satisfy the interface — it does not compile. Beyond the compile wall, the capability's flat
+   `filters()` contradicts the per-participant decision, and implementing it opts these fields into
+   every `instanceof SqlGeneratingField` consumer — `TypeConditionsGenerator`
+   (`TypeConditionsGenerator.java:64`) and `ContextArgumentClassifier`
+   (`ContextArgumentClassifier.java:120`) — both of which assume a single table-bound SQL surface.
+   The per-participant carrier is reached by the polymorphic emitter directly (step 4), not through a
+   capability interface.
+2. **`operation()`: leave it alone for these arms.** The interface/union arms
+   (`QueryField.java:46-47`) pass `List.of(), new OrderBySpec.None()`, and they should keep doing so.
+   The polymorphic fetcher emit path does **not** consume `operation()`: `TypeFetcherGenerator`'s
+   `QueryInterfaceField` / `QueryUnionField` arms (`TypeFetcherGenerator.java:452-472`) call
+   `MultiTablePolymorphicEmitter.emitMethods` / `emitConnectionMethods(..., f.participants(), …)`
+   directly and never read the `Operation`. `operation()` for these fields is read only by the
+   validator's re-fetch consistency check (`GraphitronSchemaValidator.java:164`, via
+   `requiresReFetch()`), which keys on operation/target/source *shape*, not on the filter-list
+   *contents* — so the per-participant filters do not belong on it. Threading them through
+   `operation()` would be inert (the emitter ignores it) and is impossible as a single list anyway
+   (`OutputField.readOperation` takes one `List<WhereFilter>`, and the filters are per-participant).
+   This is the same "don't carry a surface the emitter ignores" rule the Scope section applied to cut
+   `orderBy`. Filters reach the emitter solely via the new parameter in step 4. (Confirm the
+   `requiresReFetch()` derivation for these arms is unchanged by step 1's added carrier, so the
+   validator's re-fetch consistency check still passes.)
 3. **Builder: lower the arguments per participant; reject `@condition`.** In `FieldBuilder`
    (interface/union arms at `FieldBuilder.java:3441-3450`), for each table-bound participant call
    `resolveTableFieldComponents(fieldDef, participant.table(), elementTypeName, …)`, collect the
@@ -150,6 +171,11 @@ This single decision settles the three questions the original draft left open:
 - Pipeline tier (rejection): a filter naming a column absent from (or type-incompatible on) one
   participant fails classification with a typed rejection naming that participant and column.
 - Execution tier: the query applies `WHERE <col> IN (...)` per branch and returns only matching rows.
+  Cover **both** emit paths, since they start in different states: the non-connection list/interface
+  path (`emitMethods` / `buildStage1Block`, which ANDs the filter into an existing per-branch
+  `.where(...)`) and the `@asConnection` path (`emitConnectionMethods` / `buildStage1ConnectionBlock`,
+  which today emits no per-branch `.where(...)` and gains a brand-new one). The connection path is the
+  net-new emit and the higher-risk of the two.
 - Validation: a `@condition` on a multitable interface/union field is rejected at build (this also
   covers the previously-silent non-existent-method case, since any `@condition` on the path rejects).
   The test asserts the rejection *kind* (`structural`), not merely that some rejection fires, so the
@@ -188,6 +214,30 @@ Second reviewer (Spec gate, session ≠ author/last committer) made three change
   stringly `Map`; guard against running `resolveTableFieldComponents` per participant re-emitting the
   `@asConnection` advisory N times; the emitter entry points need a new filters parameter threaded
   from `TypeFetcherGenerator`'s call sites; drifted line references refreshed against current source.
+
+A fresh session must still sign this off to Ready (this reviewer's substantive edits disqualify it
+from the approval).
+
+## Spec-review revisions (2026-06-25, second pass)
+
+Third reviewer (Spec gate, session ≠ author/last committer) traced the model and generator wiring and
+corrected two single-table-shaped surfaces the plan proposed to reuse on the polymorphic fields:
+
+- **Steps 1+2: drop `SqlGeneratingField` and the `operation()` filter threading.** Both are
+  single-table surfaces that do not fit the polymorphic model. `SqlGeneratingField.returnType()`
+  returns `TableBoundReturnType`, but `QueryInterfaceField` / `QueryUnionField` carry
+  `PolymorphicReturnType` (a sibling variant), so `implements SqlGeneratingField` does not compile;
+  its flat `filters()` also contradicts the per-participant decision, and implementing it opts these
+  fields into `TypeConditionsGenerator` / `ContextArgumentClassifier`, which assume a single
+  table-bound surface. Separately, the polymorphic fetcher emit path (`TypeFetcherGenerator` →
+  `MultiTablePolymorphicEmitter.emitMethods` / `emitConnectionMethods`) reads `f.participants()`
+  directly and never consumes `operation()`; threading filters there is inert and impossible as a
+  single list. Filters reach the emitter solely via the step-4 parameter; `operation()` stays
+  `List.of(), new OrderBySpec.None()`. This is the same "don't carry a surface the emitter ignores"
+  rule the Scope section used to cut `orderBy`.
+- **Tests: execution coverage names both emit paths.** The non-connection (`buildStage1Block`, ANDs
+  into an existing branch `.where`) and `@asConnection` (`buildStage1ConnectionBlock`, gains a
+  brand-new branch `.where`) paths start in different states; the connection path is the net-new emit.
 
 A fresh session must still sign this off to Ready (this reviewer's substantive edits disqualify it
 from the approval).
