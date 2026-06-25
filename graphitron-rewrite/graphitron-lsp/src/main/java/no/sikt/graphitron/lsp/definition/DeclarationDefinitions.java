@@ -32,10 +32,12 @@ import java.util.Optional;
  * to a {@code Location}. The declaration-name hover arm projects the same
  * {@code DeclTarget} to a Javadoc overlay, so hover/goto parity is structural:
  * both switch over the same target, and a new backing permit breaks both
- * switches at compile time. Every arm routes through the sealed
- * {@link DefinitionTarget} and {@link Definitions#resolve}, the single
- * empty-resolution contract R349 settled on: {@code Located} jumps,
- * {@code SourceAbsent} / {@code Ambiguous} stay put.
+ * switches at compile time. The catalog / class / column / field arms route
+ * through the sealed {@link DefinitionTarget} and {@link Definitions#resolve},
+ * the single empty-resolution contract R349 settled on: {@code Located} jumps,
+ * {@code SourceAbsent} stays put. The method arm shares
+ * {@link Definitions#methodLocation} with the hover overlay, so its
+ * arity-then-name resolution cannot drift from hover's.
  */
 public final class DeclarationDefinitions {
 
@@ -49,7 +51,7 @@ public final class DeclarationDefinitions {
         if (!(snapshot instanceof LspSchemaSnapshot.Built built)) return Optional.empty();
         var declOpt = SdlDeclaration.findContaining(file.tree().getRootNode(), pos, file.source());
         if (declOpt.isEmpty()) return Optional.empty();
-        return locate(DeclTarget.resolve(declOpt.get(), built, catalog, file.source()), catalog, sourceIndex);
+        return locate(DeclTarget.resolve(declOpt.get(), built, catalog, file.source()), sourceIndex);
     }
 
     /**
@@ -58,9 +60,7 @@ public final class DeclarationDefinitions {
      * that this jump is present exactly when the declaration-name hover overlay is
      * (the R371 parity property), without a tree-sitter round-trip.
      */
-    public static Optional<Location> locate(
-        DeclTarget target, CompletionData catalog, SourceWalker.Index sourceIndex
-    ) {
+    public static Optional<Location> locate(DeclTarget target, SourceWalker.Index sourceIndex) {
         return switch (target) {
             case DeclTarget.CatalogTable t ->
                 Definitions.resolve(Definitions.classTarget(t.table().classFqn(), sourceIndex), t.table().classFqn());
@@ -70,8 +70,7 @@ public final class DeclarationDefinitions {
             case DeclTarget.SourceClass s ->
                 Definitions.resolve(Definitions.classTarget(s.fqClassName(), sourceIndex), s.fqClassName());
             case DeclTarget.SourceMethod m ->
-                Definitions.resolve(
-                    Definitions.methodTarget(m.fqClassName(), m.accessorMethodName(), catalog, sourceIndex), m.fqClassName());
+                Definitions.methodLocation(sourceIndex, m.fqClassName(), m.methodName(), m.paramCount());
             case DeclTarget.SourceField f ->
                 Definitions.resolve(Definitions.fieldTarget(f.fqClassName(), f.memberName(), sourceIndex), f.fqClassName());
             case DeclTarget.None ignored -> Optional.empty();

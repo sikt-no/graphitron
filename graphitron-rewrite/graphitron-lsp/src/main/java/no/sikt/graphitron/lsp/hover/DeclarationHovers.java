@@ -135,7 +135,7 @@ public final class DeclarationHovers {
             case DeclTarget.CatalogColumn c -> Descriptions.ofColumn(c.table(), c.column(), sourceIndex);
             case DeclTarget.SourceClass s -> Descriptions.classJavadoc(s.fqClassName(), sourceIndex);
             case DeclTarget.SourceMethod m -> memberJavadoc(
-                sourceIndex.methods().get(new SourceWalker.MethodKey(m.fqClassName(), m.accessorMethodName(), 0)));
+                sourceIndex.resolveMethod(m.fqClassName(), m.methodName(), m.paramCount()).orElse(null));
             case DeclTarget.SourceField f -> memberJavadoc(
                 sourceIndex.fields().get(new SourceWalker.FieldKey(f.fqClassName(), f.memberName())));
             case DeclTarget.None ignored -> "";

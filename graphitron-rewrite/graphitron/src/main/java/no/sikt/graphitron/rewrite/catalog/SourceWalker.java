@@ -30,6 +30,7 @@ import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Stream;
@@ -83,6 +84,15 @@ public final class SourceWalker {
     /** Join key for a method: fully-qualified class name, method name, parameter count. */
     public record MethodKey(String className, String methodName, int paramCount) {}
 
+    /**
+     * Join key for the name-level method view: fully-qualified class name plus
+     * method name, with no arity. Unlike {@link MethodKey}, a key here is never
+     * dropped on an overload collision, so it is the floor a consumer falls back
+     * to when the arity-keyed lookup misses (an absent arity, or a same-arity
+     * overload collision the arity map discarded).
+     */
+    public record MethodNameKey(String className, String methodName) {}
+
     /** Join key for a field: fully-qualified declaring class name plus the Java field name. */
     public record FieldKey(String className, String fieldName) {}
 
@@ -97,18 +107,69 @@ public final class SourceWalker {
      * but used to discard: it lets a consumer tell "method genuinely not
      * indexed" (key absent everywhere) from "method present but the
      * {@code (class, name, arity)} key cannot pick one overload" (key in this
-     * set). The LSP goto-definition path switches the two onto distinct
-     * {@code DefinitionTarget} arms instead of collapsing both to a silent
-     * no-jump. The set is the union of intra-file and cross-file collisions,
+     * set). The set is the union of intra-file and cross-file collisions,
      * matching exactly the keys removed from {@code methods}.
+     *
+     * <p>{@code methodsByName} is the never-dropped name-level view (keyed by
+     * {@link MethodNameKey}, first declaration wins, overload collisions kept):
+     * the floor {@link #resolveMethod} falls back to when the arity-keyed lookup
+     * misses, so a same-arity overload still lands on a declaration adjacent to
+     * the overload set rather than declining.
      */
     public record Index(
         Map<String, Decl> classes,
         Map<MethodKey, Decl> methods,
         Map<FieldKey, Decl> fields,
-        Set<MethodKey> ambiguousMethods
+        Set<MethodKey> ambiguousMethods,
+        Map<MethodNameKey, Decl> methodsByName
     ) {
         public static final Index EMPTY = new Index(Map.of(), Map.of(), Map.of(), Set.of());
+
+        /**
+         * Back-compat constructor for fixtures that predate the name-level view:
+         * derives {@code methodsByName} from {@code methods}. The production index
+         * is built by {@link SourceWalker#merge} through the canonical constructor,
+         * which keeps overload-collided names that {@code methods} dropped; a
+         * derived view cannot recover those, which is fine for the (collision-free)
+         * fixtures that use this overload.
+         */
+        public Index(
+            Map<String, Decl> classes, Map<MethodKey, Decl> methods,
+            Map<FieldKey, Decl> fields, Set<MethodKey> ambiguousMethods
+        ) {
+            this(classes, methods, fields, ambiguousMethods, deriveByName(methods));
+        }
+
+        private static Map<MethodNameKey, Decl> deriveByName(Map<MethodKey, Decl> methods) {
+            var byName = new LinkedHashMap<MethodNameKey, Decl>();
+            methods.forEach((k, v) ->
+                byName.putIfAbsent(new MethodNameKey(k.className(), k.methodName()), v));
+            return Map.copyOf(byName);
+        }
+
+        /**
+         * Two-step method resolution: the precise {@code (class, name, arity)} key
+         * first, then the never-dropped {@code (class, name)} view as a floor. The
+         * arity key lands on the correct overload when it resolves; the name floor
+         * guarantees a jump when the arity key is absent or was dropped as a
+         * same-arity collision. Empty only when the class carries no declaration of
+         * that name at all (or is not indexed). Shared by goto-definition and the
+         * declaration-name hover overlay so the two cannot diverge.
+         */
+        public Optional<Decl> resolveMethod(String className, String methodName, int paramCount) {
+            var byArity = methods.get(new MethodKey(className, methodName, paramCount));
+            if (byArity != null) return Optional.of(byArity);
+            return methodByName(className, methodName);
+        }
+
+        /**
+         * The never-dropped name-level view: any indexed declaration of
+         * {@code methodName} on {@code className}, ignoring arity. The floor for a
+         * same-arity overload collision the arity-keyed {@link #methods} dropped.
+         */
+        public Optional<Decl> methodByName(String className, String methodName) {
+            return Optional.ofNullable(methodsByName.get(new MethodNameKey(className, methodName)));
+        }
 
         public boolean isEmpty() {
             return classes.isEmpty() && methods.isEmpty() && fields.isEmpty();
@@ -120,10 +181,11 @@ public final class SourceWalker {
         Map<String, Decl> classes,
         Map<MethodKey, Decl> methods,
         Map<FieldKey, Decl> fields,
-        Set<MethodKey> ambiguousMethods
+        Set<MethodKey> ambiguousMethods,
+        Map<MethodNameKey, Decl> methodsByName
     ) {
         static final FileIndex EMPTY =
-            new FileIndex(Map.of(), Map.of(), Map.of(), Set.of());
+            new FileIndex(Map.of(), Map.of(), Map.of(), Set.of(), Map.of());
     }
 
     /**
@@ -184,6 +246,7 @@ public final class SourceWalker {
         var methods = new HashMap<MethodKey, Decl>();
         var fields = new HashMap<FieldKey, Decl>();
         var ambiguousMethods = new HashSet<MethodKey>();
+        var methodsByName = new LinkedHashMap<MethodNameKey, Decl>();
         for (FileIndex part : parts) {
             // First class / field wins on a cross-file FQN collision (a
             // duplicate top-level class is malformed; either copy is a fine
@@ -197,13 +260,16 @@ public final class SourceWalker {
                     ambiguousMethods.add(k);
                 }
             });
+            // First declaration wins across the merge, matching the class / field
+            // policy above; the name-level view is never dropped on a collision.
+            part.methodsByName().forEach(methodsByName::putIfAbsent);
         }
         for (MethodKey k : ambiguousMethods) {
             methods.remove(k);
         }
         return new Index(
             Map.copyOf(classes), Map.copyOf(methods),
-            Map.copyOf(fields), Set.copyOf(ambiguousMethods));
+            Map.copyOf(fields), Set.copyOf(ambiguousMethods), Map.copyOf(methodsByName));
     }
 
     /**
@@ -276,6 +342,7 @@ public final class SourceWalker {
         private final Map<MethodKey, Decl> methods = new HashMap<>();
         private final Map<FieldKey, Decl> fields = new HashMap<>();
         private final Set<MethodKey> ambiguousMethods = new HashSet<>();
+        private final Map<MethodNameKey, Decl> methodsByName = new LinkedHashMap<>();
 
         FileIndexBuilder(Trees trees, SourcePositions positions, CompilationUnitTree cu) {
             this.trees = trees;
@@ -287,7 +354,7 @@ public final class SourceWalker {
         FileIndex build() {
             return new FileIndex(
                 Map.copyOf(classes), Map.copyOf(methods),
-                Map.copyOf(fields), Set.copyOf(ambiguousMethods));
+                Map.copyOf(fields), Set.copyOf(ambiguousMethods), Map.copyOf(methodsByName));
         }
 
         @Override
@@ -303,10 +370,15 @@ public final class SourceWalker {
         public Void visitMethod(MethodTree node, Void unused) {
             String fqn = classFqn(getCurrentPath().getParentPath());
             if (fqn != null && !fqn.isEmpty()) {
-                var key = new MethodKey(fqn, node.getName().toString(), node.getParameters().size());
-                if (methods.putIfAbsent(key, declOf(node)) != null) {
+                String name = node.getName().toString();
+                var decl = declOf(node);
+                var key = new MethodKey(fqn, name, node.getParameters().size());
+                if (methods.putIfAbsent(key, decl) != null) {
                     ambiguousMethods.add(key);
                 }
+                // Name-level view: first declaration in source order wins, never
+                // dropped, so a same-arity overload collision still has a floor.
+                methodsByName.putIfAbsent(new MethodNameKey(fqn, name), decl);
             }
             return super.visitMethod(node, unused);
         }

@@ -236,15 +236,17 @@ class DefinitionsTest {
     }
 
     @Test
-    void methodWithUnknownLocationReturnsEmpty() {
-        // The overload-ambiguous method (Ambiguous arm) yields no jump.
+    void overloadCollisionFallsBackToNameLevelJump() {
+        // A same-arity overload collision was dropped from the arity-keyed map but
+        // kept in the never-dropped name-level view, so goto now lands on the
+        // name-level declaration (adjacent to the overload set) rather than declining.
         var file = file("""
             type Foo {
                 bar: Int @service(service: {className: "com.example.PriceService", method: "ambiguous"})
             }
             """);
         var pos = pointAt(file, 1, "ambiguous");
-        assertThat(Definitions.compute(file, serviceCatalog(), serviceIndex(), LspSchemaSnapshot.unavailable(), pos)).isEmpty();
+        assertThat(Definitions.compute(file, serviceCatalog(), serviceIndex(), LspSchemaSnapshot.unavailable(), pos)).isPresent();
     }
 
     // ---- Typed outcome (DefinitionTarget): each arm reachable ----
@@ -270,9 +272,12 @@ class DefinitionsTest {
     }
 
     @Test
-    void methodTargetAmbiguousWhenOverloadCollision() {
+    void methodTargetFallsBackToNameLevelOnOverloadCollision() {
+        // Every arity key for "ambiguous" was dropped as a same-arity collision; the
+        // never-dropped name-level view supplies the floor, so the outcome is Located
+        // rather than a non-jump.
         assertThat(Definitions.methodTarget(SVC_FQN, "ambiguous", serviceCatalog(), serviceIndex()))
-            .isInstanceOf(DefinitionTarget.Ambiguous.class);
+            .isInstanceOf(DefinitionTarget.Located.class);
     }
 
     @Test
@@ -298,18 +303,23 @@ class DefinitionsTest {
 
     /**
      * The LSP-owned source-position index the service-half join reads. The
-     * class and {@code price} resolve to declarations; {@code ambiguous} sits in
-     * {@link SourceWalker.Index#ambiguousMethods()} (key dropped from
-     * {@code methods}), driving the {@link DefinitionTarget.Ambiguous} arm.
+     * class and {@code price} resolve to declarations; {@code ambiguous} is dropped
+     * from the arity-keyed {@code methods} (it sits in
+     * {@link SourceWalker.Index#ambiguousMethods()}) but kept in the never-dropped
+     * name-level view, so the name-level fallback lands on it.
      */
     private static SourceWalker.Index serviceIndex() {
         var classDecl = new SourceWalker.Decl(new CompletionData.SourceLocation(SVC_URI, 10, 4), "");
         var priceDecl = new SourceWalker.Decl(new CompletionData.SourceLocation(SVC_URI, 12, 4), "");
+        var ambiguousDecl = new SourceWalker.Decl(new CompletionData.SourceLocation(SVC_URI, 14, 4), "");
         return new SourceWalker.Index(
             Map.of(SVC_FQN, classDecl),
             Map.of(new SourceWalker.MethodKey(SVC_FQN, "price", 0), priceDecl),
             Map.of(),
-            Set.of(new SourceWalker.MethodKey(SVC_FQN, "ambiguous", 0)));
+            Set.of(new SourceWalker.MethodKey(SVC_FQN, "ambiguous", 0)),
+            Map.of(
+                new SourceWalker.MethodNameKey(SVC_FQN, "price"), priceDecl,
+                new SourceWalker.MethodNameKey(SVC_FQN, "ambiguous"), ambiguousDecl));
     }
 
     private static LspSchemaSnapshot fooFilmSnapshot() {

@@ -8,13 +8,18 @@ import no.sikt.graphitron.rewrite.catalog.CompletionData;
  * method reference) against the LSP-owned source-position index.
  *
  * <p>Replaces the former {@code CompletionData.SourceLocation.UNKNOWN}
- * sentinel, which collapsed three distinct outcomes behind one empty value
+ * sentinel, which collapsed distinct outcomes behind one empty value
  * (uri {@code ""}, line {@code 0}): source genuinely absent, source present
  * but not indexed, and overload-ambiguous. The sentinel made the recoverable
- * "not indexed yet" case indistinguishable from the two correct no-jumps, so
+ * "not indexed yet" case indistinguishable from the correct no-jumps, so
  * the bug it caused was silent. The producer ({@link Definitions}) decides one
  * of these arms once; the consumer switches on it exhaustively rather than
  * re-testing {@code uri().isEmpty()}.
+ *
+ * <p>A same-arity overload collision is no longer an outcome here: rather than
+ * declining, {@link Definitions#methodTarget} falls back to the never-dropped
+ * name-level view and resolves to {@link Located} on a declaration adjacent to
+ * the overload set (R376).
  */
 public sealed interface DefinitionTarget {
 
@@ -29,11 +34,4 @@ public sealed interface DefinitionTarget {
      * "source exists but isn't on a watched root" case lands here too.
      */
     record SourceAbsent() implements DefinitionTarget {}
-
-    /**
-     * The {@code (class, name, arity)} join key matches more than one overload,
-     * so the walk cannot pick a single declaration. A deliberate, silent
-     * no-jump: jumping to an arbitrary overload would be worse than not jumping.
-     */
-    record Ambiguous() implements DefinitionTarget {}
 }

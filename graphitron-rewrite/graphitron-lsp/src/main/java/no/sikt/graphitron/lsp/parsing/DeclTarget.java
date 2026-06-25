@@ -2,10 +2,12 @@ package no.sikt.graphitron.lsp.parsing;
 
 import io.github.treesitter.jtreesitter.Node;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
+import no.sikt.graphitron.rewrite.catalog.FieldClassification;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
 import no.sikt.graphitron.rewrite.catalog.TypeBackingShape;
 
 import java.util.List;
+import java.util.Optional;
 
 /**
  * The Java declaration an SDL <em>declaration-name</em> coordinate (a type-name
@@ -31,8 +33,10 @@ import java.util.List;
  *   <li>{@link SourceClass} — a reflection-bound backing class (record / POJO /
  *       standalone jOOQ record), <em>and</em> a standalone-jOOQ field cursor,
  *       which has no column or member key and degrades to its class.</li>
- *   <li>{@link SourceMethod} — a POJO bean accessor (the arity-0 method the
- *       source index keys by, not the bean property name).</li>
+ *   <li>{@link SourceMethod} — a Java method the field binds to: a POJO bean
+ *       accessor (arity 0), or the developer method behind a {@code @service} /
+ *       {@code @externalField} / {@code @tableMethod} field. Carries the bound
+ *       arity so both consumers key the source index on the same overload.</li>
  *   <li>{@link SourceField} — a Java record component (indexed as a field by the
  *       parse-only source walk).</li>
  *   <li>{@link None} — no Java declaration: a {@code NoBacking.*} type, or a
@@ -50,8 +54,12 @@ public sealed interface DeclTarget {
     /** A reflection-bound backing class, or a standalone-jOOQ field degrading to its class. */
     record SourceClass(String fqClassName) implements DeclTarget {}
 
-    /** A POJO bean accessor method, keyed by its arity-0 Java method name. */
-    record SourceMethod(String fqClassName, String accessorMethodName) implements DeclTarget {}
+    /**
+     * A Java method the field binds to (a POJO bean accessor, or a
+     * {@code @service} / {@code @externalField} / {@code @tableMethod} method),
+     * keyed by class, method name, and the bound parameter count.
+     */
+    record SourceMethod(String fqClassName, String methodName, int paramCount) implements DeclTarget {}
 
     /** A Java record component, keyed as a field by the parse-only source walk. */
     record SourceField(String fqClassName, String memberName) implements DeclTarget {}
@@ -108,6 +116,13 @@ public sealed interface DeclTarget {
     static DeclTarget ofField(
         String parentTypeName, String memberName, LspSchemaSnapshot.Built built, CompletionData catalog
     ) {
+        // A method-backed field (@service / @externalField / @tableMethod) is
+        // bound to its Java method, not to a column on the parent's table, so the
+        // classification takes precedence over the parent-type backing below. The
+        // classification rides on the already-projected snapshot, mirroring how
+        // the backing arms read built.typeBacking(...); no source-index read here.
+        var methodBacked = methodBackedTarget(parentTypeName, memberName, built, catalog);
+        if (methodBacked.isPresent()) return methodBacked.get();
         var shapeOpt = built.typeBacking(parentTypeName);
         if (shapeOpt.isEmpty()) return new None();
         return switch (shapeOpt.get()) {
@@ -123,6 +138,57 @@ public sealed interface DeclTarget {
             case TypeBackingShape.NoBacking.UnbackedResult ignored -> new None();
             case TypeBackingShape.NoBacking.UnclassifiedInterface ignored -> new None();
         };
+    }
+
+    /**
+     * The method a method-backed field binds to, when the field's classification
+     * names one. {@code memberName} is the SDL field name here: the method-backed
+     * variants carry no {@code @field(name:)} override (that override redirects a
+     * column / accessor binding, a different classification), so the resolved
+     * member name is the coordinate the classification map is keyed by. The bound
+     * arity is read off the catalog method of that name; when the name is
+     * arity-overloaded the classification does not record which overload bound, so
+     * the first catalog candidate's arity is taken and the consumers' name-level
+     * fallback still guarantees a jump if that exact arity key was dropped.
+     */
+    private static Optional<DeclTarget> methodBackedTarget(
+        String parentTypeName, String memberName, LspSchemaSnapshot.Built built, CompletionData catalog
+    ) {
+        var classOpt = built.fieldClassification(parentTypeName, memberName);
+        if (classOpt.isEmpty()) return Optional.empty();
+        // The six method-backed FieldClassification variants (field-level @service,
+        // @externalField, @tableMethod child, root @service query / mutation, and
+        // @tableMethod root query); every other classification binds no developer
+        // method and falls through to the parent-type backing.
+        return switch (classOpt.get()) {
+            case FieldClassification.ServiceBacked s -> Optional.of(sourceMethod(catalog, s.methodClassName(), s.methodName()));
+            case FieldClassification.Computed c -> Optional.of(sourceMethod(catalog, c.methodClassName(), c.methodName()));
+            case FieldClassification.TableMethod t -> Optional.of(sourceMethod(catalog, t.methodClassName(), t.methodName()));
+            case FieldClassification.QueryService q -> Optional.of(sourceMethod(catalog, q.methodClassName(), q.methodName()));
+            case FieldClassification.QueryTableMethod q -> Optional.of(sourceMethod(catalog, q.methodClassName(), q.methodName()));
+            case FieldClassification.MutationService m -> Optional.of(sourceMethod(catalog, m.methodClassName(), m.methodName()));
+            default -> Optional.empty();
+        };
+    }
+
+    private static DeclTarget sourceMethod(CompletionData catalog, String className, String methodName) {
+        return new SourceMethod(className, methodName, arityOf(catalog, className, methodName));
+    }
+
+    /**
+     * Parameter count of the first catalog method of {@code methodName} on
+     * {@code className}, or 0 when the catalog carries no such method (the
+     * name-level fallback on the source index then guarantees the jump).
+     */
+    private static int arityOf(CompletionData catalog, String className, String methodName) {
+        if (catalog == null) return 0;
+        return catalog.externalReferences().stream()
+            .filter(r -> r.className().equals(className))
+            .flatMap(r -> r.methods().stream())
+            .filter(m -> m.name().equals(methodName))
+            .findFirst()
+            .map(m -> m.parameters().size())
+            .orElse(0);
     }
 
     private static DeclTarget tableTarget(String tableName, CompletionData catalog) {
@@ -150,7 +216,7 @@ public sealed interface DeclTarget {
         return accessors.stream()
             .filter(s -> s.name().equals(memberName))
             .findFirst()
-            .<DeclTarget>map(s -> new SourceMethod(fqClassName, s.accessorMethodName()))
+            .<DeclTarget>map(s -> new SourceMethod(fqClassName, s.accessorMethodName(), 0))
             .orElseGet(None::new);
     }
 
