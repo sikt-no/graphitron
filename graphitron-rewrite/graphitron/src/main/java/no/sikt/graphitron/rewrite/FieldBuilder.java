@@ -737,8 +737,9 @@ class FieldBuilder {
      * ({@code MultiTablePolymorphicEmitter.branchFilterWhere}) cannot emit, or {@code null} if every
      * filter is branch-safe. The branch path reuses the single-table condition-term emission without
      * a {@code CompositeDecodeHelperRegistry} or nested-input lift context, so it supports only the
-     * registry-free, local-free extractions ({@code Direct}, {@code EnumValueOf}, {@code ContextArg},
-     * {@code JooqConvert}); {@code NodeIdDecodeKeys} / {@code NestedInputField} / {@code InputBean}
+     * registry-free, local-free extractions ({@code Direct}, {@code EnumValueOf}, {@code ContextArg});
+     * {@code JooqConvert} (deprecated-API emission, see {@link #isBranchSafeExtraction}) /
+     * {@code NodeIdDecodeKeys} / {@code NestedInputField} / {@code InputBean}
      * need plumbing this slice does not carry. Rejecting at classify time keeps the failure a clean
      * build error rather than an emitter {@code IllegalStateException} or uncompilable output
      * ("classifier guarantees shape emitter assumptions").
