@@ -355,6 +355,86 @@ surface, generated from source we write (the capability catalog files) like the 
 in the audit: *Directive coverage* lists no `@capability` / `@exemplifies`. The directives are not yet
 shipped, so this reserves the slot rather than describing a built fact.
 
+## Derived reads, freshness, and location
+
+The base carries facts; most of what a consumer reads is *derived* from them. Three derivations recur often
+enough to name, because each is easy to mistake for a stored thing and model wrong. The first is the catalog
+of views the six reads compute; the second is freshness, a property of the whole materialization; the third
+is location, the fact that flushed out the SourceLocation question. The thread tying them together: name the
+derivation, do not store its result where the base belongs.
+
+### Derived data is a catalog of views
+
+Of the six reads in *The two referenced namespaces* (`resolve`, `validate`, `complete`, `describe`,
+`locate`, `invert`), only `describe` is a stored column (the argument of *Description*). The rest are views,
+and naming each keeps it from silting up as a redundant fact:
+
+- **The candidate space is an unconstrained relation read.** `complete` (the editor's completion, the
+  agent's enumeration) is a base relation projected with *no* key constraint: every column of the resolved
+  table, every public method of the bound service, every coordinate under a type. It is not a new fact, it
+  is the same relation that `resolve` reads with a key, read without one. Storing a "candidates" list would
+  duplicate the relation it is a `SELECT *` of.
+- **Diagnostics are data: one located-violation relation, two views.** `validate` does not *do* something,
+  it *produces* a relation: a violation is a `(rule, coordinate, location, message)` tuple. The shipped
+  `Diagnostic` (its stable wire `code`, its `primaryLocation`, its `relatedInformation`) is the editor's
+  view of that relation; a build-time / CLI error report is another view of the same tuples. Keep the
+  violation a relation and both surfaces are projections of it; bake it into one consumer's emit and the
+  other has to recompute the rule. The wire `code` being a stable string written next to the producer, not
+  derived from a Java identifier, is the same render-the-key discipline as the stable id below: the
+  identity survives a rename.
+- **Stable ids are rendered keys.** The canonical SchemaCoordinate string is the render of the decomposed
+  key columns (*The natural keys*), and it doubles as the model-context server's stable id and the language
+  server's per-coordinate key. The point for this catalog: the id is a *view* (a deterministic render of key
+  columns), never a stored surrogate, so it cannot drift from the key it names. The shipped
+  `fieldClassificationsByCoord` keying on `"ParentType.fieldName"` is exactly this render used as a map key.
+- **Reverse indexes are inverted functional dependencies.** `invert` (find-usages, what-references-this,
+  what-is-at-this-cursor) reads the base relations backwards: invert the FK `coordinate -> referencedTable`
+  to answer "which coordinates resolve to this table"; invert the locator relation below to answer "what
+  entity is at this position". These are derived indexes maintained for read speed, not new facts, and the
+  spatial what-is-at-cursor index is precisely the reverse of the locator relation, which is why
+  reverse-queryability is not evidence of keyhood (see *Location*).
+
+### Freshness: the snapshot lifecycle
+
+The base is materialized from source we write (the SDL, the jOOQ catalog, the Java surface), so it is only
+ever as fresh as the last successful build, and the consumers disagree about whether stale is acceptable.
+The shipped `LspSchemaSnapshot` models this on two orthogonal axes: **availability** (`Unavailable` vs.
+`Built`) and **freshness** (`Built.Current` vs. `Built.Previous`). The split is a consumer precondition, not
+a per-consumer model:
+
+- **Code generation demands `Built` and integrity-clean.** It will not emit from an unavailable or stale
+  snapshot; a partial or regressed base is a build failure, not a degraded answer. This is the strictest
+  precondition, matching the narrowest view (*What the model enables*).
+- **The language server tolerates `Previous` and tags it.** It would rather answer hover / completion from
+  the last good parse than punish the author for a half-typed edit, and it surfaces the staleness rather
+  than pretending currency. `Unavailable` means "no info to act on", so it stays quiet rather than emitting
+  spurious diagnostics, the same do-not-punish-the-author instinct that makes the editor read the *authored*
+  population (*Provenance*).
+
+Freshness is a property of the base because both referenced namespaces lag the same way: the jOOQ catalog
+and the Java surface are each generated from source and complete only *within* a snapshot. So freshness is a
+column on the snapshot, the lifecycle is shared, and the consumer split is purely which precondition each
+read imposes on it.
+
+### Location: a fact about an entity, joined not stored
+
+A source position is **not** a natural key. It is a fact *about* an entity that some other attribute already
+identifies; the locator relation is `naturalKey -> SourceLocation`, and a position is the *value* the
+`locate` read returns, not the key it reads by. The shipped catalog holds this literally: `CompletionData`'s
+`Table`, `Column`, `Reference`, and `Method` carry *no* source position. goto-definition joins their stable
+key (the table's `classFqn`, the method's `(className, name, paramCount)` signature) against the LSP-owned
+`SourceWalker.Index` at request time. The reason is **cadence**: positions ride the `.java` / `.graphqls`
+source-edit cadence, which moves faster than the generator build cadence, so a position stored in the built
+catalog would freeze stale while the source kept moving. **Join, don't store.** Two consequences fall out:
+
+- **The relation is partial, so `locate` may return nothing.** Built-in scalars, bundled-directive types,
+  and methods on classes compiled without `-parameters` have no position; the absent entries of
+  `typeDefinitionLocations` are by design, not a gap. A read that is allowed to be empty must not be a key.
+- **Reverse-queryability is a secondary index, not keyhood.** That what-is-at-this-cursor can find an entity
+  by position (the `invert` read) does not make position the entity's key; it is a spatial index over the
+  locator relation, the reverse of `naturalKey -> SourceLocation`. A thing a reverse lookup can find is not
+  thereby keyed by what the lookup hands back.
+
 ## The unit is the emitted method
 
 The shipped field model (R290/R299/R305/R316) carries a hidden 1:1 assumption: **one schema coordinate
