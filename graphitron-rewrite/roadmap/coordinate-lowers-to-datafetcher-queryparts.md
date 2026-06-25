@@ -78,12 +78,9 @@ erDiagram
     CAPABILITY_TAG }o--|| SLUG : "names (slug namespace)"
 
     COORDINATE {
-        enum kind "Type | Member | Argument | Directive | DirectiveArgument"
-        string typeName PK "Type / Member / Argument kinds"
-        string memberName PK "Member / Argument: output field, input field, or enum value"
-        string argumentName PK "Argument kind"
-        string directiveName PK "Directive / DirectiveArgument kinds"
-        string canonical "derived render: Foo / Foo.bar / Foo.bar(baz:) / @foo(bar:)"
+        enum kind "one of five SchemaCoordinate variants (sealed)"
+        key coordinate PK "per-variant Name columns, all non-null; see The natural keys"
+        string canonical "derived render of the key: Foo / Foo.bar / Foo.bar(baz:) / @foo(bar:)"
     }
     SOURCE {
         enum kind "Root | OnlyChild | Child"
@@ -199,6 +196,19 @@ The columns are what the model keys, joins, and indexes on: every member of a ty
 function: the string is the spec's own serialization, it is the stable id the model-context surface hands an
 agent to traverse between answers, and it is the per-coordinate key the language server files its
 classification under. One coordinate system, one render, three readers, no second id grammar to maintain.
+
+**This is a sealed union, not one table with nullable columns.** Reading the five kinds as columns of a
+single `coordinate` relation would make `typeName` / `memberName` / `argumentName` / `directiveName` nullable
+and push "which columns are populated" onto an unenforced convention keyed off `kind`: single-table
+inheritance, the denormalized shape this whole document argues against. The model is instead a sealed
+`SchemaCoordinate` with five variants, each a relation carrying exactly its own `Name` positions, all
+non-null. That is concrete-table inheritance, the relational name for the sealed hierarchies the project
+already builds in the type system, so the key obeys the same compile-time discipline as the facts that hang
+off it. The shared leading columns are real, `typeName` heads Type / Member / Argument and `directiveName`
+heads Directive / DirectiveArgument, and that shared prefix is exactly what the prefix scans key on; it is
+shared structure across variants, not one flat row with holes. The ER diagram in *The model* draws the
+coordinate as a single keyed box because its subject is the facts that hang off the coordinate, not the key
+taxonomy; the decomposition lives here.
 
 `MemberCoordinate` is a single key covering what earlier drafts split into three: an output field
 (`Film.language`), an input-object field (`FilmWhereInput.title`), and an **enum value** (`Color.RED`, the
