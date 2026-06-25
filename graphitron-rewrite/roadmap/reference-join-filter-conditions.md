@@ -226,3 +226,43 @@ R379 lands first, R380 inherits its hardened terminal-hop validation; if not, R3
 terminal hop is well-formed (the validator branch above is its own guard). Siblings in the `@reference`
 diagnostics family: R236 (candidate-hint terminal table), R282 (FK-key hint scope), and the deferred
 `nodeid-fk-target-arg-join-translation` item (the `@nodeId` FK-target translated-key case).
+
+## Reviewer note (Spec → Spec, 2026-06-25, independent session)
+
+Spec → Ready review by an independent session; **not signed off**. One material finding, two minor.
+Code citations spot-checked and accurate (`FieldBuilder.java:1157/1397/1428/1481`, `TypeConditionsGenerator.java:85/185`,
+the `BodyParam permits ColumnPredicate` decl, `BuildContext.parsePath`, `JoinPathEmitter.generateAliases/emitCorrelationWhere/emitTwoArgMethodCall`,
+`InlineTableFieldEmitter.buildInnerSelect`, `FkTargetConditionFilter`). The Design A vs B fork is well-reasoned
+against the shared-vs-forked principle; the `RemoteColumnPredicate` wrapper respects the sealed-axis principle
+(no `joinPath` field bolted onto the four `ColumnPredicate` arms); the test plan asserts on `TypeSpec` structure
+(not code-strings) and covers single/multi-hop, composite `RowIn`, null/empty guards, `ConditionJoin` rejection,
+and an execution-tier backstop, which is adequate **for the scalar-argument carrier**.
+
+1. **(Material) Carrier ambiguity: scalar argument vs input-object field.** The title ("…on input fields"), the
+   "Observed in the wild" framing ("filter fields"), and the Docs section's "(or input field)" parenthetical
+   reach the `INPUT_FIELD_DEFINITION` surface. That surface resolves to a *different* carrier,
+   `InputField.ColumnReferenceField` (constructed in `BuildContext.java:1879/2131/2188`; its javadoc already states
+   "the generator must JOIN through `joinPath` before applying the column predicate", `InputField.java:90-91`), with
+   its own resolution path and its own emit path (the input-condition path, **not** `TypeConditionsGenerator`). But
+   every implementation section here — Model changes, Classifier changes, Emitter changes — targets exclusively the
+   `ARGUMENT_DEFINITION` surface (`classifyArgument`'s scalar tail → `ArgumentRef.ScalarArg.ColumnArg` → `BodyParam`
+   → `TypeConditionsGenerator`). As written, an implementer cannot tell which carrier R380 fixes, and if the
+   motivating utdanningsregisteret bug lives on input-object filter fields, the plan as drafted would not fix it.
+   Resolve by: (a) stating whether the observed bug is on scalar `ARGUMENT_DEFINITION` args or `INPUT_FIELD_DEFINITION`
+   input-object fields; (b) aligning the title and the Docs section with the carrier(s) actually implemented; and
+   (c) if input-object fields are in scope, giving `InputField.ColumnReferenceField` its own classifier/emitter/test
+   plan (its emitter is not `TypeConditionsGenerator`), or, if out of scope, dropping "(or input field)" from Docs
+   and listing `InputField.ColumnReferenceField` remote predicates in "Out of scope" as the sibling gap.
+
+2. **(Minor) Generator-side exhaustive switches over `BodyParam`.** The "callParams projection (`:1481-1483`) is
+   unchanged" claim holds for the projection itself, but `paramType(bp)` (`TypeConditionsGenerator.java:95`) and
+   `bodyParamCallTypeName(bp)` (`FieldBuilder`) are exhaustive switches over the sealed `BodyParam`; adding
+   `RemoteColumnPredicate` forces a delegating arm in each. The compiler catches it, but name it so "unchanged" is
+   not read too literally.
+
+3. **(Minor) Validator citation precision.** § Validator cites "the `UnclassifiedArg` + `Rejection.structural` path
+   … (`:1100-1106`, `:1128-1132`)". Those lines are the R330/R215 `Rejection.structural` validator methods
+   (`validateInputCompositeColumnReferenceField` / `validateInputUnboundField`) — the right precedent, but they do
+   not use `UnclassifiedArg`. Tighten to "the `Rejection.structural` validator path".
+
+Sign off: no — return to author to resolve finding 1 (carrier scope); a fresh independent session signs off afterward.
