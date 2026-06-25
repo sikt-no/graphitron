@@ -78,6 +78,23 @@ class TypeConditionsGeneratorTest {
             gcf, DEFAULT_OUTPUT_PACKAGE);
         var body = method.code().toString();
         assertThat(body).contains("table.FILM_ID.in(ids)");
+        // R375: empty list narrows by nothing (DSL.noCondition() identity) instead of
+        // emitting IN () = false. The nullable arm folds the empty guard into its null check.
+        assertThat(body).contains("ids != null && !ids.isEmpty()");
+    }
+
+    @Test
+    void inFilter_nonNullList_emitsEmptyGuardWithoutNullCheck() {
+        // R375: a non-null list still gets the empty guard, but no null check (the type
+        // guarantees non-null). Pins the non-null In arm, which the nodeId helpers don't reach.
+        var ext = new CallSiteExtraction.NestedInputField("filter", List.of("filter", "ids"));
+        var nonNullIn = new BodyParam.In("ids", FILM_ID, FILM_ID.columnClass(), true, ext);
+        var gcf = filter(List.of(nonNullIn));
+        var method = TypeConditionsGenerator.buildConditionMethod(
+            gcf, DEFAULT_OUTPUT_PACKAGE);
+        var body = method.code().toString();
+        assertThat(body).contains("if (!ids.isEmpty()) condition = condition.and(table.FILM_ID.in(ids))");
+        assertThat(body).doesNotContain("ids != null");
     }
 
     @Test
@@ -91,6 +108,9 @@ class TypeConditionsGeneratorTest {
         // The typed Field<T> overload of DSL.row(...) returns Row<N><T1, ..., TN>, matching the
         // method parameter exactly — no Field<?>[] erasure trick.
         assertThat(body).contains("DSL.row(table.ID_1, table.ID_2).in(ids)");
+        // R375: composite-key empty list (a [] composite @nodeId filter decodes to an empty
+        // row list) narrows by nothing rather than rendering IN () = false.
+        assertThat(body).contains("ids != null && !ids.isEmpty()");
     }
 
     @Test

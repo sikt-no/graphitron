@@ -38,8 +38,8 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R212` | IntelliJ plugin wrapping graphitron:dev LSP | Spec | 2026-05-21 | [plan](intellij-lsp-plugin.md) |
 | `R269` | Null-guard split-query key extraction for nullable to-one records | Spec | 2026-06-02 <sub>created 2026-06-01</sub> | [plan](nullable-to-one-record-into-npe.md) |
 | `R112` | Operation-driven test corpus, capability catalog, and runtime trace <sub>blocked by: [capability-catalog](capability-catalog.md)</sub> | Spec |  | [plan](operation-driven-test-corpus.md) |
-| `R375` | Empty list passed to a list-IN filter renders IN () = false, zeroing the query | Ready | 2026-06-25 | [plan](empty-list-in-filter-zeroes-query.md) |
 | `R374` | MCP cross-reference edges: forward edges + stable node IDs, then a reverse-edge index for impact analysis (R118 slice 7) | Ready | 2026-06-25 | [plan](mcp-cross-reference-edges.md) |
+| `R375` | Empty list passed to a list-IN filter renders IN () = false, zeroing the query | In Review | 2026-06-25 | [plan](empty-list-in-filter-zeroes-query.md) |
 
 ---
 
@@ -175,7 +175,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R57` [**FK-target argument @nodeId, JOIN-with-translation emission**](nodeid-fk-target-arg-join-translation.md) — Backlog, architecture
 - `R273` [**Source NodeId metadata from @node + catalog PK (inferred from `implements Node`), and settle wrong-type/malformed mismatch semantics, retiring the legacy __NODE bare-ID arm**](nodeid-skip-mismatch-error-surfacing.md) — Spec, architecture
 - `R24` [**`NodeIdReferenceField` JOIN-projection form**](nodeidreferencefield-join-projection-form.md) — Backlog, cleanup
-- `R375` [**Empty list passed to a list-IN filter renders IN () = false, zeroing the query**](empty-list-in-filter-zeroes-query.md) — Ready, architecture
+- `R375` [**Empty list passed to a list-IN filter renders IN () = false, zeroing the query**](empty-list-in-filter-zeroes-query.md) — In Review, architecture
 
 ### service
 

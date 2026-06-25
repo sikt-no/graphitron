@@ -754,15 +754,17 @@ class GraphQLQueryTest {
     }
 
     @Test
-    void filmsByNodeIdArg_allMalformedIds_returnsNoRows() {
-        // R40 phase 2: when every id is malformed, the per-row Skip drops every entry; the
-        // effective row count reaches 0 and the call site's `if (rows.length == 0) return
-        // dsl.newResult();` short-circuit handles the all-skipped case without further
-        // bookkeeping.
+    void filmsByNodeIdArg_allMalformedIds_returnsUnfilteredBaseline() {
+        // R375: filmsByNodeIdArg is a fetch field (R106 lifted the argument-level same-table
+        // @nodeId onto the `WHERE film_id IN (...)` rail; schema line ~191). SkipMismatchedElement
+        // drops every malformed id, so the decoded list reaches the BodyParam.In arm empty.
+        // The fetch-path empty guard cannot (and by §Mechanism must not) distinguish "empty
+        // because []" from "empty because all skipped" — both are the same List<Integer> — so an
+        // all-malformed filter narrows by nothing and returns the unfiltered baseline of 5 films.
         Map<String, Object> data = execute(
             "{ filmsByNodeIdArg(ids: [\"garbage-1\", \"garbage-2\"]) { filmId title } }");
         List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("filmsByNodeIdArg");
-        assertThat(films).isEmpty();
+        assertThat(films).hasSize(5);
     }
 
     // ===== R113: optional same-table @nodeId on @asConnection — composes =====
@@ -824,6 +826,24 @@ class GraphQLQueryTest {
             .hasSize(3)
             .extracting(n -> n.get("filmId")).containsExactly(1, 2, 3);
         conn.extractingByKey("pageInfo", as(MAP)).containsEntry("hasNextPage", true);
+    }
+
+    @Test
+    void filmsConnectionByOptionalIds_idsEmptyList_paginatesFullTableAndCountsAll() {
+        // R375 regression (matches the external bug report exactly): an @asConnection query
+        // with a list @nodeId filter receiving an empty list [] must paginate the full table
+        // and report the full total, not zero the query. Apollo Client serialises an empty
+        // selection as [], so pre-R375 this silently dropped all rows (IN () = false AND-ed
+        // into WHERE). The fix drops the empty list to noCondition on the fetch path; the count
+        // path composes the same condition method, so totalCount sees the full table too.
+        Map<String, Object> data = execute(
+            "{ filmsConnectionByOptionalIds(ids: [], first: 10) "
+            + "{ totalCount nodes { filmId } } }");
+        var conn = assertThat(data).extractingByKey("filmsConnectionByOptionalIds", as(MAP));
+        conn.extractingByKey("nodes", as(list(Map.class)))
+            .hasSize(5)
+            .extracting(n -> n.get("filmId")).containsExactly(1, 2, 3, 4, 5);
+        conn.containsEntry("totalCount", 5);
     }
 
     @Test
@@ -956,26 +976,29 @@ class GraphQLQueryTest {
     }
 
     @Test
-    void filmsByNodeIdArg_emptyList_returnsNoRows() {
-        // R40 phase 2: empty input list — the input-rows helper's row-count computation
-        // (`int n = ids == null ? 0 : ids.size()`) yields 0, the rows array is length 0, and
-        // the call site short-circuits to `dsl.newResult()`. No SQL round-trip.
+    void filmsByNodeIdArg_emptyList_returnsUnfilteredBaseline() {
+        // R375: filmsByNodeIdArg is a fetch field (R106 lifted the argument-level same-table
+        // @nodeId onto the `WHERE film_id IN (...)` rail). An empty list narrows by nothing
+        // (DSL.noCondition() identity) rather than emitting `IN () = false`, so the field returns
+        // the unfiltered baseline of 5 films — the argument-level sibling of
+        // films_filteredBySameTableNodeId_emptyListReturnsUnfilteredBaseline.
         Map<String, Object> data = execute("{ filmsByNodeIdArg(ids: []) { filmId title } }");
         List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("filmsByNodeIdArg");
-        assertThat(films).isEmpty();
+        assertThat(films).hasSize(5);
     }
 
     @Test
-    void films_filteredBySameTableNodeId_emptyListReturnsNoRows() {
-        // R50 phase (e4b): the post-collapse successor of NodeIdInFilterField is a column-shaped
-        // ColumnField with NodeIdDecodeKeys.SkipMismatchedElement, which lands on the same
-        // column-equality body as a regular [String!] filter -- empty list emits an
-        // unsatisfiable IN predicate (jOOQ renders IN () as false). This aligns the empty-list
-        // behaviour with every other column-equality filter; the legacy hasIds short-circuit
-        // (empty → noCondition) is gone.
+    void films_filteredBySameTableNodeId_emptyListReturnsUnfilteredBaseline() {
+        // R375: an empty list on a fetch-path list-IN filter narrows by nothing
+        // (DSL.noCondition() identity) rather than emitting `IN () = false`, which jOOQ
+        // renders as the constant `false` and would zero the query. This restores the G9
+        // behaviour for fetch filters (Apollo serialising an empty selection as [] meant
+        // "no filter"), reverting the deliberate G9→G10 deviation that aligned [] with the
+        // unsatisfiable column-equality body. The null/omitted case already drops to
+        // noCondition (R230); [] is now its list-arity sibling.
         Map<String, Object> data = execute(
             "{ filmsBySameTableNodeId(filter: {filmIds: []}) { filmId } }");
-        assertThat(data).extractingByKey("filmsBySameTableNodeId", as(LIST)).isEmpty();
+        assertThat(data).extractingByKey("filmsBySameTableNodeId", as(LIST)).hasSize(5);
     }
 
     @Test
@@ -1457,6 +1480,10 @@ class GraphQLQueryTest {
 
     @Test
     void inlineLookupTableField_emptyInput_returnsEmpty() {
+        // R375: the lookup side of the fetch/lookup empty-list divergence. On a lookup field the
+        // input rows ARE the FROM-side of a VALUES…JOIN, so [] is an empty join domain (0 rows),
+        // not "no filter". This stays empty even as fetch-path list-IN filters drop [] to
+        // noCondition (see filmsConnectionByOptionalIds_idsEmptyList_paginatesFullTableAndCountsAll).
         Map<String, Object> data = execute(
             "{ filmById(film_id: [\"1\"]) { actors(actor_id: []) { firstName } } }");
         assertThat(data).extractingByKey("filmById", as(LIST))

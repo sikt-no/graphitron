@@ -1,7 +1,7 @@
 ---
 id: R375
 title: "Empty list passed to a list-IN filter renders IN () = false, zeroing the query"
-status: Ready
+status: In Review
 bucket: architecture
 theme: nodeid
 depends-on: []
@@ -50,3 +50,11 @@ The invariant must be pinned above the execution tier, since `.in(<empty>) → f
 ## Out of scope
 
 `@nodeId` filters carrying `@condition` (routed through hand-written condition methods that guard `isEmpty()` themselves) are unaffected and unchanged. No model-shape or classifier change; no `EmptyBehavior` model slot (see rationale above).
+
+## Implementation notes (shipped)
+
+Landed as specced: the four-arm empty guard in `TypeConditionsGenerator.buildConditionMethod`, the pipeline-tier `!ids.isEmpty()` assertions in `TypeConditionsGeneratorTest` (plus a new `inFilter_nonNullList_emitsEmptyGuardWithoutNullCheck` pinning the non-null `In` arm the nodeId helpers don't reach), the inverted `films_filteredBySameTableNodeId_emptyListReturnsUnfilteredBaseline`, the connection regression test `filmsConnectionByOptionalIds_idsEmptyList_paginatesFullTableAndCountsAll` (nodes + `totalCount` both unfiltered), and the lookup-side divergence comment on `inlineLookupTableField_emptyInput_returnsEmpty`.
+
+One scope item surfaced during implementation that the spec did not name: `filmsByNodeIdArg` (argument-level same-table `@nodeId`, schema line ~191) is a **fetch** field, not a lookup field. R106 lifted the argument-level same-table `@nodeId` onto the `WHERE film_id IN (...)` rail, but two execution tests (`filmsByNodeIdArg_emptyList_returnsNoRows`, `filmsByNodeIdArg_allMalformedIds_returnsNoRows`) still carried pre-R106 lookup wording (referencing the `dsl.newResult()` short-circuit) and asserted the empty set. Those assertions only passed because `IN () = false` coincidentally also zeroed the query; both are squarely within the spec's "covers collapsed `@nodeId` list filters" scope and are now inverted to the unfiltered baseline.
+
+The all-malformed case is the one genuine semantic the spec left implicit: `SkipMismatchedElement` drops every malformed id, so an all-garbage filter reaches the `BodyParam.In` arm as an empty `List<Integer>`, indistinguishable from a literal `[]`. Per §Mechanism (literal guard, no provenance threading) and the wire-boundary principle (decode at the boundary, downstream sees tuples), the condition method cannot and must not distinguish the two; both narrow by nothing and return the unfiltered baseline. Distinguishing them would require carrying decode provenance across the adapter/composer boundary, which the design explicitly rejects.
