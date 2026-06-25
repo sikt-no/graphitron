@@ -1,7 +1,7 @@
 ---
 id: R374
 title: "MCP cross-reference edges: forward edges + stable node IDs, then a reverse-edge index for impact analysis (R118 slice 7)"
-status: Ready
+status: In Review
 bucket: feature
 theme: lsp
 depends-on: []
