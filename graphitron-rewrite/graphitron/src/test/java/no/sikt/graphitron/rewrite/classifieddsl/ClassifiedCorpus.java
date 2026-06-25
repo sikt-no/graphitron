@@ -355,20 +355,20 @@ public final class ClassifiedCorpus {
             "{ filmActor { related { ... on Film { title } ... on Actor { firstName } } } }"),
 
         /*
-         * R365 route (a): a root @service field returning a multitable union (QueryServicePolymorphicField,
-         * single cardinality). The service hands back a PK-populated TableRecord per branch; the verdict is
-         * source Query, operation ServiceCall (the developer method replaces the catalog read), and target
-         * Single. The target shape is Interface for both interface and union returns (one variant carries
-         * both, routing through the shared __typename-column TypeResolver). Distinct-table participants
-         * (film, actor) so record-class dispatch is well-defined. Corpus-only: it adds the
+         * R365 route (a): a root @service field returning a multitable interface
+         * (QueryServicePolymorphicField, single cardinality). The service hands back a PK-populated
+         * TableRecord per branch; the verdict is source Query, operation ServiceCall (the developer method
+         * replaces the catalog read), and target Single, target shape Interface. Distinct-table
+         * participants (film, actor) so record-class dispatch is well-defined. Interface only — a @service
+         * returning a union is permanently unsupported (rejected at classify). Corpus-only: it adds the
          * QueryServicePolymorphicField leaf and lands on the Query / ServiceCall coordinate.
          */
         new Example("query-service-polymorphic", """
-            type Film @table(name: "film") { title: String }
-            type Actor @table(name: "actor") { firstName: String @field(name: "FIRST_NAME") }
-            union FilmOrActor @classifiedType(as: UnionType) = Film | Actor
+            interface Searchable @classifiedType(as: InterfaceType) { name: String }
+            type Film implements Searchable @table(name: "film") { name: String @field(name: "TITLE") }
+            type Actor implements Searchable @table(name: "actor") { name: String @field(name: "FIRST_NAME") }
             type Query {
-              searchService: FilmOrActor
+              searchService: Searchable
                 @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getFilm"})
                 @classified(source: Query, operation: ServiceCall, target: Single, targetShape: Interface)
             }
@@ -381,12 +381,12 @@ public final class ClassifiedCorpus {
          * MutationServicePolymorphicField leaf and lands on the Mutation / ServiceCall coordinate.
          */
         new Example("mutation-service-polymorphic", """
-            type Film @table(name: "film") { title: String }
-            type Actor @table(name: "actor") { firstName: String @field(name: "FIRST_NAME") }
-            union FilmOrActor @classifiedType(as: UnionType) = Film | Actor
+            interface Searchable @classifiedType(as: InterfaceType) { name: String }
+            type Film implements Searchable @table(name: "film") { name: String @field(name: "TITLE") }
+            type Actor implements Searchable @table(name: "actor") { name: String @field(name: "FIRST_NAME") }
             type Query { film: Film }
             type Mutation {
-              doSearch: [FilmOrActor]
+              doSearch: [Searchable]
                 @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getFilms"})
                 @classified(source: Mutation, operation: ServiceCall, target: List, targetShape: Interface)
             }

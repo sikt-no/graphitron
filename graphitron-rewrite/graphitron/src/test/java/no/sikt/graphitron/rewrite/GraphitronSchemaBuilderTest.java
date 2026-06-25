@@ -1872,20 +1872,20 @@ class GraphitronSchemaBuilderTest {
     @Test
     @ProjectionFor({QueryField.QueryServicePolymorphicField.class, MutationField.MutationServicePolymorphicField.class})
     void servicePolymorphicProjectionCarriesParticipantsAndMethod() {
-        // R365 route (a): a root @service field returning a multitable union resolves to the
-        // polymorphic-return arm (no longer rejected), carrying the resolved participant set and the
-        // service method. Distinct-table participants (film, actor) so record-class dispatch is
-        // well-defined. The Query arm is single cardinality; the Mutation arm is list cardinality.
+        // R365 route (a): a root @service field returning a multitable interface over distinct-table
+        // participants (film, actor) resolves to the polymorphic-return arm (no longer rejected),
+        // carrying the resolved participant set and the service method. Query arm is single
+        // cardinality; Mutation arm is list cardinality.
         var schema = build("""
-            type Film @table(name: "film") { title: String }
-            type Actor @table(name: "actor") { firstName: String @field(name: "FIRST_NAME") }
-            union FilmOrActor = Film | Actor
+            interface Searchable { name: String }
+            type Film implements Searchable @table(name: "film") { name: String @field(name: "TITLE") }
+            type Actor implements Searchable @table(name: "actor") { name: String @field(name: "FIRST_NAME") }
             type Query {
-              searchOne: FilmOrActor
+              searchOne: Searchable
                 @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getFilm"})
             }
             type Mutation {
-              searchMany: [FilmOrActor]
+              searchMany: [Searchable]
                 @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getFilms"})
             }
             """);
@@ -1903,6 +1903,45 @@ class GraphitronSchemaBuilderTest {
         assertThat(mp.serviceMethodCall().methodName()).isEqualTo("getFilms");
         assertThat(mp.participants()).hasSize(2);
         assertThat(mp.returnType().wrapper().isList()).isTrue();
+    }
+
+    @Test
+    void serviceReturningUnion_rejectedAsUnsupported() {
+        // R365 scope: union polymorphism is a generated-query-path capability only; a @service
+        // returning a union is permanently unsupported (AUTHOR_ERROR), not deferred.
+        var schema = build("""
+            type Film @table(name: "film") { title: String }
+            type Actor @table(name: "actor") { firstName: String @field(name: "FIRST_NAME") }
+            union FilmOrActor = Film | Actor
+            type Query {
+              search: FilmOrActor
+                @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getFilm"})
+            }
+            """);
+        var f = schema.field("Query", "search");
+        assertThat(f).isInstanceOf(no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField.class);
+        var unc = (no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField) f;
+        assertThat(unc.kind()).isEqualTo(no.sikt.graphitron.rewrite.RejectionKind.AUTHOR_ERROR);
+        assertThat(unc.reason()).contains("union").contains("must return a multitable interface");
+    }
+
+    @Test
+    void serviceReturningTableInterface_deferred() {
+        // R365 scope: a @service returning a single-table discriminated interface (TableInterfaceType)
+        // is deferred (no per-row discriminator dispatch on the service path), not silently emitted.
+        var schema = build("""
+            interface MediaItem @table(name: "film") @discriminate(on: "kind") { title: String }
+            type FilmItem implements MediaItem @table(name: "film") @discriminator(value: "film") { title: String }
+            type Query {
+              media: MediaItem
+                @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getFilm"})
+            }
+            """);
+        var f = schema.field("Query", "media");
+        assertThat(f).isInstanceOf(no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField.class);
+        var unc = (no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField) f;
+        assertThat(unc.kind()).isEqualTo(no.sikt.graphitron.rewrite.RejectionKind.DEFERRED);
+        assertThat(unc.reason()).contains("single-table discriminated interface");
     }
 
     // ===== ComputedField =====

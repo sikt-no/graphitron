@@ -82,11 +82,11 @@ final class ServiceDirectiveResolver {
         record Result(ReturnTypeRef.ResultReturnType returnType, MethodRef method) implements Success {}
         record Scalar(ReturnTypeRef.ScalarReturnType returnType, MethodRef method) implements Success {}
         /**
-         * A multitable interface/union return (R365, route (a)). The service hands back a
-         * PK-populated {@code TableRecord} per branch; the fetcher dispatches on each returned
-         * record's runtime class to pick the participant, then auto-fetches the selected columns
-         * by PK. The participant set is attached at the classify site from the resolved
-         * interface/union type.
+         * A multitable polymorphic return (R365, route (a)). The service hands back a PK-populated
+         * {@code TableRecord} per branch; the fetcher dispatches on each returned record's runtime
+         * class to pick the participant, then auto-fetches the selected columns by PK. The classify
+         * site narrows this to a distinct-table multitable <em>interface</em>: a union return is
+         * rejected (permanently unsupported) and a single-table discriminated interface is deferred.
          */
         record Polymorphic(ReturnTypeRef.PolymorphicReturnType returnType, MethodRef method) implements Success {}
         /** Polymorphic return type lifted to an {@code ErrorsField} (or rejected by lift rules). */

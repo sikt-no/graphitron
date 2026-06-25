@@ -68,9 +68,8 @@ public sealed interface QueryField extends RootField
             // Interface / Union (its payload modeled-but-unpopulated this slice); mapping() derives Table.
             case QueryInterfaceField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Interface());
             case QueryUnionField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Union());
-            // Service-polymorphic returns route through the same __typename-column TypeResolver
-            // whether the SDL type is an interface or a union (GraphitronSchemaClassGenerator treats
-            // both identically), so one variant carries both; the shape is Interface for either.
+            // Service-polymorphic returns are interface-only (union/table-interface rejected at
+            // classify time) and route through the __typename-column TypeResolver.
             case QueryServicePolymorphicField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Interface());
             case QueryNodeField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Interface());
             case QueryNodesField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Interface());
@@ -301,18 +300,21 @@ public sealed interface QueryField extends RootField
 
     /**
      * A root query field backed by a developer-provided service method that returns a multitable
-     * {@link GraphitronType.InterfaceType} or {@link GraphitronType.UnionType} (R365, route (a)).
+     * {@link GraphitronType.InterfaceType} over distinct-table participants (R365, route (a)).
      *
      * <p>The service hands back a PK-populated jOOQ {@code TableRecord} per branch. The emitted
      * fetcher dispatches on each returned record's runtime class against the participant set
      * (matching {@link ParticipantRef.TableBound#table()}'s record class), tags the matched
      * participant's {@code __typename}, and auto-fetches the selected columns by PK against that
-     * participant's table. One variant carries both the interface and union cases: by the time the
-     * participant set is resolved, the implementor-vs-member distinction is fully discharged, and
-     * both route through the same {@code __typename}-column TypeResolver.
+     * participant's table.
+     *
+     * <p>Interface only: a {@code @service} returning a union is permanently unsupported (union
+     * polymorphism is a generated-query-path capability), and a single-table discriminated interface
+     * ({@code TableInterfaceType}) is deferred; both are rejected at classify time, so this variant
+     * only ever carries a distinct-table multitable interface return.
      *
      * <p>{@code participants} is the resolved participant set, attached at the classify site from
-     * the interface/union type (the same source {@link QueryInterfaceField} uses).
+     * the interface type (the same source {@link QueryInterfaceField} uses).
      */
     record QueryServicePolymorphicField(
         String parentTypeName,

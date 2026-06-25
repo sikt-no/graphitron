@@ -24,10 +24,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  * ({@code FilmRecord} → {@code Film}, {@code ActorRecord} → {@code Actor}), tags {@code __typename},
  * and auto-fetches the selected columns by PK against PostgreSQL.
  *
- * <p>{@code documentsService} exercises two distinct-table branches (a {@code FilmRecord} and an
- * {@code ActorRecord} in one list) so a misdispatch is observable; {@code searchOneService} covers
- * single cardinality. Both are backed by {@code PolymorphicSearchService}, which returns records
- * carrying only their primary key.
+ * <p>{@code searchManyService} exercises two distinct-table branches (a {@code FilmRecord} and an
+ * {@code ActorRecord} in one list over the {@code Searchable} interface) so a misdispatch is
+ * observable; {@code searchOneService} covers single cardinality. Both are backed by
+ * {@code PolymorphicSearchService}, which returns records carrying only their primary key.
  */
 @ExecutionTier
 @SuppressWarnings("unchecked")
@@ -66,21 +66,21 @@ class ServicePolymorphicReturnExecutionTest {
     }
 
     @Test
-    void documentsService_dispatchesBothBranchesByRecordClass() {
+    void searchManyService_dispatchesBothBranchesByRecordClass() {
         String expectedFilmTitle = dsl.select(Tables.FILM.TITLE).from(Tables.FILM)
             .where(Tables.FILM.FILM_ID.eq(1)).fetchOne(Tables.FILM.TITLE);
         String expectedActorFirstName = dsl.select(Tables.ACTOR.FIRST_NAME).from(Tables.ACTOR)
             .where(Tables.ACTOR.ACTOR_ID.eq(1)).fetchOne(Tables.ACTOR.FIRST_NAME);
 
         Map<String, Object> data = execute("""
-            { documentsService {
+            { searchManyService {
                 __typename
                 ... on Film { filmId title }
                 ... on Actor { actorId firstName }
             } }
             """);
 
-        var docs = (List<Map<String, Object>>) data.get("documentsService");
+        var docs = (List<Map<String, Object>>) data.get("searchManyService");
         assertThat(docs).hasSize(2);
 
         var film = docs.stream().filter(d -> "Film".equals(d.get("__typename"))).findFirst().orElseThrow();
