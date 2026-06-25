@@ -83,15 +83,15 @@ erDiagram
         string canonical "derived render of the key: Foo / Foo.bar / Foo.bar(baz:) / @foo(bar:)"
     }
     SOURCE {
-        enum kind "Root | OnlyChild | Child"
-        table table "absent for record/service"
+        enum kind "Root | OnlyChild | Child (sealed)"
+        shape shape "carried by OnlyChild / Child only: Table | Record (Root carries none)"
     }
     TARGET {
         enum wrapper "Single | List"
         enum shape "Column | Table | Record | Field"
     }
     OPERATION {
-        enum kind "select join paginate condition orderBy serviceCall DML"
+        enum kind "select join paginate condition orderBy serviceCall DML (sealed; payload varies by kind)"
         anchor address "which query unit it lands in"
     }
     REFERENCE {
@@ -102,17 +102,17 @@ erDiagram
     }
     JOIN_STEP {
         int stepIndex
-        on on "ColumnPairs | Predicate | (start has none)"
+        on on "sealed: FkJoin (column slots) | ConditionJoin (predicate) | LiftedHop (lifted slots)"
     }
     TABLE_EXPR {
-        enum arm "Catalog | MethodCall | RoutineCall"
+        enum arm "Catalog | MethodCall | RoutineCall (sealed; MethodCall/RoutineCall carry a callable + arg bindings)"
     }
     SOURCE_OBJECT {
         class castTarget "never a table"
         bool tableBound
     }
     ACCESSOR {
-        locator locator "field-level value read"
+        locator locator "sealed read mechanism: typed jOOQ field | by-name field | record/getter | passthrough | localContext"
     }
     NODE {
         string type
@@ -123,8 +123,8 @@ erDiagram
         type backing "Java enum | String | numeric (derived)"
     }
     DISCRIMINATION {
-        enum domain "row | exception"
-        enum signal "RecordClass DiscriminatorColumn | ExceptionClass SqlState VendorCode Validation"
+        enum domain "row | exception (sealed; signal family depends on domain)"
+        enum signal "row {RecordClass | DiscriminatorColumn} or exception {ExceptionClass | SqlState | VendorCode | Validation}"
     }
     ERROR_GUARD {
         enum channel "Outcome | PayloadClass | LocalContext"
@@ -143,6 +143,14 @@ erDiagram
         int column
     }
 ```
+
+The diagram is itself a denormalized view, the same move as *the leaf zoo is a denormalized view* below. A
+discriminator marked **(sealed)** is a tagged union, not one relation with nullable-by-arm columns: each
+variant carries only its own non-null columns (concrete-table inheritance, exactly like the coordinate key in
+*The natural keys*), and the per-variant columns are normalized in that fact's deep-dive below. Flattening a
+union into one box with a `kind` / `arm` / `domain` enum is the diagram's convenience, not the model's shape;
+in the type system each is a `sealed` interface (`Source`, `Operation`, `JoinStep`, `TargetShape`,
+`ErrorChannel`, the discrimination signal). The unmarked entities are genuine single relations.
 
 The catalog, each row a fact with its own deep-dive below:
 
