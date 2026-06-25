@@ -1,5 +1,5 @@
 ---
-id: R372
+id: R373
 title: "Capture test stdout/stderr to per-class files via Surefire redirectTestOutputToFile"
 status: Backlog
 bucket: testing
