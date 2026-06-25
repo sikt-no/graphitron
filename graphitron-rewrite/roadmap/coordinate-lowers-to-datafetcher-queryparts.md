@@ -1,15 +1,15 @@
 ---
 id: R333
-title: "Lower each schema coordinate to a DataFetcher and its QueryParts"
+title: "The Graphitron data model"
 status: Spec
 bucket: structural
 priority: 3
 theme: structural-refactor
 created: 2026-06-18
-last-updated: 2026-06-22
+last-updated: 2026-06-25
 ---
 
-# Lower each schema coordinate to a DataFetcher and its QueryParts
+# The Graphitron data model
 
 ## In one paragraph
 
