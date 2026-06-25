@@ -45,20 +45,31 @@ uses `postgres`/`postgres` credentials.
 `graphitron-lsp`'s `NativeLibraryBundleTest` loads the grammar binary from
 `graphitron-tree-sitter-natives`; jtreesitter 0.26 then resolves runtime symbols against an
 OS-installed `libtree-sitter`. Ubuntu apt's `libtree-sitter0` is pinned to 0.20.x which
-predates `ts_language_abi_version`, so build from upstream source at the version matching
-the natives jar's parser ABI:
+predates `ts_language_abi_version`, so the modern runtime must be built from upstream source
+at the version matching the natives jar's parser ABI.
+
+The `SessionStart` hook (`.claude/scripts/session-start-web-env.sh`) does this automatically:
+if `libtree-sitter.so.0.26` is not already on the loader path it fetches the release tarball
+and builds it, so every web session has the runtime without manual steps.
+
+If you ever need to do it by hand, fetch the **release tarball over HTTPS** rather than
+`git clone`: in repo-scoped web sessions the proxy serves only the repos in this session's
+GitHub scope, so `git clone https://github.com/tree-sitter/tree-sitter` (a non-scoped repo)
+is refused with a `403`. Plain HTTPS to `github.com` is unaffected.
 
 ```bash
 VERSION=v0.26.9
 TMPDIR=$(mktemp -d) && trap "rm -rf $TMPDIR" EXIT
-git clone --depth=1 --branch=$VERSION https://github.com/tree-sitter/tree-sitter $TMPDIR/ts
-make -C $TMPDIR/ts
-sudo make -C $TMPDIR/ts install
+curl -fsSL "https://github.com/tree-sitter/tree-sitter/archive/refs/tags/${VERSION}.tar.gz" \
+  -o "$TMPDIR/ts.tgz"
+tar -xzf "$TMPDIR/ts.tgz" -C "$TMPDIR"
+make -C "$TMPDIR/tree-sitter-${VERSION#v}"
+sudo make -C "$TMPDIR/tree-sitter-${VERSION#v}" install
 sudo ldconfig
 ```
 
-This mirrors the `Build + install libtree-sitter from source` step in
-`.github/workflows/rewrite-build.yml`, so the web sandbox and CI exercise the same runtime.
+CI (`.github/workflows/rewrite-build.yml`) clones the same `v0.26.9` source directly, it has
+unrestricted GitHub access, so the web sandbox and CI exercise the same runtime version.
 
 ## Building graphitron-rewrite
 
