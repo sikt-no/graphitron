@@ -37,10 +37,143 @@ table field reached by a reference"; the facts do, and they add rather than mult
 
 This item is the **model**: the facts, the method graph, and the integrity check that ties them
 together. Re-platforming the generator's emit onto the model is a separate item, **R314**. Suggested
-reading order is this orientation, then the front half (*The normalized schema: the coordinate and its
-facts*), then the back half (*Operations are realized by seams*). The lettered **Discovery** threads
-(A-K) at the end record how the model was derived by walking the current emitters; they are the
-evidence, referenced throughout, not prerequisites to read first.
+reading order is this orientation, then *The model* (the ER diagram and the fact catalog) and *What the
+model enables*, then the detail: the front half (*The normalized schema: the coordinate and its facts*)
+and the back half (*Operations are realized by seams*). The lettered **Discovery** threads (A-K) at the
+end record how the model was derived by walking the current emitters; they are the evidence, referenced
+throughout, not prerequisites to read first.
+
+## The model
+
+The entity is the schema **coordinate** `(parentType, fieldName)`. The model is that coordinate together
+with a small set of **facts**, each an independent functional dependency found by its own walk. The leaf
+zoo, the per-field "graphitron field", and the two library types (`DataFetcher`, `QueryPart`) are
+denormalized views over these facts; a capability is added by adding a fact, not a new leaf type. The whole
+model at a glance:
+
+```mermaid
+erDiagram
+    COORDINATE ||--|| SOURCE : "arrives via"
+    COORDINATE ||--|| TARGET : "returns"
+    COORDINATE ||--o{ OPERATION : "triggers (a set)"
+    COORDINATE ||--o| REFERENCE : "crosses a table"
+    COORDINATE ||--o| RESOLVED_TABLE : "resolves against"
+    COORDINATE ||--|| ACCESSOR : "value read by"
+    COORDINATE ||--o| DISCRIMINATION : "recovers concrete type"
+    COORDINATE }o--|| SOURCE_OBJECT : "cast target (type-level)"
+
+    REFERENCE ||--|| REFERENCED_TABLE : "destination"
+    REFERENCE ||--|{ JOIN_STEP : "linearized join graph"
+    JOIN_STEP ||--|| TABLE_EXPR : "target node"
+
+    OPERATION ||--o| ERROR_GUARD : "if it can throw"
+
+    ACCESSOR ||--o| NODE : "@nodeId codec"
+    ACCESSOR ||--o| ENUM : "enum coercion"
+
+    COORDINATE {
+        string parentType PK
+        string fieldName PK
+    }
+    SOURCE {
+        enum kind "Root | OnlyChild | Child"
+        table table "absent for record/service"
+    }
+    TARGET {
+        enum wrapper "Single | List"
+        enum shape "Column | Table | Record | Field"
+    }
+    OPERATION {
+        enum kind "select join paginate condition orderBy serviceCall DML"
+        anchor address "which query unit it lands in"
+    }
+    REFERENCE {
+        path path "authored @reference or inferred FK"
+    }
+    RESOLVED_TABLE {
+        table table "derived: referencedTable then source then target"
+    }
+    JOIN_STEP {
+        int stepIndex
+        on on "ColumnPairs | Predicate | (start has none)"
+    }
+    TABLE_EXPR {
+        enum arm "Catalog | MethodCall | RoutineCall"
+    }
+    SOURCE_OBJECT {
+        class castTarget "never a table"
+        bool tableBound
+    }
+    ACCESSOR {
+        locator locator "field-level read"
+    }
+    NODE {
+        string type
+        table table
+    }
+    ENUM {
+        string name
+        type backing "Java enum | String | numeric (derived)"
+    }
+    DISCRIMINATION {
+        enum domain "row | exception"
+        enum signal "RecordClass DiscriminatorColumn | ExceptionClass SqlState VendorCode Validation"
+    }
+    ERROR_GUARD {
+        enum channel "Outcome | PayloadClass | LocalContext"
+        ref handlerSet "interned partition"
+    }
+```
+
+The catalog, each row a fact with its own deep-dive below:
+
+| Fact | Cardinality | Sourced from | Role |
+|---|---|---|---|
+| `source` | 1:1, total | parent + the edge into the field | where the source object arrives and how many; the parent shape |
+| `target` | 1:1, total | `field.getType()` | the field's own output wrapper (`Single` / `List`) and shape |
+| `operation` | 0..N (a set) | `@service` / `@condition` / `@orderBy` / `@mutation` / `@asConnection` / a table-bound return | the QueryPart-emitting commands the query unit composes |
+| `reference` | 0..1 | `@reference`, else inferred unique FK | the value lives off the parent's table; lowers to a `join` |
+| `referencedTable` | 0..1 (iff `reference`) | `@reference` | the reference's destination table, named in its own right |
+| `resolvedTable` | 0..1, derived | coalesce `referencedTable ?? source.table ?? target.table` | the catalog table the `@field` resolves against |
+| `tableExpr` | per table node | `@tableMethod` / `@routine` | materializes a table *node* (`Catalog` \| `MethodCall` \| `RoutineCall`) |
+| `joinPath` | the `reference`'s resolved form | `@reference` | the linearized join graph: a start node plus ordered `JoinStep`s |
+| `source object` | type-level | the parent type's record shape (`@sourceRow` for a DTO) | the cast-target record the read casts to; never a table |
+| `accessor` | 1:1 (read side) | `@field` / `@externalField` | the field-level **locator** that reads the value back out |
+| `node` | accessor refinement, 0..1 | `@node` / `@nodeId` | the nodeId codec and its key projections |
+| `enum` | accessor refinement, 0..1 | `@field` on `ENUM_VALUE` | the authored value set and a derived backing type |
+| `discrimination` | 0..1 | `@discriminate` / `@discriminator` / `@error` | concrete-type recovery, over the **row** or **exception** signal domain |
+| `errorGuard` | operation sub-fact | `@error` | on a throwing operation: a transport channel and an interned handler partition |
+
+**The model is closed.** Every active directive's effect has an owning fact in this catalog; the
+completeness audit, directive by directive, is *Directive coverage* near the end. The two halves of the
+lowering, these facts (front) and the method graph that consumes them (back), meet at the `operation`
+relation, detailed throughout the rest of this document.
+
+## What the model enables: three consumers
+
+One model, three readers. Each consumer is a **projection** over the same facts; none owns a private model,
+and a fact added for one is visible to all three.
+
+- **Code generation.** The `DataFetcher` and the QueryPart-emitting methods are *views* over the facts: the
+  DataFetcher joins `source` and `target` and dispatches the operation set, and each operation renders into a
+  query unit through a named **seam**. The seam topology (*Seam worklist* / *Operations are realized by
+  seams*) is the back-half view of the `operation` relation, and the build's correctness test is thread I's
+  **referential-integrity closure**: every method name an edge calls resolves to a node we also emit.
+  Re-platforming the emit onto this model is R314.
+- **The language server.** The same facts answer the editor's questions directly: hover and
+  go-to-definition read `resolvedTable` / `reference` / the node and accessor facts; diagnostics are the
+  model's integrity checks (discriminability, join-name match, the closure invariant) surfaced as the author
+  types. The LSP already marshals this classification to the editor; a demand-driven, memoized
+  reclassification (the salsa / rust-analyzer model, reserved in *We are data modeling*) is its performance
+  path, not a second model.
+- **MCP.** The facts are a queryable knowledge surface: a model-context server projects them so an agent can
+  ask what a coordinate lowers to, which tables back a type, or what a directive resolves against, and be
+  answered from the authoritative model rather than re-deriving it from source. The catalog-describe and
+  retrieval foundations are the first cuts of that surface.
+
+The shared discipline is *We are data modeling*: the facts are typed, keyed relations in the type system,
+materialized as in-memory collections guarded by a referential-integrity check, not sat on a query-engine
+runtime. The three consumers read views; the model is one.
 
 ## The unit is the emitted method
 
