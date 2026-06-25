@@ -75,7 +75,7 @@ The method-backed `FieldClassification` variants, each carrying `methodClassName
 `DeclarationHovers` already reads these for the classification block. Goto and the hover Javadoc
 overlay do not.
 
-## Approach: route through the shared `DeclTarget`, resolve methods by name
+## Approach: route through the shared `DeclTarget`, resolve by arity with a name-level fallback
 
 Resolve the method-backed field name through the same `DeclTarget` both goto and the
 declaration-name hover overlay project, so the capability lands in goto *and* closes the
@@ -91,83 +91,94 @@ carrying `@service` / `@externalField` is bound to that method, not to a column 
 The arm stays in the pure `ofField` core (it reads the already-projected classification off `built`,
 no source-index read, mirroring how the existing arms read `built.typeBacking(...)`).
 
-### 2. Resolve `SourceMethod` by method name, not by `(name, arity)`
+### 2. Resolve by `(class, name, arity)`, with a name-level fallback that never declines
 
-Method navigation should resolve **by method name**, landing on any declaration of that name on the
-class. The "take me to method `X`" intent is satisfied by any `X`; landing on a sibling overload is
-strictly more helpful than declining. Keying navigation by name (not arity) removes two defects in
-one move:
+Arity is used as the primary key, and is cheap: the catalog already carries the bound method's
+parameter count, and using it raises the hit rate by landing on the *correct* overload rather than a
+sibling. Two overload cases must be kept distinct:
 
-- **The arity-0 hover hardcode.** `SourceMethod` carries only `(fqClassName, methodName)`, but the
-  source index is keyed by `(class, name, paramCount)` (`SourceWalker.MethodKey`, `SourceWalker.java:84`).
-  The two consumers re-derive the arity independently and drift: goto reads it off the catalog
-  (`Definitions.methodTarget`, `:181-197`), the hover overlay hardcodes `0`
-  (`DeclarationHovers.overlay`, `:137-138`), correct only for its current producer (zero-arg POJO
-  accessors). A service method takes at least a `DSLContext`, so reusing `SourceMethod` as-is would
-  make goto jump while the overlay returns empty, violating `overlayIsPresentExactlyWhenGotoJumps`
-  (`DeclarationHoverOverlayParityTest.java:101-125`). Name-level resolution needs no arity at all, so
-  the divergence cannot occur: both consumers call one shared name-level lookup.
-- **The ambiguity non-jump.** `SourceWalker` keys methods by parameter *count*, so two overloads with
-  the same name and same arity but different parameter types (`find(String)` / `find(int)`) collide on
-  one `MethodKey`, get dropped, and are recorded as ambiguous (`SourceWalker.java:306-309`,
-  `:201-203`). Goto then declines (`DefinitionTarget.Ambiguous` → empty in `Definitions.resolve`,
-  `:213`). Declining is the wrong call: the overloads are adjacent in the same file, so landing on
-  either gets the developer to the destination. Resolving by name eliminates the concept: there is
-  no "can't pick an overload," only "first declaration of this name."
+- **Arity-distinguishable overloads** (`greet()` vs `greet(String, int)`) are *not* ambiguous: each is
+  a distinct `MethodKey(class, name, paramCount)` (`SourceWalker.java:84`). The bound arity selects the
+  right one. Discarding arity here would throw away recoverable precision and risk landing on the wrong
+  overload, so the resolution keys on arity first. This is what goto's existing `methodTarget`
+  (`Definitions.java:181-197`) already does; this item must not regress it.
+- **Same-name/same-arity overloads** (`find(String)` vs `find(int)`) are the *only* genuine ambiguity:
+  they collide on one `MethodKey`, get dropped, and are recorded as ambiguous (`SourceWalker.java:306-309`,
+  `:201-203`). Today goto declines here (`DefinitionTarget.Ambiguous` → empty, `:213`). Declining is the
+  wrong call, the overloads are adjacent in the same file, so landing on either gets the developer to
+  the destination. This is the case the fallback covers.
 
-Supporting change in `SourceWalker.Index`: the arity-keyed `methods()` map drops collided keys
-entirely (`:201-203`), so a name lookup over the survivors would still miss a same-arity-collided
-method. Add a name-level lookup (a `Map` keyed by `(class, name)`, first declaration wins, never
-dropped on collision) so a jump is always available when the class is indexed. The arity-keyed map
-stays for the directive-argument path's overload precision; navigation reads the name-level view.
+So resolution is a two-step floor: **arity-keyed lookup first** (precise, the correct overload); when
+that key is absent or was dropped as a same-arity collision, **fall back to a name-level lookup** and
+land on the first declaration of that name. Precision where it exists; never a non-jump where a
+declaration is indexed.
 
-Both projections (`DeclarationDefinitions` goto, `DeclarationHovers.overlay`) resolve `SourceMethod`
-through that one helper: found → jump / overlay that `Decl`; class indexed but no method of that name
-→ the existing `SourceAbsent` no-jump; class not indexed → `SourceAbsent`. Parity is structural
-because both arms call the same lookup.
+Two supporting changes:
+
+- **Carry the arity on `SourceMethod`.** `SourceMethod` carries only `(fqClassName, methodName)`, so the
+  two consumers re-derive the arity independently and drift: goto reads it from the catalog, the hover
+  overlay hardcodes `0` (`DeclarationHovers.overlay`, `:137-138`), correct only for its current producer
+  (zero-arg POJO accessors). A service method takes at least a `DSLContext`, so reusing `SourceMethod`
+  as-is would make goto jump while the overlay returns empty, violating `overlayIsPresentExactlyWhenGotoJumps`
+  (`DeclarationHoverOverlayParityTest.java:101-125`). Widen to `SourceMethod(fqClassName, methodName, paramCount)`,
+  stamped in `resolve()` (which has the catalog: the accessor arm sets `0`, the method-backed arm reads
+  the bound method's parameter count). Both projections then build the identical `MethodKey` and share
+  the identical fallback, so they cannot diverge and the arity-0 hardcode is deleted, not special-cased.
+- **A non-dropping name-level lookup on `SourceWalker.Index`.** The arity-keyed `methods()` map drops
+  collided keys entirely (`:201-203`), so the fallback would still miss a same-arity-collided method.
+  Add a lookup keyed by `(class, name)`, first declaration wins, never dropped, so a jump is always
+  available when the class is indexed. The arity-keyed map stays primary; the name view is the floor.
+
+Both projections (`DeclarationDefinitions` goto, `DeclarationHovers.overlay`) run the same two-step
+resolution through one shared helper: arity key → name fallback → `SourceAbsent` only when the class
+carries no declaration of that name at all (or is not indexed). Parity is structural because both arms
+call the same helper.
 
 ### Consequences for the existing paths
 
-- The existing POJO-accessor field-name path also routes through the name-level lookup. Behaviour is
-  preserved (a single `getX` resolves by name exactly as it did by `(name, 0)`), and the hover
-  overlay's arity-0 hardcode is deleted rather than special-cased.
-- `DefinitionTarget.Ambiguous` becomes dead on the navigation path. The directive-argument
-  `Definitions.methodTarget` path is aligned to the same principle (resolve by name, never decline on
-  an arity collision); whether to fold that alignment into this item or split it is an open question
-  below.
-- `SourceMethod.accessorMethodName` is a misnomer once the variant also names service methods; rename
-  to `methodName` as part of the change (touches the two projections + the producer + the parity test).
+- The existing POJO-accessor field-name path is unchanged in behaviour: its arity is `0`, the arity-keyed
+  lookup resolves exactly as before, and the hover overlay's arity-0 hardcode is replaced by the carried
+  arity rather than special-cased.
+- `DefinitionTarget.Ambiguous` stops being a non-jump: the same-arity-collision case now falls back to a
+  name-level jump. The directive-argument `Definitions.methodTarget` path is aligned to the same floor
+  (arity-primary, name fallback, never decline); whether to fold that alignment into this item or split
+  it is an open question below.
+- `SourceMethod.accessorMethodName` is a misnomer once the variant also names service methods; rename to
+  `methodName` as part of the widening (touches the two projections + the producer + the parity test).
 
 ## Why not a goto-only fix
 
 A goto-only step in `DeclarationDefinitions` (resolve the classification via `methodTarget`, leave
 `DeclTarget` and hover untouched) is smaller and also closes the goto gap, but it leaves the
 hover-overlay arity defect live and lets goto and hover diverge for service fields, against the
-module's structural-parity design. Routing through `DeclTarget` with name-level resolution fixes the
-latent defect at its source for a bounded cost.
+module's structural-parity design. Routing through `DeclTarget` with the shared arity-primary
+resolution fixes the latent defect at its source for a bounded cost.
 
 ## Acceptance
 
 - Field-name goto jumps to the bound method for each method-backed variant: at minimum a root
   `@service` (`QueryService`), a field-level `@service` (`ServiceBacked`), an `@externalField`
   (`Computed`), and a `@tableMethod` child (`TableMethod`). Exercised in `DeclarationDefinitionsTest`.
+- An arity-distinguishable overload (`greet()` vs `greet(String, int)`) resolves to the *correct*
+  overload via the bound arity, pinned so the precision is not silently lost to a name-only fallback.
 - The declaration-name hover overlay shows the bound method's Javadoc for the same fields (no longer
   arity-0-only); `DeclarationHoverOverlayParityTest` gains a non-zero-arity `SourceMethod` case so
   goto-jumps-iff-overlay-present holds for service methods.
-- A same-name/same-arity overload still produces a jump (to the first declaration), pinned by a test
-  on the new name-level index lookup; no `Ambiguous` non-jump remains on the navigation path.
+- A same-name/same-arity overload still produces a jump (to the first declaration) via the name-level
+  fallback, pinned by a test on the new index lookup; no `Ambiguous` non-jump remains on the navigation
+  path.
 - Existing `graphitron-lsp` suite stays green; the precedence rule does not regress column / accessor
   / component resolution for non-method-backed fields.
 
 ## Open questions
 
-- **Directive-arg path alignment**: fold the `Definitions.methodTarget` name-level switch (retiring
-  `DefinitionTarget.Ambiguous` as a non-jump) into this item, or split it into a follow-up? It is the
-  same principle and helper; leaning fold-in since leaving one path declining-on-ambiguity while the
-  other lands-by-name is incoherent.
-- **Tiebreak determinism**: when several declarations share a name, define "first" as source order
-  within a file and first-file-wins across the merge (the walker's natural visit order). Confirm that
-  is deterministic across the index merge in `SourceWalker`.
+- **Directive-arg path alignment**: fold the `Definitions.methodTarget` fallback (retiring
+  `DefinitionTarget.Ambiguous` as a non-jump in favour of the name-level floor) into this item, or split
+  it into a follow-up? It is the same principle and helper; leaning fold-in since leaving one path
+  declining-on-ambiguity while the other falls back is incoherent.
+- **Fallback tiebreak determinism**: the fallback only fires for the same-arity-collision case; when it
+  does, define "first declaration" as source order within a file and first-file-wins across the merge
+  (the walker's natural visit order). Confirm that is deterministic across the index merge in `SourceWalker`.
 - **Short class-name binding**: a directive `className:` may be a simplified name when the package is
   imported in `externalReferences` config; resolution against `externalReferences().className()` /
   the FQN-keyed source index is a pre-existing limitation of the directive-arg path, inherited here,
@@ -175,10 +186,11 @@ latent defect at its source for a bounded cost.
 
 ## Scope
 
-In scope: the `ofField` resolution arm, the `SourceMethod` rename + name-level projection, the
-name-level lookup added to `SourceWalker.Index`, the hover-overlay arm update, the directive-arg path
-alignment (pending the open question), and tests. Spans `graphitron-rewrite/graphitron-lsp/` and the
-small `SourceWalker.Index` addition in `graphitron-rewrite/graphitron/`.
+In scope: the `ofField` resolution arm, the `SourceMethod` arity widening + rename, the arity-primary
+projection with its name-level fallback, the non-dropping name-level lookup added to
+`SourceWalker.Index`, the hover-overlay arm update, the directive-arg path alignment (pending the open
+question), and tests. Spans `graphitron-rewrite/graphitron-lsp/` and the small `SourceWalker.Index`
+addition in `graphitron-rewrite/graphitron/`.
 
 Out of scope: how `FieldClassification` is computed in the build tier (the data is already produced);
 new LSP protocol surface; the legacy modules at the repo root.
@@ -189,5 +201,8 @@ Surfaced 2026-06-25 from a user request: after goto-definition reached the direc
 declaration-name cases, the remaining friction was that service-backed / computed field *names* still
 required navigating into the directive. Investigation found the jump target already resolved in the
 snapshot, a latent arity-0 hardcode in the hover overlay, and an ambiguity non-jump rooted in the
-index keying methods by parameter count; the user steered resolution to method-name level, which
-removes both defects and the friction together.
+index keying methods by parameter count. A first design draft dropped arity entirely and resolved by
+name; the user corrected that, arity is cheap, the catalog already carries it, and it raises the hit
+rate by landing on the correct overload. The settled design keeps arity primary and uses a name-level
+fallback only for the genuine same-arity collision, so precision is preserved and the navigation never
+declines.
