@@ -106,7 +106,7 @@ class GraphitronMcpServerTest {
             var tools = client.listTools().tools();
             assertThat(tools).extracting(McpSchema.Tool::name)
                 .containsExactlyInAnyOrder("status", "catalog.tables", "catalog.describe",
-                    "services", "conditions", "records", "schema", "diagnostics");
+                    "services", "conditions", "records", "schema", "diagnostics", "edges");
 
             var result = client.callTool(McpSchema.CallToolRequest.builder("status").build());
             assertThat(result.isError()).isNotEqualTo(Boolean.TRUE);
@@ -503,6 +503,322 @@ class GraphitronMcpServerTest {
             String fromKey = key.className() + "#" + key.methodName() + "/" + key.paramCount();
             assertThat(methodRef).isEqualTo(fromKey);
         }
+    }
+
+    // ---- R374: edges (cross-reference traversal) ----
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void edgesForwardColumnFieldYieldsBacksEdgeToCatalogColumnId() throws Exception {
+        try (var server = new GraphitronMcpServer(loopback(0), edgesWorkspace());
+             var client = connect(server.port())) {
+            client.initialize();
+
+            var structured = structured(client.callTool(McpSchema.CallToolRequest.builder("edges")
+                .arguments(Map.of("field", "Film.title", "direction", "out")).build()));
+            var node = (Map<String, Object>) structured.get("node");
+            assertThat(node).containsEntry("id", "Film.title").containsEntry("kind", "field");
+            var edges = (List<Map<String, Object>>) structured.get("edges");
+            assertThat(edges).singleElement().satisfies(e -> {
+                assertThat(e).containsEntry("kind", "BACKS").containsEntry("direction", "out");
+                var target = (Map<String, Object>) e.get("target");
+                // The BACKS target is the exact schema.table:column ID catalog.describe accepts.
+                assertThat(target).containsEntry("id", "public.film:title").containsEntry("kind", "column");
+            });
+            assertThat(structured).containsEntry("snapshotAvailability", "Built")
+                .containsEntry("snapshotFreshness", "Current");
+        }
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void edgesForwardColumnReferenceYieldsBacksPlusReferencesWithJoinPath() throws Exception {
+        try (var server = new GraphitronMcpServer(loopback(0), edgesWorkspace());
+             var client = connect(server.port())) {
+            client.initialize();
+
+            var structured = structured(client.callTool(McpSchema.CallToolRequest.builder("edges")
+                .arguments(Map.of("field", "Film.languageName", "direction", "out")).build()));
+            var edges = (List<Map<String, Object>>) structured.get("edges");
+            assertThat(edges).extracting(e -> e.get("kind")).containsExactlyInAnyOrder("BACKS", "REFERENCES");
+            // The BACKS edge lands on the terminal column; the REFERENCES edge carries the FK hop.
+            var backs = edges.stream().filter(e -> e.get("kind").equals("BACKS")).findFirst().orElseThrow();
+            assertThat((Map<String, Object>) backs.get("target")).containsEntry("id", "public.language:name");
+            var references = edges.stream().filter(e -> e.get("kind").equals("REFERENCES")).findFirst().orElseThrow();
+            assertThat((Map<String, Object>) references.get("target")).containsEntry("id", "public.language");
+            var joinPath = (List<Map<String, Object>>) references.get("joinPath");
+            assertThat(joinPath).singleElement().satisfies(h -> assertThat(h)
+                .containsEntry("targetTableName", "public.language")
+                .containsEntry("fkName", "film_language_id_fkey"));
+        }
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void edgesForwardServiceBackedYieldsResolvesEdgeMatchingServicesToolRef() throws Exception {
+        try (var server = new GraphitronMcpServer(loopback(0), edgesWorkspace());
+             var client = connect(server.port())) {
+            client.initialize();
+
+            var structured = structured(client.callTool(McpSchema.CallToolRequest.builder("edges")
+                .arguments(Map.of("field", "Film.activeFilms", "direction", "out")).build()));
+            var edges = (List<Map<String, Object>>) structured.get("edges");
+            // A table-bound @service field both resolves a method and targets a table.
+            assertThat(edges).extracting(e -> e.get("kind")).containsExactlyInAnyOrder("RESOLVES", "TARGETS");
+            var resolves = edges.stream().filter(e -> e.get("kind").equals("RESOLVES")).findFirst().orElseThrow();
+            var target = (Map<String, Object>) resolves.get("target");
+            // The method ref matches the fqcn#method/arity grammar the services / conditions tools emit.
+            assertThat(target).containsEntry("id", "com.example.FilmService#activeFilms/0")
+                .containsEntry("kind", "method");
+            var targets = edges.stream().filter(e -> e.get("kind").equals("TARGETS")).findFirst().orElseThrow();
+            assertThat((Map<String, Object>) targets.get("target")).containsEntry("id", "public.film");
+        }
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void edgesForwardNodeTypeYieldsTargetsEdgeToItsTable() throws Exception {
+        try (var server = new GraphitronMcpServer(loopback(0), edgesWorkspace());
+             var client = connect(server.port())) {
+            client.initialize();
+
+            var structured = structured(client.callTool(McpSchema.CallToolRequest.builder("edges")
+                .arguments(Map.of("type", "Film", "direction", "out")).build()));
+            var edges = (List<Map<String, Object>>) structured.get("edges");
+            assertThat(edges).singleElement().satisfies(e -> {
+                assertThat(e).containsEntry("kind", "TARGETS");
+                assertThat((Map<String, Object>) e.get("target"))
+                    .containsEntry("id", "public.film").containsEntry("kind", "table");
+            });
+        }
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void edgesReverseColumnReturnsBindingFieldCoordinates() throws Exception {
+        try (var server = new GraphitronMcpServer(loopback(0), edgesWorkspace());
+             var client = connect(server.port())) {
+            client.initialize();
+
+            var structured = structured(client.callTool(McpSchema.CallToolRequest.builder("edges")
+                .arguments(Map.of("column", "title", "table", "public.film", "direction", "in")).build()));
+            var node = (Map<String, Object>) structured.get("node");
+            assertThat(node).containsEntry("id", "public.film:title").containsEntry("kind", "column");
+            var edges = (List<Map<String, Object>>) structured.get("edges");
+            // The endpoint slot holds the *field*, not the queried column (direction-as-query-axis).
+            assertThat(edges).singleElement().satisfies(e -> {
+                assertThat(e).containsEntry("kind", "BACKS").containsEntry("direction", "in");
+                assertThat((Map<String, Object>) e.get("target"))
+                    .containsEntry("id", "Film.title").containsEntry("kind", "field");
+            });
+        }
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void edgesReverseMethodReturnsWiringFieldCoordinates() throws Exception {
+        try (var server = new GraphitronMcpServer(loopback(0), edgesWorkspace());
+             var client = connect(server.port())) {
+            client.initialize();
+
+            var structured = structured(client.callTool(McpSchema.CallToolRequest.builder("edges")
+                .arguments(Map.of("method", "com.example.FilmService#activeFilms/0", "direction", "in")).build()));
+            var edges = (List<Map<String, Object>>) structured.get("edges");
+            assertThat(edges).singleElement().satisfies(e -> {
+                assertThat(e).containsEntry("kind", "RESOLVES");
+                assertThat((Map<String, Object>) e.get("target"))
+                    .containsEntry("id", "Film.activeFilms").containsEntry("kind", "field");
+            });
+        }
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void edgesReverseTableReturnsBindingFieldsAndInboundFkNeighbours() throws Exception {
+        try (var server = new GraphitronMcpServer(loopback(0), edgesWorkspace());
+             var client = connect(server.port())) {
+            client.initialize();
+
+            var structured = structured(client.callTool(McpSchema.CallToolRequest.builder("edges")
+                .arguments(Map.of("table", "public.film", "direction", "in")).build()));
+            var edges = (List<Map<String, Object>>) structured.get("edges");
+            // A binding field (the table-bound @service TARGETS this table) ...
+            assertThat(edges).anySatisfy(e -> {
+                assertThat(e).containsEntry("kind", "TARGETS");
+                assertThat((Map<String, Object>) e.get("target"))
+                    .containsEntry("id", "Film.activeFilms").containsEntry("kind", "field");
+            });
+            // ... and the inbound-FK table neighbour, read straight off the catalog.
+            assertThat(edges).anySatisfy(e -> {
+                assertThat(e).containsEntry("kind", "REFERENCES");
+                assertThat((Map<String, Object>) e.get("target"))
+                    .containsEntry("id", "public.film_actor").containsEntry("kind", "table");
+            });
+        }
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void edgesMethodWithTwoOverloadsFansOutToTwoArityDistinctResolvesEdges() throws Exception {
+        try (var server = new GraphitronMcpServer(loopback(0), edgesWorkspace());
+             var client = connect(server.port())) {
+            client.initialize();
+
+            var structured = structured(client.callTool(McpSchema.CallToolRequest.builder("edges")
+                .arguments(Map.of("field", "Film.related", "direction", "out")).build()));
+            var edges = (List<Map<String, Object>>) structured.get("edges");
+            assertThat(edges).allSatisfy(e -> assertThat(e).containsEntry("kind", "RESOLVES"));
+            assertThat(edges).extracting(e -> ((Map<String, Object>) e.get("target")).get("id"))
+                .containsExactlyInAnyOrder(
+                    "com.example.FilmService#related/0", "com.example.FilmService#related/1");
+        }
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void edgesAmbiguousBareTableNameReturnsCandidateSchemas() throws Exception {
+        try (var server = new GraphitronMcpServer(loopback(0), workspaceWith(catalogFixture()));
+             var client = connect(server.port())) {
+            client.initialize();
+
+            var structured = structured(client.callTool(McpSchema.CallToolRequest.builder("edges")
+                .arguments(Map.of("table", "film")).build()));
+            assertThat(structured).containsEntry("resolution", "ambiguous").containsEntry("edges", List.of());
+            assertThat((List<String>) structured.get("schemas")).containsExactlyInAnyOrder("public", "other");
+        }
+    }
+
+    @Test
+    void edgesUnknownTableNameReturnsNotFound() throws Exception {
+        try (var server = new GraphitronMcpServer(loopback(0), workspaceWith(catalogFixture()));
+             var client = connect(server.port())) {
+            client.initialize();
+
+            var structured = structured(client.callTool(McpSchema.CallToolRequest.builder("edges")
+                .arguments(Map.of("table", "nope")).build()));
+            assertThat(structured).containsEntry("resolution", "notFound").containsEntry("edges", List.of());
+        }
+    }
+
+    @Test
+    void edgesBeforeFirstBuildReportsUnavailableWithEmptyEdges() throws Exception {
+        try (var server = new GraphitronMcpServer(loopback(0), new Workspace());
+             var client = connect(server.port())) {
+            client.initialize();
+
+            var structured = structured(client.callTool(McpSchema.CallToolRequest.builder("edges")
+                .arguments(Map.of("field", "Film.title", "direction", "in")).build()));
+            assertThat(structured).containsEntry("snapshotAvailability", "Unavailable")
+                .containsEntry("edges", List.of());
+        }
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void edgesReverseIndexRebuildsOnNextQueryAfterBuildSwap() throws Exception {
+        // The reverse index is memoised on the (snapshot, catalogFacts) reference pair; a
+        // setBuildOutput swap on the same live workspace must be observed on the next reverse query.
+        var workspace = edgesWorkspace();
+        try (var server = new GraphitronMcpServer(loopback(0), workspace);
+             var client = connect(server.port())) {
+            client.initialize();
+
+            var before = structured(client.callTool(McpSchema.CallToolRequest.builder("edges")
+                .arguments(Map.of("column", "title", "table", "public.film", "direction", "in")).build()));
+            assertThat((List<Map<String, Object>>) before.get("edges")).hasSize(1);
+
+            // Swap in a fresh build that adds a second field binding public.film:title.
+            var fields = new LinkedHashMap<String, FieldClassification>();
+            fields.put("Film.title", new FieldClassification.Column("film", "title"));
+            fields.put("Film.altTitle", new FieldClassification.Column("film", "title"));
+            var typeClassifications = Map.<String, TypeClassification>of(
+                "Film", new TypeClassification.Node("film", "FilmType", List.of("film_id")));
+            var snapshot = new LspSchemaSnapshot.Built.Current(
+                List.of(), Map.of(), Map.of(), fields, typeClassifications, Map.of());
+            workspace.setBuildOutput(
+                new GraphQLRewriteGenerator.BuildArtifacts(edgesCatalog(), snapshot, edgesFacts()),
+                ValidationReport.empty());
+
+            var after = structured(client.callTool(McpSchema.CallToolRequest.builder("edges")
+                .arguments(Map.of("column", "title", "table", "public.film", "direction", "in")).build()));
+            assertThat((List<Map<String, Object>>) after.get("edges"))
+                .as("the memo key missed on the new snapshot, so the index rebuilt with the added field")
+                .extracting(e -> ((Map<String, Object>) e.get("target")).get("id"))
+                .containsExactlyInAnyOrder("Film.title", "Film.altTitle");
+        }
+    }
+
+    /**
+     * A single-schema fixture wiring a {@code Film} {@code @node} type to {@code public.film}, with a
+     * column field, a {@code @reference} column field reaching {@code public.language}, a table-bound
+     * {@code @service} field, and a two-overload {@code @service} field. The catalog carries the
+     * matching tables and FKs so forward edges land on real catalog IDs and the reverse index
+     * inverts them.
+     */
+    private static Workspace edgesWorkspace() {
+        var fields = new LinkedHashMap<String, FieldClassification>();
+        fields.put("Film.title", new FieldClassification.Column("film", "title"));
+        fields.put("Film.languageName", new FieldClassification.ColumnReference("language", "name",
+            List.of(new FieldClassification.FkStep("public.language", "film_language_id_fkey"))));
+        fields.put("Film.activeFilms",
+            new FieldClassification.ServiceBacked("com.example.FilmService", "activeFilms", true, "film", null));
+        fields.put("Film.related",
+            new FieldClassification.ServiceBacked("com.example.FilmService", "related", false, null, null));
+        var typeClassifications = Map.<String, TypeClassification>of(
+            "Film", new TypeClassification.Node("film", "FilmType", List.of("film_id")));
+        var snapshot = new LspSchemaSnapshot.Built.Current(
+            List.of(), Map.of(), Map.of(), fields, typeClassifications, Map.of());
+        var workspace = new Workspace();
+        workspace.setBuildOutput(
+            new GraphQLRewriteGenerator.BuildArtifacts(edgesCatalog(), snapshot, edgesFacts()),
+            ValidationReport.empty());
+        return workspace;
+    }
+
+    /** The external-reference scan the edges fixture reconciles method arities against. */
+    private static CompletionData edgesCatalog() {
+        var filmService = new CompletionData.ExternalReference(
+            "com.example.FilmService", "com.example.FilmService", "",
+            List.of(
+                new CompletionData.Method("activeFilms", "List", "", List.of(), false),
+                new CompletionData.Method("related", "List", "", List.of(), false),
+                new CompletionData.Method("related", "List", "",
+                    List.of(new CompletionData.Parameter("limit", "int", "Arg", "")), false)),
+            List.of());
+        return new CompletionData(List.of(), List.of(), List.of(filmService), Map.of(), Map.of());
+    }
+
+    /** {@code public.film} (+ outbound FK to language, inbound FK from film_actor), language, film_actor. */
+    private static CatalogFacts edgesFacts() {
+        var film = new CatalogFacts.Table(
+            "public", "film", Optional.empty(),
+            List.of(
+                new CatalogFacts.Column("film_id", "FILM_ID", "integer", false, Optional.empty()),
+                new CatalogFacts.Column("title", "TITLE", "varchar", false, Optional.empty()),
+                new CatalogFacts.Column("language_id", "LANGUAGE_ID", "integer", false, Optional.empty())),
+            Optional.of(new CatalogFacts.Key("film_pkey", List.of("film_id"))),
+            List.of(), List.of(),
+            new CatalogFacts.ForeignKeys(
+                List.of(new CatalogFacts.OutgoingForeignKey(
+                    "film_language_id_fkey", "public.language", List.of("language_id"), List.of("language_id"))),
+                List.of(new CatalogFacts.IncomingForeignKey(
+                    "film_actor_film_id_fkey", "public.film_actor", List.of("film_id"), List.of("film_id")))));
+        var language = new CatalogFacts.Table(
+            "public", "language", Optional.empty(),
+            List.of(
+                new CatalogFacts.Column("language_id", "LANGUAGE_ID", "integer", false, Optional.empty()),
+                new CatalogFacts.Column("name", "NAME", "varchar", false, Optional.empty())),
+            Optional.of(new CatalogFacts.Key("language_pkey", List.of("language_id"))),
+            List.of(), List.of(), CatalogFacts.ForeignKeys.empty());
+        var filmActor = new CatalogFacts.Table(
+            "public", "film_actor", Optional.empty(),
+            List.of(new CatalogFacts.Column("film_id", "FILM_ID", "integer", false, Optional.empty())),
+            Optional.empty(), List.of(), List.of(), CatalogFacts.ForeignKeys.empty());
+        var map = new LinkedHashMap<String, CatalogFacts.Table>();
+        map.put("public.film", film);
+        map.put("public.language", language);
+        map.put("public.film_actor", filmActor);
+        return new CatalogFacts(map);
     }
 
     private static Workspace codeWorkspace() {

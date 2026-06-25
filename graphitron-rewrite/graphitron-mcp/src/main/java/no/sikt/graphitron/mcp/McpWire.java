@@ -88,14 +88,36 @@ final class McpWire {
     }
 
     // ---- stable cross-tool node IDs (R118 binding principle) ----
+    //
+    // The slice-7 (R374) edge model walks these IDs, so the grammar is settled here, in one
+    // place, so a later slice does not invent a fourth convention. Three separators are in use,
+    // each over identifiers that cannot themselves contain the separator (so every form
+    // round-trips by splitting):
+    //   - {@code .} qualifies a table by its schema ({@code schema.table}; CatalogFacts key).
+    //   - {@code #} + {@code /} compose a method ref ({@code fqcn#method/arity}; the /arity suffix
+    //     disambiguates overloads).
+    //   - {@code :} binds a column to its (already-qualified) table ({@code schema.table:column}).
+    // The structured owner of these forms is the R374 {@code NodeRef} hierarchy, which composes
+    // each from its resolved parts; these helpers are the shared composers so the bare-string form
+    // is produced in exactly one place.
 
     /**
      * Method-ref ID: {@code fqcn#method/arity}. Carries the {@link SourceWalker.MethodKey}
      * {@code (className, methodName, paramCount)} triple the source join uses; the {@code /arity}
-     * suffix disambiguates overloads. Slice 7 walks these IDs, so the grammar is settled here.
+     * suffix disambiguates overloads.
      */
     static String methodRef(String className, String methodName, int arity) {
         return className + "#" + methodName + "/" + arity;
+    }
+
+    /**
+     * Column-of-table ID: {@code schema.table:column}. The {@code :} is a wire separator only (SQL
+     * identifiers carry no colon, so the form round-trips: the table half is directly
+     * {@code catalog.describe}-able by splitting on the last colon). Composed from the
+     * already-qualified {@code schema.table} table ID and the bare SQL column name.
+     */
+    static String columnId(String qualifiedTable, String sqlColumn) {
+        return qualifiedTable + ":" + sqlColumn;
     }
 
     // ---- source-location wire shape ----
