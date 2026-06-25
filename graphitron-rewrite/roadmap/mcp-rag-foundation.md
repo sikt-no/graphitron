@@ -38,9 +38,12 @@ asymmetric, its query-instruction prefix is applied on the query side only. This
 fork by owning a thin graphitron seam:
 
 ```
+record Embedding(String text, float[] vector) {}  // a document: its BM25 text + KNN vector, produced only here
+record Query(String text, float[] vector) {}       // a query:    its BM25 text + KNN vector, produced only here
+
 interface Embedder {
-    float[] embedQuery(String text);          // applies the bge query-instruction prefix
-    List<float[]> embedDocuments(List<String> texts);  // no prefix
+    Query embedQuery(String text);                      // applies the bge query-instruction prefix (to the vector only)
+    List<Embedding> embedDocuments(List<String> texts); // no prefix
     int dimension();
 }
 ```
@@ -50,6 +53,12 @@ interface Embedder {
   ask for a query or a document embedding. This is the "if two consumers evaluate the same predicate
   over a field, the branch belongs in the model" rule: the query/document branch belongs in the
   embedder, not re-derived in slices 9 and 10.
+- **A raw `float[]` never crosses the store seam, and a vector never travels apart from the text it
+  was embedded from.** `embedQuery` / `embedDocuments` return `Query` / `Embedding` records, the only
+  producers of either; both bundle the BM25 text with its KNN vector so a hybrid search cannot fuse a
+  vector from one string against BM25 text from another. The store consumes these records (D2), so the
+  vector-and-its-text pairing is carried by the type, not re-asserted by each of slices 9 and 10. The
+  records are graphitron's own (a `float[]` plus its source text); they name no langchain4j type.
 - **The swap guarantee attaches to *this* wrapper, not to langchain4j.** R118 OQ2's multilingual
   swap (to `multilingual-e5-small`) stays cheap because the stable contract is `Embedder`. A model
   with no query/document asymmetry is absorbed by making its adapter's `embedQuery` delegate to the
@@ -79,10 +88,20 @@ hedge as a **test double, not a shipping backend**:
 - **In-memory is the seam's fake.** A trivial in-memory `EmbeddingStore` (or langchain4j's
   `InMemoryEmbeddingStore`) exists only to exercise the seam in fast unit tests. It never ships and
   is not a "store choice", which is why it does not contradict R118's committed-Lucene principle.
-- **The seam shape must not assume either backend.** The seam exposes write (`add(id, vector,
-  payload)`), hybrid search (`search(queryVector, queryText, k)` returning scored hits with their
+- **The seam shape must not assume either backend.** The seam exposes write
+  (`add(id, Embedding, payload)`), hybrid search (`search(Query, k)` returning scored hits with their
   payloads + stable IDs), and load-from-path; nothing in the signature names Lucene segments, BM25
-  tuning, or HNSW parameters. Backend choice never reaches a consumer.
+  tuning, or HNSW parameters. Backend choice never reaches a consumer. It takes the D1 `Embedding` /
+  `Query` records rather than bare `float[]` + text pairs, so the store reads the KNN vector and the
+  BM25 text off one object instead of trusting two positional arguments to correspond.
+- **The dimension invariant is structural, checked once.** The store is constructed with the
+  embedder's `dimension()` (the single source of truth for vector width); `add` validates each
+  `Embedding`'s vector length against it at that one point and fails loudly on mismatch, rather than
+  letting a wrong-width vector reach Lucene as a runtime surprise or a silent wrong-distance bug. The
+  embedder that produces the vectors and the index that stores them therefore agree by construction,
+  not by prose. (The store needs the embedder's *width*, not the embedder itself, so this does not
+  couple the store's warm to the embedder's: a load-only index still loads off disk before the
+  embedder is `Ready`, per D3.)
 - **Hybrid fusion, decided for V0: reciprocal-rank fusion (RRF).** `LuceneEmbeddingStore` runs the
   KNN vector query and the BM25 text query separately and fuses their two ranked lists by RRF
   (`score = Σ 1/(k + rank)`, fixed `k`), rather than normalizing and linearly combining raw KNN
@@ -137,14 +156,23 @@ so it is handle-agnostic.
   same harness), so the embedder loads once and each index warms independently.
 - **Cross-warm ordering, stated so the implementer does not invent it.** An index warm that must
   *build* an index by embedding documents (slice 10's catalog corpus) depends on the embedder being
-  `Ready`; its loader callable awaits the shared embedder warm's `Ready(Embedder)` **on its own
-  background thread** before embedding, so the dependency never reaches the dev thread. An index warm
-  that only *loads* a prebuilt index (slice 9's bundled docs index) needs the embedder only at query
-  time, so it does not block on the embedder warm at build time. Slice 8 exposes the shared embedder
-  warm's `WarmState<Embedder>` (the readable handle + an await-Ready affordance) for the consumers to
-  sequence against; it does not own which consumer awaits. `graphitron:dev` reaches its watch loop
-  without waiting on any warm, and a RAG failure sets `Failed` and leaves dev running structured-only,
-  it never takes down the dev loop.
+  `Ready`; its loader callable awaits the shared embedder warm **on its own background thread** before
+  embedding, so the dependency never reaches the dev thread. An index warm that only *loads* a
+  prebuilt index (slice 9's bundled docs index) needs the embedder only at query time, so it does not
+  block on the embedder warm at build time. Slice 8 exposes the shared embedder warm's
+  `WarmState<Embedder>` (the readable handle + an await affordance) for the consumers to sequence
+  against; it does not own which consumer awaits.
+- **The await affordance returns the terminal `WarmState<Embedder>`, it does not only block until
+  `Ready`.** This is the one genuinely concurrent decision in the slice, so its contract is pinned
+  here rather than left to the slice-10 author: `AsyncWarm<T>` exposes a blocking await that returns
+  the warm's terminal value, either `Ready(Embedder)` or `Failed(cause)` (never `Warming`). A
+  dependent build-warm switches exhaustively over that result and, on `Failed(cause)`, maps it into
+  *its own* `Failed(cause)` rather than blocking forever or dereferencing a missing handle, so an
+  embedder-load failure propagates into a clean per-index `Failed` whose degradation message the helper
+  still produces. The await has **no timeout** (it runs on a daemon thread that never touches the dev
+  loop); the only terminal states are the two the sealed type already permits. `graphitron:dev` reaches
+  its watch loop without waiting on any warm, and a RAG failure sets `Failed` and leaves dev running
+  structured-only, it never takes down the dev loop.
 
 ## Dependency quarantine, the payoff this slice exercises
 
@@ -156,20 +184,26 @@ Runtime, Lucene core) are added to `graphitron-mcp/pom.xml` only; the plugin's c
 untouched. Licensing is permissive throughout (Lucene / langchain4j Apache 2.0; ONNX Runtime / bge
 MIT), safe to redistribute. Surefire on this module gains `--enable-native-access=ALL-UNNAMED` in its
 `argLine` so the slow ONNX-load test runs without the JDK native-access warning escalating (mirroring
-the tree-sitter note R361 flagged for the `lsp` edge); the module has no surefire config today.
+the tree-sitter note R361 flagged for the `lsp` edge); the module has no surefire config today. The
+"CI runs everything" claim below is pinned by *this same* added config: the new surefire block sets no
+`excludedGroups`, so nothing inherited turns off the `slow` group; the `-DexcludedGroups=slow` opt-out
+is a command-line affordance for a developer's inner loop, never a default.
 
 ## Implementation
 
 All new code under `graphitron-mcp/src/main/java/no/sikt/graphitron/mcp/rag/`:
 
-- **`Embedder.java` (new).** The two-method seam of D1 plus `dimension()`.
+- **`Embedder.java` (new).** The two-method seam of D1 plus `dimension()`, and the `Query` /
+  `Embedding` records it is the sole producer of (each bundling BM25 text + KNN vector, graphitron's
+  own types, no langchain4j surface).
 - **`BgeEmbedder.java` (new).** The bge-backed implementation wrapping the langchain4j ONNX
   embedding model; owns the query-instruction prefix applied in `embedQuery`. Constructed by the
   async-warm loader so its model load happens off the dev thread.
-- **`EmbeddingStore.java` (new).** The write / hybrid-search / load-from-path seam of D2, payloads
-  + stable IDs only, no backend detail in the signature.
+- **`EmbeddingStore.java` (new).** The write / hybrid-search / load-from-path seam of D2, consuming
+  `Embedding` / `Query` and returning payloads + stable IDs only, no backend detail in the signature.
 - **`LuceneEmbeddingStore.java` (new).** The Lucene HNSW implementation (BM25 + KNN hybrid in one
-  index, fused by RRF per D2), the sole shipping backend.
+  index, fused by RRF per D2), the sole shipping backend. Constructed with the embedder's
+  `dimension()` and validates each added `Embedding`'s vector width against it.
 - **`WarmState.java` (new).** The generic sealed lifecycle of D3 (`WarmState<T>` over
   `Warming` / `Ready` / `Failed`) and the handle-agnostic degradation-payload helper.
 - **`AsyncWarm.java` (new).** The generic background-daemon-thread harness (`AsyncWarm<T>`) that
@@ -191,18 +225,28 @@ not either/or:**
 - **Seam tier (primary), fast, no ONNX.** Against a fake `Embedder` and the real
   `LuceneEmbeddingStore` (Lucene HNSW over a handful of vectors is cheap):
   - **Asymmetry routing:** a fake `Embedder` records its calls; assert the bge query-instruction
-    prefix is applied on the `embedQuery` path only and never on `embedDocuments`.
-  - **Store round-trip:** write a few payloads with planted vectors, then `search` returns the
+    prefix is applied on the `embedQuery` path only and never on `embedDocuments`, and that the
+    returned `Query` / `Embedding` records carry the source text alongside the vector.
+  - **Store round-trip:** add a few `Embedding` records with planted vectors, then `search` returns the
     nearest by KNN and the BM25 hybrid surfaces a lexical match, each carrying its stable ID + payload.
+  - **Dimension guard:** adding an `Embedding` whose vector width disagrees with the store's
+    configured `dimension()` fails loudly at `add`, not later inside Lucene.
   - **WarmState transitions:** `AsyncWarm<T>` drives `Warming → Ready(handle)` on a succeeding loader
     and `Warming → Failed(cause)` on a throwing loader, covering both instantiations (a
     `WarmState<Embedder>` and a `WarmState<EmbeddingStore>`) so the type parameter is exercised, not
     just asserted; a read during warm sees `Warming`; the degradation helper returns the standard
     payload for both non-`Ready` states. Exhaustive switch over the sealed permits with no `default`,
     so a new arm forces a compile-time choice.
+  - **Await propagation:** the await affordance on a loader that throws returns the terminal
+    `Failed(cause)` (never `Warming`), and a dependent warm that awaits a `Failed` upstream resolves to
+    its own `Failed(cause)` rather than hanging, exercising the cross-warm failure path of D3.
 - **Infrastructure tier (real ONNX), runs in CI.** One test that actually loads `bge-small-en-v1.5-q`
   and embeds a string, asserting the dimension is 384 and that two related sentences score closer than
-  two unrelated ones. It **runs in CI's default `mvn verify -Plocal-db`** as the native-binding
+  two unrelated ones. The semantic half is the only check that the native binding produces *meaningful*
+  output, so it is written to fail for the right reason and not flake on a model-version bump or
+  cross-arch ONNX numerics: pick sentence pairs whose related/unrelated separation is large for any
+  sane embedding (not a near-tie) and assert a strict inequality with a comfortable margin, not a
+  hand-tuned epsilon. It **runs in CI's default `mvn verify -Plocal-db`** as the native-binding
   backstop, the analogue of the sakila-example compile that also runs on every CI build; this is the
   cross-check that the real native binding + `--enable-native-access=ALL-UNNAMED` works, so it has to
   execute somewhere, and CI is that somewhere. The model ships bundled in the langchain4j bge jar (no
