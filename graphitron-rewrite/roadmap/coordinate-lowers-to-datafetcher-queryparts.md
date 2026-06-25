@@ -841,6 +841,45 @@ So enum handling is the enum's authored value set (`EnumType` / `EnumValue`) plu
 one-enum-one-type as the checks and the conversion lifted to a synthesis-time rendering. There is no
 `EnumValueOf` fact and no `@enum` directive.
 
+### Discrimination
+
+An interface or union field returns a value whose **concrete type** must be recovered before any field is
+read; that recovery is graphql-java's `TypeResolver`. It is the read-side **dual of the accessor**: the
+accessor reads a *value* off a concrete type, discrimination recovers the *type* of a polymorphic one. It does
+**not** break the monomorphic source-object axiom. The type is recovered first, then the concrete type's
+fields read off the concrete type's own record, and each concrete type is monomorphic; the interface/union
+itself reads no fields. So there is no conditional cast, only a type-recovery read.
+
+The fact is a discriminator whose **signal** is one of two things, and which one applies is forced, not
+chosen:
+
+- **`RecordClass`**: the runtime jOOQ record's Java class *is* the type. Available when the concrete record
+  survives with its type intact (a `@service`-returned `TableRecord`, a record-backed parent's hub record)
+  **and** participants map to **distinct tables**, hence distinct record classes. No discriminator column, no
+  projection.
+- **`DiscriminatorColumn(column, value → type)`**: a column value names the type. Forced in exactly the two
+  cases the record class cannot serve:
+  - **same-table participants** (`@discriminate(on:)` + `@discriminator(value:)`): all share one record class,
+    so the class cannot tell them apart, the discriminator column's value does.
+  - **erased class** (a multitable read that `UNION ALL`s participant tables into one projection): the union
+    throws the Java type away, so a **synthesized `__typename` literal** is projected per branch purely to
+    recover it. The synthesized discriminator exists *only* to undo that erasure; where the class survives,
+    none is needed.
+
+**Discriminability is the integrity check.** Every participant must be distinguishable by *some* signal:
+distinct tables resolve by class, same-table participants need a discriminator, and **same-table participants
+with no discriminator are a build error**, not a silent misdispatch (a returned record, or a `UNION` branch,
+would match two arms and tag rows with both types). This is one invariant shared by every polymorphic path,
+the read side that recovers the type and the build side that produces the rows.
+
+So discrimination is a read-side type-recovery fact with a two-arm signal (`RecordClass` |
+`DiscriminatorColumn`), the arm forced by whether the concrete type survives, collides, or is erased, gated by
+the discriminability invariant. It is distinct from the deferred *producer*-polymorphism (many producers of
+one type disagreeing on shape); here one type's concrete subtype varies per row, resolved before any read. The
+per-participant **filter** surface a polymorphic *query* carries (a WHERE lowered against each participant's
+own table) is a separate axis, the condition / join-path model applied once per participant, not part of type
+recovery.
+
 ## We are data modeling: the relational discipline, not a database engine
 
 Everything above is data modeling, and it has quietly adopted the whole vocabulary of a relational
@@ -1243,6 +1282,7 @@ Owned by an existing fact:
 | `@tableMethod` | `tableExpr` `MethodCall` (the projected node's FROM expression) |
 | `@routine` | `tableExpr` `RoutineCall` as a `@reference` join-target node (the join path) |
 | `@sourceRow` | the source-side key provenance `Lift(lifterRef)` (the join path) |
+| `@discriminate` / `@discriminator` | the discrimination fact (type recovery, `RecordClass` \| `DiscriminatorColumn`) |
 | `@field` | the **locator** (output) / column binding (input) / `EnumValue.runtimeValue` |
 | `@externalField` | the locator's typed-jOOQ-field arm |
 | `@reference` | the `reference` fact (path, `referencedTable`, `joinPath`) |
@@ -1272,10 +1312,13 @@ The gaps, in resolution order:
    The `@reference` path is the linearized join graph; verified rules
    (source-gives-first, terminus-equals-target, `table:` = derived-`key:`, root-iff-routine) hold. See *The
    table expression* and *The join path*. Deferred follow-on: the `@oneOf` SDL surface.
-3. **Polymorphic type resolution** (`@discriminate` / `@discriminator`). **Open.** The source-object fact is
-   asserted monomorphic (one shape per type, uniform-producer axiom), but a discriminated interface / union is
-   one producer whose concrete type is chosen by a column value, so the cast target becomes conditional.
-   Distinct from the deferred producer-polymorphism.
+3. **Discrimination** (`@discriminate` / `@discriminator`). **Resolved (in model).** Not a conditional cast,
+   and no break of the monomorphic axiom: an interface/union recovers its concrete type *first* (the read-side
+   dual of the accessor), then reads monomorphically per concrete type. The discriminator's signal is
+   `RecordClass` (type survives, distinct tables) or `DiscriminatorColumn(value → type)` (same-table
+   participants, or a `UNION ALL`-erased read whose synthesized `__typename` only undoes the erasure), gated by
+   the discriminability invariant (same-table-without-discriminator is a build error). Distinct from the
+   deferred producer-polymorphism. See *Discrimination*.
 4. **Error mapping** (`@error`). **Open.** Exception-to-GraphQL-error handler mapping (DATABASE / GENERIC /
    VALIDATION) on payload types; a cross-cutting operation-side behavior with no fact. The read side has an
    `Outcome.ErrorList` locator arm, but the mapping itself is unmodeled.
