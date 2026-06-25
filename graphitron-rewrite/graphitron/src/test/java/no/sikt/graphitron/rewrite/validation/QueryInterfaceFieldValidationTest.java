@@ -47,7 +47,7 @@ class QueryInterfaceFieldValidationTest {
         var iface = new GraphitronType.InterfaceType("Searchable", null, participants);
         var field = new QueryInterfaceField("Query", "search", null,
             new ReturnTypeRef.PolymorphicReturnType("Searchable", new FieldWrapper.List(false, false)),
-            participants);
+            participants, List.of());
         var sch = new GraphitronSchema(
             java.util.Map.of(
                 "Searchable", iface,
@@ -64,7 +64,7 @@ class QueryInterfaceFieldValidationTest {
         var iface = new GraphitronType.InterfaceType("Searchable", null, participants);
         var field = new QueryInterfaceField("Query", "search", null,
             new ReturnTypeRef.PolymorphicReturnType("Searchable", new FieldWrapper.List(false, false)),
-            participants);
+            participants, List.of());
         var sch = new GraphitronSchema(
             java.util.Map.of(
                 "Searchable", iface,
@@ -84,7 +84,7 @@ class QueryInterfaceFieldValidationTest {
         var iface = new GraphitronType.InterfaceType("Searchable", null, participants);
         var field = new QueryInterfaceField("Query", "search", null,
             new ReturnTypeRef.PolymorphicReturnType("Searchable", new FieldWrapper.List(false, false)),
-            participants);
+            participants, List.of());
         var sch = new GraphitronSchema(
             java.util.Map.of(
                 "Searchable", iface,
@@ -105,7 +105,7 @@ class QueryInterfaceFieldValidationTest {
         var iface = new GraphitronType.InterfaceType("Searchable", null, participants);
         var field = new QueryInterfaceField("Query", "search", null,
             new ReturnTypeRef.PolymorphicReturnType("Searchable", new FieldWrapper.List(false, false)),
-            participants);
+            participants, List.of());
         var sch = new GraphitronSchema(
             java.util.Map.of(
                 "Searchable", iface,
@@ -127,7 +127,7 @@ class QueryInterfaceFieldValidationTest {
         var iface = new GraphitronType.InterfaceType("Searchable", null, participants);
         var field = new QueryInterfaceField("Query", "search", null,
             new ReturnTypeRef.PolymorphicReturnType("Searchable", new FieldWrapper.List(false, false)),
-            participants);
+            participants, List.of());
         var sch = new GraphitronSchema(
             java.util.Map.of(
                 "Searchable", iface,
@@ -146,7 +146,7 @@ class QueryInterfaceFieldValidationTest {
         var iface = new GraphitronType.InterfaceType("Searchable", null, participants);
         var field = new QueryInterfaceField("Query", "search", null,
             new ReturnTypeRef.PolymorphicReturnType("Searchable", new FieldWrapper.List(false, false)),
-            participants);
+            participants, List.of());
         var sch = new GraphitronSchema(
             java.util.Map.of(
                 "Searchable", iface,

@@ -46,6 +46,7 @@ import no.sikt.graphitron.rewrite.model.Rejection;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
 import no.sikt.graphitron.rewrite.model.ServiceMethodCall;
 import no.sikt.graphitron.rewrite.model.TableRef;
+import no.sikt.graphitron.rewrite.model.ParticipantFilters;
 import no.sikt.graphitron.rewrite.model.WhereFilter;
 
 import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.*;
@@ -55,6 +56,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -450,26 +452,28 @@ public class TypeFetcherGenerator {
                 // Stub variants — see STUBBED_VARIANTS
                 case QueryField.QueryTableInterfaceField f    -> builder.addMethod(buildQueryTableInterfaceFieldFetcher(ctx, f, outputPackage));
                 case QueryField.QueryInterfaceField f -> {
+                    var participantFilters = participantFiltersByTypename(f.participantFilters());
                     if (f.returnType().wrapper() instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.Connection conn) {
                         MultiTablePolymorphicEmitter
-                            .emitConnectionMethods(ctx, f.name(), f.participants(), Map.of(),
+                            .emitConnectionMethods(ctx, f.name(), f.participants(), participantFilters, Map.of(),
                                 conn.defaultPageSize(), null, null, outputPackage)
                             .forEach(builder::addMethod);
                     } else {
                         MultiTablePolymorphicEmitter
-                            .emitMethods(ctx, f.name(), f.participants(), f.returnType().wrapper().isList(), outputPackage)
+                            .emitMethods(ctx, f.name(), f.participants(), participantFilters, f.returnType().wrapper().isList(), outputPackage)
                             .forEach(builder::addMethod);
                     }
                 }
                 case QueryField.QueryUnionField f -> {
+                    var participantFilters = participantFiltersByTypename(f.participantFilters());
                     if (f.returnType().wrapper() instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.Connection conn) {
                         MultiTablePolymorphicEmitter
-                            .emitConnectionMethods(ctx, f.name(), f.participants(), Map.of(),
+                            .emitConnectionMethods(ctx, f.name(), f.participants(), participantFilters, Map.of(),
                                 conn.defaultPageSize(), null, null, outputPackage)
                             .forEach(builder::addMethod);
                     } else {
                         MultiTablePolymorphicEmitter
-                            .emitMethods(ctx, f.name(), f.participants(), f.returnType().wrapper().isList(), outputPackage)
+                            .emitMethods(ctx, f.name(), f.participants(), participantFilters, f.returnType().wrapper().isList(), outputPackage)
                             .forEach(builder::addMethod);
                     }
                 }
@@ -540,7 +544,7 @@ public class TypeFetcherGenerator {
                 case ChildField.InterfaceField f -> {
                     if (f.returnType().wrapper() instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.Connection conn) {
                         MultiTablePolymorphicEmitter
-                            .emitConnectionMethods(ctx, f.name(), f.participants(), f.participantJoinPaths(),
+                            .emitConnectionMethods(ctx, f.name(), f.participants(), Map.of(), f.participantJoinPaths(),
                                 conn.defaultPageSize(), f.parentSourceKey(), f.parentResultType(), outputPackage)
                             .forEach(builder::addMethod);
                     } else {
@@ -554,7 +558,7 @@ public class TypeFetcherGenerator {
                 case ChildField.UnionField f -> {
                     if (f.returnType().wrapper() instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.Connection conn) {
                         MultiTablePolymorphicEmitter
-                            .emitConnectionMethods(ctx, f.name(), f.participants(), f.participantJoinPaths(),
+                            .emitConnectionMethods(ctx, f.name(), f.participants(), Map.of(), f.participantJoinPaths(),
                                 conn.defaultPageSize(), f.parentSourceKey(), f.parentResultType(), outputPackage)
                             .forEach(builder::addMethod);
                     } else {
@@ -1108,6 +1112,20 @@ public class TypeFetcherGenerator {
             .addStatement("condition = condition.and($T.field($T.name($S)).in($L))",
                 DSL, DSL, discriminatorColumn, inArgs)
             .build();
+    }
+
+    /**
+     * Projects a multi-table polymorphic field's per-participant filter carriers into the
+     * typename-keyed map the {@link MultiTablePolymorphicEmitter} branch loops consume, mirroring the
+     * typename-keyed {@code participantJoinPaths} the same loops already take (R363).
+     */
+    private static Map<String, List<WhereFilter>> participantFiltersByTypename(
+            List<ParticipantFilters> participantFilters) {
+        var byTypename = new LinkedHashMap<String, List<WhereFilter>>();
+        for (var pf : participantFilters) {
+            byTypename.put(pf.participant().typeName(), pf.filters());
+        }
+        return byTypename;
     }
 
     private static CodeBlock buildConditionCall(QueryField.QueryTableField qtf, String srcAlias, String outputPackage) {

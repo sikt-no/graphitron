@@ -14,8 +14,8 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 | ID | Item | Status | Updated | Plan |
 |---|---|---|---|---|
-| `R363` | Lower @field filter inputs and @condition onto multitable-interface queries | Ready | 2026-06-25 <sub>created 2026-06-24</sub> | [plan](multitable-interface-query-filter-lowering.md) |
 | `R19` | Rebase and squash rewrite branch onto main | Ready |  | [plan](history-squash.md) |
+| `R363` | Lower @field filter inputs and @condition onto multitable-interface queries | In Review | 2026-06-25 <sub>created 2026-06-24</sub> | [plan](multitable-interface-query-filter-lowering.md) |
 | `R222` | Dimensional model pivot: slots over cross-product permits | Spec | 2026-06-18 <sub>created 2026-05-21</sub> | [plan](dimensional-model-pivot.md) |
 | `R333` | The Graphitron data model | Spec | 2026-06-25 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
 | `R256` | Absorb the service walker substrate: typed per-arm errors + multi-arg ctors | Ready | 2026-05-30 <sub>created 2026-05-29</sub> | [plan](service-walker-substrate-absorption.md) |
@@ -166,7 +166,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### interface-union
 
-- `R363` [**Lower @field filter inputs and @condition onto multitable-interface queries**](multitable-interface-query-filter-lowering.md) — Ready, bug
+- `R363` [**Lower @field filter inputs and @condition onto multitable-interface queries**](multitable-interface-query-filter-lowering.md) — In Review, bug
 - `R382` [**Lower orderBy onto multitable-interface/union queries**](multitable-interface-query-orderby-lowering.md) — Backlog, bug
 - `R370` [**Record-backed parent with a nested backing class emits a non-compiling $-qualified cast**](nested-backing-class-accessor-cast.md) — Backlog, bug
 

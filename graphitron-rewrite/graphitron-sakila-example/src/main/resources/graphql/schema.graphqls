@@ -390,6 +390,17 @@ type Query {
     # B4a union-variant fixture, mirrors searchConnection.
     documentsConnection: [Document!]! @asConnection(defaultFirstValue: 5)
 
+    # R363 fixture: a @field-mapped filter input on a root multitable union. AddressOccupant =
+    # Customer | Staff; both participant tables carry a `first_name` column, so the filter lowers
+    # per participant and the emitter ANDs `first_name IN (...)` into each UNION branch's WHERE.
+    # The list form exercises buildStage1Block (the non-connection branch loop).
+    occupantsByName(firstName: [String!] @field(name: "first_name")): [AddressOccupant!]!
+
+    # R363 fixture, connection form: exercises buildStage1ConnectionBlock, which previously emitted
+    # no per-branch WHERE and gains one here. Same per-participant filter lowering as the list form.
+    occupantsByNameConnection(firstName: [String!] @field(name: "first_name")): [AddressOccupant!]!
+        @asConnection(defaultFirstValue: 5)
+
     # R36 item 1 fixture: composite-PK participants in connection-mode. paged_a + paged_b have
     # composite (Integer, Integer) PKs; the polymorphic emitter projects DSL.jsonbArray(k1, k2)
     # as the synthetic __sort__ column and types it as JSONB so PostgreSQL's lexicographic

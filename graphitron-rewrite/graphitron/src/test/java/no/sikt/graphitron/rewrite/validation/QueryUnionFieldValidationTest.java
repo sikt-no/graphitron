@@ -46,7 +46,7 @@ class QueryUnionFieldValidationTest {
         var union = new GraphitronType.UnionType("Document", null, participants);
         var field = new QueryUnionField("Query", "search", null,
             new ReturnTypeRef.PolymorphicReturnType("Document", new FieldWrapper.List(false, false)),
-            participants);
+            participants, List.of());
         var sch = new GraphitronSchema(
             java.util.Map.of(
                 "Document", union,
@@ -63,7 +63,7 @@ class QueryUnionFieldValidationTest {
         var union = new GraphitronType.UnionType("Document", null, participants);
         var field = new QueryUnionField("Query", "search", null,
             new ReturnTypeRef.PolymorphicReturnType("Document", new FieldWrapper.List(false, false)),
-            participants);
+            participants, List.of());
         var sch = new GraphitronSchema(
             java.util.Map.of(
                 "Document", union,
@@ -84,7 +84,7 @@ class QueryUnionFieldValidationTest {
         var union = new GraphitronType.UnionType("Document", null, participants);
         var field = new QueryUnionField("Query", "search", null,
             new ReturnTypeRef.PolymorphicReturnType("Document", new FieldWrapper.List(false, false)),
-            participants);
+            participants, List.of());
         var sch = new GraphitronSchema(
             java.util.Map.of(
                 "Document", union,
@@ -102,7 +102,7 @@ class QueryUnionFieldValidationTest {
         var union = new GraphitronType.UnionType("Document", null, participants);
         var field = new QueryUnionField("Query", "search", null,
             new ReturnTypeRef.PolymorphicReturnType("Document", new FieldWrapper.List(false, false)),
-            participants);
+            participants, List.of());
         var sch = new GraphitronSchema(
             java.util.Map.of(
                 "Document", union,

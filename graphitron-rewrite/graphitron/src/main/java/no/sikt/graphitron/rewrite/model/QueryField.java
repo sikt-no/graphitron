@@ -214,10 +214,12 @@ public sealed interface QueryField extends RootField
         String name,
         SourceLocation location,
         ReturnTypeRef.PolymorphicReturnType returnType,
-        List<ParticipantRef> participants
+        List<ParticipantRef> participants,
+        List<ParticipantFilters> participantFilters
     ) implements QueryField {
         public QueryInterfaceField {
             participants = List.copyOf(participants);
+            participantFilters = List.copyOf(participantFilters);
         }
         @Override public DomainReturnType domainReturnType() {
             return new DomainReturnType.Plain(OutputField.OBJECT_CLASS);
@@ -234,10 +236,12 @@ public sealed interface QueryField extends RootField
         String name,
         SourceLocation location,
         ReturnTypeRef.PolymorphicReturnType returnType,
-        List<ParticipantRef> participants
+        List<ParticipantRef> participants,
+        List<ParticipantFilters> participantFilters
     ) implements QueryField {
         public QueryUnionField {
             participants = List.copyOf(participants);
+            participantFilters = List.copyOf(participantFilters);
         }
         @Override public DomainReturnType domainReturnType() {
             return new DomainReturnType.Plain(OutputField.OBJECT_CLASS);
