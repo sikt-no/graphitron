@@ -54,9 +54,9 @@ public final class DeclarationDefinitions {
 
     /**
      * Projects the shared {@link DeclTarget} to the editor jump for its declaration.
-     * Public so the LSP tier can assert, per variant, that this jump is present
-     * exactly when the declaration-name hover overlay is (the R371 parity property),
-     * without a tree-sitter round-trip.
+     * Public so {@code DeclarationHoverOverlayParityTest} can assert, per variant,
+     * that this jump is present exactly when the declaration-name hover overlay is
+     * (the R371 parity property), without a tree-sitter round-trip.
      */
     public static Optional<Location> locate(
         DeclTarget target, CompletionData catalog, SourceWalker.Index sourceIndex

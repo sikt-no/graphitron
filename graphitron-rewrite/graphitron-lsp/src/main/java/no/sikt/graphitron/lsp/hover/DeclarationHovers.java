@@ -125,9 +125,9 @@ public final class DeclarationHovers {
      * precedence, the member arms read the indexed {@code Decl} directly (the catalog
      * carries no description to layer under a POJO accessor or record component).
      *
-     * <p>Public so the LSP tier can assert, per variant, that this overlay is
-     * non-empty exactly when goto-definition jumps (the R371 parity property),
-     * without a tree-sitter round-trip.
+     * <p>Public so {@code DeclarationHoverOverlayParityTest} can assert, per variant,
+     * that this overlay is non-empty exactly when goto-definition jumps (the R371
+     * parity property), without a tree-sitter round-trip.
      */
     public static String overlay(DeclTarget target, SourceWalker.Index sourceIndex) {
         return switch (target) {

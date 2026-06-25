@@ -143,6 +143,19 @@ hover shares goto's `DeclTarget`, so it agrees with goto by construction. The
 two hover arms answering "`@reference` field column" from different authorities
 is pre-existing and out of scope (candidate follow-up).
 
+**Surviving third copy of the backing switch (scope honesty).** Sharing
+`DeclTarget` collapses the predicate from three copies to two: goto and the
+declaration-name hover now share it, but `Hovers.columnHover`
+(`Hovers.java:314-323`, the directive-value `@field(name:)` arm) still runs its
+*own* `TypeBackingShape` switch, and it diverges on exactly the cases F1/F3
+fixed here: it maps `JooqRecordBacking.Standalone -> empty` (no overlay) and
+`RecordBacking` / `PojoBacking -> slotHover` (the member's display type, not the
+source-index Javadoc). So "the two arms cannot point at different declarations"
+(Design §1) is a claim about goto and the *declaration-name* arm, not a global
+no-drift invariant: the directive-value arm is a third consumer of the same
+`built.typeBacking(name)` predicate and still drifts. Closing that copy too is
+the candidate follow-up below, not this item.
+
 **D5 - test on the shared resolver + overlay, off the tree-sitter hover tier.**
 Both falsifiable pieces are tree-sitter-free: the `DeclTarget` resolver (a pure
 function over the `Built` projection) and the overlay (`Descriptions` /
@@ -157,7 +170,11 @@ a hand-built `LspSchemaSnapshot.Built` (the convenience constructors at
 Lift `DeclTarget` resolution into a projection on `LspSchemaSnapshot.Built`,
 built once in `CatalogBuilder` and consumed by goto, the directive-value hover
 arm, *and* this declaration-name arm, collapsing all three request-time joins to
-one build-side answer. Larger blast radius than this bug fix; the unified
+one build-side answer. This is also what retires the surviving third copy of the
+backing switch in `Hovers.columnHover` (noted under D4): the directive-value arm
+would consume the shared `DeclTarget` instead of running its own
+`TypeBackingShape` switch, so its `Standalone` / record / POJO divergence
+disappears with the same move. Larger blast radius than this bug fix; the unified
 `@reference` column authority (D4) rides on it. Filed-as-candidate so R371 stays
 a localized LSP-side refactor.
 
