@@ -2,12 +2,16 @@ package no.sikt.graphitron.lsp.hover;
 
 import io.github.treesitter.jtreesitter.Node;
 import io.github.treesitter.jtreesitter.Point;
+import no.sikt.graphitron.lsp.Descriptions;
 import no.sikt.graphitron.lsp.inlay.LspClassificationLabels;
+import no.sikt.graphitron.lsp.parsing.DeclTarget;
 import no.sikt.graphitron.lsp.parsing.Positions;
 import no.sikt.graphitron.lsp.parsing.SdlDeclaration;
 import no.sikt.graphitron.lsp.state.WorkspaceFile;
+import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.rewrite.catalog.FieldClassification;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
+import no.sikt.graphitron.rewrite.catalog.SourceWalker;
 import no.sikt.graphitron.rewrite.catalog.TypeClassification;
 import org.eclipse.lsp4j.Hover;
 import org.eclipse.lsp4j.MarkupContent;
@@ -25,25 +29,58 @@ import java.util.Optional;
  * <p>The exhaustive switch over {@link DeclarationHover} permits enforces that any new
  * SDL declaration coordinate added to the sealed family fails to compile until its
  * hover content lands here in the same commit.
+ *
+ * <p>R371 — beneath the classification block, the hover overlays the jOOQ class /
+ * column / member Javadoc the coordinate binds to, read at request time from the
+ * LSP-owned {@link SourceWalker.Index}. The binding is resolved through the shared
+ * {@link DeclTarget} that goto-definition ({@code DeclarationDefinitions}) also
+ * projects, so the two arms agree on which declaration the coordinate names: goto
+ * jumps to its {@code location()}, hover overlays its {@code javadoc()}. The overlay
+ * switch over {@code DeclTarget} is exhaustive, mirroring goto's, so a new backing
+ * permit breaks both at compile time.
  */
 public final class DeclarationHovers {
 
     private DeclarationHovers() {}
 
     /**
-     * Computes a classification hover for {@code pos}, or {@link Optional#empty()} when
-     * the cursor is not on a recognised SDL declaration name token, or the snapshot is
-     * unavailable, or the projection carries no entry for the coordinate.
+     * Classification-only entry: no source-index Javadoc overlay. Back-compat for
+     * callers that carry no catalog / source index; the production path uses the
+     * five-arg overload so the R371 declaration-name overlay lights up.
      */
     public static Optional<Hover> compute(
         WorkspaceFile file, LspSchemaSnapshot snapshot, Point pos
     ) {
+        return compute(file, null, SourceWalker.Index.EMPTY, snapshot, pos);
+    }
+
+    /**
+     * Computes the declaration-name hover for {@code pos}: the classification
+     * projection (R160), and, when the catalog / source index resolve the
+     * coordinate to a jOOQ class / column / member, that declaration's Javadoc
+     * overlaid beneath it (R371). Returns {@link Optional#empty()} when the cursor
+     * is not on a recognised SDL declaration name token, the snapshot is
+     * unavailable, or neither a classification nor an overlay is available.
+     */
+    public static Optional<Hover> compute(
+        WorkspaceFile file, CompletionData catalog, SourceWalker.Index sourceIndex,
+        LspSchemaSnapshot snapshot, Point pos
+    ) {
         if (!(snapshot instanceof LspSchemaSnapshot.Built built)) return Optional.empty();
         if (file == null || file.tree() == null) return Optional.empty();
-        Node root = file.tree().getRootNode();
-        var declaration = findContaining(root, pos, file.source());
-        if (declaration.isEmpty()) return Optional.empty();
-        return render(file, built, declaration.get());
+        var declOpt = SdlDeclaration.findContaining(file.tree().getRootNode(), pos, file.source());
+        if (declOpt.isEmpty()) return Optional.empty();
+        var declaration = declOpt.get();
+        var hoverDecl = toDeclarationHover(declaration);
+        String classification = classificationMarkdown(built, hoverDecl);
+        // The overlay shares goto-definition's binding resolution. A null catalog
+        // (the classification-only entry) skips it; an empty source index yields no
+        // overlay, leaving the classification block exactly as R160 rendered it.
+        String overlay = catalog == null
+            ? ""
+            : overlay(DeclTarget.resolve(declaration, built, catalog, file.source()), sourceIndex);
+        if (classification == null && overlay.isEmpty()) return Optional.empty();
+        return Optional.of(hover(file, hoverDecl.nameNode(), compose(classification, overlay)));
     }
 
     /**
@@ -54,29 +91,70 @@ public final class DeclarationHovers {
      * adapts the result.
      */
     public static Optional<DeclarationHover> findContaining(Node root, Point pos, byte[] source) {
-        return SdlDeclaration.findContaining(root, pos, source).map(decl -> switch (decl) {
+        return SdlDeclaration.findContaining(root, pos, source).map(DeclarationHovers::toDeclarationHover);
+    }
+
+    private static DeclarationHover toDeclarationHover(SdlDeclaration declaration) {
+        return switch (declaration) {
             case SdlDeclaration.TypeName t ->
                 new DeclarationHover.TypeDeclarationHover(t.nameNode(), t.typeName());
             case SdlDeclaration.FieldName f ->
                 new DeclarationHover.FieldDeclarationHover(f.nameNode(), f.parentTypeName(), f.fieldName());
-        });
+        };
     }
 
-    private static Optional<Hover> render(
-        WorkspaceFile file, LspSchemaSnapshot.Built built, DeclarationHover declaration
-    ) {
+    /** The R160 classification block, or {@code null} when no projection entry exists. */
+    private static String classificationMarkdown(LspSchemaSnapshot.Built built, DeclarationHover declaration) {
         return switch (declaration) {
             case DeclarationHover.FieldDeclarationHover f -> {
                 var classification = built.fieldClassificationsByCoord().get(f.coordinate());
-                if (classification == null) yield Optional.empty();
-                yield Optional.of(hover(file, f.nameNode(), renderFieldMarkdown(f, classification)));
+                yield classification == null ? null : renderFieldMarkdown(f, classification);
             }
             case DeclarationHover.TypeDeclarationHover t -> {
                 var classification = built.typeClassificationsByName().get(t.typeName());
-                if (classification == null) yield Optional.empty();
-                yield Optional.of(hover(file, t.nameNode(), renderTypeMarkdown(t, classification)));
+                yield classification == null ? null : renderTypeMarkdown(t, classification);
             }
         };
+    }
+
+    /**
+     * The R371 Javadoc overlay for the resolved {@link DeclTarget}, or empty when the
+     * coordinate binds to no Java declaration or the source index does not hold it.
+     * Switches over the same target goto-definition projects to a {@code Location};
+     * the table / column arms honour {@link Descriptions}'s catalog-description
+     * precedence, the member arms read the indexed {@code Decl} directly (the catalog
+     * carries no description to layer under a POJO accessor or record component).
+     *
+     * <p>Public so the LSP tier can assert, per variant, that this overlay is
+     * non-empty exactly when goto-definition jumps (the R371 parity property),
+     * without a tree-sitter round-trip.
+     */
+    public static String overlay(DeclTarget target, SourceWalker.Index sourceIndex) {
+        return switch (target) {
+            case DeclTarget.CatalogTable t -> Descriptions.ofTable(t.table(), sourceIndex);
+            case DeclTarget.CatalogColumn c -> Descriptions.ofColumn(c.table(), c.column(), sourceIndex);
+            case DeclTarget.SourceClass s -> Descriptions.classJavadoc(s.fqClassName(), sourceIndex);
+            case DeclTarget.SourceMethod m -> memberJavadoc(
+                sourceIndex.methods().get(new SourceWalker.MethodKey(m.fqClassName(), m.accessorMethodName(), 0)));
+            case DeclTarget.SourceField f -> memberJavadoc(
+                sourceIndex.fields().get(new SourceWalker.FieldKey(f.fqClassName(), f.memberName())));
+            case DeclTarget.None ignored -> "";
+        };
+    }
+
+    private static String memberJavadoc(SourceWalker.Decl decl) {
+        return decl != null ? decl.javadoc() : "";
+    }
+
+    /** Joins the (nullable) classification block and the (possibly empty) overlay with a rule. */
+    private static String compose(String classification, String overlay) {
+        var sb = new StringBuilder();
+        if (classification != null) sb.append(classification);
+        if (!overlay.isEmpty()) {
+            if (sb.length() > 0) sb.append("\n\n---\n\n");
+            sb.append(overlay);
+        }
+        return sb.toString();
     }
 
     private static String renderFieldMarkdown(

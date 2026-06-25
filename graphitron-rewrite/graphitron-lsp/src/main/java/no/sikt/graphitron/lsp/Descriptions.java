@@ -66,7 +66,13 @@ public final class Descriptions {
         return method.description();
     }
 
-    private static String classJavadoc(String fqn, SourceWalker.Index sourceIndex) {
+    /**
+     * Class Javadoc from the source index for an FQN, or empty when the class is
+     * not indexed. Public so the declaration-name hover arm's {@code SourceClass}
+     * target (record / POJO / standalone-jOOQ backing class) can overlay it,
+     * matching where goto-definition jumps for the same coordinate (R371).
+     */
+    public static String classJavadoc(String fqn, SourceWalker.Index sourceIndex) {
         if (fqn == null) {
             return "";
         }
