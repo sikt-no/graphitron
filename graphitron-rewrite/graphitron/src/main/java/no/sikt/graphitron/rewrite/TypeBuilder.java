@@ -514,8 +514,10 @@ class TypeBuilder {
                         // Multiple @node types on ONE table is legitimate (distinct node ids over the
                         // same rows), so byTable is one-to-many. byName keys on the distinct type names
                         // so each node on a shared table resolves independently through the explicit
-                        // @nodeId(typeName:) path.
-                        byTable.computeIfAbsent(nt.table().tableName(), k -> new ArrayList<>()).add(nt);
+                        // @nodeId(typeName:) path. byTable is keyed on the lowercased table name so
+                        // NodeIndex.forTable lookups are case-folded (the TableRef.sameTable contract);
+                        // see NodeIndex.forTable.
+                        byTable.computeIfAbsent(nt.table().tableName().toLowerCase(java.util.Locale.ROOT), k -> new ArrayList<>()).add(nt);
                         byName.put(nt.name(), nt);
                     }
                 }

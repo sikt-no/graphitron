@@ -3,6 +3,7 @@ package no.sikt.graphitron.rewrite;
 import no.sikt.graphitron.rewrite.model.GraphitronType.NodeType;
 
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 
@@ -50,9 +51,15 @@ record NodeIndex(Map<String, List<NodeType>> byTable, Map<String, NodeType> byNa
      * Every {@link NodeType} backed by the table with this SQL name, in registration order; empty
      * when no {@code @node} covers the table. The caller resolves the implicit encoder only when the
      * list is a singleton (zero and multiple are use-site rejections).
+     *
+     * <p>The key is case-folded: {@link TypeBuilder#buildClassificationIndices} lowercases the
+     * {@code @table(name:)} echo on construction and this lookup lowercases its argument, so a
+     * consumer never re-establishes the case-insensitive {@code TableRef.sameTable} contract. A
+     * caller passing a catalog-cased or mixed-case table name resolves the same node as one passing
+     * the lowercased echo.
      */
     List<NodeType> forTable(String tableSqlName) {
-        return byTable.getOrDefault(tableSqlName, List.of());
+        return byTable.getOrDefault(tableSqlName.toLowerCase(Locale.ROOT), List.of());
     }
 
     /** The {@link NodeType} with this GraphQL type name, if it classified as one. */

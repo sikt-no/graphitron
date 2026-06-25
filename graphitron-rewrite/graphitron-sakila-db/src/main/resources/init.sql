@@ -505,6 +505,17 @@ CREATE TABLE nodeidfixture.qux (
     name varchar(50) PRIMARY KEY
 );
 
+-- R377 fixture: single-key NodeType table whose __NODE_TYPE_ID ("10154") is a customized numeric
+-- value distinct from any GraphQL type name. Used by NodeIdPipelineTest's R377 case to pin that the
+-- decode helper for a @node + nesting-projection shape over one table resolves through the
+-- @node-only NodeIndex (decode<TypeName>), not the typeId fallback (decode10154). The `label`
+-- column gives a nesting-projection @table type a column to map so two object types can back the
+-- same table.
+CREATE TABLE nodeidfixture.shared_node (
+    id    varchar(50) PRIMARY KEY,
+    label varchar(50)
+);
+
 -- R50 phase (g-B) rooted-at-parent fixture. Single-key NodeType `parent_node` whose
 -- __NODE_KEY_COLUMNS pin the encode/decode key as `pk_id`, plus a child table whose FK
 -- targets parent's *alternate* unique column `alt_key`. The FK column does not positionally
