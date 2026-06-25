@@ -48,6 +48,23 @@
             <artifactId>jetty-ee10-servlet</artifactId>
         </dependency>
 
+        <!--
+          R372 RAG foundation. The bge ONNX embedder (langchain4j, model bundled in-jar) and the
+          Lucene HNSW vector store land here, on graphitron-mcp alone: this is the dependency
+          quarantine R341 created the module to hold. The heavy native footprint (ONNX Runtime JNI,
+          pulled transitively by the bge module) never reaches graphitron-maven-plugin's compile
+          surface. Licensing is permissive throughout (Lucene / langchain4j Apache 2.0; ONNX Runtime
+          / bge MIT), safe to redistribute.
+        -->
+        <dependency>
+            <groupId>dev.langchain4j</groupId>
+            <artifactId>langchain4j-embeddings-bge-small-en-v15-q</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.lucene</groupId>
+            <artifactId>lucene-core</artifactId>
+        </dependency>
+
         <dependency>
             <groupId>org.slf4j</groupId>
             <artifactId>slf4j-api</artifactId>
@@ -74,5 +91,26 @@
           which ships in the core `mcp` artifact pulled above; no extra coordinate needed.
         -->
     </dependencies>
+
+    <build>
+        <plugins>
+            <!--
+              R372 — the infrastructure-tier test loads the bge ONNX model through the ONNX Runtime
+              JNI binding. Grant native access to the unnamed module so that load runs without the
+              JDK escalating its native-access warning (the analogue of the tree-sitter note R361
+              flagged for the lsp edge). This is the module's only surefire config: it sets no
+              excludedGroups, so nothing turns off the `slow` group the ONNX test carries; CI's
+              default `mvn verify -Plocal-db` runs everything. The `-DexcludedGroups=slow` opt-out is
+              a developer inner-loop affordance supplied on the command line, never a build default.
+            -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <argLine>--enable-native-access=ALL-UNNAMED</argLine>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
 
 </project>

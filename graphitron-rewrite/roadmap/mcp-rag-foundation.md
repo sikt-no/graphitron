@@ -1,7 +1,7 @@
 ---
 id: R372
 title: "MCP RAG foundation: in-process ONNX embedder behind a graphitron Embedder seam + Lucene HNSW behind EmbeddingStore (R118 slice 8)"
-status: Ready
+status: In Review
 bucket: feature
 theme: lsp
 depends-on: []
