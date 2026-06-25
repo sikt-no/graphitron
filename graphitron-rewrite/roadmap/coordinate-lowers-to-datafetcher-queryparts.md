@@ -294,6 +294,67 @@ materialized as in-memory collections guarded by a referential-integrity check, 
 runtime. The three consumers read views over one base; the base carries every column some view needs, and no
 consumer owns a private model.
 
+## Provenance, description, and capability
+
+The section above promised the base carries columns code generation does not select. Three are due here, and
+they are a test of a relational instinct: **do not assume a fact's origin is a column on the fact.** Authored
+data and inferred data often come from different walks, the directive walk versus the catalog or producer
+walk, and when they do the natural form is **separate relations** coalesced by a view, not one relation with
+a provenance tag. Pick per fact: a column when there is one value in one slot, separate relations when the
+origins are independent walks or the values are multi-valued. The three facts below pick three different
+shapes, which is the point.
+
+### Provenance
+
+A fact's provenance is `Authored` (a directive at a source location), `Inferred` (derived from the catalog or
+the producer types), or `Defaulted` (a rule). The model already carries this, and the lesson is that the
+shape varies with the source:
+
+- **Separate relations, coalesced** when authored and inferred come from different walks. `resolvedTable` is
+  a view, the coalesce `referencedTable ?? source.table ?? target.table` over three independently-walked
+  facts. `reference` is "authored `@reference` *or* inferred unique FK", two populations of one 0..1 slot.
+  `condition` is the cleanest case: `authored_condition` and `generated_condition` are genuinely separate
+  relations, both multi-valued, both live, conjoined by union-then-suppress, and no provenance column could
+  hold them because a coordinate carries both at once.
+- **A column** when there is one value in one slot. `@node(typeId:)` is a single value the author either
+  wrote or let default to the type name; a provenance attribute on the one relation (equivalently, a sparse
+  authored relation plus a default rule) suffices. The shipped `NodeMetadata` is exactly this: it stores the
+  authored `typeId` / `keyColumns` and leaves the deduced cases null, so the authored population is one sparse
+  relation and the resolved value is the view that falls back to the default.
+
+The resolved value is always a **view** over the authored and inferred populations; what varies is whether
+those populations are separate relations or one tagged column. This is the column the three consumers split
+on: **code generation reads the resolved view** (it wants the answer), **the language server reads the
+authored relation** (it can only give feedback on what the author wrote, which is why `NodeMetadata` stores
+authored-only and deduced values are invisible in the editor by design), and **the model-context server
+reads both** (it cites the authored source and reports the resolved value). Provenance is not a decoration on
+one fact; it is why the authored and inferred populations are first-class, and the consumer split is which
+population each reads.
+
+### Description
+
+Description is the simplest of the three because it is **co-sourced with the entity it describes**. The
+catalog walk that produces a column reads its `COMMENT` in the same pass; the classpath scan that produces a
+method reads its Javadoc; the SDL parse that produces a coordinate reads its docstring. One walk, one value,
+so description is a **column** on the entity's own relation (the catalog column, the Java method, the
+coordinate), not a separate relation. Only the `describe` read selects it, hover and the knowledge surface;
+code generation never does. The contrast with provenance is the lesson: the same question ("where did this
+come from") gets the opposite answer ("a column here", because the source is the same walk), which is why the
+instinct must be "pick", not "always a column".
+
+### Capability
+
+`@capability` (on a coordinate) and `@exemplifies` (on an operation) tag schema elements with a named, stable
+capability slug. This is authored data from the directive walk, it is **multi-valued** (a coordinate can
+carry several), and the slug it names lives in its own catalog (`slug -> definition`). So it is a **separate
+relation**, `capability_tag(coordinate, slug)`, plus a referenced slug namespace, which is exactly the
+directive-application edge of *The natural keys*: `(coordinate, @capability) -> slug`. Code generation
+ignores it; the knowledge surface projects it ("which fields exemplify pagination", "what does this type
+deliver"). The slug catalog is a small third referenced namespace alongside the jOOQ catalog and the Java
+surface, generated from source we write (the capability catalog files) like the other two. This is also a gap
+in the audit: *Directive coverage* lists no `@capability` / `@exemplifies`. The directives are not yet
+shipped, so this reserves the slot rather than describing a built fact.
+
 ## The unit is the emitted method
 
 The shipped field model (R290/R299/R305/R316) carries a hidden 1:1 assumption: **one schema coordinate
@@ -1604,6 +1665,11 @@ Owned by an existing fact:
 | `@node` / `@nodeId` | **node facts** (`NodeType` / `NodeKeyColumn` / projections) |
 | `@field` on `ENUM_VALUE` | **enum facts** (`EnumValue.runtimeValue`, derived `EnumBacking`) |
 | `@scalarType` | the column's `javaType` + boundary coercion (registration is a synthesis concern) |
+
+Planned, not yet a directive: `@capability` / `@exemplifies` will own a `capability_tag(coordinate, slug)`
+relation plus the slug namespace (a third referenced namespace; see *Provenance, description, and
+capability*). They are read by the knowledge surface, not by code generation, and the audit will list them in
+the table above once they ship.
 
 The gaps, in resolution order:
 
