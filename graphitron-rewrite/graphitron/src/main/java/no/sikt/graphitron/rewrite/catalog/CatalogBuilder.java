@@ -102,7 +102,8 @@ public final class CatalogBuilder {
             directives.add(new DirectiveShape(
                 def.getName(),
                 projectInputValues(def.getInputValueDefinitions()),
-                descriptionOf(def.getDescription())
+                descriptionOf(def.getDescription()),
+                projectDirectiveLocations(def)
             ));
         }
         var typesByName = (schema == null || catalog == null)
@@ -779,6 +780,22 @@ public final class CatalogBuilder {
 
     private static String lowercaseFirst(String s) {
         return Character.toLowerCase(s.charAt(0)) + s.substring(1);
+    }
+
+    /**
+     * R368 — projects a directive's applicable locations onto renderable strings (the
+     * graphql-java {@code DirectiveLocation} names, e.g. {@code "OBJECT"},
+     * {@code "FIELD_DEFINITION"}) for the {@code directives} MCP resource. The
+     * {@code DirectiveDefinition} is in hand at the single snapshot-construction site, so the
+     * locations the user-declared half would otherwise lose at projection time ride
+     * {@link DirectiveShape} from here.
+     */
+    private static List<String> projectDirectiveLocations(graphql.language.DirectiveDefinition def) {
+        var out = new ArrayList<String>();
+        for (var loc : def.getDirectiveLocations()) {
+            out.add(loc.getName());
+        }
+        return List.copyOf(out);
     }
 
     private static List<InputValueShape> projectInputValues(List<InputValueDefinition> defs) {

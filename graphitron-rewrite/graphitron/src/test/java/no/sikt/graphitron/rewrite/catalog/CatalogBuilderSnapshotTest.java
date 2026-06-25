@@ -103,6 +103,31 @@ class CatalogBuilderSnapshotTest {
         assertThat(key.description().get()).contains("federation entities");
     }
 
+    @Test
+    void applicableLocationsRoundTripThroughBuildSnapshot() {
+        // R368: DirectiveShape now carries the directive's applicable locations, projected from
+        // DirectiveDefinition.getDirectiveLocations() at this single construction site, so the
+        // directives MCP resource can show them uniformly for bundled and user-declared directives.
+        var registry = new SchemaParser().parse("""
+            directive @guard(role: String!) on OBJECT | INTERFACE | FIELD_DEFINITION
+            type Query { x: Int }
+            """);
+
+        var snapshot = CatalogBuilder.buildSnapshot(registry);
+
+        var guard = snapshot.directive("guard").orElseThrow();
+        assertThat(guard.locations())
+            .containsExactly("OBJECT", "INTERFACE", "FIELD_DEFINITION");
+    }
+
+    @Test
+    void backCompatConstructorDefaultsLocationsToEmpty() {
+        // The un-located fixture path (the back-compat 3-arg constructor the ~10 LSP/snapshot test
+        // fixtures use) is location-absent, not malformed.
+        var shape = new DirectiveShape("auth", List.of(), java.util.Optional.empty());
+        assertThat(shape.locations()).isEmpty();
+    }
+
     // ---- R157: per-type backing projection ----
 
     @Test

@@ -5,11 +5,18 @@ import io.modelcontextprotocol.client.McpSyncClient;
 import io.modelcontextprotocol.client.transport.HttpClientStreamableHttpTransport;
 import io.modelcontextprotocol.spec.McpSchema;
 import no.sikt.graphitron.lsp.state.Workspace;
+import no.sikt.graphitron.rewrite.BuildWarning;
 import no.sikt.graphitron.rewrite.GraphQLRewriteGenerator;
+import no.sikt.graphitron.rewrite.ValidationError;
 import no.sikt.graphitron.rewrite.ValidationReport;
 import no.sikt.graphitron.rewrite.catalog.CatalogFacts;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
+import no.sikt.graphitron.rewrite.catalog.FieldClassification;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
+import no.sikt.graphitron.rewrite.catalog.SourceWalker;
+import no.sikt.graphitron.rewrite.catalog.TypeBackingShape;
+import no.sikt.graphitron.rewrite.catalog.TypeClassification;
+import no.sikt.graphitron.rewrite.model.Rejection;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
@@ -22,6 +29,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -97,7 +105,8 @@ class GraphitronMcpServerTest {
 
             var tools = client.listTools().tools();
             assertThat(tools).extracting(McpSchema.Tool::name)
-                .containsExactlyInAnyOrder("status", "catalog.tables", "catalog.describe");
+                .containsExactlyInAnyOrder("status", "catalog.tables", "catalog.describe",
+                    "services", "conditions", "records", "schema", "diagnostics");
 
             var result = client.callTool(McpSchema.CallToolRequest.builder("status").build());
             assertThat(result.isError()).isNotEqualTo(Boolean.TRUE);
@@ -275,6 +284,297 @@ class GraphitronMcpServerTest {
                 .arguments(Map.of("table", "nope")).build()));
             assertThat(structured).containsEntry("resolution", "notFound").containsEntry("table", "nope");
         }
+    }
+
+    // ---- R368: services / conditions / records ----
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void servicesListsClassesWithMethodRefsAndResolvedClassLocation() throws Exception {
+        try (var server = new GraphitronMcpServer(loopback(0), codeWorkspace());
+             var client = connect(server.port())) {
+            client.initialize();
+
+            var structured = structured(client.callTool(McpSchema.CallToolRequest.builder("services").build()));
+            var services = (List<Map<String, Object>>) structured.get("services");
+            // The record-only FilmCard is not a service (no methods); only FilmService surfaces here.
+            assertThat(services).singleElement().satisfies(s -> {
+                assertThat(s).containsEntry("classRef", "com.example.FilmService")
+                    .containsEntry("className", "com.example.FilmService");
+                var methods = (List<Map<String, Object>>) s.get("methods");
+                // Condition methods appear here too: services is the un-filtered class view.
+                assertThat(methods).extracting(m -> m.get("methodRef"))
+                    .containsExactly("com.example.FilmService#list/0", "com.example.FilmService#activeFilms/0");
+                // Class location resolved off the source index.
+                var location = (Map<String, Object>) s.get("location");
+                assertThat(location).containsEntry("uri", "file:///src/FilmService.java").containsEntry("line", 4);
+                assertThat(s).doesNotContainKey("locationStatus");
+            });
+        }
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void conditionsListsOnlyConditionMethodsWithResolvedLocation() throws Exception {
+        try (var server = new GraphitronMcpServer(loopback(0), codeWorkspace());
+             var client = connect(server.port())) {
+            client.initialize();
+
+            var structured = structured(client.callTool(McpSchema.CallToolRequest.builder("conditions").build()));
+            var conditions = (List<Map<String, Object>>) structured.get("conditions");
+            assertThat(conditions).singleElement().satisfies(c -> {
+                assertThat(c).containsEntry("methodRef", "com.example.FilmService#activeFilms/0")
+                    .containsEntry("className", "com.example.FilmService")
+                    .containsEntry("name", "activeFilms");
+                var location = (Map<String, Object>) c.get("location");
+                assertThat(location).containsEntry("uri", "file:///src/FilmService.java").containsEntry("line", 10);
+            });
+        }
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void recordsListsComponentsAndYieldsNotIndexedLocationArm() throws Exception {
+        try (var server = new GraphitronMcpServer(loopback(0), codeWorkspace());
+             var client = connect(server.port())) {
+            client.initialize();
+
+            var structured = structured(client.callTool(McpSchema.CallToolRequest.builder("records").build()));
+            var records = (List<Map<String, Object>>) structured.get("records");
+            assertThat(records).singleElement().satisfies(r -> {
+                assertThat(r).containsEntry("classRef", "com.example.FilmCard");
+                var components = (List<Map<String, Object>>) r.get("components");
+                assertThat(components).extracting(c -> c.get("name")).containsExactly("filmId", "title");
+                // FilmCard is not in the source index: the degraded arm is location-absent, not an error.
+                assertThat(r).doesNotContainKey("location").containsEntry("locationStatus", "notIndexed");
+            });
+        }
+    }
+
+    // ---- R368: schema ----
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void schemaNarrowsToOneTypeWithClassificationBackingNodeAndFields() throws Exception {
+        try (var server = new GraphitronMcpServer(loopback(0), schemaWorkspace());
+             var client = connect(server.port())) {
+            client.initialize();
+
+            var structured = structured(client.callTool(McpSchema.CallToolRequest.builder("schema")
+                .arguments(Map.of("type", "Film")).build()));
+            assertThat(structured).containsEntry("availability", "Built").containsEntry("freshness", "Current");
+            var types = (List<Map<String, Object>>) structured.get("types");
+            assertThat(types).singleElement().satisfies(t -> {
+                assertThat(t).containsEntry("typeRef", "Film");
+                var classification = (Map<String, Object>) t.get("typeClassification");
+                assertThat(classification).containsEntry("kind", "Node").containsEntry("tableName", "film");
+                var backing = (Map<String, Object>) t.get("backingShape");
+                assertThat(backing).containsEntry("kind", "TableBacking").containsEntry("tableName", "film");
+                // @node arm joined off the catalog (the snapshot carries no @node projection).
+                var node = (Map<String, Object>) t.get("node");
+                assertThat(node).containsEntry("typeId", "FilmType").containsEntry("keyColumns", List.of("film_id"));
+                var fields = (List<Map<String, Object>>) t.get("fields");
+                assertThat(fields).singleElement().satisfies(f -> {
+                    assertThat(f).containsEntry("fieldRef", "Film.title");
+                    assertThat((Map<String, Object>) f.get("classification")).containsEntry("kind", "Column");
+                });
+                var loc = (Map<String, Object>) t.get("definitionLocation");
+                assertThat(loc).containsEntry("uri", "file:///schema.graphqls");
+            });
+        }
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void schemaListsTypesPagedAndOmitsNodeForNonNodeType() throws Exception {
+        try (var server = new GraphitronMcpServer(loopback(0), schemaWorkspace());
+             var client = connect(server.port())) {
+            client.initialize();
+
+            // limit=1 over the two types (Actor, Film sorted) yields a first page plus a cursor.
+            var page1 = structured(client.callTool(McpSchema.CallToolRequest.builder("schema")
+                .arguments(Map.of("limit", 1)).build()));
+            var first = (List<Map<String, Object>>) page1.get("types");
+            assertThat(first).singleElement().satisfies(t -> {
+                assertThat(t).containsEntry("typeRef", "Actor");
+                // A plain @table type carries no @node block.
+                assertThat(t).doesNotContainKey("node");
+            });
+            assertThat(page1).containsKey("nextCursor");
+
+            var page2 = structured(client.callTool(McpSchema.CallToolRequest.builder("schema")
+                .arguments(Map.of("limit", 1, "cursor", page1.get("nextCursor"))).build()));
+            var second = (List<Map<String, Object>>) page2.get("types");
+            assertThat(second).extracting(t -> t.get("typeRef")).containsExactly("Film");
+            assertThat(page2).doesNotContainKey("nextCursor");
+        }
+    }
+
+    @Test
+    void schemaReportsUnavailableBeforeFirstBuild() throws Exception {
+        try (var server = new GraphitronMcpServer(loopback(0), new Workspace());
+             var client = connect(server.port())) {
+            client.initialize();
+
+            var structured = structured(client.callTool(McpSchema.CallToolRequest.builder("schema").build()));
+            assertThat(structured).containsEntry("availability", "Unavailable").containsEntry("types", List.of());
+        }
+    }
+
+    // ---- R368: diagnostics ----
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void diagnosticsReturnsMappedErrorsAndReportsSnapshotFreshness() throws Exception {
+        try (var server = new GraphitronMcpServer(loopback(0), diagnosticsWorkspace());
+             var client = connect(server.port())) {
+            client.initialize();
+
+            var structured = structured(client.callTool(McpSchema.CallToolRequest.builder("diagnostics").build()));
+            var diagnostics = (List<Map<String, Object>>) structured.get("diagnostics");
+            assertThat(diagnostics).hasSize(2);
+            assertThat(diagnostics.get(0))
+                .containsEntry("severity", "error")
+                .containsEntry("coordinate", "Query.film")
+                .containsEntry("message", "unknown table reference")
+                .containsEntry("rejectionKind", "author-error");
+            var location = (Map<String, Object>) diagnostics.get(0).get("location");
+            assertThat(location).containsEntry("line", 4).containsEntry("column", 2);
+            assertThat(diagnostics.get(1)).containsEntry("severity", "warning")
+                .containsEntry("message", "shadowed directive");
+            // Snapshot axes reported alongside so an agent can tell whether diagnostics are current.
+            assertThat(structured).containsEntry("snapshotAvailability", "Built")
+                .containsEntry("snapshotFreshness", "Current");
+        }
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void diagnosticsFiltersBySeverity() throws Exception {
+        try (var server = new GraphitronMcpServer(loopback(0), diagnosticsWorkspace());
+             var client = connect(server.port())) {
+            client.initialize();
+
+            var structured = structured(client.callTool(McpSchema.CallToolRequest.builder("diagnostics")
+                .arguments(Map.of("severity", "error")).build()));
+            var diagnostics = (List<Map<String, Object>>) structured.get("diagnostics");
+            assertThat(diagnostics).singleElement().satisfies(d -> assertThat(d).containsEntry("severity", "error"));
+        }
+    }
+
+    // ---- R368: directives resource ----
+
+    @Test
+    void directivesResourceIsAdvertisedAndListsBundledAndUserDeclared() throws Exception {
+        try (var server = new GraphitronMcpServer(loopback(0), directivesWorkspace());
+             var client = connect(server.port())) {
+            client.initialize();
+
+            var resources = client.listResources().resources();
+            assertThat(resources).extracting(McpSchema.Resource::uri).contains("graphitron://directives");
+
+            var read = client.readResource(McpSchema.ReadResourceRequest.builder("graphitron://directives").build());
+            assertThat(read.contents()).hasSize(1);
+            var text = ((McpSchema.TextResourceContents) read.contents().getFirst()).text();
+            // Bundled grammar present (off vocabulary()): the @table directive ships with graphitron.
+            assertThat(text).contains("@table");
+            // User-declared directive present (off the live snapshot), with its applicable locations
+            // rendered uniformly off the widened DirectiveShape.
+            assertThat(text).contains("@guard").contains("FIELD_DEFINITION");
+        }
+    }
+
+    // ---- R368: stable-ID round-trip ----
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void methodRefIdsMatchTheSourceIndexJoinKeys() throws Exception {
+        // The methodRef a tool emits is exactly fqcn#method/arity over the (className, name,
+        // paramCount) triple the SourceWalker.MethodKey carries; pin that grammar slice 7 will walk.
+        try (var server = new GraphitronMcpServer(loopback(0), codeWorkspace());
+             var client = connect(server.port())) {
+            client.initialize();
+
+            var structured = structured(client.callTool(McpSchema.CallToolRequest.builder("conditions").build()));
+            var conditions = (List<Map<String, Object>>) structured.get("conditions");
+            String methodRef = (String) conditions.getFirst().get("methodRef");
+
+            var key = new SourceWalker.MethodKey("com.example.FilmService", "activeFilms", 0);
+            String fromKey = key.className() + "#" + key.methodName() + "/" + key.paramCount();
+            assertThat(methodRef).isEqualTo(fromKey);
+        }
+    }
+
+    private static Workspace codeWorkspace() {
+        var service = new CompletionData.ExternalReference(
+            "com.example.FilmService", "com.example.FilmService", "",
+            List.of(
+                new CompletionData.Method("list", "Film", "", List.of(), false),
+                new CompletionData.Method("activeFilms", "Condition", "", List.of(), true)),
+            List.of());
+        var card = new CompletionData.ExternalReference(
+            "com.example.FilmCard", "com.example.FilmCard", "",
+            List.of(),
+            List.of(new CompletionData.RecordComponent("filmId", "Integer"),
+                new CompletionData.RecordComponent("title", "String")));
+        var catalog = new CompletionData(List.of(), List.of(), List.of(service, card), Map.of(), Map.of());
+        var workspace = builtWorkspace(catalog, new LspSchemaSnapshot.Built.Current(List.of(), Map.of(), Map.of()),
+            ValidationReport.empty());
+        // FilmService class + its activeFilms method are indexed; FilmCard is not (not-yet-indexed arm).
+        var classes = Map.of("com.example.FilmService",
+            new SourceWalker.Decl(new CompletionData.SourceLocation("file:///src/FilmService.java", 4, 0), ""));
+        var methods = Map.of(
+            new SourceWalker.MethodKey("com.example.FilmService", "activeFilms", 0),
+            new SourceWalker.Decl(new CompletionData.SourceLocation("file:///src/FilmService.java", 10, 4), ""));
+        workspace.setSourceIndex(new SourceWalker.Index(classes, methods, Map.of(), Set.of()));
+        return workspace;
+    }
+
+    private static Workspace schemaWorkspace() {
+        var typeClassifications = new LinkedHashMap<String, TypeClassification>();
+        typeClassifications.put("Film", new TypeClassification.Node("film", "FilmType", List.of("film_id")));
+        typeClassifications.put("Actor", new TypeClassification.Table("actor"));
+        Map<String, TypeBackingShape> backing = Map.of("Film", new TypeBackingShape.TableBacking("film"));
+        Map<String, FieldClassification> fields = Map.of("Film.title", new FieldClassification.Column("film", "title"));
+        Map<String, CompletionData.SourceLocation> locations =
+            Map.of("Film", new CompletionData.SourceLocation("file:///schema.graphqls", 3, 0));
+        var snapshot = new LspSchemaSnapshot.Built.Current(
+            List.of(), backing, Map.of(), fields, typeClassifications, locations);
+        // @node metadata rides the catalog (the snapshot has no @node projection).
+        var catalog = new CompletionData(List.of(), List.of(), List.of(), Map.of(),
+            Map.of("Film", new CompletionData.NodeMetadata("FilmType", List.of("film_id"))));
+        return builtWorkspace(catalog, snapshot, ValidationReport.empty());
+    }
+
+    private static Workspace diagnosticsWorkspace() {
+        var error = new ValidationError("Query.film",
+            new Rejection.AuthorError.Structural("unknown table reference"),
+            new graphql.language.SourceLocation(5, 3, "/schema.graphqls"));
+        var warning = new BuildWarning("shadowed directive",
+            new graphql.language.SourceLocation(1, 1, "/schema.graphqls"));
+        var report = ValidationReport.from(List.of(error), List.of(warning));
+        return builtWorkspace(CompletionData.empty(),
+            new LspSchemaSnapshot.Built.Current(List.of(), Map.of(), Map.of()), report);
+    }
+
+    private static Workspace directivesWorkspace() {
+        // A user-declared directive lands in the snapshot's directive surface with its applicable
+        // locations carried (R368 DirectiveShape widening), via the production buildSnapshot path.
+        var registry = new graphql.schema.idl.SchemaParser().parse("""
+            directive @guard(role: String!) on OBJECT | FIELD_DEFINITION
+            type Query { x: Int }
+            """);
+        var snapshot = no.sikt.graphitron.rewrite.catalog.CatalogBuilder.buildSnapshot(registry);
+        return builtWorkspace(CompletionData.empty(), snapshot, ValidationReport.empty());
+    }
+
+    private static Workspace builtWorkspace(
+        CompletionData catalog, LspSchemaSnapshot.Built.Current snapshot, ValidationReport report
+    ) {
+        var workspace = new Workspace();
+        workspace.setBuildOutput(
+            new GraphQLRewriteGenerator.BuildArtifacts(catalog, snapshot), report);
+        return workspace;
     }
 
     @SuppressWarnings("unchecked")
