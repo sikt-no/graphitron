@@ -1,7 +1,7 @@
 ---
 id: R375
 title: "Empty list passed to a list-IN filter renders IN () = false, zeroing the query"
-status: Spec
+status: Ready
 bucket: architecture
 theme: nodeid
 depends-on: []
