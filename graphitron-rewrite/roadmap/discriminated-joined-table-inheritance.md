@@ -162,15 +162,23 @@ deferral is the first thing to lift.
   child&rarr;parent `JoinStep.FkJoin`.
 - `TypeBuilder.buildParticipantList` / `buildTableInterfaceType`: detect a participant whose `@table`
   differs from the base, resolve its child&rarr;parent hop from the parent-`@reference` it declares, and
-  build a `JoinedTableBound`. Stop forcing the single-table assumption (participant table == base).
-- `FieldBuilder`: **no new residence resolver.** A joined-table participant's base-resident fields carry
-  `@reference`, so they reach the existing cross-table `ColumnReferenceField` classification
-  (`resolveColumnForReference`, `FieldBuilder.java:5974`) unchanged. The one reconciliation: R388's guard
-  that rejects a `@reference` whose resolved column lives on the base table (`TypeBuilder.java:820`) was
-  written under the workaround's "participant table == base" assumption, where such a reference *was*
-  meaningless. For a joined-table participant (table &ne; base) the parent-reference is the legitimate base
-  bridge, so the guard must be scoped to fire only when participant table == base. This scoping is itself a
-  validator-mirrored invariant (see Validation).
+  build a `JoinedTableBound`. Stop forcing the single-table assumption (participant table == base). **Do not
+  run the participant cross-table pass (`extractCrossTableFields`) for joined-table participants.** That pass
+  exists for the *workaround* shape (participant table == base, fields referencing *out* to detail tables);
+  a joined-table participant inverts that (table == detail, inherited fields referencing *back* to the
+  base), so the pass does not apply. With it skipped, no `CrossTableField` entries are registered for the
+  participant, `lookupParticipantCrossTableField` returns null for its fields, and field classification
+  takes its normal course (below). The workaround-era R388 base-column rejection in that pass therefore
+  never runs for these participants, so there is nothing to "scope".
+- `FieldBuilder`: **no new arm, no new resolver.** Once the participant cross-table pass is skipped, a
+  joined-table participant's fields classify through the paths that already exist: an inherited field with a
+  parent-`@reference` falls through (`FieldBuilder.java:5964` &rarr; `:5970`) to the standard
+  `ColumnReferenceField` classification, parsing from the participant's own table and resolving the column on
+  the base via `resolveColumnForReference` (`:5974`); a detail field with no `@reference` is a plain
+  `ColumnField` on the participant's table. This is the whole point of using `@reference`: the inherited
+  read *is* the cross-table read we already generate. (The single-hop-FK scalar `ColumnReferenceField` shape
+  must be an implemented `PROJECTED_LEAVES` shape, not one of the deferred variants
+  `validateColumnReferenceField` gates; that is the one acceptance check, see "Standalone use".)
 - `TypeClassGenerator`: the interface fetcher needs a **detail-only projection** of each joined-table
   participant (detail-resident fields against the detail alias) that does *not* re-traverse parent-references.
   Realise it as a second generated projection on the participant class, or as a residence-filtered emission
@@ -197,11 +205,6 @@ existing `drainBuildDiagnostics` / `Rejection` machinery (the R204/R279/R317/R38
   classic shared-PK class-table inheritance.
 - A participant's parent-references must all resolve to the same base, the discriminated interface's table.
   A parent-reference pointing at some other table is not a base bridge; reject it.
-- R388-guard scoping (the mirrored invariant for the guard reconciliation above): the "`@reference` whose
-  column lives on the base table is meaningless" rejection must fire only when participant table == base.
-  For a joined-table participant the same shape is the legitimate parent bridge, so the guard's accept/reject
-  flips with the participant kind, and the validator reads that classification rather than recomputing the
-  column-on-base predicate.
 - The joined-table participant's field leaves must land in the four-way dispatch partition
   (`TypeFetcherGenerator.IMPLEMENTED_LEAVES` / `PROJECTED_LEAVES` / `NOT_DISPATCHED_LEAVES` /
   `STUBBED_VARIANTS`); base-resident fields are `ColumnReferenceField` and detail-resident fields are
@@ -229,8 +232,8 @@ No ambiguous-FK invariant: the author names the FK in `@reference`, so the infer
   that non-matching rows carry NULL through the joins, and that a standalone query of one concrete type
   returns both its inherited and its own columns.
 - **Validation pipeline tests:** one rejection test per new invariant above (non-PK=FK hop; parent-reference
-  to a non-base table; the R388-guard scoping in both directions), plus a positive case for a
-  `TableInterfaceType` mixing a discriminator-only participant with a joined-table participant.
+  to a non-base table), plus a positive case for a `TableInterfaceType` mixing a discriminator-only
+  participant with a joined-table participant.
 - The full reactor compile under `-Plocal-db` (including the Java-17 `graphitron-sakila-example`) is the
   backstop for the detail-alias projection typing.
 
