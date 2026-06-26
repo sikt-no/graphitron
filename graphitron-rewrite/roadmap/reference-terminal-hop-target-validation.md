@@ -1,7 +1,7 @@
 ---
 id: R379
 title: "Validate @reference path joins compile: terminal-hop target and condition parameter tables"
-status: Ready
+status: In Review
 bucket: bug
 priority: 5
 theme: structural-refactor
@@ -237,22 +237,50 @@ per-condition-element) plus the typed-verdict hook plus tests.
   Because the helper reads the resolved source/target already in scope at each
   site, no second walk and no permit switch are needed. The wildcard skip keeps
   the idiomatic `(Table<?>, Table<?>)` signature valid.
-- **Check 1 — terminal hop lands on the return table (`BuildContext.parsePath`,
-  `BuildContext.java:1131`).** After the element loop and the empty-path
-  inference fallback, before `return new ParsedPath(List.copyOf(resolvedElements),
-  null)`, compute the terminal-target verdict gated on `targetSqlTableName != null
-  && !resolvedElements.isEmpty()`, switching on the terminal `JoinStep` permit:
+- **Check 1 — terminal hop lands on the return table (`BuildContext.parsePath`).**
+  After the element loop and the empty-path inference fallback, before the final
+  `return new ParsedPath(...)`, compute the terminal-target verdict in
+  `computeTerminalTargetVerdict`, gated on `startSqlTableName != null &&
+  targetSqlTableName != null && !resolvedElements.isEmpty()`, switching on the
+  terminal `JoinStep` permit:
   - `FkJoin` => `TerminalTargetVerdict.Mismatch` when
     `targetTable().tableName()` differs from `targetSqlTableName`
     (case-insensitive), else `Match`.
   - `ConditionJoin` => `Match` by construction (target is built from the return
     `@table`; its parameters are covered by Check 2).
   - `LiftedHop` => unreachable; document with an `IllegalStateException`.
-  When the gate is not met, the verdict is `NotApplicable`. On `Mismatch`, format
-  the diagnostic *from the verdict's fields*, append it to `errors`, and fall
-  through to the existing `if (!errors.isEmpty())` return. The terminal target is
+  When the gate is not met, the verdict is `NotApplicable`. The terminal target is
   reachable as the last element's `targetTable()` (the loop already advances
   `currentSource` through `HasTargetTable.targetTable()`); no second walk.
+
+  **Implementation deviation from the original draft (scope correction).** The
+  draft above said to *append the `Mismatch` diagnostic to `errors` inside
+  `parsePath`* (self-reject). That rested on a wrong assumption about
+  `parsePath`'s caller set: it assumed only the inline/split output callers
+  (`TableBoundReturnType`, `TableInterfaceType`), the input-field caller (null
+  target), and `@sourceRow` (assumed null *target*). In fact `@sourceRow` passes a
+  non-null target (the leaf table) but a null *start*, and `parsePath` is also
+  called by `@tableMethod` (FieldBuilder), `@nodeId` references, and
+  `RecordTableField` — all passing non-null start + non-null target, several with
+  their *own* terminal-target checks and pinned-message tests (e.g. the
+  `@tableMethod` "last hop lands on '…'" check). Self-rejecting in `parsePath`
+  would preempt those and re-introduce exactly the *Generation-thinking*
+  same-predicate-two-consumers smell this item cites. So Check 1 instead:
+  computes the verdict and threads it onto `ParsedPath` (the typed hook below)
+  *without* forcing it into `errorMessage`, and the two inline output callers in
+  `FieldBuilder` (`TableBoundReturnType`, `TableInterfaceType`) — the only emit
+  shape carrying the `$fields(terminalAlias)` invariant Check 1 protects — inspect
+  `referencePath.terminalTargetVerdict()` and reject `Mismatch` via
+  `mismatch.diagnostic()` before constructing the field. The double-gate
+  (`startSqlTableName != null` excludes `@sourceRow`; `targetSqlTableName != null`
+  excludes input-field) keeps the verdict `NotApplicable` outside the
+  inline/split projection. The predicate stays single-sourced; the rejection is
+  scoped to where the invariant lives.
+
+  **Follow-up (out of scope here).** `@tableMethod`'s hand-rolled terminal-target
+  check (`FieldBuilder`, the "last hop lands on '…'" rejection) is now the lone
+  remaining duplicate of the lifted predicate; it is a candidate to consume
+  `terminalTargetVerdict()` once its pinned-message test is migrated.
 - **Typed verdict hook (`ParsedPath`, `BuildContext.java:974`).** Add a small
   sealed `TerminalTargetVerdict` (`Match` / `Mismatch(String fieldName, String
   terminalTableName, String returnTableName)` / `NotApplicable`) and thread it as
