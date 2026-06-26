@@ -26,8 +26,8 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R45` | Multi-tenant routing on top of the schema-driven ExecutionInput factory | Spec | 2026-06-26 | [plan](tenant-routing-and-execution-input.md) |
 | `R273` | Source NodeId metadata from @node + catalog PK (inferred from `implements Node`), and settle wrong-type/malformed mismatch semantics, retiring the legacy __NODE bare-ID arm | Spec | 2026-06-02 | [plan](nodeid-skip-mismatch-error-surfacing.md) |
 | `R347` | Consolidate graphitron-lsp navigation, dispatch, and result-building | In Progress | 2026-06-19 | [plan](lsp-structural-consolidation.md) |
+| `R389` | First-class discriminated joined-table inheritance (participants on their own tables) | Spec | 2026-06-26 | [plan](discriminated-joined-table-inheritance.md) |
 | `R332` | Mark @table on input types as deprecated (signal ahead of R97 removal) | Spec | 2026-06-22 <sub>created 2026-06-18</sub> | [plan](table-on-input-deprecation-signal.md) |
-| `R389` | First-class discriminated joined-table inheritance (participants on their own tables) | In Progress | 2026-06-26 | [plan](discriminated-joined-table-inheritance.md) |
 | `R63` | Type UPSERT dialect requirement on the model | Spec |  | [plan](dml-dialect-requirement-on-model.md) |
 | `R13` | Faceted search on `@asConnection` | Ready | 2026-06-26 | [plan](faceted-search.md) |
 | `R92` | Surface database CHECK constraints as Jakarta validation rules | Spec |  | [plan](catalog-check-constraint-validation.md) |
@@ -171,7 +171,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 - `R382` [**Lower orderBy onto multitable-interface/union queries**](multitable-interface-query-orderby-lowering.md) — Backlog, bug
 - `R384` [**Support converted/@nodeId/developer-@condition filters on multitable interface/union queries**](multitable-interface-converted-nodeid-condition-filters.md) — Spec, bug
-- `R389` [**First-class discriminated joined-table inheritance (participants on their own tables)**](discriminated-joined-table-inheritance.md) — In Progress, feature
+- `R389` [**First-class discriminated joined-table inheritance (participants on their own tables)**](discriminated-joined-table-inheritance.md) — Spec, feature
 - `R370` [**Record-backed parent with a nested backing class emits a non-compiling $-qualified cast**](nested-backing-class-accessor-cast.md) — Backlog, bug
 - `R393` [**Author-declared base-to-detail FK override for joined-table inheritance (ambiguous-FK case)**](joined-table-base-detail-fk-override.md) — Backlog, feature, blocked by [discriminated-joined-table-inheritance](discriminated-joined-table-inheritance.md)
 

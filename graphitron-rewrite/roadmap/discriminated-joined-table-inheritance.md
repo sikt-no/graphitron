@@ -1,7 +1,7 @@
 ---
 id: R389
 title: "First-class discriminated joined-table inheritance (participants on their own tables)"
-status: In Progress
+status: Spec
 bucket: feature
 priority: 6
 theme: interface-union
@@ -33,18 +33,33 @@ workaround is the escape hatch out of that wrong column path. The visible sympto
 `fields.addAll(FeideApplikasjon.$fields(env.getSelectionSet(), subjektTable, env))` for a subtype whose
 data does not live on `subjekt`.
 
-Proper support means a participant declares its own `@table`, and the discriminated emitter joins each
-participant's detail table to the discriminated base and projects via the participant's own table/alias
-(the `MultiTablePolymorphicEmitter` stage-2 per-typename dispatch already threads each participant's own
-table into `$fields(env.getSelectionSet(), t, env)` and is the closest existing template). This is a
-model-level change: `ParticipantRef.TableBound` would carry its own table and join path, the emitter would
-thread per-participant aliases, the validator would mirror the new invariants, and pipeline tests would
-pin the shape. It deserves its own Spec rather than being bolted onto a bug fix.
+Proper support means a participant declares its own `@table` for its detail data, and declares its
+inherited (base-resident) fields with `@reference` back to the discriminated base. The discriminated
+emitter then joins each participant's detail table to the base and projects each field against the table
+the author named: shared fields off the base, the participant's own fields off its detail alias. This is
+a model-level change: a distinct `ParticipantRef` variant carries the participant's detail table and the
+resolved child&rarr;parent hop, the emitter threads per-participant detail aliases, the validator mirrors
+the new invariants, and pipeline tests pin the shape. It deserves its own Spec rather than being bolted
+onto a bug fix.
+
+**Why `@reference` on the inherited fields, rather than inferring residence from the catalog.** The
+child&rarr;parent hop is a PK=FK relationship: single-valued, total (every detail row has exactly one base
+row), and direction-canonical, so it is *always correct* to resolve a base-resident field from the detail
+row by traversing it. Declaring that hop with `@reference` does three things for free, all by reusing
+machinery that already exists: (1) it tells `FieldBuilder` to resolve the column on the base table via the
+existing `resolveColumnForReference` path (`FieldBuilder.java:5974`) rather than failing to find it on the
+detail table; (2) the annotation *is* the residence marker (a field with a parent-`@reference` is
+base-resident, a field without is detail-resident) so residence is declared, never inferred; and (3) it
+names the FK, so there is nothing to infer and no ambiguous-FK case to defer. The earlier "declare only
+`@table`, infer everything" framing is what created two hard problems this version avoids: a new
+residence-aware column-resolution path in `FieldBuilder`, and a concrete type that could not be used
+outside its interface (see "Standalone use" below). Reusing the cross-table reference vocabulary dissolves
+both.
 
 Near-term correctness of the workaround is handled by R388 (qualify the discriminator column across the
 three emission sites + reject the discriminator-column-with-`@reference` contradiction + add the missing
 execution fixture). R388 is Done; R389 is the deeper feature that removes the need for the workaround.
-R392 (In Review) further reworked this same emission site, routing the discriminated `TypeResolver` off a
+R392 (Done) further reworked this same emission site, routing the discriminated `TypeResolver` off a
 synthetic discriminator alias (`MultiTablePolymorphicEmitter.DISCRIMINATOR_COLUMN`, projected near
 `buildInterfaceFieldsList`) to disambiguate the double-projection; the joined-table emitter inherits that
 aliasing alongside R388's qualified-column emission, so the "Reuse R388's discriminator-gated ON-clause"
@@ -65,75 +80,111 @@ than with it. What we borrow from `MultiTablePolymorphicEmitter` is its *per-typ
 (`$fields(PolymorphicSelectionSet.restrictTo(sel, typeName), t, env)` against the participant's own table),
 not its query topology.
 
-**Projection shape (A2: split `$fields`, not aliased-column reuse).** A joined-table participant's fields
-split across two tables: interface-declared shared fields resolve to columns on the base; the participant's
-own distinguishing fields resolve to columns on its detail table. `$fields` (one table parameter) cannot
-project both against one table. Two routes were weighed:
+**Projection shape: each field projects against the table its `@reference` (or absence of one) names.**
+A joined-table participant's fields split across two tables: a field with a parent-`@reference` is
+base-resident and its column lives on the base; a field without one is detail-resident and its column lives
+on the participant's own detail table. Because residence is *declared* by the annotation, the classifier
+hands the emitter fields already typed by residence: base-resident fields are `ChildField.ColumnReferenceField`
+(the existing cross-table read), detail-resident fields are plain `ChildField.ColumnField` on the detail
+table. The emitter never re-derives residence; it reads the field variant.
 
-- **A1 (rejected):** auto-derive the existing `CrossTableField` set from the participant's detail `@table`
-  and reuse R388's aliased-projection + per-field alias-read fetcher path unchanged. Smallest emitter
-  delta, but it keeps the detail row as a flat bag of `detailAlias.COLUMN.as("Type_field")` projections
-  whose typing is erased at the `.as(...)` alias boundary, read back by per-field wiring. That path exists
-  as the *workaround's* escape hatch, not as a model of joined-table inheritance; promoting it to a
-  load-bearing mechanism minimises the emitter patch at the cost of an interpret-the-aliases shape in the
-  generated output that maintainers reverse-engineer. Wrong layer to minimise.
-- **A2 (chosen):** split the projection. The interface's shared fields project once against the base via a
-  new interface-level `$fields` (there is none today: `$fields` is generated per object type only, against
-  a single jOOQ table parameter, `TypeClassGenerator` line ~216). Each participant's detail-resident fields
-  project against its detail-table alias through the normal `$fields(restrictTo(sel, typeName), detailAlias,
-  env)` path, typed against the detail table and read back as a nested-type record. The participant path
-  thus *converges* with the multitable per-typename pattern instead of forking onto the alias-read
-  machinery. The cross-module `graphitron-sakila-example` compile is the backstop that the detail-alias
-  `$fields` typing lines up against real jOOQ classes.
+The two query topologies are mirror images, and the declared hop is correct in both:
+
+- **Interface (discriminated) query** is `FROM base`, with a per-participant discriminator-gated LEFT JOIN
+  to each detail table. The interface's shared fields are projected directly off the base; each
+  participant contributes only its **detail-resident** fields, projected against its detail alias. The
+  participant's base-resident fields are *not* re-projected here, the base row is already in hand, so the
+  parent-`@reference` is simply not traversed on this path.
+- **Standalone query** (the concrete type used as a return type outside the interface) is `FROM detail`.
+  Here the participant's **base-resident** fields traverse the parent-`@reference` (the existing
+  `ColumnReferenceField` join to the base), and its detail-resident fields read directly off the detail
+  table.
+
+So the participant's full `$fields` (every field, parent-references traversed) is what serves standalone
+use, and a **detail-only projection** (detail-resident fields against the detail alias) is what the
+interface fetcher uses. Critically these are *two distinct projections*, not one mutated method: the
+earlier draft's "restrict the participant's `$fields` to detail-resident fields" globally corrupts the
+standalone projection (it silently drops the inherited fields). The interface path must therefore use a
+detail-scoped projection while the type's full `$fields` stays intact. Implementation may realise the
+detail-scoped projection as a second generated method on the participant class or as a residence-filtered
+emission at the interface call site; the requirement is that the interface path does not re-traverse
+parent-references and the standalone path does. The cross-module `graphitron-sakila-example` compile is
+the backstop that both projections line up against real jOOQ classes.
+
+**Standalone use is in scope.** Because the parent hop is declared, a joined-table participant is a
+first-class return type on its own, not only reachable through its interface. This is a deliberate gain
+over the inference-only framing, where the inherited columns lived on a table the standalone query never
+joined. One acceptance check gates it: confirm the specific `ColumnReferenceField` shape we lean on
+(single-hop FK to the parent, scalar projection, in a standalone table-type `$fields`) is an implemented
+shape and not one of the deferred variants `validateColumnReferenceField` gates; if it is deferred, that
+deferral is the first thing to lift.
 
 ## Model changes
 
-The roadmap framing ("`ParticipantRef.TableBound` would carry its own table and join path") is the right
-decomposition; these make it concrete.
+- **A distinct `ParticipantRef` variant for joined-table participants.** Today every `TableInterfaceType`
+  participant is a `ParticipantRef.TableBound` whose table equals the base. A joined-table participant gets
+  its own sealed variant (`ParticipantRef.JoinedTableBound`) carrying its detail table, its discriminator
+  value, and the resolved child&rarr;parent hop. A distinct variant (not `TableBound` carrying an optional
+  hop) lets the emitter switch on identity and never inspect "is the hop null". The single-table case
+  (participant table == base, no detail) stays `TableBound`, so a `TableInterfaceType` may freely mix
+  discriminator-only participants with joined-table participants. (Both share a `TableBacked` capability for
+  the type-name / table / discriminator-value reads the TypeResolver-routing and discriminator-collection
+  sites need.)
+- **Residence is carried by field classification, declared by `@reference`.** Because the author declares
+  the parent hop, residence is not a predicate anyone recomputes: a base-resident field classifies as
+  `ChildField.ColumnReferenceField` (resolved on the base via the existing reference path), a detail-resident
+  field as `ChildField.ColumnField` on the participant's own table. The emitter and validator read the field
+  variant; they never ask the catalog "which table does this column live on". This is the Generation-thinking
+  win the inference framing only approximated, achieved by reusing the classifier path that already exists
+  rather than adding a residence-aware resolver to `FieldBuilder`.
+- **The child&rarr;parent hop arrives as a resolved `JoinStep`, never a `ForeignKey`.** The hop the author
+  names in `@reference` resolves at the parse boundary into the existing `JoinStep.FkJoin` / `JoinSlot`
+  vocabulary and is stored on the `JoinedTableBound` variant. Per "Classification belongs at the parse
+  boundary", raw `ForeignKey<?,?>` stays inside the parse-boundary holders (`JooqCatalog` canonical, with
+  `BuildContext` and the catalog builder `CatalogBuilder`); `TypeBuilder` / `FieldBuilder` consume the
+  classified hop. The hop is direction-blind (`slot.sourceSide()` / `slot.targetSide()`), so the interface
+  fetcher reads it as `base.pk = detail.pk` for the detail LEFT JOIN while the standalone reference path
+  reads it as `detail -> base`, both off the same resolved slot pair. Because the FK is named by the author,
+  there is no inference and no ambiguous-FK case (contrast the inference framing, which had to defer the
+  ambiguous case to R393).
 
-- **Participant carries its own detail table.** Today every `TableInterfaceType` participant's
-  `ParticipantRef.TableBound.table` equals the base. For a joined-table participant it becomes the
-  participant's own detail table. The single-table case (participant table == base, no detail join) stays a
-  valid shape: a `TableInterfaceType` may mix discriminator-only participants (data wholly on the base) with
-  joined-table participants (own detail table). Whether the joined-table participant is a distinct sealed
-  sub-variant of `ParticipantRef` or `TableBound` carries an optional resolved base→detail hop is the first
-  fork for the reviewer; recommendation is a distinct variant so the emitter switches on identity and never
-  inspects "is the hop null".
-- **Field residence is a type fact, not a recomputed predicate.** "A field's column resolves on the base
-  vs the detail table" is a predicate the partitioning step, the emitter, and the validator would each
-  recompute (the same Generation-thinking drift R388's `@reference`-on-base-column rejection already guards
-  one direction of). Lift it into the model: a participant's projected fields are partitioned at the parse
-  boundary into base-resident and detail-resident sets (or sealed field-projection variants carrying their
-  resolved table), so the emitter projects each set against the table the model already named and the
-  validator reads rather than re-derives.
-- **Base→detail join arrives as a resolved join shape, never a `ForeignKey`.** The hop resolves at the
-  parse boundary into the existing `JoinStep` / `JoinSlot` vocabulary (the same family `@reference` paths
-  and DTO-parent batching speak), stored on the participant variant and threaded to the emitter. Per
-  "Classification belongs at the parse boundary", raw `ForeignKey<?,?>` lives only in the parse-boundary
-  holders (`JooqCatalog` canonical, with `BuildContext` and the catalog builders `CatalogBuilder` /
-  `CatalogFacts`); `TypeBuilder` / `FieldBuilder` / `ServiceCatalog` consume the classified output via
-  `JooqCatalog` rather than holding raw types, so the resolution in `buildParticipantList` goes through
-  `JooqCatalog` and the emitter receives an already-classified hop. Inference picks the **unique** catalog
-  FK between detail and base; an ambiguous FK (more than one) is rejected at validate time (see Validation),
-  not silently guessed. An author-declared override for the ambiguous case is **out of scope here** and
-  deferred to **R393**; this item ships inference-only.
+> Note on the in-flight model code. The inert `JoinedTableBound` already on trunk (commit `073443e`) was
+> shaped for the inference framing (it carries a `detailResidentFields` list and a `baseToDetail` hop named
+> as an inferred FK). Under this design residence is implicit in field classification and the hop is the
+> author-declared child&rarr;parent reference, so that record will be reshaped during implementation (drop
+> `detailResidentFields`; the hop is the parent reference). The `TableBacked` capability and the
+> routing-site edits carry over unchanged.
 
 ## Implementation
 
-- `TypeBuilder.buildParticipantList` / `buildTableInterfaceType`: resolve each participant's own `@table`,
-  partition its fields base-vs-detail against the catalog, and resolve the base→detail hop into a
-  `JoinStep`. Stop forcing the single-table assumption (participant table == base).
-- `ParticipantRef`: add the joined-table participant shape (own detail table + resolved hop + residence
-  partition) per the model-changes fork above.
-- `TypeClassGenerator`: add an interface-level `$fields` that projects the interface's shared fields against
-  the base; restrict a joined-table participant's `$fields` to its detail-resident fields, projected against
-  the detail-table alias.
+- `ParticipantRef`: the `JoinedTableBound` variant + `TableBacked` capability (foundation already on trunk
+  at `073443e`; reshape per the model-changes note). Carries detail table, discriminator, and the resolved
+  child&rarr;parent `JoinStep.FkJoin`.
+- `TypeBuilder.buildParticipantList` / `buildTableInterfaceType`: detect a participant whose `@table`
+  differs from the base, resolve its child&rarr;parent hop from the parent-`@reference` it declares, and
+  build a `JoinedTableBound`. Stop forcing the single-table assumption (participant table == base).
+- `FieldBuilder`: **no new residence resolver.** A joined-table participant's base-resident fields carry
+  `@reference`, so they reach the existing cross-table `ColumnReferenceField` classification
+  (`resolveColumnForReference`, `FieldBuilder.java:5974`) unchanged. The one reconciliation: R388's guard
+  that rejects a `@reference` whose resolved column lives on the base table (`TypeBuilder.java:820`) was
+  written under the workaround's "participant table == base" assumption, where such a reference *was*
+  meaningless. For a joined-table participant (table &ne; base) the parent-reference is the legitimate base
+  bridge, so the guard must be scoped to fire only when participant table == base. This scoping is itself a
+  validator-mirrored invariant (see Validation).
+- `TypeClassGenerator`: the interface fetcher needs a **detail-only projection** of each joined-table
+  participant (detail-resident fields against the detail alias) that does *not* re-traverse parent-references.
+  Realise it as a second generated projection on the participant class, or as a residence-filtered emission
+  at the interface call site; do not mutate the participant's full `$fields` (that one stays whole for
+  standalone use). The interface's own shared fields project off the base, either via a small interface-level
+  `$fields` (there is none today: `$fields` is generated per object type only, `TypeClassGenerator` line
+  ~216) or by reading them directly in the fetcher.
 - `TypeFetcherGenerator.buildQueryTableInterfaceFieldFetcher` (and the child
-  `buildTableInterfaceFieldFetcher`): project shared fields via the interface-level `$fields` against the
-  base, and for each joined-table participant declare its detail alias, emit the discriminator-gated LEFT
-  JOIN on the resolved hop, and project detail fields via `$fields(restrictTo(sel, typeName), detailAlias,
-  env)`. Reuse R388's discriminator-gated ON-clause and qualified-column emission; do not reuse the
-  per-field `CrossTableField` alias-read fetcher for joined-table participants.
+  `buildTableInterfaceFieldFetcher`): project the interface's shared fields off the base, and for each
+  joined-table participant declare its detail alias, emit the discriminator-gated LEFT JOIN on the resolved
+  child&rarr;parent hop (`base.pk = detail.pk AND base.discriminator = '<value>'`), and project that
+  participant's detail-resident fields via the detail-only projection against the detail alias. Reuse R388's
+  discriminator-gated ON-clause and qualified-column emission (and R392's synthetic discriminator alias for
+  TypeResolver routing).
 
 ## Validation
 
@@ -141,30 +192,47 @@ The validator mirrors every accept/reject the joined-table classifier makes, eac
 existing `drainBuildDiagnostics` / `Rejection` machinery (the R204/R279/R317/R388 pattern), surfaced as an
 `INVALID_SCHEMA` author error with file:line:
 
-- Base→detail FK ambiguity (more than one catalog FK between detail and base and no override path): reject
-  with a candidate-FK hint.
-- The base→detail hop must be PK=FK (the join assumption the emitter bakes in): reject a detail table whose
-  join to base is not its primary key.
-- A participant field classified detail-resident must actually resolve on the detail table (the inverse of
-  R388's "reject `@reference` on a base-resident column").
-- The joined-table participant field leaf must land in the four-way dispatch partition
+- The child&rarr;parent hop must be PK=FK (the join assumption the interface fetcher bakes in): reject a
+  participant whose declared reference to the base is not via the detail table's own primary key. This is
+  classic shared-PK class-table inheritance.
+- A participant's parent-references must all resolve to the same base, the discriminated interface's table.
+  A parent-reference pointing at some other table is not a base bridge; reject it.
+- R388-guard scoping (the mirrored invariant for the guard reconciliation above): the "`@reference` whose
+  column lives on the base table is meaningless" rejection must fire only when participant table == base.
+  For a joined-table participant the same shape is the legitimate parent bridge, so the guard's accept/reject
+  flips with the participant kind, and the validator reads that classification rather than recomputing the
+  column-on-base predicate.
+- The joined-table participant's field leaves must land in the four-way dispatch partition
   (`TypeFetcherGenerator.IMPLEMENTED_LEAVES` / `PROJECTED_LEAVES` / `NOT_DISPATCHED_LEAVES` /
-  `STUBBED_VARIANTS`); `GeneratorCoverageTest`'s `everyGraphitronFieldLeafHasAKnownDispatchStatus` fails by
-  construction otherwise. Use that mechanism rather than a fresh ad-hoc check.
+  `STUBBED_VARIANTS`); base-resident fields are `ColumnReferenceField` and detail-resident fields are
+  `ColumnField`, both `PROJECTED_LEAVES`, so `GeneratorCoverageTest`'s
+  `everyGraphitronFieldLeafHasAKnownDispatchStatus` covers them by construction. The one caveat is the
+  acceptance check noted under "Standalone use": the single-hop-FK scalar `ColumnReferenceField` shape must
+  be implemented, not deferred.
+
+No ambiguous-FK invariant: the author names the FK in `@reference`, so the inference-era ambiguity case
+(and its R393 deferral) does not arise here.
 
 ## Tests
 
-- **Pipeline tier (primary):** a discriminated base + two detail-table participants SDL generates the
-  expected `TypeSpec` shape (one base query, per-participant discriminator-gated LEFT JOIN, split
-  projection). Pin the shape, not generated method-body strings.
+- **Pipeline tier (primary):** a discriminated base + two detail-table participants (inherited fields with
+  parent-`@reference`, own fields without) generates the expected `TypeSpec` shape: one base query,
+  per-participant discriminator-gated LEFT JOIN on the child&rarr;parent hop, shared fields off the base,
+  detail fields off the detail alias. Pin the shape, not generated method-body strings.
+- **Standalone-use pipeline test:** the same joined-table participant used as a standalone query return type
+  generates a `FROM detail` fetcher whose inherited fields resolve via the parent-reference join. This is
+  the regression guard for the property that motivated the redesign, the concrete type is first-class
+  outside its interface.
 - **Execution tier:** a corpus example alongside the existing `table-interface` example
   (`code-generation-triggers.adoc`), with new sakila fixtures (a discriminated base table + per-concrete-type
-  detail tables joined PK=FK). Assert that a polymorphic query returns the right per-type detail columns and
-  that non-matching rows carry NULL through the joins. No code-string assertions on emitted join bodies.
-- **Validation pipeline tests:** one rejection test per new invariant above, plus a positive case for a
+  detail tables joined PK=FK). Assert that a polymorphic query returns the right per-type detail columns,
+  that non-matching rows carry NULL through the joins, and that a standalone query of one concrete type
+  returns both its inherited and its own columns.
+- **Validation pipeline tests:** one rejection test per new invariant above (non-PK=FK hop; parent-reference
+  to a non-base table; the R388-guard scoping in both directions), plus a positive case for a
   `TableInterfaceType` mixing a discriminator-only participant with a joined-table participant.
 - The full reactor compile under `-Plocal-db` (including the Java-17 `graphitron-sakila-example`) is the
-  backstop for the detail-alias `$fields` typing.
+  backstop for the detail-alias projection typing.
 
 ## User documentation (first-client check)
 
@@ -179,38 +247,65 @@ interface Subject @table(name: "subject") @discriminate(on: "subject_type") {
 
 type Person implements Subject @table(name: "person") @discriminator(value: "PERSON") {
   id: ID!
-  name: String!          # shared, resolves on subject (base)
-  birthDate: Date!       # resolves on person (detail) — no @reference needed
+  name: String! @reference(...)   # inherited: lives on subject, reached via the person -> subject PK=FK
+  birthDate: Date!                # own: lives on person (detail)
 }
 
 type Organisation implements Subject @table(name: "organisation") @discriminator(value: "ORG") {
   id: ID!
-  name: String!
-  orgNumber: String!     # resolves on organisation (detail)
+  name: String! @reference(...)   # inherited
+  orgNumber: String!              # own: lives on organisation (detail)
 }
 ```
 
-The promise: a concrete type declares the table its own data lives on, once, via `@table`; the generator
-derives the base→detail join and the per-table projection. No `@reference` on every detail field. If this
-does not read simply, the design is wrong and must change before implementation. The draft moves into
+The promise: a concrete type declares the table its own data lives on via `@table`, and declares its
+inherited fields with `@reference` back to the base. The annotation says exactly what is true, the
+inherited value lives on the parent and is reached by the PK=FK hop, and the generator does the rest: the
+discriminated join for interface queries, the parent join for standalone queries. The cost relative to the
+discarded "infer everything" sketch is one `@reference` per inherited field (typically few, since
+class-table inheritance keeps the shared columns small); the gain is that the concrete type is usable on
+its own, residence is explicit rather than magic, and there is no ambiguous-FK case to reason about. If
+this does not read simply, the design is wrong and must change before implementation. The draft moves into
 `getting-started.adoc` / the interface-union chapter when the feature ships, scrubbed of `R<n>` / phase
 vocabulary per the user-facing-doc check.
 
+> The exact `@reference` argument spelling for the parent hop (PK=FK, single hop, scalar projection of the
+> named base column) should be pinned during the docs draft against the existing `@reference` syntax; this
+> sketch elides it. A behavior delta worth stating in the chapter: the old `@table(base)` + per-detail-field
+> `@reference` workaround let you query the concrete type standalone because every column physically sat on
+> the base. This model splits the data across two tables, so standalone querying now works *because* the
+> inherited fields carry the parent hop, not because everything lives on one table.
+
 ## Out of scope
 
-- **Author-declared base→detail FK override (R393).** Deferred. This item infers the unique catalog FK and
-  rejects an ambiguous FK at validate time; the explicit override for the rarer multi-FK schema, with its
-  own user-visible directive surface, is R393.
-- **Detail tables that do not share the base's primary key.** The base→detail hop is required to be PK=FK
-  (the detail table's join column to the base is its own primary key, i.e. classic shared-PK class-table
-  inheritance). A detail table with a separate surrogate PK plus an independent FK column to the base is
-  rejected (Validation bullet 2), not silently joined on a guessed column.
+- **Detail tables that do not share the base's primary key.** The child&rarr;parent hop is required to be
+  PK=FK (the detail table's join column to the base is its own primary key, i.e. classic shared-PK
+  class-table inheritance). A detail table with a separate surrogate PK plus an independent FK column to the
+  base is rejected (Validation), not silently joined on a guessed column.
+- **Multi-level joined-table chains (base &rarr; mid &rarr; leaf).** Each level would reference its
+  immediate parent; the hops compose, and the PK=FK invariant holds at each. The mechanism extends to it
+  cleanly, but v1 ships and tests the single base &rarr; detail level; deeper chains are a follow-up if a
+  schema needs them.
+
+## Bearing on R393
+
+R393 ("author-declared base&rarr;detail FK override for the ambiguous-FK case") was carved out of the
+*inference* framing: when the generator infers the unique catalog FK between detail and base, a schema with
+more than one FK is ambiguous and needs an override. This design has the author name the FK in `@reference`
+from the outset, so the ambiguity never arises and there is nothing to override. **R393 is very likely moot
+under this design and should be revisited** (Discarded, or repurposed if a non-`@reference` shorthand is
+ever wanted) rather than carried as a live dependency. Left as a decision for the reviewer / user, not
+unilaterally closed here.
 
 ## Resolved design decisions
 
-Both decisions that the first Spec draft left open for the reviewer are now settled:
-
-1. **Joined-table participant shape:** a distinct `ParticipantRef` sub-variant (not `TableBound` carrying an
-   optional resolved hop), so the emitter switches on identity and never inspects "is the hop null".
-2. **Ambiguous base→detail FK / override directive:** deferred to R393 (see Out of scope); this item is
-   inference-only and rejects ambiguity at validate time.
+1. **Authoring mechanism:** inherited (base-resident) fields carry a parent-`@reference`; own fields do not.
+   Residence is declared, not inferred, and the parent hop reuses the existing cross-table reference path.
+   This supersedes the first draft's "declare only `@table`, infer residence and FK" sketch, which forced a
+   new residence resolver into `FieldBuilder` and left the concrete type unusable outside its interface.
+2. **Joined-table participant shape:** a distinct `ParticipantRef.JoinedTableBound` sub-variant (not
+   `TableBound` carrying an optional hop), so the emitter switches on identity.
+3. **Standalone use:** in scope, and a first-class motivation rather than a deferred follow-up. The concrete
+   type is queryable on its own via the declared parent hop.
+4. **Projection mechanism:** the participant's full `$fields` stays whole (serves standalone); the interface
+   path uses a separate detail-only projection. The two are distinct, never one globally-restricted method.
