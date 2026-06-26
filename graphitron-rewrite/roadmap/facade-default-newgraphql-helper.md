@@ -1,7 +1,7 @@
 ---
 id: R391
 title: "Graphitron facade: default-case newGraphQL() helper"
-status: Spec
+status: Ready
 bucket: feature
 depends-on: []
 created: 2026-06-26

@@ -35,11 +35,11 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R180` | Centralize ResultType column-read emission for @record parents | Spec | 2026-05-19 | [plan](record-parent-column-read-helper.md) |
 | `R242` | DML payload positional input/output alignment | Spec | 2026-06-15 <sub>created 2026-05-26</sub> | [plan](dml-payload-positional-alignment.md) |
 | `R115` | Enumerate the capabilities graphitron delivers | Spec |  | [plan](capability-catalog.md) |
-| `R391` | Graphitron facade: default-case newGraphQL() helper | Spec | 2026-06-26 | [plan](facade-default-newgraphql-helper.md) |
 | `R109` | How-to recipe and Sakila fixture for grouped collections via Field<Result<R>> @externalField + multiset | Spec |  | [plan](list-valued-external-field-multiset.md) |
 | `R212` | IntelliJ plugin wrapping graphitron:dev LSP | Spec | 2026-05-21 | [plan](intellij-lsp-plugin.md) |
 | `R269` | Null-guard split-query key extraction for nullable to-one records | Spec | 2026-06-02 <sub>created 2026-06-01</sub> | [plan](nullable-to-one-record-into-npe.md) |
 | `R112` | Operation-driven test corpus, capability catalog, and runtime trace <sub>blocked by: [capability-catalog](capability-catalog.md)</sub> | Spec |  | [plan](operation-driven-test-corpus.md) |
+| `R391` | Graphitron facade: default-case newGraphQL() helper | Ready | 2026-06-26 | [plan](facade-default-newgraphql-helper.md) |
 | `R99` | LSP classpath scan misses sibling modules when dev goal runs from a sub-module | Ready | 2026-06-26 | [plan](lsp-submodule-sibling-classpath.md) |
 | `R386` | MCP catalog.search: semantic fuzzy discovery over CatalogFacts descriptors, content-hash-persisted Lucene index refreshed on the classpath trigger (R118 slice 10) | In Review | 2026-06-26 | [plan](mcp-catalog-search.md) |
 
