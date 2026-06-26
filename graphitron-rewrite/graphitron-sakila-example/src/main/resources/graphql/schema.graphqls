@@ -355,6 +355,15 @@ type Query {
     # column so the TypeResolver can route to FilmContent or ShortContent at runtime.
     allContent: [Content!]!
 
+    # R388 fixture: discriminated joined-inheritance interface whose participant detail tables reach
+    # their detail-only columns through a COMPOSITE FK that re-declares the discriminator column
+    # (subject_kind). Once such a participant join fires, an unqualified discriminator reference in
+    # the generated SELECT projection / LEFT JOIN ON-clause / WHERE filter is ambiguous and
+    # PostgreSQL rejects the query; the interface fetcher qualifies all three to the base table.
+    # Authored the corrected way: the discriminator is a plain interface field (no @reference), and
+    # each participant's detail-only field carries the composite @reference.
+    allSubjects: [Subject!]!
+
     # stub-interface-union-fetchers.md Track B (B2): QueryInterfaceField fixture.
     # Searchable is a multi-table interface implemented by Film and Actor — heterogeneous
     # tables, no shared discriminator column. The generator emits a two-stage fetcher:
@@ -1708,6 +1717,35 @@ input FilmIdListFilter @table(name: "film") {
 interface Content @table(name: "content") @discriminate(on: "CONTENT_TYPE") {
     contentId: Int!    @field(name: "CONTENT_ID")
     title:     String! @field(name: "TITLE")
+}
+
+# R388 discriminated joined-inheritance fixture. Subject is a single-table discriminated interface
+# over jti_subject (discriminator subject_kind). Each participant uses @table(name: "jti_subject")
+# (the base) and a per-field @reference to reach its detail-only column — the workaround shape that
+# compiles today (a participant declaring its own detail @table is R389). The defining dimension:
+# the detail tables (jti_app_account, jti_person) re-declare the discriminator column subject_kind
+# via their composite FK back to the base, so a bare discriminator reference in the generated
+# fetcher is ambiguous once a participant join fires. subjectKind is exposed as a PLAIN interface
+# field; authoring @reference on it would now be a build-time error (the discriminator column lives
+# on the base table, so a cross-table @reference is meaningless).
+interface Subject @table(name: "jti_subject") @discriminate(on: "subject_kind") {
+    subjectId:   Int!    @field(name: "jti_subject_id")
+    subjectKind: String! @field(name: "subject_kind")
+    displayName: String! @field(name: "display_name")
+}
+
+type AppAccount implements Subject @table(name: "jti_subject") @discriminator(value: "APP") {
+    subjectId:   Int!    @field(name: "jti_subject_id")
+    subjectKind: String! @field(name: "subject_kind")
+    displayName: String! @field(name: "display_name")
+    clientId:    String  @reference(path: [{key: "jti_app_account_subject_fk"}]) @field(name: "client_id")
+}
+
+type Person implements Subject @table(name: "jti_subject") @discriminator(value: "PERSON") {
+    subjectId:   Int!    @field(name: "jti_subject_id")
+    subjectKind: String! @field(name: "subject_kind")
+    displayName: String! @field(name: "display_name")
+    fullName:    String  @reference(path: [{key: "jti_person_subject_fk"}]) @field(name: "full_name")
 }
 
 # stub-interface-union-fetchers.md Track B (B2): plain (multi-table) InterfaceType fixture.

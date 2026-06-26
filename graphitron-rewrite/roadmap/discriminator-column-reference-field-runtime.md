@@ -1,7 +1,7 @@
 ---
 id: R388
 title: "Discriminated-interface @reference field generates wrong SQL/fetcher at runtime"
-status: Ready
+status: In Review
 bucket: bug
 priority: 2
 theme: interface-union
@@ -72,7 +72,38 @@ emitter joins it to the discriminated base and projects via the participant's ow
 per-field `@reference` boilerplate and the `$fields(subjektTable)` wrongness) — is tracked as **R389** and
 is out of scope here. R388 stays scoped to the near-term correctness fix.
 
-## Spec / implementation plan
+## Implementation status — shipped (In Review)
+
+All three workstreams landed; `mvn install -Plocal-db` is green end-to-end. Highlights and the one
+design decision taken during implementation:
+
+- **Workstream A (defect 1):** all three discriminator emission sites in `TypeFetcherGenerator` now
+  qualify to the base table. Implementation note: a table-instance reference (`tableLocal.field(name)`)
+  renders the right SQL but types as `Field<?>`, which the downstream `.eq(String)` / `.in(String...)`
+  calls reject. The fix uses a **two-part qualified name** `DSL.field(DSL.name(baseTableSqlName, col))`,
+  which renders `"base"."col"` *and* keeps the `Field<Object>` the discriminator predicates need. The
+  three helpers thread the base table's SQL name (`tableRef.tableName()`).
+- **Workstream B (defect 2):** the contradiction is detected **once** in `TypeBuilder.extractCrossTableFields`
+  (catalog in scope): the field is skipped from the participant's cross-table set (classifier narrowing)
+  and a build diagnostic is registered via `ctx.addDiagnostic(...)`. **Design decision:** the spec called
+  for the rejection to be emitted in `GraphitronSchemaValidator.validateTableInterfaceType`, but that
+  method has no catalog access (it reads the classified model only), so it cannot recompute the
+  base-column predicate or build the detail-column `candidateHint`. Registering the rejection as a build
+  diagnostic the validator drains (`drainBuildDiagnostics`, the established R204 / R279 / R317 pattern) is
+  the faithful realisation of the spec's "resolve once, validator reads it rather than recomputing" intent:
+  a single detection site with the catalog, surfaced through the validator as a build-time `INVALID_SCHEMA`
+  author error with file:line and a detail-column hint.
+- **Workstream C:** `jti_subject` + `jti_app_account` + `jti_person` joined-inheritance fixture added to
+  `init.sql` (detail tables re-declare the discriminator via composite FK); `Subject` / `AppAccount` /
+  `Person` SDL added to the example schema (authored the corrected way); execution tests
+  `allSubjects_returnsDiscriminatorPerRow` + `allSubjects_inlineFragmentDetail_joinsWithoutAmbiguousColumn`
+  (the defect-1 regression, with an SQL_LOG qualified-reference assertion) and validation pipeline tests
+  `DiscriminatorReferenceContradictionPipelineTest` (defect-2 rejection + the participant-only positive
+  case).
+
+R389 (first-class discriminated joined-table inheritance) remains out of scope and unstarted.
+
+## Spec / implementation plan (as approved)
 
 Reviewed against the design principles by the `principles-architect` (read-only consult). Key rulings
 folded in below: defect 2's validator rejection is **mandatory** (not an either/or with classifier-skip)

@@ -202,6 +202,43 @@ CREATE TABLE film_endorsement (
     note            varchar(255)
 );
 
+-- -------------------------
+-- jti_subject (+ jti_app_account, jti_person): R388 discriminated joined-inheritance fixture.
+-- A discriminated base table (jti_subject, carrying the subject_kind discriminator) plus one
+-- detail table per concrete kind, joined by a COMPOSITE FK (jti_subject_id, subject_kind). The
+-- composite FK re-declares the discriminator column (subject_kind) on the detail table — the
+-- dimension no existing discriminated fixture has. With that column present on a joined table,
+-- an unqualified discriminator reference in the generated interface fetcher's SELECT projection,
+-- LEFT JOIN ON-clause, and WHERE filter is ambiguous and PostgreSQL rejects the query
+-- ("column reference \"subject_kind\" is ambiguous"); R388 qualifies all three to the base table.
+-- The UNIQUE(jti_subject_id, subject_kind) constraint is what lets the detail tables carry the
+-- composite FK. Each detail table also has a detail-only column reached from the interface via a
+-- composite @reference (client_id / full_name), the genuine cross-table participant field.
+-- -------------------------
+
+CREATE TABLE jti_subject (
+    jti_subject_id  serial       PRIMARY KEY,
+    subject_kind    varchar(20)  NOT NULL,
+    display_name    varchar(255) NOT NULL,
+    UNIQUE (jti_subject_id, subject_kind)
+);
+
+CREATE TABLE jti_app_account (
+    jti_subject_id  int          NOT NULL,
+    subject_kind    varchar(20)  NOT NULL,
+    client_id       varchar(255),
+    CONSTRAINT jti_app_account_subject_fk
+        FOREIGN KEY (jti_subject_id, subject_kind) REFERENCES jti_subject (jti_subject_id, subject_kind)
+);
+
+CREATE TABLE jti_person (
+    jti_subject_id  int          NOT NULL,
+    subject_kind    varchar(20)  NOT NULL,
+    full_name       varchar(255),
+    CONSTRAINT jti_person_subject_fk
+        FOREIGN KEY (jti_subject_id, subject_kind) REFERENCES jti_subject (jti_subject_id, subject_kind)
+);
+
 -- ===========================
 -- Seed data
 -- ===========================
@@ -304,6 +341,24 @@ INSERT INTO content (content_type, title, length, short_description, film_id) VA
     ('FILM',  'ACE GOLDFINGER (extended)',     90, NULL,                  2),
     ('SHORT', 'Sunrise',                       12, 'Dawn over a city',    NULL),
     ('SHORT', 'Interlude',                      8, 'Quiet jazz piece',    NULL);
+
+-- jti_subject seed data: two APP subjects (with app-account detail rows) and two PERSON subjects
+-- (with person detail rows). The detail rows re-state subject_kind in the composite FK, exercising
+-- the discriminator-ambiguity case at runtime. display_name is on the base table; client_id /
+-- full_name live only on their detail tables and are reached via the composite @reference.
+INSERT INTO jti_subject (subject_kind, display_name) VALUES
+    ('APP',    'Billing service'),
+    ('APP',    'Reporting service'),
+    ('PERSON', 'Ada Lovelace'),
+    ('PERSON', 'Alan Turing');
+
+INSERT INTO jti_app_account (jti_subject_id, subject_kind, client_id) VALUES
+    (1, 'APP', 'billing-client-001'),
+    (2, 'APP', 'reporting-client-002');
+
+INSERT INTO jti_person (jti_subject_id, subject_kind, full_name) VALUES
+    (3, 'PERSON', 'Ada Lovelace (full)'),
+    (4, 'PERSON', 'Alan Turing (full)');
 
 -- R36 item 1 fixture: composite-PK participants in @asConnection multi-table polymorphic.
 -- paged_a + paged_b share a (Integer, Integer) composite PK shape so the polymorphic emitter

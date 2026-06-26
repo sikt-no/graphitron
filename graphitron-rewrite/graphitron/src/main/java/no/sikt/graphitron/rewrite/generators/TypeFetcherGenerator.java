@@ -818,7 +818,7 @@ public class TypeFetcherGenerator {
      *     List<SortField<?>> orderBy = List.of();
      *     DSLContext dsl = graphitronContext(env).getDslContext(env);
      *     return dsl
-     *         .select(table.asterisk(), DSL.field(DSL.name("CONTENT_TYPE")))
+     *         .select(table.asterisk(), DSL.field(DSL.name("content", "CONTENT_TYPE")))
      *         .from(table)
      *         .where(condition)
      *         .orderBy(orderBy)
@@ -842,8 +842,8 @@ public class TypeFetcherGenerator {
         builder.addCode(GeneratorUtils.declareTableLocal(names, tableRef));
         String tableLocal = names.tableLocalName();
         builder.addCode(buildConditionCall(qtif.parentTypeName(), qtif.name(), tableLocal, outputPackage));
-        builder.addCode(buildDiscriminatorFilter(qtif.discriminatorColumn(), qtif.knownDiscriminatorValues()));
-        builder.addCode(buildInterfaceFieldsList(qtif.participants(), qtif.discriminatorColumn(), tableLocal, outputPackage));
+        builder.addCode(buildDiscriminatorFilter(qtif.discriminatorColumn(), qtif.knownDiscriminatorValues(), tableRef.tableName()));
+        builder.addCode(buildInterfaceFieldsList(qtif.participants(), qtif.discriminatorColumn(), tableRef.tableName(), tableLocal, outputPackage));
         builder.addCode(buildCrossTableAliasDeclarations(qtif.participants(), tableLocal));
 
         var dslContextClass = ClassName.get("org.jooq", "DSLContext");
@@ -853,7 +853,7 @@ public class TypeFetcherGenerator {
         builder.addStatement("$T dsl = $L.getDslContext(env)", dslContextClass, ctx.graphitronContextCall());
         builder.addStatement("$T step = dsl.select(new $T<>(fields)).from($L)",
             selectJoinStepOfRecord, ArrayList.class, tableLocal);
-        builder.addCode(buildCrossTableJoinChain(qtif.participants(), qtif.discriminatorColumn(), tableLocal));
+        builder.addCode(buildCrossTableJoinChain(qtif.participants(), qtif.discriminatorColumn(), tableRef.tableName(), tableLocal));
 
         if (isList) {
             builder.addCode(buildOrderByCode(qtif.orderBy(), qtif.name(), tableLocal));
@@ -886,7 +886,7 @@ public class TypeFetcherGenerator {
      *     DSLContext dsl = graphitronContext(env).getDslContext(env);
      *     Condition condition = DSL.field(DSL.name("FILM_ID")).eq(parentRecord.get(DSL.name("FILM_ID")));
      *     return dsl
-     *         .select(table.asterisk(), DSL.field(DSL.name("CONTENT_TYPE")))
+     *         .select(table.asterisk(), DSL.field(DSL.name("content", "CONTENT_TYPE")))
      *         .from(table)
      *         .where(condition)
      *         .fetchOne();
@@ -916,15 +916,15 @@ public class TypeFetcherGenerator {
         // Build join-path condition. Only single-hop FkJoin is supported; multi-hop and
         // ConditionJoin paths are caught at classification time.
         builder.addCode(buildJoinPathCondition(tif.joinPath(), tableRef.tableName()));
-        builder.addCode(buildDiscriminatorFilter(tif.discriminatorColumn(), tif.knownDiscriminatorValues()));
-        builder.addCode(buildInterfaceFieldsList(tif.participants(), tif.discriminatorColumn(), tableLocal, outputPackage));
+        builder.addCode(buildDiscriminatorFilter(tif.discriminatorColumn(), tif.knownDiscriminatorValues(), tableRef.tableName()));
+        builder.addCode(buildInterfaceFieldsList(tif.participants(), tif.discriminatorColumn(), tableRef.tableName(), tableLocal, outputPackage));
         builder.addCode(buildCrossTableAliasDeclarations(tif.participants(), tableLocal));
 
         var selectJoinStepClass = ClassName.get("org.jooq", "SelectJoinStep");
         var selectJoinStepOfRecord = ParameterizedTypeName.get(selectJoinStepClass, RECORD);
         builder.addStatement("$T step = dsl.select(new $T<>(fields)).from($L)",
             selectJoinStepOfRecord, ArrayList.class, tableLocal);
-        builder.addCode(buildCrossTableJoinChain(tif.participants(), tif.discriminatorColumn(), tableLocal));
+        builder.addCode(buildCrossTableJoinChain(tif.participants(), tif.discriminatorColumn(), tableRef.tableName(), tableLocal));
 
         if (isList) {
             builder.addCode(buildOrderByCode(tif.orderBy(), tif.name(), tableLocal));
@@ -990,7 +990,7 @@ public class TypeFetcherGenerator {
      */
     private static CodeBlock buildInterfaceFieldsList(
             List<ParticipantRef> participants, String discriminatorColumn,
-            String tableLocal, String outputPackage) {
+            String tableSqlName, String tableLocal, String outputPackage) {
         var b = CodeBlock.builder();
         var fieldType = ParameterizedTypeName.get(
             ClassName.get("org.jooq", "Field"),
@@ -998,7 +998,15 @@ public class TypeFetcherGenerator {
         var setType = ParameterizedTypeName.get(
             ClassName.get(LinkedHashSet.class), fieldType);
         b.addStatement("$T fields = new $T<>()", setType, LinkedHashSet.class);
-        b.addStatement("fields.add($T.field($T.name($S)))", DSL, DSL, discriminatorColumn);
+        // Qualify the discriminator column to the interface/base table. A participant's FK-target
+        // detail table can re-declare the discriminator column (composite FK whose columns include
+        // it), making a bare DSL.field(DSL.name(col)) reference ambiguous once that join is present.
+        // The discriminator always lives on the base table, which is never aliased here (FROM
+        // <base>), so a two-part DSL.name(base, col) renders "base"."col" and matches the FROM
+        // clause. (A table-instance reference would render the same SQL but type as Field<?>, which
+        // the downstream .eq(String) / .in(String...) calls cannot accept; the two-part name keeps
+        // the Field<Object> the discriminator predicates rely on.)
+        b.addStatement("fields.add($T.field($T.name($S, $S)))", DSL, DSL, tableSqlName, discriminatorColumn);
         for (var participant : participants) {
             if (!(participant instanceof ParticipantRef.TableBound tb)) continue;
             var typeClass = ClassName.get(outputPackage + ".types", tb.typeName());
@@ -1073,7 +1081,8 @@ public class TypeFetcherGenerator {
      * {@link no.sikt.graphitron.rewrite.model.JoinStep.FkJoin}'s arity invariant).
      */
     private static CodeBlock buildCrossTableJoinChain(
-            List<ParticipantRef> participants, String discriminatorColumn, String tableLocal) {
+            List<ParticipantRef> participants, String discriminatorColumn,
+            String tableSqlName, String tableLocal) {
         var b = CodeBlock.builder();
         for (var participant : participants) {
             if (!(participant instanceof ParticipantRef.TableBound tb)) continue;
@@ -1085,9 +1094,11 @@ public class TypeFetcherGenerator {
                 // the joined alias. Slot orientation is direction-blind; emitCorrelationWhere
                 // reads target.<targetSide>.eq(parent.<sourceSide>) uniformly.
                 var fkOn = JoinPathEmitter.emitCorrelationWhere(ctf.fkJoin(), aliasVar, tableLocal);
+                // Qualify the discriminator predicate to the base table; see buildInterfaceFieldsList
+                // for why a bare reference is ambiguous and why the two-part name is used.
                 var onCondition = CodeBlock.builder()
-                    .add("$L.and($T.field($T.name($S)).eq($S))",
-                        fkOn, DSL, DSL, discriminatorColumn, tb.discriminatorValue())
+                    .add("$L.and($T.field($T.name($S, $S)).eq($S))",
+                        fkOn, DSL, DSL, tableSqlName, discriminatorColumn, tb.discriminatorValue())
                     .build();
                 b.beginControlFlow("if ($L != null)", aliasVar);
                 b.addStatement("step = step.leftJoin($L).on($L)", aliasVar, onCondition);
@@ -1098,19 +1109,23 @@ public class TypeFetcherGenerator {
     }
 
     /**
-     * Emits {@code condition = condition.and(DSL.field(DSL.name(col)).in(val1, val2, ...))}
+     * Emits {@code condition = condition.and(<base>.field(DSL.name(col)).in(val1, val2, ...))}
      * to restrict results to rows with a known discriminator value. Mirrors the legacy generator
      * which always emits {@code WHERE col IN (...known values...)}. When {@code knownValues} is
      * empty, emits nothing (no restriction added).
+     *
+     * <p>The discriminator column is qualified to the interface/base table ({@code tableSqlName}):
+     * once any participant cross-table join is present, the joined detail table can re-declare the
+     * discriminator column, making a bare reference ambiguous. See {@link #buildInterfaceFieldsList}.
      */
-    private static CodeBlock buildDiscriminatorFilter(String discriminatorColumn, List<String> knownValues) {
+    private static CodeBlock buildDiscriminatorFilter(String discriminatorColumn, List<String> knownValues, String tableSqlName) {
         if (knownValues.isEmpty()) return CodeBlock.of("");
         var inArgs = knownValues.stream()
             .map(v -> CodeBlock.of("$S", v))
             .collect(CodeBlock.joining(", "));
         return CodeBlock.builder()
-            .addStatement("condition = condition.and($T.field($T.name($S)).in($L))",
-                DSL, DSL, discriminatorColumn, inArgs)
+            .addStatement("condition = condition.and($T.field($T.name($S, $S)).in($L))",
+                DSL, DSL, tableSqlName, discriminatorColumn, inArgs)
             .build();
     }
 

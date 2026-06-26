@@ -5573,4 +5573,66 @@ class GraphQLQueryTest {
         payload.containsEntry("reviewId", 50042);
         payload.containsEntry("errors", null);
     }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void allSubjects_returnsDiscriminatorPerRow() {
+        // R388 discriminated joined-inheritance fixture. Subject exposes its discriminator
+        // (subjectKind) as a plain interface field; with no inline fragment no participant join
+        // fires, so this exercises the SELECT-projection discriminator and the WHERE IN filter in
+        // isolation. init.sql seeds two APP subjects then two PERSON subjects (ordered by id).
+        Map<String, Object> data = execute("{ allSubjects { subjectId subjectKind displayName } }");
+        List<Map<String, Object>> items = (List<Map<String, Object>>) data.get("allSubjects");
+        assertThat(items).hasSize(4);
+        assertThat(items).extracting(i -> i.get("subjectKind"))
+            .containsExactly("APP", "APP", "PERSON", "PERSON");
+        assertThat(items).extracting(i -> i.get("displayName"))
+            .containsExactly("Billing service", "Reporting service", "Ada Lovelace", "Alan Turing");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void allSubjects_inlineFragmentDetail_joinsWithoutAmbiguousColumn() {
+        // R388 defect-1 regression test, and the only mechanical guard for the qualification fix:
+        // both the qualified and the bare discriminator reference type-check, so compilation cannot
+        // catch the defect. Each participant detail table (jti_app_account, jti_person) re-declares
+        // the discriminator column subject_kind via its composite FK, so a bare discriminator
+        // reference in the SELECT projection, the LEFT JOIN ON-clause, or the WHERE filter makes
+        // PostgreSQL reject the query as ambiguous once the join fires. execute() asserts the GraphQL
+        // result carries no errors, so reaching the data assertions already proves the ambiguous-
+        // column failure is gone. The detail value is non-null for matching discriminator rows and
+        // null for the others (the LEFT JOIN is gated by the participant's discriminator value).
+        SQL_LOG.clear();
+        Map<String, Object> data = execute("""
+            { allSubjects {
+                __typename
+                subjectKind
+                ... on AppAccount { clientId }
+                ... on Person { fullName }
+            } }
+            """);
+        List<Map<String, Object>> items = (List<Map<String, Object>>) data.get("allSubjects");
+        assertThat(items).hasSize(4);
+
+        var apps = items.stream().filter(i -> "AppAccount".equals(i.get("__typename"))).toList();
+        assertThat(apps).hasSize(2);
+        assertThat(apps).extracting(i -> i.get("clientId"))
+            .containsExactlyInAnyOrder("billing-client-001", "reporting-client-002");
+        assertThat(apps).allSatisfy(i ->
+            assertThat(i.get("fullName")).as("Person-only field is null on AppAccount rows").isNull());
+
+        var persons = items.stream().filter(i -> "Person".equals(i.get("__typename"))).toList();
+        assertThat(persons).hasSize(2);
+        assertThat(persons).extracting(i -> i.get("fullName"))
+            .containsExactlyInAnyOrder("Ada Lovelace (full)", "Alan Turing (full)");
+        assertThat(persons).allSatisfy(i ->
+            assertThat(i.get("clientId")).as("AppAccount-only field is null on Person rows").isNull());
+
+        // Mechanical guard: the generated SQL qualifies the discriminator column to the base table
+        // (SQL_LOG entries are lowercased by the ExecuteListener). The qualified
+        // "jti_subject"."subject_kind" form, present at the join site, is what removes the ambiguity.
+        assertThat(SQL_LOG)
+            .as("the discriminated-interface query must qualify the discriminator to the base table at the join site")
+            .anyMatch(s -> s.contains("\"jti_subject\".\"subject_kind\"") && s.contains("join"));
+    }
 }
