@@ -23,11 +23,10 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R308` | Fix the @service list-payload N+1 by deriving many-arrival for list-returning carriers | Spec | 2026-06-14 | [plan](service-list-payload-arrival.md) |
 | `R335` | Fold input/scalar/enum classification into the single classify-and-emit walk | Spec | 2026-06-19 | [plan](walk-classifies-input-surface.md) |
 | `R380` | Implement @reference join-subquery filter conditions on input fields and arguments | Spec | 2026-06-26 <sub>created 2026-06-25</sub> | [plan](reference-join-filter-conditions.md) |
-| `R381` | LSP-guided @reference path authoring <sub>blocked by: [reference-terminal-hop-target-validation](reference-terminal-hop-target-validation.md)</sub> | Spec | 2026-06-25 | [plan](lsp-reference-path-authoring.md) |
+| `R381` | LSP-guided @reference path authoring | Spec | 2026-06-25 | [plan](lsp-reference-path-authoring.md) |
 | `R45` | Multi-tenant routing on top of the schema-driven ExecutionInput factory | Spec | 2026-05-20 | [plan](tenant-routing-and-execution-input.md) |
 | `R273` | Source NodeId metadata from @node + catalog PK (inferred from `implements Node`), and settle wrong-type/malformed mismatch semantics, retiring the legacy __NODE bare-ID arm | Spec | 2026-06-02 | [plan](nodeid-skip-mismatch-error-surfacing.md) |
 | `R347` | Consolidate graphitron-lsp navigation, dispatch, and result-building | In Progress | 2026-06-19 | [plan](lsp-structural-consolidation.md) |
-| `R379` | Validate @reference path joins compile: terminal-hop target and condition parameter tables | In Review | 2026-06-26 <sub>created 2026-06-25</sub> | [plan](reference-terminal-hop-target-validation.md) |
 | `R332` | Mark @table on input types as deprecated (signal ahead of R97 removal) | Spec | 2026-06-22 <sub>created 2026-06-18</sub> | [plan](table-on-input-deprecation-signal.md) |
 | `R13` | Faceted search on `@asConnection` | Spec |  | [plan](faceted-search.md) |
 | `R63` | Type UPSERT dialect requirement on the model | Spec |  | [plan](dml-dialect-requirement-on-model.md) |
@@ -251,10 +250,9 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R359` [**Guard ColumnRef.sqlName() comparisons against case-sensitivity drift**](column-sqlname-comparison-case-guard.md) — Backlog, cleanup
 - `R69` [**Implement @experimental_constructType**](experimental-construct-type.md) — Backlog, feature
 - `R380` [**Implement @reference join-subquery filter conditions on input fields and arguments**](reference-join-filter-conditions.md) — Spec, feature
-- `R381` [**LSP-guided @reference path authoring**](lsp-reference-path-authoring.md) — Spec, architecture, blocked by [reference-terminal-hop-target-validation](reference-terminal-hop-target-validation.md)
+- `R381` [**LSP-guided @reference path authoring**](lsp-reference-path-authoring.md) — Spec, architecture
 - `R282` [**Scope unknownForeignKeyRejection FK candidate hint to the structurally relevant FKs**](fk-key-hint-sibling-scope.md) — Backlog, bug
 - `R72` [**Slim ServiceCatalog down to a lookup primitive**](slim-servicecatalog-to-lookup.md) — Backlog, architecture
-- `R379` [**Validate @reference path joins compile: terminal-hop target and condition parameter tables**](reference-terminal-hop-target-validation.md) — In Review, bug
 - `R319` [**Warn on pruned unreachable output types instead of dropping them silently**](warn-on-pruned-unreachable-types.md) — Backlog, architecture
 - `R239` [**Lift ColumnField.parentTable from emitter parameter to record component**](column-field-parent-table-record-component.md) — Backlog, architecture
 - `R278` [**Polymorphic type classification: sealed union-type variants over ParticipantRef**](polymorphic-type-sealed-variants.md) — Backlog, structural-refactor
