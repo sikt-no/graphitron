@@ -1,7 +1,7 @@
 ---
 id: R379
 title: "Validate @reference path joins compile: terminal-hop target and condition parameter tables"
-status: Spec
+status: Ready
 bucket: bug
 priority: 5
 theme: structural-refactor
