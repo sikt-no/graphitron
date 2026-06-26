@@ -14,8 +14,8 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 | ID | Item | Status | Updated | Plan |
 |---|---|---|---|---|
-| `R392` | Discriminated TypeResolver reads discriminator ambiguously (double-projection) | Spec | 2026-06-26 | [plan](discriminated-typeresolver-discriminator-alias.md) |
 | `R19` | Rebase and squash rewrite branch onto main | Ready |  | [plan](history-squash.md) |
+| `R392` | Discriminated TypeResolver reads discriminator ambiguously (double-projection) | In Review | 2026-06-26 | [plan](discriminated-typeresolver-discriminator-alias.md) |
 | `R222` | Dimensional model pivot: slots over cross-product permits | Spec | 2026-06-18 <sub>created 2026-05-21</sub> | [plan](dimensional-model-pivot.md) |
 | `R333` | The Graphitron data model | Spec | 2026-06-25 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
 | `R256` | Absorb the service walker substrate: typed per-arm errors + multi-arg ctors | Ready | 2026-05-30 <sub>created 2026-05-29</sub> | [plan](service-walker-substrate-absorption.md) |
@@ -170,7 +170,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### interface-union
 
-- `R392` [**Discriminated TypeResolver reads discriminator ambiguously (double-projection)**](discriminated-typeresolver-discriminator-alias.md) — Spec, bug
+- `R392` [**Discriminated TypeResolver reads discriminator ambiguously (double-projection)**](discriminated-typeresolver-discriminator-alias.md) — In Review, bug
 - `R382` [**Lower orderBy onto multitable-interface/union queries**](multitable-interface-query-orderby-lowering.md) — Backlog, bug
 - `R384` [**Support converted/@nodeId/developer-@condition filters on multitable interface/union queries**](multitable-interface-converted-nodeid-condition-filters.md) — Backlog, bug, blocked by [multitable-interface-filter-extraction-kinds](multitable-interface-filter-extraction-kinds.md)
 - `R383` [**Support nested-input @field filters on multitable interface/union queries**](multitable-interface-filter-extraction-kinds.md) — Ready, bug
