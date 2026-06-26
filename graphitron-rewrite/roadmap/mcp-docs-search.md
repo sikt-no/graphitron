@@ -1,7 +1,7 @@
 ---
 id: R385
 title: "MCP docs.search: build-time .adoc chunking + pre-embedded bundled index, async-loaded semantic retrieval over the documentation (R118 slice 9)"
-status: Spec
+status: Ready
 bucket: feature
 theme: lsp
 depends-on: []
@@ -128,7 +128,14 @@ the real docs warm cost and is named here so it is not mistaken for a zero-cost 
 - **Bundle tuples, not a Lucene `FSDirectory`** (rationale above).
 - **In-memory store** per the programme's stated "an in-memory store suffices" for the docs corpus.
 
-## Open design fork for the reviewer: where the build-time embed runs
+## Where the build-time embed runs (settled at Spec → Ready sign-off: Option A)
+
+The reviewer confirmed **Option A**: chunk + embed inside `graphitron-mcp`. The deciding principle is
+the dependency quarantine the module's own pom documents holding (ONNX Runtime + Lucene on
+`graphitron-mcp` alone); Option B would re-spread the heavy ONNX dependency onto a second module's
+build classpath, which is exactly what the quarantine exists to prevent. The cross-directory read of
+`/docs/` is a build-time-only input, mitigated by the declared `<docs.source.dir>` property and the
+content-hash stamp, not a runtime edge. The two shapes are kept below for the implementation record.
 
 The decisive trade-off is the dependency quarantine `graphitron-mcp` exists for. Two shapes:
 
@@ -144,7 +151,12 @@ The decisive trade-off is the dependency quarantine `graphitron-mcp` exists for.
   real reactor edge. Cost: the ONNX embedder reaches a second module's *build* classpath, re-spreading
   the heavy dependency the quarantine is meant to contain.
 
-Reviewer to confirm A or redirect to B; the rest of the plan is independent of the choice.
+Two implementation details the reviewer flagged as non-blocking, for the implementer to settle in
+flight: (1) the corpus root resolves to `docs/manual/**` (the tutorial / explanation / reference /
+directives subtrees named above); whether the top-level `docs/*.adoc` pages (quick-start, faq) join
+the corpus is an open low-stakes call, default to the manual subtree unless they prove useful. (2) The
+`sourcePath` + `anchor` → `https://graphitron.sikt.no/...` URL transform is not pinned here; derive it
+from the rendered site's path layout when wiring the result shape.
 
 ## Tests
 
