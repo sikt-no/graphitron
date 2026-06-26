@@ -7,7 +7,11 @@ import io.modelcontextprotocol.server.transport.HttpServletStreamableServerTrans
 import io.modelcontextprotocol.spec.McpSchema;
 import no.sikt.graphitron.lsp.state.Workspace;
 import no.sikt.graphitron.mcp.rag.AsyncWarm;
+import no.sikt.graphitron.mcp.rag.CatalogSearchIndex;
 import no.sikt.graphitron.mcp.rag.Embedder;
+import no.sikt.graphitron.mcp.rag.EmbeddingStore;
+import no.sikt.graphitron.mcp.rag.RagConfig;
+import no.sikt.graphitron.mcp.rag.WarmState;
 import no.sikt.graphitron.mcp.rag.docs.DocsIndex;
 import no.sikt.graphitron.rewrite.catalog.CatalogBuilder;
 import no.sikt.graphitron.rewrite.catalog.CatalogFacts;
@@ -87,30 +91,56 @@ public final class GraphitronMcpServer implements AutoCloseable {
     // is then always advertised but reads as still-warming and degrades to the structured tools.
     private final DocsSearchTool docsSearchTool;
 
+    // R386 — the semantic catalog index behind catalog.search: self-observing the live catalogFacts
+    // and persisting its Lucene index under the RagConfig cache dir, riding the *same* shared embedder
+    // warm docs.search uses (the second consumer the slice-9 wiring stood the warm up for). Null when
+    // the server is stood up without RAG (the structured-tool tests); catalog.search then degrades.
+    private final CatalogSearchIndex catalogSearchIndex;
+
     /**
-     * Structured-only server (no RAG): the docs-index and embedder warms are absent, so
-     * {@code docs.search} is advertised but degrades to the structured tools. The entry point the
-     * structured-tool tests use; production threads the warms through the four-arg constructor.
+     * Structured-only server (no RAG): the docs-index and embedder warms and the catalog cache are
+     * absent, so {@code docs.search} and {@code catalog.search} are advertised but degrade to the
+     * structured tools. The entry point the structured-tool tests use; production threads the warms
+     * and cache through the five-arg constructor.
      */
     public GraphitronMcpServer(InetSocketAddress address, Workspace workspace) throws IOException {
-        this(address, workspace, null, null);
+        this(address, workspace, null, null, null);
     }
 
     /**
-     * Build and start the server on the supplied loopback address, holding the live
-     * {@code workspace} the {@code status} tool reads its snapshot state off and the two RAG warms
-     * {@code docs.search} rides. A taken port surfaces as an {@link IOException}; the caller
-     * translates it into a Mojo error. On any startup failure the partially-built server is torn
-     * down before the exception propagates, so nothing leaks. The warms are read-only here (their
-     * lifecycle is owned by the caller that constructed and started them), mirroring how the live
-     * {@code Workspace} is threaded in; a RAG warm failure leaves the server structured-only and
-     * never blocks the bind, per the R118 cross-cutting principle.
+     * RAG server without a catalog cache: docs.search rides its warms, catalog.search degrades. A
+     * back-compat seam for callers that wire only the docs slice; production uses the five-arg form.
      */
     public GraphitronMcpServer(
         InetSocketAddress address, Workspace workspace,
         AsyncWarm<Embedder> embedderWarm, AsyncWarm<DocsIndex> docsWarm
     ) throws IOException {
+        this(address, workspace, embedderWarm, docsWarm, null);
+    }
+
+    /**
+     * Build and start the server on the supplied loopback address, holding the live
+     * {@code workspace} the {@code status} tool reads its snapshot state off, the two RAG warms
+     * {@code docs.search} rides, and the {@code ragConfig} the catalog index persists under. A taken
+     * port surfaces as an {@link IOException}; the caller translates it into a Mojo error. On any
+     * startup failure the partially-built server is torn down before the exception propagates, so
+     * nothing leaks. The embedder / docs warms are read-only here (their lifecycle is owned by the
+     * caller that constructed and started them), mirroring how the live {@code Workspace} is threaded
+     * in; the catalog index warm, by contrast, is owned by the {@link CatalogSearchIndex} this server
+     * holds, so the server kicks it after bind. A RAG warm failure leaves the server structured-only
+     * and never blocks the bind, per the R118 cross-cutting principle.
+     */
+    public GraphitronMcpServer(
+        InetSocketAddress address, Workspace workspace,
+        AsyncWarm<Embedder> embedderWarm, AsyncWarm<DocsIndex> docsWarm, RagConfig ragConfig
+    ) throws IOException {
         this.docsSearchTool = new DocsSearchTool(embedderWarm, docsWarm);
+        // The catalog index needs the shared embedder warm and a cache location; without both, the
+        // tool stays advertised but degrades (the structured-only path), mirroring docs.search.
+        this.catalogSearchIndex = (embedderWarm != null && ragConfig != null)
+            ? new CatalogSearchIndex(workspace::catalogFacts, embedderWarm, ragConfig)
+            : null;
+
         String instructions = loadResource("/mcp/instructions.txt");
         String aboutText = loadResource("/mcp/about.md");
 
@@ -142,7 +172,7 @@ public final class GraphitronMcpServer implements AutoCloseable {
                 catalogTablesTool(workspace), catalogDescribeTool(workspace),
                 servicesTool(workspace), conditionsTool(workspace), recordsTool(workspace),
                 schemaTool(workspace), diagnosticsTool(workspace), edgesTool(workspace),
-                docsSearchTool.specification())
+                docsSearchTool.specification(), catalogSearchTool())
             .resources(directivesResource(workspace, bundledDirectives))
             .build();
 
@@ -173,6 +203,25 @@ public final class GraphitronMcpServer implements AutoCloseable {
             stop();
             throw new IOException("graphitron:dev: failed to start MCP HTTP server", e);
         }
+
+        // R386 — kick the initial catalog-index build off the dev thread, so an agent's first search
+        // usually lands a ready index. The shared embedder warm is already started by the caller; the
+        // index warm only awaits it. The warm never touches the dev loop; a failure leaves search
+        // degraded, not the server. The structured-only path has no index and so nothing to kick.
+        if (catalogSearchIndex != null) {
+            catalogSearchIndex.start();
+        }
+    }
+
+    /**
+     * Blocks until the catalog search index reaches a terminal warm state, or returns immediately
+     * when the server is structured-only. A test affordance for deterministically driving the ready
+     * arm; production drives the tool and reads the degradation message while warming.
+     */
+    void awaitRagWarm() {
+        if (catalogSearchIndex != null) {
+            catalogSearchIndex.awaitWarm();
+        }
     }
 
     /** The bound local port (the ephemeral port under tests, {@code 8488} in production). */
@@ -189,6 +238,13 @@ public final class GraphitronMcpServer implements AutoCloseable {
     }
 
     private void stop() {
+        if (catalogSearchIndex != null) {
+            try {
+                catalogSearchIndex.close();
+            } catch (RuntimeException e) {
+                LOGGER.warn("graphitron:dev: error closing catalog search index: {}", e.getMessage());
+            }
+        }
         try {
             mcpServer.closeGracefully();
         } catch (RuntimeException e) {
@@ -655,6 +711,104 @@ public final class GraphitronMcpServer implements AutoCloseable {
             .callHandler((exchange, request) -> EdgesTool.edgesResult(
                 workspace.snapshot(), workspace.catalogFacts(),
                 workspace.catalog().externalReferences(), reverseEdgeIndexCache, request.arguments()))
+            .build();
+    }
+
+    // ---- R386: catalog.search (semantic catalog discovery) ----
+
+    /** Default {@code catalog.search} top-k: semantic discovery is "find the table I can't name", not enumeration. */
+    private static final int DEFAULT_SEARCH_LIMIT = 10;
+
+    /**
+     * R386 — {@code catalog.search}: fuzzy, semantic discovery over the database catalog by names and
+     * comments. The semantic counterpart to {@code catalog.tables} / {@code catalog.describe}: those
+     * answer "describe the table I named", this answers "find the table I can only describe". Drives
+     * the self-observing {@link #catalogSearchIndex}, which reads the live {@code catalogFacts} and
+     * refreshes its persisted Lucene index when the catalog content changes. Hits return by the same
+     * schema-qualified SQL id {@code catalog.describe} accepts, so discovery hands off to description.
+     */
+    private McpServerFeatures.SyncToolSpecification catalogSearchTool() {
+        var tool = McpSchema.Tool.builder("catalog.search", Map.of(
+                "type", "object",
+                "properties", Map.of(
+                    "query", Map.of("type", "string",
+                        "description", "Natural-language description of the data you are looking for."),
+                    "limit", Map.of("type", "integer",
+                        "description", "Maximum tables to return (default " + DEFAULT_SEARCH_LIMIT + ").")),
+                "required", List.of("query")))
+            .title("Search the catalog semantically")
+            .description("Fuzzy, semantic discovery over the database catalog by table and column "
+                + "names and comments. Ask in natural language (\"where are customer addresses "
+                + "stored?\") and get back the most relevant tables ranked by similarity, each by its "
+                + "schema-qualified SQL name; feed a hit's id straight into catalog.describe for the "
+                + "full column / key / foreign-key detail. Semantic search is much stronger when your "
+                + "jOOQ codegen captured table and column comments; without them it works on names "
+                + "alone. The index warms in the background at dev startup and refreshes after a "
+                + "schema change; a search during a refresh reports that it is warming and points you "
+                + "at the structured catalog.* tools meanwhile.")
+            .build();
+        return McpServerFeatures.SyncToolSpecification.builder()
+            .tool(tool)
+            .callHandler((exchange, request) -> catalogSearchResult(catalogSearchIndex, request.arguments()))
+            .build();
+    }
+
+    static McpSchema.CallToolResult catalogSearchResult(CatalogSearchIndex index, Map<String, Object> args) {
+        if (index == null) {
+            // Structured-only server (no RAG wired): the tool is advertised but degrades, mirroring
+            // docs.search, so an agent learns to fall back to the structured catalog.* tools.
+            return McpSchema.CallToolResult.builder()
+                .addTextContent(WarmState.degradationMessage(new WarmState.Warming<>()))
+                .structuredContent(Map.of("status", "warming", "results", List.of()))
+                .build();
+        }
+        Optional<String> query = McpWire.stringArg(args, "query");
+        if (query.isEmpty()) {
+            return McpSchema.CallToolResult.builder()
+                .addTextContent("catalog.search: a non-empty 'query' argument is required.")
+                .structuredContent(Map.of("status", "invalid", "results", List.of()))
+                .build();
+        }
+        int limit = McpWire.intArg(args, "limit", DEFAULT_SEARCH_LIMIT);
+        if (limit < 1) {
+            limit = DEFAULT_SEARCH_LIMIT;
+        }
+        return switch (index.search(query.get(), limit)) {
+            case CatalogSearchIndex.SearchOutcome.Hits hits -> catalogSearchHits(query.get(), hits.hits());
+            case CatalogSearchIndex.SearchOutcome.Degraded degraded -> McpSchema.CallToolResult.builder()
+                .addTextContent(degraded.message())
+                .structuredContent(Map.of("status", degraded.status(), "results", List.of()))
+                .build();
+        };
+    }
+
+    /**
+     * Maps ranked hits onto the {@code catalog.search} result: each hit carries its stable
+     * {@code schema.table} id (split back into {@code schema} / {@code name} for convenience), the
+     * comment when codegen captured one, and the fused RRF score surfaced verbatim.
+     */
+    private static McpSchema.CallToolResult catalogSearchHits(String query, List<EmbeddingStore.Hit> hits) {
+        var results = new ArrayList<Map<String, Object>>(hits.size());
+        for (var hit : hits) {
+            String[] qualified = McpWire.splitQualifiedTable(hit.id());
+            var entry = new LinkedHashMap<String, Object>();
+            entry.put("id", hit.id());
+            entry.put("schema", qualified[0]);
+            entry.put("name", qualified[1]);
+            if (hit.payload() != null && !hit.payload().isBlank()) {
+                entry.put("comment", hit.payload());
+            }
+            entry.put("score", hit.score());
+            results.add(entry);
+        }
+        var fields = new LinkedHashMap<String, Object>();
+        fields.put("status", "ready");
+        fields.put("results", results);
+        String summary = "catalog.search: " + hits.size() + " table(s) for \"" + query + "\""
+            + (hits.isEmpty() ? "" : "; top match " + hits.get(0).id()) + ".";
+        return McpSchema.CallToolResult.builder()
+            .addTextContent(summary)
+            .structuredContent(fields)
             .build();
     }
 

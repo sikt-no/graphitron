@@ -198,6 +198,25 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
     }
 
     /**
+     * Derives the {@code graphitron-mcp-rag} cache root under {@code project.build.directory} (R386),
+     * with the same {@code basedir/target} fallback {@link #resolveOutputResourcesDirectory(Path)}
+     * uses for hand-built {@link MavenProject} test instances. The semantic catalog index persists
+     * its content-hash-keyed Lucene directories here, so it survives {@code dev} restarts and dies on
+     * {@code mvn clean}.
+     */
+    final Path resolveRagCacheDirectory(Path basedir) {
+        var buildDirectory = project.getBuild() != null
+            ? project.getBuild().getDirectory()
+            : null;
+        var targetDir = buildDirectory != null
+            ? Path.of(buildDirectory)
+            : basedir.resolve("target");
+        return (targetDir.isAbsolute() ? targetDir : basedir.resolve(targetDir))
+            .resolve("graphitron-mcp-rag")
+            .normalize();
+    }
+
+    /**
      * The reactor projects whose roots the LSP scans: every project in the
      * Maven session, so a consumer running {@code mvn graphitron:dev} from one
      * module sees services / tables declared in sibling modules of the same

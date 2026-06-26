@@ -7,6 +7,8 @@ import io.modelcontextprotocol.spec.McpSchema;
 import no.sikt.graphitron.lsp.state.Workspace;
 import no.sikt.graphitron.mcp.rag.AsyncWarm;
 import no.sikt.graphitron.mcp.rag.Embedder;
+import no.sikt.graphitron.mcp.rag.FakeEmbedder;
+import no.sikt.graphitron.mcp.rag.RagConfig;
 import no.sikt.graphitron.mcp.rag.docs.DocChunk;
 import no.sikt.graphitron.mcp.rag.docs.DocsBundle;
 import no.sikt.graphitron.mcp.rag.docs.DocsIndex;
@@ -114,7 +116,8 @@ class GraphitronMcpServerTest {
             var tools = client.listTools().tools();
             assertThat(tools).extracting(McpSchema.Tool::name)
                 .containsExactlyInAnyOrder("status", "catalog.tables", "catalog.describe",
-                    "services", "conditions", "records", "schema", "diagnostics", "edges", "docs.search");
+                    "services", "conditions", "records", "schema", "diagnostics", "edges",
+                    "docs.search", "catalog.search");
 
             var result = client.callTool(McpSchema.CallToolRequest.builder("status").build());
             assertThat(result.isError()).isNotEqualTo(Boolean.TRUE);
@@ -895,6 +898,109 @@ class GraphitronMcpServerTest {
         @Override
         public int dimension() {
             return dim;
+        }
+    }
+
+    // ---- R386: catalog.search (semantic catalog discovery) ----
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void catalogSearchReturnsRankedTableIdsWhoseTopFeedsCatalogDescribe() throws Exception {
+        // The shared embedder warm carries a fake (no ONNX); BM25 over the descriptors carries the
+        // ranking. The server kicks the index warm at bind; awaitRagWarm() waits it out deterministically.
+        var embedderWarm = startedAwaited(new AsyncWarm<Embedder>("e", () -> new FakeEmbedder(384)));
+        try (var server = new GraphitronMcpServer(
+                loopback(0), catalogSearchWorkspace(), embedderWarm, null, RagConfig.temporary());
+             var client = connect(server.port())) {
+            client.initialize();
+            server.awaitRagWarm();
+
+            var structured = structured(client.callTool(McpSchema.CallToolRequest.builder("catalog.search")
+                .arguments(Map.of("query", "customer address")).build()));
+            assertThat(structured).containsEntry("status", "ready");
+            var results = (List<Map<String, Object>>) structured.get("results");
+            assertThat(results).isNotEmpty();
+
+            // Each hit carries the schema-qualified id catalog.describe accepts, split into schema / name.
+            var top = results.get(0);
+            assertThat(top).containsKeys("id", "schema", "name", "score");
+            String topId = (String) top.get("id");
+            assertThat(topId).isEqualTo(top.get("schema") + "." + top.get("name"));
+
+            // Discovery hands off to description: the top id feeds straight into catalog.describe.
+            var describe = structured(client.callTool(McpSchema.CallToolRequest.builder("catalog.describe")
+                .arguments(Map.of("table", topId)).build()));
+            assertThat(describe).containsEntry("resolution", "resolved");
+        }
+    }
+
+    @Test
+    void catalogSearchReportsWarmingWhileTheIndexIsStillBuilding() throws Exception {
+        // A blocking embedder pins the index in Warming; the first search reports the degradation.
+        var embedderWarm = startedAwaited(new AsyncWarm<Embedder>("e", () -> new BlockingEmbedder(384)));
+        try (var server = new GraphitronMcpServer(
+                loopback(0), catalogSearchWorkspace(), embedderWarm, null, RagConfig.temporary());
+             var client = connect(server.port())) {
+            client.initialize();
+
+            var result = client.callTool(McpSchema.CallToolRequest.builder("catalog.search")
+                .arguments(Map.of("query", "customer address")).build());
+            assertThat(result.isError()).isNotEqualTo(Boolean.TRUE);
+            assertThat(result.content()).isNotEmpty();
+            @SuppressWarnings("unchecked")
+            var structured = (Map<String, Object>) result.structuredContent();
+            assertThat(structured).containsEntry("status", "warming");
+        }
+    }
+
+    /** A two-table fixture (address, customer) the catalog.search BM25 ranking discovers by name. */
+    private static Workspace catalogSearchWorkspace() {
+        var address = new CatalogFacts.Table(
+            "public", "address", Optional.of("Customer mailing addresses"),
+            List.of(
+                new CatalogFacts.Column("address_id", "ADDRESS_ID", "integer", false, Optional.empty()),
+                new CatalogFacts.Column("address", "ADDRESS", "varchar", false, Optional.of("Street address"))),
+            Optional.empty(), List.of(), List.of(), CatalogFacts.ForeignKeys.empty());
+        var customer = new CatalogFacts.Table(
+            "public", "customer", Optional.empty(),
+            List.of(new CatalogFacts.Column("customer_id", "CUSTOMER_ID", "integer", false, Optional.empty())),
+            Optional.empty(), List.of(), List.of(), CatalogFacts.ForeignKeys.empty());
+        var map = new LinkedHashMap<String, CatalogFacts.Table>();
+        map.put("public.address", address);
+        map.put("public.customer", customer);
+        return workspaceWith(new CatalogFacts(map));
+    }
+
+    /** An {@link Embedder} that blocks forever in {@code embedDocuments}, pinning the index in Warming. */
+    private static final class BlockingEmbedder implements Embedder {
+        private final int dimension;
+        private final java.util.concurrent.CountDownLatch gate = new java.util.concurrent.CountDownLatch(1);
+
+        BlockingEmbedder(int dimension) {
+            this.dimension = dimension;
+        }
+
+        @Override
+        public Query embedQuery(String text) {
+            return new Query(text, no.sikt.graphitron.mcp.rag.FakeEmbedder.oneHot(text, dimension));
+        }
+
+        @Override
+        public List<Embedding> embedDocuments(List<String> texts) {
+            try {
+                gate.await();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new RuntimeException(e);
+            }
+            return texts.stream()
+                .map(t -> new Embedding(t, no.sikt.graphitron.mcp.rag.FakeEmbedder.oneHot(t, dimension)))
+                .toList();
+        }
+
+        @Override
+        public int dimension() {
+            return dimension;
         }
     }
 

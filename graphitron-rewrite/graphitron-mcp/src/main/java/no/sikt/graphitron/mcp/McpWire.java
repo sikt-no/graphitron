@@ -1,5 +1,6 @@
 package no.sikt.graphitron.mcp;
 
+import no.sikt.graphitron.rewrite.catalog.CatalogFacts;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
 import no.sikt.graphitron.rewrite.catalog.SourceWalker;
@@ -118,6 +119,20 @@ final class McpWire {
      */
     static String columnId(String qualifiedTable, String sqlColumn) {
         return qualifiedTable + ":" + sqlColumn;
+    }
+
+    /**
+     * Splits a schema-qualified table ID ({@code schema.table}; the {@code CatalogFacts} key, the
+     * same form {@link CatalogFacts.Table#qualifiedName() qualifiedName} composes) back into its
+     * {@code [schema, name]} halves on the first {@code .}. SQL schema identifiers carry no dot, so
+     * the first separator is the schema boundary; an unqualified id (no dot) yields an empty schema
+     * and the whole string as the name. The inverse of the {@code schema + "." + name} composition.
+     */
+    static String[] splitQualifiedTable(String qualifiedTable) {
+        int dot = qualifiedTable.indexOf('.');
+        return dot < 0
+            ? new String[] {"", qualifiedTable}
+            : new String[] {qualifiedTable.substring(0, dot), qualifiedTable.substring(dot + 1)};
     }
 
     // ---- source-location wire shape ----

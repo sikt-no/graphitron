@@ -351,6 +351,22 @@ The port is fixed at `8488` (the LSP's is `8487`). If `8488` is already taken
 a message naming the conflict rather than silently rebinding, so a stale
 `.mcp.json` never points an agent at the wrong project's server.
 
+[quote]
+____
+*`catalog.search`*, semantic, fuzzy discovery over your database catalog. Ask
+in natural language ("where are customer addresses stored?") and get back the
+most relevant tables ranked by similarity, by their schema-qualified SQL name.
+Feed a hit straight into `catalog.describe` for the full column / key / FK
+detail. The index warms in the background when `graphitron:dev` starts and
+refreshes after a schema change; the first search during a refresh reports that
+it is warming and points you at the structured `catalog.*` tools meanwhile.
+
+Semantic search is much stronger when your jOOQ-generated catalog carries table
+and column comments. Enable comment generation in your jOOQ codegen
+configuration so the database's own documentation feeds the search; without
+comments, search still works on table and column names alone.
+____
+
 What the loop does on each schema save:
 
 . Re-runs the generator. Idempotent writes mean only the files whose

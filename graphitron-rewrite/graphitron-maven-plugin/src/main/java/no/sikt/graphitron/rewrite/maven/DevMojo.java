@@ -14,6 +14,7 @@ import no.sikt.graphitron.rewrite.maven.dev.DevServer;
 import no.sikt.graphitron.mcp.GraphitronMcpServer;
 import no.sikt.graphitron.mcp.rag.AsyncWarm;
 import no.sikt.graphitron.mcp.rag.Embedder;
+import no.sikt.graphitron.mcp.rag.RagConfig;
 import no.sikt.graphitron.mcp.rag.WarmState;
 import no.sikt.graphitron.mcp.rag.docs.DocsIndex;
 import no.sikt.graphitron.mcp.rag.docs.DocsRag;
@@ -158,7 +159,7 @@ public class DevMojo extends AbstractRewriteMojo {
         this.schemaDebounce = new DebounceExecutor(debounceMs);
         Consumer<String> saveListener = buildSaveListener(
             initialCtx.schemaFileExtensions(), schemaDebounce, () -> regenerate(workspace));
-        bindServer(workspace, saveListener);
+        bindServer(workspace, saveListener, new RagConfig(resolveRagCacheDirectory(initialCtx.basedir())));
         // Seed the source-position index so goto-definition / hover work before
         // the first .java edit; the source watcher refreshes it on the source
         // cadence thereafter. The walk (and its cache) is owned by the workspace.
@@ -209,7 +210,8 @@ public class DevMojo extends AbstractRewriteMojo {
         }
     }
 
-    private void bindServer(Workspace workspace, Consumer<String> saveListener) throws MojoExecutionException {
+    private void bindServer(Workspace workspace, Consumer<String> saveListener, RagConfig ragConfig)
+        throws MojoExecutionException {
         try {
             this.server = new DevServer(new InetSocketAddress(LOOPBACK_HOST, port), workspace, saveListener);
         } catch (BindException e) {
@@ -239,7 +241,7 @@ public class DevMojo extends AbstractRewriteMojo {
         // message names the MCP port and gives recovery guidance, mirroring the LSP arm's contract.
         try {
             this.mcpServer = new GraphitronMcpServer(
-                new InetSocketAddress(LOOPBACK_HOST, mcpPort), workspace, embedderWarm, docsWarm);
+                new InetSocketAddress(LOOPBACK_HOST, mcpPort), workspace, embedderWarm, docsWarm, ragConfig);
         } catch (IOException e) {
             // The partial-startup unwind must reach the warms too, not just the LSP socket: warm
             // cleanup otherwise lives only in cleanup() (the normal Ctrl+C stop), which this exception

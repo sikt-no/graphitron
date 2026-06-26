@@ -1,7 +1,7 @@
 ---
 id: R386
 title: "MCP catalog.search: semantic fuzzy discovery over CatalogFacts descriptors, content-hash-persisted Lucene index refreshed on the classpath trigger (R118 slice 10)"
-status: Ready
+status: In Review
 bucket: feature
 theme: lsp
 depends-on: []
