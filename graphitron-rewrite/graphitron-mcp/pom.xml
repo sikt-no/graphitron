@@ -14,6 +14,18 @@
     <artifactId>graphitron-mcp</artifactId>
     <name>${project.groupId}:${project.artifactId}</name>
 
+    <properties>
+        <!--
+          R385 — the docs root the build-time docs-index generator reads. A declared property, not a
+          buried `../../docs` literal, because Option A (chunk + embed inside graphitron-mcp) reaches
+          across the reactor's directory boundary into the sibling /docs tree: the dependency graph
+          does not encode "the index depends on /docs content", so the cross-directory read is made
+          explicit here and the content-hash stamp tracks recompute. graphitron-mcp lives at
+          graphitron-rewrite/graphitron-mcp, so the repo-root /docs tree is two levels up.
+        -->
+        <docs.source.dir>${project.basedir}/../../docs</docs.source.dir>
+    </properties>
+
     <!--
       The MCP server embedded in the `graphitron:dev` JVM. Hosts the MCP Java SDK's servlet-based
       Streamable HTTP transport in embedded Jetty 12 (loopback only). This module is the
@@ -109,6 +121,37 @@
                 <configuration>
                     <argLine>--enable-native-access=ALL-UNNAMED</argLine>
                 </configuration>
+            </plugin>
+
+            <!--
+              R385 — the build-time docs-index generator. Chunks and embeds the public manual under
+              <docs.source.dir> into a pre-embedded bundle written to ${project.build.outputDirectory},
+              so it is packaged in the jar and async-loaded at server warm. Bound to process-classes
+              (after this module's own classes compile, before package) so it runs against the freshly
+              compiled BgeEmbedder + AdocChunker. The ONNX embed cost is gated by a content-hash stamp
+              the generator writes beside the bundle: an unchanged manual skips the re-embed, so a plain
+              `mvn install` inner loop does not pay it twice. exec:java runs in-process; the embedder's
+              ONNX native load is granted native access by the same flag the surefire config carries.
+            -->
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>exec-maven-plugin</artifactId>
+                <version>3.5.0</version>
+                <executions>
+                    <execution>
+                        <id>build-docs-index</id>
+                        <phase>process-classes</phase>
+                        <goals><goal>java</goal></goals>
+                        <configuration>
+                            <mainClass>no.sikt.graphitron.mcp.rag.docs.DocsIndexBuilder</mainClass>
+                            <classpathScope>compile</classpathScope>
+                            <arguments>
+                                <argument>${docs.source.dir}</argument>
+                                <argument>${project.build.outputDirectory}/mcp/docs-index</argument>
+                            </arguments>
+                        </configuration>
+                    </execution>
+                </executions>
             </plugin>
         </plugins>
     </build>

@@ -12,6 +12,11 @@ import no.sikt.graphitron.rewrite.ValidationFailedException;
 import no.sikt.graphitron.rewrite.ValidationReport;
 import no.sikt.graphitron.rewrite.maven.dev.DevServer;
 import no.sikt.graphitron.mcp.GraphitronMcpServer;
+import no.sikt.graphitron.mcp.rag.AsyncWarm;
+import no.sikt.graphitron.mcp.rag.Embedder;
+import no.sikt.graphitron.mcp.rag.WarmState;
+import no.sikt.graphitron.mcp.rag.docs.DocsIndex;
+import no.sikt.graphitron.mcp.rag.docs.DocsRag;
 import no.sikt.graphitron.rewrite.maven.watch.DebounceExecutor;
 import no.sikt.graphitron.rewrite.maven.watch.SchemaWatcher;
 import no.sikt.graphitron.rewrite.maven.watch.WatchErrorFormatter;
@@ -97,6 +102,11 @@ public class DevMojo extends AbstractRewriteMojo {
     // (the MCP server failing after the LSP succeeds) is unwound in bindServer.
     DevServer server;
     private GraphitronMcpServer mcpServer;
+    // R385 — the two RAG warms docs.search rides: a shared bge embedder load (heavy, off the dev
+    // thread) and the docs-index load (reads the bundled tuples, rebuilds the in-memory store). Both
+    // start during bind and never block it; a warm failure leaves the dev loop structured-only.
+    private AsyncWarm<Embedder> embedderWarm;
+    private AsyncWarm<DocsIndex> docsWarm;
     private Set<WatchErrorFormatter.DeltaKey> previousErrorKeys = null;
 
     @Override
@@ -203,12 +213,21 @@ public class DevMojo extends AbstractRewriteMojo {
             throw new MojoExecutionException(
                 "graphitron:dev: failed to bind " + LOOPBACK_HOST + ":" + port, e);
         }
+        // Start the RAG warms before binding the MCP server so they warm during startup; both run on
+        // their own daemon threads and never block the bind (R372 / R118). The shared embedder warm
+        // is stood up here so slice 10 can later reuse the same handle rather than loading a second
+        // bge copy.
+        this.embedderWarm = DocsRag.embedderWarm();
+        this.docsWarm = DocsRag.docsWarm();
+        this.embedderWarm.start();
+        this.docsWarm.start();
         // The MCP server is a sibling of the LSP DevServer in the same JVM. A failed MCP bind must
         // not leak the LSP socket already bound above, so close it before rethrowing. Jetty wraps a
         // taken port as a plain IOException (not BindException), so a single arm covers it; the
         // message names the MCP port and gives recovery guidance, mirroring the LSP arm's contract.
         try {
-            this.mcpServer = new GraphitronMcpServer(new InetSocketAddress(LOOPBACK_HOST, mcpPort), workspace);
+            this.mcpServer = new GraphitronMcpServer(
+                new InetSocketAddress(LOOPBACK_HOST, mcpPort), workspace, embedderWarm, docsWarm);
         } catch (IOException e) {
             this.server.close();
             throw new MojoExecutionException(
@@ -426,6 +445,12 @@ public class DevMojo extends AbstractRewriteMojo {
         if (sourceDebounce != null) sourceDebounce.close();
         if (server != null) server.close();
         if (mcpServer != null) mcpServer.close();
+        // Close the docs store if it warmed (frees the in-memory Lucene index); a still-warming or
+        // failed warm has no store to close. The embedder warm holds no closeable resource. Daemon
+        // warm threads die with the JVM regardless.
+        if (docsWarm != null && docsWarm.state() instanceof WarmState.Ready<DocsIndex> ready) {
+            ready.handle().close();
+        }
     }
 
     private static String banner(String label) {

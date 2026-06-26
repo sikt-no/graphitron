@@ -6,6 +6,9 @@ import io.modelcontextprotocol.server.McpSyncServer;
 import io.modelcontextprotocol.server.transport.HttpServletStreamableServerTransportProvider;
 import io.modelcontextprotocol.spec.McpSchema;
 import no.sikt.graphitron.lsp.state.Workspace;
+import no.sikt.graphitron.mcp.rag.AsyncWarm;
+import no.sikt.graphitron.mcp.rag.Embedder;
+import no.sikt.graphitron.mcp.rag.docs.DocsIndex;
 import no.sikt.graphitron.rewrite.catalog.CatalogBuilder;
 import no.sikt.graphitron.rewrite.catalog.CatalogFacts;
 import no.sikt.graphitron.rewrite.catalog.DirectiveShape;
@@ -79,14 +82,35 @@ public final class GraphitronMcpServer implements AutoCloseable {
     // a build and rebuilt when the (snapshot, catalogFacts) reference pair is swapped.
     private final ReverseEdgeIndex.Cache reverseEdgeIndexCache = new ReverseEdgeIndex.Cache();
 
+    // R385 — the docs.search handler, holding the shared embedder warm and the docs-index warm. The
+    // warms may be absent (the structured-tool tests / an IDE run off un-embedded classes); the tool
+    // is then always advertised but reads as still-warming and degrades to the structured tools.
+    private final DocsSearchTool docsSearchTool;
+
     /**
-     * Build and start the server on the supplied loopback address, holding the live
-     * {@code workspace} the {@code status} tool reads its snapshot state off. A taken port
-     * surfaces as an {@link IOException}; the caller translates it into a Mojo error. On any
-     * startup failure the partially-built server is torn down before the exception propagates, so
-     * nothing leaks.
+     * Structured-only server (no RAG): the docs-index and embedder warms are absent, so
+     * {@code docs.search} is advertised but degrades to the structured tools. The entry point the
+     * structured-tool tests use; production threads the warms through the four-arg constructor.
      */
     public GraphitronMcpServer(InetSocketAddress address, Workspace workspace) throws IOException {
+        this(address, workspace, null, null);
+    }
+
+    /**
+     * Build and start the server on the supplied loopback address, holding the live
+     * {@code workspace} the {@code status} tool reads its snapshot state off and the two RAG warms
+     * {@code docs.search} rides. A taken port surfaces as an {@link IOException}; the caller
+     * translates it into a Mojo error. On any startup failure the partially-built server is torn
+     * down before the exception propagates, so nothing leaks. The warms are read-only here (their
+     * lifecycle is owned by the caller that constructed and started them), mirroring how the live
+     * {@code Workspace} is threaded in; a RAG warm failure leaves the server structured-only and
+     * never blocks the bind, per the R118 cross-cutting principle.
+     */
+    public GraphitronMcpServer(
+        InetSocketAddress address, Workspace workspace,
+        AsyncWarm<Embedder> embedderWarm, AsyncWarm<DocsIndex> docsWarm
+    ) throws IOException {
+        this.docsSearchTool = new DocsSearchTool(embedderWarm, docsWarm);
         String instructions = loadResource("/mcp/instructions.txt");
         String aboutText = loadResource("/mcp/about.md");
 
@@ -117,7 +141,8 @@ public final class GraphitronMcpServer implements AutoCloseable {
                 statusTool(workspace),
                 catalogTablesTool(workspace), catalogDescribeTool(workspace),
                 servicesTool(workspace), conditionsTool(workspace), recordsTool(workspace),
-                schemaTool(workspace), diagnosticsTool(workspace), edgesTool(workspace))
+                schemaTool(workspace), diagnosticsTool(workspace), edgesTool(workspace),
+                docsSearchTool.specification())
             .resources(directivesResource(workspace, bundledDirectives))
             .build();
 
