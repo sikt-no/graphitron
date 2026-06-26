@@ -113,10 +113,10 @@ decomposition; these make it concrete.
   holders (`JooqCatalog` canonical, with `BuildContext` and the catalog builders `CatalogBuilder` /
   `CatalogFacts`); `TypeBuilder` / `FieldBuilder` / `ServiceCatalog` consume the classified output via
   `JooqCatalog` rather than holding raw types, so the resolution in `buildParticipantList` goes through
-  `JooqCatalog` and the emitter receives an already-classified hop. Inference picks the unique catalog FK between detail and base; when
-  ambiguous the author declares the path through the same `ctx.parsePath` mechanism `@reference` uses (an
-  explicit path directive on the participant). The exact override directive surface is the second reviewer
-  fork; the constraint is that it lands in the `JoinStep` vocabulary, not a re-parsed string.
+  `JooqCatalog` and the emitter receives an already-classified hop. Inference picks the **unique** catalog
+  FK between detail and base; an ambiguous FK (more than one) is rejected at validate time (see Validation),
+  not silently guessed. An author-declared override for the ambiguous case is **out of scope here** and
+  deferred to **R393**; this item ships inference-only.
 
 ## Implementation
 
@@ -148,9 +148,9 @@ existing `drainBuildDiagnostics` / `Rejection` machinery (the R204/R279/R317/R38
 - A participant field classified detail-resident must actually resolve on the detail table (the inverse of
   R388's "reject `@reference` on a base-resident column").
 - The joined-table participant field leaf must land in the four-way dispatch partition
-  (`IMPLEMENTED` / `PROJECTED` / `NOT_DISPATCHED` / `STUBBED`); `GeneratorCoverageTest`'s
-  `everyGraphitronFieldLeafHasAKnownDispatchStatus` fails by construction otherwise. Use that mechanism
-  rather than a fresh ad-hoc check.
+  (`TypeFetcherGenerator.IMPLEMENTED_LEAVES` / `PROJECTED_LEAVES` / `NOT_DISPATCHED_LEAVES` /
+  `STUBBED_VARIANTS`); `GeneratorCoverageTest`'s `everyGraphitronFieldLeafHasAKnownDispatchStatus` fails by
+  construction otherwise. Use that mechanism rather than a fresh ad-hoc check.
 
 ## Tests
 
@@ -196,9 +196,21 @@ does not read simply, the design is wrong and must change before implementation.
 `getting-started.adoc` / the interface-union chapter when the feature ships, scrubbed of `R<n>` / phase
 vocabulary per the user-facing-doc check.
 
-## Open forks for the reviewer
+## Out of scope
 
-1. Joined-table participant as a distinct `ParticipantRef` sub-variant vs `TableBound` carrying an optional
-   resolved hop (recommendation: distinct variant).
-2. The override directive surface for a non-inferrable base→detail hop (constraint: resolves into the
-   `JoinStep` vocabulary at the parse boundary, not a re-parsed string).
+- **Author-declared base→detail FK override (R393).** Deferred. This item infers the unique catalog FK and
+  rejects an ambiguous FK at validate time; the explicit override for the rarer multi-FK schema, with its
+  own user-visible directive surface, is R393.
+- **Detail tables that do not share the base's primary key.** The base→detail hop is required to be PK=FK
+  (the detail table's join column to the base is its own primary key, i.e. classic shared-PK class-table
+  inheritance). A detail table with a separate surrogate PK plus an independent FK column to the base is
+  rejected (Validation bullet 2), not silently joined on a guessed column.
+
+## Resolved design decisions
+
+Both decisions that the first Spec draft left open for the reviewer are now settled:
+
+1. **Joined-table participant shape:** a distinct `ParticipantRef` sub-variant (not `TableBound` carrying an
+   optional resolved hop), so the emitter switches on identity and never inspects "is the hop null".
+2. **Ambiguous base→detail FK / override directive:** deferred to R393 (see Out of scope); this item is
+   inference-only and rejects ambiguity at validate time.
