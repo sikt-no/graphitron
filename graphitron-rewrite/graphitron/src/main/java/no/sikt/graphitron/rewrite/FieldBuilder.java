@@ -3092,7 +3092,7 @@ class FieldBuilder {
     }
 
     /**
-     * Load-bearing classifier check (R75 Phase 1): when a {@code @mutation} field returns a
+     * Validates the DML data-table invariant (R75): when a {@code @mutation} field returns a
      * single-record DML carrier, the data field's {@code @table} must equal the DML target
      * table (the input's {@code @table}). Two consumer sites depend on this equality: (a) the
      * mutation fetcher's PK-only {@code RETURNING} clause projects
