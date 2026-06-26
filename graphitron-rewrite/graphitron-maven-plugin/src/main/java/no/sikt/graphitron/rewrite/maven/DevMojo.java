@@ -105,8 +105,15 @@ public class DevMojo extends AbstractRewriteMojo {
     // R385 — the two RAG warms docs.search rides: a shared bge embedder load (heavy, off the dev
     // thread) and the docs-index load (reads the bundled tuples, rebuilds the in-memory store). Both
     // start during bind and never block it; a warm failure leaves the dev loop structured-only.
-    private AsyncWarm<Embedder> embedderWarm;
-    private AsyncWarm<DocsIndex> docsWarm;
+    // Package-private so DevMojoTest can read their terminal state after a bind-failure unwind.
+    AsyncWarm<Embedder> embedderWarm;
+    AsyncWarm<DocsIndex> docsWarm;
+    // The warm factories, behind a seam mirroring GraphitronMcpServer's structured-only / injected-warm
+    // constructor pair. Production keeps the DocsRag factories; DevMojoTest swaps in ONNX-free fakes so
+    // the fast surefire fork never pays a real BgeEmbedder ONNX load (which SIGSEGVs the fork). A
+    // factory may return null to run structured-only, exactly as the server tolerates null warms.
+    java.util.function.Supplier<AsyncWarm<Embedder>> embedderWarmFactory = DocsRag::embedderWarm;
+    java.util.function.Supplier<AsyncWarm<DocsIndex>> docsWarmFactory = DocsRag::docsWarm;
     private Set<WatchErrorFormatter.DeltaKey> previousErrorKeys = null;
 
     @Override
@@ -216,11 +223,16 @@ public class DevMojo extends AbstractRewriteMojo {
         // Start the RAG warms before binding the MCP server so they warm during startup; both run on
         // their own daemon threads and never block the bind (R372 / R118). The shared embedder warm
         // is stood up here so slice 10 can later reuse the same handle rather than loading a second
-        // bge copy.
-        this.embedderWarm = DocsRag.embedderWarm();
-        this.docsWarm = DocsRag.docsWarm();
-        this.embedderWarm.start();
-        this.docsWarm.start();
+        // bge copy. Both come from the injectable factories (see the field comment), so the heavy ONNX
+        // load stays out of the fast test suite; a factory returning null runs structured-only.
+        this.embedderWarm = embedderWarmFactory.get();
+        this.docsWarm = docsWarmFactory.get();
+        if (this.embedderWarm != null) {
+            this.embedderWarm.start();
+        }
+        if (this.docsWarm != null) {
+            this.docsWarm.start();
+        }
         // The MCP server is a sibling of the LSP DevServer in the same JVM. A failed MCP bind must
         // not leak the LSP socket already bound above, so close it before rethrowing. Jetty wraps a
         // taken port as a plain IOException (not BindException), so a single arm covers it; the
@@ -229,7 +241,13 @@ public class DevMojo extends AbstractRewriteMojo {
             this.mcpServer = new GraphitronMcpServer(
                 new InetSocketAddress(LOOPBACK_HOST, mcpPort), workspace, embedderWarm, docsWarm);
         } catch (IOException e) {
+            // The partial-startup unwind must reach the warms too, not just the LSP socket: warm
+            // cleanup otherwise lives only in cleanup() (the normal Ctrl+C stop), which this exception
+            // path never reaches. Unlike that path, a failed bind returns into a still-live JVM, so a
+            // warm left mid-load would keep running on its daemon thread after this method returns
+            // (with a real ONNX load, a leaked embedder daemon mid-load crashes a surefire fork).
             this.server.close();
+            awaitAndCloseWarms();
             throw new MojoExecutionException(
                 "graphitron:dev: MCP port " + mcpPort + " is already in use (or could not be bound). "
                     + "Stop the other graphitron:dev session occupying it, then retry.", e);
@@ -449,6 +467,25 @@ public class DevMojo extends AbstractRewriteMojo {
         // failed warm has no store to close. The embedder warm holds no closeable resource. Daemon
         // warm threads die with the JVM regardless.
         if (docsWarm != null && docsWarm.state() instanceof WarmState.Ready<DocsIndex> ready) {
+            ready.handle().close();
+        }
+    }
+
+    /**
+     * Tears down the RAG warms on the bind-failure unwind, before the fatal
+     * {@link MojoExecutionException} propagates. Distinct from {@link #cleanup()} (the normal Ctrl+C
+     * stop, where the JVM is exiting and the daemon warm threads die with it): a failed bind returns
+     * into a still-live JVM, so a warm left mid-load would keep running on its daemon thread after this
+     * method returns. So join each warm to its terminal state ({@link AsyncWarm#await()}) before closing
+     * the docs store if it warmed; the embedder warm holds no closeable resource. Joining is what
+     * guarantees no warm daemon outlives the unwind (and, with a real ONNX load, keeps a leaked embedder
+     * daemon from crashing a surefire fork after the test returns).
+     */
+    private void awaitAndCloseWarms() {
+        if (embedderWarm != null) {
+            embedderWarm.await();
+        }
+        if (docsWarm != null && docsWarm.await() instanceof WarmState.Ready<DocsIndex> ready) {
             ready.handle().close();
         }
     }
