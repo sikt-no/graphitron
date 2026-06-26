@@ -22,17 +22,16 @@ genuinely needs plumbing the branch path does not carry, so the classifier
 (`FieldBuilder.firstUnsupportedFilterArg` / `isBranchSafeExtraction`) structurally rejects them:
 
 - **`JooqConvert`** (ID-typed / custom-converter columns), whether top-level or as a nested-input
-  leaf. Its emission routes through a `DataType.convert(Object)` call that is deprecated-for-removal
-  in jOOQ 3.20 and trips the consumer `-Werror` (`graphitron-sakila-example` compiles generated
-  output with warnings-as-errors). Lifting this needs a non-deprecated conversion path *and* the
-  shared `<name>Keys` local declared once across branches (the env argument is the same for every
-  branch; per-branch declaration duplicates the local). The non-deprecated path is **not** a fresh
-  invention: R195 already moved the input-bean decoders off `DataType.convert(Object)` to
-  `Record.fromArray(Object[], Field<?>...)` (which coerces through the proper converter), and R267
-  tracks doing the same for the sibling `NodeIdEncoder.decode<Type>` site. The branch emitter's
-  `JooqConvert` arm (`ArgCallEmitter` lines 284-288, `getDataType()::convert`) is a third instance of
-  the same deprecation; this phase reuses the established `Record.fromArray`/converter-path idiom
-  rather than minting a new one, so the three sites converge instead of drifting. Note: a nested
+  leaf. Its emission (`ArgCallEmitter` lines 284-288) hands a column-typed Java *value* to the
+  developer condition method: scalar `table.COL.getDataType().convert((String) env.getArgument(...))`
+  and list `<name>Keys.stream().map(table.COL.getDataType()::convert).toList()`. That
+  `DataType.convert(Object)` is deprecated-for-removal in jOOQ 3.20, so under
+  `graphitron-sakila-example`'s `-Xlint:all -Werror` (deprecation and removal are both errors) a
+  fixture exercising it fails the build. Lifting this needs the shared `<name>Keys` local declared
+  once across branches (the env argument is the same for every branch; per-branch declaration
+  duplicates the local) *and* a decision on the deprecation. The deprecation is handled by
+  suppression, not by `Record.fromArray`: see Design (`JooqConvert` is a bare-value coercion, a
+  different shape from the record-building `fromArray` sites). Note: a nested
   `@field` column is currently
   built with a hardcoded `Direct` leaf in `BuildContext` regardless of GraphQL type, so a nested
   `[ID!] @field` over a plain (non-FK, non-`@nodeId`) column does **not** today route through
@@ -85,6 +84,36 @@ registry's "cannot silently forget to emit a registered helper" invariant intact
 exactly one host builder, never to one-of-N. A participant's decode helpers land on that participant's
 composer, alongside the participant-named condition method its filters already lower to.
 
+**`JooqConvert` deprecation: suppress at the emitting member, do not convert it away.** The
+`JooqConvert` arm produces a column-typed Java *value* for a developer condition-method parameter (the
+scalar `getDataType().convert(...)` and the list `.map(getDataType()::convert).toList()` forms above).
+This is a *bare-value* coercion, structurally unlike the *record-building* sites R195 moved to
+`Record.fromArray(Object[], Field<?>...)`: `fromArray` loads positional values onto a record's columns
+and coerces as a side effect of populating the record (R195's input-bean `decode<Type>Record`, R267's
+`NodeIdEncoder.decode<Type>` which builds a `RecordN` via `rec.set`). A single coerced value is not a
+record, and a list of ids for one column is not N columns of one record, so `fromArray` does not express
+either `JooqConvert` form. There is also no clean non-deprecated public `Object → T` coercion to
+substitute: the codebase already recorded this finding at `NodeIdEncoderClassGenerator` (the comment
+above its class-level suppression notes that the recommended `Field.getConverter().from` does not accept
+`Object` input and `org.jooq.tools.Convert` is itself marked for removal). `JooqConvert` therefore
+belongs with the other *bare-value* `convert` sites, `NodeIdEncoder.requireColumnAgreement` and
+`ConnectionHelper`'s cursor decode, both of which keep `getDataType().convert(...)` under a
+`@SuppressWarnings({"deprecation", "removal"})` (class-level on those helper classes). This item does the
+same, scoped to the *narrowest enclosing member* (the generated fetcher method), driven by a model
+single-source-of-truth predicate so the single-table and multitable hosts cannot drift, exactly as
+`CallParam.emitsUncheckedCast()` already does for the `unchecked` category (Phase a). A throwaway-record
+`fromArray` round-trip (build a one-element record, read the coerced value back) was considered and
+rejected: it allocates per value, needs a per-element form for lists, and reads worse than the one-line
+`convert` call the generated code already emits, against "Generated code is read and debugged"; it would
+also diverge from the two sibling bare-value sites for no gain while jOOQ ships no public successor.
+
+Empirically, no generated fetcher / `QueryConditions` class emits a `JooqConvert` `convert` today: a
+single-table `ID`-typed `@field` filter is not exercised in `graphitron-sakila-example`, so the only
+generated `getDataType().convert` sites are `NodeIdEncoder` and `ConnectionHelper` (both already
+suppressed). The `-Werror` trip is therefore latent, and this item's fixture is the first generated
+source to hit it; the same model predicate also closes the latent single-table gap when such a filter is
+eventually added.
+
 ## Implementation
 
 ### Phase 0: thread the shared plumbing (behaviorally inert)
@@ -103,13 +132,30 @@ the existing pipeline/execution tests stay green and prove the threading is iner
 
 ### Phase a: `JooqConvert`
 
-- Replace the `JooqConvert` emission's deprecated `DataType.convert` with the non-deprecated
-  `Record.fromArray`/converter-path idiom established by R195 (see R267 for the sibling site); apply it
-  to both the top-level arm and the nested-input leaf.
+- Keep `ArgCallEmitter`'s `JooqConvert` arm as is (it already emits the scalar / list `convert` forms);
+  the deprecation is handled by suppression, not by rewriting the expression (see Design). Add a model
+  single-source-of-truth predicate `CallParam.emitsDeprecatedConversion()`, sibling to
+  `emitsUncheckedCast()`, returning true for a top-level `JooqConvert` and for a `NestedInputField`
+  whose `leaf` is `JooqConvert` (recurse into the leaf, as `isBranchSafeExtraction` does). Both hosts
+  fold over their `CallParam`s and ask this predicate rather than re-deriving the `instanceof JooqConvert`
+  test.
+- Stamp `@SuppressWarnings({"deprecation", "removal"})` at the narrowest enclosing fetcher member when
+  any participant filter carries such a param. `MultiTablePolymorphicEmitter` already has
+  `stampUncheckedSuppressionIfNeeded`; generalise the suppression so a method needing both `unchecked`
+  (R383 list `NestedInputField`) and `deprecation`/`removal` (this arm) emits a **single** merged
+  `@SuppressWarnings({...})` (Java rejects two `@SuppressWarnings` on one element), collecting the union
+  of categories from the two model predicates. Apply the same predicate-driven stamp in
+  `QueryConditionsGenerator`, which closes the latent single-table gap at no behavioural cost (single-table
+  `JooqConvert` is unexercised today, so nothing is emitted differently until such a filter exists).
 - Align the nested `@field` leaf with top-level conversion semantics so a nested `[ID!] @field` over a
   converted column routes through `JooqConvert` rather than the hardcoded `Direct` leaf `BuildContext`
-  builds today. Extend `CallParam.emitsUncheckedCast()` (the R383 single-source-of-truth) if the
-  list-typed converted arm emits an unchecked cast, rather than re-deriving it in either host.
+  builds today.
+- Fix the stale forward-reference in `CallParam.emitsUncheckedCast()`'s javadoc: it speculates that
+  "R384's `JooqConvert` lift" will start emitting an *unchecked cast* and gain an arm there. It does not;
+  the scalar `(String)` cast is checked and the list arm carries no cast (the `<name>Keys` local is a
+  plain generic assignment), so `JooqConvert`'s warning is `deprecation`, not `unchecked`. Redirect the
+  comment to the new `emitsDeprecatedConversion()` predicate so the doc names the live mechanism
+  ("Documentation names only live tests/code").
 - Flip the `case CallSiteExtraction.JooqConvert` arm in `FieldBuilder.isBranchSafeExtraction` to
   branch-safe.
 
@@ -145,34 +191,30 @@ code-string assertions on generated bodies** at any tier:
   union: an ID-typed shared column such as `store_id` on `customer` / `staff` for `JooqConvert`; a
   `@nodeId` filter for `NodeIdDecodeKeys`; a developer `@condition` for phase c. New sakila fixtures
   added per phase as needed, in the `OccupantFilter` / `occupantsByFilter` family R383 introduced.
+- **Compilation backstop for phase a's suppression.** The `JooqConvert` fixture is the first generated
+  fetcher to emit `getDataType().convert(...)`, so the `graphitron-sakila-example` `-Xlint:all -Werror`
+  compile *is* the pin that the merged `@SuppressWarnings({"deprecation", "removal"})` is emitted at the
+  right member: if phase a omits or misplaces the stamp, the deprecation/removal warning fails that
+  compile. No code-string assertion on the annotation is needed (and none is added, per the no-body-string
+  rule); the warning-as-error build is the live check.
 
 The `NodeIdDecodeRecord` / `InputBean` / `JooqRecord` arms remain rejected after this item; if a future
 schema produces one of them as a multitable filter arg, the exhaustive switch forces a fresh decision
 at the gate rather than silently rejecting.
 
-## Reviewer note (Spec → Ready, 2026-06-26): revise phase a before sign-off
+## Revision log
 
-Verification of every named symbol, path, line citation, test, fixture, and the R195/R267 cross-refs
-passed; the nine-permit list, the no-default `isBranchSafeExtraction` switch, the `branchFilterWhere`
-`emitTerm(..., null, null, Map.of())` seam, and the per-participant-registry decode-helper-home decision
-all hold against live code. One finding blocks sign-off:
-
-**The `JooqConvert` convergence claim conflates two different jOOQ operations.** The Implementation
-phase-a text (and the lines 28-35 motivation) frame the three `DataType.convert` sites as converging on
-"the established `Record.fromArray`/converter-path idiom." But `Record.fromArray(Object[], Field<?>...)`
-is a record-*materialization* API: it maps N positional values onto N columns of a `RecordN`. That is
-exactly what the two sibling sites do (R195's `decode<Type>Record` and R267's
-`NodeIdEncoder.decode<Type>` both build a typed record). The `JooqConvert` arm this phase changes is a
-different shape: `ArgCallEmitter` lines 284-288 produce a *bare coerced scalar* for a developer
-condition-method parameter (`col.getDataType().convert((String) env.getArgument(...))`), and for the list
-case a `List<value>` of the *same* column coerced element-by-element. `fromArray` expresses neither: a
-single value is not a record, and N ids for one column are not N columns of one record. So "reuse
-`fromArray`" does not actually apply to the arm being lifted, and the concrete non-deprecated coercion
-call is left for the implementer to invent. Note also that `DSL.val(raw, col.getDataType())` (design
-principles § "Column value binding") coerces lazily at bind time, so it is not a drop-in for an eagerly
-coerced bare Java value either.
-
-Suggested revision shape: pin the concrete non-deprecated scalar-and-list coercion API for the
-`JooqConvert` arm (verified against jOOQ 3.20), and either drop the "three sites converge" framing or
-qualify it to "shares the deprecation, not the shape" since the two sibling sites materialize records and
-this one coerces a value. Phase 0, phase b, and phase c are unaffected and read as implementer-ready.
+**2026-06-26 (Spec → Spec revise).** First Spec → Ready review flagged that phase a's "reuse
+`Record.fromArray`" framing conflated two jOOQ operations: `fromArray` is record-*materialization*
+(positional values → record columns, what R195 and R267 do), whereas the `JooqConvert` arm is a
+bare-value coercion for a condition-method parameter, which `fromArray` cannot express. The codebase had
+already established (at `NodeIdEncoderClassGenerator`) that no clean non-deprecated public `Object → T`
+coercion exists, and that the standing answer for bare-value `convert` sites is a localized
+`@SuppressWarnings({"deprecation", "removal"})`. Phase a was rewritten accordingly: keep the existing
+`convert` expression, add the `CallParam.emitsDeprecatedConversion()` single-source-of-truth predicate,
+stamp a single merged suppression at the narrowest enclosing member in both hosts, and lean on the
+`graphitron-sakila-example` `-Werror` compile as the backstop. The Design section now records the
+suppress-not-convert decision and the empirical finding that single-table `JooqConvert` is unexercised
+(so the `-Werror` trip is latent and this item's fixture is the first to hit it). The next Spec → Ready
+sign-off must come from a session distinct from both the original author and the reviewer who landed this
+revision.
