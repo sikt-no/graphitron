@@ -1,7 +1,7 @@
 ---
 id: R390
 title: "Connection carrier rewrite drops the element type subgraph from the rebuilt assembled schema"
-status: Backlog
+status: In Review
 bucket: bug
 theme: pagination
 depends-on: []
