@@ -5,18 +5,24 @@ status: Spec
 priority: 7
 theme: pagination
 depends-on: []
+last-updated: 2026-06-26
 ---
 
 # Faceted search on `@asConnection`: `@asFacet` directive
 
-> Add a `@asFacet` directive for filter-input fields. The `@asConnection`
-> emit-time synthesis pipeline grows a facet arm: each marked input field
-> becomes an entry on a synthesized `XConnectionFacets` object that is
-> attached as `facets` on the generated Connection type. The classifier
-> carries a `FacetSpec` list on `FieldWrapper.Connection`; the fetcher
-> emits one `UNION ALL` aggregate query per Connection request, with
-> each arm computing one facet's counts under its filter-minus-self
-> predicate. Phase 1 spike confirmed this shape over `GROUPING SETS`
+> Add a `@asFacet` directive for filter-input fields. `ConnectionPromoter`
+> (the field-first `@asConnection` synthesis pass) grows a facet arm: each
+> marked input field becomes an entry on a synthesised `XConnectionFacets`
+> object attached as `facets` on the generated Connection type. The facet
+> specs ride the first-class `GraphitronType.ConnectionType` entry (not the
+> per-site `FieldWrapper.Connection`); the connection fetcher carries a
+> facet plan on `ConnectionResult` and a `ConnectionHelper.facets` resolver
+> issues one `UNION ALL` aggregate query per request, each arm computing one
+> facet's counts under its filter-minus-self predicate. This rides the
+> connection machinery exactly as `totalCount` does today, leaving the
+> general-dispatch `Operation.Facet` arm unpopulated behind the ConnectionType
+> quarantine for R314 to fold in later (see *Contained approach* below).
+> Phase 1 spike confirmed the `UNION ALL` shape over `GROUPING SETS`
 > (see Phase 1 Outcome below). Delivers the
 > "filter ↔ facet" contract the admissions UX needs without nested
 > queries.
@@ -87,86 +93,142 @@ into a single `ConnectionResult` carrier.
 
 ## Current State
 
-- Rewrite's `@asConnection` emit-time synthesis (`ConnectionSynthesis`
-  in `graphitron-rewrite`) expands directive-driven list fields into
-  `XConnection` / `XEdge` / `PageInfo` TypeSpecs and rewrites the
-  carrier field's return type via `ObjectTypeGenerator`. Nothing there
-  knows about facets yet.
-- The rewrite classifier's `FieldBuilder.buildWrapper` produces
-  `FieldWrapper.Connection` carrying `defaultPageSize` and
-  `connectionName` only; the record sits in `model/FieldWrapper.java`
-  with one regular constructor + one 2-arg convenience constructor for
-  structural detection.
-- `TypeFetcherGenerator.buildQueryConnectionFetcher` emits a single
-  keyset-paginated SELECT wrapped in `ConnectionResult`. No secondary
-  aggregation queries.
-- The synthesised `<ConnName>Type.registerFetchers(GraphQLCodeRegistry.Builder)`
-  body wires `edges` / `nodes` / `pageInfo` against `ConnectionHelper`
-  via `codeRegistry.dataFetcher(FieldCoordinates.coordinates(...), ...)`.
-- Filter-input types classify through `TypeBuilder.buildInputField`
-  into `InputField` sealed subclasses (`ColumnField`,
-  `ColumnReferenceField`, `PlatformIdField`, `NestingField`,
-  `CompositeColumnField`, `CompositeColumnReferenceField`). None of
-  them carries a facet flag. The `[ID!] @nodeId(typeName: T)` reference
-  shape (post-R50 successor of the retired `InputField.IdReferenceField`)
-  surfaces as `InputField.ColumnReferenceField` /
-  `InputField.CompositeColumnReferenceField` carrying
-  `extraction = NodeIdDecodeKeys.SkipMismatchedElement`; Phase 3's
+The connection pipeline was rebuilt twice since this plan's first draft:
+the emit-time `ConnectionSynthesis` pass is gone (R279 slice 5 made it
+field-first), and R316 moved per-Connection-type metadata off the field
+wrapper onto a first-class `GraphitronType` entry. The anchors below are
+the current ones; the retired names appear only to mark what moved.
+
+- **Synthesis is field-first in `ConnectionPromoter`** (`rewrite/ConnectionPromoter.java`),
+  not the retired `ConnectionSynthesis.buildPlan()`. `synthesiseForField`
+  runs once per visited field during the classification walk: when the
+  field is an `@asConnection` (or structural) connection carrier it builds
+  the connection / edge / page-info `GraphQLObjectType` schema forms
+  (`buildSynthesisedConnection` / `buildSynthesisedEdge`), registers them
+  through `ctx.typeRegistry.register`, and notes the synthesised names in a
+  `synthesisedNames` set. `rebuildAssembledForConnections` then rewrites
+  the carrier field's return type and appends `first` / `after`, and adds
+  the synthesised types via `additionalType(...)`. Nothing there knows
+  about facets yet.
+- **Per-type Connection metadata lives on `GraphitronType.ConnectionType`**
+  (`model/GraphitronType.java:511`), a sealed arm implementing
+  `EmitsPerTypeFile`, carrying `name`, `elementTypeName`, `edgeTypeName`,
+  `itemNullable`, `shareable`, and the `GraphQLObjectType schemaType`.
+  `FieldWrapper.Connection` (`model/FieldWrapper.java:73`) is now a slim
+  2-arg record `(boolean connectionNullable, int defaultPageSize)` carrying
+  only per-carrier-site facts; `connectionName` and `itemNullable` moved to
+  `ConnectionType`. **This is the structural reason facet specs belong on
+  `ConnectionType`, not the wrapper** (see Phase 3).
+- `TypeFetcherGenerator.buildQueryConnectionFetcher` (`:4402`) emits a
+  single keyset-paginated SELECT, builds the full `condition` via
+  `buildConditionCall(qtf, tableLocal, ...)`, and wraps the result as
+  `new ConnectionResult(result, page, tableLocal, condition)`. No secondary
+  aggregation queries. The jOOQ table local is `names.tableLocalName()`
+  and emitted code is `var`-free.
+- **`totalCount` is the template for the contained facet approach.**
+  `ConnectionResult` (`generators/util/ConnectionResultClassGenerator.java`)
+  already carries the parent field's `Table<?>` and `Condition` (nullable;
+  Split-Connection scatter passes null), and its Javadoc names
+  "faceted-search aggregates" as the future second reader of those.
+  `ConnectionHelper.totalCount(env)` reads them and issues
+  `dsl.selectCount().from(cr.table()).where(cr.condition())`, lazy on
+  selection. The per-connection `<Conn>Fetchers.totalCount` is a thin
+  delegate (`ConnectionFetcherClassGenerator`), and
+  `FetcherRegistrationsEmitter.connectionBody` wires it via
+  `codeRegistry.dataFetcher(FieldCoordinates.coordinates(...), <Conn>Fetchers::totalCount)`
+  behind an SDL-presence gate.
+- Synthesised types are emitted as per-type `<Name>Type` schema classes;
+  `GraphitronSchemaClassGenerator.generate()` registers each via
+  `schemaBuilder.additionalType(<Name>Type.type())`. Any new
+  `GraphitronType` arm implementing `EmitsPerTypeFile` rides this path.
+- Filter-input types classify into `InputField` sealed subclasses
+  (`model/InputField.java`): `ColumnField`, `ColumnReferenceField`,
+  `CompositeColumnField`, `CompositeColumnReferenceField`, `NestingField`,
+  `UnboundField`, plus the `LookupKeyField` / `SetField` sub-seals. None
+  carries a facet flag. The `[ID!] @nodeId(typeName: T)` reference shape
+  surfaces as `ColumnReferenceField` / `CompositeColumnReferenceField`
+  carrying `extraction = CallSiteExtraction.NodeIdDecodeKeys`; Phase 3's
   `@asFacet` rejection list must rule on those carriers (see Non-goals).
-- `BuildContext` lists every directive the rewrite reads in its
-  `DIR_*` constant block; there is no `DIR_FACET`.
-- No execution-test fixture combines `@asConnection` with a filter input
-  today — the test-spec `schema.graphqls` has `filmsConnection` + variants
-  but only scalar filter args at argument level, not a `@table`-backed
-  filter input.
-- Filter-input conditions are emitted via `WhereFilter` (sealed into
-  `GeneratedConditionFilter` / `ConditionFilter`, one per
-  `@condition`-bound method). `TypeFetcherGenerator.buildConditionCall`
-  iterates filters, emitting one
-  `condition = condition.and(Filters.method(table, args...))` per
-  filter. The filter method itself ANDs all its fields internally — so
-  the fetcher cannot surgically drop a single input-field's predicate
-  by passing a skip name; the filter-class generator owns that
-  assembly. This shapes Phase 4's condition-minus-self strategy (see
-  below).
-- **Builds on shipped fetcher-quality primitives**: pagination boilerplate
-  lives in `ConnectionHelper.pageRequest(...)`, condition orchestration in
-  generated `QueryConditions` classes, the local jOOQ-table variable is
-  named `<entity>Table`, and emitted code is `var`-free (see "Generated-fetcher
-  quality pass" in roadmap Done). Phase 4 below is written against this
-  post-quality shape and notes the coordination points inline.
+  (`PlatformIdField`, named in the old draft, is gone; `UnboundField` is
+  new.)
+- `BuildContext` lists every directive the rewrite reads in its `DIR_*`
+  constant block (`:79`); there is no `DIR_FACET`. `DIR_AS_CONNECTION`,
+  `ARG_CONNECTION_NAME`, `ARG_DEFAULT_FIRST_VALUE` are present.
+- Conditions are generated into per-query `QueryConditions` /
+  `MutationConditions` classes (`QueryConditionsGenerator`), one
+  `<field>Condition(table, env)` method per query field, composing the
+  filter-input predicates into one jOOQ `Condition`. The method ANDs all
+  its fields internally, so the fetcher cannot ask it to "skip facet field
+  X"; this shapes Phase 4's condition-minus-self strategy (see below).
+- No execution-test fixture combines `@asConnection` with a `@table`-backed
+  filter input today; the test-spec `schema.graphqls` has connection
+  variants but only argument-level scalar filters.
 
 ## Desired End State
 
 - New `@asFacet` directive declared in rewrite's own directive resource
-  (`graphitron-rewrite/src/main/resources/directives.graphqls`).
-- The `@asConnection` emit-time synthesis pipeline grows a facet arm:
-  for each `@asConnection` field whose filter input has `@asFacet`-marked
-  fields, the synthesis Plan records a `FacetSpec` list, and emit-time
-  produces one `<ConnName>FacetsType` per Connection plus one reusable
-  `<Scalar>FacetValueType` per distinct value scalar. The Connection
-  type's `ObjectTypeGenerator` rewrite gains a `facets` field;
-  `GraphitronSchemaClassGenerator` adds the synthesised types via
-  `.additionalType(...)` alongside the existing Connection / Edge
-  types.
-- `FieldWrapper.Connection` carries a `FacetSpec` describing each facet
-  (input-field name → column + value-scalar type).
-- `TypeFetcherGenerator` emits **one** `UNION ALL` aggregate query per
-  Connection request, one arm per selected facet. Each arm's `WHERE`
-  applies the full Connection filter *minus that facet's own
-  predicate*, so a selected facet value still shows its siblings'
-  counts. Each arm can use per-facet indexes; `Parallel Append`
-  executes arms concurrently.
-- `ConnectionResult` carries the facet results; a new
-  `ConnectionHelper.facets` static assembles them; the synthesised
-  `<ConnName>Type.registerFetchers` body wires the `facets` field.
+  (`graphitron/src/main/resources/no/sikt/graphitron/rewrite/schema/directives.graphqls`).
+- `ConnectionPromoter` grows a facet arm: for each `@asConnection` field
+  whose filter input has `@asFacet`-marked fields, `synthesiseForField`
+  derives a `List<FacetSpec>`, appends a `facets: <ConnName>Facets` field to
+  the connection's `GraphQLObjectType`, and registers one
+  `<ConnName>FacetsType` per Connection plus one reusable
+  `<Scalar>FacetValueType` per distinct value scalar through
+  `ctx.typeRegistry.register` / `synthesisedNames`. Those types ride the
+  existing `additionalType(...)` + per-type `<Name>Type` emit path.
+- `GraphitronType.ConnectionType` carries the `List<FacetSpec>`; new
+  `EmitsPerTypeFile` arms (`FacetsType`, `FacetValueType`) carry the
+  synthesised facet object types.
+- The connection fetcher carries a facet plan on `ConnectionResult`
+  (the per-facet columns, a base condition over non-facet fields, and each
+  facet's own predicate), and a new `ConnectionHelper.facets(env)` resolver
+  assembles **one** `UNION ALL` aggregate query per request, one arm per
+  selected facet. Each arm's `WHERE` applies the full Connection filter
+  *minus that facet's own predicate*, so a selected facet value still shows
+  its siblings' counts. Each arm can use per-facet indexes; `Parallel Append`
+  executes arms concurrently. This is `totalCount`'s shape, extended.
+- `FetcherRegistrationsEmitter.connectionBody` and
+  `ConnectionFetcherClassGenerator` wire a `facets` dataFetcher behind a
+  has-facets gate (parallel to the `totalCount` SDL-presence gate); the
+  `*FacetValue` types need no fetcher wiring (graphql-java's default property
+  fetcher reads `value` / `count` from the inner maps).
 - Execution tests against Sakila confirm counts match plain SQL aggregates,
   including when a facet's own predicate is active.
+
+## Contained approach: facets ride the connection machinery, like `totalCount`
+
+R333 ("The Graphitron data model") places faceting on the **operation** axis:
+`Operation.Facet` is a modeled-but-unpopulated arm, sibling to `Operation.Count`
+(`totalCount`) and `Operation.Paginate`, "behind the ConnectionType quarantine."
+The quarantine is the fact that connections are not yet lowered through the
+general `(source, operation, target)` dispatch; they are emitted as a
+self-contained unit (`ConnectionPromoter` + the connection fetcher + `ConnectionHelper`),
+and `totalCount` already computes its own aggregate *inside* that unit without
+populating `Operation.Count`.
+
+This plan deliberately takes the **contained** route: facets ride the same
+connection machinery as `totalCount`, and `Operation.Facet` stays unpopulated.
+The justification is that this is not new debt, it is the *same shape* as a
+feature already shipped (`totalCount`), and it dissolves the *same way*: when
+R314 lowers the connection quarantine onto the general dispatch, the contained
+facet emit folds into `Operation.Facet` exactly as the contained count emit
+folds into `Operation.Count`. The two move together or not at all. Until then,
+facets do not block on R333/R314, and they do not deepen the quarantine beyond
+the precedent `totalCount` already set.
+
+Concretely, this rules out two tempting-but-wrong shapes:
+- **No `FacetedConnectionType`.** Faceting is an operation fact, not a
+  target-type variant; R333's thesis is "a capability adds a fact, not a leaf
+  type," and a connection-type subtype would re-fuse the operation axis onto
+  the target axis that R316 split apart.
+- **No premature `Operation.Facet` population.** Wiring facets through general
+  dispatch now would mean dissolving the connection quarantine ahead of R314,
+  which is exactly the large structural program the contained route avoids.
 
 ### Verification
 
 1. New pipeline test in `GraphitronSchemaBuilderTest` classifies a schema with
-   `@asFacet` into a `FieldWrapper.Connection` whose `facets()` is non-empty.
+   `@asFacet` into a `GraphitronType.ConnectionType` whose `facets()` is non-empty.
 2. New execution test in `graphitron-test` asserts facet counts
    match a hand-written jOOQ aggregate over the same filter.
 3. Existing `filmsConnection*` tests unchanged (no `@asFacet` in their filters).
@@ -184,7 +246,7 @@ into a single `ConnectionResult` carrier.
   or composite/`[ID!]` reference fields (including the post-R50
   `[ID!] @nodeId(typeName: T)` shape carried by
   `InputField.ColumnReferenceField` / `CompositeColumnReferenceField`
-  with `extraction = NodeIdDecodeKeys`).** Classifier rejects these at
+  with `extraction = CallSiteExtraction.NodeIdDecodeKeys`).** Classifier rejects these at
   validate time; loosening is a follow-up. The v1 SQL emitter only
   understands direct-column facet values; a join-mediated reference
   field needs a different aggregation shape, tracked as a follow-up
@@ -195,37 +257,55 @@ into a single `ConnectionResult` carrier.
 
 ## Key Discoveries
 
-- **Reuse the `@asConnection` emit-time synthesis pipeline.**
-  `ConnectionSynthesis.buildPlan()` already scans the assembled
-  `GraphQLSchema` for `@asConnection` and produces a `Plan` consumed
-  by `emitSupportingTypes()` (which writes `<ConnName>Type` /
-  `<ConnName>EdgeType` TypeSpecs) and by
-  `ObjectTypeGenerator.buildFieldDefinition()` (which rewrites the
-  directive-driven field's return type and arguments). Facets ride
-  the same plan: extend `ConnectionDef` with a `List<FacetSpec>` read
-  from `@asFacet` on the filter input, emit one
-  `<ConnName>FacetsType` per Connection plus one
-  `<Scalar>FacetValueType` per distinct value scalar, and have
-  `ObjectTypeGenerator` append a `facets` field to the rewritten
-  Connection. `GraphitronSchemaClassGenerator.generate()` adds the
-  new TypeSpecs via `.additionalType(...)` next to the existing
-  Connection / Edge types.
+- **Extend the field-first `ConnectionPromoter`, not a Plan.**
+  `ConnectionPromoter.synthesiseForField` already reads the carrier
+  field's applied directives and builds the connection / edge
+  `GraphQLObjectType` forms (`buildSynthesisedConnection`), registering
+  them via `ctx.typeRegistry.register` and noting absent names in
+  `synthesisedNames` so `rebuildAssembledForConnections` adds them via
+  `additionalType(...)`. Facets ride the same walk: read `@asFacet` off
+  the filter-input argument, append a `facets` field in
+  `buildSynthesisedConnection`, and register the `FacetsType` /
+  `FacetValueType` entries the same way. No separate Plan and no
+  `ObjectTypeGenerator` rewrite (that generator is emission-only now;
+  the carrier rewrite happens in `rebuildAssembledForConnections`).
+- **Facet specs live on `GraphitronType.ConnectionType`, not the wrapper.**
+  R316 slimmed `FieldWrapper.Connection` to per-carrier-site facts and
+  moved per-type metadata (`connectionName`, `itemNullable`) onto the
+  first-class `ConnectionType` entry. `FacetSpec` is per-Connection-type
+  metadata (which columns, which value scalars), so it belongs beside
+  `elementTypeName` / `edgeTypeName` on `ConnectionType`. The deprecation
+  of `@asConnection(connectionName:)` ("each connection field owns its
+  own Connection type") means per-type and per-carrier coincide, so there
+  is no ambiguity.
 - **Single directive-declaration file.** `@asFacet` is declared in
-  rewrite's own `directives.graphqls`. The schema loader auto-injects
-  it before classification.
-- **`FieldWrapper.Connection` is a record** with no public builders;
-  adding a `facets` member means every construction site — the
-  directive-driven `@asConnection` path and the structural-detection
-  fallback in `FieldBuilder.buildWrapper` — must pass the new argument.
-- **Per-facet self-predicate stripping** needs the `Condition` to be built
-  compositionally. `buildConditionCall` in `TypeFetcherGenerator` currently
-  folds all argument conditions into one — we'll need per-column conjuncts
-  kept addressable so one can be dropped when emitting each facet query.
+  rewrite's own `directives.graphqls`. The schema loader auto-injects it
+  before classification.
+- **New `EmitsPerTypeFile` arms for the facet object types.** `FacetsType`
+  and `FacetValueType` join the `GraphitronType` seal; each carries a
+  `GraphQLObjectType schemaType` and rides the existing
+  `additionalType(<Name>Type.type())` emit. This *does* add sealed leaves
+  (unlike the original draft's "extend an existing record" framing), so it
+  touches `VariantCoverageTest` and the exhaustive `GraphitronType` switches
+  (`CatalogBuilder`, `GraphitronSchemaValidator`, `FetcherRegistrationsEmitter`).
+  An implementer may collapse the two into one synthesised-object arm to
+  hold leaf count down; decide during Phase 2.
+- **Per-facet self-predicate stripping** needs the condition built
+  compositionally. The generated `QueryConditions.<field>Condition` folds
+  all argument predicates into one, so the fetcher cannot ask it to skip a
+  facet field. The contained plan reconstructs a base condition (non-facet
+  fields) plus each facet's own predicate in the fetcher, carries them on
+  `ConnectionResult`, and the `facets` resolver assembles
+  `base AND (⋀ g≠f predicate_g)` per arm (see Phase 4).
+- **`totalCount` is the working precedent.** `ConnectionResult` already
+  carries `(table, condition)` for exactly this kind of self-contained
+  secondary aggregate, and `ConnectionHelper.totalCount` shows the
+  lazy-on-selection, scatter-returns-null shape facets reuse.
 - **Facet value types are cross-schema reusable.** `StringFacetValue`,
-  `BooleanFacetValue`, `IntFacetValue`, `<Enum>FacetValue` — one per
-  value scalar encountered across the whole schema, not per connection.
-  Synthesize-once via a single `FacetNaming.facetValueTypeName(scalar)`
-  helper used by both the synthesis pass and the classifier.
+  `BooleanFacetValue`, `IntFacetValue`, `<Enum>FacetValue`: one per value
+  scalar encountered across the whole schema, not per connection.
+  Synthesise-once via a single `FacetNaming.facetValueTypeName(scalar)`
+  helper used by both `ConnectionPromoter` and the classifier.
 
 ## Implementation Approach
 
@@ -240,9 +320,9 @@ facets after v1 lands.
 | Phase | Module / artefact | What lands |
 |---|---|---|
 | 1 | hand-written SQL (complete) | Spike — benchmarked SQL strategies against Sakila; confirmed shape C as v1 default; resolved NULL + ordering Open Questions. Outcome captured in Phase 1 Outcome below |
-| 2 | `graphitron-rewrite` (directive + synthesis) | `@asFacet` directive definition; the `@asConnection` synthesis pipeline grows a facet arm that emits `*Facets` / `*FacetValue` TypeSpecs and adds the `facets` field on the rewritten Connection |
-| 3 | `graphitron-rewrite` (classifier) | `FieldWrapper.Connection` carries `FacetSpec`; validator rejects misuse |
-| 4 | `graphitron-rewrite` (emitter) | Fetcher emits the spike-chosen aggregate shape; helper + wiring expose the new field |
+| 2 | `graphitron-rewrite` (directive + `ConnectionPromoter`) | `@asFacet` directive definition; `ConnectionPromoter` grows a facet arm that registers `FacetsType` / `FacetValueType` entries and appends the `facets` field on the synthesised Connection |
+| 3 | `graphitron-rewrite` (classifier) | `GraphitronType.ConnectionType` carries `List<FacetSpec>`; classifier / validator rejects misuse |
+| 4 | `graphitron-rewrite` (emitter) | Fetcher carries a facet plan on `ConnectionResult`; `ConnectionHelper.facets` emits the spike-chosen `UNION ALL` aggregate; registration wires the new field |
 | 5 | `graphitron-test` | Execution tests against Sakila |
 | 6 | deferred | Hierarchical facets (`includeChildrenOf` + `parentValue`) |
 
@@ -479,16 +559,15 @@ together with the plan on Done.
 
 ### Overview
 
-Declare `@asFacet` in rewrite's own directives resource and extend the
-existing `@asConnection` emit-time synthesis pipeline so each
-`@asConnection` field's `@asFacet`-bearing filter inputs produce a
-`facets` field on the rewritten Connection type, one
-`<ConnName>FacetsType` per Connection, and one reusable
+Declare `@asFacet` in rewrite's own directives resource and extend
+`ConnectionPromoter` so each `@asConnection` field's `@asFacet`-bearing
+filter inputs produce a `facets` field on the synthesised Connection type,
+one `<ConnName>FacetsType` per Connection, and one reusable
 `<Scalar>FacetValueType` per distinct value scalar.
 
 ### Changes
 
-#### `graphitron-rewrite/src/main/resources/directives.graphqls`
+#### `graphitron/src/main/resources/no/sikt/graphitron/rewrite/schema/directives.graphqls`
 
 Add:
 
@@ -508,126 +587,93 @@ bindings are rejected in v1).
 directive @asFacet on INPUT_FIELD_DEFINITION
 ```
 
-#### Extend the `@asConnection` synthesis pipeline
+#### Extend `ConnectionPromoter`
 
-The existing pipeline (shipped under "Rewrite owns `@asConnection` via
-emit-time synthesis"; see changelog) is the natural seam:
+`ConnectionPromoter.synthesiseForField` is the natural seam: it already
+reads the carrier field's applied directives, builds the connection / edge
+schema forms, and registers them. Facets ride the same walk.
 
-- `ConnectionSynthesis.buildPlan()` scans the assembled
-  `GraphQLSchema` and produces a `Plan` of `ConnectionDef` entries.
-  Extend `ConnectionDef` with a `List<FacetSpec>` populated by
-  reading `@asFacet` on the wrapped field's filter-input argument.
-- `ConnectionSynthesis.emitSupportingTypes()` produces the existing
-  `<ConnName>Type` / `<ConnName>EdgeType` TypeSpecs. Extend it to
-  also emit `<ConnName>FacetsType` (one per Connection that has
-  facets) and `<Scalar>FacetValueType` (one per distinct value
-  scalar across the whole schema, deduped by name via the shared
-  `FacetNaming.facetValueTypeName(scalar)` helper).
-- `ObjectTypeGenerator.buildFieldDefinition()` already rewrites the
-  directive-driven Connection field's return type and arguments;
-  append a `facets: <ConnName>Facets` field to that rewritten type
-  when the plan entry has a non-empty `FacetSpec` list.
-- `GraphitronSchemaClassGenerator.generate()` already wires
-  synthesised Connection / Edge / PageInfo types via
-  `.additionalType(...)`; thread the new `*Facets` and
-  `*FacetValue` TypeSpecs through the same call site.
+- In `promotionFor(...)`, when the carrier carries `@asConnection`, walk
+  its filter-input argument and read `@asFacet` off each input field. Carry
+  the resulting `List<FacetSpec>` on the `ConnectionPromotion` record so the
+  registration step below can place it on `ConnectionType` (Phase 3).
+- In `buildSynthesisedConnection(...)`, append a
+  `facets: <ConnName>Facets` field (nullable, the whole facets object may be
+  absent) to the connection's `GraphQLObjectType` when the facet list is
+  non-empty. The field name is `facets`.
+- In `synthesiseForField(...)`, register one `FacetsType` per faceted
+  Connection plus one `FacetValueType` per distinct value scalar through
+  `registerSynthesised(ctx, name, type, synthesisedNames)` (the same path
+  that notes absent names for `rebuildAssembledForConnections` to add via
+  `additionalType`). The `<Scalar>FacetValue` name comes from the shared
+  `FacetNaming.facetValueTypeName(scalar)` helper, deduped by name across
+  the whole schema.
+- `rebuildAssembledForConnections` and
+  `GraphitronSchemaClassGenerator.generate()` need no facet-specific change:
+  the new `FacetsType` / `FacetValueType` arms implement `EmitsPerTypeFile`,
+  so they flow through the existing `additionalType(<Name>Type.type())` emit.
 
-For each field annotated `@asConnection`, the synthesis pass walks
-the filter-input argument and, for every input field carrying
-`@asFacet`:
+For each `@asConnection` field, the facet walk does, per `@asFacet` input field:
 
-1. Resolve the value scalar (the GraphQL type of the input field,
-   stripped of list/non-null). For scalar/enum leaves, this is the
-   facet value type.
-2. Record a `<Scalar>FacetValue` entry on the Plan, deduped by the
-   derived type name. `value` carries the **same scalar as the
-   filter-input field**, preserving round-trip symmetry:
+1. Resolve the value scalar (the input field's GraphQL type, stripped of
+   list / non-null). For scalar / enum leaves, this is the facet value type.
+2. Register a `FacetValueType` for that scalar, deduped by the derived type
+   name. `value` carries the **same scalar as the filter-input field**,
+   preserving round-trip symmetry:
    ```graphql
    type MpaaRatingFacetValue { value: MpaaRating! count: Int! }
    type StringFacetValue     { value: String!     count: Int! }
    type BooleanFacetValue    { value: Boolean!    count: Int! }
    type IntFacetValue        { value: Int!        count: Int! }
    ```
-   A client feeds `facetValue.value` straight back into the filter
-   input with no conversion. Custom scalars synthesize
-   `<CustomScalar>FacetValue` on demand the same way. The shared
-   helper `FacetNaming.facetValueTypeName(scalar)` is the source of
-   truth for the derived type name, shared between this pass and the
-   classifier (Phase 3).
-3. Record one `{ConnectionName}Facets` Plan entry with one non-null
-   list field per `@asFacet` input, field name matching the input
-   field name.
-4. Mark the Connection's plan entry as carrying `facets`, so
-   `ObjectTypeGenerator` appends the `facets: {ConnectionName}Facets`
-   field when it rewrites the directive-driven Connection field.
+   A client feeds `facetValue.value` straight back into the filter input
+   with no conversion. Custom scalars synthesise `<CustomScalar>FacetValue`
+   on demand the same way. `FacetNaming.facetValueTypeName(scalar)` is the
+   source of truth for the derived name, shared with the classifier (Phase 3).
+3. Register one `<ConnName>Facets` `FacetsType` with one non-null list field
+   (`[<Scalar>FacetValue!]!`) per `@asFacet` input, field name matching the
+   input field name.
 
-`emitSupportingTypes()` then turns the Plan into TypeSpecs:
-`<ConnName>FacetsType` and each `<Scalar>FacetValueType` join the
-sorted list emitted to the schema sub-package. If the wrapped field
-has no filter input, or the filter input has no `@asFacet` fields, no
-facet entries land on the plan and the Connection is emitted exactly
-as today. No error, no warning.
+If the carrier has no filter input, or the filter input has no `@asFacet`
+fields, no facet entries are registered and the Connection is synthesised
+exactly as today. No error, no warning.
 
 ### Success Criteria
 
-- [ ] `mvn test -pl :graphitron-rewrite -Pquick` — new
-      `ConnectionSynthesisTest` cases cover an SDL with `@asFacet` and
-      assert the Plan carries a non-empty `FacetSpec` list, the
-      emitted TypeSpecs include `<ConnName>FacetsType` (with one list
-      field per `@asFacet`) and each `<Scalar>FacetValueType` (with
-      `value` + `count`), and the rewritten Connection field has a
-      `facets` member.
-- [ ] Existing Connection-synthesis fixtures unchanged.
-- [ ] Classifier tolerates the synthesized types at this phase: they
-      appear as `UnclassifiedType` since nothing reads
-      `FieldWrapper.Connection.facets` yet. Validator won't flag them
-      because they're not reached from a classified field.
-
-> **Note on classifier tolerance.** If `UnclassifiedType` on the synthesized
-> facets types does trigger a validator error in isolation, add an allowlist
-> entry keyed on the `FacetValue` / `Facets` suffix pattern until Phase 3
-> supplies real classification. Verify during Phase 2 implementation.
+- [ ] `mvn test -pl :graphitron-rewrite -Pquick`: new `ConnectionPromoter`
+      (or successor) test cases cover an SDL with `@asFacet` and assert:
+      `ConnectionType.facets()` carries one `FacetSpec` per marked field;
+      the registered types include `<ConnName>Facets` (one list field per
+      `@asFacet`) and each `<Scalar>FacetValue` (with `value` + `count`);
+      and the synthesised Connection's `schemaType` has a `facets` field.
+- [ ] Existing connection-synthesis fixtures unchanged.
+- [ ] The new facet types classify cleanly. Because they are registered as
+      first-class `GraphitronType` arms (not left as `UnclassifiedType`),
+      no allowlist shim is needed; confirm `VariantCoverageTest` and the
+      exhaustive `GraphitronType` switches are updated for the new arms.
 
 ---
 
-## Phase 3 — Classifier: `FacetSpec` on `FieldWrapper.Connection`
+## Phase 3: Classifier, `FacetSpec` on `GraphitronType.ConnectionType`
 
 ### Overview
 
-The rewrite classifier currently flattens `@asConnection` into a
-`FieldWrapper.Connection` with only pagination metadata. Phase 3 teaches
-it to *also* read the filter input's `@asFacet` directives and carry the
-resulting specs on the wrapper, so the emitter (Phase 4) has everything
-it needs without re-parsing SDL.
+Phase 2 reads `@asFacet` during the connection-synthesis walk. Phase 3
+gives the specs a typed home and the misuse rejections. The home is
+`GraphitronType.ConnectionType`, not `FieldWrapper.Connection`: R316 moved
+per-Connection-type metadata onto the first-class type entry, and a facet
+list is exactly that. The emitter (Phase 4) reads `ConnectionType.facets()`,
+not the SDL.
 
 ### Changes
 
 #### `BuildContext` — new directive constant
 
-Add to the `DIR_*` constant block:
+Add to the `DIR_*` constant block (`:79`):
 
 ```java
 static final String DIR_FACET = "asFacet";
 ```
-
-#### `model/FieldWrapper.java`
-
-Extend the `Connection` record with a facets list:
-
-```java
-record Connection(
-    boolean connectionNullable,
-    boolean itemNullable,
-    int defaultPageSize,
-    String connectionName,
-    java.util.List<FacetSpec> facets   // empty when no @asFacet fields
-) implements FieldWrapper { ... }
-```
-
-Keep both existing constructors; have them forward `List.of()` for the
-new parameter. Both Connection construction sites in
-`FieldBuilder.buildWrapper` — the directive-driven `@asConnection` path
-and the structural-detection fallback — get an extra argument.
 
 #### New `model/FacetSpec.java`
 
@@ -641,235 +687,192 @@ public record FacetSpec(
 ```
 
 Carries exactly what the emitter needs: which column to `GROUP BY`, what
-GraphQL type the scalar value has (for wiring the `value` field), and
-what `*FacetValue` object type to instantiate.
+GraphQL type the scalar value has (for wiring the `value` field), and what
+`*FacetValue` object type to instantiate. (Phase 6 keeps room to grow this
+into a sealed `FlatFacetSpec` / `HierarchicalFacetSpec`; v1 is the flat
+record.)
 
-#### `FieldBuilder` — populate `facets`
+#### `model/GraphitronType.java`: `ConnectionType` carries `List<FacetSpec>`
 
-When building a `FieldWrapper.Connection`, walk the wrapped field's
-arguments; for each argument whose type is an input type containing
-`@asFacet`-marked fields:
+Add a `List<FacetSpec> facets` component to the `ConnectionType` record
+(empty when no `@asFacet` fields), beside `elementTypeName` /
+`edgeTypeName`. Both `ConnectionType` construction sites pass it: the
+`ConnectionPromoter` synthesis path (the populated list, Phase 2) and the
+`TypeRegistry` re-materialisation (`TypeRegistry.java:119`, which rebuilds
+the entry on a tag-union merge; forward the existing list). Also add the
+new `FacetsType` / `FacetValueType` arms here (see Phase 2 Key Discoveries
+on the leaf-count choice).
 
-1. Each `@asFacet` field must also carry `@field(name:)` (rejected
-   otherwise with `UnclassifiedField` + a message naming the field).
-2. Each `@asFacet` field's GraphQL leaf scalar/enum is its `valueTypeName`.
-3. Derive `facetValueTypeName` via the shared
-   `FacetNaming.facetValueTypeName(scalar)` helper introduced in Phase 2.
-   Both the synthesis pass and the classifier call through the same
-   helper — no two-module sync worry.
+#### `ConnectionPromoter` / classifier: populate and reject
 
-Reject at classify time:
+The Phase 2 facet walk derives each `FacetSpec`:
 
-- `@asFacet` on a non-`@field`-bound input field (reference path,
-  condition, nesting) → `UnclassifiedField`.
+1. Each `@asFacet` field must also carry `@field(name:)` (the `columnName`).
+2. Each `@asFacet` field's GraphQL leaf scalar / enum is its `valueTypeName`.
+3. `facetValueTypeName` comes from `FacetNaming.facetValueTypeName(scalar)`,
+   the same helper Phase 2 uses, so the two never drift.
+
+Reject:
+
+- `@asFacet` on an input field that is not plain-`@field`-bound: it
+  co-occurs with `@reference` / `@condition`, has no `@field`, or is a
+  composite / `[ID!] @nodeId` reference (`ColumnReferenceField` /
+  `CompositeColumnReferenceField` carrying
+  `CallSiteExtraction.NodeIdDecodeKeys`). The v1 SQL emitter only
+  understands direct-column facets. A shallow directive-level check in the
+  promoter catches the co-occurrence cases; the binding-kind cases
+  (composite / reference) are known once the input field classifies, so
+  defer those to `GraphitronSchemaValidator` if the promoter cannot see the
+  classified `InputField` arm at synthesis time.
 - `@asFacet` on a field whose enclosing input type is not reached via an
-  `@asConnection` field → `UnclassifiedField` (the expanded `facets`
-  field is dead schema otherwise).
+  `@asConnection` field (the `facets` expansion would be dead schema).
+
+Surface rejections as a classification error with a message naming the
+field (the rewrite's existing `UnclassifiedField` / validator-error
+channel; pick whichever the surrounding connection-misuse rejections
+already use, so facet errors read consistently with them).
 
 #### `GraphitronSchemaValidator`
 
-No new validator rule in Phase 3 — the classifier's rejections above
-propagate naturally. If Phase 2's note about `UnclassifiedType` allowlisting
-was needed, remove the allowlist here: the synthesized facet types are
-now reachable from a classified field.
+`validateConnectionType` (`GraphitronSchemaValidator.java:353`) is the
+natural home for any rejection that needs the classified input surface (the
+composite / reference binding cases above). Add the rule there if the
+promoter-level check cannot reach the binding kind.
 
 ### Success Criteria
 
 - [ ] `mvn test -pl :graphitron-rewrite -Pquick` — existing tests pass.
 - [ ] New pipeline test: schema with two `@asFacet` inputs on a filter →
-      classified `Connection.facets()` has two entries with correct
+      the classified `ConnectionType.facets()` has two entries with correct
       column names and value types.
-- [ ] New pipeline test: `@asFacet` on a `@reference`-bound input field
-      → `UnclassifiedField` with a specific error message.
-- [ ] `VariantCoverageTest` still passes — no new sealed leaf added
-      (this phase only extends an existing record).
+- [ ] New pipeline test: `@asFacet` on a `@reference`-bound input field →
+      classification error with a specific message.
+- [ ] `VariantCoverageTest` updated for the new `FacetsType` /
+      `FacetValueType` arms (the leaf-count decision from Phase 2).
 
 ---
 
-## Phase 4 — Emitter: `UNION ALL` aggregate + wiring
+## Phase 4: Emitter, facet plan on `ConnectionResult` + `ConnectionHelper.facets`
 
 ### Overview
 
-`TypeFetcherGenerator.buildQueryConnectionFetcher` (`:519`) emits one
-extra SELECT formed as a `UNION ALL` of per-facet `GROUP BY` arms, one
-arm per selected facet. Each arm applies filter-minus-self in its own
-`WHERE`; each arm's value column is cast to `TEXT` to unify UNION arm
-types. Results carry a `facet` label column used by the Java decoder;
-decoded values parse back to each facet's native Java type via the
-`FacetSpec` carried on `FieldWrapper.Connection`. Results are packaged
-into an extended `ConnectionResult`; `ConnectionHelper` gets a `facets`
-accessor; the synthesised `<ConnName>Type.registerFetchers` body adds
-a `facets` dataFetcher.
+This is `totalCount`, extended. `totalCount` carries `(table, condition)`
+on `ConnectionResult` and lets `ConnectionHelper.totalCount(env)` issue its
+own aggregate, lazy on selection. Facets carry a richer **facet plan** on
+`ConnectionResult` and let a new `ConnectionHelper.facets(env)` resolver
+issue one `UNION ALL` of per-facet `GROUP BY` arms, each under its
+filter-minus-self predicate, value column cast to `TEXT` to unify the arm
+types, decoded back per column. The per-connection `<Conn>Fetchers.facets`
+is a thin delegate, exactly like `<Conn>Fetchers.totalCount`. The paginated
+`edges` / `nodes` query is untouched.
+
+The heavy SQL stays in `ConnectionHelper` (one hand-auditable home, the
+explicit design intent in its Javadoc); the fetcher only *builds the plan*.
 
 ### Changes
 
-#### `ConnectionResult` (generated carrier)
+#### `ConnectionResultClassGenerator`: carry a facet plan
 
-Add a `Map<String, List<FacetValueRow>>` field keyed on input-field name,
-plus a nested `FacetValueRow(Object value, int count)` record. Update the
-constructor and `trimmedResult()` accordingly. `ConnectionResult` lives in
-`<outputPackage>.rewrite` alongside `ConnectionHelper`; package unaffected
-by the recent `*Fetchers` / `*Conditions` package split.
+Beside the existing nullable `(table, condition)`, add a nullable facet
+plan: the base condition (non-facet fields), a `Map<String, Condition>` of
+each facet's own predicate keyed by facet label, and the `List<FacetSpec>`
+(label + `columnName`) the resolver needs to build arms and decode. Add a
+nested `FacetValueRow(Object value, int count)` carrier if convenient, or
+let the resolver return graphql-java-shaped maps directly. Split-Connection
+scatter passes `null` (the `facets` resolver returns `null` there, matching
+the `totalCount` scatter contract). `ConnectionResult` is in
+`<outputPackage>.util` alongside `ConnectionHelper`.
 
-#### `ConnectionHelperClassGenerator`
+#### `QueryConditionsGenerator`: a non-facet base condition
 
-Add a `facets(ConnectionResult, env)` static that returns a
-`Map<String, List<Map<String, Object>>>` shaped for GraphQL-Java. Each
-inner map is `{"value": <typed>, "count": <int>}`. The synthesised
-`<Scalar>FacetValueType` TypeSpecs need no extra wiring — graphql-java's
-default property fetcher exposes `value` and `count` from the inner
-maps by name.
+The generated `<field>Condition(table, env)` ANDs every filter field,
+facets included, and backs the page query unchanged. Add a sibling
+`<field>FacetBaseCondition(table, env)` that ANDs only the **non**-facet
+fields (skipping every `@asFacet`-marked input field). This is the one
+additive generator touch-point; it keeps facet knowledge out of the main
+condition method's body and gives the fetcher a clean base to build
+filter-minus-self from. (Which class owns this follows wherever the
+connection's filter condition is generated today; mirror that.)
 
-#### `TypeFetcherGenerator.buildQueryConnectionFetcher`
+#### `TypeFetcherGenerator.buildQueryConnectionFetcher` (`:4402`): build the plan
 
-Per the *SQL emission strategy* section above: one `UNION ALL` of
-per-facet `GROUP BY` arms. Each arm applies the full Connection
-filter *minus that facet's own predicate*. The paginated `edges` /
-`nodes` query is unchanged.
+Today the fetcher builds the full `condition` and wraps
+`new ConnectionResult(result, page, tableLocal, condition)`. When
+`conn`'s `ConnectionType.facets()` is non-empty, additionally build:
 
-**Builds on shipped fetcher-quality primitives.** The "Generated-fetcher
-quality pass" entry in roadmap Done already extracted pagination
-boilerplate into `ConnectionHelper.pageRequest(...)`, condition
-orchestration into generated `QueryConditions` classes, and the
-`table` → `<entity>Table` rename. This phase reads: "call
-`ConnectionHelper.pageRequest(...)` for the pagination block, add an
-`applyNonFacet` method to `QueryConditions` alongside the existing
-`applyFull`, and refer to the jOOQ table through the `<entity>Table`
-local." Everything below is written against this post-quality shape.
+- the **base condition** from `<field>FacetBaseCondition(tableLocal, env)`;
+- a per-facet own-predicate for each facet `g`: the column-equality / `IN`
+  implied by `FacetSpec.columnName` and the value(s) at
+  `env.getArgument("filter").get(g.inputFieldName())`, emitted inline via
+  jOOQ (`tableLocal.field(columnName).in(values)`, or `.eq` for a scalar
+  facet). Gate on null / empty: absent input contributes no conjunct.
 
-After the main SELECT is emitted, determine the set of facets
-present in the GraphQL selection set (a facet whose field is not
-selected contributes nothing):
+Pass these to a facet-carrying `ConnectionResult` constructor. The fetcher
+does **not** issue the aggregate; it only assembles the plan, so its output
+stays byte-identical to today whenever `facets()` is empty.
 
-- If the selected-facets set is empty — or if `conn.facets()` is
-  empty — emit no aggregate query. The fetcher stays byte-identical
-  to today's output in that case.
+#### `ConnectionHelperClassGenerator`: `facets(env)` resolver
 
-Otherwise, emit one aggregate query. Let `selectedFacets` be the
-subset of `conn.facets()` that the client actually asked for.
+A generic static, the facet sibling of `totalCount`:
 
-1. **Per-facet conditions.** For each facet `f` in `selectedFacets`,
-   build `cond_minus_f` — the full argument-derived Condition with
-   `f`'s own predicate omitted. The current filter class bundles all
-   its input-field predicates into one generated method (see *Current
-   State*), so the fetcher cannot ask the filter to "skip field X".
-   Instead, reconstruct facet predicates inline in the fetcher using
-   `FacetSpec` data (which Phase 3 places on `FieldWrapper.Connection`):
+```text
+facets(env):
+  cr = env.getSource()
+  if (cr.facetPlan() == null) return null            // scatter path
+  selected = facets under `facets` in env.getSelectionSet()   // selection gate
+  if (selected.isEmpty()) return Map.of()            // no arm, no SQL
+  for each selected facet f:
+     cond_minus_f = base AND (⋀ g≠f of perFacet[g])
+     arm_f = SELECT val(label_f) AS facet, col_f.cast(String) AS value,
+                    count(*) AS cnt
+             FROM cr.table() WHERE cond_minus_f GROUP BY col_f
+  union = arm_0.unionAll(arm_1)...                    // one statement
+  rows  = dsl.select().from(union)
+             .orderBy(field("facet"), field("cnt").desc(), field("value")).fetch()
+  decode each row: typed = cr.table().field(columnName).getDataType().convert(raw)
+                   (null-safe: NULL bucket stays null)
+  return Map<facetLabel, List<{ "value": typed, "count": cnt }>>
+```
 
-   - Build a **base condition** equal to the full filter's condition
-     applied to *every non-facet field*. The cleanest route is to
-     emit a second method on the per-query `QueryConditions` class —
-     `applyNonFacet(table, filter)` — that skips every `@asFacet`-marked
-     input field when building `condition`. The existing
-     `applyFull(...)` method continues to back the edges/nodes
-     query. (Pre-quality-plan variant: teach `TypeConditionsGenerator`
-     to emit a second overload on the existing generated filter class.
-     Same shape, different home.) Adds a generator touch-point but
-     keeps facet knowledge out of the filter method's body.
-   - For each facet `g`, its own predicate is the column-equality /
-     `IN` implied by `FacetSpec.columnName` and the value(s) the
-     client passed at `env.getArgument("filter").get(g.inputFieldName())`.
-     The fetcher emits this inline via jOOQ:
-     `DSL.field(g.columnName(), g.jooqType()).in(values)` (or `.eq`
-     for a scalar-valued facet). Gate on null/empty — absent input
-     contributes no conjunct.
-   - `cond_minus_f = baseCondition AND (⋀ g ≠ f of g's inline predicate)`.
+`col.cast(String.class)` unifies the `value` column across arms so
+`UNION ALL` parses; decode uses the column's own `DataType.convert` (the
+same coercion `decodeCursor` already relies on), so no per-scalar parser
+table is needed. Returns `Map<String, List<Map<String, Object>>>`;
+graphql-java's default property fetcher exposes `value` / `count` from the
+inner maps, so the `*FacetValue` types need no wiring. `DSLContext` comes
+from the same `graphitronContext(env)` shim `totalCount` uses.
 
-   This leaves the filter-class generation with one additive change
-   (a second overload) and puts facet-predicate reconstruction in the
-   one place that already has `FacetSpec`: the fetcher.
-
-2. **Per-facet arms.** For each `f` in `selectedFacets`, emit one arm
-   (post-quality-plan, the jOOQ table local is `<entity>Table`; pre,
-   it's `table` — adjust to whatever the surrounding method uses):
-   ```java
-   SelectSelectStep<Record3<String, String, Integer>> armFor(FacetSpec f) {
-       Field<?> col = filmTable.field(f.columnName());
-       return DSL
-           .select(
-               DSL.val(f.inputFieldName()).as("facet"),
-               col.cast(String.class).as("value"),
-               DSL.count().as("cnt"))
-           .from(filmTable)
-           .where(condMinusSelf(f))
-           .groupBy(col);
-   }
-   ```
-   `col.cast(String.class)` aligns the `value` column type across
-   arms so `UNION ALL` parses. At decode time the Java side parses
-   back to each facet's native type via the `FacetSpec`.
-
-3. **Assemble the UNION.** Glue the arms:
-   ```java
-   var first = armFor(selectedFacets.get(0));
-   Select<Record3<String, String, Integer>> union = first;
-   for (int i = 1; i < selectedFacets.size(); i++) {
-       union = union.unionAll(armFor(selectedFacets.get(i)));
-   }
-   var facetRows = dsl
-       .select()
-       .from(union)
-       .orderBy(
-           DSL.field("facet", String.class),
-           DSL.field("cnt", Integer.class).desc(),
-           DSL.field("value", String.class))
-       .fetch();
-   ```
-   No cross-arm sharing; each arm's planner decision is independent.
-   Postgres' `Parallel Append` executes arms concurrently.
-
-4. **Decode rows into the facets map.** Each row carries its own
-   `facet` label; no GROUPING() bit-flag decoding needed. Parse
-   `value` back via each facet's `FacetSpec`:
-   ```java
-   Map<String, List<FacetValueRow>> facets = new HashMap<>();
-   Map<String, FacetSpec> byName = selectedFacets.stream()
-       .collect(Collectors.toMap(FacetSpec::inputFieldName, f -> f));
-   for (Record row : facetRows) {
-       String label = row.get("facet", String.class);
-       String raw   = row.get("value", String.class);
-       int count    = row.get("cnt",   Integer.class);
-       FacetSpec f  = byName.get(label);
-       Object typed = f.parseValue(raw);    // null-safe; returns null for NULL bucket
-       facets.computeIfAbsent(label, k -> new ArrayList<>())
-             .add(new FacetValueRow(typed, count));
-   }
-   ```
-
-5. Attach the facets map to the `ConnectionResult`.
-
-**N-facet fallback.** When `selectedFacets.size()` exceeds ~10, the
-UNION becomes unwieldy and fetcher readability suffers. At that
-threshold the fetcher issues N separate jOOQ queries (shape B) and
-assembles in Java. Same per-arm SQL structure, just N round-trips
-instead of one UNION. The switchover is an emitter-local decision;
-no schema or classifier change. Defer actually writing the N-facet
-path until a schema crosses the threshold.
+**N-facet fallback.** When `selected.size()` exceeds ~10 the UNION becomes
+unwieldy; the resolver can issue N separate queries (shape B) and merge in
+Java, same per-arm SQL. Resolver-local decision, no schema or classifier
+change; defer writing the N-facet path until a schema crosses the threshold.
 
 **jOOQ API surface (3.20.11):** `DSL.select(...)`, `DSL.val(...)`,
 `Field.cast(Class)`, `SelectJoinStep.groupBy(Field)`,
-`Select.unionAll(Select)`, `DSL.count()`, `ResultQuery.fetch()`. No
-`DSL.groupingSets(...)` or `DSL.grouping(...)`. Surface verified
-against the Phase 1 spike's hand-written SQL.
+`Select.unionAll(Select)`, `DSL.count()`, `ResultQuery.fetch()`,
+`Field.getDataType().convert(...)`. No `DSL.groupingSets(...)` /
+`DSL.grouping(...)`. Surface verified against the Phase 1 spike's SQL and
+the existing `ConnectionHelper` cursor code.
 
-#### `<ConnName>Type.registerFetchers`
+#### Wiring: `FetcherRegistrationsEmitter` + `ConnectionFetcherClassGenerator`
 
-The synthesised Connection type's emit-time `registerFetchers` method
-already registers `edges` / `nodes` / `pageInfo` against
-`ConnectionHelper`. Append a `facets` registration that calls
-`ConnectionHelper.facets(...)`. The `*FacetValue` types need no
-explicit fetcher wiring — `value` and `count` are record properties
-that graphql-java's default property fetcher handles.
+`connectionBody` (`FetcherRegistrationsEmitter.java:137`) wires `edges` /
+`nodes` / `pageInfo` and, behind a gate, `totalCount`. Add a `facets`
+registration behind a has-facets gate (`!ct.facets().isEmpty()`), parallel
+to the `totalCount` SDL-presence gate. `ConnectionFetcherClassGenerator`
+(`:38`) adds a `facets` delegate under the same gate. The `*FacetValue`
+types need no explicit fetcher wiring.
 
 ### Success Criteria
 
 - [ ] `mvn verify -Pquick` on the whole tree.
-- [ ] Schemas *without* `@asFacet` emit unchanged fetchers (structural
-      diff test: classify pre- and post-patch SDL with no `@asFacet`,
-      assert identical `TypeSpec` for the fetcher method).
-- [ ] Wiring test: a Connection with `@asFacet` fields registers a
-      `facets` dataFetcher in its `<ConnName>Type.registerFetchers`
-      body; the `*FacetValue` TypeSpecs are loadable.
+- [ ] Schemas *without* `@asFacet` emit unchanged fetchers (structural diff:
+      classify pre- and post-patch SDL with no `@asFacet`, assert identical
+      `TypeSpec` for the fetcher method and unchanged `ConnectionResult`
+      construction).
+- [ ] Wiring test: a Connection with `@asFacet` fields registers a `facets`
+      dataFetcher in its `connectionBody`, and `<Conn>Fetchers` has a
+      `facets` delegate; the `*FacetValue` types are loadable.
 
 ---
 
@@ -1018,20 +1021,21 @@ reviewers can confirm the v1 design does not foreclose it.
 
 ## Testing Strategy
 
-- **Unit:** none required — no new reflection / catalog probes.
-- **Pipeline (synthesis):** new `ConnectionSynthesisTest` cases cover
-  expansion of `@asFacet` into `*Facets` / `*FacetValue` TypeSpecs +
-  the `facets` field on the rewritten Connection, and no-op when no
-  `@asFacet` is present.
-- **Pipeline (classifier):** two new `GraphitronSchemaBuilderTest` cases —
-  `@asFacet` classification success and `@asFacet` rejection on non-`@field`
-  bindings.
-- **Wiring:** assert the synthesised `<ConnName>Type.registerFetchers`
-  body wires a `facets` dataFetcher and the `*FacetValue` TypeSpecs
-  are loadable.
+- **Unit:** none required; no new reflection / catalog probes.
+- **Pipeline (synthesis):** new `ConnectionPromoter` (or successor) test
+  cases cover registration of `<ConnName>Facets` / `<Scalar>FacetValue`
+  types and the `facets` field on the synthesised Connection, and the no-op
+  when no `@asFacet` is present.
+- **Pipeline (classifier):** two new `GraphitronSchemaBuilderTest` cases:
+  `@asFacet` populates `ConnectionType.facets()` correctly, and `@asFacet`
+  on a non-`@field` binding is rejected with a specific message.
+- **Wiring:** assert `connectionBody` wires a `facets` dataFetcher (and
+  `<Conn>Fetchers` has the delegate) when the Connection has facets, and the
+  `*FacetValue` types are loadable.
 - **Execution:** three Sakila cases as above.
-- **Regression:** existing `filmsConnection*` tests unchanged; structural
-  diff confirms fetcher output is byte-identical when `@asFacet` is absent.
+- **Regression:** existing connection tests unchanged; structural diff
+  confirms fetcher output and `ConnectionResult` construction are
+  byte-identical when `@asFacet` is absent.
 
 ## Resolved design decisions
 
@@ -1095,9 +1099,9 @@ reviewers can confirm the v1 design does not foreclose it.
    enumeration per facet — achievable from the jOOQ catalog for enum
    columns and from an optional `@asFacet(values: [...])` argument or a
    compile-time query on the referenced table for small FKs. Design
-   constraint for v1: keep `FacetSpec` + `FieldWrapper.Connection`
-   permissive enough that the C-vs-F choice lives entirely inside
-   `TypeFetcherGenerator`; no wire-format or type-surface impact.
+   constraint for v1: keep `FacetSpec` + the `ConnectionResult` facet
+   plan permissive enough that the C-vs-F choice lives entirely inside
+   `ConnectionHelper.facets`; no wire-format or type-surface impact.
    Decide in Phase 5 based on profiling: ship F if any Sikt
    connection exceeds the measured 5-facet threshold or if tables
    routinely exceed `shared_buffers` by >10×.
@@ -1114,20 +1118,30 @@ reviewers can confirm the v1 design does not foreclose it.
   ticket with the target SDL shape.
 - Jira: [SOPP-141](https://sikt.atlassian.net/browse/SOPP-141) —
   admissions initiative; closed in favour of GG-335.
-- `graphitron-rewrite/.../ConnectionSynthesis` — Phase 2 extension
-  point: `buildPlan()` + `emitSupportingTypes()` grow facet entries.
-- `graphitron-rewrite/.../ObjectTypeGenerator.buildFieldDefinition` —
-  appends the `facets` field on the rewritten Connection field.
-- `graphitron-rewrite/.../GraphitronSchemaClassGenerator.generate` —
-  threads new `*Facets` / `*FacetValue` TypeSpecs through
-  `.additionalType(...)`.
-- `graphitron-rewrite/src/main/resources/directives.graphqls` — target
-  for the `@asFacet` directive declaration.
-- `graphitron-rewrite/.../FieldBuilder.buildWrapper` —
-  `FieldWrapper.Connection` construction sites (both arms).
-- `graphitron-rewrite/.../TypeFetcherGenerator.buildQueryConnectionFetcher` —
-  Phase 4 emitter target.
-- `graphitron-rewrite/.../BuildContext` — `DIR_*` constants.
-- "Generated-fetcher quality pass" (roadmap Done) — Phase 4 builds on
-  the shipped `QueryConditions` extraction, `<entity>Table` rename, and
-  `ConnectionHelper.pageRequest` primitives.
+- `rewrite/ConnectionPromoter.java`: Phase 2 extension point.
+  `synthesiseForField` / `promotionFor` / `buildSynthesisedConnection`
+  grow the facet arm and register the facet types.
+- `rewrite/model/GraphitronType.java:511`: `ConnectionType` (carries the
+  new `List<FacetSpec>`); new `FacetsType` / `FacetValueType` arms.
+- `rewrite/model/FieldWrapper.java:73`: `Connection` is the slim 2-arg
+  per-site record; facets do **not** go here (see Phase 3 rationale).
+- `rewrite/generators/schema/GraphitronSchemaClassGenerator.java`:
+  `additionalType(<Name>Type.type())` carries the facet types (no
+  facet-specific change needed once they are `EmitsPerTypeFile` arms).
+- `graphitron/src/main/resources/no/sikt/graphitron/rewrite/schema/directives.graphqls`:
+  target for the `@asFacet` directive declaration.
+- `rewrite/generators/TypeFetcherGenerator.java:4402`
+  (`buildQueryConnectionFetcher`): Phase 4 builds the facet plan onto
+  `ConnectionResult`.
+- `rewrite/generators/util/ConnectionResultClassGenerator.java` /
+  `ConnectionHelperClassGenerator.java`: the `(table, condition)` +
+  `totalCount` precedent the facet plan + `facets` resolver extend.
+- `rewrite/generators/util/ConnectionFetcherClassGenerator.java:38` and
+  `rewrite/generators/schema/FetcherRegistrationsEmitter.java:137`: the
+  `facets` delegate + registration, behind a has-facets gate.
+- `rewrite/generators/QueryConditionsGenerator.java`: the additive
+  `<field>FacetBaseCondition` (non-facet base condition).
+- `rewrite/BuildContext.java:79`: `DIR_*` constants (add `DIR_FACET`).
+- `rewrite/model/Operation.java:92`: `Operation.Facet`, the
+  general-dispatch home this plan deliberately leaves unpopulated (see
+  *Contained approach*); R314 folds the contained emit into it.
