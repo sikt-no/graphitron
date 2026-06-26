@@ -5,9 +5,9 @@ status: Backlog
 bucket: bug
 priority: 3
 theme: interface-union
-depends-on: [multitable-interface-filter-extraction-kinds]
+depends-on: []
 created: 2026-06-25
-last-updated: 2026-06-25
+last-updated: 2026-06-26
 ---
 
 # Support converted/@nodeId/developer-@condition filters on multitable interface/union queries
