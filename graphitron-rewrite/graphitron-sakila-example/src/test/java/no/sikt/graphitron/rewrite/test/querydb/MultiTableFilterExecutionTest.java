@@ -1,7 +1,6 @@
 package no.sikt.graphitron.rewrite.test.querydb;
 
 import graphql.GraphQL;
-import graphql.schema.GraphQLSchema;
 import no.sikt.graphitron.generated.Graphitron;
 import no.sikt.graphitron.rewrite.test.tier.ExecutionTier;
 import org.jooq.DSLContext;
@@ -59,8 +58,7 @@ class MultiTableFilterExecutionTest {
                     if (sql != null) SQL_LOG.add(sql.toLowerCase(Locale.ROOT));
                 }
             }));
-        GraphQLSchema schema = Graphitron.buildSchema(b -> {});
-        graphql = GraphQL.newGraphQL(schema).build();
+        graphql = Graphitron.newGraphQL().build();
     }
 
     @AfterAll

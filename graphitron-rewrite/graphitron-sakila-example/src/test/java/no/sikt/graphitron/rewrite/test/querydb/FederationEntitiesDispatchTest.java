@@ -57,8 +57,7 @@ class FederationEntitiesDispatchTest {
                     if (sql != null) SQL_LOG.add(sql.toLowerCase(java.util.Locale.ROOT));
                 }
             }));
-        GraphQLSchema schema = Graphitron.buildSchema(b -> {});
-        graphql = GraphQL.newGraphQL(schema).build();
+        graphql = Graphitron.newGraphQL().build();
     }
 
     @AfterAll

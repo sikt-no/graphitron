@@ -1,7 +1,7 @@
 ---
 id: R391
 title: "Graphitron facade: default-case newGraphQL() helper"
-status: Ready
+status: In Review
 bucket: feature
 depends-on: []
 created: 2026-06-26
@@ -9,6 +9,17 @@ last-updated: 2026-06-26
 ---
 
 # Graphitron facade: default-case newGraphQL() helper
+
+> **Shipped (In Review).** `newGraphQL()` emitted in `GraphitronFacadeGenerator`
+> (returns `GraphQL.Builder`, body `GraphQL.newGraphQL(buildSchema(customizer -> {}))`);
+> 16/16 unit tests in `GraphitronFacadeGeneratorTest` green (added
+> `newGraphQL_isPublicStaticReturningGraphQLBuilder`,
+> `newGraphQL_isPresentExactlyOnceInFederationBuild`, no body-string assertion).
+> Federation correctness pinned by `FederationBuildSmokeTest.newGraphQLBuildsFederationWrappedEngine`.
+> Sweep: `GraphqlEngine` plus 23 default-case execution-tier sites converted to
+> `Graphitron.newGraphQL().build()` (enumerated in the landing commit); two-arg
+> `buildSchema(b -> {}, fed -> {})` federation sites and the raw-SDL spike left as-is.
+> `mvn clean install -Plocal-db` green end-to-end.
 
 > Add a default-case `Graphitron.newGraphQL()` factory to the generated facade,
 > returning a `graphql.GraphQL.Builder` pre-wired from the schema, so consumers

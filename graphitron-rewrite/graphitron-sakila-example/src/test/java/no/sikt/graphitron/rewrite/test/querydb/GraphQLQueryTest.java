@@ -77,8 +77,7 @@ class GraphQLQueryTest {
                 }
             }));
 
-        GraphQLSchema schema = Graphitron.buildSchema(b -> {});
-        graphql = GraphQL.newGraphQL(schema).build();
+        graphql = Graphitron.newGraphQL().build();
     }
 
     @AfterAll

@@ -49,6 +49,8 @@ public final class GraphitronFacadeGenerator {
         var graphitronContextImpl = graphitronContext.nestedClass(GraphitronContextInterfaceGenerator.IMPL_CLASS_NAME);
         var executionInput = ClassName.get("graphql", "ExecutionInput");
         var executionInputBuilder = ClassName.get("graphql", "ExecutionInput", "Builder");
+        var graphQL = ClassName.get("graphql", "GraphQL");
+        var graphQLBuilder = ClassName.get("graphql", "GraphQL", "Builder");
         var dataLoaderRegistry = ClassName.get("org.dataloader", "DataLoaderRegistry");
         var dslContext = ClassName.get("org.jooq", "DSLContext");
 
@@ -71,11 +73,19 @@ public final class GraphitronFacadeGenerator {
             graphitronContext, graphitronContextImpl, executionInput, executionInputBuilder,
             dataLoaderRegistry, dslContext, contextArgs);
 
+        var newGraphQL = MethodSpec.methodBuilder("newGraphQL")
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(graphQLBuilder)
+            .addStatement("return $T.newGraphQL(buildSchema(customizer -> {}))", graphQL)
+            .addJavadoc(newGraphQLJavadoc())
+            .build();
+
         var classBuilder = TypeSpec.classBuilder(CLASS_NAME)
             .addModifiers(Modifier.PUBLIC, Modifier.FINAL)
             .addJavadoc(classJavadoc())
             .addMethod(buildSchema)
-            .addMethod(newExecutionInput);
+            .addMethod(newExecutionInput)
+            .addMethod(newGraphQL);
 
         if (federationLink) {
             var SCHEMA_TRANSFORMER = ClassName.get("com.apollographql.federation.graphqljava", "SchemaTransformer");
@@ -141,6 +151,23 @@ public final class GraphitronFacadeGenerator {
         method.addCode("    .dataLoaderRegistry(new $T());\n", dataLoaderRegistry);
         method.addJavadoc(newExecutionInputJavadoc(contextArgs));
         return method.build();
+    }
+
+    private static String newGraphQLJavadoc() {
+        return "Builds a {@link graphql.GraphQL.Builder} for the zero-configuration default case,\n"
+            + "equivalent to {@code GraphQL.newGraphQL(buildSchema(b -> {}))}. Chain {@code .build()}\n"
+            + "to obtain the engine: {@code var graphql = Graphitron.newGraphQL().build();}.\n"
+            + "\n"
+            + "<p>Returns a builder rather than a built {@link graphql.GraphQL} so callers can still\n"
+            + "attach instrumentation or execution strategies before {@code .build()}. Consumers that\n"
+            + "need to customize the schema (extra scalars, additional types, custom directives, or a\n"
+            + "federation entity fetcher) should call {@link #buildSchema(java.util.function.Consumer)}\n"
+            + "directly and wrap it with {@code GraphQL.newGraphQL(...)} themselves; this convenience\n"
+            + "covers only the no-extra-wiring default.\n"
+            + "\n"
+            + "<p>Per-request runtime values (DSLContext, contextArguments) still travel via\n"
+            + "{@code Graphitron.newExecutionInput(...)}.\n"
+            + "@return a {@link graphql.GraphQL.Builder} over the default-wired schema, ready for {@code .build()}\n";
     }
 
     private static String classJavadoc() {
