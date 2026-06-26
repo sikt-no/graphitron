@@ -1,6 +1,6 @@
 ---
 id: R380
-title: "Implement @reference join-subquery filter conditions on input fields"
+title: "Implement @reference join-subquery filter conditions on input fields and arguments"
 status: Spec
 bucket: feature
 priority: 5
@@ -10,38 +10,53 @@ created: 2026-06-25
 last-updated: 2026-06-25
 ---
 
-# Implement @reference join-subquery filter conditions on input fields
+# Implement @reference join-subquery filter conditions on input fields and arguments
 
 ## The gap
 
-`@reference` is grammatically accepted on `ARGUMENT_DEFINITION` / `INPUT_FIELD_DEFINITION`,
-but the generated-condition machinery ignores the join path for the *scalar-filter-argument*
-surface. A scalar filter argument carrying `@reference(path:[...])` aiming at a column on a
-*joined* table never gets its path read:
+`@reference` is grammatically accepted on both `INPUT_FIELD_DEFINITION` and `ARGUMENT_DEFINITION`,
+but the generated-condition machinery never turns the join path into a join. A `@reference(path:[...])`
+filter aiming at a column on a *joined* table is bound against the field's own (local) table instead.
+The two surfaces are broken in *different* ways, and R380 fixes both; the shared spine (model +
+emitter, below) is identical, only the classifier locus differs.
 
-* `FieldBuilder.classifyArgument`'s scalar-binding tail (`FieldBuilder.java:1157-1183`)
-  resolves the column against `rt.tableName()` (the field's own return-type table) and reads
-  only `@field(name:)` for renaming. It never reads `@reference`. It produces
-  `ArgumentRef.ScalarArg.ColumnArg` / `CompositeColumnArg`.
-* `FieldBuilder.projectFilters` (`:1397-1427`) projects those into `BodyParam.Eq/In/RowEq/RowIn`
-  and groups all of a field's filter args into one `GeneratedConditionFilter` (carries
-  `tableRef` + `bodyParams`, no path).
-* `TypeConditionsGenerator.buildConditionMethod` (`TypeConditionsGenerator.java:85`) emits the
-  entity-scoped pure-function method `<ReturnType>Conditions.<field>Condition(Table table, args…)`
-  whose body emits every predicate as `table.<COLUMN>` (`:104`, `:118`, `:130`, `:145`). The
-  local-table binding is baked in here.
+**Surface 1 — input-object filter fields (`INPUT_FIELD_DEFINITION`; the motivating bug).** Here the
+path *is* parsed and carried, then dropped at projection. The chain for the
+utdanningsregisteret field `harSelvakkrediteringsretts: Boolean @reference(path: {table: "LARESTED"})
+@field(name: "STATUS_SELVAKKREDITERENDE")` inside a `filter:` input on a query returning
+`URegOrganisasjon` (`@table(name: "ORGANISASJON")`):
 
-Because the column does not exist on the local table, the outcome today is one of: an
-`UnboundArg` rejection ("column '…' could not be resolved in table '…'") when the name is
-absent locally; or a silently mis-bound predicate against the wrong column when a column of
-that name happens to collide on the local table; or, where a stale binding survives into emit,
-non-compiling generated source. None of these is the join-subquery the author asked for.
+1. `BuildContext` (the `@reference` arm of input-field resolution, `BuildContext.java:1867-1885`)
+   calls `parsePath`, resolves `STATUS_SELVAKKREDITERENDE` against the *terminal* table `LARESTED`,
+   and constructs `InputField.ColumnReferenceField` carrying `joinPath = path.elements()` and
+   `liftedSourceColumns = List.of(col)` where `col` is the LARESTED column. **The path is correct
+   and on the carrier.**
+2. `FieldBuilder.walkInputFieldConditions`'s `ColumnReferenceField` arm (the non-`@condition`
+   branch, `FieldBuilder.java:~1383-1395`) emits `implicitBodyParam(rf.liftedSourceColumns().get(0), …)`
+   and **silently drops `rf.joinPath()`**, producing a bare `BodyParam.Eq` over the LARESTED column.
+3. `TypeConditionsGenerator.buildConditionMethod` (`TypeConditionsGenerator.java:85`) binds it as
+   `table.STATUS_SELVAKKREDITERENDE` with `table` = `ORGANISASJON` (`:104`, `:118`, `:130`, `:145`);
+   the column isn't on `ORGANISASJON`, so the generated `*Conditions.java` does not compile (the six
+   observed errors).
 
-Observed in the wild (utdanningsregisteret): filter fields referencing
+**Surface 2 — direct scalar arguments (`ARGUMENT_DEFINITION`).** Here the path is never even read.
+`FieldBuilder.classifyArgument` reads orderBy / pagination / `@condition` / `@lookupKey` / `@nodeId` /
+`@field`, but **no `@reference`**; a scalar arg carrying `@reference(path:[...])` falls through to the
+scalar-binding tail (`FieldBuilder.java:1157-1183`), which reads only `@field(name:)` and resolves the
+column against `rt.tableName()` (the field's own return-type table), producing
+`ArgumentRef.ScalarArg.ColumnArg` / `CompositeColumnArg` → `projectFilters` (`:1397-1427`) →
+`BodyParam.Eq/In/RowEq/RowIn`. Because the path is dropped at the *start*, the column resolves against
+the local table from the outset: an `UnboundArg` rejection ("column '…' could not be resolved in
+table '…'") when the name is absent locally, or a silently mis-bound predicate against the wrong
+column when a same-named column collides on the local table.
+
+Neither surface produces the join-subquery the author asked for.
+
+Observed in the wild (utdanningsregisteret): `filter:`-input fields referencing
 `STATUS_SELVAKKREDITERENDE`, `NKRKODE`, `UTDANNINGSSPESIFIKASJONSTYPE_KODE`,
 `STATUS_GYLDIG_AKKREDITERING` resolved against `Organisasjon` / `Utdanningsmulighet` /
 `Utdanningsspesifikasjon`, none of which carry those columns; the author expected the path to
-produce a join-subquery condition.
+produce a join-subquery condition. These are all Surface 1 (input-object filter fields).
 
 ### Relationship to the existing `@nodeId` FK-target arm
 
@@ -121,7 +136,43 @@ may target different remote tables via different paths, so the path is necessari
 
 ## Classifier changes (`FieldBuilder`)
 
-In the scalar-binding tail of `classifyArgument` (`:1157`), before the local `findColumn`:
+Both surfaces converge on the same projected output: a `BodyParam.RemoteColumnPredicate(joinPath, inner)`
+in the field's `GeneratedConditionFilter`. They differ only in where the path is read and where the
+wrap happens.
+
+### Surface 1 — input-object filter fields (`walkInputFieldConditions`)
+
+The path is already parsed and carried on `InputField.ColumnReferenceField.joinPath()`
+(`BuildContext.java:1867-1885`); **no `BuildContext`/`parsePath` change is needed here**. The fix is to
+stop dropping it. In the `ColumnReferenceField` arm of `walkInputFieldConditions`
+(`FieldBuilder.java:~1383-1395`), the non-`@condition` branch currently builds
+`implicitBodyParam(rf.liftedSourceColumns().get(0), …)`. When `rf.joinPath()` is non-empty **and** this
+is a plain `@reference` (not the `@nodeId` lift; see the discrimination note below), wrap the resulting
+`ColumnPredicate` in `RemoteColumnPredicate(rf.joinPath(), inner)`. The same treatment applies to the
+`CompositeColumnReferenceField` arm (`RowEq`/`RowIn` inner over the terminal columns).
+
+**The nodeId-vs-plain-`@reference` discrimination is load-bearing.** `ColumnReferenceField` is produced
+for two cases whose `liftedSourceColumns` mean *different tables*:
+
+* `@nodeId` FK-target (DirectFk): `liftedSourceColumns` are FK child columns *on the parent's own
+  table*, positionally aligned with the decoded NodeType keys. The predicate is correctly bound to the
+  local `table` today (the lift means no join is needed). This case must **not** be wrapped.
+* plain `@reference` (the bug): `liftedSourceColumns` is the *terminal* column on the joined table. This
+  case **must** go through the `EXISTS`.
+
+The carrier does not currently distinguish these by type, only by provenance (the `@nodeId` arm sets a
+`NodeIdDecodeKeys` extraction and lifts source columns; the plain-`@reference` arm sets `Direct` and
+stores the terminal column, `BuildContext.java:1880-1884`). The implementer should pick the cleanest
+available discriminator (the `Direct`-vs-`NodeIdDecodeKeys` extraction split is the most direct signal;
+a sealed sub-variant on `ColumnReferenceField` is the more generation-thinking-aligned option if the
+provenance fork proves to recur) and **record the choice in the implementation commit**. Conflating the
+two `liftedSourceColumns` meanings under one slot is what dropped the join in the first place; the fix
+must not re-conflate them.
+
+### Surface 2 — direct scalar arguments (`classifyArgument` scalar tail)
+
+Here the path is never read. In the scalar-binding tail of `classifyArgument` (`:1157`), before the
+local `findColumn`:
 
 * If the arg carries `@reference`, call `ctx.parsePath(arg, name, rt.tableName(), <terminal-sql-name>)`.
   Resolve the filtered column against the *terminal* table (the path's last `HasTargetTable.targetTable()`),
@@ -162,14 +213,28 @@ existing arms stay byte-for-byte:
   `if (!list.isEmpty())` guards wrap the entire `.and(DSL.exists(...))` term, so an absent scalar or
   empty list still contributes no predicate, identical to the local-column guards (`:107`, `:117-122`,
   `:144-149`). This is the `In`/`RowIn` empty-guard parity the Backlog note asked for.
+* **Sealed-permit fallout.** Adding `RemoteColumnPredicate` to the sealed `BodyParam` makes two other
+  switches non-exhaustive until they gain an arm: `paramType(bp)` (`TypeConditionsGenerator.java:~95`,
+  which builds the method parameter per body param) and `bodyParamCallTypeName(bp)` (`FieldBuilder`, read
+  at `:1483`). Both arms are trivial delegations to `inner` (`name()/list()/nonNull()/extraction()`
+  delegate, so the parameter type and call-type are the inner predicate's). The compiler forces both;
+  this note exists only so "the `callParams` projection is unchanged" is not read as "the sealed addition
+  is free".
 
 ## Validator (`GraphitronSchemaValidator`)
 
-Mirror the new classifier branch (validator-mirrors-classifier invariant). The moment the classifier
-reads `@reference` and produces a remote predicate, an unresolvable path or an unsupported terminal/hop
-kind must surface as a typed `Rejection` at validate time, never an `IllegalStateException` at emit.
-Reuse the `UnclassifiedArg` + `Rejection.structural` path the surrounding deferred cases already use
-(`:1100-1106`, `:1128-1132`). `parsePath`'s own error string is the diagnostic for an unresolvable path.
+Mirror the new classifier branches (validator-mirrors-classifier invariant) at **both** mirror sites —
+the input-field walk and the scalar-argument projection. The moment the classifier reads `@reference`
+and produces a remote predicate, an unresolvable path or an unsupported terminal/hop kind (a
+`ConditionJoin` hop, deferred below) must surface as a typed `Rejection` at validate time, never an
+`IllegalStateException` at emit. Both sites reject the same two conditions, so this is one rejection
+shape applied at two mirrors, not new logic per site. For Surface 1 the natural home is alongside
+`validateInputColumnReferenceField` (which today guards only the `@condition`-present FK-target case);
+for Surface 2 it is the `ArgumentRef`/`projectFilters` mirror. Follow the `Rejection.structural`
+validator path the surrounding deferred FK-target cases already use (`:1100-1106`, `:1128-1132` —
+`validateInputCompositeColumnReferenceField` / `validateInputUnboundField`; these build a
+`ValidationError` carrying `Rejection.structural(...)`, they do not use `UnclassifiedArg`).
+`parsePath`'s own error string is the diagnostic for an unresolvable path.
 
 ## Scope and deferrals (reviewer: confirm the v1 boundary)
 
@@ -191,13 +256,18 @@ Reuse the `UnclassifiedArg` + `Rejection.structural` path the surrounding deferr
 
 ## Tests
 
-* **Pipeline tier** (primary): SDL with `@reference(path:[...])` on a scalar filter arg whose terminal
-  column lives on a joined table → assert the generated `<Type>Conditions` `TypeSpec` contains the
+* **Pipeline tier** (primary): assert the generated `<Type>Conditions` `TypeSpec` contains the
   EXISTS-bearing condition method (assert on the model/`TypeSpec` structure, not code-string bodies, per
-  design principles). Cover: single-hop `{key:}`; single-hop `{table:}` with auto-discovered FK; multi-hop;
+  design principles). **Cover both surfaces** with the same matrix, since they project to the same
+  `RemoteColumnPredicate`: (1) `@reference(path:[...])` on an **input-object filter field** whose terminal
+  column lives on a joined table (the motivating `harSelvakkrediteringsretts` / `LARESTED` shape — this is
+  the regression guard for the actual bug); (2) `@reference(path:[...])` on a **direct scalar argument**.
+  Across the two, exercise: single-hop `{key:}`; single-hop `{table:}` with auto-discovered FK; multi-hop;
   composite-key terminal (`RowIn`); a nullable scalar (guard present) and a non-null scalar (unguarded);
-  an empty-list `In` (guard present). Add the inverse: a `ConditionJoin`-bearing reference filter path
-  produces a clean rejection.
+  an empty-list `In` (guard present). Add a discrimination guard: an `@nodeId` FK-target input field on
+  the *same* type still binds to the local table (no EXISTS) — proof the nodeId-vs-plain-`@reference`
+  fork did not regress. Add the inverse: a `ConditionJoin`-bearing reference filter path produces a clean
+  rejection (at both mirror sites).
 * **Classification / corpus.** If the remote-column filter introduces a new classification verdict,
   thread it through the R281 corpus + `code-generation-triggers.adoc` (see the `classified-corpus` skill).
 * **Execution tier** (backstop): add a sakila-example schema field exercising a remote-column reference
@@ -227,42 +297,31 @@ terminal hop is well-formed (the validator branch above is its own guard). Sibli
 diagnostics family: R236 (candidate-hint terminal table), R282 (FK-key hint scope), and the deferred
 `nodeid-fk-target-arg-join-translation` item (the `@nodeId` FK-target translated-key case).
 
-## Reviewer note (Spec → Spec, 2026-06-25, independent session)
+## Revision history
 
-Spec → Ready review by an independent session; **not signed off**. One material finding, two minor.
-Code citations spot-checked and accurate (`FieldBuilder.java:1157/1397/1428/1481`, `TypeConditionsGenerator.java:85/185`,
-the `BodyParam permits ColumnPredicate` decl, `BuildContext.parsePath`, `JoinPathEmitter.generateAliases/emitCorrelationWhere/emitTwoArgMethodCall`,
-`InlineTableFieldEmitter.buildInnerSelect`, `FkTargetConditionFilter`). The Design A vs B fork is well-reasoned
-against the shared-vs-forked principle; the `RemoteColumnPredicate` wrapper respects the sealed-axis principle
-(no `joinPath` field bolted onto the four `ColumnPredicate` arms); the test plan asserts on `TypeSpec` structure
-(not code-strings) and covers single/multi-hop, composite `RowIn`, null/empty guards, `ConditionJoin` rejection,
-and an execution-tier backstop, which is adequate **for the scalar-argument carrier**.
+**Spec → Spec revise (2026-06-25, independent reviewer session).** A Spec → Ready review traced the
+motivating bug into the code and reframed the plan; findings folded into the body above rather than left
+as a note. Substance:
 
-1. **(Material) Carrier ambiguity: scalar argument vs input-object field.** The title ("…on input fields"), the
-   "Observed in the wild" framing ("filter fields"), and the Docs section's "(or input field)" parenthetical
-   reach the `INPUT_FIELD_DEFINITION` surface. That surface resolves to a *different* carrier,
-   `InputField.ColumnReferenceField` (constructed in `BuildContext.java:1879/2131/2188`; its javadoc already states
-   "the generator must JOIN through `joinPath` before applying the column predicate", `InputField.java:90-91`), with
-   its own resolution path and its own emit path (the input-condition path, **not** `TypeConditionsGenerator`). But
-   every implementation section here — Model changes, Classifier changes, Emitter changes — targets exclusively the
-   `ARGUMENT_DEFINITION` surface (`classifyArgument`'s scalar tail → `ArgumentRef.ScalarArg.ColumnArg` → `BodyParam`
-   → `TypeConditionsGenerator`). As written, an implementer cannot tell which carrier R380 fixes, and if the
-   motivating utdanningsregisteret bug lives on input-object filter fields, the plan as drafted would not fix it.
-   Resolve by: (a) stating whether the observed bug is on scalar `ARGUMENT_DEFINITION` args or `INPUT_FIELD_DEFINITION`
-   input-object fields; (b) aligning the title and the Docs section with the carrier(s) actually implemented; and
-   (c) if input-object fields are in scope, giving `InputField.ColumnReferenceField` its own classifier/emitter/test
-   plan (its emitter is not `TypeConditionsGenerator`), or, if out of scope, dropping "(or input field)" from Docs
-   and listing `InputField.ColumnReferenceField` remote predicates in "Out of scope" as the sibling gap.
+* The motivating utdanningsregisteret bug is on **input-object filter fields**
+  (`INPUT_FIELD_DEFINITION`), not direct scalar arguments. Confirmed it surfaces in
+  `TypeConditionsGenerator.buildConditionMethod` (the six `*Conditions.java` errors), via
+  `BuildContext` parsing the path correctly onto `InputField.ColumnReferenceField` but
+  `walkInputFieldConditions` dropping `joinPath` at projection. The original draft pointed its
+  "Classifier changes" only at `classifyArgument`'s scalar tail (`:1157`), which is a *different,
+  also-broken* surface — so the original plan would not have fixed the reported bug.
+* Decision (with the user): **fix both surfaces in R380** (they share the model + emitter spine; only
+  the classifier locus differs). "The gap" now documents both; "Classifier changes" is split into
+  Surface 1 (`walkInputFieldConditions`, path already parsed — stop dropping it; discriminate
+  nodeId-lift from plain-`@reference`) and Surface 2 (`classifyArgument` scalar tail, original prose).
+* Folded in: the `paramType`/`bodyParamCallTypeName` sealed-permit fallout (Emitter section), the
+  `UnclassifiedArg` → `Rejection.structural` wording fix and the two-mirror-site note (Validator
+  section), and both-surface + nodeId-discrimination test coverage (Tests section).
+* Citations verified accurate during review (`FieldBuilder.java:1157/1397/1428/1481/1533`,
+  `TypeConditionsGenerator.java:85/185`, the `BodyParam permits ColumnPredicate` decl,
+  `BuildContext.java:1867-1885`, `InputField.ColumnReferenceField`, `JoinPathEmitter`,
+  `InlineTableFieldEmitter.buildInnerSelect`, `FkTargetConditionFilter`). The Design A-vs-B fork and
+  the `RemoteColumnPredicate` sealed-axis shape were judged sound and are unchanged.
 
-2. **(Minor) Generator-side exhaustive switches over `BodyParam`.** The "callParams projection (`:1481-1483`) is
-   unchanged" claim holds for the projection itself, but `paramType(bp)` (`TypeConditionsGenerator.java:95`) and
-   `bodyParamCallTypeName(bp)` (`FieldBuilder`) are exhaustive switches over the sealed `BodyParam`; adding
-   `RemoteColumnPredicate` forces a delegating arm in each. The compiler catches it, but name it so "unchanged" is
-   not read too literally.
-
-3. **(Minor) Validator citation precision.** § Validator cites "the `UnclassifiedArg` + `Rejection.structural` path
-   … (`:1100-1106`, `:1128-1132`)". Those lines are the R330/R215 `Rejection.structural` validator methods
-   (`validateInputCompositeColumnReferenceField` / `validateInputUnboundField`) — the right precedent, but they do
-   not use `UnclassifiedArg`. Tighten to "the `Rejection.structural` validator path".
-
-Sign off: no — return to author to resolve finding 1 (carrier scope); a fresh independent session signs off afterward.
+The reviewer session became the last committer of this revision, so the next **Spec → Ready** sign-off
+must come from a different session.
