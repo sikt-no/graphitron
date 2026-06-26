@@ -854,6 +854,13 @@ class FieldBuilder {
             if (referencePath.hasError()) {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(referencePath.errorMessage()));
             }
+            // R379 Check 1: this inline / split projection feeds the terminal alias to a
+            // $fields overload typed for the return table (InlineTableFieldEmitter.buildArm), so a
+            // terminal hop landing elsewhere would compile to javac-rejected generated code. Reject
+            // at build time, formatting the diagnostic from the typed verdict.
+            if (referencePath.terminalTargetVerdict() instanceof BuildContext.TerminalTargetVerdict.Mismatch mismatch) {
+                return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(mismatch.diagnostic()));
+            }
             var components = resolveTableFieldComponents(fieldDef, returnType.table(), elementTypeName,
                 buildNodeIdArgPlan(fieldDef, returnType.table()));
             if (components instanceof TableFieldComponents.Rejected rj) return new UnclassifiedField(parentTypeName, name, location, fieldDef, rj.rejection());
@@ -920,6 +927,10 @@ class FieldBuilder {
             var referencePath = ctx.parsePath(fieldDef, name, parentTableType.table().tableName(), tableInterfaceType.table().tableName());
             if (referencePath.hasError()) {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(referencePath.errorMessage()));
+            }
+            // R379 Check 1: same $fields(terminalAlias) invariant as the TableBoundReturnType arm.
+            if (referencePath.terminalTargetVerdict() instanceof BuildContext.TerminalTargetVerdict.Mismatch mismatch) {
+                return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(mismatch.diagnostic()));
             }
             var components = resolveTableFieldComponents(fieldDef, tableInterfaceType.table(), elementTypeName,
                 buildNodeIdArgPlan(fieldDef, tableInterfaceType.table()));

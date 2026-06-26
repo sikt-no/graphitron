@@ -88,6 +88,11 @@ public final class InlineTableFieldEmitter {
             // call, parent.getName() is the raw table name; each nested call accumulates the prefix,
             // giving globally unique aliases at every depth. Both FkJoin and ConditionJoin (and the
             // unreachable-here LiftedHop) expose targetTable() through HasTargetTable.
+            // Invariant (R379): the terminal hop's targetTable equals the field return type's
+            // @table, and every condition method's concretely-typed parameters match the aliases
+            // passed here — both asserted at build time in BuildContext.parsePath (Check 1 / 2),
+            // so terminalAlias feeds a $fields overload typed for the right table and
+            // emitTwoArgMethodCall never hands a mistyped alias to a concrete parameter.
             for (int i = 0; i < path.size(); i++) {
                 JoinStep.HasTargetTable ht = (JoinStep.HasTargetTable) path.get(i);
                 ClassName jooqTableClass = ht.targetTable().tableClass();

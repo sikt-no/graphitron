@@ -970,9 +970,68 @@ class BuildContext {
      * Carries the result of {@link #parsePath}: either a fully resolved list of path elements or
      * an error message. When {@code errorMessage()} is non-null the {@code elements()} list is
      * empty and the containing field must be classified as an unclassified variant.
+     *
+     * <p>{@code terminalTargetVerdict} is the typed outcome of Check 1 (does the path's terminal
+     * hop land on the field return type's {@code @table}?), exposed as a small sealed projection
+     * (R379) so the LSP layer (R381) can render the verdict without re-parsing
+     * {@link #errorMessage()}. It is {@link TerminalTargetVerdict.Mismatch} when the terminal hop
+     * lands on the wrong table, {@link TerminalTargetVerdict.Match} when it lands correctly, and
+     * {@link TerminalTargetVerdict.NotApplicable} when the check did not run (no table-backed
+     * start, no return table, empty path, or an earlier error short-circuited parsing).
+     *
+     * <p>The verdict is independent of {@link #errorMessage()}: a {@code Mismatch} is carried on an
+     * otherwise non-error {@code ParsedPath} (the resolved elements are present). The inline / split
+     * output callers ({@code InlineTableFieldEmitter}'s {@code $fields(terminalAlias)} projection,
+     * wired through {@code FieldBuilder}) convert {@code Mismatch} into an
+     * {@link no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField} via
+     * {@link TerminalTargetVerdict.Mismatch#diagnostic()}; callers with their own terminal-target
+     * invariant (e.g. {@code @tableMethod}) keep their existing checks and ignore the verdict.
      */
-    record ParsedPath(List<JoinStep> elements, String errorMessage) {
+    record ParsedPath(List<JoinStep> elements, String errorMessage,
+            TerminalTargetVerdict terminalTargetVerdict) {
         boolean hasError() { return errorMessage != null; }
+    }
+
+    /**
+     * Typed outcome of {@link #parsePath}'s terminal-hop landing-table check (R379 Check 1): does
+     * the {@code @reference} path's terminal hop land on the field return type's {@code @table}?
+     * The emitter ({@code InlineTableFieldEmitter.buildArm}) feeds the terminal hop's alias to a
+     * {@code $fields} overload typed for the return table, so a terminal hop that lands elsewhere
+     * compiles to generated Java that javac rejects with an incompatible-types error in a
+     * downstream consumer's build. This verdict moves that failure to build time.
+     *
+     * <p>Exposed as a sealed projection rather than only an {@code errorMessage} string so R381's
+     * LSP layer can surface the terminal-target diagnostic at edit time, consuming the verdict via
+     * the catalog snapshot rather than re-deriving it (the R233 pattern). {@link Mismatch} carries
+     * exactly the names {@link Mismatch#diagnostic()} prints, so the rendered string and the
+     * structured projection cannot drift.
+     */
+    public sealed interface TerminalTargetVerdict {
+
+        /** The terminal hop lands on the return table (or is a {@code ConditionJoin}, whose target
+         *  is constructed from the return {@code @table} and so matches by construction). */
+        record Match() implements TerminalTargetVerdict {}
+
+        /**
+         * The terminal hop resolves to {@code terminalTableName}, but the carrier field
+         * {@code fieldName}'s return type is bound to {@code @table} {@code returnTableName}.
+         */
+        record Mismatch(String fieldName, String terminalTableName, String returnTableName)
+                implements TerminalTargetVerdict {
+
+            /** The author-facing diagnostic, formatted from this record's fields so the message
+             *  and the structured projection share a single source of truth. */
+            String diagnostic() {
+                return "the @reference terminal hop on field '" + fieldName + "' resolves to table '"
+                    + terminalTableName + "', but the field's return type is bound to @table '"
+                    + returnTableName + "'; the path must end on '" + returnTableName
+                    + "' (the terminal alias is fed to a $fields overload typed for the return table).";
+            }
+        }
+
+        /** The check did not run: no return table at this site, an empty path, or an earlier
+         *  parse error short-circuited the terminal-target assertion. */
+        record NotApplicable() implements TerminalTargetVerdict {}
     }
 
     /**
@@ -1164,7 +1223,7 @@ class BuildContext {
         }
 
         if (!errors.isEmpty()) {
-            return new ParsedPath(List.of(), String.join("; ", errors));
+            return new ParsedPath(List.of(), String.join("; ", errors), new TerminalTargetVerdict.NotApplicable());
         }
         if (resolvedElements.isEmpty()
                 && startSqlTableName != null
@@ -1177,19 +1236,83 @@ class BuildContext {
                     case FkJoinResolution.Resolved r -> resolvedElements.add(r.fkJoin());
                     case FkJoinResolution.UnknownTable u -> {
                         return new ParsedPath(List.of(),
-                            unknownTableRejection(u.failure(), u.requestedName()).message());
+                            unknownTableRejection(u.failure(), u.requestedName()).message(),
+                            new TerminalTargetVerdict.NotApplicable());
                     }
                     case FkJoinResolution.UnknownForeignKey uf -> {
                         return new ParsedPath(List.of(),
-                            unknownForeignKeyRejection(uf.fkName()).message());
+                            unknownForeignKeyRejection(uf.fkName()).message(),
+                            new TerminalTargetVerdict.NotApplicable());
                     }
                 }
             } else {
                 return new ParsedPath(List.of(),
-                    fkCountMessage(startSqlTableName, targetSqlTableName, fks, /*directiveAbsent=*/true));
+                    fkCountMessage(startSqlTableName, targetSqlTableName, fks, /*directiveAbsent=*/true),
+                    new TerminalTargetVerdict.NotApplicable());
             }
         }
-        return new ParsedPath(List.copyOf(resolvedElements), null);
+        // Check 1 (R379): compute the terminal-target verdict — does the terminal hop land on the
+        // return type's @table? The terminal target is already resolved on the last JoinStep (the
+        // loop advances currentSource through HasTargetTable.targetTable()); this reuses R232's
+        // resolved value rather than re-deriving the hop kind from the directive element. Gated on a
+        // non-empty path plus a non-null start AND return table (see computeTerminalTargetVerdict).
+        //
+        // The verdict is threaded onto ParsedPath as a typed projection rather than forced into
+        // errorMessage here: parsePath is shared by callers that have their own terminal-target
+        // invariant (e.g. the @tableMethod path's "last hop lands on …" check) and callers whose
+        // emit shape does not feed the terminal alias to a $fields overload at all. Only the inline
+        // / split output projection (InlineTableFieldEmitter) carries the $fields(terminalAlias)
+        // invariant this check protects, so its two FieldBuilder callers (TableBoundReturnType,
+        // TableInterfaceType) consume the verdict and reject on Mismatch. R381's LSP layer reads the
+        // same projection. This keeps the predicate single-sourced and scoped to where it applies.
+        var terminalVerdict = computeTerminalTargetVerdict(resolvedElements, fieldName, startSqlTableName, targetSqlTableName);
+        return new ParsedPath(List.copyOf(resolvedElements), null, terminalVerdict);
+    }
+
+    /**
+     * Computes the R379 Check 1 verdict: does the {@code @reference} path's terminal hop land on
+     * the field return type's {@code @table}? Reads the already-resolved terminal
+     * {@link JoinStep.HasTargetTable#targetTable()} rather than re-deriving the hop kind from the
+     * directive element.
+     *
+     * <ul>
+     *   <li>{@link JoinStep.FkJoin} — {@link TerminalTargetVerdict.Mismatch} when the resolved
+     *       target table differs (case-insensitive) from {@code returnSqlTableName}, else
+     *       {@link TerminalTargetVerdict.Match}. R232's resolved {@code targetTable} encodes
+     *       "where this hop lands" for both terminal {@code {table:}} and terminal {@code {key:}}
+     *       elements, so this single comparison subsumes both author forms.</li>
+     *   <li>{@link JoinStep.ConditionJoin} — {@link TerminalTargetVerdict.Match} by construction:
+     *       {@code resolveConditionJoinTarget}'s terminal branch builds the target from the return
+     *       {@code @table}, so the comparison is tautological. The terminal {@code ConditionJoin}'s
+     *       method parameters are validated by Check 2, not here.</li>
+     *   <li>{@link JoinStep.LiftedHop} — unreachable; {@code @reference} path parsing never
+     *       produces a {@code LiftedHop} (single-hop terminal only, from the {@code @sourceRow}
+     *       leaf-PK arm, which passes a null start and so never reaches this gate).</li>
+     * </ul>
+     *
+     * <p>Returns {@link TerminalTargetVerdict.NotApplicable} when {@code startSqlTableName} or
+     * {@code returnSqlTableName} is null, or the path is empty: the check fires only for the
+     * inline/split output projection off a table-backed parent. The {@code @sourceRow} composition
+     * (null start) and input-field sites (null return table) are excluded — their paths are not the
+     * {@code $fields(terminalAlias)} projection this invariant protects.
+     */
+    private TerminalTargetVerdict computeTerminalTargetVerdict(
+            List<JoinStep> resolvedElements, String fieldName,
+            String startSqlTableName, String returnSqlTableName) {
+        if (startSqlTableName == null || returnSqlTableName == null || resolvedElements.isEmpty()) {
+            return new TerminalTargetVerdict.NotApplicable();
+        }
+        JoinStep terminal = resolvedElements.getLast();
+        return switch (terminal) {
+            case JoinStep.FkJoin fk -> fk.targetTable().sameTable(returnSqlTableName)
+                ? new TerminalTargetVerdict.Match()
+                : new TerminalTargetVerdict.Mismatch(fieldName, fk.targetTable().tableName(), returnSqlTableName);
+            case JoinStep.ConditionJoin ignored -> new TerminalTargetVerdict.Match();
+            case JoinStep.LiftedHop ignored -> throw new IllegalStateException(
+                "JoinStep.LiftedHop is never produced by @reference path parsing (single-hop "
+                + "terminal only, from the @sourceRow leaf-PK arm, which passes a null target and "
+                + "so never reaches this gate); reaching it here is a contract violation.");
+        };
     }
 
     /**
@@ -1432,7 +1555,10 @@ class BuildContext {
             }
             var keyResolution = synthesizeFkJoin(f, effectiveSourceSqlName, fieldName, stepIndex, whereFilter, /*selfRefFkOnSource=*/!isList);
             switch (keyResolution) {
-                case FkJoinResolution.Resolved r -> out.add(r.fkJoin());
+                case FkJoinResolution.Resolved r -> {
+                    out.add(r.fkJoin());
+                    validateWhereFilterParamTables(r.fkJoin(), errors);
+                }
                 case FkJoinResolution.UnknownTable u ->
                     errors.add(unknownTableRejection(u.failure(), u.requestedName()).message());
                 case FkJoinResolution.UnknownForeignKey uf ->
@@ -1461,7 +1587,10 @@ class BuildContext {
             }
             var tableStepResolution = synthesizeFkJoin(fks.get(0), currentSourceSqlName, fieldName, stepIndex, whereFilter, /*selfRefFkOnSource=*/!isList);
             switch (tableStepResolution) {
-                case FkJoinResolution.Resolved r -> out.add(r.fkJoin());
+                case FkJoinResolution.Resolved r -> {
+                    out.add(r.fkJoin());
+                    validateWhereFilterParamTables(r.fkJoin(), errors);
+                }
                 case FkJoinResolution.UnknownTable u ->
                     errors.add(unknownTableRejection(u.failure(), u.requestedName()).message());
                 case FkJoinResolution.UnknownForeignKey uf ->
@@ -1482,7 +1611,13 @@ class BuildContext {
             }
             var targetResolution = resolveConditionJoinTarget(res.ref(), isTerminal, terminalTargetSqlName);
             switch (targetResolution) {
-                case ConditionJoinTargetResolution.Resolved r -> out.add(new ConditionJoin(res.ref(), r.target(), alias));
+                case ConditionJoinTargetResolution.Resolved r -> {
+                    out.add(new ConditionJoin(res.ref(), r.target(), alias));
+                    // Check 2 (R379): the ON-clause method is called method(sourceAlias, targetAlias).
+                    // Source is the table entering this hop; target is the resolved ConditionJoin
+                    // target (return table for a terminal hop, second-parameter-resolved otherwise).
+                    validateConditionParamTables(res.ref(), currentSourceSqlName, r.target().tableName(), errors);
+                }
                 case ConditionJoinTargetResolution.AuthorError e -> errors.add(e.message());
             }
             return;
@@ -1633,6 +1768,78 @@ class BuildContext {
             + "resolve to a generated jOOQ table class. Change the second parameter to a "
             + "concrete jOOQ table type, or rewrite the path to use `{table:}` or `{key:}` "
             + "for this hop.");
+    }
+
+    /**
+     * Check 2 (R379) for an {@link FkJoin#whereFilter()}: the filter method is emitted as
+     * {@code filter(sourceAlias, targetAlias)} by {@code JoinPathEmitter.emitTwoArgMethodCall},
+     * with source = the FK hop's {@code originTable} and target = its {@code targetTable}, both
+     * already resolved by {@code synthesizeFkJoin}. A no-op when the hop carries no filter.
+     */
+    private void validateWhereFilterParamTables(FkJoin fkJoin, List<String> errors) {
+        if (fkJoin.whereFilter() == null) return;
+        validateConditionParamTables(fkJoin.whereFilter(),
+            fkJoin.originTable().tableName(), fkJoin.targetTable().tableName(), errors);
+    }
+
+    /**
+     * Check 2 (R379): a two-argument condition method the path emits is called positionally as
+     * {@code method(sourceAlias, targetAlias)}. When the author <em>concretely</em> types a table
+     * parameter (e.g. {@code aCondition(NotB src, C tgt)}), it must agree with the table the
+     * emitter will hand it, or the generated source fails javac with an incompatible-types error
+     * in a downstream consumer's build. This moves that failure to build time.
+     *
+     * <p>Parameter 0 is checked against {@code sourceSqlName}, parameter 1 against
+     * {@code targetSqlName}. Wildcard {@code Table<?>} parameters (the idiomatic
+     * {@code (Table<?>, Table<?>)} shape) are unverifiable and accepted — the same wildcard
+     * predicate {@link #resolveConditionJoinTarget} uses. A concrete parameter type that does not
+     * resolve to a catalog table (a non-{@code Table} parameter, or a class absent from the
+     * codegen loader) is likewise skipped: this check validates a constraint the author opted into
+     * by naming a concrete jOOQ table, it imposes no new signature requirement.
+     *
+     * <p>Reads the reflected {@link MethodRef} parameter types and the resolved source/target
+     * tables already in scope at the call site; it never re-inspects the directive element nor
+     * re-walks the path.
+     */
+    private void validateConditionParamTables(
+            MethodRef method, String sourceSqlName, String targetSqlName, List<String> errors) {
+        var params = method.params();
+        checkConcreteParamTable(method, params, 0, sourceSqlName, "source", errors);
+        checkConcreteParamTable(method, params, 1, targetSqlName, "target", errors);
+    }
+
+    /**
+     * Validates one positional table parameter of a condition method against the table the emitter
+     * will pass it. Skips when the position is out of range, the expected table is unknown, the
+     * declared parameter is a wildcard {@code Table<?>}, or the concrete type does not resolve to a
+     * catalog table. Reuses {@link #resolveConditionJoinTarget}'s {@code Class.forName} +
+     * {@link JooqCatalog#findTableByClass} machinery and the wildcard predicate.
+     */
+    private void checkConcreteParamTable(MethodRef method, List<MethodRef.Param> params,
+            int index, String expectedSqlName, String role, List<String> errors) {
+        if (expectedSqlName == null || index >= params.size()) return;
+        String typeName = params.get(index).typeName();
+        // Wildcard `Table<?>` (the literal type-name jOOQ reflection yields) accepts any aliased
+        // table; nothing is assertable. Same predicate as resolveConditionJoinTarget.
+        if (typeName.contains("<?>") || typeName.equals("org.jooq.Table")) return;
+        String rawTypeName = typeName.contains("<") ? typeName.substring(0, typeName.indexOf('<')) : typeName;
+        Class<?> cls;
+        try {
+            cls = Class.forName(rawTypeName, false, codegenLoader());
+        } catch (ClassNotFoundException notOnLoader) {
+            // Not a class on the codegen loader, so it cannot map to a catalog table; not assertable.
+            return;
+        }
+        var entry = catalog.findTableByClass(cls);
+        if (entry.isEmpty()) return; // a concrete non-table parameter; nothing to assert.
+        String declaredTable = entry.get().table().getName();
+        if (!declaredTable.equalsIgnoreCase(expectedSqlName)) {
+            errors.add("condition method '" + method.className() + "." + method.methodName()
+                + "' parameter " + index + " is typed for table '" + declaredTable
+                + "' but this hop's " + role + " table is '" + expectedSqlName
+                + "'; the emitter passes the " + role + " alias positionally, so the concrete "
+                + "parameter type must match (or use a wildcard `Table<?>`).");
+        }
     }
 
     /**

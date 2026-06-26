@@ -190,4 +190,57 @@ class TestConditionStub {
             no.sikt.graphitron.rewrite.test.jooq.tables.FilmActor tgt) {
         throw new UnsupportedOperationException();
     }
+
+    /**
+     * R379 Check 2 fixture: an intermediate-hop ON-clause condition whose <em>first</em> (source)
+     * parameter is a concrete table ({@code Actor}) other than the hop's actual source table
+     * ({@code film}). The emitter passes the source alias positionally into parameter 0, so a
+     * concretely-mistyped source parameter would compile to {@code aCondition(filmAlias, …)}
+     * feeding a {@code film}-typed alias into an {@code Actor}-typed slot — javac rejects it. The
+     * target ({@code FilmActor}) is correct so only the source-side mismatch fires.
+     */
+    public static Condition intermediateWrongSource(
+            no.sikt.graphitron.rewrite.test.jooq.tables.Actor src,
+            no.sikt.graphitron.rewrite.test.jooq.tables.FilmActor tgt) {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
+     * R379 Check 2 fixture: a <em>terminal</em>-hop condition whose <em>second</em> (target)
+     * parameter is a concrete table ({@code Film}) other than the carrier field's return
+     * {@code @table}. The terminal branch of {@code resolveConditionJoinTarget} builds the target
+     * from the return type and never reads this parameter, so without Check 2 the mistyped target
+     * parameter slips through to javac. The source parameter ({@code City}) is correct so only the
+     * target-side mismatch fires.
+     */
+    public static Condition terminalWrongTarget(
+            no.sikt.graphitron.rewrite.test.jooq.tables.City src,
+            no.sikt.graphitron.rewrite.test.jooq.tables.Film tgt) {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
+     * R379 happy-path fixture: a terminal-hop condition whose concrete source ({@code City}) and
+     * target ({@code Actor}) parameters both match the aliases the emitter passes (source = the
+     * {@code City} carrier's table, target = the {@code Actor} return {@code @table}). Asserts the
+     * concrete-parameter check does not reject a correctly-typed signature.
+     */
+    public static Condition terminalCorrect(
+            no.sikt.graphitron.rewrite.test.jooq.tables.City src,
+            no.sikt.graphitron.rewrite.test.jooq.tables.Actor tgt) {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
+     * R379 Check 2 fixture: a {@code {table:, condition:}} whereFilter whose first parameter is a
+     * concrete table ({@code Actor}) other than the FK hop's source ({@code film}). The whereFilter
+     * rides as {@code .where(filter(srcAlias, tgtAlias))} on the enclosing SELECT with source = the
+     * FK hop's origin table and target = its target table, so a mistyped source parameter would
+     * hand a {@code film}-typed alias to an {@code Actor}-typed slot.
+     */
+    public static Condition whereFilterWrongSource(
+            no.sikt.graphitron.rewrite.test.jooq.tables.Actor src,
+            no.sikt.graphitron.rewrite.test.jooq.tables.FilmActor tgt) {
+        throw new UnsupportedOperationException();
+    }
 }
