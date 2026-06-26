@@ -41,7 +41,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R269` | Null-guard split-query key extraction for nullable to-one records | Spec | 2026-06-02 <sub>created 2026-06-01</sub> | [plan](nullable-to-one-record-into-npe.md) |
 | `R112` | Operation-driven test corpus, capability catalog, and runtime trace <sub>blocked by: [capability-catalog](capability-catalog.md)</sub> | Spec |  | [plan](operation-driven-test-corpus.md) |
 | `R99` | LSP classpath scan misses sibling modules when dev goal runs from a sub-module | Ready | 2026-06-26 | [plan](lsp-submodule-sibling-classpath.md) |
-| `R391` | Graphitron facade: default-case newGraphQL() helper | In Review | 2026-06-26 | [plan](facade-default-newgraphql-helper.md) |
 | `R386` | MCP catalog.search: semantic fuzzy discovery over CatalogFacts descriptors, content-hash-persisted Lucene index refreshed on the classpath trigger (R118 slice 10) | In Review | 2026-06-26 | [plan](mcp-catalog-search.md) |
 
 ---
@@ -319,7 +318,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R296` [**Emit BuildWarnings when a schema uses deprecated directives or arguments**](deprecated-usage-warnings.md)
 - `R85` [**Emit graphitronContext helper into Conditions and Type classes**](helper-emission-non-fetcher-hosts.md)
 - `R209` [**FieldRegistry classify-input trace loses typed Rejection payload**](field-registry-typed-rejection-trace.md)
-- `R391` [**Graphitron facade: default-case newGraphQL() helper**](facade-default-newgraphql-helper.md)
 - `R109` [**How-to recipe and Sakila fixture for grouped collections via Field<Result<R>> @externalField + multiset**](list-valued-external-field-multiset.md)
 - `R288` [**Inline TableInterfaceField and TableMethodField children (currently N+1)**](inline-interface-and-tablemethod-children.md)
 - `R52` [**Lift lookup-vs-query operation taxonomy into the model**](lift-operation-taxonomy.md)
