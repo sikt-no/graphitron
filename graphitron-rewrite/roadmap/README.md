@@ -21,6 +21,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R346` | Regenerate and guard the generated supported-directives migration doc against directive-set drift | Ready | 2026-06-19 | [plan](supported-directives-regen-guard.md) |
 | `R308` | Fix the @service list-payload N+1 by deriving many-arrival for list-returning carriers | Spec | 2026-06-14 | [plan](service-list-payload-arrival.md) |
 | `R335` | Fold input/scalar/enum classification into the single classify-and-emit walk | Spec | 2026-06-19 | [plan](walk-classifies-input-surface.md) |
+| `R384` | Composable routine support: lift @routine beyond the root-only projected node | Spec | 2026-06-26 | [plan](composable-routine-reads.md) |
 | `R380` | Implement @reference join-subquery filter conditions on input fields | Spec | 2026-06-25 | [plan](reference-join-filter-conditions.md) |
 | `R381` | LSP-guided @reference path authoring <sub>blocked by: [reference-terminal-hop-target-validation](reference-terminal-hop-target-validation.md)</sub> | Spec | 2026-06-25 | [plan](lsp-reference-path-authoring.md) |
 | `R45` | Multi-tenant routing on top of the schema-driven ExecutionInput factory | Spec | 2026-05-20 | [plan](tenant-routing-and-execution-input.md) |
@@ -242,6 +243,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R302` [**Rename ChildField to SourceField (carrier-named field hierarchy)**](rename-childfield-to-sourcefield.md) — Backlog, structural
 - `R257` [**UpdateRowsWalker raw-SDL substrate absorption**](updaterows-walker-sdl-substrate.md) — Backlog, structural
 - `R236` [**BuildContext nested-input candidate-hint draws from path-origin table instead of @reference terminal table**](validator-reference-candidate-hint-terminal-table.md) — Backlog, bug
+- `R384` [**Composable routine support: lift @routine beyond the root-only projected node**](composable-routine-reads.md) — Spec, feature
 - `R231` [**Emit text-mapped-enum fields as the GraphQL enum type, not String**](emit-text-mapped-enum-fields-as-enum-type.md) — Backlog, architecture
 - `R133` [**Flip leaf-coverage profile activation to opt-in**](leaf-coverage-profile-opt-in.md) — Backlog, cleanup
 - `R359` [**Guard ColumnRef.sqlName() comparisons against case-sensitivity drift**](column-sqlname-comparison-case-guard.md) — Backlog, cleanup
