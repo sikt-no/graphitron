@@ -44,6 +44,11 @@ pin the shape. It deserves its own Spec rather than being bolted onto a bug fix.
 Near-term correctness of the workaround is handled by R388 (qualify the discriminator column across the
 three emission sites + reject the discriminator-column-with-`@reference` contradiction + add the missing
 execution fixture). R388 is Done; R389 is the deeper feature that removes the need for the workaround.
+R392 (In Review) further reworked this same emission site, routing the discriminated `TypeResolver` off a
+synthetic discriminator alias (`MultiTablePolymorphicEmitter.DISCRIMINATOR_COLUMN`, projected near
+`buildInterfaceFieldsList`) to disambiguate the double-projection; the joined-table emitter inherits that
+aliasing alongside R388's qualified-column emission, so the "Reuse R388's discriminator-gated ON-clause"
+note below reads against the post-R392 shape on trunk.
 
 ## Design
 
@@ -103,9 +108,12 @@ decomposition; these make it concrete.
   validator reads rather than re-derives.
 - **Base→detail join arrives as a resolved join shape, never a `ForeignKey`.** The hop resolves at the
   parse boundary into the existing `JoinStep` / `JoinSlot` vocabulary (the same family `@reference` paths
-  and DTO-parent batching speak), stored on the participant variant and threaded to the emitter. Only
-  `JooqCatalog` / `TypeBuilder` / `FieldBuilder` / `ServiceCatalog` may hold `ForeignKey<?,?>`; the emitter
-  receives an already-classified hop. Inference picks the unique catalog FK between detail and base; when
+  and DTO-parent batching speak), stored on the participant variant and threaded to the emitter. Per
+  "Classification belongs at the parse boundary", raw `ForeignKey<?,?>` lives only in the parse-boundary
+  holders (`JooqCatalog` canonical, with `BuildContext` and the catalog builders `CatalogBuilder` /
+  `CatalogFacts`); `TypeBuilder` / `FieldBuilder` / `ServiceCatalog` consume the classified output via
+  `JooqCatalog` rather than holding raw types, so the resolution in `buildParticipantList` goes through
+  `JooqCatalog` and the emitter receives an already-classified hop. Inference picks the unique catalog FK between detail and base; when
   ambiguous the author declares the path through the same `ctx.parsePath` mechanism `@reference` uses (an
   explicit path directive on the participant). The exact override directive surface is the second reviewer
   fork; the constraint is that it lands in the `JoinStep` vocabulary, not a re-parsed string.
