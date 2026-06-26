@@ -4,6 +4,11 @@ import no.sikt.graphitron.rewrite.RewriteContext;
 import no.sikt.graphitron.rewrite.schema.input.SchemaInput;
 import no.sikt.graphitron.lsp.state.Workspace;
 import no.sikt.graphitron.mcp.GraphitronMcpServer;
+import no.sikt.graphitron.mcp.rag.AsyncWarm;
+import no.sikt.graphitron.mcp.rag.Embedder;
+import no.sikt.graphitron.mcp.rag.EmbeddingStore;
+import no.sikt.graphitron.mcp.rag.WarmState;
+import no.sikt.graphitron.mcp.rag.docs.DocsIndex;
 import no.sikt.graphitron.rewrite.maven.dev.DevServer;
 import no.sikt.graphitron.rewrite.maven.watch.DebounceExecutor;
 import org.apache.maven.plugin.MojoExecutionException;
@@ -80,6 +85,15 @@ class DevMojoTest {
             int takenMcpPort = mcpBlocker.port();
 
             var mojo = mojoFor(basedir, 0, takenMcpPort);
+            // Inject ONNX-free warms the unwind can be observed against: the embedder loader returns
+            // nothing (no real BgeEmbedder ONNX load, which would SIGSEGV the fork), and the docs warm
+            // wraps a store whose close() the bind-failure unwind must call. Started during bind, these
+            // are the warms started-above the failing MCP bind must tear down.
+            var spyStore = new ClosingSpyStore();
+            var embedderWarm = new AsyncWarm<Embedder>("test-embedder", () -> null);
+            var docsWarm = new AsyncWarm<DocsIndex>("test-docs", () -> new DocsIndex(spyStore, 3));
+            mojo.embedderWarmFactory = () -> embedderWarm;
+            mojo.docsWarmFactory = () -> docsWarm;
 
             assertThatThrownBy(mojo::execute)
                 .isInstanceOf(MojoExecutionException.class)
@@ -92,6 +106,36 @@ class DevMojoTest {
             assertThat(mojo.server.isClosed())
                 .as("partial bind unwound: the LSP socket must be closed, not leaked")
                 .isTrue();
+            // The warms started above must be unwound too, not just the LSP socket. Joining them on
+            // the failure path means no warm daemon outlives the unwind (the SIGSEGV's proximate
+            // cause), and the warmed docs store must be closed so the in-memory index is freed.
+            assertThat(mojo.embedderWarm.state())
+                .as("the embedder warm was joined on the unwind, not left running")
+                .isNotInstanceOf(WarmState.Warming.class);
+            assertThat(mojo.docsWarm.state())
+                .as("the docs warm was joined on the unwind, not left running")
+                .isNotInstanceOf(WarmState.Warming.class);
+            assertThat(spyStore.closed)
+                .as("the bind-failure unwind closed the warmed docs store")
+                .isTrue();
+        }
+    }
+
+    /** An {@link EmbeddingStore} that records its close, so a test can assert the unwind freed it. */
+    private static final class ClosingSpyStore implements EmbeddingStore {
+        volatile boolean closed = false;
+
+        @Override
+        public void add(String id, Embedder.Embedding embedding, String payload) {}
+
+        @Override
+        public List<EmbeddingStore.Hit> search(Embedder.Query query, int k) {
+            return List.of();
+        }
+
+        @Override
+        public void close() {
+            closed = true;
         }
     }
 
@@ -211,6 +255,11 @@ class DevMojoTest {
         mojo.mcpPort = mcpPort;
         mojo.debounceMs = 100;
         mojo.skipInitial = true; // we don't have a real catalog for buildContext to chew on
+        // Never load the real BgeEmbedder ONNX model in the fast suite (it SIGSEGVs the surefire
+        // fork). Default to structured-only warms; a test that needs to observe the warm unwind
+        // overrides these with fakes it can assert against.
+        mojo.embedderWarmFactory = () -> null;
+        mojo.docsWarmFactory = () -> null;
         return mojo;
     }
 }
