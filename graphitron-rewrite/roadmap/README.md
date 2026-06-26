@@ -15,7 +15,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | ID | Item | Status | Updated | Plan |
 |---|---|---|---|---|
 | `R19` | Rebase and squash rewrite branch onto main | Ready |  | [plan](history-squash.md) |
-| `R388` | Discriminated-interface @reference field generates wrong SQL/fetcher at runtime | In Review | 2026-06-26 | [plan](discriminator-column-reference-field-runtime.md) |
 | `R222` | Dimensional model pivot: slots over cross-product permits | Spec | 2026-06-18 <sub>created 2026-05-21</sub> | [plan](dimensional-model-pivot.md) |
 | `R383` | Support nested-input @field filters on multitable interface/union queries | Spec | 2026-06-25 | [plan](multitable-interface-filter-extraction-kinds.md) |
 | `R333` | The Graphitron data model | Spec | 2026-06-25 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
@@ -170,7 +169,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### interface-union
 
-- `R388` [**Discriminated-interface @reference field generates wrong SQL/fetcher at runtime**](discriminator-column-reference-field-runtime.md) — In Review, bug
 - `R382` [**Lower orderBy onto multitable-interface/union queries**](multitable-interface-query-orderby-lowering.md) — Backlog, bug
 - `R384` [**Support converted/@nodeId/developer-@condition filters on multitable interface/union queries**](multitable-interface-converted-nodeid-condition-filters.md) — Backlog, bug, blocked by [multitable-interface-filter-extraction-kinds](multitable-interface-filter-extraction-kinds.md)
 - `R383` [**Support nested-input @field filters on multitable interface/union queries**](multitable-interface-filter-extraction-kinds.md) — Spec, bug
