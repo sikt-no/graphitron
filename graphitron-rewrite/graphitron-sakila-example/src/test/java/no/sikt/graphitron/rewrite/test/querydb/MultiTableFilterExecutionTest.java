@@ -132,6 +132,44 @@ class MultiTableFilterExecutionTest {
 
     @Test
     @SuppressWarnings("unchecked")
+    void nestedInputFilter_matchingBothParticipants_appliesPerBranch() {
+        // R383: the same per-participant filter delivered through an input object (`filter`) rather
+        // than as a top-level argument. The branch emitter reaches the value via a self-contained
+        // Map traversal (env.getArgument("filter") instanceof Map ...), so each UNION branch still
+        // narrows by its own first_name column.
+        Map<String, Object> data = execute("""
+            { occupantsByFilter(filter: { firstNames: ["Mary", "Mike"] }) {
+                __typename
+                ... on Customer { firstName }
+                ... on Staff { firstName }
+            } }
+            """);
+        List<Map<String, Object>> rows = (List<Map<String, Object>>) data.get("occupantsByFilter");
+        assertThat(rows).hasSize(2);
+        assertThat(rows).extracting(r -> (String) r.get("firstName"))
+            .containsExactlyInAnyOrder("Mary", "Mike");
+        assertThat(rows).extracting(r -> (String) r.get("__typename"))
+            .containsExactlyInAnyOrder("Customer", "Staff");
+        assertThat(SQL_LOG)
+            .as("the nested-input filter still lowers to a per-branch first_name predicate")
+            .anyMatch(s -> s.contains("first_name") && s.contains(" in ("));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void nestedInputFilter_omittedFilter_returnsAllRows() {
+        // The filter input is nullable and the inner list is absent: the null-safe Map traversal
+        // yields null, the condition method omits the predicate, and every occupant is returned.
+        Map<String, Object> data = execute("""
+            { occupantsByFilter(filter: {}) { __typename } }
+            """);
+        assertThat((List<Map<String, Object>>) data.get("occupantsByFilter"))
+            .as("an empty filter narrows by nothing")
+            .isNotEmpty();
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
     void connectionForm_filterApplied_returnsOnlyMatchingNodes() {
         Map<String, Object> data = execute("""
             { occupantsByNameConnection(firstName: ["Mike"]) {

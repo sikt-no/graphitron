@@ -7,6 +7,7 @@ import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
+import no.sikt.graphitron.rewrite.model.CallParam;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.QueryField;
@@ -126,14 +127,14 @@ public class QueryConditionsGenerator {
             .addParameter(jooqTableClass, "table")
             .addParameter(ENV, "env");
 
-        // A list-typed nested-input filter arg extracts as `(List<X>) map.get(key)`, where the
-        // map value is statically Object, so the cast is inherently unchecked (unlike the
-        // `<T> T env.getArgument(...)` sites, which carry their type through inference). Stamp the
-        // suppression at this method, the narrowest enclosing member, only when such a param is
-        // present.
+        // Stamp @SuppressWarnings("unchecked") at this method, the narrowest enclosing member, when
+        // any call param's extraction emits an unchecked cast (CallParam.emitsUncheckedCast owns that
+        // fact: today a list-typed nested-input filter extracting as `(List<X>) map.get(key)`). The
+        // multitable MultiTablePolymorphicEmitter folds over the same model predicate, so the two
+        // hosts cannot drift.
         boolean needsUncheckedSuppression = filters.stream()
             .flatMap(f -> f.callParams().stream())
-            .anyMatch(p -> p.list() && p.extraction() instanceof CallSiteExtraction.NestedInputField);
+            .anyMatch(CallParam::emitsUncheckedCast);
         if (needsUncheckedSuppression) {
             builder.addAnnotation(AnnotationSpec.builder(SuppressWarnings.class)
                 .addMember("value", "$S", "unchecked")

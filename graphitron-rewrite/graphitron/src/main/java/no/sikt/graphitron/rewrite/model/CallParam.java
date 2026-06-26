@@ -51,4 +51,24 @@ public record CallParam(
         String raw = lt < 0 ? typeName : typeName.substring(0, lt);
         return ClassName.bestGuess(raw);
     }
+
+    /**
+     * True when emitting this argument's extraction produces a Java unchecked cast, so the enclosing
+     * generated method must carry {@code @SuppressWarnings("unchecked")}. The single source of truth
+     * for this fact: every generator that hosts a condition-method call (the single-table
+     * {@code QueryConditionsGenerator} method and the multitable {@code MultiTablePolymorphicEmitter}
+     * fetcher) folds over its {@link CallParam}s and asks here, rather than each re-deriving the same
+     * {@code list() && extraction instanceof …} predicate (Generation-thinking: a fact two consumers
+     * branch on belongs on the model).
+     *
+     * <p>Today the only such shape is a list-typed {@link CallSiteExtraction.NestedInputField}, which
+     * extracts as {@code (List<X>) map.get(key)} — {@code Map.get} is statically {@code Object} and
+     * {@code List<X>} is not reifiable, so the cast is unchecked even though graphql-java has already
+     * coerced the input-object field to {@code List<X>}. When a future extraction (e.g. R384's
+     * {@code JooqConvert} lift) starts emitting an unchecked cast, its arm is added here once and both
+     * hosts pick it up.
+     */
+    public boolean emitsUncheckedCast() {
+        return list && extraction instanceof CallSiteExtraction.NestedInputField;
+    }
 }

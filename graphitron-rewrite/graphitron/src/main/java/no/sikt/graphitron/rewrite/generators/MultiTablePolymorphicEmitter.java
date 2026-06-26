@@ -1,5 +1,6 @@
 package no.sikt.graphitron.rewrite.generators;
 
+import no.sikt.graphitron.javapoet.AnnotationSpec;
 import no.sikt.graphitron.javapoet.ArrayTypeName;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.CodeBlock;
@@ -9,6 +10,8 @@ import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.javapoet.WildcardTypeName;
 import no.sikt.graphitron.rewrite.generators.util.PolymorphicSelectionSetClassGenerator;
 import no.sikt.graphitron.rewrite.generators.util.ValuesJoinRowBuilder;
+import no.sikt.graphitron.rewrite.model.CallParam;
+import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.JoinStep;
@@ -474,6 +477,7 @@ public final class MultiTablePolymorphicEmitter {
             return builder.build();
         }
 
+        stampUncheckedSuppressionIfNeeded(builder, participantFilters);
         builder.addCode(buildStage1Block(ctx, participants, Map.of(), participantFilters));
 
         int pkArity = participants.get(0).table().primaryKeyColumns().size();
@@ -746,6 +750,7 @@ public final class MultiTablePolymorphicEmitter {
             pageRequestClass, connectionHelperClass, defaultPageSize, LIST);
 
         // Stage 1: UNION ALL of branches as derived table; outer SELECT applies .orderBy/.seek/.limit.
+        stampUncheckedSuppressionIfNeeded(builder, participantFilters);
         builder.addCode(buildStage1ConnectionBlock(ctx, participants, participantFilters));
 
         // Stage 1.5: group stage-1 rows by __typename into (idx, pks) bindings. Reads all
@@ -1004,6 +1009,28 @@ public final class MultiTablePolymorphicEmitter {
             }
         }
         return b.build();
+    }
+
+    /**
+     * Stamps {@code @SuppressWarnings("unchecked")} on a root fetcher method when any participant
+     * filter carries a call param whose extraction emits an unchecked cast
+     * ({@link CallParam#emitsUncheckedCast()} — the model owns that fact). Today that is a list-typed
+     * {@link CallSiteExtraction.NestedInputField} extracting as {@code (List<X>) map.get(key)} at the
+     * branch call site (R383). The single-table {@code QueryConditionsGenerator} folds over the same
+     * model predicate for its {@code <field>Condition} method, so the two paths cannot drift. Stamped
+     * only when such a param is present, at the narrowest enclosing member.
+     */
+    private static void stampUncheckedSuppressionIfNeeded(
+            MethodSpec.Builder builder, Map<String, List<WhereFilter>> participantFilters) {
+        boolean needsSuppression = participantFilters.values().stream()
+            .flatMap(List::stream)
+            .flatMap(f -> f.callParams().stream())
+            .anyMatch(CallParam::emitsUncheckedCast);
+        if (needsSuppression) {
+            builder.addAnnotation(AnnotationSpec.builder(SuppressWarnings.class)
+                .addMember("value", "$S", "unchecked")
+                .build());
+        }
     }
 
     /** ANDs two nullable branch WHERE predicates; returns whichever is non-null, or null if both are. */
