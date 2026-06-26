@@ -1,7 +1,7 @@
 ---
 id: R392
 title: "Discriminated TypeResolver reads discriminator ambiguously (double-projection)"
-status: Spec
+status: In Review
 bucket: bug
 priority: 2
 theme: interface-union
@@ -28,14 +28,30 @@ fixture with the query shape `{ allSubjects { subjectId ... on AppAccount { subj
 value. R388's execution test missed it because the ambiguity is INFO-level (non-fatal) and the test
 asserted the functional result, not the absence of the warning.
 
-Fix: project the routing discriminator under a synthetic alias (mirroring the multi-table path's
-`MultiTablePolymorphicEmitter.TYPENAME_COLUMN = "__typename"` convention) — e.g. a shared
-`DISCRIMINATOR_COLUMN = "__discriminator__"` — in `buildInterfaceFieldsList`, and read that alias in the
-`TypeResolver`. The synthetic alias is distinct from any `$fields`-projected real column, so the routing
-read is unambiguous and the user-facing discriminator field (if exposed) projects once under its own name.
-The WHERE filter and LEFT JOIN ON-clause keep referencing the real qualified column (unaffected). Add a
-regression test asserting the SELECT projects the discriminator under the synthetic alias (SQL-shape
-assertion) alongside the existing routing assertions.
+## Implementation status — shipped (In Review)
+
+The fix landed together with this item; `mvn -f graphitron-rewrite/pom.xml install -Plocal-db` is green
+end-to-end (full reactor, 0 test failures). What shipped:
+
+- A shared `MultiTablePolymorphicEmitter.DISCRIMINATOR_COLUMN = "__discriminator__"` constant, mirroring
+  the multi-table path's `TYPENAME_COLUMN = "__typename"` synthetic-column convention.
+- `TypeFetcherGenerator.buildInterfaceFieldsList` now projects the routing discriminator as
+  `<base>.field(DSL.name(base, col)).as("__discriminator__")` — the two-part qualified name keeps the
+  `Field<Object>` the `.as(...)` wrapping carries, and the alias is distinct from any `$fields`-projected
+  real column.
+- `GraphitronSchemaClassGenerator` (the discriminated `TypeResolver`) reads
+  `record.get(DSL.field(DSL.name("__discriminator__")), String.class)` instead of the raw column name, so
+  the routing read is unambiguous and the user-facing discriminator field (if exposed) still resolves from
+  its own column. The WHERE filter and LEFT JOIN ON-clause keep referencing the real qualified column
+  (unaffected).
+- Regression: execution-tier `GraphQLQueryTest.allSubjects_discriminatorFieldInsideFragment_routesViaSyntheticAlias`
+  (discriminator field selected inside the inline fragment; asserts routing per type plus the
+  `as "__discriminator__"` projection via `SQL_LOG`). The schema-generator unit test
+  `GraphitronSchemaClassGeneratorTest` was updated from asserting the raw-column read to asserting the
+  alias read (`build_typeResolver_routesOffSyntheticDiscriminatorAlias`).
+
+Awaiting the In Review → Done approval, which the reviewer rule reserves for a session distinct from the
+implementer.
 
 Not in scope: the per-participant-`@table` joined-table inheritance compile error (R389), and the
 data-specific `navn`-null report (a cross-table `@reference` detail field returning null), which does **not**
