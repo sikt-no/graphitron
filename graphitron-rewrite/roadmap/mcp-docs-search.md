@@ -1,7 +1,7 @@
 ---
 id: R385
 title: "MCP docs.search: build-time .adoc chunking + pre-embedded bundled index, async-loaded semantic retrieval over the documentation (R118 slice 9)"
-status: Ready
+status: In Review
 bucket: feature
 theme: lsp
 depends-on: []

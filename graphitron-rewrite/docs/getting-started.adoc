@@ -330,6 +330,14 @@ MCP-aware agent (Claude Code, Cursor) connected to it gets ambient context
 about your graphitron project and a `+/mcp__graphitron__about+` slash command
 that explains the dev loop.
 
+Among the tools it exposes, `docs.search` answers natural-language questions
+over the bundled manual ("which directive joins two tables?") and returns the
+matching passages with a link into this site, so you can find the right pattern
+without already knowing the vocabulary to grep for. Its index loads
+asynchronously at startup; while it warms, `docs.search` returns a short notice
+and the structured tools (catalog, schema, services, conditions, records,
+diagnostics, edges) answer in the meantime.
+
 The `graphitron-sakila-example` project ships a committed `.mcp.json` pointing
 at this URL, so cloning it needs zero MCP configuration. For your own project,
 the dev server prints a copy-pasteable line on startup:

@@ -5,6 +5,12 @@ import io.modelcontextprotocol.client.McpSyncClient;
 import io.modelcontextprotocol.client.transport.HttpClientStreamableHttpTransport;
 import io.modelcontextprotocol.spec.McpSchema;
 import no.sikt.graphitron.lsp.state.Workspace;
+import no.sikt.graphitron.mcp.rag.AsyncWarm;
+import no.sikt.graphitron.mcp.rag.Embedder;
+import no.sikt.graphitron.mcp.rag.docs.DocChunk;
+import no.sikt.graphitron.mcp.rag.docs.DocsBundle;
+import no.sikt.graphitron.mcp.rag.docs.DocsIndex;
+import no.sikt.graphitron.mcp.rag.docs.DocsRag;
 import no.sikt.graphitron.rewrite.BuildWarning;
 import no.sikt.graphitron.rewrite.GraphQLRewriteGenerator;
 import no.sikt.graphitron.rewrite.ValidationError;
@@ -19,6 +25,8 @@ import no.sikt.graphitron.rewrite.catalog.TypeClassification;
 import no.sikt.graphitron.rewrite.model.Rejection;
 import org.junit.jupiter.api.Test;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.InetAddress;
@@ -106,7 +114,7 @@ class GraphitronMcpServerTest {
             var tools = client.listTools().tools();
             assertThat(tools).extracting(McpSchema.Tool::name)
                 .containsExactlyInAnyOrder("status", "catalog.tables", "catalog.describe",
-                    "services", "conditions", "records", "schema", "diagnostics", "edges");
+                    "services", "conditions", "records", "schema", "diagnostics", "edges", "docs.search");
 
             var result = client.callTool(McpSchema.CallToolRequest.builder("status").build());
             assertThat(result.isError()).isNotEqualTo(Boolean.TRUE);
@@ -745,6 +753,148 @@ class GraphitronMcpServerTest {
                 .as("the memo key missed on the new snapshot, so the index rebuilt with the added field")
                 .extracting(e -> ((Map<String, Object>) e.get("target")).get("id"))
                 .containsExactlyInAnyOrder("Film.title", "Film.altTitle");
+        }
+    }
+
+    // ---- R385: docs.search (semantic retrieval over the bundled manual) ----
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void docsSearchWhileWarmingReturnsDegradationMessageAndNoPassages() throws Exception {
+        // Un-started warms read as Warming: the tool is advertised but degrades to the structured tools.
+        var embedderWarm = new AsyncWarm<Embedder>("e", () -> new PlantedEmbedder(3, new float[] {1, 0, 0}));
+        var docsWarm = new AsyncWarm<DocsIndex>("d", GraphitronMcpServerTest::pagingDocsIndex);
+        try (var server = new GraphitronMcpServer(loopback(0), new Workspace(), embedderWarm, docsWarm);
+             var client = connect(server.port())) {
+            client.initialize();
+
+            var result = client.callTool(McpSchema.CallToolRequest.builder("docs.search")
+                .arguments(Map.of("query", "how do I paginate")).build());
+            assertThat(result.isError()).isNotEqualTo(Boolean.TRUE);
+            assertThat(((McpSchema.TextContent) result.content().getFirst()).text())
+                .contains("still warming");
+            var structured = (Map<String, Object>) result.structuredContent();
+            assertThat((List<Map<String, Object>>) structured.get("passages")).isEmpty();
+        }
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void docsSearchWhenEmbedderWarmFailedReturnsDegradationNamingTheCause() throws Exception {
+        var embedderWarm = startedAwaited(new AsyncWarm<Embedder>("e", () -> {
+            throw new RuntimeException("ONNX unavailable");
+        }));
+        var docsWarm = startedAwaited(new AsyncWarm<DocsIndex>("d", GraphitronMcpServerTest::pagingDocsIndex));
+        try (var server = new GraphitronMcpServer(loopback(0), new Workspace(), embedderWarm, docsWarm);
+             var client = connect(server.port())) {
+            client.initialize();
+
+            var result = client.callTool(McpSchema.CallToolRequest.builder("docs.search")
+                .arguments(Map.of("query", "anything")).build());
+            assertThat(result.isError()).isNotEqualTo(Boolean.TRUE);
+            assertThat(((McpSchema.TextContent) result.content().getFirst()).text())
+                .contains("failed to load").contains("ONNX unavailable");
+            var structured = (Map<String, Object>) result.structuredContent();
+            assertThat((List<Map<String, Object>>) structured.get("passages")).isEmpty();
+        }
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void docsSearchReadyReturnsRankedPassagesWithHeadingPathSourceUrlAndScore() throws Exception {
+        // The query embedder lands on the keyset passage's planted vector; KNN puts it first.
+        var embedderWarm = startedAwaited(new AsyncWarm<Embedder>("e",
+            () -> new PlantedEmbedder(3, new float[] {1, 0, 0})));
+        var docsWarm = startedAwaited(new AsyncWarm<DocsIndex>("d", GraphitronMcpServerTest::pagingDocsIndex));
+        try (var server = new GraphitronMcpServer(loopback(0), new Workspace(), embedderWarm, docsWarm);
+             var client = connect(server.port())) {
+            client.initialize();
+
+            var result = client.callTool(McpSchema.CallToolRequest.builder("docs.search")
+                .arguments(Map.of("query", "stable cursors", "k", 2)).build());
+            assertThat(result.isError()).isNotEqualTo(Boolean.TRUE);
+            var structured = (Map<String, Object>) result.structuredContent();
+            var passages = (List<Map<String, Object>>) structured.get("passages");
+            assertThat(passages).isNotEmpty();
+            var top = passages.getFirst();
+            assertThat((List<String>) top.get("headingPath")).containsExactly("Batching", "Keyset seek");
+            assertThat(top).containsEntry("sourcePath", "docs/manual/explanation/batching-model.adoc")
+                .containsEntry("anchor", "keyset-seek")
+                .containsEntry("url",
+                    "https://graphitron.sikt.no/manual/explanation/batching-model.html#keyset-seek");
+            assertThat((Double) top.get("score")).isGreaterThan(0.0);
+            // The text summary names the top hit's heading path for non-structured clients.
+            assertThat(((McpSchema.TextContent) result.content().getFirst()).text())
+                .contains("Batching > Keyset seek");
+        }
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void docsSearchDimensionMismatchDegradesRatherThanThrowingLuceneWidthError() throws Exception {
+        // The bundle was embedded at dimension 4; the runtime embedder produces width 3. The guard
+        // degrades rather than letting the KNN query reach Lucene with a mismatched width.
+        var embedderWarm = startedAwaited(new AsyncWarm<Embedder>("e",
+            () -> new PlantedEmbedder(3, new float[] {1, 0, 0})));
+        var docsWarm = startedAwaited(new AsyncWarm<DocsIndex>("d", () -> docsIndexOf(4, List.of(
+            entry(new DocChunk(List.of("A"), "docs/manual/x.adoc", "a", "body"), new float[] {1, 0, 0, 0})))));
+        try (var server = new GraphitronMcpServer(loopback(0), new Workspace(), embedderWarm, docsWarm);
+             var client = connect(server.port())) {
+            client.initialize();
+
+            var result = client.callTool(McpSchema.CallToolRequest.builder("docs.search")
+                .arguments(Map.of("query", "anything")).build());
+            assertThat(result.isError()).isNotEqualTo(Boolean.TRUE);
+            assertThat(((McpSchema.TextContent) result.content().getFirst()).text())
+                .contains("different embedding model");
+            var structured = (Map<String, Object>) result.structuredContent();
+            assertThat((List<Map<String, Object>>) structured.get("passages")).isEmpty();
+        }
+    }
+
+    /** A two-chunk docs index (dim 3): a keyset-seek passage at [1,0,0] and a batching one at [0,1,0]. */
+    private static DocsIndex pagingDocsIndex() {
+        return docsIndexOf(3, List.of(
+            entry(new DocChunk(List.of("Batching", "Keyset seek"),
+                "docs/manual/explanation/batching-model.adoc", "keyset-seek",
+                "Use keyset pagination for stable cursors."), new float[] {1, 0, 0}),
+            entry(new DocChunk(List.of("Batching", "Data loader"),
+                "docs/manual/explanation/batching-model.adoc", "data-loader",
+                "The data loader batches sibling fetches."), new float[] {0, 1, 0})));
+    }
+
+    private static DocsBundle.Entry entry(DocChunk chunk, float[] vector) {
+        return new DocsBundle.Entry(chunk.id(), chunk.embedText(), DocsBundle.encodePayload(chunk), vector);
+    }
+
+    /** Writes the entries to a bundle and rebuilds the index through the production warm loader. */
+    private static DocsIndex docsIndexOf(int dimension, List<DocsBundle.Entry> entries) {
+        var buf = new ByteArrayOutputStream();
+        DocsBundle.write(buf, dimension, entries);
+        return DocsRag.loadDocsIndex(new ByteArrayInputStream(buf.toByteArray()));
+    }
+
+    private static <T> AsyncWarm<T> startedAwaited(AsyncWarm<T> warm) {
+        warm.start();
+        warm.await();
+        return warm;
+    }
+
+    /** A query-side embedder that returns a fixed planted vector; documents come prebuilt in the bundle. */
+    private record PlantedEmbedder(int dim, float[] queryVector) implements Embedder {
+        @Override
+        public Query embedQuery(String text) {
+            return new Query(text, queryVector);
+        }
+
+        @Override
+        public List<Embedding> embedDocuments(List<String> texts) {
+            throw new UnsupportedOperationException("documents are prebuilt in the bundle");
+        }
+
+        @Override
+        public int dimension() {
+            return dim;
         }
     }
 
