@@ -1,13 +1,13 @@
 ---
 id: R383
 title: "Support nested-input @field filters on multitable interface/union queries"
-status: Spec
+status: Ready
 bucket: bug
 priority: 3
 theme: interface-union
 depends-on: []
 created: 2026-06-25
-last-updated: 2026-06-25
+last-updated: 2026-06-26
 ---
 
 # Support nested-input @field filters on multitable interface/union queries
