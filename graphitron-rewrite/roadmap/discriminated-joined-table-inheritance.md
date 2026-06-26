@@ -216,26 +216,75 @@ existing `drainBuildDiagnostics` / `Rejection` machinery (the R204/R279/R317/R38
 No ambiguous-FK invariant: the author names the FK in `@reference`, so the inference-era ambiguity case
 (and its R393 deferral) does not arise here.
 
-## Tests
+**Write the execution test first; it is the acceptance gate.** This feature's correctness is a runtime
+property, not a shape: join-column orientation, discriminator gating, NULL-through on non-matching rows,
+TypeResolver routing, and standalone resolution. A pipeline test pins that *a* LEFT JOIN is emitted; it
+cannot prove the query returns the right rows. So the `@ExecutionTier` test against real PostgreSQL
+(`graphitron-sakila-example`) is the definition-of-done and is authored first; the pipeline and validation
+tiers below are the fast regression net layered under it, not the primary proof for this item. (This
+refines, for a runtime-correctness feature, the usual "pipeline-tier is primary" default in
+`rewrite-design-principles.adoc`.)
 
-- **Pipeline tier (primary):** a discriminated base + two detail-table participants (inherited fields with
-  parent-`@reference`, own fields without) generates the expected `TypeSpec` shape: one base query,
-  per-participant discriminator-gated LEFT JOIN on the child&rarr;parent hop, shared fields off the base,
-  detail fields off the detail alias. Pin the shape, not generated method-body strings.
-- **Standalone-use pipeline test:** the same joined-table participant used as a standalone query return type
-  generates a `FROM detail` fetcher whose inherited fields resolve via the parent-reference join. This is
-  the regression guard for the property that motivated the redesign, the concrete type is first-class
-  outside its interface.
-- **Execution tier:** a corpus example alongside the existing `table-interface` example
-  (`code-generation-triggers.adoc`), with new sakila fixtures (a discriminated base table + per-concrete-type
-  detail tables joined PK=FK). Assert that a polymorphic query returns the right per-type detail columns,
-  that non-matching rows carry NULL through the joins, and that a standalone query of one concrete type
-  returns both its inherited and its own columns.
-- **Validation pipeline tests:** one rejection test per new invariant above (non-PK=FK hop; parent-reference
-  to a non-base table), plus a positive case for a `TableInterfaceType` mixing a discriminator-only
-  participant with a joined-table participant.
-- The full reactor compile under `-Plocal-db` (including the Java-17 `graphitron-sakila-example`) is the
-  backstop for the detail-alias projection typing.
+### Fixture (the crux, and a fork for the reviewer)
+
+The repo already has a discriminated joined-inheritance fixture, `jti_subject` + `jti_app_account` +
+`jti_person` (`graphitron-sakila-db/src/main/resources/init.sql`), and the example `Subject` interface
+(`graphitron-sakila-example/.../schema.graphqls`). But it is the **R388 workaround** shape: every
+participant `@table("jti_subject")` (the base) with a per-field `@reference` pointing *out* to the detail
+table, a composite FK `(jti_subject_id, subject_kind)`, and **no primary key on the detail tables**. It
+does not satisfy R389's PK=FK invariant and is not the `@table(detail)` authoring this item is about. Two
+ways to get a proper fixture:
+
+- **Option A (recommended): a new, clean single-column shared-PK fixture.** Add a base table (PK, a
+  discriminator column, a shared column) and two detail tables whose own single-column PK *is* a FK to the
+  base PK, each with one detail-only column. This is textbook class-table inheritance, matches the spec's
+  PK=FK invariant verbatim, and keeps the gnarly composite-FK `jti_*` fixture for the R388 workaround
+  coverage it already serves. Lowest-risk way to make the execution test concrete.
+- **Option B: convert the `jti_*` fixture to R389.** Add the composite primary key
+  `(jti_subject_id, subject_kind)` to `jti_app_account` / `jti_person` (so the detail PK *is* the FK to the
+  base) and re-author `Subject` so each participant declares its own detail `@table` with the inherited
+  fields carrying `@reference` back to the base. This is the most honest proof that R389 *replaces* the
+  workaround (same fixture, re-authored), and it preserves R388's stress dimension (the discriminator
+  column re-declared on the detail tables). But it requires generalising the PK=FK invariant to a composite
+  key referencing the base's unique key (not only the base PK), and a decision on whether the R388
+  workaround-shape coverage is dropped or kept elsewhere. Bigger blast radius; closer to the stated "remove
+  the need for the workaround" goal.
+
+Recommendation: A for this item (single-column shared-PK), with B (composite, subsume-the-workaround) as an
+explicit follow-up once the single-column path is proven. The reviewer should settle this, because it sets
+whether R389 v1's PK=FK invariant is single-column-only or composite-capable, which in turn decides whether
+R389 fully subsumes the workaround or only partially.
+
+### The execution assertions (whichever fixture)
+
+Seed data must cover at least one row of each concrete kind **and** one base row whose detail row is absent
+(or whose kind differs), so the LEFT JOIN's NULL-through is asserted, not assumed.
+
+- **Polymorphic interface query** (`subjects { id shared ... on A { ownA } ... on B { ownB } }`): each row
+  routes to the right concrete type; the matching participant's own column is populated and the sibling's
+  own column is absent/NULL; the shared fields are populated for every row off the base.
+- **NULL-through:** the base row with no matching detail row returns its shared fields and routes correctly,
+  with the detail columns NULL.
+- **Standalone concrete-type query** (`a(id) { id shared ownA }`, the type used outside the interface):
+  `FROM detail`, inherited fields resolved via the parent-reference join, own fields read directly. This is
+  the regression guard for the property that motivated the whole redesign.
+
+### Regression net under the execution test
+
+- **Pipeline tier:** the same SDL generates the expected `TypeSpec` shape (one base query, per-participant
+  discriminator-gated LEFT JOIN on the child&rarr;parent hop, shared fields off the base, own fields off the
+  detail alias; and the standalone `FROM detail` fetcher resolving inherited fields via the parent
+  reference). Pin the shape, not method-body strings.
+- **Validation pipeline tests:** one rejection test per invariant (detail FK to base that is not the
+  detail's PK; parent-reference to a non-base table), plus a positive mixed case (a discriminator-only
+  participant alongside a joined-table participant).
+- **Compile backstop:** the full reactor compile under `-Plocal-db` (including the Java-17
+  `graphitron-sakila-example`) backstops the detail-alias projection typing.
+
+### Docs
+
+A corpus example alongside the existing `table-interface` example (`code-generation-triggers.adoc`),
+authored the R389 way, scrubbed of `R<n>` / phase vocabulary per the user-facing-doc check.
 
 ## User documentation (first-client check)
 
