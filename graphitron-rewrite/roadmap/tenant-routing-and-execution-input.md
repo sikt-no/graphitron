@@ -1,7 +1,7 @@
 ---
 id: R45
 title: "Multi-tenant routing on top of the schema-driven ExecutionInput factory"
-status: Spec
+status: Ready
 bucket: architecture
 priority: 5
 theme: service
