@@ -5634,4 +5634,43 @@ class GraphQLQueryTest {
             .as("the discriminated-interface query must qualify the discriminator to the base table at the join site")
             .anyMatch(s -> s.contains("\"jti_subject\".\"subject_kind\"") && s.contains("join"));
     }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void allSubjects_discriminatorFieldInsideFragment_routesViaSyntheticAlias() {
+        // R392 regression: the discriminator field (subjectKind) selected INSIDE an inline fragment,
+        // alongside a cross-table detail field. The interface exposes subjectKind as a queryable field,
+        // so the participant $fields projects the real subject_kind column; without a synthetic routing
+        // alias the discriminated TypeResolver's bare read of "subject_kind" matches both that projection
+        // and the routing copy ("Ambiguous match found", resolved by luck). The fix projects the routing
+        // copy as "__discriminator__" and the TypeResolver reads that alias, so routing is unambiguous and
+        // the user-facing subjectKind field still resolves from its own column.
+        SQL_LOG.clear();
+        Map<String, Object> data = execute("""
+            { allSubjects {
+                subjectId
+                ... on AppAccount { subjectKind clientId }
+                ... on Person     { subjectKind fullName }
+            } }
+            """);
+        List<Map<String, Object>> items = (List<Map<String, Object>>) data.get("allSubjects");
+        assertThat(items).hasSize(4);
+
+        var apps = items.stream().filter(i -> "billing-client-001".equals(i.get("clientId"))
+            || "reporting-client-002".equals(i.get("clientId"))).toList();
+        assertThat(apps).hasSize(2);
+        // The user-facing discriminator field resolves correctly for the routed type.
+        assertThat(apps).allSatisfy(i -> assertThat(i.get("subjectKind")).isEqualTo("APP"));
+
+        var persons = items.stream().filter(i -> "Ada Lovelace (full)".equals(i.get("fullName"))
+            || "Alan Turing (full)".equals(i.get("fullName"))).toList();
+        assertThat(persons).hasSize(2);
+        assertThat(persons).allSatisfy(i -> assertThat(i.get("subjectKind")).isEqualTo("PERSON"));
+
+        // Mechanical guard: the routing discriminator is projected under the synthetic alias, distinct
+        // from the real subject_kind column the $fields projection also emits. (SQL_LOG is lowercased.)
+        assertThat(SQL_LOG)
+            .as("the discriminated interface fetcher must project the routing discriminator under the __discriminator__ alias")
+            .anyMatch(s -> s.contains("as \"__discriminator__\""));
+    }
 }

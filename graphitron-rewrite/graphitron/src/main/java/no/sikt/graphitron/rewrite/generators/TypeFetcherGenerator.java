@@ -998,15 +998,21 @@ public class TypeFetcherGenerator {
         var setType = ParameterizedTypeName.get(
             ClassName.get(LinkedHashSet.class), fieldType);
         b.addStatement("$T fields = new $T<>()", setType, LinkedHashSet.class);
-        // Qualify the discriminator column to the interface/base table. A participant's FK-target
-        // detail table can re-declare the discriminator column (composite FK whose columns include
-        // it), making a bare DSL.field(DSL.name(col)) reference ambiguous once that join is present.
-        // The discriminator always lives on the base table, which is never aliased here (FROM
-        // <base>), so a two-part DSL.name(base, col) renders "base"."col" and matches the FROM
-        // clause. (A table-instance reference would render the same SQL but type as Field<?>, which
-        // the downstream .eq(String) / .in(String...) calls cannot accept; the two-part name keeps
-        // the Field<Object> the discriminator predicates rely on.)
-        b.addStatement("fields.add($T.field($T.name($S, $S)))", DSL, DSL, tableSqlName, discriminatorColumn);
+        // Project the discriminator under a synthetic alias for the TypeResolver to route off. Two
+        // reasons. (1) Qualification: the discriminator lives on the base table, and a participant's
+        // FK-target detail table can re-declare it (composite FK), so a bare DSL.name(col) is ambiguous
+        // once a participant join is present; the two-part DSL.name(base, col) renders "base"."col" and
+        // matches the FROM clause. (2) De-duplication: when the interface also exposes the discriminator
+        // as a queryable field, the participant $fields below projects the real catalog column too
+        // (rendered three-part, "schema"."base"."col"); a TypeResolver reading the bare column name would
+        // match both projections ambiguously. Aliasing the routing copy to a synthetic name distinct from
+        // any real column (see MultiTablePolymorphicEmitter.DISCRIMINATOR_COLUMN, mirroring the
+        // multi-table __typename convention) makes the routing read unambiguous and leaves the
+        // user-facing field projected once under its own name. The WHERE filter and LEFT JOIN ON-clause
+        // keep referencing the real qualified column (they cannot read a SELECT alias); only this routing
+        // projection is aliased. The two-part name keeps the Field<Object> the .as(...) wrapping carries.
+        b.addStatement("fields.add($T.field($T.name($S, $S)).as($S))",
+            DSL, DSL, tableSqlName, discriminatorColumn, MultiTablePolymorphicEmitter.DISCRIMINATOR_COLUMN);
         for (var participant : participants) {
             if (!(participant instanceof ParticipantRef.TableBound tb)) continue;
             var typeClass = ClassName.get(outputPackage + ".types", tb.typeName());

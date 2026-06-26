@@ -313,11 +313,16 @@ class GraphitronSchemaClassGeneratorTest {
     }
 
     @Test
-    void build_typeResolver_readsDiscriminatorColumnFromRecord() {
-        // The discriminator column is resolved to its SQL name (lowercase) at classification
-        // time so DSL.name(...) generates a correctly-cased quoted identifier for PostgreSQL.
+    void build_typeResolver_routesOffSyntheticDiscriminatorAlias() {
+        // R392: the TypeResolver routes off the synthetic discriminator alias the interface fetcher
+        // projects (MultiTablePolymorphicEmitter.DISCRIMINATOR_COLUMN), not the raw discriminator column
+        // name. When the interface exposes the discriminator as a queryable field, the real column is
+        // also projected by the participant $fields, and a bare read of the column name matches both
+        // projections ambiguously. The alias is distinct from any real column, so the routing read is
+        // unambiguous; the raw column name no longer appears in the resolver.
         var body = buildBody(INTERFACE_SDL);
-        assertThat(body).contains("\"content_type\"");
+        assertThat(body).contains("\"__discriminator__\"");
+        assertThat(body).doesNotContain("\"content_type\"");
     }
 
     @Test

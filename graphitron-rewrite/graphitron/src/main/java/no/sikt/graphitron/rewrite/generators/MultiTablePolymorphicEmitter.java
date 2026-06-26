@@ -66,6 +66,17 @@ public final class MultiTablePolymorphicEmitter {
 
     /** Synthetic stage-1 projection column carrying the participant typename literal. */
     public static final String TYPENAME_COLUMN = "__typename";
+    /**
+     * Synthetic projection alias carrying the discriminator value for a single-table discriminated
+     * interface ({@code @table @discriminate}). The discriminated {@code TypeResolver} routes off this
+     * alias rather than the raw discriminator column name: when the interface also exposes the
+     * discriminator as a queryable field, the real column is projected by the participant {@code $fields}
+     * too, and a bare read of the unaliased name matches both projections ambiguously (jOOQ logs
+     * {@code Ambiguous match found} and resolves to the first by luck). Same {@code __}-wrapping
+     * collision-avoidance rationale as {@link #TYPENAME_COLUMN}; reaches generated code only as a string
+     * literal (a {@code .as("__discriminator__")} projection and a {@code record.get(DSL.name(...))} read).
+     */
+    public static final String DISCRIMINATOR_COLUMN = "__discriminator__";
     /** Stage-1 sort key column alias. Single PK projects the column directly; composite PKs use {@code DSL.jsonbArray(...)}. */
     public static final String SORT_COLUMN = "__sort__";
     /** Stage-1 parent-index column alias; drives the Java-side scatter back to the originating parent row. */
