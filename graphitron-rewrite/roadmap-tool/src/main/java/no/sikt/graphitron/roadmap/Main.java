@@ -150,7 +150,11 @@ public final class Main {
         if (!existing.equals(rendered)) {
             System.err.println("roadmap README.md is out of date. Regenerate with:");
             System.err.println("  mvn -pl :graphitron-roadmap-tool exec:java");
-            System.exit(1);
+            // Throw rather than System.exit: this runs via exec-maven-plugin's `java` goal in
+            // the Maven JVM, so System.exit would kill Maven before it prints BUILD FAILURE.
+            // The exception lets the plugin wrap it as MojoExecutionException; the stderr above
+            // stays readable in the execution's INFO block. See BuildFailure for the rationale.
+            throw new BuildFailure("roadmap README.md drift");
         }
         System.out.println("roadmap README.md is up to date.");
     }
@@ -1167,7 +1171,9 @@ public final class Main {
         if (!errors.isEmpty()) {
             System.err.println("roadmap front-matter validation failed:");
             for (String e : errors) System.err.println("  " + e);
-            System.exit(1);
+            // See BuildFailure / runVerify: this runs in the Maven JVM via exec:java, so a
+            // System.exit would kill Maven before it can print BUILD FAILURE.
+            throw new BuildFailure("roadmap front-matter validation failed");
         }
     }
 

@@ -84,7 +84,11 @@ final class AdocMarkdownTableCheck {
         for (Finding f : findings) {
             System.err.println("  " + f.file() + ":" + f.line() + ": " + f.content());
         }
-        return 1;
+        // Throw rather than return non-zero (which the Main dispatcher turns into System.exit):
+        // this check is bound to the `verify` phase and runs in the Maven JVM via exec:java, so
+        // System.exit would kill Maven before BUILD FAILURE prints. Usage / not-a-directory
+        // errors keep returning 64 above; those are CLI dev errors, not a verify-phase tripwire.
+        throw new BuildFailure("markdown-formatted tables in authored .adoc files");
     }
 
     static List<Finding> scan(Path root) throws IOException {
