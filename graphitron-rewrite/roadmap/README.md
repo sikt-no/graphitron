@@ -23,8 +23,8 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R308` | Fix the @service list-payload N+1 by deriving many-arrival for list-returning carriers | Spec | 2026-06-14 | [plan](service-list-payload-arrival.md) |
 | `R335` | Fold input/scalar/enum classification into the single classify-and-emit walk | Spec | 2026-06-19 | [plan](walk-classifies-input-surface.md) |
 | `R381` | LSP-guided @reference path authoring | Spec | 2026-06-25 | [plan](lsp-reference-path-authoring.md) |
-| `R45` | Multi-tenant routing on top of the schema-driven ExecutionInput factory | Spec | 2026-06-26 | [plan](tenant-routing-and-execution-input.md) |
 | `R273` | Source NodeId metadata from @node + catalog PK (inferred from `implements Node`), and settle wrong-type/malformed mismatch semantics, retiring the legacy __NODE bare-ID arm | Spec | 2026-06-02 | [plan](nodeid-skip-mismatch-error-surfacing.md) |
+| `R45` | Multi-tenant routing on top of the schema-driven ExecutionInput factory | Ready | 2026-06-26 | [plan](tenant-routing-and-execution-input.md) |
 | `R347` | Consolidate graphitron-lsp navigation, dispatch, and result-building | In Progress | 2026-06-19 | [plan](lsp-structural-consolidation.md) |
 | `R389` | First-class discriminated joined-table inheritance (participants on their own tables) | Spec | 2026-06-26 | [plan](discriminated-joined-table-inheritance.md) |
 | `R332` | Mark @table on input types as deprecated (signal ahead of R97 removal) | Spec | 2026-06-22 <sub>created 2026-06-18</sub> | [plan](table-on-input-deprecation-signal.md) |
@@ -188,7 +188,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 - `R201` [**Honor @field(name:) in @error payload construction shape resolution**](honor-field-directive-in-payload-construction-shape.md) — Backlog, bug
 - `R202` [**Honor @field(name:) in @error type extra-field accessor matching against handler source class**](honor-field-directive-in-error-type-source-accessors.md) — Backlog, bug
-- `R45` [**Multi-tenant routing on top of the schema-driven ExecutionInput factory**](tenant-routing-and-execution-input.md) — Spec, architecture
+- `R45` [**Multi-tenant routing on top of the schema-driven ExecutionInput factory**](tenant-routing-and-execution-input.md) — Ready, architecture
 - `R54` [**Rename @externalField (parallel-support, deprecation, migration)**](rename-externalfield-directive.md) — Backlog, cleanup
 - `R192` [**Mojo-configured custom Bean Validation factory**](custom-validator-factory.md) — Backlog, architecture
 - `R46` [**Multi-tenant fan-out for `@service`**](service-multi-tenant-fanout.md) — Backlog, architecture, blocked by [tenant-routing-and-execution-input](tenant-routing-and-execution-input.md)
