@@ -7,6 +7,7 @@ import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
+import no.sikt.graphitron.rewrite.generators.MultiTablePolymorphicEmitter;
 import no.sikt.graphitron.rewrite.generators.util.QueryNodeFetcherClassGenerator;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType;
@@ -138,8 +139,13 @@ public final class GraphitronSchemaClassGenerator {
                 var cb = CodeBlock.builder();
                 cb.add("codeRegistry.typeResolver($S, env -> {\n", tit.name()).indent();
                 cb.addStatement("$T record = ($T) env.getObject()", JOOQ_RECORD, JOOQ_RECORD);
+                // Route off the synthetic discriminator alias the interface fetcher projects
+                // (TypeFetcherGenerator.buildInterfaceFieldsList), not the raw discriminator column name:
+                // when the interface exposes the discriminator as a queryable field, the real column is
+                // also projected by the participant $fields, and a bare read of the column name matches
+                // both ambiguously. The alias is distinct from any real column, so the read is unambiguous.
                 cb.addStatement("String discriminatorValue = record.get($T.field($T.name($S)), String.class)",
-                    JOOQ_DSL, JOOQ_DSL, tit.discriminatorColumn());
+                    JOOQ_DSL, JOOQ_DSL, MultiTablePolymorphicEmitter.DISCRIMINATOR_COLUMN);
                 cb.add("return switch (discriminatorValue) {\n").indent();
                 for (var p : tableBound) {
                     cb.add("case $S -> env.getSchema().getObjectType($S);\n",
