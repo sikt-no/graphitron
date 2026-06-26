@@ -1,7 +1,7 @@
 ---
 id: R380
 title: "Implement @reference join-subquery filter conditions on input fields and arguments"
-status: Ready
+status: In Review
 bucket: feature
 priority: 5
 theme: structural-refactor

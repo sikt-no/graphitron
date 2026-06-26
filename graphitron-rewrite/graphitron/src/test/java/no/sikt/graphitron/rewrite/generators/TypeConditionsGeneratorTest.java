@@ -43,6 +43,7 @@ class TypeConditionsGeneratorTest {
             case BodyParam.In in -> in.javaType();
             case BodyParam.RowEq req -> "org.jooq.Row" + req.columns().size();
             case BodyParam.RowIn rin -> "org.jooq.Row" + rin.columns().size();
+            case BodyParam.RemoteColumnPredicate r -> callTypeName(r.inner());
         };
     }
 
@@ -137,6 +138,126 @@ class TypeConditionsGeneratorTest {
         // Post-R50 the call-site decodes wire-format String -> column-typed scalar; the
         // condition method receives the typed list directly.
         assertThat(idsParam.type().toString()).isEqualTo("java.util.List<java.lang.Integer>");
+    }
+
+    // ===== R380: RemoteColumnPredicate (correlated EXISTS over a @reference join path) =====
+    //
+    // These exercise the body emitter's RemoteColumnPredicate arm directly. The classifier only
+    // produces single-column (Eq/In) remote predicates in v1 (a plain @reference resolves one
+    // terminal column); the composite RowIn case below proves the emitter already supports a
+    // composite terminal tuple, so folding in a composite reference filter later is additive.
+
+    private static final ColumnRef LANGUAGE_ID = new ColumnRef("language_id", "LANGUAGE_ID", "java.lang.Integer");
+    private static final ColumnRef LANGUAGE_NAME = new ColumnRef("name", "NAME", "java.lang.String");
+    private static final TableRef LANGUAGE_TABLE = TestFixtures.tableRef("language", "LANGUAGE", "Language", List.of());
+    private static final TableRef CITY_TABLE = TestFixtures.tableRef("city", "CITY", "City", List.of());
+    private static final TableRef COUNTRY_TABLE = TestFixtures.tableRef("country", "COUNTRY", "Country", List.of());
+    private static final ColumnRef CITY_ID = new ColumnRef("city_id", "CITY_ID", "java.lang.Integer");
+    private static final ColumnRef COUNTRY_ID = new ColumnRef("country_id", "COUNTRY_ID", "java.lang.Integer");
+    private static final ColumnRef COUNTRY_NAME = new ColumnRef("country", "COUNTRY", "java.lang.String");
+
+    @Test
+    void remoteEq_singleHop_emitsCorrelatedExistsAgainstTerminalAlias() {
+        // Filter Film by language.name reached through film.language_id -> language. The predicate
+        // must NOT bind table.NAME (film has no `name`); it binds the terminal alias's column inside
+        // a correlated EXISTS, with the correlation tying the terminal alias back to `table`.
+        var fk = TestFixtures.fkJoin(
+            TestFixtures.foreignKeyRef("film_language_id_fkey"), FILM_TABLE,
+            List.of(LANGUAGE_ID), LANGUAGE_TABLE, List.of(LANGUAGE_ID), null, "l0");
+        var inner = new BodyParam.Eq("languageName", LANGUAGE_NAME, "java.lang.String", false,
+            new CallSiteExtraction.NestedInputField("filter", List.of("filter", "languageName")));
+        var remote = new BodyParam.RemoteColumnPredicate(List.of(fk), inner);
+        var body = TypeConditionsGenerator.buildConditionMethod(filter(List.of(remote)), DEFAULT_OUTPUT_PACKAGE)
+            .code().toString();
+
+        assertThat(body).contains("org.jooq.impl.DSL.exists(");
+        assertThat(body).contains(".from(languageName_ref0)");
+        // Correlation back to the method's own `table` alias.
+        assertThat(body).contains("languageName_ref0.LANGUAGE_ID.eq(table.LANGUAGE_ID)");
+        // Inner predicate binds the TERMINAL alias, never `table`.
+        assertThat(body).contains("languageName_ref0.NAME.eq(org.jooq.impl.DSL.val(languageName, languageName_ref0.NAME))");
+        assertThat(body).doesNotContain("table.NAME");
+        // Nullable scalar: guarded by a null check around the whole EXISTS term.
+        assertThat(body).contains("if (languageName != null) condition = condition.and(org.jooq.impl.DSL.exists(");
+    }
+
+    @Test
+    void remoteIn_emitsEmptyListGuardedExists() {
+        var fk = TestFixtures.fkJoin(
+            TestFixtures.foreignKeyRef("film_language_id_fkey"), FILM_TABLE,
+            List.of(LANGUAGE_ID), LANGUAGE_TABLE, List.of(LANGUAGE_ID), null, "l0");
+        var inner = new BodyParam.In("languageNames", LANGUAGE_NAME, "java.lang.String", false,
+            new CallSiteExtraction.NestedInputField("filter", List.of("filter", "languageNames")));
+        var remote = new BodyParam.RemoteColumnPredicate(List.of(fk), inner);
+        var body = TypeConditionsGenerator.buildConditionMethod(filter(List.of(remote)), DEFAULT_OUTPUT_PACKAGE)
+            .code().toString();
+
+        // Empty-list guard wraps the whole EXISTS, identical to the local In arm.
+        assertThat(body).contains("if (languageNames != null && !languageNames.isEmpty()) condition = condition.and(org.jooq.impl.DSL.exists(");
+        assertThat(body).contains("languageNames_ref0.NAME.in(languageNames)");
+    }
+
+    @Test
+    void remoteEq_multiHop_emitsJoinChainBackTowardStepZero() {
+        // Filter (table = Address) by country.country via address.city_id -> city.country_id -> country.
+        var hop0 = TestFixtures.fkJoin(
+            TestFixtures.foreignKeyRef("address_city_id_fkey"), TestFixtures.tableRef("address", "ADDRESS", "Address", List.of()),
+            List.of(CITY_ID), CITY_TABLE, List.of(CITY_ID), null, "c0");
+        var hop1 = TestFixtures.fkJoin(
+            TestFixtures.foreignKeyRef("city_country_id_fkey"), CITY_TABLE,
+            List.of(COUNTRY_ID), COUNTRY_TABLE, List.of(COUNTRY_ID), null, "c1");
+        var inner = new BodyParam.Eq("countryName", COUNTRY_NAME, "java.lang.String", false,
+            new CallSiteExtraction.NestedInputField("filter", List.of("filter", "countryName")));
+        var remote = new BodyParam.RemoteColumnPredicate(List.of(hop0, hop1), inner);
+        var body = TypeConditionsGenerator.buildConditionMethod(filter(List.of(remote)), DEFAULT_OUTPUT_PACKAGE)
+            .code().toString();
+
+        // FROM the terminal (country) alias; JOIN the previous (city) alias back toward step 0.
+        assertThat(body).contains(".from(countryName_ref1)");
+        assertThat(body).contains(".join(countryName_ref0).onKey(");
+        // Step-0 correlation ties the first hop's alias to the method's own table.
+        assertThat(body).contains("countryName_ref0.CITY_ID.eq(table.CITY_ID)");
+        // Terminal predicate binds the country alias.
+        assertThat(body).contains("countryName_ref1.COUNTRY.eq(org.jooq.impl.DSL.val(countryName, countryName_ref1.COUNTRY))");
+    }
+
+    @Test
+    void remoteRowIn_compositeTerminal_emitsRowInAgainstTerminalAliasAndCompositeCorrelation() {
+        // Emitter capacity for a composite terminal tuple (RowIn) reached through a composite FK.
+        // Not classifier-reachable in v1, but the wrapper accepts any inner ColumnPredicate.
+        var a = new ColumnRef("a", "A", "java.lang.String");
+        var b = new ColumnRef("b", "B", "java.lang.String");
+        var t = TestFixtures.tableRef("t", "T", "T", List.of());
+        var c1 = new ColumnRef("c1", "C1", "java.lang.String");
+        var c2 = new ColumnRef("c2", "C2", "java.lang.String");
+        var fk = TestFixtures.fkJoin(
+            TestFixtures.foreignKeyRef("film_t_fkey"), FILM_TABLE,
+            List.of(a, b), t, List.of(a, b), null, "t0");
+        var inner = new BodyParam.RowIn("keys", List.of(c1, c2), false,
+            new CallSiteExtraction.NestedInputField("filter", List.of("filter", "keys")));
+        var remote = new BodyParam.RemoteColumnPredicate(List.of(fk), inner);
+        var body = TypeConditionsGenerator.buildConditionMethod(filter(List.of(remote)), DEFAULT_OUTPUT_PACKAGE)
+            .code().toString();
+
+        assertThat(body).contains("org.jooq.impl.DSL.row(keys_ref0.C1, keys_ref0.C2).in(keys)");
+        // Composite FK correlation ANDs each slot pair.
+        assertThat(body).contains("keys_ref0.A.eq(table.A)");
+        assertThat(body).contains("keys_ref0.B.eq(table.B)");
+        assertThat(body).contains("if (keys != null && !keys.isEmpty()) condition = condition.and(org.jooq.impl.DSL.exists(");
+    }
+
+    @Test
+    void remotePredicate_methodParamType_delegatesToInner() {
+        var fk = TestFixtures.fkJoin(
+            TestFixtures.foreignKeyRef("film_language_id_fkey"), FILM_TABLE,
+            List.of(LANGUAGE_ID), LANGUAGE_TABLE, List.of(LANGUAGE_ID), null, "l0");
+        var inner = new BodyParam.Eq("languageName", LANGUAGE_NAME, "java.lang.String", false,
+            new CallSiteExtraction.NestedInputField("filter", List.of("filter", "languageName")));
+        var remote = new BodyParam.RemoteColumnPredicate(List.of(fk), inner);
+        var method = TypeConditionsGenerator.buildConditionMethod(filter(List.of(remote)), DEFAULT_OUTPUT_PACKAGE);
+        var param = method.parameters().stream()
+            .filter(p -> p.name().equals("languageName")).findFirst().orElseThrow();
+        assertThat(param.type().toString()).isEqualTo("java.lang.String");
     }
 
     @Test

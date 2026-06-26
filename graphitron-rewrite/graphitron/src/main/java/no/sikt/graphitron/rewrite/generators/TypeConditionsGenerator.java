@@ -14,6 +14,7 @@ import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.GeneratedConditionFilter;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
+import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.LookupField;
 import no.sikt.graphitron.rewrite.model.QueryField;
 import no.sikt.graphitron.rewrite.model.SqlGeneratingField;
@@ -124,61 +125,131 @@ public class TypeConditionsGenerator {
         builder.addStatement("$T condition = $T.noCondition()", CONDITION, DSL);
         for (var bp : gcf.bodyParams()) {
             switch (bp) {
-                case BodyParam.Eq eq -> {
-                    String col = eq.column().javaName();
-                    if (eq.nonNull()) {
-                        builder.addStatement("condition = condition.and(table.$L.eq($T.val($L, table.$L)))",
-                            col, DSL, eq.name(), col);
-                    } else {
-                        builder.addStatement("if ($L != null) condition = condition.and(table.$L.eq($T.val($L, table.$L)))",
-                            eq.name(), col, DSL, eq.name(), col);
-                    }
-                }
-                case BodyParam.In in -> {
-                    String col = in.column().javaName();
-                    // Empty-list guard: an empty list contributes no predicate, so the filter
-                    // narrows by nothing (DSL.noCondition() identity) rather than emitting
-                    // `IN ()`, which jOOQ renders as the constant `false` and would zero the
-                    // query. The null-arity sibling of this guard is the `!= null` branch below.
-                    if (in.nonNull()) {
-                        builder.addStatement("if (!$L.isEmpty()) condition = condition.and(table.$L.in($L))",
-                            in.name(), col, in.name());
-                    } else {
-                        builder.addStatement("if ($L != null && !$L.isEmpty()) condition = condition.and(table.$L.in($L))",
-                            in.name(), in.name(), col, in.name());
-                    }
-                }
-                case BodyParam.RowEq req -> {
-                    // DSL.row(table.c1, ..., table.cN).eq(arg) — the typed Field<T> overload
-                    // produces a Row<N><T1, ..., TN> matching the method parameter exactly.
-                    var cols = buildTypedCols(req.columns());
-                    if (req.nonNull()) {
-                        builder.addStatement("condition = condition.and($T.row($L).eq($L))",
-                            DSL, cols, req.name());
-                    } else {
-                        builder.addStatement("if ($L != null) condition = condition.and($T.row($L).eq($L))",
-                            req.name(), DSL, cols, req.name());
-                    }
-                }
-                case BodyParam.RowIn rin -> {
-                    // DSL.row(table.c1, ..., table.cN).in(rows) — typed Row<N>.in takes
-                    // Collection<? extends Row<N><T1, ..., TN>>.
-                    // Empty-list guard mirrors the In arm: an empty composite-key list (a
-                    // client sending [] for a composite @nodeId filter decodes to an empty
-                    // row list) narrows by nothing rather than rendering `IN () = false`.
-                    var cols = buildTypedCols(rin.columns());
-                    if (rin.nonNull()) {
-                        builder.addStatement("if (!$L.isEmpty()) condition = condition.and($T.row($L).in($L))",
-                            rin.name(), DSL, cols, rin.name());
-                    } else {
-                        builder.addStatement("if ($L != null && !$L.isEmpty()) condition = condition.and($T.row($L).in($L))",
-                            rin.name(), rin.name(), DSL, cols, rin.name());
-                    }
-                }
+                // Local column predicate: bind directly against the method's own `table` alias.
+                case BodyParam.ColumnPredicate cp ->
+                    appendGuardedAnd(builder, cp, emitColumnPredicateTerm(cp, "table"));
+                // Remote column predicate: the column lives on a joined table, so AND in a
+                // correlated EXISTS that joins through the path and applies the inner predicate
+                // against the terminal alias. The null / empty-list guard wraps the whole EXISTS
+                // term, identical to the local case. emitRemoteExists declares the per-hop alias
+                // locals on the builder (unconditionally, before the guard) and returns the bare
+                // DSL.exists(...) term.
+                case BodyParam.RemoteColumnPredicate r ->
+                    appendGuardedAnd(builder, r.inner(), emitRemoteExists(builder, r));
             }
         }
         builder.addStatement("return condition");
         return builder.build();
+    }
+
+    /**
+     * Emits the bare jOOQ predicate expression for a {@link BodyParam.ColumnPredicate}, binding
+     * its column(s) against {@code alias}. No {@code condition.and(...)} wrapping and no null /
+     * empty-list guard — those are applied uniformly by {@link #appendGuardedAnd} so the local and
+     * remote (EXISTS) sites share one guard policy while differing only in the term they AND in.
+     */
+    private static CodeBlock emitColumnPredicateTerm(BodyParam.ColumnPredicate cp, String alias) {
+        return switch (cp) {
+            case BodyParam.Eq eq -> {
+                String col = eq.column().javaName();
+                yield CodeBlock.of("$L.$L.eq($T.val($L, $L.$L))", alias, col, DSL, eq.name(), alias, col);
+            }
+            case BodyParam.In in -> CodeBlock.of("$L.$L.in($L)", alias, in.column().javaName(), in.name());
+            // DSL.row(alias.c1, ..., alias.cN).eq(arg) — typed Field<T> overload produces a
+            // Row<N><T1, ..., TN> matching the method parameter exactly.
+            case BodyParam.RowEq req -> CodeBlock.of("$T.row($L).eq($L)",
+                DSL, buildTypedCols(req.columns(), alias), req.name());
+            // DSL.row(alias.c1, ..., alias.cN).in(rows) — typed Row<N>.in takes
+            // Collection<? extends Row<N><T1, ..., TN>>.
+            case BodyParam.RowIn rin -> CodeBlock.of("$T.row($L).in($L)",
+                DSL, buildTypedCols(rin.columns(), alias), rin.name());
+        };
+    }
+
+    /**
+     * ANDs {@code term} into the method's {@code condition} local, guarded by the same null /
+     * empty-list policy the four local arms used before R380:
+     * <ul>
+     *   <li>{@code Eq} / {@code RowEq} (scalar): unguarded when non-null, else {@code if (arg != null)};</li>
+     *   <li>{@code In} / {@code RowIn} (list): {@code if (!arg.isEmpty())} when non-null, else
+     *       {@code if (arg != null && !arg.isEmpty())}. An empty list contributes no predicate
+     *       (DSL.noCondition() identity) rather than rendering {@code IN ()} as the constant
+     *       {@code false} and zeroing the query.</li>
+     * </ul>
+     * The guard depends only on {@code cp}'s arm identity and {@code nonNull}, so the same call
+     * wraps a bare local predicate ({@code term} over {@code table}) and a remote
+     * {@code DSL.exists(...)} term identically.
+     */
+    private static void appendGuardedAnd(MethodSpec.Builder builder, BodyParam.ColumnPredicate cp, CodeBlock term) {
+        String name = cp.name();
+        if (cp.list()) {
+            if (cp.nonNull()) {
+                builder.addStatement("if (!$L.isEmpty()) condition = condition.and($L)", name, term);
+            } else {
+                builder.addStatement("if ($L != null && !$L.isEmpty()) condition = condition.and($L)", name, name, term);
+            }
+        } else {
+            if (cp.nonNull()) {
+                builder.addStatement("condition = condition.and($L)", term);
+            } else {
+                builder.addStatement("if ($L != null) condition = condition.and($L)", name, term);
+            }
+        }
+    }
+
+    /**
+     * Builds the correlated {@code DSL.exists(DSL.selectOne().from(terminalAlias).join(...)
+     * .where(<correlation back to table>.and(<inner predicate on terminalAlias>)))} term for a
+     * {@link BodyParam.RemoteColumnPredicate}. Mirrors {@link InlineTableFieldEmitter#buildInnerSelect}
+     * and {@link FkTargetConditionEmitter} (FROM terminal, JOIN chain walking back toward step 0,
+     * WHERE step-0 parent correlation). The hop aliases are method-local statics prefixed with the
+     * parameter name so multiple remote predicates in one method never collide; this method does
+     * not recurse, so no runtime alias prefixing is needed.
+     *
+     * <p>The per-hop alias locals are declared as statements on {@code builder} directly (they
+     * must precede the EXISTS expression and sit outside any null-guard {@code if}); the returned
+     * {@link CodeBlock} is only the {@code DSL.exists(...)} term that {@link #appendGuardedAnd}
+     * then ANDs in.
+     */
+    private static CodeBlock emitRemoteExists(MethodSpec.Builder builder, BodyParam.RemoteColumnPredicate r) {
+        var path = r.joinPath();
+        String prefix = r.inner().name() + "_ref";
+
+        var hopAliases = new ArrayList<String>(path.size());
+        for (int i = 0; i < path.size(); i++) {
+            var ht = (JoinStep.HasTargetTable) path.get(i);
+            String local = prefix + i;
+            builder.addStatement("$T $L = $T.$L.as($S)",
+                ht.targetTable().tableClass(), local,
+                ht.targetTable().constantsClass(), ht.targetTable().javaFieldName(), local);
+            hopAliases.add(local);
+        }
+        String terminalAlias = hopAliases.get(hopAliases.size() - 1);
+
+        var sel = CodeBlock.builder();
+        sel.add("$T.selectOne()", DSL);
+        sel.add("\n        .from($L)", terminalAlias);
+        // JOIN chain: walk from terminal back toward step 0, joining the previous hop's alias.
+        for (int i = path.size() - 1; i >= 1; i--) {
+            if (!(path.get(i) instanceof JoinStep.FkJoin fk)) {
+                throw new IllegalStateException(
+                    "RemoteColumnPredicate join hop " + i + " for '" + r.inner().name()
+                    + "' is not an FkJoin (" + path.get(i).getClass().getSimpleName()
+                    + "); the validator must reject non-foreign-key reference-filter paths before emission");
+            }
+            sel.add("\n        .join($L).onKey($T.$L)",
+                hopAliases.get(i - 1), fk.fk().keysClass(), fk.fk().constantName());
+        }
+        if (!(path.get(0) instanceof JoinStep.FkJoin firstHop)) {
+            throw new IllegalStateException(
+                "RemoteColumnPredicate first hop for '" + r.inner().name()
+                + "' is not an FkJoin; the validator must reject non-foreign-key reference-filter paths before emission");
+        }
+        var correlation = JoinPathEmitter.emitCorrelationWhere(firstHop, hopAliases.get(0), "table");
+        var predicate = emitColumnPredicateTerm(r.inner(), terminalAlias);
+        sel.add("\n        .where($L.and($L))", correlation, predicate);
+
+        return CodeBlock.of("$T.exists($L)", DSL, sel.build());
     }
 
     /**
@@ -193,6 +264,9 @@ public class TypeConditionsGenerator {
             case BodyParam.In in -> ParameterizedTypeName.get(LIST, ClassName.bestGuess(in.javaType()));
             case BodyParam.RowEq req -> rowTypeName(req.columns());
             case BodyParam.RowIn rin -> ParameterizedTypeName.get(LIST, rowTypeName(rin.columns()));
+            // A remote predicate's parameter type is the inner predicate's: the value still arrives
+            // through env.getArgument; only the SQL shape (EXISTS vs a local column) differs.
+            case BodyParam.RemoteColumnPredicate r -> paramType(r.inner());
         };
     }
 
@@ -207,12 +281,12 @@ public class TypeConditionsGenerator {
         return ParameterizedTypeName.get(rowN, typeArgs);
     }
 
-    /** Comma-separated {@code table.c1, ..., table.cN} for {@code DSL.row(Field<T>...)}. */
-    private static CodeBlock buildTypedCols(List<ColumnRef> columns) {
+    /** Comma-separated {@code alias.c1, ..., alias.cN} for {@code DSL.row(Field<T>...)}. */
+    private static CodeBlock buildTypedCols(List<ColumnRef> columns, String alias) {
         var cells = CodeBlock.builder();
         for (int i = 0; i < columns.size(); i++) {
             if (i > 0) cells.add(", ");
-            cells.add("table.$L", columns.get(i).javaName());
+            cells.add("$L.$L", alias, columns.get(i).javaName());
         }
         return cells.build();
     }

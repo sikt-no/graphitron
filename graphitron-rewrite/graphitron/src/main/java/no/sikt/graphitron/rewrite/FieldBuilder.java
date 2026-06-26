@@ -1244,7 +1244,7 @@ class FieldBuilder {
                     if (keys.size() == 1) {
                         return new ArgumentRef.ScalarArg.ColumnArg(
                             name, typeName, nonNull, list, keys.get(0), extraction,
-                            argCondition, fieldOverride, isLookupKey);
+                            argCondition, fieldOverride, isLookupKey, List.of());
                     }
                     return new ArgumentRef.ScalarArg.CompositeColumnArg(
                         name, typeName, nonNull, list, keys, extraction,
@@ -1322,13 +1322,55 @@ class FieldBuilder {
                     if (keyColumns.size() == 1) {
                         return new ArgumentRef.ScalarArg.ColumnArg(
                             name, typeName, nonNull, list, keyColumns.get(0), extraction,
-                            argCondition, fieldOverride, isLookupKey);
+                            argCondition, fieldOverride, isLookupKey, List.of());
                     }
                     return new ArgumentRef.ScalarArg.CompositeColumnArg(
                         name, typeName, nonNull, list, keyColumns, extraction,
                         argCondition, fieldOverride, isLookupKey);
                 }
             }
+        }
+
+        // R380 — scalar arg carrying @reference(path:) reaching a column on a *joined* table.
+        // Unlike the @nodeId FK-target arm above (which lifts to local FK columns and emits no
+        // join), a plain @reference filter resolves the column against the *terminal* table and
+        // emits a correlated EXISTS. Read the path before the local findColumn so the column never
+        // mis-binds against the field's own table. v1 supports FkJoin paths only; a ConditionJoin
+        // hop is deferred (mirrors FkTargetConditionEmitter and the output-side @reference stub).
+        if (arg.hasAppliedDirective(DIR_REFERENCE)) {
+            var refPath = ctx.parsePath(arg, name, rt.tableName(), null);
+            if (refPath.hasError()) {
+                return new ArgumentRef.UnclassifiedArg(name, typeName, nonNull, list,
+                    Rejection.structural("argument '" + name + "': " + refPath.errorMessage()));
+            }
+            if (refPath.elements().stream().anyMatch(h -> !(h instanceof JoinStep.FkJoin))) {
+                return new ArgumentRef.UnclassifiedArg(name, typeName, nonNull, list,
+                    Rejection.structural(referenceFilterConditionJoinRejection(name)));
+            }
+            String refColumnName = argString(arg, DIR_FIELD, ARG_NAME).orElse(name);
+            var refCol = svc.resolveColumnForReference(refColumnName, refPath.elements(), rt.tableName());
+            if (refCol.isEmpty()) {
+                return new ArgumentRef.ScalarArg.UnboundArg(
+                    name, typeName, nonNull, list, refColumnName,
+                    "no column '" + refColumnName + "' reachable via @reference path from table '"
+                        + rt.tableName() + "'");
+            }
+            var refColumnRef = refCol.get();
+            String refEnumClassName;
+            switch (enumMappingResolver.validateEnumFilter(typeName, refColumnRef)) {
+                case EnumMappingResolver.EnumValidation.NotEnum n -> refEnumClassName = null;
+                case EnumMappingResolver.EnumValidation.Valid v -> refEnumClassName = v.fqcn();
+                case EnumMappingResolver.EnumValidation.Mismatch m -> {
+                    errors.add(m.message());
+                    return new ArgumentRef.UnclassifiedArg(name, typeName, nonNull, list,
+                        Rejection.structural("enum filter validation failed for column '" + refColumnRef.sqlName() + "'"));
+                }
+            }
+            CallSiteExtraction refExtraction = enumMappingResolver.deriveExtraction(typeName, refColumnRef, refEnumClassName);
+            boolean refIsLookupKey = arg.hasAppliedDirective(DIR_LOOKUP_KEY);
+            return new ArgumentRef.ScalarArg.ColumnArg(
+                name, typeName, nonNull, list, refColumnRef, refExtraction,
+                argCondition, fieldOverride, refIsLookupKey, refPath.elements());
         }
 
         // Scalar arg: bind to column
@@ -1357,7 +1399,20 @@ class FieldBuilder {
         CallSiteExtraction extraction = enumMappingResolver.deriveExtraction(typeName, columnRef, enumClassName);
         boolean isLookupKey = arg.hasAppliedDirective(DIR_LOOKUP_KEY);
         return new ArgumentRef.ScalarArg.ColumnArg(
-            name, typeName, nonNull, list, columnRef, extraction, argCondition, fieldOverride, isLookupKey);
+            name, typeName, nonNull, list, columnRef, extraction, argCondition, fieldOverride, isLookupKey, List.of());
+    }
+
+    /**
+     * Shared rejection text for a scalar {@code @reference} filter path that traverses a
+     * non-foreign-key ({@code ConditionJoin}) hop. v1 emits the correlated EXISTS through FK hops
+     * only; the {@code condition:} reference form is still a runtime-throwing stub on the output
+     * side, so a reference *filter* path through it is rejected at validate time. Asserted on by
+     * the Surface-2 ConditionJoin rejection test and mirrored by the validator.
+     */
+    static String referenceFilterConditionJoinRejection(String argName) {
+        return "argument '" + argName + "': @reference filter path traverses a condition-join "
+            + "(non-foreign-key) hop, which is not yet supported; reference filters emit a "
+            + "foreign-key correlated subquery and require every hop to resolve to a foreign key";
     }
 
     private ArgumentRef classifyOrderByArg(GraphQLArgument arg, String name, String typeName,
@@ -1579,9 +1634,16 @@ class FieldBuilder {
                     // as GeneratedConditionFilter bodyParams.
                     if (!autoSuppressed && !ca.isLookupKey()) {
                         String javaType = javaTypeFor(ca.extraction(), ca.column());
-                        bodyParams.add(ca.list()
+                        BodyParam.ColumnPredicate inner = ca.list()
                             ? new BodyParam.In(ca.name(), ca.column(), javaType, ca.nonNull(), ca.extraction())
-                            : new BodyParam.Eq(ca.name(), ca.column(), javaType, ca.nonNull(), ca.extraction()));
+                            : new BodyParam.Eq(ca.name(), ca.column(), javaType, ca.nonNull(), ca.extraction());
+                        // R380: a non-empty joinPath means @reference reached the terminal column on
+                        // a joined table — wrap the predicate in a correlated EXISTS. Empty path is
+                        // the local-column case (today's behavior); the column already binds to the
+                        // field's own table.
+                        bodyParams.add(ca.joinPath().isEmpty()
+                            ? inner
+                            : new BodyParam.RemoteColumnPredicate(ca.joinPath(), inner));
                     }
                     ca.argCondition().ifPresent(ac -> argConditions.add(ac.filter()));
                 }
@@ -1759,10 +1821,16 @@ class FieldBuilder {
                         // parent's own table positionally aligned with the decoded NodeType keys
                         // (nodeId direct-fk, single-hop or identity-carrying multi-hop), or the
                         // resolved reference column for plain @reference. Single source of truth.
-                        implicitBodyParams.add(implicitBodyParam(
+                        // R380: for a plain @reference (Direct extraction) reaching a column on a
+                        // joined table, liftedSourceColumns().get(0) is the *terminal* column, so
+                        // wrap the predicate in a RemoteColumnPredicate (correlated EXISTS). The
+                        // @nodeId-lift case (NodeIdDecodeKeys extraction) binds locally and stays
+                        // unwrapped — see remoteIfReferenceJoin's discrimination note.
+                        var inner = implicitBodyParam(
                             rf.liftedSourceColumns().get(0), rf.name(), rf.typeName(),
                             effectiveNonNull && rf.nonNull(), rf.list(),
-                            rf.extraction(), outerArgName, leafPath));
+                            rf.extraction(), outerArgName, leafPath);
+                        implicitBodyParams.add(remoteIfReferenceJoin(inner, rf.extraction(), rf.joinPath()));
                     }
                 }
                 case InputField.NestingField nf -> {
@@ -1804,12 +1872,17 @@ class FieldBuilder {
                     if (!enclosingOverride
                             && ccrf.condition().isEmpty()
                             && !lookupBoundNames.contains(ccrf.name())) {
-                        // Composite reference is nodeId-only (per record javadoc); read the
-                        // resolver-supplied liftedSourceColumns directly.
-                        implicitBodyParams.add(compositeImplicitBodyParam(
+                        // Composite reference is nodeId-only today (per record javadoc), so the
+                        // extraction is always NodeIdDecodeKeys and remoteIfReferenceJoin keeps it
+                        // local (lifted FK-child columns on the parent's own table). The wrap is
+                        // applied symmetrically with the single-column arm so that if a composite
+                        // plain @reference ever appears (Direct extraction over a terminal tuple)
+                        // it routes to a RowEq/RowIn-inner RemoteColumnPredicate without re-editing.
+                        var inner = compositeImplicitBodyParam(
                             ccrf.liftedSourceColumns(), ccrf.name(),
                             effectiveNonNull && ccrf.nonNull(), ccrf.list(),
-                            ccrf.extraction(), outerArgName, leafPath));
+                            ccrf.extraction(), outerArgName, leafPath);
+                        implicitBodyParams.add(remoteIfReferenceJoin(inner, ccrf.extraction(), ccrf.joinPath()));
                     }
                 }
                 case InputField.UnboundField uf -> {
@@ -1935,6 +2008,38 @@ class FieldBuilder {
     }
 
     /**
+     * R380: wraps an implicit predicate in a {@link BodyParam.RemoteColumnPredicate} when the
+     * reference carrier is a plain {@code @reference} ({@link CallSiteExtraction.Direct} extraction)
+     * reaching a column on a <em>joined</em> table; otherwise returns {@code inner} unchanged.
+     *
+     * <p>The discrimination is load-bearing. {@code ColumnReferenceField} /
+     * {@code CompositeColumnReferenceField} are produced for two cases whose
+     * {@code liftedSourceColumns} mean different tables:
+     * <ul>
+     *   <li><b>{@code @nodeId} FK-target (DirectFk)</b> — {@link CallSiteExtraction.NodeIdDecodeKeys}
+     *       extraction; the lifted columns are FK-child columns on the parent's <em>own</em> table,
+     *       positionally aligned with the decoded NodeType keys. The predicate is correctly bound to
+     *       the local {@code table} (the lift means no join is needed), so this stays unwrapped.</li>
+     *   <li><b>plain {@code @reference}</b> — {@link CallSiteExtraction.Direct} extraction; the
+     *       lifted column is the <em>terminal</em> column on the joined table, so it must go through
+     *       the correlated EXISTS.</li>
+     * </ul>
+     * The {@code Direct}-vs-{@code NodeIdDecodeKeys} extraction split is the cleanest available
+     * discriminator (chosen per the Spec; recorded here so the two {@code liftedSourceColumns}
+     * meanings stay un-conflated). An empty {@code joinPath} means the column is local (start table
+     * == terminal table), so it is also left unwrapped.
+     */
+    private static BodyParam remoteIfReferenceJoin(BodyParam inner,
+            CallSiteExtraction referenceExtraction, List<JoinStep> joinPath) {
+        if (referenceExtraction instanceof CallSiteExtraction.Direct
+                && !joinPath.isEmpty()
+                && inner instanceof BodyParam.ColumnPredicate cp) {
+            return new BodyParam.RemoteColumnPredicate(joinPath, cp);
+        }
+        return inner;
+    }
+
+    /**
      * Per-variant {@link CallParam#typeName()} for a {@link BodyParam}. Eq/In carry their own
      * {@code javaType} string; row-shape variants synthesize {@code "org.jooq.Row<N>"} from the
      * column tuple (the {@code CallParam.typeName} slot is unused on the NodeId-decode call-site
@@ -1947,6 +2052,9 @@ class FieldBuilder {
             case BodyParam.In in -> in.javaType();
             case BodyParam.RowEq req -> "org.jooq.Row" + req.columns().size();
             case BodyParam.RowIn rin -> "org.jooq.Row" + rin.columns().size();
+            // A remote predicate's call-site type is the inner predicate's: the value arrives the
+            // same way (env.getArgument), only the SQL shape differs.
+            case BodyParam.RemoteColumnPredicate r -> bodyParamCallTypeName(r.inner());
         };
     }
 

@@ -486,6 +486,34 @@ type Query {
     # SchemaPrinter emits spec-built-in directive definitions. Implicit-condition @table shape
     # mirrors Query.filmsWithImplicitInput above, so codegen routes through a proven path.
     filmsByOneOf(filter: FilmOneOfFilter): [Film!]!
+
+    # R380 execution fixtures: @reference(path:) filter whose terminal column lives on a JOINED
+    # table emits a correlated EXISTS. Surface 2 (direct scalar argument), single-hop: filter City
+    # by country.country reached through city.country_id -> country.
+    citiesByCountryName(
+        countryName: String @reference(path: [{table: "country"}]) @field(name: "country")
+    ): [City!]!
+    # Surface 2, two-hop: filter Address by country.country through address.city_id -> city ->
+    # city.country_id -> country.
+    addressesByCountryName(
+        countryName: String @reference(path: [{table: "city"}, {table: "country"}]) @field(name: "country")
+    ): [Address!]!
+    # Surface 1 (input-object filter field — the motivating utdanningsregisteret bug shape):
+    # a @table input filter field whose @reference reaches a column on a joined table.
+    citiesByCountryFilter(filter: CityCountryFilter): [City!]!
+}
+
+# R380 Surface 1 fixture: a @table(name: "city") filter input whose countryName field references
+# country.country through the city -> country FK. Mirrors the harSelvakkrediteringsretts /
+# LARESTED shape that motivated R380.
+input CityCountryFilter @table(name: "city") {
+    countryName: String @reference(path: [{table: "country"}]) @field(name: "country")
+}
+
+# R380 fixture: minimal City projection for the reference-filter execution tests.
+type City @table(name: "city") {
+    cityId:   Int!    @field(name: "CITY_ID")
+    cityName: String! @field(name: "CITY")
 }
 
 # R110 fixture: free-form (non-table-backed) record-backed payload. The backing class is a

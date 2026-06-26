@@ -1749,6 +1749,51 @@ class GraphQLQueryTest {
         }
     }
 
+    // ===== R380: @reference join-subquery filter conditions =====
+
+    @SuppressWarnings("unchecked")
+    @Test
+    void referenceFilter_scalarArg_singleHop_filtersByJoinedColumn() {
+        // R380 Surface 2: citiesByCountryName(countryName) filters City by country.country reached
+        // through city.country_id -> country, via a correlated EXISTS. Seed: Italy -> Rome only.
+        Map<String, Object> data = execute("{ citiesByCountryName(countryName: \"Italy\") { cityName } }");
+        List<Map<String, Object>> cities = (List<Map<String, Object>>) data.get("citiesByCountryName");
+        assertThat(cities).extracting(c -> c.get("cityName")).containsExactly("Rome");
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    void referenceFilter_scalarArg_multiHop_filtersByTwoHopJoinedColumn() {
+        // R380 Surface 2, two-hop: addressesByCountryName filters Address by country.country through
+        // address -> city -> country. Seed: only '28 MySQL Boulevard' (city Rome) is in Italy.
+        Map<String, Object> data = execute("{ addressesByCountryName(countryName: \"Italy\") { address } }");
+        List<Map<String, Object>> addresses = (List<Map<String, Object>>) data.get("addressesByCountryName");
+        assertThat(addresses).extracting(a -> a.get("address")).containsExactly("28 MySQL Boulevard");
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    void referenceFilter_inputObjectField_filtersByJoinedColumn() {
+        // R380 Surface 1 (the motivating bug): the @reference filter field lives inside a @table
+        // input object; the terminal column (country.country) is absent from the local city table.
+        // A pre-R380 build mis-bound it against city and failed to compile the conditions class.
+        Map<String, Object> data = execute(
+            "{ citiesByCountryFilter(filter: {countryName: \"United States\"}) { cityName } }");
+        List<Map<String, Object>> cities = (List<Map<String, Object>>) data.get("citiesByCountryFilter");
+        assertThat(cities).extracting(c -> c.get("cityName")).containsExactly("Lethbridge");
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    void referenceFilter_absentArgument_returnsAllRows() {
+        // Null arg contributes no predicate (the EXISTS term is guarded by the null check), so an
+        // omitted countryName returns every city — proof the null/empty-list semantics carry through.
+        Map<String, Object> data = execute("{ citiesByCountryName { cityName } }");
+        List<Map<String, Object>> cities = (List<Map<String, Object>>) data.get("citiesByCountryName");
+        assertThat(cities).extracting(c -> c.get("cityName"))
+            .containsExactlyInAnyOrder("Lethbridge", "Rome", "Tokyo");
+    }
+
     @SuppressWarnings("unchecked")
     @Test
     void multiParentSharedNesting_inlineTableField_returnsAddressPerParent() {
