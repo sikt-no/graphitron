@@ -27,8 +27,8 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R273` | Source NodeId metadata from @node + catalog PK (inferred from `implements Node`), and settle wrong-type/malformed mismatch semantics, retiring the legacy __NODE bare-ID arm | Spec | 2026-06-02 | [plan](nodeid-skip-mismatch-error-surfacing.md) |
 | `R347` | Consolidate graphitron-lsp navigation, dispatch, and result-building | In Progress | 2026-06-19 | [plan](lsp-structural-consolidation.md) |
 | `R332` | Mark @table on input types as deprecated (signal ahead of R97 removal) | Spec | 2026-06-22 <sub>created 2026-06-18</sub> | [plan](table-on-input-deprecation-signal.md) |
-| `R13` | Faceted search on `@asConnection` | Spec | 2026-06-26 | [plan](faceted-search.md) |
 | `R63` | Type UPSERT dialect requirement on the model | Spec |  | [plan](dml-dialect-requirement-on-model.md) |
+| `R13` | Faceted search on `@asConnection` | Ready | 2026-06-26 | [plan](faceted-search.md) |
 | `R92` | Surface database CHECK constraints as Jakarta validation rules | Spec |  | [plan](catalog-check-constraint-validation.md) |
 | `R26` | Retire `graphitron-maven-plugin` + `graphitron-schema-transform` | In Progress |  | [plan](retire-maven-plugin.md) |
 | `R180` | Centralize ResultType column-read emission for @record parents | Spec | 2026-05-19 | [plan](record-parent-column-read-helper.md) |
@@ -210,7 +210,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 - `R298` [**First-client contract-composition check: do type-level @tag-only synthesised connection types satisfy a real federation contract?**](federation-tag-first-client-contract-check.md) — Backlog, bug
 - `R297` [**Collapse the shareable boolean on ConnectionType/EdgeType/PageInfoType; read federation flags off schemaType()**](collapse-connection-shareable-boolean.md) — Backlog, tech-debt
-- `R13` [**Faceted search on `@asConnection`**](faceted-search.md) — Spec
+- `R13` [**Faceted search on `@asConnection`**](faceted-search.md) — Ready
 - `R10` [**Drop the assembled-schema rebuild in favour of per-variant graphql-java forms**](drop-assembled-schema-rebuild.md) — Backlog, cleanup
 - `R208` [**Retire the @asConnection(connectionName:) deprecated argument**](retire-connection-name-override.md) — Backlog, cleanup
 
