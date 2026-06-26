@@ -1,24 +1,53 @@
 ---
 id: R99
 title: "LSP classpath scan misses sibling modules when dev goal runs from a sub-module"
-status: Backlog
+status: Spec
 bucket: feature
 theme: lsp
 depends-on: []
+last-updated: 2026-06-26
 ---
 
 # LSP classpath scan misses sibling modules when dev goal runs from a sub-module
 
 When a consumer runs `mvn graphitron:dev` from inside one sub-module of a multi-module project (e.g. `cd opptak-subgraph && mvn graphitron:dev`), Maven loads only that module's pom and the reactor contains a single project. `AbstractRewriteMojo` reads `MavenSession.getAllProjects()` to assemble classpath roots for the LSP catalog scan (the Phase 5e widening that was meant to cover the multi-module case), so the scan only sees the current module's `target/classes`. Sibling modules that hold service / condition / record classes referenced by the schema are silently absent: `data.externalReferences()` is empty, and the LSP returns no completions for `@service(service: {className: "..."})` / `@condition` / `@record`, no hover, and no unknown-class diagnostics on those references. Running from the parent with `mvn -pl <module> graphitron:dev` works because there `getAllProjects()` returns the full reactor regardless of `-pl` filtering, but running from inside a module is a normal workflow (faster startup, scoped logs) and the silent failure is the worst-case shape: the user sees an empty popup and no error to grep for.
 
-The fix is to detect the "single-project reactor" case and walk up to the parent pom, parse its `<modules>`, and add each `<module>/target/classes` to the classpath roots. No Maven re-resolution: the mojo can read the parent's pom.xml directly and resolve module directories relative to it. The walk should stop at the first ancestor pom that lists the current project as a `<module>` (covers the common standard layout) and not climb arbitrarily; failing to find one leaves behaviour unchanged from today. An escape hatch (`<classpathRoots>` or `-Dgraphitron.lsp.classpathRoots=`) is worth considering for non-standard layouts but is secondary; the primary goal is that the default workflow Just Works from a sub-module.
+The fix is to detect the "single-project reactor" case and walk up to the parent pom, parse its `<modules>`, and add each sibling module's directories to the roots the dev goal already assembles. No Maven re-resolution: the mojo reads the parent's `pom.xml` directly and resolves module directories relative to it. The walk stops at the first ancestor pom that lists the current project as a `<module>` (covers the common standard layout) and does not climb arbitrarily; failing to find one leaves behaviour unchanged from today.
 
-Scope:
+## Design decision: walk-up, not JAR scanning
 
-- `graphitron-rewrite/graphitron-maven/src/main/java/.../AbstractRewriteMojo.java` (line ~113): widen the classpath-roots assembly with the parent-pom walk-up. Keep the existing `getAllProjects()` path as the primary source; the walk-up is a fallback that runs when that path returns a single project.
-- Test coverage in the maven-plugin module: a fixture multi-module reactor that exercises the sub-module invocation and asserts the sibling's classes land in the catalog. The fixture-based pipeline tier (see `rewrite-design-principles.adoc`) is the right level — unit tests of the walk-up logic alone won't catch the wiring.
-- A diagnostic log line at LSP startup: "classpath scan: N reactor roots, M external references". Would have made this issue self-diagnose; cheap to add.
-- Docs: a section in the dev-goal documentation under `graphitron-rewrite/docs/` (or wherever the dev-goal usage is documented; check at Spec time) covering the multi-module workflow and the new fallback. Reference from the public site if the dev goal has a page there.
-- A short note in `CLAUDE.md` next to the existing catalog-jar footgun, since this is the same shape (a `-pl` / sub-module gotcha that produces silent empty results); keep it brief and link to this item or the docs.
+Two approaches were weighed at Spec time (consulted `principles-architect`):
 
-Non-goals: rewriting how the catalog is built, supporting non-Maven build systems, or surfacing classpath roots in the LSP wire protocol.
+- **Option A (chosen): parent-pom walk-up.** When the reactor is a single project, resolve the sibling modules from the parent pom and add each one's `target/classes` (for the consumer-class scan and the codegen loader) and source roots (for goto-definition) to what the dev goal already collects.
+- **Option B (rejected): scan the compile classpath including JARs.** Teach `ClasspathScanner` to read `.class` entries from dependency JARs too, symmetric with how `JooqCatalog` resolves jOOQ classes by reflection through the codegen `URLClassLoader`.
+
+Option B was rejected for two principle-level reasons:
+
+1. **It breaks the R351/R369 scan/walk parity invariant.** `AbstractRewriteMojo` deliberately resolves `resolveClasspathRoots()` (scanned for completion) and `resolveCompileSourceRoots()` (walked for goto-definition) over the *same* reactor-project set through the *same* `collectExistingDirs` traversal, so "a class scanned for completion is a class whose source root is walked." `unwalkedScannedModules()` exists only to *name the residue* where parity can't hold, and its javadoc calls out the one case it can't close: "a table class that arrives only as a published dependency JAR with no `.java` to walk." Option B promotes that named, warned-about residue into the common path: every JAR-sourced consumer class would be scanned for completion with no source root to jump to, and the warning designed to fire rarely becomes noise on every run.
+2. **It crosses the scanner's parse-only boundary.** `ClasspathScanner` is parse-only by design (reads `.class` bytes via `java.lang.classfile`, resolves no types, tolerates malformed classes, and reads raw `MethodParameters` so the `-parameters`-absent diagnostic can detect `name == null`). The jOOQ path is the opposite model (reflection through a classloader) because it needs typed `Table<?>` / `ForeignKey<?,?>` instances; that's why it lives behind the `JooqCatalog` boundary. "Symmetric with jOOQ" is symmetry with the *reflection* boundary, not the parse boundary the two LSP indices share.
+
+Option A stays entirely inside the directory-scan model and, by widening both sides over the same sibling set, preserves parity. The published-dependency-JAR consumer scenario Option B would also cover is real but is a *separate* feature with its own goto-definition story (source JARs, or an accepted no-jump); folding it in here expands scope past the confirmed trigger (sibling reactor modules) and weakens the invariant. It is an explicit non-goal below.
+
+## Implementation
+
+The classpath assembly lives in `AbstractRewriteMojo.resolveClasspathRoots()` (~line 221), the source assembly in `resolveCompileSourceRoots()` (~line 254), both fed by `reactorProjects()` (~line 208); the codegen loader at `buildCodegenLoader()` (~line 491) folds in `resolveClasspathRoots()`. (Note: this file lives under `graphitron-maven-plugin/`, not the `graphitron-maven/` path the original Backlog body named.)
+
+- **Widen at the shared seam, not at one leaf.** Three consumers read the reactor roots today: the consumer-class scan, the source walk, and the codegen reflection loader (which resolves `@service` classes for validation diagnostics, not just LSP). Wiring the walk-up into `resolveClasspathRoots()` alone would fix completion but leave goto-definition (R369) and the codegen loader still blind to siblings, reintroducing the same silent-empty failure in a new spot. Introduce one shared helper that produces the sibling-module basedirs for the single-reactor case, and have both `resolveClasspathRoots()` and `resolveCompileSourceRoots()` consume it (the codegen loader widens for free through `resolveClasspathRoots()`).
+- **Trigger.** The fallback runs only when `session.getAllProjects()` returns a single project. A genuine standalone single-module project (no ancestor pom lists it as a `<module>`) finds no match and behaves exactly as today.
+- **Walk-up.** From the current project's basedir, find the nearest ancestor `pom.xml` whose `<modules>` lists the current project; parse `<modules>` in *document order* and resolve each named module relative to that ancestor. Do not enumerate sibling directories off disk (`Files.list` over the parent is unordered and would break the catalog's determinism guarantee); the declared `<modules>` order is deterministic and is the only ordering input.
+- **Per-sibling directories.** Contribute each sibling's `target/classes` to the classpath side and its `src/main/java` plus disk-discovered `target/generated-sources/*` (the existing `generatedSourceRoots` convention) to the source side. Everything runs through `collectExistingDirs` for the existence filter and dedup, so a sibling already present (e.g. a non-trivial reactor) collapses to a no-op. Resolving sibling dirs by convention (rather than constructing full `MavenProject` instances for modules the session never loaded) is acceptable for this fallback and matches the "standard layout" caveat; a custom `<build><outputDirectory>` in a sibling is out of scope.
+- **Diagnostic (`DevMojo.java`).** The startup line (`scanning N reactor classpath root(s) ... M external reference(s) indexed`, ~line 153) already shipped from this item. Extend it so the *no-ancestor-match* path self-explains: when the session is a single project and the walk-up found no parent listing it, log why the catalog may be empty rather than leaving the silent zero this item set out to eliminate.
+
+## Tests
+
+- **Pipeline-tier fixture (primary).** A multi-module reactor fixture (parent aggregator + a graphql-spec module + a sibling service module holding a `@condition`/`@service` class), exercising the sub-module invocation (a session whose `getAllProjects()` is the spec module alone). Assert *both* that the sibling's service/condition classes land in `externalReferences()`, and that the sibling's source root is walked (the source index carries its positions). The second assertion is load-bearing: without it the test passes while R369 parity silently regresses. The fixture tier is the right level (see `rewrite-design-principles.adoc`); unit tests of the walk-up alone won't catch the wiring.
+- **Unit test of the walk-up helper.** Over a hand-built directory tree: a parent pom with `<modules>` resolves sibling basedirs in document order; ancestor detection stops at the first pom listing the current project; the no-ancestor case returns empty (behaviour-unchanged guarantee).
+
+## User documentation (first-client check)
+
+- A short subsection in the dev-goal documentation under `graphitron-rewrite/docs/` (confirm the exact file at implementation time) covering the multi-module workflow: running `graphitron:dev` from inside a sub-module now picks up sibling modules' services/conditions/records automatically, with the one caveat that a sibling must have been compiled at least once (its `target/classes` must exist on disk; the dev goal does not build siblings for you). Reference from the public site if the dev goal has a page there.
+- A brief note in `CLAUDE.md` next to the existing catalog-jar footgun: same shape (a sub-module gotcha that produces silent empty results), now handled for standard layouts; keep it short and link to this item or the docs.
+
+## Non-goals
+
+Scanning dependency JARs / supporting consumer classes that arrive only as a published artifact (Option B; a separate feature with its own goto-definition story), supporting non-standard sibling `<build>` output/source directory configuration, rewriting how the catalog is built, supporting non-Maven build systems, or surfacing classpath roots in the LSP wire protocol.
