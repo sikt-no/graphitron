@@ -1,7 +1,7 @@
 ---
 id: R380
 title: "Implement @reference join-subquery filter conditions on input fields and arguments"
-status: Spec
+status: Ready
 bucket: feature
 priority: 5
 theme: structural-refactor
@@ -107,7 +107,7 @@ The machinery to reuse:
 * `BuildContext.parsePath` (`BuildContext.java:1178`) already turns `@reference(path:[...])` into
   `List<JoinStep>` (`FkJoin` / `ConditionJoin`), with single-FK auto-discovery, multi-hop, and
   terminal-table resolution. The classifier calls it exactly as the output-side reference fields do.
-* `InlineTableFieldEmitter.buildInnerSelect` (`:125`) is the shape to mirror: FROM terminal alias,
+* `InlineTableFieldEmitter.buildInnerSelect` (`:130`) is the shape to mirror: FROM terminal alias,
   JOIN chain walking back toward step 0, WHERE step-0 parent-correlation `.and(...)` the predicate.
 * `JoinPathEmitter.generateAliases` / `emitCorrelationWhere` (FkJoin) / `emitTwoArgMethodCall`
   (ConditionJoin) are the per-hop emitters.
@@ -248,7 +248,7 @@ validator path the surrounding deferred FK-target cases already use (`:1100-1106
   (`join-with-references.adoc:195-199`), so a reference *filter* path that traverses a `ConditionJoin`
   is rejected with a typed diagnostic pointing at that limitation. `FkTargetConditionEmitter` takes the
   same posture today (`:131-141`). Folding `ConditionJoin` in later is additive (the inner-select join
-  chain in `InlineTableFieldEmitter` `:148` already shows the `.on(method(...))` shape).
+  chain in `InlineTableFieldEmitter` `:153` already shows the `.on(method(...))` shape).
 * **`@splitQuery` interaction.** A split reference field relocates the join into a separate query
   (`SplitRowsMethodEmitter`, `JoinStep.LiftedHop`). Investigate during implementation whether a remote
   *filter* predicate on a split field is reachable, and if so whether the generated condition method is
