@@ -5,22 +5,51 @@ import java.util.List;
 /**
  * An implementing or member type of an interface or union.
  *
- * <p>Two variants:
+ * <p>Variants:
  * <ul>
- *   <li>{@link TableBound} — the participant has a resolved jOOQ table and an optional
- *       discriminator value. Generator code may emit SQL for this participant.</li>
+ *   <li>{@link TableBound} — the participant's data lives wholly on one table (the shared
+ *       interface/base table for single-table discriminated inheritance, or its own independent
+ *       PK-bearing table for multi-table polymorphism). Carries an optional discriminator value
+ *       and an optional cross-table-field list.</li>
+ *   <li>{@link JoinedTableBound} — a joined-table (class-table) inheritance participant: a
+ *       discriminated base shared with its siblings plus the participant's own detail table joined
+ *       to the base PK=FK. Carries the resolved base&rarr;detail hop and the field-residence
+ *       partition (which of the participant's fields resolve on the base vs. its detail table). Only
+ *       ever appears in a {@link GraphitronType.TableInterfaceType} participant list (R389).</li>
  *   <li>{@link Unbound} — the participant is not table-backed (e.g. {@code @error} types,
  *       structural interfaces, value types). Generator code must skip SQL generation for
  *       unbound participants.</li>
  * </ul>
+ *
+ * <p>{@link TableBound} and {@link JoinedTableBound} share the {@link TableBacked} capability so
+ * sites that only need the participant's type name, table, and discriminator value (TypeResolver
+ * routing, discriminator-value collection) read them uniformly without distinguishing single-table
+ * from joined-table participants. The emitter switches on the concrete variant where the join shape
+ * differs.
  */
-public sealed interface ParticipantRef permits ParticipantRef.TableBound, ParticipantRef.Unbound {
+public sealed interface ParticipantRef permits ParticipantRef.TableBacked, ParticipantRef.Unbound {
 
     /** The simple GraphQL type name (e.g. {@code "Film"}). */
     String typeName();
 
     /**
-     * A table-backed participant.
+     * Capability shared by every table-backed participant ({@link TableBound} and
+     * {@link JoinedTableBound}). Exposes the participant's own table and its discriminator value so
+     * routing / discriminator-collection sites read them without a per-variant switch.
+     *
+     * <p>For {@link TableBound} the table is the single table the participant's data lives on; for
+     * {@link JoinedTableBound} it is the participant's detail table. {@code discriminatorValue} is
+     * the {@code @discriminator(value:)} on the participant type, or {@code null} when absent
+     * (only single-table {@link TableBound} multi-table participants leave it null; a
+     * {@link JoinedTableBound} always carries one).
+     */
+    sealed interface TableBacked extends ParticipantRef permits TableBound, JoinedTableBound {
+        TableRef table();
+        String discriminatorValue();
+    }
+
+    /**
+     * A single-table participant.
      *
      * <p>{@code table} is always non-null. {@code discriminatorValue} is the value from
      * {@code @discriminator(value:)} on this type, or {@code null} when the directive is absent.
@@ -37,7 +66,7 @@ public sealed interface ParticipantRef permits ParticipantRef.TableBound, Partic
      */
     record TableBound(String typeName, TableRef table, String discriminatorValue,
                       List<CrossTableField> crossTableFields)
-            implements ParticipantRef {
+            implements TableBacked {
 
         public TableBound {
             crossTableFields = List.copyOf(crossTableFields);
@@ -72,6 +101,49 @@ public sealed interface ParticipantRef permits ParticipantRef.TableBound, Partic
             /** Java variable name used in the generated interface fetcher to hold the aliased target table. */
             public String aliasVarName() { return aliasName + "_alias"; }
         }
+    }
+
+    /**
+     * A joined-table (class-table) inheritance participant (R389).
+     *
+     * <p>The participant shares a discriminated base table with its sibling participants (one PK
+     * space, one discriminator column) and carries its own detail table joined to the base by a
+     * PK=FK foreign key. Its fields split across the two tables: the interface's shared fields
+     * resolve on the base; the participant's own distinguishing fields resolve on the detail table.
+     *
+     * <p>{@code detailTable} is the participant's own table (the {@code table()} capability returns
+     * it). {@code discriminatorValue} is the participant's {@code @discriminator(value:)}, always
+     * non-null (a {@code TableInterfaceType} participant without one is rejected upstream).
+     *
+     * <p>{@code baseToDetail} is the resolved single-hop {@link JoinStep.FkJoin} from the base table
+     * to the detail table: {@code originTable} is the base, {@code targetTable} the detail, and each
+     * slot pairs the base PK column ({@code sourceSide()}) with the detail PK/FK column
+     * ({@code targetSide()}). The emitter joins {@code base LEFT JOIN detail ON base.pk = detail.pk}
+     * gated by the discriminator value, so non-matching rows carry NULL through the join.
+     *
+     * <p>{@code detailResidentFields} names the participant's GraphQL fields whose column resolves
+     * on the detail table rather than the base (the field-residence partition lifted to the model
+     * per "field residence is a type fact, not a recomputed predicate"). The interface-level
+     * {@code $fields} projects the shared base-resident fields; the participant's own
+     * {@code $fields} is restricted to exactly these field names, projected against the detail
+     * alias.
+     */
+    record JoinedTableBound(String typeName, TableRef detailTable, String discriminatorValue,
+                            JoinStep.FkJoin baseToDetail, List<String> detailResidentFields)
+            implements TableBacked {
+
+        public JoinedTableBound {
+            detailResidentFields = List.copyOf(detailResidentFields);
+        }
+
+        /** The participant's detail table. Satisfies {@link TableBacked#table()}. */
+        @Override public TableRef table() { return detailTable; }
+
+        /** Java variable name used in the generated interface fetcher to hold the aliased detail table. */
+        public String detailAliasVarName() { return typeName + "_detail_alias"; }
+
+        /** Stable alias string for the detail table within the interface query. */
+        public String detailAliasName() { return typeName + "_detail"; }
     }
 
     /**
