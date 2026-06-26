@@ -1,7 +1,7 @@
 ---
 id: R389
 title: "First-class discriminated joined-table inheritance (participants on their own tables)"
-status: Spec
+status: Ready
 bucket: feature
 priority: 6
 theme: interface-union
