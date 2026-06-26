@@ -10,7 +10,9 @@ import graphql.schema.GraphQLObjectType;
 import graphql.schema.GraphQLOutputType;
 import graphql.schema.GraphQLSchema;
 import graphql.schema.GraphQLSchemaElement;
+import graphql.schema.GraphQLType;
 import graphql.schema.GraphQLTypeReference;
+import graphql.schema.GraphQLTypeUtil;
 import graphql.schema.GraphQLTypeVisitorStub;
 import graphql.schema.SchemaTransformer;
 import graphql.util.TraversalControl;
@@ -201,10 +203,31 @@ final class ConnectionPromoter {
 
         // Step 1: register synthesised types on the schema so later carrier rewrites can reference
         // them by typeRef without graphql-java's build-time validation failing.
+        //
+        // The carrier element types are pinned here as additional types too. After step 2 rewrites a
+        // bare-list carrier to name its synthesised Connection, the element type is referenced only
+        // through the Connection's `nodes` / Edge's `node` typeRefs. SchemaTransformer rebuilds its
+        // type map from the concretely-traversed graph (typeRefs are leaves, not followed), so an
+        // element type reachable in the original schema only through that one carrier, and its whole
+        // transitive subgraph, would otherwise be pruned: either dropped silently (its `<Name>Type`
+        // schema class is never emitted yet GraphitronSchema names it, so generated code fails to
+        // compile) or, when a surviving typeRef still points at it, an NPE inside the transform's
+        // type-reference resolver. Pinning the element type as an additional root keeps it (and its
+        // children) concretely reachable so neither happens. Concretely reachable subgraphs hang off
+        // these roots, so pinning the direct carrier elements suffices.
+        var pinned = new LinkedHashMap<String, GraphQLType>();
+        for (var schemaType : synthesisedTypes) {
+            pinned.putIfAbsent(((GraphQLNamedType) schemaType).getName(), schemaType);
+        }
+        for (var rewrite : rewrites) {
+            var elementType = carrierElementType(original, rewrite);
+            if (elementType != null) pinned.putIfAbsent(elementType.getName(), elementType);
+        }
+
         var withSynthesised = original;
-        if (!synthesisedTypes.isEmpty()) {
+        if (!pinned.isEmpty()) {
             var extrasBuilder = GraphQLSchema.newSchema(original);
-            for (var schemaType : synthesisedTypes) {
+            for (var schemaType : pinned.values()) {
                 extrasBuilder.additionalType(schemaType);
             }
             withSynthesised = extrasBuilder.build();
@@ -230,6 +253,22 @@ final class ConnectionPromoter {
             }
         };
         return SchemaTransformer.transformSchema(withSynthesised, visitor);
+    }
+
+    /**
+     * Resolves the concrete element type a directive-driven carrier returns in the {@code original}
+     * (pre-rewrite) schema: the named base type of {@code <parentTypeName>.<fieldName>}'s bare list.
+     * Returns {@code null} when the carrier's parent type or field cannot be found, or the base type
+     * is not a named type still present in the original schema — the rebuild then simply pins nothing
+     * extra for that carrier rather than failing.
+     */
+    private static GraphQLNamedType carrierElementType(GraphQLSchema original, CarrierRewrite rewrite) {
+        if (!(original.getType(rewrite.parentTypeName()) instanceof GraphQLObjectType parent)) return null;
+        var field = parent.getFieldDefinition(rewrite.fieldName());
+        if (field == null) return null;
+        var base = GraphQLTypeUtil.unwrapAll(field.getType());
+        if (!(base instanceof GraphQLNamedType named)) return null;
+        return original.getType(named.getName()) instanceof GraphQLNamedType resolved ? resolved : null;
     }
 
     /**
