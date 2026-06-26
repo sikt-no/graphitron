@@ -61,9 +61,17 @@ type QueryFilmerConnection {
 }
 
 type QueryFilmerConnectionFacets {
-    rating:   [MpaaRatingFacetValue!]!
-    category: [StringFacetValue!]!
+    rating:   [MpaaRatingFacetValue!]
+    category: [StringFacetValue!]
 }
+# Each per-facet field is nullable; the list elements stay non-null (a null
+# entry in a facet list is meaningless). A facet is a best-effort aggregate,
+# not a structural guarantee: a nullable field firewalls GraphQL non-null
+# propagation at the individual facet, so one facet failing or timing out
+# nulls only that field, never its siblings and never the connection. This
+# also keeps the wire contract stable if facets are later split into one
+# query per field that can succeed or fail individually. See "Facet failure
+# semantics" below.
 
 # Per-scalar named types. value mirrors the filter-input field's element
 # type exactly: same scalar AND same nullability, so a client filters by
@@ -94,6 +102,33 @@ its siblings' counts. Postgres plans each arm independently (bitmap
 index scans on selective filters) and executes arms concurrently via
 `Parallel Append`. See *SQL emission strategy* below. Results merge
 into a single `ConnectionResult` carrier.
+
+### Facet failure semantics
+
+Facets are a best-effort aggregate layered onto the connection, never a
+structural guarantee, and the output nullability is chosen to keep them
+that way:
+
+- **`facets` (the whole object) is nullable**, and so is **every per-facet
+  field under it** (`[<Scalar>FacetValue!]`). The list elements and the
+  inner `value` / `count` stay non-null, but each now sits under a nullable
+  ancestor one hop up, so GraphQL non-null propagation can never bubble a
+  facet failure past its own facet field.
+- **A facet query failure or timeout degrades to null, it never escalates
+  to a connection-level or request-level error.** The page query
+  (`edges` / `nodes` / `pageInfo`) resolves in a separate DataFetcher and is
+  unaffected; a client that sets an aggressive statement timeout on facet
+  aggregation gets `facets: null` (or a null individual facet field) plus an
+  entry in the GraphQL `errors` array, while the page of results still
+  returns. The resolver must surface facet failures this way rather than
+  letting the exception abort the whole response.
+- **v1 blast radius is all-or-nothing per request, by design.** Because v1
+  issues one `UNION ALL` for every selected facet, a single slow arm fails
+  the whole statement and the resolver returns `facets: null` (not a partial
+  map). The per-facet field nullability does not change v1 runtime behaviour;
+  it pins the *contract* so that splitting facets into one query per field
+  later, so each can succeed or fail individually, is a resolver change with
+  no schema or wire-compat impact.
 
 ## Current State
 
@@ -603,8 +638,8 @@ Add:
 Marks a filter-input field as a facet on the enclosing `@asConnection`
 field's generated Connection type. The Connection type gains a
 `facets: XConnectionFacets` field; each `@asFacet`-marked input field
-becomes an entry there, returning `[XFacetValue!]!` with per-value
-counts.
+becomes an entry there, returning `[XFacetValue!]` (nullable list, non-null
+elements) with per-value counts.
 
 Only valid on fields of an input type used as the filter input of an
 `@asConnection`-bearing field. The input field must be bound to a
@@ -668,9 +703,11 @@ For each `@asConnection` field, the facet walk does, per `@asFacet` input field:
    and the element nullability so a non-null and a nullable facet over the
    same scalar never collide on one type; it is shared with the classifier
    (Phase 3).
-3. Register one `<ConnName>Facets` `FacetsType` with one non-null list field
-   (`[<Scalar>FacetValue!]!`) per `@asFacet` input, field name matching the
-   input field name.
+3. Register one `<ConnName>Facets` `FacetsType` with one nullable list field
+   (`[<Scalar>FacetValue!]`, non-null elements) per `@asFacet` input, field
+   name matching the input field name. The field is nullable so a single
+   facet can fail independently (see "Facet failure semantics"); the list
+   element stays non-null because a null entry in a facet list is meaningless.
 
 If the carrier has no filter input, or the filter input has no `@asFacet`
 fields, no facet entries are registered and the Connection is synthesised
@@ -1138,6 +1175,15 @@ reviewers can confirm the v1 design does not foreclose it.
   `BooleanFacetValue.value: String`, read as ticket-writing shorthand
   rather than considered design); the typed-vs-`String` deviation still
   wants ticket-author confirmation (see the Overview deviation note).
+- **Facet field nullability — every field under `facets` is nullable.**
+  The `facets` object and each per-facet field (`[<Scalar>FacetValue!]`) are
+  nullable; only the list elements and inner `value` / `count` stay non-null.
+  Rationale: a facet is a best-effort aggregate, so a failure or timeout must
+  degrade to a null facet, never bubble through GraphQL non-null propagation
+  to abort the connection or the request. Making each per-facet field
+  nullable (not just the `facets` object) keeps the wire contract stable for
+  a future split into one query per facet field that can succeed or fail
+  individually. See "Facet failure semantics".
 - **Hierarchical shape (Phase 6).** Flat response +
   `includeChildrenOf: [<parent value type>]` argument +
   `parentValue` pointer typed to match. No nested query structures
