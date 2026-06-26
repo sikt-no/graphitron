@@ -5,7 +5,7 @@ status: Spec
 bucket: architecture
 priority: 5
 theme: structural-refactor
-depends-on: [reference-terminal-hop-target-validation]
+depends-on: []
 created: 2026-06-25
 last-updated: 2026-06-25
 ---
