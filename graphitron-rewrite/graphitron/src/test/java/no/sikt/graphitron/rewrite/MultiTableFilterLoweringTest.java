@@ -1,6 +1,7 @@
 package no.sikt.graphitron.rewrite;
 
 import no.sikt.graphitron.rewrite.model.BodyParam;
+import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.GeneratedConditionFilter;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.ParticipantFilters;
@@ -90,6 +91,76 @@ class MultiTableFilterLoweringTest {
                     assertThat(((BodyParam.In) bp).column().sqlName()).isEqualTo("first_name");
                 });
         }
+    }
+
+    @Test
+    void nestedInputFieldFilter_lowersPerParticipantWithNestedExtraction() {
+        // R383: the same first_name filter delivered through an input object (`filter`) rather than
+        // as a top-level argument. The implicit column-equality predicate carries a
+        // NestedInputField(filter -> firstNames) call-site extraction whose leaf is Direct, which the
+        // polymorphic branch emitter handles registry-free; only the call site differs from the
+        // top-level form, so the per-participant lowering is otherwise identical.
+        var schema = TestSchemaHelper.buildSchema(CUSTOMER_STAFF + """
+            input OccupantFilter { firstNames: [String!] @field(name: "first_name") }
+            union Occupant = Customer | Staff
+            type Query {
+                occupants(filter: OccupantFilter): [Occupant!]!
+            }
+            """);
+        var field = schema.field("Query", "occupants");
+        assertThat(field).isInstanceOf(QueryField.QueryUnionField.class);
+        var union = (QueryField.QueryUnionField) field;
+        var participantFilters = union.participantFilters();
+        assertThat(participantFilters)
+            .as("one filter carrier per table-bound participant")
+            .hasSize(2);
+        for (var pf : participantFilters) {
+            var gcf = pf.filters().stream()
+                .filter(f -> f instanceof GeneratedConditionFilter)
+                .map(f -> (GeneratedConditionFilter) f)
+                .findFirst()
+                .orElseThrow(() -> new AssertionError(
+                    "participant '" + pf.participant().typeName() + "' carries no GeneratedConditionFilter: "
+                        + pf.filters()));
+            assertThat(gcf.methodName()).isEqualTo("occupantsCondition");
+            assertThat(gcf.bodyParams())
+                .anySatisfy(bp -> {
+                    assertThat(bp).isInstanceOf(BodyParam.In.class);
+                    assertThat(((BodyParam.In) bp).column().sqlName()).isEqualTo("first_name");
+                });
+            var callParam = gcf.callParams().stream()
+                .filter(p -> p.name().equals("firstNames"))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError(
+                    "no 'firstNames' call param on " + pf.participant().typeName() + ": " + gcf.callParams()));
+            assertThat(callParam.extraction())
+                .as("a nested-input filter arrives Map-traversed, not as a top-level argument")
+                .isInstanceOf(CallSiteExtraction.NestedInputField.class);
+            var nif = (CallSiteExtraction.NestedInputField) callParam.extraction();
+            assertThat(nif.outerArgName()).isEqualTo("filter");
+            assertThat(nif.path()).containsExactly("firstNames");
+            assertThat(nif.leaf())
+                .as("a plain @field nested column carries a Direct leaf, so the branch path needs no registry")
+                .isInstanceOf(CallSiteExtraction.Direct.class);
+        }
+    }
+
+    @Test
+    void nestedInputFieldCondition_rejectedStructuralNotDeferred() {
+        // A developer @condition on a nested input field is a ConditionFilter (not a
+        // GeneratedConditionFilter), so it stays rejected even though plain nested @field filters
+        // are now admitted: the branch path carries no @condition adapter/registry plumbing.
+        var schema = TestSchemaHelper.buildSchema(CUSTOMER_STAFF + """
+            input OccupantFilter {
+                firstName: String @condition(condition: {
+                    className: "no.sikt.graphitron.rewrite.TestConditionStub", method: "anyMethod"})
+            }
+            union Occupant = Customer | Staff
+            type Query {
+                occupants(filter: OccupantFilter): [Occupant!]!
+            }
+            """);
+        assertConditionRejectedStructural(schema.field("Query", "occupants"));
     }
 
     @Test
