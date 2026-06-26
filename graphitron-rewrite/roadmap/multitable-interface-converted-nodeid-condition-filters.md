@@ -149,3 +149,30 @@ code-string assertions on generated bodies** at any tier:
 The `NodeIdDecodeRecord` / `InputBean` / `JooqRecord` arms remain rejected after this item; if a future
 schema produces one of them as a multitable filter arg, the exhaustive switch forces a fresh decision
 at the gate rather than silently rejecting.
+
+## Reviewer note (Spec → Ready, 2026-06-26): revise phase a before sign-off
+
+Verification of every named symbol, path, line citation, test, fixture, and the R195/R267 cross-refs
+passed; the nine-permit list, the no-default `isBranchSafeExtraction` switch, the `branchFilterWhere`
+`emitTerm(..., null, null, Map.of())` seam, and the per-participant-registry decode-helper-home decision
+all hold against live code. One finding blocks sign-off:
+
+**The `JooqConvert` convergence claim conflates two different jOOQ operations.** The Implementation
+phase-a text (and the lines 28-35 motivation) frame the three `DataType.convert` sites as converging on
+"the established `Record.fromArray`/converter-path idiom." But `Record.fromArray(Object[], Field<?>...)`
+is a record-*materialization* API: it maps N positional values onto N columns of a `RecordN`. That is
+exactly what the two sibling sites do (R195's `decode<Type>Record` and R267's
+`NodeIdEncoder.decode<Type>` both build a typed record). The `JooqConvert` arm this phase changes is a
+different shape: `ArgCallEmitter` lines 284-288 produce a *bare coerced scalar* for a developer
+condition-method parameter (`col.getDataType().convert((String) env.getArgument(...))`), and for the list
+case a `List<value>` of the *same* column coerced element-by-element. `fromArray` expresses neither: a
+single value is not a record, and N ids for one column are not N columns of one record. So "reuse
+`fromArray`" does not actually apply to the arm being lifted, and the concrete non-deprecated coercion
+call is left for the implementer to invent. Note also that `DSL.val(raw, col.getDataType())` (design
+principles § "Column value binding") coerces lazily at bind time, so it is not a drop-in for an eagerly
+coerced bare Java value either.
+
+Suggested revision shape: pin the concrete non-deprecated scalar-and-list coercion API for the
+`JooqConvert` arm (verified against jOOQ 3.20), and either drop the "three sites converge" framing or
+qualify it to "shares the deprecation, not the shape" since the two sibling sites materialize records and
+this one coerces a value. Phase 0, phase b, and phase c are unaffected and read as implementer-ready.
