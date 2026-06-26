@@ -6214,11 +6214,12 @@ class FieldBuilder {
         return ChildPolymorphicJoinPaths.ok(paths);
     }
 
-    /** Collects the non-null discriminator values from all {@link ParticipantRef.TableBound} participants. */
+    /** Collects the non-null discriminator values from all table-backed participants
+     * ({@link ParticipantRef.TableBound} and {@link ParticipantRef.JoinedTableBound}). */
     private static List<String> knownDiscriminatorValues(GraphitronType.TableInterfaceType tit) {
         return tit.participants().stream()
-            .filter(p -> p instanceof ParticipantRef.TableBound tb && tb.discriminatorValue() != null)
-            .map(p -> ((ParticipantRef.TableBound) p).discriminatorValue())
+            .filter(p -> p instanceof ParticipantRef.TableBacked tb && tb.discriminatorValue() != null)
+            .map(p -> ((ParticipantRef.TableBacked) p).discriminatorValue())
             .toList();
     }
 

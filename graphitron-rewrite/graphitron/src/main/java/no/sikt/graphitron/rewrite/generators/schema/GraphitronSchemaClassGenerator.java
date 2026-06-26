@@ -132,8 +132,8 @@ public final class GraphitronSchemaClassGenerator {
             .forEach(e -> {
                 var tit = (TableInterfaceType) e.getValue();
                 var tableBound = tit.participants().stream()
-                    .filter(p -> p instanceof ParticipantRef.TableBound tb && tb.discriminatorValue() != null)
-                    .map(p -> (ParticipantRef.TableBound) p)
+                    .filter(p -> p instanceof ParticipantRef.TableBacked tb && tb.discriminatorValue() != null)
+                    .map(p -> (ParticipantRef.TableBacked) p)
                     .toList();
                 if (tableBound.isEmpty()) return;
                 var cb = CodeBlock.builder();
