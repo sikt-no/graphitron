@@ -721,6 +721,14 @@ exactly as today. No error, no warning.
       the registered types include `<ConnName>Facets` (one list field per
       `@asFacet`) and each `<Scalar>FacetValue` (with `value` + `count`);
       and the synthesised Connection's `schemaType` has a `facets` field.
+- [ ] **Facet-field nullability (the firewall) is pinned, not just prose.**
+      On the synthesised `<ConnName>Facets` `schemaType`, assert each
+      per-facet field is a **nullable** list of non-null elements
+      (`[<Scalar>FacetValue!]`, i.e. `GraphQLList` whose wrapped type is the
+      `FacetValue` object, *not* wrapped in `GraphQLNonNull` at the field
+      level), and that the `facets` field on the Connection is itself
+      nullable. This is the assertion that pins "Facet failure semantics":
+      without it the firewall claim rests only on prose.
 - [ ] Existing connection-synthesis fixtures unchanged.
 - [ ] The new facet types classify cleanly. Because they are registered as
       first-class `GraphitronType` arms (not left as `UnclassifiedType`),
