@@ -1,7 +1,7 @@
 ---
 id: R388
 title: "Discriminated-interface @reference field generates wrong SQL/fetcher at runtime"
-status: Spec
+status: Ready
 bucket: bug
 priority: 2
 theme: interface-union
