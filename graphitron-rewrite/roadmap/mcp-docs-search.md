@@ -1,7 +1,7 @@
 ---
 id: R385
 title: "MCP docs.search: build-time .adoc chunking + pre-embedded bundled index, async-loaded semantic retrieval over the documentation (R118 slice 9)"
-status: Ready
+status: In Review
 bucket: feature
 theme: lsp
 depends-on: []
@@ -10,6 +10,22 @@ last-updated: 2026-06-26
 ---
 
 # MCP docs.search: build-time .adoc chunking + pre-embedded bundled index, async-loaded semantic retrieval over the documentation (R118 slice 9)
+
+## Rework landed (returning to In Review)
+
+Both gate-blocking defects below are fixed at `bba3251`, mirroring the seam shapes the reviewer
+prescribed; `mvn install -Plocal-db` is green (the SIGSEGV is gone, all six `DevMojoTest` cases pass):
+
+1. **Seam for the warms.** `DevMojo.bindServer` no longer constructs `DocsRag.embedderWarm()` /
+   `docsWarm()` directly; it goes through package-private warm factories defaulting to the `DocsRag`
+   factories, mirroring the `GraphitronMcpServer` structured-only / injected-warm constructor pair.
+   `DevMojoTest.mojoFor` defaults to structured-only (null) warms and the MCP-bind-failure case swaps
+   in ONNX-free fakes, so the fast surefire fork never loads the real `BgeEmbedder` model.
+2. **Warm cleanup on the bind-failure path.** A new `awaitAndCloseWarms()` joins each warm to its
+   terminal state and closes the warmed docs store; the MCP-bind-failure catch arm calls it before
+   rethrowing. Joining is what guarantees no warm daemon outlives the unwind into a still-live JVM
+   (the SIGSEGV's proximate cause). `DevMojoTest` now asserts the failed bind leaves no live warm and
+   freed the docs store, paralleling the existing LSP-socket-closed assertion.
 
 ## In Review feedback (rework requested, returned to Ready)
 
