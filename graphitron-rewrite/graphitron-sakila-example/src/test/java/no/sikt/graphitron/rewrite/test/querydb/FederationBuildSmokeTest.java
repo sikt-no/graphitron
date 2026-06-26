@@ -66,6 +66,29 @@ class FederationBuildSmokeTest {
     }
 
     /**
+     * R391: the default-case {@code Graphitron.newGraphQL()} convenience builds its engine off the
+     * single-arg {@code buildSchema(b -> {})}, which in a federation-linked module returns the
+     * already-{@code Federation.transform}-wrapped schema. This pins that {@code newGraphQL().build()}
+     * yields a correctly federation-wrapped engine end-to-end: {@code _service { sdl }} must resolve
+     * with no errors. The convenience emits the same method regardless of {@code federationLink}, so
+     * this is the case the unit-tier facade test cannot reach.
+     */
+    @Test
+    void newGraphQLBuildsFederationWrappedEngine() {
+        var graphql = Graphitron.newGraphQL().build();
+        var input = ExecutionInput.newExecutionInput()
+            .query("{ _service { sdl } }")
+            .build();
+        var result = graphql.execute(input);
+        assertThat(result.getErrors()).isEmpty();
+        @SuppressWarnings("unchecked")
+        var service = (Map<String, Object>) ((Map<String, Object>) result.getData()).get("_service");
+        assertThat(service.get("sdl"))
+            .as("newGraphQL() must build a federation-wrapped engine whose _service.sdl resolves")
+            .isInstanceOf(String.class);
+    }
+
+    /**
      * The {@code _Entity} union must list every type Graphitron classifies as a federation entity:
      * three {@code @node} types (Customer, Address, Film), the compound-key FilmActor, plus the two
      * {@code @key(resolvable: false)} reference-only stubs — table-bound Language and non-table-bound

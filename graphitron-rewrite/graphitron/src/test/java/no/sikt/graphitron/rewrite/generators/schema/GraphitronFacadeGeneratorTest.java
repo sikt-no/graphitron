@@ -32,10 +32,10 @@ class GraphitronFacadeGeneratorTest {
     }
 
     @Test
-    void generatedClass_exposesBuildSchemaAndOneNewExecutionInputMethod() {
+    void generatedClass_exposesBuildSchemaNewExecutionInputAndNewGraphQL() {
         var spec = GraphitronFacadeGenerator.generate(emptySchema(), "com.example").get(0);
         assertThat(spec.methodSpecs()).extracting(m -> m.name())
-            .containsExactly("buildSchema", "newExecutionInput");
+            .containsExactly("buildSchema", "newExecutionInput", "newGraphQL");
     }
 
     @Test
@@ -112,6 +112,25 @@ class GraphitronFacadeGeneratorTest {
             .contains("b.put(org.jooq.DSLContext.class, defaultDsl)")
             .contains("com.example.schema.GraphitronContext.GraphitronContextImpl.INSTANCE")
             .contains("new org.dataloader.DataLoaderRegistry()");
+    }
+
+    // ===== newGraphQL =====
+
+    @Test
+    void newGraphQL_isPublicStaticReturningGraphQLBuilder() {
+        var method = findFirstMethod("newGraphQL", false);
+        assertThat(method.modifiers()).contains(Modifier.PUBLIC, Modifier.STATIC);
+        assertThat(method.returnType().toString()).isEqualTo("graphql.GraphQL.Builder");
+        assertThat(method.parameters()).isEmpty();
+    }
+
+    @Test
+    void newGraphQL_isPresentExactlyOnceInFederationBuild() {
+        var spec = GraphitronFacadeGenerator.generate(emptySchema(), "com.example", true).get(0);
+        var newGraphQLCount = spec.methodSpecs().stream()
+            .filter(m -> m.name().equals("newGraphQL"))
+            .count();
+        assertThat(newGraphQLCount).isEqualTo(1);
     }
 
     // ===== federation overload =====

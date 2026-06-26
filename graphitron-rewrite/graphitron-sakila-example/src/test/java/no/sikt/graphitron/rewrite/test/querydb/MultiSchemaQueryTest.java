@@ -3,7 +3,6 @@ package no.sikt.graphitron.rewrite.test.querydb;
 import graphql.ExecutionInput;
 import graphql.GraphQL;
 import graphql.schema.DataFetchingEnvironment;
-import graphql.schema.GraphQLSchema;
 import no.sikt.graphitron.generated.multischema.Graphitron;
 import no.sikt.graphitron.generated.multischema.schema.GraphitronContext;
 import no.sikt.graphitron.rewrite.test.tier.ExecutionTier;
@@ -65,8 +64,7 @@ class MultiSchemaQueryTest {
             dsl = DSL.using(postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword());
         }
 
-        GraphQLSchema schema = Graphitron.buildSchema(b -> {});
-        graphql = GraphQL.newGraphQL(schema).build();
+        graphql = Graphitron.newGraphQL().build();
     }
 
     @SuppressWarnings("unchecked")

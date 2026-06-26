@@ -18,7 +18,7 @@ The `pom.xml` shows the shape you need (Quarkus BOM, the rewrite's `graphitron-m
 
 Three files cover the runtime under [`src/main/java/no/sikt/graphitron/sakila/example/app/`](src/main/java/no/sikt/graphitron/sakila/example/app/):
 
-- [`GraphqlEngine`](src/main/java/no/sikt/graphitron/sakila/example/app/GraphqlEngine.java) (`@ApplicationScoped`): builds the `GraphQLSchema` once at startup via `Graphitron.buildSchema(b -> {})` and exposes a single `GraphQL` engine. graphql-java engines are immutable and thread-safe; one instance handles every request.
+- [`GraphqlEngine`](src/main/java/no/sikt/graphitron/sakila/example/app/GraphqlEngine.java) (`@ApplicationScoped`): builds the engine once at startup via `Graphitron.newGraphQL().build()`, the default-case convenience that wraps `Graphitron.buildSchema(b -> {})`, and exposes a single `GraphQL` engine. graphql-java engines are immutable and thread-safe; one instance handles every request.
 - [`GraphqlResource`](src/main/java/no/sikt/graphitron/sakila/example/app/GraphqlResource.java) (`@Path("/graphql")`): a JAX-RS resource implementing the [GraphQL-over-HTTP spec](https://graphql.github.io/graphql-over-http/). POST accepts `application/json`, GET takes `?query=&operationName=`, both negotiate to `application/graphql-response+json`. A third method, `@GET @Produces(text/html)`, returns a 303 redirect to `/graphiql/`, so a browser visiting `http://localhost:8080/graphql` lands on the playground while curl/POST traffic routes to the engine. Each request gets a fresh `DataLoaderRegistry` (graphql-java requires one even when no DataLoader is used) and a per-request `AppContext` stashed on the `ExecutionInput`.
 - [`AppContext`](src/main/java/no/sikt/graphitron/sakila/example/app/AppContext.java) (`implements GraphitronContext`): per-request `DSLContext` derived from the Quarkus-managed `AgroalDataSource`, plus a context-values map fed into `getContextArgument` lookups. Wire JWT-claim extraction or any other request-scoped state through that map.
 
@@ -44,7 +44,7 @@ When the GraphiQL or React versions need bumping, [`tools/graphiql-build/`](tool
 
 ## Recommended test pattern (the tests)
 
-Tests live under [`src/test/java/no/sikt/graphitron/rewrite/test/querydb/`](src/test/java/no/sikt/graphitron/rewrite/test/querydb/) and stay **in-process**: each builds the schema via `Graphitron.buildSchema(...)`, instantiates a `GraphQL` engine, executes via graphql-java, and asserts against a live Postgres `DSLContext`. They do not go through the Quarkus HTTP stack. Keeping the pattern in-process means you can copy it without bringing Quarkus into your test classpath.
+Tests live under [`src/test/java/no/sikt/graphitron/rewrite/test/querydb/`](src/test/java/no/sikt/graphitron/rewrite/test/querydb/) and stay **in-process**: each builds the engine via `Graphitron.newGraphQL().build()` (or `Graphitron.buildSchema(...)` directly when extra wiring is needed), executes via graphql-java, and asserts against a live Postgres `DSLContext`. They do not go through the Quarkus HTTP stack. Keeping the pattern in-process means you can copy it without bringing Quarkus into your test classpath.
 
 Two shapes are worked out for you:
 

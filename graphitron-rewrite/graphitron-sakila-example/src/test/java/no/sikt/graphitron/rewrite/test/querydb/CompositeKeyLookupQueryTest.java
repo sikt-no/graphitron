@@ -3,7 +3,6 @@ package no.sikt.graphitron.rewrite.test.querydb;
 import graphql.ExecutionInput;
 import graphql.GraphQL;
 import graphql.schema.DataFetchingEnvironment;
-import graphql.schema.GraphQLSchema;
 import no.sikt.graphitron.generated.Graphitron;
 import no.sikt.graphitron.generated.schema.GraphitronContext;
 import no.sikt.graphitron.rewrite.test.tier.ExecutionTier;
@@ -64,8 +63,7 @@ class CompositeKeyLookupQueryTest {
                     if (sql != null) SQL_LOG.add(sql.toLowerCase(java.util.Locale.ROOT));
                 }
             }));
-        GraphQLSchema schema = Graphitron.buildSchema(b -> {});
-        graphql = GraphQL.newGraphQL(schema).build();
+        graphql = Graphitron.newGraphQL().build();
     }
 
     @AfterAll
