@@ -803,6 +803,38 @@ class TypeBuilder {
             // Resolve the column on the target table that the field maps to. @field(name:) is the
             // primary signal; fall back to the GraphQL field name when the directive is absent.
             String columnSqlName = argString(fieldDef, DIR_FIELD, ARG_NAME).orElse(fieldName);
+
+            // R388 defect-2 guard. A @reference field whose resolved column already exists on the
+            // interface/base table is a contradiction: the column is read directly off the
+            // discriminated base table, so a cross-table @reference is meaningless. The pathological
+            // case is the discriminator column itself, re-declared on a detail table by a composite
+            // FK — classifying it as cross-table emits a fetcher that reads a join-only alias never
+            // populated in a non-inline-fragment query, so the read silently finds nothing. Resolve
+            // the predicate once here (the catalog is in scope) and surface a build-time rejection
+            // through the diagnostic channel the validator drains; the validator has no catalog, so
+            // it reads the surfaced rejection rather than recomputing (avoiding the two-consumer
+            // drift the design principles warn against). Skipping the field also narrows the
+            // classifier so no ParticipantColumnReferenceField is emitted (belt-and-suspenders). A
+            // participant-only field like `navn` (column lives only on the detail table) is not
+            // matched and stays a valid cross-table field.
+            if (ctx.catalog.findColumn(interfaceTable.tableName(), columnSqlName).isPresent()) {
+                var baseColumns = Set.copyOf(ctx.catalog.columnSqlNamesOf(interfaceTable.tableName()));
+                var detailOnlyColumns = ctx.catalog.columnSqlNamesOf(fk.targetTable().tableName()).stream()
+                    .filter(c -> !baseColumns.contains(c))
+                    .toList();
+                ctx.addDiagnostic(ValidationError.forField(
+                    participantTypeName + "." + fieldName,
+                    Rejection.invalidSchema(
+                        "carries @reference but its resolved column '" + columnSqlName
+                        + "' already exists on the interface/base table '" + interfaceTable.tableName()
+                        + "'; the column is read directly from the base table, so the cross-table @reference is "
+                        + "meaningless and must be removed"
+                        + BuildContext.candidateHint(columnSqlName, detailOnlyColumns,
+                            ". A cross-table @reference must name a column that lives only on the detail table, e.g.: ")),
+                    BuildContext.locationOf(fieldDef)));
+                continue;
+            }
+
             var columnEntry = ctx.catalog.findColumn(fk.targetTable().tableName(), columnSqlName).orElse(null);
             if (columnEntry == null) continue;
             var column = new ColumnRef(columnEntry.sqlName(), columnEntry.javaName(), columnEntry.columnClass());
