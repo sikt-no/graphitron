@@ -169,9 +169,9 @@ type Customer @table(name: "customer") {
 
 Same shape as a multi-hop object reference; the only difference is the parent type's projection list at SQL time, which gets `staff.first_name` aliased to `storeManagerName`.
 
-== Input-field references
+== Filter references
 
-`@reference` also applies to `INPUT_FIELD_DEFINITION` (and `ARGUMENT_DEFINITION`), letting an input shape carry a value that resolves through a foreign-key path against the implicit return table.
+`@reference` also applies to filter inputs: both `INPUT_FIELD_DEFINITION` (a field inside a `filter:` input object) and `ARGUMENT_DEFINITION` (a direct scalar argument). In both cases the directive lets a filter value resolve through a foreign-key path to a column on a *joined* table, instead of a column on the field's own table.
 
 [source,graphql]
 ----
@@ -188,9 +188,55 @@ type Query {
 }
 ----
 
-The query's return type `Customer` has `@table(name: "customer")`, so the input type `Input` is implicitly bound to the `customer` table for the duration of this argument site. The `@reference(path: [{table: "address"}])` on the `district` input field resolves the customer→address FK and threads the input value as a predicate against `address.district`. The classifier emits a `ColumnReferenceField` for input fields the same way it emits one for object fields, just with the predicate-shape instead of projection-shape at runtime.
+The query's return type `Customer` has `@table(name: "customer")`, so the input type `Input` is implicitly bound to the `customer` table for the duration of this argument site. The `@reference(path: [{table: "address"}])` on the `district` input field resolves the customer→address FK and filters on `address.district` (a column that does not exist on `customer`).
 
-This is the input-side mirror of the inline-column shape: the input field carries a value that the generator resolves through the FK path, not by name on the parent table. The full set of input-field directives (`@field`, `@condition`, `@reference`) interoperate; see xref:condition-cascade.adoc[How-to: Stacking and overriding conditions] for the input-carrier rules and how the input's `@table` cascade interacts with the per-field directives.
+Because the terminal column lives on a different table than the row being filtered, the generated condition does not compare a local column. It emits a *correlated `EXISTS` subquery* that joins through the path and applies the predicate against the terminal table:
+
+[source,sql]
+----
+EXISTS (
+    SELECT 1
+    FROM address
+    WHERE address.address_id = customer.address_id   -- correlation back to the filtered row
+      AND address.district = ?                        -- predicate on the terminal column
+)
+----
+
+The same applies to a direct scalar argument:
+
+[source,graphql]
+----
+type Query {
+    customersByDistrict(
+        district: String @reference(path: [{table: "address"}])
+    ): [Customer!]!
+}
+----
+
+=== Multi-hop filters
+
+The path may traverse several foreign keys. The `EXISTS` subquery then joins the whole chain, correlating its first hop back to the filtered row and applying the predicate against the terminal table:
+
+[source,graphql]
+----
+type Query {
+    citiesByCountryName(
+        countryName: String @reference(path: [{table: "city"}, {table: "country"}]) @field(name: "country")
+    ): [Address!]!
+}
+----
+
+`@field(name:)` names the terminal column (here `country.country`) when it differs from the GraphQL field name; without it the field name is used.
+
+=== Null and empty-list filters contribute no predicate
+
+A reference filter behaves exactly like a local-column filter for absent values: a null scalar argument, or an empty list, contributes no predicate at all (the whole `EXISTS` term is guarded), so the query is unfiltered rather than matching zero rows. A list-valued reference filter emits `IN (...)` against the terminal column inside the `EXISTS`.
+
+=== Foreign-key hops only
+
+A reference filter requires every hop to resolve to a foreign key (the `{key:}` and `{table:}` forms, including single-FK auto-discovery). A `{condition:}` hop (see <<condition-form>> below) is *not* supported in a filter path and is rejected at build time; reference filters are emitted as a foreign-key correlated subquery, so a non-FK hop has nothing to correlate on.
+
+The full set of input-field directives (`@field`, `@condition`, `@reference`) interoperate; see xref:condition-cascade.adoc[How-to: Stacking and overriding conditions] for the input-carrier rules and how the input's `@table` cascade interacts with the per-field directives.
 
 [#condition-form]
 == The `condition:` form (classify-only today)

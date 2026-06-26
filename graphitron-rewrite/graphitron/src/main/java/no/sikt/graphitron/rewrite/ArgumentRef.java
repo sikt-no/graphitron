@@ -67,6 +67,15 @@ public sealed interface ArgumentRef {
          * {@code docs/argument-resolution.md#condition-on-field-and-argument-definitions}.
          * {@code isLookupKey} reflects the presence of {@code @lookupKey} at classify time
          * so projections (notably {@code projectForLookup}) never re-read the SDL directive.
+         *
+         * <p>{@code joinPath} (R380) is empty for the common local-column case (today's behavior).
+         * When the arg carries {@code @reference(path:)} reaching a column on a <em>joined</em>
+         * table, it holds the resolved FK join path from the field's own table to the terminal
+         * table that holds {@code column}; {@code projectFilters} then wraps the predicate in a
+         * {@link no.sikt.graphitron.rewrite.model.BodyParam.RemoteColumnPredicate} (correlated
+         * EXISTS). This is distinct from {@link ColumnReferenceArg}, whose {@code @nodeId} join
+         * path lifts to local FK columns (no join); here {@code column} is the terminal column and
+         * the join is genuinely emitted.
          */
         record ColumnArg(
             String name,
@@ -77,8 +86,14 @@ public sealed interface ArgumentRef {
             CallSiteExtraction extraction,
             Optional<ArgConditionRef> argCondition,
             boolean suppressedByFieldOverride,
-            boolean isLookupKey
-        ) implements ScalarArg {}
+            boolean isLookupKey,
+            List<JoinStep> joinPath
+        ) implements ScalarArg {
+
+            public ColumnArg {
+                joinPath = List.copyOf(joinPath);
+            }
+        }
 
         /**
          * Composite-PK NodeId scalar arg: one wire-format base64 id (or list of them) decodes

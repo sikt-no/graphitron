@@ -1091,6 +1091,27 @@ public class GraphitronSchemaValidator {
                 field.location()
             ));
         }
+        // R380: a plain @reference (Direct extraction) implicit-predicate field whose terminal
+        // column lives on a joined table emits a correlated EXISTS over the path
+        // (TypeConditionsGenerator.emitRemoteExists), which requires every hop to be a resolved
+        // FkJoin. Mirror that emitter precondition so a non-Fk / ConditionJoin hop fails at validate
+        // time with a directed message rather than as an emitter IllegalStateException. (Today the
+        // builder cannot resolve a terminal column through a non-FkJoin hop, so this is a defensive
+        // mirror against future path-resolution changes; the v1 deferral of ConditionJoin reference
+        // filters is the same posture FkTargetConditionEmitter takes.)
+        if (field.condition().isEmpty()
+                && field.extraction() instanceof no.sikt.graphitron.rewrite.model.CallSiteExtraction.Direct
+                && !field.joinPath().isEmpty()
+                && field.joinPath().stream().anyMatch(h -> !(h instanceof no.sikt.graphitron.rewrite.model.JoinStep.FkJoin))) {
+            errors.add(new ValidationError(
+                field.qualifiedName(),
+                Rejection.structural("Input field '" + field.qualifiedName()
+                    + "': @reference filter path traverses a condition-join (non-foreign-key) hop, "
+                    + "which is not yet supported; reference filters emit a foreign-key correlated "
+                    + "subquery and require every hop to resolve to a foreign key"),
+                field.location()
+            ));
+        }
     }
 
     /**

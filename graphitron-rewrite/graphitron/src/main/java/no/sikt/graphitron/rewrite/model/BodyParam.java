@@ -38,7 +38,7 @@ import java.util.List;
  * <p>The parallel call-site view of this parameter is {@link CallParam}. A {@link BodyParam}
  * and its corresponding {@link CallParam} share the same {@code name} and {@code extraction}.
  */
-public sealed interface BodyParam permits BodyParam.ColumnPredicate {
+public sealed interface BodyParam permits BodyParam.ColumnPredicate, BodyParam.RemoteColumnPredicate {
 
     /** Parameter name (matches the GraphQL input field name). */
     String name();
@@ -143,6 +143,45 @@ public sealed interface BodyParam permits BodyParam.ColumnPredicate {
         }
 
         @Override public boolean list() { return true; }
+    }
+
+    /**
+     * A column predicate whose target column lives on a <em>joined</em> table, reached from the
+     * field's own table through a {@code @reference(path:)} join path. The wrapped {@link #inner}
+     * predicate is an ordinary {@link ColumnPredicate} whose {@link ColumnRef}s are bound to the
+     * <em>terminal</em> table; {@link #joinPath} carries how to reach that table.
+     *
+     * <p>The emitter ({@link no.sikt.graphitron.rewrite.generators.TypeConditionsGenerator}) turns
+     * this into a correlated {@code DSL.exists(DSL.selectOne().from(terminalAlias).join(...).where(
+     * <correlation back to the method's own table>.and(<inner predicate on terminalAlias>)))} ANDed
+     * into the method's condition. The method signature, call-site argument extraction, and
+     * null / empty-list guards are identical to the {@link #inner} local predicate — only the SQL
+     * shape differs — so {@link #name()}, {@link #list()}, {@link #nonNull()}, and
+     * {@link #extraction()} all delegate to {@code inner}.
+     *
+     * <p>This wrapping keeps the local-vs-remote axis off the operator/value-arity
+     * {@link ColumnPredicate} taxonomy (no {@code joinPath.isEmpty()} ladder on the four arms),
+     * mirroring how {@link FkTargetConditionFilter} wraps a {@link ConditionFilter} rather than
+     * bolting a {@code joinPath} field onto it.
+     */
+    record RemoteColumnPredicate(
+        List<JoinStep> joinPath,
+        ColumnPredicate inner
+    ) implements BodyParam {
+
+        public RemoteColumnPredicate {
+            joinPath = List.copyOf(joinPath);
+            if (joinPath.isEmpty()) {
+                throw new IllegalArgumentException(
+                    "BodyParam.RemoteColumnPredicate requires a non-empty joinPath; an empty path "
+                    + "means the column is local and should be the bare inner ColumnPredicate");
+            }
+        }
+
+        @Override public String name() { return inner.name(); }
+        @Override public boolean list() { return inner.list(); }
+        @Override public boolean nonNull() { return inner.nonNull(); }
+        @Override public CallSiteExtraction extraction() { return inner.extraction(); }
     }
 
 }
