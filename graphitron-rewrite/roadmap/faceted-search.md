@@ -65,9 +65,13 @@ type QueryFilmerConnectionFacets {
     category: [StringFacetValue!]!
 }
 
-# Per-scalar named types. value always matches the filter-input field's
-# scalar type — so a client filters by the same value it sees in facets,
-# no coercion:  filter: { rating: [facetValue.value] }.
+# Per-scalar named types. value mirrors the filter-input field's element
+# type exactly: same scalar AND same nullability, so a client filters by
+# the same value it sees in facets, no coercion: filter: { rating: [facetValue.value] }.
+# Both filter fields above use non-null elements ([MpaaRating!] / [String!]),
+# so value is non-null here and each arm scrubs its NULL group (... IS NOT NULL).
+# A nullable filter element ([MpaaRating]) yields value: MpaaRating and
+# preserves the NULL bucket. See "NULL facet buckets" below.
 type MpaaRatingFacetValue { value: MpaaRating! count: Int! }
 type StringFacetValue     { value: String!     count: Int! }
 ```
@@ -302,16 +306,24 @@ Concretely, this rules out two tempting-but-wrong shapes:
   secondary aggregate, and `ConnectionHelper.totalCount` shows the
   lazy-on-selection, scatter-returns-null shape facets reuse.
 - **Facet value types are cross-schema reusable.** `StringFacetValue`,
-  `BooleanFacetValue`, `IntFacetValue`, `<Enum>FacetValue`: one per value
-  scalar encountered across the whole schema, not per connection.
-  Synthesise-once via a single `FacetNaming.facetValueTypeName(scalar)`
-  helper used by both `ConnectionPromoter` and the classifier.
+  `BooleanFacetValue`, `IntFacetValue`, `<Enum>FacetValue`: one per
+  (value scalar, element nullability) encountered across the whole schema,
+  not per connection. Synthesise-once via a single
+  `FacetNaming.facetValueTypeName(scalar, nullable)` helper used by both
+  `ConnectionPromoter` and the classifier; keying on nullability as well as
+  scalar means a non-null and a nullable facet over the same scalar get
+  distinct names instead of colliding.
 
 ## Implementation Approach
 
-Five v1 phases plus Phase 6 deferred, in strict order — each phase
+Five v1 phases plus Phase 6 deferred, in strict order; each phase
 leaves the build green and existing tests passing. No phase adds
 user-observable behaviour until Phase 4; Phase 5 is test coverage.
+Phases 2 and 3 land as a **single commit**: the `FacetSpec` record and
+the `ConnectionType.facets()` component (nominally Phase 3) are the home
+Phase 2's synthesis arm writes into and Phase 2's tests read back, so they
+must exist together. The Phase 2/3 split below is a narrative ordering
+(synthesis first, then rejection/validation), not two shippable increments.
 Phase 1 is a measurement spike that validates or redirects the SQL
 strategy *before* emitter work begins; its deliverables are a report
 plus any plan revisions it motivates. Phase 6 ships hierarchical
@@ -320,8 +332,8 @@ facets after v1 lands.
 | Phase | Module / artefact | What lands |
 |---|---|---|
 | 1 | hand-written SQL (complete) | Spike — benchmarked SQL strategies against Sakila; confirmed shape C as v1 default; resolved NULL + ordering Open Questions. Outcome captured in Phase 1 Outcome below |
-| 2 | `graphitron-rewrite` (directive + `ConnectionPromoter`) | `@asFacet` directive definition; `ConnectionPromoter` grows a facet arm that registers `FacetsType` / `FacetValueType` entries and appends the `facets` field on the synthesised Connection |
-| 3 | `graphitron-rewrite` (classifier) | `GraphitronType.ConnectionType` carries `List<FacetSpec>`; classifier / validator rejects misuse |
+| 2 | `graphitron-rewrite` (directive + `ConnectionPromoter` + model) | `@asFacet` directive definition; `FacetSpec` record + `ConnectionType.facets()` carrier; `ConnectionPromoter` grows a facet arm that registers `FacetsType` / `FacetValueType` entries and appends the `facets` field on the synthesised Connection |
+| 3 | `graphitron-rewrite` (classifier) | classifier / validator rejects misuse (lands with Phase 2 as one commit) |
 | 4 | `graphitron-rewrite` (emitter) | Fetcher carries a facet plan on `ConnectionResult`; `ConnectionHelper.facets` emits the spike-chosen `UNION ALL` aggregate; registration wires the new field |
 | 5 | `graphitron-test` | Execution tests against Sakila |
 | 6 | deferred | Hierarchical facets (`includeChildrenOf` + `parentValue`) |
@@ -453,10 +465,25 @@ more awkward to assemble in jOOQ and wins on nothing.
 Postgres emits a NULL group key automatically when the facet column
 has NULL values. Phase 1 scenario 7 confirmed this: a rating facet
 under a 200 000-row table with 10 000 NULLs produces a NULL bucket
-with count 10 000 and no cast or special handling. v1 preserves NULL
-as its own facet bucket. The `*FacetValue.value` schema field is
-therefore nullable; the emitter does not inject `IS NOT NULL` around
-facet columns.
+with count 10 000 and no cast or special handling.
+
+Whether that NULL bucket surfaces is driven by the annotated filter
+field's element nullability, so output mirrors input:
+
+- **Nullable filter element** (`rating: [MpaaRating]`): `value` is
+  nullable (`MpaaRating`), the NULL bucket is preserved as its own
+  group, and it round-trips (`filter: { rating: [null] }`). The
+  emitter injects no `IS NOT NULL`.
+- **Non-null filter element** (`rating: [MpaaRating!]`): `value` is
+  non-null (`MpaaRating!`), and the facet's arm appends
+  `AND <col> IS NOT NULL` so no NULL key reaches a non-null output
+  field. Without the scrub a non-null `value` is a latent runtime
+  failure on the first NULL-bearing column; the scrub makes the
+  non-null output contract one the resolver actually keeps.
+
+`FacetSpec` carries this as a `valueNullable` flag (see Phase 3); it
+drives both the `*FacetValue` type name (Phase 2 dedup key) and the
+per-arm `IS NOT NULL` emit (Phase 4).
 
 ### Facet-value ordering
 
@@ -602,12 +629,13 @@ schema forms, and registers them. Facets ride the same walk.
   absent) to the connection's `GraphQLObjectType` when the facet list is
   non-empty. The field name is `facets`.
 - In `synthesiseForField(...)`, register one `FacetsType` per faceted
-  Connection plus one `FacetValueType` per distinct value scalar through
+  Connection plus one `FacetValueType` per distinct (value scalar,
+  nullability) pair through
   `registerSynthesised(ctx, name, type, synthesisedNames)` (the same path
   that notes absent names for `rebuildAssembledForConnections` to add via
   `additionalType`). The `<Scalar>FacetValue` name comes from the shared
-  `FacetNaming.facetValueTypeName(scalar)` helper, deduped by name across
-  the whole schema.
+  `FacetNaming.facetValueTypeName(scalar, nullable)` helper, deduped by name
+  across the whole schema.
 - `rebuildAssembledForConnections` and
   `GraphitronSchemaClassGenerator.generate()` need no facet-specific change:
   the new `FacetsType` / `FacetValueType` arms implement `EmitsPerTypeFile`,
@@ -616,20 +644,30 @@ schema forms, and registers them. Facets ride the same walk.
 For each `@asConnection` field, the facet walk does, per `@asFacet` input field:
 
 1. Resolve the value scalar (the input field's GraphQL type, stripped of
-   list / non-null). For scalar / enum leaves, this is the facet value type.
-2. Register a `FacetValueType` for that scalar, deduped by the derived type
-   name. `value` carries the **same scalar as the filter-input field**,
-   preserving round-trip symmetry:
+   list / non-null) and note the **element nullability** (was the list
+   element `MpaaRating!` or `MpaaRating`). For scalar / enum leaves the
+   scalar is the facet value type; the nullability carries to the output.
+2. Register a `FacetValueType` for that (scalar, nullability) pair, deduped
+   by the derived type name. `value` mirrors the filter-input field's
+   element type exactly, same scalar **and** same nullability, preserving
+   round-trip symmetry:
    ```graphql
+   # non-null filter elements ([MpaaRating!] / [String!] / [Boolean!] / [Int!])
    type MpaaRatingFacetValue { value: MpaaRating! count: Int! }
    type StringFacetValue     { value: String!     count: Int! }
    type BooleanFacetValue    { value: Boolean!    count: Int! }
    type IntFacetValue        { value: Int!        count: Int! }
+   # a nullable filter element ([MpaaRating]) yields a nullable value and a
+   # distinct derived name (FacetNaming's to fix, e.g. MpaaRatingFacetValueOrNull)
+   type MpaaRatingFacetValueOrNull { value: MpaaRating count: Int! }
    ```
    A client feeds `facetValue.value` straight back into the filter input
    with no conversion. Custom scalars synthesise `<CustomScalar>FacetValue`
-   on demand the same way. `FacetNaming.facetValueTypeName(scalar)` is the
-   source of truth for the derived name, shared with the classifier (Phase 3).
+   on demand the same way. `FacetNaming.facetValueTypeName(scalar, nullable)`
+   is the source of truth for the derived name, keyed on **both** the scalar
+   and the element nullability so a non-null and a nullable facet over the
+   same scalar never collide on one type; it is shared with the classifier
+   (Phase 3).
 3. Register one `<ConnName>Facets` `FacetsType` with one non-null list field
    (`[<Scalar>FacetValue!]!`) per `@asFacet` input, field name matching the
    input field name.
@@ -665,6 +703,11 @@ per-Connection-type metadata onto the first-class type entry, and a facet
 list is exactly that. The emitter (Phase 4) reads `ConnectionType.facets()`,
 not the SDL.
 
+The `FacetSpec` record and the `ConnectionType.facets()` component land
+**with Phase 2 in the same commit** (Phase 2's synthesis arm populates them
+and its tests read them back); what is genuinely Phase 3 work is the
+classifier/validator rejection logic below.
+
 ### Changes
 
 #### `BuildContext` — new directive constant
@@ -682,15 +725,20 @@ public record FacetSpec(
     String inputFieldName,    // e.g. "rating"
     String columnName,        // e.g. "RATING"
     String valueTypeName,     // e.g. "MpaaRating"
+    boolean valueNullable,    // mirrors the filter field's element nullability
     String facetValueTypeName // e.g. "MpaaRatingFacetValue"
 ) {}
 ```
 
 Carries exactly what the emitter needs: which column to `GROUP BY`, what
-GraphQL type the scalar value has (for wiring the `value` field), and what
-`*FacetValue` object type to instantiate. (Phase 6 keeps room to grow this
-into a sealed `FlatFacetSpec` / `HierarchicalFacetSpec`; v1 is the flat
-record.)
+GraphQL type the scalar value has (for wiring the `value` field), whether
+the value is nullable, and what `*FacetValue` object type to instantiate.
+`valueNullable` mirrors the annotated filter field's list-element
+nullability; it drives the `*FacetValue` type name (via
+`FacetNaming.facetValueTypeName(scalar, nullable)`) and the Phase 4 per-arm
+scrub: `false` appends `AND <col> IS NOT NULL` so a non-null `value` can
+never receive a NULL group key. (Phase 6 keeps room to grow this into a
+sealed `FlatFacetSpec` / `HierarchicalFacetSpec`; v1 is the flat record.)
 
 #### `model/GraphitronType.java`: `ConnectionType` carries `List<FacetSpec>`
 
@@ -708,9 +756,11 @@ on the leaf-count choice).
 The Phase 2 facet walk derives each `FacetSpec`:
 
 1. Each `@asFacet` field must also carry `@field(name:)` (the `columnName`).
-2. Each `@asFacet` field's GraphQL leaf scalar / enum is its `valueTypeName`.
-3. `facetValueTypeName` comes from `FacetNaming.facetValueTypeName(scalar)`,
-   the same helper Phase 2 uses, so the two never drift.
+2. Each `@asFacet` field's GraphQL leaf scalar / enum is its `valueTypeName`;
+   the field's list-element nullability is its `valueNullable`.
+3. `facetValueTypeName` comes from
+   `FacetNaming.facetValueTypeName(scalar, valueNullable)`, the same helper
+   Phase 2 uses, so the two never drift.
 
 Reject:
 
@@ -776,40 +826,58 @@ explicit design intent in its Javadoc); the fetcher only *builds the plan*.
 Beside the existing nullable `(table, condition)`, add a nullable facet
 plan: the base condition (non-facet fields), a `Map<String, Condition>` of
 each facet's own predicate keyed by facet label, and the `List<FacetSpec>`
-(label + `columnName`) the resolver needs to build arms and decode. Add a
+(label + `columnName` + `valueNullable`) the resolver needs to build arms
+and decode. Each `Condition` is the result of a generated
+`<field>FacetBaseCondition` / `<field>Facet_<g>Condition` call, not built
+inline, so the binding stays inside the adapter. Add a
 nested `FacetValueRow(Object value, int count)` carrier if convenient, or
 let the resolver return graphql-java-shaped maps directly. Split-Connection
 scatter passes `null` (the `facets` resolver returns `null` there, matching
 the `totalCount` scatter contract). `ConnectionResult` is in
 `<outputPackage>.util` alongside `ConnectionHelper`.
 
-#### `QueryConditionsGenerator`: a non-facet base condition
+#### `QueryConditionsGenerator`: a non-facet base condition + per-facet fragments
 
 The generated `<field>Condition(table, env)` ANDs every filter field,
-facets included, and backs the page query unchanged. Add a sibling
-`<field>FacetBaseCondition(table, env)` that ANDs only the **non**-facet
-fields (skipping every `@asFacet`-marked input field). This is the one
-additive generator touch-point; it keeps facet knowledge out of the main
-condition method's body and gives the fetcher a clean base to build
-filter-minus-self from. (Which class owns this follows wherever the
-connection's filter condition is generated today; mirror that.)
+facets included, and backs the page query unchanged. Add two additive
+siblings, both riding the existing binding-correct adapter machinery, so
+String-delivered enums / IDs coerce through the column's `Converter` per the
+"Column value binding" convention and no raw-value handling leaks into the
+fetcher:
+
+- `<field>FacetBaseCondition(table, env)` ANDs only the **non**-facet
+  fields (skipping every `@asFacet`-marked input field). This is the base
+  the resolver builds filter-minus-self from.
+- `<field>Facet_<g>Condition(table, env)` per facet `g`: just that facet's
+  own predicate (the column-equality / `IN` over `g`'s input values), with
+  the same absent-input to no-conjunct gate the main method already applies.
+  The resolver composes these; it never reconstructs a predicate from raw
+  `env` values.
+
+These are the only generator touch-points; they keep facet knowledge out of
+the main condition method's body and keep every value binding inside the
+typed `QueryConditions` boundary (the adapter half of the adapter/composer
+pair). (Which class owns these follows wherever the connection's filter
+condition is generated today; mirror that.)
 
 #### `TypeFetcherGenerator.buildQueryConnectionFetcher` (`:4402`): build the plan
 
 Today the fetcher builds the full `condition` and wraps
 `new ConnectionResult(result, page, tableLocal, condition)`. When
-`conn`'s `ConnectionType.facets()` is non-empty, additionally build:
+`conn`'s `ConnectionType.facets()` is non-empty, additionally call:
 
-- the **base condition** from `<field>FacetBaseCondition(tableLocal, env)`;
-- a per-facet own-predicate for each facet `g`: the column-equality / `IN`
-  implied by `FacetSpec.columnName` and the value(s) at
-  `env.getArgument("filter").get(g.inputFieldName())`, emitted inline via
-  jOOQ (`tableLocal.field(columnName).in(values)`, or `.eq` for a scalar
-  facet). Gate on null / empty: absent input contributes no conjunct.
+- `<field>FacetBaseCondition(tableLocal, env)` for the **base condition**;
+- `<field>Facet_<g>Condition(tableLocal, env)` for each facet `g`'s own
+  predicate.
 
-Pass these to a facet-carrying `ConnectionResult` constructor. The fetcher
-does **not** issue the aggregate; it only assembles the plan, so its output
-stays byte-identical to today whenever `facets()` is empty.
+Both are generated `QueryConditions` fragments (above), so the fetcher only
+*calls* them and collects the results; it does not read `env.getArgument`
+or build predicates itself, which keeps value binding inside the adapter and
+avoids the enum / ID `String`-coercion trap. Pass the base plus the
+`Map<facetLabel, Condition>` of own-predicates to a facet-carrying
+`ConnectionResult` constructor. The fetcher does **not** issue the
+aggregate; it only assembles the plan, so its output stays byte-identical to
+today whenever `facets()` is empty.
 
 #### `ConnectionHelperClassGenerator`: `facets(env)` resolver
 
@@ -822,7 +890,10 @@ facets(env):
   selected = facets under `facets` in env.getSelectionSet()   // selection gate
   if (selected.isEmpty()) return Map.of()            // no arm, no SQL
   for each selected facet f:
-     cond_minus_f = base AND (⋀ g≠f of perFacet[g])
+     // base and perFacet[g] are pre-built Condition objects from the
+     // generated QueryConditions fragments; composition only ANDs them.
+     cond_minus_f = base.and(⋀ g≠f of perFacet[g])
+     if (!f.valueNullable) cond_minus_f = cond_minus_f.and(col_f.isNotNull())
      arm_f = SELECT val(label_f) AS facet, col_f.cast(String) AS value,
                     count(*) AS cnt
              FROM cr.table() WHERE cond_minus_f GROUP BY col_f
@@ -830,7 +901,8 @@ facets(env):
   rows  = dsl.select().from(union)
              .orderBy(field("facet"), field("cnt").desc(), field("value")).fetch()
   decode each row: typed = cr.table().field(columnName).getDataType().convert(raw)
-                   (null-safe: NULL bucket stays null)
+                   (null-safe: a preserved NULL bucket stays null; a non-null
+                    facet emits no NULL key thanks to the IS NOT NULL scrub)
   return Map<facetLabel, List<{ "value": typed, "count": cnt }>>
 ```
 
@@ -904,14 +976,16 @@ input FilmFacetFilter @table(name: "film") {
 }
 ```
 
-`LANGUAGE_NAME` doesn't exist as a plain column on `film` — use a column
+`LANGUAGE_NAME` doesn't exist as a plain column on `film`; use a column
 that does: pick `RATING` + a second scalar like `RENTAL_DURATION`
 (Integer) so both an enum-scalar facet and an Integer-scalar facet are
-exercised. Values surface as native types over the wire — enum values
-deserialize as `MpaaRating.PG`, integers as `3`. Assertions compare
-typed values; this is also the test that pins the round-trip property
-(`filter: { rating: [facetValue.value] }` works with no coercion).
-Final column choice finalized during implementation.
+exercised. Both use non-null elements (`[MpaaRating!]` / `[Int!]`), so
+`value` is non-null and each arm carries the `IS NOT NULL` scrub; this is
+the path execution-tested below. Values surface as native types over the
+wire: enum values deserialize as `MpaaRating.PG`, integers as `3`.
+Assertions compare typed values; this is also the test that pins the
+round-trip property (`filter: { rating: [facetValue.value] }` works with no
+coercion). Final column choice finalized during implementation.
 
 #### Execution tests
 
@@ -928,9 +1002,19 @@ Three cases, each running through a real Sakila database:
 
 Round-trip assertions: one query for edges/nodes, one aggregate query
 for all selected facets. Two round-trips total, regardless of how many
-facets are selected — lock this number in to catch regressions that
+facets are selected; lock this number in to catch regressions that
 would re-introduce per-facet round-trips. When no facet field is in
 the selection set, the aggregate is skipped: one round-trip.
+
+The nullability split is pinned where each side is cleanest. The
+non-null path (output `value` non-null + per-arm `IS NOT NULL` scrub) is
+exercised here, since `rating` / `rental_duration` are non-null facet
+elements. The nullable path (output `value` nullable + preserved NULL
+bucket, no scrub) is pinned at the pipeline tier in Phase 2/3, asserting
+the emitted `*FacetValue.value` nullability and the presence/absence of the
+`IS NOT NULL` conjunct keyed on `FacetSpec.valueNullable`; Sakila's `film`
+carries no clean NULL-bearing plain scalar column to drive a NULL-bucket
+execution case, so the pipeline assertion is the authoritative check.
 
 ### Success Criteria
 
@@ -1039,16 +1123,21 @@ reviewers can confirm the v1 design does not foreclose it.
 
 ## Resolved design decisions
 
-- **Facet-value shape — per-scalar typed, matching the filter field.**
-  `MpaaRatingFacetValue.value: MpaaRating!`,
-  `BooleanFacetValue.value: Boolean!`, etc. Rationale: a facet value
-  is a candidate filter value; typing them the same preserves
-  round-trip symmetry (`filter: { x: [facetValue.value] }` with no
-  coercion) and keeps GraphQL's type-safety guarantee. **This
-  overrides the literal GG-335 text** (which shows
-  `BooleanFacetValue.value: String` — read as ticket-writing
-  shorthand rather than considered design). Flag for confirmation
-  during Spec → Ready review.
+- **Facet-value shape — per-(scalar, nullability) typed, mirroring the
+  filter field's element type.** `value` matches the annotated filter
+  field's list-element type exactly: same scalar and same nullability.
+  Non-null element (`[MpaaRating!]`) yields `value: MpaaRating!` with an
+  `IS NOT NULL` scrub on that arm; nullable element (`[MpaaRating]`) yields
+  `value: MpaaRating` with the NULL bucket preserved. Rationale: a facet
+  value is a candidate filter value; mirroring the input type preserves
+  round-trip symmetry (`filter: { x: [facetValue.value] }` with no coercion)
+  and keeps the non-null *output* contract one the resolver can actually
+  keep (a `GROUP BY` can always surface a NULL key). The `FacetNaming`
+  derived name keys on (scalar, nullability) so the two cases never collide.
+  **This overrides the literal GG-335 text** (which shows
+  `BooleanFacetValue.value: String`, read as ticket-writing shorthand
+  rather than considered design); the typed-vs-`String` deviation still
+  wants ticket-author confirmation (see the Overview deviation note).
 - **Hierarchical shape (Phase 6).** Flat response +
   `includeChildrenOf: [<parent value type>]` argument +
   `parentValue` pointer typed to match. No nested query structures
@@ -1061,13 +1150,17 @@ reviewers can confirm the v1 design does not foreclose it.
   it; the SQL strategy section above builds on it.
 - **No nested `facets { parent { children { ... } } }` structure.**
   Hard constraint from ticket: performance + query-shape driver.
-- **NULL facet buckets — preserve as their own group.** `GROUP BY`
-  emits NULL as a distinct key automatically; Phase 1's NULL-bearing
-  scenario confirmed all three measured shapes pass NULL through unchanged.
-  v1 emits no `IS NOT NULL` scrubbing; `*FacetValue.value` is
-  **nullable** on the schema side to accommodate. Consumers that
-  want to hide NULL can apply `IS NOT NULL` as a regular filter or
-  drop the row client-side.
+- **NULL facet buckets — author-driven via the filter element nullability.**
+  `GROUP BY` emits NULL as a distinct key automatically; Phase 1's
+  NULL-bearing scenario confirmed all three measured shapes pass NULL
+  through unchanged. When the annotated filter element is **nullable**
+  (`[MpaaRating]`), `*FacetValue.value` is nullable and v1 preserves the
+  NULL bucket as its own group (it round-trips via `filter: { x: [null] }`).
+  When the element is **non-null** (`[MpaaRating!]`), `value` is non-null
+  and the facet's arm appends `AND <col> IS NOT NULL`, so no NULL key
+  reaches a non-null output field. `FacetSpec.valueNullable` carries the
+  choice. Consumers wanting to hide a NULL bucket they would otherwise
+  surface can mark the filter element non-null, or drop the row client-side.
 - **Facet-value ordering — count-desc with stable tiebreaker.** v1
   emits `ORDER BY facet, cnt DESC, value` at the top of the UNION.
   Spike measured ~0.4 ms overhead at 200× Sakila scale (27.3 →
