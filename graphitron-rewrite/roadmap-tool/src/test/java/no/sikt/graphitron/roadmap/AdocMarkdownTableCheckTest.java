@@ -9,6 +9,7 @@ import java.nio.file.Path;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Pins the markdown-table detection contract: a {@code |---|---|} separator row
@@ -180,5 +181,37 @@ class AdocMarkdownTableCheckTest {
         Files.writeString(md, "# Plan\n\n| A | B |\n|---|---|\n| 1 | 2 |\n");
 
         assertThat(AdocMarkdownTableCheck.scan(dir)).isEmpty();
+    }
+
+    @Test
+    void run_withFindings_throwsBuildFailure(@TempDir Path dir) throws IOException {
+        // The verify-phase entry point must throw rather than return non-zero (which the Main
+        // dispatcher turns into System.exit). exec-maven-plugin runs `java` in the Maven JVM,
+        // so a System.exit would kill Maven before it prints BUILD FAILURE; a BuildFailure lets
+        // the plugin surface the normal [ERROR] / BUILD FAILURE summary.
+        Files.writeString(dir.resolve("page.adoc"), """
+            = A page
+
+            | A | B |
+            |---|---|
+            | 1 | 2 |
+            """);
+
+        assertThatThrownBy(() -> AdocMarkdownTableCheck.run(List.of(dir.toString())))
+            .isInstanceOf(BuildFailure.class);
+    }
+
+    @Test
+    void run_clean_returnsZero(@TempDir Path dir) throws IOException {
+        Files.writeString(dir.resolve("page.adoc"), "= A clean page\n\nNo tables here.\n");
+
+        assertThat(AdocMarkdownTableCheck.run(List.of(dir.toString()))).isZero();
+    }
+
+    @Test
+    void run_usageError_returnsExitCodeWithoutThrowing() throws IOException {
+        // Usage / argument errors are CLI dev errors, not a verify-phase tripwire, so they keep
+        // returning the conventional 64 (EX_USAGE) for the dispatcher to System.exit on.
+        assertThat(AdocMarkdownTableCheck.run(List.of())).isEqualTo(64);
     }
 }
