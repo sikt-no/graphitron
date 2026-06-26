@@ -1,7 +1,7 @@
 ---
 id: R385
 title: "MCP docs.search: build-time .adoc chunking + pre-embedded bundled index, async-loaded semantic retrieval over the documentation (R118 slice 9)"
-status: In Review
+status: Ready
 bucket: feature
 theme: lsp
 depends-on: []
@@ -10,6 +10,49 @@ last-updated: 2026-06-26
 ---
 
 # MCP docs.search: build-time .adoc chunking + pre-embedded bundled index, async-loaded semantic retrieval over the documentation (R118 slice 9)
+
+## In Review feedback (rework requested, returned to Ready)
+
+Reviewed the implementation landed at `b0afcf8` (+ README regen `6cb322a`) against this spec.
+Most of the slice is in good shape; the chunker, bundle, build-time generator, dimension guard,
+deep-link, and all five test tiers match the contract, and the two in-flight settlements (the
+`DocsIndex(store, dimension)` record and the dependency-free Base64 payload) are sound. **The gate
+fails on one thing: the build is red.** Two coupled defects, both in the `DevMojo` warm wiring:
+
+1. **Build-breaking: the fast suite now pays a real ONNX load, and it SIGSEGVs the test fork.**
+   `DevMojo.bindServer` unconditionally constructs and `start()`s the real `DocsRag.embedderWarm()`
+   (a `BgeEmbedder` ONNX load) on every `execute()`, with no seam to inject a fake or disable RAG.
+   `DevMojoTest.mcpBindFailureSurfacesMojoMessageAndClosesLspSocket` calls `mojo.execute()`, so the
+   heavy ONNX model now loads on a `graphitron-warm-embedder` daemon thread inside the
+   `graphitron-maven-plugin` surefire fork. That native load crashes the fork
+   (`SIGSEGV` in `libonnxruntime.so`, `OrtSession.createSession`), aborting `mvn install`.
+   Reproduced deterministically twice; `hs_err` current-thread is `graphitron-warm-embedder` both
+   times. This also contradicts the spec's own Tests intent ("the build-time ONNX embed itself stays
+   out of the fast suite ... the handler tests use a fake/precomputed bundle"): the mcp handler tests
+   correctly used `PlantedEmbedder`, but `DevMojo` exposes no equivalent seam, so `DevMojoTest`
+   cannot avoid the real load.
+   - *File:* `graphitron-maven-plugin/.../DevMojo.java:220-223` (the unconditional `embedderWarm.start()`).
+   - *Fix shape:* give `DevMojo` a seam to inject the warms (mirroring the `GraphitronMcpServer`
+     structured-only constructor + injected-warm pattern this slice already established), so
+     `DevMojoTest` runs structured-only / with a fake embedder and the fast suite pays no ONNX cost.
+
+2. **Resource leak on the bind-failure path (the crash's proximate cause).** The MCP-bind-failure
+   catch arm in `bindServer` calls `this.server.close()` and rethrows, but does **not** stop the
+   `embedderWarm` / `docsWarm` it just started; warm cleanup lives only in `DevMojo.close()` (the
+   normal stop path), which the exception path never reaches. So a failed MCP bind leaks the embedder
+   daemon mid-load. This is the same leak-on-partial-startup the LSP-socket close was written to
+   prevent, reintroduced for the warms; the leaked daemon continuing its ONNX load after the test
+   returns is what crashes the fork.
+   - *File:* `graphitron-maven-plugin/.../DevMojo.java:228-235` (catch arm closes the LSP socket only).
+   - *Fix shape:* on MCP bind failure, stop/close the warms started above before rethrowing (and add
+     a `DevMojoTest` assertion that a failed bind leaves no live warm, paralleling the existing
+     LSP-socket-closed assertion).
+
+Everything else assessed clean: spec→diff alignment, the dimension-guard memoisation, structured-only
+degradation wording, structured-content-only test assertions, and the corpus narrowing to
+`docs/manual/**`. Re-running the gate after these two are fixed should be a quick pass. Note for the
+next pass: also collapse the spec body's phase descriptions to `shipped at <sha>` one-liners as part
+of housekeeping (minor; the body is otherwise still written as a forward contract).
 
 Slice 9 of the R118 MCP-server programme: the first of the two **semantic** tools, and the
 simplest consumer of the RAG foundation R372 landed. `docs.search` gives an MCP-aware agent
