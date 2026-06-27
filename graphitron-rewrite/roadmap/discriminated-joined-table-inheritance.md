@@ -200,9 +200,15 @@ The validator mirrors every accept/reject the joined-table classifier makes, eac
 existing `drainBuildDiagnostics` / `Rejection` machinery (the R204/R279/R317/R388 pattern), surfaced as an
 `INVALID_SCHEMA` author error with file:line:
 
-- The child&rarr;parent hop must be PK=FK (the join assumption the interface fetcher bakes in): reject a
-  participant whose declared reference to the base is not via the detail table's own primary key. This is
-  classic shared-PK class-table inheritance.
+- The child&rarr;parent hop must be PK=FK (the join assumption the interface fetcher bakes in): the detail
+  table's FK columns to the base **are** the detail table's primary key, referencing the base's primary key
+  or a unique key. This holds for both shapes in scope: a single-column shared PK (detail PK `= ` FK to the
+  base PK), and a composite shared key (the detail's composite PK is the FK to a base unique key, as in the
+  `jti_*` fixture where `(jti_subject_id, subject_kind)` is both). Reject a detail table whose join to the
+  base is not its primary key (e.g. a separate surrogate PK plus an independent FK column to the base), since
+  the base&rarr;detail join would not be single-valued. The emitter handles the composite case with no extra
+  logic: `JoinStep.FkJoin` carries one slot per key column and the join ON-clause chains them with `.and(...)`
+  (already exercised by `buildCrossTableJoinChain`).
 - A participant's parent-references must all resolve to the same base, the discriminated interface's table.
   A parent-reference pointing at some other table is not a base bridge; reject it.
 - The joined-table participant's field leaves must land in the four-way dispatch partition
@@ -225,18 +231,12 @@ tiers below are the fast regression net layered under it, not the primary proof 
 refines, for a runtime-correctness feature, the usual "pipeline-tier is primary" default in
 `rewrite-design-principles.adoc`.)
 
-### Fixture (settled: new single-column shared-PK tables)
+### Fixtures (both shapes in scope: single-column and composite shared key)
 
-The repo's existing joined-inheritance fixture (`jti_subject` + `jti_app_account` + `jti_person`,
-`graphitron-sakila-db/src/main/resources/init.sql`, with the example `Subject` interface in
-`graphitron-sakila-example/.../schema.graphqls`) is the **R388 workaround** shape: every participant
-`@table("jti_subject")` (the base) with per-field `@reference` pointing *out* to the detail table, a
-composite FK `(jti_subject_id, subject_kind)`, and **no primary key on the detail tables**. It does not
-satisfy R389's PK=FK invariant and is not the `@table(detail)` authoring this item is about, so R389 does
-not reuse it; `jti_*` stays as the R388 workaround coverage it already serves.
+Both shared-key shapes are in scope, so both get execution coverage.
 
-R389 adds a new, clean single-column shared-PK fixture (textbook class-table inheritance), which matches the
-PK=FK invariant verbatim:
+**Single-column shared PK (new `party` fixture).** A clean, textbook class-table inheritance fixture that
+matches the PK=FK invariant in its simplest form:
 
 ```sql
 -- party (base): discriminated by party_kind; display_name is a base-only shared column.
@@ -277,11 +277,33 @@ type Company implements Party @table(name: "party_company") @discriminator(value
 }
 ```
 
-Seed data must cover at least one `INDIVIDUAL` and one `COMPANY` row, **and** a base `party` row whose detail
-row is absent (e.g. a third `party_kind`, or an `INDIVIDUAL` base row with no `party_individual` row), so the
-LEFT JOIN's NULL-through is asserted, not assumed.
+**Composite shared key (the `jti_*` fixture, re-authored to R389).** The repo already has the composite
+joined-inheritance fixture `jti_subject` + `jti_app_account` + `jti_person`
+(`graphitron-sakila-db/.../init.sql`), today carrying the **R388 workaround** authoring (every participant
+`@table("jti_subject")` with per-field `@reference` pointing *out*; composite FK `(jti_subject_id,
+subject_kind)`; the discriminator re-declared on the detail tables). Two changes make it the R389 composite
+fixture:
 
-### The execution assertions
+1. Add the composite primary key `(jti_subject_id, subject_kind)` to `jti_app_account` / `jti_person` (they
+   have none today) so the detail's join columns to the base **are** its PK, the composite-key form of the
+   invariant.
+2. Re-author `Subject` so each participant declares its own detail `@table` (`jti_app_account` /
+   `jti_person`) with the base-only inherited field (`displayName`) carrying `@reference` back to the base;
+   `subjectId` and `subjectKind` are on the detail too (the composite key), so they need none; `clientId` /
+   `fullName` are the own detail fields.
+
+This converts the workaround example into the R389 example, which is the most honest proof that R389 replaces
+the workaround, and it keeps R388's stress dimension (the discriminator column `subject_kind` is present on
+both base and detail, so the discriminator qualification R388 hardened is still exercised under a participant
+join). The cross-table participant-field path (`ParticipantColumnReferenceField`) that the workaround `Subject`
+incidentally covered is independently exercised by the `content` / `FilmContent.rating` fixture, so converting
+`Subject` loses no coverage; the R388 execution test that asserted the workaround `Subject` query becomes the
+R389 composite-case test (update it in place).
+
+Seed data (each fixture) must cover at least one row of each concrete kind **and** a base row whose detail
+row is absent (or whose kind has no detail table), so the LEFT JOIN's NULL-through is asserted, not assumed.
+
+### The execution assertions (run against both fixtures)
 
 - **Polymorphic interface query** (`parties { partyId displayName ... on Individual { birthDate } ... on Company { orgNumber } }`):
   each row routes to the right concrete type; the matching participant's own column is populated and the
@@ -354,20 +376,14 @@ vocabulary per the user-facing-doc check.
 
 ## Out of scope
 
-- **Detail tables that do not share the base's primary key.** The child&rarr;parent hop is required to be
-  PK=FK (the detail table's join column to the base is its own primary key, i.e. classic shared-PK
-  class-table inheritance). A detail table with a separate surrogate PK plus an independent FK column to the
-  base is rejected (Validation), not silently joined on a guessed column.
+- **Detail tables that do not share the base's key.** The child&rarr;parent hop is required to be PK=FK (the
+  detail table's join columns to the base are its own primary key, single-column or composite). A detail
+  table with a separate surrogate PK plus an independent FK column to the base is rejected (Validation), not
+  silently joined on a guessed column.
 - **Multi-level joined-table chains (base &rarr; mid &rarr; leaf).** Each level would reference its
   immediate parent; the hops compose, and the PK=FK invariant holds at each. The mechanism extends to it
   cleanly, but v1 ships and tests the single base &rarr; detail level; deeper chains are a follow-up if a
   schema needs them.
-- **Composite shared-key joined tables (subsuming the R388 workaround fixture).** v1's PK=FK invariant is
-  single-column: the detail's single-column PK is a FK to the base PK (the `party` fixture). The `jti_*`
-  workaround fixture is composite (`(jti_subject_id, subject_kind)`, referencing the base's *unique key*,
-  with the discriminator re-declared on the detail), which is a real but distinct shape: generalising the
-  invariant to a composite detail PK referencing a base unique key is the natural follow-up that would let
-  R389 fully subsume the R388 workaround. Deferred; file as its own Backlog item when v1 lands.
 
 ## Bearing on R393
 
@@ -393,7 +409,9 @@ unilaterally closed here.
    path uses a separate detail-only projection. The two are distinct, never one globally-restricted method.
 5. **Test order:** the `@ExecutionTier` test is authored first as the acceptance gate (runtime correctness),
    with pipeline / validation / compile as the regression net under it.
-6. **Fixture:** a new, clean single-column shared-PK fixture (the `party` / `party_individual` /
-   `party_company` tables above), not the composite-FK `jti_*` workaround fixture. v1's PK=FK invariant is
-   single-column; the composite shared-key case (which would let R389 subsume the R388 workaround) is a
-   deferred follow-up (see Out of scope).
+6. **Shared-key shapes:** both single-column and composite shared keys are in scope (composite is **not**
+   deferred). The PK=FK invariant is "the detail's FK to the base is the detail's PK", single-column or
+   composite. Two execution fixtures: the new single-column `party` tables, and the composite `jti_*` tables
+   re-authored to R389 (with the detail composite PK added), which also subsumes the R388 workaround. The
+   composite case needs no new emitter logic (multi-column joins and discriminator qualification already
+   exist).
