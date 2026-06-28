@@ -1,6 +1,6 @@
 ---
 id: R393
-title: "Author-declared base-to-detail FK override for joined-table inheritance (ambiguous-FK case)"
+title: "Disambiguate the base-to-detail (interface-to-implementer) join path via @reference"
 status: Backlog
 bucket: feature
 priority: 7
@@ -10,26 +10,44 @@ created: 2026-06-26
 last-updated: 2026-06-26
 ---
 
-# Author-declared base-to-detail FK override for joined-table inheritance (ambiguous-FK case)
+# Disambiguate the base-to-detail (interface-to-implementer) join path via @reference
 
-R389 ships first-class discriminated joined-table inheritance with the base-to-detail join
-**inferred** from the catalog: it picks the unique foreign key between a participant's detail table and
-the discriminated base. When more than one FK connects the two tables, inference is ambiguous; R389
-handles that by **rejecting** the schema at validate time with a candidate-FK hint (a hard
-`INVALID_SCHEMA` author error), so the ambiguous-FK author has no way to express which key to join on.
+R389 ships first-class discriminated joined-table inheritance: a participant declares its own detail
+`@table` and its base-only inherited fields carry `@reference` back to the discriminated base. Two paths
+ride that declared reference: resolving the inherited (base-resident) fields (detail to base), and the
+base-to-detail join the interface fetcher emits to reach each implementer's own detail table (base to
+detail, the *interface-to-implementer* path). R389 handles the **unambiguous** shape only: exactly one
+foreign key connects the detail table and the base, so the reference pins the join with nothing to
+disambiguate. Both R389 fixtures are this shape (`party_individual -> party`; `jti_app_account ->
+jti_subject`).
 
-This item adds the escape hatch: an **author-declared override** that names the base-to-detail join path
-explicitly, lifting the ambiguous case from "rejected" to "supported". The constraint carried over from
-R389's design review is that the override must resolve, at the parse boundary, into the existing
-`JoinStep` / `JoinSlot` vocabulary (the same family `@reference` paths and DTO-parent batching speak)
-through the `ctx.parsePath` mechanism `@reference` already uses; the emitter must keep receiving an
-already-classified hop and never a raw `ForeignKey<?,?>` or a re-parsed string. It is deferred out of
-R389 because the inference path plus the rejection already make joined-table inheritance usable for the
-common shape (the detail table's primary key *is* its foreign key to the base, a single unambiguous FK);
-the override only matters for the rarer multi-FK schema and carries its own user-visible directive-surface
-design (this was R389's open "fork 2").
+This item owns the **disambiguation**: how `@reference` names the base-to-detail (interface-to-implementer)
+join path when the unambiguous assumption does not hold, and what the canonical declaration is. The two
+cases R389 cannot express:
 
-Open question for Spec: the override directive surface. Candidates include a path argument on the
-participant's `@table` / `@discriminator`, or a dedicated participant-level reference directive. The Spec
-must draft the user docs for whichever surface it picks (first-client check), since this adds a
-user-visible authoring directive.
+- **Multiple FKs between detail and base.** A detail table with more than one FK to the base (or to a base
+  unique key) leaves the inheritance join ambiguous; the author must be able to say which FK is the
+  inheritance join.
+- **No base-only inherited field to carry the reference.** When every inherited field is also physically on
+  the detail (e.g. the shared-key columns), no base-only field's `@reference` names the FK, so the
+  base-to-detail join has nothing to ride; a participant-level declaration of the inheritance join is
+  needed.
+
+R389's behaviour at this boundary is to **reject** the ambiguous / undeclared case at validate time with a
+candidate-FK hint (a hard `INVALID_SCHEMA` author error); this item lifts those from "rejected" to
+"supported".
+
+Design constraints carried from R389:
+
+- The declared path resolves at the parse boundary into the existing `JoinStep` / `JoinSlot` vocabulary
+  through `ctx.parsePath` (the mechanism `@reference` already uses); the emitter keeps receiving an
+  already-classified hop, never a raw `ForeignKey<?,?>` or a re-parsed string.
+- One declaration should serve both roles where they coincide: naming the inheritance join used for the
+  base-to-detail projection, and (when the same FK resolves a base-only inherited field) that field's
+  resolution.
+
+Open question for Spec: the directive surface. Does the participant's inherited-field `@reference(key:)`
+serve double duty (resolve the field and name the join), with a participant-level declaration as the
+fallback when no base-only field exists? Or a dedicated participant-level reference (a path argument on
+`@table` / `@discriminator`, or a participant `@reference`)? Draft the user docs for whichever surface it
+picks (first-client check), since it is user-visible authoring.
