@@ -219,8 +219,14 @@ existing `drainBuildDiagnostics` / `Rejection` machinery (the R204/R279/R317/R38
   acceptance check noted under "Standalone use": the single-hop-FK scalar `ColumnReferenceField` shape must
   be implemented, not deferred.
 
-No ambiguous-FK invariant: the author names the FK in `@reference`, so the inference-era ambiguity case
-(and its R393 deferral) does not arise here.
+- The base&rarr;detail join must be unambiguously pinned. R389 derives it from the participant's declared
+  `@reference` in the unambiguous shape: exactly one FK connects the detail table and the base, so the
+  reference (whether it names the FK by key or resolves the unique FK) fixes both the inherited-field
+  resolution and the base&rarr;detail join the interface fetcher emits. When that does not hold (more than
+  one FK between detail and base, or a participant with detail-only fields but no base-only inherited field
+  whose `@reference` could name the join), reject at validate time with a candidate-FK hint. The mechanism
+  for *declaring* the join in those cases (how `@reference` disambiguates the interface&rarr;implementer
+  path) is **R393**, which lifts these from rejected to supported.
 
 **Write the execution test first; it is the acceptance gate.** This feature's correctness is a runtime
 property, not a shape: join-column orientation, discriminator gating, NULL-through on non-matching rows,
@@ -387,13 +393,14 @@ vocabulary per the user-facing-doc check.
 
 ## Bearing on R393
 
-R393 ("author-declared base&rarr;detail FK override for the ambiguous-FK case") was carved out of the
-*inference* framing: when the generator infers the unique catalog FK between detail and base, a schema with
-more than one FK is ambiguous and needs an override. This design has the author name the FK in `@reference`
-from the outset, so the ambiguity never arises and there is nothing to override. **R393 is very likely moot
-under this design and should be revisited** (Discarded, or repurposed if a non-`@reference` shorthand is
-ever wanted) rather than carried as a live dependency. Left as a decision for the reviewer / user, not
-unilaterally closed here.
+R393 is **not** moot under this design; it is repurposed and stays a live follow-up. R389 handles only the
+unambiguous base&rarr;detail join (one FK between detail and base, pinned by the participant's `@reference`),
+and rejects the cases it cannot express. R393 owns the **disambiguation**: how `@reference` declares and
+disambiguates the base&rarr;detail (interface&rarr;implementer) join path when more than one FK connects
+detail and base, or when a participant has detail-only fields but no base-only inherited field whose
+`@reference` could name the join. R393 lifts those from rejected to supported, and must settle the directive
+surface (inherited-field `@reference(key:)` serving double duty, vs. a participant-level declaration). It
+depends on R389 (the unambiguous path) landing first.
 
 ## Resolved design decisions
 
