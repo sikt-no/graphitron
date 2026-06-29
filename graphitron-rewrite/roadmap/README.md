@@ -16,10 +16,10 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 |---|---|---|---|---|
 | `R19` | Rebase and squash rewrite branch onto main | Ready |  | [plan](history-squash.md) |
 | `R222` | Dimensional model pivot: slots over cross-product permits | Spec | 2026-06-18 <sub>created 2026-05-21</sub> | [plan](dimensional-model-pivot.md) |
-| `R395` | Discriminated-interface discriminator column must qualify to the FROM table, not the @table directive name | Spec | 2026-06-29 | [plan](discriminator-column-from-clause-qualification.md) |
 | `R384` | Support converted/@nodeId/developer-@condition filters on multitable interface/union queries | Spec | 2026-06-27 <sub>created 2026-06-25</sub> | [plan](multitable-interface-converted-nodeid-condition-filters.md) |
 | `R333` | The Graphitron data model | Spec | 2026-06-25 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
 | `R256` | Absorb the service walker substrate: typed per-arm errors + multi-arg ctors | Ready | 2026-05-30 <sub>created 2026-05-29</sub> | [plan](service-walker-substrate-absorption.md) |
+| `R395` | Discriminated-interface discriminator column must qualify to the FROM table, not the @table directive name | Ready | 2026-06-29 | [plan](discriminator-column-from-clause-qualification.md) |
 | `R346` | Regenerate and guard the generated supported-directives migration doc against directive-set drift | Ready | 2026-06-19 | [plan](supported-directives-regen-guard.md) |
 | `R308` | Fix the @service list-payload N+1 by deriving many-arrival for list-returning carriers | Spec | 2026-06-14 | [plan](service-list-payload-arrival.md) |
 | `R335` | Fold input/scalar/enum classification into the single classify-and-emit walk | Spec | 2026-06-19 | [plan](walk-classifies-input-surface.md) |
@@ -170,7 +170,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### interface-union
 
-- `R395` [**Discriminated-interface discriminator column must qualify to the FROM table, not the @table directive name**](discriminator-column-from-clause-qualification.md) — Spec, bug
+- `R395` [**Discriminated-interface discriminator column must qualify to the FROM table, not the @table directive name**](discriminator-column-from-clause-qualification.md) — Ready, bug
 - `R382` [**Lower orderBy onto multitable-interface/union queries**](multitable-interface-query-orderby-lowering.md) — Backlog, bug
 - `R384` [**Support converted/@nodeId/developer-@condition filters on multitable interface/union queries**](multitable-interface-converted-nodeid-condition-filters.md) — Spec, bug
 - `R389` [**First-class discriminated joined-table inheritance (participants on their own tables)**](discriminated-joined-table-inheritance.md) — Spec, feature

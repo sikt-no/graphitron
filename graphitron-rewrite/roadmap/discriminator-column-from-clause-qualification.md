@@ -1,7 +1,7 @@
 ---
 id: R395
 title: "Discriminated-interface discriminator column must qualify to the FROM table, not the @table directive name"
-status: Spec
+status: Ready
 bucket: bug
 priority: 3
 theme: interface-union
