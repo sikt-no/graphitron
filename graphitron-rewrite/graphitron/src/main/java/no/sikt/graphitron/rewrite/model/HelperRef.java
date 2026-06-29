@@ -68,11 +68,19 @@ public sealed interface HelperRef {
      * Per-Node decoder helper. The Java parameter list is fixed: {@code decode<TypeName>(String base64Id)}.
      * {@code outputColumnShape} describes the columns of the returned {@code RecordN<T1..TN>}; it is
      * NOT the call-site Java parameter list.
+     *
+     * <p>{@code typeId} is the wire-format type prefix this decoder expects (the first argument
+     * {@code buildPerTypeDecode} bakes into its {@code decodeValues($S, ...)} call). It may differ
+     * from the GraphQL type name when {@code @node(typeId:)} customizes it, so the
+     * {@code ThrowOnMismatch} message-builder compares it against {@code NodeIdEncoder.peekTypeId}
+     * to fold the right-type-wrong-arity sub-case into the "malformed" branch rather than
+     * mis-reporting it as "wrong type". It is a generation-time constant, never read at runtime.
      */
     record Decode(
         ClassName encoderClass,
         String methodName,
-        List<ColumnRef> outputColumnShape
+        List<ColumnRef> outputColumnShape,
+        String typeId
     ) implements HelperRef {
 
         public Decode {

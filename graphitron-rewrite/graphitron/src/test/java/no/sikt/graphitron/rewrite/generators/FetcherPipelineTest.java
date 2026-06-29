@@ -284,10 +284,11 @@ class FetcherPipelineTest {
     }
 
     @Test
-    void serviceField_withoutErrorChannel_catchArmCallsErrorRouterRedact() {
+    void serviceField_withoutErrorChannel_catchArmCallsSurfaceClientErrorOrRedact() {
         // Counterpart: a @service field whose payload has no errors slot keeps the no-channel
-        // disposition (redact). Distinct fixture from SAK_DISPATCH_SDL — the payload is a plain
-        // scalar with no @error types reachable.
+        // disposition, which since R378 routes through surfaceClientErrorOrRedact (client errors
+        // surface, internal faults still redact). Distinct fixture from SAK_DISPATCH_SDL — the
+        // payload is a plain scalar with no @error types reachable.
         var sdl = """
             type Query {
                 count: Int
@@ -296,7 +297,7 @@ class FetcherPipelineTest {
             """;
         var count = method(findSpec("QueryFetchers", sdl), "count");
         var body = count.code().toString();
-        assertThat(body).contains("ErrorRouter.redact(e, env)");
+        assertThat(body).contains("ErrorRouter.surfaceClientErrorOrRedact(e, env)");
         assertThat(body).doesNotContain("ErrorRouter.dispatch");
     }
 

@@ -32,8 +32,10 @@ import java.util.Map;
  * {@code key.valuesRow()} for arity-N) are baked into a readable statement-form body, so the
  * call site collapses to {@code <name>(wireExpr)}.
  *
- * <p>Skip and throw modes get separate helpers (different bodies) — the throw arm raises a
- * {@code GraphqlErrorException} on a {@code null} decode rather than filtering it out. The
+ * <p>Skip and throw modes get separate helpers (different bodies). The throw arm raises the
+ * generated {@code GraphitronClientException} on a {@code null} decode rather than filtering it
+ * out (R378), carrying a two-branch message that distinguishes structurally-malformed input from a
+ * well-formed wrong-type id (it peeks the wire prefix via {@code NodeIdEncoder.peekTypeId}). The
  * statement-form throw replaces the expression-only {@code Supplier}-lambda-throw trick the inline
  * emission used to need to stay an expression (R260); a developer can now breakpoint the decode
  * and read a meaningful stack frame.
@@ -44,11 +46,20 @@ final class CompositeDecodeHelperRegistry {
 
     record Key(ClassName encoderClass, String methodName, Mode mode, boolean list) {}
 
-    private static final String MISMATCH_MESSAGE =
-        "Decoded NodeId did not match the expected type for this argument";
-
     private final Map<Key, String> helperNames = new LinkedHashMap<>();
     private final Map<Key, MethodSpec> helpers = new LinkedHashMap<>();
+
+    /**
+     * Output package of the generated code, used to reach the generated client-error type
+     * {@code <outputPackage>.schema.GraphitronClientException} that a {@link Mode#THROW} helper
+     * raises on a decode failure (R378). Empty package is tolerated for the SKIP-only paths that
+     * never reach the client-error reference.
+     */
+    private final String outputPackage;
+
+    CompositeDecodeHelperRegistry(String outputPackage) {
+        this.outputPackage = outputPackage;
+    }
 
     /**
      * Brackets the construct-thread-drain lifecycle so a registry can never be registered into
@@ -62,9 +73,9 @@ final class CompositeDecodeHelperRegistry {
      * <p>Used by {@link QueryConditionsGenerator}, {@link TypeClassGenerator}, and
      * {@link TypeFetcherGenerator}; each owns the {@link TypeSpec.Builder} the helpers land on.
      */
-    static void collectInto(TypeSpec.Builder classBuilder,
+    static void collectInto(TypeSpec.Builder classBuilder, String outputPackage,
             java.util.function.Consumer<CompositeDecodeHelperRegistry> body) {
-        var registry = new CompositeDecodeHelperRegistry();
+        var registry = new CompositeDecodeHelperRegistry(outputPackage);
         body.accept(registry);
         registry.emit().forEach(classBuilder::addMethod);
     }
@@ -93,9 +104,7 @@ final class CompositeDecodeHelperRegistry {
         // Decoder methods are uniformly named `decode<TypeName>`; strip the prefix once and apply
         // the (arity, list) suffix matrix to derive the helper name. Arity-1 projects a single key
         // (`Key`/`Keys`); arity-N projects a composite tuple row (`Row`/`Rows`).
-        String typeName = decodeMethod.startsWith("decode")
-            ? decodeMethod.substring("decode".length())
-            : decodeMethod;
+        String typeName = strippedTypeName(decodeMethod);
         String kind = arity == 1
             ? (list ? "Keys" : "Key")
             : (list ? "Rows" : "Row");
@@ -103,7 +112,7 @@ final class CompositeDecodeHelperRegistry {
         return mode == Mode.THROW ? base + "OrThrow" : base;
     }
 
-    private static MethodSpec buildHelper(HelperRef.Decode decode, Mode mode, boolean list, String name) {
+    private MethodSpec buildHelper(HelperRef.Decode decode, Mode mode, boolean list, String name) {
         int arity = decode.outputColumnShape().size();
         // arity-1 binds the single key column directly; arity-N binds the typed Row<N> tuple.
         TypeName elementType = arity == 1
@@ -123,38 +132,96 @@ final class CompositeDecodeHelperRegistry {
         ClassName recordN = ClassName.get("org.jooq", "Record" + arity);
         ClassName objects = ClassName.get(java.util.Objects.class);
         ClassName collectors = ClassName.get(java.util.stream.Collectors.class);
-        ClassName graphqlErr = ClassName.get("graphql", "GraphqlErrorException");
+        TypeName recordType = typedRecord(decode.outputColumnShape());
 
         if (list) {
             builder.addStatement("if (!(wire instanceof $T<?> nodeIds)) return null", List.class);
-            CodeBlock.Builder chain = CodeBlock.builder()
-                .add("return nodeIds.stream().map(nodeId -> $T.$L((String) nodeId))", encoder, decodeMethod);
             if (mode == Mode.THROW) {
-                chain.add(".map(key -> { if (key == null) throw $T.newErrorException().message($S).build(); return key; })",
-                    graphqlErr, MISMATCH_MESSAGE);
+                // Decode and the null-check share one statement lambda so the offending wire value
+                // (`nodeId`) is in scope at the throw; the bad element names itself in the message.
+                CodeBlock.Builder b = CodeBlock.builder()
+                    .add("return nodeIds.stream().map(nodeId -> {\n").indent()
+                    .addStatement("$T key = $T.$L((String) nodeId)", recordType, encoder, decodeMethod)
+                    .beginControlFlow("if (key == null)")
+                    .add(decodeFailureThrow(decode, "(String) nodeId", "nodeId"))
+                    .endControlFlow()
+                    .addStatement("return key")
+                    .unindent()
+                    .add("})\n")
+                    // arity-1 projects the single key column; arity-N projects the composite tuple row.
+                    .add(arity == 1 ? ".map($T::value1)\n" : ".map($T::valuesRow)\n", recordN)
+                    .addStatement(".collect($T.toList())", collectors);
+                builder.addCode(b.build());
             } else {
-                chain.add(".filter($T::nonNull)", objects);
+                CodeBlock.Builder chain = CodeBlock.builder()
+                    .add("return nodeIds.stream().map(nodeId -> $T.$L((String) nodeId))", encoder, decodeMethod)
+                    .add(".filter($T::nonNull)", objects)
+                    .add(arity == 1 ? ".map($T::value1)" : ".map($T::valuesRow)", recordN)
+                    .add(".collect($T.toList())", collectors);
+                builder.addStatement(chain.build());
             }
-            // arity-1 projects the single key column; arity-N projects the composite tuple row.
-            chain.add(arity == 1 ? ".map($T::value1)" : ".map($T::valuesRow)", recordN);
-            chain.add(".collect($T.toList())", collectors);
-            builder.addStatement(chain.build());
         } else {
             builder.addStatement("if (!(wire instanceof String nodeId)) return null");
             // Typed local rather than `var`: the lint guard forbids `var` in emitted sources so
             // inferred types stay searchable. Record<N> with the column tuple's java types is the
             // exact return shape of NodeIdEncoder.decode<TypeName>(String).
-            TypeName recordType = typedRecord(decode.outputColumnShape());
             builder.addStatement("$T key = $T.$L(nodeId)", recordType, encoder, decodeMethod);
             String projection = arity == 1 ? "key.value1()" : "key.valuesRow()";
             if (mode == Mode.THROW) {
-                builder.addStatement("if (key == null) throw $T.newErrorException().message($S).build()", graphqlErr, MISMATCH_MESSAGE);
+                builder.beginControlFlow("if (key == null)");
+                builder.addCode(decodeFailureThrow(decode, "nodeId", "nodeId"));
+                builder.endControlFlow();
                 builder.addStatement("return $L", projection);
             } else {
                 builder.addStatement("return key == null ? null : $L", projection);
             }
         }
         return builder.build();
+    }
+
+    /**
+     * Emits the {@link Mode#THROW} failure path for a {@code null} decode return (R378): peek the
+     * wire value's type prefix, then throw the generated {@code GraphitronClientException} carrying
+     * a two-branch message that distinguishes structurally-malformed input from a well-formed
+     * wrong-type id. {@code peekArg} is the wire expression fed to {@code peekTypeId} (cast to
+     * {@code String} on the list path, already-{@code String} on the scalar path); {@code msgVar}
+     * is the local concatenated into the message text.
+     *
+     * <p>The second base64 walk {@code peekTypeId} performs (re-decoding what {@code decode<Type>}
+     * already discarded) is deliberate: it runs only on the error path, which is about to throw and
+     * abort the field, so the redundant decode costs nothing on the success path.
+     */
+    private CodeBlock decodeFailureThrow(HelperRef.Decode decode, String peekArg, String msgVar) {
+        ClassName clientException = ClassName.get(outputPackage + ".schema", "GraphitronClientException");
+        String typeName = strippedTypeName(decode.methodName());
+        return CodeBlock.builder()
+            .addStatement("$T peeked = $T.peekTypeId($L)", String.class, decode.encoderClass(), peekArg)
+            .addStatement("throw new $T($L)", clientException,
+                failureMessageExpr(decode.typeId(), typeName, msgVar))
+            .build();
+    }
+
+    /**
+     * Builds the ternary message expression. {@code peeked == null} (bad base64 / no colon) and
+     * {@code peeked.equals(expectedTypeId)} (right type prefix, wrong key arity) both read as
+     * "malformed"; any other non-null prefix is a well-formed wrong-type id and names the type it
+     * decoded to. The expected type name and id are generation-time constants.
+     */
+    private static CodeBlock failureMessageExpr(String expectedTypeId, String typeName, String msgVar) {
+        return CodeBlock.of(
+            "peeked == null || $S.equals(peeked)\n"
+          + "    ? $S + $L + $S\n"
+          + "    : $S + $L + $S + peeked + $S",
+            expectedTypeId,
+            "Invalid node id \"", msgVar, "\" for this argument: not a valid " + typeName + " id",
+            "Invalid node id \"", msgVar, "\" for this argument: decodes to type \"",
+            "\", expected a " + typeName + " id");
+    }
+
+    private static String strippedTypeName(String decodeMethod) {
+        return decodeMethod.startsWith("decode")
+            ? decodeMethod.substring("decode".length())
+            : decodeMethod;
     }
 
     private static TypeName typedRow(List<ColumnRef> columns) {

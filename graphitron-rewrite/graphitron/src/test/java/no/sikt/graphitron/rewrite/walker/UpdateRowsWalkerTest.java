@@ -397,7 +397,7 @@ class UpdateRowsWalkerTest {
 
     private static CallSiteExtraction.NodeIdDecodeKeys dummyDecode(List<ColumnRef> columns) {
         return new CallSiteExtraction.NodeIdDecodeKeys.SkipMismatchedElement(
-            new HelperRef.Decode(ClassName.get("fixture", "Enc"), "decode", columns));
+            new HelperRef.Decode(ClassName.get("fixture", "Enc"), "decode", columns, "Type"));
     }
 
     private static SourceLocation loc() {

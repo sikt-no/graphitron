@@ -124,16 +124,17 @@ public sealed interface CallSiteExtraction
      * {@link HelperRef.Decode decode<TypeName>} (malformed input or typeId mismatch) surfaces:
      *
      * <ul>
-     *   <li>{@link SkipMismatchedElement} — input-side filters
-     *       ({@code [ID!] @nodeId(typeName: T)} on an input-object field, or the same shape as a
-     *       top-level field-argument). A {@code null} return short-circuits the bad element to
-     *       "no row matches"; never throws. Empty list and null arg follow existing
-     *       column-equality behavior (predicate omitted when arg is absent, {@code falseCondition()}
-     *       when present-but-empty).</li>
-     *   <li>{@link ThrowOnMismatch} — {@code @nodeId} on a top-level scalar / list argument used
-     *       as a lookup or mutation key. A {@code null} return is an authored-input error and
-     *       surfaces as a {@code GraphqlErrorException}-shaped error, not silent null; a
-     *       wrong-type id at a lookup key is a contract violation rather than "no match."</li>
+     *   <li>{@link SkipMismatchedElement} — a {@code null} return short-circuits the bad element to
+     *       "no row matches"; never throws. After R378 this arm is produced <em>only</em> by the
+     *       legacy {@code __NODE_*} synthesis shims (on the {@code retire-synthesis-shims} track);
+     *       authored {@code @nodeId} filters no longer use it.</li>
+     *   <li>{@link ThrowOnMismatch} — every authored {@code @nodeId} argument or input-object-field
+     *       filter ({@code [ID!] @nodeId(typeName: T)} and the scalar analogue), plus {@code @nodeId}
+     *       lookup / mutation keys. A {@code null} return is a client mistake and surfaces as a
+     *       {@code GraphitronClientException} (a {@code GraphQLError}), not a silent drop; the decode
+     *       helper's message distinguishes a structurally-malformed id from a well-formed wrong-type
+     *       id (R378). For filters this gives up the Relay heterogeneous-id-source pattern by design:
+     *       one bad element fails the whole field rather than narrowing the set.</li>
      * </ul>
      *
      * <p>The third failure mode (NullOnMismatch) is dispatcher-driven (Query.node, Query.nodes,
@@ -151,15 +152,17 @@ public sealed interface CallSiteExtraction
     }
 
     /**
-     * Skip the bad element on a {@code null} decode return. Used by
-     * {@code [ID!] @nodeId(typeName: T)} input-object-field filters and the equivalent top-level
-     * field-argument filter shape.
+     * Skip the bad element on a {@code null} decode return. After R378 this arm is produced only by
+     * the legacy {@code __NODE_*} synthesis shims ({@code retire-synthesis-shims} track); authored
+     * {@code @nodeId} filters classify to {@link ThrowOnMismatch} instead.
      */
     record SkipMismatchedElement(HelperRef.Decode decodeMethod) implements NodeIdDecodeKeys {}
 
     /**
-     * Throw a {@code GraphqlErrorException} on a {@code null} decode return. Used by
-     * {@code @nodeId} on a top-level scalar / list argument bound to a lookup or mutation key.
+     * Throw the generated {@code GraphitronClientException} (a {@code GraphQLError}) on a
+     * {@code null} decode return, with a message distinguishing malformed input from a well-formed
+     * wrong-type id (R378). Used by every authored {@code @nodeId} filter (argument or
+     * input-object-field) and by {@code @nodeId} lookup / mutation keys.
      */
     record ThrowOnMismatch(HelperRef.Decode decodeMethod) implements NodeIdDecodeKeys {}
 

@@ -849,9 +849,10 @@ class TypeFetcherGeneratorTest {
     }
 
     @Test
-    void queryServiceRecordField_withoutErrorChannel_catchArmStillRedacts() {
-        // Counter-test: an absent channel keeps the redact disposition. Same fetcher shape as
-        // the dispatch test above but with Optional.empty() for the channel.
+    void queryServiceRecordField_withoutErrorChannel_catchArmSurfacesOrRedacts() {
+        // Counter-test: an absent channel keeps the no-channel disposition, which since R378 routes
+        // through surfaceClientErrorOrRedact. Same fetcher shape as the dispatch test above but with
+        // Optional.empty() for the channel.
         var method = TestFixtures.staticServiceMethodRef(
             "com.example.Service", "filmCount", ClassName.get("java.lang", "Integer"), List.of());
         var field = new QueryField.QueryServiceRecordField("Query", "filmCount", null,
@@ -860,7 +861,7 @@ class TypeFetcherGeneratorTest {
             List.of(field), DEFAULT_OUTPUT_PACKAGE);
 
         var body = method(spec, "filmCount").code().toString();
-        assertThat(body).contains("ErrorRouter.redact(e, env)");
+        assertThat(body).contains("ErrorRouter.surfaceClientErrorOrRedact(e, env)");
         assertThat(body).doesNotContain("ErrorRouter.dispatch");
         assertThat(body).doesNotContain("ErrorMappings");
     }
@@ -996,11 +997,11 @@ class TypeFetcherGeneratorTest {
     }
 
     @Test
-    void mutationServiceTableField_withoutErrorChannel_catchArmRedacts() {
-        // Counter-test: an absent channel keeps the redact disposition on the mutation side
-        // too. Without this assertion, a regression that hard-wired dispatch in the mutation
-        // emitter (rather than going through the shared common helper's fork) would slip
-        // through.
+    void mutationServiceTableField_withoutErrorChannel_catchArmSurfacesOrRedacts() {
+        // Counter-test: an absent channel keeps the no-channel disposition (surfaceClientErrorOrRedact
+        // since R378) on the mutation side too. Without this assertion, a regression that hard-wired
+        // dispatch in the mutation emitter (rather than going through the shared common helper's
+        // fork) would slip through.
         var method = TestFixtures.staticServiceMethodRef(
             "com.example.Service", "doThing", ClassName.get("java.lang", "Integer"), List.of());
         var field = new MutationField.MutationServiceRecordField("Mutation", "doThing", null,
@@ -1010,7 +1011,7 @@ class TypeFetcherGeneratorTest {
             List.of(field), DEFAULT_OUTPUT_PACKAGE);
 
         var body = method(spec, "doThing").code().toString();
-        assertThat(body).contains("ErrorRouter.redact(e, env)");
+        assertThat(body).contains("ErrorRouter.surfaceClientErrorOrRedact(e, env)");
         assertThat(body).doesNotContain("ErrorRouter.dispatch");
     }
 

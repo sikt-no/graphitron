@@ -50,7 +50,7 @@ class TypeConditionsGeneratorTest {
     private static HelperRef.Decode decodeHelper(String typeName, List<ColumnRef> outputCols) {
         return new HelperRef.Decode(
             ClassName.get(DEFAULT_OUTPUT_PACKAGE + ".util", "NodeIdEncoder"),
-            "decode" + typeName, outputCols);
+            "decode" + typeName, outputCols, typeName);
     }
 
     private static BodyParam.In nodeIdInList(String name, ColumnRef col, String typeName) {

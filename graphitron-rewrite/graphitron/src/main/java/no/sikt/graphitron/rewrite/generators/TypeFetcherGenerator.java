@@ -371,7 +371,7 @@ public class TypeFetcherGenerator {
         // filter sites that decode a @nodeId argument lift a per-class private static helper through
         // it. collectInto co-locates construct and drain onto this class's builder so a lifted
         // helper can never be silently dropped.
-        CompositeDecodeHelperRegistry.collectInto(builder, registry -> {
+        CompositeDecodeHelperRegistry.collectInto(builder, outputPackage, registry -> {
         for (var field : fields) {
             switch (field) {
                 case ChildField.ColumnField cf -> {
@@ -796,7 +796,7 @@ public class TypeFetcherGenerator {
         }
         builder.addCode(returnSyncSuccess(valueType, "payload"));
         builder.nextControlFlow("catch ($T e)", Exception.class);
-        builder.addCode(redactCatchArm(outputPackage));
+        builder.addCode(noChannelCatchArm(outputPackage));
         builder.endControlFlow();
 
         return builder.build();
@@ -863,7 +863,7 @@ public class TypeFetcherGenerator {
         }
         builder.addCode(returnSyncSuccess(valueType, "payload"));
         builder.nextControlFlow("catch ($T e)", Exception.class);
-        builder.addCode(redactCatchArm(outputPackage));
+        builder.addCode(noChannelCatchArm(outputPackage));
         builder.endControlFlow();
 
         return builder.build();
@@ -934,7 +934,7 @@ public class TypeFetcherGenerator {
         }
         builder.addCode(returnSyncSuccess(valueType, "payload"));
         builder.nextControlFlow("catch ($T e)", Exception.class);
-        builder.addCode(redactCatchArm(outputPackage));
+        builder.addCode(noChannelCatchArm(outputPackage));
         builder.endControlFlow();
 
         return builder.build();
@@ -1291,7 +1291,7 @@ public class TypeFetcherGenerator {
             .build());
         builder.addCode(returnSyncSuccess(valueType, "payload"));
         builder.nextControlFlow("catch ($T e)", Exception.class);
-        builder.addCode(redactCatchArm(outputPackage));
+        builder.addCode(noChannelCatchArm(outputPackage));
         builder.endControlFlow();
 
         return builder.build();
@@ -4495,7 +4495,7 @@ public class TypeFetcherGenerator {
             valueType, connectionResultClass, tableLocal);
         builder.addCode(returnSyncSuccess(valueType, "payload"));
         builder.nextControlFlow("catch ($T e)", Exception.class);
-        builder.addCode(redactCatchArm(outputPackage));
+        builder.addCode(noChannelCatchArm(outputPackage));
         builder.endControlFlow();
 
         return builder.build();
@@ -4804,7 +4804,7 @@ public class TypeFetcherGenerator {
         builder.addStatement("$T payload = $L(env)", valueType, field.lookupMethodName());
         builder.addCode(returnSyncSuccess(valueType, "payload"));
         builder.nextControlFlow("catch ($T e)", Exception.class);
-        builder.addCode(redactCatchArm(outputPackage));
+        builder.addCode(noChannelCatchArm(outputPackage));
         builder.endControlFlow();
         return builder.build();
     }
@@ -4895,7 +4895,7 @@ public class TypeFetcherGenerator {
             no.sikt.graphitron.rewrite.generators.util.QueryNodeFetcherClassGenerator.DISPATCH_METHOD);
         builder.addCode(returnSyncSuccess(valueType, "payload"));
         builder.nextControlFlow("catch ($T e)", Exception.class);
-        builder.addCode(redactCatchArm(outputPackage));
+        builder.addCode(noChannelCatchArm(outputPackage));
         builder.endControlFlow();
         return builder.build();
     }
@@ -6032,7 +6032,7 @@ public class TypeFetcherGenerator {
     private static CodeBlock catchArm(String outputPackage, Optional<ErrorChannel> errorChannel,
                                       CodeBlock localContextSentinel) {
         if (errorChannel.isEmpty()) {
-            return redactCatchArm(outputPackage);
+            return noChannelCatchArm(outputPackage);
         }
         return switch (errorChannel.get()) {
             // R244 additive window: Mapped is not produced yet (the Outcome-wrapper emit seam,
@@ -6071,11 +6071,15 @@ public class TypeFetcherGenerator {
     }
 
     /**
-     * Builds the standard catch arm for a synchronous fetcher without a typed-error channel:
-     * redact the throw via the {@code ErrorRouter} emitted at {@code <outputPackage>.schema.ErrorRouter}.
+     * Builds the standard catch arm for a synchronous fetcher without a typed-error channel: route
+     * the throw through {@code ErrorRouter.surfaceClientErrorOrRedact} (emitted at
+     * {@code <outputPackage>.schema.ErrorRouter}). A {@code GraphitronClientException} (e.g. a
+     * malformed/wrong-type {@code @nodeId} filter id) surfaces its real message; every other
+     * throwable still redacts to a correlation id (R378). Behaviour changes only for the
+     * client-error marker type, so the blast radius is bounded to those throws.
      */
-    private static CodeBlock redactCatchArm(String outputPackage) {
-        return CodeBlock.of("return $T.redact(e, env);\n", errorRouterClass(outputPackage));
+    private static CodeBlock noChannelCatchArm(String outputPackage) {
+        return CodeBlock.of("return $T.surfaceClientErrorOrRedact(e, env);\n", errorRouterClass(outputPackage));
     }
 
     /**

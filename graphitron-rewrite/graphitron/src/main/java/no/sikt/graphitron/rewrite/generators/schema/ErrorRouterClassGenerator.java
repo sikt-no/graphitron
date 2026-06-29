@@ -115,6 +115,7 @@ public final class ErrorRouterClassGenerator {
             .addCode(redactBody())
             .build();
 
+        var surfaceClientErrorOrRedact = buildSurfaceClientErrorOrRedactMethod(typeP, resultOfP, outputPackage);
         var dispatch = buildDispatchMethod(typeP, resultOfP);
         var dispatchToLocalContext = buildDispatchToLocalContextMethod(typeP, resultOfP);
 
@@ -145,6 +146,7 @@ public final class ErrorRouterClassGenerator {
             .addType(sqlStateMapping)
             .addType(vendorCodeMapping)
             .addMethod(redact)
+            .addMethod(surfaceClientErrorOrRedact)
             .addMethod(dispatch)
             .addMethod(dispatchToLocalContext)
             .build();
@@ -313,6 +315,42 @@ public final class ErrorRouterClassGenerator {
                 .addModifiers(Modifier.PUBLIC)
                 .returns(STRING_CN)
                 .addStatement("return description")
+                .build())
+            .build();
+    }
+
+    private static MethodSpec buildSurfaceClientErrorOrRedactMethod(
+            TypeVariableName typeP,
+            ParameterizedTypeName resultOfP,
+            String outputPackage) {
+        var clientException = ClassName.get(outputPackage + ".schema",
+            GraphitronClientExceptionClassGenerator.CLASS_NAME);
+
+        return MethodSpec.methodBuilder("surfaceClientErrorOrRedact")
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .addTypeVariable(typeP)
+            .returns(resultOfP)
+            .addParameter(THROWABLE, "thrown")
+            .addParameter(DATA_FETCHING_ENVIRONMENT, "env")
+            .addJavadoc("No-channel disposition for fetchers that may throw a client-input error.\n"
+                + "Walks the cause chain outermost-first; if a {@link $T} (itself a\n"
+                + "{@code GraphQLError}) is found, returns a {@link $T} with {@code data=null} and\n"
+                + "that error, so the real client-facing message reaches the response\n"
+                + "{@code errors} array. On no match falls through to {@link #redact}: genuine\n"
+                + "internal faults keep the privacy contract (logged + correlation id only).\n"
+                + "\n"
+                + "<p>This is the no-channel counterpart {@code redact} was for channel-less\n"
+                + "fetchers; it narrows surfacing to the client-error marker type so a future query\n"
+                + "{@code @error} lift (R397) can route the same throw through a channel with no\n"
+                + "change at the throw site.\n",
+                clientException, DATA_FETCHER_RESULT)
+            .addCode(CodeBlock.builder()
+                .beginControlFlow("for ($T t = thrown; t != null; t = t.getCause())", THROWABLE)
+                .beginControlFlow("if (t instanceof $T clientError)", clientException)
+                .addStatement("return $T.<P>newResult().data(null).error(clientError).build()", DATA_FETCHER_RESULT)
+                .endControlFlow()
+                .endControlFlow()
+                .addStatement("return redact(thrown, env)")
                 .build())
             .build();
     }

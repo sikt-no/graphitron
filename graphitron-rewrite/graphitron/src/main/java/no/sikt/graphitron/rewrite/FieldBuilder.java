@@ -1230,16 +1230,16 @@ class FieldBuilder {
                     { return new ArgumentRef.UnclassifiedArg(name, typeName, nonNull, list, r.rejection()); }
                 case NodeIdLeafResolver.Resolved.SameTable st -> {
                     // Same-table @nodeId arg = filter semantics (WHERE pk IN (decoded_ids) /
-                    // RowIn for composite PKs). A malformed encoded id drops silently to "no
-                    // row matches" via SkipMismatchedElement. Explicit @lookupKey re-enables
-                    // the N×M derived-table lookup shape — the only remaining same-table-arg
-                    // path into QueryLookupTableField after R106. The emitter's per-row decode
-                    // site branches on the NodeIdDecodeKeys arm; ThrowOnMismatch is reserved
-                    // for synthesised lookup-key paths (the implicit scalar-ID arm below)
-                    // where a wrong-type id is an authored-input contract violation rather
-                    // than a filter miss.
+                    // RowIn for composite PKs). A malformed or wrong-type encoded id throws a
+                    // GraphitronClientException via ThrowOnMismatch (R378): a bad filter id is a
+                    // client mistake worth surfacing, not silently dropping to "no row matches".
+                    // Explicit @lookupKey re-enables the N×M derived-table lookup shape — the only
+                    // remaining same-table-arg path into QueryLookupTableField after R106. The
+                    // emitter's per-row decode site branches on the NodeIdDecodeKeys arm; both
+                    // filter and synthesised-lookup-key paths now throw, distinguished only by the
+                    // decode helper's two-branch message.
                     boolean isLookupKey = arg.hasAppliedDirective(DIR_LOOKUP_KEY);
-                    var extraction = new CallSiteExtraction.SkipMismatchedElement(st.decodeMethod());
+                    var extraction = new CallSiteExtraction.ThrowOnMismatch(st.decodeMethod());
                     var keys = st.keyColumns();
                     if (keys.size() == 1) {
                         return new ArgumentRef.ScalarArg.ColumnArg(
@@ -1251,17 +1251,17 @@ class FieldBuilder {
                         argCondition, fieldOverride, isLookupKey);
                 }
                 case NodeIdLeafResolver.Resolved.FkTarget.DirectFk direct -> {
-                    // FK-target @nodeId arg = filter semantics. Skip extraction (malformed ids
-                    // drop silently to "no match"). projectFilters emits BodyParam.In/Eq/RowIn
-                    // /RowEq using DirectFk's fkSourceColumns directly — no JOIN, the resolver
-                    // has already verified the FK's targetColumns positionally match the
-                    // NodeType key columns.
+                    // FK-target @nodeId arg = filter semantics. Throw extraction (malformed or
+                    // wrong-type ids surface a GraphitronClientException, R378, rather than dropping
+                    // silently to "no match"). projectFilters emits BodyParam.In/Eq/RowIn/RowEq
+                    // using DirectFk's fkSourceColumns directly — no JOIN, the resolver has already
+                    // verified the FK's targetColumns positionally match the NodeType key columns.
                     if (arg.hasAppliedDirective(DIR_LOOKUP_KEY)) {
                         return new ArgumentRef.UnclassifiedArg(name, typeName, nonNull, list,
                             Rejection.structural("@lookupKey is meaningless on an FK-target @nodeId arg; FK-target"
                             + " @nodeId is a filter, not a lookup"));
                     }
-                    var extraction = new CallSiteExtraction.SkipMismatchedElement(direct.decodeMethod());
+                    var extraction = new CallSiteExtraction.ThrowOnMismatch(direct.decodeMethod());
                     var keys = direct.keyColumns();
                     if (keys.size() == 1) {
                         return new ArgumentRef.ScalarArg.ColumnReferenceArg(

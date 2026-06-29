@@ -1,7 +1,7 @@
 ---
 id: R378
 title: "Filter @nodeId decode should distinguish malformed input from wrong-type and report malformed as a user error"
-status: Ready
+status: In Review
 bucket: architecture
 theme: nodeid
 depends-on: []
@@ -65,7 +65,7 @@ The empty-vs-bad-element asymmetry is intentional and principled: emptiness is *
 The reported bug is on a **query/fetch** field (`soknader(filter: HentSoknadInput): [Soknad!]`). Throwing from the decode helper is necessary but **not sufficient** to give the client a catchable, meaningful error, because of two architectural facts:
 
 1. **`@error` attaches to a payload OBJECT, and a bare-entity field has no host for it.** `@error` is `on OBJECT`: handlers are declared on a payload object carrying an `errors` field, and the error *channel* binds to fields whose return type is such a payload. This is **not** mutation-only — several query field variants carry channels: `WithErrorChannel` is implemented by `QueryServiceTableField`, `QueryServiceRecordField`, `QueryServicePolymorphicField`, and `QueryTableMethodTableField` (`WithErrorChannel.java:13` names "root + child services, root + child `@tableMethod` fields"), and `CatalogBuilder` resolves `errorChannelName(f.errorChannel())` for them. What `soknader(filter:): [Soknad!]` lacks is not "query-ness" but a payload OBJECT to host the `errors` field: it returns a bare list of entities. The sealed `QueryField` interface itself does not `extends WithErrorChannel` (`QueryField.java:25`, unlike `MutationField.java:18`), so the capability lives on the service / `@tableMethod` variants, not on a plain table-fetch field like `soknader`.
-2. **Fetch fields redact every thrown exception.** A query fetcher wraps its work in a redact-only catch arm (`TypeFetcherGenerator.java:799`, `redactCatchArm`). `ErrorRouter.redact` (`ErrorRouterClassGenerator.java:421-432`) logs the throwable and returns `data: null` + a generic `"An error occurred. Reference: <uuid>."`, with **no special-casing** for any client-error type. A raw throw here would be scrubbed to a correlation id.
+2. **Fetch fields redact every thrown exception.** A query fetcher wraps its work in a redact-only catch arm (`TypeFetcherGenerator`, `redactCatchArm`; renamed to `noChannelCatchArm` and repointed at `surfaceClientErrorOrRedact` by this item). `ErrorRouter.redact` (`ErrorRouterClassGenerator.java:421-432`) logs the throwable and returns `data: null` + a generic `"An error occurred. Reference: <uuid>."`, with **no special-casing** for any client-error type. A raw throw here would be scrubbed to a correlation id.
 
 **Decision (user): path B, done so that lifting `@error` to queries later is a clean follow-on.** A malformed / wrong-type id is a *client* mistake, not a server fault, so the query catch arm should surface its real message in the standard GraphQL `errors` array while still redacting genuine internal exceptions. The throw is **not** a bare anonymous `GraphqlErrorException`: it is a stable, recognizable type so (a) the catch arm can tell "client error → surface" from "internal fault → redact", and (b) when bare-entity query fields gain a payload object that can host `@error` handlers (the companion item below), the *same* throw is matched by an `@error` `GENERIC` handler with **zero change at the throw site**.
 
@@ -124,6 +124,22 @@ No new validate-time rule. Malformed/wrong-type-ness is a *runtime* property of 
 - **Pipeline tier** — assert the four authored arms now classify to `ThrowOnMismatch` (pinning the intent mechanically per "Documentation names only live tests/code": a future arm reintroducing `SkipMismatchedElement` on an *authored* filter must fail a test, not just contradict prose). Assert the two shim arms still classify to `SkipMismatchedElement` (the deliberate boundary).
 - **Unit tier** — `CompositeDecodeHelperRegistryTest`: the enriched `Mode.THROW` body throws `GraphitronClientException` with the two-branch message (wire value + expected type), for both list and scalar arms (code-string assertions by this file's existing convention; behaviour proven at execution tier). Plus a focused test that `ErrorRouter.surfaceClientErrorOrRedact` surfaces a `GraphitronClientException`'s message and redacts a plain `RuntimeException` (the surface-vs-redact split).
 - **Compilation tier** — the generated `GraphitronClientException` + the `surfaceClientErrorOrRedact` arm compile under `graphitron-sakila-example`'s `<release>17</release>` (they ride generated output); a `@nodeId` filter field in that module exercises the throw end-to-end.
+
+## Implementation notes (In Review)
+
+Landed as planned; the plan body above is the design of record. What shipped:
+
+- **`HelperRef.Decode` carries `typeId`** (the typeId-carrying form, not the no-comparison fallback), so the malformed branch folds the right-type-wrong-arity sub-case via `peeked == null || "<typeId>".equals(peeked)`.
+- **`GraphitronClientException`** is generated at `<outputPackage>.schema` and **subclasses `graphql.GraphqlErrorException`** (the spec's first preference; graphql-java 25 permits a message-carrying subclass through `newErrorException().message(...)`), so it is natively a `GraphQLError`, channel-matchable, and serialises into the response `errors` array. A `serialVersionUID` is emitted to keep generated output clean under `-Xlint:serial`.
+- **`ErrorRouter.surfaceClientErrorOrRedact`** added; the no-channel catch disposition was repointed at it in **both** `TypeFetcherGenerator` (the renamed `noChannelCatchArm`, 8 sites) **and** `MultiTablePolymorphicEmitter` (its own `noChannelCatchArm`), plus `ChannelCatchArmEmitter`'s `Optional.empty()` arm, for uniformity across fetcher emitters. The channel-present and async `.exceptionally` redact paths were left untouched (out of scope).
+- **`CompositeDecodeHelperRegistry`** threads `outputPackage` through `collectInto` and emits the two-branch message; the list arm was restructured to a statement lambda so the offending `nodeId` is in scope at the throw.
+
+Two boundary findings recorded during implementation:
+
+- **The `@lookupKey` same-table `@nodeId` arg also flips to `ThrowOnMismatch`.** Its extraction is created at the shared `FieldBuilder.java:1242` site regardless of the `@lookupKey` flag, so the lookup variant inherits the throw policy. This is desirable (a bad lookup id should throw) and the `LookupValuesJoinEmitter` `ThrowOnMismatch` arm already handled it; the `NodeIdPipelineTest` pin was updated accordingly.
+- **`LookupValuesJoinEmitter` is a separate decode-throw site that is NOT enriched.** The N×M `@lookupKey` derived-table path throws its own plain `GraphqlErrorException`, so a wrong-type id there still **redacts** rather than surfacing. This is the same deliberate boundary the record-decode siblings (R195/R315) sit on, and is pinned behaviourally by `compositeNodeIdLookup_typeMismatch_raisesError`. Only the `CompositeDecodeHelperRegistry`-emitted filter/arg helpers surface.
+
+**Validator:** no new rule, as planned. Both `NodeIdDecodeKeys` arms and both registry modes were already fully implemented, so flipping a producer from one implemented arm to the other introduces no new unhandled classification; the "validator mirrors classifier invariants" rule is satisfied vacuously.
 
 ## Relationship to R273
 

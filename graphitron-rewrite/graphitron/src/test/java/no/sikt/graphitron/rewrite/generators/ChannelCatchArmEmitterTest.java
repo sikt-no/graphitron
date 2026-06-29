@@ -32,11 +32,12 @@ class ChannelCatchArmEmitterTest {
         ClassName.get("com.example", "SakRecord"));
 
     @Test
-    void emit_emptyChannel_producesRedactArm() {
+    void emit_emptyChannel_producesSurfaceClientErrorOrRedactArm() {
         var code = ChannelCatchArmEmitter.emit(
             Optional.empty(), OUTCOME_OF_RECORD, OUTPUT_PACKAGE, null).toString();
 
-        assertThat(code).contains("redact(e, env)");
+        // R378: the no-channel disposition surfaces a GraphitronClientException and otherwise redacts.
+        assertThat(code).contains("surfaceClientErrorOrRedact(e, env)");
         assertThat(code).doesNotContain("ErrorList");
     }
 
