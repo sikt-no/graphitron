@@ -7,7 +7,7 @@ priority: 6
 theme: interface-union
 depends-on: []
 created: 2026-06-26
-last-updated: 2026-06-26
+last-updated: 2026-06-29
 ---
 
 # First-class discriminated joined-table inheritance (participants on their own tables)
@@ -114,10 +114,13 @@ the backstop that both projections line up against real jOOQ classes.
 **Standalone use is in scope.** Because the parent hop is declared, a joined-table participant is a
 first-class return type on its own, not only reachable through its interface. This is a deliberate gain
 over the inference-only framing, where the inherited columns lived on a table the standalone query never
-joined. One acceptance check gates it: confirm the specific `ColumnReferenceField` shape we lean on
-(single-hop FK to the parent, scalar projection, in a standalone table-type `$fields`) is an implemented
-shape and not one of the deferred variants `validateColumnReferenceField` gates; if it is deferred, that
-deferral is the first thing to lift.
+joined. The acceptance check that gates it is **verified satisfied on trunk**: the single-hop scalar
+`ColumnReferenceField` shape we lean on is in `TypeFetcherGenerator.PROJECTED_LEAVES`, an implemented
+projected leaf, not one of the deferred variants `validateColumnReferenceField` gates. The only deferred
+sibling is `CompositeColumnReferenceField` (a rooted-at-parent NodeId reference), which is **not** the
+shape this feature uses: the composite shared-key fixture's inherited field (`displayName`) is a single
+scalar reached through a multi-slot `FkJoin`, still a plain `ColumnReferenceField`, so both fixtures land
+on the implemented path. No deferral needs lifting.
 
 ## Model changes
 
@@ -152,8 +155,11 @@ deferral is the first thing to lift.
 > shaped for the inference framing (it carries a `detailResidentFields` list and a `baseToDetail` hop named
 > as an inferred FK). Under this design residence is implicit in field classification and the hop is the
 > author-declared child&rarr;parent reference, so that record will be reshaped during implementation (drop
-> `detailResidentFields`; the hop is the parent reference). The `TableBacked` capability and the
-> routing-site edits carry over unchanged.
+> `detailResidentFields`; the hop is the parent reference). Its current javadoc describes the rejected
+> "restrict the participant's `$fields` to `detailResidentFields`" projection (decision 4 below supersedes
+> this with two distinct projections); the reshape must rewrite that javadoc in the same commit, so it does
+> not survive as a false invariant per "Documentation names only live tests/code". The `TableBacked`
+> capability and the routing-site edits carry over unchanged.
 
 ## Implementation
 

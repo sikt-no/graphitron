@@ -27,7 +27,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R273` | Source NodeId metadata from @node + catalog PK (inferred from `implements Node`), and settle wrong-type/malformed mismatch semantics, retiring the legacy __NODE bare-ID arm <sub>blocked by: [nodeid-filter-malformed-vs-mismatched](nodeid-filter-malformed-vs-mismatched.md)</sub> | Spec | 2026-06-02 | [plan](nodeid-skip-mismatch-error-surfacing.md) |
 | `R45` | Multi-tenant routing on top of the schema-driven ExecutionInput factory | Ready | 2026-06-26 | [plan](tenant-routing-and-execution-input.md) |
 | `R347` | Consolidate graphitron-lsp navigation, dispatch, and result-building | In Progress | 2026-06-19 | [plan](lsp-structural-consolidation.md) |
-| `R389` | First-class discriminated joined-table inheritance (participants on their own tables) | Spec | 2026-06-26 | [plan](discriminated-joined-table-inheritance.md) |
+| `R389` | First-class discriminated joined-table inheritance (participants on their own tables) | Spec | 2026-06-29 <sub>created 2026-06-26</sub> | [plan](discriminated-joined-table-inheritance.md) |
 | `R332` | Mark @table on input types as deprecated (signal ahead of R97 removal) | Spec | 2026-06-22 <sub>created 2026-06-18</sub> | [plan](table-on-input-deprecation-signal.md) |
 | `R63` | Type UPSERT dialect requirement on the model | Spec |  | [plan](dml-dialect-requirement-on-model.md) |
 | `R13` | Faceted search on `@asConnection` | Ready | 2026-06-26 | [plan](faceted-search.md) |
