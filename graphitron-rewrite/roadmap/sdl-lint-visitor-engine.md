@@ -51,6 +51,37 @@ Out of scope (deferred):
 - A declarative rule-config DSL (Spectral-style selector plus closed predicate library) as an alternative no-code authoring surface. Noted as prior art; not part of this item.
 - Running the full classifier inside the LSP, and any new protocol surface.
 
+## Starter rule set (first iteration)
+
+The first iteration ships roughly a dozen built-in visitors so the engine lands with value rather than empty. The set is curated from the cross-vendor GraphQL-SDL-linter consensus (graphql-schema-linter, graphql-eslint, Apollo GraphOS, WunderGraph Cosmo) plus graphitron's own directive conventions. Final severities and exact membership are confirmed at Spec.
+
+Curation principles (why these and not others):
+
+- **Do not duplicate what graphql-java already enforces.** Graphitron parses with graphql-java, whose schema validation already hard-errors the type-system-correctness and uniqueness family (`known-type-names`, `known-directives`, `known-argument-names`, `provided-required-arguments`, `unique-*`, `lone-schema-definition`, `possible-type-extension`). These are parse-time errors we get for free, not lint rules. Excluded.
+- **Do not duplicate graphitron's existing hard rejections.** Directive conflicts (mutually-exclusive directive groups), removed directives (`@notGenerated`, `@multitableReference`, `@lookupKey` on inputs), `@scalarType` on a spec built-in, and the UPSERT / `multiRow` refusals are already `Rejection` arms that fail the build. Lint rules must not restate them. Excluded.
+- **Adopt the style/convention consensus** that no parser enforces: naming, descriptions, deprecation hygiene, orphan types.
+- **Formalize graphitron's existing build-tier warnings** as first-class visitors so they share one home; this absorbs R121 and the `@record` / `@asConnection` advisories.
+
+Generic SDL conventions (vendor-agnostic; purely syntactic, so tree-sitter-able for instant LSP feedback as well as build/CI):
+
+1. **type-names-pascal-case**: object, interface, union, enum, input, and scalar type names are PascalCase. Severity warning. Consensus: graphql-schema-linter `types-are-capitalized`, Apollo `TYPE_NAMES_SHOULD_BE_PASCAL_CASE`, Cosmo.
+2. **field-names-camel-case**: object and interface field names are camelCase. The single most agreed-upon GraphQL rule, and safe in graphitron because the SDL field name is decoupled from the column via `@field(name:)`. Severity warning. Consensus: all four tools.
+3. **input-and-argument-names-camel-case**: input-object field names and field-argument names are camelCase. Severity warning. Consensus: graphql-schema-linter, Apollo.
+4. **enum-values-screaming-snake-case**: enum value names are UPPER_SNAKE_CASE, independent of any `@order` / `@enum` directive on the value. Severity warning. Consensus: all four tools.
+5. **deprecations-have-a-reason**: every `@deprecated` carries a non-empty `reason`. Universal hygiene rule; complements graphitron's existing deprecation doc-coverage culture. Severity warning. Consensus: graphql-schema-linter, graphql-eslint, Apollo, Cosmo.
+6. **types-and-fields-have-descriptions**: type definitions and their fields carry descriptions, with configurable scope to keep noise down (default: types plus root-operation fields; opt-in to all fields). Severity warning (advisory, not error). Recurring: graphql-schema-linter's `*-have-descriptions` family, Apollo `ALL_ELEMENTS_REQUIRE_DESCRIPTION`, Cosmo.
+7. **input-object-name-suffix**: input object type names end in `Input`. Severity warning, off-by-default candidate (opinionated; flagged for the Spec on/off decision). Provenance: Apollo `INPUT_TYPE_SUFFIX`, Cosmo.
+
+Graphitron-native rules (directive conventions; mostly schema-aware, so build-side with the LSP projecting):
+
+8. **no-deprecated-directive-usage**: using a graphitron directive or argument marked `@deprecated` in `directives.graphqls`: today `@record`, `@index` (use `@order`), `@asConnection(connectionName:)`, and `ExternalCodeReference.name` (use `className`). One rule that reads the deprecation markers, so it stays correct as the set evolves. Severity warning. This is roadmap R296, absorbed here as a built-in visitor.
+9. **splitquery-redundant-on-record-parent**: `@splitQuery` on a field whose enclosing type is record-backed, where the record handoff already opens a new scope so the directive is ignored. Already emitted as a build warning (`FieldBuilder.warnIfSplitQueryOnRecordParent`); formalized here with a shared marker constant. Severity warning. This is roadmap R121, absorbed here.
+10. **redundant-record-directive**: `@record` on a type that also carries `@table`, or whose backing class graphitron already infers, so the directive is ignored or redundant. Already emitted as a build warning (`TypeBuilder.warnAboutRedundantRecord`, three arms); formalized here. Severity warning. Overlaps R296's deprecated-`@record` signal but carries the more specific redundancy/conflict message; Spec decides whether to merge or keep distinct.
+11. **asconnection-same-table-pk-in**: `@asConnection` on a same-table PK-IN filter with required `@nodeId` arguments, which forces full-table pagination instead of keyed-range pagination. Already emitted as a build warning (`FieldBuilder.warnAsConnectionSameTable`); formalized here. Severity warning. Schema-aware.
+12. **nodeid-target-is-node-type**: `@nodeId(typeName:)` references a type that exists but does not carry `@node`, so the global id cannot decode to PK columns. Schema-aware (resolves the target type, checks for `@node`). Severity warning. Implementation note: confirm this is not already a hard `Rejection`; if the classifier already rejects it, drop this rule and substitute another generic one (candidates: `no-typename-prefix`, `description-style` block-string enforcement, or an off-by-default `enum-values-sorted`).
+
+Deliberately deferred rule candidates (not in iteration one): rules gated on unfinished features (UPSERT, `@mutation` UPDATE `multiRow`, composite-NodeId reference, polymorphic `@service` returns); alphabetical-ordering rules (opinionated, high churn, revisit once the engine is proven); and Relay-connection-conformance rules (graphitron synthesizes Connection / Edge / PageInfo via `@asConnection`, so that shape is generator-controlled, not author-authored; a rule there would police generated output, not author input).
+
 ## Prior-art references (research, 2026-06-29)
 
 - **ESLint**: pluggable parser to ESTree, one shared traversal, rules as visitor factories (`create(context)` returning node-kind-keyed listeners), range-based `context.report`, range-based autofix. The `no-restricted-syntax` rule shows a declarative-selector escape hatch living in config; plugins are the code path.
@@ -65,8 +96,9 @@ Cross-tool synthesis: the schema-linting idiom is visitor-over-typed-AST rules r
 ## Relationships
 
 - **R347** (LSP structural consolidation): its Slice 3 introduces a `CompletionProvider` registry keyed by `Behavior`, replacing a manual dispatch waterfall. This item is the diagnostics-side sibling of that registry shape; landing on the consolidated navigation/dispatch primitives is preferable to forking another copy.
-- **R121** (redundant `@splitQuery` on `@record`): a natural first built-in visitor; its marker-constant note already anticipates a shared rule home.
-- **R296** (deprecated-directive usage) and **R345** (schema parse-failure squiggle): further built-in-visitor candidates and adjacent diagnostics.
+- **R121** (redundant `@splitQuery` on `@record`): absorbed as starter visitor 9; its marker-constant note already anticipates a shared rule home. When R398 ships this visitor, R121 is superseded (the Spec records whether R121 is closed or folded).
+- **R296** (deprecated-directive usage): absorbed as starter visitor 8. Same supersede-or-fold decision at Spec.
+- **R345** (schema parse-failure squiggle): adjacent diagnostic, not part of the rule engine (it is a freshness-policy carve-out); stays independent.
 - **R139** freshness-aware silence policy governs how LSP-projected findings behave on stale snapshots; built-in visitors must place themselves relative to it.
 
 ## Open questions (to settle at Spec)
