@@ -5,7 +5,7 @@ status: Spec
 bucket: bug
 priority: 3
 theme: interface-union
-depends-on: [discriminator-column-from-clause-qualification]
+depends-on: []
 created: 2026-06-29
 last-updated: 2026-06-29
 ---
