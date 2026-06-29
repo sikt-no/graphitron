@@ -125,14 +125,17 @@ class MultiSchemaQueryTest {
     @SuppressWarnings("unchecked")
     void signalsRouteToDiscriminatedTypesUnderNamedSchema() {
         // R395 regression guard. Signal is a single-table discriminated interface over
-        // multischema_a.signal, declared as @table(name: "multischema_a.SIGNAL") — uppercase and
-        // schema-qualified, so the directive string matches neither the case nor a bare form of the
-        // rendered FROM token "multischema_a"."signal". The selection drives all three discriminator
-        // emit sites: the __discriminator__ routing projection, the WHERE ... IN restriction, and the
-        // AlertSignal cross-table LEFT JOIN gate (widgetName, signal -> widget via the in-schema FK).
-        // Before R395 each qualified off the directive string and Postgres rejected the query with
+        // multischema_a.signal, declared as @table(name: "signal"): unqualified and lowercase.
+        // 'signal' is unique to multischema_a so it resolves there, yet jOOQ renders the FROM token
+        // schema-qualified as "multischema_a"."signal", which the bare directive string does not match
+        // (it omits the schema). The selection drives all three discriminator emit sites: the
+        // __discriminator__ routing projection, the WHERE ... IN restriction, and the AlertSignal
+        // cross-table LEFT JOIN gate (widgetName, signal -> widget via the in-schema FK). Before R395
+        // each qualified off the directive string and Postgres rejected the query with
         // "missing FROM-clause entry", surfacing as a fetch error so the field resolved null. After
-        // the fix the rows route to their concrete types and the cross-table column resolves.
+        // the fix the rows route to their concrete types and the cross-table column resolves. This
+        // pins the schema-qualification dimension; the uppercase/case-mismatch dimension is pinned at
+        // the unit tier (TypeFetcherGeneratorTest's INTERFACE_BASE fixture), not here.
         Map<String, Object> data = execute("""
             { signals { __typename signalId label ... on AlertSignal { widgetName } } }
             """);
