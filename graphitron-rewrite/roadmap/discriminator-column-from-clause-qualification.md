@@ -1,7 +1,7 @@
 ---
 id: R395
 title: "Discriminated-interface discriminator column must qualify to the FROM table, not the @table directive name"
-status: Ready
+status: In Review
 bucket: bug
 priority: 3
 theme: interface-union
@@ -47,6 +47,22 @@ upper-case / schema-qualified-directive dimension is covered at the unit tier (`
 fixture). The `@reference` FK-connection limitation is filed as a follow-up Backlog item.
 
 On approval: delete this file and add a one-line `changelog.md` entry citing the landing SHA and R395.
+
+## Rework landed (Ready -> In Progress -> In Review, 2026-06-29)
+
+The single gate-blocking item below is resolved. Both stale fixture comments now describe the
+shipped `@table(name: "signal")` shape (unqualified, lowercase directive vs the schema-qualified
+FROM token `"multischema_a"."signal"`), matching the SDL comments and the deviation note, and each
+states that the uppercase/case-mismatch dimension is pinned at the unit tier
+(`TypeFetcherGeneratorTest`'s `INTERFACE_BASE` fixture), not at the execution tier:
+
+- `graphitron-sakila-db/src/main/resources/init.sql` (the `multischema_a.signal` DDL comment).
+- `graphitron-sakila-example/.../MultiSchemaQueryTest.java` (the
+  `signalsRouteToDiscriminatedTypesUnderNamedSchema` comment); the em dash flagged by the
+  writing-style rule was removed.
+
+Comment-only change, no logic touched. The reviewer-session != implementer-session rule applies to
+the next In Review -> Done sign-off.
 
 ## Review feedback (In Review -> Ready, 2026-06-29)
 

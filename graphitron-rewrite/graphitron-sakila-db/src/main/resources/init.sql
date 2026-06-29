@@ -810,10 +810,13 @@ CREATE TABLE multischema_a.event (
 -- (multischema_a) with a lowercase real name. The discriminator column signal_kind routes rows to
 -- two concrete types; widget_id is an in-schema FK into multischema_a.widget so one participant can
 -- carry a cross-table @reference, exercising the LEFT JOIN ON-clause discriminator gate under a
--- non-default schema. The SDL deliberately spells @table(name: "multischema_a.SIGNAL") (uppercase,
--- schema-qualified), so neither the case nor a bare name matches the rendered FROM token
--- "multischema_a"."signal"; before R395 the discriminator qualified off that directive string and
--- Postgres rejected the query with "missing FROM-clause entry".
+-- non-default schema. The SDL spells @table(name: "signal") (unqualified, lowercase); 'signal' is
+-- unique to multischema_a, so it resolves there, yet jOOQ renders the FROM token schema-qualified as
+-- "multischema_a"."signal". A discriminator qualifier built from the bare directive string emits
+-- "signal"."signal_kind" and omits the schema, so it never matches FROM; before R395 Postgres
+-- rejected the query with "missing FROM-clause entry". This pins the schema-qualification dimension;
+-- the uppercase/case-mismatch dimension is pinned at the unit tier (TypeFetcherGeneratorTest's
+-- INTERFACE_BASE fixture), not here.
 CREATE TABLE multischema_a.signal (
     signal_id    serial      PRIMARY KEY,
     signal_kind  varchar(20) NOT NULL,
