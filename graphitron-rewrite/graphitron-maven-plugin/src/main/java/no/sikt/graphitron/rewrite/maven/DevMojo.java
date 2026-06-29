@@ -172,6 +172,17 @@ public class DevMojo extends AbstractRewriteMojo {
             + " reactor classpath root(s), " + initialCtx.compileSourceRoots().size()
             + " source root(s); " + workspace.catalog().externalReferences().size()
             + " external reference(s) indexed");
+        // Self-explain the single-module-reactor case the sibling walk-up (R99) could not
+        // widen: when graphitron:dev runs from inside a sub-module and no ancestor pom lists
+        // it (so no siblings were resolved), only this module's target/classes is scanned.
+        // Without this line the symptom is a silent empty popup with nothing to grep for.
+        if (singleProjectReactor() && siblingModuleBasedirs().isEmpty()) {
+            getLog().info("graphitron:dev: this reactor resolved to a single module and no "
+                + "sibling modules were found to scan. If services / conditions / records "
+                + "live in sibling modules, run from the aggregator (e.g. mvn -pl <module> "
+                + "graphitron:dev) or check that the parent pom's <modules> lists this module "
+                + "(see R99).");
+        }
         // Name any module the auto-include could not close: scanned for completion
         // (its target/classes is on disk) but contributing no walked source root, so
         // goto-definition / hover on its declarations is a silent no-jump (R369). The

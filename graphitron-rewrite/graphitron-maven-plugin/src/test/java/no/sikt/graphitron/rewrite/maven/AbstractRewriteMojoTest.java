@@ -2,13 +2,21 @@ package no.sikt.graphitron.rewrite.maven;
 
 import graphql.language.SourceLocation;
 import no.sikt.graphitron.rewrite.ValidationError;
+import no.sikt.graphitron.rewrite.catalog.ClasspathScanner;
+import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.rewrite.maven.watch.WatchErrorFormatter;
 import no.sikt.graphitron.rewrite.model.Rejection;
+import org.apache.maven.execution.DefaultMavenExecutionRequest;
+import org.apache.maven.execution.DefaultMavenExecutionResult;
+import org.apache.maven.execution.MavenSession;
 import org.apache.maven.model.Build;
 import org.apache.maven.project.MavenProject;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import java.io.IOException;
+import java.lang.classfile.ClassFile;
+import java.lang.constant.ClassDesc;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -192,6 +200,146 @@ class AbstractRewriteMojoTest {
         var reported = AbstractRewriteMojo.unwalkedScannedModules(List.of(bare, walked, gen));
 
         assertThat(reported).containsExactly(bare.getId());
+    }
+
+    @Test
+    void siblingModuleBasedirs_resolvesDeclaredModulesInDocumentOrderExcludingCurrent(@TempDir Path root) throws Exception {
+        // Aggregator lists three modules; the current project is the middle one.
+        // The walk-up returns the OTHER two, in <modules> document order (the only
+        // ordering input; never an unordered Files.list off the parent).
+        Files.writeString(root.resolve("pom.xml"), aggregatorPom("alpha", "current", "beta"));
+        Path current = Files.createDirectories(root.resolve("current"));
+        Files.createDirectories(root.resolve("alpha"));
+        Files.createDirectories(root.resolve("beta"));
+
+        var siblings = AbstractRewriteMojo.siblingModuleBasedirs(current);
+
+        assertThat(siblings).containsExactly(
+            root.resolve("alpha").toAbsolutePath().normalize(),
+            root.resolve("beta").toAbsolutePath().normalize());
+    }
+
+    @Test
+    void siblingModuleBasedirs_stopsAtNearestAncestorListingCurrent(@TempDir Path root) throws Exception {
+        // A grandparent aggregator lists the current module (via a nested path) and
+        // a far sibling; the immediate parent also lists it, alongside a near sibling.
+        // The walk must stop at the NEAREST ancestor (the parent) and return its
+        // siblings only: the grandparent's far sibling must never surface.
+        Files.writeString(root.resolve("pom.xml"), aggregatorPom("group/current", "far-sibling"));
+        Files.createDirectories(root.resolve("far-sibling"));
+        Path group = Files.createDirectories(root.resolve("group"));
+        Files.writeString(group.resolve("pom.xml"), aggregatorPom("current", "near-sibling"));
+        Path current = Files.createDirectories(group.resolve("current"));
+        Files.createDirectories(group.resolve("near-sibling"));
+
+        var siblings = AbstractRewriteMojo.siblingModuleBasedirs(current);
+
+        assertThat(siblings).containsExactly(
+            group.resolve("near-sibling").toAbsolutePath().normalize());
+        assertThat(siblings).doesNotContain(
+            root.resolve("far-sibling").toAbsolutePath().normalize());
+    }
+
+    @Test
+    void siblingModuleBasedirs_emptyWhenNoAncestorPomListsCurrent(@TempDir Path root) throws Exception {
+        // A standalone module: an ancestor pom exists but does not list this module.
+        // The walk finds no aggregator and returns empty, leaving behaviour exactly
+        // as pre-R99 (no widening for a genuine single-module project).
+        Files.writeString(root.resolve("pom.xml"), aggregatorPom("someone-else"));
+        Files.createDirectories(root.resolve("someone-else"));
+        Path current = Files.createDirectories(root.resolve("standalone"));
+
+        var siblings = AbstractRewriteMojo.siblingModuleBasedirs(current);
+
+        assertThat(siblings).isEmpty();
+    }
+
+    @Test
+    void singleProjectReactor_widensScanAndWalkToDeclaredSiblings(@TempDir Path root) throws Exception {
+        // The sub-module-invocation shape R99 targets: a reactor with an aggregator,
+        // the spec module graphitron:dev runs from, and a sibling service module
+        // holding a @condition/@service class. The session sees only the spec module
+        // (getAllProjects() is size 1), so without the walk-up the sibling's classes
+        // and sources are silently absent.
+        Files.writeString(root.resolve("pom.xml"), aggregatorPom("spec-module", "service-module"));
+
+        Path specBase = Files.createDirectories(root.resolve("spec-module"));
+        Path specClasses = Files.createDirectories(specBase.resolve("target/classes"));
+        Path specSrc = Files.createDirectories(specBase.resolve("src/main/java"));
+
+        Path serviceBase = root.resolve("service-module");
+        Path serviceClasses = Files.createDirectories(serviceBase.resolve("target/classes"));
+        Path serviceSrc = Files.createDirectories(serviceBase.resolve("src/main/java"));
+        writePublicClass(serviceClasses, "no.sikt.example.service.CategoryConditions");
+
+        var specProject = new MavenProject();
+        specProject.setFile(specBase.resolve("pom.xml").toFile());
+        var build = new Build();
+        build.setDirectory(specBase.resolve("target").toString());
+        build.setOutputDirectory(specClasses.toString());
+        specProject.setBuild(build);
+        specProject.addCompileSourceRoot(specSrc.toString());
+
+        var mojo = new ValidateMojo();
+        mojo.project = specProject;
+        mojo.session = singleProjectSession(specProject);
+        mojo.outputDirectory = specBase.resolve("target/generated-sources/graphitron").toString();
+
+        var ctx = mojo.buildContext();
+
+        // Classpath side: the sibling service module's target/classes is scanned,
+        // alongside the spec module's own.
+        assertThat(ctx.classpathRoots()).contains(
+            serviceClasses.toAbsolutePath().normalize(),
+            specClasses.toAbsolutePath().normalize());
+        // ...so the sibling's @condition class lands as an external reference: the
+        // catalog scan the LSP runs over exactly these roots now sees it.
+        var refs = ClasspathScanner.scan(ctx.classpathRoots(), "no.sikt.example.jooq");
+        assertThat(refs).extracting(CompletionData.ExternalReference::className)
+            .contains("no.sikt.example.service.CategoryConditions");
+        // Source side (load-bearing for R369 parity): the sibling's source root is
+        // walked too, so goto-definition / hover on its declarations resolves rather
+        // than silently no-jumping. Without this assertion the test would pass with
+        // only the classpath side wired.
+        assertThat(ctx.compileSourceRoots()).contains(
+            serviceSrc.toAbsolutePath().normalize());
+    }
+
+    /** A {@code <project>} with the given {@code <module>} entries, in order. */
+    private static String aggregatorPom(String... modules) {
+        var sb = new StringBuilder("<project><modelVersion>4.0.0</modelVersion>"
+            + "<groupId>test</groupId><artifactId>aggregator</artifactId><version>1.0</version>"
+            + "<packaging>pom</packaging><modules>");
+        for (String m : modules) {
+            sb.append("<module>").append(m).append("</module>");
+        }
+        return sb.append("</modules></project>").toString();
+    }
+
+    /** A {@link MavenSession} whose reactor is the single project {@code only}, simulating
+     *  {@code mvn graphitron:dev} run from inside one sub-module. The list-taking constructor
+     *  is deprecated but is the only one that builds a usable session without a live Plexus
+     *  container; the test reads nothing the deprecation concerns. */
+    @SuppressWarnings("deprecation")
+    private static MavenSession singleProjectSession(MavenProject only) {
+        var session = new MavenSession(
+            (org.codehaus.plexus.PlexusContainer) null,
+            new DefaultMavenExecutionRequest(),
+            new DefaultMavenExecutionResult(),
+            List.of(only));
+        // The constructor seeds getProjects() but not getAllProjects(); the LSP scan
+        // reads the latter, so set it explicitly to the same single-project reactor.
+        session.setAllProjects(List.of(only));
+        return session;
+    }
+
+    /** Synthesises a minimal public top-level {@code .class} under {@code classes}, the same
+     *  byte-level fixture {@code ClasspathScannerTest} uses (no javac, no real types). */
+    private static void writePublicClass(Path classes, String fqn) throws IOException {
+        byte[] bytes = ClassFile.of().build(ClassDesc.of(fqn), cb -> cb.withFlags(ClassFile.ACC_PUBLIC));
+        Path target = classes.resolve(fqn.replace('.', '/') + ".class");
+        Files.createDirectories(target.getParent());
+        Files.write(target, bytes);
     }
 
     private static MavenProject projectWithBuild(String directory, String outputDirectory) {

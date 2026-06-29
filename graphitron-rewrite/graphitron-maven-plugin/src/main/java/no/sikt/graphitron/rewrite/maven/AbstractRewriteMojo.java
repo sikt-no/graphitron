@@ -11,7 +11,10 @@ import org.apache.maven.execution.MavenSession;
 import org.apache.maven.plugin.AbstractMojo;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugins.annotations.Parameter;
+import org.apache.maven.model.Model;
+import org.apache.maven.model.io.xpp3.MavenXpp3Reader;
 import org.apache.maven.project.MavenProject;
+import org.codehaus.plexus.util.xml.pull.XmlPullParserException;
 
 import java.io.IOException;
 import java.net.MalformedURLException;
@@ -231,17 +234,142 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
     }
 
     /**
+     * True when the Maven reactor for this invocation is a single project, i.e.
+     * {@code mvn graphitron:dev} was run from inside one sub-module of a
+     * multi-module build (Maven loads only that module's pom). This is the shape
+     * the sibling walk-up ({@link #siblingModuleBasedirs()}) targets: the reactor
+     * contains the current module alone, so its sibling service / condition /
+     * record classes would otherwise be invisible to the catalog scan (R99).
+     *
+     * <p>Returns {@code false} for a genuine multi-module reactor (run from the
+     * parent, where {@code getAllProjects()} carries the full set even under
+     * {@code -pl} filtering) and for unit-tier callers with no session, where the
+     * walk-up must stay inert.
+     */
+    boolean singleProjectReactor() {
+        return session != null
+            && session.getAllProjects() != null
+            && session.getAllProjects().size() == 1;
+    }
+
+    /**
+     * Sibling module basedirs to widen the scan / walk over when this is a
+     * {@link #singleProjectReactor() single-project reactor}, in declared
+     * {@code <modules>} document order; empty otherwise (including every
+     * multi-module reactor and unit-tier caller). Delegates the directory walk to
+     * {@link #siblingModuleBasedirs(Path)} from the current project's basedir.
+     */
+    List<Path> siblingModuleBasedirs() {
+        if (!singleProjectReactor()) {
+            return List.of();
+        }
+        return siblingModuleBasedirs(project.getBasedir().toPath());
+    }
+
+    /**
+     * Walks up from {@code currentBasedir} to the nearest ancestor {@code pom.xml}
+     * whose {@code <modules>} list resolves to include {@code currentBasedir}, and
+     * returns that ancestor's <em>other</em> modules' basedirs in declared document
+     * order. The walk stops at the first such ancestor (the standard aggregator
+     * layout) and returns empty when none lists the current project, so a genuine
+     * standalone module is unchanged from pre-R99 behaviour.
+     *
+     * <p>Module entries are resolved against the ancestor's directory and compared
+     * by normalised absolute path; an entry that points straight at a {@code pom.xml}
+     * is normalised to its containing directory. Declared {@code <modules>} order is
+     * the only ordering input (no {@code Files.list} over the parent, which is
+     * unordered and would break the catalog's determinism guarantee). Resolving
+     * sibling directories by convention, rather than constructing {@link MavenProject}
+     * instances for modules the session never loaded, is the deliberate scope of this
+     * fallback (a custom {@code <build>} output/source directory in a sibling is out
+     * of scope); see R99.
+     */
+    static List<Path> siblingModuleBasedirs(Path currentBasedir) {
+        Path current = currentBasedir.toAbsolutePath().normalize();
+        for (Path dir = current.getParent(); dir != null; dir = dir.getParent()) {
+            Path pom = dir.resolve("pom.xml");
+            if (!Files.isRegularFile(pom)) {
+                continue;
+            }
+            var siblings = new ArrayList<Path>();
+            boolean listsCurrent = false;
+            for (String module : parseModules(pom)) {
+                Path moduleBase = resolveModuleBasedir(dir, module);
+                if (moduleBase == null) {
+                    continue;
+                }
+                if (moduleBase.equals(current)) {
+                    listsCurrent = true;
+                } else {
+                    siblings.add(moduleBase);
+                }
+            }
+            if (listsCurrent) {
+                return List.copyOf(siblings);
+            }
+        }
+        return List.of();
+    }
+
+    /**
+     * Reads the {@code <modules>} entries of {@code pom} in document order, lenient
+     * about an off-spec pom (a malformed or unreadable ancestor pom yields no
+     * modules rather than failing the goal). Profile-scoped {@code <modules>} are
+     * not consulted; the standard top-level aggregator layout is the supported
+     * shape (R99).
+     */
+    private static List<String> parseModules(Path pom) {
+        try (var reader = Files.newBufferedReader(pom)) {
+            Model model = new MavenXpp3Reader().read(reader, false);
+            return model.getModules() != null ? model.getModules() : List.of();
+        } catch (IOException | XmlPullParserException e) {
+            return List.of();
+        }
+    }
+
+    /**
+     * Resolves a {@code <module>} entry to its basedir relative to the ancestor
+     * pom's directory. A module declared as a path to a {@code pom.xml} file
+     * normalises to that file's parent directory; the common directory form
+     * resolves directly. Returns {@code null} for an empty entry.
+     */
+    private static Path resolveModuleBasedir(Path ancestorDir, String module) {
+        if (module == null || module.isBlank()) {
+            return null;
+        }
+        Path resolved = ancestorDir.resolve(module.trim()).toAbsolutePath().normalize();
+        Path fileName = resolved.getFileName();
+        if (fileName != null && fileName.toString().equals("pom.xml")) {
+            return resolved.getParent();
+        }
+        return resolved;
+    }
+
+    /**
      * Compile-output directories from every reactor project. The LSP catalog
      * scans each one for service / condition / record class candidates.
      * External jars on the compile classpath ({@code ~/.m2}) are intentionally
      * not scanned: services live in reactor source code, not third-party
      * libraries.
+     *
+     * <p>When the session is a single-project reactor (a consumer running
+     * {@code mvn graphitron:dev} from inside one sub-module, so
+     * {@code getAllProjects()} sees only that module), the sibling modules
+     * declared by the nearest ancestor pom are folded in by convention through
+     * {@link #siblingModuleBasedirs()}: each sibling's {@code target/classes}.
+     * The widening rides the same {@link #collectExistingDirs} existence filter
+     * and dedup as the reactor roots, so a sibling already present in a
+     * non-trivial reactor collapses to a no-op (R99).
      */
     private List<Path> resolveClasspathRoots() {
-        return collectExistingDirs(reactorProjects(), p -> {
+        var roots = new LinkedHashSet<>(collectExistingDirs(reactorProjects(), p -> {
             String dir = p.getBuild() == null ? null : p.getBuild().getOutputDirectory();
             return dir == null ? List.of() : List.of(dir);
-        });
+        }));
+        for (Path base : siblingModuleBasedirs()) {
+            addExistingDir(roots, base.resolve("target/classes"));
+        }
+        return new ArrayList<>(roots);
     }
 
     /**
@@ -271,7 +399,32 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
      * widening is a no-op under a full-lifecycle goal.
      */
     private List<Path> resolveCompileSourceRoots() {
-        return collectExistingDirs(reactorProjects(), AbstractRewriteMojo::compileSourceRootsOf);
+        var roots = new LinkedHashSet<>(
+            collectExistingDirs(reactorProjects(), AbstractRewriteMojo::compileSourceRootsOf));
+        // Mirror the classpath-side widening on the source side so a sibling
+        // scanned for completion also has its source root walked for
+        // goto-definition: same sibling set, same parity invariant (R99/R369).
+        // Per sibling: src/main/java plus the disk-discovered generated-sources/*.
+        for (Path base : siblingModuleBasedirs()) {
+            addExistingDir(roots, base.resolve("src/main/java"));
+            for (String generated : generatedSourceRootsUnder(base.resolve("target"))) {
+                addExistingDir(roots, Path.of(generated));
+            }
+        }
+        return new ArrayList<>(roots);
+    }
+
+    /**
+     * Normalises a loose directory path and adds it to {@code into} if it exists
+     * on disk, the same per-directory discipline {@link #collectExistingDirs}
+     * applies to reactor-project dirs. The {@link LinkedHashSet} preserves
+     * encounter order and dedups a path already contributed by a reactor project.
+     */
+    private static void addExistingDir(LinkedHashSet<Path> into, Path candidate) {
+        Path path = candidate.toAbsolutePath().normalize();
+        if (Files.isDirectory(path)) {
+            into.add(path);
+        }
     }
 
     /**
@@ -320,7 +473,21 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
         if (build == null || build.getDirectory() == null) {
             return List.of();
         }
-        Path generatedSources = Path.of(build.getDirectory()).resolve("generated-sources");
+        return generatedSourceRootsUnder(Path.of(build.getDirectory()));
+    }
+
+    /**
+     * The existing immediate subdirectories of {@code <targetDir>/generated-sources/},
+     * sorted for a deterministic order across filesystems. The
+     * {@link MavenProject}-keyed {@link #generatedSourceRoots(MavenProject)} delegates
+     * here; the sibling-widening path ({@link #resolveCompileSourceRoots()}) calls it
+     * directly against {@code <siblingBasedir>/target}, since the convention is fixed
+     * and an unloaded sibling has no {@link MavenProject} to read a build directory
+     * from (R99). Returns an empty list when no {@code generated-sources} directory
+     * exists on disk.
+     */
+    static List<String> generatedSourceRootsUnder(Path targetDir) {
+        Path generatedSources = targetDir.resolve("generated-sources");
         if (!Files.isDirectory(generatedSources)) {
             return List.of();
         }

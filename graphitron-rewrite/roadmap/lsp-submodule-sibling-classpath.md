@@ -1,11 +1,11 @@
 ---
 id: R99
 title: "LSP classpath scan misses sibling modules when dev goal runs from a sub-module"
-status: Ready
+status: In Review
 bucket: feature
 theme: lsp
 depends-on: []
-last-updated: 2026-06-26
+last-updated: 2026-06-29
 ---
 
 # LSP classpath scan misses sibling modules when dev goal runs from a sub-module
