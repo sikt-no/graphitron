@@ -1,7 +1,7 @@
 ---
 id: R378
 title: "Filter @nodeId decode should distinguish malformed input from wrong-type and report malformed as a user error"
-status: Spec
+status: Ready
 bucket: architecture
 theme: nodeid
 depends-on: []
