@@ -1,6 +1,6 @@
 ---
 id: R397
-title: "Lift @error to query fields so decode and other client errors route through error handlers"
+title: "Let bare-entity query fields host @error so decode and other client errors route through handlers"
 status: Backlog
 bucket: architecture
 priority: 4
@@ -10,19 +10,19 @@ created: 2026-06-29
 last-updated: 2026-06-29
 ---
 
-# Lift @error to query fields so decode and other client errors route through error handlers
+# Let bare-entity query fields host @error so decode and other client errors route through handlers
 
 ## Problem
 
-`@error` is `on OBJECT` and routes through an error *channel* that only `MutationField` carries (`MutationField implements WithErrorChannel`; `QueryField` does not, `QueryField.java:25`). Query/fetch fields wrap their fetcher in a no-channel catch arm (`TypeFetcherGenerator` `redactCatchArm`). So a client-facing error raised while fetching a query field cannot be mapped to a typed `@error` payload the way a mutation's can; the consumer's only lever is whatever the no-channel disposition does.
+`@error` is `on OBJECT`: handlers are declared on a payload object that carries an `errors` field, and the error *channel* binds to fields whose return type is such a payload. This already works for query fields whose return shape is payload-like: `WithErrorChannel` is implemented by `QueryServiceTableField`, `QueryServiceRecordField`, `QueryServicePolymorphicField`, and `QueryTableMethodTableField` (`WithErrorChannel.java:13` names "root + child services, root + child `@tableMethod` fields"), and `CatalogBuilder` resolves `errorChannelName(f.errorChannel())` for them. What has **no** error channel is a plain **bare-entity** fetch field (`soknader: [Soknad!]`): the sealed `QueryField` interface does not `extends WithErrorChannel` (`QueryField.java:25`, unlike `MutationField.java:18`), the table-fetch variants do not implement it, and their fetcher wraps work in a no-channel catch arm (`TypeFetcherGenerator` `redactCatchArm`). So a client-facing error raised while fetching a bare-entity field cannot be mapped to a typed `@error` payload; the consumer's only lever is the no-channel disposition.
 
-This blocks the natural follow-on to R378 (`nodeid-filter-malformed-vs-mismatched`). R378 makes a malformed / wrong-type `@nodeId` filter throw a stable, generated client-error type (`GraphitronClientException`) and, via path B, surfaces it on query fields through `ErrorRouter.surfaceClientErrorOrRedact` (real message in the standard `errors` array) rather than redacting it. R378 deliberately built that type to be `instanceof`-matchable by `ExceptionMapping`, so the missing piece is purely the *channel*: give `QueryField` an error channel and route the same throw through `@error` handlers.
+This blocks the natural follow-on to R378 (`nodeid-filter-malformed-vs-mismatched`). R378 makes a malformed / wrong-type `@nodeId` filter throw a stable, generated client-error type (`GraphitronClientException`) and, via path B, surfaces it on bare-entity query fields through `ErrorRouter.surfaceClientErrorOrRedact` (real message in the standard `errors` array) rather than redacting it. R378 deliberately built that type to be `instanceof`-matchable by `ExceptionMapping`, so the missing piece is **not** "add a channel to query fields" in general (service / `@tableMethod` query fields already have one) but giving a bare-entity field a payload object to host `@error` handlers.
 
 ## Direction (for Spec)
 
-- Make `QueryField` carry an error channel (`WithErrorChannel`), resolve channels for query result types, and swap the no-channel catch arm for channel dispatch when a channel is present (falling through to R378's `surfaceClientErrorOrRedact`, which becomes the no-channel disposition exactly as `redact` is for channel-less mutations today).
-- The hard design question: `@error` declares handlers on an OBJECT that hosts the `errors` field. A list-returning query (`soknader: [Soknad!]`) has no payload object. Decide the shape: does the consumer wrap query results in error-carrying payload types, or does the channel attach to query fields by another means? This shaping is the crux and is why the lift is its own item, not folded into R378.
-- Because R378 already throws an `instanceof`-matchable client-error type, the throw site needs no change: a `@error(handlers: [{handler: GENERIC, className: "<outputPackage>.schema.GraphitronClientException"}])` (or a `NodeIdDecodeException` subtype) matches it once the channel exists.
+- The hard design question, and the crux that keeps this out of R378: `@error` declares handlers on an OBJECT that hosts the `errors` field. A bare-entity field (`soknader: [Soknad!]`) has no such payload object. Decide the shape: does the consumer wrap such results in error-carrying payload types (the route the existing service/`@tableMethod` channels already take), or does the channel attach to bare-entity query fields by another means?
+- Once the host is decided, extend the channel to the bare-entity table-fetch `QueryField` variants and swap their no-channel catch arm for channel dispatch when a channel is present (falling through to R378's `surfaceClientErrorOrRedact`, which is the no-channel disposition exactly as `redact` is for channel-less mutations today). The service/`@tableMethod` variants already do this and are the working precedent.
+- Because R378 already throws an `instanceof`-matchable client-error type, the throw site needs no change: a `@error(handlers: [{handler: GENERIC, className: "<outputPackage>.schema.GraphitronClientException"}])` (or a `NodeIdDecodeException` subtype) matches it once a bare-entity field can host a channel.
 
 ## Relationship
 
