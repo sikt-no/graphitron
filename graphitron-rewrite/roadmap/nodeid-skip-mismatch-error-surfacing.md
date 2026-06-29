@@ -5,7 +5,7 @@ status: Spec
 bucket: architecture
 priority: 5
 theme: nodeid
-depends-on: []
+depends-on: [nodeid-filter-malformed-vs-mismatched]
 created: 2026-06-02
 last-updated: 2026-06-02
 ---
@@ -87,6 +87,16 @@ what a *present, well-formed-but-wrong-type* id means. A non-null marker does no
   fallback entirely.
 
 ## What to decide (policy)
+
+**Settled by R378 (do not re-litigate here).** R378 decided the filter-position policy: a malformed
+*or* well-formed-wrong-type id throws (the two are distinguished in the message, not in behaviour),
+and the error surfaces to the client (path B: query fetch fields surface a generated client-error
+type rather than redacting it, built so a later `@error`-on-queries lift catches the same type). So
+`ThrowOnMismatch` **survives**; Deliverable 5's "delete `ThrowOnMismatch` / `Mode.THROW` if skip
+wins" branch is dead. R273 *inherits* this policy and keeps only the metadata-sourcing mechanism
+below (infer `@node`, source from `@node` + catalog PK, reroute the bare-`ID` arm onto the settled
+throw policy). The sub-questions below are retained as the record of what R378 weighed, not as open
+decisions.
 
 Is "no match" the right semantics for a wrong-type / malformed id in filter position, or should it
 surface as an error (or a partial result plus a non-fatal `errors` entry)? Sub-questions:

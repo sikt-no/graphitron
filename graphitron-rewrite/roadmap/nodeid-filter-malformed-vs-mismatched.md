@@ -1,12 +1,12 @@
 ---
 id: R378
 title: "Filter @nodeId decode should distinguish malformed input from wrong-type and report malformed as a user error"
-status: Backlog
+status: Spec
 bucket: architecture
 theme: nodeid
 depends-on: []
 created: 2026-06-25
-last-updated: 2026-06-25
+last-updated: 2026-06-29
 ---
 
 # Filter @nodeId decode should distinguish malformed input from wrong-type and report malformed as a user error
@@ -60,22 +60,26 @@ A list `@nodeId` filter now has three runtime outcomes; an authored single `@nod
 
 The empty-vs-bad-element asymmetry is intentional and principled: emptiness is *structural* ("no constraint supplied"), element validity is *content* ("a constraint was supplied and it is garbage"). The mixed case (some valid, some bad) throws under the "any bad element" rule, i.e. one fat-fingered id fails the whole field; this is the same Relay-heterogeneous tradeoff the decision already accepted, made explicit so "mixed" is not an unstated fourth case.
 
-## OPEN DECISION (blocking): how does the thrown error reach the client on a *fetch* field?
+## Error surfacing on fetch fields (decided: path B, built forward-compatible with `@error`)
 
-The reported bug is on a **query/fetch** field (`soknader(filter: HentSoknadInput): [Soknad!]`). Throwing a `GraphqlErrorException` from the decode helper is necessary but **not sufficient** to give the user a catchable, meaningful error, because of two architectural facts:
+The reported bug is on a **query/fetch** field (`soknader(filter: HentSoknadInput): [Soknad!]`). Throwing from the decode helper is necessary but **not sufficient** to give the client a catchable, meaningful error, because of two architectural facts:
 
-1. **`@error` is mutation-only.** `@error` is `on OBJECT` and routes through an error *channel* that only `MutationField` carries (`MutationField implements WithErrorChannel`; `QueryField` does **not**, `QueryField.java:25`). A list-returning query field has no payload object on which to declare `@error` handlers, so `@error` is not applicable to `soknader` as it stands.
-2. **Fetch fields redact every thrown exception.** A query fetcher body wraps its work in a redact-only catch arm (`TypeFetcherGenerator.java:799`, `redactCatchArm`). `ErrorRouter.redact` (`ErrorRouterClassGenerator.java:421-432`) logs the throwable and returns `data: null` + a generic `"An error occurred. Reference: <uuid>."` GraphQL error, with **no special-casing for `GraphqlErrorException`**. So our distinguished malformed-vs-wrong-type message would be **scrubbed** to a correlation id, and `@error` never sees it.
+1. **`@error` is mutation-only.** `@error` is `on OBJECT` and routes through an error *channel* only `MutationField` carries (`MutationField implements WithErrorChannel`; `QueryField` does **not**, `QueryField.java:25`). A list-returning query field has no payload object on which to declare `@error` handlers, so `@error` is not applicable to `soknader` as it stands.
+2. **Fetch fields redact every thrown exception.** A query fetcher wraps its work in a redact-only catch arm (`TypeFetcherGenerator.java:799`, `redactCatchArm`). `ErrorRouter.redact` (`ErrorRouterClassGenerator.java:421-432`) logs the throwable and returns `data: null` + a generic `"An error occurred. Reference: <uuid>."`, with **no special-casing** for any client-error type. A raw throw here would be scrubbed to a correlation id.
 
-So, as scoped above, R378's throw on the `soknader` field would yield `{data: {…soknader: null}, errors: [{message: "An error occurred. Reference: <uuid>."}]}` — strictly better than the silent full-table answer (the original bug), but **not** the catchable, useful `@error` outcome the user requires.
+**Decision (user): path B, done so that lifting `@error` to queries later is a clean follow-on.** A malformed / wrong-type id is a *client* mistake, not a server fault, so the query catch arm should surface its real message in the standard GraphQL `errors` array while still redacting genuine internal exceptions. The throw is **not** a bare anonymous `GraphqlErrorException`: it is a stable, recognizable type so (a) the catch arm can tell "client error → surface" from "internal fault → redact", and (b) when `@error` is later lifted to query fields (the companion item below), the *same* throw is matched by an `@error` `GENERIC` handler with **zero change at the throw site**.
 
-Candidate paths (to settle with the user before this leaves Backlog):
+This is mechanically guaranteed: the channel dispatcher matches a thrown exception via `ExceptionMapping.match`, which is `exceptionClass.isInstance(throwable)` (instanceof semantics, confirmed at `ErrorRouterClassGenerator`), and falls through to the no-channel disposition on no match. So B's catch-arm change *is* the predecessor of path A: B surfaces the client-error type raw; A routes the same type through `@error`, and B's surfacing becomes A's no-channel fallback (exactly as `redact` is today for channel-less mutations).
 
-- **(A) Extend the `@error` error channel to query/fetch fields.** Make `QueryField` carry an error channel and route fetch-field throws through it (the research's 5-step list: `WithErrorChannel` on `QueryField`, resolve channels for query results, swap the redact-only catch arm for channel dispatch, validator coverage). Largest. Awkward for list-returning queries: `@error` needs a payload OBJECT to host the `errors` field, which a `[Soknad!]` query does not have. Likely a separate companion roadmap item, not R378.
-- **(B) Don't redact client-input errors on query fields; pass their real message through.** Distinguish a *user-input* error (a decode `GraphqlErrorException` — a bad id is a client mistake) from an *internal* fault (redact-worthy, may leak internals). The query catch arm lets the user-input error surface its real message in the standard GraphQL `errors` array while still redacting genuine internal exceptions behind a correlation id. Smaller, and arguably the correct behaviour regardless of `@error`: redaction exists to hide server faults, not to swallow "you sent a malformed id." Surfaces via the standard `errors` array, **not** via `@error`-typed payloads. This is the recommended path *if* the user's intent is "the client sees a catchable, meaningful error" rather than "specifically the `@error` typed-payload mechanism."
-- **(C) Pre-execution argument validation.** Decode/validate `@nodeId` args before the fetcher runs, surfacing errors natively outside the redact scope. Larger; overlaps the `VALIDATION` `ErrorHandlerType` surface.
+### What path B adds (on top of the throw + message work below)
 
-This decision determines the rest of the Implementation section (whether R378 is "flip producers + enrich message + adjust query catch arm for user-input errors" (B), or "flip producers + enrich message" with a companion item for (A)). Resolve before Spec sign-off.
+1. **A generated, stably-named client-error type.** Emit a `GraphQLError`-implementing exception into `<outputPackage>.schema` alongside `ErrorRouter` (no runtime support module exists; generated code's runtime types are generated), e.g. `GraphitronClientException`. It must implement `graphql.GraphQLError` so it surfaces natively and is channel-matchable; subclass `graphql.GraphqlErrorException` if the graphql-java 25 API permits a message-carrying subclass, else implement `GraphQLError` directly. The class *is* the surfacing marker (the catch arm surfaces instances of it) and the stable `@error` `className` anchor (instanceof match); future client-error producers subtype it. The nodeId decode throw uses it (optionally a `NodeIdDecodeException extends GraphitronClientException` if a narrower `className` is wanted for targeting).
+2. **`ErrorRouter.surfaceClientErrorOrRedact(thrown, env)`.** New sibling to `redact`: walk the cause chain; if a `GraphitronClientException` (a `GraphQLError`) is found, return `DataFetcherResult.data(null).error(thatError)` so the real message reaches the client; else fall through to `redact` unchanged (the privacy contract for genuine faults is untouched).
+3. **Repoint the no-channel catch disposition** at `surfaceClientErrorOrRedact` (the `redactCatchArm` query sites in `TypeFetcherGenerator`; and `ChannelCatchArmEmitter`'s `Optional.empty()` fallthrough). Uniform across fetchers; observable behaviour changes only for `GraphitronClientException` throws (today only the nodeId decode produces one), so blast radius is bounded to the decode failure.
+
+### Companion item (the future lift, filed separately)
+
+Lifting `@error` to query fields (`WithErrorChannel` on `QueryField`, resolve channels for query results, swap the no-channel arm for channel dispatch, validator coverage) is **out of scope for R378** and tracked as **R397** (`error-directive-on-query-fields`, Backlog); R378 is its deliberate predecessor (the client-error type + the surface/redact split are exactly what that lift consumes). The awkward part the lift must solve is that `@error` wants a payload OBJECT to host the `errors` field, which a `[Soknad!]` query does not have; that shaping question belongs to the lift, not here.
 
 ## Implementation
 
@@ -88,6 +92,7 @@ This decision determines the rest of the Implementation section (whether R378 is
    The message **names the offending wire value** (near-zero cost, the value is in scope; a third reason this beats the sealed-return shape, which would have to carry the value out). The expected type is a **generation-time constant** baked in as a `$S` literal, not learned at runtime: the type *name* is `decode.methodName()` with the `decode` prefix stripped (the registry already does this in `helperName`). The expected *typeId* (needed to fold the arity-mismatch sub-case into the malformed branch accurately, since a customized `@node(typeId:)` can differ from the type name) is **not** currently on `HelperRef.Decode`; thread it on as a single-source plumbing addition (it is already a generation-time constant baked into `decodeValues($S, ...)` by `buildPerTypeDecode`). If threading it proves heavier than expected, the fallback is the no-comparison form (`peek == null` → malformed, else wrong-type), accepting that the rare arity-mismatch id reads as "wrong type"; decide during implementation, prefer the typeId-carrying form.
    - This enriches **every** `Mode.THROW` consumer, not just the flipped filters: the existing lookup/mutation-key `ThrowOnMismatch` path (`FieldBuilder.java:1321`) gets the same improved diagnostics, keeping the message contract single-sourced (a malformed lookup id is also a client bug worth naming). Per the consult, enriching filter-only would let the two THROW paths drift.
    - The redundant second base64 decode (`peekTypeId` re-walks what `decode<TypeName>` already discarded) is acceptable: it runs **only on the error path**, which is about to throw and abort the field anyway. Record this justification inline rather than the weaker "peekTypeId is already shared" one.
+   - **Throw the generated client-error type, not a bare `GraphqlErrorException`** (see [Error surfacing](#error-surfacing-on-fetch-fields-decided-path-b-built-forward-compatible-with-error)): the THROW body throws `GraphitronClientException` (or the `NodeIdDecodeException` subtype) carrying the two-branch message, so the query catch arm surfaces it and a future query `@error` handler matches it. This replaces the current inline `throw GraphqlErrorException.newErrorException().message(MISMATCH_MESSAGE).build()` at both arms.
 
 2. **Flip the four authored filter producers** from `SkipMismatchedElement` to `ThrowOnMismatch`:
    - `FieldBuilder.java:1242` (top-level same-table `@nodeId` arg filter)
@@ -109,14 +114,16 @@ No new validate-time rule. Malformed/wrong-type-ness is a *runtime* property of 
 
 ## Tests
 
-- **Execution tier (`graphitron-sakila-example` `GraphQLQueryTest`)** — re-invert the R375 leftover and add the wrong-type case:
-  - `filmsByNodeIdArg_allMalformedIds_returnsUnfilteredBaseline` (currently asserts the full 5-film baseline, `GraphQLQueryTest.java:756`) → rename + invert to assert a `GraphqlErrorException` (errors-list entry naming the bad value + expected type), not the baseline.
-  - Add a **wrong-type** case: a valid id of a sibling NodeType handed to a `Film` `@nodeId` filter throws, with a message distinguishing it from malformed.
-  - Add a **mixed** case (one valid, one malformed) → throws.
+- **Execution tier (`graphitron-sakila-example` `GraphQLQueryTest`)** — assert the *real message surfaces* (path B), not the baseline and not a redacted correlation id:
+  - `filmsByNodeIdArg_allMalformedIds_returnsUnfilteredBaseline` (currently asserts the full 5-film baseline, `GraphQLQueryTest.java:756`) → rename + invert to assert `data` for the field is `null` and the response `errors` array carries the **real** message (names the bad value + expected type), *not* an `"An error occurred. Reference: …"` redaction. This is the direct regression for the reported bug.
+  - Add a **wrong-type** case: a valid id of a sibling NodeType handed to a `Film` `@nodeId` filter surfaces the wrong-type message (distinct from malformed).
+  - Add a **mixed** case (one valid, one malformed) → surfaces the error.
+  - Add a **privacy-contract** case: a genuine internal fault on a query field still redacts to a correlation id (proves `surfaceClientErrorOrRedact` narrows to the client-error type and did not start leaking arbitrary exceptions). If no existing query fetcher throws a non-client exception conveniently, assert this at whatever tier can reach the `redact` fallthrough.
   - **Keep** the genuinely-empty cases as R375 left them: `[]` / omitted arg still returns the unfiltered baseline (`films_filteredBySameTableNodeId_emptyListReturnsUnfilteredBaseline`, `filmsConnectionByOptionalIds_*`). These prove the empty-vs-bad asymmetry holds.
   - Cover both filter surfaces: a top-level `@nodeId` filter arg and an input-object-field `@nodeId` filter (the `soknadId`/`HentSoknadInput` shape), so both flipped loci are exercised end-to-end.
 - **Pipeline tier** — assert the four authored arms now classify to `ThrowOnMismatch` (pinning the intent mechanically per "Documentation names only live tests/code": a future arm reintroducing `SkipMismatchedElement` on an *authored* filter must fail a test, not just contradict prose). Assert the two shim arms still classify to `SkipMismatchedElement` (the deliberate boundary).
-- **Unit tier (`CompositeDecodeHelperRegistryTest`)** — the enriched `Mode.THROW` body emits the two-branch message naming the wire value and expected type, for both list and scalar arms. Note this file uses code-string assertions by its existing convention; the behaviour is independently proven at the execution tier.
+- **Unit tier** — `CompositeDecodeHelperRegistryTest`: the enriched `Mode.THROW` body throws `GraphitronClientException` with the two-branch message (wire value + expected type), for both list and scalar arms (code-string assertions by this file's existing convention; behaviour proven at execution tier). Plus a focused test that `ErrorRouter.surfaceClientErrorOrRedact` surfaces a `GraphitronClientException`'s message and redacts a plain `RuntimeException` (the surface-vs-redact split).
+- **Compilation tier** — the generated `GraphitronClientException` + the `surfaceClientErrorOrRedact` arm compile under `graphitron-sakila-example`'s `<release>17</release>` (they ride generated output); a `@nodeId` filter field in that module exercises the throw end-to-end.
 
 ## Relationship to R273
 
