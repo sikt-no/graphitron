@@ -120,4 +120,40 @@ class MultiSchemaQueryTest {
             .containsEntry("eventId", 10)
             .containsEntry("name", "launch-a");
     }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void signalsRouteToDiscriminatedTypesUnderNamedSchema() {
+        // R395 regression guard. Signal is a single-table discriminated interface over
+        // multischema_a.signal, declared as @table(name: "multischema_a.SIGNAL") — uppercase and
+        // schema-qualified, so the directive string matches neither the case nor a bare form of the
+        // rendered FROM token "multischema_a"."signal". The selection drives all three discriminator
+        // emit sites: the __discriminator__ routing projection, the WHERE ... IN restriction, and the
+        // AlertSignal cross-table LEFT JOIN gate (widgetName, signal -> widget via the in-schema FK).
+        // Before R395 each qualified off the directive string and Postgres rejected the query with
+        // "missing FROM-clause entry", surfacing as a fetch error so the field resolved null. After
+        // the fix the rows route to their concrete types and the cross-table column resolves.
+        Map<String, Object> data = execute("""
+            { signals { __typename signalId label ... on AlertSignal { widgetName } } }
+            """);
+
+        assertThat(data).extractingByKey("signals", as(list(Map.class)))
+            .hasSize(3)
+            .satisfiesExactlyInAnyOrder(
+                s -> assertThat((Map<String, Object>) s)
+                    .containsEntry("__typename", "AlertSignal")
+                    .containsEntry("signalId", 1)
+                    .containsEntry("label", "disk-full")
+                    .containsEntry("widgetName", "alpha-widget"),
+                s -> assertThat((Map<String, Object>) s)
+                    .containsEntry("__typename", "NoticeSignal")
+                    .containsEntry("signalId", 2)
+                    .containsEntry("label", "login")
+                    .doesNotContainKey("widgetName"),
+                s -> assertThat((Map<String, Object>) s)
+                    .containsEntry("__typename", "AlertSignal")
+                    .containsEntry("signalId", 3)
+                    .containsEntry("label", "cpu-high")
+                    .containsEntry("widgetName", "alpha-widget"));
+    }
 }

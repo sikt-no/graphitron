@@ -1,13 +1,53 @@
 ---
 id: R395
 title: "Discriminated-interface discriminator column must qualify to the FROM table, not the @table directive name"
-status: Ready
+status: In Review
 bucket: bug
 priority: 3
 theme: interface-union
 depends-on: []
 created: 2026-06-29
 last-updated: 2026-06-29
+---
+
+## Landed (awaiting In Review → Done sign-off)
+
+All three discriminator emit sites in `TypeFetcherGenerator` now qualify off the FROM table's own
+jOOQ instance via `<tableLocal>.getQualifiedName().append(DSL.name(col))` (a `Field<Object>` via the
+explicit `Object.class`), so the rendered qualifier matches the FROM clause by construction:
+
+- `buildInterfaceFieldsList` (`__discriminator__` routing projection): dropped `tableSqlName`.
+- `buildDiscriminatorFilter` (`... IN (knownValues)`): swapped `tableSqlName` for `tableLocal`.
+- `buildCrossTableJoinChain` (LEFT JOIN ON-clause discriminator gate): dropped `tableSqlName`.
+
+Both callers (`buildQueryTableInterfaceFieldFetcher`, `buildTableInterfaceFieldFetcher`) pass
+`tableLocal`; `tableRef.tableName()` no longer reaches any discriminator site. Method javadocs and
+the two class-level example snippets were refreshed to the table-instance qualifier.
+
+Tests: four regression-lock assertions in `TypeFetcherGeneratorTest` (each site qualifies off
+`filmTable.getQualifiedName().append(...)`; the directive-name string never qualifies, pinned with a
+case-mismatched `INTERFACE_BASE` fixture). New execution-tier fixture in the `multischema` slice:
+`multischema_a.signal` (DDL + seed in `init.sql`, `jooq.codegen.schema.version` bumped 2.1 → 2.2),
+a `Signal @discriminate` interface with `AlertSignal` (carrying a cross-table `@reference` to
+`widget`) / `NoticeSignal` in `multischema.graphqls`, and `MultiSchemaQueryTest.signalsRouteToDiscriminatedTypesUnderNamedSchema`.
+Full graphitron + sakila-example suites green; the default-schema guards (`allContent`/`allSubjects`,
+`PolymorphicProjectionQueryTest`) still pass, confirming no over-qualification regression.
+
+### Deviation from spec: execution fixture uses an unqualified `@table` name
+
+The spec called for `@table(name: "multischema_a.SIGNAL")` (schema-qualified, upper-case). Both the
+upper-case and the schema-qualified forms are rejected at schema-validation time by a *separate*
+`@reference` FK-connection check ("key `signal_widget_id_fkey` does not connect to table ...") that is
+case- and schema-qualification-sensitive on the base `@table` name; this is unrelated to R395's
+discriminator-qualifier root cause. The fixture instead uses the unqualified `@table(name: "signal")`
+(`signal` is unique to `multischema_a`, so it resolves like `Widget`), which still renders the FROM
+token schema-qualified as `"multischema_a"."signal"` and so still fires the R395 bug pre-fix; this is
+exactly the reported consumer shape (unqualified directive, schema-qualified real table). The
+upper-case / schema-qualified-directive dimension is covered at the unit tier (`INTERFACE_BASE`
+fixture). The `@reference` FK-connection limitation is filed as a follow-up Backlog item.
+
+On approval: delete this file and add a one-line `changelog.md` entry citing the landing SHA and R395.
+
 ---
 
 # Discriminated-interface discriminator column must qualify to the FROM table, not the @table directive name

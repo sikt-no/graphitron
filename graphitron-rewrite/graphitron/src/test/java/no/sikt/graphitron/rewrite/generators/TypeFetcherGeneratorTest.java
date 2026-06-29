@@ -1352,6 +1352,81 @@ class TypeFetcherGeneratorTest {
         assertThat(code).contains("step = step.leftJoin(FilmContent_rating_alias).on(");
     }
 
+    // ===== R395: discriminator qualifies off the FROM table instance, not the @table directive =====
+    //
+    // The discriminator column must qualify to the table jOOQ renders in the FROM clause, produced
+    // by the table instance's own getQualifiedName(). Qualifying off the verbatim @table(name:)
+    // directive string (the pre-R395 shape) diverges from the rendered FROM token whenever the
+    // directive name differs in case or schema, so Postgres rejects the query with
+    // "missing FROM-clause entry". These fixtures give the base a deliberately mismatched directive
+    // name distinct from both the jOOQ-derived local variable (filmTable) and the column (FILM_TYPE),
+    // so a regression back to directive-string qualification surfaces as that literal, which the
+    // final assertion forbids.
+
+    private static final String DISCRIMINATOR_DIRECTIVE_NAME = "INTERFACE_BASE";
+
+    /**
+     * Single-table discriminated interface whose base {@code @table(name:)} echo
+     * ({@code INTERFACE_BASE}) is case- and name-mismatched against the jOOQ-derived FROM token,
+     * exercising all three discriminator emit sites (routing projection, IN filter, LEFT JOIN gate)
+     * in one Query fetcher body.
+     */
+    private static QueryField.QueryTableInterfaceField discriminatedAllContent() {
+        var base = TestFixtures.tableRef(DISCRIMINATOR_DIRECTIVE_NAME, "FILM", "Film", List.of());
+        var returnType = TestFixtures.tableBound("Film", base, nonNullList());
+        var participants = List.<ParticipantRef>of(
+            new ParticipantRef.TableBound("FilmContent", filmTable(), "FILM",
+                List.of(filmContentRatingCrossTable())),
+            new ParticipantRef.TableBound("ShortContent", filmTable(), "SHORT"));
+        return new QueryField.QueryTableInterfaceField("Query", "allContent", null, returnType,
+            "FILM_TYPE", List.of("FILM", "SHORT"), participants,
+            List.of(), new OrderBySpec.None(), null);
+    }
+
+    @Test
+    void queryTableInterfaceField_discriminatorProjection_qualifiesOffTableInstance() {
+        var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null,
+            List.of(discriminatedAllContent()), DEFAULT_OUTPUT_PACKAGE);
+        var code = method(spec, "allContent").code().toString();
+        assertThat(code)
+            .as("the __discriminator__ routing projection qualifies off the FROM table instance")
+            .contains("filmTable.getQualifiedName().append(org.jooq.impl.DSL.name(\"FILM_TYPE\")), java.lang.Object.class).as(\"__discriminator__\")");
+    }
+
+    @Test
+    void queryTableInterfaceField_discriminatorFilter_qualifiesOffTableInstance() {
+        var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null,
+            List.of(discriminatedAllContent()), DEFAULT_OUTPUT_PACKAGE);
+        var code = method(spec, "allContent").code().toString();
+        assertThat(code)
+            .as("the IN-filter discriminator restriction qualifies off the FROM table instance")
+            .contains("filmTable.getQualifiedName().append(org.jooq.impl.DSL.name(\"FILM_TYPE\")), java.lang.Object.class).in(");
+    }
+
+    @Test
+    void queryTableInterfaceField_discriminatorJoinGate_qualifiesOffTableInstance() {
+        var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null,
+            List.of(discriminatedAllContent()), DEFAULT_OUTPUT_PACKAGE);
+        var code = method(spec, "allContent").code().toString();
+        assertThat(code)
+            .as("the LEFT JOIN ON-clause discriminator gate qualifies off the FROM table instance")
+            .contains("filmTable.getQualifiedName().append(org.jooq.impl.DSL.name(\"FILM_TYPE\")), java.lang.Object.class).eq(\"FILM\")");
+    }
+
+    @Test
+    void queryTableInterfaceField_discriminator_neverQualifiesOffDirectiveName() {
+        // Regression lock for R395: the verbatim @table(name:) directive string must not appear as a
+        // SQL-name qualifier at any discriminator site. Before the fix, all three rendered
+        // DSL.name("INTERFACE_BASE", "FILM_TYPE"); the directive name diverges from the FROM token
+        // and Postgres rejects the query with "missing FROM-clause entry".
+        var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null,
+            List.of(discriminatedAllContent()), DEFAULT_OUTPUT_PACKAGE);
+        var code = method(spec, "allContent").code().toString();
+        assertThat(code)
+            .as("the @table directive name must not qualify any discriminator reference")
+            .doesNotContain(DISCRIMINATOR_DIRECTIVE_NAME);
+    }
+
     @Test
     void graphitronContextHelper_targetsLocallyEmittedInterfaceByClassKey() {
         // Pins the commit that retargeted GraphitronContext from no.sikt.graphql to the

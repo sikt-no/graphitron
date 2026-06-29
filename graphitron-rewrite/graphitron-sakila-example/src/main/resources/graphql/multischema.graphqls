@@ -23,10 +23,24 @@
 # (`rewrite-generate-multischema`) which writes its output to a disjoint
 # subpackage of the example module's generated-sources tree.
 
+#   4. R395 single-table discriminated interface in a NAMED schema:
+#      Signal @table(name: "signal") @discriminate(on: "signal_kind")
+#      signal lives only in multischema_a, so the unqualified directive resolves uniquely (like
+#      Widget), but jOOQ still renders the FROM token schema-qualified as "multischema_a"."signal".
+#      A discriminator qualifier built from the bare directive string (the pre-R395 shape) emits
+#      "signal"."signal_kind", which omits the schema and never matches FROM. This is exactly the
+#      shape the consumer reported (@table(name: "INNBOKS_MELDING") over kommunikasjon.innboks_melding).
+#      The discriminator projection, IN filter, and the AlertSignal cross-table LEFT JOIN gate must all
+#      qualify off the FROM table instance, not the directive string, or Postgres rejects the query
+#      with "missing FROM-clause entry". This is the non-default-schema guard for the dimension R388
+#      regressed on (the sakila Content fixture, in the unnamed default schema, never hit it). The
+#      case-mismatch dimension is covered separately by TypeFetcherGeneratorTest.
+
 type Query {
     widgets: [Widget!]!
     events: [Event!]!
     gadgets: [Gadget!]!
+    signals: [Signal!]!
 }
 
 type Widget @table(name: "widget") {
@@ -43,4 +57,26 @@ type Gadget @table(name: "gadget") {
     gadgetId: Int! @field(name: "gadget_id")
     note: String
     widget: Widget @reference(path: [{key: "gadget_widget_id_fkey"}])
+}
+
+# R395: single-table discriminated interface over multischema_a.signal. The unqualified
+# @table(name: "signal") resolves uniquely to multischema_a, yet jOOQ renders the FROM token as
+# "multischema_a"."signal"; a discriminator qualifier built from the bare directive string emits
+# "signal"."signal_kind" and omits the schema, so it never matches FROM. AlertSignal carries a
+# cross-table @reference (signal -> widget via signal_widget_id_fkey) so the LEFT JOIN ON-clause
+# discriminator gate is exercised under a named schema too.
+interface Signal @table(name: "signal") @discriminate(on: "signal_kind") {
+    signalId: Int!    @field(name: "signal_id")
+    label:    String! @field(name: "label")
+}
+
+type AlertSignal implements Signal @table(name: "signal") @discriminator(value: "ALERT") {
+    signalId:   Int!    @field(name: "signal_id")
+    label:      String! @field(name: "label")
+    widgetName: String  @reference(path: [{key: "signal_widget_id_fkey"}]) @field(name: "name")
+}
+
+type NoticeSignal implements Signal @table(name: "signal") @discriminator(value: "NOTICE") {
+    signalId: Int!    @field(name: "signal_id")
+    label:    String! @field(name: "label")
 }

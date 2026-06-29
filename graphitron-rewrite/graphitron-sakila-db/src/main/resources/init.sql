@@ -806,6 +806,21 @@ CREATE TABLE multischema_a.event (
     name       varchar(50) NOT NULL
 );
 
+-- R395 execution-tier fixture: a single-table discriminated interface living in a NAMED schema
+-- (multischema_a) with a lowercase real name. The discriminator column signal_kind routes rows to
+-- two concrete types; widget_id is an in-schema FK into multischema_a.widget so one participant can
+-- carry a cross-table @reference, exercising the LEFT JOIN ON-clause discriminator gate under a
+-- non-default schema. The SDL deliberately spells @table(name: "multischema_a.SIGNAL") (uppercase,
+-- schema-qualified), so neither the case nor a bare name matches the rendered FROM token
+-- "multischema_a"."signal"; before R395 the discriminator qualified off that directive string and
+-- Postgres rejected the query with "missing FROM-clause entry".
+CREATE TABLE multischema_a.signal (
+    signal_id    serial      PRIMARY KEY,
+    signal_kind  varchar(20) NOT NULL,
+    label        varchar(50) NOT NULL,
+    widget_id    int         REFERENCES multischema_a.widget(widget_id)
+);
+
 -- Schema B: 'gadget' is unique to B; its widget_id is a cross-schema FK
 -- into multischema_a.widget. The FK constraint is held on multischema_b
 -- (jOOQ exposes this as ForeignKey.getTable().getSchema() == multischema_b),
@@ -833,3 +848,9 @@ INSERT INTO multischema_a.event  (event_id,  name) VALUES (10, 'launch-a');
 INSERT INTO multischema_b.event  (event_id,  code) VALUES (20, 'B-001');
 INSERT INTO multischema_b.gadget (gadget_id, widget_id, note) VALUES (100, 1, 'first-gadget');
 INSERT INTO multischema_b.gadget (gadget_id, widget_id, note) VALUES (101, 1, 'second-gadget');
+
+-- R395 seed: two ALERT rows (one of which a NoticeSignal does not match) and one NOTICE row, with
+-- the ALERT rows carrying an FK to the seeded widget so the cross-table @reference resolves.
+INSERT INTO multischema_a.signal (signal_id, signal_kind, label, widget_id) VALUES (1, 'ALERT',  'disk-full', 1);
+INSERT INTO multischema_a.signal (signal_id, signal_kind, label, widget_id) VALUES (2, 'NOTICE', 'login',     NULL);
+INSERT INTO multischema_a.signal (signal_id, signal_kind, label, widget_id) VALUES (3, 'ALERT',  'cpu-high',  1);
