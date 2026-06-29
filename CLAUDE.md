@@ -49,6 +49,8 @@ The `mvn install -Plocal-db` command above runs the full pipeline (build-fixture
 
 **Footgun: catalog-jar clobber.** Omitting `-Plocal-db` silently empties the jOOQ catalog jar; pipeline tests then fail with `UnclassifiedType` / `NoSuchElement` / "table … could not be resolved" cascades. Recovery: rerun with `-Plocal-db`.
 
+**Sub-module gotcha (handled for standard layouts): `graphitron:dev` sibling scan.** Running `mvn graphitron:dev` from inside one module of a multi-module reactor used to see only that module's classes, so services / conditions / records in sibling modules silently produced empty completions. The dev goal now walks the parent pom's `<modules>` and folds siblings' `target/classes` and sources into the scan automatically (standard layout only; a sibling must have been compiled once). See R99 (`lsp-submodule-sibling-classpath`) and the "Multi-module projects" note in `graphitron-rewrite/docs/getting-started.adoc`.
+
 ## Writing style
 
 Do not use em dashes (—) in documentation. Use a comma, semicolon, colon, or restructure the sentence instead.
