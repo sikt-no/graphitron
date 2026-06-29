@@ -1,0 +1,70 @@
+= LSP requirements
+:description: Reference for the system dependency the Graphitron LSP needs at runtime: a libtree-sitter shared library of version 0.25.0 or later, plus the supported host architectures and per-platform install matrix.
+:keywords: graphitron, lsp, tree-sitter, libtree-sitter, jtreesitter, native, runtime, requirements
+
+The Graphitron LSP, started by the `dev` goal of the Maven plugin (`mvn graphitron:dev`), parses GraphQL with a tree-sitter-based parser. That parser has two native pieces, and they are sourced differently:
+
+* The *GraphQL grammar* (`tree_sitter_graphql`) ships with the LSP. It is bundled per-platform in the `no.sikt:graphitron-tree-sitter-natives` jar and extracted to a temp file on first use. You never install it yourself.
+* The *tree-sitter runtime* (`libtree-sitter`, exporting the `ts_*` symbols) is *not* bundled. It is a system dependency the LSP loads from the consumer's OS.
+
+So the one thing a machine running the LSP must provide is a system-installed `libtree-sitter`.
+
+== Required version
+
+`libtree-sitter` *0.25.0 or later*. This is jtreesitter 0.26's minimum ABI: at `Language.load` time jtreesitter looks up the `ts_language_abi_version` symbol, which was introduced in tree-sitter 0.25. Anything older fails at LSP startup with `Symbol not found: ts_language_abi_version`.
+
+The most common too-old case is Debian/Ubuntu apt's `libtree-sitter0` package, which is still pinned to `0.20.x`. See the per-platform table below for the supported install path on each OS.
+
+== Supported host architectures
+
+The bundled grammar binaries cover four host platforms:
+
+* `linux-x86_64`
+* `linux-aarch64`
+* `macos-aarch64`
+* `windows-x86_64`
+
+Intel-Mac (`macos-x86_64`) is not shipped. On an unsupported host the LSP fails fast at startup naming the `os.name` / `os.arch` it saw and the supported set.
+
+== Installing the runtime
+
+The LSP probes a short list of well-known install prefixes at startup and composes a system-installed `libtree-sitter` into jtreesitter's lookup if it finds one, so the standard package-manager install on each platform works with no environment-variable wiring. The table covers each supported install path plus the fallback for non-default layouts.
+
+[cols="1,3"]
+|===
+| Platform | Install + library discovery
+
+| macOS (Apple silicon or Intel, Homebrew)
+| `brew install tree-sitter`. The LSP probes `/opt/homebrew/lib` and `/usr/local/lib` automatically, so no env-var wiring is needed when Homebrew installs to its standard location.
+
+| Windows (vcpkg)
+| `vcpkg install tree-sitter:x64-windows`. The LSP picks up the DLL from `$VCPKG_ROOT/installed/x64-windows/bin/tree-sitter.dll` (or the legacy `$VCPKG_INSTALLATION_ROOT` variable, or the default `C:\vcpkg\...` layout) automatically. Putting vcpkg's `bin` directory on `PATH` also works through jtreesitter's normal loader chain.
+
+| NixOS
+| Add `tree-sitter` to your shell inputs and either export `LD_LIBRARY_PATH=$\{pkgs.tree-sitter\}/lib` from a `shellHook` or set `JAVA_TOOL_OPTIONS="-Djava.library.path=$\{pkgs.tree-sitter\}/lib"`. Nix-store paths are content-hashed so probing is not tractable; the shellHook is the standard NixOS pattern. Nixpkgs `tree-sitter` is `0.25.x`, within the compat window.
+
+| Linux (Arch, Fedora)
+| `pacman -S tree-sitter` / `dnf install tree-sitter`. Both ship `0.26.x` and install into the system loader path; no env-var wiring needed.
+
+| Linux (Debian/Ubuntu)
+| *apt's `libtree-sitter0` is pinned to `0.20.x`, which is too old.* Build `v0.26.9` from source: `git clone --depth=1 --branch=v0.26.9 https://github.com/tree-sitter/tree-sitter /tmp/ts && make -C /tmp/ts && sudo make -C /tmp/ts install && sudo ldconfig`. `/usr/local/lib` is both on `ldconfig`'s cache and on the LSP's probe list; no `JAVA_TOOL_OPTIONS` wiring needed.
+
+| Non-default install location (any platform)
+| If you installed `libtree-sitter` somewhere the probe does not cover, set `JAVA_TOOL_OPTIONS="-Djava.library.path=/your/lib/dir"` in your shell rc. This is the most robust env-var-only escape hatch across platforms because the JVM reads it at startup before any native-lookup work runs: unlike `DYLD_LIBRARY_PATH` it does not trip macOS's SIP stripping, and unlike `LD_LIBRARY_PATH` it survives `sudo` boundaries.
+|===
+
+The runtime is a one-time install per machine. The LSP picks up future graphitron-lsp version bumps without further setup.
+
+== Startup diagnostics
+
+When the runtime is missing or too old, the LSP does not let the underlying `UnsatisfiedLinkError` surface raw. It probes the well-known install paths, checks whether a found library exports `ts_language_abi_version`, and reports one of two actionable startup errors:
+
+* *Missing*: the runtime was not found on any probed path or the JVM's loader chain. The error names the per-platform install command.
+* *Too old*: a `libtree-sitter` was found but predates the `0.25` ABI (the apt `libtree-sitter0` 0.20.x case). The error names the per-platform upgrade command.
+
+== See also
+
+* xref:lsp-inlay-hints.adoc[LSP inlay hints and classification hover]: the editor-side config keys that surface Graphitron's inference and classification layers.
+* xref:../../../architecture/getting-started.adoc#native-runtime-dependency[Getting Started: native runtime dependency] for the same requirement in the context of the full `dev`-loop walkthrough, including a NixOS `shell.nix` snippet.
+
+xref:index.adoc[← Back to the reference index]
