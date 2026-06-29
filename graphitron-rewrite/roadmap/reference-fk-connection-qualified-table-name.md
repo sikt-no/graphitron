@@ -5,7 +5,7 @@ status: Spec
 bucket: bug
 priority: 3
 theme: interface-union
-depends-on: []
+depends-on: [discriminator-column-from-clause-qualification]
 created: 2026-06-29
 last-updated: 2026-06-29
 ---
@@ -56,8 +56,33 @@ predicate "which end of the FK is the source":
 So fixing only site 1 is wrong: the schema-qualified name then flows into sites 2 and 3 where the same
 bare compare returns false and **silently mis-orients the join** (`targetSqlName` becomes the source
 table instead of the referenced table; the slot pairing inverts). The triplicated predicate is itself
-the smell: the same FK source-side decision is recomputed from raw strings at three consumers, and that
-is exactly why a partial fix drifts.
+the smell: the same FK source-side decision is recomputed from raw strings at multiple consumers, and
+that is exactly why a partial fix drifts.
+
+Two **further source-side directional filters** recompute the same decision and carry the identical
+defect, both on a schema-qualified source `@table`:
+
+4. `JooqCatalog.findUniqueFkToTable` (line 489): `fk.getTable().getName().equalsIgnoreCase(sourceTableSqlName)`.
+   Phase 2 below fixes the `findForeignKeysBetweenTables` *candidate list* this method consumes, but the
+   method then re-filters those candidates with its own bare source-side compare, so a qualified source
+   still collapses to empty. Reachable with verbatim `@table` echoes from both callers
+   (`NodeIdLeafResolver` line 454 via `containingTable.tableName()`; `BuildContext` line 2163 via the
+   parent input type's `tableName`).
+5. `resolveRecordFkTargetColumns` implicit-inference branch (line 2619):
+   `.filter(k -> recordTable.sameTable(k.getTable().getName()))`. This is the sharp one: Phase 1 already
+   pulls this method in for the `resolveFkSlots` orientation site (line 2633), so leaving its sibling
+   directional filter three lines up untouched leaves the method **half-fixed** — a qualified record
+   `@table` on the implicit branch (no explicit `@reference(key:)`) still rejects at 2619, directly
+   contradicting the "exists in exactly one place" claim.
+
+**Scope ruling for sites 4-5 (surface to reviewer).** Both back adjacent features rather than the
+`@reference` path forms this item scopes itself to (site 4 backs `@nodeId` leaf FK auto-discovery and
+the input-field NodeId synthesis shim; site 5 backs R315 record population). The "one primitive, no
+drift" thesis nonetheless argues for routing both through the shared primitive in Phase 2 so the
+predicate is eliminated, not merely relocated. Default: fold site 5 into Phase 1/2 (the method is
+already on the Phase-1 path, so leaving it half-fixed is the worse outcome) and route site 4's own
+filter through `foreignKeyOnSource` in Phase 2; if the reviewer prefers a tighter R396, mark both
+explicitly residual with a focused follow-up rather than leaving them silently un-enumerated.
 
 Two further sites carry the identical defect on the same `@table`-qualified author shape:
 
@@ -102,6 +127,13 @@ boolean foreignKeyOnSource(ForeignKey<?,?> fk, String sourceSqlName, boolean sel
 The source SQL name (`currentSourceSqlName`) stays the verbatim echo everywhere, so the author-error
 diagnostic still quotes what the user wrote; only the *comparison* changes.
 
+**Non-resolving fallback (symmetry with Phase 2).** `findTable` returns non-`Resolved` for an
+`Ambiguous` (same bare name in two schemas) or `NotInCatalog` source, so an identity compare cannot
+fire. Both primitives must then fall back to the current bare `equalsIgnoreCase` against the endpoint
+names — identical to the fallback Phase 2 gives `findForeignKeysBetweenTables` — so the diagnostic
+surface for genuinely-unknown or unqualified-ambiguous names does not shift under R396. Identity is the
+preferred path; bare-name is the documented fallback when the source does not resolve to a single class.
+
 ## Phase 1 — the reported `{key:}` path (unblocks the R395 fixture)
 
 - **Connection check** (`parsePathElement`, 1539-1545): replace the two bare `equalsIgnoreCase` clauses
@@ -113,8 +145,14 @@ diagnostic still quotes what the user wrote; only the *comparison* changes.
   change `resolveFkSlots`' signature to accept the precomputed `boolean fkOnSource` instead of
   recomputing it from `(sourceSqlName, selfRefFkOnSource)`. Update both `resolveFkSlots` callers
   (`synthesizeFkJoin` line 1377; `resolveRecordFkTargetColumns` line 2633 computes its orientation via
-  the same catalog primitive and passes it in). After this the FK source-side predicate exists in
+  the same catalog primitive and passes it in). After this the FK *orientation* predicate exists in
   exactly one place.
+- **Site 5 — finish `resolveRecordFkTargetColumns` (line 2619):** while this method is on the Phase-1
+  path for orientation, also replace its implicit-inference directional filter
+  (`recordTable.sameTable(k.getTable().getName())`) with `foreignKeyOnSource` (or
+  `foreignKeyTouchesTable` plus the orientation result), so a schema-qualified record `@table` resolves
+  on the implicit branch too. Leaving it is the documented half-fix; folding it in is the default per
+  the site 4-5 scope ruling above.
 
 ## Phase 2 — the `{table:}` and empty-inference forms (same author shape, shared primitive)
 
@@ -124,6 +162,12 @@ classes in either direction; fall back to the current bare `equalsIgnoreCase` on
 not resolve (preserving today's behaviour for genuinely-unknown names). This makes
 `@reference(path: [{table: "..."}])` and bare-`@reference` inference accept a schema-qualified parent
 `@table`, completing directive-form coverage rather than fixing one of three forms of one directive.
+
+**Site 4 — `findUniqueFkToTable` (line 489):** routing `findForeignKeysBetweenTables` through identity
+fixes the candidate list but not this method's own source-side re-filter. Replace that bare
+`equalsIgnoreCase` with `foreignKeyOnSource` so the `@nodeId` leaf auto-discovery and input-field
+synthesis-shim callers (lines 454 / 2163) accept a qualified source too. Default per the site 4-5 scope
+ruling; split out only if the reviewer wants a tighter R396.
 
 ## Phase 3 — the return-type qualifier (R379 terminal verdict) — fold in or split out
 
@@ -202,5 +246,8 @@ root cause shared with R395, worth keeping in the changelog).
 - Reported against the released **10.0.0-RC21** line, same consumer wave as R395 (`opptak`); a
   schema-qualified `@table` base with `@reference` is the consumer's real shape.
 - This item modifies the multischema fixture R395 introduced; that is expected and was anticipated by
-  R395's deviation note. R395 should reach Done first (or land alongside) so the fixture change is not
-  contested across two in-flight items.
+  R395's deviation note. A **`depends-on`** on R395 (slug `discriminator-column-from-clause-qualification`)
+  is now declared: R395 is in flight (it bounced back to Ready over the `@table(name)` form in this same
+  fixture, then returned to In Review), and R396 rewrites those exact `@table` lines to
+  `multischema_a.SIGNAL`. R396 must not enter In Progress until R395 reaches Done, or the two will
+  contest the same fixture lines across two in-flight items.
