@@ -1,7 +1,7 @@
 ---
 id: R395
 title: "Discriminated-interface discriminator column must qualify to the FROM table, not the @table directive name"
-status: In Review
+status: Ready
 bucket: bug
 priority: 3
 theme: interface-union
@@ -47,6 +47,39 @@ upper-case / schema-qualified-directive dimension is covered at the unit tier (`
 fixture). The `@reference` FK-connection limitation is filed as a follow-up Backlog item.
 
 On approval: delete this file and add a one-line `changelog.md` entry citing the landing SHA and R395.
+
+## Review feedback (In Review -> Ready, 2026-06-29)
+
+Independent In Review -> Done review of `27325cd3e`. Build green on JDK 25 via Testcontainers
+(full graphitron + sakila-example suites; `MultiSchemaQueryTest` 4/4 including the new
+`signalsRouteToDiscriminatedTypesUnderNamedSchema`; default-schema over-qualification guards
+`PolymorphicProjectionQueryTest` and `GraphQLQueryTest` allContent/allSubjects all pass). The
+three-site qualifier conversion, the `tableSqlName` retirement, the javadoc/class-example refresh,
+the `INTERFACE_BASE` regression-lock, the named-schema execution guard, and the R396 filing are all
+sound. Implementation accepted; one blocker holds the gate.
+
+**Blocker: two fixture comments describe a `@table(name:)` form the shipped SDL does not use.**
+
+- `graphitron-sakila-db/src/main/resources/init.sql:813` and
+  `graphitron-sakila-example/.../MultiSchemaQueryTest.java:128` both assert the interface is declared
+  `@table(name: "multischema_a.SIGNAL")` (uppercase, schema-qualified) and that the directive string
+  "matches neither the case nor a bare form of the rendered FROM token." The shipped SDL
+  (`multischema.graphqls:68,73,79`) declares `@table(name: "signal")` (lowercase, unqualified). The
+  SDL's own comments are correct; only these two are stale (they describe the pre-deviation plan A).
+- This contradicts the "Deviation from spec" section above and overstates coverage: the comments
+  claim the execution test exercises the case/schema-mismatch dimension, but that dimension lives
+  only at the unit tier (`INTERFACE_BASE`). This is the broad form of the *Documentation names only
+  live tests/code* principle (a comment making a claim the code does not bear out), which the
+  reviewer rule checks at this transition.
+- Severity is gate-blocking because approval deletes this spec file, taking the correct deviation
+  rationale with it and leaving the two false comments as the most prominent surviving account at the
+  fixture sites. The correction must land before deletion.
+- Fix (comment-only, no logic change): rewrite both comments to the actual `@table(name: "signal")`
+  shape (unqualified directive vs schema-qualified FROM token `"multischema_a"."signal"`), matching
+  the SDL comments and the deviation note, and state that the uppercase/case-mismatch dimension is
+  pinned at the unit tier rather than here. Also drop the em dash in `MultiSchemaQueryTest.java:128`
+  per the writing-style rule. The reviewer-session != implementer-session rule applies again next
+  cycle.
 
 ---
 
