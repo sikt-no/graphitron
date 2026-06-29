@@ -84,6 +84,22 @@ already on the Phase-1 path, so leaving it half-fixed is the worse outcome) and 
 filter through `foreignKeyOnSource` in Phase 2; if the reviewer prefers a tighter R396, mark both
 explicitly residual with a focused follow-up rather than leaving them silently un-enumerated.
 
+6. **`JooqCatalog.qualifierForFk` (line 544):** `.filter(fk -> fk.getTable().getName().equalsIgnoreCase(sourceTableSqlName))`,
+   the identical source-side bare compare. Reached from `BuildContext` line 2150 on the **same**
+   input-field NodeId synthesis-shim path as site 4 (line 2163), with the **same** `tableName` verbatim
+   echo as the argument. `buildQualifierMap(tableName)` (line 2148) resolves its source through
+   `findTable` and so populates the map for a schema-qualified `@table`, meaning the shim fires; then
+   `qualifierForFk` re-filters by bare source identity, returns empty for the qualified name, and the
+   caller's `.orElseThrow(... "should be unreachable")` (line 2151) turns a qualified-`@table` input
+   type with a qualifier-map-hitting `ID!` field into a hard `IllegalStateException` — strictly worse
+   than the silent mis-orientation this item treats elsewhere as the regression to avoid. By the same
+   reasoning the spec gives site 5 ("leaving its sibling directional filter three lines up untouched
+   leaves the method half-fixed"), fixing site 4 at 2163 while leaving 2150 untouched leaves the shim
+   path half-fixed. Default per the site 4-5 scope ruling: route `qualifierForFk`'s source-side filter
+   through the shared resolve-to-identity step in Phase 2 (it needs source-side membership, not
+   orientation, so `foreignKeyTouchesTable` plus the existing FK-name lookup suffices); split out only
+   if the reviewer wants a tighter R396.
+
 Two further sites carry the identical defect on the same `@table`-qualified author shape:
 
 - `JooqCatalog.findForeignKeysBetweenTables(a, b)` (bare-`equalsIgnoreCase` on both args against
