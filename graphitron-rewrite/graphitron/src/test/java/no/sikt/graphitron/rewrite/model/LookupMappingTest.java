@@ -27,7 +27,8 @@ class LookupMappingTest {
     private static final HelperRef.Decode DECODE_FILM_ACTOR = new HelperRef.Decode(
         ClassName.bestGuess("com.example.NodeIdEncoder"),
         "decodeFilmActor",
-        List.of(FILM_ID, ACTOR_ID));
+        List.of(FILM_ID, ACTOR_ID),
+        "FilmActor");
 
     @Test
     void mapInput_withEmptyBindings_throws() {

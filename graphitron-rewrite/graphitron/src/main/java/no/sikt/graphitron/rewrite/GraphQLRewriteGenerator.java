@@ -21,6 +21,7 @@ import no.sikt.graphitron.rewrite.generators.schema.ConstraintViolationsClassGen
 import no.sikt.graphitron.rewrite.generators.schema.EnumTypeGenerator;
 import no.sikt.graphitron.rewrite.generators.schema.ErrorMappingsClassGenerator;
 import no.sikt.graphitron.rewrite.generators.schema.ErrorRouterClassGenerator;
+import no.sikt.graphitron.rewrite.generators.schema.GraphitronClientExceptionClassGenerator;
 import no.sikt.graphitron.rewrite.generators.schema.FetcherRegistrationsEmitter;
 import no.sikt.graphitron.rewrite.generators.schema.GraphitronFacadeGenerator;
 import no.sikt.graphitron.rewrite.generators.schema.GraphitronSchemaClassGenerator;
@@ -221,6 +222,7 @@ public class GraphQLRewriteGenerator {
         write(OrderByResultClassGenerator.generate(),                                             "util",       emittedThisRun);
         write(GraphitronContextInterfaceGenerator.generate(),                                     "schema",     emittedThisRun);
         write(ConstraintViolationsClassGenerator.generate(),                                      "schema",     emittedThisRun);
+        write(GraphitronClientExceptionClassGenerator.generate(),                                 "schema",     emittedThisRun);
         write(ErrorRouterClassGenerator.generate(outputPackage),                                  "schema",     emittedThisRun);
         write(OutcomeClassGenerator.generate(outputPackage),                                      "schema",     emittedThisRun);
         write(ErrorMappingsClassGenerator.generate(schema, outputPackage),                        "schema",     emittedThisRun);

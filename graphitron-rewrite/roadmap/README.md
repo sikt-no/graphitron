@@ -40,8 +40,8 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R212` | IntelliJ plugin wrapping graphitron:dev LSP | Spec | 2026-05-21 | [plan](intellij-lsp-plugin.md) |
 | `R269` | Null-guard split-query key extraction for nullable to-one records | Spec | 2026-06-02 <sub>created 2026-06-01</sub> | [plan](nullable-to-one-record-into-npe.md) |
 | `R112` | Operation-driven test corpus, capability catalog, and runtime trace <sub>blocked by: [capability-catalog](capability-catalog.md)</sub> | Spec |  | [plan](operation-driven-test-corpus.md) |
-| `R378` | Filter @nodeId decode should distinguish malformed input from wrong-type and report malformed as a user error | Ready | 2026-06-29 <sub>created 2026-06-25</sub> | [plan](nodeid-filter-malformed-vs-mismatched.md) |
 | `R99` | LSP classpath scan misses sibling modules when dev goal runs from a sub-module | Ready | 2026-06-26 | [plan](lsp-submodule-sibling-classpath.md) |
+| `R378` | Filter @nodeId decode should distinguish malformed input from wrong-type and report malformed as a user error | In Review | 2026-06-29 <sub>created 2026-06-25</sub> | [plan](nodeid-filter-malformed-vs-mismatched.md) |
 
 ---
 
@@ -184,7 +184,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R57` [**FK-target argument @nodeId, JOIN-with-translation emission**](nodeid-fk-target-arg-join-translation.md) — Backlog, architecture
 - `R273` [**Source NodeId metadata from @node + catalog PK (inferred from `implements Node`), and settle wrong-type/malformed mismatch semantics, retiring the legacy __NODE bare-ID arm**](nodeid-skip-mismatch-error-surfacing.md) — Spec, architecture, blocked by [nodeid-filter-malformed-vs-mismatched](nodeid-filter-malformed-vs-mismatched.md)
 - `R24` [**`NodeIdReferenceField` JOIN-projection form**](nodeidreferencefield-join-projection-form.md) — Backlog, cleanup
-- `R378` [**Filter @nodeId decode should distinguish malformed input from wrong-type and report malformed as a user error**](nodeid-filter-malformed-vs-mismatched.md) — Ready, architecture
+- `R378` [**Filter @nodeId decode should distinguish malformed input from wrong-type and report malformed as a user error**](nodeid-filter-malformed-vs-mismatched.md) — In Review, architecture
 
 ### service
 

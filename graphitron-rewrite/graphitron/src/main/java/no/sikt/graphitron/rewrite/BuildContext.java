@@ -2306,10 +2306,11 @@ class BuildContext {
      * construction.
      *
      * <p>Failure mode for the decode helper is fixed at
-     * {@link no.sikt.graphitron.rewrite.model.CallSiteExtraction.SkipMismatchedElement}: input-field
-     * filter leaves drop malformed encoded ids silently to "no row matches" rather than throwing.
-     * Argument-level lookup leaves in {@link FieldBuilder#classifyArgument} can pick
-     * {@code ThrowOnMismatch}; that arm is not reachable from here.
+     * {@link no.sikt.graphitron.rewrite.model.CallSiteExtraction.ThrowOnMismatch} (R378): an
+     * authored input-field {@code @nodeId} filter leaf throws a {@code GraphitronClientException}
+     * on a malformed or wrong-type encoded id rather than silently dropping it to "no row matches".
+     * This matches the argument-level filter leaves in {@link FieldBuilder#classifyArgument}; the
+     * legacy synthesis-shim arms (not reachable from here) keep {@code SkipMismatchedElement}.
      */
     private InputFieldResolution inputFieldFromNodeIdResolved(
             NodeIdLeafResolver.Resolved resolved, String parentTypeName,
@@ -2321,7 +2322,8 @@ class BuildContext {
             }
             case NodeIdLeafResolver.Resolved.SameTable st -> {
                 Optional<ArgConditionRef> cond = buildInputFieldCondition(field, name, errors);
-                var extraction = new no.sikt.graphitron.rewrite.model.CallSiteExtraction.SkipMismatchedElement(st.decodeMethod());
+                // R378: authored input-field @nodeId filter throws on malformed/wrong-type ids.
+                var extraction = new no.sikt.graphitron.rewrite.model.CallSiteExtraction.ThrowOnMismatch(st.decodeMethod());
                 if (st.keyColumns().size() == 1) {
                     return new InputFieldResolution.Resolved(new InputField.ColumnField(
                         parentTypeName, name, locationOf(field), typeName, nonNull, list,
@@ -2333,7 +2335,8 @@ class BuildContext {
             }
             case NodeIdLeafResolver.Resolved.FkTarget.DirectFk direct -> {
                 Optional<ArgConditionRef> cond = buildInputFieldCondition(field, name, errors);
-                var extraction = new no.sikt.graphitron.rewrite.model.CallSiteExtraction.SkipMismatchedElement(direct.decodeMethod());
+                // R378: authored input-field FK-target @nodeId filter throws on malformed/wrong-type ids.
+                var extraction = new no.sikt.graphitron.rewrite.model.CallSiteExtraction.ThrowOnMismatch(direct.decodeMethod());
                 if (direct.keyColumns().size() == 1) {
                     return new InputFieldResolution.Resolved(new InputField.ColumnReferenceField(
                         parentTypeName, name, locationOf(field), typeName, nonNull, list,
@@ -2458,7 +2461,7 @@ class BuildContext {
             ctx.outputPackage() + ".util",
             no.sikt.graphitron.rewrite.generators.util.NodeIdEncoderClassGenerator.CLASS_NAME);
         return new no.sikt.graphitron.rewrite.model.HelperRef.Decode(
-            encoderClass, "decode" + fallbackTypeId, keyColumns);
+            encoderClass, "decode" + fallbackTypeId, keyColumns, fallbackTypeId);
     }
 
     /**

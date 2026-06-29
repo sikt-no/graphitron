@@ -5381,7 +5381,7 @@ class GraphitronSchemaBuilderTest {
                 assertThat(f.list()).isTrue();
                 assertThat(f.column().sqlName()).isEqualTo("film_id");
                 assertThat(f.extraction())
-                    .isInstanceOf(no.sikt.graphitron.rewrite.model.CallSiteExtraction.SkipMismatchedElement.class);
+                    .isInstanceOf(no.sikt.graphitron.rewrite.model.CallSiteExtraction.ThrowOnMismatch.class);
                 assertThat(f.joinPath()).hasSize(1);
             }) {
             @Override public Set<Class<?>> variants() { return Set.of(InputField.ColumnReferenceField.class); }
@@ -5404,7 +5404,7 @@ class GraphitronSchemaBuilderTest {
                     .filter(InputField.ColumnReferenceField.class::isInstance).findFirst().orElseThrow();
                 assertThat(f.column().sqlName()).isEqualTo("language_id");
                 assertThat(f.extraction())
-                    .isInstanceOf(no.sikt.graphitron.rewrite.model.CallSiteExtraction.SkipMismatchedElement.class);
+                    .isInstanceOf(no.sikt.graphitron.rewrite.model.CallSiteExtraction.ThrowOnMismatch.class);
                 assertThat(f.joinPath()).hasSize(1);
             }),
 
@@ -5461,7 +5461,7 @@ class GraphitronSchemaBuilderTest {
                     .filter(InputField.ColumnReferenceField.class::isInstance).findFirst().orElseThrow();
                 assertThat(f.column().sqlName()).isEqualTo("film_id");
                 assertThat(f.extraction())
-                    .isInstanceOf(no.sikt.graphitron.rewrite.model.CallSiteExtraction.SkipMismatchedElement.class);
+                    .isInstanceOf(no.sikt.graphitron.rewrite.model.CallSiteExtraction.ThrowOnMismatch.class);
             });
 
         final String sdl;

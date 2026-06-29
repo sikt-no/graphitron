@@ -18,8 +18,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * Pipeline-tier coverage for {@link QueryConditionsGenerator}'s composite-key NodeId helper
  * registry: when two distinct {@code QueryTableField}s on the same root type consume the same
  * NodeId type via {@code [ID!] @nodeId(typeName: T)}, the generator emits exactly one shared
- * {@code decode<T>Rows} private static helper on the {@code QueryConditions} class, and both
- * condition methods reference it.
+ * {@code decode<T>RowsOrThrow} private static helper on the {@code QueryConditions} class (R378:
+ * authored filters throw on a bad id), and both condition methods reference it.
  *
  * <p>Uses the {@code nodeidfixture} jOOQ catalog so the composite-key {@code Bar} NodeType
  * (PK {@code (id_1, id_2)}) is available; sakila has no composite-key NodeType usable from
@@ -52,19 +52,24 @@ class QueryConditionsPipelineTest {
         var queryConditions = classes.stream()
             .filter(t -> t.name().equals("QueryConditions")).findFirst().orElseThrow();
 
-        // Exactly one helper, deduplicated across both call sites.
+        // Exactly one helper, deduplicated across both call sites. R378: an authored input-field
+        // [ID!] @nodeId filter classifies to ThrowOnMismatch, so the shared helper is the throwing
+        // form (`…OrThrow`); a bad filter id surfaces an error rather than dropping silently.
         var helpers = queryConditions.methodSpecs().stream()
-            .filter(m -> m.name().equals("decodeBarRows"))
+            .filter(m -> m.name().equals("decodeBarRowsOrThrow"))
             .toList();
         assertThat(helpers).hasSize(1);
         assertThat(helpers.get(0).modifiers()).contains(javax.lang.model.element.Modifier.PRIVATE,
             javax.lang.model.element.Modifier.STATIC);
+        // The skip-form helper must not be emitted for an authored filter.
+        assertThat(queryConditions.methodSpecs()).extracting(MethodSpec::name)
+            .doesNotContain("decodeBarRows");
 
-        // Both condition methods invoke the shared helper.
+        // Both condition methods invoke the shared throwing helper.
         var primaryBody = bodyOf(queryConditions, "barsPrimaryCondition");
         var secondaryBody = bodyOf(queryConditions, "barsSecondaryCondition");
-        assertThat(primaryBody).contains("decodeBarRows(");
-        assertThat(secondaryBody).contains("decodeBarRows(");
+        assertThat(primaryBody).contains("decodeBarRowsOrThrow(");
+        assertThat(secondaryBody).contains("decodeBarRowsOrThrow(");
     }
 
     @Test
@@ -125,11 +130,13 @@ class QueryConditionsPipelineTest {
         var queryConditions = classes.stream()
             .filter(t -> t.name().equals("QueryConditions")).findFirst().orElseThrow();
 
+        // R378: both authored input-field @nodeId filters classify to ThrowOnMismatch, so both
+        // helpers are the throwing form (scalar `Row`, list `Rows`).
         var helperNames = queryConditions.methodSpecs().stream()
             .map(MethodSpec::name)
             .filter(n -> n.startsWith("decodeBar"))
             .toList();
-        assertThat(helperNames).containsExactlyInAnyOrder("decodeBarRow", "decodeBarRows");
+        assertThat(helperNames).containsExactlyInAnyOrder("decodeBarRowOrThrow", "decodeBarRowsOrThrow");
     }
 
     private static String bodyOf(TypeSpec spec, String methodName) {

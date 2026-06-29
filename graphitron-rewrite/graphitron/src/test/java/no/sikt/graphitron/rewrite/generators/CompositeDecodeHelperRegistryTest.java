@@ -20,19 +20,21 @@ import static org.assertj.core.api.Assertions.assertThat;
 @UnitTier
 class CompositeDecodeHelperRegistryTest {
 
-    private static final ClassName ENCODER = ClassName.get("no.sikt.example.util", "NodeIdEncoder");
+    private static final String OUTPUT_PACKAGE = "no.sikt.example";
+    private static final ClassName ENCODER = ClassName.get(OUTPUT_PACKAGE + ".util", "NodeIdEncoder");
 
     private static HelperRef.Decode decodeFilmActor() {
         return new HelperRef.Decode(
             ENCODER, "decodeFilmActor",
             List.of(
                 new ColumnRef("actor_id", "ACTOR_ID", "java.lang.Integer"),
-                new ColumnRef("film_id", "FILM_ID", "java.lang.Integer")));
+                new ColumnRef("film_id", "FILM_ID", "java.lang.Integer")),
+            "FilmActor");
     }
 
     @Test
     void register_sameKey_returnsSameHelperName() {
-        var registry = new CompositeDecodeHelperRegistry();
+        var registry = new CompositeDecodeHelperRegistry(OUTPUT_PACKAGE);
         var decode = decodeFilmActor();
         String first = registry.register(decode, CompositeDecodeHelperRegistry.Mode.SKIP, true);
         String second = registry.register(decode, CompositeDecodeHelperRegistry.Mode.SKIP, true);
@@ -42,7 +44,7 @@ class CompositeDecodeHelperRegistryTest {
 
     @Test
     void register_skipAndThrow_emitDistinctHelpers() {
-        var registry = new CompositeDecodeHelperRegistry();
+        var registry = new CompositeDecodeHelperRegistry(OUTPUT_PACKAGE);
         var decode = decodeFilmActor();
         String skipName = registry.register(decode, CompositeDecodeHelperRegistry.Mode.SKIP, true);
         String throwName = registry.register(decode, CompositeDecodeHelperRegistry.Mode.THROW, true);
@@ -53,7 +55,7 @@ class CompositeDecodeHelperRegistryTest {
 
     @Test
     void register_scalarAndList_emitDistinctHelpers() {
-        var registry = new CompositeDecodeHelperRegistry();
+        var registry = new CompositeDecodeHelperRegistry(OUTPUT_PACKAGE);
         var decode = decodeFilmActor();
         String scalar = registry.register(decode, CompositeDecodeHelperRegistry.Mode.SKIP, false);
         String list = registry.register(decode, CompositeDecodeHelperRegistry.Mode.SKIP, true);
@@ -64,7 +66,7 @@ class CompositeDecodeHelperRegistryTest {
 
     @Test
     void emit_listSkipHelper_hasTypedRowReturnAndFilterChain() {
-        var registry = new CompositeDecodeHelperRegistry();
+        var registry = new CompositeDecodeHelperRegistry(OUTPUT_PACKAGE);
         registry.register(decodeFilmActor(), CompositeDecodeHelperRegistry.Mode.SKIP, true);
         MethodSpec helper = registry.emit().iterator().next();
         assertThat(helper.name()).isEqualTo("decodeFilmActorRows");
@@ -79,19 +81,26 @@ class CompositeDecodeHelperRegistryTest {
     }
 
     @Test
-    void emit_listThrowHelper_swapsFilterForThrowingMap() {
-        var registry = new CompositeDecodeHelperRegistry();
+    void emit_listThrowHelper_throwsClientExceptionWithTwoBranchMessage() {
+        var registry = new CompositeDecodeHelperRegistry(OUTPUT_PACKAGE);
         registry.register(decodeFilmActor(), CompositeDecodeHelperRegistry.Mode.THROW, true);
         MethodSpec helper = registry.emit().iterator().next();
         String body = helper.code().toString();
         assertThat(body)
-            .contains("graphql.GraphqlErrorException")
-            .doesNotContain("Objects::nonNull");
+            // R378: throws the generated client-error type, not a bare GraphqlErrorException, and
+            // peeks the wire prefix to distinguish malformed input from a wrong-type id.
+            .contains("no.sikt.example.schema.GraphitronClientException")
+            .contains("NodeIdEncoder.peekTypeId")
+            .contains("not a valid FilmActor id")
+            .contains("decodes to type")
+            .contains("Record2::valuesRow")
+            .doesNotContain("Objects::nonNull")
+            .doesNotContain("GraphqlErrorException");
     }
 
     @Test
     void emit_scalarSkipHelper_returnsTypedRowDirectly() {
-        var registry = new CompositeDecodeHelperRegistry();
+        var registry = new CompositeDecodeHelperRegistry(OUTPUT_PACKAGE);
         registry.register(decodeFilmActor(), CompositeDecodeHelperRegistry.Mode.SKIP, false);
         MethodSpec helper = registry.emit().iterator().next();
         assertThat(helper.returnType().toString())
@@ -106,7 +115,8 @@ class CompositeDecodeHelperRegistryTest {
     private static HelperRef.Decode decodeFilm() {
         return new HelperRef.Decode(
             ENCODER, "decodeFilm",
-            List.of(new ColumnRef("film_id", "FILM_ID", "java.lang.Integer")));
+            List.of(new ColumnRef("film_id", "FILM_ID", "java.lang.Integer")),
+            "Film");
     }
 
     @Test
@@ -114,7 +124,7 @@ class CompositeDecodeHelperRegistryTest {
         // R260 extended the registry from composite-only to all arities: an arity-1 decode lifts to
         // a `decode<Type>Key`/`Keys` helper that returns the bare key column type and projects via
         // Record1.value1(), rather than the former inline ternary at the call site.
-        var registry = new CompositeDecodeHelperRegistry();
+        var registry = new CompositeDecodeHelperRegistry(OUTPUT_PACKAGE);
         var decode = decodeFilm();
         String scalar = registry.register(decode, CompositeDecodeHelperRegistry.Mode.SKIP, false);
         String list = registry.register(decode, CompositeDecodeHelperRegistry.Mode.SKIP, true);
@@ -127,7 +137,7 @@ class CompositeDecodeHelperRegistryTest {
 
     @Test
     void emit_arity1ScalarSkipHelper_returnsKeyTypeAndProjectsValue1() {
-        var registry = new CompositeDecodeHelperRegistry();
+        var registry = new CompositeDecodeHelperRegistry(OUTPUT_PACKAGE);
         registry.register(decodeFilm(), CompositeDecodeHelperRegistry.Mode.SKIP, false);
         MethodSpec helper = registry.emit().iterator().next();
         assertThat(helper.name()).isEqualTo("decodeFilmKey");
@@ -142,7 +152,7 @@ class CompositeDecodeHelperRegistryTest {
 
     @Test
     void emit_arity1ListThrowHelper_returnsListOfKeyTypeAndThrows() {
-        var registry = new CompositeDecodeHelperRegistry();
+        var registry = new CompositeDecodeHelperRegistry(OUTPUT_PACKAGE);
         registry.register(decodeFilm(), CompositeDecodeHelperRegistry.Mode.THROW, true);
         MethodSpec helper = registry.emit().iterator().next();
         assertThat(helper.name()).isEqualTo("decodeFilmKeysOrThrow");
@@ -150,8 +160,30 @@ class CompositeDecodeHelperRegistryTest {
         String body = helper.code().toString();
         assertThat(body)
             .contains("instanceof java.util.List<?>")
-            .contains("graphql.GraphqlErrorException")
+            .contains("no.sikt.example.schema.GraphitronClientException")
+            .contains("NodeIdEncoder.peekTypeId")
+            .contains("not a valid Film id")
             .contains("Record1::value1")
-            .doesNotContain("Objects::nonNull");
+            .doesNotContain("Objects::nonNull")
+            .doesNotContain("GraphqlErrorException");
+    }
+
+    @Test
+    void emit_arity1ScalarThrowHelper_throwsClientExceptionWithTwoBranchMessage() {
+        var registry = new CompositeDecodeHelperRegistry(OUTPUT_PACKAGE);
+        registry.register(decodeFilm(), CompositeDecodeHelperRegistry.Mode.THROW, false);
+        MethodSpec helper = registry.emit().iterator().next();
+        assertThat(helper.name()).isEqualTo("decodeFilmKeyOrThrow");
+        assertThat(helper.returnType().toString()).isEqualTo("java.lang.Integer");
+        String body = helper.code().toString();
+        assertThat(body)
+            // The scalar arm has `nodeId` in scope directly, so the throw names the wire value too.
+            .contains("wire instanceof String nodeId")
+            .contains("no.sikt.example.schema.GraphitronClientException")
+            .contains("NodeIdEncoder.peekTypeId(nodeId)")
+            .contains("not a valid Film id")
+            .contains("decodes to type")
+            .contains("return key.value1()")
+            .doesNotContain("GraphqlErrorException");
     }
 }

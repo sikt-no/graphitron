@@ -64,7 +64,7 @@ public class QueryConditionsGenerator {
             // condition method on this root type are deduplicated and drained as private static
             // helpers alongside the public condition methods. collectInto co-locates construct and
             // drain so the lift can never be silently dropped.
-            CompositeDecodeHelperRegistry.collectInto(classBuilder, registry -> {
+            CompositeDecodeHelperRegistry.collectInto(classBuilder, outputPackage, registry -> {
                 for (var field : schema.fieldsOf(rootType.name())) {
                     if (field instanceof QueryField.QueryTableField qtf) {
                         methods.add(buildConditionMethod(qtf.name(), qtf.returnType(), qtf.filters(), outputPackage, registry));

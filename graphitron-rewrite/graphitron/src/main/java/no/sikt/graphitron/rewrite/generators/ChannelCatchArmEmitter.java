@@ -46,7 +46,9 @@ public final class ChannelCatchArmEmitter {
             String outputPackage,
             CodeBlock localContextSentinel) {
         if (channel.isEmpty()) {
-            return CodeBlock.of("return $T.redact(e, env);\n", errorRouterClass(outputPackage));
+            // No-channel disposition routes through surfaceClientErrorOrRedact (R378): a
+            // GraphitronClientException surfaces its real message; everything else still redacts.
+            return CodeBlock.of("return $T.surfaceClientErrorOrRedact(e, env);\n", errorRouterClass(outputPackage));
         }
         return switch (channel.get()) {
             case ErrorChannel.Mapped m -> mappedCatchArm(m, valueType, outputPackage);

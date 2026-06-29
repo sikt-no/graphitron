@@ -57,8 +57,8 @@ class SelfFkNodeIdReferenceReadSidePipelineTest {
             .as("filter binds against the self-FK child columns on email's own table (no self-join)")
             .extracting(c -> c.sqlName())
             .containsExactly("mailbox_id", "in_reply_to_no");
-        assertThat(rowIn.extraction()).isInstanceOf(CallSiteExtraction.SkipMismatchedElement.class);
-        var skip = (CallSiteExtraction.SkipMismatchedElement) rowIn.extraction();
+        assertThat(rowIn.extraction()).isInstanceOf(CallSiteExtraction.ThrowOnMismatch.class);
+        var skip = (CallSiteExtraction.ThrowOnMismatch) rowIn.extraction();
         assertThat(skip.decodeMethod().methodName()).isEqualTo("decodeEmail");
     }
 

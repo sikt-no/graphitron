@@ -28,7 +28,7 @@ class NodeTypeValidationTest {
     private static NodeType node(String name, String typeId, List<ColumnRef> keys) {
         return new NodeType(name, null, RESOLVED_FILM, typeId, keys,
             new HelperRef.Encode(ENC, "encode" + name, keys),
-            new HelperRef.Decode(ENC, "decode" + name, keys));
+            new HelperRef.Decode(ENC, "decode" + name, keys, typeId));
     }
 
     enum Case implements TypeValidatorCase {

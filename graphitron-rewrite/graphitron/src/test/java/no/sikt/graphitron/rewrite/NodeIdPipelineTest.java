@@ -355,7 +355,7 @@ class NodeIdPipelineTest {
                 assertThat(f.columns()).extracting(ColumnRef::sqlName)
                     .containsExactly("id_1", "id_2");
                 assertThat(f.extraction())
-                    .isInstanceOf(no.sikt.graphitron.rewrite.model.CallSiteExtraction.SkipMismatchedElement.class);
+                    .isInstanceOf(no.sikt.graphitron.rewrite.model.CallSiteExtraction.ThrowOnMismatch.class);
                 assertThat(f.extraction().decodeMethod().methodName()).isEqualTo("decodeBar");
             }),
 
@@ -373,7 +373,7 @@ class NodeIdPipelineTest {
                 var f = (InputField.ColumnField) t.inputFields().get(0);
                 assertThat(f.list()).isFalse();
                 assertThat(f.column().sqlName()).isEqualTo("id");
-                var skip = (no.sikt.graphitron.rewrite.model.CallSiteExtraction.SkipMismatchedElement) f.extraction();
+                var skip = (no.sikt.graphitron.rewrite.model.CallSiteExtraction.ThrowOnMismatch) f.extraction();
                 assertThat(skip.decodeMethod().methodName()).isEqualTo("decodeBaz");
             }),
 
@@ -440,7 +440,7 @@ class NodeIdPipelineTest {
                 var t = (GraphitronType.TableInputType) schema.type("SharedSelector");
                 var f = (InputField.ColumnField) t.inputFields().get(0);
                 assertThat(f.column().sqlName()).isEqualTo("id");
-                var skip = (no.sikt.graphitron.rewrite.model.CallSiteExtraction.SkipMismatchedElement) f.extraction();
+                var skip = (no.sikt.graphitron.rewrite.model.CallSiteExtraction.ThrowOnMismatch) f.extraction();
                 assertThat(skip.decodeMethod().methodName()).isEqualTo("decodeSharedNode");
                 assertThat(skip.decodeMethod().methodName()).isNotEqualTo("decode10154");
             }),
@@ -518,7 +518,7 @@ class NodeIdPipelineTest {
         REFERENCE_TO_NODE_TYPE(
             "R131 four-corners: singular `relatedId: ID! @nodeId(typeName: 'Baz')` on bar table"
                 + " (FK bar.id_1 -> baz.id, single-PK target) → ColumnReferenceField with"
-                + " NodeIdDecodeKeys.SkipMismatchedElement",
+                + " NodeIdDecodeKeys.ThrowOnMismatch",
             """
             type Baz @table(name: "baz") { id: ID! }
             input Foo @table(name: "bar") { relatedId: ID! @nodeId(typeName: "Baz") }
@@ -532,7 +532,7 @@ class NodeIdPipelineTest {
                 assertThat(f.column().sqlName()).isEqualTo("id");
                 assertThat(f.joinPath()).hasSize(1);
                 assertThat(f.extraction())
-                    .isInstanceOf(no.sikt.graphitron.rewrite.model.CallSiteExtraction.SkipMismatchedElement.class);
+                    .isInstanceOf(no.sikt.graphitron.rewrite.model.CallSiteExtraction.ThrowOnMismatch.class);
                 assertThat(((no.sikt.graphitron.rewrite.model.CallSiteExtraction.NodeIdDecodeKeys) f.extraction())
                     .decodeMethod().methodName()).isEqualTo("decodeBaz");
             }),
@@ -557,7 +557,7 @@ class NodeIdPipelineTest {
                 assertThat(f.liftedSourceColumns()).extracting(ColumnRef::sqlName)
                     .containsExactly("k1", "k2");
                 assertThat(f.extraction())
-                    .isInstanceOf(no.sikt.graphitron.rewrite.model.CallSiteExtraction.SkipMismatchedElement.class);
+                    .isInstanceOf(no.sikt.graphitron.rewrite.model.CallSiteExtraction.ThrowOnMismatch.class);
                 assertThat(f.extraction().decodeMethod().methodName()).isEqualTo("decodeLevelA");
             }),
 
@@ -605,7 +605,7 @@ class NodeIdPipelineTest {
                 assertThat(f.list()).isFalse();
                 assertThat(f.column().sqlName()).isEqualTo("name");
                 assertThat(f.extraction())
-                    .isInstanceOf(no.sikt.graphitron.rewrite.model.CallSiteExtraction.SkipMismatchedElement.class);
+                    .isInstanceOf(no.sikt.graphitron.rewrite.model.CallSiteExtraction.ThrowOnMismatch.class);
             });
 
         final String sdl;
@@ -725,7 +725,7 @@ class NodeIdPipelineTest {
      * a primary-key IN predicate, not a FK join. The classifier short-circuits before
      * {@code findUniqueFkToTable(t, t)} (which would always miss) and emits
      * {@link InputField.ColumnField} (arity-1) or {@link InputField.CompositeColumnField}
-     * (arity &gt; 1) carrying {@link CallSiteExtraction.NodeIdDecodeKeys.SkipMismatchedElement}.
+     * (arity &gt; 1) carrying {@link CallSiteExtraction.NodeIdDecodeKeys.ThrowOnMismatch}.
      */
     enum InputSameTableNodeIdCase {
         SAME_TABLE_COMPOSITE_PK(
@@ -746,8 +746,8 @@ class NodeIdPipelineTest {
                 assertThat(f.columns()).extracting(ColumnRef::sqlName)
                     .containsExactly("id_1", "id_2");
                 assertThat(f.extraction())
-                    .isInstanceOf(CallSiteExtraction.SkipMismatchedElement.class);
-                var skip = (CallSiteExtraction.SkipMismatchedElement) f.extraction();
+                    .isInstanceOf(CallSiteExtraction.ThrowOnMismatch.class);
+                var skip = (CallSiteExtraction.ThrowOnMismatch) f.extraction();
                 assertThat(skip.decodeMethod().methodName()).isEqualTo("decodeBar");
             }),
 
@@ -767,8 +767,8 @@ class NodeIdPipelineTest {
                 assertThat(f.list()).isTrue();
                 assertThat(f.column().sqlName()).isEqualTo("id");
                 assertThat(f.extraction())
-                    .isInstanceOf(CallSiteExtraction.SkipMismatchedElement.class);
-                var skip = (CallSiteExtraction.SkipMismatchedElement) f.extraction();
+                    .isInstanceOf(CallSiteExtraction.ThrowOnMismatch.class);
+                var skip = (CallSiteExtraction.ThrowOnMismatch) f.extraction();
                 assertThat(skip.decodeMethod().methodName()).isEqualTo("decodeBaz");
             }),
 
@@ -803,7 +803,7 @@ class NodeIdPipelineTest {
                 assertThat(f.columns()).extracting(ColumnRef::sqlName)
                     .containsExactly("id_1", "id_2");
                 assertThat(f.extraction())
-                    .isInstanceOf(CallSiteExtraction.SkipMismatchedElement.class);
+                    .isInstanceOf(CallSiteExtraction.ThrowOnMismatch.class);
             }),
 
         BARE_LIST_NODE_ID_NO_OBJECT_TYPE(
@@ -1064,8 +1064,8 @@ class NodeIdPipelineTest {
                     .filter(no.sikt.graphitron.rewrite.model.BodyParam.Eq.class::isInstance)
                     .findFirst().orElseThrow();
                 assertThat(bp.column().sqlName()).isEqualTo("id");
-                assertThat(bp.extraction()).isInstanceOf(CallSiteExtraction.SkipMismatchedElement.class);
-                var skip = (CallSiteExtraction.SkipMismatchedElement) bp.extraction();
+                assertThat(bp.extraction()).isInstanceOf(CallSiteExtraction.ThrowOnMismatch.class);
+                var skip = (CallSiteExtraction.ThrowOnMismatch) bp.extraction();
                 assertThat(skip.decodeMethod().methodName()).isEqualTo("decodeBaz");
             }),
 
@@ -1091,8 +1091,8 @@ class NodeIdPipelineTest {
                     .findFirst().orElseThrow();
                 assertThat(bp.columns()).extracting(ColumnRef::sqlName)
                     .containsExactly("id_1", "id_2");
-                assertThat(bp.extraction()).isInstanceOf(CallSiteExtraction.SkipMismatchedElement.class);
-                var skip = (CallSiteExtraction.SkipMismatchedElement) bp.extraction();
+                assertThat(bp.extraction()).isInstanceOf(CallSiteExtraction.ThrowOnMismatch.class);
+                var skip = (CallSiteExtraction.ThrowOnMismatch) bp.extraction();
                 assertThat(skip.decodeMethod().methodName()).isEqualTo("decodeBar");
             }),
 
@@ -1134,8 +1134,8 @@ class NodeIdPipelineTest {
                     .filter(no.sikt.graphitron.rewrite.model.BodyParam.RowIn.class::isInstance)
                     .findFirst().orElseThrow();
                 assertThat(bp.columns()).hasSize(2);
-                assertThat(bp.extraction()).isInstanceOf(CallSiteExtraction.SkipMismatchedElement.class);
-                var skip = (CallSiteExtraction.SkipMismatchedElement) bp.extraction();
+                assertThat(bp.extraction()).isInstanceOf(CallSiteExtraction.ThrowOnMismatch.class);
+                var skip = (CallSiteExtraction.ThrowOnMismatch) bp.extraction();
                 assertThat(skip.decodeMethod().methodName()).isEqualTo("decodeBar");
             }),
 
@@ -1157,7 +1157,7 @@ class NodeIdPipelineTest {
                 var bp = (no.sikt.graphitron.rewrite.model.BodyParam.RowIn) gcf.bodyParams().stream()
                     .filter(no.sikt.graphitron.rewrite.model.BodyParam.RowIn.class::isInstance)
                     .findFirst().orElseThrow();
-                var skip = (CallSiteExtraction.SkipMismatchedElement) bp.extraction();
+                var skip = (CallSiteExtraction.ThrowOnMismatch) bp.extraction();
                 assertThat(skip.decodeMethod().methodName()).isEqualTo("decodeBar");
             }),
 
@@ -1204,7 +1204,7 @@ class NodeIdPipelineTest {
                     .findFirst().orElseThrow();
                 assertThat(idIn.name()).isEqualTo("ids");
                 assertThat(idIn.columns()).hasSize(2);
-                assertThat(idIn.extraction()).isInstanceOf(CallSiteExtraction.SkipMismatchedElement.class);
+                assertThat(idIn.extraction()).isInstanceOf(CallSiteExtraction.ThrowOnMismatch.class);
                 var nameEq = (no.sikt.graphitron.rewrite.model.BodyParam.Eq) gcf.bodyParams().stream()
                     .filter(no.sikt.graphitron.rewrite.model.BodyParam.Eq.class::isInstance)
                     .filter(bp -> "name".equals(((no.sikt.graphitron.rewrite.model.BodyParam.Eq) bp).name()))
@@ -1229,7 +1229,7 @@ class NodeIdPipelineTest {
                     cm.args().get(0);
                 assertThat(arg.list()).isTrue();
                 assertThat(arg.targetColumn().sqlName()).isEqualTo("id");
-                assertThat(arg.extraction()).isInstanceOf(CallSiteExtraction.SkipMismatchedElement.class);
+                assertThat(arg.extraction()).isInstanceOf(CallSiteExtraction.ThrowOnMismatch.class);
             }),
 
         FK_TARGET_LOOKUP_KEY_REJECTED(
@@ -1295,8 +1295,8 @@ class NodeIdPipelineTest {
                     .filter(no.sikt.graphitron.rewrite.model.BodyParam.In.class::isInstance)
                     .findFirst().orElseThrow();
                 assertThat(bp.column().sqlName()).isEqualTo("id_1");
-                assertThat(bp.extraction()).isInstanceOf(CallSiteExtraction.SkipMismatchedElement.class);
-                var skip = (CallSiteExtraction.SkipMismatchedElement) bp.extraction();
+                assertThat(bp.extraction()).isInstanceOf(CallSiteExtraction.ThrowOnMismatch.class);
+                var skip = (CallSiteExtraction.ThrowOnMismatch) bp.extraction();
                 assertThat(skip.decodeMethod().methodName()).isEqualTo("decodeBaz");
             }),
 
@@ -1374,8 +1374,8 @@ class NodeIdPipelineTest {
                     .extracting(c -> c.sqlName())
                     .containsExactly("k1", "k2");
                 assertThat(bp.extraction())
-                    .isInstanceOf(CallSiteExtraction.SkipMismatchedElement.class);
-                var skip = (CallSiteExtraction.SkipMismatchedElement) bp.extraction();
+                    .isInstanceOf(CallSiteExtraction.ThrowOnMismatch.class);
+                var skip = (CallSiteExtraction.ThrowOnMismatch) bp.extraction();
                 assertThat(skip.decodeMethod().methodName()).isEqualTo("decodeLevelA");
             });
 
@@ -1500,7 +1500,7 @@ class NodeIdPipelineTest {
                     .containsExactly("fk_a", "fk_b", "fk_c");
                 assertThat(leaf.joinPath()).hasSize(1);
                 assertThat(leaf.extraction())
-                    .isInstanceOf(no.sikt.graphitron.rewrite.model.CallSiteExtraction.SkipMismatchedElement.class);
+                    .isInstanceOf(no.sikt.graphitron.rewrite.model.CallSiteExtraction.ThrowOnMismatch.class);
             }),
 
         FK_TARGET_REORDERED_KEY_PERMUTATION_DIRECT_FK_SINGULAR(
@@ -1573,7 +1573,7 @@ class NodeIdPipelineTest {
         assertThat(inFilters).hasSize(1);
         var bp = inFilters.get(0);
         assertThat(bp.column().sqlName()).isEqualTo("id");
-        assertThat(bp.extraction()).isInstanceOf(CallSiteExtraction.SkipMismatchedElement.class);
+        assertThat(bp.extraction()).isInstanceOf(CallSiteExtraction.ThrowOnMismatch.class);
         assertThat(f.orderBy()).isNotNull();
         assertThat(f.pagination()).isNotNull();
     }

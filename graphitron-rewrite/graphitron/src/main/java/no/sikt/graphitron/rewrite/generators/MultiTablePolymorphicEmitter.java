@@ -238,7 +238,7 @@ public final class MultiTablePolymorphicEmitter {
             }
             builder.addCode(returnSyncSuccess(valueType, "payload"));
             builder.nextControlFlow("catch ($T e)", Exception.class);
-            builder.addCode(redactCatchArm(outputPackage));
+            builder.addCode(noChannelCatchArm(outputPackage));
             builder.endControlFlow();
             return builder.build();
         }
@@ -256,7 +256,7 @@ public final class MultiTablePolymorphicEmitter {
         }
         builder.addCode(returnSyncSuccess(valueType, "payload"));
         builder.nextControlFlow("catch ($T e)", Exception.class);
-        builder.addCode(redactCatchArm(outputPackage));
+        builder.addCode(noChannelCatchArm(outputPackage));
         builder.endControlFlow();
         return builder.build();
     }
@@ -483,7 +483,7 @@ public final class MultiTablePolymorphicEmitter {
             }
             builder.addCode(returnSyncSuccess(valueType, "payload"));
             builder.nextControlFlow("catch ($T e)", Exception.class);
-            builder.addCode(redactCatchArm(outputPackage));
+            builder.addCode(noChannelCatchArm(outputPackage));
             builder.endControlFlow();
             return builder.build();
         }
@@ -505,7 +505,7 @@ public final class MultiTablePolymorphicEmitter {
         }
         builder.addCode(returnSyncSuccess(valueType, "payload"));
         builder.nextControlFlow("catch ($T e)", Exception.class);
-        builder.addCode(redactCatchArm(outputPackage));
+        builder.addCode(noChannelCatchArm(outputPackage));
         builder.endControlFlow();
         return builder.build();
     }
@@ -573,7 +573,7 @@ public final class MultiTablePolymorphicEmitter {
             }
             builder.addCode(returnSyncSuccess(valueType, "payload"));
             builder.nextControlFlow("catch ($T e)", Exception.class);
-            builder.addCode(redactCatchArm(outputPackage));
+            builder.addCode(noChannelCatchArm(outputPackage));
             builder.endControlFlow();
             return builder.build();
         }
@@ -614,7 +614,7 @@ public final class MultiTablePolymorphicEmitter {
         }
         builder.addCode(returnSyncSuccess(valueType, "payload"));
         builder.nextControlFlow("catch ($T e)", Exception.class);
-        builder.addCode(redactCatchArm(outputPackage));
+        builder.addCode(noChannelCatchArm(outputPackage));
         builder.endControlFlow();
         return builder.build();
     }
@@ -711,7 +711,7 @@ public final class MultiTablePolymorphicEmitter {
                 valueType, connectionResultClass, LIST);
             builder.addCode(returnSyncSuccess(valueType, "payload"));
             builder.nextControlFlow("catch ($T e)", Exception.class);
-            builder.addCode(redactCatchArm(outputPackage));
+            builder.addCode(noChannelCatchArm(outputPackage));
             builder.endControlFlow();
             return builder.build();
         }
@@ -808,7 +808,7 @@ public final class MultiTablePolymorphicEmitter {
             valueType, connectionResultClass, CONNECTION_PAGES_LOCAL, DSL);
         builder.addCode(returnSyncSuccess(valueType, "cr"));
         builder.nextControlFlow("catch ($T e)", Exception.class);
-        builder.addCode(redactCatchArm(outputPackage));
+        builder.addCode(noChannelCatchArm(outputPackage));
         builder.endControlFlow();
         return builder.build();
     }
@@ -1826,11 +1826,14 @@ public final class MultiTablePolymorphicEmitter {
             ClassName.get("graphql.execution", "DataFetcherResult"), boxed, payloadLocal);
     }
 
-    private static CodeBlock redactCatchArm(String outputPackage) {
+    private static CodeBlock noChannelCatchArm(String outputPackage) {
         var errorRouter = ClassName.get(
             outputPackage + ".schema",
             no.sikt.graphitron.rewrite.generators.schema.ErrorRouterClassGenerator.CLASS_NAME);
-        return CodeBlock.of("return $T.redact(e, env);\n", errorRouter);
+        // Route through surfaceClientErrorOrRedact so a GraphitronClientException (e.g. a
+        // malformed/wrong-type @nodeId filter id) surfaces its real message while internal faults
+        // still redact (R378); uniform with TypeFetcherGenerator's no-channel arm.
+        return CodeBlock.of("return $T.surfaceClientErrorOrRedact(e, env);\n", errorRouter);
     }
 
     /** {@code CompletableFuture<DataFetcherResult<P>>}; primitives box. Mirror of TypeFetcherGenerator's helper. */

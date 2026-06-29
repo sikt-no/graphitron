@@ -163,6 +163,20 @@ class ErrorRouterClassGeneratorTest {
     }
 
     @Test
+    void surfaceClientErrorOrRedact_surfacesClientErrorElseFallsThroughToRedact() {
+        // R378: the no-channel disposition surfaces a GraphitronClientException's real message and
+        // otherwise reuses redact unchanged (the privacy contract for internal faults).
+        var router = generate();
+        var surface = method(router, "surfaceClientErrorOrRedact");
+        String body = surface.code().toString();
+        assertThat(body)
+            .contains("t = t.getCause()")
+            .contains("instanceof com.example.schema.GraphitronClientException")
+            .contains(".data(null).error(clientError)")
+            .contains("return redact(thrown, env)");
+    }
+
+    @Test
     void noConstructor_otherThanPrivateNoArg() {
         var router = generate();
         var ctors = router.methodSpecs().stream()

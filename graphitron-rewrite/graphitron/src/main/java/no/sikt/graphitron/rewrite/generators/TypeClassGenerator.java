@@ -140,7 +140,7 @@ public class TypeClassGenerator {
         // collectInto co-locates construct and drain so the lifted helpers land on this class
         // alongside $fields and the lift can never be silently dropped. The registry threads through
         // emitSelectionSwitch's NestingField recursion, so nested inline fields share it.
-        CompositeDecodeHelperRegistry.collectInto(builder, registry ->
+        CompositeDecodeHelperRegistry.collectInto(builder, outputPackage, registry ->
             builder.addMethod(build$FieldsMethod(tableRef, columnFields, compositeColumnFields, columnReferenceFields, tableFields, lookupTableFields, nestingFields, computedFields, requiredProjectionColumns, outputPackage, registry)));
         // Helpers for inline LookupTableFields are hoisted onto this outer type class — including
         // ones nested inside NestingField sub-types, which don't get their own type class (plain

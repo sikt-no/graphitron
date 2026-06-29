@@ -110,6 +110,20 @@ class GraphQLQueryTest {
         return graphql.execute(input);
     }
 
+    /**
+     * Asserts a top-level field resolved to null. Tolerant of graphql-java's non-null propagation:
+     * a {@code [T!]!} field returning null bubbles the null to the root, so {@code getData()} may be
+     * null outright rather than a map carrying a null value. Either shape means the field did not
+     * resolve, which is the point for an errored fetch.
+     */
+    @SuppressWarnings("unchecked")
+    private static void assertFieldNullified(graphql.ExecutionResult result, String field) {
+        Object data = result.getData();
+        if (data != null) {
+            assertThat(((Map<String, Object>) data).get(field)).isNull();
+        }
+    }
+
     // ===== R313: aliasing scalar build-through + execution =====
 
     @Test
@@ -656,34 +670,15 @@ class GraphQLQueryTest {
     void films_filteredByArgNodeId_returnsRowsMatchingDecodedIds() {
         // R106: argument-level same-table @nodeId now classifies as QueryTableField with a
         // BodyParam.In filter against film.film_id (no lookup-promotion). Each opaque ID
-        // decodes once via SkipMismatchedElement; the predicate emits as
-        // `WHERE film_id IN (?, ?)`. Result rows correspond to the supplied ids (order is
-        // not guaranteed by SQL, hence containsExactlyInAnyOrder).
+        // decodes once via ThrowOnMismatch (R378); well-formed ids decode cleanly and the
+        // predicate emits as `WHERE film_id IN (?, ?)`. Result rows correspond to the supplied
+        // ids (order is not guaranteed by SQL, hence containsExactlyInAnyOrder).
         String id2 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Film", 2);
         String id4 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Film", 4);
         Map<String, Object> data = execute(
             "{ filmsByNodeIdArg(ids: [\"" + id2 + "\", \"" + id4 + "\"]) { filmId title } }");
         List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("filmsByNodeIdArg");
         assertThat(films).extracting(f -> f.get("filmId")).containsExactlyInAnyOrder(2, 4);
-    }
-
-    @Test
-    void films_filteredByArgNodeId_dropsWrongTypeIdViaSkipHelper() {
-        // R260: the arity-1 list @nodeId decode now lifts to the statement-form helper
-        // QueryConditions.decodeFilmKeys (was an inline nested-ternary). This drives the helper's
-        // SkipMismatchedElement runtime path end to end: a Customer-encoded id passed to a Film
-        // arg decodes to null (wrong NodeType) and is dropped by the helper's filter(nonNull), so
-        // only the genuine Film id survives the WHERE film_id IN (...) predicate. Exercises the
-        // GraphQL→generated-helper→jOOQ path, not just compilation.
-        String filmId2 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Film", 2);
-        String wrongTypeId = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Customer", 2);
-        Map<String, Object> data = execute(
-            "{ filmsByNodeIdArg(ids: [\"" + filmId2 + "\", \"" + wrongTypeId + "\"]) { filmId title } }");
-        @SuppressWarnings("unchecked")
-        List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("filmsByNodeIdArg");
-        assertThat(films)
-            .as("the Customer-encoded id decodes to null for Film and is skipped; only film 2 matches")
-            .extracting(f -> f.get("filmId")).containsExactly(2);
     }
 
     @Test
@@ -714,21 +709,6 @@ class GraphQLQueryTest {
     }
 
     @Test
-    void filmsByNodeIdArg_malformedIdMixedWithWellFormed_returnsWellFormedSubset() {
-        // R40 phase 2: same-table @nodeId arg now uses SkipMismatchedElement — a malformed id
-        // drops silently from the VALUES set rather than throwing GraphqlErrorException. The
-        // emitter tracks an effective row count and trims rows[] when shorter than n, so the
-        // VALUES+JOIN runs against only the well-formed decoded ids and the result is the
-        // single matching row. Restores the originally-specified Skip semantics over the first
-        // pass's expedient Throw.
-        String id2 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Film", 2);
-        Map<String, Object> data = execute(
-            "{ filmsByNodeIdArg(ids: [\"" + id2 + "\", \"not-a-valid-node-id\"]) { filmId title } }");
-        List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("filmsByNodeIdArg");
-        assertThat(films).extracting(f -> f.get("filmId")).containsExactly(2);
-    }
-
-    @Test
     void filmsByEffectiveNullability_omittedFilter_returnsUnfilteredBaseline() {
         // R230: nullable enclosing `filter: FilmIdListFilter` carries a non-null inner
         // `filmIds: [Int!]!`. Pre-R230 the generator passed the inner field's own non-null
@@ -753,17 +733,70 @@ class GraphQLQueryTest {
     }
 
     @Test
-    void filmsByNodeIdArg_allMalformedIds_returnsUnfilteredBaseline() {
-        // R375: filmsByNodeIdArg is a fetch field (R106 lifted the argument-level same-table
-        // @nodeId onto the `WHERE film_id IN (...)` rail; schema line ~191). SkipMismatchedElement
-        // drops every malformed id, so the decoded list reaches the BodyParam.In arm empty.
-        // The fetch-path empty guard cannot (and by §Mechanism must not) distinguish "empty
-        // because []" from "empty because all skipped" — both are the same List<Integer> — so an
-        // all-malformed filter narrows by nothing and returns the unfiltered baseline of 5 films.
-        Map<String, Object> data = execute(
+    void filmsByNodeIdArg_malformedIds_surfacesClientErrorNotBaseline() {
+        // R378 (inverts the former R375 baseline behaviour): an authored @nodeId filter now throws
+        // on a malformed id rather than dropping it silently. filmsByNodeIdArg is a top-level fetch
+        // field (schema line ~191); the throw propagates out of the WHERE-IN decode helper and the
+        // no-channel catch arm routes it through ErrorRouter.surfaceClientErrorOrRedact, so the real
+        // client-facing message reaches the response errors array and the field resolves to null.
+        // This is the direct regression for the reported bug (soknadId: ["IKKE_EN_ID"] returned the
+        // full table); the all-malformed case must NOT degrade into the empty-list baseline.
+        graphql.ExecutionResult result = executeRaw(
             "{ filmsByNodeIdArg(ids: [\"garbage-1\", \"garbage-2\"]) { filmId title } }");
-        List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("filmsByNodeIdArg");
-        assertThat(films).hasSize(5);
+        assertThat(result.getErrors())
+            .as("a malformed @nodeId filter id is a client error, surfaced not redacted")
+            .isNotEmpty();
+        assertThat(result.getErrors().get(0).getMessage())
+            .contains("garbage-1")
+            .contains("not a valid Film id")
+            .doesNotContain("An error occurred. Reference:");
+        assertFieldNullified(result, "filmsByNodeIdArg");
+    }
+
+    @Test
+    void filmsByNodeIdArg_wrongTypeId_surfacesWrongTypeMessage() {
+        // R378: a well-formed id of a sibling NodeType (FilmActor) handed to a Film @nodeId filter
+        // decodes to the wrong type. The message names the type it decoded to, distinct from the
+        // malformed branch, so a consumer can tell a typo'd id from a right-shape-wrong-type id.
+        String filmActorId = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("FilmActor", 1, 2);
+        graphql.ExecutionResult result = executeRaw(
+            "{ filmsByNodeIdArg(ids: [\"" + filmActorId + "\"]) { filmId } }");
+        assertThat(result.getErrors()).isNotEmpty();
+        assertThat(result.getErrors().get(0).getMessage())
+            .contains("decodes to type \"FilmActor\"")
+            .contains("expected a Film id")
+            .doesNotContain("An error occurred. Reference:");
+        assertFieldNullified(result, "filmsByNodeIdArg");
+    }
+
+    @Test
+    void filmsByNodeIdArg_mixedValidAndMalformed_surfacesClientError() {
+        // R378: the "any bad element" rule — one fat-fingered id fails the whole field even when a
+        // sibling element is a valid Film id. No partial result; the field returns null with the
+        // error naming the bad element.
+        String validFilmId = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Film", 1);
+        graphql.ExecutionResult result = executeRaw(
+            "{ filmsByNodeIdArg(ids: [\"" + validFilmId + "\", \"not-a-real-id\"]) { filmId } }");
+        assertThat(result.getErrors()).isNotEmpty();
+        assertThat(result.getErrors().get(0).getMessage())
+            .contains("not-a-real-id")
+            .contains("not a valid Film id");
+        assertFieldNullified(result, "filmsByNodeIdArg");
+    }
+
+    @Test
+    void filmsBySameTableNodeId_malformedId_surfacesClientError() {
+        // R378: the other filter surface — an input-object-field [ID!] @nodeId filter (the
+        // soknadId/HentSoknadInput shape). Exercises the BuildContext SameTable flip end-to-end:
+        // the decode throw inside the filter helper surfaces through the no-channel catch arm.
+        graphql.ExecutionResult result = executeRaw(
+            "{ filmsBySameTableNodeId(filter: {filmIds: [\"IKKE_EN_ID\"]}) { filmId } }");
+        assertThat(result.getErrors()).isNotEmpty();
+        assertThat(result.getErrors().get(0).getMessage())
+            .contains("IKKE_EN_ID")
+            .contains("not a valid Film id")
+            .doesNotContain("An error occurred. Reference:");
+        assertFieldNullified(result, "filmsBySameTableNodeId");
     }
 
     // ===== R113: optional same-table @nodeId on @asConnection — composes =====
@@ -2054,16 +2087,21 @@ class GraphQLQueryTest {
 
     @Test
     void compositeNodeIdLookup_typeMismatch_raisesError() {
-        // ThrowOnMismatch contract: a NodeId encoded for the wrong typeId must surface as an
-        // error rather than silently producing degenerate VALUES rows. A Customer-prefixed id
-        // reaches decodeFilmActor, which returns null on prefix-mismatch; the generated
-        // row-builder then throws GraphqlErrorException. The fetcher's try/catch routes the
-        // throw through ErrorRouter.redact (privacy: the raw message is logged with a
-        // correlation id, never surfaced), producing a single redacted error and null data.
+        // ThrowOnMismatch contract: a NodeId encoded for the wrong typeId must surface as an error
+        // rather than silently producing degenerate VALUES rows. A Customer-prefixed id reaches
+        // decodeFilmActor, which returns null on prefix-mismatch; the lookup VALUES row-builder
+        // (LookupValuesJoinEmitter) then throws a plain GraphqlErrorException. That throw is NOT the
+        // GraphitronClientException marker R378 introduced (R378 enriched the
+        // CompositeDecodeHelperRegistry filter/lookup-arg helpers, not the separate lookup-values
+        // emitter, mirroring how the record-decode siblings keep their own message), so
+        // surfaceClientErrorOrRedact falls through to redact: a correlation id, not the raw text.
+        // Pins that boundary behaviourally.
         String wrongType = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Customer", 1);
         graphql.ExecutionResult result = executeRaw(
             "{ filmActorByNodeId(id: [\"" + wrongType + "\"]) { filmId actorId } }");
         assertThat(result.getErrors()).isNotEmpty();
+        assertThat(result.getErrors().get(0).getMessage())
+            .contains("An error occurred. Reference:");
     }
 
     // ===== C4: RecordTableField — @record parent + DataLoader language batch =====
@@ -4251,6 +4289,14 @@ class GraphQLQueryTest {
         assertThat(result.getErrors())
             .as("a wrong-type NodeId in a jOOQ-record member is an authored-input error, not a silent decode")
             .isNotEmpty();
+        // R378 privacy-contract proof: the record-decode path throws a plain GraphqlErrorException,
+        // NOT the GraphitronClientException marker, so surfaceClientErrorOrRedact must NOT surface
+        // it — it falls through to redact (correlation id only), leaking no internal detail. This
+        // pins that the surface arm narrows to the client-error type rather than leaking arbitrary
+        // exceptions.
+        assertThat(result.getErrors().get(0).getMessage())
+            .contains("An error occurred. Reference:")
+            .doesNotContain(wrongTypeId);
         Map<String, Object> data = result.getData();
         assertThat(data.get("assignFilmRecord"))
             .as("the mutation does not succeed with a wrong-type NodeId")
