@@ -239,6 +239,33 @@ CREATE TABLE jti_person (
         FOREIGN KEY (jti_subject_id, subject_kind) REFERENCES jti_subject (jti_subject_id, subject_kind)
 );
 
+-- -------------------------
+-- party (+ party_individual, party_company): R389 single-column discriminated joined-table
+-- (class-table) inheritance fixture. A discriminated base table (party, carrying the party_kind
+-- discriminator and the base-only shared column display_name) plus one detail table per concrete
+-- kind. Each detail table's own primary key IS its foreign key to party(party_id): a single-column
+-- shared primary key, the simplest form of the PK=FK invariant R389 requires. Authored the R389
+-- way, each concrete type declares its own detail @table; its base-only inherited field
+-- (displayName) carries @reference back to party, and its own columns (birth_date / org_number)
+-- live on the detail table.
+-- -------------------------
+
+CREATE TABLE party (
+    party_id     serial       PRIMARY KEY,
+    party_kind   varchar(20)  NOT NULL,   -- discriminator: 'INDIVIDUAL' | 'COMPANY'
+    display_name varchar(255) NOT NULL
+);
+
+CREATE TABLE party_individual (
+    party_id   int  PRIMARY KEY REFERENCES party(party_id),
+    birth_date date
+);
+
+CREATE TABLE party_company (
+    party_id   int          PRIMARY KEY REFERENCES party(party_id),
+    org_number varchar(64)
+);
+
 -- ===========================
 -- Seed data
 -- ===========================
@@ -359,6 +386,20 @@ INSERT INTO jti_app_account (jti_subject_id, subject_kind, client_id) VALUES
 INSERT INTO jti_person (jti_subject_id, subject_kind, full_name) VALUES
     (3, 'PERSON', 'Ada Lovelace (full)'),
     (4, 'PERSON', 'Alan Turing (full)');
+
+-- party seed data (R389 single-column shared-PK fixture): one INDIVIDUAL and one COMPANY with
+-- detail rows, plus an INDIVIDUAL base row (party_id 3) with NO matching party_individual detail
+-- row, so the interface query's LEFT JOIN NULL-through is asserted rather than assumed.
+INSERT INTO party (party_kind, display_name) VALUES
+    ('INDIVIDUAL', 'Grace Hopper'),
+    ('COMPANY',    'Sikt'),
+    ('INDIVIDUAL', 'Detached Individual');
+
+INSERT INTO party_individual (party_id, birth_date) VALUES
+    (1, DATE '1906-12-09');
+
+INSERT INTO party_company (party_id, org_number) VALUES
+    (2, 'NO-919477822');
 
 -- R36 item 1 fixture: composite-PK participants in @asConnection multi-table polymorphic.
 -- paged_a + paged_b share a (Integer, Integer) composite PK shape so the polymorphic emitter

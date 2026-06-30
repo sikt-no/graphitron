@@ -34,10 +34,17 @@ final class TypeFetcherEmissionContext {
     private final EnumSet<HelperKind> requested = EnumSet.noneOf(HelperKind.class);
     private final GraphQLSchema assembledSchema;
     private final String parentTypeName;
+    private final no.sikt.graphitron.rewrite.GraphitronSchema graphitronSchema;
 
     TypeFetcherEmissionContext(GraphQLSchema assembledSchema, String parentTypeName) {
+        this(assembledSchema, parentTypeName, null);
+    }
+
+    TypeFetcherEmissionContext(GraphQLSchema assembledSchema, String parentTypeName,
+            no.sikt.graphitron.rewrite.GraphitronSchema graphitronSchema) {
         this.assembledSchema = assembledSchema;
         this.parentTypeName = parentTypeName;
+        this.graphitronSchema = graphitronSchema;
     }
 
     /**
@@ -47,7 +54,7 @@ final class TypeFetcherEmissionContext {
      * {@code null} for such contexts.
      */
     TypeFetcherEmissionContext() {
-        this(null, null);
+        this(null, null, null);
     }
 
     /**
@@ -76,5 +83,16 @@ final class TypeFetcherEmissionContext {
     /** The SDL parent type name (the type whose fields are being emitted as fetchers). */
     String parentTypeName() {
         return parentTypeName;
+    }
+
+    /**
+     * The classified {@link no.sikt.graphitron.rewrite.GraphitronSchema} being generated, or
+     * {@code null} for schema-free callers (unit-tier model-only tests, nested-type emission).
+     * The R389 joined-table interface fetcher reads each participant's classified fields off this
+     * to partition base-resident ({@code ColumnReferenceField}) from detail-resident
+     * ({@code ColumnField}) fields per "the emitter reads the field variant".
+     */
+    no.sikt.graphitron.rewrite.GraphitronSchema graphitronSchema() {
+        return graphitronSchema;
     }
 }
