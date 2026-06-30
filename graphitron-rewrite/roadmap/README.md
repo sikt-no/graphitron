@@ -43,7 +43,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R212` | IntelliJ plugin wrapping graphitron:dev LSP | Spec | 2026-05-21 | [plan](intellij-lsp-plugin.md) |
 | `R112` | Operation-driven test corpus, capability catalog, and runtime trace <sub>blocked by: [capability-catalog](capability-catalog.md)</sub> | Spec |  | [plan](operation-driven-test-corpus.md) |
 | `R400` | Withhold not-in-use directives from the v1 advertised directive surface | Spec | 2026-06-30 | [plan](withhold-not-in-use-directives-v1.md) |
-| `R401` | Bundle the tree-sitter runtime in the natives jar (zero system deps) | In Review | 2026-06-30 | [plan](bundle-tree-sitter-runtime.md) |
 
 ---
 
@@ -307,7 +306,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R398` [**SDL lint engine with ESLint-style built-in visitors**](sdl-lint-visitor-engine.md) — Spec, feature
 - `R345` [**Surface schema parse failures as LSP red squiggles**](lsp-squiggle-schema-parse-failure.md) — Backlog, feature
 - `R123` [**Parent-context-aware schema coordinates for per-directive Behavior policy**](parent-context-aware-schema-coordinates.md) — Backlog, architecture
-- `R401` [**Bundle the tree-sitter runtime in the natives jar (zero system deps)**](bundle-tree-sitter-runtime.md) — In Review, feature
 - `R118` [**Graphitron MCP server programme: agent-facing schema, catalog, code, and docs tools in graphitron:dev**](graphitron-mcp-server.md) — Backlog, feature
 - `R212` [**IntelliJ plugin wrapping graphitron:dev LSP**](intellij-lsp-plugin.md) — Spec, feature
 - `R152` [**Scope @nodeId(typeName:) hover column lookup to the @node type's @table**](lsp-nodetype-hover-column-scoping.md) — Backlog, bug
