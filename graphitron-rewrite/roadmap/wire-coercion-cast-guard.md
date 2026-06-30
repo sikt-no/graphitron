@@ -1,13 +1,13 @@
 ---
 id: R261
 title: "Generation-time wire-coercion cast guard across arg-classification sites"
-status: Backlog
+status: Spec
 bucket: architecture
 priority: 2
 theme: structural-refactor
 depends-on: [service-walker-substrate-absorption, dimensional-model-pivot]
 created: 2026-05-29
-last-updated: 2026-05-29
+last-updated: 2026-06-30
 ---
 
 # Generation-time wire-coercion cast guard across arg-classification sites
@@ -79,35 +79,168 @@ correctness improvement (typed rejection) was deferred for substrate reasons.
 This item is that correctness invariant, framed to ride the in-flight direction
 rather than bolt onto the legacy classifier the pivot is dissolving.
 
-## Direction (to be pinned at Spec, with principles-architect)
+## Design (pinned)
 
 The invariant: **for any scalar/enum SDL leaf bound to a consumer-declared Java
-type, the producer must either (a) confirm the type matches graphql-java's
-coercion output, (b) route to a real conversion (`JooqConvert` / NodeId decode /
-`valueOf`), or (c) emit a typed `Rejection`. The `Direct` raw-cast fallthrough is
-retired as a catch-all.** Rejections ship in the established walker shape (typed
-`*Error` sub-seal of `AuthorError`, `lspCode()`, LSP `Diagnostic` projection,
-`RejectionSeverityCoverageTest` sample), per the R246/R238 precedent.
+type, the classifier must either (a) confirm the declared type equals
+graphql-java's coercion output (true raw pass-through), (b) route to a real
+conversion (`JooqConvert` / NodeId decode / `EnumValueOf`), or (c) emit a typed
+`Rejection`. The `Direct` raw-cast fallthrough stops being a catch-all and becomes
+the *narrow* arm the predicate confirms is wire-pass-through.** Rejections ship in
+the established shape (typed arm under `Rejection.AuthorError`, `lspCode()`, LSP
+`Diagnostic` projection, `RejectionSeverityCoverageTest` sample, `typed-rejection.adoc`
+paragraph + drift-list entry), per the R246/R238/R256 precedent.
 
-Central design fork (the same one R256 is already wrestling with): the rejection
-cannot be produced by a translator over the resolved model, because that substrate
-does no fresh reflection. It must live either at the **classifier** that produces
-`CallSiteExtraction` (`ServiceCatalog.argExtraction`, `InputBeanResolver`), or in
-**R256's substrate absorption** that pulls reflection into the walker. Resolve it
-once, consistently with R256.
+Four decisions pin the shape (validated read-only with `principles-architect`):
 
-Per-site landing:
+### D1 — The judgment lives at the classifier, not on `ScalarTypeResolver`
 
-- **A, E (input-bean):** coordinate with R195 (which adds the `@nodeId`-record
-  *happy path* and a narrow jOOQ-record rejection) and R256's `input-bean-shape`
-  arm. Widen R195's rejection from "jOOQ record only" to the full
-  wire-incompatible family (numeric width, ID-as-numeric, domain types,
-  enum-name divergence), or absorb it here, so there is exactly one rejection.
-- **B (service arg):** the deferred R256 arm. `depends-on` R256.
-- **C (`@condition` nested), D (`@externalField`):** out of R256's service-only
-  scope; follow the same walker/typed-rejection pattern R222 steers toward, not
-  the legacy permit style. May be split into their own slice if the service slice
-  lands first.
+`ScalarTypeResolver` is a pure name↔type *mapping* (SDL name → `ScalarResolution`
+/ `TypeName` / boolean); it never holds a consumer-declared Java type or a call
+site. The wire-coercion check introduces a third operand (the declared type) and a
+*verdict* (assignable, or a mismatch tied to a site), which is a classify-time
+decision. Folding that verdict into the mapping utility would make it a reader of
+types it has never held, the same surface-widening R256 declined for the walker.
+
+So: `ScalarTypeResolver` gains only the *missing forward mapping* it can own as a
+total function (SDL scalar leaf → coercion-output `TypeName`, extending the
+existing `SPEC_BUILT_INS` / `isClassifiedScalarJavaType` so it stays the single
+source of truth for built-ins **and** custom `@scalarType` resolved types). The
+*assignability verdict* is homed at the classifier and returns a **sealed result**
+(`Resolved | Rejection`), mirroring the `EnumMappingResolver.EnumValidation`
+(`Valid` / `Mismatch`) shape one file over, not an `Optional<Mismatch>` bag. The
+enum→`String` and input-object→`Map` coercion facts are not in `SPEC_BUILT_INS`
+and are not added there: they are already carried structurally by `EnumValueOf` /
+`InputBean`, so the classifier reads them from the existing fork, not from the
+resolver.
+
+### D2 — `ServiceCatalog.argExtraction` is widened to carry both operands and a rejection arm
+
+`argExtraction(String typeName, ClassLoader)` (site B) receives only the *Java*
+type name, so it structurally cannot compute the coercion-output class; it forks
+`EnumValueOf` vs `Direct` on `isEnum()` alone. Both callers (`ServiceCatalog:245`,
+`:577`) already hold the SDL surface. **Thread the SDL leaf into `argExtraction`**
+rather than hoisting the check to the callers: hoisting would have two consumers
+re-derive the same predicate (the "one predicate, one home" drift), whereas
+threading keeps the fork single-homed and lets every downstream `ParamSource.Arg`
+consumer assume the extraction is wire-sound. `argExtraction` returns
+`CallSiteExtraction` today, which has no rejection arm; its return type widens to
+the sealed `Resolved | Rejection` from D1 so a wire-incompatible arg *rejects*
+instead of silently classifying to `Direct`. This is the "classifier guarantees
+shape emitter assumptions" lift: the contract ("this extraction is
+wire-assignable") moves into the return type.
+
+`InputBeanResolver.bindField` (sites A/E) already returns a `FieldResult.Ok | Fail`
+sealed result and already branches before `Direct` for jOOQ-record members (R195);
+it gains the same predicate call on the scalar arm, widening R195's narrow
+"jOOQ-record only" rejection to the full wire-incompatible family (numeric width,
+ID-as-numeric, domain types).
+
+### D3 — Enum-name divergence (site E) is a separate axis, reusing `EnumMappingResolver`
+
+Sites A-D fail because the coercion *class* (String/Integer/Double/Map) does not
+assign to the declared type. Site E's declared type *is* the enum and assignment
+succeeds; it fails because `Enum.valueOf((String) ...)` throws
+`IllegalArgumentException` when the SDL enum value name diverges from the Java
+constant name. That is a constant-name-set membership check, not a class
+assignability check; they share neither operands nor failure shape, and conflating
+them would re-introduce exactly the two-axes-in-one-arm problem R256 warned about
+for `input-bean-shape`. So the typed family is **two sibling arms** (see D4), and
+site E's parity check **reuses the existing `EnumMappingResolver.validateEnumMapping`
+computation** (`:129-144`, which already diffs SDL value names against
+`enumType.values()` and emits a Levenshtein-hinted candidate) rather than
+re-implementing parity at the two `@service` `EnumValueOf` producers
+(`InputBeanResolver:769`, `ServiceCatalog:742`). Today those producers build
+`EnumValueOf` with *no* parity check while the column/arg enum path does the full
+check; this closes that asymmetry by routing both through one parity home.
+
+### D4 — One sealed wire-coercion error family with two arms
+
+Add a `WireCoercionError` sub-seal of `Rejection.AuthorError` (`lspCode()`
+namespace `graphitron.wire-coercion.*`) with two arms, each carrying its
+structured components (never a baked string):
+
+- `Assignability(sdlLeaf, coercionOutputClass, declaredType, site)` — sites A-D.
+- `EnumConstantDivergence(enumClass, sdlValueName, candidates, site)` — site E,
+  populated from the `EnumMappingResolver` parity result.
+
+Each arm lands with the full five-piece checklist (R246/R238/R256 precedent):
+permits-clause entry, `lspCode()`, production at the classify site, a
+`RejectionSeverityCoverageTest.sampleFor` branch, and a `typed-rejection.adoc`
+paragraph + drift-list entry (`SealedHierarchyDocCoverageTest` scans both). This is
+distinct from R256's `ReflectionError` / `ServiceMethodCallError` arms, which carry
+reflection-intrinsic and service-binding failures; per the R256 boundary section,
+R256 builds the *channel* and the reflection arms, R261 supplies the *coercion
+judgment* that flows through it for the service slice and reuses the same predicate
+for the non-service sites.
+
+## Per-site landing
+
+- **A, E (input-bean field / enum field):** `InputBeanResolver.bindField`. A widens
+  R195's jOOQ-record branch to the full `Assignability` family; E routes the enum
+  arm through the `EnumMappingResolver` parity reuse → `EnumConstantDivergence`.
+- **B (service scalar arg):** `ServiceCatalog.argExtraction`, widened per D2. Rides
+  R256's typed-rejection channel; **`depends-on` R256**.
+- **C (`@condition` nested), D (`@externalField` accessor arg):** outside R256's
+  service-only scope. These consume the *same* classifier predicate from D1 (the
+  predicate is authored once in this item, in Slice 1, and is not re-homed), but
+  their channel is R222's dimensional `ConditionCall` / `ExternalFieldCall`
+  siblings, which **R222 has not yet pinned** (R222 is `Spec`, and its own body
+  notes it "added no per-leaf wire-coercion check"). See "Sequencing" below: this
+  asymmetry is the reason C/D are a deferred Slice 2 and may be carved into their
+  own item.
+
+## Implementation
+
+File-by-file for Slice 1 (the `@service` sites A, B, E + the shared predicate):
+
+- `ScalarTypeResolver` — add the forward mapping `coercionOutputType(scalarName,
+  classifiedTypes) → TypeName` (built-ins from `SPEC_BUILT_INS`, custom scalars from
+  `ScalarResolution.Resolved#javaType`), the missing half of the existing
+  bidirectional pair. Pure function; no declared-type operand.
+- New classify-time predicate (sealed `Resolved | Rejection` result) — the single
+  home for the "coercion output assignable to declared type" judgment, consuming
+  `ScalarTypeResolver`. Co-locate with the classifiers that call it; do not put the
+  verdict on the resolver (D1).
+- `model/CallSiteExtraction.java` / the rejection model — add the `WireCoercionError`
+  sub-seal of `Rejection.AuthorError` with the `Assignability` and
+  `EnumConstantDivergence` arms (D4).
+- `ServiceCatalog.argExtraction` (`:739`) — widen signature to take the SDL leaf and
+  return the sealed result; produce `Direct` only on confirmed pass-through,
+  `EnumValueOf` for enums, else `Assignability` rejection. Thread the SDL leaf from
+  callers `:245` / `:577` (D2).
+- `InputBeanResolver.bindField` (`:743`) — call the predicate on the scalar arm
+  (`else` at `:784`), widening R195's jOOQ-record branch; route the enum arm
+  (`:766-769`) through the `EnumMappingResolver` parity reuse → `EnumConstantDivergence`
+  (D3).
+- `generators/ServiceMethodCallEmitter.scalarLeaf` (`:201-212`) — once the classifier
+  guarantees every `Direct` leaf is wire-pass-through, the `($T) rawValue` cast in the
+  `Direct` arm is provably safe; the latent `JooqConvert` / `NodeIdDecodeKeys` /
+  `default` raw casts (secondary scope) fall out of the same guarantee rather than
+  being an independent cleanup.
+- `Diagnostics.lspCodeOf` — add the `WireCoercionError` `instanceof` branch
+  (`graphitron.wire-coercion.*`).
+- `RejectionSeverityCoverageTest`, `typed-rejection.adoc` + its drift list — one
+  entry per new arm (the tests fail "(no test sample)" / on doc drift otherwise).
+
+`ArgCallEmitter` (master switch, site C) and `FetcherEmitter` (`:739-762`, site D)
+are touched only in Slice 2.
+
+## Sequencing
+
+- **Slice 1 (A, B, E + the shared predicate)** depends only on **R256** (`Ready`),
+  whose boundary section already pins the channel Slice 1 rides. The predicate
+  (D1) and the `WireCoercionError` family (D4) are authored here, once.
+- **Slice 2 (C, D)** depends on **R222** (`Spec`), which has not pinned a per-leaf
+  wire-coercion channel for its `ConditionCall` / `ExternalFieldCall` siblings.
+  Slice 2 *consumes* the Slice 1 predicate unchanged; it must not re-home it.
+- **Recommendation for the reviewer:** because Slice 1 has a resolved channel (R256)
+  and Slice 2 does not (R222 still `Spec`), if R222's channel is not pinned by the
+  time Slice 1 lands, carve C/D into a separate roadmap item that `depends-on` R222
+  and consumes this item's predicate. That would let R261 drop `dimensional-model-pivot`
+  from `depends-on` and close on the `@service` slice alone. Keeping them in one item
+  is acceptable only if Slice 2 explicitly reuses the Slice 1 predicate with no
+  re-derivation. The slice boundary is the decision to confirm at `Spec → Ready`.
 
 ## Secondary scope (MED, from the audit)
 
@@ -116,16 +249,40 @@ Per-site landing:
 - Align the null-element contract: `createBeanList` rejects null elements
   unconditionally, throwing spurious `IllegalArgumentException` on a schema-legal
   `[FooInput]` with a null element, while the carrier path tolerates it.
-- Retire the latent raw casts in `ServiceMethodCallEmitter.scalarLeaf:159-162`
-  (`JooqConvert` / `NodeIdDecodeKeys` / `default` arms emit `($T) rawValue`); dead
-  today, a trap if a classifier ever routes a scalar leaf there.
+- Retire the latent raw casts in `ServiceMethodCallEmitter.scalarLeaf` (`:201-212`;
+  the `JooqConvert` / `NodeIdDecodeKeys` / `default` arms emit `($T) rawValue`); dead
+  today, a trap if a classifier ever routes a scalar leaf there. Framed as falling
+  out of the D1 predicate (the classifier now guarantees the leaf is wire-assignable
+  or rejected), not an independent cleanup.
 
 ## Tests
 
 Pipeline-tier (primary): an SDL exercising each site with a wire-incompatible
-declared type produces a typed rejection (build fails), not a generated cast.
-Compilation/execution tiers as the cross-module backstop. A regression test that
-the reported `(SakRecord) raw.get(...)` shape can no longer be generated.
+declared type produces a typed rejection (build fails), not a generated cast. One
+case per arm: `Assignability` (jOOQ record, numeric-width mismatch, ID-as-numeric,
+domain type) and `EnumConstantDivergence` (SDL value name with no matching Java
+constant). Compilation/execution tiers as the cross-module backstop. A regression
+test that the reported `(SakRecord) raw.get(...)` shape can no longer be generated.
+
+**Validator-mirror invariant (per "Validator mirrors classifier invariants").**
+Retiring `Direct`-as-catch-all introduces a new invariant: *every `Direct` is
+wire-pass-through*. `GeneratorCoverageTest` partitions only `GraphitronField`
+leaves (R261 `:50-52`), so nothing mechanically fails the build if a future
+classifier emits `Direct` for a wire-incompatible type and the regression silently
+returns. Pin the invariant two ways, mirroring R256's approach: (a) the D1
+predicate is the **sole** producer of `Direct` across all the in-scope classify
+sites (no bare `new Direct()` survives outside it); (b) a pipeline-tier assertion
+per site that a wire-incompatible declared type fails the build with the
+`WireCoercionError` arm's `lspCode()`. The mirror lives in the
+classifier-rejection + pipeline-test pair, not in extending the
+`GeneratorCoverageTest` partition.
+
+**Custom-scalar non-regression (pin the audit's clearance).** The predicate asks
+"does the declared type equal the *resolved* scalar Java type" (consulting
+`ScalarResolution.Resolved#javaType` via `isClassifiedScalarJavaType`), **not** "is
+it a spec built-in". A test that a `@scalarType`-resolved declared type classifies
+to `Direct` (not a spurious `Assignability` rejection) keeps the audit-cleared
+custom-scalar path sound and guards against over-rejection.
 
 ## Out of scope
 
