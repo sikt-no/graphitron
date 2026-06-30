@@ -121,4 +121,27 @@ class AccessorDerivedBatchKeyTest {
         assertThat(films0).extracting(f -> f.get("title"))
             .allSatisfy(t -> assertThat(t).asString().isNotBlank());
     }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    void accessorDerivedManyPayloads_nullToManyBacking_rendersEmptyListWithoutNpe() {
+        // R269 (MANY arm, fork (a)): the second payload's films() accessor returns null (a to-many
+        // @table relation that was never populated). buildAccessorKeyMany hoists the accessor result
+        // to a typed local and skips the for-loop when it is null, so `keys` stays empty and the
+        // existing loadMany(keys, ...) dispatch renders the field as [] — rather than NPEing in the
+        // for-each. The present payload still resolves film [1] through the same loader.
+        Map<String, Object> data = execute(
+            "{ recentlyCreatedFilmsBatchedWithGap { films { filmId } } }");
+
+        List<Map<String, Object>> payloads = (List<Map<String, Object>>) data.get("recentlyCreatedFilmsBatchedWithGap");
+        assertThat(payloads).hasSize(2);
+
+        var films0 = (List<Map<String, Object>>) payloads.get(0).get("films");
+        var films1 = (List<Map<String, Object>>) payloads.get(1).get("films");
+
+        assertThat(films0).extracting(f -> f.get("filmId")).containsExactly(1);
+        // Null to-many backing collapses to the empty-list rendering (null-vs-empty is not
+        // meaningful at a to-many's surface), the deliberate asymmetry with the ONE arm's null.
+        assertThat(films1).isEmpty();
+    }
 }

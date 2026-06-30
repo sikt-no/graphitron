@@ -37,4 +37,20 @@ public final class CreateFilmsPayloadService {
             new CreateFilmsPayload(List.of(f3))
         );
     }
+
+    /**
+     * R269 fixture: returns two payloads where the second carries a {@code null} {@code films}
+     * backing (a to-many relation that was never populated). The first payload lists film [1]; the
+     * second's {@code films()} accessor returns {@code null}. The MANY accessor key-extraction
+     * ({@code GeneratorUtils.buildAccessorKeyMany}) must skip its for-loop on the null collection so
+     * the field renders {@code []} rather than NPEing in the for-each.
+     */
+    public static List<CreateFilmsPayload> recentlyCreatedFilmsBatchedWithGap() {
+        FilmRecord f1 = new FilmRecord();
+        f1.setFilmId(1);
+        return List.of(
+            new CreateFilmsPayload(List.of(f1)),
+            new CreateFilmsPayload(null)
+        );
+    }
 }

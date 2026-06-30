@@ -548,6 +548,46 @@ class GraphQLQueryTest {
     }
 
     @Test
+    void inventoryById_filmCardDataNullAccessor_rendersFilmNullWithoutNpe() {
+        // R269 execution-tier fixture (the load-bearing net for the accessor ONE-arm null guard):
+        // the record-backed parent FilmCardData's film() accessor returns null for even film_ids
+        // (a nullable to-one @table relation that resolves to NO row on an otherwise-successful
+        // parent). buildAccessorKeySingle's `if (element == null) return completedFuture(null)`
+        // guard must render `film` as null for those rows rather than raising
+        //   Cannot invoke "...Record.into(...)" because "element" is null
+        // (the bug R269 fixes). execute(...) asserts result.getErrors() is empty, so the NPE — which
+        // would surface as a DataFetcher exception — is pinned out behaviourally, not by grepping the
+        // emitted `if (element == null)` out of the fetcher body (banned per rewrite-design-principles).
+        //
+        // Mixed batch: with the seed inventory_id N -> film_id N, inventories 1 and 3 (odd film_ids)
+        // still resolve their full Film row through the same AccessorKeyedSingle loader, proving the
+        // guard nulls only the absent arm and leaves present siblings untouched.
+        Map<String, Object> data = execute(
+            "{ inventoryById(inventory_id: [1, 2, 3]) { inventoryId filmCardDataMaybeMissing { film { filmId title } } } }");
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> rows = (List<Map<String, Object>>) data.get("inventoryById");
+        assertThat(rows).hasSize(3);
+        Map<Integer, String> expectedTitleByFilmId = Map.of(
+            1, "ACADEMY DINOSAUR",
+            3, "ADAPTATION HOLES");
+        for (var row : rows) {
+            int inventoryId = (Integer) row.get("inventoryId");
+            @SuppressWarnings("unchecked")
+            Map<String, Object> wrapper = (Map<String, Object>) row.get("filmCardDataMaybeMissing");
+            @SuppressWarnings("unchecked")
+            Map<String, Object> film = (Map<String, Object>) wrapper.get("film");
+            if (inventoryId % 2 == 0) {
+                // Even film_id -> null embedded FilmRecord -> the guard renders the field null.
+                assertThat(film).isNull();
+            } else {
+                // Odd film_id -> present record -> the loader resolves the full Film row by PK.
+                assertThat(film).extractingByKey("filmId").isEqualTo(inventoryId);
+                assertThat(film).extractingByKey("title").isEqualTo(expectedTitleByFilmId.get(inventoryId));
+            }
+        }
+    }
+
+    @Test
     void inventoryById_filmViaTableMethod_correlatesParentRowViaInjectedFkProjection() {
         // R43 FK-projection sub-commit: the child @tableMethod fetcher reads
         // parentRecord.get(DSL.name("film_id"), …) for the parent-row correlation. Without
