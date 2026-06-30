@@ -355,13 +355,13 @@ type Query {
     # column so the TypeResolver can route to FilmContent or ShortContent at runtime.
     allContent: [Content!]!
 
-    # R388 fixture: discriminated joined-inheritance interface whose participant detail tables reach
-    # their detail-only columns through a COMPOSITE FK that re-declares the discriminator column
-    # (subject_kind). Once such a participant join fires, an unqualified discriminator reference in
-    # the generated SELECT projection / LEFT JOIN ON-clause / WHERE filter is ambiguous and
-    # PostgreSQL rejects the query; the interface fetcher qualifies all three to the base table.
-    # Authored the corrected way: the discriminator is a plain interface field (no @reference), and
-    # each participant's detail-only field carries the composite @reference.
+    # R389 composite-shared-key joined-table inheritance interface (composite counterpart of
+    # allParties). Each participant declares its own detail @table (jti_app_account / jti_person)
+    # joined to the base jti_subject on the composite key (jti_subject_id, subject_kind). That key
+    # re-declares the discriminator column subject_kind on the detail tables, so once a participant
+    # join fires an unqualified discriminator reference in the generated SELECT projection / LEFT JOIN
+    # ON-clause / WHERE filter is ambiguous and PostgreSQL rejects the query; the interface fetcher
+    # qualifies all three to the base table.
     allSubjects: [Subject!]!
 
     # R389 fixture: first-class discriminated joined-table (class-table) inheritance. Party is a
@@ -1755,33 +1755,34 @@ interface Content @table(name: "content") @discriminate(on: "CONTENT_TYPE") {
     title:     String! @field(name: "TITLE")
 }
 
-# R388 discriminated joined-inheritance fixture. Subject is a single-table discriminated interface
-# over jti_subject (discriminator subject_kind). Each participant uses @table(name: "jti_subject")
-# (the base) and a per-field @reference to reach its detail-only column — the workaround shape that
-# compiles today (a participant declaring its own detail @table is R389). The defining dimension:
-# the detail tables (jti_app_account, jti_person) re-declare the discriminator column subject_kind
-# via their composite FK back to the base, so a bare discriminator reference in the generated
-# fetcher is ambiguous once a participant join fires. subjectKind is exposed as a PLAIN interface
-# field; authoring @reference on it would now be a build-time error (the discriminator column lives
-# on the base table, so a cross-table @reference is meaningless).
+# R389 COMPOSITE-shared-key discriminated joined-table inheritance fixture (the composite counterpart
+# of the single-column Party fixture). Subject is a discriminated interface over the base jti_subject;
+# each concrete type declares its OWN detail @table (jti_app_account / jti_person). The shared
+# composite key (subjectId + subjectKind) is present on the detail tables too (it is their composite
+# PK = composite FK to the base), so those fields carry no @reference; only the base-only displayName
+# does. clientId / fullName are the participants' own detail columns. The defining stress dimension
+# carries over from the R388 workaround this replaces: subject_kind is re-declared on the detail
+# tables via the composite key, so the generated interface fetcher must qualify the discriminator to
+# the base table at the SELECT projection, the LEFT JOIN ON-clause, and the WHERE filter, or
+# PostgreSQL rejects the query as ambiguous once a participant join fires.
 interface Subject @table(name: "jti_subject") @discriminate(on: "subject_kind") {
     subjectId:   Int!    @field(name: "jti_subject_id")
     subjectKind: String! @field(name: "subject_kind")
     displayName: String! @field(name: "display_name")
 }
 
-type AppAccount implements Subject @table(name: "jti_subject") @discriminator(value: "APP") {
+type AppAccount implements Subject @table(name: "jti_app_account") @discriminator(value: "APP") {
     subjectId:   Int!    @field(name: "jti_subject_id")
     subjectKind: String! @field(name: "subject_kind")
-    displayName: String! @field(name: "display_name")
-    clientId:    String  @reference(path: [{key: "jti_app_account_subject_fk"}]) @field(name: "client_id")
+    displayName: String! @reference(path: [{key: "jti_app_account_subject_fk"}]) @field(name: "display_name")
+    clientId:    String  @field(name: "client_id")
 }
 
-type Person implements Subject @table(name: "jti_subject") @discriminator(value: "PERSON") {
+type Person implements Subject @table(name: "jti_person") @discriminator(value: "PERSON") {
     subjectId:   Int!    @field(name: "jti_subject_id")
     subjectKind: String! @field(name: "subject_kind")
-    displayName: String! @field(name: "display_name")
-    fullName:    String  @reference(path: [{key: "jti_person_subject_fk"}]) @field(name: "full_name")
+    displayName: String! @reference(path: [{key: "jti_person_subject_fk"}]) @field(name: "display_name")
+    fullName:    String  @field(name: "full_name")
 }
 
 # R389 first-class discriminated joined-table (class-table) inheritance fixture (single-column
