@@ -14,7 +14,7 @@ Authoritative descriptions of every directive, every Maven plugin parameter, eve
 
 == Editor support
 
-* xref:lsp-requirements.adoc[LSP requirements]: the one system dependency the LSP needs at runtime, a `libtree-sitter` shared library of version `0.25.0` or later (the GraphQL grammar itself ships bundled). Covers the version floor, the supported host architectures, and the per-platform install matrix.
+* xref:lsp-requirements.adoc[LSP requirements]: the LSP's native runtime. Both the GraphQL grammar and the `libtree-sitter` runtime ship bundled, so there is no system dependency to install. Covers the supported host architectures and the startup diagnostics.
 * xref:lsp-inlay-hints.adoc[LSP inlay hints and classification hover]: the three editor-side config keys (`graphitron.inlayHints.inferredDirectives`, `graphitron.inlayHints.classification`, `graphitron.hover.classification`) that surface Graphitron's inference and classification layers inside the editor. Default off; opt in per key.
 
 == Diagnostics
