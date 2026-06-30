@@ -5,10 +5,15 @@ import graphql.language.DirectiveDefinition;
 import graphql.language.SourceLocation;
 import graphql.schema.FieldCoordinates;
 import graphql.schema.GraphQLArgument;
+import graphql.schema.GraphQLFieldDefinition;
+import graphql.schema.GraphQLInputObjectType;
 import graphql.schema.GraphQLInterfaceType;
+import graphql.schema.GraphQLNamedType;
 import graphql.schema.GraphQLObjectType;
 import graphql.schema.GraphQLSchema;
 import graphql.schema.GraphQLSchemaElement;
+import graphql.schema.GraphQLType;
+import graphql.schema.GraphQLTypeUtil;
 import graphql.schema.GraphQLTypeVisitorStub;
 import graphql.schema.GraphQLUnionType;
 import graphql.util.TraversalControl;
@@ -289,6 +294,11 @@ public class GraphitronSchemaBuilder {
         // verdict and the assembled schema stays consistent; the validator surfaces the collision by
         // draining the channel.
         rejectCaseInsensitiveTypeCollisions(ctx);
+        // R262: reject every @nodeId application whose coordinate is not of unwrapped type ID. Reads
+        // ctx.schema applied directives (not the registry) because a dropped @nodeId leaves no trace
+        // on the classified field — see rejectNonIdNodeId. Sibling soundness reduction; registers a
+        // build-time diagnostic the validator drains, demoting nothing.
+        rejectNonIdNodeId(ctx);
         // Hash-suffix dedup: walk every WithErrorChannel field and apply the collision-suffix
         // rule to ErrorChannel.mappingsConstantName so the resolved name lands on the carrier
         // before the emitter runs. Pass-through for the common case (every payload class has at
@@ -721,6 +731,98 @@ public class GraphitronSchemaBuilder {
                     Rejection.caseFoldCollision(group, origin), existing.location()));
             }
         }
+    }
+
+    /**
+     * R262: rejects every {@code @nodeId} application whose coordinate does not have an unwrapped
+     * SDL type of {@code ID}. The SDL directive permits {@code @nodeId} on {@code FIELD_DEFINITION |
+     * INPUT_FIELD_DEFINITION | ARGUMENT_DEFINITION} with no {@code ID} restriction, but every
+     * decode/encode arm in the generator is gated on {@code "ID".equals(...)}; on a non-{@code ID}
+     * coordinate the directive is silently dropped and the raw base64 wire String is bound undecoded,
+     * a green build with a production failure.
+     *
+     * <p>Unlike its sibling reductions ({@link #rejectCaseInsensitiveTypeCollisions},
+     * {@link #collectDomainReturnTypeConflicts}), this pass reads {@code ctx.schema} applied
+     * directives rather than the classified registries: a dropped {@code @nodeId} leaves <em>no
+     * trace</em> on the classified field (that absence is the bug), so there is nothing in the
+     * registry to walk. {@link BuildContext} is a permitted raw-schema holder, so reading
+     * {@code ctx.schema} here is sound. R317 slice 5 — registers a build-time diagnostic on the
+     * shared channel that {@link GraphitronSchemaValidator} drains; it demotes no verdict.
+     *
+     * <p>The three {@code on} locations map onto the schema as: object/interface field definitions
+     * ({@code FIELD_DEFINITION}, the encode side), their arguments ({@code ARGUMENT_DEFINITION}, a
+     * decode side), and input-object fields ({@code INPUT_FIELD_DEFINITION}, the other decode side).
+     */
+    private static void rejectNonIdNodeId(BuildContext ctx) {
+        for (var type : ctx.schema.getAllTypesAsList()) {
+            switch (type) {
+                case GraphQLObjectType obj -> {
+                    for (var field : obj.getFieldDefinitions()) {
+                        checkNodeIdFieldAndArguments(ctx, obj.getName(), field);
+                    }
+                }
+                case GraphQLInterfaceType iface -> {
+                    for (var field : iface.getFieldDefinitions()) {
+                        checkNodeIdFieldAndArguments(ctx, iface.getName(), field);
+                    }
+                }
+                case GraphQLInputObjectType input -> {
+                    for (var field : input.getFieldDefinitions()) {
+                        if (!field.hasAppliedDirective(DIR_NODE_ID)) continue;
+                        String unwrapped = unwrappedTypeName(field.getType());
+                        if ("ID".equals(unwrapped)) continue;
+                        ctx.addDiagnostic(ValidationError.forField(
+                            input.getName() + "." + field.getName(),
+                            Rejection.invalidSchema(nonIdNodeIdMessage(unwrapped)),
+                            locationOf(field)));
+                    }
+                }
+                default -> { /* scalars, enums, unions carry no @nodeId-bearing coordinate */ }
+            }
+        }
+    }
+
+    /**
+     * Checks a single object/interface field for a non-{@code ID} {@code @nodeId} (the encode side,
+     * {@code FIELD_DEFINITION}) and each of its arguments (a decode side,
+     * {@code ARGUMENT_DEFINITION}). Argument rejections attach to the parent field's qualified name
+     * (the coordinate {@code UnclassifiedArg} surfaces on) and name the argument in the message.
+     */
+    private static void checkNodeIdFieldAndArguments(BuildContext ctx, String parentTypeName, GraphQLFieldDefinition field) {
+        if (field.hasAppliedDirective(DIR_NODE_ID)) {
+            String unwrapped = unwrappedTypeName(field.getType());
+            if (!"ID".equals(unwrapped)) {
+                ctx.addDiagnostic(ValidationError.forField(
+                    parentTypeName + "." + field.getName(),
+                    Rejection.invalidSchema(nonIdNodeIdMessage(unwrapped)),
+                    locationOf(field)));
+            }
+        }
+        for (var arg : field.getArguments()) {
+            if (!arg.hasAppliedDirective(DIR_NODE_ID)) continue;
+            String unwrapped = unwrappedTypeName(arg.getType());
+            if ("ID".equals(unwrapped)) continue;
+            ctx.addDiagnostic(ValidationError.forField(
+                parentTypeName + "." + field.getName(),
+                Rejection.invalidSchema("argument '" + arg.getName() + "': " + nonIdNodeIdMessage(unwrapped)),
+                argLocation(arg)));
+        }
+    }
+
+    private static String unwrappedTypeName(GraphQLType type) {
+        return ((GraphQLNamedType) GraphQLTypeUtil.unwrapAll(type)).getName();
+    }
+
+    private static SourceLocation argLocation(GraphQLArgument arg) {
+        var def = arg.getDefinition();
+        return def != null ? def.getSourceLocation() : null;
+    }
+
+    private static String nonIdNodeIdMessage(String actualType) {
+        return "@nodeId is only valid on a field/argument of type ID (got '" + actualType + "'). "
+            + "Every @nodeId decode/encode arm is gated on the ID type, so on a non-ID coordinate the "
+            + "directive is silently dropped and the raw base64 wire value is bound undecoded. Change "
+            + "the type to ID, or remove @nodeId.";
     }
 
     /**
