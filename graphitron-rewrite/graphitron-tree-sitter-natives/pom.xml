@@ -1,9 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  Standalone Maven module that publishes the per-platform tree-sitter-graphql
-  grammar binaries as a single jar to Maven Central, consumed by graphitron-lsp.
-  The tree-sitter runtime (libtree-sitter) itself is NOT bundled; jtreesitter's
-  ChainedLibraryLookup finds it from the consumer's OS at load time.
+  Standalone Maven module that publishes the per-platform tree-sitter natives
+  as a single jar to Maven Central, consumed by graphitron-lsp. Each supported
+  platform ships TWO binaries: the tree-sitter-graphql grammar and the
+  tree-sitter runtime (libtree-sitter). graphitron-lsp extracts both at startup
+  and composes grammar.or(runtime) into jtreesitter's SPI lookup, so the LSP has
+  no native system dependency: nothing to install.
 
   Intentionally NOT a child of graphitron-rewrite-parent. Trunk's parent runs
   at 10-SNAPSHOT and declares no <snapshotRepository>, so inheriting from it
@@ -15,11 +17,13 @@
   omits this module so `mvn install -f graphitron-rewrite/pom.xml -Plocal-db`
   pays zero build cost.
 
-  Version scheme is <tree-sitter-runtime-version>-<build-n>; first release is
-  0.26.0-1. The <runtime-version> portion is the tree-sitter parser ABI the
-  grammar was built against, not a runtime we ship. Bump <build-n> for any
-  grammar-binary change (grammar update, build flag, recompile); bump
-  <runtime-version> when retargeting the grammar to a newer tree-sitter ABI.
+  Version scheme is <runtime-version>-<build-n>; first bundled-runtime release
+  is 0.26.9-1. The <runtime-version> portion is the actual tree-sitter runtime
+  version shipped in the jar (the upstream source tag both the bundled
+  libtree-sitter and the grammar's parser ABI are built from). Bump <build-n>
+  for any change to the binaries at the same upstream version (build-flag
+  change, recompile, security/bugfix rebuild); bump <runtime-version> when we
+  retarget to a newer upstream tree-sitter tag.
   See UPSTREAM.md and graphitron-rewrite/docs/tree-sitter-natives-release.adoc.
 -->
 <project xmlns="http://maven.apache.org/POM/4.0.0"

@@ -76,10 +76,13 @@ tag + release-gate assertions; binaries are not committed).
   resulting unversioned shared-lib symlink is dereferenced and staged under
   the canonical `libtree-sitter.{so,dylib}` name.
 - **Build invocation (Windows, MinGW-w64 under MSYS2).**
-  `make CC=x86_64-w64-mingw32-gcc AR=x86_64-w64-mingw32-ar CFLAGS="-O3"
-  LDFLAGS="-static -static-libgcc"`, staged as `tree-sitter.dll`. The
-  static-link flags keep the MinGW runtime (`libgcc_s_seh-1.dll`,
-  `libwinpthread-1.dll`) out of the DLL's transitive deps. (Leading route;
+  `make CC=gcc AR=ar CFLAGS="-O3" LDFLAGS="-static -static-libgcc"`, staged as
+  `tree-sitter.dll`. In the MSYS2 MINGW64 environment the unprefixed `gcc`/`ar`
+  (from `mingw-w64-x86_64-gcc`, in `/mingw64/bin`) are the native x86_64
+  mingw-w64 toolchain; the triplet-prefixed `x86_64-w64-mingw32-ar` alias is
+  not installed, so the unprefixed names are used. The static-link flags keep
+  the MinGW runtime (`libgcc_s_seh-1.dll`, `libwinpthread-1.dll`) out of the
+  DLL's transitive deps. (Leading route;
   the fallback if these deps prove unshakeable is the MSVC/vcpkg-built
   `tree-sitter.dll`, at the cost of weaker provenance.)
 - **Transitive-dep allowlist (release gate).**
