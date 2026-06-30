@@ -59,6 +59,12 @@ final class DiagnosticsTool {
                 var m = new LinkedHashMap<String, Object>();
                 m.put("severity", "warning");
                 m.put("message", w.message());
+                // A lint finding (the sealed BuildWarning's tagged arm) carries a typed LintRule;
+                // project its stable id so an agent sees which rule fired, not just the message.
+                // The no-rule arm carries no id, so there is no nullable field to guard (R398).
+                if (w instanceof no.sikt.graphitron.rewrite.BuildWarning.LintFinding lf) {
+                    m.put("lintRule", lf.rule().id());
+                }
                 addLocation(m, w.location());
                 entries.add(m);
             }

@@ -456,6 +456,26 @@ class GraphitronMcpServerTest {
             // Snapshot axes reported alongside so an agent can tell whether diagnostics are current.
             assertThat(structured).containsEntry("snapshotAvailability", "Built")
                 .containsEntry("snapshotFreshness", "Current");
+            // The no-rule warning arm carries no rule id, so the wire entry omits the field.
+            assertThat(diagnostics.get(1)).doesNotContainKey("lintRule");
+        }
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void diagnosticsProjectsLintRuleIdForLintFindings() throws Exception {
+        // R398: a lint finding rides the ValidationReport warning channel and the diagnostics tool
+        // projects its typed LintRule id onto the wire, so an MCP-aware agent sees which rule fired
+        // for free over the shared Workspace, with no new tool or seam.
+        try (var server = new GraphitronMcpServer(loopback(0), lintFindingWorkspace());
+             var client = connect(server.port())) {
+            client.initialize();
+
+            var structured = structured(client.callTool(McpSchema.CallToolRequest.builder("diagnostics").build()));
+            var diagnostics = (List<Map<String, Object>>) structured.get("diagnostics");
+            assertThat(diagnostics).singleElement().satisfies(d -> assertThat(d)
+                .containsEntry("severity", "warning")
+                .containsEntry("lintRule", "no-typename-prefix"));
         }
     }
 
@@ -1122,9 +1142,21 @@ class GraphitronMcpServerTest {
         var error = new ValidationError("Query.film",
             new Rejection.AuthorError.Structural("unknown table reference"),
             new graphql.language.SourceLocation(5, 3, "/schema.graphqls"));
-        var warning = new BuildWarning("shadowed directive",
+        BuildWarning warning = new BuildWarning.NoRule("shadowed directive",
             new graphql.language.SourceLocation(1, 1, "/schema.graphqls"));
         var report = ValidationReport.from(List.of(error), List.of(warning));
+        return builtWorkspace(CompletionData.empty(),
+            new LspSchemaSnapshot.Built.Current(List.of(), Map.of(), Map.of()), report);
+    }
+
+    private static Workspace lintFindingWorkspace() {
+        // A lint finding rides the same ValidationReport warning channel; the MCP diagnostics tool
+        // projects its typed LintRule id onto the wire so an agent sees which rule fired (R398).
+        no.sikt.graphitron.rewrite.BuildWarning finding = no.sikt.graphitron.rewrite.BuildWarning.LintFinding.of(
+            "field 'User.userName' is prefixed with its type name",
+            new graphql.language.SourceLocation(3, 5, "/schema.graphqls"),
+            no.sikt.graphitron.rewrite.lint.LintRule.NO_TYPENAME_PREFIX);
+        var report = ValidationReport.from(List.of(), List.of(finding));
         return builtWorkspace(CompletionData.empty(),
             new LspSchemaSnapshot.Built.Current(List.of(), Map.of(), Map.of()), report);
     }

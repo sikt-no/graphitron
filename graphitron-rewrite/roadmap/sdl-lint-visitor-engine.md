@@ -1,7 +1,7 @@
 ---
 id: R398
 title: "SDL lint engine with ESLint-style built-in visitors"
-status: Ready
+status: In Progress
 bucket: feature
 priority: 5
 theme: lsp

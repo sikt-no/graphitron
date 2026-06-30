@@ -16,6 +16,7 @@ import graphql.schema.GraphQLTypeUtil;
 import graphql.schema.GraphQLUnionType;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.rewrite.JooqCatalog;
+import no.sikt.graphitron.rewrite.lint.LintRule;
 import no.sikt.graphitron.rewrite.model.AccessorResolution;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.ChildField.ColumnField;
@@ -665,9 +666,10 @@ class FieldBuilder {
     private void warnAsConnectionSameTable(GraphQLFieldDefinition fieldDef, NodeIdArgPlan plan) {
         if (fieldDef.hasAppliedDirective(DIR_AS_CONNECTION)
                 && plan.firstRequiredSameTableHit() != null) {
-            ctx.addWarning(new BuildWarning(
+            ctx.addWarning(BuildWarning.LintFinding.of(
                 formatAsConnectionSameTableWarning(plan.firstRequiredSameTableHit(), fieldDef.getName()),
-                locationOf(fieldDef)));
+                locationOf(fieldDef),
+                LintRule.ASCONNECTION_SAME_TABLE_PK_IN));
         }
     }
 
@@ -5013,10 +5015,11 @@ class FieldBuilder {
     private void warnIfSplitQueryOnRecordParent(GraphQLFieldDefinition fieldDef, String parentTypeName,
             String name, SourceLocation location) {
         if (!fieldDef.hasAppliedDirective(DIR_SPLIT_QUERY)) return;
-        ctx.addWarning(new BuildWarning(
+        ctx.addWarning(BuildWarning.LintFinding.of(
             parentTypeName + "." + name + ": @splitQuery is redundant on a record-backed parent field; "
             + "the record handoff already opens a new DataLoader-backed scope. The directive will be ignored.",
-            location));
+            location,
+            LintRule.SPLITQUERY_REDUNDANT_ON_RECORD_PARENT));
     }
 
     /**

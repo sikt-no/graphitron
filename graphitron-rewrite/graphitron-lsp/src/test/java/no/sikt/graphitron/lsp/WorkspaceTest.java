@@ -296,7 +296,7 @@ class WorkspaceTest {
         var catalog = CompletionData.empty();
         var snapshot = new LspSchemaSnapshot.Built.Current(List.of(), Map.of(), Map.of());
         var report = ValidationReport.from(java.util.List.of(),
-            java.util.List.of(new no.sikt.graphitron.rewrite.BuildWarning(
+            java.util.List.<no.sikt.graphitron.rewrite.BuildWarning>of(new no.sikt.graphitron.rewrite.BuildWarning.NoRule(
                 "shadowed directive",
                 new graphql.language.SourceLocation(5, 3, "/x.graphqls"))));
 
