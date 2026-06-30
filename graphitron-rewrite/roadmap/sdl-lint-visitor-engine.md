@@ -32,6 +32,8 @@ Build-side evaluation is the spine. The authoritative tier is the build, where g
 
 The LSP gets parity for free. Diagnostics already replays the build's `ValidationReport` into squiggles (`Diagnostics.validatorDiagnostics`, with the freshness-aware silence policy of R139). Emitting custom-rule findings into the same report means a rule fires in CI and in the editor from one definition, with no second evaluator and no drift seam.
 
+The MCP server is a third consumer, also for free. `GraphitronMcpServer` holds the very same `Workspace` the LSP holds (wired once by `DevMojo.bindServer`) and already exposes a `diagnostics` tool that projects `workspace.validationReport().errors()` and `.warnings()` to agents. Because lint findings ride `ValidationReport` as warnings, they surface through that existing tool the moment they are emitted, with no new plumbing. The only addition is carrying the typed `LintRule` id onto the MCP wire mapping so an agent sees which rule fired, not just the message text. This is the build-evaluates-everyone-projects spine paying off: one emission reaches CI, the editor, and an MCP-aware agent. A dedicated lint-filtered tool or fix exposure can follow later; the data is reachable on the shared seam without it.
+
 Decided: the v1 engine evaluates **build-side over the graphql-java AST**, and the LSP projects findings through the existing `ValidationReport` replay. The tree-sitter-shared-engine alternative (moving the tree-sitter substrate below the LSP for a second evaluator) is deferred; build-side graphql-java is the lower-risk single evaluator and the GraphQL-native idiom.
 
 This splits the built-in rules by what they need to see, and the split determines *where each rule lives*:
@@ -65,6 +67,7 @@ In scope:
 - Surfacing the three existing **classification-derived advisories** through the same report channel into the LSP, and tagging them with a typed `LintRule`, without re-deriving their conditions (the classifier stays their sole emitter).
 - The typed rule-identity field on `BuildWarning`, and the `LintRuleRegistryCoverageTest` drift guard.
 - The optional per-rule suggested-fix mechanism: a typed `LintFix` on the finding, projected to a `QuickFix` `CodeAction` through the existing `CodeActions` plumbing, for the v1 fix-bearing rules listed under Starter rule set.
+- Carrying the typed `LintRule` id through the MCP `diagnostics` wire mapping (`GraphitronMcpServer` already surfaces `ValidationReport` warnings via that tool over the shared `Workspace`), so an MCP-aware agent sees which rule fired. No new MCP tool or seam; findings reach the MCP for free, this is only the rule-id field on the wire.
 
 Out of scope (deferred):
 
@@ -134,6 +137,7 @@ The behaviour oracle is the finding set a rule produces over a fixture, asserted
 - `LintRuleRegistryCoverageTest` passes: every `LintRule` registered exactly once, every node kind has a known dispatch status, no silent skip.
 - One LSP-projection parity test passes, including the R139 stale-snapshot silence.
 - Fix-bearing rules attach a valid `LintFix`; the LSP offers it as a `QuickFix` whose applied `WorkspaceEdit` produces the corrected SDL. Rules without a fix offer none, and no fix is auto-applied at build time.
+- The MCP `diagnostics` tool surfaces lint findings (they ride `ValidationReport` warnings) carrying their typed `LintRule` id, verified by a `graphitron-mcp` handler test.
 - No code-string / body assertions in any test; findings asserted on the typed shape and range.
 - Full reactor green: `mvn -f graphitron-rewrite/pom.xml install -Plocal-db`.
 
