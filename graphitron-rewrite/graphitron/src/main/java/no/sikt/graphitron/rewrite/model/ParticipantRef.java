@@ -12,10 +12,11 @@ import java.util.List;
  *       PK-bearing table for multi-table polymorphism). Carries an optional discriminator value
  *       and an optional cross-table-field list.</li>
  *   <li>{@link JoinedTableBound} — a joined-table (class-table) inheritance participant: a
- *       discriminated base shared with its siblings plus the participant's own detail table joined
- *       to the base PK=FK. Carries the resolved base&rarr;detail hop and the field-residence
- *       partition (which of the participant's fields resolve on the base vs. its detail table). Only
- *       ever appears in a {@link GraphitronType.TableInterfaceType} participant list (R389).</li>
+ *       discriminated base shared with its siblings plus the participant's own detail table,
+ *       joined to the base by the author-declared child&rarr;parent {@code @reference} (PK=FK).
+ *       Carries that resolved hop; field residence is declared by the per-field {@code @reference}
+ *       and read off the field variant, not stored here. Only ever appears in a
+ *       {@link GraphitronType.TableInterfaceType} participant list (R389).</li>
  *   <li>{@link Unbound} — the participant is not table-backed (e.g. {@code @error} types,
  *       structural interfaces, value types). Generator code must skip SQL generation for
  *       unbound participants.</li>
@@ -107,34 +108,36 @@ public sealed interface ParticipantRef permits ParticipantRef.TableBacked, Parti
      * A joined-table (class-table) inheritance participant (R389).
      *
      * <p>The participant shares a discriminated base table with its sibling participants (one PK
-     * space, one discriminator column) and carries its own detail table joined to the base by a
-     * PK=FK foreign key. Its fields split across the two tables: the interface's shared fields
-     * resolve on the base; the participant's own distinguishing fields resolve on the detail table.
+     * space, one discriminator column) and declares its own detail table via {@code @table}. Its
+     * fields split across the two tables, and residence is <em>declared</em> by the author rather
+     * than inferred: a field carrying a parent-{@code @reference} back to the base is base-resident
+     * (classifies as {@link ChildField.ColumnReferenceField}, resolved on the base via the existing
+     * reference path); a field without one is detail-resident (a plain {@link ChildField.ColumnField}
+     * on this detail table). No site recomputes residence; the emitter and validator read the field
+     * variant.
      *
      * <p>{@code detailTable} is the participant's own table (the {@code table()} capability returns
      * it). {@code discriminatorValue} is the participant's {@code @discriminator(value:)}, always
      * non-null (a {@code TableInterfaceType} participant without one is rejected upstream).
      *
-     * <p>{@code baseToDetail} is the resolved single-hop {@link JoinStep.FkJoin} from the base table
-     * to the detail table: {@code originTable} is the base, {@code targetTable} the detail, and each
-     * slot pairs the base PK column ({@code sourceSide()}) with the detail PK/FK column
-     * ({@code targetSide()}). The emitter joins {@code base LEFT JOIN detail ON base.pk = detail.pk}
-     * gated by the discriminator value, so non-matching rows carry NULL through the join.
+     * <p>{@code childToParent} is the resolved single-hop {@link JoinStep.FkJoin} the author named in
+     * the inherited fields' parent-{@code @reference}: {@code originTable} is the detail table,
+     * {@code targetTable} the discriminated base. The hop is direction-blind ({@code slot.sourceSide()}
+     * sits on the detail/FK side, {@code slot.targetSide()} on the base/PK side), so the standalone
+     * reference path reads it as {@code detail -> base} while the interface fetcher reads the same slot
+     * pair as {@code base.pk = detail.fk} for the discriminator-gated {@code base LEFT JOIN detail},
+     * carrying NULL through for non-matching rows. The PK=FK invariant (the detail's FK columns to the
+     * base are the detail's own primary key) is checked by the validator, not encoded here.
      *
-     * <p>{@code detailResidentFields} names the participant's GraphQL fields whose column resolves
-     * on the detail table rather than the base (the field-residence partition lifted to the model
-     * per "field residence is a type fact, not a recomputed predicate"). The interface-level
-     * {@code $fields} projects the shared base-resident fields; the participant's own
-     * {@code $fields} is restricted to exactly these field names, projected against the detail
-     * alias.
+     * <p>There is no residence list on this record: the interface fetcher emits a <em>detail-only</em>
+     * projection (the participant's detail-resident {@link ChildField.ColumnField}s against the detail
+     * alias, parent-references not re-traversed), while the participant's own {@code $fields} stays
+     * whole and serves standalone queries (parent-references traversed to the base). The two are
+     * distinct projections, never one globally-restricted method.
      */
     record JoinedTableBound(String typeName, TableRef detailTable, String discriminatorValue,
-                            JoinStep.FkJoin baseToDetail, List<String> detailResidentFields)
+                            JoinStep.FkJoin childToParent)
             implements TableBacked {
-
-        public JoinedTableBound {
-            detailResidentFields = List.copyOf(detailResidentFields);
-        }
 
         /** The participant's detail table. Satisfies {@link TableBacked#table()}. */
         @Override public TableRef table() { return detailTable; }
