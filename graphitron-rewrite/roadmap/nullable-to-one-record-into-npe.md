@@ -10,7 +10,7 @@ last-updated: 2026-06-30
 
 # Null-guard split-query key extraction for nullable to-one records
 
-The record-parent split-query key extraction `GeneratorUtils.buildAccessorKeySingle` / `buildAccessorKeyMany` (`GeneratorUtils.java:318-360`) reads a nested jOOQ record off the parent backing and calls `.into(<PK columns>)` on it with no null guard: `ElementRecord __elt = ((Backing) env.getSource()).accessor(); RecordN<...> key = __elt.into(T.PK1, T.PK2)`. When the accessor returns null (a nullable to-one `@table` relation that resolves to no row on an otherwise successful parent), this NPEs with `Cannot invoke "...Record.into(...)" because "__elt" is null` instead of resolving the field to null. The sibling table-parent path `buildKeyExtractionWithNullCheck` (`GeneratorUtils.java:393-440`) already short-circuits with `CompletableFuture.completedFuture(null)` when a key component is null; the accessor path never got the equivalent guard. This is independent of the error channel (it fires on the success arm, with no `@error` payload involved) and was split out of R268, which fixes only the error-arm case via the `Outcome` arm-switch (on the `ErrorList` arm the loader is never dispatched, so the key extraction is not reached). Scope: add the null short-circuit to the accessor key-extraction helpers; pin with an execution-tier fixture where a nullable to-one `@table` field resolves null on a non-error parent and the field renders null rather than throwing.
+The record-parent split-query key extraction `GeneratorUtils.buildAccessorKeySingle` / `buildAccessorKeyMany` (`GeneratorUtils.java:318-360`) reads a nested jOOQ record off the parent backing and calls `.into(<PK columns>)` on it with no null guard: `ElementRecord element = ((Backing) env.getSource()).accessor(); RecordN<...> key = element.into(T.PK1, T.PK2)`. When the accessor returns null (a nullable to-one `@table` relation that resolves to no row on an otherwise successful parent), this NPEs with `Cannot invoke "...Record.into(...)" because "element" is null` instead of resolving the field to null. The sibling table-parent path `buildKeyExtractionWithNullCheck` (`GeneratorUtils.java:393-440`) already short-circuits with `CompletableFuture.completedFuture(null)` when a key component is null; the accessor path never got the equivalent guard. This is independent of the error channel (it fires on the success arm, with no `@error` payload involved) and was split out of R268, which fixes only the error-arm case via the `Outcome` arm-switch (on the `ErrorList` arm the loader is never dispatched, so the key extraction is not reached). Scope: add the null short-circuit to the accessor key-extraction helpers; pin with an execution-tier fixture where a nullable to-one `@table` field resolves null on a non-error parent and the field renders null rather than throwing.
 
 ## The shape that NPEs
 
@@ -19,20 +19,20 @@ A reflection-derived record-backed parent (a Java pojo / generated bean, classif
 The `ONE` arm (the reported bug) emits:
 
 ```java
-ElementRecord __elt = ((Backing) env.getSource()).accessor();
-RecordN<...> key = __elt.into(Tables.T.PK1, Tables.T.PK2);   // NPE when __elt is null
+ElementRecord element = ((Backing) env.getSource()).accessor();
+RecordN<...> key = element.into(Tables.T.PK1, Tables.T.PK2);   // NPE when element is null
 return loader.load(key, env);
 ```
 
 A nullable to-one relation that resolves to no row hands the accessor a `null`, and `.into(...)` dereferences it. There is no error payload in play; this is a perfectly ordinary "the related row doesn't exist" outcome that should resolve the field to `null`.
 
-The `MANY` arm has the analogous hazard one level out: `for (ElementRecord __elt : ((Backing) env.getSource()).accessor())` NPEs when the accessor returns a `null` *collection* (an unpopulated to-many backing), before any `.into(...)` runs.
+The `MANY` arm has the analogous hazard one level out: `for (ElementRecord element : ((Backing) env.getSource()).accessor())` NPEs when the accessor returns a `null` *collection* (an unpopulated to-many backing), before any `.into(...)` runs.
 
 ## The fix
 
 Mirror the existing FK-side precedent. `buildKeyExtractionWithNullCheck` already establishes the contract and the exact return expression for this fetcher shape: when a key component is null, `return CompletableFuture.completedFuture(null)` before the loader is touched ("a NULL FK can never match `terminal.pk = parentInput.fk_value`, so dispatching to the DataLoader is a wasted round-trip"). The dispatch for the single arm is `LOAD_ONE` → `return loader.load(key, env)` and the fetcher's declared return is `CompletableFuture<DataFetcherResult<Record>>`, so `completedFuture(null)` is assignable and resolves the field to null. The accessor path wants the same short-circuit, keyed on the nested record being null rather than an FK column being null.
 
-- **`buildAccessorKeySingle`** ; between the `__elt = ...accessor()` read and the `__elt.into(...)` key build, emit `if (__elt == null) return CompletableFuture.completedFuture(null);`. One statement; same return expression as the sibling helper.
+- **`buildAccessorKeySingle`** ; between the `element = ...accessor()` read and the `element.into(...)` key build, emit `if (element == null) return CompletableFuture.completedFuture(null);`. One statement; same return expression as the sibling helper.
 - **`buildAccessorKeyMany`** ; guard the accessor result before the `for`. A null collection short-circuits to "no keys", which the existing `loadMany(keys, ...)` dispatch already renders as an empty list (the natural rendering for a to-many relation with nothing on the other side). Emit `var elements = ((Backing) env.getSource()).accessor(); if (elements == null) return CompletableFuture.completedFuture(...);` *or* skip the loop body so `keys` stays empty and the existing dispatch runs over the empty list. See the design fork below for which.
 
 Element-level nulls *inside* a non-null collection stay unguarded: a `null` sitting in a populated to-many backing is a malformed parent, not a legitimate "no row" outcome, and swallowing it would hide a consumer bug rather than model a real cardinality.
@@ -45,8 +45,8 @@ After this slice, three helpers reachable from the record-parent path emit the s
 
 ## Implementation seams
 
-1. **`GeneratorUtils.buildAccessorKeySingle`** (249-267) ; add the `if (__elt == null) return CompletableFuture.completedFuture(null);` line. `CompletableFuture` is already referenced by the sibling helper; reuse the same `ClassName.get("java.util.concurrent", "CompletableFuture")` constant/import path.
-2. **`GeneratorUtils.buildAccessorKeyMany`** (269-296) ; guard the collection per the fork below.
+1. **`GeneratorUtils.buildAccessorKeySingle`** (318-336) ; add the `if (element == null) return CompletableFuture.completedFuture(null);` line. `CompletableFuture` is already referenced by the sibling helper; reuse the same `ClassName.get("java.util.concurrent", "CompletableFuture")` constant/import path.
+2. **`GeneratorUtils.buildAccessorKeyMany`** (338-365) ; guard the collection per the fork below.
 3. **No model or classifier change ; but the guard does rely on a classifier-known fact.** The guard is purely emit-time; `SourceKey`, `AccessorRef`, and the `BatchKeyField` permits are untouched, and the fetcher's outer return type and dispatch line are unchanged ; only the key-extraction `CodeBlock` grows a short-circuit, exactly as the FK-side helper already does. The fact the guard exists *for* is "a nullable to-one `@table` accessor parent can hand the fetcher a null nested record", which is a nullability fact the classifier already carries on the field. No live test pins the correspondence between that classification and the guard, so carry a short `{@link}` (or a one-line comment) from the guarded helper back to the nullability source on the field/`SourceKey`, so that if a future change makes such a field non-null the guard is visibly dead code rather than silently orphaned. This is the lightweight producer/consumer-linkage mechanism the design principles prescribe when there is no validator invariant to mirror.
 
 ## Design fork for In Progress (flag to principles review)
@@ -58,16 +58,9 @@ The `MANY` guard has two faithful renderings of "null to-many collection":
 
 Recommendation: **(a)**. It is the smaller change, avoids deciding empty-vs-null for the list shape (the loader's empty result already is the answer), and a single skipped iteration is not a round-trip worth the extra return path. The single arm's early `completedFuture(null)` stays as-is because there is no loop to skip and `null` is the unambiguous to-one rendering. Confirm with `principles-architect` before the `MANY` arm lands; if a `MANY` accessor fixture proves expensive to stand up, the `MANY` guard may narrow to a follow-up, but the `ONE` guard plus its fixture is the irreducible core of this slice.
 
-## Coordination with R268
+## Coordination with R268 (resolved ; R268 shipped)
 
-R268 edits the same two helpers: it changes the *source* they read from (`success.value()` under an `Outcome.Success<X>` narrowing, vs `env.getSource()`) and renames the `__elt` / `__k` dunder locals to readable names. R269 changes whether they *tolerate a null read*. The two are logically independent (R268 is the error-arm short-circuit before key extraction; R269 is the success-arm null guard inside it), so `depends-on` stays empty and either can land first.
-
-They do share adjacent lines, so whoever lands second rebases onto the other's helper shape:
-
-- If **R268 lands first**, R269's guard references the renamed local (`elt`, not `__elt`) and sits after the R268 source-binding prelude; the threaded source expression is the thing read, so the guard tests *that* binding for null.
-- If **R269 lands first**, R268 must carry the guard through when it swaps the source expression ; the null check moves from `env.getSource().accessor()` to `success.value()....accessor()` but does not disappear.
-
-Land them in either order; the implementer of the second reads the first's diff. Renaming the dunders is R268's retrofit per its own generated-code-style note; R269 does not need to touch the names unless it lands first, in which case matching the surrounding style (readable local for the guarded value) is the lighter-weight choice.
+R268 shipped (`fc365b4` + `f4ae047`), so the landing-order fork this section once carried is settled. The two helpers are now source-bound: they read from a threaded `sourceExpr` (`success.value()` under an `Outcome.Success<X>` narrowing, or `env.getSource()` for a non-outcome parent) rather than `env.getSource()` directly. R271 separately retired the `__elt` / `__k` dunders to readable `element` / `key` locals. R269 changes only whether the source-bound read *tolerates a null*, which is independent of both (R268 is the error-arm short-circuit before key extraction; R269 is the success-arm null guard inside it), so `depends-on` stays empty and there is no rebase fork left. The guard sits after the R268 source-binding prelude and tests the `element` read for null.
 
 ## Coordination with R400
 
@@ -75,9 +68,9 @@ R400 (remove the `@tableMethod` directive) deletes the `ChildField.RecordTableMe
 
 ## Tests
 
-- **Execution (`@ExecutionTier`) is the primary and load-bearing net.** A nullable to-one `@table` relation, reached through a record-backed parent's accessor (the `AccessorCall` + `ONE` shape), resolving to no row on an otherwise-successful parent: the field renders `null` and the query does **not** raise `Cannot invoke "...Record.into(...)" because "__elt" is null`. This directly exercises the generated guard against real PostgreSQL. The `graphitron-sakila-example` record-parent fixtures (the `RecordTableField` family, former `SingleRecordTableField` per R305) are the place to add or extend a case where the accessor legitimately returns null. If the `MANY` guard lands (fork (a)), add the to-many sibling: a null to-many backing resolves to `[]` rather than NPEing in the `for`.
+- **Execution (`@ExecutionTier`) is the primary and load-bearing net.** A nullable to-one `@table` relation, reached through a record-backed parent's accessor (the `AccessorCall` + `ONE` shape), resolving to no row on an otherwise-successful parent: the field renders `null` and the query does **not** raise `Cannot invoke "...Record.into(...)" because "element" is null`. This directly exercises the generated guard against real PostgreSQL. The `graphitron-sakila-example` record-parent fixtures (the `RecordTableField` family, former `SingleRecordTableField` per R305) are the place to add or extend a case where the accessor legitimately returns null. If the `MANY` guard lands (fork (a)), add the to-many sibling: a null to-many backing resolves to `[]` rather than NPEing in the `for`.
 - **Pipeline (`@PipelineTier`)**: the nullable to-one child classifies as `RecordTableField` with `Reader.AccessorCall` + `Cardinality.ONE` and routes through `buildRecordBasedDataFetcher` ; a structural assertion on the classified model (reader variant, cardinality, the `BatchKeyField` `SourceKey`), not a fetcher-body string.
-- **No generated-body string assertion.** Per `rewrite-design-principles.adoc` ("Code-string assertions on generated method bodies are banned at every tier"), the guard's *presence* is pinned behaviourally at the execution tier, not by grepping the emitted `if (__elt == null)` out of the fetcher `toString()`. (The pre-existing `SplitTableFieldPipelineTest.splitQueryField_singleCardinality_nullFkShortCircuitAppearsInFetcherBody` body-string check is legacy and against this rule; do not extend that pattern to the accessor path.)
+- **No generated-body string assertion.** Per `rewrite-design-principles.adoc` ("Code-string assertions on generated method bodies are banned at every tier"), the guard's *presence* is pinned behaviourally at the execution tier, not by grepping the emitted `if (element == null)` out of the fetcher `toString()`. (The pre-existing `SplitTableFieldPipelineTest.splitQueryField_singleCardinality_nullFkShortCircuitAppearsInFetcherBody` body-string check is legacy and against this rule; do not extend that pattern to the accessor path.)
 - **Compilation (`@CompilationTier`)**: `mvn install -Plocal-db` end-to-end green over `graphitron-sakila-example`, which compiles the `CompletableFuture`-returning guarded arm and catches any type mismatch in the early-return expression.
 
 ## Out of scope
@@ -85,4 +78,4 @@ R400 (remove the `@tableMethod` directive) deletes the `ChildField.RecordTableMe
 - **The error-arm short-circuit and the `Outcome` arm-switch**: R268. R269 is the success-arm null guard only.
 - **Element-level nulls inside a populated to-many collection**: a malformed backing, not a cardinality to model; left to NPE rather than silently swallowed.
 - **The FK-side path** (`Reader.ColumnRead` → `buildKeyExtractionWithNullCheck`): already guarded; unchanged here.
-- **Renaming the `__elt` / `__k` dunder locals**: R268's generated-code-style retrofit. R269 touches it only incidentally if it lands first.
+- **Renaming the `__elt` / `__k` dunder locals**: already done by R271; the helpers emit `element` / `key` today, so this is no longer R269's concern.
