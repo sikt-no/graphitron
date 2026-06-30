@@ -30,19 +30,18 @@
 
     <groupId>no.sikt</groupId>
     <artifactId>graphitron-tree-sitter-natives</artifactId>
-    <version>0.26.0-1</version>
+    <version>0.26.9-1</version>
     <packaging>jar</packaging>
 
     <name>${project.groupId}:${project.artifactId}</name>
     <description>
-        Per-platform tree-sitter-graphql grammar binaries for graphitron-lsp:
-        the bkegley tree-sitter-graphql grammar compiled against the
-        tree-sitter 0.26.0 parser ABI, one shared library per supported
-        platform (linux-x86_64, linux-aarch64, macos-aarch64,
-        windows-x86_64), shipped under lib/&lt;os&gt;-&lt;arch&gt;/ in the jar.
-        The tree-sitter runtime (libtree-sitter) is NOT bundled; consumers
-        provide it via the OS package manager and jtreesitter's chain
-        resolves it at load time.
+        Per-platform tree-sitter natives for graphitron-lsp: the bkegley
+        tree-sitter-graphql grammar plus the tree-sitter runtime
+        (libtree-sitter) built from the pinned upstream 0.26.9 source, two
+        shared libraries per supported platform (linux-x86_64, linux-aarch64,
+        macos-aarch64, windows-x86_64), shipped under lib/&lt;os&gt;-&lt;arch&gt;/
+        in the jar. Both pieces are extracted and composed at load time, so
+        the LSP has no native system dependency.
     </description>
     <url>https://github.com/sikt-no/graphitron</url>
 

@@ -1,7 +1,7 @@
 ---
 id: R401
 title: "Bundle the tree-sitter runtime in the natives jar (zero system deps)"
-status: Ready
+status: In Progress
 bucket: feature
 theme: lsp
 depends-on: []
@@ -201,6 +201,61 @@ case. This reads as "nothing to install," which is the design's success conditio
 - Any change to the grammar vendoring or its build.
 - The natives module's standalone-pom / `workflow_dispatch` shape stays; the runtime build lives in
   the release workflow, out of the normal reactor.
+
+## Implementation status / rollout sequencing
+
+This item spans a Maven Central release boundary and cannot land in one
+trunk-green commit. The two halves and their ordering:
+
+**Half A (landed, trunk-safe now).** The release workflow, provenance, and
+version scheme. None of this runs in per-PR CI (the natives workflow is
+`workflow_dispatch`-only and the module is outside the reactor), and
+`graphitron-lsp` still consumes the existing `0.26.0-1` grammar-only jar, so
+the rewrite build stays green.
+
+- `tree-sitter-natives-release.yml`: per-platform runtime build from the
+  pinned source tag (POSIX `make`; Windows MinGW-w64 leading route, route (a)
+  in "Design alternatives"); release-gate assertions (exported `ts_*`
+  symbols + transitive-dep allowlist); jar-layout assertion raised to eight
+  entries; `post-deploy-verify` drops the `Install libtree-sitter` steps and
+  composes the bundled runtime with no system runtime present.
+- `graphitron-tree-sitter-natives/pom.xml`: version `0.26.0-1` -> `0.26.9-1`;
+  description updated.
+- `UPSTREAM.md` (module): runtime provenance record; version-scheme prose.
+- `docs/tree-sitter-natives-release.adoc`: operator doc updated to the
+  bundled-runtime workflow (two binaries, eight-entry jar, no-system-runtime
+  verify).
+
+**Gate between A and B (human action, cannot be done from an agent
+session).** A maintainer dispatches `tree-sitter-natives-release.yml` with
+`tree-sitter-cli-version=v0.26.9`. The first dispatch validates the runtime
+build empirically; the Windows MinGW transitive-dep allowlist is the spec's
+acknowledged spike (fall back to route (b), the vcpkg-built DLL, only if the
+MinGW runtime deps prove unshakeable). On success, `0.26.9-1` is on Central
+with all eight entries.
+
+**Half B (blocked on the gate; do NOT ship to trunk until `0.26.9-1` is
+published).** Until the new jar exists, these changes break every
+`graphitron-lsp` parsing test (extraction of `lib/<os>-<arch>/libtree-sitter.*`
+from a jar that does not contain it):
+
+- `graphitron-lsp/pom.xml`: bump the natives dependency to `0.26.9-1`.
+- `BundledLibraryLookup`: extract the bundled runtime, return
+  `grammar.or(bundledRuntime)`; delete `probeSystemTreeSitter` /
+  `candidateRuntimePaths`.
+- `GraphqlLanguage`: collapse the dual mechanism (delete
+  `classifyInstalledRuntime`, `RuntimeStatus`, `runtimeProbePaths`,
+  `tooOldRuntimeMessage`, `missingRuntimeMessage`, `ABI_VERSION_SYMBOL`); keep
+  one bundled-load-failure diagnostic; fix/repoint `DOCS_URL`.
+- Tests: rework `GraphqlLanguageErrorTranslationTest` to the single
+  diagnostic + add the bogus-extracted-path failure test;
+  `NativeLibraryBundleTest` / `TreeSitterSmokeTest` exercise the bundled
+  runtime with no system `libtree-sitter`.
+- Docs collapse: `docs/manual/reference/lsp-requirements.adoc` and
+  `getting-started.adoc#native-runtime-dependency` to "nothing to install"
+  (the first-client check). These are deliberately held with Half B: shipping
+  them before the LSP consumes the bundled jar would tell users "nothing to
+  install" while the released LSP still needs a system runtime.
 
 ## References
 
