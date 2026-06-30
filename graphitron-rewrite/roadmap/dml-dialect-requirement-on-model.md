@@ -124,26 +124,39 @@ because the OSS jOOQ distribution omits commercial-only values like
 `ORACLE19C`. The mapping function lives at the boundary, same shape as the
 inline name-prefix check today.
 
-`MutationField.DmlTableField` gains the requirement on the sealed supertype:
+`MutationField.DmlTableField` gains the requirement on the sealed supertype.
+The interface today declares only `returnExpression()` and `location()` (the
+input surface varies by verb: INSERT/UPSERT carry a `TableInputArg`, while
+UPDATE/DELETE carry the slim `InputArgRef inputArg` plus a walker carrier, so
+there is no shared `tableInputArg()` accessor to extend). The lift adds one
+new member:
 
 ```java
 sealed interface DmlTableField extends MutationField {
-    DmlReturnExpression returnExpression();
-    ArgumentRef.InputTypeArg.TableInputArg tableInputArg();
-    DialectRequirement dialectRequirement();   // never null
-    SourceLocation location();
+    DmlReturnExpression returnExpression();      // existing
+    DialectRequirement dialectRequirement();     // new; never null
+    SourceLocation location();                   // existing
 }
 ```
 
 Each of the four DML records gains a `DialectRequirement dialectRequirement`
-component. The classifier (`FieldBuilder.buildDmlField`) populates:
+component, set at its construction site. INSERT/UPSERT are built in the shared
+`@mutation` switch (`FieldBuilder` ~`:4027` / ~`:4040`); UPDATE is built in
+`classifyUpdateTableField` (~`:4105`) and DELETE in `classifyDeleteTableField`
+(both intercepted before the shared switch, which throws on the UPDATE/DELETE
+arms). The shared `buildDmlField` helper only resolves the return expression
+and error channel, then defers record construction to the per-verb builder
+lambda; the new component value is supplied by each lambda. Population:
 
 - INSERT/DELETE: `DialectRequirement.None.INSTANCE`.
 - UPDATE: `DialectRequirement.None.INSTANCE` for single-row; the bulk arm
   carries `new DialectRequirement.RequiresFamily(SqlDialectFamily.POSTGRES,
   "...UPDATE...FROM (VALUES)...")` because jOOQ silently emulates
-  `UPDATE...FROM` on non-Postgres dialects with semantics drift. The
-  classifier reads `tia.list()` to pick. (Bulk DML, R77, has shipped; the
+  `UPDATE...FROM` on non-Postgres dialects with semantics drift. UPDATE is a
+  single record type (`MutationUpdateTableField`) whose bulk-vs-single split is
+  the emitter's, driven by `inputArg.list()`; `classifyUpdateTableField` reads
+  the same `inputArg.list()` (already resolved at `:4069`) to pick the arm at
+  construction. (Bulk DML, R77, has shipped; the
   bulk-UPDATE arm and its inline `postDslGuard` are live at
   `generators/TypeFetcherGenerator.java:3684-3704`.)
 - UPSERT: `new DialectRequirement.RejectsFamily(SqlDialectFamily.ORACLE,
@@ -253,10 +266,13 @@ Oracle, bulk UPDATE still rejects only non-Postgres. Acceptance gates:
   Postgres-family collapse).
 - `model/MutationField.java`: `DmlTableField` interface gains
   `dialectRequirement()`; each of the four DML records gains the component.
-- `FieldBuilder.buildDmlField`: populate `DialectRequirement.None.INSTANCE`
-  by default, `RejectsFamily(ORACLE, ...)` for UPSERT, and
-  `RequiresFamily(POSTGRES, ...)` for the bulk-UPDATE arm (selected on
-  `tia.list()`).
+- `FieldBuilder`: thread the new component into each per-verb construction
+  lambda. INSERT/DELETE get `DialectRequirement.None.INSTANCE`; UPSERT gets
+  `RejectsFamily(ORACLE, ...)` (shared `@mutation` switch, ~`:4040`); UPDATE
+  gets `None.INSTANCE` for single-row and `RequiresFamily(POSTGRES, ...)` for
+  the bulk arm, selected on `inputArg.list()` in `classifyUpdateTableField`
+  (~`:4105`). `buildDmlField` itself is verb-generic (resolves return
+  expression + error channel only) and is not the population site.
 - `generators/TypeFetcherGenerator`:
   - Replace the `postDslGuard` `CodeBlock` parameter with a
     `DialectRequirement` (always present from the model), collapsing the
@@ -296,7 +312,7 @@ Oracle, bulk UPDATE still rejects only non-Postgres. Acceptance gates:
   `DmlTableField` only; promote it to a wider field-set if a second
   `DialectRequirement`-bearing field type appears.
 - Typifying `postInGuard`, the sibling free-form `CodeBlock` slot on
-  `buildDmlFetcher` (`:4366`). Unlike `postDslGuard`, which carries a
+  `buildDmlFetcher` (`:4367`). Unlike `postDslGuard`, which carries a
   discoverable model fact ("UPSERT mistranslates on Oracle") that belongs as
   typed data a validator could one day read, `postInGuard` carries imperative
   per-row emission mechanics (building the dynamic SET map, the
