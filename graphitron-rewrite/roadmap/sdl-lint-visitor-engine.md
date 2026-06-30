@@ -18,7 +18,7 @@ Graphitron validates its own directive coordinates against the jOOQ catalog and 
 
 ## Decision (settled with the user)
 
-Adopt the ESLint execution model: parse the SDL once into the typed AST, run a single shared traversal, and dispatch each node to the visitors that subscribed to its kind/coordinate; each visitor reports problems carrying a source range, message, and severity. Rules are independent visitors registered against the engine, not branches inside one method.
+Adopt the ESLint execution model: parse the SDL once into the typed AST, run a single shared traversal, and dispatch each node to the visitors that subscribed to its kind/coordinate; each visitor reports problems carrying a source range, message, and severity. Rules are independent visitors registered against the engine, not branches inside one method. A rule may optionally supply a suggested fix the user can accept in the editor; the fix capability is available to every rule but required of none.
 
 Ship a useful set of **built-in** visitors first. The plugin model (consumer-supplied custom visitor functions wired into the same registry) is deliberately deferred to a follow-on item until the built-in set has proven the engine and shipped value. This mirrors the project's own R3 then R121 discipline: do not build the extensibility abstraction before a real population of rules exists to justify its shape.
 
@@ -47,12 +47,14 @@ Pinned at Spec so the implementer builds against a typed shape, not a string bag
 - **The visitor shape** mirrors the ESLint / graphql-schema-linter contract: a visitor declares its `LintRule` and subscribes to graphql-java AST node kinds (the `create(context)`-returning-node-kind-listeners shape), receiving a context that exposes the parsed `Document` (and, for any future schema-aware rule, the classifier projection) plus a `report(node, message)` sink. Method bodies are implementation; the contract is the visitor interface plus the registry.
 - **Findings ride the warning channel as a typed shape.** `BuildWarning` gains a typed, nullable `LintRule rule` field (null for the pre-existing non-lint warnings), so rule identity is structural rather than smuggled into the message text. No `(ruleId-string, message, severity)` parallel carrier is introduced. Findings flow into `ValidationReport` exactly as today's warnings do, so the LSP replay (`Diagnostics.validatorDiagnostics`) surfaces them with no new transport.
 - **One registry.** A `LintRules` registry pairs every `LintRule` with its visitor; the engine's single traversal dispatches each node to the subscribed visitors. The registry is asserted complete by test (see Testing strategy), mirroring the `VariantCoverageTest` / R374 `EdgeCoverageTest` no-silent-default pattern and R347's `Behavior`-keyed provider registry.
+- **Optional suggested fix.** A rule may attach a `LintFix` to a finding: a typed, ordered list of edits, each a source range (`SourceLocation` start and end) plus replacement text. It is optional (most rules carry none) and is a *suggestion*, not a build-time mutation, the build never rewrites the consumer's SDL. The fix rides on the finding through the same channel; the LSP turns a fix-bearing finding into a `QuickFix` `CodeAction` (a `WorkspaceEdit` of `TextEdit`s) associated with the finding's diagnostic, reusing the existing `CodeActions` output plumbing (the `WorkspaceEdit` / `TextEdit` / QuickFix machinery already serving the R93 quick-fixes). The rule owns its fix; the LSP only projects it, with no LSP-side recompute of how to fix a given rule, keeping the build the single evaluator.
 
 ## Severity and enablement (v1)
 
 - **Warnings only.** Every built-in finding is a warning in v1. It maps to `BuildWarning` (a non-fatal advisory that never fails the build) and projects to `DiagnosticSeverity.Warning` in the LSP, the severity that channel already hardcodes. No lint finding is an error in v1, so `severityOf` needs no lint arm and the error channel is untouched.
 - **No per-rule configuration in v1.** Built-in rules are all on; there is no consumer-facing disable or severity override yet. The earlier `input-object-name-suffix` and `redundant-record-directive` "off-by-default" hedges are dropped: both ship on as warnings.
 - **Deferred to the configurability follow-on:** per-rule enable/disable, severity overrides, and any error-capable lint (which would need the typed finding to carry a severity axis and a `severityOf` lint arm). The motivation's stronger form, a convention that *fails CI*, lives there; v1 deliberately delivers advisories and the engine they ride on, not enforcement.
+- **Fixes are user-accepted suggestions.** A suggested fix is offered as an editor QuickFix the user chooses to apply; it is never auto-applied at build time and there is no bulk apply-all. A fix is offered only when applying it is safe within the SDL (see Suggested fixes under Starter rule set); a rule whose only correct fix would ripple to references it cannot see supplies no fix in v1.
 
 ## Scope
 
@@ -62,10 +64,12 @@ In scope:
 - The nine **syntactic** built-in visitors listed under Starter rule set (the engine's new rules), each emitting a typed `BuildWarning`.
 - Surfacing the three existing **classification-derived advisories** through the same report channel into the LSP, and tagging them with a typed `LintRule`, without re-deriving their conditions (the classifier stays their sole emitter).
 - The typed rule-identity field on `BuildWarning`, and the `LintRuleRegistryCoverageTest` drift guard.
+- The optional per-rule suggested-fix mechanism: a typed `LintFix` on the finding, projected to a `QuickFix` `CodeAction` through the existing `CodeActions` plumbing, for the v1 fix-bearing rules listed under Starter rule set.
 
 Out of scope (deferred):
 
 - Re-implementing classification verdicts as engine visitors. Verdicts stay in the classifier; the engine never recomputes them.
+- Reference-aware rename refactoring (the coordinated multi-site edit a type rename needs). The rename-class rules ship no fix in v1; a workspace-wide rename is its own follow-on.
 - Consumer-supplied custom visitor functions (the plugin SPI), per-rule enable/disable, severity overrides, and error-capable lint. These are the configurability follow-on; the engine should be shaped so wiring external visitors in later is additive, but no public extension API is committed here.
 - A declarative rule-config DSL (Spectral-style selector plus closed predicate library). Noted as prior art; not part of this item.
 - A second tree-sitter evaluator below the LSP, and any new protocol surface. v1 evaluates build-side and projects.
@@ -99,6 +103,12 @@ Classification-sourced advisories (classifier-owned; surfaced and tagged here, n
 - **redundant-record-directive**: `@record` on a type that also carries `@table`, or whose backing class graphitron already infers. Emitted by `TypeBuilder.warnAboutRedundantRecord` (three arms).
 - **asconnection-same-table-pk-in**: `@asConnection` on a same-table PK-IN filter with required `@nodeId` arguments, which forces full-table pagination instead of keyed-range pagination. Emitted by `FieldBuilder.warnAsConnectionSameTable`.
 
+Suggested fixes (v1). A fix is offered only where the edit is safe within the SDL document and the user opts in:
+
+- **Additive fixes** (insert text, change nothing existing): `deprecations-have-a-reason` (insert a `reason: "..."` placeholder) and `types-and-fields-have-descriptions` (insert a description placeholder).
+- **Local replacements** (rewrite one token or directive, no SDL reference affected): `no-deprecated-directive-usage` (swap `@index` to `@order`, `name:` to `className:`, remove the ignored `@record`) and the field renames `no-typename-prefix` and `field-names-camel-case` (a field name is not referenced elsewhere in the SDL, so the edit is document-local; offered as a suggestion the user accepts). `input-and-argument-names-camel-case` is document-local in the same way and may offer a suggestion once the implementer confirms argument-name references stay within operations, outside SDL scope.
+- **No v1 fix** (the correct fix ripples to references the rule cannot rewrite alone): `type-names-pascal-case` and `input-object-name-suffix` (a type rename touches every SDL reference) and `enum-values-screaming-snake-case` (an enum-value rename can hit SDL default values). These await the reference-aware rename follow-on; until then they report without a fix.
+
 Deliberately deferred rule candidates (not in iteration one): rules gated on unfinished features (UPSERT, `@mutation` UPDATE `multiRow`, composite-NodeId reference, polymorphic `@service` returns); alphabetical-ordering rules (opinionated, high churn, revisit once the engine is proven); and Relay-connection-conformance rules (graphitron synthesizes Connection / Edge / PageInfo via `@asConnection`, so that shape is generator-controlled, not author-authored; a rule there would police generated output, not author input).
 
 ## Testing strategy
@@ -110,6 +120,7 @@ The behaviour oracle is the finding set a rule produces over a fixture, asserted
 - **Advisory tagging and single-emit, pipeline tier.** For the three classification advisories, a test pins that the existing classifier warning now carries the correct typed `LintRule`, reaches `ValidationReport`, and is emitted exactly once (the no-double-emit guard, given the engine does not re-derive them).
 - **Registry coverage, meta-test tier.** `LintRuleRegistryCoverageTest` asserts every `LintRule` enum constant is registered to exactly one visitor (no orphan rule, none registered twice), and that the engine's node-kind dispatch has a known status for every node kind it can encounter (subscribed or explicitly not-linted, asserted, no silent skip). Mirrors `VariantCoverageTest` / `EdgeCoverageTest`.
 - **Message constants.** Each rule's message is a named constant pinned by a test, so wording is single-sourced; this is the guard the absorbed R121 marker-constant note anticipated.
+- **Fixes, both tiers.** For each fix-bearing rule, a pipeline-tier test asserts the produced `LintFix` (edit ranges and replacement text) on a non-compliant fixture; an LSP-tier test asserts the `QuickFix` `CodeAction` is offered for the finding's diagnostic and that applying its `WorkspaceEdit` yields the expected corrected SDL. A rule that supplies no fix asserts none is offered.
 
 ## Acceptance criteria
 
@@ -118,6 +129,7 @@ The behaviour oracle is the finding set a rule produces over a fixture, asserted
 - The three classification advisories surface in the LSP carrying their typed `LintRule`, emitted once each, with the classifier still their sole producer.
 - `LintRuleRegistryCoverageTest` passes: every `LintRule` registered exactly once, every node kind has a known dispatch status, no silent skip.
 - One LSP-projection parity test passes, including the R139 stale-snapshot silence.
+- Fix-bearing rules attach a valid `LintFix`; the LSP offers it as a `QuickFix` whose applied `WorkspaceEdit` produces the corrected SDL. Rules without a fix offer none, and no fix is auto-applied at build time.
 - No code-string / body assertions in any test; findings asserted on the typed shape and range.
 - Full reactor green: `mvn -f graphitron-rewrite/pom.xml install -Plocal-db`.
 
@@ -142,7 +154,7 @@ Cross-tool synthesis: the schema-linting idiom is visitor-over-typed-AST rules r
 
 ## Decisions resolved at Spec
 
-The forks this item existed to settle are decided above: build-side graphql-java evaluation with LSP projection (not a second tree-sitter evaluator); a typed `LintRule` plus a typed field on `BuildWarning` (not a stringly carrier); warnings-only with no per-rule config in v1; the engine hosts only syntactic rules while the classification advisories stay classifier-owned and are surfaced, not re-derived.
+The forks this item existed to settle are decided above: build-side graphql-java evaluation with LSP projection (not a second tree-sitter evaluator); a typed `LintRule` plus a typed field on `BuildWarning` (not a stringly carrier); warnings-only with no per-rule config in v1; the engine hosts only syntactic rules while the classification advisories stay classifier-owned and are surfaced, not re-derived; and a rule may optionally supply a user-accepted suggested fix, surfaced as an editor QuickFix through the existing `CodeActions` plumbing.
 
 Left to the implementer or the Ready reviewer (judgment, not open design):
 
