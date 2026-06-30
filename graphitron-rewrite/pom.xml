@@ -18,6 +18,7 @@
         <module>graphitron-sakila-db</module>
         <module>graphitron-sakila-service</module>
         <module>graphitron-mcp</module>
+        <module>graphitron-jakarta-rest</module>
         <module>graphitron-maven-plugin</module>
         <module>graphitron-sakila-example</module>
         <module>graphitron-lsp</module>
@@ -45,6 +46,22 @@
         -->
         <version.dev.langchain4j.embeddings>1.16.3-beta26</version.dev.langchain4j.embeddings>
         <version.org.apache.lucene>10.4.0</version.org.apache.lucene>
+        <!--
+          graphitron-jakarta-rest. Vendor-neutral Jakarta EE 10 coordinates: the JAX-RS and CDI
+          APIs the library compiles against (provided at runtime by the consumer's container, e.g.
+          the Quarkus 3.x platform the sakila-example consumer runs on), and Jackson for parsing
+          the GraphQL-over-HTTP request body. These are the library's only non-graphql-java needs.
+
+          Jackson is a plain version property applied only in graphitron-jakarta-rest's own pom, NOT
+          imported as a BOM into this dependencyManagement: a jackson-bom import here would pin
+          jackson-annotations reactor-wide and clobber the newer Jackson that graphitron-mcp resolves
+          transitively from the MCP SDK (it needs JsonFormat.Shape.POJO, a 2.19+ member). The property
+          keeps the version pinned in one place without forcing it on other modules; a consumer's
+          platform BOM (Quarkus here) overrides the library's transitive copy at runtime anyway.
+        -->
+        <version.jakarta.ws.rs>3.1.0</version.jakarta.ws.rs>
+        <version.jakarta.enterprise.cdi>4.0.1</version.jakarta.enterprise.cdi>
+        <version.com.fasterxml.jackson>2.21.3</version.com.fasterxml.jackson>
 
         <jooqPackage>no.sikt.graphitron.rewrite.test.jooq</jooqPackage>
     </properties>
@@ -94,6 +111,18 @@
                 <groupId>org.jooq</groupId>
                 <artifactId>jooq</artifactId>
                 <version>${version.org.jooq}</version>
+            </dependency>
+            <!-- graphitron-jakarta-rest API deps (Jakarta REST + CDI). Jackson is intentionally not
+                 managed here; see the version-property comment above for why. -->
+            <dependency>
+                <groupId>jakarta.ws.rs</groupId>
+                <artifactId>jakarta.ws.rs-api</artifactId>
+                <version>${version.jakarta.ws.rs}</version>
+            </dependency>
+            <dependency>
+                <groupId>jakarta.enterprise</groupId>
+                <artifactId>jakarta.enterprise.cdi-api</artifactId>
+                <version>${version.jakarta.enterprise.cdi}</version>
             </dependency>
             <!--
               R372 RAG foundation (graphitron-mcp). The bge module transitively pulls

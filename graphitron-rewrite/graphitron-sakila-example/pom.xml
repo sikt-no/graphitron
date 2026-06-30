@@ -56,6 +56,15 @@
             <groupId>org.jooq</groupId>
             <artifactId>jooq</artifactId>
         </dependency>
+        <!-- The reusable GraphQL-over-HTTP serving library (R399). This module is its first
+             consumer and conformance harness: the SakilaGraphitronApplication adapter is the only
+             hand-written wiring; the @Path resource, engine, status-code semantics, SDL endpoint,
+             and GraphiQL page all come from the library. -->
+        <dependency>
+            <groupId>no.sikt</groupId>
+            <artifactId>graphitron-jakarta-rest</artifactId>
+            <version>${project.version}</version>
+        </dependency>
         <!-- Compile scope: generator emits sources under target/generated-sources/graphitron
              that reference graphql.schema.* and org.dataloader.* (via transitive java-dataloader),
              so these must be on the main compile classpath, not just test. -->

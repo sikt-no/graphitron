@@ -1,7 +1,7 @@
 ---
 id: R399
 title: "Reusable JAX-RS library serving a Graphitron schema per the GraphQL-over-HTTP spec"
-status: Ready
+status: In Review
 bucket: feature
 priority: 5
 theme: service
@@ -11,6 +11,34 @@ last-updated: 2026-06-30
 ---
 
 # Reusable JAX-RS library serving a Graphitron schema per the GraphQL-over-HTTP spec
+
+## Shipped (awaiting review)
+
+The committed v1 scope landed; the design below is retained for the In Review reviewer. What was built:
+
+- New module `graphitron-jakarta-rest` (`<release>17</release>`, publishable, joins the deploy set):
+  `GraphitronApplication` SPI (`schema()`, `newExecutionInput()`, default `engineBuilder()`),
+  `AbstractGraphitronApplication` (cached schema from a supplier lambda), `GraphqlEngine`
+  (application-scoped cached `GraphQL`), `GraphqlResource` (`@Path("/graphql")`: POST/GET content
+  negotiation, the media-type-driven status watershed, `/graphql/schema` via `SchemaPrinter`, and a
+  CDN-based GraphiQL page), `GraphqlRequest` record, and a `META-INF/beans.xml` so a CDI container
+  discovers the beans. No custom JAX-RS providers; the resource owns parse-error shaping and the
+  status watershed.
+- `graphitron-sakila-example` refactored onto the library: its `GraphqlResource`/`GraphqlEngine`
+  copies and self-hosted GraphiQL assets are gone, replaced by a one-class `SakilaGraphitronApplication`
+  adapter. An 11-case `@ExecutionTier` `GraphQLOverHttpConformanceTest` (spec-citing `@DisplayName`s +
+  a requirement -> section -> test pointer table) exercises the real library end-to-end.
+- Docs: `rewrite-design-principles.adoc` grew the third Java-version category (hand-written runtime
+  artifacts -> Java 17); `docs/README.adoc` lists the module and its publishable status.
+
+One refinement from the signed-off spec, made during implementation: `graphiqlEnabled()` is a `default`
+method on the `GraphitronApplication` **interface** (still default `true`), not only on the abstract
+base. The resource injects the SPI interface, so the toggle must be callable through it; putting it on
+the interface also lets a consumer that implements the SPI directly (without the base) override it.
+This is the faithful realization of "rides the SPI seam, mirroring `engineBuilder()`" (which is itself
+an interface default); the abstract base inherits it unchanged.
+
+Out of scope, unchanged: batching (no spec definition) remains a possible follow-up.
 
 ## Motivation
 

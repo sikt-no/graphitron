@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8"/>
+    <title>GraphiQL</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1"/>
+    <style>
+        body { margin: 0; }
+        #graphiql { height: 100dvh; }
+    </style>
+    <!--
+      CDN-based GraphiQL. The library bundles only this small page, not the GraphiQL assets, so the
+      runtime jar stays lean; the playground loads from unpkg. The fetcher posts to the same path the
+      page is served from, so it works wherever the consumer mounts the resource.
+    -->
+    <link rel="stylesheet" href="https://unpkg.com/graphiql/graphiql.min.css"/>
+</head>
+<body>
+<div id="graphiql">Loading GraphiQL…</div>
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/graphiql/graphiql.min.js"></script>
+<script>
+    const fetcher = GraphiQL.createFetcher({
+        url: window.location.origin + window.location.pathname,
+    });
+    const root = ReactDOM.createRoot(document.getElementById('graphiql'));
+    root.render(React.createElement(GraphiQL, {fetcher: fetcher, defaultEditorToolsVisibility: true}));
+</script>
+</body>
+</html>

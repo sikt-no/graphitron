@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Marks this jar for CDI bean discovery so a consumer's container (e.g. Quarkus) indexes it and
+  finds the @Path resource and @ApplicationScoped engine. "annotated" discovery picks up the
+  library's annotated beans; the consumer supplies the GraphitronApplication implementation.
+-->
+<beans xmlns="https://jakarta.ee/xml/ns/jakartaee"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xsi:schemaLocation="https://jakarta.ee/xml/ns/jakartaee https://jakarta.ee/xml/ns/jakartaee/beans_4_0.xsd"
+       version="4.0" bean-discovery-mode="annotated">
+</beans>
