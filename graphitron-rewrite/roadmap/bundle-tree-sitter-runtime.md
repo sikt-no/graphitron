@@ -1,7 +1,7 @@
 ---
 id: R401
 title: "Bundle the tree-sitter runtime in the natives jar (zero system deps)"
-status: In Progress
+status: In Review
 bucket: feature
 theme: lsp
 depends-on: []
