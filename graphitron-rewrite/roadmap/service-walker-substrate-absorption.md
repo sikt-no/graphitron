@@ -1,13 +1,13 @@
 ---
 id: R256
 title: "Absorb the service walker substrate: typed per-arm errors + multi-arg ctors"
-status: Ready
+status: In Review
 bucket: structural
 priority: 3
 theme: structural-refactor
 depends-on: []
 created: 2026-05-29
-last-updated: 2026-05-30
+last-updated: 2026-06-30
 ---
 
 # Absorb the service walker substrate: typed per-arm errors + multi-arg ctors
@@ -255,6 +255,12 @@ mirror differently, and the Spec should not assert a single mechanism for both:
   consume the `ValueShape` directly. (Sketch the replacement during
   implementation; this is the most opaque of the four deliverables and the one
   most likely to grow — split it out if it does.)
+  **Carved out:** this part grew (it requires reworking `InputBeanInstantiationEmitter`
+  and the jOOQ-record / record-decode helper emitters to consume `ValueShape` directly,
+  an independent change with its own compilation-tier backstop), so per this deliverable's
+  own split-it-out clause it is now tracked as **R402**
+  (`retire-bean-helper-queue-valueshape-roundtrip`). The `ConflictSite` widening above is
+  the part of deliverable 4 that landed with R256.
 
 ## Tests
 

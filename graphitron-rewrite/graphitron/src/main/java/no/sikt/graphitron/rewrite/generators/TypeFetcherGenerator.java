@@ -1787,8 +1787,32 @@ public class TypeFetcherGenerator {
     static CodeBlock serviceCallTarget(MethodRef.Service method, ClassName serviceClass) {
         return switch (method.callShape()) {
             case MethodRef.CallShape.Static ignored -> CodeBlock.of("$T", serviceClass);
-            case MethodRef.CallShape.InstanceWithDslHolder ignored -> CodeBlock.of("new $T(dsl)", serviceClass);
+            case MethodRef.CallShape.InstanceWithDslHolder holder ->
+                CodeBlock.of("new $T($L)", serviceClass, holderCtorArgs(holder));
         };
+    }
+
+    /**
+     * Renders the holder constructor's actual-argument list (R256). A {@link ParamSource.DslContext}
+     * ctor parameter reads the surrounding {@code dsl} local; a {@link ParamSource.Context}
+     * parameter extracts inline via the {@code graphitronContext(env)} helper, mirroring
+     * {@code ServiceMethodCallEmitter}'s {@code FromContext} emit. The legacy single-{@code DSLContext}
+     * holder renders as {@code dsl}, identical to the pre-R256 {@code new ClassName(dsl)} form.
+     */
+    private static CodeBlock holderCtorArgs(MethodRef.CallShape.InstanceWithDslHolder holder) {
+        CodeBlock.Builder b = CodeBlock.builder();
+        boolean first = true;
+        for (MethodRef.Param p : holder.ctorParams()) {
+            if (!first) b.add(", ");
+            first = false;
+            if (p.source() instanceof ParamSource.DslContext) {
+                b.add("dsl");
+            } else {
+                TypeName javaType = p instanceof MethodRef.Param.Typed t ? t.javaType() : ClassName.OBJECT;
+                b.add("($T) graphitronContext(env).getContextArgument(env, $S)", javaType, p.name());
+            }
+        }
+        return b.build();
     }
 
     /**
@@ -1804,7 +1828,8 @@ public class TypeFetcherGenerator {
     static boolean needsDsl(MethodRef.CallShape callShape) {
         return switch (callShape) {
             case MethodRef.CallShape.Static s -> s.needsDslLocal();
-            case MethodRef.CallShape.InstanceWithDslHolder ignored -> true;
+            case MethodRef.CallShape.InstanceWithDslHolder holder ->
+                holder.ctorParams().stream().anyMatch(p -> p.source() instanceof ParamSource.DslContext);
         };
     }
 

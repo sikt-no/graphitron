@@ -62,6 +62,46 @@ class ServiceMethodCallWalkerTest {
     }
 
     @Test
+    void walk_instanceWithMultiArgCtor_translatesCtorParamSourcesInOrder() {
+        // R256: the holder ctor carries (DSLContext, tenantId) sources; the walker projects them
+        // onto ctorArgs in order — FromDsl then FromContext — rather than the hard-coded [FromDsl].
+        var dslType = ClassName.get("org.jooq", "DSLContext");
+        var stringType = ClassName.get(String.class);
+        var holder = new MethodRef.CallShape.InstanceWithDslHolder(List.of(
+            param("ctx", dslType, new ParamSource.DslContext()),
+            param("tenantId", stringType, new ParamSource.Context())));
+        var method = service("com.example.Svc", "doThing", TypeName.OBJECT, holder);
+
+        var call = ok(walker.walk(null, method));
+
+        var inst = (ServiceMethodCall.Instance) call;
+        assertThat(inst.ctorArgs()).hasSize(2);
+        assertThat(inst.ctorArgs().get(0)).isInstanceOf(MappingEntry.FromDsl.class);
+        var ctx = (MappingEntry.FromContext) inst.ctorArgs().get(1);
+        assertThat(ctx.contextKey()).isEqualTo("tenantId");
+        assertThat(ctx.javaType()).isEqualTo(stringType);
+    }
+
+    @Test
+    void walk_instanceCtorTwoDslSlots_raisesCtorRoundError() {
+        // R256: a holder ctor with two DSLContext slots raises MultipleDslContextSlots under the
+        // CTOR round — the constructor mirror of the method-round guard.
+        var dslType = ClassName.get("org.jooq", "DSLContext");
+        var holder = new MethodRef.CallShape.InstanceWithDslHolder(List.of(
+            param("a", dslType, new ParamSource.DslContext()),
+            param("b", dslType, new ParamSource.DslContext())));
+        var method = service("com.example.Svc", "doThing", TypeName.OBJECT, holder);
+
+        var result = walker.walk(null, method);
+
+        assertThat(result).isInstanceOf(WalkerResult.Err.class);
+        var err = (WalkerResult.Err<ServiceMethodCall>) result;
+        assertThat(err.errors()).anyMatch(e ->
+            e instanceof ServiceMethodCallError.MultipleDslContextSlots ms
+                && ms.round() == ServiceMethodCallError.Round.CTOR);
+    }
+
+    @Test
     void walk_contextParam_producesFromContextEntry() {
         var stringType = ClassName.get(String.class);
         var method = service("com.example.Svc", "doThing", TypeName.OBJECT,

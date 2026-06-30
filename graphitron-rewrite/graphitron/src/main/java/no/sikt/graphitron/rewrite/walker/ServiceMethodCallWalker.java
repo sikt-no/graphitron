@@ -96,10 +96,10 @@ public final class ServiceMethodCallWalker {
             case MethodRef.CallShape.Static s ->
                 new ServiceMethodCall.Static(
                     method.className(), method.methodName(), methodArgs, method.returnType());
-            case MethodRef.CallShape.InstanceWithDslHolder ignored ->
+            case MethodRef.CallShape.InstanceWithDslHolder holder ->
                 new ServiceMethodCall.Instance(
                     method.className(),
-                    List.of(new MappingEntry.FromDsl()),
+                    ctorArgs(holder, method, errors),
                     method.methodName(),
                     methodArgs,
                     method.returnType());
@@ -109,6 +109,43 @@ public final class ServiceMethodCallWalker {
             return new WalkerResult.Err<>(errors);
         }
         return new WalkerResult.Ok<>(carrier);
+    }
+
+    /**
+     * Project the holder constructor's resolved parameter sources onto {@code ctorArgs} entries
+     * (R256). Each {@link MethodRef.Param} is a {@link ParamSource.DslContext} or
+     * {@link ParamSource.Context} by construction (the producer's {@code resolveInstanceHolder}
+     * only binds those), so the projection is {@link MappingEntry.FromDsl} /
+     * {@link MappingEntry.FromContext}; the cross-round invariant forbidding
+     * {@link MappingEntry.FromArg} in {@code ctorArgs} holds structurally. A constructor with more
+     * than one {@code DSLContext} slot raises {@link ServiceMethodCallError.MultipleDslContextSlots}
+     * under the {@code CTOR} round (the constructor mirror of the method-round guard above).
+     */
+    private List<MappingEntry> ctorArgs(
+        MethodRef.CallShape.InstanceWithDslHolder holder,
+        MethodRef.Service method,
+        List<Rejection.AuthorError> errors
+    ) {
+        List<MappingEntry> entries = new ArrayList<>();
+        int dslSlots = 0;
+        for (MethodRef.Param p : holder.ctorParams()) {
+            if (!(p instanceof MethodRef.Param.Typed typed)) {
+                continue;
+            }
+            MappingEntry entry = projectParam(typed, method, errors);
+            if (entry == null) {
+                continue;
+            }
+            if (entry instanceof MappingEntry.FromDsl) {
+                dslSlots++;
+            }
+            entries.add(entry);
+        }
+        if (dslSlots > 1) {
+            errors.add(new ServiceMethodCallError.MultipleDslContextSlots(
+                method.className(), ServiceMethodCallError.Round.CTOR));
+        }
+        return entries;
     }
 
     private MappingEntry projectParam(

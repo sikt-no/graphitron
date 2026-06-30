@@ -59,6 +59,39 @@ class MethodRefCallShapeTest {
     }
 
     @Test
+    void serviceCallTarget_multiArgHolderCtor_rendersDslAndContextArgs() {
+        // R256: a (DSLContext, tenantId) holder ctor renders both args — `dsl` for the DSLContext
+        // slot and an inline getContextArgument extraction for the context slot.
+        var serviceClass = ClassName.get("com.example", "Service");
+        var holder = new MethodRef.CallShape.InstanceWithDslHolder(List.of(
+            new MethodRef.Param.Typed("ctx", "org.jooq.DSLContext",
+                ClassName.get("org.jooq", "DSLContext"),
+                new no.sikt.graphitron.rewrite.model.ParamSource.DslContext()),
+            new MethodRef.Param.Typed("tenantId", "java.lang.String",
+                ClassName.get(String.class),
+                new no.sikt.graphitron.rewrite.model.ParamSource.Context())));
+        var instanceService = new MethodRef.Service(
+            "com.example.Service", "doThing", TypeName.OBJECT, List.of(), List.of(), holder);
+
+        var code = TypeFetcherGenerator.serviceCallTarget(instanceService, serviceClass);
+        assertThat(code.toString())
+            .as("multi-arg holder ctor renders dsl plus an inline context extraction")
+            .isEqualTo("new com.example.Service(dsl, (java.lang.String) graphitronContext(env).getContextArgument(env, \"tenantId\"))");
+    }
+
+    @Test
+    void needsDsl_contextOnlyHolderCtor_isFalse() {
+        // R256: a holder ctor with no DSLContext slot (context-only) needs no dsl local.
+        var holder = new MethodRef.CallShape.InstanceWithDslHolder(List.of(
+            new MethodRef.Param.Typed("tenantId", "java.lang.String",
+                ClassName.get(String.class),
+                new no.sikt.graphitron.rewrite.model.ParamSource.Context())));
+        assertThat(TypeFetcherGenerator.needsDsl(holder))
+            .as("context-only holder ctor does not need the dsl local")
+            .isFalse();
+    }
+
+    @Test
     void needsDsl_staticArm_readsTheCallShapeFlag() {
         // Static.needsDslLocal() is the pre-resolved disjunction "any param has DslContext".
         // Both buildServiceFetcherCommon and buildServiceRowsMethod read needsDsl through this

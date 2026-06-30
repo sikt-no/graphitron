@@ -1026,18 +1026,93 @@ class ServiceCatalogTest {
     }
 
     @Test
-    void reflectServiceMethod_instanceMethodWithoutDslContextCtor_rejectedWithActionableMessage() {
-        // Holder class has only a no-arg constructor. The emitter has no way to thread a
-        // DSLContext into the holder, so the classifier rejects with both options spelled out
-        // (make the method static, or add a (DSLContext) constructor).
+    void reflectServiceMethod_instanceMethodUnbindableCtor_rejectedWithActionableMessage() {
+        // Holder class's only public constructor takes a parameter that is neither a DSLContext
+        // nor a declared context key, so no constructor is bindable (R256 relaxed the holder rule
+        // from (DSLContext)-only to any all-bindable constructor). The classifier rejects with the
+        // typed InstanceHolderUnconstructible arm spelling out both options.
+        var result = newCatalog().reflectServiceMethod(
+            "no.sikt.graphitron.rewrite.TestInstanceServiceStubUnbindableCtor", "getFilm",
+            bindings(Map.of()), Set.of(), List.of(), null);
+
+        assertThat(result.failed()).isTrue();
+        assertThat(result.rejection())
+            .isInstanceOf(no.sikt.graphitron.rewrite.model.ServiceMethodCallError.InstanceHolderUnconstructible.class);
+        assertThat(result.rejection().message())
+            .contains("instance method")
+            .contains("no public constructor whose")
+            .contains("DSLContext or a declared context argument")
+            .contains("make the method static");
+    }
+
+    @Test
+    void reflectServiceMethod_instanceMethodNoArgCtor_admittedWithEmptyCtorParams() {
+        // R256: a no-arg public constructor is trivially all-bindable, so an instance @service on
+        // such a holder now resolves (it emits `new Service().method(...)`); the call shape carries
+        // no ctor parameters.
         var result = newCatalog().reflectServiceMethod(
             "no.sikt.graphitron.rewrite.TestInstanceServiceStubNoCtor", "getFilm",
             bindings(Map.of()), Set.of(), List.of(), null);
 
+        assertThat(result.failed()).isFalse();
+        var callShape = ((MethodRef.Service) result.ref()).callShape();
+        assertThat(callShape).isInstanceOf(MethodRef.CallShape.InstanceWithDslHolder.class);
+        assertThat(((MethodRef.CallShape.InstanceWithDslHolder) callShape).ctorParams()).isEmpty();
+    }
+
+    @Test
+    void reflectServiceMethod_instanceMethodDslAndContextCtor_resolvesCtorParamSources() {
+        // R256: a (DSLContext, tenantId) constructor resolves when tenantId is a declared context
+        // key. The holder's ctor parameter sources are carried on the call shape in order: a
+        // DSLContext slot then a context binding.
+        var result = newCatalog().reflectServiceMethod(
+            "no.sikt.graphitron.rewrite.TestInstanceServiceStubMultiArgCtor", "getFilm",
+            bindings(Map.of()), Set.of("tenantId"), List.of(), null);
+
+        assertThat(result.failed()).isFalse();
+        var callShape = ((MethodRef.CallShape.InstanceWithDslHolder)
+            ((MethodRef.Service) result.ref()).callShape());
+        assertThat(callShape.ctorParams()).hasSize(2);
+        assertThat(callShape.ctorParams().get(0).source()).isInstanceOf(ParamSource.DslContext.class);
+        assertThat(callShape.ctorParams().get(1).source()).isInstanceOf(ParamSource.Context.class);
+        assertThat(callShape.ctorParams().get(1).name()).isEqualTo("tenantId");
+    }
+
+    // ===== R256: shared reflection-intrinsic typed arms =====
+
+    @Test
+    void reflectServiceMethod_classNotLoaded_producesTypedReflectionError() {
+        var result = newCatalog().reflectServiceMethod(
+            "com.example.DoesNotExist", "get", bindings(Map.of()), Set.of(), List.of(), null);
+
         assertThat(result.failed()).isTrue();
+        assertThat(result.rejection())
+            .isInstanceOf(no.sikt.graphitron.rewrite.model.ReflectionError.ClassNotLoaded.class);
+        assertThat(result.rejection().message()).contains("could not be loaded");
+    }
+
+    @Test
+    void reflectServiceMethod_returnTypeMismatch_producesTypedReflectionError() {
+        var result = newCatalog().reflectServiceMethod(
+            STUB_CLASS, "get", bindings(Map.of()), Set.of(), List.of(), FILM_RECORD);
+
+        assertThat(result.failed()).isTrue();
+        assertThat(result.rejection())
+            .isInstanceOf(no.sikt.graphitron.rewrite.model.ReflectionError.ReturnTypeMismatch.class);
+    }
+
+    @Test
+    void reflectServiceMethod_overloadedMethod_producesAmbiguousMethod() {
+        // TestServiceStub declares two methods named getOverloaded (arity 0 and 1); R256 rejects
+        // the silent first-match pick with a typed AmbiguousMethod carrying both arities.
+        var result = newCatalog().reflectServiceMethod(
+            STUB_CLASS, "getOverloaded", bindings(Map.of()), Set.of(), List.of(), null);
+
+        assertThat(result.failed()).isTrue();
+        assertThat(result.rejection())
+            .isInstanceOf(no.sikt.graphitron.rewrite.model.ReflectionError.AmbiguousMethod.class);
         assertThat(result.rejection().message())
-            .contains("instance method")
-            .contains("no public constructor taking a single org.jooq.DSLContext")
-            .contains("make the method static");
+            .contains("overloaded")
+            .contains("getOverloaded");
     }
 }

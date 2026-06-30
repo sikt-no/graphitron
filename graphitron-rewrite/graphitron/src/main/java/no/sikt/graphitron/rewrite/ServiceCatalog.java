@@ -16,7 +16,9 @@ import no.sikt.graphitron.rewrite.model.JoinStep.FkJoin;
 import no.sikt.graphitron.rewrite.model.LoaderRegistration;
 import no.sikt.graphitron.rewrite.model.MethodRef;
 import no.sikt.graphitron.rewrite.model.ParamSource;
+import no.sikt.graphitron.rewrite.model.ReflectionError;
 import no.sikt.graphitron.rewrite.model.Rejection;
+import no.sikt.graphitron.rewrite.model.ServiceMethodCallError;
 import no.sikt.graphitron.rewrite.model.SourceKey;
 import no.sikt.graphitron.rewrite.model.TableRef;
 import no.sikt.graphitron.rewrite.model.TypeNames;
@@ -188,34 +190,27 @@ class ServiceCatalog {
         }
         try {
             Class<?> cls = Class.forName(className, false, ctx.codegenLoader());
-            var methods = Arrays.stream(cls.getDeclaredMethods())
-                .filter(m -> m.getName().equals(methodName))
-                .toList();
-            if (methods.isEmpty()) {
-                var declaredMethodNames = Arrays.stream(cls.getDeclaredMethods())
-                    .map(java.lang.reflect.Method::getName)
-                    .distinct()
-                    .toList();
-                return new ServiceReflectionResult(null,
-                    Rejection.unknownServiceMethod(
-                        "method '" + methodName + "' not found in class '" + className + "'",
-                        methodName, declaredMethodNames));
+            MethodPick pick = pickMethod(cls, className, methodName);
+            if (pick.rejection() != null) {
+                return new ServiceReflectionResult(null, pick.rejection());
             }
-            var javaMethod = methods.get(0);
+            var javaMethod = pick.method();
             TypeName actualReturnType = TypeName.get(javaMethod.getGenericReturnType());
             if (expectedReturnType != null
                     && !actualReturnType.equals(expectedReturnType)) {
                 return new ServiceReflectionResult(null,
-                    Rejection.structural("method '" + methodName + "' in class '" + className
-                    + "' must return '" + TypeNames.simple(expectedReturnType)
-                    + "' to match the field's declared return type — got '" + TypeNames.simple(actualReturnType) + "'"));
+                    new ReflectionError.ReturnTypeMismatch(className, methodName,
+                        TypeNames.simple(expectedReturnType), TypeNames.simple(actualReturnType),
+                        ReflectionError.ReturnContext.SERVICE));
             }
             boolean isStatic = java.lang.reflect.Modifier.isStatic(javaMethod.getModifiers());
+            List<MethodRef.Param> ctorParams = List.of();
             if (!isStatic) {
-                String instanceRejection = checkServiceInstanceHolderShape(cls, methodName, className);
-                if (instanceRejection != null) {
-                    return new ServiceReflectionResult(null, Rejection.structural(instanceRejection));
+                InstanceHolderResolution holder = resolveInstanceHolder(cls, methodName, className, ctxKeys);
+                if (holder.rejection() != null) {
+                    return new ServiceReflectionResult(null, holder.rejection());
                 }
+                ctorParams = holder.ctorParams();
             }
             if (Arrays.stream(javaMethod.getParameters()).anyMatch(p -> !p.isNamePresent())) {
                 emitParametersWarning();
@@ -250,8 +245,7 @@ class ServiceCatalog {
                     if (sourcesShape.isEmpty()) {
                         if (pName == null) {
                             return new ServiceReflectionResult(null,
-                                Rejection.structural("parameter names not available for method '" + methodName + "' in class '" + className
-                                + "' — compile with -parameters flag (see warning above for instructions)"));
+                                new ReflectionError.ParameterNamesMissing(className, methodName));
                         }
                         // The discriminator is the parameter type axis, not the coordinate. The
                         // parameter must either match a GraphQL argument / context key (handled
@@ -285,7 +279,7 @@ class ServiceCatalog {
                             String dtoReason = dtoSourcesRejectionReason(p.getParameterizedType());
                             if (dtoReason != null) {
                                 return new ServiceReflectionResult(null,
-                                    Rejection.structural("parameter '" + displayName + "' in method '" + methodName + "': " + dtoReason));
+                                    new ServiceMethodCallError.DtoSourcesUnsupported(displayName, methodName, dtoReason));
                             }
                         }
                         // Non-SOURCES-adjacent parameter that didn't match any argument / context
@@ -293,7 +287,6 @@ class ServiceCatalog {
                         // context key). Fires at any coordinate — root, DTO-parent child, or
                         // @table-parent child with a non-container type (R187).
                         if (!looksLikeSourcesShape(p.getParameterizedType())) {
-                            String available = formatNameSet(argByJavaName.keySet());
                             String suggestion;
                             if (argByJavaName.isEmpty()) {
                                 suggestion = " — this field declares no GraphQL arguments;"
@@ -325,15 +318,14 @@ class ServiceCatalog {
                                     + pathTrailer;
                             }
                             return new ServiceReflectionResult(null,
-                                Rejection.structural("parameter '" + displayName + "' in method '" + methodName
-                                + "' does not match any GraphQL argument or context key on this field"
-                                + " — available GraphQL arguments: " + available
-                                + "; available context keys: " + formatNameSet(ctxKeys)
-                                + suggestion));
+                                new ServiceMethodCallError.ArgumentParameterMismatch(
+                                    displayName, methodName,
+                                    List.copyOf(argByJavaName.keySet()),
+                                    List.copyOf(ctxKeys),
+                                    suggestion));
                         }
                         return new ServiceReflectionResult(null,
-                            Rejection.structural("parameter '" + displayName + "' in method '" + methodName
-                            + "' has an unrecognized sources type: '" + typeName + "'"));
+                            new ServiceMethodCallError.UnrecognizedSourcesType(displayName, methodName, typeName));
                     }
                     SourcesShape shape = sourcesShape.get();
                     params.add(new MethodRef.Param.Sourced(
@@ -346,48 +338,132 @@ class ServiceCatalog {
                     .anyMatch(p -> p.source() instanceof ParamSource.DslContext);
                 callShape = new MethodRef.CallShape.Static(needsDslLocal);
             } else {
-                callShape = new MethodRef.CallShape.InstanceWithDslHolder();
+                callShape = new MethodRef.CallShape.InstanceWithDslHolder(ctorParams);
             }
             return new ServiceReflectionResult(
                 new MethodRef.Service(className, methodName, actualReturnType, List.copyOf(params),
                     declaredExceptionFqns(javaMethod), callShape),
                 null);
         } catch (ClassNotFoundException e) {
-            return new ServiceReflectionResult(null, Rejection.structural("class '" + className + "' could not be loaded"));
+            return new ServiceReflectionResult(null, new ReflectionError.ClassNotLoaded(className));
         }
     }
 
     /**
-     * Validates that an instance {@code @service} method's enclosing class is a usable holder:
-     * the class must be concrete (not abstract or an interface) and expose a public constructor
-     * taking exactly one {@link org.jooq.DSLContext} parameter (matching the legacy generator's
-     * {@code new Service(ctx)} pattern). Returns {@code null} when the shape is acceptable, or a
-     * concrete actionable rejection message naming the option to either make the method
-     * {@code static} or add the constructor.
-     *
-     * <p>The single-DSLContext-constructor contract mirrors the legacy generator's
-     * {@code new ServiceName(_iv_transform.getCtx())} call site; widening to other constructor
-     * shapes (no-arg, multi-param) is out of scope here and would need its own design pass.
+     * Outcome of {@link #pickMethod}: either the single resolved method or a typed rejection
+     * (method-not-found {@link Rejection.AuthorError.UnknownName}, or
+     * {@link ReflectionError.AmbiguousMethod} when more than one declaration shares the name).
      */
-    private static String checkServiceInstanceHolderShape(Class<?> cls, String methodName, String className) {
+    private record MethodPick(java.lang.reflect.Method method, Rejection rejection) {}
+
+    /**
+     * Resolves the single declared method named {@code methodName} on {@code cls}. Shared by all
+     * three reflect helpers (R256): replaces the silent {@code methods.get(0)} that picked the
+     * first JVM-declaration-order match with an explicit fork — zero matches produce the typed
+     * {@code unknownServiceMethod} {@link Rejection.AuthorError.UnknownName}; more than one produce
+     * {@link ReflectionError.AmbiguousMethod} carrying every candidate's parameter arity.
+     */
+    private static MethodPick pickMethod(Class<?> cls, String className, String methodName) {
+        var methods = Arrays.stream(cls.getDeclaredMethods())
+            .filter(m -> m.getName().equals(methodName))
+            .toList();
+        if (methods.isEmpty()) {
+            var declaredMethodNames = Arrays.stream(cls.getDeclaredMethods())
+                .map(java.lang.reflect.Method::getName)
+                .distinct()
+                .toList();
+            return new MethodPick(null,
+                Rejection.unknownServiceMethod(
+                    "method '" + methodName + "' not found in class '" + className + "'",
+                    methodName, declaredMethodNames));
+        }
+        if (methods.size() > 1) {
+            var arities = methods.stream()
+                .map(java.lang.reflect.Method::getParameterCount)
+                .toList();
+            return new MethodPick(null, new ReflectionError.AmbiguousMethod(className, methodName, arities));
+        }
+        return new MethodPick(methods.get(0), null);
+    }
+
+    /**
+     * Outcome of {@link #resolveInstanceHolder}: the resolved constructor's parameter sources (in
+     * declaration order) on success, or a typed {@link ServiceMethodCallError.InstanceHolderUnconstructible}
+     * rejection.
+     */
+    private record InstanceHolderResolution(List<MethodRef.Param> ctorParams, Rejection rejection) {}
+
+    /**
+     * Resolves the holder constructor for an instance {@code @service} method (R256 relaxation).
+     * The class must be concrete (not abstract / an interface); it must expose a public constructor
+     * whose parameters are each bindable from a {@code DSLContext} slot or a declared context key
+     * (so the legacy {@code (DSLContext)} ctor still resolves, and a {@code (DSLContext, ctxArg)}
+     * ctor now does too). Among the qualifying constructors the one with the most parameters wins
+     * (so a {@code (DSLContext)} ctor is preferred over a no-arg ctor, and a richer
+     * {@code (DSLContext, ctxArg)} ctor over a bare {@code (DSLContext)} one); ties break on
+     * declaration order.
+     *
+     * <p>Returns the chosen constructor's parameters projected onto {@link MethodRef.Param} with
+     * {@link ParamSource.DslContext} / {@link ParamSource.Context} sources, which the walker
+     * translates into {@code ServiceMethodCall.Instance.ctorArgs}. Context-key binding reuses the
+     * same {@code ctxKeys} membership the method-parameter loop uses, so a ctor context arg
+     * participates in the cross-site {@code contextArgument} type-agreement check unchanged. A
+     * multi-{@code DSLContext} constructor is not rejected here; the walker raises
+     * {@link ServiceMethodCallError.MultipleDslContextSlots} with the {@code CTOR} round.
+     */
+    private static InstanceHolderResolution resolveInstanceHolder(
+            Class<?> cls, String methodName, String className, Set<String> ctxKeys) {
         int classMods = cls.getModifiers();
         if (java.lang.reflect.Modifier.isAbstract(classMods) || cls.isInterface()) {
-            return "method '" + methodName + "' in class '" + className
-                + "' is an instance method, but its enclosing class is abstract or an interface"
-                + " — make the method static, or move it to a concrete class with a public"
-                + " constructor taking a single org.jooq.DSLContext parameter";
+            return new InstanceHolderResolution(null,
+                new ServiceMethodCallError.InstanceHolderUnconstructible(className, methodName,
+                    cls.getSimpleName(), ServiceMethodCallError.HolderProblem.ABSTRACT_OR_INTERFACE));
         }
-        boolean hasDslCtor = Arrays.stream(cls.getDeclaredConstructors())
-            .filter(c -> java.lang.reflect.Modifier.isPublic(c.getModifiers()))
-            .anyMatch(c -> c.getParameterCount() == 1
-                && org.jooq.DSLContext.class.isAssignableFrom(c.getParameterTypes()[0]));
-        if (!hasDslCtor) {
-            return "method '" + methodName + "' in class '" + className
-                + "' is an instance method but the class has no public constructor taking a"
-                + " single org.jooq.DSLContext parameter — add `public " + cls.getSimpleName()
-                + "(DSLContext ctx)`, or make the method static";
+        java.lang.reflect.Constructor<?> chosen = null;
+        for (var ctor : cls.getDeclaredConstructors()) {
+            if (!java.lang.reflect.Modifier.isPublic(ctor.getModifiers())) continue;
+            if (!ctorParamsAllBindable(ctor, ctxKeys)) continue;
+            if (chosen == null || ctor.getParameterCount() > chosen.getParameterCount()) {
+                chosen = ctor;
+            }
         }
-        return null;
+        if (chosen == null) {
+            return new InstanceHolderResolution(null,
+                new ServiceMethodCallError.InstanceHolderUnconstructible(className, methodName,
+                    cls.getSimpleName(), ServiceMethodCallError.HolderProblem.NO_BINDABLE_CTOR));
+        }
+        var ctorParams = new ArrayList<MethodRef.Param>();
+        for (var p : chosen.getParameters()) {
+            if (org.jooq.DSLContext.class.isAssignableFrom(p.getType())) {
+                String paramName = p.isNamePresent() ? p.getName() : "dsl";
+                ctorParams.add(new MethodRef.Param.Typed(paramName,
+                    p.getParameterizedType().getTypeName(),
+                    TypeName.get(p.getParameterizedType()),
+                    new ParamSource.DslContext()));
+            } else {
+                // Bindable by the ctorParamsAllBindable guard: name matches a context key.
+                ctorParams.add(new MethodRef.Param.Typed(p.getName(),
+                    p.getParameterizedType().getTypeName(),
+                    TypeName.get(p.getParameterizedType()),
+                    new ParamSource.Context()));
+            }
+        }
+        return new InstanceHolderResolution(List.copyOf(ctorParams), null);
+    }
+
+    /**
+     * True when every parameter of {@code ctor} is bindable for an instance-{@code @service}
+     * holder: a {@code DSLContext}, or a named parameter whose name is a declared context key.
+     * A nameless parameter (compiled without {@code -parameters}) that isn't a {@code DSLContext}
+     * is not bindable.
+     */
+    private static boolean ctorParamsAllBindable(java.lang.reflect.Constructor<?> ctor, Set<String> ctxKeys) {
+        for (var p : ctor.getParameters()) {
+            if (org.jooq.DSLContext.class.isAssignableFrom(p.getType())) continue;
+            if (p.isNamePresent() && ctxKeys.contains(p.getName())) continue;
+            return false;
+        }
+        return true;
     }
 
     /**
@@ -504,20 +580,11 @@ class ServiceCatalog {
         }
         try {
             Class<?> cls = Class.forName(className, false, ctx.codegenLoader());
-            var methods = Arrays.stream(cls.getDeclaredMethods())
-                .filter(m -> m.getName().equals(methodName))
-                .toList();
-            if (methods.isEmpty()) {
-                var declaredMethodNames = Arrays.stream(cls.getDeclaredMethods())
-                    .map(java.lang.reflect.Method::getName)
-                    .distinct()
-                    .toList();
-                return new ServiceReflectionResult(null,
-                    Rejection.unknownServiceMethod(
-                        "method '" + methodName + "' not found in class '" + className + "'",
-                        methodName, declaredMethodNames));
+            MethodPick pick = pickMethod(cls, className, methodName);
+            if (pick.rejection() != null) {
+                return new ServiceReflectionResult(null, pick.rejection());
             }
-            var javaMethod = methods.get(0);
+            var javaMethod = pick.method();
             if (!java.lang.reflect.Modifier.isStatic(javaMethod.getModifiers())) {
                 return new ServiceReflectionResult(null,
                     Rejection.structural("method '" + methodName + "' in class '" + className
@@ -528,10 +595,9 @@ class ServiceCatalog {
             if (expectedReturnClass != null
                     && !actualReturnClass.equals(expectedReturnClass)) {
                 return new ServiceReflectionResult(null,
-                    Rejection.structural("method '" + methodName + "' in class '" + className
-                    + "' must return the generated jOOQ table class '" + TypeNames.simple(expectedReturnClass)
-                    + "' for @tableMethod with a @table-bound return type — got '"
-                    + TypeNames.simple(actualReturnClass) + "'"));
+                    new ReflectionError.ReturnTypeMismatch(className, methodName,
+                        TypeNames.simple(expectedReturnClass), TypeNames.simple(actualReturnClass),
+                        ReflectionError.ReturnContext.TABLE_METHOD));
             }
             if (Arrays.stream(javaMethod.getParameters()).anyMatch(p -> !p.isNamePresent())) {
                 emitParametersWarning();
@@ -566,8 +632,7 @@ class ServiceCatalog {
                 String pName = p.isNamePresent() ? p.getName() : null;
                 if (pName == null) {
                     return new ServiceReflectionResult(null,
-                        Rejection.structural("parameter names not available for method '" + methodName + "' in class '" + className
-                        + "' — compile with -parameters flag (see warning above for instructions)"));
+                        new ReflectionError.ParameterNamesMissing(className, methodName));
                 }
                 String typeName = p.getParameterizedType().getTypeName();
                 TypeName javaType = TypeName.get(p.getParameterizedType());
@@ -594,7 +659,7 @@ class ServiceCatalog {
                     declaredExceptionFqns(javaMethod)),
                 null);
         } catch (ClassNotFoundException e) {
-            return new ServiceReflectionResult(null, Rejection.structural("class '" + className + "' could not be loaded"));
+            return new ServiceReflectionResult(null, new ReflectionError.ClassNotLoaded(className));
         }
     }
 
@@ -621,20 +686,11 @@ class ServiceCatalog {
             ClassName parentTableClass) {
         try {
             Class<?> cls = Class.forName(className, false, ctx.codegenLoader());
-            var methods = Arrays.stream(cls.getDeclaredMethods())
-                .filter(m -> m.getName().equals(methodName))
-                .toList();
-            if (methods.isEmpty()) {
-                var declaredMethodNames = Arrays.stream(cls.getDeclaredMethods())
-                    .map(java.lang.reflect.Method::getName)
-                    .distinct()
-                    .toList();
-                return new ServiceReflectionResult(null,
-                    Rejection.unknownServiceMethod(
-                        "method '" + methodName + "' not found in class '" + className + "'",
-                        methodName, declaredMethodNames));
+            MethodPick pick = pickMethod(cls, className, methodName);
+            if (pick.rejection() != null) {
+                return new ServiceReflectionResult(null, pick.rejection());
             }
-            var javaMethod = methods.get(0);
+            var javaMethod = pick.method();
             int mods = javaMethod.getModifiers();
             if (!java.lang.reflect.Modifier.isStatic(mods) || !java.lang.reflect.Modifier.isPublic(mods)) {
                 return new ServiceReflectionResult(null,
@@ -679,7 +735,7 @@ class ServiceCatalog {
                 new MethodRef.StaticOnly(className, methodName, returnTypeName, params, List.of()),
                 null);
         } catch (ClassNotFoundException e) {
-            return new ServiceReflectionResult(null, Rejection.structural("class '" + className + "' could not be loaded"));
+            return new ServiceReflectionResult(null, new ReflectionError.ClassNotLoaded(className));
         }
     }
 

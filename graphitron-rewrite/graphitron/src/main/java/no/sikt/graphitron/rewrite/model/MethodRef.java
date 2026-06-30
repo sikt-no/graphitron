@@ -186,8 +186,10 @@ public sealed interface MethodRef permits MethodRef.NonCondition, ConditionFilte
      * <p>{@link Static#needsDslLocal()} is pre-resolved at classify time inside
      * {@code ServiceCatalog.reflectServiceMethod} (the disjunction "any param has
      * {@link ParamSource.DslContext}" is computed once at the parse boundary). The
-     * {@link InstanceWithDslHolder} arm has no field — {@code needsDsl} is always {@code true}
-     * by variant identity (the holder ctor needs the local regardless of the param list).
+     * {@link InstanceWithDslHolder} arm carries the holder constructor's resolved parameter
+     * sources ({@link InstanceWithDslHolder#ctorParams()}); whether a {@code dsl} local is needed
+     * is read from those (R256 relaxed the holder from {@code (DSLContext)}-only to any constructor
+     * whose parameters bind from a DSLContext slot or a declared context argument).
      */
     sealed interface CallShape permits CallShape.Static, CallShape.InstanceWithDslHolder {
 
@@ -199,11 +201,30 @@ public sealed interface MethodRef permits MethodRef.NonCondition, ConditionFilte
         record Static(boolean needsDslLocal) implements CallShape {}
 
         /**
-         * Instance method on a class with a {@code public ClassName(DSLContext)} constructor.
-         * Emits {@code new ClassName(dsl).method(...)} at the call site; the {@code dsl} local
-         * is unconditionally needed.
+         * Instance method on a holder class constructed per call. {@code ctorParams} are the
+         * holder constructor's parameters in declaration order, each sourced from
+         * {@link ParamSource.DslContext} or {@link ParamSource.Context}; the call site emits
+         * {@code new ClassName(<ctorArgs>).method(...)}. The legacy {@code (DSLContext)}-only
+         * holder is the single-{@link ParamSource.DslContext}-param case; R256 widened the arm to
+         * carry richer constructors (e.g. {@code (DSLContext, ctxArg)}).
+         *
+         * <p>The no-arg convenience constructor preserves the legacy {@code (DSLContext)} shape for
+         * test fixtures and any caller that has not been updated to thread the resolved ctor
+         * parameters; it defaults to a single {@link ParamSource.DslContext} parameter named
+         * {@code "dsl"}.
          */
-        record InstanceWithDslHolder() implements CallShape {}
+        record InstanceWithDslHolder(List<Param> ctorParams) implements CallShape {
+            public InstanceWithDslHolder {
+                ctorParams = List.copyOf(ctorParams);
+            }
+
+            /** Legacy {@code (DSLContext)}-holder shape: a single DSLContext ctor parameter. */
+            public InstanceWithDslHolder() {
+                this(List.of(new Param.Typed("dsl", "org.jooq.DSLContext",
+                    no.sikt.graphitron.javapoet.ClassName.get("org.jooq", "DSLContext"),
+                    new ParamSource.DslContext())));
+            }
+        }
     }
 
     /**
