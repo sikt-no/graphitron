@@ -15,9 +15,15 @@ last-updated: 2026-06-30
 ## Problem
 
 The generator emits Java that compiles cleanly and then `ClassCastException`s on
-the first real request. The reported instance was
+the first real request. The motivating instance was
 `SakRecord sakId = (SakRecord) raw.get("sakId");` in a generated
-`MutationFetchers` (an `@service` input bean whose member is a jOOQ record).
+`MutationFetchers` (an `@service` input bean whose member is a jOOQ record). That
+*specific* jOOQ-record shape is now guarded: `InputBeanResolver.bindField` already
+branches a record-typed member to a `@nodeId`-decode leaf or a loud rejection
+before `Direct` (R195/R311/R315). What survives is the rest of the family on the
+same scalar fall-through: a member or arg whose declared Java type is a numeric PK
+type, a width-mismatched numeric, or a domain class still lands on
+`CallSiteExtraction.Direct` and emits `(Long) raw.get("id")` / `(Integer) raw.get(...)`.
 A four-agent audit found this is **one instance of a single missing invariant
 replicated across every arg-classification site**: classify an argument by its
 declared Java type, fall through to `CallSiteExtraction.Direct`, emit a raw
@@ -35,11 +41,11 @@ guaranteed runtime crash, invisible at build time.
 
 | # | SDL surface | Classifier → emitter | Crashing shape |
 |---|-------------|----------------------|----------------|
-| A | `@service` input-bean **field** | `InputBeanResolver.java:297` → `InputBeanInstantiationEmitter.java:147` | `(SakRecord) raw.get(...)`; also `(Long) raw.get(...)` for `Int`, `(Integer) raw.get("id")` for `ID` |
-| B | `@service` scalar **arg** | `ServiceCatalog.argExtraction:735` → `ServiceMethodCallEmitter.scalarLeaf:155` | `(Long) env.getArgument("id")` for `ID` |
-| C | `@condition` **nested** input field | `ConditionResolver.rewrapForNested` (2-arg ctor → `Direct`) → `ArgCallEmitter.java:539` | `(Long) _m.get("filmId")` for nested `ID`/enum |
-| D | `@externalField`/accessor **arg** | `FetcherEmitter.java:754` | `(Long) env.getArgument(...)` cast to the reflected backing-method param type |
-| E | `@service` input-bean **enum field** | `InputBeanResolver.java:293` → `InputBeanInstantiationEmitter.java:150` | `Enum.valueOf((String) ...)` with no check that SDL enum value names equal Java constant names → `IllegalArgumentException` |
+| A | `@service` input-bean **field** | `InputBeanResolver.bindField` scalar arm (`:784`) → `InputBeanInstantiationEmitter` (`:189`) | `(Long) raw.get(...)` for `Int`, `(Integer) raw.get("id")` for `ID`, domain/width-mismatch casts (the jOOQ-record `(SakRecord)` shape is already guarded, R195/R311/R315) |
+| B | `@service` scalar **arg** | `ServiceCatalog.argExtraction` (`:795`) → `ServiceMethodCallEmitter.scalarLeaf` (`:201`) | `(Long) env.getArgument("id")` for `ID` |
+| C | `@condition` **nested** input field | `ConditionResolver.rewrapForNested` (`:161`, 2-arg ctor → `Direct`) → `ArgCallEmitter` cast site | `(Long) _m.get("filmId")` for nested `ID`/enum |
+| D | `@externalField`/accessor **arg** | `FetcherEmitter` (`:757`) | `(Long) env.getArgument(...)` cast to the reflected backing-method param type |
+| E | `@service` input-bean **enum field** | `InputBeanResolver.bindField` enum arm (`:766-769`) → `InputBeanInstantiationEmitter` (`:202`) | `Enum.valueOf((String) ...)` with no check that SDL enum value names equal Java constant names → `IllegalArgumentException` |
 
 Structural amplifier (why these reach production, not just a unit test): the
 `.inputs` validation carriers (`InputRecordGenerator.fromMap`) use *wire-faithful*
@@ -67,8 +73,8 @@ paths, and understanding why shapes the fix:
   the right safety net — a `ServiceMethodCallError` taxonomy with ~10 typed arms
   including `input-bean-shape` — but the translator substrate could only produce
   2 of them, so the other 8 were trimmed and **deferred to R256**
-  (`service-walker-substrate-absorption`, Backlog). The validate-time rejection
-  that would catch site B is parked there.
+  (`service-walker-substrate-absorption`, since Done). The validate-time rejection
+  that would catch site B landed there.
 - **R222** (`dimensional-model-pivot`, Spec) rejects a non-`TableRecord` jOOQ
   `Record` as an input *backing class* — an orthogonal dimension. Our bug is a
   valid POJO backing whose *member field* is a `TableRecord`. The pivot relocated
@@ -118,8 +124,9 @@ resolver.
 
 `argExtraction(String typeName, ClassLoader)` (site B) receives only the *Java*
 type name, so it structurally cannot compute the coercion-output class; it forks
-`EnumValueOf` vs `Direct` on `isEnum()` alone. Both callers (`ServiceCatalog:245`,
-`:577`) already hold the SDL surface. **Thread the SDL leaf into `argExtraction`**
+`EnumValueOf` vs `Direct` on `isEnum()` alone (`:797-801`). Both callers
+(`ServiceCatalog:240`, `:642`) already hold the SDL surface. **Thread the SDL leaf
+into `argExtraction`**
 rather than hoisting the check to the callers: hoisting would have two consumers
 re-derive the same predicate (the "one predicate, one home" drift), whereas
 threading keeps the fork single-homed and lets every downstream `ParamSource.Arg`
@@ -146,13 +153,24 @@ constant name. That is a constant-name-set membership check, not a class
 assignability check; they share neither operands nor failure shape, and conflating
 them would re-introduce exactly the two-axes-in-one-arm problem R256 warned about
 for `input-bean-shape`. So the typed family is **two sibling arms** (see D4), and
-site E's parity check **reuses the existing `EnumMappingResolver.validateEnumMapping`
-computation** (`:129-144`, which already diffs SDL value names against
-`enumType.values()` and emits a Levenshtein-hinted candidate) rather than
-re-implementing parity at the two `@service` `EnumValueOf` producers
-(`InputBeanResolver:769`, `ServiceCatalog:742`). Today those producers build
-`EnumValueOf` with *no* parity check while the column/arg enum path does the full
-check; this closes that asymmetry by routing both through one parity home.
+site E's parity check **reuses the value-name diff that today lives inside
+`EnumMappingResolver.validateEnumFilter`** (`:114-145`; the SDL-value vs
+`enumType.values()` comparison with the Levenshtein-hinted candidate is at
+`:133-141`) rather than re-implementing parity at the two `@service` `EnumValueOf`
+producers (`InputBeanResolver.bindField`'s enum arm `:766-769`,
+`ServiceCatalog.argExtraction` `:798`). Today those producers build `EnumValueOf`
+with *no* parity check while the column/arg enum path does the full check; this
+closes that asymmetry by routing both through one parity home.
+
+One wrinkle the implementer must resolve, not invent around: `validateEnumFilter`
+(`:114`) and `deriveExtraction` (`:161`) are `ColumnRef`-coupled, and site E has no
+column, only a declared Java enum `Class`. So the reuse is *not* a direct call.
+Lift the value-name comparison (`:133-141`) into a column-agnostic helper that
+takes the SDL enum type and the Java `enumType.values()` directly and returns the
+same `EnumValidation`-shaped `Valid | Mismatch`; have `validateEnumFilter` delegate
+to it for the column path (deriving the `Class` from the `ColumnRef` as it does
+today) and call the helper from the site-E producers. The single parity home is
+the extracted helper, with `validateEnumFilter` as one of its two callers.
 
 ### D4 — One sealed wire-coercion error family with two arms
 
@@ -178,9 +196,9 @@ for the non-service sites.
 
 - **A, E (input-bean field / enum field):** `InputBeanResolver.bindField`. A widens
   R195's jOOQ-record branch to the full `Assignability` family; E routes the enum
-  arm through the `EnumMappingResolver` parity reuse → `EnumConstantDivergence`.
+  arm through the column-agnostic parity helper (D3) → `EnumConstantDivergence`.
 - **B (service scalar arg):** `ServiceCatalog.argExtraction`, widened per D2. Rides
-  R256's typed-rejection channel; **`depends-on` R256**.
+  R256's now-landed typed-rejection channel.
 - **C (`@condition` nested), D (`@externalField` accessor arg):** outside R256's
   service-only scope. These consume the *same* classifier predicate from D1 (the
   predicate is authored once in this item, in Slice 1, and is not re-homed), but
@@ -205,13 +223,13 @@ File-by-file for Slice 1 (the `@service` sites A, B, E + the shared predicate):
 - `model/CallSiteExtraction.java` / the rejection model — add the `WireCoercionError`
   sub-seal of `Rejection.AuthorError` with the `Assignability` and
   `EnumConstantDivergence` arms (D4).
-- `ServiceCatalog.argExtraction` (`:739`) — widen signature to take the SDL leaf and
+- `ServiceCatalog.argExtraction` (`:795`) — widen signature to take the SDL leaf and
   return the sealed result; produce `Direct` only on confirmed pass-through,
   `EnumValueOf` for enums, else `Assignability` rejection. Thread the SDL leaf from
-  callers `:245` / `:577` (D2).
+  callers `:240` / `:642` (D2).
 - `InputBeanResolver.bindField` (`:743`) — call the predicate on the scalar arm
   (`else` at `:784`), widening R195's jOOQ-record branch; route the enum arm
-  (`:766-769`) through the `EnumMappingResolver` parity reuse → `EnumConstantDivergence`
+  (`:766-769`) through the column-agnostic parity helper → `EnumConstantDivergence`
   (D3).
 - `generators/ServiceMethodCallEmitter.scalarLeaf` (`:201-212`) — once the classifier
   guarantees every `Direct` leaf is wire-pass-through, the `($T) rawValue` cast in the
@@ -228,8 +246,10 @@ are touched only in Slice 2.
 
 ## Sequencing
 
-- **Slice 1 (A, B, E + the shared predicate)** depends only on **R256** (`Ready`),
-  whose boundary section already pins the channel Slice 1 rides. The predicate
+- **Slice 1 (A, B, E + the shared predicate)** depends only on **R256** (Done),
+  whose boundary section already pins the channel Slice 1 rides; the
+  `ReflectionError` / `ServiceMethodCallError` seals and untouched `scalarLeaf` are
+  on trunk. The predicate
   (D1) and the `WireCoercionError` family (D4) are authored here, once.
 - **Slice 2 (C, D)** depends on **R222** (`Spec`), which has not pinned a per-leaf
   wire-coercion channel for its `ConditionCall` / `ExternalFieldCall` siblings.
