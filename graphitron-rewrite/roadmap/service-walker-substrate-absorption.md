@@ -7,7 +7,7 @@ priority: 3
 theme: structural-refactor
 depends-on: []
 created: 2026-05-29
-last-updated: 2026-05-30
+last-updated: 2026-06-30
 ---
 
 # Absorb the service walker substrate: typed per-arm errors + multi-arg ctors
@@ -36,12 +36,12 @@ already succeeded. Every *reflection-time* failure is produced **upstream in
 
 | Failure | Current production site |
 |---------|-------------------------|
-| class not loaded | `ServiceCatalog.java:352` / `:593` / `:678` (`Rejection.structural`) |
-| return-type mismatch | `ServiceCatalog.java:204` / `:525` |
-| instance-holder missing `(DSLContext)` ctor | `checkServiceInstanceHolderShape`, `:371` / `:382` |
-| parameter names missing (no `-parameters`) | `ServiceCatalog.java:248` / `:563` |
-| arg-to-parameter unbindable (DTO-source / unrecognized) | `ServiceCatalog.java:283-285`, `:323-333` |
-| ambiguous overload | *never produced* — `methods.get(0)` at `:200` / `:516` / `:633` silently takes the first name match |
+| class not loaded | `ServiceCatalog.java:356` / `:597` / `:682` (`Rejection.structural`) |
+| return-type mismatch | `ServiceCatalog.java:209` / `:523` |
+| instance-holder missing `(DSLContext)` ctor | `checkServiceInstanceHolderShape`, `:372` (single-`DSLContext`-param check `:382`, rejection `:385`) |
+| parameter names missing (no `-parameters`) | `ServiceCatalog.java:253` / `:569` |
+| arg-to-parameter unbindable (DTO-source / unrecognized) | `ServiceCatalog.java:288`, `:328-335` |
+| ambiguous overload | *never produced* — `methods.get(0)` at `:204` / `:520` / `:637` silently takes the first name match |
 | method not found | already typed: `Rejection.unknownServiceMethod(...)` → `AuthorError.UnknownName(SERVICE_METHOD)` |
 
 The two live arms (`MultipleDslContextSlots`, `ParameterUnbindable`) fire inside
@@ -57,7 +57,7 @@ collisions by JVM declaration order with no arity check, so the designed
 `AmbiguousMethod` arm has no producer.
 
 **3. Transitional cruft.** `ContextArgumentClassifier.syntheticServiceMethodRef`
-(`:160-168`) fabricates an empty `MethodRef.Service` (empty params, dummy
+(`:160-169`) fabricates an empty `MethodRef.Service` (empty params, dummy
 `CallShape.Static(false)`) solely so the `ConflictSite(MethodRef site, …)`
 constructor (`ConflictSite.java:16`) accepts a walker-carrier conflict; the
 bean-helper queue round-trips `ValueShape` composites back into synthetic
@@ -123,8 +123,8 @@ R261's "resolve it once, consistently with R256" a concrete shape and keeps the
 two items from each implementing half a cast guard.
 
 **The one shared file, pinned for order-independence.** Both items can touch
-`ServiceMethodCallEmitter.scalarLeaf` (`:155` emits the `(SakRecord)`/`(Long)`
-raw cast for `Direct`; `:159-162` carry the latent `JooqConvert`/`NodeIdDecodeKeys`/`default`
+`ServiceMethodCallEmitter.scalarLeaf` (`:203` emits the `($T) $L`
+raw cast for `Direct`; `:207-210` carry the latent `JooqConvert`/`NodeIdDecodeKeys`/`default`
 raw casts R261's secondary scope names). Retiring those raw casts is the *emitter
 consequence of R261's judgment*, so **it is R261's, not R256's**. R256 leaves
 `scalarLeaf` emitting exactly as today and only guarantees the
@@ -168,15 +168,15 @@ precedent), each arm lands with all of:
 Arms to land: `ClassNotLoaded`, `ReturnTypeMismatch`, `InstanceHolderMissingCtor`,
 `ParameterNamesMissing`, `AmbiguousMethod`, the arg-mapping family (the
 DTO-source/unrecognized-source/ctor-`FromArg` cases — confirm the final partition
-against `ServiceCatalog:283-333` during implementation; the `FromArg`-in-`ctorArgs`
+against `ServiceCatalog:286-335` during implementation; the `FromArg`-in-`ctorArgs`
 case is the cross-round invariant `ServiceMethodCall`'s javadoc already names).
 `MultipleDslContextSlots` and `ParameterUnbindable` stay as-is.
 
 **Shared-vs-service partition (one predicate, one home).** The three reflect
 helpers `reflectServiceMethod` / `reflectTableMethod` / `reflectExternalField`
-share their class-load (`:352`/`:593`/`:678`), return-type-mismatch (`:204`/`:525`),
-parameter-names (`:248`/`:563`) and overload-resolution (`methods.get(0)` at
-`:200`/`:516`/`:633`) code. So `ClassNotLoaded`, `ReturnTypeMismatch`,
+share their class-load (`:356`/`:597`/`:682`), return-type-mismatch (`:209`/`:523`),
+parameter-names (`:253`/`:569`) and overload-resolution (`methods.get(0)` at
+`:204`/`:520`/`:637`) code. So `ClassNotLoaded`, `ReturnTypeMismatch`,
 `ParameterNamesMissing` and `AmbiguousMethod` are **reflection-intrinsic, not
 `@service`-specific**. Migrating only the service call site would leave the
 structurally identical `@tableMethod`/`@externalField` failures as prose
@@ -231,9 +231,12 @@ mirror differently, and the Spec should not assert a single mechanism for both:
   Relaxing the producer guard pulls two obligations in the *same change* (per
   "Classifier guarantees shape emitter assumptions"): (a) the
   at-most-one-`FromDsl`-per-round invariant, enforced today only for the method
-  round (`ServiceMethodCallWalker:90-93`), must now also fire for `ctorArgs` — a
-  multi-DSLContext constructor produces `MultipleDslContextSlots` with a new
-  `Round.CONSTRUCTOR` discriminant the walker does not emit today; (b) the
+  round (`ServiceMethodCallWalker:84-92`), must now also fire for `ctorArgs` — a
+  multi-DSLContext constructor produces `MultipleDslContextSlots` with the
+  `Round.CTOR` discriminant. `ServiceMethodCallError.Round` already carries
+  `CTOR` alongside `METHOD`; the walker emits only `Round.METHOD` today
+  (`ServiceMethodCallWalker:92`), so the work is to *emit* the existing `CTOR`
+  arm for the ctor round, not to add a new discriminant; (b) the
   `(DSLContext, ContextArg)` ctor's `FromContext` name resolution must reuse the
   existing method-param context-binding path (`inferBindingsByType` / the ctx-keys
   walk), not a parallel ctor-only one.
