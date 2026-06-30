@@ -1,7 +1,7 @@
 ---
 id: R262
 title: "Reject @nodeId on non-ID coordinates and federation encoded @key fields at validate time"
-status: In Progress
+status: In Review
 bucket: validation
 priority: 2
 theme: mutations-errors
