@@ -25,6 +25,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R308` | Fix the @service list-payload N+1 by deriving many-arrival for list-returning carriers | Spec | 2026-06-14 | [plan](service-list-payload-arrival.md) |
 | `R335` | Fold input/scalar/enum classification into the single classify-and-emit walk | Spec | 2026-06-19 | [plan](walk-classifies-input-surface.md) |
 | `R381` | LSP-guided @reference path authoring | Spec | 2026-06-25 | [plan](lsp-reference-path-authoring.md) |
+| `R400` | Remove the @tableMethod directive | Spec | 2026-06-30 | [plan](remove-tablemethod-directive.md) |
 | `R399` | Reusable JAX-RS library serving a Graphitron schema per the GraphQL-over-HTTP spec | Spec | 2026-06-30 | [plan](graphql-http-jaxrs-library.md) |
 | `R398` | SDL lint engine with ESLint-style built-in visitors | Spec | 2026-06-30 <sub>created 2026-06-29</sub> | [plan](sdl-lint-visitor-engine.md) |
 | `R273` | Source NodeId metadata from @node + catalog PK (inferred from `implements Node`), and settle wrong-type/malformed mismatch semantics, retiring the legacy __NODE bare-ID arm | Spec | 2026-06-02 | [plan](nodeid-skip-mismatch-error-surfacing.md) |
@@ -252,6 +253,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R69` [**Implement @experimental_constructType**](experimental-construct-type.md) — Backlog, feature
 - `R381` [**LSP-guided @reference path authoring**](lsp-reference-path-authoring.md) — Spec, architecture
 - `R387` [**Migrate TypeConditionsGeneratorTest off code-string assertions on generated method bodies**](type-conditions-test-code-string-migration.md) — Backlog, testing
+- `R400` [**Remove the @tableMethod directive**](remove-tablemethod-directive.md) — Spec, structural
 - `R282` [**Scope unknownForeignKeyRejection FK candidate hint to the structurally relevant FKs**](fk-key-hint-sibling-scope.md) — Backlog, bug
 - `R72` [**Slim ServiceCatalog down to a lookup primitive**](slim-servicecatalog-to-lookup.md) — Backlog, architecture
 - `R319` [**Warn on pruned unreachable output types instead of dropping them silently**](warn-on-pruned-unreachable-types.md) — Backlog, architecture
