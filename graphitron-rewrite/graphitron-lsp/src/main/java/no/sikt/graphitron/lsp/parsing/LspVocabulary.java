@@ -6,13 +6,13 @@ import graphql.language.InputObjectTypeDefinition;
 import graphql.language.InputValueDefinition;
 import graphql.language.ListType;
 import graphql.language.NonNullType;
-import graphql.language.StringValue;
 import graphql.language.Type;
 import graphql.language.TypeName;
 import graphql.schema.idl.SchemaParser;
 import graphql.schema.idl.TypeDefinitionRegistry;
 import io.github.treesitter.jtreesitter.Node;
 import io.github.treesitter.jtreesitter.Point;
+import no.sikt.graphitron.rewrite.lint.DeprecationRecognizer;
 import no.sikt.graphitron.rewrite.schema.RewriteSchemaLoader;
 
 import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.ENUM_VALUE;
@@ -28,7 +28,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.regex.Pattern;
 
 /**
  * The LSP's directive vocabulary, keyed by GraphQL schema coordinates.
@@ -56,15 +55,6 @@ public record LspVocabulary(
     Map<SchemaCoordinate, Behavior> overlay,
     TypeDefinitionRegistry registry
 ) {
-
-    /**
-     * Javadoc-style {@code @deprecated} token in a description string,
-     * applied to the parsed description text rather than raw SDL bytes.
-     * The negative lookbehind avoids matching mid-word occurrences such
-     * as {@code my@deprecated}.
-     */
-    private static final Pattern DESCRIPTION_DEPRECATED_TOKEN =
-        Pattern.compile("(?<![A-Za-z0-9])@deprecated\\b");
 
     public LspVocabulary {
         overlay = Map.copyOf(overlay);
@@ -602,34 +592,24 @@ public record LspVocabulary(
      * {@code @deprecated} convention (whole-directive). Empty if the
      * coordinate is not deprecated.
      */
-    public Optional<DeprecationInfo> deprecationOf(SchemaCoordinate coord) {
+    public Optional<DeprecationRecognizer.DeprecationInfo> deprecationOf(SchemaCoordinate coord) {
+        var recognizer = new DeprecationRecognizer(registry);
         return switch (coord) {
-            case SchemaCoordinate.Directive d -> directiveDocstringDeprecation(d.name());
-            case SchemaCoordinate.DirectiveArg da -> directiveArgNativeDeprecation(da.directive(), da.arg());
-            case SchemaCoordinate.InputField f -> inputFieldNativeDeprecation(f.type(), f.field());
+            case SchemaCoordinate.Directive d -> recognizer.directiveDeprecation(d.name());
+            case SchemaCoordinate.DirectiveArg da -> recognizer.directiveArgDeprecation(da.directive(), da.arg());
+            case SchemaCoordinate.InputField f -> recognizer.inputFieldDeprecation(f.type(), f.field());
             case SchemaCoordinate.InputType ignored -> Optional.empty();
         };
     }
 
-    private Optional<DeprecationInfo> directiveDocstringDeprecation(String name) {
-        return findDirective(name)
-            .flatMap(d -> descriptionText(d.getDescription()))
-            .filter(text -> DESCRIPTION_DEPRECATED_TOKEN.matcher(text).find())
-            .map(DeprecationInfo::docstring);
-    }
-
-    private Optional<DeprecationInfo> directiveArgNativeDeprecation(String directive, String arg) {
-        return findDirective(directive)
-            .flatMap(d -> findInputValue(d.getInputValueDefinitions(), arg))
-            .flatMap(LspVocabulary::nativeDeprecationReason)
-            .map(DeprecationInfo::native_);
-    }
-
-    private Optional<DeprecationInfo> inputFieldNativeDeprecation(String type, String field) {
-        return findInputType(type)
-            .flatMap(t -> findInputValue(t.getInputValueDefinitions(), field))
-            .flatMap(LspVocabulary::nativeDeprecationReason)
-            .map(DeprecationInfo::native_);
+    /**
+     * Linear lookup for {@link InputValueDefinition} by name in a list. Used by {@code Diagnostics}
+     * (unknown-arg + required-arg validation) and {@code ArgNameCompletions} (arg-name completion);
+     * delegates to {@link DeprecationRecognizer#findInputValue} so the loop is single-sourced.
+     */
+    public static Optional<InputValueDefinition> findInputValue(
+        java.util.List<InputValueDefinition> values, String name) {
+        return DeprecationRecognizer.findInputValue(values, name);
     }
 
     private Optional<DirectiveDefinition> findDirective(String name) {
@@ -641,34 +621,6 @@ public record LspVocabulary(
 
     private Optional<InputObjectTypeDefinition> findInputType(String name) {
         return Optional.ofNullable(registry.getTypeOrNull(name, InputObjectTypeDefinition.class));
-    }
-
-    /**
-     * Linear lookup for {@link InputValueDefinition} by name in a list. Used
-     * in three call sites internal to {@link LspVocabulary} plus
-     * {@code Diagnostics} (unknown-arg + required-arg validation) and
-     * {@code ArgNameCompletions} (arg-name completion). The graphql-java API
-     * exposes the lists but no name-keyed accessor; this helper avoids
-     * duplicating the loop in every consumer.
-     */
-    public static Optional<InputValueDefinition> findInputValue(
-        java.util.List<InputValueDefinition> values, String name) {
-        for (var v : values) {
-            if (v.getName().equals(name)) return Optional.of(v);
-        }
-        return Optional.empty();
-    }
-
-    private static Optional<String> nativeDeprecationReason(InputValueDefinition v) {
-        for (var dir : v.getDirectives("deprecated")) {
-            for (var arg : dir.getArguments()) {
-                if (arg.getName().equals("reason") && arg.getValue() instanceof StringValue s) {
-                    return Optional.of(s.getValue());
-                }
-            }
-            return Optional.of("");
-        }
-        return Optional.empty();
     }
 
     private static Optional<String> descriptionText(Description description) {
@@ -696,35 +648,6 @@ public record LspVocabulary(
 
     private static TypeDefinitionRegistry parseDirectivesSdl() {
         return new SchemaParser().parse(RewriteSchemaLoader.directivesSdl());
-    }
-
-    /**
-     * Carrier for deprecation info, agnostic to whether the marker came
-     * from native {@code @deprecated(reason:)} or graphitron's docstring
-     * {@code @deprecated} convention. Consumers query
-     * {@link LspVocabulary#deprecationOf} without caring which shape declared it.
-     *
-     * @param reason     the replacement-hint text. For native deprecation,
-     *                   the {@code reason:} arg's value (empty string when
-     *                   {@code @deprecated} carries no reason). For
-     *                   docstring deprecation, the whole description text
-     *                   (the recogniser-side parse of "what to use instead"
-     *                   lives in the consumer that surfaces it; this
-     *                   record only declares "marker present" plus context).
-     * @param shape      whether the marker came from the native form or
-     *                   the docstring convention; informs auto-migration
-     *                   policy in {@code SdlActions}.
-     */
-    public record DeprecationInfo(String reason, Shape shape) {
-        public enum Shape { NATIVE, DOCSTRING }
-
-        static DeprecationInfo native_(String reason) {
-            return new DeprecationInfo(reason, Shape.NATIVE);
-        }
-
-        static DeprecationInfo docstring(String description) {
-            return new DeprecationInfo(description, Shape.DOCSTRING);
-        }
     }
 
     /**

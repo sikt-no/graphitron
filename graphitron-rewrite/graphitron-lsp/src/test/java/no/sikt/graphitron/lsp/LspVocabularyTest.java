@@ -6,7 +6,7 @@ import no.sikt.graphitron.lsp.parsing.Behavior;
 import no.sikt.graphitron.lsp.parsing.Directives;
 import no.sikt.graphitron.lsp.parsing.GraphqlLanguage;
 import no.sikt.graphitron.lsp.parsing.LspVocabulary;
-import no.sikt.graphitron.lsp.parsing.LspVocabulary.DeprecationInfo;
+import no.sikt.graphitron.rewrite.lint.DeprecationRecognizer.DeprecationInfo;
 import no.sikt.graphitron.lsp.parsing.LspVocabulary.LspStartupException;
 import no.sikt.graphitron.lsp.parsing.Nodes;
 import no.sikt.graphitron.lsp.parsing.SchemaCoordinate;
