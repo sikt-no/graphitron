@@ -124,8 +124,10 @@ re-authoring. Recovery is **anchor-free** (no hardcoded SHA to go stale): for ea
 3. The three reference pages and `how-to/source-row.adoc` are gone from the tree.
 4. Recovery is captured by R403 / R404 / R69 with anchor-free (`git log --diff-filter=D`) restore
    instructions.
-5. No generator behaviour change: `directives.graphqls` is untouched; no classify-time rejection
-   added; the only Java change is the two `DirectiveSupportReport` sets.
+5. No generator behaviour change: `directives.graphqls` is untouched and no classify-time rejection
+   is added. The only Java changes are confined to `roadmap-tool`'s `DirectiveSupportReport` — the
+   two policy sets (`REJECTED_ON_USE` / `WITHHELD_FROM_V1`) and the `renderMigration` filtering that
+   consumes them.
 
 ## Out of scope
 
