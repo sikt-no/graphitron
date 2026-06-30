@@ -165,13 +165,28 @@ the only generated-symbol references live in this tiny subclass.
 
 - The `@Path("/graphql")` JAX-RS resource and an application-scoped engine bean holding the cached
   `GraphQL`.
-- Request-body parse into a transport record (`query`, `operationName`, `variables`, `extensions`)
-  and `query`-required validation. (The first copies used a `MessageBodyReader<ExecutionInput>` /
-  `MessageBodyWriter<ExecutionResult>` provider pair; folding parse into the resource over a plain
-  record keeps the auth/`ExecutionInput` construction behind the seam instead of inside a JAX-RS
-  provider. Settle the reader/writer-vs-record form during implementation; it is not load-bearing.)
-- `ExecutionResult.toSpecification()` serialisation (wire-format encoding stays at the HTTP boundary,
-  never in the model).
+- Request parsing and serialisation in the resource itself, with **no custom JAX-RS providers**. The
+  resource reads the raw body, parses it with the library's `ObjectMapper` into a small `GraphqlRequest`
+  record (`query`, `operationName`, `variables`, `extensions`), validates `query` is present, and both
+  the GET and POST verbs funnel through one `execute(...)` helper that builds the input via the seam,
+  executes, and serialises `result.toSpecification()` (wire-format encoding stays at the HTTP boundary,
+  never in the model). The first copies used a `MessageBodyReader<ExecutionInput>` /
+  `MessageBodyWriter<ExecutionResult>` provider pair; we drop it deliberately, for two reasons beyond
+  "single consumer":
+  - **No reuse to capture.** A reader/writer pair earns its keep when several resources share the same
+    entity marshalling; the library owns exactly one resource and both verbs already funnel through one
+    helper, so the providers would centralise across a single call site.
+  - **The fiddly parts cannot live in a provider anyway.** A `MessageBodyWriter<ExecutionResult>`
+    cannot set `Response.status` from "request error vs. execution began", so the status watershed
+    stays in the resource regardless and the writer would only wrap `toSpecification()`, which Jackson
+    already does for the resulting `Map`. And spec-compliant parse-error shaping argues against
+    auto-binding too: letting the stock JSON provider bind a malformed body yields the framework's
+    default error, not a spec `4xx` `application/graphql-response+json`, so the resource must own
+    parsing to control the error shape.
+
+  We keep the original `ExecutionBodyHandler`'s intent, explicit parse-error -> `4xx` and explicit
+  `.toSpecification()` so the raw graphql-java object is never serialised, without the `@Provider`
+  machinery.
 - The `GET /graphql/schema` SDL endpoint (`SchemaPrinter` over `schema()`).
 - A bundled, CDN-based GraphiQL page served at `GET /graphql` with `Accept: text/html`, disable-able
   by config.
@@ -233,6 +248,7 @@ runtime-library transport tests grows, the tier guide should note that they reus
 | GET | Supported for queries; `405` on mutation |
 | Batching | Out of scope for v1 |
 | Status codes | Media-type-driven per spec |
+| Body marshalling | No custom JAX-RS providers; resource parses to a `GraphqlRequest` record and serialises `toSpecification()`, owning parse-error `4xx` and the status watershed |
 | Sakila | First consumer + conformance harness; spec-citing tests |
 
 ### Relationship to R45 / R190
