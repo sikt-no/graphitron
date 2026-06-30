@@ -131,4 +131,55 @@ class JoinedTableInheritancePipelineTest {
                 && e.message().contains("no base-resident field carrying @reference")
                 && e.message().contains("party_individual_party_id_fkey"));
     }
+
+    @Test
+    void detailJoinNotPkEqFk_rejected() {
+        // PK=FK invariant: the detail table's FK columns to the base must BE the detail's own primary
+        // key, so the base->detail join is single-valued. Here CityPlace's detail table 'city' joins
+        // the base 'country' on country_id (city's FK), but city's primary key is the surrogate
+        // city_id — not the join column. The base->detail join would fan out, so it is rejected.
+        var schema = TestSchemaHelper.buildSchema("""
+            interface Place @table(name: "country") @discriminate(on: "country") {
+                placeId: Int! @field(name: "country_id")
+            }
+            type CityPlace implements Place @table(name: "city") @discriminator(value: "CITY") {
+                placeId:   Int!    @field(name: "country_id")
+                placeName: String! @reference(path: [{key: "city_country_id_fkey"}]) @field(name: "country")
+            }
+            type Query { allPlaces: [Place!]! }
+            """);
+
+        assertThat(schema.diagnostics())
+            .as("a detail table whose FK to the base is not its own primary key must be rejected as non-single-valued")
+            .anyMatch(e -> e.kind() == RejectionKind.INVALID_SCHEMA
+                && e.message().contains("CityPlace")
+                && e.message().contains("not single-valued")
+                && e.message().contains("city")
+                && e.message().contains("must be the detail table's own primary key"));
+    }
+
+    @Test
+    void parentReferenceToNonBaseTable_rejected() {
+        // same-base invariant: a joined-table participant's inherited @reference must bridge back to the
+        // discriminated base. AddressPlace's detail table 'address' has no FK to the base 'country'; its
+        // only reference (address_city_id_fkey) resolves to 'city', which is not the base. A reference
+        // to some other table is not a base bridge, so it is rejected.
+        var schema = TestSchemaHelper.buildSchema("""
+            interface Place @table(name: "country") @discriminate(on: "country") {
+                placeId: Int! @field(name: "country_id")
+            }
+            type AddressPlace implements Place @table(name: "address") @discriminator(value: "ADDRESS") {
+                placeId:  Int!    @field(name: "address_id")
+                cityName: String! @reference(path: [{key: "address_city_id_fkey"}]) @field(name: "city")
+            }
+            type Query { allPlaces: [Place!]! }
+            """);
+
+        assertThat(schema.diagnostics())
+            .as("a joined-table participant whose parent-@reference resolves to a non-base table must be rejected")
+            .anyMatch(e -> e.kind() == RejectionKind.INVALID_SCHEMA
+                && e.message().contains("AddressPlace")
+                && e.message().contains("does not resolve to the discriminated base table")
+                && e.message().contains("country"));
+    }
 }
