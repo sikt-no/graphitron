@@ -15,6 +15,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | ID | Item | Status | Updated | Plan |
 |---|---|---|---|---|
 | `R261` | Generation-time wire-coercion cast guard across arg-classification sites <sub>blocked by: [service-walker-substrate-absorption](service-walker-substrate-absorption.md), [dimensional-model-pivot](dimensional-model-pivot.md)</sub> | Spec | 2026-06-30 <sub>created 2026-05-29</sub> | [plan](wire-coercion-cast-guard.md) |
+| `R262` | Reject @nodeId on non-ID coordinates and federation encoded @key fields at validate time | Spec | 2026-06-30 <sub>created 2026-05-29</sub> | [plan](reject-nodeid-on-non-id-coordinates.md) |
 | `R19` | Rebase and squash rewrite branch onto main | Ready |  | [plan](history-squash.md) |
 | `R222` | Dimensional model pivot: slots over cross-product permits | Spec | 2026-06-18 <sub>created 2026-05-21</sub> | [plan](dimensional-model-pivot.md) |
 | `R384` | Support converted/@nodeId/developer-@condition filters on multitable interface/union queries | Spec | 2026-06-27 <sub>created 2026-06-25</sub> | [plan](multitable-interface-converted-nodeid-condition-filters.md) |
@@ -117,7 +118,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 ### Validation
 
-- `R262` [**Reject @nodeId on non-ID coordinates and federation encoded @key fields at validate time**](reject-nodeid-on-non-id-coordinates.md): `@nodeId` decode is silently conditional. The SDL directive (`directives.graphqls:370-379`) permits `@nodeId` on `FIELD_DEFINITION | INPUT_FIELD_DEFINITION | ARGUMENT_DEFINITION` with **no restriction to `ID`**, but every decode arm in the generator is gated on `"ID".equals(typeName)`, and `GraphitronSchemaValidator` has **zero** `@nodeId` checks. So `@nodeId` on a non-`ID` coordinate is accepted, the decode is dropped, and the base64 wire String is bound raw, producing a runtime SQL bind/type error or a silent never-matches predicate. The build is green; the failure is in production. This is the same "compiles but breaks at runtime" family as the input-bean `ClassCastException` (see `wire-coercion-cast-guard`), but on the wire-decode axis rather than the cast axis. <sub>updated 2026-05-29</sub>
 - `R136` [**Execution-tier coverage for FK-target/NodeType-keyColumns permutation**](nodeid-fk-permutation-execution-tier.md): R131's permutation relaxation is pinned at the pipeline tier (`InputFieldFkTargetNodeIdCase.FK_TARGET_REORDERED_KEY_PERMUTATION_DIRECT_FK{,_SINGULAR}` in `NodeIdPipelineTest`), which asserts `liftedSourceColumns` is permuted into `@node.keyColumns` order on the resolver's `DirectFk` carrier. The end-to-end SQL correctness — that the emitted `BodyParam.RowEq` against `liftedSourceColumns` actually matches the right rows when joined against decoded NodeId values — is not exercised by an execution-tier test in this repo.
 - `R135` [**Multi-hop @nodeId pipeline test for FK-target/NodeType-keyColumns permutation**](multi-hop-nodeid-fk-permutation-test.md): R131's permutation relaxation in `NodeIdLeafResolver.resolve` accepts set-equality between the terminal hop's target columns and the NodeType's `@node(keyColumns:)`, then permutes `liftedSourceColumns` into NodeType-keyColumns order before constructing `Resolved.FkTarget.DirectFk`. The pipeline-tier test pinning this lands on the single-hop `reordered_pk_parent` fixture (`InputFieldFkTargetNodeIdCase.FK_TARGET_REORDERED_KEY_PERMUTATION_DIRECT_FK{,_SINGULAR}`).
 - `R181` [**Validate @order/@defaultOrder: empty directive and @index coexistence**](validate-order-directive-args.md): A real user report (paraphrased) crashed the schema build: <sub>updated 2026-05-20, created 2026-05-19</sub>
@@ -199,7 +199,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### mutations-errors
 
-- `R262` [**Reject @nodeId on non-ID coordinates and federation encoded @key fields at validate time**](reject-nodeid-on-non-id-coordinates.md) — Backlog, validation
+- `R262` [**Reject @nodeId on non-ID coordinates and federation encoded @key fields at validate time**](reject-nodeid-on-non-id-coordinates.md) — Spec, validation
 - `R397` [**Let bare-entity query fields host @error so decode and other client errors route through handlers**](error-directive-on-query-fields.md) — Backlog, architecture
 - `R170` [**Sakila execute-tier fixture for the Jakarta ValidationHandler channel (R94-blocked)**](validator-integration-execute-coverage.md) — Backlog, testing
 - `R98` [**Multi-source input validation: SDL directives + DB CHECK + Jakarta on a unified rendered schema**](multi-source-input-validation.md) — Backlog, architecture, blocked by [catalog-check-constraint-validation](catalog-check-constraint-validation.md)
