@@ -203,17 +203,19 @@ CREATE TABLE film_endorsement (
 );
 
 -- -------------------------
--- jti_subject (+ jti_app_account, jti_person): R388 discriminated joined-inheritance fixture.
--- A discriminated base table (jti_subject, carrying the subject_kind discriminator) plus one
--- detail table per concrete kind, joined by a COMPOSITE FK (jti_subject_id, subject_kind). The
--- composite FK re-declares the discriminator column (subject_kind) on the detail table — the
--- dimension no existing discriminated fixture has. With that column present on a joined table,
--- an unqualified discriminator reference in the generated interface fetcher's SELECT projection,
+-- jti_subject (+ jti_app_account, jti_person): R389 COMPOSITE-shared-key discriminated joined-table
+-- (class-table) inheritance fixture (the composite counterpart of the single-column party fixture
+-- below). A discriminated base table (jti_subject, carrying the subject_kind discriminator) plus one
+-- detail table per concrete kind. Each detail table's composite PRIMARY KEY (jti_subject_id,
+-- subject_kind) IS its composite FK to the base — the composite-key form of the PK=FK invariant.
+-- The composite key re-declares the discriminator column (subject_kind) on the detail table — the
+-- dimension no other discriminated fixture has. With that column present on a joined table, an
+-- unqualified discriminator reference in the generated interface fetcher's SELECT projection,
 -- LEFT JOIN ON-clause, and WHERE filter is ambiguous and PostgreSQL rejects the query
--- ("column reference \"subject_kind\" is ambiguous"); R388 qualifies all three to the base table.
--- The UNIQUE(jti_subject_id, subject_kind) constraint is what lets the detail tables carry the
--- composite FK. Each detail table also has a detail-only column reached from the interface via a
--- composite @reference (client_id / full_name), the genuine cross-table participant field.
+-- ("column reference \"subject_kind\" is ambiguous"); the qualified discriminator (hardened by R388)
+-- removes it, and R389 preserves that stress under a participant declaring its own detail @table.
+-- The UNIQUE(jti_subject_id, subject_kind) on the base backs the detail composite FK. Each detail
+-- table also has a detail-only column (client_id / full_name) projected off the detail alias.
 -- -------------------------
 
 CREATE TABLE jti_subject (
@@ -223,10 +225,16 @@ CREATE TABLE jti_subject (
     UNIQUE (jti_subject_id, subject_kind)
 );
 
+-- R389: the detail tables carry the composite primary key (jti_subject_id, subject_kind), which IS
+-- their composite foreign key to the base — the composite-key form of the PK=FK invariant. This makes
+-- the base->detail join single-valued and lets each concrete type declare its own detail @table with
+-- the shared key columns present on the detail too (so subjectId / subjectKind need no @reference; only
+-- the base-only displayName does).
 CREATE TABLE jti_app_account (
     jti_subject_id  int          NOT NULL,
     subject_kind    varchar(20)  NOT NULL,
     client_id       varchar(255),
+    PRIMARY KEY (jti_subject_id, subject_kind),
     CONSTRAINT jti_app_account_subject_fk
         FOREIGN KEY (jti_subject_id, subject_kind) REFERENCES jti_subject (jti_subject_id, subject_kind)
 );
@@ -235,6 +243,7 @@ CREATE TABLE jti_person (
     jti_subject_id  int          NOT NULL,
     subject_kind    varchar(20)  NOT NULL,
     full_name       varchar(255),
+    PRIMARY KEY (jti_subject_id, subject_kind),
     CONSTRAINT jti_person_subject_fk
         FOREIGN KEY (jti_subject_id, subject_kind) REFERENCES jti_subject (jti_subject_id, subject_kind)
 );

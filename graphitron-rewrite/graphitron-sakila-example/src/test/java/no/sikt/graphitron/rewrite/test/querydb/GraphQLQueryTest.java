@@ -5662,9 +5662,10 @@ class GraphQLQueryTest {
     @Test
     @SuppressWarnings("unchecked")
     void allSubjects_returnsDiscriminatorPerRow() {
-        // R388 discriminated joined-inheritance fixture. Subject exposes its discriminator
-        // (subjectKind) as a plain interface field; with no inline fragment no participant join
-        // fires, so this exercises the SELECT-projection discriminator and the WHERE IN filter in
+        // R389 composite-shared-key joined-table fixture. Subject exposes its discriminator
+        // (subjectKind) as a plain interface field; with no inline fragment no detail join fires, so
+        // this exercises the base projection (shared-key subjectId / subjectKind off the base, the
+        // inherited displayName off the base aliased as the field name) and the WHERE IN filter in
         // isolation. init.sql seeds two APP subjects then two PERSON subjects (ordered by id).
         Map<String, Object> data = execute("{ allSubjects { subjectId subjectKind displayName } }");
         List<Map<String, Object>> items = (List<Map<String, Object>>) data.get("allSubjects");
@@ -5678,15 +5679,16 @@ class GraphQLQueryTest {
     @Test
     @SuppressWarnings("unchecked")
     void allSubjects_inlineFragmentDetail_joinsWithoutAmbiguousColumn() {
-        // R388 defect-1 regression test, and the only mechanical guard for the qualification fix:
-        // both the qualified and the bare discriminator reference type-check, so compilation cannot
-        // catch the defect. Each participant detail table (jti_app_account, jti_person) re-declares
-        // the discriminator column subject_kind via its composite FK, so a bare discriminator
-        // reference in the SELECT projection, the LEFT JOIN ON-clause, or the WHERE filter makes
-        // PostgreSQL reject the query as ambiguous once the join fires. execute() asserts the GraphQL
-        // result carries no errors, so reaching the data assertions already proves the ambiguous-
-        // column failure is gone. The detail value is non-null for matching discriminator rows and
-        // null for the others (the LEFT JOIN is gated by the participant's discriminator value).
+        // R389 composite case (subsumes the R388 workaround this fixture used to carry). Each concrete
+        // type declares its own detail @table (jti_app_account / jti_person); the interface fetcher
+        // LEFT JOINs each detail table on the composite child->parent key, gated by the discriminator
+        // value, and projects the participant's detail-exclusive column off the detail alias. The
+        // discriminator qualification stress carries over: subject_kind is re-declared on the detail
+        // tables via the composite key, so a bare discriminator reference in the SELECT projection,
+        // the LEFT JOIN ON-clause, or the WHERE filter makes PostgreSQL reject the query as ambiguous
+        // once the join fires. execute() asserts no GraphQL errors, so reaching the data assertions
+        // already proves the ambiguous-column failure is gone. The detail value is non-null for
+        // matching discriminator rows and null for the others (the LEFT JOIN is discriminator-gated).
         SQL_LOG.clear();
         Map<String, Object> data = execute("""
             { allSubjects {
