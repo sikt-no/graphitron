@@ -70,20 +70,175 @@ The split is along the line of "GraphQL-over-HTTP transport" (generic, belongs i
   package), which means the library cannot name the facade directly and needs a small provider SPI the
   subgraph implements.
 
-## Open questions for Spec
+## Design
 
-- **Where does it live?** The rewrite has no runtime/serving module yet (serving code lives only in
-  the example app). A new `graphitron-*` runtime module under `graphitron-rewrite/`, or a separate
-  artifact consumers depend on alongside generated code.
-- **How generic is "JAX-RS"?** The existing copies use Quarkus/RESTEasy Reactive specifics
-  (`org.jboss.resteasy.reactive.NoCache`, `@Context ObjectMapper`, CDI `@Inject`). Decide whether the
-  library targets plain Jakarta REST + a thin CDI integration, or is explicitly Quarkus-flavoured.
-- **The facade SPI shape.** How a subgraph hands the library its generated `Graphitron` facade
-  (schema, SDL resource, `newExecutionInput`) and its per-request `GraphitronContext` source, given
-  the facade class name differs per subgraph.
-- **GraphQL-over-HTTP conformance scope.** Which parts of the spec we commit to (media types, status
-  codes, GET/POST, batching, the `application/graphql-response+json` watershed) and how that is tested,
-  ideally folded into `graphitron-sakila-example` so the reference app exercises the real library
-  instead of its own fourth copy.
-- **Relationship to R45 multi-tenant routing.** The tenant-routing factory work should compose with,
-  not duplicate, the request-to-`ExecutionInput` path this library owns.
+### Module
+
+A new runtime module `graphitron-jakarta-rest` under `graphitron-rewrite/`. It is the first
+hand-written *runtime* artifact consumers depend on, distinct from both generator code (Java 25) and
+generated output (Java 17). It compiles with `<release>17</release>`: consumers compile generated
+output and their own code on a Java 17 floor (see `graphitron-sakila-example`, which sets
+`<release>17</release>` precisely to verify that floor), and a runtime jar they put on that same
+classpath must not require newer bytecode. The module joins the publishable deploy set (the modules
+listed in `docs/README.adoc`); it is a real artifact consumers pull, unlike `graphitron-sakila-example`
+(which carries `maven.deploy.skip=true` and is only the first consumer, never the artifact).
+
+Reviewer note: the Java-version principle in `docs/rewrite-design-principles.adoc` today draws a
+two-way split (generator implementation = Java 25; generated source = Java 17) and does not name this
+third category. This item is the first instance of it; the principle should grow a bullet for
+"hand-written runtime artifacts consumers depend on -> Java 17" so a later reader does not apply the
+literal two-way split and license Java 25 here.
+
+### The dependency-inversion seam
+
+The library cannot name the generated `Graphitron` facade: its class lives in a per-subgraph package,
+and `newExecutionInput` varies per schema in both arity and parameter type (its context-arg values are
+resolved per request from auth). So the subgraph's adapter is the only place that names the facade,
+and the library depends on an interface it defines:
+
+```java
+public interface GraphitronApplication {
+    // The single executable schema. Source of truth for both the engine and the SDL endpoint.
+    GraphQLSchema schema();
+
+    // Per-request, auth-seeded input builder. The library layers query/variables/
+    // operationName/extensions from the HTTP body on top, then executes.
+    ExecutionInput.Builder newExecutionInput();
+
+    // Engine assembly via graphql-java's own builder seam. Default uses schema();
+    // override to chain .instrumentation(...), a custom ExecutionStrategy, etc.
+    default GraphQL.Builder engineBuilder() {
+        return GraphQL.newGraphQL(schema());
+    }
+}
+```
+
+Two refinements over the first interview sketch, both from the `principles-architect` pass:
+
+- **Engine, not ingredients.** The first sketch had a `List<Instrumentation> instrumentations()`
+  default and let the library hand-assemble the engine, which re-derives downstream what graphql-java's
+  builder already owns and expresses only one kind of customization. `engineBuilder()` returns the
+  standard `GraphQL.Builder` instead, so instrumentation (OpenTelemetry `GraphQLTelemetry`), execution
+  strategies, and any future engine knob ride the seam graphql-java and the facade's `newGraphQL()`
+  already define. The library caches `engineBuilder().build()` once (application scope). The default
+  delegates to `schema()` rather than the facade's `newGraphQL()` so there is exactly one built schema,
+  not one for the engine and another for the SDL endpoint.
+- **One schema, no second SDL source.** The first sketch had a `schemaSdl()` method reading the
+  bundled `schema.graphqls` resource: a second source of truth that can drift from `schema()` (a
+  `buildSchema` customizer that adds types appears in the executable schema but not in the bundled
+  file). Dropped from the SPI; the library renders the `/schema` SDL endpoint from `schema()` via
+  graphql-java's `SchemaPrinter` at the HTTP boundary. (Federation note: the executable schema is
+  `Federation.transform`-wrapped, so `SchemaPrinter` shows the augmented view, which is correct for the
+  human-facing `/schema` convenience; gateway composition uses the federation `_service { sdl }` field,
+  not this endpoint. If a consumer ever needs byte-exact source SDL the printer cannot reproduce, the
+  abstract base exposes an overridable SDL hook rather than re-adding a SPI method.)
+
+**Hand-written adapter, abstract base.** The adapter is hand-written by each consumer, not generated.
+Generating it would give every generated codebase a compile-time dependency on `graphitron-jakarta-rest`,
+coupling the generated-output version to the library version and breaking the generator/runtime
+decoupling the generator deliberately keeps (`GraphitronContextInterfaceGenerator` depends only on
+jOOQ + graphql-java, never a runtime jar). To remove the boilerplate, the library ships an abstract
+base that implements `schema()` (cached) and the engine/SDL plumbing from a schema supplier the
+consumer passes in, so the consumer's concrete class writes only the auth-bearing `newExecutionInput()`
+and, optionally, an `engineBuilder()` override:
+
+```java
+@ApplicationScoped
+public class MySubgraphApplication extends AbstractGraphitronApplication {
+    @Inject AuthenticatedContextProvider auth;   // @RequestScoped, per-subgraph
+
+    public MySubgraphApplication() {
+        super(() -> Graphitron.buildSchema(b -> {}));   // only facade reference, via lambda
+    }
+
+    @Override
+    public ExecutionInput.Builder newExecutionInput() {
+        return Graphitron.newExecutionInput(auth.getContext());   // + any context args
+    }
+}
+```
+
+The supplier is a lambda over the static facade, so the abstract base never names a per-subgraph type;
+the only generated-symbol references live in this tiny subclass.
+
+### What the library owns
+
+- The `@Path("/graphql")` JAX-RS resource and an application-scoped engine bean holding the cached
+  `GraphQL`.
+- Request-body parse into a transport record (`query`, `operationName`, `variables`, `extensions`)
+  and `query`-required validation. (The first copies used a `MessageBodyReader<ExecutionInput>` /
+  `MessageBodyWriter<ExecutionResult>` provider pair; folding parse into the resource over a plain
+  record keeps the auth/`ExecutionInput` construction behind the seam instead of inside a JAX-RS
+  provider. Settle the reader/writer-vs-record form during implementation; it is not load-bearing.)
+- `ExecutionResult.toSpecification()` serialisation (wire-format encoding stays at the HTTP boundary,
+  never in the model).
+- The `GET /graphql/schema` SDL endpoint (`SchemaPrinter` over `schema()`).
+- A bundled, CDN-based GraphiQL page served at `GET /graphql` with `Accept: text/html`, disable-able
+  by config.
+
+### GraphQL-over-HTTP conformance
+
+Targets the current draft of the spec. Committed scope:
+
+- **Media types.** Accept `application/json` request bodies; produce `application/graphql-response+json`
+  (modern) or `application/json` (legacy) by content negotiation.
+- **Status codes (media-type-driven).** With `application/graphql-response+json`: a *request error*
+  (invalid JSON, validation or variable-coercion failure, before execution begins) returns `4xx`
+  (`400`/`422` per the draft); a request that begins executing returns `2xx` even when the result
+  carries field errors. With legacy `application/json`: `200` for every well-formed request regardless
+  of GraphQL errors. This tightens the example's looser `result.isDataPresent()` rule.
+- **GET.** POST is mandatory; GET is supported for read-only queries (the spec makes GET a MAY; we opt
+  in for cacheable reads and browser links). A GET whose `query`/`operationName` resolves to a
+  mutation returns `405 Method Not Allowed`, as the spec requires.
+- **Batching.** The spec does not define batching; out of scope for v1, recorded as a possible
+  follow-up.
+
+### Testing and the conformance harness
+
+`graphitron-sakila-example` is the first consumer and the conformance harness: its current
+`GraphqlResource` + `GraphqlEngine` copy is replaced by a thin `GraphitronApplication` adapter on the
+library, and a GraphQL-over-HTTP conformance test suite is added so the reference app exercises the
+real library and cannot drift again.
+
+**Spec-traceable conformance tests.** Each conformance assertion must quote the normative spec text it
+verifies, with a stable reference to the section, so a reader can cross-check against the spec and so a
+spec change is easy to locate and update. Concretely:
+
+- One test (or named case) per normative requirement we claim to satisfy: POST-accepted, GET-MAY +
+  mutation-over-GET -> `405`, the `application/graphql-response+json` request-error `4xx` vs
+  executed-`2xx` watershed, legacy `application/json` always-`200`, `query`-required, and the
+  `variables`/`operationName`/`extensions` request-parameter handling.
+- Each case carries the verbatim MUST/SHOULD/MAY sentence as a doc comment or a `@DisplayName`, plus a
+  section pointer (the spec section heading or anchor) and the spec revision the text was taken from,
+  so drift between our behaviour and a future spec revision surfaces at the exact failing case.
+- A short pointer table (requirement -> spec section -> test) lives next to the suite so coverage of
+  the committed scope above is auditable at a glance, and a gap (a committed requirement with no
+  citing test) is visible.
+
+Reviewer note: this is the first behavioural test of hand-written *runtime* code rather than generated
+output, and it does not fit the four-tier taxonomy (unit / pipeline / compilation / execution)
+cleanly, since those tiers describe generated-code behaviour. The per-module enforcement test
+(`testing.adoc`) fails the build on any `@Test` class lacking exactly one tier tag, so the conformance
+suite carries `@ExecutionTier` (closest: a full request over a real engine). If a body of
+runtime-library transport tests grows, the tier guide should note that they reuse `@ExecutionTier`.
+
+### Decisions (resolved forks)
+
+| Fork | Decision |
+|---|---|
+| Framework | Jakarta REST + Jakarta CDI, vendor-neutral; no RESTEasy/Quarkus-specific types |
+| Module / Java level | New `graphitron-jakarta-rest`, `<release>17</release>`, publishable |
+| Seam | `GraphitronApplication` SPI (`schema()`, `newExecutionInput()`, default `engineBuilder()`); hand-written adapter + abstract base |
+| GraphiQL | Bundled CDN page, served, disable-able |
+| GET | Supported for queries; `405` on mutation |
+| Batching | Out of scope for v1 |
+| Status codes | Media-type-driven per spec |
+| Sakila | First consumer + conformance harness; spec-citing tests |
+
+### Relationship to R45 / R190
+
+The auth-to-context flow rides the existing `GraphitronContext` / `newExecutionInput` seam rather than
+re-implementing per-request wiring; the `@RequestScoped` provider feeding `newExecutionInput()` is
+consumer business logic staying consumer-side. R45 multi-tenant routing composes with this: it varies
+what `newExecutionInput()` returns (a tenant-routed `DSLContext` and context args), it does not
+duplicate the request-to-`ExecutionInput` path this library owns.
