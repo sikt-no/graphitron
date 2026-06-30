@@ -171,11 +171,15 @@ jobs:
           mkdir -p "$out"
           git clone --depth=1 --branch="${{ inputs.tree-sitter-cli-version }}" \
             https://github.com/tree-sitter/tree-sitter "$src"
+          # In the MSYS2 MINGW64 environment the unprefixed gcc/ar (from
+          # mingw-w64-x86_64-gcc, in /mingw64/bin) ARE the native x86_64
+          # mingw-w64 toolchain. The triplet-prefixed x86_64-w64-mingw32-ar
+          # alias is not installed, so use the unprefixed names.
           # Static-link the MinGW runtime so the DLL carries no libgcc_s_seh-1 /
           # libwinpthread-1 transitive deps (enforced by the dependents allowlist below).
           make -C "$src" \
-            CC=x86_64-w64-mingw32-gcc \
-            AR=x86_64-w64-mingw32-ar \
+            CC=gcc \
+            AR=ar \
             CFLAGS="-O3" \
             LDFLAGS="-static -static-libgcc"
           built="$(ls -1 "$src"/libtree-sitter.dll "$src"/*.dll 2>/dev/null | head -n1)"
