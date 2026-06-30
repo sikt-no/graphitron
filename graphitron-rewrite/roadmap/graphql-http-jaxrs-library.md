@@ -188,8 +188,16 @@ the only generated-symbol references live in this tiny subclass.
   `.toSpecification()` so the raw graphql-java object is never serialised, without the `@Provider`
   machinery.
 - The `GET /graphql/schema` SDL endpoint (`SchemaPrinter` over `schema()`).
-- A bundled, CDN-based GraphiQL page served at `GET /graphql` with `Accept: text/html`, disable-able
-  by config.
+- A bundled, CDN-based GraphiQL page served at `GET /graphql` with `Accept: text/html`. The toggle
+  rides the SPI seam, not a config framework: an overridable `default boolean graphiqlEnabled()`
+  (default `true`) on `AbstractGraphitronApplication`, mirroring how `engineBuilder()` and the
+  instrumentation opt-in ride the seam. This is deliberate: the framework decision is vendor-neutral
+  Jakarta with no RESTEasy/Quarkus types, and the project principles forbid adding dependencies not
+  already pinned in the parent pom, so reaching for Quarkus `@ConfigProperty` or pulling MicroProfile
+  Config to gate GraphiQL would violate a stated constraint. A consumer that wants the toggle wired to
+  *its own* config framework overrides `graphiqlEnabled()` to read from wherever it likes; the library
+  stays dependency-free. (A consumer that wants to serve a customized GraphiQL page can ride the same
+  overridable-method pattern with an SDL-hook-style override returning the page resource.)
 
 ### GraphQL-over-HTTP conformance
 
@@ -197,11 +205,25 @@ Targets the current draft of the spec. Committed scope:
 
 - **Media types.** Accept `application/json` request bodies; produce `application/graphql-response+json`
   (modern) or `application/json` (legacy) by content negotiation.
-- **Status codes (media-type-driven).** With `application/graphql-response+json`: a *request error*
-  (invalid JSON, validation or variable-coercion failure, before execution begins) returns `4xx`
-  (`400`/`422` per the draft); a request that begins executing returns `2xx` even when the result
-  carries field errors. With legacy `application/json`: `200` for every well-formed request regardless
-  of GraphQL errors. This tightens the example's looser `result.isDataPresent()` rule.
+- **Status codes (media-type-driven).** With `application/graphql-response+json`, the draft pins
+  distinct codes per *request error* class (a request error prevents execution; a *field error* arises
+  during execution):
+  - GraphQL document cannot be parsed -> `400` ("Requests where the _GraphQL document_ cannot be
+    parsed should result in status code `400`").
+  - Not a well-formed GraphQL-over-HTTP request, e.g. missing `query` -> `422` ("A request that does
+    not constitute a well-formed _GraphQL-over-HTTP request_ SHOULD result in status code `422`").
+  - GraphQL validation failure -> `422` ("If a request fails _GraphQL validation_, the server SHOULD
+    return a status code of `422` ... without proceeding to GraphQL execution").
+  - Variable coercion failure -> `422` ("If [CoerceVariableValues()] raises a _GraphQL request error_,
+    the server SHOULD NOT execute the request and SHOULD return a status code of `422`").
+  - Execution begins -> `200`, even with field errors ("This is the case even if a _GraphQL field
+    error_ is raised during GraphQL's ExecuteQuery()").
+
+  With legacy `application/json`: `200` for every well-formed request regardless of GraphQL errors.
+  This supersedes both prior copies: the `tilgangsstyring` consumer copy uses a looser
+  `result.isDataPresent() || isLegacy` rule (200 when data present, 400 otherwise), and the
+  `graphitron-sakila-example` copy always returns `200`; neither implements the media-type-driven
+  per-class mapping above.
 - **GET.** POST is mandatory; GET is supported for read-only queries (the spec makes GET a MAY; we opt
   in for cacheable reads and browser links). A GET whose `query`/`operationName` resolves to a
   mutation returns `405 Method Not Allowed`, as the spec requires.
@@ -220,8 +242,10 @@ verifies, with a stable reference to the section, so a reader can cross-check ag
 spec change is easy to locate and update. Concretely:
 
 - One test (or named case) per normative requirement we claim to satisfy: POST-accepted, GET-MAY +
-  mutation-over-GET -> `405`, the `application/graphql-response+json` request-error `4xx` vs
-  executed-`2xx` watershed, legacy `application/json` always-`200`, `query`-required, and the
+  mutation-over-GET -> `405`, and the per-class `application/graphql-response+json` status codes pinned
+  above (unparseable document -> `400`; malformed request / missing `query` -> `422`; validation
+  failure -> `422`; variable-coercion failure -> `422`; executed-with-field-errors -> `200`), legacy
+  `application/json` always-`200`, `query`-required, and the
   `variables`/`operationName`/`extensions` request-parameter handling.
 - Each case carries the verbatim MUST/SHOULD/MAY sentence as a doc comment or a `@DisplayName`, plus a
   section pointer (the spec section heading or anchor) and the spec revision the text was taken from,
@@ -230,12 +254,19 @@ spec change is easy to locate and update. Concretely:
   the committed scope above is auditable at a glance, and a gap (a committed requirement with no
   citing test) is visible.
 
-Reviewer note: this is the first behavioural test of hand-written *runtime* code rather than generated
-output, and it does not fit the four-tier taxonomy (unit / pipeline / compilation / execution)
-cleanly, since those tiers describe generated-code behaviour. The per-module enforcement test
-(`testing.adoc`) fails the build on any `@Test` class lacking exactly one tier tag, so the conformance
-suite carries `@ExecutionTier` (closest: a full request over a real engine). If a body of
-runtime-library transport tests grows, the tier guide should note that they reuse `@ExecutionTier`.
+All behavioural coverage lives in this sakila-example suite, which is already in the tier-enforcement
+in-scope list; `graphitron-jakarta-rest` itself carries **no `@Test` classes**. This is deliberate:
+keeping the library test-free means the per-module tier-enforcement in-scope list need not grow, and no
+library-module test can silently escape the tier guard. If unit-level tests of the library are ever
+wanted (for example to exercise the status watershed in isolation), the module must join the
+tier-enforcement in-scope list at that point.
+
+Reviewer note: the conformance suite is the first behavioural test of hand-written *runtime* code
+rather than generated output, and it does not fit the four-tier taxonomy (unit / pipeline /
+compilation / execution) cleanly, since those tiers describe generated-code behaviour. The per-module
+enforcement test (`testing.adoc`) fails the build on any `@Test` class lacking exactly one tier tag, so
+the conformance suite carries `@ExecutionTier` (closest: a full request over a real engine). If a body
+of runtime-library transport tests grows, the tier guide should note that they reuse `@ExecutionTier`.
 
 ### Decisions (resolved forks)
 
@@ -244,7 +275,7 @@ runtime-library transport tests grows, the tier guide should note that they reus
 | Framework | Jakarta REST + Jakarta CDI, vendor-neutral; no RESTEasy/Quarkus-specific types |
 | Module / Java level | New `graphitron-jakarta-rest`, `<release>17</release>`, publishable |
 | Seam | `GraphitronApplication` SPI (`schema()`, `newExecutionInput()`, default `engineBuilder()`); hand-written adapter + abstract base |
-| GraphiQL | Bundled CDN page, served, disable-able |
+| GraphiQL | Bundled CDN page, served; toggled by an overridable `graphiqlEnabled()` (default `true`) on the abstract base, no config-framework dependency |
 | GET | Supported for queries; `405` on mutation |
 | Batching | Out of scope for v1 |
 | Status codes | Media-type-driven per spec |
