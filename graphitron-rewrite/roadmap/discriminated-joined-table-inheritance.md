@@ -65,6 +65,42 @@ synthetic discriminator alias (`MultiTablePolymorphicEmitter.DISCRIMINATOR_COLUM
 aliasing alongside R388's qualified-column emission, so the "Reuse R388's discriminator-gated ON-clause"
 note below reads against the post-R392 shape on trunk.
 
+## Implementation status
+
+Landed on trunk (single-column shared-PK slice, execution-verified end to end):
+
+- **Model.** `ParticipantRef.JoinedTableBound` reshaped to the approved design (dropped
+  `detailResidentFields`; carries the resolved child&rarr;parent `JoinStep.FkJoin`).
+- **Classifier.** `TypeBuilder.buildParticipantList` detects a participant whose `@table` differs from
+  the base, resolves the child&rarr;parent hop from the inherited `@reference`, skips the cross-table
+  pass, and builds a `JoinedTableBound`. PK=FK, same-base, and no-nameable-join invariants surface as
+  `INVALID_SCHEMA` diagnostics with candidate-FK hints.
+- **Emitter.** `TypeFetcherGenerator` projects each joined participant's base-resident
+  `ColumnReferenceField` off the base (aliased as the field name), its shared-key `ColumnField` off the
+  base (natural), and its detail-exclusive `ColumnField`s off a discriminator-gated `LEFT JOIN` to the
+  detail alias. The shared-key partition derives from the hop columns the variant carries, so no
+  residence list and no catalog read leak into the emitter. Standalone use rides the existing
+  `ColumnReferenceField` path unchanged.
+- **Fixture + tests.** New single-column `party` / `party_individual` / `party_company` tables (with a
+  base row lacking a detail row); `Party` / `Individual` / `Company` in `graphitron-sakila-example`
+  authored the R389 way; `@ExecutionTier` `allParties` (routing + per-participant projection +
+  NULL-through) and `allIndividuals` (standalone via the parent reference) tests; a `@PipelineTier`
+  classification test (positive shape, mixed discriminator-only + joined participant, no-nameable-join
+  rejection).
+
+Remaining for this item before In Review:
+
+- **Composite `jti_*` re-author.** Add the composite PK to `jti_app_account` / `jti_person`, re-author
+  `Subject` to the R389 shape, and convert the R388 workaround execution test in place to the R389
+  composite case. The emitter already AND-chains composite hop slots, so no new emitter logic is
+  expected; this is fixture + test work that proves the composite shared key.
+- **Validation tests for the remaining two invariants.** Rejection tests for the PK=FK violation (a
+  detail table whose FK to the base is not its PK) and the non-base parent-reference, each needing a
+  small dedicated fixture. The diagnostics are implemented and the no-nameable-join rejection is
+  covered; these two paths are unexercised by a test.
+- **Docs corpus example.** An R281 corpus example alongside `table-interface`, scrubbed of `R<n>` /
+  phase vocabulary, plus moving the user-doc draft into the interface-union chapter.
+
 ## Design
 
 **Query shape (confirmed): one discriminated base query plus a per-participant discriminator-gated
