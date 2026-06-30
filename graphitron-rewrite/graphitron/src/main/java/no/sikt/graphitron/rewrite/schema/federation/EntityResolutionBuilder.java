@@ -315,7 +315,7 @@ public final class EntityResolutionBuilder {
             // carries each required field individually, including the id), not NODE_ID.
             // Surface a warning so the consumer is aware their compound key bypasses the
             // global-id decode path.
-            warningSink.accept(new BuildWarning(
+            warningSink.accept(new BuildWarning.NoRule(
                 "@key(fields: \"" + fieldsValue + "\") on @node type '" + typeName
                 + "' includes 'id' alongside other fields; the id is treated as a column value "
                 + "rather than a global NodeId. Federation reps for this alternative must "

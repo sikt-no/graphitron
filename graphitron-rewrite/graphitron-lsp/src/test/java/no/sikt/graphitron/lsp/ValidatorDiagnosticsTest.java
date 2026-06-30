@@ -97,7 +97,7 @@ class ValidatorDiagnosticsTest {
     void buildWarningMapsToWarningSeverity() {
         var path = "/tmp/schema.graphqls";
         var uri = ValidationReport.canonicalUri(path);
-        var warning = new BuildWarning(
+        BuildWarning warning = new BuildWarning.NoRule(
             "compiled without -parameters; parameter names unavailable",
             new SourceLocation(10, 5, path));
         var report = ValidationReport.from(List.of(), List.of(warning));
@@ -122,11 +122,12 @@ class ValidatorDiagnosticsTest {
         // unreachable @record produces no warning and thus no editor signal, mirroring the generator.)
         var path = "/tmp/schema.graphqls";
         var uri = ValidationReport.canonicalUri(path);
-        var warning = new BuildWarning(
+        BuildWarning warning = BuildWarning.LintFinding.of(
             "Type 'FilmDetails' carries @record(record: { className: \"com.example.FilmDto\" }). "
             + "Graphitron derives the same backing class from the producing field's reflected return "
             + "type. The directive is redundant; remove it.",
-            new SourceLocation(2, 18, path));
+            new SourceLocation(2, 18, path),
+            no.sikt.graphitron.rewrite.lint.LintRule.REDUNDANT_RECORD_DIRECTIVE);
         var report = ValidationReport.from(List.of(), List.of(warning));
 
         var diags = Diagnostics.compute(uri, file(), CompletionData.empty(), CURRENT_SNAPSHOT, report);
