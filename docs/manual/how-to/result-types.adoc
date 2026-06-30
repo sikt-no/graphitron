@@ -2,7 +2,7 @@
 :description: Understand which backing class the rewrite reflects from a class-backed type's producer (jOOQ TableRecord, jOOQ Record, Java record, or POJO), and let accessor inference batch the children when the catalog can't.
 :!toc:
 
-A class-backed GraphQL output or input type is bound to an existing Java class. The binding is derived by reflection from the type's producer: for an output type, the producing field's return type (a `@service` method return, a `@tableMethod` return, or a parent-accessor chain); for an input type, the method parameter the input flows into. The reflected class's shape determines which sealed result-type variant the rewrite picks and, for child `@table` fields on free-form parents, whether the classifier can auto-derive a batch key from a typed accessor or whether you need an xref:../reference/directives/sourceRow.adoc[`@sourceRow`]. This recipe walks the decision tree and the operational consequences for each variant.
+A class-backed GraphQL output or input type is bound to an existing Java class. The binding is derived by reflection from the type's producer: for an output type, the producing field's return type (a `@service` method return or a parent-accessor chain); for an input type, the method parameter the input flows into. The reflected class's shape determines which sealed result-type variant the rewrite picks and, for child `@table` fields on free-form parents, whether the classifier can auto-derive a batch key from a typed accessor. This recipe walks the decision tree and the operational consequences for each variant.
 
 == The four output variants
 
@@ -150,7 +150,6 @@ The producer's return type determines the backing class. The only authoring choi
 
 == See also
 
-* xref:../reference/directives/sourceRow.adoc[`@sourceRow`] supplies the lift function when accessor inference can't apply.
 * xref:../reference/directives/reference.adoc[`@reference`] is the catalog-driven counterpart on `@table` and jOOQ-record parents.
 * xref:../reference/directives/table.adoc[`@table`] is the catalog-bound alternative when the type *is* the table.
 * xref:external-code.adoc[How-to: Wire external Java code] covers the broader `@service` integration patterns.

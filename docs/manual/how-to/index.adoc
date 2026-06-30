@@ -28,7 +28,6 @@ a|
 * xref:multi-hop-nodeid-filter.adoc[Multi-hop `@nodeId` filters]: reach a related node type through one or more intermediate tables when the FKs carry the target's keys positionally by SQL name.
 * xref:polymorphic-types.adoc[Polymorphic types]: choose between single-table and multi-table layouts for GraphQL interfaces and unions.
 * xref:result-types.adoc[Result-type variants]: understand the backing class reflected from a class-backed parent's producer (jOOQ `TableRecord`, jOOQ `Record`, Java record, plain POJO).
-* xref:source-row.adoc[Source-row directive]: bridge a non-jOOQ DTO parent to a `@table` child field with `@sourceRow`, optionally composed with `@reference` for multi-hop paths.
 * xref:sort-results.adoc[Sort results]: pick a column source, build stable keyset cursors with explicit tie-breakers, and avoid the collation pitfalls.
 * xref:split-vs-inline.adoc[When to split queries]: choose between inline correlated subqueries and `@splitQuery`-batched fetches.
 * xref:tenant-scoping.adoc[Tenant scoping]: per-request routing through `Graphitron.newExecutionInput(dsl, ...)`. The full recipe (per-tenant DataLoader partitioning, `@tenantId` directive, `byTenant` factory overload) ships under R45; until then, single-tenant apps pass a single `DSLContext`.

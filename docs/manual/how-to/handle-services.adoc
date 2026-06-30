@@ -4,7 +4,7 @@
 
 xref:../reference/directives/service.adoc[`@service`] hands the database operation for a field off to a custom Java method. The reference page covers signature, the `argMapping:` syntax, and the constraints. This recipe addresses the three operational topics it defers: how arguments (including nested input types and request-context values) flow into Java parameters, what return shapes the framework recognises and how to choose among them, and the contract the rewrite imposes when `@service` lands on a non-root field.
 
-For the surrounding context (when to reach for `@service` vs xref:../reference/directives/mutation.adoc[`@mutation`] vs xref:../reference/directives/tableMethod.adoc[`@tableMethod`]) see the reference's "Constraints" section. This recipe assumes the choice is already made.
+For the surrounding context (when to reach for `@service` vs xref:../reference/directives/mutation.adoc[`@mutation`]) see the reference's "Constraints" section. This recipe assumes the choice is already made.
 
 == Argument binding: from GraphQL to Java parameters
 
@@ -231,7 +231,6 @@ The performance shape: one `Set<Key>`-input call, one `Map<Key, Value>`-output r
 
 * xref:../reference/directives/service.adoc[`@service`] is the directive surface; this recipe expands its three deferred topics.
 * xref:../reference/directives/mutation.adoc[`@mutation`] for the framework-generated alternative on root mutation fields.
-* xref:../reference/directives/tableMethod.adoc[`@tableMethod`] for the lighter-weight "developer returns a `Table`, framework projects" variant.
 * xref:../reference/directives/splitQuery.adoc[`@splitQuery`] is the per-parent batch wrapper non-root services require.
 * xref:result-types.adoc[How-to: Result-type variants] covers the class-backed payload backing-class shape that the classifier reflects on to find children.
 * xref:split-vs-inline.adoc[How-to: When to split queries] covers the `DataLoader` cache-key shape and the aliased-uses-don't-share-batches consequence.

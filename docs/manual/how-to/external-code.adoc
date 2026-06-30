@@ -2,11 +2,9 @@
 :description: Plug a custom Java method into a directive that takes `ExternalCodeReference!`.
 :!toc:
 
-Five of the rewrite's directives (`@service`, `@externalField`, `@tableMethod`, `@condition`, `@enum`) hand the resolution of a slot off to a developer-supplied Java target via the shared `ExternalCodeReference` input. The mechanics are uniform across all five: a fully-qualified class name on the rewrite plugin's classpath, an optional method name that defaults to the GraphQL field name, and an optional `argMapping:` for renaming Java parameters. This recipe walks through each piece once.
+Four of the rewrite's directives (`@service`, `@externalField`, `@condition`, `@enum`) hand the resolution of a slot off to a developer-supplied Java target via the shared `ExternalCodeReference` input. The mechanics are uniform across all four: a fully-qualified class name on the rewrite plugin's classpath, an optional method name that defaults to the GraphQL field name, and an optional `argMapping:` for renaming Java parameters. This recipe walks through each piece once.
 
 (The deprecated `@record` directive still parses the same `ExternalCodeReference` shape, but it is ignored: a class-backed type's binding is reflected from its producer's return or parameter type, not from a directive. See xref:result-types.adoc[How-to: Result-type variants].)
-
-`@sourceRow` carries the same plugin-classpath requirement but exposes the lifter via flat `(className, method)` args rather than the `ExternalCodeReference` wrapper. See xref:source-row.adoc[Source-row directive] for the dedicated walk-through.
 
 == Make the class reachable
 
@@ -106,13 +104,11 @@ Each directive's `ExternalCodeReference!` parameter has its own name, but the co
 | Directive | Slot name | Reference page
 | `@service` | `service:` (`ExternalCodeReference`) | xref:../reference/directives/service.adoc[`@service`]
 | `@externalField` | `reference:` (`ExternalCodeReference`) | xref:../reference/directives/externalField.adoc[`@externalField`]
-| `@tableMethod` | flat `className:` + `method:` + `argMapping:` | xref:../reference/directives/tableMethod.adoc[`@tableMethod`]
 | `@condition` | `condition:` (`ExternalCodeReference`) | xref:../reference/directives/condition.adoc[`@condition`]
 | `@enum` | `enumReference:` (`ExternalCodeReference`) | xref:../reference/directives/enum.adoc[`@enum`]
-| `@sourceRow` | flat `className:` + `method:` | xref:../reference/directives/sourceRow.adoc[`@sourceRow`]
 |===
 
-The slot names are historical (each directive was named before the shape was unified). The two flat-form directives (`@tableMethod`, `@sourceRow`) carry `className:` and `method:` directly on the directive; the rest still wrap them in an `ExternalCodeReference` input object.
+The slot names are historical (each directive was named before the shape was unified); each wraps the class/method pair in an `ExternalCodeReference` input object.
 
 The deprecated `@record` directive parses the same `record:` (`ExternalCodeReference`) shape, but the binding it once carried is ignored; a class-backed type's Java class is reflected from its producer instead. A reachable type still carrying `@record` triggers a build warning telling you to remove it.
 
@@ -128,8 +124,6 @@ The deprecated `@record` directive parses the same `record:` (`ExternalCodeRefer
 
 * xref:../reference/directives/service.adoc[`@service`] is the most common consumer of this surface: a developer-supplied resolver method for a whole field.
 * xref:../reference/directives/externalField.adoc[`@externalField`] uses a static method that returns a jOOQ `Field<T>` plugged into the parent's `SELECT` projection.
-* xref:../reference/directives/tableMethod.adoc[`@tableMethod`] uses a static method that returns a jOOQ `Table<R>` chosen at request time.
 * xref:../reference/directives/condition.adoc[`@condition`] uses a static method that returns a jOOQ `Condition` to splice into a query's `WHERE` clause.
-* xref:source-row.adoc[Source-row directive] (`@sourceRow`) uses a static method that supplies the per-parent batch key for a class-backed parent. Sibling pattern with flat `(className, method)` args instead of the `ExternalCodeReference` wrapper documented above.
 
 xref:index.adoc[← How-to index]

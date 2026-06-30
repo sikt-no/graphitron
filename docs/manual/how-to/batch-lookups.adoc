@@ -118,7 +118,7 @@ type FilmDetails {
 }
 ----
 
-The same VALUES-pair join applies; the difference is purely on the parent side, where the key extraction reads from the jOOQ record's accessor rather than from a `@table` parent's projected `__idx__` column. xref:../reference/directives/sourceRow.adoc[`@sourceRow`] is the analogous escape hatch when the class-backed parent's backing class is a *plain* Java record (no FK metadata), but the lookup-key plumbing on the child side is the same.
+The same VALUES-pair join applies; the difference is purely on the parent side, where the key extraction reads from the jOOQ record's accessor rather than from a `@table` parent's projected `__idx__` column.
 
 == Constraints and pitfalls
 
@@ -138,7 +138,6 @@ The same VALUES-pair join applies; the difference is purely on the parent side, 
 * xref:../reference/directives/lookupKey.adoc[`@lookupKey`] is the directive surface and the canonical-shapes catalog.
 * xref:../reference/directives/splitQuery.adoc[`@splitQuery`] composes with `@lookupKey` for per-parent narrowed child batches.
 * xref:../reference/directives/nodeId.adoc[`@nodeId`] supplies the encoded-id decode plumbing; same-table `@nodeId` args synthesise `@lookupKey` automatically.
-* xref:../reference/directives/sourceRow.adoc[`@sourceRow`] is the analogous escape hatch on plain-Java-record parents (no FK metadata).
 * xref:global-id.adoc[How-to: Global object IDs] covers stable-id strategies and the decode-side argument and input contracts that NodeId-keyed lookups depend on.
 * xref:condition-cascade.adoc[How-to: Stacking and overriding conditions] covers the `@lookupKey` exemption from the implicit-predicate path.
 * xref:connections.adoc[How-to: Cursor-paginated connections] covers the `@splitQuery` + `@asConnection` shape when paginated child slices are the goal instead of caller-narrowed keysets.
