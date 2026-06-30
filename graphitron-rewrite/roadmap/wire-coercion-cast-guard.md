@@ -5,7 +5,7 @@ status: Spec
 bucket: architecture
 priority: 2
 theme: structural-refactor
-depends-on: [service-walker-substrate-absorption, dimensional-model-pivot]
+depends-on: [dimensional-model-pivot]
 created: 2026-05-29
 last-updated: 2026-06-30
 ---

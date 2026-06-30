@@ -14,14 +14,13 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 | ID | Item | Status | Updated | Plan |
 |---|---|---|---|---|
-| `R261` | Generation-time wire-coercion cast guard across arg-classification sites <sub>blocked by: [service-walker-substrate-absorption](service-walker-substrate-absorption.md), [dimensional-model-pivot](dimensional-model-pivot.md)</sub> | Spec | 2026-06-30 <sub>created 2026-05-29</sub> | [plan](wire-coercion-cast-guard.md) |
+| `R261` | Generation-time wire-coercion cast guard across arg-classification sites <sub>blocked by: [dimensional-model-pivot](dimensional-model-pivot.md)</sub> | Spec | 2026-06-30 <sub>created 2026-05-29</sub> | [plan](wire-coercion-cast-guard.md) |
 | `R19` | Rebase and squash rewrite branch onto main | Ready |  | [plan](history-squash.md) |
 | `R222` | Dimensional model pivot: slots over cross-product permits | Spec | 2026-06-18 <sub>created 2026-05-21</sub> | [plan](dimensional-model-pivot.md) |
 | `R384` | Support converted/@nodeId/developer-@condition filters on multitable interface/union queries | Spec | 2026-06-27 <sub>created 2026-06-25</sub> | [plan](multitable-interface-converted-nodeid-condition-filters.md) |
 | `R333` | The Graphitron data model | Spec | 2026-06-25 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
 | `R396` | @reference FK-connection validation rejects schema-qualified or case-mismatched @table base names | Ready | 2026-06-30 <sub>created 2026-06-29</sub> | [plan](reference-fk-connection-qualified-table-name.md) |
 | `R346` | Regenerate and guard the generated supported-directives migration doc against directive-set drift | Ready | 2026-06-19 | [plan](supported-directives-regen-guard.md) |
-| `R256` | Absorb the service walker substrate: typed per-arm errors + multi-arg ctors | In Review | 2026-06-30 <sub>created 2026-05-29</sub> | [plan](service-walker-substrate-absorption.md) |
 | `R308` | Fix the @service list-payload N+1 by deriving many-arrival for list-returning carriers | Spec | 2026-06-14 | [plan](service-list-payload-arrival.md) |
 | `R335` | Fold input/scalar/enum classification into the single classify-and-emit walk | Spec | 2026-06-19 | [plan](walk-classifies-input-surface.md) |
 | `R381` | LSP-guided @reference path authoring | Spec | 2026-06-25 | [plan](lsp-reference-path-authoring.md) |
@@ -232,8 +231,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### structural-refactor
 
-- `R261` [**Generation-time wire-coercion cast guard across arg-classification sites**](wire-coercion-cast-guard.md) — Spec, architecture, blocked by [service-walker-substrate-absorption](service-walker-substrate-absorption.md), [dimensional-model-pivot](dimensional-model-pivot.md)
-- `R256` [**Absorb the service walker substrate: typed per-arm errors + multi-arg ctors**](service-walker-substrate-absorption.md) — In Review, structural
+- `R261` [**Generation-time wire-coercion cast guard across arg-classification sites**](wire-coercion-cast-guard.md) — Spec, architecture, blocked by [dimensional-model-pivot](dimensional-model-pivot.md)
 - `R222` [**Dimensional model pivot: slots over cross-product permits**](dimensional-model-pivot.md) — Spec, structural
 - `R334` [**Generated @condition arg extraction is an unreadable nested-ternary one-liner**](readable-condition-arg-extraction.md) — Backlog, Backlog
 - `R333` [**The Graphitron data model**](coordinate-lowers-to-datafetcher-queryparts.md) — Spec, structural
