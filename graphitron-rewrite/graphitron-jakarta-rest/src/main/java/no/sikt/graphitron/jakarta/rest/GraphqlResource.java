@@ -1,8 +1,5 @@
 package no.sikt.graphitron.jakarta.rest;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import graphql.ErrorType;
 import graphql.ExecutionInput;
 import graphql.ExecutionResult;
@@ -12,6 +9,10 @@ import graphql.language.OperationDefinition;
 import graphql.parser.Parser;
 import graphql.schema.idl.SchemaPrinter;
 import jakarta.inject.Inject;
+import jakarta.json.bind.Jsonb;
+import jakarta.json.bind.JsonbBuilder;
+import jakarta.json.bind.JsonbConfig;
+import jakarta.json.bind.JsonbException;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.POST;
@@ -43,8 +44,8 @@ import java.util.Map;
  *
  * <p>Request parsing and response serialisation live in this resource, with <em>no</em> custom
  * JAX-RS {@code MessageBodyReader}/{@code Writer} providers: the resource reads the raw body, parses
- * it with its own {@link ObjectMapper} into a {@link GraphqlRequest}, and both verbs funnel through
- * one {@link #execute} helper that builds the input via the {@link GraphitronApplication} seam,
+ * it with the Jakarta JSON Binding ({@link Jsonb}) API into a {@link GraphqlRequest}, and both verbs
+ * funnel through one {@link #execute} helper that builds the input via the {@link GraphitronApplication} seam,
  * executes, and serialises {@code result.toSpecification()}. Wire-format encoding stays at the HTTP
  * boundary, never in the model. Owning parsing lets the resource shape parse errors as spec
  * {@code 4xx} responses and own the request-error-vs-field-error status watershed, which a
@@ -59,11 +60,17 @@ public class GraphqlResource {
     private static final MediaType GRAPHQL_RESPONSE_TYPE =
         new MediaType("application", "graphql-response+json");
 
-    private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {};
-
     private static final String GRAPHIQL_HTML = loadResource("graphiql.html");
 
-    private final ObjectMapper mapper = new ObjectMapper();
+    /**
+     * The JSON binder, created once and shared (it is thread-safe and expensive to build). Resolved
+     * from the JSON-B provider on the consumer's classpath via {@code ServiceLoader}; a Jakarta REST
+     * runtime supplies one (Yasson on Jakarta EE servers; {@code quarkus-jsonb} in Quarkus).
+     * {@code withNullValues(true)} keeps explicit nulls (a GraphQL field that resolves to {@code null}
+     * must appear in {@code data}, not be dropped).
+     */
+    private static final Jsonb JSONB =
+        JsonbBuilder.create(new JsonbConfig().withNullValues(true));
 
     @Inject GraphqlEngine engine;
     @Inject GraphitronApplication application;
@@ -75,8 +82,8 @@ public class GraphqlResource {
         boolean legacy = isLegacy(headers);
         GraphqlRequest request;
         try {
-            request = mapper.readValue(body, GraphqlRequest.class);
-        } catch (JsonProcessingException e) {
+            request = JSONB.fromJson(body, GraphqlRequest.class);
+        } catch (JsonbException e) {
             // Not a well-formed GraphQL-over-HTTP request (body is not valid JSON) -> 422.
             return requestError(422, "Request body is not valid JSON.", legacy);
         }
@@ -102,7 +109,7 @@ public class GraphqlResource {
         try {
             variableMap = parseMapParam(variables);
             extensionMap = parseMapParam(extensions);
-        } catch (JsonProcessingException e) {
+        } catch (JsonbException e) {
             return requestError(422, "The 'variables'/'extensions' parameter is not valid JSON.", legacy);
         }
         return execute(new GraphqlRequest(query, operationName, variableMap, extensionMap), true, legacy);
@@ -212,11 +219,12 @@ public class GraphqlResource {
         return chosen == null ? null : chosen.getOperation();
     }
 
-    private Map<String, Object> parseMapParam(String json) throws JsonProcessingException {
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> parseMapParam(String json) {
         if (isBlank(json)) {
             return null;
         }
-        return mapper.readValue(json, MAP_TYPE);
+        return JSONB.fromJson(json, Map.class);
     }
 
     private Response requestError(int modernStatus, String message, boolean legacy) {
@@ -226,12 +234,8 @@ public class GraphqlResource {
             .build();
     }
 
-    private String serialise(Object payload) {
-        try {
-            return mapper.writeValueAsString(payload);
-        } catch (JsonProcessingException e) {
-            throw new IllegalStateException("Failed to serialise GraphQL response", e);
-        }
+    private static String serialise(Object payload) {
+        return JSONB.toJson(payload);
     }
 
     private static Object errorBody(String message) {
