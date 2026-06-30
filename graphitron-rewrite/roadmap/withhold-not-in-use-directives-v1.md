@@ -102,6 +102,25 @@ already documented in `how-to/migrating-from-legacy.adoc` and they are labelled 
 directive index. Note this is only about their explanatory prose — that same file still needs the
 two withheld-trio `xref` fixes called out above, so it is in Stage 2's strip list, not exempt from it.
 
+**Bijection test carve-out (R68).** `DirectiveDocCoverageTest`
+(`graphitron-sakila-example`) pins a declared-directive ↔ reference-page bijection. Deleting the
+withheld trio's pages while AC5 keeps them declared in `directives.graphqls` breaks it: the trio
+becomes declared-but-page-less. The fix narrows the invariant to "a directive needs a page only if
+it is on the *advertised* surface", and derives the exempt (withheld) set from the generated
+`supported-directives.adoc` fragment that `DirectiveSupportReport` renders (a declared directive
+absent from that fragment is withheld) rather than duplicating `WITHHELD_FROM_V1`, so the test
+cannot drift from the report that owns the policy. When a withheld directive is re-advertised
+(R403/R404/R69) its page reappears and the bijection tightens automatically. Test-infra only.
+
+> Note for the Done-gate reviewer: at the time of writing, `mvn install -Plocal-db` is red on
+> trunk for reasons unrelated to R400 — R389/R398 joined-table-inheritance In-Progress commits
+> leave `graphitron` core (9 failures + 2 errors on the `Party` / joined-table fixtures) and, at
+> `82fd246`, `graphitron-sakila-example` code-generation (21 schema-validation errors on the
+> `jti_*` tables) red. These reproduce at R400's own `4771bcd` publish, predate this item's diff,
+> and touch no file R400 changes. R400's `DirectiveDocCoverageTest` fix was verified by running the
+> test standalone against the real tree (passes); a full-reactor green build depends on R389/R398
+> landing.
+
 ## Reintroduction & recovery
 
 The removal is non-destructive: every removed page stays in git history, recoverable without
@@ -125,9 +144,11 @@ re-authoring. Recovery is **anchor-free** (no hardcoded SHA to go stale): for ea
 4. Recovery is captured by R403 / R404 / R69 with anchor-free (`git log --diff-filter=D`) restore
    instructions.
 5. No generator behaviour change: `directives.graphqls` is untouched and no classify-time rejection
-   is added. The only Java changes are confined to `roadmap-tool`'s `DirectiveSupportReport` — the
-   two policy sets (`REJECTED_ON_USE` / `WITHHELD_FROM_V1`) and the `renderMigration` filtering that
-   consumes them.
+   is added. The Java touched is test/tool infrastructure only: `roadmap-tool`'s
+   `DirectiveSupportReport` (Stage 1: the two policy sets `REJECTED_ON_USE` / `WITHHELD_FROM_V1`
+   and the `renderMigration` filtering that consumes them) and, in Stage 2, the
+   `DirectiveDocCoverageTest` carve-out (see Stage 2 note below). No emitter, classifier, or
+   validator code changes.
 
 ## In Review -> Ready: review feedback (2026-06-30)
 
