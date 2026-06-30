@@ -1,7 +1,7 @@
 ---
 id: R400
 title: "Withhold not-in-use directives from the v1 advertised directive surface"
-status: Ready
+status: In Review
 bucket: feature
 theme: docs
 depends-on: []
