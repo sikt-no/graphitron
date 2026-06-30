@@ -400,6 +400,19 @@ The `@table`+`@discriminate` interface child (`TableInterfaceField`, inline, tar
 the Relay `Node` root (`QueryNodeField`, `operation = NodeResolve`, target shape `Interface`) are further
 leaves on this same polymorphic rule; they are asserted corpus-only (`table-interface`, `relay-node`).
 
+A discriminated interface may also be a *joined-table* (class-table) inheritance: each concrete type
+declares its own detail `@table` distinct from the discriminated base, with its inherited (base-resident)
+fields carrying a `@reference` back to the base and its own columns living on the detail table. Such a
+participant classifies as a `ParticipantRef.JoinedTableBound` carrying the resolved child-to-parent hop
+(rather than a single-table `TableBound`); its inherited field is a `ColumnReferenceField` resolved on
+the base and its own field a plain `ColumnField` on the detail table. The interface fetcher selects from
+the base and emits a discriminator-gated `LEFT JOIN` to each participant's detail table, projecting the
+shared fields off the base and each participant's detail-exclusive columns off its detail alias; the same
+concrete type is independently queryable on its own, resolving its inherited fields through the parent
+reference. The child-to-parent join must be PK=FK (the detail table's foreign-key columns to the base are
+its own primary key, single-column or composite), which keeps the base-to-detail join single-valued.
+Asserted by the `joined-table-interface` corpus example.
+
 === Reading the generator-output column
 
 The "`*Fetchers` Generates" column in the tables below names which of four emission paths a variant
