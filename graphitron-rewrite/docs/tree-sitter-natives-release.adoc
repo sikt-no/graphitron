@@ -9,17 +9,17 @@ of graphitron's generator surface never see it directly.
 
 == What the artifact is
 
-A single jar that ships per-platform tree-sitter-graphql grammar libraries
-under `lib/<os>-<arch>/`:
+A single jar that ships two per-platform tree-sitter libraries under
+`lib/<os>-<arch>/`: the GraphQL grammar and the tree-sitter runtime.
 
-[cols="1,2"]
+[cols="1,2,2"]
 |===
-| Platform | Resource path
+| Platform | Grammar | Runtime
 
-| `linux-x86_64`   | `lib/linux-x86_64/libtree-sitter-graphql.so`
-| `linux-aarch64`  | `lib/linux-aarch64/libtree-sitter-graphql.so`
-| `macos-aarch64`  | `lib/macos-aarch64/libtree-sitter-graphql.dylib`
-| `windows-x86_64` | `lib/windows-x86_64/tree-sitter-graphql.dll`
+| `linux-x86_64`   | `lib/linux-x86_64/libtree-sitter-graphql.so`   | `lib/linux-x86_64/libtree-sitter.so`
+| `linux-aarch64`  | `lib/linux-aarch64/libtree-sitter-graphql.so`  | `lib/linux-aarch64/libtree-sitter.so`
+| `macos-aarch64`  | `lib/macos-aarch64/libtree-sitter-graphql.dylib` | `lib/macos-aarch64/libtree-sitter.dylib`
+| `windows-x86_64` | `lib/windows-x86_64/tree-sitter-graphql.dll`   | `lib/windows-x86_64/tree-sitter.dll`
 |===
 
 macOS is Apple-silicon-only. Sikt graphitron-lsp developers all run M1
@@ -28,46 +28,57 @@ on the platform, and graphitron-lsp is internal-only per the spec's
 "Out of scope" list. Adding `macos-x86_64` back means re-enabling that
 matrix entry and bumping the jar-layout assertion expectations.
 
-Each binary is the vendored bkegley tree-sitter-graphql grammar (commit
-`5e66e96`) compiled against the upstream tree-sitter parser ABI (currently
-`0.26.0`). The binary exports the grammar's `tree_sitter_graphql` entry
-point only; the tree-sitter runtime itself (`libtree-sitter`, exporting the
-`ts_*` symbols) is *not* linked in. graphitron-lsp's `BundledLibraryLookup`
-loads the grammar from this jar, and jtreesitter's `ChainedLibraryLookup`
-finds the runtime on the consumer's OS at load time
-(`SymbolLookup.libraryLookup` → `System.loadLibrary("tree-sitter")` →
-`Linker.defaultLookup`).
+The *grammar* binary is the vendored bkegley tree-sitter-graphql grammar
+(commit `5e66e96`), built with the upstream `tree-sitter build` CLI against
+the pinned parser ABI. It exports the grammar's `tree_sitter_graphql` entry
+point only, imports no `ts_*` symbols, and so loads independently of the
+runtime.
 
-This is the ecosystem's standing split: the runtime is generic and lives
-once on the system, per-language grammar libs are caller-provided. Earlier
-drafts of this module tried to ship both in a unity build and ran into
-upstream gaps (the tree-sitter project does not publish a prebuilt
-`libtree-sitter` runtime asset alongside its CLI); the grammar-only shape
-is the one jtreesitter is built around.
+The *runtime* binary is the upstream tree-sitter runtime
+(`libtree-sitter`, exporting the `ts_*` symbols) built from the pinned
+source tag, not the system package. graphitron-lsp's `BundledLibraryLookup`
+extracts both binaries from this jar and composes `grammar.or(runtime)` into
+jtreesitter's SPI lookup, so the LSP has no native system dependency at all.
 
-The build uses the upstream `tree-sitter build` CLI rather than a
+Bundling the runtime reverses the module's original grammar-only split. That
+split made the runtime a system dependency (`brew install tree-sitter`,
+`pacman -S`, `vcpkg install`, or a from-source build on Debian/Ubuntu, whose
+apt `libtree-sitter0` is 0.20.x and too old). The recurring cost of that
+install path, especially on Windows and Debian/Ubuntu, is what R401 retired
+by bundling the runtime; the tree-sitter project still does not publish a
+prebuilt `libtree-sitter` asset, so we build it ourselves on native runners
+from the pinned source (see "Cutting a release" below).
+
+The grammar build uses the upstream `tree-sitter build` CLI rather than a
 hand-rolled `cc` / `cl.exe` invocation. The CLI handles MSVC export
 annotations on Windows uniformly, which is what gives us a working Windows
 DLL with the grammar entry point correctly exported (the bonede route
 fails this on Windows, exporting `Java_org_treesitter_*` JNI wrappers
-only).
+only). The runtime build does not use the CLI: it builds `libtree-sitter`
+from the cloned source `lib/` (POSIX `make`; Windows MinGW-w64 `make` with
+static-linked gcc runtime), with a transitive-dep allowlist enforced as a
+release gate.
 
 == Versioning
 
-Format: `<runtime-version>-<build-n>`. First release: `0.26.0-1`. The
-`<runtime-version>` portion is the tree-sitter parser ABI the grammar was
-built against, not a runtime we ship. A consumer with an OS-installed
-`libtree-sitter` older than this fails at `Language.load` with a clear
-ABI-mismatch error.
+Format: `<runtime-version>-<build-n>`. First bundled-runtime release:
+`0.26.9-1`. The `<runtime-version>` portion is the actual tree-sitter
+runtime version shipped in the jar: the upstream source tag both the grammar
+ABI and the bundled `libtree-sitter` are built from. It must match the
+`tree-sitter-cli-version` workflow input (tag `v0.26.9` for `0.26.9-1`).
+
+Before `0.26.9-1`, `<runtime-version>` meant the parser ABI the grammar was
+built against and the runtime was a system dependency; from `0.26.9-1` it
+names the runtime we ship.
 
 [cols="1,2"]
 |===
 | Change | Version bump
 
-| Grammar update (new `parser.c`)                       | `<build-n>` (e.g. `0.26.0-1` → `0.26.0-2`)
+| Grammar update (new `parser.c`)                       | `<build-n>` (e.g. `0.26.9-1` -> `0.26.9-2`)
 | Build-flag change                                     | `<build-n>`
-| Recompile with no source change                       | `<build-n>`
-| Retarget grammar to a newer tree-sitter parser ABI    | `<runtime-version>` resets `<build-n>` to `1` (e.g. `0.26.0-3` → `0.27.0-1`)
+| Recompile / security rebuild with no source change    | `<build-n>`
+| Retarget to a newer upstream tree-sitter tag          | `<runtime-version>` resets `<build-n>` to `1` (e.g. `0.26.9-3` -> `0.27.0-1`)
 |===
 
 Snapshots are not used. The natives module ships releases only, and a
@@ -87,38 +98,42 @@ Three steps, the second being the GitHub Actions trigger.
 
 . *Trigger the workflow.* In the GitHub Actions UI for `sikt-no/graphitron`,
   run `.github/workflows/tree-sitter-natives-release.yml` via
-  `workflow_dispatch`. The single input is the upstream `tree-sitter` CLI
-  release tag (e.g. `v0.26.9`); pick a CLI release whose bundled parser
-  matches the `<runtime-version>` portion of the pom version.
+  `workflow_dispatch`. The single input is the upstream `tree-sitter` tag
+  (e.g. `v0.26.9`); it pins both the CLI that builds the grammar and the
+  source checkout the bundled runtime is built from, and must match the
+  `<runtime-version>` portion of the pom version.
 
 . *Watch the three stages.* The workflow only deploys if every stage
   succeeds:
 +
-.. *Build matrix* (four native runners). Each runner downloads the pinned
-   `tree-sitter` CLI, runs `tree-sitter build` against the vendored
-   grammar, then asserts the produced binary exports
-   `tree_sitter_graphql`. Symbol-table check uses `nm -gU` on POSIX and
-   `dumpbin /exports` on Windows. The artifact is uploaded as
+.. *Build matrix* (four native runners). Each runner builds two binaries.
+   The grammar: download the pinned `tree-sitter` CLI, run
+   `tree-sitter build` against the vendored grammar, assert it exports
+   `tree_sitter_graphql`. The runtime: clone the pinned source tag and build
+   `libtree-sitter` from `lib/` (POSIX `make`; Windows MinGW-w64 `make` with
+   `-static -static-libgcc`), then run the release gates: it must export
+   `ts_language_abi_version` and the core `ts_parser_*` symbols, and its
+   transitive deps must fall within the per-platform allowlist (`ldd` /
+   `otool -L` / `dumpbin /dependents`; a stray `libgcc_s_seh-1.dll` or
+   third-party `.so` fails the release). Symbol checks use `nm -gU` on POSIX
+   and `dumpbin /exports` on Windows. Both binaries upload as
    `native-<platform>`.
-.. *Package + deploy* (ubuntu-latest). Downloads all four binary artifacts,
-   stages them under `target/classes/lib/<os>-<arch>/`, runs
-   `mvn package`, and asserts the produced jar contains exactly the four
-   `lib/<os>-<arch>/...` entries and no others. Then `mvn deploy` signs
-   with GPG and publishes via `central-publishing-maven-plugin` with
-   `autoPublish=true`.
+.. *Package + deploy* (ubuntu-latest). Downloads all four artifacts, stages
+   grammar + runtime under `target/classes/lib/<os>-<arch>/`, runs
+   `mvn package`, and asserts the produced jar contains exactly the eight
+   `lib/<os>-<arch>/...` entries (four grammar + four runtime) and no others.
+   Then `mvn deploy` signs with GPG and publishes via
+   `central-publishing-maven-plugin` with `autoPublish=true`.
 .. *Post-deploy load+parse matrix* (four native runners). After deploy
-   succeeds, each runner installs `libtree-sitter`: source build from
-   upstream on Linux (apt's `libtree-sitter0` is 0.20.x and predates
-   `ts_language_abi_version` that jtreesitter 0.26 needs), `brew install
-   tree-sitter` on macOS, `vcpkg install tree-sitter:x64-windows` on
-   Windows. Then resolves the freshly-published jar from a clean local m2
-   (with retries against Central's propagation delay), then runs a tiny
-   FFM-based Java verifier that loads the platform-appropriate grammar
-   binary, calls `Language.load(symbols, "tree_sitter_graphql")`, parses
+   succeeds, each runner resolves the freshly-published jar from a clean
+   local m2 (with retries against Central's propagation delay), then runs a
+   tiny FFM-based Java verifier with *no* system `libtree-sitter` installed.
+   The verifier extracts both the grammar and the runtime from the jar,
+   composes `grammar.or(runtime)`, calls
+   `Language.load(symbols, "tree_sitter_graphql")`, parses
    `"type Query { hello: String }"`, and asserts the root is `source_file`
-   with no errors. The verifier passes only the grammar's `SymbolLookup`
-   to `Language.load`; jtreesitter's chain finds the just-installed
-   runtime automatically.
+   with no errors. A pass with no system runtime present is the proof that
+   the jar is self-sufficient on that platform.
 
 If stage 3 fails on any platform, bump `<build-n>` and re-release. The
 failing version stays on Central; downstream `graphitron-lsp` pins to
@@ -161,9 +176,12 @@ Three design choices worth knowing about for anyone maintaining this:
 
 == Where the binaries live before deploy
 
-Not committed. The four binaries are produced fresh on four native
-runners per release and merged into the jar during the package+deploy
-stage. The vendored grammar sources under
+Not committed. The eight binaries (four grammar + four runtime) are produced
+fresh on four native runners per release and merged into the jar during the
+package+deploy stage. The vendored grammar sources under
 `graphitron-rewrite/graphitron-tree-sitter-natives/src/main/native/grammars/graphql/`
-are the only inputs that live in git; the tree-sitter runtime sources are
-not vendored anywhere, because we don't ship the runtime at all.
+are the grammar's only git-resident input; the runtime is built from the
+pinned upstream source tag cloned at release time, not vendored in git. Its
+provenance (source tag, per-platform build invocation and flags, the
+transitive-dep allowlist, and the update procedure) is recorded in the
+module-level `UPSTREAM.md` "Runtime provenance" section.

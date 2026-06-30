@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
     inputs:
       tree-sitter-cli-version:
-        description: 'Upstream tree-sitter CLI tag to build with (must match runtime version pinned in pom.xml).'
+        description: 'Upstream tree-sitter tag. Pins both the CLI used to build the grammar and the source checkout the bundled libtree-sitter runtime is built from. Must match the runtime version in pom.xml (e.g. tag v0.26.9 -> pom 0.26.9-<build-n>).'
         required: true
         default: 'v0.26.9'
       dry-run:
@@ -35,21 +35,26 @@ jobs:
           - platform: linux-x86_64
             runner: ubuntu-latest
             lib-name: libtree-sitter-graphql.so
+            runtime-name: libtree-sitter.so
             cli-asset: tree-sitter-linux-x64.gz
             cli-binary: tree-sitter
           - platform: linux-aarch64
             runner: ubuntu-24.04-arm
             lib-name: libtree-sitter-graphql.so
+            runtime-name: libtree-sitter.so
             cli-asset: tree-sitter-linux-arm64.gz
             cli-binary: tree-sitter
           - platform: macos-aarch64
             runner: macos-14
             lib-name: libtree-sitter-graphql.dylib
+            runtime-name: libtree-sitter.dylib
             cli-asset: tree-sitter-macos-arm64.gz
             cli-binary: tree-sitter
           - platform: windows-x86_64
             runner: windows-latest
             lib-name: tree-sitter-graphql.dll
+            # Windows DLLs follow platform convention: no "lib" prefix (matches the grammar).
+            runtime-name: tree-sitter.dll
             cli-asset: tree-sitter-windows-x64.gz
             cli-binary: tree-sitter.exe
     steps:
@@ -117,11 +122,132 @@ jobs:
           }
           Write-Output "OK: tree_sitter_graphql exported"
 
-      - name: Upload binary artifact
+      # ---- tree-sitter runtime (libtree-sitter) -------------------------------
+      # Built from the same pinned upstream tag as the grammar, but from source
+      # (the `lib/` directory) rather than the CLI binary. Bundling it removes
+      # the LSP's only system dependency. Provenance + flags: see the natives
+      # module UPSTREAM.md "Runtime provenance" section.
+
+      - name: Build libtree-sitter runtime (POSIX)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          src="$RUNNER_TEMP/ts-src"
+          out="$RUNNER_TEMP/out"
+          mkdir -p "$out"
+          git clone --depth=1 --branch="${{ inputs.tree-sitter-cli-version }}" \
+            https://github.com/tree-sitter/tree-sitter "$src"
+          make -C "$src" CFLAGS="-O3"
+          # The top-level make leaves an unversioned shared-lib symlink at the repo
+          # root; fall back to the newest versioned artifact if the name differs.
+          built="$src/${{ matrix.runtime-name }}"
+          if [[ ! -e "$built" ]]; then
+            built="$(ls -1 "$src/${{ matrix.runtime-name }}"* 2>/dev/null | sort | tail -n1)"
+          fi
+          # -L dereferences the symlink so we stage the real binary under the canonical name.
+          cp -L "$built" "$out/${{ matrix.runtime-name }}"
+          ls -la "$out/${{ matrix.runtime-name }}"
+
+      - name: Set up MSYS2 + MinGW-w64 (Windows runtime build)
+        if: runner.os == 'Windows'
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: false
+          install: >-
+            git
+            make
+            mingw-w64-x86_64-gcc
+
+      - name: Build libtree-sitter runtime (Windows, MinGW-w64)
+        if: runner.os == 'Windows'
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          tmp="$(cygpath -u "$RUNNER_TEMP")"
+          src="$tmp/ts-src"
+          out="$tmp/out"
+          mkdir -p "$out"
+          git clone --depth=1 --branch="${{ inputs.tree-sitter-cli-version }}" \
+            https://github.com/tree-sitter/tree-sitter "$src"
+          # Static-link the MinGW runtime so the DLL carries no libgcc_s_seh-1 /
+          # libwinpthread-1 transitive deps (enforced by the dependents allowlist below).
+          make -C "$src" \
+            CC=x86_64-w64-mingw32-gcc \
+            AR=x86_64-w64-mingw32-ar \
+            CFLAGS="-O3" \
+            LDFLAGS="-static -static-libgcc"
+          built="$(ls -1 "$src"/libtree-sitter.dll "$src"/*.dll 2>/dev/null | head -n1)"
+          cp "$built" "$out/${{ matrix.runtime-name }}"
+          ls -la "$out/${{ matrix.runtime-name }}"
+
+      - name: Verify runtime exported symbols (POSIX)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          lib="$RUNNER_TEMP/out/${{ matrix.runtime-name }}"
+          nm_out="$(nm -gU "$lib" 2>/dev/null || nm -g --defined-only "$lib")"
+          for sym in ts_language_abi_version ts_parser_new ts_parser_parse ts_parser_delete; do
+            echo "$nm_out" | grep -E "(^| )_?$sym( |$)" >/dev/null \
+              || { echo "::error::$sym not exported in $lib"; exit 1; }
+          done
+          echo "OK: runtime exports ts_language_abi_version + core ts_parser_*"
+
+      - name: Verify runtime transitive deps (POSIX allowlist)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          lib="$RUNNER_TEMP/out/${{ matrix.runtime-name }}"
+          if [[ "$RUNNER_OS" == "macOS" ]]; then
+            # otool -L: allow only the macOS system frameworks + the lib's own install id.
+            bad="$(otool -L "$lib" | tail -n +2 | awk '{print $1}' \
+              | grep -vE '^(/usr/lib/|/System/Library/)' | grep -vE 'libtree-sitter' || true)"
+          else
+            # ldd: allow only glibc + the dynamic loader + the base gcc runtime. Anything
+            # else (a vendored or third-party .so) means we are shipping provenance we do not own.
+            bad="$(ldd "$lib" | awk '{print $1}' \
+              | grep -vE '(linux-vdso|ld-linux|libc\.so|libm\.so|libdl\.so|libpthread\.so|librt\.so|libgcc_s\.so)' || true)"
+          fi
+          if [[ -n "$bad" ]]; then
+            echo "::error::runtime links against non-allowlisted libraries:"; echo "$bad"; exit 1
+          fi
+          echo "OK: runtime links only against the per-platform system allowlist"
+
+      - name: Verify runtime exported symbols + deps (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $lib = "$env:RUNNER_TEMP/out/${{ matrix.runtime-name }}"
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vsroot = & "$vswhere" -latest -property installationPath
+          $dumpbin = Get-ChildItem -Path "$vsroot\VC\Tools\MSVC" -Recurse -Filter dumpbin.exe |
+                     Select-Object -First 1 -ExpandProperty FullName
+          if (-not $dumpbin) { Write-Error "dumpbin.exe not found"; exit 1 }
+          $exports = & "$dumpbin" /exports "$lib"
+          foreach ($sym in @('ts_language_abi_version','ts_parser_new','ts_parser_parse','ts_parser_delete')) {
+            if (-not ($exports -match $sym)) { Write-Error "$sym not exported in $lib"; exit 1 }
+          }
+          Write-Output "OK: runtime exports ts_language_abi_version + core ts_parser_*"
+          # dumpbin /dependents: allow only the Windows system CRT/kernel DLLs. A MinGW
+          # runtime dep (libgcc_s_seh-1.dll / libwinpthread-1.dll) here means static-link failed.
+          $deps = & "$dumpbin" /dependents "$lib"
+          $allow = '^(kernel32|ucrtbase|vcruntime\d*|msvcrt|ntdll|advapi32|api-ms-win-[\w-]+)\.dll$'
+          $bad = $deps |
+            Select-String -Pattern '^\s+\S+\.dll\s*$' |
+            ForEach-Object { $_.Line.Trim() } |
+            Where-Object { $_ -notmatch $allow }
+          if ($bad) { Write-Error "runtime links against non-allowlisted DLLs:`n$($bad -join "`n")"; exit 1 }
+          Write-Output "OK: runtime links only against the Windows system DLL allowlist"
+
+      - name: Upload binary artifacts
         uses: actions/upload-artifact@v7
         with:
           name: native-${{ matrix.platform }}
-          path: ${{ runner.temp }}/out/${{ matrix.lib-name }}
+          # Whole out/ dir: grammar + runtime, both staged under their canonical names.
+          path: ${{ runner.temp }}/out
           if-no-files-found: error
           retention-days: 7
 
@@ -171,7 +297,8 @@ jobs:
           mvn -f "$NATIVES_MODULE/pom.xml" --batch-mode --errors package -DskipTests
 
       - name: Assert jar layout
-        # Exactly four lib/<os>-<arch>/<file> entries; any other lib/* path is a bug.
+        # Exactly eight lib/<os>-<arch>/<file> entries (four grammar + four runtime);
+        # any other lib/* path is a bug.
         run: |
           set -euo pipefail
           # Pin to the main artifact; the broad glob also matches -sources.jar and -javadoc.jar.
@@ -182,17 +309,21 @@ jobs:
           # Filter out the bare lib/ and lib/<os>-<arch>/ directory entries unzip -l also prints.
           lib_entries="$(unzip -l "$jar_path" | awk '{print $4}' | grep -E '^lib/.+[^/]$' || true)"
           expected="lib/linux-aarch64/libtree-sitter-graphql.so
+          lib/linux-aarch64/libtree-sitter.so
           lib/linux-x86_64/libtree-sitter-graphql.so
+          lib/linux-x86_64/libtree-sitter.so
           lib/macos-aarch64/libtree-sitter-graphql.dylib
-          lib/windows-x86_64/tree-sitter-graphql.dll"
+          lib/macos-aarch64/libtree-sitter.dylib
+          lib/windows-x86_64/tree-sitter-graphql.dll
+          lib/windows-x86_64/tree-sitter.dll"
           expected="$(echo "$expected" | sed 's/^ *//' | sort)"
           actual="$(echo "$lib_entries" | sort)"
           if [[ "$actual" != "$expected" ]]; then
-            echo "::error::jar lib/ contents do not match expected four entries"
+            echo "::error::jar lib/ contents do not match the expected eight entries"
             diff <(echo "$expected") <(echo "$actual") || true
             exit 1
           fi
-          echo "OK: jar layout matches exactly the four expected lib/<os>-<arch>/ entries"
+          echo "OK: jar layout matches exactly the eight expected lib/<os>-<arch>/ entries"
 
       - name: Deploy to Maven Central
         if: ${{ !inputs.dry-run }}
@@ -239,39 +370,10 @@ jobs:
           java-version: '25'
           distribution: 'temurin'
 
-      - name: Install libtree-sitter (Linux)
-        if: runner.os == 'Linux'
-        shell: bash
-        run: |
-          # apt's libtree-sitter0 is 0.20.x, predates ts_language_abi_version that jtreesitter 0.26 needs.
-          set -euo pipefail
-          VERSION=v0.26.9
-          TMPDIR=$(mktemp -d) && trap "rm -rf $TMPDIR" EXIT
-          git clone --depth=1 --branch=$VERSION https://github.com/tree-sitter/tree-sitter $TMPDIR/ts
-          make -C $TMPDIR/ts
-          sudo make -C $TMPDIR/ts install
-          sudo ldconfig
-
-      - name: Install libtree-sitter (macOS)
-        if: runner.os == 'macOS'
-        shell: bash
-        run: |
-          set -euo pipefail
-          brew install tree-sitter
-
-      - name: Install libtree-sitter (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = "Stop"
-          & "$env:VCPKG_INSTALLATION_ROOT/vcpkg.exe" install tree-sitter:x64-windows
-          $binDir = "$env:VCPKG_INSTALLATION_ROOT/installed/x64-windows/bin"
-          if (-not (Test-Path "$binDir/tree-sitter.dll")) {
-            Write-Error "tree-sitter.dll not found in $binDir after vcpkg install"
-            exit 1
-          }
-          # Append to PATH so the verifier JVM's System.loadLibrary chain finds it.
-          Add-Content -Path $env:GITHUB_PATH -Value $binDir
+      # No "Install libtree-sitter" step: the whole point of this item is that the
+      # runtime now ships inside the jar. The verifier below composes the bundled
+      # runtime and must load+parse with NO system libtree-sitter present, proving
+      # the jar is self-sufficient on every platform.
 
       - name: Resolve published jar into a clean local m2
         shell: bash
@@ -320,26 +422,28 @@ jobs:
               public static void main(String[] args) throws Exception {
                   String os = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
                   String arch = System.getProperty("os.arch", "").toLowerCase(Locale.ROOT);
-                  String dir, libName;
+                  String dir, libName, runtimeName;
                   if (os.contains("linux") && (arch.equals("amd64") || arch.equals("x86_64"))) {
-                      dir = "linux-x86_64"; libName = "libtree-sitter-graphql.so";
+                      dir = "linux-x86_64"; libName = "libtree-sitter-graphql.so"; runtimeName = "libtree-sitter.so";
                   } else if (os.contains("linux") && arch.equals("aarch64")) {
-                      dir = "linux-aarch64"; libName = "libtree-sitter-graphql.so";
+                      dir = "linux-aarch64"; libName = "libtree-sitter-graphql.so"; runtimeName = "libtree-sitter.so";
                   } else if (os.contains("mac") && arch.equals("aarch64")) {
-                      dir = "macos-aarch64"; libName = "libtree-sitter-graphql.dylib";
+                      dir = "macos-aarch64"; libName = "libtree-sitter-graphql.dylib"; runtimeName = "libtree-sitter.dylib";
                   } else if (os.contains("windows") && (arch.equals("amd64") || arch.equals("x86_64"))) {
-                      dir = "windows-x86_64"; libName = "tree-sitter-graphql.dll";
+                      dir = "windows-x86_64"; libName = "tree-sitter-graphql.dll"; runtimeName = "tree-sitter.dll";
                   } else {
                       throw new IllegalStateException("unsupported os/arch: " + os + "/" + arch);
                   }
-                  String resource = "lib/" + dir + "/" + libName;
-                  Path extracted = Files.createTempFile("verify-", "-" + libName);
-                  try (InputStream in = Verify.class.getClassLoader().getResourceAsStream(resource)) {
-                      if (in == null) throw new IllegalStateException("missing classpath resource: " + resource);
-                      Files.copy(in, extracted, StandardCopyOption.REPLACE_EXISTING);
-                  }
+                  Path grammarLib = extract("lib/" + dir + "/" + libName, libName);
+                  Path runtimeLib = extract("lib/" + dir + "/" + runtimeName, runtimeName);
                   try (Arena arena = Arena.ofConfined()) {
-                      SymbolLookup symbols = SymbolLookup.libraryLookup(extracted, arena);
+                      // Compose grammar over the bundled runtime: the grammar exports
+                      // tree_sitter_graphql, the runtime exports the ts_* symbols. No system
+                      // libtree-sitter is installed here, so a successful load proves the jar
+                      // is self-sufficient on this platform.
+                      SymbolLookup grammar = SymbolLookup.libraryLookup(grammarLib, arena);
+                      SymbolLookup runtime = SymbolLookup.libraryLookup(runtimeLib, arena);
+                      SymbolLookup symbols = grammar.or(runtime);
                       Language language = Language.load(symbols, "tree_sitter_graphql");
                       try (Parser parser = new Parser(language)) {
                           Tree tree = parser.parse("type Query { hello: String }").orElseThrow();
@@ -352,6 +456,15 @@ jobs:
                           }
                       }
                   }
+              }
+
+              private static Path extract(String resource, String name) throws Exception {
+                  Path target = Files.createTempFile("verify-", "-" + name);
+                  try (InputStream in = Verify.class.getClassLoader().getResourceAsStream(resource)) {
+                      if (in == null) throw new IllegalStateException("missing classpath resource: " + resource);
+                      Files.copy(in, target, StandardCopyOption.REPLACE_EXISTING);
+                  }
+                  return target;
               }
           }
           JAVA
