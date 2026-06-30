@@ -12,6 +12,32 @@ last-updated: 2026-06-30
 
 # SDL lint engine with ESLint-style built-in visitors
 
+## Implementation status (In Progress)
+
+Landed:
+
+- Typed `LintRule` (9 engine rules + 3 classifier advisories, with a `Source` axis), `LintFix`, and
+  the sealed `BuildWarning` (`NoRule` / `LintFinding`); all six producers migrated; the three
+  classifier advisories tagged with their `LintRule`. MCP `diagnostics` wire projects the rule id.
+- The `DeprecationRecognizer` extracted into the `graphitron` build module; `LspVocabulary` delegates
+  (zero behaviour change, pinned by `LspVocabularyTest` / `SdlActionDriftTest`).
+- The engine (`LintEngine`, `LintVisitor`, `LintContext`, `LintNodeKind`, `LintRules`) and the nine
+  syntactic visitors; one shared traversal over the consumer SDL, findings on the `BuildWarning`
+  channel, wired into the three report surfaces in `GraphQLRewriteGenerator` (build / validate /
+  `buildOutput`) so the LSP and MCP get them for free. Coverage meta-test asserts the declared
+  partition; per-rule pipeline tests cover positive / negative / range.
+
+Remaining (kept for follow-on commits under this item):
+
+- Populate `LintFix` for the fix-bearing rules (additive: `deprecations-have-a-reason`,
+  `types-and-fields-have-descriptions`; local: `no-deprecated-directive-usage`, `no-typename-prefix`,
+  `field-names-camel-case`) and the two safe-deletion classifier advisories.
+- The LSP finding-keyed `QuickFix` `CodeAction` branch projecting `LintFix`, with fix tests both tiers.
+- Align `@record` with the deprecation convention (docstring marker + migration action +
+  `SdlActionDriftTest` update), the coordinated edit described under Starter rule set.
+- A build to `ValidationReport` integration test pinning lint findings reach the report, and the
+  LSP-projection parity test for a lint finding.
+
 ## Problem
 
 Graphitron validates its own directive coordinates against the jOOQ catalog and re-derives a handful of build-tier warnings as LSP squiggles (`Diagnostics.java`), but there is no general lint-rule engine. Every diagnostic is hand-wired into `Diagnostics.compute`, and consumers cannot enforce their own SDL conventions (naming, required directive pairings, banned shapes). The dispatch is already visitor-shaped (one walk over the directive nodes, dispatch on the coordinate `Behavior` arm), yet it is bespoke per rule rather than a registry of independent rules.
