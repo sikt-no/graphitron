@@ -24,7 +24,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R308` | Fix the @service list-payload N+1 by deriving many-arrival for list-returning carriers | Spec | 2026-06-14 | [plan](service-list-payload-arrival.md) |
 | `R335` | Fold input/scalar/enum classification into the single classify-and-emit walk | Spec | 2026-06-19 | [plan](walk-classifies-input-surface.md) |
 | `R381` | LSP-guided @reference path authoring | Spec | 2026-06-25 | [plan](lsp-reference-path-authoring.md) |
-| `R400` | Remove the @tableMethod directive | Spec | 2026-06-30 | [plan](remove-tablemethod-directive.md) |
 | `R398` | SDL lint engine with ESLint-style built-in visitors | Spec | 2026-06-30 <sub>created 2026-06-29</sub> | [plan](sdl-lint-visitor-engine.md) |
 | `R273` | Source NodeId metadata from @node + catalog PK (inferred from `implements Node`), and settle wrong-type/malformed mismatch semantics, retiring the legacy __NODE bare-ID arm | Spec | 2026-06-02 | [plan](nodeid-skip-mismatch-error-surfacing.md) |
 | `R45` | Multi-tenant routing on top of the schema-driven ExecutionInput factory | Ready | 2026-06-26 | [plan](tenant-routing-and-execution-input.md) |
@@ -43,6 +42,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R109` | How-to recipe and Sakila fixture for grouped collections via Field<Result<R>> @externalField + multiset | Spec |  | [plan](list-valued-external-field-multiset.md) |
 | `R212` | IntelliJ plugin wrapping graphitron:dev LSP | Spec | 2026-05-21 | [plan](intellij-lsp-plugin.md) |
 | `R112` | Operation-driven test corpus, capability catalog, and runtime trace <sub>blocked by: [capability-catalog](capability-catalog.md)</sub> | Spec |  | [plan](operation-driven-test-corpus.md) |
+| `R400` | Withhold not-in-use directives from the v1 advertised directive surface | Spec | 2026-06-30 | [plan](withhold-not-in-use-directives-v1.md) |
 | `R401` | Bundle the tree-sitter runtime in the natives jar (zero system deps) | In Progress | 2026-06-30 | [plan](bundle-tree-sitter-runtime.md) |
 
 ---
@@ -157,6 +157,13 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 - `R257` [**UpdateRowsWalker raw-SDL substrate absorption**](updaterows-walker-sdl-substrate.md): R246 shipped `UpdateRowsWalker` as a *translator* over the already-classified `InputField` permits (the four admitted column carriers `ColumnField` / `CompositeColumnField` / `ColumnReferenceField` / `CompositeColumnReferenceField`, reached via `TableInputType.inputFields()`) plus the jOOQ catalog, rather than re-deriving the input-field classification from raw SDL + classloader as the R246 spec's ideal `walk(GraphQLFieldDefinition, JooqCatalog)` signature implied. This is the same blast-radius concession R238's `ServiceMethodCallWalker` took (translating over a resolved `MethodRef.Service` rather than reflecting from scratch); re-deriving the `@reference` FK-join and `@nodeId` decode resolution inside the walker would have duplicated the substantial classifier in `InputFieldResolver` / `EnumMappingResolver.buildLookupBindings`. <sub>updated 2026-05-29</sub>
 - `R394` [**roadmap-tool verify tripwires throw BuildFailure, not System.exit**](roadmap-tool-tripwire-buildfailure.md): The roadmap-tool verify-phase tripwires (README drift in `Main.runVerify`, front-matter validation in `Main.validate`, leaf-coverage drift/no-traces in `LeafCoverageReport.run`, and markdown-table findings in `AdocMarkdownTableCheck.run`) signal failure with `System.exit(1)` or a non-zero return that the dispatcher turns into `System.exit`. These checks run via exec-maven-plugin's `java` goal, which executes in the Maven JVM, so `System.exit` terminates Maven directly: the contributor sees the friendly diagnostic line, then the shell prompt with `$? = 1`, no `BUILD FAILURE` banner and no `[ERROR]` line. The build looks like Maven crashed rather than failed a check. Replace those verify-mode tripwire exits with a thrown `BuildFailure` (a `RuntimeException` whose `fillInStackTrace` no-ops, since the failure surface is the printed diagnostic, not a Java stack) so exec-maven-plugin wraps it as a `MojoExecutionException` and produces the normal `BUILD FAILURE` summary. CLI/usage errors (`usage()`, argument errors, the `create` file-exists path) stay on `System.exit`, since those are dev errors outside any verify phase. This adapts the change from the stale `claude/fix-maven-build-failure-yjL4J` branch onto the current roadmap-tool structure, which has grown the `check-adoc-tables` verify tripwire since. <sub>updated 2026-06-26</sub>
 
+### Deferred
+
+_Items parked until a blocking concern is resolved or re-prioritised. Set `deferred: false` (or remove the field) to return an item to the active backlog._
+
+- `R404` [**Reintroduce @sourceRow documentation when it enters the supported surface**](reintroduce-sourcerow-docs.md) — _gated on @sourceRow re-entering the supported surface; not a release priority_
+- `R403` [**Rethink and reintroduce @tableMethod**](reintroduce-tablemethod-docs.md) — _gated on @tableMethod re-entering the supported surface after a rethink; not a release priority_
+
 
 ---
 
@@ -250,7 +257,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R69` [**Implement @experimental_constructType**](experimental-construct-type.md) — Backlog, feature
 - `R381` [**LSP-guided @reference path authoring**](lsp-reference-path-authoring.md) — Spec, architecture
 - `R387` [**Migrate TypeConditionsGeneratorTest off code-string assertions on generated method bodies**](type-conditions-test-code-string-migration.md) — Backlog, testing
-- `R400` [**Remove the @tableMethod directive**](remove-tablemethod-directive.md) — Spec, structural
 - `R282` [**Scope unknownForeignKeyRejection FK candidate hint to the structurally relevant FKs**](fk-key-hint-sibling-scope.md) — Backlog, bug
 - `R72` [**Slim ServiceCatalog down to a lookup primitive**](slim-servicecatalog-to-lookup.md) — Backlog, architecture
 - `R319` [**Warn on pruned unreachable output types instead of dropping them silently**](warn-on-pruned-unreachable-types.md) — Backlog, architecture
@@ -277,6 +283,9 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R17` [**Annotated walkthrough of a generated file**](generated-output-walkthrough.md) — Backlog, cleanup
 - `R35` [**Class-level Javadoc and `package-info.java` sweep**](source-orientation-javadocs.md) — Backlog, cleanup
 - `R168` [**Sub-agent classifier for blast-radius effort (Low/Medium/High) at Spec stage**](effort-blast-radius-classification.md) — Backlog, cleanup
+- `R404` [**Reintroduce @sourceRow documentation when it enters the supported surface**](reintroduce-sourcerow-docs.md) — Backlog, docs
+- `R403` [**Rethink and reintroduce @tableMethod**](reintroduce-tablemethod-docs.md) — Backlog, docs
+- `R400` [**Withhold not-in-use directives from the v1 advertised directive surface**](withhold-not-in-use-directives-v1.md) — Spec, feature
 
 ### testing
 

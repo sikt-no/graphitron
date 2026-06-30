@@ -10,14 +10,14 @@ a|
 == Alphabetical
 
 * xref:asConnection.adoc[`@asConnection`]
-* xref:sourceRow.adoc[`@sourceRow`]
+* xref:sourceRow.adoc[`@sourceRow`] _(not part of the first release)_
 * xref:condition.adoc[`@condition`]
 * xref:defaultOrder.adoc[`@defaultOrder`]
 * xref:discriminate.adoc[`@discriminate`]
 * xref:discriminator.adoc[`@discriminator`]
 * xref:enum.adoc[`@enum`]
 * xref:error.adoc[`@error`]
-* xref:experimental_constructType.adoc[`@experimental_constructType`]
+* xref:experimental_constructType.adoc[`@experimental_constructType`] _(experimental, not part of the first release)_
 * xref:externalField.adoc[`@externalField`]
 * xref:field.adoc[`@field`]
 * xref:index-directive.adoc[`@index`] _(deprecated, use `@order(index:)`)_
@@ -36,7 +36,7 @@ a|
 * xref:service.adoc[`@service`]
 * xref:splitQuery.adoc[`@splitQuery`]
 * xref:table.adoc[`@table`]
-* xref:tableMethod.adoc[`@tableMethod`]
+* xref:tableMethod.adoc[`@tableMethod`] _(not part of the first release)_
 
 a|
 == By category
@@ -45,10 +45,10 @@ a|
 xref:table.adoc[`@table`], xref:field.adoc[`@field`], xref:enum.adoc[`@enum`], xref:scalarType.adoc[`@scalarType`]
 
 *Joining* +
-xref:reference.adoc[`@reference`], xref:sourceRow.adoc[`@sourceRow`]
+xref:reference.adoc[`@reference`]
 
 *Querying* +
-xref:asConnection.adoc[`@asConnection`], xref:condition.adoc[`@condition`], xref:experimental_constructType.adoc[`@experimental_constructType`], xref:externalField.adoc[`@externalField`], xref:lookupKey.adoc[`@lookupKey`], xref:routine.adoc[`@routine`], xref:splitQuery.adoc[`@splitQuery`], xref:tableMethod.adoc[`@tableMethod`]
+xref:asConnection.adoc[`@asConnection`], xref:condition.adoc[`@condition`], xref:externalField.adoc[`@externalField`], xref:lookupKey.adoc[`@lookupKey`], xref:routine.adoc[`@routine`], xref:splitQuery.adoc[`@splitQuery`]
 
 *Mutating* +
 xref:mutation.adoc[`@mutation`], xref:service.adoc[`@service`]
@@ -67,6 +67,9 @@ xref:node.adoc[`@node`], xref:nodeId.adoc[`@nodeId`]
 
 *Rejected by the rewrite* +
 xref:notGenerated.adoc[`@notGenerated`], xref:multitableReference.adoc[`@multitableReference`] (remove from the schema)
+
+*Not part of the first release* +
+xref:tableMethod.adoc[`@tableMethod`], xref:sourceRow.adoc[`@sourceRow`] (implemented, not advertised in v1), xref:experimental_constructType.adoc[`@experimental_constructType`] (experimental, no generator support yet)
 
 |===
 

@@ -35,6 +35,20 @@ At generation time the generator parses the `selection` string and emits a `DSL.
 3. **Emitter**: emit a `DSL.select(col1.as("graphqlField1"), col2.as("graphqlField2"), ...)` projection in the generated `$fields` method body
 4. **Tests**: unit-tier pipeline cases; execution-tier test against Sakila schema
 
+## Documentation (withheld for v1 by R400)
+
+R400 withholds `@experimental_constructType` from the first-release advertised surface (it has no
+emitter yet, so v1 must not present it as available). When this item lands the implementation, also
+restore its documentation. The reference page
+`docs/manual/reference/directives/experimental_constructType.adoc` is removed by R400 Stage 2 but
+stays in git history; recover it anchor-free (no hardcoded SHA):
+`git log --oneline --diff-filter=D -- docs/manual/reference/directives/experimental_constructType.adoc`,
+then `git checkout <that-commit>^ -- <path>`. Restore its index/category entries and remove
+`experimental_constructType` from the `WITHHELD_FROM_V1` set in `DirectiveSupportReport` so it
+reappears under "Supported directives". Unlike R404 (`@sourceRow`, already implemented), this
+directive's doc reintroduction is gated on the implementation here, not on a promotion decision, so
+it lives on this item rather than a separate reintroduction ticket.
+
 ## Out of scope for this item
 
 Renaming the `@experimental_` prefix once the feature is stable (separate stabilisation step).

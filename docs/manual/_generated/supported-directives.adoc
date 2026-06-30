@@ -6,31 +6,35 @@
 The rewrite generator declares the following directives. Each is documented in the architecture chapter and exercised by at least one execution-tier or pipeline-tier test fixture:
 
 * `@asConnection`
-* `@sourceRow`
 * `@condition`
 * `@defaultOrder`
 * `@discriminate`
 * `@discriminator`
 * `@enum`
 * `@error`
-* `@experimental_constructType`
 * `@externalField`
 * `@field`
 * `@index`
 * `@lookupKey`
-* `@multitableReference`
 * `@mutation`
 * `@node`
 * `@nodeId`
-* `@notGenerated`
 * `@order`
 * `@orderBy`
 * `@record`
 * `@reference`
+* `@routine`
+* `@scalarType`
 * `@service`
 * `@splitQuery`
 * `@table`
-* `@tableMethod`
+
+=== Removed / rejected directives
+
+These directives are still declared so existing schemas parse, but the rewrite no longer supports them: applying one is a build error. Remove them from your schema (see the migration guide for replacements):
+
+* `@multitableReference`
+* `@notGenerated`
 
 === Legacy-only directives
 
@@ -49,4 +53,8 @@ The following directives have argument-shape changes between legacy and rewrite.
 ==== `@field`
 
 * - javaName: String  (legacy only)
+
+==== `@mutation`
+
+* + multiRow: Boolean = false  (rewrite only)
 
