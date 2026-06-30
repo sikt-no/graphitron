@@ -1051,22 +1051,29 @@ public class TypeFetcherGenerator {
         //     correlated-subquery projection uses, so the one registered fetcher reads it in both
         //     queries (FetcherEmitter reads a Direct ColumnReferenceField by field-name alias);
         //   - a shared-key field is a ColumnField whose column is one of the child->parent hop's
-        //     columns (the join key, present on both base and detail); project it off the base under
-        //     its natural name so NULL-through rows (base present, detail absent) still resolve it.
+        //     columns (the join key, present on both base and detail); project the paired base column
+        //     so NULL-through rows (base present, detail absent) still resolve it, aliased to the
+        //     detail column's name (a no-op when the FK and PK columns share a name) so the
+        //     participant's ColumnField fetcher reads it back by that name even when the two differ.
         // Detail-exclusive ColumnFields (column not in the hop) are projected against the detail alias
-        // by buildJoinedDetailAliasDeclarations. The LinkedHashSet dedupes the shared base projections
-        // contributed by every participant.
+        // by buildJoinedDetailAliasDeclarations. A field projected by more than one participant (every
+        // shared/inherited field is) is emitted once: the .as(...) aliases produce fresh Field objects
+        // the LinkedHashSet would not dedupe, so we dedupe by output alias explicitly.
         var schema = ctx.graphitronSchema();
         if (schema != null) {
+            var seenAliases = new java.util.HashSet<String>();
             for (var participant : participants) {
                 if (!(participant instanceof ParticipantRef.JoinedTableBound jtb)) continue;
-                var sharedKeyCols = hopColumnSqlNames(jtb);
                 for (var f : schema.fieldsOf(jtb.typeName())) {
                     if (f instanceof ChildField.ColumnReferenceField crf) {
-                        b.addStatement("fields.add($L.$L.as($S))", tableLocal, crf.column().javaName(), crf.name());
-                    } else if (f instanceof ChildField.ColumnField cf
-                            && sharedKeyCols.contains(cf.column().sqlName().toLowerCase(java.util.Locale.ROOT))) {
-                        b.addStatement("fields.add($L.$L)", tableLocal, cf.column().javaName());
+                        if (seenAliases.add(crf.name())) {
+                            b.addStatement("fields.add($L.$L.as($S))", tableLocal, crf.column().javaName(), crf.name());
+                        }
+                    } else if (f instanceof ChildField.ColumnField cf) {
+                        var baseCol = sharedKeyBaseColumn(jtb, cf.column());
+                        if (baseCol != null && seenAliases.add(cf.column().sqlName())) {
+                            b.addStatement("fields.add($L.$L.as($S))", tableLocal, baseCol.javaName(), cf.column().sqlName());
+                        }
                     }
                 }
             }
@@ -1074,11 +1081,20 @@ public class TypeFetcherGenerator {
         return b.build();
     }
 
-    /** SQL names (lower-cased) of the child->parent hop's columns: the detail-side join key. */
-    private static Set<String> hopColumnSqlNames(ParticipantRef.JoinedTableBound jtb) {
-        var out = new java.util.HashSet<String>();
-        for (var col : jtb.childToParent().sourceSideColumns()) out.add(col.sqlName().toLowerCase(java.util.Locale.ROOT));
-        return out;
+    /**
+     * For a participant {@link ChildField.ColumnField} whose column is a child-&gt;parent hop column
+     * (a shared-key column present on both base and detail), returns the paired base-side column (the
+     * hop slot's target side); {@code null} when the field's column is detail-exclusive. The base side
+     * may differ in name from the detail side, so the caller projects {@code base.<returned>} aliased
+     * to the detail column's name.
+     */
+    private static ColumnRef sharedKeyBaseColumn(ParticipantRef.JoinedTableBound jtb, ColumnRef detailColumn) {
+        for (var slot : jtb.childToParent().slots()) {
+            if (slot.sourceSide().sqlName().equalsIgnoreCase(detailColumn.sqlName())) {
+                return slot.targetSide();
+            }
+        }
+        return null;
     }
 
     /**
@@ -1091,11 +1107,9 @@ public class TypeFetcherGenerator {
             TypeFetcherEmissionContext ctx, ParticipantRef.JoinedTableBound jtb) {
         var schema = ctx.graphitronSchema();
         if (schema == null) return List.of();
-        var sharedKeyCols = hopColumnSqlNames(jtb);
         var out = new ArrayList<ChildField.ColumnField>();
         for (var f : schema.fieldsOf(jtb.typeName())) {
-            if (f instanceof ChildField.ColumnField cf
-                    && !sharedKeyCols.contains(cf.column().sqlName().toLowerCase(java.util.Locale.ROOT))) {
+            if (f instanceof ChildField.ColumnField cf && sharedKeyBaseColumn(jtb, cf.column()) == null) {
                 out.add(cf);
             }
         }
