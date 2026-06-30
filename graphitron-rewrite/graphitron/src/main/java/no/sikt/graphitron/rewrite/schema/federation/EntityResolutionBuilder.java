@@ -11,6 +11,7 @@ import graphql.schema.GraphQLSchema;
 import no.sikt.graphitron.rewrite.BuildWarning;
 import no.sikt.graphitron.rewrite.TypeRegistry;
 import no.sikt.graphitron.rewrite.ValidationError;
+import no.sikt.graphitron.rewrite.model.CallSiteCompaction;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.EntityResolution;
@@ -171,6 +172,7 @@ public final class EntityResolutionBuilder {
 
             var alternatives = new ArrayList<KeyAlternative>();
             String error = null;
+            ValidationError fatal = null;
             for (var key : keys) {
                 var alt = buildAlternative(typeName, gType, key, fields, warningSink);
                 if (alt instanceof AltResult.Ok ok) {
@@ -178,7 +180,16 @@ public final class EntityResolutionBuilder {
                 } else if (alt instanceof AltResult.Err err) {
                     error = err.message();
                     break;
+                } else if (alt instanceof AltResult.Fatal f) {
+                    fatal = f.error();
+                    break;
                 }
+            }
+            if (fatal != null) {
+                // R262 finding H: the typed InvalidSchema rejection is already constructed; register
+                // it verbatim and skip the type (no second structural diagnostic).
+                diagnosticSink.accept(fatal);
+                continue;
             }
             if (error != null) {
                 diagnosticSink.accept(ValidationError.forType(typeName, Rejection.structural(error), gType.location()));
@@ -228,6 +239,14 @@ public final class EntityResolutionBuilder {
     private sealed interface AltResult {
         record Ok(KeyAlternative alt) implements AltResult {}
         record Err(String message) implements AltResult {}
+        /**
+         * A fatal rejection whose typed {@link ValidationError} is already constructed (R262 finding
+         * H). Distinct from {@link Err}, whose message the caller wraps in a
+         * {@link Rejection.AuthorError.Structural}; this carries an {@link Rejection.InvalidSchema}
+         * the caller registers verbatim, and the caller skips the type without emitting a second
+         * diagnostic.
+         */
+        record Fatal(ValidationError error) implements AltResult {}
     }
 
     private static AltResult buildAlternative(
@@ -265,11 +284,29 @@ public final class EntityResolutionBuilder {
         // DIRECT shape: each required field name maps to a ColumnRef on the type's table.
         var columns = new ArrayList<ColumnRef>();
         for (String name : required) {
-            ColumnRef col = lookupColumn(typeName, name, fields);
+            var field = fields.get(FieldCoordinates.coordinates(typeName, name));
+            ColumnRef col = columnOf(field);
             if (col == null) {
                 return new AltResult.Err("@key(fields: \"" + fieldsValue + "\") on type '"
                     + typeName + "' references field '" + name
                     + "' which is not a column-backed field on this type's table");
+            }
+            // R262 finding H: a @key whose referenced field is itself an @nodeId-encoded reference
+            // carrier (a ColumnReferenceField wrapping its column in NodeIdEncodeKeys) cannot resolve
+            // through the DIRECT _entities path: that path binds the rep's field value verbatim, but
+            // the rep carries a base64-encoded global id, so the encoded id is bound undecoded into
+            // the VALUES table — a never-matches predicate or a SQL bind/type error at runtime. Reject
+            // fatally (not the non-fatal compound-id warning below, which covers the distinct
+            // own-column 'id' carrier). Decode-into-rep is a possible follow-on; rejection first.
+            if (field instanceof ChildField.ColumnReferenceField cref
+                && cref.compaction() instanceof CallSiteCompaction.NodeIdEncodeKeys) {
+                return new AltResult.Fatal(ValidationError.forType(typeName, Rejection.invalidSchema(
+                    "@key(fields: \"" + fieldsValue + "\") on type '" + typeName + "' references field '"
+                    + name + "', which is an @nodeId-encoded reference (its rep value is a base64 global "
+                    + "id). The _entities DIRECT path binds the rep value verbatim, so the encoded id "
+                    + "would be bound undecoded into the entity lookup. Key on a non-encoded column, or "
+                    + "use the canonical @key(fields: \"id\") NodeId path on a @node type."),
+                    gType.location()));
             }
             columns.add(col);
         }
@@ -310,11 +347,7 @@ public final class EntityResolutionBuilder {
         return true;
     }
 
-    private static ColumnRef lookupColumn(
-        String typeName, String fieldName, Map<FieldCoordinates, GraphitronField> fields
-    ) {
-        var coords = FieldCoordinates.coordinates(typeName, fieldName);
-        var field = fields.get(coords);
+    private static ColumnRef columnOf(GraphitronField field) {
         if (field == null) return null;
         if (field instanceof ChildField.ColumnField cf) return cf.column();
         if (field instanceof ChildField.ColumnReferenceField cref) return cref.column();
