@@ -1,7 +1,7 @@
 ---
 id: R389
 title: "First-class discriminated joined-table inheritance (participants on their own tables)"
-status: In Progress
+status: In Review
 bucket: feature
 priority: 6
 theme: interface-union
@@ -95,14 +95,18 @@ Landed on trunk (both shared-key shapes, execution-verified end to end):
   via the composite key). No new emitter logic was needed: the join chain AND-chains the composite hop
   slots and the base/detail projections iterate fields, both composite-agnostic.
 
-Remaining for this item before In Review:
+- **Validation tests (all invariants).** Rejection pipeline tests for PK=FK violation
+  (`city` &rarr; `country`, FK is not the detail PK), non-base parent-reference (`address` &rarr;
+  `city`, not the base), and no-nameable-join, plus the positive mixed case; the diagnostics are
+  implemented and every classifier rejection now has a build-time test.
+- **Docs.** A `joined-table-interface` R281 corpus example alongside `table-interface`, plus prose in
+  `code-generation-triggers.adoc` (scrubbed of `R<n>` / phase vocabulary; `check-adoc-tables` and the
+  AsciiDoctor render are green).
 
-- **Validation tests for the remaining two invariants.** Rejection tests for the PK=FK violation (a
-  detail table whose FK to the base is not its PK) and the non-base parent-reference, each needing a
-  small dedicated fixture. The diagnostics are implemented and the no-nameable-join rejection is
-  covered; these two paths are unexercised by a test.
-- **Docs corpus example.** An R281 corpus example alongside `table-interface`, scrubbed of `R<n>` /
-  phase vocabulary, plus moving the user-doc draft into the interface-union chapter.
+Optional doc follow-up (not blocking): there is no user-manual chapter for discriminated interfaces
+today (the single-table case is undocumented for users too), so the spec's user-doc draft has no
+existing `getting-started.adoc` home to move into; authoring a discriminated-interface authoring
+chapter (covering single-table and joined-table together) is a separate doc effort.
 
 ## Design
 
