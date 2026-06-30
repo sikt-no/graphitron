@@ -10,9 +10,9 @@ depends-on: []
 
 # Type UPSERT dialect requirement on the model
 
-> UPSERT's "PostgreSQL-only" requirement is currently expressed as a free-form
-> `CodeBlock` threaded through a 9-arg `buildDmlFetcher` overload. Lift it onto
-> the model as typed data so the constraint is discoverable on
+> UPSERT's "not on Oracle" requirement is currently expressed as a free-form
+> `postDslGuard` `CodeBlock` threaded into the shared `buildDmlFetcher`. Lift
+> it onto the model as typed data so the constraint is discoverable on
 > `MutationUpsertTableField`, the verb-neutral skeleton stays verb-neutral,
 > and the validator can eventually reject it at validate time once the
 > consumer's target dialect is known at codegen time.
@@ -26,7 +26,7 @@ work after R22's stub-lift phases shipped.
 ## Motivation
 
 `TypeFetcherGenerator.buildMutationUpsertFetcher` builds a `postDslGuard`
-`CodeBlock` inline (`TypeFetcherGenerator.java:1577-1584`):
+`CodeBlock` inline (`generators/TypeFetcherGenerator.java:3821-3828`):
 
 ```java
 var postDslGuard = CodeBlock.builder()
@@ -37,10 +37,16 @@ var postDslGuard = CodeBlock.builder()
     .build();
 ```
 
-The shared `buildDmlFetcher` was given a 9-arg overload
-(`TypeFetcherGenerator.java:1642`) to accept this `CodeBlock` as a generic
-pre-DSL guard. UPSERT is the only caller; INSERT, UPDATE, and DELETE pass
-through the 8-arg overload and supply nothing.
+The shared `buildDmlFetcher` carries a `postDslGuard` `CodeBlock` slot as a
+generic pre-DSL guard, threaded through a chain of three overloads
+(`generators/TypeFetcherGenerator.java:4299`, `:4316`, `:4355`): a base
+overload with neither guard, one adding `postDslGuard`, and the deepest
+adding a sibling `postInGuard` (13 params total). Two verbs fill the
+`postDslGuard` slot today: UPSERT rejects Oracle (`:3821-3828`, above), and
+bulk UPDATE rejects non-PostgreSQL dialects on the `UPDATE ... FROM (VALUES
+...)` form (`:3693-3700`). INSERT, DELETE, and single-row UPDATE pass an
+empty block. The two guards have *different* semantics: UPSERT rejects a
+single named family, bulk UPDATE requires one.
 
 Two smells:
 
@@ -61,13 +67,20 @@ Two new model types under `no.sikt.graphitron.rewrite.model`:
 
 ```java
 public sealed interface DialectRequirement
-        permits DialectRequirement.None, DialectRequirement.RequiresFamily {
+        permits DialectRequirement.None,
+                DialectRequirement.RequiresFamily,
+                DialectRequirement.RejectsFamily {
 
     record None() implements DialectRequirement {
         public static final None INSTANCE = new None();
     }
 
+    /** Throw unless the request-time dialect is {@code family}. */
     record RequiresFamily(SqlDialectFamily family, String reason)
+        implements DialectRequirement {}
+
+    /** Throw when the request-time dialect is {@code family}. */
+    record RejectsFamily(SqlDialectFamily family, String reason)
         implements DialectRequirement {}
 }
 
@@ -78,8 +91,12 @@ public enum SqlDialectFamily {
      * Maps a jOOQ {@code SQLDialect.name()} to a graphitron dialect family.
      * Name-prefix-based to cover commercial-only dialect enum values that
      * aren't present in the OSS jOOQ distribution (e.g. ORACLE12C,
-     * ORACLE19C). Generated code consults this at request time via the
-     * dispatched {@code dsl.dialect().name()} string.
+     * ORACLE19C). Mirrors jOOQ's own {@code SQLDialect.family()} collapse:
+     * {@code POSTGRES}, the {@code POSTGRESPLUS} spelling, and
+     * {@code YUGABYTEDB} all map to {@code POSTGRES} (cross-check against
+     * jOOQ 3.20.11's {@code SQLDialect.family()} membership, the source of
+     * truth, rather than guessing). Generated code consults this at request
+     * time via the dispatched {@code dsl.dialect().name()} string.
      */
     public static SqlDialectFamily fromDialectName(String name) { ... }
 }
@@ -89,8 +106,17 @@ Sealed-with-`None` (rather than `Optional<DialectRequirement>`) because:
 
 - The principle "Sealed hierarchies over enums for typed information" prefers
   named arms over presence-or-absence.
-- Future arms (`RejectsFamily`, `RequiresAnyOf(Set<SqlDialectFamily>)`) can
-  land without touching every consumer.
+- The hierarchy ships with three arms (`None`, `RequiresFamily`,
+  `RejectsFamily`) because the two live guards have genuinely different
+  semantics: UPSERT *rejects* Oracle (jOOQ silently mistranslates `ON
+  CONFLICT` to `MERGE INTO`, with semantics drift; other dialects throw their
+  own error rather than mistranslate, so only Oracle needs gating), while
+  bulk UPDATE *requires* Postgres (the `UPDATE ... FROM (VALUES ...)` form is
+  a Postgres extension). Collapsing both into one `RequiresFamily(POSTGRES)`
+  arm would silently change UPSERT's reach from "reject Oracle" to "reject
+  every non-Postgres dialect", which is a behaviour change, not a refactor.
+- Further arms (`RequiresAnyOf(Set<SqlDialectFamily>)`) can land later without
+  touching every consumer.
 - Pattern-matching reads tighter than a chain of `Optional.ifPresent`.
 
 `SqlDialectFamily` is a graphitron-internal enum (not jOOQ's `SQLDialect`)
@@ -113,39 +139,49 @@ Each of the four DML records gains a `DialectRequirement dialectRequirement`
 component. The classifier (`FieldBuilder.buildDmlField`) populates:
 
 - INSERT/DELETE: `DialectRequirement.None.INSTANCE`.
-- UPDATE: `DialectRequirement.None.INSTANCE` for single-row; if R77 (bulk
-  DML) has shipped, the bulk arm carries
-  `RequiresFamily(SqlDialectFamily.POSTGRES, "...UPDATE...FROM (VALUES)
-  ...")` because jOOQ silently emulates `UPDATE...FROM` on non-Postgres
-  dialects with semantics drift. The classifier reads `tia.list()` to
-  pick.
-- UPSERT: `new DialectRequirement.RequiresFamily(SqlDialectFamily.POSTGRES,
+- UPDATE: `DialectRequirement.None.INSTANCE` for single-row; the bulk arm
+  carries `new DialectRequirement.RequiresFamily(SqlDialectFamily.POSTGRES,
+  "...UPDATE...FROM (VALUES)...")` because jOOQ silently emulates
+  `UPDATE...FROM` on non-Postgres dialects with semantics drift. The
+  classifier reads `tia.list()` to pick. (Bulk DML, R77, has shipped; the
+  bulk-UPDATE arm and its inline `postDslGuard` are live at
+  `generators/TypeFetcherGenerator.java:3684-3704`.)
+- UPSERT: `new DialectRequirement.RejectsFamily(SqlDialectFamily.ORACLE,
   "...UPSERT...MERGE INTO...")`. The reason string carries the actionable
-  message that today is hardcoded in the inline `CodeBlock`.
+  message that today is hardcoded in the inline `CodeBlock`. UPSERT rejects
+  *only* Oracle, not "requires Postgres": the failure mode is jOOQ's silent
+  `ON CONFLICT`→`MERGE INTO` mistranslation on Oracle specifically, so H2 /
+  MySQL / MSSQL keep today's behaviour (no guard; jOOQ throws its own error
+  if it cannot emit `ON CONFLICT`).
 
-If R77 ships first, the inline `postDslGuard` `CodeBlock` lives on both
-UPSERT and bulk-UPDATE call sites until R63 lifts both at once. The
-9-arg `buildDmlFetcher` overload deletion in this plan covers both.
+Both `postDslGuard` call sites (UPSERT's Oracle gate at `:3821-3828`, bulk
+UPDATE's Postgres gate at `:3693-3700`) are live today, and this item lifts
+both at once. The `postDslGuard`-parameter removal below covers both.
 
 ## Emitter rewrite
 
 `buildDmlFetcher` consults `f.dialectRequirement()` and renders the runtime
-guard via a single helper. The 9-arg `postDslGuard` overload deletes:
+guard via a single helper. The `postDslGuard` `CodeBlock` parameter is
+replaced by a `DialectRequirement` (always present from the model), which
+collapses the three overloads into two (base + `+postInGuard`):
 
 ```java
 private static MethodSpec buildDmlFetcher(
+        TypeFetcherEmissionContext ctx,
         String fetcherName,
         DmlReturnExpression rex,
         Optional<ErrorChannel> errorChannel,
         String inputArgName,
         TableRef tableRef,
-        ResolvedTableNames tablesOnly,
+        GeneratorUtils.ResolvedTableNames tablesOnly,
         String tableLocal,
         String outputPackage,
         CodeBlock dmlChain,
-        DialectRequirement dialectRequirement) {
+        DialectRequirement dialectRequirement,   // replaces the postDslGuard CodeBlock slot
+        CodeBlock postInGuard,
+        boolean listInput) {
     // ...
-    builder.addStatement("$T dsl = graphitronContext(env).getDslContext(env)", DSL);
+    builder.addStatement("$T dsl = $L.getDslContext(env)", DSL, ctx.graphitronContextCall());
     emitDialectGuard(builder, dialectRequirement);
     // ...
 }
@@ -160,33 +196,47 @@ private static void emitDialectGuard(MethodSpec.Builder b, DialectRequirement re
                     UnsupportedOperationException.class, r.reason())
              .endControlFlow();
         }
+        case DialectRequirement.RejectsFamily r -> {
+            b.beginControlFlow("if ($T.fromDialectName(dsl.dialect().name()) == $T.$L)",
+                    SqlDialectFamily.class, SqlDialectFamily.class, r.family().name())
+             .addStatement("throw new $T($S)",
+                    UnsupportedOperationException.class, r.reason())
+             .endControlFlow();
+        }
     }
 }
 ```
 
 Verb-neutral skeleton stays verb-neutral; UPSERT no longer needs special-case
-handling at the call site. INSERT/UPDATE/DELETE pass `DialectRequirement.None`
-and the helper emits nothing.
+handling at the call site. INSERT/DELETE and single-row UPDATE pass
+`DialectRequirement.None` and the helper emits nothing.
 
 The runtime check on the consumer side runs through `SqlDialectFamily`'s
-mapping, not a string-prefix check, which is the same logic but lives once at
-the boundary instead of being inlined into emitted Java.
+mapping, not a string-prefix check (UPSERT today) or a `family()` call (bulk
+UPDATE today). This is the same logic for both, consolidated onto one
+boundary mapping that lives once instead of being inlined into emitted Java.
 
 ## Tests
 
-Pure model refactor, not a behaviour change. Acceptance gates:
+Pure model refactor, not a behaviour change: UPSERT still rejects only
+Oracle, bulk UPDATE still rejects only non-Postgres. Acceptance gates:
 
 - Existing execution-tier PostgreSQL tests against UPSERT pass unchanged
   (`upsertFilm_updateBranch_writesAndReturnsProjectedFilm`,
-  `upsertFilm_insertBranch_writesAndReturnsProjectedFilm`). The emitted guard
-  body changes (now consults `SqlDialectFamily.fromDialectName`), but the
-  PostgreSQL path passes through the no-op arm exactly as it does today.
+  `upsertFilm_insertBranch_writesAndReturnsProjectedFilm` in
+  `graphitron-sakila-example/.../querydb/GraphQLQueryTest.java`). The emitted
+  guard body changes (now consults `SqlDialectFamily.fromDialectName`), but
+  under PostgreSQL the `RejectsFamily(ORACLE)` arm does not fire, exactly as
+  today's `startsWith("ORACLE")` check does not fire.
 - New unit-tier assertion: `MutationUpsertTableField.dialectRequirement()`
-  returns `RequiresFamily(POSTGRES, ...)`; the other three DML records return
-  `None.INSTANCE`.
+  returns `RejectsFamily(ORACLE, ...)`; INSERT, DELETE, and single-row UPDATE
+  return `None.INSTANCE`; the bulk-UPDATE arm returns
+  `RequiresFamily(POSTGRES, ...)`.
 - New unit-tier assertion on `SqlDialectFamily.fromDialectName`: covers
-  `POSTGRES` for any `POSTGRES*` name, `ORACLE` for `ORACLE`, `ORACLE12C`,
-  `ORACLE19C`, `ORACLE23AI`, etc., `OTHER` for unrecognised names.
+  `POSTGRES` for any `POSTGRES*` name plus the `POSTGRESPLUS` spelling and
+  `YUGABYTEDB` (mirroring jOOQ's `family()` collapse); `ORACLE` for `ORACLE`,
+  `ORACLE12C`, `ORACLE19C`, `ORACLE23AI`, etc.; `OTHER` for unrecognised
+  names.
 - New compilation-tier test: a generated UPSERT fetcher's body throws
   `UnsupportedOperationException` with the message from the model's
   `reason()` slot when invoked under an Oracle-flavoured `DSLContext`. Either
@@ -196,22 +246,30 @@ Pure model refactor, not a behaviour change. Acceptance gates:
 
 ## Implementation sites
 
-- New file `model/DialectRequirement.java`: sealed interface, two arms.
-- New file `model/SqlDialectFamily.java`: enum + `fromDialectName` mapping.
+- New file `model/DialectRequirement.java`: sealed interface, three arms
+  (`None`, `RequiresFamily`, `RejectsFamily`).
+- New file `model/SqlDialectFamily.java`: enum + `fromDialectName` mapping
+  (mirrors jOOQ `SQLDialect.family()`; cross-check 3.20.11 membership for the
+  Postgres-family collapse).
 - `model/MutationField.java`: `DmlTableField` interface gains
   `dialectRequirement()`; each of the four DML records gains the component.
 - `FieldBuilder.buildDmlField`: populate `DialectRequirement.None.INSTANCE`
-  by default, `RequiresFamily(POSTGRES, ...)` for UPSERT and (if R77 has
-  shipped) for bulk UPDATE.
-- `TypeFetcherGenerator`:
-  - Delete the 9-arg `buildDmlFetcher` overload.
+  by default, `RejectsFamily(ORACLE, ...)` for UPSERT, and
+  `RequiresFamily(POSTGRES, ...)` for the bulk-UPDATE arm (selected on
+  `tia.list()`).
+- `generators/TypeFetcherGenerator`:
+  - Replace the `postDslGuard` `CodeBlock` parameter with a
+    `DialectRequirement` (always present from the model), collapsing the
+    three `buildDmlFetcher` overloads (`:4299`, `:4316`, `:4355`) into two:
+    base and `+postInGuard`.
   - Add `emitDialectGuard` private helper.
-  - `buildDmlFetcher` (single overload now) calls `emitDialectGuard`.
+  - `buildDmlFetcher` calls `emitDialectGuard` where it currently emits
+    `postDslGuard` (`:4385-4387`).
   - `buildMutationUpsertFetcher` deletes the inline `postDslGuard`
-    `CodeBlock`; the call site shrinks to the same shape as
+    `CodeBlock` (`:3821-3828`); the call site shrinks toward the shape of
     `buildMutationInsertFetcher` etc.
-  - If R77 has shipped, `buildMutationUpdateFetcher`'s bulk arm deletes
-    its inline `postDslGuard` symmetrically.
+  - `buildMutationUpdateFetcher`'s bulk arm deletes its inline
+    `postDslGuard` (`:3693-3700`) symmetrically.
 - `MappingsConstantNameDedup` and any other site that rebuilds DML records:
   thread the new component through.
 
@@ -237,3 +295,12 @@ Pure model refactor, not a behaviour change. Acceptance gates:
 - Reusing `DialectRequirement` outside `DmlTableField`. The slot is added to
   `DmlTableField` only; promote it to a wider field-set if a second
   `DialectRequirement`-bearing field type appears.
+- Typifying `postInGuard`, the sibling free-form `CodeBlock` slot on
+  `buildDmlFetcher` (`:4366`). Unlike `postDslGuard`, which carries a
+  discoverable model fact ("UPSERT mistranslates on Oracle") that belongs as
+  typed data a validator could one day read, `postInGuard` carries imperative
+  per-row emission mechanics (building the dynamic SET map, the
+  no-settable-fields check, the bulk uniform-shape and duplicate-lookup-key
+  guards). There is no `DialectRequirement`-shaped datum hiding in it;
+  lifting it would invent a parallel mini-DSL for guard construction, which is
+  worse than the `CodeBlock`. It stays a free-form block.
