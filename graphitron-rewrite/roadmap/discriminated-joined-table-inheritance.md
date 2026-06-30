@@ -1,7 +1,7 @@
 ---
 id: R389
 title: "First-class discriminated joined-table inheritance (participants on their own tables)"
-status: In Review
+status: Ready
 bucket: feature
 priority: 6
 theme: interface-union
@@ -64,6 +64,33 @@ synthetic discriminator alias (`MultiTablePolymorphicEmitter.DISCRIMINATOR_COLUM
 `buildInterfaceFieldsList`) to disambiguate the double-projection; the joined-table emitter inherits that
 aliasing alongside R388's qualified-column emission, so the "Reuse R388's discriminator-gated ON-clause"
 note below reads against the post-R392 shape on trunk.
+
+## Review feedback (In Review &rarr; Ready, 2026-06-30)
+
+Independent-session In Review review. The implementation is architecturally sound and a **clean**
+build is fully green (every module, including the execution-tier `graphitron-sakila-example` and the
+docs render). Spec&rarr;diff alignment, the classifier invariants, the emitter projections, both
+fixtures, and the test tiers (execution / pipeline / rejection / corpus + drift guards) all deliver
+what the spec promised, with no code-string assertions on generated method bodies. One blocking
+build-correctness defect must be fixed before Done:
+
+- **Bump `jooq.codegen.schema.version` (still `2.2`) in `graphitron-rewrite/graphitron-sakila-db/pom.xml:19`.**
+  R389 changed `init.sql` (added the `party` / `party_individual` / `party_company` tables, and added
+  the composite primary keys to `jti_app_account` / `jti_person`) but left the schema version at `2.2`.
+  jOOQ's `schemaVersionProvider` then **skips regeneration** on any incremental `-Plocal-db` build that
+  already has a `2.2` catalog: the codegen logs `Existing version 2.2 is up to date with 2.2 for schema
+  public. Ignoring schema.` and the stale catalog never gains the `party` tables (nor the new composite
+  PKs). The result is an `UnclassifiedType` cascade: `Party` / `Query.allParties` fail to classify and
+  **11 tests** break (`JoinedTableInheritancePipelineTest` x3, plus the corpus-coverage drift guards
+  `SourceShapeProjectionTest`, `VariantCoverageTest`, `WrapperAlgebraTest`, `ClassifiedDslTest`). This
+  reproduced here on an incremental build before a clean regeneration. R388 explicitly bumped this same
+  property for its `init.sql` change (commit `b6b629d`), and the pom comment documents the requirement
+  ("Increment when init.sql changes to force jOOQ regeneration on incremental builds"). Fix: bump to
+  `2.3`. This is the only change needed; the next pass should be quick.
+
+  (Note: a fresh-clone / CI build, and any `mvn clean install -Plocal-db`, regenerate from scratch and
+  pass; the breakage is specific to the team's standard incremental local loop, which is exactly the
+  failure mode the documented convention exists to prevent.)
 
 ## Implementation status
 
