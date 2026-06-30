@@ -170,6 +170,51 @@ class DirectiveSupportReportTest {
     }
 
     @Test
+    void renderMigrationWithholdsNotInUseAndRejectedDirectivesFromSupported() {
+        // A rewrite that declares a genuinely-supported directive (table), the withheld-but-declared
+        // ones (tableMethod, sourceRow, experimental_constructType), the hard-rejected retirements
+        // (notGenerated, multitableReference), and @record (deprecated + silently ignored, kept
+        // as-is for v1, NOT dropped).
+        java.util.function.Function<String, DirectiveSupportReport.Directive> d =
+            name -> new DirectiveSupportReport.Directive(name, List.of(), List.of("FIELD_DEFINITION"));
+        var declared = List.of(
+            d.apply("table"),
+            d.apply("tableMethod"),
+            d.apply("sourceRow"),
+            d.apply("experimental_constructType"),
+            d.apply("notGenerated"),
+            d.apply("multitableReference"),
+            d.apply("record"));
+
+        String fragment = DirectiveSupportReport.renderMigration(declared, declared, java.util.Set.of());
+
+        // Genuinely supported directive is advertised.
+        assertThat(fragment).contains("=== Supported directives").contains("`@table`");
+        // Withheld and rejected directives never appear under "Supported".
+        var supportedSection = fragment.substring(
+            fragment.indexOf("=== Supported directives"),
+            fragment.indexOf("=== Removed / rejected directives"));
+        assertThat(supportedSection)
+            .doesNotContain("`@tableMethod`")
+            .doesNotContain("`@sourceRow`")
+            .doesNotContain("`@experimental_constructType`")
+            .doesNotContain("`@notGenerated`")
+            .doesNotContain("`@multitableReference`");
+        // @record is kept as-is (deprecated + silently ignored, not dropped): it is neither
+        // withheld nor moved to the rejected list, so it stays where it was — under Supported.
+        assertThat(supportedSection).contains("`@record`");
+        // The two hard-rejected retirements are surfaced under "Removed / rejected" so migrating
+        // consumers are told to delete them; withheld-but-usable directives and @record are not.
+        var rejectedSection = fragment.substring(fragment.indexOf("=== Removed / rejected directives"));
+        assertThat(rejectedSection)
+            .contains("`@notGenerated`")
+            .contains("`@multitableReference`")
+            .doesNotContain("`@tableMethod`")
+            .doesNotContain("`@experimental_constructType`")
+            .doesNotContain("`@record`");
+    }
+
+    @Test
     void renderMigrationStatesNoChanges_whenLegacyAndRewriteAgree() {
         var d = new DirectiveSupportReport.Directive("table",
             List.of(new DirectiveSupportReport.Arg("name", "String!", null)),

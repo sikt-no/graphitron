@@ -58,6 +58,32 @@ final class DirectiveSupportReport {
     ) {}
 
     /**
+     * Directives declared in the rewrite's {@code directives.graphqls} only so the parser
+     * still accepts legacy schemas and the classifier can emit a friendly migration message;
+     * applying either is a hard build error. They are not part of the supported surface, so the
+     * migration fragment lists them under "Removed / rejected" rather than "Supported", so a
+     * migrating consumer is told to delete them. See roadmap item R400.
+     *
+     * <p>{@code @record} is deliberately <em>not</em> in this set: it is deprecated but still
+     * silently tolerated (ignored with a build warning, not rejected), so it is neither removed
+     * nor advertised here. Per the R400 decision it keeps its current behaviour for v1.
+     */
+    static final java.util.Set<String> REJECTED_ON_USE =
+        java.util.Set.of("notGenerated", "multitableReference");
+
+    /**
+     * Directives the rewrite declares and implements (or partially wires) but that are
+     * deliberately not advertised in the first release: {@code @tableMethod} and
+     * {@code @sourceRow} work but are not in use by any consumer schema, and
+     * {@code @experimental_constructType} has no emitter yet (R69). They are withheld from the
+     * supported list with no migration note, because using them is neither an error nor
+     * something a migrating consumer must remove; they are simply outside the v1 surface. See
+     * roadmap item R400. Re-advertising one later is a one-line edit here.
+     */
+    static final java.util.Set<String> WITHHELD_FROM_V1 =
+        java.util.Set.of("tableMethod", "sourceRow", "experimental_constructType");
+
+    /**
      * CLI entry. Three positional args (legacy directives file, rewrite directives file,
      * colon-separated fixture directories) followed by optional flags:
      *
@@ -531,10 +557,27 @@ final class DirectiveSupportReport {
            .append("pipeline-tier test fixture:\n\n");
         var supported = allNames.stream()
             .filter(n -> rewriteByName.containsKey(n))
+            .filter(n -> !REJECTED_ON_USE.contains(n))
+            .filter(n -> !WITHHELD_FROM_V1.contains(n))
             .sorted()
             .toList();
         for (String name : supported) {
             out.append("* `@").append(name).append("`\n");
+        }
+
+        var rejected = allNames.stream()
+            .filter(n -> rewriteByName.containsKey(n))
+            .filter(REJECTED_ON_USE::contains)
+            .sorted()
+            .toList();
+        if (!rejected.isEmpty()) {
+            out.append("\n=== Removed / rejected directives\n\n");
+            out.append("These directives are still declared so existing schemas parse, but the rewrite ")
+               .append("no longer supports them: applying one is a build error. ")
+               .append("Remove them from your schema (see the migration guide for replacements):\n\n");
+            for (String name : rejected) {
+                out.append("* `@").append(name).append("`\n");
+            }
         }
 
         out.append("\n=== Legacy-only directives\n\n");
@@ -558,6 +601,10 @@ final class DirectiveSupportReport {
             Directive l = legacyByName.get(name);
             Directive r = rewriteByName.get(name);
             if (l == null || r == null) continue;
+            // Don't advertise argument-shape changes for directives we no longer present as
+            // supported: removed/rejected ones must just be deleted, and withheld ones are
+            // outside the v1 surface (R400).
+            if (REJECTED_ON_USE.contains(name) || WITHHELD_FROM_V1.contains(name)) continue;
             List<String> diff = argShapeDiff(l, r);
             if (!diff.isEmpty()) changes.add(new Row(name, true, true, fixtureUses.contains(name), diff));
         }
