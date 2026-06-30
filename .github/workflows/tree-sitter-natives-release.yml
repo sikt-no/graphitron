@@ -406,10 +406,72 @@ jobs:
       - name: Write verifier harness
         # Standalone load+parse against the published jar. Inlined to decouple
         # this stage from any in-flight graphitron-lsp test class.
+        #
+        # jtreesitter resolves the runtime (ts_* symbols) NOT from the
+        # SymbolLookup passed to Language.load, but through its own
+        # NativeLibraryLookup SPI chain at TreeSitter.<clinit>. So to load with
+        # no system libtree-sitter we must register an SPI service that hands
+        # back the bundled runtime, exactly as graphitron-lsp's
+        # BundledLibraryLookup does. The grammar entry point is supplied
+        # separately via Language.load. RuntimeBundleLookup is that SPI;
+        # Verify.main supplies the grammar.
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p verifier
+          mkdir -p verifier/META-INF/services
+          echo "RuntimeBundleLookup" > verifier/META-INF/services/io.github.treesitter.jtreesitter.NativeLibraryLookup
+
+          cat > verifier/RuntimeBundleLookup.java <<'JAVA'
+          import io.github.treesitter.jtreesitter.NativeLibraryLookup;
+          import java.io.InputStream;
+          import java.lang.foreign.Arena;
+          import java.lang.foreign.SymbolLookup;
+          import java.nio.file.Files;
+          import java.nio.file.Path;
+          import java.nio.file.StandardCopyOption;
+          import java.util.Locale;
+
+          /**
+           * jtreesitter NativeLibraryLookup SPI that supplies the bundled
+           * tree-sitter runtime (the ts_* symbols) from the natives jar. This
+           * mirrors graphitron-lsp's BundledLibraryLookup: jtreesitter calls it
+           * at TreeSitter.<clinit> to bind the runtime, with no system
+           * libtree-sitter present.
+           */
+          public final class RuntimeBundleLookup implements NativeLibraryLookup {
+              public RuntimeBundleLookup() {}
+
+              @Override
+              public SymbolLookup get(Arena arena) {
+                  String os = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
+                  String arch = System.getProperty("os.arch", "").toLowerCase(Locale.ROOT);
+                  String dir, runtimeName;
+                  if (os.contains("linux") && (arch.equals("amd64") || arch.equals("x86_64"))) {
+                      dir = "linux-x86_64"; runtimeName = "libtree-sitter.so";
+                  } else if (os.contains("linux") && arch.equals("aarch64")) {
+                      dir = "linux-aarch64"; runtimeName = "libtree-sitter.so";
+                  } else if (os.contains("mac") && arch.equals("aarch64")) {
+                      dir = "macos-aarch64"; runtimeName = "libtree-sitter.dylib";
+                  } else if (os.contains("windows") && (arch.equals("amd64") || arch.equals("x86_64"))) {
+                      dir = "windows-x86_64"; runtimeName = "tree-sitter.dll";
+                  } else {
+                      throw new IllegalStateException("unsupported os/arch: " + os + "/" + arch);
+                  }
+                  String resource = "lib/" + dir + "/" + runtimeName;
+                  try {
+                      Path target = Files.createTempFile("verify-rt-", "-" + runtimeName);
+                      try (InputStream in = RuntimeBundleLookup.class.getClassLoader().getResourceAsStream(resource)) {
+                          if (in == null) throw new IllegalStateException("missing classpath resource: " + resource);
+                          Files.copy(in, target, StandardCopyOption.REPLACE_EXISTING);
+                      }
+                      return SymbolLookup.libraryLookup(target, arena);
+                  } catch (Exception e) {
+                      throw new RuntimeException("failed to load bundled runtime " + resource, e);
+                  }
+              }
+          }
+          JAVA
+
           cat > verifier/Verify.java <<'JAVA'
           import io.github.treesitter.jtreesitter.Language;
           import io.github.treesitter.jtreesitter.Parser;
@@ -426,29 +488,25 @@ jobs:
               public static void main(String[] args) throws Exception {
                   String os = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
                   String arch = System.getProperty("os.arch", "").toLowerCase(Locale.ROOT);
-                  String dir, libName, runtimeName;
+                  String dir, libName;
                   if (os.contains("linux") && (arch.equals("amd64") || arch.equals("x86_64"))) {
-                      dir = "linux-x86_64"; libName = "libtree-sitter-graphql.so"; runtimeName = "libtree-sitter.so";
+                      dir = "linux-x86_64"; libName = "libtree-sitter-graphql.so";
                   } else if (os.contains("linux") && arch.equals("aarch64")) {
-                      dir = "linux-aarch64"; libName = "libtree-sitter-graphql.so"; runtimeName = "libtree-sitter.so";
+                      dir = "linux-aarch64"; libName = "libtree-sitter-graphql.so";
                   } else if (os.contains("mac") && arch.equals("aarch64")) {
-                      dir = "macos-aarch64"; libName = "libtree-sitter-graphql.dylib"; runtimeName = "libtree-sitter.dylib";
+                      dir = "macos-aarch64"; libName = "libtree-sitter-graphql.dylib";
                   } else if (os.contains("windows") && (arch.equals("amd64") || arch.equals("x86_64"))) {
-                      dir = "windows-x86_64"; libName = "tree-sitter-graphql.dll"; runtimeName = "tree-sitter.dll";
+                      dir = "windows-x86_64"; libName = "tree-sitter-graphql.dll";
                   } else {
                       throw new IllegalStateException("unsupported os/arch: " + os + "/" + arch);
                   }
+                  // The runtime (ts_* symbols) comes from RuntimeBundleLookup (the registered
+                  // NativeLibraryLookup SPI) with NO system libtree-sitter present. Language.load
+                  // only needs the grammar entry point, so we hand it just the grammar lookup.
                   Path grammarLib = extract("lib/" + dir + "/" + libName, libName);
-                  Path runtimeLib = extract("lib/" + dir + "/" + runtimeName, runtimeName);
                   try (Arena arena = Arena.ofConfined()) {
-                      // Compose grammar over the bundled runtime: the grammar exports
-                      // tree_sitter_graphql, the runtime exports the ts_* symbols. No system
-                      // libtree-sitter is installed here, so a successful load proves the jar
-                      // is self-sufficient on this platform.
                       SymbolLookup grammar = SymbolLookup.libraryLookup(grammarLib, arena);
-                      SymbolLookup runtime = SymbolLookup.libraryLookup(runtimeLib, arena);
-                      SymbolLookup symbols = grammar.or(runtime);
-                      Language language = Language.load(symbols, "tree_sitter_graphql");
+                      Language language = Language.load(grammar, "tree_sitter_graphql");
                       try (Parser parser = new Parser(language)) {
                           Tree tree = parser.parse("type Query { hello: String }").orElseThrow();
                           try (tree) {
@@ -456,7 +514,8 @@ jobs:
                               boolean hasError = tree.getRootNode().hasError();
                               if (!"source_file".equals(type)) throw new IllegalStateException("root type: " + type);
                               if (hasError) throw new IllegalStateException("parse produced errors");
-                              System.out.println("OK: parsed source_file with no errors on " + dir);
+                              System.out.println("OK: parsed source_file with no errors on " + dir
+                                  + " (bundled runtime via SPI, no system libtree-sitter)");
                           }
                       }
                   }
@@ -492,5 +551,7 @@ jobs:
           sep=":"
           if [[ "$RUNNER_OS" == "Windows" ]]; then sep=";"; fi
           cp="$JTREESITTER_JAR$sep$NATIVES_JAR"
-          javac -cp "$cp" -d verifier verifier/Verify.java
+          javac -cp "$cp" -d verifier verifier/RuntimeBundleLookup.java verifier/Verify.java
+          # The `verifier` dir carries the compiled SPI class + its META-INF/services
+          # registration, so jtreesitter's ServiceLoader picks up RuntimeBundleLookup.
           java --enable-native-access=ALL-UNNAMED -cp "verifier$sep$cp" Verify
