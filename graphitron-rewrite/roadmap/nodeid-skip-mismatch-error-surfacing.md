@@ -5,7 +5,7 @@ status: Spec
 bucket: architecture
 priority: 5
 theme: nodeid
-depends-on: [nodeid-filter-malformed-vs-mismatched]
+depends-on: []
 created: 2026-06-02
 last-updated: 2026-06-02
 ---

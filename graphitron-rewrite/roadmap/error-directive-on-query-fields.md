@@ -5,7 +5,7 @@ status: Backlog
 bucket: architecture
 priority: 4
 theme: mutations-errors
-depends-on: [nodeid-filter-malformed-vs-mismatched]
+depends-on: []
 created: 2026-06-29
 last-updated: 2026-06-29
 ---
