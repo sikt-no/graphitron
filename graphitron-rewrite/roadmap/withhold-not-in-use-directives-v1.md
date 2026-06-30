@@ -112,14 +112,13 @@ absent from that fragment is withheld) rather than duplicating `WITHHELD_FROM_V1
 cannot drift from the report that owns the policy. When a withheld directive is re-advertised
 (R403/R404/R69) its page reappears and the bijection tightens automatically. Test-infra only.
 
-> Note for the Done-gate reviewer: at the time of writing, `mvn install -Plocal-db` is red on
-> trunk for reasons unrelated to R400 — R389/R398 joined-table-inheritance In-Progress commits
-> leave `graphitron` core (9 failures + 2 errors on the `Party` / joined-table fixtures) and, at
-> `82fd246`, `graphitron-sakila-example` code-generation (21 schema-validation errors on the
-> `jti_*` tables) red. These reproduce at R400's own `4771bcd` publish, predate this item's diff,
-> and touch no file R400 changes. R400's `DirectiveDocCoverageTest` fix was verified by running the
-> test standalone against the real tree (passes); a full-reactor green build depends on R389/R398
-> landing.
+> Rework verification: full `mvn -f graphitron-rewrite/pom.xml clean install -Plocal-db` is **green**
+> after the fix, including `DirectiveDocCoverageTest` (ran in-reactor, 1 test, 0 failures). The
+> `graphitron`-core `Query.allParties` / joined-table `UnclassifiedType` cascades seen on a first
+> pass were the environmental stale-`rewrite_test`-DB issue the reviewer flagged (the web sandbox
+> seeded the DB before R389's `party*` / `jti_*` tables landed): re-seeding from
+> `graphitron-sakila-db/src/main/resources/init.sql` and a `clean install` regenerates the jOOQ
+> catalog and clears them. Not an R400 defect, and not trunk code breakage.
 
 ## Reintroduction & recovery
 
@@ -139,7 +138,10 @@ re-authoring. Recovery is **anchor-free** (no hardcoded SHA to go stale): for ea
 
 1. `supported-directives.adoc`: the withheld trio and the rejected pair are absent from "Supported";
    the rejected pair appears under "Removed / rejected"; `@record` still appears under "Supported".
-2. No `xref` to a removed page remains anywhere under `docs/` (the docs build is green).
+2. No `xref` to a removed page remains anywhere under `docs/`, and the build is green. "Green" is
+   the full `mvn -f graphitron-rewrite/pom.xml install -Plocal-db` (which runs
+   `DirectiveDocCoverageTest`), not just the AsciiDoctor render; the docs render passing on
+   `fail-on-WARN` (the dangling-`xref` guard) is necessary but not sufficient.
 3. The three reference pages and `how-to/source-row.adoc` are gone from the tree.
 4. Recovery is captured by R403 / R404 / R69 with anchor-free (`git log --diff-filter=D`) restore
    instructions.
