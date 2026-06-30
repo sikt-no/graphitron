@@ -1,7 +1,7 @@
 ---
 id: R389
 title: "First-class discriminated joined-table inheritance (participants on their own tables)"
-status: Ready
+status: In Review
 bucket: feature
 priority: 6
 theme: interface-union
@@ -91,6 +91,12 @@ build-correctness defect must be fixed before Done:
   (Note: a fresh-clone / CI build, and any `mvn clean install -Plocal-db`, regenerate from scratch and
   pass; the breakage is specific to the team's standard incremental local loop, which is exactly the
   failure mode the documented convention exists to prevent.)
+
+  **Resolved** (commit `8a9f38e`): bumped `jooq.codegen.schema.version` 2.2 &rarr; 2.3. Verified by an
+  incremental (no-clean) `install -Plocal-db`: `graphitron-sakila-db` codegen reruns (18s, not a ~1s
+  skip) and the full reactor is green, including the 11 previously-cascading tests. This was the only
+  blocking finding; the methodology gap that hid it (the implementing session's green builds had relied
+  on a manually force-regenerated catalog) is noted for future fixture changes.
 
 ## Implementation status
 
