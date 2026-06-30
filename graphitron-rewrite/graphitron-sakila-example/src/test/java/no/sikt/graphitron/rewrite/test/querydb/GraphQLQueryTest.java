@@ -5719,4 +5719,69 @@ class GraphQLQueryTest {
             .as("the discriminated interface fetcher must project the routing discriminator under the __discriminator__ alias")
             .anyMatch(s -> s.contains("as \"__discriminator__\""));
     }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void allParties_joinedTableInheritance_routesAndProjectsPerParticipantTable() {
+        // R389 acceptance gate (single-column shared-PK fixture). Party is first-class discriminated
+        // joined-table inheritance: each participant declares its OWN detail @table and its inherited
+        // displayName via @reference back to the base. The interface fetcher selects FROM party and
+        // LEFT JOINs each detail table gated by the participant's discriminator value. Correctness is
+        // a runtime property (join orientation, discriminator gating, NULL-through), so execute()
+        // carrying no errors plus the per-row assertions below are the proof, not the generated shape.
+        Map<String, Object> data = execute("""
+            { allParties {
+                __typename
+                partyId
+                displayName
+                ... on Individual { birthDate }
+                ... on Company { orgNumber }
+            } }
+            """);
+        List<Map<String, Object>> items = (List<Map<String, Object>>) data.get("allParties");
+        assertThat(items).hasSize(3);
+
+        var grace = items.stream().filter(i -> Integer.valueOf(1).equals(i.get("partyId"))).findFirst().orElseThrow();
+        assertThat(grace.get("__typename")).isEqualTo("Individual");
+        assertThat(grace.get("displayName")).as("inherited base field resolves off the base").isEqualTo("Grace Hopper");
+        assertThat(grace.get("birthDate")).asString().startsWith("1906");
+        assertThat(grace.get("orgNumber")).as("the sibling participant's own column is absent on Individual rows").isNull();
+
+        var sikt = items.stream().filter(i -> Integer.valueOf(2).equals(i.get("partyId"))).findFirst().orElseThrow();
+        assertThat(sikt.get("__typename")).isEqualTo("Company");
+        assertThat(sikt.get("displayName")).isEqualTo("Sikt");
+        assertThat(sikt.get("orgNumber")).isEqualTo("NO-919477822");
+        assertThat(sikt.get("birthDate")).as("the sibling participant's own column is absent on Company rows").isNull();
+
+        // NULL-through: the INDIVIDUAL base row with no matching party_individual detail row still
+        // routes correctly and resolves its base fields, with the detail column NULL.
+        var detached = items.stream().filter(i -> Integer.valueOf(3).equals(i.get("partyId"))).findFirst().orElseThrow();
+        assertThat(detached.get("__typename")).isEqualTo("Individual");
+        assertThat(detached.get("displayName")).isEqualTo("Detached Individual");
+        assertThat(detached.get("birthDate")).as("LEFT JOIN NULL-through: no detail row, so the detail column is NULL").isNull();
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void allIndividuals_standalone_resolvesInheritedFieldViaParentReference() {
+        // R389 standalone use: the joined-table concrete type queried outside its interface. The
+        // fetcher selects FROM party_individual; displayName (inherited, base-resident) resolves
+        // through the parent @reference join back to party, while partyId / birthDate read directly
+        // off the detail table. This is the regression guard for the property the redesign exists for.
+        Map<String, Object> data = execute("""
+            { allIndividuals {
+                partyId
+                displayName
+                birthDate
+            } }
+            """);
+        List<Map<String, Object>> items = (List<Map<String, Object>>) data.get("allIndividuals");
+        // FROM party_individual: only the one row with a detail row (Grace Hopper); the detached
+        // INDIVIDUAL base row has no party_individual row and so is absent from the standalone query.
+        assertThat(items).hasSize(1);
+        var grace = items.get(0);
+        assertThat(grace.get("partyId")).isEqualTo(1);
+        assertThat(grace.get("displayName")).as("inherited field resolved via the parent reference join to party").isEqualTo("Grace Hopper");
+        assertThat(grace.get("birthDate")).asString().startsWith("1906");
+    }
 }

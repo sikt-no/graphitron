@@ -753,6 +753,17 @@ class TypeBuilder {
             var gt = participantClassification(typeName);
             if (gt instanceof TableBackedType tbt && !(gt instanceof TableInterfaceType)) {
                 String discriminatorValue = argString(ctx.schema.getObjectType(typeName), DIR_DISCRIMINATOR, ARG_VALUE).orElse(null);
+                // R389 joined-table (class-table) inheritance: a participant whose own @table is a
+                // detail table distinct from the discriminated base. Its inherited (base-resident)
+                // fields carry a parent-@reference back to the base; the participant cross-table pass
+                // (which exists for the inverse workaround shape, @table == base referencing OUT to
+                // detail tables) does not apply, so it is skipped. The child->parent hop is resolved
+                // from the declared @reference; PK=FK and same-base invariants surface as diagnostics.
+                if (interfaceTable != null && !tbt.table().denotesSameTableAs(interfaceTable)) {
+                    var joined = resolveJoinedTableParticipant(typeName, tbt.table(), interfaceTable, discriminatorValue);
+                    if (joined != null) result.add(joined);
+                    continue;
+                }
                 List<ParticipantRef.TableBound.CrossTableField> crossTableFields = interfaceTable != null
                     ? extractCrossTableFields(typeName, interfaceTable)
                     : List.of();
@@ -843,6 +854,97 @@ class TypeBuilder {
             out.add(new ParticipantRef.TableBound.CrossTableField(fieldName, column, fk, aliasName));
         }
         return List.copyOf(out);
+    }
+
+    /**
+     * Resolves an R389 joined-table inheritance participant: a participant whose own {@code @table}
+     * ({@code detailTable}) is distinct from the discriminated {@code baseTable}. Its inherited
+     * (base-resident) fields carry a parent-{@code @reference} back to the base; the single-hop
+     * {@link JoinStep.FkJoin} they name is the participant's child&rarr;parent hop, stored on the
+     * {@link ParticipantRef.JoinedTableBound}.
+     *
+     * <p>Two invariants are checked here (the catalog is in scope; the validator has none, so it reads
+     * the surfaced rejection rather than recomputing, per "Classification belongs at the parse
+     * boundary" / the R388 diagnostic-channel pattern):
+     * <ul>
+     *   <li>every parent-{@code @reference} must resolve to the discriminated base, not some other
+     *       table (a non-base reference is not a base bridge);</li>
+     *   <li>the child&rarr;parent hop must be PK=FK: the detail table's FK columns to the base
+     *       <em>are</em> the detail's own primary key (single-column or composite), so the
+     *       base&rarr;detail join the interface fetcher emits is single-valued.</li>
+     * </ul>
+     * When no inherited field carries a parent-{@code @reference} that names the join, the join cannot
+     * be pinned in the unambiguous R389 shape (R393 owns disambiguation); reject with a candidate-FK
+     * hint. On any rejection the method surfaces the diagnostic and returns {@code null} (the
+     * participant is dropped; the diagnostic fails the build before generation).
+     */
+    private ParticipantRef resolveJoinedTableParticipant(
+            String typeName, TableRef detailTable, TableRef baseTable, String discriminatorValue) {
+        var participantObj = ctx.schema.getObjectType(typeName);
+        JoinStep.FkJoin hop = null;
+        boolean sawNonBaseReference = false;
+        if (participantObj != null) {
+            for (var fieldDef : participantObj.getFieldDefinitions()) {
+                if (!fieldDef.hasAppliedDirective(DIR_REFERENCE)) continue;
+                var parsed = ctx.parsePath(fieldDef, fieldDef.getName(), detailTable.tableName(), null);
+                if (parsed.hasError() || parsed.elements().size() != 1) continue;
+                if (!(parsed.elements().get(0) instanceof JoinStep.FkJoin fk)) continue;
+                if (!fk.targetTable().denotesSameTableAs(baseTable)) {
+                    sawNonBaseReference = true;
+                    continue;
+                }
+                if (hop == null) hop = fk;
+            }
+        }
+
+        if (sawNonBaseReference) {
+            ctx.addDiagnostic(ValidationError.forType(typeName,
+                Rejection.invalidSchema(
+                    "joined-table participant '" + typeName + "' declares a parent-@reference that does not "
+                    + "resolve to the discriminated base table '" + baseTable.tableName()
+                    + "'; an inherited field's @reference must bridge back to the base"),
+                participantObj == null ? null : BuildContext.locationOf(participantObj)));
+            return null;
+        }
+
+        if (hop == null) {
+            var candidateFks = ctx.catalog.findForeignKeysBetweenTables(detailTable.tableName(), baseTable.tableName())
+                .stream().map(org.jooq.ForeignKey::getName).toList();
+            ctx.addDiagnostic(ValidationError.forType(typeName,
+                Rejection.invalidSchema(
+                    "joined-table participant '" + typeName + "' (detail table '" + detailTable.tableName()
+                    + "') has no base-resident field carrying @reference to name the base->detail join; "
+                    + "declare one inherited field with @reference back to '" + baseTable.tableName() + "'"
+                    + BuildContext.candidateHint(baseTable.tableName(), candidateFks,
+                        ". Candidate foreign keys between the tables: ")),
+                participantObj == null ? null : BuildContext.locationOf(participantObj)));
+            return null;
+        }
+
+        var detailFkColumns = hop.sourceSideColumns().stream()
+            .map(c -> c.sqlName().toLowerCase(java.util.Locale.ROOT))
+            .collect(java.util.stream.Collectors.toSet());
+        var detailPk = ctx.catalog.candidateKeys(detailTable.tableName()).stream()
+            .filter(JooqCatalog.KeyEntry::primary).findFirst();
+        var detailPkColumns = detailPk
+            .map(k -> k.columns().stream().map(c -> c.sqlName().toLowerCase(java.util.Locale.ROOT))
+                .collect(java.util.stream.Collectors.toSet()))
+            .orElse(java.util.Set.of());
+        if (detailPkColumns.isEmpty() || !detailPkColumns.equals(detailFkColumns)) {
+            String fkColsText = hop.sourceSideColumns().stream().map(ColumnRef::sqlName).toList().toString();
+            String pkColsText = detailPk.map(k -> k.columns().stream()
+                .map(JooqCatalog.ColumnEntry::sqlName).toList().toString()).orElse("absent");
+            ctx.addDiagnostic(ValidationError.forType(typeName,
+                Rejection.invalidSchema(
+                    "joined-table participant '" + typeName + "': the base->detail join is not single-valued. "
+                    + "The detail table '" + detailTable.tableName() + "'s foreign-key columns to the base "
+                    + fkColsText + " must be the detail table's own primary key (single-column or composite), "
+                    + "but the detail primary key is " + pkColsText),
+                participantObj == null ? null : BuildContext.locationOf(participantObj)));
+            return null;
+        }
+
+        return new ParticipantRef.JoinedTableBound(typeName, detailTable, discriminatorValue, hop);
     }
 
     // ===== Type classification =====

@@ -364,6 +364,20 @@ type Query {
     # each participant's detail-only field carries the composite @reference.
     allSubjects: [Subject!]!
 
+    # R389 fixture: first-class discriminated joined-table (class-table) inheritance. Party is a
+    # TableInterfaceType over the base table 'party'; each participant declares its OWN detail
+    # @table (party_individual / party_company), its inherited displayName via @reference back to
+    # the base, and its own columns on the detail table. The interface fetcher selects FROM party
+    # and emits a discriminator-gated LEFT JOIN per participant to its detail table, projecting the
+    # shared fields off the base and each participant's detail-exclusive columns off its detail alias.
+    allParties: [Party!]!
+
+    # R389 standalone use: a joined-table concrete type queried outside its interface. The fetcher
+    # selects FROM party_individual and resolves the inherited displayName through the parent
+    # @reference join back to party. This is the regression guard for the property that motivated
+    # the redesign (the concrete type is usable on its own, not only via the interface).
+    allIndividuals: [Individual!]!
+
     # stub-interface-union-fetchers.md Track B (B2): QueryInterfaceField fixture.
     # Searchable is a multi-table interface implemented by Film and Actor — heterogeneous
     # tables, no shared discriminator column. The generator emits a two-stage fetcher:
@@ -1746,6 +1760,30 @@ type Person implements Subject @table(name: "jti_subject") @discriminator(value:
     subjectKind: String! @field(name: "subject_kind")
     displayName: String! @field(name: "display_name")
     fullName:    String  @reference(path: [{key: "jti_person_subject_fk"}]) @field(name: "full_name")
+}
+
+# R389 first-class discriminated joined-table (class-table) inheritance fixture (single-column
+# shared PK). Party is a TableInterfaceType over the base table 'party' (discriminator party_kind).
+# Each concrete type declares its OWN detail @table; partyId is the shared single-column PK (present
+# on the detail too, so no @reference); displayName is base-only and carries @reference back to the
+# base; birthDate / orgNumber are the participants' own detail columns. Contrast the R388 Subject
+# fixture above, where every participant used @table("jti_subject") (the base) and referenced OUT to
+# detail tables — the workaround R389 replaces.
+interface Party @table(name: "party") @discriminate(on: "party_kind") {
+    partyId:     Int!    @field(name: "party_id")
+    displayName: String! @field(name: "display_name")
+}
+
+type Individual implements Party @table(name: "party_individual") @discriminator(value: "INDIVIDUAL") {
+    partyId:     Int!      @field(name: "party_id")
+    displayName: String!   @reference(path: [{key: "party_individual_party_id_fkey"}]) @field(name: "display_name")
+    birthDate:   LocalDate @field(name: "birth_date")
+}
+
+type Company implements Party @table(name: "party_company") @discriminator(value: "COMPANY") {
+    partyId:     Int!    @field(name: "party_id")
+    displayName: String! @reference(path: [{key: "party_company_party_id_fkey"}]) @field(name: "display_name")
+    orgNumber:   String  @field(name: "org_number")
 }
 
 # stub-interface-union-fetchers.md Track B (B2): plain (multi-table) InterfaceType fixture.
