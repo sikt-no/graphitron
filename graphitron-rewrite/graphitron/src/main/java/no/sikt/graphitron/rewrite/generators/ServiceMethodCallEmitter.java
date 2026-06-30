@@ -71,7 +71,7 @@ public final class ServiceMethodCallEmitter {
     public static List<CodeBlock> emit(ServiceMethodCall call, String outputPackage, TypeName resultLocalType) {
         List<CodeBlock> out = new ArrayList<>();
 
-        boolean needsDsl = anyFromDsl(allEntries(call)) || call instanceof ServiceMethodCall.Instance;
+        boolean needsDsl = anyFromDsl(allEntries(call));
         if (needsDsl) {
             out.add(CodeBlock.of("$T dsl = graphitronContext(env).getDslContext(env)", DSL_CONTEXT));
         }
@@ -96,7 +96,7 @@ public final class ServiceMethodCallEmitter {
      * which auto-fetches by PK) consults this to avoid double-declaring it.
      */
     public static boolean declaresDslLocal(ServiceMethodCall call) {
-        return anyFromDsl(allEntries(call)) || call instanceof ServiceMethodCall.Instance;
+        return anyFromDsl(allEntries(call));
     }
 
     private static List<MappingEntry> allEntries(ServiceMethodCall call) {

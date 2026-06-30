@@ -783,4 +783,17 @@ class TestServiceStub {
     public static java.util.List<no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord> createFilmsWrongComposite() {
         throw new UnsupportedOperationException();
     }
+
+    /**
+     * R256: two declarations sharing the name {@code getOverloaded} (arity 0 and 1). The reflect
+     * helpers must reject the name as ambiguous rather than silently picking the first
+     * declaration-order match.
+     */
+    public static no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord getOverloaded() {
+        throw new UnsupportedOperationException();
+    }
+
+    public static no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord getOverloaded(String id) {
+        throw new UnsupportedOperationException();
+    }
 }

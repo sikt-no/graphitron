@@ -299,19 +299,20 @@ class ServiceFieldValidationTest {
 
     /**
      * Drives the instance-service-holder-shape rejection end-to-end: builds a real schema bound to
-     * {@link no.sikt.graphitron.rewrite.TestInstanceServiceStubNoCtor} (an instance holder with
-     * no {@code (DSLContext)} constructor), runs it through {@code GraphitronSchemaBuilder} +
-     * {@code GraphitronSchemaValidator}, and asserts a single {@link ValidationError} surfaces
-     * with both fix options ("make the method static, or add the (DSLContext) constructor").
-     * Existing {@code ServiceCatalogTest} coverage is unit-tier; this test pins reachability
-     * through the validator's own dispatch surface, matching {@code rewrite-design-principles.adoc}
-     * ("validator mirrors classifier invariants").
+     * {@link no.sikt.graphitron.rewrite.TestInstanceServiceStubUnbindableCtor} (an instance holder
+     * whose only constructor takes an unbindable parameter), runs it through
+     * {@code GraphitronSchemaBuilder} + {@code GraphitronSchemaValidator}, and asserts the typed
+     * {@code ServiceMethodCallError.InstanceHolderUnconstructible} arm surfaces (R256 relaxed the
+     * holder rule from {@code (DSLContext)}-only to any all-bindable constructor, and migrated the
+     * prose rejection onto the typed arm). Existing {@code ServiceCatalogTest} coverage is
+     * unit-tier; this test pins reachability through the validator's own dispatch surface, matching
+     * {@code rewrite-design-principles.adoc} ("validator mirrors classifier invariants").
      */
     @org.junit.jupiter.api.Test
-    void instanceServiceHolderShape_noCtor_validatorReportsAuthorError() {
+    void instanceServiceHolderShape_unbindableCtor_validatorReportsTypedAuthorError() {
         var schema = no.sikt.graphitron.rewrite.TestSchemaHelper.buildSchema("""
             type Query {
-                film: Film @service(service: {className: "no.sikt.graphitron.rewrite.TestInstanceServiceStubNoCtor", method: "getFilm"})
+                film: Film @service(service: {className: "no.sikt.graphitron.rewrite.TestInstanceServiceStubUnbindableCtor", method: "getFilm"})
             }
             type Film @table(name: "film") {
                 title: String
@@ -319,12 +320,18 @@ class ServiceFieldValidationTest {
             """);
 
         var errors = validate(schema);
-        assertThat(errors).extracting(ValidationError::message)
-            .filteredOn(m -> m.contains("Query.film"))
-            .as("validator surfaces the instance-holder rejection through the validator's own surface")
-            .singleElement()
-            .satisfies(message -> assertThat(message)
-                .contains("make the method static")
-                .contains("DSLContext"));
+        var typed = errors.stream()
+            .map(ValidationError::rejection)
+            .filter(r -> r instanceof no.sikt.graphitron.rewrite.model.ServiceMethodCallError.InstanceHolderUnconstructible)
+            .map(r -> (no.sikt.graphitron.rewrite.model.ServiceMethodCallError.InstanceHolderUnconstructible) r)
+            .findFirst();
+        assertThat(typed)
+            .as("validator surfaces the instance-holder rejection as a typed arm")
+            .isPresent();
+        assertThat(typed.get().lspCode())
+            .isEqualTo("graphitron.service-method-call.instance-holder-unconstructible");
+        assertThat(typed.get().message())
+            .contains("make the method static")
+            .contains("DSLContext");
     }
 }

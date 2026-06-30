@@ -28,7 +28,11 @@ import java.util.stream.Collectors;
  */
 public sealed interface ServiceMethodCallError extends Rejection.AuthorError permits
     ServiceMethodCallError.MultipleDslContextSlots,
-    ServiceMethodCallError.ParameterUnbindable
+    ServiceMethodCallError.ParameterUnbindable,
+    ServiceMethodCallError.InstanceHolderUnconstructible,
+    ServiceMethodCallError.ArgumentParameterMismatch,
+    ServiceMethodCallError.DtoSourcesUnsupported,
+    ServiceMethodCallError.UnrecognizedSourcesType
 {
     /** LSP wire code under the {@code graphitron.service-method-call.} namespace. */
     String lspCode();
@@ -72,5 +76,103 @@ public sealed interface ServiceMethodCallError extends Rejection.AuthorError per
             return sb.toString();
         }
         @Override public String lspCode() { return "graphitron.service-method-call.parameter-unbindable"; }
+    }
+
+    /** Which reason an instance {@code @service} holder is unconstructible. */
+    enum HolderProblem { ABSTRACT_OR_INTERFACE, NO_BINDABLE_CTOR }
+
+    /**
+     * An instance {@code @service} method's enclosing class cannot be used as a holder: it is
+     * abstract / an interface, or it exposes no public constructor whose parameters are each
+     * bindable from a {@code DSLContext} slot or a declared context argument (R256 relaxed the
+     * legacy {@code (DSLContext)}-only rule). Carries the class/method coordinate, the class's
+     * simple name (for the fix hint), and which {@link HolderProblem} applies.
+     */
+    record InstanceHolderUnconstructible(
+        String className,
+        String methodName,
+        String classSimpleName,
+        HolderProblem problem
+    ) implements ServiceMethodCallError {
+        @Override public String message() {
+            return switch (problem) {
+                case ABSTRACT_OR_INTERFACE -> "method '" + methodName + "' in class '" + className
+                    + "' is an instance method, but its enclosing class is abstract or an interface"
+                    + " — make the method static, or move it to a concrete class with a public"
+                    + " constructor whose parameters are each a DSLContext or a declared context argument";
+                case NO_BINDABLE_CTOR -> "method '" + methodName + "' in class '" + className
+                    + "' is an instance method but the class has no public constructor whose"
+                    + " parameters are each a DSLContext or a declared context argument — add e.g. `public "
+                    + classSimpleName + "(DSLContext ctx)`, or make the method static";
+            };
+        }
+        @Override public String lspCode() { return "graphitron.service-method-call.instance-holder-unconstructible"; }
+    }
+
+    /**
+     * A Java parameter did not match any GraphQL argument or context key on the field. Carries the
+     * parameter and method names, the available GraphQL argument names and context keys (so the
+     * author can spot a typo), and a pre-rendered {@code suggestion} hint (the rename / argMapping /
+     * dot-path guidance the classifier computed). Subsumes the prose the legacy
+     * {@code Rejection.structural} arm produced at {@code ServiceCatalog}.
+     */
+    record ArgumentParameterMismatch(
+        String paramName,
+        String methodName,
+        List<String> availableArgs,
+        List<String> availableContextKeys,
+        String suggestion
+    ) implements ServiceMethodCallError {
+        public ArgumentParameterMismatch {
+            availableArgs = List.copyOf(availableArgs);
+            availableContextKeys = List.copyOf(availableContextKeys);
+        }
+        private static String formatNameSet(List<String> names) {
+            return names.isEmpty()
+                ? "(none)"
+                : names.stream().sorted().collect(Collectors.joining(", ", "[", "]"));
+        }
+        @Override public String message() {
+            return "parameter '" + paramName + "' in method '" + methodName
+                + "' does not match any GraphQL argument or context key on this field"
+                + " — available GraphQL arguments: " + formatNameSet(availableArgs)
+                + "; available context keys: " + formatNameSet(availableContextKeys)
+                + (suggestion == null ? "" : suggestion);
+        }
+        @Override public String lspCode() { return "graphitron.service-method-call.argument-parameter-mismatch"; }
+    }
+
+    /**
+     * A {@code @service} SOURCES parameter is a {@code List<DTO>} / {@code Set<DTO>} whose element
+     * is not backed by a jOOQ {@code TableRecord} (free-form DTO sources are unsupported). Carries
+     * the parameter and method names plus the classifier's {@code reason} (the {@code @sourceRow}
+     * hint).
+     */
+    record DtoSourcesUnsupported(
+        String paramName,
+        String methodName,
+        String reason
+    ) implements ServiceMethodCallError {
+        @Override public String message() {
+            return "parameter '" + paramName + "' in method '" + methodName + "': " + reason;
+        }
+        @Override public String lspCode() { return "graphitron.service-method-call.dto-sources-unsupported"; }
+    }
+
+    /**
+     * A {@code @service} parameter looks like a SOURCES batch shape but its element type is not one
+     * the classifier recognises ({@code RowN} / {@code RecordN} / {@code TableRecord}). Carries the
+     * parameter and method names plus the unrecognised Java type name.
+     */
+    record UnrecognizedSourcesType(
+        String paramName,
+        String methodName,
+        String typeName
+    ) implements ServiceMethodCallError {
+        @Override public String message() {
+            return "parameter '" + paramName + "' in method '" + methodName
+                + "' has an unrecognized sources type: '" + typeName + "'";
+        }
+        @Override public String lspCode() { return "graphitron.service-method-call.unrecognized-sources-type"; }
     }
 }

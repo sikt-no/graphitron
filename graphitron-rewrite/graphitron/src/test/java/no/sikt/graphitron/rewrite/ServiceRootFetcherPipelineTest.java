@@ -61,9 +61,18 @@ class ServiceRootFetcherPipelineTest {
             }
             """);
 
-        assertThat(messages(errors))
-            .anyMatch(m -> m.contains("Field 'Query.wider'")
-                && m.contains("must return the generated jOOQ table class"));
+        // R256: the wider-return failure surfaces the shared ReflectionError.ReturnTypeMismatch arm
+        // (TABLE_METHOD context) end-to-end through the validator, carrying its stable lspCode.
+        var typed = errors.stream()
+            .map(ValidationError::rejection)
+            .filter(r -> r instanceof no.sikt.graphitron.rewrite.model.ReflectionError.ReturnTypeMismatch)
+            .map(r -> (no.sikt.graphitron.rewrite.model.ReflectionError.ReturnTypeMismatch) r)
+            .findFirst();
+        assertThat(typed)
+            .as("@tableMethod wider-return must reach ValidationError as a typed ReturnTypeMismatch")
+            .isPresent();
+        assertThat(typed.get().lspCode()).isEqualTo("graphitron.reflect.return-type-mismatch");
+        assertThat(typed.get().message()).contains("must return the generated jOOQ table class");
     }
 
     @Test
@@ -76,10 +85,18 @@ class ServiceRootFetcherPipelineTest {
             }
             """);
 
-        assertThat(messages(errors))
-            .anyMatch(m -> m.contains("Field 'Query.wrongReturn'")
-                && m.contains("must return")
-                && m.contains("FilmRecord"));
+        // R256: the strict-return failure surfaces the shared ReflectionError.ReturnTypeMismatch
+        // arm (SERVICE context) end-to-end through the validator, carrying its stable lspCode.
+        var typed = errors.stream()
+            .map(ValidationError::rejection)
+            .filter(r -> r instanceof no.sikt.graphitron.rewrite.model.ReflectionError.ReturnTypeMismatch)
+            .map(r -> (no.sikt.graphitron.rewrite.model.ReflectionError.ReturnTypeMismatch) r)
+            .findFirst();
+        assertThat(typed)
+            .as("root @service strict-return mismatch must reach ValidationError as a typed ReturnTypeMismatch")
+            .isPresent();
+        assertThat(typed.get().lspCode()).isEqualTo("graphitron.reflect.return-type-mismatch");
+        assertThat(typed.get().message()).contains("must return").contains("FilmRecord");
     }
 
     /**
@@ -156,6 +173,48 @@ class ServiceRootFetcherPipelineTest {
             .isPresent();
         assertThat(typed.get().lspCode())
             .isEqualTo("graphitron.service-method-call.multiple-dsl-context-slots");
+    }
+
+    @Test
+    void serviceOnOverloadedMethod_surfacesAsTypedAmbiguousMethod() {
+        // R256: a @service pointing at an overloaded method name surfaces the shared
+        // ReflectionError.AmbiguousMethod arm instead of silently binding the first declaration.
+        var errors = validate("""
+            type Film @table(name: "film") { title: String }
+            type Query {
+                ambiguous: Film
+                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getOverloaded"})
+            }
+            """);
+
+        var typed = errors.stream()
+            .map(ValidationError::rejection)
+            .filter(r -> r instanceof no.sikt.graphitron.rewrite.model.ReflectionError.AmbiguousMethod)
+            .map(r -> (no.sikt.graphitron.rewrite.model.ReflectionError.AmbiguousMethod) r)
+            .findFirst();
+        assertThat(typed)
+            .as("overloaded @service method must reach ValidationError as a typed AmbiguousMethod")
+            .isPresent();
+        assertThat(typed.get().lspCode()).isEqualTo("graphitron.reflect.ambiguous-method");
+    }
+
+    @Test
+    void serviceOnMultiArgCtorHolder_resolvesWithoutHolderRejection() {
+        // R256: an instance @service whose holder takes (DSLContext, tenantId) resolves when
+        // tenantId is a declared context argument — no InstanceHolderUnconstructible rejection.
+        var errors = validate("""
+            type Film @table(name: "film") { title: String }
+            type Query {
+                film: Film @service(
+                    service: {className: "no.sikt.graphitron.rewrite.TestInstanceServiceStubMultiArgCtor", method: "getFilm"},
+                    contextArguments: ["tenantId"])
+            }
+            """);
+
+        assertThat(errors)
+            .as("a (DSLContext, ctxArg) holder ctor must resolve without a holder rejection")
+            .noneMatch(e -> e.rejection()
+                instanceof no.sikt.graphitron.rewrite.model.ServiceMethodCallError.InstanceHolderUnconstructible);
     }
 
     private static List<ValidationError> validate(String sdl) {

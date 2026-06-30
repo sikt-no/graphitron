@@ -130,17 +130,15 @@ public final class ContextArgumentClassifier {
      * Walks a {@link ServiceMethodCall} carrier for {@link MappingEntry.FromContext} entries
      * across {@code ctorArgs} (when present) and {@code methodArgs}, recording each as a
      * {@link ConflictSite} keyed on the carrier's class + method coordinate. The walker enforces
-     * the same per-name fold as {@link #collectFromMethodRef}; a minimal synthetic
-     * {@link MethodRef.Service} carries the carrier's coordinate so the existing
-     * {@link ConflictSite#site()} accessor and the conflict-rejection renderer at
-     * {@code Rejection.AuthorError.TypeConflict} continue to work without widening
-     * {@link ConflictSite}'s type. The synthetic carries no params / declaredExceptions / CallShape
-     * detail beyond what the renderer reads ({@code className()} + {@code methodName()}).
+     * the same per-name fold as {@link #collectFromMethodRef}. R256: the carrier is carried
+     * honestly through {@link ConflictSite.Site.Carrier}, retiring the empty synthetic
+     * {@link MethodRef.Service} sentinel the carrier coordinate previously fabricated to satisfy
+     * {@link ConflictSite}'s old {@code MethodRef}-typed field.
      */
     private static void collectFromCarrier(
             no.sikt.graphitron.rewrite.model.ServiceMethodCall carrier,
             Map<String, List<ConflictSite>> byName) {
-        var site = syntheticServiceMethodRef(carrier);
+        var site = new ConflictSite.Site.Carrier(carrier);
         if (carrier instanceof no.sikt.graphitron.rewrite.model.ServiceMethodCall.Instance inst) {
             for (var entry : inst.ctorArgs()) recordFromContext(entry, site, byName);
         }
@@ -149,23 +147,12 @@ public final class ContextArgumentClassifier {
 
     private static void recordFromContext(
             no.sikt.graphitron.rewrite.model.MappingEntry entry,
-            MethodRef site,
+            ConflictSite.Site site,
             Map<String, List<ConflictSite>> byName) {
         if (entry instanceof no.sikt.graphitron.rewrite.model.MappingEntry.FromContext fc) {
             byName.computeIfAbsent(fc.contextKey(), k -> new ArrayList<>())
                 .add(new ConflictSite(site, fc.javaType()));
         }
-    }
-
-    private static MethodRef syntheticServiceMethodRef(
-            no.sikt.graphitron.rewrite.model.ServiceMethodCall carrier) {
-        return new MethodRef.Service(
-            carrier.fqClassName(),
-            carrier.methodName(),
-            carrier.javaReturnType(),
-            List.of(),
-            List.of(),
-            new MethodRef.CallShape.Static(false));
     }
 
     private static void collectFromInputFieldCondition(GraphitronField field,
@@ -186,7 +173,7 @@ public final class ContextArgumentClassifier {
         for (var p : method.params()) {
             if (p instanceof MethodRef.Param.Typed typed && typed.source() instanceof ParamSource.Context) {
                 byName.computeIfAbsent(typed.name(), k -> new ArrayList<>())
-                    .add(new ConflictSite(method, typed.javaType()));
+                    .add(ConflictSite.of(method, typed.javaType()));
             }
         }
     }

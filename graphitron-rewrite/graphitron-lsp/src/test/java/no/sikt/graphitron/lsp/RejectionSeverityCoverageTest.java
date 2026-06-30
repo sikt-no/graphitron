@@ -117,12 +117,12 @@ class RejectionSeverityCoverageTest {
             return new Rejection.AuthorError.TypeConflict(
                 "fnr",
                 List.of(
-                    new no.sikt.graphitron.rewrite.model.ConflictSite(
+                    no.sikt.graphitron.rewrite.model.ConflictSite.of(
                         new no.sikt.graphitron.rewrite.model.MethodRef.StaticOnly(
                             "com.example.S", "m", no.sikt.graphitron.javapoet.ClassName.OBJECT,
                             List.of(), List.of()),
                         no.sikt.graphitron.javapoet.ClassName.get(String.class)),
-                    new no.sikt.graphitron.rewrite.model.ConflictSite(
+                    no.sikt.graphitron.rewrite.model.ConflictSite.of(
                         new no.sikt.graphitron.rewrite.model.MethodRef.StaticOnly(
                             "com.example.T", "m", no.sikt.graphitron.javapoet.ClassName.OBJECT,
                             List.of(), List.of()),
@@ -180,6 +180,44 @@ class RejectionSeverityCoverageTest {
         if (permit == no.sikt.graphitron.rewrite.model.ServiceMethodCallError.ParameterUnbindable.class) {
             return new no.sikt.graphitron.rewrite.model.ServiceMethodCallError.ParameterUnbindable(
                 "title", List.of("name", "year"), "name");
+        }
+        // R256: re-added ServiceMethodCallError service-binding arms. One sample per arm;
+        // Diagnostics.compute's switch on Rejection.AuthorError catches them uniformly (Error),
+        // and lspCodeOf forwards each arm's stable graphitron.service-method-call.* code.
+        if (permit == no.sikt.graphitron.rewrite.model.ServiceMethodCallError.InstanceHolderUnconstructible.class) {
+            return new no.sikt.graphitron.rewrite.model.ServiceMethodCallError.InstanceHolderUnconstructible(
+                "com.example.Svc", "getFilm", "Svc",
+                no.sikt.graphitron.rewrite.model.ServiceMethodCallError.HolderProblem.NO_BINDABLE_CTOR);
+        }
+        if (permit == no.sikt.graphitron.rewrite.model.ServiceMethodCallError.ArgumentParameterMismatch.class) {
+            return new no.sikt.graphitron.rewrite.model.ServiceMethodCallError.ArgumentParameterMismatch(
+                "title", "getFilm", List.of("name", "year"), List.of("tenantId"), " — rename or argMapping");
+        }
+        if (permit == no.sikt.graphitron.rewrite.model.ServiceMethodCallError.DtoSourcesUnsupported.class) {
+            return new no.sikt.graphitron.rewrite.model.ServiceMethodCallError.DtoSourcesUnsupported(
+                "keys", "getFilms", "sources type 'com.example.Dto' is not backed by a jOOQ TableRecord");
+        }
+        if (permit == no.sikt.graphitron.rewrite.model.ServiceMethodCallError.UnrecognizedSourcesType.class) {
+            return new no.sikt.graphitron.rewrite.model.ServiceMethodCallError.UnrecognizedSourcesType(
+                "input", "getFilms", "java.util.List<com.example.Weird>");
+        }
+        // R256: ReflectionError sub-seal of AuthorError (shared reflection-intrinsic arms). One
+        // sample per arm; lspCodeOf forwards each arm's stable graphitron.reflect.* code.
+        if (permit == no.sikt.graphitron.rewrite.model.ReflectionError.ClassNotLoaded.class) {
+            return new no.sikt.graphitron.rewrite.model.ReflectionError.ClassNotLoaded("com.example.Missing");
+        }
+        if (permit == no.sikt.graphitron.rewrite.model.ReflectionError.ReturnTypeMismatch.class) {
+            return new no.sikt.graphitron.rewrite.model.ReflectionError.ReturnTypeMismatch(
+                "com.example.Svc", "getFilm", "FilmRecord", "String",
+                no.sikt.graphitron.rewrite.model.ReflectionError.ReturnContext.SERVICE);
+        }
+        if (permit == no.sikt.graphitron.rewrite.model.ReflectionError.ParameterNamesMissing.class) {
+            return new no.sikt.graphitron.rewrite.model.ReflectionError.ParameterNamesMissing(
+                "com.example.Svc", "getFilm");
+        }
+        if (permit == no.sikt.graphitron.rewrite.model.ReflectionError.AmbiguousMethod.class) {
+            return new no.sikt.graphitron.rewrite.model.ReflectionError.AmbiguousMethod(
+                "com.example.Svc", "getFilm", List.of(0, 1));
         }
         // R246: UpdateRowsError sub-seal of AuthorError. One sample per arm; Diagnostics.compute's
         // switch on Rejection.AuthorError catches the whole sub-family uniformly (Error severity).
