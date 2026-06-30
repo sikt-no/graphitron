@@ -5,7 +5,7 @@ status: Backlog
 bucket: feature
 priority: 7
 theme: interface-union
-depends-on: [discriminated-joined-table-inheritance]
+depends-on: []
 created: 2026-06-26
 last-updated: 2026-06-26
 ---
