@@ -59,7 +59,16 @@ class FixtureWarningsGateTest {
             Map.of()
         );
 
-        List<BuildWarning> warnings = new GraphQLRewriteGenerator(ctx).buildOutput().report().warnings();
+        List<BuildWarning> allWarnings = new GraphQLRewriteGenerator(ctx).buildOutput().report().warnings();
+
+        // R398: SDL lint findings (the engine's syntactic visitors) ride this same warning channel
+        // and are exercised by LintEngineTest. This R294 gate pins the classifier/generator advisory
+        // set specifically, so it filters the engine lint findings out; a CLASSIFIER advisory (the
+        // same-table @asConnection one below) is itself a LintFinding but stays in scope here.
+        List<BuildWarning> warnings = allWarnings.stream()
+            .filter(w -> !(w instanceof BuildWarning.LintFinding lf
+                && lf.rule().source() == no.sikt.graphitron.rewrite.lint.LintRule.Source.ENGINE))
+            .toList();
 
         // Exactly one expected advisory: a new accidental warning grows this list and fails here.
         assertThat(warnings)

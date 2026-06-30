@@ -114,7 +114,7 @@ public class GraphQLRewriteGenerator {
         var snapshot = CatalogBuilder.buildSnapshot(attributed.registry(), bundle.model(), catalog);
         var catalogFacts = CatalogBuilder.buildCatalogFacts(jooq);
         var errors = new GraphitronSchemaValidator().validate(bundle.model());
-        var warnings = bundle.model().warnings();
+        var warnings = withLintFindings(bundle.model(), attributed);
         var report = ValidationReport.from(errors, warnings);
         return new BuildOutput(new BuildArtifacts(catalog, snapshot, catalogFacts), report);
     }
@@ -152,9 +152,10 @@ public class GraphQLRewriteGenerator {
      * Throws {@link ValidationFailedException} if validation errors are found.
      */
     public void validate() {
-        var bundle = GraphitronSchemaBuilder.buildBundle(loadAttributedRegistry(), ctx);
+        var attributed = loadAttributedRegistry();
+        var bundle = GraphitronSchemaBuilder.buildBundle(attributed, ctx);
         var schema = bundle.model();
-        logWarnings(schema);
+        logWarnings(withLintFindings(schema, attributed));
         var errors = validateAndLogErrors(schema);
         if (!errors.isEmpty()) {
             throw new ValidationFailedException(errors);
@@ -191,7 +192,7 @@ public class GraphQLRewriteGenerator {
         var assembled = bundle.assembled();
         boolean federationLink = bundle.federationLink();
 
-        logWarnings(schema);
+        logWarnings(withLintFindings(schema, attributed));
 
         var errors = validateAndLogErrors(schema);
         if (!errors.isEmpty()) {
@@ -287,8 +288,20 @@ public class GraphQLRewriteGenerator {
         }
     }
 
-    private static void logWarnings(GraphitronSchema schema) {
-        schema.warnings().forEach(w -> {
+    /**
+     * Classification advisories ({@code schema.warnings()}) plus the SDL lint engine's findings over
+     * the same parsed registry (R398). Lint findings ride the {@link BuildWarning} channel here at the
+     * report-assembly surfaces rather than inside {@link GraphitronSchemaBuilder}, so the per-build
+     * classifier model stays advisory-only and only the user-facing report carries the lint surface.
+     */
+    private static List<BuildWarning> withLintFindings(GraphitronSchema schema, AttributedRegistry attributed) {
+        var all = new java.util.ArrayList<BuildWarning>(schema.warnings());
+        all.addAll(no.sikt.graphitron.rewrite.lint.LintEngine.builtIn().run(attributed.registry()));
+        return all;
+    }
+
+    private static void logWarnings(List<BuildWarning> warnings) {
+        warnings.forEach(w -> {
             var loc = w.location();
             if (loc != null) {
                 LOGGER.warn("{}:{}:{}: warning: {}", relativiseSourceName(loc.getSourceName()), loc.getLine(), loc.getColumn(), w.message());
