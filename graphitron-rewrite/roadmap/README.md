@@ -16,7 +16,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 |---|---|---|---|---|
 | `R261` | Generation-time wire-coercion cast guard across arg-classification sites <sub>blocked by: [service-walker-substrate-absorption](service-walker-substrate-absorption.md), [dimensional-model-pivot](dimensional-model-pivot.md)</sub> | Spec | 2026-06-30 <sub>created 2026-05-29</sub> | [plan](wire-coercion-cast-guard.md) |
 | `R19` | Rebase and squash rewrite branch onto main | Ready |  | [plan](history-squash.md) |
-| `R262` | Reject @nodeId on non-ID coordinates and federation encoded @key fields at validate time | In Progress | 2026-06-30 <sub>created 2026-05-29</sub> | [plan](reject-nodeid-on-non-id-coordinates.md) |
+| `R262` | Reject @nodeId on non-ID coordinates and federation encoded @key fields at validate time | In Review | 2026-06-30 <sub>created 2026-05-29</sub> | [plan](reject-nodeid-on-non-id-coordinates.md) |
 | `R222` | Dimensional model pivot: slots over cross-product permits | Spec | 2026-06-18 <sub>created 2026-05-21</sub> | [plan](dimensional-model-pivot.md) |
 | `R384` | Support converted/@nodeId/developer-@condition filters on multitable interface/union queries | Spec | 2026-06-27 <sub>created 2026-06-25</sub> | [plan](multitable-interface-converted-nodeid-condition-filters.md) |
 | `R333` | The Graphitron data model | Spec | 2026-06-25 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
@@ -199,7 +199,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### mutations-errors
 
-- `R262` [**Reject @nodeId on non-ID coordinates and federation encoded @key fields at validate time**](reject-nodeid-on-non-id-coordinates.md) — In Progress, validation
+- `R262` [**Reject @nodeId on non-ID coordinates and federation encoded @key fields at validate time**](reject-nodeid-on-non-id-coordinates.md) — In Review, validation
 - `R397` [**Let bare-entity query fields host @error so decode and other client errors route through handlers**](error-directive-on-query-fields.md) — Backlog, architecture
 - `R170` [**Sakila execute-tier fixture for the Jakarta ValidationHandler channel (R94-blocked)**](validator-integration-execute-coverage.md) — Backlog, testing
 - `R98` [**Multi-source input validation: SDL directives + DB CHECK + Jakarta on a unified rendered schema**](multi-source-input-validation.md) — Backlog, architecture, blocked by [catalog-check-constraint-validation](catalog-check-constraint-validation.md)
