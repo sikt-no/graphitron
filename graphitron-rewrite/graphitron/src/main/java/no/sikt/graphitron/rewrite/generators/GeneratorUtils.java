@@ -328,9 +328,20 @@ class GeneratorUtils {
             if (i > 0) intoArgs.add(", ");
             intoArgs.add("$T.$L.$L", tablesClass, tableField, pkCols.get(i).javaName());
         }
+        // Null-guard: a nullable to-one @table relation that resolves to no row hands the accessor
+        // a null nested record (the field's nullability classification on the SourceKey is what
+        // makes this reachable — if a future change marks such a field non-null, this guard becomes
+        // visibly dead code rather than silently orphaned). Mirrors the FK-side precedent in
+        // buildKeyExtractionWithNullCheck: a key that can't be built must not dispatch the loader;
+        // the to-one's faithful "no row" rendering is null, and the fetcher returns
+        // CompletableFuture<DataFetcherResult<Record>>, so completedFuture(null) is assignable.
         return CodeBlock.builder()
             .addStatement("$T element = (($T) $L).$L()",
                 elementClass, backingClass, sourceExpr, accessor.methodName())
+            .beginControlFlow("if (element == null)")
+            .addStatement("return $T.completedFuture(null)",
+                ClassName.get("java.util.concurrent", "CompletableFuture"))
+            .endControlFlow()
             .addStatement("$T key = element.into($L)", keyType, intoArgs.build())
             .build();
     }
@@ -344,6 +355,8 @@ class GeneratorUtils {
         String tableField = elementTable.javaFieldName();
         TypeName keysListType = ParameterizedTypeName.get(LIST, keyType);
         ClassName arrayList = ClassName.get("java.util", "ArrayList");
+        TypeName elementsType = ParameterizedTypeName.get(
+            ClassName.get("java.lang", "Iterable"), elementClass);
         var intoArgs = CodeBlock.builder();
         var pkCols = sourceKey.columns();
         for (int i = 0; i < pkCols.size(); i++) {
@@ -354,12 +367,31 @@ class GeneratorUtils {
         // inference cheaply, and iterating works uniformly across the List<X> and Set<X>
         // declarations the parent class may carry. The output is always a List<RecordN<...>>
         // because DataLoader.loadMany takes a List.
+        //
+        // Null-guard (R269): a nullable to-many @table relation whose backing was never populated
+        // hands the accessor a null collection, and the bare for-each would NPE before any
+        // .into(...) runs. Hoist the accessor result to a typed local and skip the loop when it is
+        // null so `keys` stays empty; the existing loadMany(keys, ...) dispatch then renders the
+        // field as []. This deliberately collapses null-vs-empty (both render []), unlike the ONE
+        // arm (buildAccessorKeySingle) which preserves null-vs-present (a null nested record
+        // renders the field null): a to-many has no faithful surface distinction between "never
+        // populated" and "zero rows" once the loader returns, whereas a to-one's "no row"
+        // faithfully renders as null. Element-level nulls inside a non-null collection stay
+        // unguarded (a malformed backing, not a cardinality to model). The local is typed
+        // Iterable<Element> because the loop consumes only the iteration capability, the same
+        // List/Set-agnostic reading the comment above relies on; AccessorRef carries the element
+        // type, not the parent's concrete List/Set declaration. Whether the relation can be null is
+        // the field's nullability classification on the SourceKey; if a future change makes it
+        // non-null this guard is visibly dead code rather than silently orphaned.
         var b = CodeBlock.builder()
             .addStatement("$T keys = new $T<>()", keysListType, arrayList)
-            .beginControlFlow("for ($T element : (($T) $L).$L())",
-                elementClass, backingClass, sourceExpr, accessor.methodName())
+            .addStatement("$T elements = (($T) $L).$L()",
+                elementsType, backingClass, sourceExpr, accessor.methodName())
+            .beginControlFlow("if (elements != null)")
+            .beginControlFlow("for ($T element : elements)", elementClass)
             .addStatement("$T key = element.into($L)", keyType, intoArgs.build())
             .addStatement("keys.add(key)")
+            .endControlFlow()
             .endControlFlow();
         return b.build();
     }

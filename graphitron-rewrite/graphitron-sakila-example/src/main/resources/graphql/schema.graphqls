@@ -469,6 +469,18 @@ type Query {
             method: "recentlyCreatedFilmsBatched"
         })
 
+    # R269 execution-tier fixture (the to-many sibling of the ONE-arm null guard): one payload
+    # carries a null films() backing (a to-many @table relation that was never populated). The
+    # MANY accessor key-extraction (buildAccessorKeyMany) must skip the for-loop on the null
+    # collection so `keys` stays empty and the loadMany dispatch renders the field as [], rather
+    # than NPEing in the for-each. Deliberately collapses null-vs-empty (both render []); a to-many
+    # has no faithful surface distinction once the loader returns.
+    recentlyCreatedFilmsBatchedWithGap: [CreateFilmsPayload!]!
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.CreateFilmsPayloadService",
+            method: "recentlyCreatedFilmsBatchedWithGap"
+        })
+
     # R366 compilation-tier fixture: free-form record-backed payload whose typed
     # List<AddressRecord> accessor drives a list-cardinality multi-table polymorphic child
     # (OccupantsBatchPayload.occupants). The classifier derives Reader.AccessorCall +
@@ -911,6 +923,16 @@ type Inventory @table(name: "inventory") {
     filmCardData: FilmCardWrapper @externalField(reference: {
         className: "no.sikt.graphitron.rewrite.test.extensions.InventoryExtensions",
         method:    "filmCardData"
+    })
+    # R269 execution-tier fixture: a nullable to-one @table accessor that resolves to NO row on
+    # a non-error parent. The extension hands back a FilmCardData whose film() accessor is null
+    # for even film_ids (the related row is absent) and present for odd ones, so the child
+    # `film: Film` (AccessorKeyedSingle → buildAccessorKeySingle) must render null for the absent
+    # arm rather than NPEing on element.into(...). The mixed batch proves the guard nulls only the
+    # absent parent while the present ones still resolve their Film row through the same loader.
+    filmCardDataMaybeMissing: FilmCardWrapper @externalField(reference: {
+        className: "no.sikt.graphitron.rewrite.test.extensions.InventoryExtensions",
+        method:    "filmCardDataMaybeMissing"
     })
     # R43 commit 3 fixture: child @tableMethod on a @table parent, single-FK auto-inference.
     # Inventory has a unique FK inventory_film_id_fkey -> film, so the classifier auto-infers

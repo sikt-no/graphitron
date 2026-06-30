@@ -50,4 +50,23 @@ public final class InventoryExtensions {
             return new FilmCardData(f);
         }));
     }
+
+    /**
+     * R269 execution-tier fixture: a nullable to-one accessor whose embedded {@link FilmRecord}
+     * is {@code null} for even {@code film_id}s (the related row is absent) and present for odd
+     * ones. The parent {@link FilmCardData} is always non-null, so the child {@code film: Film}
+     * fetcher reaches {@code GeneratorUtils.buildAccessorKeySingle} and must short-circuit the
+     * null {@code film()} return to {@code completedFuture(null)} rather than NPEing on
+     * {@code element.into(...)}. Wired by {@code Inventory.filmCardDataMaybeMissing}.
+     */
+    public static Field<FilmCardData> filmCardDataMaybeMissing(Inventory table) {
+        return table.FILM_ID.convert(Converter.from(Integer.class, FilmCardData.class, filmId -> {
+            if (filmId % 2 == 0) {
+                return new FilmCardData(null);
+            }
+            FilmRecord f = new FilmRecord();
+            f.setFilmId(filmId);
+            return new FilmCardData(f);
+        }));
+    }
 }
