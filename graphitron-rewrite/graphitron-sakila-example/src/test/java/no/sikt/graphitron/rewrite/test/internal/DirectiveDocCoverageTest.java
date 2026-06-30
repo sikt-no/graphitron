@@ -22,9 +22,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  * (the canonical directive surface auto-injected by {@code RewriteSchemaLoader}) and
  * the per-directive reference pages under {@code docs/manual/reference/directives/}.
  *
- * <p>Asserts every directive declared in the schema has a {@code <name>.adoc} page,
- * and every {@code <name>.adoc} page corresponds to a directive declared in the
- * schema. Failures print the missing pages or stale files so the fix is mechanical.
+ * <p>Asserts every directive declared in the schema <em>and advertised in the v1
+ * surface</em> has a {@code <name>.adoc} page, and every {@code <name>.adoc} page
+ * corresponds to a directive declared in the schema. Failures print the missing
+ * pages or stale files so the fix is mechanical.
  *
  * <p>R68 Phase 2 closing slice. A future PR that adds a directive cannot land green
  * without adding the doc page; a PR that removes a directive must remove its page
@@ -32,6 +33,15 @@ import static org.assertj.core.api.Assertions.assertThat;
  * module if one exists, otherwise in {@code graphitron-sakila-example}; we use the
  * latter since {@code graphitron-sakila-example} already carries cross-cutting
  * structural tests against the project layout.
+ *
+ * <p>R400 carve-out: a directive may be declared in {@code directives.graphqls} (so
+ * legacy schemas keep parsing) yet withheld from the advertised v1 surface, in which
+ * case it has no reference page on purpose. The withheld set is not duplicated here;
+ * it is derived from the generated {@code supported-directives.adoc} fragment that
+ * {@code DirectiveSupportReport} renders (a declared directive absent from that
+ * fragment is withheld), so the exemption cannot drift from the report that owns the
+ * policy. When a withheld directive is re-advertised, its page reappears and the
+ * bijection tightens automatically.
  */
 @UnitTier
 class DirectiveDocCoverageTest {
@@ -44,6 +54,18 @@ class DirectiveDocCoverageTest {
         Pattern.compile("^directive\\s+@(\\w+)", Pattern.MULTILINE);
 
     private static final String DOCS_DIRECTIVES_PATH = "docs/manual/reference/directives";
+
+    /**
+     * Generated migration fragment listing the advertised directive surface (Supported +
+     * Removed/rejected + shape-changes). Rendered by {@code DirectiveSupportReport}; the set
+     * of declared directives absent from it is exactly the R400 withheld-from-v1 set.
+     */
+    private static final String SUPPORTED_DIRECTIVES_FRAGMENT =
+        "docs/manual/_generated/supported-directives.adoc";
+
+    /** Matches a backtick-wrapped {@code `@<name>`} directive mention in the fragment. */
+    private static final Pattern DIRECTIVE_MENTION =
+        Pattern.compile("`@(\\w+)");
 
     /**
      * Page filename → directive name remap for cases where the natural
@@ -66,8 +88,18 @@ class DirectiveDocCoverageTest {
     void everyDirectiveHasAReferencePageAndViceVersa() throws IOException {
         Set<String> directives = directivesFromSchema();
         Set<String> pages = pagesFromDocs();
+        Set<String> advertised = advertisedDirectives();
 
-        Set<String> missingPages = new TreeSet<>(directives);
+        // R400: directives declared but absent from the advertised surface are withheld
+        // from v1 and intentionally page-less. Derived from the report's own output so the
+        // exemption cannot drift from DirectiveSupportReport.WITHHELD_FROM_V1.
+        Set<String> withheld = new TreeSet<>(directives);
+        withheld.removeAll(advertised);
+
+        Set<String> directivesRequiringAPage = new TreeSet<>(directives);
+        directivesRequiringAPage.removeAll(withheld);
+
+        Set<String> missingPages = new TreeSet<>(directivesRequiringAPage);
         missingPages.removeAll(pages);
 
         Set<String> stalePages = new TreeSet<>(pages);
@@ -77,13 +109,34 @@ class DirectiveDocCoverageTest {
             .as("at least one directive must be declared in directives.graphqls")
             .isNotEmpty();
         assertThat(missingPages)
-            .as("directives declared in directives.graphqls without a matching "
-                + "reference/directives/<name>.adoc page; add the missing page(s)")
+            .as("advertised directives in directives.graphqls without a matching "
+                + "reference/directives/<name>.adoc page; add the missing page(s). "
+                + "(Withheld-from-v1 directives, exempt here: " + withheld + ")")
             .isEmpty();
         assertThat(stalePages)
             .as("reference/directives/<name>.adoc pages with no matching directive "
                 + "in directives.graphqls; remove the stale page(s)")
             .isEmpty();
+    }
+
+    /**
+     * Directive names mentioned in the generated {@code supported-directives.adoc} fragment,
+     * i.e. the advertised v1 surface. A directive declared in the schema but missing from
+     * this set is withheld from v1 (R400) and needs no reference page.
+     */
+    private static Set<String> advertisedDirectives() throws IOException {
+        Path fragment = locate(SUPPORTED_DIRECTIVES_FRAGMENT);
+        String text = Files.readString(fragment);
+        Set<String> names = new TreeSet<>();
+        Matcher m = DIRECTIVE_MENTION.matcher(text);
+        while (m.find()) {
+            names.add(m.group(1));
+        }
+        assertThat(names)
+            .as("generated fragment " + SUPPORTED_DIRECTIVES_FRAGMENT
+                + " mentions no directives; the regen step likely did not run")
+            .isNotEmpty();
+        return names;
     }
 
     private static Set<String> directivesFromSchema() throws IOException {
@@ -103,7 +156,7 @@ class DirectiveDocCoverageTest {
     }
 
     private static Set<String> pagesFromDocs() throws IOException {
-        Path docsDir = locateDocsDirectivesDir();
+        Path docsDir = locate(DOCS_DIRECTIVES_PATH);
         try (Stream<Path> files = Files.list(docsDir)) {
             return files
                 .filter(Files::isRegularFile)
@@ -117,18 +170,18 @@ class DirectiveDocCoverageTest {
     }
 
     /**
-     * Walks up from the test working directory until it finds the
-     * {@code docs/manual/reference/directives/} subtree. Surefire runs from the
-     * module directory, so the directory is normally two parents up; the walk
-     * keeps the test robust against future restructuring of the module layout.
+     * Walks up from the test working directory until {@code relativePath} resolves to an
+     * existing file or directory. Surefire runs from the module directory, so the docs tree
+     * is normally two parents up; the walk keeps the test robust against future
+     * restructuring of the module layout.
      */
-    private static Path locateDocsDirectivesDir() {
+    private static Path locate(String relativePath) {
         Path cwd = Path.of("").toAbsolutePath();
         for (Path p = cwd; p != null; p = p.getParent()) {
-            Path candidate = p.resolve(DOCS_DIRECTIVES_PATH);
-            if (Files.isDirectory(candidate)) return candidate;
+            Path candidate = p.resolve(relativePath);
+            if (Files.exists(candidate)) return candidate;
         }
         throw new IllegalStateException(
-            "Could not locate " + DOCS_DIRECTIVES_PATH + " by walking up from " + cwd);
+            "Could not locate " + relativePath + " by walking up from " + cwd);
     }
 }
