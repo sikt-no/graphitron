@@ -226,36 +226,42 @@ the rewrite build stays green.
   bundled-runtime workflow (two binaries, eight-entry jar, no-system-runtime
   verify).
 
-**Gate between A and B (human action, cannot be done from an agent
-session).** A maintainer dispatches `tree-sitter-natives-release.yml` with
-`tree-sitter-cli-version=v0.26.9`. The first dispatch validates the runtime
-build empirically; the Windows MinGW transitive-dep allowlist is the spec's
-acknowledged spike (fall back to route (b), the vcpkg-built DLL, only if the
-MinGW runtime deps prove unshakeable). On success, `0.26.9-1` is on Central
-with all eight entries.
+**Gate between A and B (done).** A maintainer dispatched
+`tree-sitter-natives-release.yml` with `tree-sitter-cli-version=v0.26.9`;
+`0.26.9-1` is published on Central with all eight entries. Two Half-A
+follow-up fixes landed from the dispatch: the Windows runtime build uses the
+MINGW64-native unprefixed `gcc`/`ar` (the triplet-prefixed `ar` alias is not
+installed), and the `post-deploy-verify` harness now supplies the runtime via
+a registered `NativeLibraryLookup` SPI (jtreesitter binds `ts_*` through the
+SPI at `TreeSitter.<clinit>`, not through the `Language.load` argument). The
+MinGW route (a) held; no fallback to route (b) was needed.
 
-**Half B (blocked on the gate; do NOT ship to trunk until `0.26.9-1` is
-published).** Until the new jar exists, these changes break every
-`graphitron-lsp` parsing test (extraction of `lib/<os>-<arch>/libtree-sitter.*`
-from a jar that does not contain it):
+**Half B (landed).** With `0.26.9-1` published, the LSP now consumes the
+bundled runtime. Validated locally against the published jar: full
+`graphitron-lsp` suite green (456 tests, 3 `@EnabledOnOs` skips), loading the
+bundled runtime through the SPI (consulted before any system fallback).
 
-- `graphitron-lsp/pom.xml`: bump the natives dependency to `0.26.9-1`.
-- `BundledLibraryLookup`: extract the bundled runtime, return
-  `grammar.or(bundledRuntime)`; delete `probeSystemTreeSitter` /
-  `candidateRuntimePaths`.
-- `GraphqlLanguage`: collapse the dual mechanism (delete
-  `classifyInstalledRuntime`, `RuntimeStatus`, `runtimeProbePaths`,
-  `tooOldRuntimeMessage`, `missingRuntimeMessage`, `ABI_VERSION_SYMBOL`); keep
-  one bundled-load-failure diagnostic; fix/repoint `DOCS_URL`.
-- Tests: rework `GraphqlLanguageErrorTranslationTest` to the single
-  diagnostic + add the bogus-extracted-path failure test;
-  `NativeLibraryBundleTest` / `TreeSitterSmokeTest` exercise the bundled
-  runtime with no system `libtree-sitter`.
-- Docs collapse: `docs/manual/reference/lsp-requirements.adoc` and
-  `getting-started.adoc#native-runtime-dependency` to "nothing to install"
-  (the first-client check). These are deliberately held with Half B: shipping
-  them before the LSP consumes the bundled jar would tell users "nothing to
-  install" while the released LSP still needs a system runtime.
+- `graphitron-lsp/pom.xml`: natives dependency bumped to `0.26.9-1`.
+- `BundledLibraryLookup`: extracts both grammar + runtime, returns
+  `grammar.or(bundledRuntime)`; `probeSystemTreeSitter` /
+  `candidateRuntimePaths` deleted.
+- `GraphqlLanguage`: dual mechanism collapsed (`classifyInstalledRuntime`,
+  `RuntimeStatus`, `runtimeProbePaths`, `tooOldRuntimeMessage`,
+  `missingRuntimeMessage`, `ABI_VERSION_SYMBOL` deleted); single
+  bundled-load-failure diagnostic naming the extracted temp path;
+  `DOCS_URL` repointed to the reference page (`/manual/reference/lsp-requirements.html`).
+- Tests: `GraphqlLanguageErrorTranslationTest` reworked to the single
+  diagnostic (+ missing-path case); `NativeLibraryBundleTest` /
+  `TreeSitterSmokeTest` / `IncrementalParseTest` javadocs updated to the
+  bundled runtime.
+- Docs collapse: `docs/manual/reference/lsp-requirements.adoc`,
+  `getting-started.adoc#native-runtime-dependency`, and
+  `docs/manual/reference/index.adoc` now read "nothing to install"; the NixOS
+  `shell.nix` snippet and per-platform install matrix are removed.
+
+Remaining: this item can move to In Review. The no-system-runtime proof on all
+four platforms is the release workflow's `post-deploy-verify` (now fixed);
+re-running it is optional confirmation, not a blocker for review.
 
 ## References
 

@@ -9,10 +9,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Verifies that jtreesitter loads the graphitron-tree-sitter-natives grammar
- * binary against an OS-installed libtree-sitter and that the
- * tree-sitter-graphql grammar parses a trivial schema. If this test fails on
- * a platform, either the natives jar does not cover that platform or the
- * system libtree-sitter is missing on the test runner.
+ * binary against the bundled libtree-sitter runtime (both ship in the natives
+ * jar; no system libtree-sitter is needed) and that the tree-sitter-graphql
+ * grammar parses a trivial schema. If this test fails on a platform, the
+ * natives jar does not cover that platform.
  */
 class TreeSitterSmokeTest {
 

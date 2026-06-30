@@ -13,11 +13,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Verifies the end-to-end native plumbing on whichever host CI is running on:
- * the {@code graphitron-tree-sitter-natives} jar carries a grammar binary
- * under {@code lib/<os>-<arch>/}, {@code BundledLibraryLookup} extracts it
- * at runtime, and jtreesitter loads {@code tree_sitter_graphql} against it
- * (with the system-installed {@code libtree-sitter} providing the runtime
- * symbols) and parses a trivial GraphQL document.
+ * the {@code graphitron-tree-sitter-natives} jar carries both a grammar binary
+ * and the {@code libtree-sitter} runtime under {@code lib/<os>-<arch>/},
+ * {@code BundledLibraryLookup} extracts both at runtime, and jtreesitter loads
+ * {@code tree_sitter_graphql} against the bundled runtime (resolved through the
+ * {@code BundledLibraryLookup} SPI, no system {@code libtree-sitter} required)
+ * and parses a trivial GraphQL document.
  *
  * <p>Coverage for each supported platform lives in a separate
  * {@code @EnabledOnOs} method so a CI matrix run exercises exactly one per

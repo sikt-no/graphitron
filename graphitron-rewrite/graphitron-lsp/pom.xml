@@ -41,7 +41,7 @@
         <dependency>
             <groupId>no.sikt</groupId>
             <artifactId>graphitron-tree-sitter-natives</artifactId>
-            <version>0.26.0-1</version>
+            <version>0.26.9-1</version>
         </dependency>
 
         <dependency>
