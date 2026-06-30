@@ -1,13 +1,13 @@
 ---
 id: R398
 title: "SDL lint engine with ESLint-style built-in visitors"
-status: Backlog
+status: Spec
 bucket: feature
 priority: 5
 theme: lsp
 depends-on: []
 created: 2026-06-29
-last-updated: 2026-06-29
+last-updated: 2026-06-30
 ---
 
 # SDL lint engine with ESLint-style built-in visitors
@@ -42,7 +42,7 @@ Two rule tiers, split by what a rule needs to see:
 In scope:
 
 - A visitor/rule engine over the build's typed AST: a rule contract (subscribe to node kind/coordinate, report a finding with range, severity, message), a registry, and a single-pass traversal that dispatches to all registered rules.
-- A useful starter set of built-in lint visitors. The exact set is chosen at Spec; candidates include the existing R121 redundant `@splitQuery` on `@record` advisory, R296 deprecated-directive usage, and common SDL-convention checks (naming, required directive pairings).
+- A useful starter set of built-in lint visitors, defined below under Starter rule set. It folds the former R121 (`@splitQuery`-on-`@record`) and R296 (deprecated-directive usage) advisories together with cross-vendor SDL-convention checks (naming, descriptions, deprecation hygiene).
 - Findings emitted through the existing `ValidationReport` / `BuildWarning` channel so they surface both at build/CI and in the LSP via the existing replay path.
 
 Out of scope (deferred):
@@ -78,7 +78,7 @@ Graphitron-native rules (directive conventions; mostly schema-aware, so build-si
 9. **splitquery-redundant-on-record-parent**: `@splitQuery` on a field whose enclosing type is record-backed, where the record handoff already opens a new scope so the directive is ignored. Already emitted as a build warning (`FieldBuilder.warnIfSplitQueryOnRecordParent`); formalized here with a shared marker constant. Severity warning. This is roadmap R121, absorbed here.
 10. **redundant-record-directive**: `@record` on a type that also carries `@table`, or whose backing class graphitron already infers, so the directive is ignored or redundant. Already emitted as a build warning (`TypeBuilder.warnAboutRedundantRecord`, three arms); formalized here. Severity warning. Overlaps R296's deprecated-`@record` signal but carries the more specific redundancy/conflict message; Spec decides whether to merge or keep distinct.
 11. **asconnection-same-table-pk-in**: `@asConnection` on a same-table PK-IN filter with required `@nodeId` arguments, which forces full-table pagination instead of keyed-range pagination. Already emitted as a build warning (`FieldBuilder.warnAsConnectionSameTable`); formalized here. Severity warning. Schema-aware.
-12. **nodeid-target-is-node-type**: `@nodeId(typeName:)` references a type that exists but does not carry `@node`, so the global id cannot decode to PK columns. Schema-aware (resolves the target type, checks for `@node`). Severity warning. Implementation note: confirm this is not already a hard `Rejection`; if the classifier already rejects it, drop this rule and substitute another generic one (candidates: `no-typename-prefix`, `description-style` block-string enforcement, or an off-by-default `enum-values-sorted`).
+12. **no-typename-prefix**: an object or interface field name must not be prefixed with its enclosing type's name (for example `User.userName` should be `User.name`). Severity warning; auto-fixable; purely syntactic. Provenance: graphql-eslint `no-typename-prefix`. This replaced an earlier `nodeid-target-is-node-type` candidate: `NodeIdLeafResolver.resolve` already hard-rejects every shape of that case (a `@nodeId(typeName:)` target that does not exist, is not `@table`-annotated, or has no resolvable `@node` identity for its backing table is a `Rejection.structural` at classification time, lines ~248 to ~280), so a lint rule there would restate a hard error and is excluded by the curation principle. The one residual seam is message clarity on the third rejection ("zero or multiple GraphQL types map to it"), which is a wording improvement to the existing error rather than a lint rule.
 
 Deliberately deferred rule candidates (not in iteration one): rules gated on unfinished features (UPSERT, `@mutation` UPDATE `multiRow`, composite-NodeId reference, polymorphic `@service` returns); alphabetical-ordering rules (opinionated, high churn, revisit once the engine is proven); and Relay-connection-conformance rules (graphitron synthesizes Connection / Edge / PageInfo via `@asConnection`, so that shape is generator-controlled, not author-authored; a rule there would police generated output, not author input).
 
@@ -96,8 +96,8 @@ Cross-tool synthesis: the schema-linting idiom is visitor-over-typed-AST rules r
 ## Relationships
 
 - **R347** (LSP structural consolidation): its Slice 3 introduces a `CompletionProvider` registry keyed by `Behavior`, replacing a manual dispatch waterfall. This item is the diagnostics-side sibling of that registry shape; landing on the consolidated navigation/dispatch primitives is preferable to forking another copy.
-- **R121** (redundant `@splitQuery` on `@record`): absorbed as starter visitor 9; its marker-constant note already anticipates a shared rule home. When R398 ships this visitor, R121 is superseded (the Spec records whether R121 is closed or folded).
-- **R296** (deprecated-directive usage): absorbed as starter visitor 8. Same supersede-or-fold decision at Spec.
+- **R121** (redundant `@splitQuery` on `@record`): folded into starter visitor 9 and retired (file deleted, superseded by this item). The build-tier warning it referenced already exists (`FieldBuilder.warnIfSplitQueryOnRecordParent`); R398 formalizes it as a visitor and adds the edit-time surface R121 wanted.
+- **R296** (deprecated-directive usage): folded into starter visitor 8 and retired (file deleted, superseded by this item).
 - **R345** (schema parse-failure squiggle): adjacent diagnostic, not part of the rule engine (it is a freshness-policy carve-out); stays independent.
 - **R139** freshness-aware silence policy governs how LSP-projected findings behave on stale snapshots; built-in visitors must place themselves relative to it.
 
