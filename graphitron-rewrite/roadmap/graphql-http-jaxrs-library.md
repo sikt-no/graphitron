@@ -1,7 +1,7 @@
 ---
 id: R399
 title: "Reusable JAX-RS library serving a Graphitron schema per the GraphQL-over-HTTP spec"
-status: Backlog
+status: Spec
 bucket: feature
 priority: 5
 theme: service
