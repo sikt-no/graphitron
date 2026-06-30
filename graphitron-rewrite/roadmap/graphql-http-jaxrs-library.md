@@ -50,6 +50,15 @@ Two refinements from the signed-off spec, made during implementation:
 
 Out of scope, unchanged: batching (no spec definition) remains a possible follow-up.
 
+Reviewer focus: the highest-uncertainty, least-typed spot is `GraphqlResource.statusFor`. The
+request-error-vs-field-error watershed is reconstructed from graphql-java's surface
+(`ErrorType.InvalidSyntax` -> `400`; any other error with no `data` present -> `422`; data present or
+no errors -> `200`), so the `422`-by-exclusion arm would silently misclassify a *new* pre-execution
+`ErrorType` graphql-java might add. It is correct against the current library and is pinned by the
+conformance suite per example query, but only at execution tier (the library is `@Test`-free by
+design). If a graphql-java upgrade ever moves this, the unit-tier escape hatch noted above (add the
+module to the tier-enforcement in-scope list, test `statusFor` in isolation) is the intended fix.
+
 ## Motivation
 
 Every Graphitron subgraph that exposes its schema over HTTP today hand-copies the same JAX-RS

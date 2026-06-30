@@ -80,6 +80,11 @@ public class GraphqlResource {
     @Produces({GRAPHQL_RESPONSE_JSON, MediaType.APPLICATION_JSON})
     public Response post(String body, @Context HttpHeaders headers) {
         boolean legacy = isLegacy(headers);
+        if (isBlank(body)) {
+            // Empty/absent body is not a well-formed GraphQL-over-HTTP request -> 422 (and avoids
+            // handing a null/blank document to the JSON binder).
+            return requestError(422, "The request body must be a JSON object with a 'query'.", legacy);
+        }
         GraphqlRequest request;
         try {
             request = JSONB.fromJson(body, GraphqlRequest.class);
