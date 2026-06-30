@@ -40,7 +40,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R109` | How-to recipe and Sakila fixture for grouped collections via Field<Result<R>> @externalField + multiset | Spec |  | [plan](list-valued-external-field-multiset.md) |
 | `R212` | IntelliJ plugin wrapping graphitron:dev LSP | Spec | 2026-05-21 | [plan](intellij-lsp-plugin.md) |
 | `R112` | Operation-driven test corpus, capability catalog, and runtime trace <sub>blocked by: [capability-catalog](capability-catalog.md)</sub> | Spec |  | [plan](operation-driven-test-corpus.md) |
-| `R400` | Withhold not-in-use directives from the v1 advertised directive surface | In Review | 2026-06-30 | [plan](withhold-not-in-use-directives-v1.md) |
+| `R400` | Withhold not-in-use directives from the v1 advertised directive surface | Ready | 2026-06-30 | [plan](withhold-not-in-use-directives-v1.md) |
 
 ---
 
@@ -280,7 +280,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R168` [**Sub-agent classifier for blast-radius effort (Low/Medium/High) at Spec stage**](effort-blast-radius-classification.md) — Backlog, cleanup
 - `R404` [**Reintroduce @sourceRow documentation when it enters the supported surface**](reintroduce-sourcerow-docs.md) — Backlog, docs
 - `R403` [**Rethink and reintroduce @tableMethod**](reintroduce-tablemethod-docs.md) — Backlog, docs
-- `R400` [**Withhold not-in-use directives from the v1 advertised directive surface**](withhold-not-in-use-directives-v1.md) — In Review, feature
+- `R400` [**Withhold not-in-use directives from the v1 advertised directive surface**](withhold-not-in-use-directives-v1.md) — Ready, feature
 
 ### testing
 

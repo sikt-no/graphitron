@@ -1,7 +1,7 @@
 ---
 id: R400
 title: "Withhold not-in-use directives from the v1 advertised directive surface"
-status: In Review
+status: Ready
 bucket: feature
 theme: docs
 depends-on: []
@@ -128,6 +128,57 @@ re-authoring. Recovery is **anchor-free** (no hardcoded SHA to go stale): for ea
    is added. The only Java changes are confined to `roadmap-tool`'s `DirectiveSupportReport` — the
    two policy sets (`REJECTED_ON_USE` / `WITHHELD_FROM_V1`) and the `renderMigration` filtering that
    consumes them.
+
+## In Review -> Ready: review feedback (2026-06-30)
+
+**Rework requested. Build is not green.** `mvn -f graphitron-rewrite/pom.xml install
+-Plocal-db` fails at `graphitron-sakila-example`:
+
+    DirectiveDocCoverageTest.everyDirectiveHasAReferencePageAndViceVersa:82
+    Expecting empty but was: ["experimental_constructType", "sourceRow", "tableMethod"]
+
+`DirectiveDocCoverageTest` (R68 Phase 2, at
+`graphitron-sakila-example/src/test/java/no/sikt/graphitron/rewrite/test/internal/DirectiveDocCoverageTest.java`)
+is a bidirectional drift seam: every directive declared in `directives.graphqls` must
+have a `reference/directives/<name>.adoc` page, and vice versa. Its Javadoc is explicit:
+"a PR that removes a directive must remove its page (or the build fails)." Stage 2 deleted
+the withheld trio's reference pages (AC3) while AC5 deliberately keeps the trio **declared**
+in `directives.graphqls`; that combination breaks the bijection in the missing-page
+direction. The failure is deterministic and fully attributable to R400 (the test is
+untouched by this item; it was green before Stage 2).
+
+The In Review commit claimed "Docs build green on fail-on-WARN; AC1-AC5 verified" ; that
+verified the AsciiDoctor render (the dangling-`xref` guard, which is genuinely clean), but
+the full `install` test suite was evidently not run, so this invariant slipped through.
+**The "build green" acceptance bar is the full `install -Plocal-db`, not just the docs
+render.** AC2 should be reworded to say so, or a new AC added.
+
+Suggested fix (cheapest, architecturally consistent): teach `DirectiveDocCoverageTest` to
+subtract the withheld set from the directives-that-require-a-page, the same way
+`DirectiveSupportReport` already filters `WITHHELD_FROM_V1` out of the advertised "Supported"
+list. A withheld-but-declared directive intentionally has no reference page, so it should be
+exempt from the missing-page assertion (the stale-page direction stays as-is). This is
+test-infra, not generator behaviour, so it does not touch AC5's "no behaviour change /
+`directives.graphqls` untouched / no classify-time rejection" guarantee. Factor the withheld
+set so the test and the report cannot drift apart. (The rejected pair `notGenerated` /
+`multitableReference` keep their pages and are unaffected; `@record` keeps its page.)
+
+Everything else in the diff checks out and should carry forward unchanged: AC1 (the generated
+`supported-directives.adoc` correctly drops the trio + rejected pair from "Supported", lists
+the rejected pair under "Removed / rejected", keeps `@record`); AC2's dangling-`xref` guard
+(zero `xref`s to deleted pages remain); AC3 (the three reference pages + `how-to/source-row.adoc`
+are gone); AC4 (recovery tickets R403 / R404 / R69 exist with anchor-free restore); AC5 (the
+only generator-side change is `roadmap-tool`'s `DirectiveSupportReport` + its test;
+`directives.graphqls` untouched). The deliberate deviation from the spec's literal strip-list
+(leaving bare-prose mentions in `add-custom-conditions` / `condition-cascade` / `test-your-schema`
+because they carry no `xref` to a deleted page and the directives are withheld-not-removed) is
+sound and documented in `2ea7900`; keep it.
+
+Note for the next implementer (environmental, not an R400 bug): a stale web-sandbox
+`rewrite_test` DB seeded before R389's `party*` tables landed makes the `graphitron` module's
+`Query.allParties` corpus tests fail with `UnclassifiedType` cascades. Re-seed from
+`graphitron-sakila-db/src/main/resources/init.sql` and `clean install` so the jOOQ catalog
+regenerates before reading the `DirectiveDocCoverageTest` failure above.
 
 ## Out of scope
 
