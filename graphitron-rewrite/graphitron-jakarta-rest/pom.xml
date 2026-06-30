@@ -22,18 +22,13 @@
             <groupId>com.graphql-java</groupId>
             <artifactId>graphql-java</artifactId>
         </dependency>
-        <!-- Jackson parses the GraphQL-over-HTTP request body into a GraphqlRequest record;
-             wire-format encoding stays at the HTTP boundary, never in the model. Version pinned via
-             the parent property and applied here (not reactor-wide); see the parent pom for why a
-             jackson-bom import is deliberately avoided. -->
-        <dependency>
-            <groupId>com.fasterxml.jackson.core</groupId>
-            <artifactId>jackson-databind</artifactId>
-            <version>${version.com.fasterxml.jackson}</version>
-        </dependency>
-        <!-- Jakarta REST + CDI APIs only. provided: the consumer's container (e.g. Quarkus)
-             supplies the implementation at runtime, so the library stays vendor-neutral and
-             pulls no RESTEasy/Quarkus-specific types. -->
+        <!-- Jakarta REST + CDI + JSON-B APIs only. provided: the consumer's container (e.g. Quarkus,
+             or a Jakarta EE server) supplies the implementations at runtime, so the library stays
+             vendor-neutral and pulls no concrete JSON library or RESTEasy/Quarkus-specific types. The
+             GraphQL-over-HTTP request body is parsed and the response serialised through the JSON-B
+             (jakarta.json.bind) API; wire-format encoding stays at the HTTP boundary, never in the
+             model. A consumer must have a JSON-B provider on the classpath (Yasson on Jakarta EE
+             servers; quarkus-jsonb in Quarkus). -->
         <dependency>
             <groupId>jakarta.ws.rs</groupId>
             <artifactId>jakarta.ws.rs-api</artifactId>
@@ -42,6 +37,11 @@
         <dependency>
             <groupId>jakarta.enterprise</groupId>
             <artifactId>jakarta.enterprise.cdi-api</artifactId>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>jakarta.json.bind</groupId>
+            <artifactId>jakarta.json.bind-api</artifactId>
             <scope>provided</scope>
         </dependency>
     </dependencies>

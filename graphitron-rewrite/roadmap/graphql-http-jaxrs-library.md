@@ -31,12 +31,22 @@ The committed v1 scope landed; the design below is retained for the In Review re
 - Docs: `rewrite-design-principles.adoc` grew the third Java-version category (hand-written runtime
   artifacts -> Java 17); `docs/README.adoc` lists the module and its publishable status.
 
-One refinement from the signed-off spec, made during implementation: `graphiqlEnabled()` is a `default`
-method on the `GraphitronApplication` **interface** (still default `true`), not only on the abstract
-base. The resource injects the SPI interface, so the toggle must be callable through it; putting it on
-the interface also lets a consumer that implements the SPI directly (without the base) override it.
-This is the faithful realization of "rides the SPI seam, mirroring `engineBuilder()`" (which is itself
-an interface default); the abstract base inherits it unchanged.
+Two refinements from the signed-off spec, made during implementation:
+
+1. `graphiqlEnabled()` is a `default` method on the `GraphitronApplication` **interface** (still default
+   `true`), not only on the abstract base. The resource injects the SPI interface, so the toggle must
+   be callable through it; putting it on the interface also lets a consumer that implements the SPI
+   directly (without the base) override it. This is the faithful realization of "rides the SPI seam,
+   mirroring `engineBuilder()`" (which is itself an interface default); the abstract base inherits it
+   unchanged.
+2. Body marshalling uses the **Jakarta JSON Binding (JSON-B) API**, not Jackson. The signed-off spec
+   said "the library's `ObjectMapper`", but Jackson is a concrete third-party impl, at odds with the
+   module's vendor-neutral-Jakarta-spec-API stance (everything else is `jakarta.*` at `provided`
+   scope). The resource now parses/serialises through `jakarta.json.bind.Jsonb`, leaving the library
+   with zero concrete JSON dependency; the consumer supplies a JSON-B provider (Yasson on Jakarta EE
+   servers; `quarkus-jsonb` in the sakila harness). `withNullValues(true)` preserves explicit nulls in
+   GraphQL `data`; JSON-B's default "ignore unknown members" satisfies the spec's ignore-unknown rule
+   without annotations; record binding rides JSON-B 3.0 (Jakarta EE 10).
 
 Out of scope, unchanged: batching (no spec definition) remains a possible follow-up.
 
@@ -194,8 +204,9 @@ the only generated-symbol references live in this tiny subclass.
 - The `@Path("/graphql")` JAX-RS resource and an application-scoped engine bean holding the cached
   `GraphQL`.
 - Request parsing and serialisation in the resource itself, with **no custom JAX-RS providers**. The
-  resource reads the raw body, parses it with the library's `ObjectMapper` into a small `GraphqlRequest`
-  record (`query`, `operationName`, `variables`, `extensions`), validates `query` is present, and both
+  resource reads the raw body, parses it with the JSON-B (`jakarta.json.bind.Jsonb`) API into a small
+  `GraphqlRequest` record (`query`, `operationName`, `variables`, `extensions`), validates `query` is
+  present, and both
   the GET and POST verbs funnel through one `execute(...)` helper that builds the input via the seam,
   executes, and serialises `result.toSpecification()` (wire-format encoding stays at the HTTP boundary,
   never in the model). The first copies used a `MessageBodyReader<ExecutionInput>` /
@@ -206,8 +217,8 @@ the only generated-symbol references live in this tiny subclass.
     helper, so the providers would centralise across a single call site.
   - **The fiddly parts cannot live in a provider anyway.** A `MessageBodyWriter<ExecutionResult>`
     cannot set `Response.status` from "request error vs. execution began", so the status watershed
-    stays in the resource regardless and the writer would only wrap `toSpecification()`, which Jackson
-    already does for the resulting `Map`. And spec-compliant parse-error shaping argues against
+    stays in the resource regardless and the writer would only wrap `toSpecification()`, which the JSON-B
+    binder already does for the resulting `Map`. And spec-compliant parse-error shaping argues against
     auto-binding too: letting the stock JSON provider bind a malformed body yields the framework's
     default error, not a spec `4xx` `application/graphql-response+json`, so the resource must own
     parsing to control the error shape.
@@ -307,7 +318,7 @@ of runtime-library transport tests grows, the tier guide should note that they r
 | GET | Supported for queries; `405` on mutation |
 | Batching | Out of scope for v1 |
 | Status codes | Media-type-driven per spec |
-| Body marshalling | No custom JAX-RS providers; resource parses to a `GraphqlRequest` record and serialises `toSpecification()`, owning parse-error `4xx` and the status watershed |
+| Body marshalling | No custom JAX-RS providers; resource parses to a `GraphqlRequest` record and serialises `toSpecification()` via the JSON-B (`jakarta.json.bind`) API (no concrete JSON impl in the library; consumer supplies the provider), owning parse-error `4xx` and the status watershed |
 | Sakila | First consumer + conformance harness; spec-citing tests |
 
 ### Relationship to R45 / R190

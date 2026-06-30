@@ -133,6 +133,14 @@
             <groupId>io.quarkus</groupId>
             <artifactId>quarkus-rest-jackson</artifactId>
         </dependency>
+        <!-- JSON-B provider (Yasson) for graphitron-jakarta-rest: the library parses/serialises
+             through the JSON-B API and the consumer supplies the implementation. This is what a
+             real consumer adds to use the library; quarkus-rest-jackson stays for the one test
+             (ApprovalQueryExampleTest) that pretty-prints with a Jackson ObjectMapper. -->
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-jsonb</artifactId>
+        </dependency>
         <dependency>
             <groupId>io.quarkus</groupId>
             <artifactId>quarkus-jdbc-postgresql</artifactId>
