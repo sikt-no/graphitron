@@ -56,7 +56,6 @@ The rewrite emits `select(Tilgang.$fields(...)).from(Routines.tilgangerForFeideb
 
 == See also
 
-* xref:tableMethod.adoc[`@tableMethod`] is the developer-Java twin: where `@routine` binds a database routine, `@tableMethod` binds a static Java method returning a jOOQ table.
 * xref:table.adoc[`@table`] is the plain catalog-driven counterpart for a field always backed by the same table.
 * xref:service.adoc[`@service`] is the alternative when the developer supplies the entire fetcher rather than a routine-backed table.
 

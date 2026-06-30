@@ -1,8 +1,8 @@
 = How-to: Federation key fields
-:description: Declare entity keys with `@key`, layer `@key` onto `@node` types, dispatch across multiple alternatives, and stub non-resolvable entities owned by another subgraph (the pattern that motivates `@experimental_constructType`).
+:description: Declare entity keys with `@key`, layer `@key` onto `@node` types, dispatch across multiple alternatives, and reference non-resolvable entities owned by another subgraph.
 :!toc:
 
-xref:../reference/directives/experimental_constructType.adoc[`@experimental_constructType`] points at this recipe for the non-resolvable-entity pattern that motivates the directive's existence. To make sense of that pattern, you need the surrounding federation surface first: how `@key` declares an entity, how graphitron wires entity resolution from `@key` and `@node`, what compound and multi-alternative keys do, and the `resolvable: false` flag for keys owned by another subgraph. This recipe walks the path from "what `@key` does at all" through to "how to project a stub of an entity that lives elsewhere".
+This recipe covers the federation key surface: how `@key` declares an entity, how graphitron wires entity resolution from `@key` and `@node`, what compound and multi-alternative keys do, and the `resolvable: false` flag for keys owned by another subgraph. It walks the path from "what `@key` does at all" through to declaring a reference-only entity that lives on another subgraph.
 
 The framework-level federation surface (the `@link` opt-in, the runtime entity dispatcher, custom fetchers, the `<schemaInput tag>` flag) lives in xref:apollo-federation.adoc[How-to: Apollo Federation transport]; this recipe assumes that wiring is in place.
 
@@ -116,80 +116,6 @@ Two distinct uses:
 
 `resolvable: false` is also legal on `@node` types via the synthesised path: `@node @key(fields: "id", resolvable: false)` declares the type as a reference-only entity even though `@node` would normally make it resolvable.
 
-== Non-resolvable entities and `@experimental_constructType`
-
-Now the deferred pattern from xref:../reference/directives/experimental_constructType.adoc[`@experimental_constructType`]: how do you expose a *field on a local entity* whose value is itself an entity owned by another subgraph?
-
-Concretely: subgraph A has `Customer` (local, table-backed). Subgraph B owns `Organisation`. Subgraph A wants `Customer.organisation: Organisation` so a request like
-
-[source,graphql]
-----
-{ customer(id: ...) { organisation { name } } }
-----
-
-routes through the gateway: the gateway resolves the `name` against subgraph B, but it needs subgraph A to produce the *representation* (the key fields B will resolve against). Subgraph A doesn't have an `organisation` table; it has `customer.org_id`. The shape is:
-
-. Subgraph A declares `Organisation @key(fields: "id", resolvable: false)` so the gateway knows the type exists but routes resolution to B.
-. Subgraph A's `Customer.organisation` field projects the representation: `{ id: <derived from customer.org_id> }`.
-. The constructed `Organisation` representation needs no `@table` (subgraph A doesn't have the table) and no `@field` per column (the columns live on `customer`, not on a hypothetical organisation table). `@experimental_constructType` fits: the parent type carries `@table`, the child does not, and the directive's `selection:` projects parent-table columns into the child's fields inline.
-
-The shape:
-
-[source,graphql]
-----
-extend schema
-  @link(url: "https://specs.apollo.dev/federation/v2.10", import: ["@key"])
-
-# Owned by this subgraph: full entity, full resolution.
-type Customer @table(name: "customer") @key(fields: "customerId") {
-    customerId: Int! @field(name: "CUSTOMER_ID")
-
-    # Reference to an Organisation owned by another subgraph.
-    organisation: Organisation
-        @experimental_constructType(selection: "id: ORG_ID")
-}
-
-# Owned by another subgraph: declared here as reference-only.
-# Note: NO @table, because we don't have an organisation table.
-type Organisation @key(fields: "id", resolvable: false) {
-    id:   ID!
-    name: String!
-}
-----
-
-A request `{ customer(...) { organisation { name } } }` flows like this:
-
-. Subgraph A's `Customer` resolver fetches the customer row, including the `org_id` column.
-. The `Customer.organisation` field uses the inline `@experimental_constructType` projection to produce `{ "__typename": "Organisation", "id": <org_id-value> }` from the parent row.
-. The federation gateway sees the representation, looks up its routing table for `Organisation`, sees subgraph B's resolvable `@key(fields: "id")`, and dispatches the `name` resolution to B.
-. The gateway stitches B's `name` into A's response shape.
-
-The directive's "constructed type must not carry `@table`" constraint is exactly the pivot: the local subgraph doesn't have a table for the foreign entity. The "every column comes from the parent" rule pairs with the federation contract: the only thing this subgraph needs to produce is the key value, and the parent table is where that value lives.
-
-When the foreign-entity key uses different field names from your local columns, the `selection:` mapping does the bridging:
-
-[source,graphql]
-----
-type Customer @table(name: "customer") @key(fields: "customerId") {
-    customerId: Int! @field(name: "CUSTOMER_ID")
-    organisation: Organisation
-        @experimental_constructType(selection: """
-            id:   ORG_ID,
-            slug: ORG_SLUG
-        """)
-}
-
-type Organisation @key(fields: "id slug", resolvable: false) {
-    id:   ID!
-    slug: String!
-    name: String!
-}
-----
-
-Both `id` and `slug` project from local columns into the representation; the foreign subgraph's compound key resolves with what the gateway forwards.
-
-The Sakila example schema doesn't currently fold these two together: `federated-schema.graphqls` exercises `@key` (with `Language @key(fields: "languageId", resolvable: false)`), and `directives.graphqls` documents `@experimental_constructType`. When a fixture combining them lands, this recipe will be amended; until then, the pattern above is the recommended composition.
-
 == Wiring federation: `@link`, `<schemaInput tag>`, custom fetchers
 
 Three wiring concerns surface once `@key` is in play. xref:apollo-federation.adoc[How-to: Apollo Federation transport] covers them in full; the operational summary:
@@ -205,16 +131,13 @@ Three wiring concerns surface once `@key` is in play. xref:apollo-federation.ado
 * *`@key` is rejected on interface types in graphitron.* The federation spec allows it, but graphitron's dispatcher does not yet support `@key` on interfaces; declare `@key` on the implementing types instead. The diagnostic mentions this explicitly.
 * *Most-specific-wins applies across keys, not within.* Within a single `@key`, all required fields are mandatory; the alternative matches only when *every* required field is supplied. Across alternatives, the dispatcher picks the largest matching one.
 * *`resolvable: false` is honoured but advisory.* The dispatcher skips the alternative; if no other alternative matches, the result is `null`. A non-resolvable key with no resolvable counterpart on any subgraph is a federation-graph composition error, not a graphitron build error; it surfaces at the gateway, not at build time.
-* *`@experimental_constructType` doesn't compose with `@field` or `@externalField`.* Its "constructed type must not carry `@table`, parent must carry `@table`" rules are a separate axis from the column-mapping axis. Pick one per field.
-* *Compound keys must list column-backed fields only.* A field that is `@externalField`, `@experimental_constructType`, or otherwise non-column can't participate in a `@key`; the diagnostic names the offending field. The fix: use a column-backed field, or restructure the key to avoid the non-column field.
-* *No fixtures combine non-resolvable `@key` with `@experimental_constructType` today.* The pattern above is the recommended shape, but the example-schema coverage is split across the two surfaces. When the combined fixture lands, this recipe will reflect it.
+* *Compound keys must list column-backed fields only.* A field that is `@externalField` or otherwise non-column can't participate in a `@key`; the diagnostic names the offending field. The fix: use a column-backed field, or restructure the key to avoid the non-column field.
 
 == See also
 
-* xref:../reference/directives/experimental_constructType.adoc[`@experimental_constructType`] is the directive that motivates this recipe; this recipe expands its non-resolvable-entity use case.
 * xref:../reference/directives/node.adoc[`@node`] is the Relay/`Query.node` directive whose synthesised key feeds the federation `_entities` path.
 * xref:../reference/directives/nodeId.adoc[`@nodeId`] declares the encoded `id:` field that NODE_ID-shape alternatives use.
-* xref:../reference/directives/field.adoc[`@field`] is the per-field column-mapping axis; alternative to `@experimental_constructType` when the constructed type *does* have its own `@table`.
+* xref:../reference/directives/field.adoc[`@field`] is the per-field column-mapping axis for entity key fields.
 * xref:apollo-federation.adoc[How-to: Apollo Federation transport] covers the framework-level wiring (`@link`, `<schemaInput tag>`, custom fetchers) this recipe assumes is in place.
 * xref:global-id.adoc[How-to: Global object IDs] covers the Relay-side `Query.node` dispatch and `keyColumns` migrations that share infrastructure with `@key`.
 

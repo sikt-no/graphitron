@@ -147,7 +147,7 @@ Each `<namedReference>` carries two required children:
 
 | `name`
 | `String`
-| Lookup key the SDL uses to refer to this reference. Matched against the `name:` argument of `ExternalCodeReference`-bearing directives (see xref:directives/condition.adoc[`@condition`], xref:directives/externalField.adoc[`@externalField`], xref:directives/service.adoc[`@service`], xref:directives/tableMethod.adoc[`@tableMethod`]). Names live in a flat namespace; collisions are an author error.
+| Lookup key the SDL uses to refer to this reference. Matched against the `name:` argument of `ExternalCodeReference`-bearing directives (see xref:directives/condition.adoc[`@condition`], xref:directives/externalField.adoc[`@externalField`], xref:directives/service.adoc[`@service`]). Names live in a flat namespace; collisions are an author error.
 
 | `className`
 | `String` (FQCN)

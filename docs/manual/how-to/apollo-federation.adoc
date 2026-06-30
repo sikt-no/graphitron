@@ -103,8 +103,7 @@ This is the one place where federation-relevant state lives outside the SDL itse
 
 == See also
 
-* xref:federation-keys.adoc[How-to: Federation key fields] is the entity-side companion; it covers `@key`, multi-alternative dispatch, compound keys, the `resolvable: false` flag, and the `@experimental_constructType` stub pattern for entities owned by another subgraph.
+* xref:federation-keys.adoc[How-to: Federation key fields] is the entity-side companion; it covers `@key`, multi-alternative dispatch, compound keys, and the `resolvable: false` flag for entities owned by another subgraph.
 * xref:tenant-scoping.adoc[How-to: Tenant scoping] covers per-request `DSLContext` routing (recipe is being rewritten under R45).
-* xref:../reference/directives/experimental_constructType.adoc[`@experimental_constructType`] is the directive reference for projecting a stub representation of an entity owned by another subgraph; the recipe under federation-keys.adoc covers the runtime use.
 
 xref:index.adoc[← How-to index]

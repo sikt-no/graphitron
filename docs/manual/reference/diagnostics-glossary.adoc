@@ -102,7 +102,7 @@ When `[author-error]` carries an `UnknownName` variant (a closed-set name lookup
 
 *Cause.* The `@sourceRow` directive's `methodName:` argument did not match any static method on the resolved class. Candidates are the lifter-shape static methods (`(Set<Key>) -> Map<Key, Value>`) on that class.
 
-*Next step.* Correct the method name. xref:directives/sourceRow.adoc[`@sourceRow` directive reference] covers the lifter signature.
+*Next step.* Correct the method name. The lifter must be a static method with the `(Set<Key>) -> Map<Key, Value>` shape.
 
 [#attempt-enum-constant]
 === enum-constant
