@@ -1,12 +1,12 @@
 ---
 id: R182
 title: "Retire legacy reactor and unnest graphitron-rewrite to repo root"
-status: Backlog
+status: Spec
 bucket: structural
 theme: legacy-migration
 depends-on: [retire-maven-plugin]
 created: 2026-05-19
-last-updated: 2026-05-19
+last-updated: 2026-06-30
 ---
 
 # Retire legacy reactor and unnest graphitron-rewrite to repo root
@@ -17,7 +17,9 @@ Today the rewrite reactor lives nested under `graphitron-rewrite/`; the repo roo
 
 ## Trigger condition (gating)
 
-Every legacy consumer must be migrated to the new plugin before this lands; cadence is dictated by per-consumer feature work. Until then, this stays in Backlog. Promoting prematurely strands consumers on a deleted reactor.
+Every legacy consumer must be migrated to the new plugin before this lands; cadence is dictated by per-consumer feature work. Promoting prematurely strands consumers on a deleted reactor.
+
+**Gate cleared (2026-06-30):** the migration milestone has been reached and the user has signed off on retiring the legacy reactor. The item moves into the active pipeline.
 
 ## End state
 
