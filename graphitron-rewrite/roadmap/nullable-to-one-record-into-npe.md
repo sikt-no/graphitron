@@ -1,7 +1,7 @@
 ---
 id: R269
 title: Null-guard split-query key extraction for nullable to-one records
-status: Spec
+status: Ready
 bucket: structural
 depends-on: []
 created: 2026-06-01
