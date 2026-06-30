@@ -27,42 +27,61 @@ Ship a useful set of **built-in** visitors first. The plugin model (consumer-sup
 Build-side evaluation is the spine. The authoritative tier is the build, where graphitron already parses with graphql-java and runs its classifier. The GraphQL-native idiom (graphql-schema-linter) is exactly this: it reuses graphql-js's own `validate()` / `visitInParallel` / `TypeInfo` to run all rule visitors in one pass, and reports via `GraphQLError(node)` so locations fall out of the node's source position. Graphitron's analog is direct:
 
 - graphql-java `Parser` / `Document` and `NodeTraverser` / `NodeVisitor` for the one-pass traversal.
-- The classifier plus jOOQ catalog as a *richer* `TypeInfo`: it knows table/column/FK resolution, not just GraphQL types.
-- Output rides the existing sealed channels (`BuildWarning` / `ValidationError` / `Rejection`), never a new stringly-typed carrier, so `Diagnostics.severityOf` and the report machinery stay single-sourced.
+- The classifier plus jOOQ catalog as a *richer* `TypeInfo`: it knows table/column/FK resolution, not just GraphQL types (used by the classification advisories and any future schema-aware rule; the v1 engine visitors are syntactic and need only the AST).
+- Output rides the existing warning channel, not a new parallel carrier. `BuildWarning` is today a flat `record(String message, SourceLocation location)`, not sealed; this item adds a typed rule-identity field to it (see Rule and finding contract) so a finding's rule is a type, not prose smuggled into the message. The `ValidationError` / `Rejection` error channel stays sealed and untouched; v1 lint findings are warnings only (see Severity and enablement).
 
 The LSP gets parity for free. Diagnostics already replays the build's `ValidationReport` into squiggles (`Diagnostics.validatorDiagnostics`, with the freshness-aware silence policy of R139). Emitting custom-rule findings into the same report means a rule fires in CI and in the editor from one definition, with no second evaluator and no drift seam.
 
-Two rule tiers, split by what a rule needs to see:
+Decided: the v1 engine evaluates **build-side over the graphql-java AST**, and the LSP projects findings through the existing `ValidationReport` replay. The tree-sitter-shared-engine alternative (moving the tree-sitter substrate below the LSP for a second evaluator) is deferred; build-side graphql-java is the lower-risk single evaluator and the GraphQL-native idiom.
 
-- Schema-aware rules (need resolved types, catalog, classification) run build-side over the graphql-java AST, the graphql-schema-linter shape.
-- Purely syntactic rules (naming, directive presence/absence, nesting) could additionally run over the LSP's tree-sitter tree for instant edit-time feedback, but CI parity still requires they run build-side. Whether to share one tree-sitter engine across both tiers (moving the tree-sitter substrate below the LSP in the module graph) or keep the build on graphql-java and let the LSP project is an open Spec decision (see Open questions).
+This splits the built-in rules by what they need to see, and the split determines *where each rule lives*:
+
+- **Syntactic rules** (naming, descriptions, deprecation-marker usage, type-name prefix) are re-derivable from the AST alone. These are the engine's actual new visitors; they own no classification logic.
+- **Classification-derived advisories** (whether a parent is record-backed, whether a backing class is inferred, whether an `@asConnection` filter is same-table PK-IN) are *verdicts the classifier already computes*, fired today as `BuildWarning`s from inside `FieldBuilder` / `TypeBuilder`. The engine does **not** re-evaluate these: `warnIfSplitQueryOnRecordParent` alone fires from four distinct classification sites gated on different resolved outcomes, so re-deriving the condition in a second AST walk is the same-predicate-two-consumers drift the Generation-thinking principle warns against. The classifier stays their single emitter; this item surfaces them through the same report channel into the LSP and tags them with a typed rule id. No condition is emitted twice.
+
+## Rule and finding contract
+
+Pinned at Spec so the implementer builds against a typed shape, not a string bag:
+
+- **Rule identity is a type.** A `LintRule` enum enumerates the built-in rules; each constant carries its stable kebab-case id and its fixed v1 severity. It is an enum, not a free string; the plugin follow-on can widen it to a sealed interface when external rules arrive. A finding names its `LintRule`, never a bare id string.
+- **The visitor shape** mirrors the ESLint / graphql-schema-linter contract: a visitor declares its `LintRule` and subscribes to graphql-java AST node kinds (the `create(context)`-returning-node-kind-listeners shape), receiving a context that exposes the parsed `Document` (and, for any future schema-aware rule, the classifier projection) plus a `report(node, message)` sink. Method bodies are implementation; the contract is the visitor interface plus the registry.
+- **Findings ride the warning channel as a typed shape.** `BuildWarning` gains a typed, nullable `LintRule rule` field (null for the pre-existing non-lint warnings), so rule identity is structural rather than smuggled into the message text. No `(ruleId-string, message, severity)` parallel carrier is introduced. Findings flow into `ValidationReport` exactly as today's warnings do, so the LSP replay (`Diagnostics.validatorDiagnostics`) surfaces them with no new transport.
+- **One registry.** A `LintRules` registry pairs every `LintRule` with its visitor; the engine's single traversal dispatches each node to the subscribed visitors. The registry is asserted complete by test (see Testing strategy), mirroring the `VariantCoverageTest` / R374 `EdgeCoverageTest` no-silent-default pattern and R347's `Behavior`-keyed provider registry.
+
+## Severity and enablement (v1)
+
+- **Warnings only.** Every built-in finding is a warning in v1. It maps to `BuildWarning` (a non-fatal advisory that never fails the build) and projects to `DiagnosticSeverity.Warning` in the LSP, the severity that channel already hardcodes. No lint finding is an error in v1, so `severityOf` needs no lint arm and the error channel is untouched.
+- **No per-rule configuration in v1.** Built-in rules are all on; there is no consumer-facing disable or severity override yet. The earlier `input-object-name-suffix` and `redundant-record-directive` "off-by-default" hedges are dropped: both ship on as warnings.
+- **Deferred to the configurability follow-on:** per-rule enable/disable, severity overrides, and any error-capable lint (which would need the typed finding to carry a severity axis and a `severityOf` lint arm). The motivation's stronger form, a convention that *fails CI*, lives there; v1 deliberately delivers advisories and the engine they ride on, not enforcement.
 
 ## Scope
 
 In scope:
 
-- A visitor/rule engine over the build's typed AST: a rule contract (subscribe to node kind/coordinate, report a finding with range, severity, message), a registry, and a single-pass traversal that dispatches to all registered rules.
-- A useful starter set of built-in lint visitors, defined below under Starter rule set. It folds the former R121 (`@splitQuery`-on-`@record`) and R296 (deprecated-directive usage) advisories together with cross-vendor SDL-convention checks (naming, descriptions, deprecation hygiene).
-- Findings emitted through the existing `ValidationReport` / `BuildWarning` channel so they surface both at build/CI and in the LSP via the existing replay path.
+- A lint engine over the build's graphql-java AST: the `LintRule` enum, the visitor contract, the `LintRules` registry, and a single shared traversal that dispatches each node to its subscribed visitors.
+- The nine **syntactic** built-in visitors listed under Starter rule set (the engine's new rules), each emitting a typed `BuildWarning`.
+- Surfacing the three existing **classification-derived advisories** through the same report channel into the LSP, and tagging them with a typed `LintRule`, without re-deriving their conditions (the classifier stays their sole emitter).
+- The typed rule-identity field on `BuildWarning`, and the `LintRuleRegistryCoverageTest` drift guard.
 
 Out of scope (deferred):
 
-- Consumer-supplied custom visitor functions, i.e. a plugin SPI. This is the explicit follow-on; file it once the built-in set ships. The engine should be shaped so wiring external visitors in later is additive, but no public extension API is committed here.
-- A declarative rule-config DSL (Spectral-style selector plus closed predicate library) as an alternative no-code authoring surface. Noted as prior art; not part of this item.
-- Running the full classifier inside the LSP, and any new protocol surface.
+- Re-implementing classification verdicts as engine visitors. Verdicts stay in the classifier; the engine never recomputes them.
+- Consumer-supplied custom visitor functions (the plugin SPI), per-rule enable/disable, severity overrides, and error-capable lint. These are the configurability follow-on; the engine should be shaped so wiring external visitors in later is additive, but no public extension API is committed here.
+- A declarative rule-config DSL (Spectral-style selector plus closed predicate library). Noted as prior art; not part of this item.
+- A second tree-sitter evaluator below the LSP, and any new protocol surface. v1 evaluates build-side and projects.
 
 ## Starter rule set (first iteration)
 
-The first iteration ships roughly a dozen built-in visitors so the engine lands with value rather than empty. The set is curated from the cross-vendor GraphQL-SDL-linter consensus (graphql-schema-linter, graphql-eslint, Apollo GraphOS, WunderGraph Cosmo) plus graphitron's own directive conventions. Final severities and exact membership are confirmed at Spec.
+The first iteration delivers nine new engine visitors and surfaces three existing classifier advisories, so a consumer sees about a dozen lint findings out of the gate. The set is curated from the cross-vendor GraphQL-SDL-linter consensus (graphql-schema-linter, graphql-eslint, Apollo GraphOS, WunderGraph Cosmo) plus graphitron's directive conventions.
 
 Curation principles (why these and not others):
 
 - **Do not duplicate what graphql-java already enforces.** Graphitron parses with graphql-java, whose schema validation already hard-errors the type-system-correctness and uniqueness family (`known-type-names`, `known-directives`, `known-argument-names`, `provided-required-arguments`, `unique-*`, `lone-schema-definition`, `possible-type-extension`). These are parse-time errors we get for free, not lint rules. Excluded.
 - **Do not duplicate graphitron's existing hard rejections.** Directive conflicts (mutually-exclusive directive groups), removed directives (`@notGenerated`, `@multitableReference`, `@lookupKey` on inputs), `@scalarType` on a spec built-in, and the UPSERT / `multiRow` refusals are already `Rejection` arms that fail the build. Lint rules must not restate them. Excluded.
 - **Adopt the style/convention consensus** that no parser enforces: naming, descriptions, deprecation hygiene, orphan types.
-- **Formalize graphitron's existing build-tier warnings** as first-class visitors so they share one home; this absorbs R121 and the `@record` / `@asConnection` advisories.
+- **Surface, do not re-derive, graphitron's existing classification advisories.** The `@splitQuery`-on-record, redundant-`@record`, and same-table-`@asConnection` conditions are classifier verdicts already emitted as `BuildWarning`s; the engine routes them to the LSP and tags them with a typed `LintRule`, but the classifier remains their sole emitter (no double-emit, no re-walk).
 
-Generic SDL conventions (vendor-agnostic; purely syntactic, so tree-sitter-able for instant LSP feedback as well as build/CI):
+Engine visitors (new; syntactic; evaluated build-side over the graphql-java AST and projected to the LSP):
 
 1. **type-names-pascal-case**: object, interface, union, enum, input, and scalar type names are PascalCase. Severity warning. Consensus: graphql-schema-linter `types-are-capitalized`, Apollo `TYPE_NAMES_SHOULD_BE_PASCAL_CASE`, Cosmo.
 2. **field-names-camel-case**: object and interface field names are camelCase. The single most agreed-upon GraphQL rule, and safe in graphitron because the SDL field name is decoupled from the column via `@field(name:)`. Severity warning. Consensus: all four tools.
@@ -70,17 +89,37 @@ Generic SDL conventions (vendor-agnostic; purely syntactic, so tree-sitter-able 
 4. **enum-values-screaming-snake-case**: enum value names are UPPER_SNAKE_CASE, independent of any `@order` / `@enum` directive on the value. Severity warning. Consensus: all four tools.
 5. **deprecations-have-a-reason**: every `@deprecated` carries a non-empty `reason`. Universal hygiene rule; complements graphitron's existing deprecation doc-coverage culture. Severity warning. Consensus: graphql-schema-linter, graphql-eslint, Apollo, Cosmo.
 6. **types-and-fields-have-descriptions**: type definitions and their fields carry descriptions, with configurable scope to keep noise down (default: types plus root-operation fields; opt-in to all fields). Severity warning (advisory, not error). Recurring: graphql-schema-linter's `*-have-descriptions` family, Apollo `ALL_ELEMENTS_REQUIRE_DESCRIPTION`, Cosmo.
-7. **input-object-name-suffix**: input object type names end in `Input`. Severity warning, off-by-default candidate (opinionated; flagged for the Spec on/off decision). Provenance: Apollo `INPUT_TYPE_SUFFIX`, Cosmo.
+7. **input-object-name-suffix**: input object type names end in `Input`. Severity warning. Provenance: Apollo `INPUT_TYPE_SUFFIX`, Cosmo. Opinionated, but v1 has no off switch so it ships on; a future config can make it opt-out.
+8. **no-deprecated-directive-usage**: a graphitron directive or argument marked `@deprecated` in `directives.graphqls` is used in the consumer SDL: today `@record`, `@index` (use `@order`), `@asConnection(connectionName:)`, and `ExternalCodeReference.name` (use `className`). Syntactic: the deprecation markers are read from the bundled `directives.graphqls`, usage is an AST walk, no classification needed. Severity warning. Subsumes the retired R296.
+9. **no-typename-prefix**: an object or interface field name must not be prefixed with its enclosing type's name (for example `User.userName` should be `User.name`). Auto-fixable; purely syntactic. Severity warning. Provenance: graphql-eslint `no-typename-prefix`. This replaced an earlier `nodeid-target-is-node-type` candidate, which `NodeIdLeafResolver.resolve` already hard-rejects (a `@nodeId(typeName:)` target that does not exist, is not `@table`-annotated, or has no resolvable `@node` identity for its backing table is a `Rejection.structural` at classification), so a lint rule there would restate a hard error.
 
-Graphitron-native rules (directive conventions; mostly schema-aware, so build-side with the LSP projecting):
+Classification-sourced advisories (classifier-owned; surfaced and tagged here, not re-derived; severity warning):
 
-8. **no-deprecated-directive-usage**: using a graphitron directive or argument marked `@deprecated` in `directives.graphqls`: today `@record`, `@index` (use `@order`), `@asConnection(connectionName:)`, and `ExternalCodeReference.name` (use `className`). One rule that reads the deprecation markers, so it stays correct as the set evolves. Severity warning. This is roadmap R296, absorbed here as a built-in visitor.
-9. **splitquery-redundant-on-record-parent**: `@splitQuery` on a field whose enclosing type is record-backed, where the record handoff already opens a new scope so the directive is ignored. Already emitted as a build warning (`FieldBuilder.warnIfSplitQueryOnRecordParent`); formalized here with a shared marker constant. Severity warning. This is roadmap R121, absorbed here.
-10. **redundant-record-directive**: `@record` on a type that also carries `@table`, or whose backing class graphitron already infers, so the directive is ignored or redundant. Already emitted as a build warning (`TypeBuilder.warnAboutRedundantRecord`, three arms); formalized here. Severity warning. Overlaps R296's deprecated-`@record` signal but carries the more specific redundancy/conflict message; Spec decides whether to merge or keep distinct.
-11. **asconnection-same-table-pk-in**: `@asConnection` on a same-table PK-IN filter with required `@nodeId` arguments, which forces full-table pagination instead of keyed-range pagination. Already emitted as a build warning (`FieldBuilder.warnAsConnectionSameTable`); formalized here. Severity warning. Schema-aware.
-12. **no-typename-prefix**: an object or interface field name must not be prefixed with its enclosing type's name (for example `User.userName` should be `User.name`). Severity warning; auto-fixable; purely syntactic. Provenance: graphql-eslint `no-typename-prefix`. This replaced an earlier `nodeid-target-is-node-type` candidate: `NodeIdLeafResolver.resolve` already hard-rejects every shape of that case (a `@nodeId(typeName:)` target that does not exist, is not `@table`-annotated, or has no resolvable `@node` identity for its backing table is a `Rejection.structural` at classification time, lines ~248 to ~280), so a lint rule there would restate a hard error and is excluded by the curation principle. The one residual seam is message clarity on the third rejection ("zero or multiple GraphQL types map to it"), which is a wording improvement to the existing error rather than a lint rule.
+- **splitquery-redundant-on-record-parent**: `@splitQuery` on a field whose enclosing type is record-backed, where the record handoff already opens a new scope. Emitted by `FieldBuilder.warnIfSplitQueryOnRecordParent` (four classification sites). Subsumes the retired R121; this item adds the edit-time surface R121 wanted.
+- **redundant-record-directive**: `@record` on a type that also carries `@table`, or whose backing class graphitron already infers. Emitted by `TypeBuilder.warnAboutRedundantRecord` (three arms).
+- **asconnection-same-table-pk-in**: `@asConnection` on a same-table PK-IN filter with required `@nodeId` arguments, which forces full-table pagination instead of keyed-range pagination. Emitted by `FieldBuilder.warnAsConnectionSameTable`.
 
 Deliberately deferred rule candidates (not in iteration one): rules gated on unfinished features (UPSERT, `@mutation` UPDATE `multiRow`, composite-NodeId reference, polymorphic `@service` returns); alphabetical-ordering rules (opinionated, high churn, revisit once the engine is proven); and Relay-connection-conformance rules (graphitron synthesizes Connection / Edge / PageInfo via `@asConnection`, so that shape is generator-controlled, not author-authored; a rule there would police generated output, not author input).
+
+## Testing strategy
+
+The behaviour oracle is the finding set a rule produces over a fixture, asserted on the typed finding and its range. Code-string / generated-body assertions are banned at every tier (per the design principles); assert on the typed `LintRule` and the `SourceLocation`, not on substring-matching rendered diagnostic text beyond the minimum identity check.
+
+- **Per-rule, pipeline tier** (graphitron module: SDL fixture in, `ValidationReport` findings out). Each engine visitor gets three cases: positive (non-compliant SDL yields exactly one finding naming the right `LintRule`), negative (compliant SDL yields none), and range (the finding's `SourceLocation` points at the offending node, for example the type name or the directive node, not the whole definition). This is the primary tier.
+- **LSP-projection parity, LSP module tier.** One test pins the "parity for free" invariant: a build-side finding replays into a squiggle with the same range, at `Warning` severity, and respects the R139 freshness-silence policy on a stale snapshot. `ValidatorDiagnosticsTest` is the template.
+- **Advisory tagging and single-emit, pipeline tier.** For the three classification advisories, a test pins that the existing classifier warning now carries the correct typed `LintRule`, reaches `ValidationReport`, and is emitted exactly once (the no-double-emit guard, given the engine does not re-derive them).
+- **Registry coverage, meta-test tier.** `LintRuleRegistryCoverageTest` asserts every `LintRule` enum constant is registered to exactly one visitor (no orphan rule, none registered twice), and that the engine's node-kind dispatch has a known status for every node kind it can encounter (subscribed or explicitly not-linted, asserted, no silent skip). Mirrors `VariantCoverageTest` / `EdgeCoverageTest`.
+- **Message constants.** Each rule's message is a named constant pinned by a test, so wording is single-sourced; this is the guard the absorbed R121 marker-constant note anticipated.
+
+## Acceptance criteria
+
+- The engine parses the SDL once and dispatches to registered visitors in a single traversal; adding a visitor is registering it, not editing a central switch.
+- The nine syntactic visitors each emit a typed `BuildWarning` (typed `LintRule`, correct range) on non-compliant SDL and nothing on compliant SDL; all are warnings.
+- The three classification advisories surface in the LSP carrying their typed `LintRule`, emitted once each, with the classifier still their sole producer.
+- `LintRuleRegistryCoverageTest` passes: every `LintRule` registered exactly once, every node kind has a known dispatch status, no silent skip.
+- One LSP-projection parity test passes, including the R139 stale-snapshot silence.
+- No code-string / body assertions in any test; findings asserted on the typed shape and range.
+- Full reactor green: `mvn -f graphitron-rewrite/pom.xml install -Plocal-db`.
 
 ## Prior-art references (research, 2026-06-29)
 
@@ -96,14 +135,17 @@ Cross-tool synthesis: the schema-linting idiom is visitor-over-typed-AST rules r
 ## Relationships
 
 - **R347** (LSP structural consolidation): its Slice 3 introduces a `CompletionProvider` registry keyed by `Behavior`, replacing a manual dispatch waterfall. This item is the diagnostics-side sibling of that registry shape; landing on the consolidated navigation/dispatch primitives is preferable to forking another copy.
-- **R121** (redundant `@splitQuery` on `@record`): folded into starter visitor 9 and retired (file deleted, superseded by this item). The build-tier warning it referenced already exists (`FieldBuilder.warnIfSplitQueryOnRecordParent`); R398 formalizes it as a visitor and adds the edit-time surface R121 wanted.
-- **R296** (deprecated-directive usage): folded into starter visitor 8 and retired (file deleted, superseded by this item).
+- **R121** (redundant `@splitQuery` on `@record`): subsumed and retired (file deleted, superseded by this item). Its condition is a classifier verdict already emitted by `FieldBuilder.warnIfSplitQueryOnRecordParent`, so R398 surfaces and tags that existing warning in the LSP (the edit-time surface R121 wanted) rather than re-implementing it as a visitor.
+- **R296** (deprecated-directive usage): subsumed and retired (file deleted, superseded by this item) as engine visitor 8 (`no-deprecated-directive-usage`), which is genuinely syntactic.
 - **R345** (schema parse-failure squiggle): adjacent diagnostic, not part of the rule engine (it is a freshness-policy carve-out); stays independent.
 - **R139** freshness-aware silence policy governs how LSP-projected findings behave on stale snapshots; built-in visitors must place themselves relative to it.
 
-## Open questions (to settle at Spec)
+## Decisions resolved at Spec
 
-- Which parse representation the engine evaluates against for syntactic rules: one shared tree-sitter engine moved below the LSP (CI parity through tree-sitter), or build-side graphql-java with the LSP projecting (CI parity through the existing replay). The latter is the lower-risk default; the former avoids a double parse but forces a module-graph change.
-- The exact starter set of built-in visitors and their severities.
-- The rule contract's shape (how a visitor subscribes and reports) and where the registry lives, ideally consistent with R347's provider-registry instinct.
-- Whether the deferred extensibility surface, when it arrives, is code visitors (the ESLint and graphql-schema-linter path the user chose) or also a declarative config layer.
+The forks this item existed to settle are decided above: build-side graphql-java evaluation with LSP projection (not a second tree-sitter evaluator); a typed `LintRule` plus a typed field on `BuildWarning` (not a stringly carrier); warnings-only with no per-rule config in v1; the engine hosts only syntactic rules while the classification advisories stay classifier-owned and are surfaced, not re-derived.
+
+Left to the implementer or the Ready reviewer (judgment, not open design):
+
+- Whether the rule identity rides as a new field on `BuildWarning` or a small typed wrapper that maps to it at the report boundary; either keeps identity typed.
+- The node-kind subscription granularity of the registry (per-kind callbacks vs a coordinate key), to land consistently with R347's provider-registry shape.
+- The deferred extensibility surface (code visitors vs also a declarative config layer) is the configurability follow-on's decision, not this one's.
