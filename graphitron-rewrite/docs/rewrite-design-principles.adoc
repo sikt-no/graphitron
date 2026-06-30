@@ -154,10 +154,11 @@ See xref:testing.adoc[Test-tier guide] for build commands and guidance on choosi
 
 Graphitron is a code generator. The Java version used to build the generator is independent of the Java version of the source it emits.
 
-- *Generator implementation* (everything under `graphitron-rewrite/`) may freely use Java 25 features ; sealed classes, pattern matching, records, switch expressions, switch patterns, text blocks, scoped values, and so on. The parent pom's `requireJavaVersion` enforcer pins the minimum to 25.
+- *Generator implementation* (almost everything under `graphitron-rewrite/`) may freely use Java 25 features ; sealed classes, pattern matching, records, switch expressions, switch patterns, text blocks, scoped values, and so on. The parent pom's `requireJavaVersion` enforcer pins the minimum to 25. The one exception is the hand-written runtime category below, which opts back down to 17 in its own pom.
 - *Generated source files* must target Java 17. Consumers compile Graphitron's output with their own toolchain, which may be Java 17. Generator authors are responsible for ensuring that any syntax emitted into generated files is valid Java 17 ; no switch patterns, no sequenced collections API, nothing that requires 21+. `graphitron-sakila-example` compiles with `<release>17</release>` to verify this.
+- *Hand-written runtime artifacts consumers depend on* must target Java 17, for the same reason as generated output: a runtime jar a consumer puts on the same classpath as Graphitron-generated sources must not require newer bytecode than that Java 17 floor. This is a distinct category from both of the above: not generated, but shipped to and run by consumers. `graphitron-jakarta-rest` (the reusable GraphQL-over-HTTP serving library) is the first instance; it overrides its main compile to `<release>17</release>` in its own pom while inheriting the parent's `-Xlint:all -Werror`. The generator itself stays Java 25.
 
-The practical implication: when adding code to a generator, distinguish between code *in* the generator (unrestricted) and code *emitted by* the generator (Java 17).
+The practical implication: when adding code, distinguish between code *in* the generator (unrestricted Java 25), code *emitted by* the generator (Java 17), and hand-written runtime code *shipped to* consumers (Java 17).
 
 == Generated code is read and debugged
 

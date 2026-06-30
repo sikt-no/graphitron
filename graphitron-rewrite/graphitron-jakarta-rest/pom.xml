@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>no.sikt</groupId>
+        <artifactId>graphitron-rewrite-parent</artifactId>
+        <version>10-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>graphitron-jakarta-rest</artifactId>
+    <name>${project.groupId}:${project.artifactId}</name>
+    <description>Reusable, spec-conformant Jakarta REST surface serving a Graphitron schema over
+        GraphQL-over-HTTP. The first hand-written runtime artifact consumers depend on.</description>
+
+    <dependencies>
+        <!-- graphql-java: GraphQLSchema, ExecutionInput/Result, GraphQL engine, SchemaPrinter,
+             Parser (the GET mutation-vs-query check). The library's one substantive dependency. -->
+        <dependency>
+            <groupId>com.graphql-java</groupId>
+            <artifactId>graphql-java</artifactId>
+        </dependency>
+        <!-- Jackson parses the GraphQL-over-HTTP request body into a GraphqlRequest record;
+             wire-format encoding stays at the HTTP boundary, never in the model. Version pinned via
+             the parent property and applied here (not reactor-wide); see the parent pom for why a
+             jackson-bom import is deliberately avoided. -->
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+            <version>${version.com.fasterxml.jackson}</version>
+        </dependency>
+        <!-- Jakarta REST + CDI APIs only. provided: the consumer's container (e.g. Quarkus)
+             supplies the implementation at runtime, so the library stays vendor-neutral and
+             pulls no RESTEasy/Quarkus-specific types. -->
+        <dependency>
+            <groupId>jakarta.ws.rs</groupId>
+            <artifactId>jakarta.ws.rs-api</artifactId>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>jakarta.enterprise</groupId>
+            <artifactId>jakarta.enterprise.cdi-api</artifactId>
+            <scope>provided</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <!--
+                Java-17 floor for this hand-written runtime artifact. The parent pom sets
+                <release>25</release> at plugin level for the generator code; override the
+                main compile to release 17 here so a Java-18+ syntax slip fails this module's
+                build rather than a consumer's. The inherited -Xlint:all -Werror compilerArgs
+                merge in unchanged, so the runtime jar is held to the same warning bar as the
+                rest of the reactor. The module carries no @Test classes (R399: coverage lives
+                in the sakila-example conformance suite), so only the main compile is pinned.
+            -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>default-compile</id>
+                        <configuration>
+                            <release>17</release>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+</project>

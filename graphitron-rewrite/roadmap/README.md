@@ -27,8 +27,8 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R398` | SDL lint engine with ESLint-style built-in visitors | Spec | 2026-06-30 <sub>created 2026-06-29</sub> | [plan](sdl-lint-visitor-engine.md) |
 | `R273` | Source NodeId metadata from @node + catalog PK (inferred from `implements Node`), and settle wrong-type/malformed mismatch semantics, retiring the legacy __NODE bare-ID arm | Spec | 2026-06-02 | [plan](nodeid-skip-mismatch-error-surfacing.md) |
 | `R45` | Multi-tenant routing on top of the schema-driven ExecutionInput factory | Ready | 2026-06-26 | [plan](tenant-routing-and-execution-input.md) |
-| `R399` | Reusable JAX-RS library serving a Graphitron schema per the GraphQL-over-HTTP spec | Ready | 2026-06-30 | [plan](graphql-http-jaxrs-library.md) |
 | `R347` | Consolidate graphitron-lsp navigation, dispatch, and result-building | In Progress | 2026-06-19 | [plan](lsp-structural-consolidation.md) |
+| `R399` | Reusable JAX-RS library serving a Graphitron schema per the GraphQL-over-HTTP spec | In Review | 2026-06-30 | [plan](graphql-http-jaxrs-library.md) |
 | `R332` | Mark @table on input types as deprecated (signal ahead of R97 removal) | Spec | 2026-06-22 <sub>created 2026-06-18</sub> | [plan](table-on-input-deprecation-signal.md) |
 | `R370` | Record-backed parent with a nested backing class emits a non-compiling $-qualified cast | Spec | 2026-06-30 <sub>created 2026-06-24</sub> | [plan](nested-backing-class-accessor-cast.md) |
 | `R389` | First-class discriminated joined-table inheritance (participants on their own tables) | In Review | 2026-06-30 <sub>created 2026-06-26</sub> | [plan](discriminated-joined-table-inheritance.md) |
@@ -194,7 +194,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R202` [**Honor @field(name:) in @error type extra-field accessor matching against handler source class**](honor-field-directive-in-error-type-source-accessors.md) — Backlog, bug
 - `R45` [**Multi-tenant routing on top of the schema-driven ExecutionInput factory**](tenant-routing-and-execution-input.md) — Ready, architecture
 - `R54` [**Rename @externalField (parallel-support, deprecation, migration)**](rename-externalfield-directive.md) — Backlog, cleanup
-- `R399` [**Reusable JAX-RS library serving a Graphitron schema per the GraphQL-over-HTTP spec**](graphql-http-jaxrs-library.md) — Ready, feature
+- `R399` [**Reusable JAX-RS library serving a Graphitron schema per the GraphQL-over-HTTP spec**](graphql-http-jaxrs-library.md) — In Review, feature
 - `R192` [**Mojo-configured custom Bean Validation factory**](custom-validator-factory.md) — Backlog, architecture
 - `R46` [**Multi-tenant fan-out for `@service`**](service-multi-tenant-fanout.md) — Backlog, architecture, blocked by [tenant-routing-and-execution-input](tenant-routing-and-execution-input.md)
 - `R11` [**`DSLContext` on `@condition` / `@tableMethod` methods**](dslcontext-on-condition-tablemethod.md) — Backlog, architecture
