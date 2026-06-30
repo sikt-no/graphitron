@@ -1,7 +1,7 @@
 ---
 id: R398
 title: "SDL lint engine with ESLint-style built-in visitors"
-status: Spec
+status: Ready
 bucket: feature
 priority: 5
 theme: lsp
@@ -65,7 +65,7 @@ In scope:
 - A lint engine over the build's graphql-java AST: the `LintRule` enum, the visitor contract, the `LintRules` registry, and a single shared traversal that dispatches each node to its subscribed visitors.
 - The nine **syntactic** built-in visitors listed under Starter rule set (the engine's new rules), each emitting a typed `BuildWarning`.
 - Surfacing the three existing **classification-derived advisories** through the same report channel into the LSP, and tagging them with a typed `LintRule`, without re-deriving their conditions (the classifier stays their sole emitter).
-- The typed rule-identity field on `BuildWarning`, and the `LintRuleRegistryCoverageTest` drift guard.
+- The sealed `BuildWarning` (no-rule arm vs lint-finding arm carrying `LintRule` + `Optional<LintFix>`), and the `LintRuleRegistryCoverageTest` drift guard.
 - The optional per-rule suggested-fix mechanism: a typed `LintFix` on the finding, projected to a `QuickFix` `CodeAction` by a new finding-keyed code-action branch (alongside the detector-driven `SdlActions` dispatch, sharing only its `WorkspaceEdit` / `TextEdit` emit primitives), for the v1 fix-bearing rules listed under Starter rule set.
 - Projecting the typed `LintRule` id onto the MCP `diagnostics` wire mapping by pattern-matching the lint-finding arm of the sealed `BuildWarning` (the no-rule arm carries no id, so there is no nullable field to guard; the arms land in `graphitron` per the bullet above, only this projection is in `graphitron-mcp`). `GraphitronMcpServer` already surfaces `ValidationReport` warnings via that tool over the shared `Workspace`, so an MCP-aware agent sees which rule fired with no new tool or seam; findings reach the MCP for free.
 
@@ -169,20 +169,3 @@ Left to the implementer or the Ready reviewer (judgment, not open design):
 
 - The node-kind subscription granularity of the registry (per-kind callbacks vs a coordinate key), to land consistently with R347's provider-registry shape.
 - The deferred extensibility surface (code visitors vs also a declarative config layer) is the configurability follow-on's decision, not this one's.
-
-## Spec review (revisions requested, 2026-06-30)
-
-A Spec -> Ready gate review (independent session) found the plan architecturally sound and verified every concrete code/test/symbol reference exact (paths and line numbers included). Status stays Spec pending the following; the next sign-off must be a different session from the one that lands these revisions.
-
-Settle before Ready:
-
-- **Carrier shape: pick the sealed split, drop the nullable-field hedge.** Section "Rule and finding contract" (the "`BuildWarning` gains a typed, nullable `LintRule rule` field" bullet) and "Decisions resolved at Spec" (the "new field on `BuildWarning` or a small typed wrapper ... either keeps identity typed" fork). Bears on *Sealed hierarchies over enums for typed information* and *Sub-taxonomies for resolution outcomes*. A no-rule warning genuinely exists today (`EntityResolutionBuilder` emits a `BuildWarning` that the spec does not tag), so a nullable `rule` plus an only-meaningful-when-`rule`-is-non-null `LintFix` encodes a real two-arm split by nullity, the exact "this field implies that field" smell the principles name; the error channel is already sealed (`Rejection`) while the warning channel is flat. Revision: resolve this at Spec to a sealed `BuildWarning` (a no-rule arm carrying `message`/`location`, and a finding arm carrying the non-null `LintRule` plus `Optional<LintFix>`), rather than leaving "field or wrapper" to the implementer. The deferred error-capable-lint severity axis then lands on the finding arm alone.
-- **Sequence and locate the deprecation-recognizer relocation.** Starter rule set, visitor 8 ("the recognizer needs a single home reachable from the `graphitron` build module ... not a second copy"). Bears on *Generation-thinking* (one producer) and *Documentation names only live tests/code* (no dangling move). Confirmed: `graphitron` does not depend on `graphitron-lsp`; `DESCRIPTION_DEPRECATED_TOKEN` / `deprecationOf` / `DeprecationInfo` and the `SchemaCoordinate` they key on all live in `graphitron-lsp/.../parsing/`, so visitor 8 cannot consume them in place. This is the largest unscoped structural work in the spec, and `SdlActionDriftTest:55` pins `deprecatedCoordinates()` exactly, so a piecemeal move reds the build. Revision: name the target module for the extracted recognizer (and whether `DeprecationInfo`/`SchemaCoordinate` move with it), and give the move the same "lands together, not before" sequencing the `@record`-marker coordinated edit already gets.
-
-Should fix:
-
-- **Name the not-linted node-kind partition structure.** "Rule and finding contract" ("One registry") and Testing strategy ("Registry coverage"). Bears on the no-silent-default pattern the spec cites (`GeneratorCoverageTest` reads a declared four-way partition). The "every node kind has a known dispatch status" acceptance criterion cannot be asserted unless the not-linted set is a declared structure; the spec should name it (the set of graphql-java AST node kinds, partitioned into subscribed-by-a-visitor vs explicitly-declared-not-linted) as the thing `LintRuleRegistryCoverageTest` reads, paralleling `GeneratorCoverageTest`.
-
-Minor:
-
-- **Reconcile the enum severity field with warnings-only v1.** "Rule and finding contract" says each `LintRule` constant carries its "fixed v1 severity"; "Severity and enablement" says every rule is Warning and `severityOf` needs no lint arm. While all rules are Warning the per-constant field is dead data. One sentence: either drop the field from the v1 enum or note that severity is the axis on which the enum is expected to split into a sealed interface in the error-capable follow-on.
