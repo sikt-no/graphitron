@@ -150,7 +150,7 @@ columns, not the write target table.
   these compute anything per usage, so they state the carve-out in prose and are safe
   to ship now.
 - *Actionable tier (fires per `@table`-on-input usage; must respect the carve-out).*
-  A non-fatal build warning (`BuildWarning` via `ctx.addWarning`, the same channel as
+  A non-fatal build warning (`BuildWarning.NoRule` via `ctx.addWarning`, the same channel and arm as
   the `@record` "directive ignored" warning at `TypeBuilder.emitDirectiveIgnoredWarning`).
   Non-fatal by the `BuildContext` warnings contract: it never fails the build.
 
@@ -200,7 +200,10 @@ Flat file list; the only ordering constraint is "the warning pass reads the clas
   (2) walks input types that *explicitly declare* `@table` (the `tableOpt`-resolved branch of
   `TypeBuilder.buildInputType`, not the consumer-derived `findReturnTablesForInput` branch,
   which carries no author-written directive); (3) for each not in the carve-out set,
-  `ctx.addWarning(new BuildWarning(message, inputType.getSourceLocation()))`. Inline emission in
+  `ctx.addWarning(new BuildWarning.NoRule(message, inputType.getSourceLocation()))` (`BuildWarning` is
+  a sealed interface, `permits BuildWarning.NoRule, BuildWarning.LintFinding`; `NoRule(String message,
+  SourceLocation location)` is the plain non-lint arm the `@record` directive-ignored warning also
+  emits, so there is no `new BuildWarning(...)` to call). Inline emission in
   `TypeBuilder.buildInputType` is wrong: it lacks the consuming-field view the carve-out needs.
 - **`encodedWriteTargetInputTypes(...)`** — a single named helper returning `Set<String>`. This
   is the find-usages anchor R97 Phase 2b retires (see Roadmap coordination); keep it named
