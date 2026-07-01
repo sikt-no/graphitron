@@ -23,12 +23,14 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R346` | Regenerate and guard the generated supported-directives migration doc against directive-set drift | Ready | 2026-06-19 | [plan](supported-directives-regen-guard.md) |
 | `R308` | Fix the @service list-payload N+1 by deriving many-arrival for list-returning carriers | Spec | 2026-06-14 | [plan](service-list-payload-arrival.md) |
 | `R335` | Fold input/scalar/enum classification into the single classify-and-emit walk | Spec | 2026-06-19 | [plan](walk-classifies-input-surface.md) |
+| `R407` | Exclude generator-injected federation/link definitions from linting | Spec | 2026-07-01 | [plan](lint-skip-injected-definitions.md) |
 | `R381` | LSP-guided @reference path authoring | Spec | 2026-06-25 | [plan](lsp-reference-path-authoring.md) |
 | `R273` | Source NodeId metadata from @node + catalog PK (inferred from `implements Node`), and settle wrong-type/malformed mismatch semantics, retiring the legacy __NODE bare-ID arm | Spec | 2026-06-02 | [plan](nodeid-skip-mismatch-error-surfacing.md) |
 | `R405` | Support single-table discriminated interface as a @service polymorphic return | Spec | 2026-07-01 | [plan](service-single-table-interface-return.md) |
 | `R45` | Multi-tenant routing on top of the schema-driven ExecutionInput factory | Ready | 2026-06-26 | [plan](tenant-routing-and-execution-input.md) |
 | `R347` | Consolidate graphitron-lsp navigation, dispatch, and result-building | In Progress | 2026-06-19 | [plan](lsp-structural-consolidation.md) |
 | `R398` | SDL lint engine with ESLint-style built-in visitors | In Progress | 2026-06-30 <sub>created 2026-06-29</sub> | [plan](sdl-lint-visitor-engine.md) |
+| `R408` | Lint finding suppression mechanism | Spec | 2026-07-01 | [plan](lint-finding-suppression.md) |
 | `R332` | Mark @table on input types as deprecated (signal ahead of R97 removal) | Spec | 2026-06-22 <sub>created 2026-06-18</sub> | [plan](table-on-input-deprecation-signal.md) |
 | `R370` | Record-backed parent with a nested backing class emits a non-compiling $-qualified cast | Spec | 2026-06-30 <sub>created 2026-06-24</sub> | [plan](nested-backing-class-accessor-cast.md) |
 | `R13` | Faceted search on `@asConnection` | Ready | 2026-06-26 | [plan](faceted-search.md) |
@@ -299,8 +301,10 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 ### lsp
 
 - `R347` [**Consolidate graphitron-lsp navigation, dispatch, and result-building**](lsp-structural-consolidation.md) — In Progress, architecture
+- `R407` [**Exclude generator-injected federation/link definitions from linting**](lint-skip-injected-definitions.md) — Spec, cleanup
 - `R398` [**SDL lint engine with ESLint-style built-in visitors**](sdl-lint-visitor-engine.md) — In Progress, feature
 - `R345` [**Surface schema parse failures as LSP red squiggles**](lsp-squiggle-schema-parse-failure.md) — Backlog, feature
+- `R408` [**Lint finding suppression mechanism**](lint-finding-suppression.md) — Spec, feature
 - `R123` [**Parent-context-aware schema coordinates for per-directive Behavior policy**](parent-context-aware-schema-coordinates.md) — Backlog, architecture
 - `R118` [**Graphitron MCP server programme: agent-facing schema, catalog, code, and docs tools in graphitron:dev**](graphitron-mcp-server.md) — Backlog, feature
 - `R212` [**IntelliJ plugin wrapping graphitron:dev LSP**](intellij-lsp-plugin.md) — Spec, feature
