@@ -33,8 +33,8 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R347` | Consolidate graphitron-lsp navigation, dispatch, and result-building | In Progress | 2026-06-19 | [plan](lsp-structural-consolidation.md) |
 | `R398` | SDL lint engine with ESLint-style built-in visitors | In Progress | 2026-06-30 <sub>created 2026-06-29</sub> | [plan](sdl-lint-visitor-engine.md) |
 | `R408` | Lint finding suppression mechanism | Spec | 2026-07-01 | [plan](lint-finding-suppression.md) |
-| `R332` | Mark @table on input types as deprecated (signal ahead of R97 removal) | Ready | 2026-07-01 <sub>created 2026-06-18</sub> | [plan](table-on-input-deprecation-signal.md) |
 | `R370` | Record-backed parent with a nested backing class emits a non-compiling $-qualified cast | Ready | 2026-07-01 <sub>created 2026-06-24</sub> | [plan](nested-backing-class-accessor-cast.md) |
+| `R332` | Mark @table on input types as deprecated (signal ahead of R97 removal) | In Review | 2026-07-01 <sub>created 2026-06-18</sub> | [plan](table-on-input-deprecation-signal.md) |
 | `R13` | Faceted search on `@asConnection` | Ready | 2026-06-26 | [plan](faceted-search.md) |
 | `R92` | Surface database CHECK constraints as Jakarta validation rules | Spec |  | [plan](catalog-check-constraint-validation.md) |
 | `R180` | Centralize ResultType column-read emission for @record parents | Spec | 2026-05-19 | [plan](record-parent-column-read-helper.md) |
@@ -230,7 +230,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R181` [**Validate @order/@defaultOrder: empty directive and @index coexistence**](validate-order-directive-args.md) — Backlog, validation
 - `R16` [**`FkJoin` model cleanup: `JoinConditionRef` wrapper**](fkjoin-model-cleanup.md) — Backlog, cleanup
 - `R97` [**Deprecate @table on input types; consumer-derived tables + argMapping grouping**](consumer-derived-input-tables.md) — Backlog, architecture
-- `R332` [**Mark @table on input types as deprecated (signal ahead of R97 removal)**](table-on-input-deprecation-signal.md) — Ready, cleanup
+- `R332` [**Mark @table on input types as deprecated (signal ahead of R97 removal)**](table-on-input-deprecation-signal.md) — In Review, cleanup
 - `R323` [**Multi-parent NestingField sharing: BatchKey leaves**](nestingfield-multiparent-batchkey-leaves.md) — Backlog, architecture
 - `R120` [**Drop or wire FkJoin.alias dead storage**](fkjoin-alias-dead-storage.md) — Backlog, cleanup
 - `R126` [**Scrub residual BatchKey.X references from sakila-service / sakila-example prose**](scrub-stale-batchkey-prose.md) — Backlog, cleanup

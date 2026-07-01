@@ -25,7 +25,9 @@ import graphql.schema.idl.TypeDefinitionRegistry;
 import graphql.schema.idl.errors.SchemaProblem;
 
 import no.sikt.graphitron.rewrite.model.ChildField;
+import no.sikt.graphitron.rewrite.model.DmlReturnExpression;
 import no.sikt.graphitron.rewrite.model.DomainReturnType;
+import no.sikt.graphitron.rewrite.model.MutationField;
 import no.sikt.graphitron.rewrite.model.EmitsPerTypeFile;
 import no.sikt.graphitron.rewrite.model.EntityResolution;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
@@ -294,6 +296,12 @@ public class GraphitronSchemaBuilder {
         // verdict and the assembled schema stays consistent; the validator surfaces the collision by
         // draining the channel.
         rejectCaseInsensitiveTypeCollisions(ctx);
+        // R332: deprecation signal over @table-on-input usages, carving out the encoded-ID /
+        // scalar-return INSERT/UPSERT case whose only write-target signal is still the input's
+        // @table (R97 Phase 2b retires that carve-out). Placed beside the other post-classification
+        // cross-cutting passes on the live ctx; reads the classified model (the carve-out set is
+        // computed off the field registry's MutationField leaves).
+        emitTableOnInputDeprecationWarnings(ctx);
         // R262: reject every @nodeId application whose coordinate is not of unwrapped type ID. Reads
         // ctx.schema applied directives (not the registry) because a dropped @nodeId leaves no trace
         // on the classified field — see rejectNonIdNodeId. Sibling soundness reduction; registers a
@@ -731,6 +739,79 @@ public class GraphitronSchemaBuilder {
                     Rejection.caseFoldCollision(group, origin), existing.location()));
             }
         }
+    }
+
+    /**
+     * R332: the actionable tier of the {@code @table}-on-input deprecation signal. Walks every
+     * {@code INPUT_OBJECT} that <em>explicitly declares</em> {@code @table} (read off
+     * {@code ctx.schema} applied directives, like {@link #rejectNonIdNodeId} — the consumer-derived
+     * table branch of {@link TypeBuilder#buildInputType} carries no author-written directive and is
+     * deliberately not flagged) and emits a non-fatal {@link BuildWarning.NoRule} advisory per usage,
+     * except those in the encoded-ID / scalar-return INSERT/UPSERT carve-out
+     * ({@link #encodedWriteTargetInputTypes}).
+     *
+     * <p>The message names no roadmap ID (D2): it gives the replacement instruction (the write target
+     * is derived from the consuming mutation field's resolved table) rather than pointing at the
+     * internal removal owner. Unconditional and not suppressible (D4): a switchable nudge defeats the
+     * "stop adding new usages" purpose, and there is no build-breakage to suppress. The plain
+     * {@link BuildWarning.NoRule} arm (not {@link BuildWarning.LintFinding}) is deliberate (D1): this
+     * is a deprecation announcement, not a lint-engine finding, and stays unconditional. The live
+     * precedent for {@code NoRule} is the federation compound-key advisory in
+     * {@link EntityResolutionBuilder}.
+     */
+    private static void emitTableOnInputDeprecationWarnings(BuildContext ctx) {
+        Set<String> carveOut = encodedWriteTargetInputTypes(ctx);
+        for (var type : ctx.schema.getAllTypesAsList()) {
+            if (!(type instanceof GraphQLInputObjectType input)) continue;
+            if (!input.hasAppliedDirective(DIR_TABLE)) continue;
+            if (carveOut.contains(input.getName())) continue;
+            ctx.addWarning(new BuildWarning.NoRule(
+                "`@table` on input type '" + input.getName() + "' is deprecated and will be removed "
+                + "in a future release; the write target is derived from the consuming mutation "
+                + "field's resolved table. Remove `@table` from this input.",
+                locationOf(input)));
+        }
+    }
+
+    /**
+     * R332: the SDL input-type names in the encoded-ID / scalar-return INSERT/UPSERT carve-out (D3).
+     * These are the {@link MutationField.MutationInsertTableField} /
+     * {@link MutationField.MutationUpsertTableField} whose {@link MutationField.DmlTableField#returnExpression()}
+     * is an {@code Encoded*} arm: their return type carries no {@code @table}, so there is nothing for
+     * the field-relative derivation to collapse to, and the input's {@code @table} is currently the
+     * only signal naming the write target. Every part is pre-resolved on the classified model (the
+     * encoded-vs-projected axis is a settled {@link DmlReturnExpression} arm; the leaf names its input
+     * type), so no {@code lookAheadVerdict} or reflection is needed.
+     *
+     * <p>Conservative type-level rule (D3): an input reused by both an encoded INSERT/UPSERT and a
+     * projected consumer is suppressed (added to the set once <em>any</em> consumer is an encoded
+     * INSERT/UPSERT), because a false fire tells an author to delete the only signal naming their
+     * write target and breaks their build, whereas a false suppress costs one extra release carrying a
+     * directive. Per-{@code (input, consumer)} precision is R97's axis.
+     *
+     * <p>This is the find-usages anchor R97 Phase 2b retires: once the write target is field-relative,
+     * encoded INSERT/UPSERT inputs no longer need {@code @table} and this set empties, letting the
+     * warning fire on them too.
+     */
+    private static Set<String> encodedWriteTargetInputTypes(BuildContext ctx) {
+        Set<String> carveOut = new LinkedHashSet<>();
+        for (var field : ctx.fieldRegistry.entries().values()) {
+            switch (field) {
+                case MutationField.MutationInsertTableField f -> {
+                    if (isEncoded(f.returnExpression())) carveOut.add(f.tableInputArg().typeName());
+                }
+                case MutationField.MutationUpsertTableField f -> {
+                    if (isEncoded(f.returnExpression())) carveOut.add(f.tableInputArg().typeName());
+                }
+                default -> { /* only the two @table-carrying direct-return DML leaves are in scope */ }
+            }
+        }
+        return carveOut;
+    }
+
+    private static boolean isEncoded(DmlReturnExpression expr) {
+        return expr instanceof DmlReturnExpression.EncodedSingle
+            || expr instanceof DmlReturnExpression.EncodedList;
     }
 
     /**
