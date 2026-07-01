@@ -1,6 +1,0 @@
-query ProcedureCallQuery($inventoryId: ID!) {
-    inventoriesWithHeldBy(inventoryId: $inventoryId) {
-        id
-        inventoryHeldBy
-    }
-}

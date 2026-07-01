@@ -1,5 +1,0 @@
-query CustomerLookup($customerIds: [ID!]!) {
-    customerLookup(customerIds: $customerIds) {
-        id
-    }
-}

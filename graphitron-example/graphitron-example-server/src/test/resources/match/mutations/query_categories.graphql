@@ -1,6 +1,0 @@
-query Category($in: [CategoryInput!]) {
-    categories(in: $in) {
-        id
-        name
-    }
-}

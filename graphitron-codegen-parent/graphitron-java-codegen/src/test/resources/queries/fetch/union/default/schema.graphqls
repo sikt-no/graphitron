@@ -1,5 +1,0 @@
-union U = CustomerUnion
-
-type CustomerUnion {
-  email: String
-}

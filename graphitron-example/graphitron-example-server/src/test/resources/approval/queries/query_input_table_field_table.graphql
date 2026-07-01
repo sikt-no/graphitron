@@ -1,7 +1,0 @@
-{
-    filmWrappedWithInputTableAndTableField(input: {filmId: "RmlsbTox"}) {
-        films {
-            id
-        }
-    }
-}

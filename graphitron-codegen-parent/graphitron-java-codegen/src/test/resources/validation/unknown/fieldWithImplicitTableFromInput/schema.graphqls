@@ -1,3 +1,0 @@
-type Query {
-  query(in: CustomerNodeInputTable!): String @field(name: "WRONG")
-}

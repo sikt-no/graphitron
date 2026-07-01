@@ -1,3 +1,0 @@
-type Customer implements Node @node(typeId: "C") @table {
-  id: ID! @nodeId
-}

@@ -1,8 +1,0 @@
-type Query {
-    query: Payment @notGenerated
-}
-
-type Payment @table {
-    staffAndCustomers(first: Int = 100, after: String): PersonWithEmailConnection
-}
-

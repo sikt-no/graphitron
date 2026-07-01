@@ -1,7 +1,0 @@
-extend type Query {
-  object3: [Object3] @asConnection
-}
-
-type Object3 {
-  string: String!
-}

@@ -1,3 +1,0 @@
-type Query {
-  query: DummyTypeRecord @service(service : {name: "DUMMY_SERVICE"})
-}

@@ -1,3 +1,0 @@
-type Query {
-  query(wrong: String): CustomerTable @condition(condition: {name: "DUMMY_CONDITION"}, override: true)
-}

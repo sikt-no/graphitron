@@ -1,3 +1,0 @@
-type Query {
-  customers(first: Int = 100, after: String): CustomerConnection
-}

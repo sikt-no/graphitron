@@ -1,7 +1,0 @@
-interface SomeInterface {
-    id: ID
-}
-
-type SomeType implements SomeInterface {
-    id: ID @notGenerated
-}

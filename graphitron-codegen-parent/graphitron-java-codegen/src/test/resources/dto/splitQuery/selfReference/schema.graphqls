@@ -1,3 +1,0 @@
-type Film @table {
-    sequel: Film @splitQuery
-}

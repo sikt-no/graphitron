@@ -1,7 +1,0 @@
-query QueryCondition {
-    inactiveCustomers(lastNameStartingWith: "E") {
-        nodes {
-            id
-        }
-    }
-}

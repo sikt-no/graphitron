@@ -1,7 +1,0 @@
-type Query {
-  query: Payment @notGenerated
-}
-
-type Payment @table {
-  staffAndCustomers(email: String!): [PersonWithEmail] @splitQuery
-}

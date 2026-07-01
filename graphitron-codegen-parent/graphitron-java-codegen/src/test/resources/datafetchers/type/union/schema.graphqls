@@ -1,5 +1,0 @@
-union U = A
-
-type A {
-  string: String
-}

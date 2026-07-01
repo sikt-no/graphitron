@@ -1,8 +1,0 @@
-{
-    filmWrapped(filmId: "1") {
-        films {
-            id
-            title
-        }
-    }
-}

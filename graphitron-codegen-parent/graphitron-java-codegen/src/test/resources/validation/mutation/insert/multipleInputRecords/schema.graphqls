@@ -1,3 +1,0 @@
-type Mutation {
-  query(in0: CustomerNodeInputTable, in1: CustomerNodeInputTable): CustomerNode @mutation(typeName: INSERT)
-}

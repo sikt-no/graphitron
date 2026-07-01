@@ -1,7 +1,0 @@
-type Customer @table {
-  city: City @reference(path: [{table: "ADDRESS"}])
-}
-
-type City @table {
-  id: ID!
-}

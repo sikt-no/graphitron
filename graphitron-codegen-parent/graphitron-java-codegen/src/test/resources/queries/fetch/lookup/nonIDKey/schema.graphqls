@@ -1,7 +1,0 @@
-type Query {
-  query(integer: [Int] @field(name: "LENGTH") @lookupKey): Film
-}
-
-type Film @table {
-  id: ID
-}

@@ -1,7 +1,0 @@
-type Customer @table {
-  city: City @splitQuery @reference(path: [{condition: {name: "REFERENCE_CUSTOMER_CONDITION", method: "cityCustomer"}}])
-}
-
-type City @table {
-  id: ID!
-}

@@ -1,9 +1,0 @@
-query QueryStaff($input: StaffInput!) {
-    staff(input: $input) {
-        nodes {
-            id
-            email
-            username
-        }
-    }
-}

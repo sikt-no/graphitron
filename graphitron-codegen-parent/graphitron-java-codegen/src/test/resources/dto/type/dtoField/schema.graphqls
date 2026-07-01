@@ -1,7 +1,0 @@
-type CustomerTable @table(name: "CUSTOMER") {
-    someType: SomeType
-}
-
-type SomeType {
-    id: ID
-}

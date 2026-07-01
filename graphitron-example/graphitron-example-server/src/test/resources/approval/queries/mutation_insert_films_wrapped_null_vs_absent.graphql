@@ -1,8 +1,0 @@
-mutation InsertFilmsWrapped($in: [FilmCreateInput!]!) {
-    insertFilmsWrapped(in: $in) {
-        films {
-            title
-            rentalDuration
-        }
-    }
-}

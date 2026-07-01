@@ -1,7 +1,0 @@
-mutation CheckJooqChangedStatus($input: CustomerInput!) {
-    checkJooqChangedStatus(input: $input) {
-        results {
-            firstNameStatus
-        }
-    }
-}

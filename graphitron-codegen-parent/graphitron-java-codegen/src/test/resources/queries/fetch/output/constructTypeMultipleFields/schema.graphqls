@@ -1,8 +1,0 @@
-type Customer @table {
-  field: Inner @experimental_constructType(selection: "f0, f1: STORE_ID")
-}
-
-type Inner {
-  f0: String
-  f1: String
-}

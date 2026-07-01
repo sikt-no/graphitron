@@ -1,7 +1,0 @@
-extend type InnerObject {
-  extraFlag: ID
-}
-
-extend input Input {
-  extraFlag: ID
-}

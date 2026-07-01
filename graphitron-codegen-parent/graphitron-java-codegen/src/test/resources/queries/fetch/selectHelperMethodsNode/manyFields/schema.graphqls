@@ -1,9 +1,0 @@
-type Query {
-  node(id: ID!): Node
-}
-
-type Customer implements Node @table {
-  id: ID
-  first: String @field(name: "FIRST_NAME")
-  last: String! @field(name: "LAST_NAME")
-}

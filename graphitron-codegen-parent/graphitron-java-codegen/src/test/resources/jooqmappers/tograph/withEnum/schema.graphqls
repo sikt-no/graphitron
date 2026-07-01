@@ -1,7 +1,0 @@
-type Query {
-  film: Film @service(service : {name: "DUMMY_SERVICE"})
-}
-
-type Film @table {
-  e: DummyEnum! @field(name: "RATING")
-}

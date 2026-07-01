@@ -1,6 +1,0 @@
-# Service with autofetch returning null for the resolver key.
-{
-    customerServiceReturningNull {
-        id
-    }
-}

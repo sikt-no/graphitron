@@ -1,3 +1,0 @@
-type FilmActorNode implements Node @node @table(name: "FILM_ACTOR") {
-    id: ID! @nodeId
-}

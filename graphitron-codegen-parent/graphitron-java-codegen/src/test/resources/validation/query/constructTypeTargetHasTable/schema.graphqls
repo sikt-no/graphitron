@@ -1,8 +1,0 @@
-type Customer @table {
-  field: Address @experimental_constructType(selection: "f")
-}
-
-type Address @table {
-  f: String
-}
-

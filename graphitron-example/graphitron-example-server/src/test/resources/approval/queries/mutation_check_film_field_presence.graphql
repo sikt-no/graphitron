@@ -1,6 +1,0 @@
-mutation CheckFilmFieldPresence($in: [FilmInsertWrapper!]!) {
-    checkFilmFieldPresence(in: $in) {
-        title
-        rentalDurationPresent
-    }
-}

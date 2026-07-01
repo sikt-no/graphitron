@@ -1,3 +1,0 @@
-type Mutation {
-  mutation(in: CustomerInputTable): ID @mutation(typeName: UPDATE)
-}

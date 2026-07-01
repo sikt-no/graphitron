@@ -1,7 +1,0 @@
-type Mutation {
-  mutation: CustomerWrapper @service(service: {className: "ResolverMutationService", method: "mutationCustomer"})
-}
-
-type CustomerWrapper {
-  customer: CustomerTable @splitQuery
-}

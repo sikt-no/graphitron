@@ -1,4 +1,0 @@
-type ValidationError implements Error {
-  path: [String]
-  message: String
-}

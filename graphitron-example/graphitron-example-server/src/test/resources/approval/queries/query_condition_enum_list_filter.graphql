@@ -1,9 +1,0 @@
-# Regression: a null list-of-enum field in a @record filter must not NPE in QueryHelper.makeEnumMap(List)
-query LanguagesByName($filter: LanguageNameFilter!) {
-    languagesByName(filter: $filter) {
-        nodes {
-            id
-            name
-        }
-    }
-}

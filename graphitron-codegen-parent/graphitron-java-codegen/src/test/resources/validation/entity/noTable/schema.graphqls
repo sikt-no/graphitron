@@ -1,5 +1,0 @@
-union _Entity = Customer
-
-type Customer @key(fields: "id") {
-  id: ID
-}

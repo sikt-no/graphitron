@@ -1,8 +1,0 @@
-mutation {
-    createCustomerEmail {
-        customers {
-            id
-            email
-        }
-    }
-}

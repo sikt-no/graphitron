@@ -1,3 +1,0 @@
-type Mutation {
-  upsertCustomer(in: CustomerInputTable): ID @mutation(typeName: UPSERT)
-}

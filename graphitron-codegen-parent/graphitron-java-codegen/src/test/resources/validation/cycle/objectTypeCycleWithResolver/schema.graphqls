@@ -1,7 +1,0 @@
-type TypeA {
-    b: TypeB
-}
-
-type TypeB {
-    a: TypeA @splitQuery
-}

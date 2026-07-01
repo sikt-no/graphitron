@@ -1,8 +1,0 @@
-{
-    cities(first: 2) {
-        nodes {
-            id
-            countryName
-        }
-    }
-}

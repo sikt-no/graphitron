@@ -1,9 +1,0 @@
-query {
-    allCustomerEmails_handledError {
-        errors {
-            __typename
-            path
-            message
-        }
-    }
-}

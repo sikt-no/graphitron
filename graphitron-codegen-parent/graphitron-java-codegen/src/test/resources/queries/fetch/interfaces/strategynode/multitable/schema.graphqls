@@ -1,5 +1,0 @@
-type Query {
-    query: SomeUnion
-}
-
-union SomeUnion = CustomerTable

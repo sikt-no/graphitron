@@ -1,4 +1,0 @@
-type Customer @table {
-  district1: String! @reference(path: [{table: "ADDRESS"}]) @field(name: "DISTRICT")
-  district2: String! @reference(path: [{table: "ADDRESS"}]) @field(name: "DISTRICT")
-}

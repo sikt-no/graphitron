@@ -1,6 +1,0 @@
-mutation UpsertCategories($in: [CategoryNameInput]) {
-    upsertCategories(in: $in) {
-        id
-        name
-    }
-}

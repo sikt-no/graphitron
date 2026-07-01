@@ -1,7 +1,0 @@
-mutation {
-    upsertCategories(in: []
-    ) {
-        id
-        name
-    }
-}
