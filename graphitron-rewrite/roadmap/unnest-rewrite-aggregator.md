@@ -4,14 +4,14 @@ title: "Retire legacy reactor and unnest graphitron-rewrite to repo root"
 status: Spec
 bucket: structural
 theme: legacy-migration
-depends-on: [retire-maven-plugin]
+depends-on: []
 created: 2026-05-19
 last-updated: 2026-07-01
 ---
 
 # Retire legacy reactor and unnest graphitron-rewrite to repo root
 
-Carved out from R26's "Retire legacy + unnest the rewrite aggregator" sub-item so the repo-topology change has its own Spec and review trail.
+Carved out from R26's "Retire legacy + unnest the rewrite aggregator" sub-item so the repo-topology change has its own Spec and review trail. R26 closed 2026-07-01 with every other bullet under it shipped; this item is now the sole remaining carrier of that closing step and no longer depends on R26 as an open tracker.
 
 Today the rewrite reactor lives nested under `graphitron-rewrite/`; the repo root still hosts the legacy `graphitron-parent` reactor (`graphitron-codegen-parent`, `graphitron-common`, `graphitron-example`, `graphitron-maven-plugin`, `graphitron-schema-transform`, `graphitron-servlet-parent`). This is operationally load-bearing in surprising ways: GitHub's `release: created` event always loads workflow files from the default branch, so any release tag, on any branch, runs the `main`-branch `maven-publish.yml`, which builds the root reactor (legacy). A `v10.0.0` tag cut from a rewrite-branch commit would republish the legacy artifacts at 10.0.0, not the rewrite reactor. The rewrite-branch publish workflow that knows about `-f graphitron-rewrite/pom.xml` and accepts `-RC<n>` suffixes is unreachable from a release event. Unnesting collapses the surface: one root reactor, one publish workflow on `main`, no `-f` flag, no nested-vs-root ambiguity.
 
@@ -61,6 +61,6 @@ Two commits, not one. The deletion and the rename are separated so the rename co
 
 ## Closes
 
-- R26 sub-item "Retire legacy + unnest the rewrite aggregator" (its closing landing marker). On Done, edit R26 to remove that bullet or mark it shipped.
+- R26's last open sub-item, "Retire legacy + unnest the rewrite aggregator". R26 itself was already closed (2026-07-01, see `changelog.md`) once every other bullet under it had shipped; this item carries that final step to completion independently.
 - The `release`-event publish hazard: legacy artifacts can no longer be cut at 10.0.0 because there is no legacy reactor to build.
 - R19 (`history-squash.md`), superseded outright: this item does not use the squash approach R19 describes. R19 discards (step 2 above) rather than shipping.
