@@ -1,7 +1,7 @@
 ---
 id: R370
 title: "Record-backed parent with a nested backing class emits a non-compiling $-qualified cast"
-status: In Review
+status: Ready
 bucket: bug
 priority: 6
 theme: interface-union
@@ -11,6 +11,49 @@ last-updated: 2026-07-01
 ---
 
 # Record-backed parent with a nested backing class emits a non-compiling $-qualified cast
+
+## Review feedback (In Review → Ready, 2026-07-01)
+
+Independent In Review → Done review found two **in-hand-category** `bestGuess`-over-binary-`fqClassName`
+sites with the identical nested-class defect, both left unfixed and unnamed. Both hold a reflected
+`Class<?>` / captured `TypeName` at the site, so they are the same one-for-one-swap shape as the four
+sites this pass fixed, **not** the "no reflected `Class` at the site, needs a model-lift" category the
+"Sibling latent bug" section defers to R412. The spec's completeness claim (R412 captures every
+remaining hazard) is therefore false, and the "Scope note" absorbed exactly the two query-path in-hand
+sites while missing the mutation-path and error-channel in-hand sites of the same category.
+
+Aggravating factor: `checkServiceReturnMatchesPayload` (fixed in this pass) guards **both** query and
+mutation service-record fields (`FieldBuilder.java:3822`). Before this pass its `bestGuess` mismatch
+**spuriously rejected** every nested `@service` payload at classify time, masking these two downstream
+emit bugs. This pass removes that rejection, so a nested `@service` payload now **reaches codegen** and
+these two sites emit the non-compiling `Outer$Nested`. This pass therefore *unmasks* latent defects it
+does not fix; for the mutation and error-channel paths the end-to-end result is now a broken build where
+it was previously a classify-time author error.
+
+1. **`FieldBuilder.resolveErrorChannel`** (`FieldBuilder.java:2569`) — the `@service` error-channel
+   (Outcome) payload-construction resolver builds `payloadClassName = ClassName.bestGuess(result.fqClassName())`
+   even though `payloadCls` (the reflected `Class<?>`) is already loaded at `:2549`. A nested `@service`
+   payload carrying an `@error`/Outcome channel emits `Outer$Nested` in the ctor/bean construction arms
+   (`buildErrorChannelCtorArm` / `buildErrorChannelBeanArm`) and fails `javac`. Fix: `ClassName.get(payloadCls)`.
+2. **`TypeFetcherGenerator.computeMutationServiceRecordReturnType`** (`TypeFetcherGenerator.java:1739`) —
+   the mutation twin of the `computeServiceRecordReturnType` this pass fixed. Its class-backed arm still
+   rebuilds the type via `ClassName.bestGuess(r.fqClassName())`, so a nested mutation `@service` record
+   payload emits `DataFetcherResult<Outer$Nested>` / `Outer$Nested result` and fails `javac`.
+   `serviceMethodCall().javaReturnType()` is already read at `:1748` and the mutation path is validated by
+   the same `checkServiceReturnMatchesPayload`, so the identical collapse-to-`javaReturnType()` applies.
+   The method's own javadoc (`:1732`, "Mirrors `computeServiceRecordReturnType` ... Identical policy") is
+   now **false** and must be corrected; this is the design-principles "one site drifts from another"
+   (rewrite-design-principles.adoc line 17) and false-invariant-doc (line 141) hazard.
+
+Next pass: apply the two one-for-one swaps (mirroring the query-side fixes already landed), add a
+compilation witness that reaches each (a nested mutation `@service` record payload; a nested `@service`
+payload with an `@error` channel) since both are latent precisely because no witness reaches them, and
+correct the stale mirror javadoc. If instead the team wants to keep this item minimal, these two must at
+least be explicitly named in scope and filed as their own item; they do **not** belong in R412 as scoped
+(that is the no-reflected-`Class` category). Everything else in this pass verified sound: the two
+`AccessorRef` producer swaps, the `checkServiceReturnMatchesPayload` and query-side
+`computeServiceRecordReturnType` fixes, both nested compilation witnesses (verified emitting `Outer.Nested`
+and compiling), the R412 filing, and a green `mvn install -Plocal-db` (after a local catalog re-seed).
 
 ## Problem
 
