@@ -29,7 +29,8 @@ public sealed interface QueryField extends RootField
             QueryField.QueryTableInterfaceField, QueryField.QueryInterfaceField,
             QueryField.QueryUnionField,
             QueryField.QueryServiceTableField, QueryField.QueryServiceRecordField,
-            QueryField.QueryServicePolymorphicField {
+            QueryField.QueryServicePolymorphicField,
+            QueryField.QueryServiceTableInterfaceField {
 
     /** Every {@code QueryField} leaf is on the {@code Query} root, so the source is {@link Source.Root.Query}. */
     @Override default Source source() { return new Source.Root.Query(); }
@@ -51,6 +52,7 @@ public sealed interface QueryField extends RootField
             case QueryServiceTableField f -> OutputField.serviceCall(f.serviceMethodCall());
             case QueryServiceRecordField f -> OutputField.serviceCall(f.serviceMethodCall());
             case QueryServicePolymorphicField f -> OutputField.serviceCall(f.serviceMethodCall());
+            case QueryServiceTableInterfaceField f -> OutputField.serviceCall(f.serviceMethodCall());
         };
     }
 
@@ -71,6 +73,11 @@ public sealed interface QueryField extends RootField
             // Service-polymorphic returns are interface-only (union/table-interface rejected at
             // classify time) and route through the __typename-column TypeResolver.
             case QueryServicePolymorphicField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Interface());
+            // Single-table service interface return (R405): payload is a raw Record / List<Record>
+            // routed by the discriminated TypeResolver, same wiring shape as route (a). Interface
+            // (not Table) keeps requiresReFetch() false so the re-fetch mirror agrees with the
+            // service fetcher, which does the by-PK re-projection itself.
+            case QueryServiceTableInterfaceField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Interface());
             case QueryNodeField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Interface());
             case QueryNodesField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Interface());
         };
@@ -330,6 +337,46 @@ public sealed interface QueryField extends RootField
         Optional<ErrorChannel> errorChannel
     ) implements QueryField, ServiceField, WithErrorChannel {
         public QueryServicePolymorphicField {
+            participants = List.copyOf(participants);
+        }
+        @Override public DomainReturnType domainReturnType() {
+            return new DomainReturnType.Plain(OutputField.OBJECT_CLASS);
+        }
+    }
+
+    /**
+     * R405 — a root {@code @service} field returning a single-table discriminated interface
+     * ({@code @table @discriminate}, implementers pinned by {@code @discriminator(value:)}, all
+     * sharing one jOOQ table). The single-table sibling of {@link QueryServicePolymorphicField}
+     * (route (a)): both carry a service binding and dispatch a service-returned record set to
+     * {@code __typename}, but the mechanism differs. Route (a) routes on each record's runtime Java
+     * class (distinct-table participants); here every returned record is the same shared-table record,
+     * so class dispatch cannot tell the subtypes apart. Instead the emitted fetcher collects the
+     * shared table's PKs off the service records, runs one by-PK SELECT projecting the read-side
+     * {@code __discriminator__} (plus the unified participant field set and discriminator-gated
+     * cross-table {@code LEFT JOIN}s), and lets the per-{@code TableInterfaceType} {@code TypeResolver}
+     * route each row off the live discriminator value.
+     *
+     * <p>Carries the same read-side single-table discrimination data as
+     * {@link QueryTableInterfaceField} ({@code returnType} over the shared {@code @table},
+     * {@code discriminatorColumn}, {@code knownDiscriminatorValues}, {@code participants} of
+     * {@link ParticipantRef.TableBound} with non-null {@code discriminatorValue}) plus the service
+     * binding. The payload is a raw {@code Record} / {@code List<Record>}, so {@link #domainReturnType()}
+     * is {@link DomainReturnType.Plain} over {@code Object}, exactly as route (a)'s variant.
+     */
+    record QueryServiceTableInterfaceField(
+        String parentTypeName,
+        String name,
+        SourceLocation location,
+        ReturnTypeRef.TableBoundReturnType returnType,
+        String discriminatorColumn,
+        List<String> knownDiscriminatorValues,
+        List<ParticipantRef> participants,
+        ServiceMethodCall serviceMethodCall,
+        Optional<ErrorChannel> errorChannel
+    ) implements QueryField, ServiceField, WithErrorChannel {
+        public QueryServiceTableInterfaceField {
+            knownDiscriminatorValues = List.copyOf(knownDiscriminatorValues);
             participants = List.copyOf(participants);
         }
         @Override public DomainReturnType domainReturnType() {

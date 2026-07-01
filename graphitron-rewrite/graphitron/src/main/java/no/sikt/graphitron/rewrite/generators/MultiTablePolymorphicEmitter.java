@@ -17,6 +17,7 @@ import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.ParticipantRef;
 import no.sikt.graphitron.rewrite.model.QueryField;
+import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
 import no.sikt.graphitron.rewrite.model.ServiceMethodCall;
 import no.sikt.graphitron.rewrite.model.SourceKey;
 import no.sikt.graphitron.rewrite.model.TableRef;
@@ -213,22 +214,7 @@ public final class MultiTablePolymorphicEmitter {
 
         // Normalise the service return into a flat List<Record> in input order. Records that match
         // no participant fall through the dispatch chain below and are skipped.
-        builder.addStatement("$T records = new $T<>()", listOfRecord, ARRAY_LIST);
-        if (isList) {
-            builder.beginControlFlow("if (result != null)");
-            builder.beginControlFlow("for (Object o : result)");
-            builder.addStatement("if (o != null) records.add(($T) o)", RECORD);
-            builder.endControlFlow();
-            builder.endControlFlow();
-        } else {
-            // Route the single value through an Object local so the downcast to Record is never
-            // flagged redundant under -Werror, whatever the method's declared single return type
-            // (Record, a TableRecord subtype, or Object).
-            builder.addStatement("Object single = result");
-            builder.beginControlFlow("if (single != null)");
-            builder.addStatement("records.add(($T) single)", RECORD);
-            builder.endControlFlow();
-        }
+        builder.addCode(buildServiceNormaliseToRecords(isList));
 
         if (participants.isEmpty()) {
             if (isList) {
@@ -307,6 +293,185 @@ public final class MultiTablePolymorphicEmitter {
             b.addStatement("$L(byType.get($S), env, dsl, dispatched)",
                 perTypenameMethodName(fieldName, typeName), typeName);
             b.endControlFlow();
+        }
+        return b.build();
+    }
+
+    /**
+     * Extracted service-call normalise snippet (R405): declares {@code List<Record> records} holding
+     * the service return flattened into input order. Shared by {@link #buildServiceMainFetcher}
+     * (route (a)) and {@link #buildServiceTableInterfaceFetcher} (R405 single-table interface) so the
+     * "call the service, flatten to {@code List<Record>} in input order" logic lives in one place.
+     * The single-value arm routes through an {@code Object} local so the downcast to {@code Record} is
+     * never flagged redundant under {@code -Werror}, whatever the method's declared single return type.
+     */
+    private static CodeBlock buildServiceNormaliseToRecords(boolean isList) {
+        var listOfRecord = ParameterizedTypeName.get(LIST, RECORD);
+        var b = CodeBlock.builder();
+        b.addStatement("$T records = new $T<>()", listOfRecord, ARRAY_LIST);
+        if (isList) {
+            b.beginControlFlow("if (result != null)");
+            b.beginControlFlow("for (Object o : result)");
+            b.addStatement("if (o != null) records.add(($T) o)", RECORD);
+            b.endControlFlow();
+            b.endControlFlow();
+        } else {
+            b.addStatement("Object single = result");
+            b.beginControlFlow("if (single != null)");
+            b.addStatement("records.add(($T) single)", RECORD);
+            b.endControlFlow();
+        }
+        return b.build();
+    }
+
+    /**
+     * R405 entry point: a root {@code @service} field (query or mutation) returning a single-table
+     * discriminated interface ({@code @table @discriminate}). Unlike route (a)
+     * ({@link #emitServiceMethods}), there is no runtime-class dispatch and no per-typename UNION: every
+     * service-returned record is the same shared-table record, so class dispatch cannot tell the
+     * subtypes apart. Instead the single emitted fetcher collects the shared table's PKs off the
+     * service records and runs one by-PK SELECT reusing the read-side single-table discrimination
+     * projection ({@code __discriminator__} + participant fields + discriminator-gated cross-table LEFT
+     * JOINs, via {@link TypeFetcherGenerator#buildTableInterfaceReprojection}); the per-
+     * {@code TableInterfaceType} {@code TypeResolver} routes each row off the live discriminator value.
+     * One method only — the read-side projection and the {@code TypeResolver} are reused verbatim.
+     */
+    public static List<MethodSpec> emitServiceTableInterfaceMethods(
+            TypeFetcherEmissionContext ctx, String fieldName, ServiceMethodCall serviceCall,
+            ReturnTypeRef.TableBoundReturnType returnType, String discriminatorColumn,
+            List<String> knownDiscriminatorValues, List<ParticipantRef> participants,
+            boolean isList, String outputPackage) {
+        return List.of(buildServiceTableInterfaceFetcher(ctx, fieldName, serviceCall, returnType,
+            discriminatorColumn, knownDiscriminatorValues, participants, isList, outputPackage));
+    }
+
+    /**
+     * R405 main (and only) fetcher for the single-table service-interface return. Emits: the service
+     * call + a {@code dsl} local (when the call did not declare one), the normalise-to-{@code records}
+     * snippet, the shared-table local, a by-PK {@code WHERE row(pk…) IN (…)} condition, the reused
+     * read-side re-projection (including the PK columns so the fetched Record carries them), a single
+     * {@code fetch()}, then a by-PK re-map of the fetched rows to input positions.
+     *
+     * <p><b>Drop / null contract</b> (aligned with route (a)'s {@link #buildServiceMainFetcher}): a
+     * service-returned PK that matches no live row, or whose discriminator is not a known participant
+     * value (filtered by the reused discriminator {@code IN} restriction), drops from a list return
+     * (the surviving payload is simply shorter) and yields {@code null} for a single return (surfacing
+     * as a graphql-java non-null violation if the field is non-null). Re-mapping by input position
+     * preserves order among the survivors.
+     */
+    private static MethodSpec buildServiceTableInterfaceFetcher(
+            TypeFetcherEmissionContext ctx, String fieldName, ServiceMethodCall serviceCall,
+            ReturnTypeRef.TableBoundReturnType returnType, String discriminatorColumn,
+            List<String> knownDiscriminatorValues, List<ParticipantRef> participants,
+            boolean isList, String outputPackage) {
+
+        var tableRef = returnType.table();
+        var names = GeneratorUtils.ResolvedTableNames.of(tableRef, returnType.returnTypeName(), outputPackage);
+        var listOfRecord = ParameterizedTypeName.get(LIST, RECORD);
+        var resultOfRecord = ParameterizedTypeName.get(RESULT, RECORD);
+        TypeName valueType = isList ? listOfRecord : RECORD;
+
+        var builder = MethodSpec.methodBuilder(fieldName)
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(syncResultType(valueType))
+            .addParameter(ENV, "env");
+
+        builder.beginControlFlow("try");
+        // Service call: declares `result` and a `dsl` local iff the method binds a DSLContext /
+        // is instance-shaped. The by-PK re-fetch needs `dsl`, so declare one here when it did not.
+        ServiceMethodCallEmitter.emit(serviceCall, outputPackage).forEach(builder::addStatement);
+        if (!ServiceMethodCallEmitter.declaresDslLocal(serviceCall)) {
+            builder.addStatement("$T dsl = $L.getDslContext(env)", DSL_CONTEXT, ctx.graphitronContextCall());
+        }
+        builder.addCode(buildServiceNormaliseToRecords(isList));
+
+        // Shared @table instance for the by-PK re-projection.
+        builder.addCode(GeneratorUtils.declareTableLocal(names, tableRef));
+        String tableLocal = names.tableLocalName();
+
+        // WHERE row(pk…) IN (:servicePks) — row-value IN so single-column and composite PKs are
+        // covered uniformly. `condition` is the base; the reused projection ANDs the discriminator IN.
+        builder.addCode(buildPkInCondition(tableRef, tableLocal));
+
+        // Reuse the read-side discriminator-filter + projection + join assembly, additionally
+        // projecting the shared table's PK columns so the fetched Record carries them for the re-map.
+        builder.addCode(TypeFetcherGenerator.buildTableInterfaceReprojection(ctx, participants,
+            discriminatorColumn, knownDiscriminatorValues, tableRef.primaryKeyColumns(), tableLocal, outputPackage));
+
+        builder.addStatement("$T fetched = step.where(condition).fetch()", resultOfRecord);
+        builder.addCode(buildServiceTableInterfaceRemap(tableRef, tableLocal, isList, valueType));
+
+        builder.addCode(returnSyncSuccess(valueType, "payload"));
+        builder.nextControlFlow("catch ($T e)", Exception.class);
+        builder.addCode(noChannelCatchArm(outputPackage));
+        builder.endControlFlow();
+        return builder.build();
+    }
+
+    /**
+     * R405: emits the by-PK row-value IN condition off the normalised {@code records} list. Builds a
+     * {@code List<RowN>} of the shared table's PK values per service record (input order) and
+     * {@code DSL.row(pkCols).in(pkRows)}. Row-value IN keeps single-column and composite PKs uniform.
+     */
+    private static CodeBlock buildPkInCondition(TableRef tableRef, String tableLocal) {
+        var pkCols = tableRef.primaryKeyColumns();
+        var rowN = ClassName.get("org.jooq", "RowN");
+        var listOfRowN = ParameterizedTypeName.get(LIST, rowN);
+        var b = CodeBlock.builder();
+        b.addStatement("$T pkRows = new $T<>()", listOfRowN, ARRAY_LIST);
+        b.beginControlFlow("for ($T rec : records)", RECORD);
+        var cells = CodeBlock.builder();
+        for (int i = 0; i < pkCols.size(); i++) {
+            if (i > 0) cells.add(", ");
+            cells.add("rec.get($L.$L)", tableLocal, pkCols.get(i).javaName());
+        }
+        b.addStatement("pkRows.add($T.row(new Object[]{$L}))", DSL, cells.build());
+        b.endControlFlow();
+        var lhs = CodeBlock.builder();
+        for (int i = 0; i < pkCols.size(); i++) {
+            if (i > 0) lhs.add(", ");
+            lhs.add("$L.$L", tableLocal, pkCols.get(i).javaName());
+        }
+        b.addStatement("$T condition = $T.row(new $T<?>[]{$L}).in(pkRows)", CONDITION, DSL, FIELD, lhs.build());
+        return b.build();
+    }
+
+    /**
+     * R405: re-maps the fetched rows back to input positions by PK. Builds a {@code Map<List<Object>,
+     * Record>} keyed on the shared table's PK values, then walks the service {@code records} in order,
+     * placing each matched fetched row into the payload at its input position (dropping unmatched PKs
+     * per the drop contract). The by-PK re-map is an internal round-trip detail and does not put null
+     * holes into a list return.
+     */
+    private static CodeBlock buildServiceTableInterfaceRemap(
+            TableRef tableRef, String tableLocal, boolean isList, TypeName valueType) {
+        var pkCols = tableRef.primaryKeyColumns();
+        var arrays = ClassName.get("java.util", "Arrays");
+        var listOfObject = ParameterizedTypeName.get(LIST, ClassName.get(Object.class));
+        var mapType = ParameterizedTypeName.get(MAP, listOfObject, RECORD);
+        java.util.function.Function<String, CodeBlock> keyOf = recVar -> {
+            var k = CodeBlock.builder().add("$T.<$T>asList(", arrays, Object.class);
+            for (int i = 0; i < pkCols.size(); i++) {
+                if (i > 0) k.add(", ");
+                k.add("$L.get($L.$L)", recVar, tableLocal, pkCols.get(i).javaName());
+            }
+            k.add(")");
+            return k.build();
+        };
+        var b = CodeBlock.builder();
+        b.addStatement("$T byPk = new $T<>()", mapType, LINKED_HASH_MAP);
+        b.beginControlFlow("for ($T r : fetched)", RECORD);
+        b.addStatement("byPk.put($L, r)", keyOf.apply("r"));
+        b.endControlFlow();
+        if (isList) {
+            b.addStatement("$T payload = new $T<>()", valueType, ARRAY_LIST);
+            b.beginControlFlow("for ($T rec : records)", RECORD);
+            b.addStatement("$T match = byPk.get($L)", RECORD, keyOf.apply("rec"));
+            b.addStatement("if (match != null) payload.add(match)");
+            b.endControlFlow();
+        } else {
+            b.addStatement("$T payload = records.isEmpty() ? null : byPk.get($L)",
+                RECORD, keyOf.apply("records.get(0)"));
         }
         return b.build();
     }

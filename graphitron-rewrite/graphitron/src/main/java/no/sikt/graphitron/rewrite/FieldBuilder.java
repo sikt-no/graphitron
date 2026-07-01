@@ -3571,22 +3571,6 @@ class FieldBuilder {
             + "') is not supported"));
     }
 
-    /**
-     * A {@code @service} returning a single-table discriminated interface ({@code TableInterfaceType}:
-     * {@code @table @discriminate}) resolves to the table-bound service path, which auto-fetches by PK
-     * but emits no per-row discriminator dispatch, so it cannot set the right {@code __typename} per
-     * row. Reject as deferred (no backlog item) rather than silently misclassify the rows; route (a)
-     * supports distinct-table multitable-interface returns only.
-     */
-    private GraphitronField deferServiceTableInterface(String parentTypeName, String name,
-            SourceLocation location, GraphQLFieldDefinition fieldDef, String returnTypeName) {
-        return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.deferred(
-            "@service returning a single-table discriminated interface ('" + returnTypeName
-            + "', @table @discriminate) is not yet supported — the service path emits no per-row"
-            + " discriminator dispatch; use a distinct-table multitable interface, or split the type",
-            ""));
-    }
-
     private GraphitronField classifyQueryField(GraphQLFieldDefinition fieldDef, String parentTypeName) {
         String name = fieldDef.getName();
         SourceLocation location = locationOf(fieldDef);
@@ -3602,8 +3586,14 @@ class FieldBuilder {
                     new UnclassifiedField(parentTypeName, name, location, fieldDef, r.rejection());
                 case ServiceDirectiveResolver.Resolved.ErrorsLifted e -> e.field();
                 case ServiceDirectiveResolver.Resolved.TableBound tb -> {
-                    if (typeBuilder.lookAheadVerdict(tb.returnType().returnTypeName()) instanceof TableInterfaceType) {
-                        yield deferServiceTableInterface(parentTypeName, name, location, fieldDef, tb.returnType().returnTypeName());
+                    // R405: a @service returning a single-table discriminated interface
+                    // (TableInterfaceType) resolves through this table-bound arm (a TableInterfaceType
+                    // is a TableBackedType). Build the single-table service-interface variant carrying
+                    // the read-side discrimination data straight off the verdict, rather than deferring.
+                    if (typeBuilder.lookAheadVerdict(tb.returnType().returnTypeName()) instanceof TableInterfaceType tit) {
+                        yield buildServiceField(tb.returnType(), tb.method(), parentTypeName, name, location, fieldDef, (ch, smc) ->
+                            new QueryField.QueryServiceTableInterfaceField(parentTypeName, name, location, tb.returnType(),
+                                tit.discriminatorColumn(), knownDiscriminatorValues(tit), tit.participants(), smc, ch));
                     }
                     yield buildServiceField(tb.returnType(), tb.method(), parentTypeName, name, location, fieldDef, (ch, smc) ->
                         new QueryField.QueryServiceTableField(parentTypeName, name, location, tb.returnType(), smc, ch));
@@ -3781,8 +3771,12 @@ class FieldBuilder {
                     new UnclassifiedField(parentTypeName, name, location, fieldDef, r.rejection());
                 case ServiceDirectiveResolver.Resolved.ErrorsLifted e -> e.field();
                 case ServiceDirectiveResolver.Resolved.TableBound tb -> {
-                    if (typeBuilder.lookAheadVerdict(tb.returnType().returnTypeName()) instanceof TableInterfaceType) {
-                        yield deferServiceTableInterface(parentTypeName, name, location, fieldDef, tb.returnType().returnTypeName());
+                    // R405: single-table discriminated interface return on the @service mutation path,
+                    // the mutation twin of the query arm above.
+                    if (typeBuilder.lookAheadVerdict(tb.returnType().returnTypeName()) instanceof TableInterfaceType tit) {
+                        yield buildServiceField(tb.returnType(), tb.method(), parentTypeName, name, location, fieldDef, (ch, smc) ->
+                            new MutationField.MutationServiceTableInterfaceField(parentTypeName, name, location, tb.returnType(),
+                                tit.discriminatorColumn(), knownDiscriminatorValues(tit), tit.participants(), smc, ch));
                     }
                     yield buildServiceField(tb.returnType(), tb.method(), parentTypeName, name, location, fieldDef, (ch, smc) ->
                         new MutationField.MutationServiceTableField(parentTypeName, name, location, tb.returnType(), smc, ch));

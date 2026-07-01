@@ -1,7 +1,7 @@
 ---
 id: R405
 title: "Support single-table discriminated interface as a @service polymorphic return"
-status: Ready
+status: In Review
 bucket: feature
 priority: 5
 theme: interface-union

@@ -384,6 +384,16 @@ public final class CatalogBuilder {
                     false,
                     null,
                     errorChannelName(f.errorChannel()));
+            case QueryField.QueryServiceTableInterfaceField f ->
+                // R405: a @service field returning a single-table discriminated interface. Like route
+                // (a), the @service nature is the salient hover fact; the shared @table is reported as
+                // the target so hover names the backing table.
+                new FieldClassification.QueryService(
+                    f.serviceMethodCall().fqClassName(),
+                    f.serviceMethodCall().methodName(),
+                    true,
+                    targetTableName(f.returnType()),
+                    errorChannelName(f.errorChannel()));
 
             // --- MutationField permits ---
             case MutationField.MutationInsertTableField f -> dmlMutation(f.tableInputArg(), no.sikt.graphitron.rewrite.model.DmlKind.INSERT, f.errorChannel());
@@ -426,6 +436,15 @@ public final class CatalogBuilder {
                     f.serviceMethodCall().methodName(),
                     false,
                     null,
+                    errorChannelName(f.errorChannel()));
+            case MutationField.MutationServiceTableInterfaceField f ->
+                // R405: mutation analogue of QueryServiceTableInterfaceField; reports the shared @table.
+                new FieldClassification.MutationService(
+                    f.serviceMethodCall().fqClassName(),
+                    f.serviceMethodCall().methodName(),
+                    true,
+                    f.returnType() != null && f.returnType().table() != null
+                        ? f.returnType().table().tableName() : null,
                     errorChannelName(f.errorChannel()));
             case MutationField.MutationDmlRecordField f ->
                 new FieldClassification.DmlRecord(
