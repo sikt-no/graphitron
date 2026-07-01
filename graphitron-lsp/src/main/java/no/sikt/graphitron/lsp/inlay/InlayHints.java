@@ -20,6 +20,8 @@ import org.eclipse.lsp4j.Range;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.DIRECTIVE;
 import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.DIRECTIVES;
@@ -52,6 +54,39 @@ import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.NAME;
 public final class InlayHints {
 
     private InlayHints() {}
+
+    /**
+     * Renderer for the present-directive inlay arm: emits the inferred canonical
+     * argument as a ghost annotation on a directive that omitted it. One per
+     * {@link InferredDirectiveArgs.Entry}, registered by directive name in
+     * {@link #INFERRED_RENDERERS}.
+     */
+    @FunctionalInterface
+    private interface InferredDirectiveRenderer {
+        void render(List<InlayHint> out, WorkspaceFile file, LspSchemaSnapshot.Built built,
+                    Directives.Directive directive, String canonicalArgName);
+    }
+
+    /**
+     * Registry pairing each inferred-directive entry with its present-arm renderer,
+     * keyed by directive name. R347 Slice 3 replaced the {@code switch(directiveName)}
+     * whose {@code default} silently dropped any {@link InferredDirectiveArgs.Entry}
+     * without a renderer; {@code InlayHintRendererCoverageTest} now fails the build
+     * when an entry has no matching key here, the LSP-side mirror of the catalog's
+     * sealed {@code AbsentArm}. The renderers stay LSP-side because they need
+     * {@link WorkspaceFile} / {@link LspSchemaSnapshot.Built} context the catalog
+     * {@code Entry} cannot carry.
+     */
+    private static final Map<String, InferredDirectiveRenderer> INFERRED_RENDERERS = Map.of(
+        "table", InlayHints::renderInferredTableNameHint,
+        "field", InlayHints::renderInferredFieldNameHint,
+        "reference", InlayHints::renderInferredReferencePathHint
+    );
+
+    /** Directive names with a registered present-arm renderer; the coverage-test oracle. */
+    public static Set<String> renderedInferredDirectives() {
+        return INFERRED_RENDERERS.keySet();
+    }
 
     public static List<InlayHint> compute(
         InlayHintConfig config, WorkspaceFile file, LspSchemaSnapshot snapshot, Range visibleRange
@@ -133,11 +168,11 @@ public final class InlayHints {
             // arg to check, the directive name tells the renderer which projection to read.
             var entry = InferredDirectiveArgs.findByDirective(directiveName).orElse(null);
             if (entry == null) continue;
-            switch (entry.directiveName()) {
-                case "table" -> renderInferredTableNameHint(out, file, built, directive, entry.argName());
-                case "field" -> renderInferredFieldNameHint(out, file, built, directive, entry.argName());
-                case "reference" -> renderInferredReferencePathHint(out, file, built, directive, entry.argName());
-                default -> { /* future inference rule landed in InferredDirectiveArgs without a renderer */ }
+            var renderer = INFERRED_RENDERERS.get(entry.directiveName());
+            // Completeness is asserted by InlayHintRendererCoverageTest, not by a
+            // silent default arm; the guard is the belt to that test's suspenders.
+            if (renderer != null) {
+                renderer.render(out, file, built, directive, entry.argName());
             }
         }
         collectAbsentDirectiveHints(out, file, built, root, visibleRange);

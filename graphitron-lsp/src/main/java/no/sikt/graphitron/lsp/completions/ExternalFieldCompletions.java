@@ -7,8 +7,6 @@ import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import io.github.treesitter.jtreesitter.Point;
 import org.eclipse.lsp4j.CompletionItem;
 import org.eclipse.lsp4j.CompletionItemKind;
-import org.eclipse.lsp4j.TextEdit;
-import org.eclipse.lsp4j.jsonrpc.messages.Either;
 
 import java.util.List;
 import java.util.Optional;
@@ -80,23 +78,8 @@ public final class ExternalFieldCompletions {
     }
 
     private static CompletionItem toCompletionItem(CompletionData.Method method, CompletionContext context) {
-        var item = new CompletionItem(method.name());
-        item.setKind(CompletionItemKind.Method);
-        item.setDetail(formatSignature(method));
-        item.setTextEdit(Either.forLeft(new TextEdit(context.replaceRange(), method.name())));
-        return item;
-    }
-
-    private static String formatSignature(CompletionData.Method method) {
-        var sb = new StringBuilder();
-        sb.append(method.returnType()).append(' ').append(method.name()).append('(');
-        for (int i = 0; i < method.parameters().size(); i++) {
-            if (i > 0) sb.append(", ");
-            var p = method.parameters().get(i);
-            sb.append(p.type()).append(' ')
-                .append(p.name() != null ? p.name() : "arg" + i);
-        }
-        sb.append(')');
-        return sb.toString();
+        return CompletionItems.replacing(
+            method.name(), CompletionItemKind.Method, context.replaceRange(),
+            CompletionItems.formatSignature(method));
     }
 }

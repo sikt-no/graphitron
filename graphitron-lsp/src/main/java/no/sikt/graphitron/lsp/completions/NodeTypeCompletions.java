@@ -5,8 +5,6 @@ import no.sikt.graphitron.lsp.parsing.LspVocabulary;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import org.eclipse.lsp4j.CompletionItem;
 import org.eclipse.lsp4j.CompletionItemKind;
-import org.eclipse.lsp4j.TextEdit;
-import org.eclipse.lsp4j.jsonrpc.messages.Either;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -44,11 +42,7 @@ public final class NodeTypeCompletions {
     private static CompletionItem toCompletionItem(
         String typeName, CompletionData.NodeMetadata meta, CompletionContext context
     ) {
-        var item = new CompletionItem(typeName);
-        item.setKind(CompletionItemKind.Class);
         String detail = meta.typeId() != null ? "typeId: " + meta.typeId() : "@node";
-        item.setDetail(detail);
-        item.setTextEdit(Either.forLeft(new TextEdit(context.replaceRange(), typeName)));
-        return item;
+        return CompletionItems.replacing(typeName, CompletionItemKind.Class, context.replaceRange(), detail);
     }
 }

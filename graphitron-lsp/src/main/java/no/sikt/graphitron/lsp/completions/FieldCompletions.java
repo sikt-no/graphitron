@@ -15,7 +15,6 @@ import org.eclipse.lsp4j.CompletionItem;
 import org.eclipse.lsp4j.CompletionItemKind;
 import org.eclipse.lsp4j.MarkupContent;
 import org.eclipse.lsp4j.MarkupKind;
-import org.eclipse.lsp4j.TextEdit;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
 
 import java.util.List;
@@ -130,12 +129,10 @@ public final class FieldCompletions {
     }
 
     private static CompletionItem sourceSigilItem(CompletionContext context) {
-        var item = new CompletionItem(no.sikt.graphitron.rewrite.FieldSourceSigil.UPSTREAM_ROOT_LITERAL);
-        item.setKind(CompletionItemKind.Keyword);
-        item.setDetail("Root-value sigil — bind to the upstream Java value as a whole (R159)");
-        item.setTextEdit(Either.forLeft(new TextEdit(context.replaceRange(),
-            no.sikt.graphitron.rewrite.FieldSourceSigil.UPSTREAM_ROOT_LITERAL)));
-        return item;
+        return CompletionItems.replacing(
+            no.sikt.graphitron.rewrite.FieldSourceSigil.UPSTREAM_ROOT_LITERAL,
+            CompletionItemKind.Keyword, context.replaceRange(),
+            "Root-value sigil — bind to the upstream Java value as a whole (R159)");
     }
 
     private static List<CompletionItem> tableColumnItems(
@@ -158,24 +155,20 @@ public final class FieldCompletions {
         CompletionData.Table table, CompletionData.Column column,
         CompletionContext context, SourceWalker.Index sourceIndex
     ) {
-        var item = new CompletionItem(column.name());
-        item.setKind(CompletionItemKind.Field);
+        var item = CompletionItems.replacing(
+            column.name(), CompletionItemKind.Field, context.replaceRange(),
+            column.graphqlType() + (column.nullable() ? " (nullable)" : ""));
         String description = Descriptions.ofColumn(table, column, sourceIndex);
         if (!description.isEmpty()) {
             item.setDocumentation(Either.forRight(
                 new MarkupContent(MarkupKind.PLAINTEXT, description)
             ));
         }
-        item.setDetail(column.graphqlType() + (column.nullable() ? " (nullable)" : ""));
-        item.setTextEdit(Either.forLeft(new TextEdit(context.replaceRange(), column.name())));
         return item;
     }
 
     private static CompletionItem toMemberSlotItem(TypeBackingShape.MemberSlot slot, CompletionContext context) {
-        var item = new CompletionItem(slot.name());
-        item.setKind(CompletionItemKind.Field);
-        item.setDetail(slot.displayType());
-        item.setTextEdit(Either.forLeft(new TextEdit(context.replaceRange(), slot.name())));
-        return item;
+        return CompletionItems.replacing(
+            slot.name(), CompletionItemKind.Field, context.replaceRange(), slot.displayType());
     }
 }

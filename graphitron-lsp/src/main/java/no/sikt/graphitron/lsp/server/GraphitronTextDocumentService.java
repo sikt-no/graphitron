@@ -1,17 +1,7 @@
 package no.sikt.graphitron.lsp.server;
 
 import no.sikt.graphitron.lsp.code_action.CodeActions;
-import no.sikt.graphitron.lsp.completions.ArgMappingCompletions;
-import no.sikt.graphitron.lsp.completions.ArgNameCompletions;
-import no.sikt.graphitron.lsp.completions.ClassNameCompletions;
-import no.sikt.graphitron.lsp.completions.CompletionContext;
-import no.sikt.graphitron.lsp.completions.ExternalFieldCompletions;
-import no.sikt.graphitron.lsp.completions.FieldCompletions;
-import no.sikt.graphitron.lsp.completions.MethodCompletions;
-import no.sikt.graphitron.lsp.completions.NodeTypeCompletions;
-import no.sikt.graphitron.lsp.completions.ReferenceCompletions;
-import no.sikt.graphitron.lsp.completions.ScalarTypeCompletions;
-import no.sikt.graphitron.lsp.completions.TableCompletions;
+import no.sikt.graphitron.lsp.completions.Completions;
 import no.sikt.graphitron.lsp.definition.DeclarationDefinitions;
 import no.sikt.graphitron.lsp.definition.Definitions;
 import no.sikt.graphitron.lsp.definition.IntraSchemaDefinitions;
@@ -181,67 +171,6 @@ public class GraphitronTextDocumentService implements TextDocumentService {
         });
     }
 
-    /**
-     * Single-walk dispatch: {@link no.sikt.graphitron.lsp.parsing.LspVocabulary#locateAt}
-     * runs once for the cursor and the coordinate-driven providers each
-     * pattern-match on the behavior arm of the resulting coordinate. The
-     * first non-empty list wins; behaviors are mutually exclusive at any
-     * one coordinate so the order is incidental. Locating produces a
-     * {@link CompletionContext} carrying the replace range so every value
-     * item ships an explicit {@code TextEdit} (R153 — clients otherwise
-     * apply per-client word-boundary heuristics to dotted candidates).
-     *
-     * <p>When {@code locateAt} is empty (cursor outside any directive
-     * arg's value, on the arg-name side, or on whitespace inside an
-     * {@code object_value}), the value providers are skipped entirely
-     * and dispatch falls straight through to
-     * {@link ArgNameCompletions}, which has its own walk for partial
-     * arg-name identifiers and zero-width insertion points.
-     */
-    private static List<CompletionItem> coordinateBasedCompletions(
-        no.sikt.graphitron.lsp.state.Workspace workspace,
-        no.sikt.graphitron.lsp.parsing.Directives.Directive directive,
-        io.github.treesitter.jtreesitter.Point pos,
-        org.eclipse.lsp4j.Position lspPos,
-        byte[] source
-    ) {
-        var data = workspace.catalog();
-        var vocab = workspace.vocabulary();
-        var locationOpt = vocab.locateAt(directive, pos, source);
-        if (locationOpt.isPresent()) {
-            var context = CompletionContext.from(locationOpt.get(), source);
-            var classItems = ClassNameCompletions.generate(vocab, data, context);
-            if (!classItems.isEmpty()) return classItems;
-            // @externalField narrows the method list to Field-returning lifters;
-            // runs ahead of the generic method provider so the narrowed list wins,
-            // and falls through to it when the class exposes no matching method.
-            var externalFieldItems = ExternalFieldCompletions.generate(vocab, data, context, directive, pos, source);
-            if (!externalFieldItems.isEmpty()) return externalFieldItems;
-            var methodItems = MethodCompletions.generate(vocab, data, context, directive, pos, source);
-            if (!methodItems.isEmpty()) return methodItems;
-            var tableItems = TableCompletions.generate(vocab, data, workspace.sourceIndex(), context);
-            if (!tableItems.isEmpty()) return tableItems;
-            var fieldItems = FieldCompletions.generate(vocab, data, workspace.sourceIndex(), workspace.snapshot(), context, directive, source);
-            if (!fieldItems.isEmpty()) return fieldItems;
-            var refItems = ReferenceCompletions.generate(vocab, data, workspace.snapshot(), context, directive, source);
-            if (!refItems.isEmpty()) return refItems;
-            var scalarItems = ScalarTypeCompletions.generate(vocab, data, context, directive, source);
-            if (!scalarItems.isEmpty()) return scalarItems;
-            var nodeTypeItems = NodeTypeCompletions.generate(vocab, data, context);
-            if (!nodeTypeItems.isEmpty()) return nodeTypeItems;
-            var argMappingItems = ArgMappingCompletions.generate(
-                vocab, data, context, directive, pos, lspPos, source);
-            if (!argMappingItems.isEmpty()) return argMappingItems;
-        }
-        // Arg-name fallback: fires both when locateAt is empty (cursor on
-        // arg-name / whitespace) and when locateAt produced no value
-        // matches above. Computes its own range independent of context.
-        var argNameItems = ArgNameCompletions.generate(
-            vocab, workspace.snapshot(), directive, pos, lspPos, source);
-        if (!argNameItems.isEmpty()) return argNameItems;
-        return List.of();
-    }
-
     @Override
     public CompletableFuture<Either<List<CompletionItem>, CompletionList>> completion(CompletionParams params) {
         return CompletableFuture.supplyAsync(() -> {
@@ -258,7 +187,7 @@ public class GraphitronTextDocumentService implements TextDocumentService {
                 return Either.forLeft(List.of());
             }
             var directive = directiveOpt.get();
-            return Either.forLeft(coordinateBasedCompletions(
+            return Either.forLeft(Completions.at(
                 workspace, directive, pos, params.getPosition(), file.source()));
         });
     }

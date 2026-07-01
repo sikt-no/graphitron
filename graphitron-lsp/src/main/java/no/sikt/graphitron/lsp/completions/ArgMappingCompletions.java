@@ -15,8 +15,6 @@ import org.eclipse.lsp4j.CompletionItem;
 import org.eclipse.lsp4j.CompletionItemKind;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
-import org.eclipse.lsp4j.TextEdit;
-import org.eclipse.lsp4j.jsonrpc.messages.Either;
 
 import java.util.List;
 
@@ -68,8 +66,9 @@ public final class ArgMappingCompletions {
         Node leaf = locationOpt.get().leafNode();
         if (!STRING_VALUE.matches(leaf)) return List.of();
 
+        int quote = CompletionContext.openingQuoteLength(source, leaf.getStartByte(), leaf.getEndByte());
+        if (quote == 0) return List.of();
         String raw = Nodes.text(leaf, source);
-        int quote = openingQuoteLength(raw);
         if (raw.length() < quote * 2) return List.of();
         String content = raw.substring(quote, raw.length() - quote);
         int contentStartByte = leaf.getStartByte() + quote;
@@ -98,7 +97,7 @@ public final class ArgMappingCompletions {
         return method.get().parameters().stream()
             .map(CompletionData.Parameter::name)
             .filter(name -> name != null && !name.isEmpty())
-            .map(name -> item(name, CompletionItemKind.Variable, replaceRange))
+            .map(name -> CompletionItems.replacing(name, CompletionItemKind.Variable, replaceRange))
             .toList();
     }
 
@@ -111,15 +110,8 @@ public final class ArgMappingCompletions {
         var fieldDef = TypeContext.enclosingFieldDefinition(directive.outer());
         if (fieldDef.isEmpty()) return List.of();
         return TypeContext.fieldArgumentNames(fieldDef.get(), source).stream()
-            .map(name -> item(name, CompletionItemKind.Field, replaceRange))
+            .map(name -> CompletionItems.replacing(name, CompletionItemKind.Field, replaceRange))
             .toList();
-    }
-
-    private static CompletionItem item(String label, CompletionItemKind kind, Range replaceRange) {
-        var item = new CompletionItem(label);
-        item.setKind(kind);
-        item.setTextEdit(Either.forLeft(new TextEdit(replaceRange, label)));
-        return item;
     }
 
     private static Range rangeFor(byte[] source, int contentStartByte, ArgMapping.Segment token) {
@@ -128,10 +120,5 @@ public final class ArgMappingCompletions {
         return new Range(
             Positions.toLspPosition(source, startByte),
             Positions.toLspPosition(source, endByte));
-    }
-
-    private static int openingQuoteLength(String raw) {
-        if (raw.length() >= 6 && raw.startsWith("\"\"\"") && raw.endsWith("\"\"\"")) return 3;
-        return 1;
     }
 }

@@ -7,7 +7,7 @@ priority: 5
 theme: lsp
 depends-on: []
 created: 2026-06-19
-last-updated: 2026-06-19
+last-updated: 2026-07-01
 ---
 
 # Consolidate graphitron-lsp navigation, dispatch, and result-building
@@ -162,20 +162,38 @@ Learnings / scope vs. the sketch:
   is an LSP-side renderer registry asserted complete by test, which is exactly Slice 3's
   provider-contract shape; moved there.
 
-### Slice 3 — a completion-provider contract
+### Slice 3 — a completion-provider contract — SHIPPED
 
-Introduce a `CompletionProvider` seam keyed on `Behavior` and replace the manual waterfall with a
-registry (a `Map<Class<? extends Behavior>, CompletionProvider>` or a sealed switch). The shared
-behavior-guard that opens nearly every provider moves into the dispatcher; the load-bearing ordering
-becomes data, not a comment. Fold the verbatim `formatSignature` and the `CompletionItem`-build
-idiom into a `CompletionItems` factory and share the quote-length logic on `CompletionContext`.
+Shipped: introduced the `CompletionProvider` functional seam over a shared `CompletionRequest` (the
+union of the ten providers' bespoke argument tuples), and a `Completions` dispatcher whose
+`providersFor(Behavior)` is an exhaustive sealed switch over `Behavior`, replacing the 40-line
+hand-ordered completion waterfall that lived in `GraphitronTextDocumentService`. The load-bearing
+ordering (`@externalField`'s narrowed method list ahead of the generic one) is now the list order in
+that switch, not a comment, and a new `Behavior` arm is a compile error in the switch until it names
+its provider(s). Folded the byte-identical `formatSignature` (two copies) and the
+`new CompletionItem` + `setKind` + `setTextEdit` idiom (ten copies) into a `CompletionItems` factory,
+and hoisted the triple-vs-single quote-delimiter logic to one `CompletionContext.openingQuoteLength`
+shared by the range builder and `ArgMappingCompletions`.
 
-Also retire the `InlayHints.collectInferredDirectiveHints` `switch(entry.directiveName())` (moved
-here from Slice 2): it is the same "registry keyed by directive, asserted complete by test rather
-than a silent `default` arm" shape, the LSP-side mirror of the catalog's sealed `AbsentArm`. The
-present renderers stay LSP-side (they need `WorkspaceFile` / `TypeContext` / the built snapshot); the
-registry pairs each `InferredDirectiveArgs.Entry` with its renderer at one site, and a coverage test
-fails the build when an entry has no renderer (replacing today's silent no-op).
+Retired `InlayHints.collectInferredDirectiveHints`'s `switch(entry.directiveName())` (moved here from
+Slice 2) for a `Map<String, InferredDirectiveRenderer>` registry keyed by directive name; the old
+`default -> {}` that silently dropped an unrendered `InferredDirectiveArgs.Entry` is gone, and
+`InlayHintRendererCoverageTest` now fails the build when an entry has no renderer, the LSP-side mirror
+of the catalog's sealed `AbsentArm`.
+
+Learnings / scope vs. the sketch:
+
+- **Behavior guards stayed in the providers, they did not "move into the dispatcher."** The dispatcher
+  owns provider *selection* by arm (the sealed switch), but each provider keeps its
+  `behaviorAt(coordinate) instanceof …` guard. The deciding constraint was the behaviour oracle: the
+  per-provider unit tests call each `generate(...)` directly and pin the guard (e.g.
+  `ClassNameCompletionsTest.referencePathTopLevelClassNameDoesNotComplete` asserts emptiness that is
+  *the guard's* doing, not the dispatcher's). Moving the guard out would force re-leveling those
+  negative tests to dispatcher-level tests, a behaviour-risking change disproportionate to the win;
+  the retained guard is now a cheap confirm of the arm the switch already selected, and keeps each
+  provider independently unit-testable. The registry adapts the shared `CompletionRequest` to each
+  provider's unchanged `generate(...)` signature via a lambda, so the ten provider APIs and their
+  tests are untouched.
 
 ### Slice 4 — one result-builder
 
