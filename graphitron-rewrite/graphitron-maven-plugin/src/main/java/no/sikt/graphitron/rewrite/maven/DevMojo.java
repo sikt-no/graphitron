@@ -15,6 +15,7 @@ import no.sikt.graphitron.mcp.GraphitronMcpServer;
 import no.sikt.graphitron.mcp.rag.AsyncWarm;
 import no.sikt.graphitron.mcp.rag.Embedder;
 import no.sikt.graphitron.mcp.rag.RagConfig;
+import no.sikt.graphitron.mcp.rag.RagLogQuieting;
 import no.sikt.graphitron.mcp.rag.WarmState;
 import no.sikt.graphitron.mcp.rag.docs.DocsIndex;
 import no.sikt.graphitron.mcp.rag.docs.DocsRag;
@@ -233,6 +234,13 @@ public class DevMojo extends AbstractRewriteMojo {
             throw new MojoExecutionException(
                 "graphitron:dev: failed to bind " + LOOPBACK_HOST + ":" + port, e);
         }
+        // Quiet the RAG warms' non-actionable startup log noise before the warms start (R409). The
+        // warms load the noisy classes (DJL tokenizer, Lucene VectorizationProvider) on their
+        // graphitron-warm-* daemon threads, and thread-start is a happens-before edge, so establishing
+        // the suppression on this dev thread first guarantees it is visible when those threads touch
+        // the loggers. Do not reorder this after the start() calls below. The helper lives in
+        // graphitron-mcp because the logger names are facts about the quarantined RAG dependency set.
+        RagLogQuieting.quietRagWarmLogs(getLog()::info);
         // Start the RAG warms before binding the MCP server so they warm during startup; both run on
         // their own daemon threads and never block the bind (R372 / R118). The shared embedder warm
         // is stood up here so slice 10 can later reuse the same handle rather than loading a second

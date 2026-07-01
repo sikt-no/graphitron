@@ -367,6 +367,41 @@ configuration so the database's own documentation feeds the search; without
 comments, search still works on table and column names alone.
 ____
 
+[#dev-quieting-startup-warnings]
+==== Quieting startup warnings
+
+A clean `mvn graphitron:dev` startup prints a few JVM and library warnings that
+look alarming but are not. They come from three places, and graphitron already
+handles the two that are its to handle:
+
+* *DJL tokenizer* (`maxLength is not explicitly specified, use modelMaxLength:
+  512`) comes from the bundled bge model inside the RAG embedder warm. The model
+  exposes no knob for this, so it carries no action; graphitron silences it for
+  you.
+* *Lucene vector search* (`Java vector incubator module is not readable ... pass
+  '--add-modules jdk.incubator.vector'`) is actionable: that flag both silences
+  the warning and puts semantic search on the faster Vector API path. Graphitron
+  demotes Lucene's multi-line warning and, when the flag is missing, prints one
+  short line pointing you here instead.
+* *Maven-runtime warnings* (jansi `System::load` native-access, guava
+  `sun.misc.Unsafe` deprecation) are printed by the JVM for Maven's own `lib/`
+  jars before any plugin code runs. A plugin running in Maven's JVM cannot
+  un-print them; only launch flags or a newer Maven clear them.
+
+To clear the Vector API warning and the Maven-runtime warnings, add a
+`.mvn/jvm.config` at the root of your consumer project:
+
+----
+--add-modules jdk.incubator.vector
+--enable-native-access=ALL-UNNAMED
+--sun-misc-unsafe-memory-access=allow
+----
+
+Maven reads `.mvn/jvm.config` at launch, so these apply to the whole `dev` JVM.
+The `--add-modules` line also enables the faster vector path for
+`catalog.search` and `docs.search`; the other two only silence the Maven-runtime
+warnings. `MAVEN_OPTS` works too if you prefer not to commit the file.
+
 What the loop does on each schema save:
 
 . Re-runs the generator. Idempotent writes mean only the files whose
