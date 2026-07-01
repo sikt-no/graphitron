@@ -146,7 +146,7 @@ public sealed interface ArgumentRef {
          * columns when those columns positionally match the target's NodeType key columns
          * (the simple direct-FK case); pathological cases where they differ are rejected at
          * classify time with a deferred-emission hint (see
-         * graphitron-rewrite/roadmap/nodeid-fk-target-arg-join-translation.md).
+         * roadmap/nodeid-fk-target-arg-join-translation.md).
          *
          * <p>{@code extraction} narrows to {@link CallSiteExtraction.NodeIdDecodeKeys}: input
          * filters are not contract-violation surfaces, so the failure mode is

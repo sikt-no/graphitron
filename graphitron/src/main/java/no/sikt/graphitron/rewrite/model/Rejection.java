@@ -334,7 +334,7 @@ public sealed interface Rejection permits Rejection.AuthorError, Rejection.Inval
     /**
      * Recognised but not yet generator-supported. {@code summary} is the prose
      * preceding the optional roadmap-path suffix; {@code planSlug} names the
-     * roadmap file under {@code graphitron-rewrite/roadmap/} (no extension), or is
+     * roadmap file under {@code roadmap/} (no extension), or is
      * empty when the deferred message has no associated plan; {@code stubKey}
      * names the variant class or other anchor inside that plan. The render form
      * embeds the plan path verbatim, separator-prefixed by an em-dash; LSP
@@ -349,7 +349,7 @@ public sealed interface Rejection permits Rejection.AuthorError, Rejection.Inval
         @Override public String message() {
             return planSlug.isEmpty()
                 ? summary
-                : summary + " — see graphitron-rewrite/roadmap/" + planSlug + ".md";
+                : summary + " — see roadmap/" + planSlug + ".md";
         }
 
         @Override public Rejection prefixedWith(String prefix) {
@@ -440,7 +440,7 @@ public sealed interface Rejection permits Rejection.AuthorError, Rejection.Inval
     /**
      * {@link Deferred} factory keyed on a stubbed variant class, with optional roadmap slug and
      * optional variant-class anchor. {@code planSlug} is the file basename under
-     * {@code graphitron-rewrite/roadmap/} (no extension) or empty when the deferred message has
+     * {@code roadmap/} (no extension) or empty when the deferred message has
      * no associated plan; {@code fieldClass} is {@code null} when the rejection names a feature
      * shape rather than a stubbed leaf class.
      */

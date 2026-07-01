@@ -2141,7 +2141,7 @@ class BuildContext {
         // @field(name: "X_ID") fields are intercepted before the case-insensitive column match
         // would shadow the qualifier reverse-map. The shim routes to the same column-shaped
         // carriers as the canonical [ID!] @nodeId(typeName: T) branch above. Retirement plan:
-        // graphitron-rewrite/roadmap/retire-synthesis-shims.md.
+        // roadmap/retire-synthesis-shims.md.
         if ("ID".equals(typeName)
                 && !field.hasAppliedDirective(DIR_NODE_ID)
                 && !field.hasAppliedDirective(DIR_REFERENCE)) {
@@ -2170,7 +2170,7 @@ class BuildContext {
                         "input field '{}.{}' synthesizes a NodeId reference from qualifier '{}'"
                         + " (FK '{}'); replace the legacy form with {} to drop the synthesis shim."
                         + " The shim will be removed in a future release;"
-                        + " see graphitron-rewrite/roadmap/retire-id-reference-synthesis-shim.md",
+                        + " see roadmap/retire-id-reference-synthesis-shim.md",
                         parentTypeName, name, qualifier, shimFkName, canonical);
                     Optional<ArgConditionRef> shimRefCond = buildInputFieldCondition(field, name, errors);
                     var shimFkOpt = catalog.findForeignKey(shimFkName);
@@ -2231,14 +2231,14 @@ class BuildContext {
         // carries node-identity metadata (__NODE_TYPE_ID / __NODE_KEY_COLUMNS constants emitted
         // by KjerneJooqGenerator). Fires a per-site deprecation diagnostic; the canonical form is
         // to declare @nodeId explicitly, which routes through the bare-@nodeId branch above. See
-        // graphitron-rewrite/roadmap/retire-synthesis-shims.md.
+        // roadmap/retire-synthesis-shims.md.
         if ("ID".equals(typeName) && !list && !field.hasAppliedDirective(DIR_NODE_ID)) {
             Optional<JooqCatalog.NodeIdMetadata> nodeIdMeta = catalog.nodeIdMetadata(tableName);
             if (nodeIdMeta.isPresent()) {
                 NODE_ID_SHIM_LOGGER.warn("input field '{}.{}' synthesizes a NodeId-decoded column"
                     + " without '@nodeId'; declare the directive explicitly. The synthesis shim"
                     + " will be removed in a future release."
-                    + " See graphitron-rewrite/roadmap/retire-synthesis-shims.md",
+                    + " See roadmap/retire-synthesis-shims.md",
                     parentTypeName, name);
                 // Arity-1 lands on InputField.ColumnField with extraction =
                 // NodeIdDecodeKeys.SkipMismatchedElement; arity > 1 lands on
@@ -2423,7 +2423,7 @@ class BuildContext {
      *   <li>No {@code @node} backs it (orphan-input / synthesis-shim case): fall back to the
      *       metadata's {@code typeId} as the helper suffix. Only reachable through the synthesis
      *       shim, on a retirement track (see
-     *       graphitron-rewrite/roadmap/retire-synthesis-shims.md).</li>
+     *       roadmap/retire-synthesis-shims.md).</li>
      * </ul>
      *
      * <p>Pre-R377 this routed through {@code findGraphQLTypeForTable}, an all-{@code @table} index,
@@ -2455,7 +2455,7 @@ class BuildContext {
         // No @node backs this table (orphan-input / synthesis-shim case: an `input Foo @table(...)`
         // with catalog NodeId metadata but no @node SDL type). Fall back to the metadata's typeId as
         // the helper suffix; only reachable through the synthesis shim, on a retirement track (see
-        // graphitron-rewrite/roadmap/retire-synthesis-shims.md).
+        // roadmap/retire-synthesis-shims.md).
         if (fallbackTypeId == null || fallbackTypeId.isBlank()) return null;
         var encoderClass = no.sikt.graphitron.javapoet.ClassName.get(
             ctx.outputPackage() + ".util",

@@ -22,7 +22,7 @@ sandbox to a buildable state. Each step is idempotent and no-ops on local develo
 - **Brings up PostgreSQL for `-Plocal-db`.** Starts the cluster, sets the `postgres`/`postgres`
   password (JDBC connects over 127.0.0.1 with scram-sha-256, while `sudo -u postgres` uses peer
   auth), and creates + seeds the `rewrite_test` database from
-  `graphitron-rewrite/graphitron-sakila-db/src/main/resources/init.sql`.
+  `graphitron-sakila-db/src/main/resources/init.sql`.
 - **Clears a stale Maven proxy.** Replaces `~/.m2/settings.xml` with an empty settings file if it
   still carries the legacy `21.0.0.129` proxy that blocks Maven Central.
 - **Builds libtree-sitter `0.26.9`.** `graphitron-lsp`'s jtreesitter 0.26 resolves runtime symbols
@@ -37,42 +37,26 @@ Each step prints a one-line status message on success or failure. If a step fail
 by hand (`.claude/scripts/session-start-web-env.sh`) or apply that step manually from its description
 above.
 
-## Building graphitron-rewrite
+## Building the reactor
 
-The rewrite aggregator builds standalone from `graphitron-rewrite/pom.xml`; no
-legacy module (`graphitron-common`, `graphitron-java-codegen`,
-`graphitron-maven-plugin`, `graphitron-schema-transform`) needs to exist in the
-local repo first. Run commands from the repository root:
+The reactor builds from the root `pom.xml`. Run commands from the repository root:
 
 ```bash
-# 1. Build the full rewrite aggregator (javapoet, rewrite, sakila-db, sakila-service, maven, sakila-example, ...).
+# 1. Build the full reactor (javapoet, graphitron, sakila-db, sakila-service, mcp, jakarta-rest, maven-plugin, sakila-example, ...).
 #    -Plocal-db switches jooq codegen in graphitron-sakila-db from TestContainers to native Postgres.
-mvn install -f graphitron-rewrite/pom.xml -Plocal-db
+mvn install -Plocal-db
 
 # 2. Unit and structural tests for graphitron (no DB needed)
-mvn test -f graphitron-rewrite/pom.xml -pl :graphitron
+mvn test -pl :graphitron
 
 # 3. Compilation test: generated code compiles against real jOOQ classes
-mvn compile -f graphitron-rewrite/pom.xml -pl :graphitron-sakila-example -Plocal-db
+mvn compile -pl :graphitron-sakila-example -Plocal-db
 
 # 4. Execution tests: generated code runs against native PostgreSQL
-mvn test -f graphitron-rewrite/pom.xml -pl :graphitron-sakila-example -Plocal-db
+mvn test -pl :graphitron-sakila-example -Plocal-db
 ```
 
-For what each tier asserts, where its files live, and the `@UnitTier` / `@PipelineTier` / `@CompilationTier` / `@ExecutionTier` meta-annotations, see [`graphitron-rewrite/docs/testing.adoc`](../graphitron-rewrite/docs/testing.adoc).
-
-To verify the aggregator stays standalone (no legacy artifact leaks into the
-build):
-
-```bash
-graphitron-rewrite/scripts/verify-standalone-build.sh -Plocal-db
-```
-
-Runs `mvn install` against a fresh empty local repo and fails if any
-`no.sikt:graphitron-common`, `graphitron-java-codegen`,
-`graphitron-maven-plugin`, or `graphitron-schema-transform` artifact is
-resolved. The rewrite tree publishes its own `graphitron-javapoet` at the
-rewrite version (10-SNAPSHOT), distinct from the legacy 9-SNAPSHOT coord.
+For what each tier asserts, where its files live, and the `@UnitTier` / `@PipelineTier` / `@CompilationTier` / `@ExecutionTier` meta-annotations, see [`docs/architecture/how-to/testing.adoc`](../docs/architecture/how-to/testing.adoc).
 
 ### Notes
 
@@ -82,9 +66,6 @@ rewrite version (10-SNAPSHOT), distinct from the legacy 9-SNAPSHOT coord.
 - Maven is at `/opt/maven/bin/mvn`; the SessionStart hook ensures Java 25 is the
   default JVM (see [Automatic setup](#automatic-setup-sessionstart-hook)). The parent
   pom's enforcer rule fails fast with a clear message if the JVM is older than 25.
-- The legacy repo-root `mvn install` still works as before, but it no longer
-  builds the rewrite tree (dropped from the root reactor as part of the
-  aggregator-standalone work).
 
 ## Catalog-jar clobber — symptoms and recovery
 

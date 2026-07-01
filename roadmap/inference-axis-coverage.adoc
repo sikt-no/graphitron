@@ -7,8 +7,8 @@ To regenerate the report locally for inspection (overwrites this file in your wo
 
 [source,shell]
 ----
-mvn -f graphitron-rewrite/pom.xml -pl roadmap-tool exec:java \
-  -Dexec.args='leaf-coverage graphitron-rewrite' -Pleaf-coverage
+mvn -pl roadmap-tool exec:java \
+  -Dexec.args='leaf-coverage .' -Pleaf-coverage
 ----
 
 The `-Pleaf-coverage` flag is a no-op today (the profile is active by default) and becomes load-bearing once the opt-in flip (R133) ships; leaving it on the command line keeps the instruction current across both.

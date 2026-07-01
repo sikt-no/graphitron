@@ -49,7 +49,7 @@ class FederationRecipeDiagnosticTest {
                     assertThat(recipeError.message()).contains("@key");
                     assertThat(recipeError.message()).contains("@link");
                     assertThat(recipeError.message()).contains(
-                            "getting-started.adoc#build-time-federation-directives");
+                            "docs/manual/how-to/apollo-federation.adoc");
                 });
     }
 

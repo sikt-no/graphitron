@@ -9,7 +9,7 @@ import java.util.stream.Collectors;
  * {@code relatedInformation} need; downstream tooling switches on the arm rather than parsing
  * prose.
  *
- * <p>The arm-to-code mapping (see {@code graphitron-rewrite/roadmap/methodcall-walker-carrier.md}'s
+ * <p>The arm-to-code mapping (see {@code roadmap/methodcall-walker-carrier.md}'s
  * LSP wire conventions table) is exposed via {@link #lspCode()} so the orchestrator can project
  * a typed error to a {@link Diagnostic} without a separate dispatch table.
  *

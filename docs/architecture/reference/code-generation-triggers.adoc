@@ -602,7 +602,7 @@ Not all classification requires directives. The builder also classifies based on
 
 == Source Map
 
-All source lives under `graphitron-rewrite/graphitron/src/main/java/no/sikt/graphitron/rewrite/`. Each file has Javadoc documenting its variants and record components.
+All source lives under `graphitron/src/main/java/no/sikt/graphitron/rewrite/`. Each file has Javadoc documenting its variants and record components.
 
 === Model (`model/`)
 
@@ -658,11 +658,11 @@ Four families, by what they emit. The Generators package holds emitter helpers (
 
 === Directives
 
-- *SDL definitions*: `graphitron-rewrite/graphitron/src/main/resources/no/sikt/graphitron/rewrite/schema/directives.graphqls`. `RewriteSchemaLoader` auto-injects this file into the merged schema.
+- *SDL definitions*: `graphitron/src/main/resources/no/sikt/graphitron/rewrite/schema/directives.graphqls`. `RewriteSchemaLoader` auto-injects this file into the merged schema.
 - *Directive reference with examples*: see the directive reference under `docs/manual/reference/directives/` (rendered at the published manual). For the contributor-facing chapter consolidating runtime extension points and the typed-rejection narrative, see xref:runtime-extension-points.adoc[Runtime Extension Points] and xref:../explanation/typed-rejection.adoc[Typed rejection]; this Source Map is the canonical reference for what each generator emits.
 
 '''
 
 *See also:*
 - xref:../explanation/rewrite-design-principles.adoc[Rewrite Design Principles] ; architectural and technical principles for the rewrite pipeline
-- link:https://github.com/sikt-no/graphitron/tree/claude/graphitron-rewrite/graphitron-rewrite/roadmap[Rewrite Roadmap] ; remaining generator work
+- link:https://github.com/sikt-no/graphitron/tree/claude/graphitron-rewrite/roadmap[Rewrite Roadmap] ; remaining generator work

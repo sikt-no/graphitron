@@ -44,7 +44,7 @@ The choice is semantic, not structural:
 
 The rewrite doesn't pick a side: a class-backed payload whose canonical constructor declares a parameter typed `List<? super FilmError>` (or `List<SimpleError>`) is recognised either way. The classifier reflects on the canonical constructor and locates the unique parameterised `List`/`Iterable`/`Collection` slot whose element bound is compatible with every channel error type.
 
-The Sakila example schema currently has no `@error` types; the canonical fixtures live in `/home/user/graphitron/graphitron-rewrite/graphitron/src/test/java/no/sikt/graphitron/rewrite/ErrorChannelClassificationTest.java` (alongside the synthetic `SakPayload` record at `no.sikt.graphitron.codereferences.dummyreferences.SakPayload`). When you wire your first error channel, that test class's setup is the right shape to copy.
+The Sakila example schema currently has no `@error` types; the canonical fixtures live in `graphitron/src/test/java/no/sikt/graphitron/rewrite/ErrorChannelClassificationTest.java` (alongside the synthetic `SakPayload` record at `no.sikt.graphitron.codereferences.dummyreferences.SakPayload`). When you wire your first error channel, that test class's setup is the right shape to copy.
 
 == Handler dispatch: source order, cause-chain unwrap
 

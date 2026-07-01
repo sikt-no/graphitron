@@ -51,7 +51,7 @@ grammar was built against" and the runtime was a system dependency. From
 
 ## Cutting a new release
 
-See `graphitron-rewrite/docs/tree-sitter-natives-release.adoc` for the
+See `docs/architecture/how-to/release-natives.adoc` for the
 human-driven release procedure. The short version: bump the version in
 `pom.xml`, push, manually trigger
 `.github/workflows/tree-sitter-natives-release.yml` from the GitHub
@@ -109,7 +109,7 @@ cadence to the next 10.x rewrite release. The standalone shape costs the
 inlined release plumbing (gpg, central-publishing, source, javadoc,
 deploy) in `pom.xml` and decouples the cadence entirely. The parent's
 `<modules>` list does not include this module either, so the regular
-`mvn install -f graphitron-rewrite/pom.xml -Plocal-db` build does not
+`mvn install -Plocal-db` build does not
 touch it.
 
 ## Layout

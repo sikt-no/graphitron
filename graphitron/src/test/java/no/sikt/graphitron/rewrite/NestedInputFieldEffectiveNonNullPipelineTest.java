@@ -30,7 +30,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p>Asserts on the classified {@link BodyParam#nonNull()} slot, not on the rendered method
  * body (code-string assertions on emitted bodies are banned at every tier per
- * {@code graphitron-rewrite/docs/rewrite-design-principles.adoc}). Execution-tier coverage of
+ * {@code docs/architecture/explanation/rewrite-design-principles.adoc}). Execution-tier coverage of
  * the runtime {@code .in(null) -> false} rendering rides on the Sakila execution test that
  * exercises a list-shaped optional filter through real Postgres.
  */

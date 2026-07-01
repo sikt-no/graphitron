@@ -1,11 +1,11 @@
 ---
 name: capability-catalog
-description: Maintain the graphitron capability catalog at `graphitron-rewrite/capabilities/<slug>.adoc` — add, edit, suggest, audit, dedupe, and remove capabilities. Use when the user asks to "add a capability for X", "list capabilities", "suggest missing capabilities", "audit the catalog", "remove the foo capability", "edit the pagination capability", or any phrase about graphitron's capability namespace. The catalog is the source of truth for the slug namespace `@capability(name:)` and `@exemplifies(capability:)` reference; every authored slug must surface on at least one coordinate, every directive value must resolve to an authored slug.
+description: Maintain the graphitron capability catalog at `capabilities/<slug>.adoc` — add, edit, suggest, audit, dedupe, and remove capabilities. Use when the user asks to "add a capability for X", "list capabilities", "suggest missing capabilities", "audit the catalog", "remove the foo capability", "edit the pagination capability", or any phrase about graphitron's capability namespace. The catalog is the source of truth for the slug namespace `@capability(name:)` and `@exemplifies(capability:)` reference; every authored slug must surface on at least one coordinate, every directive value must resolve to an authored slug.
 ---
 
 # Capability catalog
 
-Operates on `graphitron-rewrite/capabilities/<slug>.adoc` files. Each capability is a durable, named *capability* graphitron delivers (pagination, typed-errors, polymorphic-dispatch, federation-entities, ...). The slug `id` is the join key the rest of the project uses; the title is human-readable; the body is a working definition that grows over time as worked examples register via `@exemplifies` (R112).
+Operates on `capabilities/<slug>.adoc` files. Each capability is a durable, named *capability* graphitron delivers (pagination, typed-errors, polymorphic-dispatch, federation-entities, ...). The slug `id` is the join key the rest of the project uses; the title is human-readable; the body is a working definition that grows over time as worked examples register via `@exemplifies` (R112).
 
 ## Capability identity: slug
 
@@ -35,14 +35,14 @@ The skill recognises six intents from the user's request. Pick one and execute.
 Print slugs and titles in one block, sorted:
 
 ```bash
-ls graphitron-rewrite/capabilities/*.adoc 2>/dev/null
+ls capabilities/*.adoc 2>/dev/null
 ```
 
 If the directory does not yet exist, say so (R115 has not seeded it yet) and stop.
 
 ### add `<slug>` `--title "<title>"`
 
-Create `graphitron-rewrite/capabilities/<slug>.adoc` with the file shape above and a one-sentence definition. Validate slug rules before writing (lowercase kebab-case, no `directive-` or `impl-` prefix, no implementation jargon). Refuse if the file already exists; suggest `edit` instead.
+Create `capabilities/<slug>.adoc` with the file shape above and a one-sentence definition. Validate slug rules before writing (lowercase kebab-case, no `directive-` or `impl-` prefix, no implementation jargon). Refuse if the file already exists; suggest `edit` instead.
 
 ### edit `<slug>`
 
@@ -52,11 +52,11 @@ Resolve the slug to the file (filename = `id`). Surface current content; help th
 
 Walk discovery sources and propose candidate slugs not yet authored. This is the load-bearing subcommand for R115's seeding pass and for ongoing capability-gap detection.
 
-The walk is idempotent against canonical state: before listing candidates, subtract the set of already-authored slugs (from `graphitron-rewrite/capabilities/*.adoc`) and the set of coordinates already carrying `@capability(name:)` in the SDL. Re-running `suggest` after authoring stubs yields a shrinking list, never a repeat. State lives in the catalog and the SDL; this subcommand reads, never writes.
+The walk is idempotent against canonical state: before listing candidates, subtract the set of already-authored slugs (from `capabilities/*.adoc`) and the set of coordinates already carrying `@capability(name:)` in the SDL. Re-running `suggest` after authoring stubs yields a shrinking list, never a repeat. State lives in the catalog and the SDL; this subcommand reads, never writes.
 
 1. **Directives reference.** For each `docs/manual/reference/directives/<directive>.adoc`, identify the user-facing capability it exposes. Most map 1:1 (`@discriminator` → `polymorphic-dispatch`; `@table` → `table-types`); some cluster (`@key`/`@field`/entity dispatch → `federation-entities`); some are infrastructure that don't surface as a capability (`@condition`, `@notGenerated`, `@experimental_constructType`). Flag any directive whose capability is not authored.
-2. **Classifier sealed-variant families.** Grep `graphitron-rewrite/graphitron/src/main/java` for `sealed ` declarations producing fetchers; cross-check that every non-trivial family maps to at least one capability. Implicit capabilities like `selection-aware-fetching` and `node-id` surface here when no single directive corresponds.
-3. **Sakila schema.** Read `graphitron-rewrite/graphitron-sakila-example/src/main/resources/graphql/schema.graphqls` and `federated-schema.graphqls`; flag directive uses on coordinates whose capability slug isn't authored.
+2. **Classifier sealed-variant families.** Grep `graphitron/src/main/java` for `sealed ` declarations producing fetchers; cross-check that every non-trivial family maps to at least one capability. Implicit capabilities like `selection-aware-fetching` and `node-id` surface here when no single directive corresponds.
+3. **Sakila schema.** Read `graphitron-sakila-example/src/main/resources/graphql/schema.graphqls` and `federated-schema.graphqls`; flag directive uses on coordinates whose capability slug isn't authored.
 
 Output: a ranked list of candidate slugs with one-sentence rationale and which discovery source surfaced them. The user decides which to author; this subcommand never writes files.
 
@@ -73,11 +73,11 @@ Output: a finding list per category. The user decides remediation; this subcomma
 
 ### remove `<slug>`
 
-Refuse if any `@capability(name: <slug>)` or `@exemplifies(capability: <slug>)` reference exists anywhere in the repo (SDL files, operation `.graphql`, roadmap markdown, docs `.adoc`). Surface the references and stop. Otherwise delete `graphitron-rewrite/capabilities/<slug>.adoc`.
+Refuse if any `@capability(name: <slug>)` or `@exemplifies(capability: <slug>)` reference exists anywhere in the repo (SDL files, operation `.graphql`, roadmap markdown, docs `.adoc`). Surface the references and stop. Otherwise delete `capabilities/<slug>.adoc`.
 
 ## Hard rules
 
-- The `.adoc` files in `graphitron-rewrite/capabilities/` are canonical. The DuckDB knowledge base R117 frames is a projection rebuilt every build; never edit a capability through any other surface.
+- The `.adoc` files in `capabilities/` are canonical. The DuckDB knowledge base R117 frames is a projection rebuilt every build; never edit a capability through any other surface.
 - Slug = capability not implementation; lowercase kebab-case; stable from authorship. Renames are coordinated multi-file edits, not a subcommand.
 - `id:` in frontmatter must equal the filename slug. If they disagree, the filename wins; correct the frontmatter.
 - One sentence per slug is the bar during seeding. Long-form preamble grows lazily as `@exemplifies` worked examples land via R112; don't author multi-paragraph prose just because a stub feels thin.

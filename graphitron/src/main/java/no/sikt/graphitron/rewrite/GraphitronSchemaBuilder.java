@@ -949,7 +949,7 @@ public class GraphitronSchemaBuilder {
                 + "      `extend schema @link(url: \"https://specs.apollo.dev/federation/v2.x\",\n"
                 + "                           import: [\"@" + directiveName + "\", ...])`\n"
                 + "  (2) Or declare it manually with `directive @" + directiveName + " ... on ...`.\n"
-                + "See graphitron-rewrite/docs/getting-started.adoc#build-time-federation-directives.";
+                + "See docs/manual/how-to/apollo-federation.adoc.";
     }
 
     private static void validateDirectiveSchema(BuildContext ctx) {

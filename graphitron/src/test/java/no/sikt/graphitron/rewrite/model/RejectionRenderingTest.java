@@ -66,7 +66,7 @@ class RejectionRenderingTest {
             "@service on a record-backed parent is not yet supported",
             "service-record-field");
         assertThat(r.message()).isEqualTo(
-            "@service on a record-backed parent is not yet supported — see graphitron-rewrite/roadmap/service-record-field.md");
+            "@service on a record-backed parent is not yet supported — see roadmap/service-record-field.md");
     }
 
     @Test

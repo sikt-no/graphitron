@@ -29,8 +29,8 @@ The runtime boots only the **non-federated** schema. Both `graphitron-maven-plug
 ### Run the app
 
 ```bash
-mvn -f graphitron-rewrite/pom.xml install -Plocal-db
-cd graphitron-rewrite/graphitron-sakila-example
+mvn install -Plocal-db
+cd graphitron-sakila-example
 mvn quarkus:dev
 ```
 

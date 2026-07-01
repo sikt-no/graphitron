@@ -87,7 +87,7 @@ Banned: code-string body matching.
 
 Generated source must compile against the test catalog.
 
-*Where:* `graphitron-sakila-example`, run with `mvn compile -f graphitron-rewrite/pom.xml -pl :graphitron-sakila-example -Plocal-db`.
+*Where:* `graphitron-sakila-example`, run with `mvn compile -pl :graphitron-sakila-example -Plocal-db`.
 The compiler is the assertion; no hand-written assertions are needed for type correctness.
 
 Two test classes layer structural checks on top:
@@ -100,7 +100,7 @@ Two test classes layer structural checks on top:
 
 Full GraphQL request → SQL → row round-trip.
 
-*Where:* `graphitron-sakila-example`, run with `mvn test -f graphitron-rewrite/pom.xml -pl :graphitron-sakila-example -Plocal-db`.
+*Where:* `graphitron-sakila-example`, run with `mvn test -pl :graphitron-sakila-example -Plocal-db`.
 
 Canonical classes: `GraphQLQueryTest` on the shared fixture; `FederationEntitiesDispatchTest` on the federated fixture.
 
@@ -126,16 +126,16 @@ Only `GeneratorDeterminismTest` is `@Tag("cross-cutting")`; the rest carry one o
 [source,bash]
 ----
 # Unit + pipeline (no database needed)
-mvn test -f graphitron-rewrite/pom.xml -pl :graphitron -Plocal-db
+mvn test -pl :graphitron -Plocal-db
 
 # Compilation (generated source compiles against real jOOQ catalog)
-mvn compile -f graphitron-rewrite/pom.xml -pl :graphitron-sakila-example -Plocal-db
+mvn compile -pl :graphitron-sakila-example -Plocal-db
 
 # All tiers including execution (requires local PostgreSQL via -Plocal-db)
-mvn test -f graphitron-rewrite/pom.xml -Plocal-db
+mvn test -Plocal-db
 
 # Skip execution tier for fast inner loops
-mvn test -f graphitron-rewrite/pom.xml -pl :graphitron -Plocal-db -DexcludedGroups=execution
+mvn test -pl :graphitron -Plocal-db -DexcludedGroups=execution
 ----
 
 See `.claude/web-environment.md` for database setup prerequisites and the fixtures-jar footgun recovery.
