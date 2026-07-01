@@ -14,7 +14,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 | ID | Item | Status | Updated | Plan |
 |---|---|---|---|---|
-| `R19` | Rebase and squash rewrite branch onto main | Ready |  | [plan](history-squash.md) |
 | `R222` | Dimensional model pivot: slots over cross-product permits | Spec | 2026-06-18 <sub>created 2026-05-21</sub> | [plan](dimensional-model-pivot.md) |
 | `R333` | The Graphitron data model | Spec | 2026-06-25 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
 | `R396` | @reference FK-connection validation rejects schema-qualified or case-mismatched @table base names | Ready | 2026-06-30 <sub>created 2026-06-29</sub> | [plan](reference-fk-connection-qualified-table-name.md) |
@@ -288,7 +287,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### legacy-migration
 
-- `R19` [**Rebase and squash rewrite branch onto main**](history-squash.md) — Ready
 - `R360` [**Retire the @enum directive; infer enum Java backing from producers**](retire-enum-directive.md) — Backlog, cleanup
 - `R27` [**Retire `@nodeId` and `IdReferenceField` synthesis shims**](retire-synthesis-shims.md) — Backlog, cleanup, blocked by [sis-rewrite-migration](sis-rewrite-migration.md)
 - `R47` [**Short class-name resolution for `@service` and `@externalField` (legacy parity)**](service-short-classname-resolution.md) — Backlog, cleanup
