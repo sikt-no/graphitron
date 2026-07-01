@@ -1,5 +1,6 @@
 package no.sikt.graphitron.rewrite;
 
+import no.sikt.graphitron.rewrite.lint.LintRule;
 import no.sikt.graphitron.rewrite.schema.input.SchemaInput;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
@@ -89,5 +90,40 @@ class BuildOutputReportPipelineTest {
             .anyMatch(m -> m.contains("FilmDetails.language") && m.contains("redundant"));
 
         assertThat(report.isEmpty()).isFalse();
+    }
+
+    @Test
+    void buildOutput_reportCarriesEngineLintFindingsWithTheirFix(@TempDir Path tmp) throws IOException {
+        // R398: the SDL lint engine's syntactic findings ride the same warning channel and must reach
+        // the ValidationReport through buildOutput(), so the LSP and MCP project them for free. The
+        // snake_case SDL field name trips field-names-camel-case; it maps to the real snake_case column
+        // (the SDL name is what the rule flags, decoupled from the column), so the type still classifies.
+        Path schema = tmp.resolve("schema.graphqls");
+        Files.writeString(schema, """
+            type Film @table(name: "film") {
+              original_language_id: Int
+            }
+            type Query { film: Film }
+            """);
+
+        var ctx = new RewriteContext(
+            List.of(new SchemaInput(schema.toString(), Optional.empty(), Optional.empty())),
+            tmp, tmp, DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE, Map.of());
+
+        var report = new GraphQLRewriteGenerator(ctx).buildOutput().report();
+
+        var lintFinding = report.warnings().stream()
+            .filter(w -> w instanceof BuildWarning.LintFinding lf
+                && lf.rule() == LintRule.FIELD_NAMES_CAMEL_CASE)
+            .map(BuildWarning.LintFinding.class::cast)
+            .findFirst();
+
+        assertThat(lintFinding)
+            .as("an engine lint finding reaches the report through buildOutput()")
+            .isPresent();
+        assertThat(lintFinding.get().message()).contains("original_language_id");
+        assertThat(lintFinding.get().fix())
+            .as("the field-names-camel-case rename fix travels with the finding onto the report")
+            .isPresent();
     }
 }

@@ -140,6 +140,53 @@ class ValidatorDiagnosticsTest {
     }
 
     @Test
+    void engineLintFinding_surfacesAsWarningSquiggleAtItsRange() {
+        // R398 parity-for-free: an engine lint finding (here field-names-camel-case) rides the same
+        // ValidationReport warning channel and replays into a Warning squiggle at its own range, no
+        // second evaluator. The finding's location is the offending field name token (line 2, col 3).
+        var path = "/tmp/schema.graphqls";
+        var uri = ValidationReport.canonicalUri(path);
+        BuildWarning finding = BuildWarning.LintFinding.of(
+            "Field name 'created_at' should be camelCase.",
+            new SourceLocation(2, 3, path),
+            no.sikt.graphitron.rewrite.lint.LintRule.FIELD_NAMES_CAMEL_CASE);
+        var report = ValidationReport.from(List.of(), List.of(finding));
+        var source = """
+            type Widget {
+              created_at: String
+            }
+            """;
+
+        var diags = Diagnostics.compute(uri, file(source), CompletionData.empty(), CURRENT_SNAPSHOT, report);
+
+        assertThat(diags).singleElement().satisfies(d -> {
+            assertThat(d.getSeverity()).isEqualTo(DiagnosticSeverity.Warning);
+            assertThat(d.getSource()).isEqualTo("graphitron-validator");
+            assertThat(d.getMessage()).contains("camelCase");
+            assertThat(d.getRange().getStart().getLine()).isEqualTo(1);
+            assertThat(d.getRange().getStart().getCharacter()).isEqualTo(2);
+        });
+    }
+
+    @Test
+    void engineLintFinding_isSilencedOnStaleSnapshot() {
+        // R139: the same freshness silence that covers validator errors covers lint findings; a stale
+        // snapshot yields no squiggle so the user is not punished for a buffer we cannot reliably see.
+        var path = "/tmp/schema.graphqls";
+        var uri = ValidationReport.canonicalUri(path);
+        BuildWarning finding = BuildWarning.LintFinding.of(
+            "Field name 'created_at' should be camelCase.",
+            new SourceLocation(2, 3, path),
+            no.sikt.graphitron.rewrite.lint.LintRule.FIELD_NAMES_CAMEL_CASE);
+        var report = ValidationReport.from(List.of(), List.of(finding));
+
+        var diags = Diagnostics.compute(uri, file(), CompletionData.empty(),
+            new LspSchemaSnapshot.Built.Previous(List.of(), Map.of(), Map.of()), report);
+
+        assertThat(diags).isEmpty();
+    }
+
+    @Test
     void entriesForOtherFilesAreFiltered() {
         var openPath = "/tmp/open.graphqls";
         var openUri = ValidationReport.canonicalUri(openPath);
