@@ -80,9 +80,11 @@ rule by its stable id, and a typo is a build error, not a silently-ignored line.
 
 ## User documentation (first-client check)
 
-Draft of the `getting-started.adoc` (or the plugin-config reference) section, written first so
-the design is validated against how a consumer reads it. If this does not read simply, the
-design is wrong and changes before implementation.
+Draft of the `docs/manual/reference/mojo-configuration.adoc` (Maven plugin configuration
+reference) section, written first so the design is validated against how a consumer reads it.
+This is the page that already documents every `<configuration>` parameter of the plugin, so the
+new `<lint>` block joins it there. If this does not read simply, the design is wrong and changes
+before implementation.
 
 > ### Silencing lint warnings
 >
