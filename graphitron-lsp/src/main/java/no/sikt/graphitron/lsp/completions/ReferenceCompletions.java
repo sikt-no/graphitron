@@ -9,8 +9,6 @@ import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
 import org.eclipse.lsp4j.CompletionItem;
 import org.eclipse.lsp4j.CompletionItemKind;
-import org.eclipse.lsp4j.TextEdit;
-import org.eclipse.lsp4j.jsonrpc.messages.Either;
 
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
@@ -55,12 +53,9 @@ public final class ReferenceCompletions {
         var items = new ArrayList<CompletionItem>();
         for (CompletionData.Reference ref : table.get().references()) {
             if (!seen.add(ref.keyName())) continue;
-            var item = new CompletionItem(ref.keyName());
-            item.setKind(CompletionItemKind.Reference);
             String detail = (ref.inverse() ? "← " : "→ ") + ref.targetTable();
-            item.setDetail(detail);
-            item.setTextEdit(Either.forLeft(new TextEdit(context.replaceRange(), ref.keyName())));
-            items.add(item);
+            items.add(CompletionItems.replacing(
+                ref.keyName(), CompletionItemKind.Reference, context.replaceRange(), detail));
         }
         return items;
     }

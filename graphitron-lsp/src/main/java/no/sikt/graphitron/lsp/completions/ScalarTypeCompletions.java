@@ -9,8 +9,6 @@ import no.sikt.graphitron.rewrite.ScalarTypeResolver;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import org.eclipse.lsp4j.CompletionItem;
 import org.eclipse.lsp4j.CompletionItemKind;
-import org.eclipse.lsp4j.TextEdit;
-import org.eclipse.lsp4j.jsonrpc.messages.Either;
 
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
@@ -62,11 +60,8 @@ public final class ScalarTypeCompletions {
         fqns.addAll(table.values());
         var items = new ArrayList<CompletionItem>(fqns.size());
         for (String fqn : fqns) {
-            var item = new CompletionItem(fqn);
-            item.setKind(CompletionItemKind.Constant);
-            item.setDetail("extended-scalars convention");
-            item.setTextEdit(Either.forLeft(new TextEdit(context.replaceRange(), fqn)));
-            items.add(item);
+            items.add(CompletionItems.replacing(
+                fqn, CompletionItemKind.Constant, context.replaceRange(), "extended-scalars convention"));
         }
         return items;
     }

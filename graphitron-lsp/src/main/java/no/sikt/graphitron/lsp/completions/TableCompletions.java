@@ -9,7 +9,6 @@ import org.eclipse.lsp4j.CompletionItem;
 import org.eclipse.lsp4j.CompletionItemKind;
 import org.eclipse.lsp4j.MarkupContent;
 import org.eclipse.lsp4j.MarkupKind;
-import org.eclipse.lsp4j.TextEdit;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
 
 import java.util.List;
@@ -45,15 +44,13 @@ public final class TableCompletions {
     private static CompletionItem toCompletionItem(
         CompletionData.Table table, CompletionContext context, SourceWalker.Index sourceIndex
     ) {
-        var item = new CompletionItem(table.name());
-        item.setKind(CompletionItemKind.Class);
+        var item = CompletionItems.replacing(table.name(), CompletionItemKind.Class, context.replaceRange());
         String description = Descriptions.ofTable(table, sourceIndex);
         if (!description.isEmpty()) {
             item.setDocumentation(Either.forRight(
                 new MarkupContent(MarkupKind.PLAINTEXT, description)
             ));
         }
-        item.setTextEdit(Either.forLeft(new TextEdit(context.replaceRange(), table.name())));
         return item;
     }
 }

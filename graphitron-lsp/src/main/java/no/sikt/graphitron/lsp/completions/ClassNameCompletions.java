@@ -6,8 +6,6 @@ import no.sikt.graphitron.lsp.parsing.LspVocabulary;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import org.eclipse.lsp4j.CompletionItem;
 import org.eclipse.lsp4j.CompletionItemKind;
-import org.eclipse.lsp4j.TextEdit;
-import org.eclipse.lsp4j.jsonrpc.messages.Either;
 
 import java.util.List;
 
@@ -55,9 +53,6 @@ public final class ClassNameCompletions {
     private static CompletionItem toCompletionItem(
         CompletionData.ExternalReference ref, CompletionContext context
     ) {
-        var item = new CompletionItem(ref.className());
-        item.setKind(CompletionItemKind.Class);
-        item.setTextEdit(Either.forLeft(new TextEdit(context.replaceRange(), ref.className())));
-        return item;
+        return CompletionItems.replacing(ref.className(), CompletionItemKind.Class, context.replaceRange());
     }
 }

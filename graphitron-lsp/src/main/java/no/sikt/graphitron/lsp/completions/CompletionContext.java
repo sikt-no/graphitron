@@ -52,19 +52,35 @@ public record CompletionContext(SchemaCoordinate coordinate, Range replaceRange,
         int start = leaf.getStartByte();
         int end = leaf.getEndByte();
         if (STRING_VALUE.matches(leaf)) {
-            int length = end - start;
-            // The bkegley GraphQL grammar surfaces both "..." and """..."""
-            // as named kind "string_value"; discriminate by content.
-            if (length >= 6
-                && source[start] == '"' && source[start + 1] == '"' && source[start + 2] == '"'
-                && source[end - 1] == '"' && source[end - 2] == '"' && source[end - 3] == '"') {
-                return toRange(source, start + 3, end - 3);
-            }
-            if (length >= 2 && source[start] == '"' && source[end - 1] == '"') {
-                return toRange(source, start + 1, end - 1);
+            int quote = openingQuoteLength(source, start, end);
+            if (quote > 0) {
+                return toRange(source, start + quote, end - quote);
             }
         }
         return toRange(source, start, end);
+    }
+
+    /**
+     * Delimiter width of the GraphQL string literal spanning {@code [start, end)}
+     * in {@code source}: 3 for a triple-quoted block string, 1 for an ordinary
+     * double-quoted string, 0 when the span is not a closed double-quoted literal
+     * (an unterminated or non-string leaf). The bkegley grammar surfaces both
+     * {@code "..."} and {@code """..."""} as one {@code string_value} kind, so
+     * the discrimination is by content, not node kind. Shared with
+     * {@link ArgMappingCompletions}, which strips the same delimiters off an
+     * {@code argMapping} literal before parsing its content.
+     */
+    static int openingQuoteLength(byte[] source, int start, int end) {
+        int length = end - start;
+        if (length >= 6
+            && source[start] == '"' && source[start + 1] == '"' && source[start + 2] == '"'
+            && source[end - 1] == '"' && source[end - 2] == '"' && source[end - 3] == '"') {
+            return 3;
+        }
+        if (length >= 2 && source[start] == '"' && source[end - 1] == '"') {
+            return 1;
+        }
+        return 0;
     }
 
     private static Range toRange(byte[] source, int startByte, int endByte) {
