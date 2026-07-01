@@ -65,19 +65,35 @@ public final class LintEngine {
 
     /**
      * Runs every registered visitor over {@code registry} in one traversal, returning the findings
-     * as {@link BuildWarning.LintFinding}s in source-walk order.
+     * as {@link BuildWarning.LintFinding}s in source-walk order. Excludes only graphitron's own
+     * bundled surface; use {@link #run(TypeDefinitionRegistry, Set)} to additionally exclude
+     * federation-injected definitions.
      */
     public List<BuildWarning> run(TypeDefinitionRegistry registry) {
+        return run(registry, Set.of());
+    }
+
+    /**
+     * As {@link #run(TypeDefinitionRegistry)}, but also excludes the federation {@code @link}
+     * injector's definitions ({@code injectedNames}, from
+     * {@link no.sikt.graphitron.rewrite.AttributedRegistry#injectedNames()}). Both {@code injectedNames}
+     * and {@code BUNDLED_TYPE_NAMES} are generator-owned surface the author never wrote and cannot
+     * rename or document, so linting them is pure noise (R407); the exclusion widens the existing
+     * name-set skip to a second contributor rather than adding a new skip mechanism.
+     */
+    public List<BuildWarning> run(TypeDefinitionRegistry registry, Set<String> injectedNames) {
         var out = new ArrayList<BuildWarning>();
         var recognizer = new DeprecationRecognizer(registry);
         var rootOps = rootOperationTypeNames(registry);
+        var excluded = new LinkedHashSet<>(BUNDLED_TYPE_NAMES);
+        excluded.addAll(injectedNames);
 
         for (TypeDefinition<?> def : registry.types().values()) {
-            if (BUNDLED_TYPE_NAMES.contains(def.getName())) continue;
+            if (excluded.contains(def.getName())) continue;
             visitTypeDefinition(def, registry, recognizer, rootOps, out);
         }
         for (ScalarTypeDefinition scalar : registry.scalars().values()) {
-            if (BUNDLED_TYPE_NAMES.contains(scalar.getName())) continue;
+            if (excluded.contains(scalar.getName())) continue;
             dispatch(LintNodeKind.SCALAR_TYPE, scalar, scalar.getName(), false, registry, recognizer, out);
             visitAppliedDirectives(scalar, scalar.getName(), registry, recognizer, out);
         }

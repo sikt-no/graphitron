@@ -23,9 +23,12 @@ class FederationLinkApplierTest {
             """
         ));
 
-        boolean fedLink = FederationLinkApplier.apply(registry);
+        var injectedNames = FederationLinkApplier.apply(registry);
 
-        assertThat(fedLink).isTrue();
+        assertThat(injectedNames)
+            .as("apply returns the names of the definitions it injected")
+            .contains("key", "link")
+            .anyMatch(n -> n.startsWith("federation__") || n.startsWith("link__"));
         assertThat(registry.getDirectiveDefinition("key")).isPresent();
         assertThat(registry.getDirectiveDefinition("link")).isPresent();
     }
@@ -173,9 +176,9 @@ class FederationLinkApplierTest {
             "type Foo { id: ID! }"
         ));
 
-        boolean fedLink = FederationLinkApplier.apply(registry);
+        var injectedNames = FederationLinkApplier.apply(registry);
 
-        assertThat(fedLink).isFalse();
+        assertThat(injectedNames).isEmpty();
         assertThat(registry.getDirectiveDefinition("key")).isEmpty();
     }
 }

@@ -15,7 +15,9 @@ import graphql.language.Value;
 import graphql.schema.idl.TypeDefinitionRegistry;
 
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.Objects;
+import java.util.Set;
 import java.util.stream.Stream;
 
 /**
@@ -42,11 +44,15 @@ public final class FederationLinkApplier {
 
     /**
      * Injects federation directive declarations derived from the schema's {@code @link} into
-     * {@code registry}. Returns {@code true} when a federation {@code @link} was present and
-     * definitions were injected; {@code false} when no federation {@code @link} was found and the
-     * registry is unchanged. The pipeline orchestrator captures this return value into
+     * {@code registry}. Returns the names of the definitions it injected (federation/link
+     * namespaced types, scalars, enums and directives such as {@code federation__FieldSet},
+     * {@code link__Import}, {@code @key}); an empty set means no federation {@code @link} was found
+     * and the registry is unchanged. The pipeline orchestrator captures this return value into
      * {@link no.sikt.graphitron.rewrite.AttributedRegistry} so downstream stages do not re-walk
-     * the registry to discover the same fact.
+     * the registry to discover the same fact: the "federation link present" boolean is derivable
+     * as "injected anything", and the injected names are the authoritative provenance set the lint
+     * engine excludes (these definitions carry the federation spec's own names and a {@code null}
+     * source, so the author can neither rename nor document them; see R407).
      *
      * <p>Throws an {@link IllegalStateException} wrapping
      * {@link MultipleFederationLinksException} if the schema contains more than one federation
@@ -56,19 +62,23 @@ public final class FederationLinkApplier {
      * if the {@code @link} URL names a federation spec version the library does not yet support.
      * Both are programming errors in the consumer SDL and are treated as hard build failures.
      */
-    public static boolean apply(TypeDefinitionRegistry registry) {
+    public static Set<String> apply(TypeDefinitionRegistry registry) {
         try {
             var defs = LinkDirectiveProcessor.loadFederationImportedDefinitions(registry);
             if (defs == null) {
-                return false;
+                return Set.of();
             }
+            var injectedNames = new LinkedHashSet<String>();
             defs.forEach(def -> {
                 var error = registry.add(def);
                 if (error.isPresent()) {
                     throw new IllegalStateException(buildCollisionMessage(registry, def));
                 }
+                if (def instanceof NamedNode<?> named) {
+                    injectedNames.add(named.getName());
+                }
             });
-            return true;
+            return injectedNames;
         } catch (MultipleFederationLinksException e) {
             // Drop the cause: its message is a raw Directive{...}Directive{...} dump that
             // Maven appends to ours. buildMultipleLinksMessage produces a developer-friendly
