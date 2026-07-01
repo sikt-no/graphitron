@@ -173,7 +173,7 @@ example's projection query, rendered as SDL descriptions by `QueryViewRenderer`.
 | Interface without `@table` (multi-table) | `InterfaceType` | `*Fetchers` class
 | Union type | `UnionType` | `*Fetchers` class
 | `@error` | `ErrorType` | No generation (error mapping config)
-| Input type with `@table` | `TableInputType` | Used in mutation generation.
+| Input type with `@table` (deprecated on input; see `docs/manual/reference/directives/table.adoc`) | `TableInputType` | Used in mutation generation. A build warning fires per `@table`-on-input usage, except encoded-ID / scalar-return INSERT/UPSERT.
 | Input type without `@table` (the `@service` / `@condition` / `@tableMethod` parameter the input flows into is reflected as a developer class) | `InputType`* | No generation (developer-provided class). The input's backing class is reflected from the parameter type it flows into.
 | Input type with `@table` used on fields with conflicting return tables | `PojoInputType` (unbound) | No generation ; column binding resolved per field-usage
 | Object type with no `@table` and no producer binding | `NestingType` | No generation; nested under a parent table-bound or class-backed scope via `NestingField`

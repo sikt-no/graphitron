@@ -9,7 +9,11 @@ schema. Fields must be fully described by the schema.
 """
 directive @notGenerated on FIELD_DEFINITION | ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION | INTERFACE | UNION
 
-"""Connect this type to a jOOQ table. All the containing fields will by default be assumed to be located there."""
+"""
+Connect this type to a jOOQ table. All the containing fields will by default be assumed to be located there.
+
+Deprecated on input types: applying `@table` to an input (`INPUT_OBJECT`) is deprecated and will be removed in a future release. A mutation's write/read target is derived from the consuming field's resolved target table, so the directive on the input is redundant; remove it. (One case still needs it for now: a mutation returning an encoded ID or scalar, e.g. `createFilm(...): ID`, where the input's `@table` is currently the only signal naming the write target. The build does not warn on that case yet.) `@table` on `OBJECT` / `INTERFACE` is unaffected.
+"""
 directive @table(name: String) on OBJECT | INPUT_OBJECT | INTERFACE
 
 """

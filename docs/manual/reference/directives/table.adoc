@@ -44,6 +44,16 @@ input FilmCreateInput @table(name: "film") {
 }
 ----
 
+[WARNING]
+.Deprecated on input types
+====
+Applying `@table` to an input (`INPUT_OBJECT`) is deprecated and will be removed in a future release. `@table` on `OBJECT` and `INTERFACE` is unaffected.
+
+A mutation's write/read target is derived from the consuming field's resolved target table, so the directive on the input is redundant. Remove it. A non-fatal build warning fires per `@table`-on-input usage.
+
+One case still needs the directive for now: a mutation returning an *encoded ID or scalar* (e.g. `createFilm(...): ID`). There the return type carries no `@table`, so the input's `@table` is currently the only signal naming the write target, and the build does not warn on that usage yet. The other write shapes (returning a `@table` type, or a payload wrapping one) already derive the target from the return, so their inputs warn today.
+====
+
 == Constraints
 
 * The `name` parameter must resolve to a real jOOQ table; the generator fails the build with an unclassified-type error if the catalog has no matching `Table` class. Use the same case the jOOQ generator emits (typically uppercase for PostgreSQL identifiers, but follow your project's catalog).

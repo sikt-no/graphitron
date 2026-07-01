@@ -65,7 +65,7 @@ class DeprecationsDocCoverageTest {
      * index. A new whole-directive deprecation must be added here AND have a row
      * in {@code deprecations.adoc}.
      */
-    private static final Set<String> WHOLE_DIRECTIVE_DEPRECATIONS = Set.of("index", "record");
+    private static final Set<String> WHOLE_DIRECTIVE_DEPRECATIONS = Set.of("index", "record", "table");
 
     @Test
     void everySdlDeprecatedMarkerHasARowInTheIndex() throws IOException {

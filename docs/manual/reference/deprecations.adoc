@@ -35,13 +35,18 @@ The rewrite's `@deprecated(reason:)` markers do not carry a structured removal v
 | Use `className:` instead. `name:` was a Norwegian-language alias kept for backward compatibility with legacy schemas; `className:` is the canonical key on `ExternalCodeReference` (used by xref:directives/service.adoc[`@service`], xref:directives/error.adoc[`@error`], and other directive sites that reference external Java code).
 |===
 
-== Deprecated whole directives
+== Deprecated whole directives and directive locations
 
-The GraphQL spec does not allow `@deprecated` on a directive definition, so these are documented in the directive's own reference page and listed here for visibility.
+The GraphQL spec does not allow `@deprecated` on a directive definition, nor on a single directive *location* (a scope in the `on` clause). Deprecations the spec cannot mark inline, whether the whole directive or one of its locations, are documented in the directive's own reference page and listed here for visibility.
 
 [cols="2,2,1,3",options="header"]
 |===
 | Directive | Status | Since | Migration
+
+| xref:directives/table.adoc[`@table`] (on `INPUT_OBJECT`)
+| Deprecated; `OBJECT` / `INTERFACE` unaffected
+| Rewrite v1
+| Remove `@table` from input types. The mutation's write/read target is derived from the consuming field's resolved target table, so the directive on the input is redundant. A build warning fires per `@table`-on-input usage, except encoded-ID / scalar-return INSERT/UPSERT, where the input's `@table` is still the only write-target signal until that derivation lands.
 
 | xref:directives/index-directive.adoc[`@index`]
 | Backward-compatibility alias
