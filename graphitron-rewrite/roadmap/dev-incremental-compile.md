@@ -25,8 +25,9 @@ compile step, driving an in-process compiler over a **model-sourced** dependency
 one-field schema edit recompiles the affected sub-closure (a handful of files) regardless of subgraph
 size. That graph is a file-level coarsening of the same structure R333 models as the back half of the
 lowering (a referentially-closed graph of emitted Java methods); the sourcing seam is built so it
-re-sources from R333's method graph once R314 lands, and the coverage obligation that keeps it one
-model (not a revived parallel structure) is compile-checked, not promised in prose.
+re-sources from R333's method graph once that graph exists, and the coverage obligation that keeps it
+one model (not a revived parallel structure) is a compile-checked exhaustive switch that is live from
+day one, not a stub promised in prose.
 
 ## Scope boundary
 
@@ -77,16 +78,22 @@ edges come from" and "the compiler that consumes them". This is the load-bearing
 R333's "the projection seam re-sources from the facts" applied to a fourth consumer:
 
 - **Today** the builder sources edges by coarsening the classified model (methods collapse into their
-  emitting class; method-call seams collapse into file references). This is a projection over the same
-  base the emitter reads, not a private walk.
-- **After R314** the builder re-sources from R333's method graph directly; the coarsening becomes a
-  view over that graph.
-- **The guard is compile-checked, not prose.** The builder is written so that when R333's method
-  graph exists, an exhaustive coverage obligation (mirroring `CatalogBuilder.projectFieldClassification`'s
-  switch) fails to compile until the file graph re-sources from it. Absent that obligation, "re-source
-  later" is exactly R333's revived-leaves fracture: the file graph persists as a second private model
-  of the dependency structure. If the obligation genuinely cannot be stated at implementation time,
-  that is a spec-blocking finding to surface, not a residual risk to wave through.
+  emitting class; method-call seams collapse into file references) through an **exhaustive switch over
+  the current classified-model leaves**, mirroring `CatalogBuilder.projectFieldClassification`. This is
+  a projection over the same base the emitter reads, not a private walk.
+- **The guard is compile-checked today, not a stub.** The switch above is live from slice 2: it is
+  exhaustive over the classified-model source it projects, so any drift in that base (a new leaf or
+  variant the switch does not cover) is a **compile error now**, not a dormant obligation that only
+  bites once R333 lands. An inert obligation would be prose with a stub, which is precisely R333's
+  revived-leaves fracture, the file graph persisting as a second private model of the dependency
+  structure. If an *active* exhaustive switch over today's classified-model source genuinely cannot be
+  written, that is a spec-blocking finding to surface, not a residual risk to wave through.
+- **When R333's method graph exists** the builder re-sources by **re-targeting that same live switch**
+  onto the method graph; the coarsening becomes a view over it. The switch stays exhaustive across the
+  move, so the re-source cannot silently leave the file graph sourcing from the old base. This re-source
+  is gated on R333's method graph existing, not on sibling R314 shipping: R314 (emit re-platforming) is
+  the *parallel* emit consumer of the same model, a peer of this fourth consumer, not this consumer's
+  trigger.
 
 ## Design: the incremental compile engine
 
@@ -119,14 +126,57 @@ R333's "the projection seam re-sources from the facts" applied to a fourth consu
   `generated-sources/graphitron`, which graphitron solely owns), the `.class` orphan sweep is scoped to
   the same `OWNED_SUBPACKAGES` under `target/classes/<outputPackage>/`, so it can never delete consumer
   bytecode (a silent `NoClassDefFoundError`-at-runtime failure), and dev startup **fails fast** if the
-  consumer's compile plugin is still configured to compile `generated-sources`. R410 *adds* the
-  exclusion line to `getting-started.adoc`'s dev-loop section; it does not yet exist.
+  consumer's compile plugin is still configured to compile `generated-sources` (drafted in
+  *First-client user-doc draft* below, landed by slice 6; it does not yet exist).
 - **Sequencing vs R333/R314.** Ship the model-sourced graph now behind `CompileDependencyGraph` (see
-  *The sourcing seam*), rather than blocking on R314. The compile-dependency graph is a coarsening of
-  R333's method graph and becomes a view over it once R314 lands: a fourth consumer alongside code-gen,
-  the LSP, and the MCP server, matching R333's "one base, many consumers, no consumer owns a private
-  model" thesis. No hard `depends-on`; the migration is guarded by the compile-checked coverage
-  obligation, not deferred to good intentions.
+  *The sourcing seam*), rather than blocking on either. The compile-dependency graph is a coarsening of
+  R333's method graph and becomes a view over it once that method graph exists: a fourth consumer
+  alongside code-gen, the LSP, and the MCP server, matching R333's "one base, many consumers, no
+  consumer owns a private model" thesis. R314 (emit re-platforming) is a peer consumer of the same
+  model, not a gate on this one. No hard `depends-on`; the migration is guarded by the live
+  compile-checked exhaustive switch, not deferred to good intentions.
+
+## First-client user-doc draft
+
+Per workflow.adoc's item conventions, the user-visible contract is drafted here as the first-client
+check: if it does not read simply, the design is wrong. This is the block slice 6 lands in
+`getting-started.adoc`'s dev-loop section (final wording may tighten, the shape is the contract).
+
+> **`graphitron:dev` compiles the generated code for you.** In a dev session the goal writes the
+> generated Java *and* compiles it, dropping the `.class` files straight into
+> `target/classes/<outputPackage>/` as you edit the schema. Only the classes affected by an edit are
+> recompiled, so a one-field change is fast even on a large schema. You no longer need `quarkus:dev`
+> or the IDE to recompile the generated code; they still own reloading it into a running app.
+>
+> **One-time setup: let graphitron own the generated package.** Because graphitron now compiles the
+> generated sources itself, your own build must not also compile them, or the two race to write the
+> same `.class` files. Exclude the generated-sources root from your module's compile (it stays a
+> source root for IDE indexing and go-to-definition; it is just not double-compiled):
+>
+> ```xml
+> <plugin>
+>   <groupId>org.apache.maven.plugins</groupId>
+>   <artifactId>maven-compiler-plugin</artifactId>
+>   <configuration>
+>     <excludes>
+>       <exclude>**/<outputPackage-as-path>/**</exclude>
+>     </excludes>
+>   </configuration>
+> </plugin>
+> ```
+>
+> If the exclusion is missing, `graphitron:dev` stops at startup rather than racing silently:
+>
+> ```
+> graphitron:dev: your build compiles the generated package <outputPackage> itself, which would
+> race graphitron's own compilation into target/classes. Exclude the generated-sources root from
+> maven-compiler-plugin (see the dev-loop docs), or run with -Dgraphitron.dev.compile=false to let
+> your build own it.
+> ```
+
+The `-Dgraphitron.dev.compile=false` escape hatch (fall back to today's generate-only behaviour, let
+the consumer's tool compile) is part of slice 6's surface, so a consumer who cannot change their build
+config is not blocked.
 
 ## Risk centers (where the spec's difficulty concentrates)
 
@@ -179,11 +229,13 @@ correctness-only gate perfectly while delivering none of the item's value:
    `GraphQLRewriteGenerator.java:207-262`) surface the wrote-vs-skipped set. `@UnitTier` on the writer;
    no behavior change to emitted content, so existing determinism tests stay green.
 2. **Model-sourced dependency graph behind `CompileDependencyGraph`.** Build the file-level graph as a
-   coarsening projection of the classified model, with the `TypeSpec`-`ClassName` walk retained only as
-   a labelled transitional fallback. `@UnitTier` on the graph builder; `@PipelineTier` asserting a
-   realistic SDL yields the expected edges (e.g. a fetcher unit references its type unit and its
-   conditions unit). The compile-checked coverage obligation for the R314 re-source lands with this
-   slice (even if inert until R333's method graph exists).
+   coarsening projection of the classified model through an **active exhaustive switch over the current
+   classified-model leaves** (mirroring `CatalogBuilder.projectFieldClassification`), so drift in the
+   base the builder projects over is a compile error today; the `TypeSpec`-`ClassName` walk is retained
+   only as a labelled transitional fallback. `@UnitTier` on the graph builder; `@PipelineTier` asserting
+   a realistic SDL yields the expected edges (e.g. a fetcher unit references its type unit and its
+   conditions unit). The switch is live from this slice, not a stub; the R333 step (a later item) only
+   re-targets it onto the method graph.
 3. **ABI hashing + recompile-set algorithm.** Signature-surface hash and the
    `delta ∪ ABI-affected-reverse-dependents` computation as pure functions over the graph. `@UnitTier`
    with hand-built graphs covering body-only (no propagation), ABI change (one-hop and transitive), and
@@ -197,10 +249,11 @@ correctness-only gate perfectly while delivering none of the item's value:
    the acceptance gate.
 6. **Dev-loop integration.** Fold the engine into `DevMojo`: schema-save and classpath-change triggers
    drive it, consumer `.class` changes invalidate dependent generated units, Ctrl+C shuts the engine
-   down cleanly, and dev startup fails fast on a mis-configured consumer compile. Extend `DevMojoTest`,
-   including a clause mirroring `IdempotentWriterTest`'s third (a planted `.class` outside owned
-   sub-packages survives a sweep). Update `getting-started.adoc` dev-loop section with the exclusion
-   line and the ownership contract.
+   down cleanly, dev startup fails fast on a mis-configured consumer compile (with the
+   `-Dgraphitron.dev.compile=false` opt-out for consumers who cannot change their build config). Extend
+   `DevMojoTest`, including a clause mirroring `IdempotentWriterTest`'s third (a planted `.class`
+   outside owned sub-packages survives a sweep) and the fail-fast / opt-out paths. Land the
+   *First-client user-doc draft* block into `getting-started.adoc`'s dev-loop section.
 
 ## Non-goals
 
@@ -213,8 +266,9 @@ correctness-only gate perfectly while delivering none of the item's value:
 
 - **R333 (The Graphitron data model), R314 (emit re-platforming):** the dependency graph is a
   coarsening of R333's method graph; slice 2's builder sources from the classified model behind
-  `CompileDependencyGraph`, with a compile-checked coverage obligation that forces re-sourcing from the
-  R333 method graph once R314 lands. Sequenced as ship-now-behind-a-guarded-seam, not blocked.
+  `CompileDependencyGraph` through a live exhaustive switch, which is later re-targeted onto the R333
+  method graph once that graph exists. R314 is a peer consumer of the same model, not a gate on this
+  re-source. Sequenced as ship-now-behind-a-guarded-seam, not blocked.
 - **R349 (source-watcher decoupling), R341 (MCP transport seam):** this engine is a fourth long-lived
   component in the one-JVM dev loop those items shaped; it follows their lifecycle and shutdown
   conventions.
