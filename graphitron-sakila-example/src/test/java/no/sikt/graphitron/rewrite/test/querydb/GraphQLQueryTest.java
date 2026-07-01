@@ -3038,7 +3038,7 @@ class GraphQLQueryTest {
     }
 
     // Commented out under R190: getTenantId override and per-tenant DataLoader partitioning are
-    // reintroduced under R45 (see graphitron-rewrite/roadmap/tenant-routing-and-execution-input.md).
+    // reintroduced under R45 (see roadmap/tenant-routing-and-execution-input.md).
     // The QUERY_COUNT == 2 assertion shape stays as the canonical execution-tier proof R45 will
     // re-anchor on once `<tenantColumn>` is configurable on the @table directive.
     // @Test

@@ -14,7 +14,7 @@
   rewrite release. The release plumbing (gpg, central-publishing, source,
   javadoc, deploy) is therefore inlined below rather than picked up from the
   parent's `release` profile, and the parent's <modules> list deliberately
-  omits this module so `mvn install -f graphitron-rewrite/pom.xml -Plocal-db`
+  omits this module so `mvn install -Plocal-db`
   pays zero build cost.
 
   Version scheme is <runtime-version>-<build-n>; first bundled-runtime release
@@ -24,7 +24,7 @@
   for any change to the binaries at the same upstream version (build-flag
   change, recompile, security/bugfix rebuild); bump <runtime-version> when we
   retarget to a newer upstream tree-sitter tag.
-  See UPSTREAM.md and graphitron-rewrite/docs/tree-sitter-natives-release.adoc.
+  See UPSTREAM.md and docs/architecture/how-to/release-natives.adoc.
 -->
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"

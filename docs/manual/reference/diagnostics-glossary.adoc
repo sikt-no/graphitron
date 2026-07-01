@@ -12,7 +12,7 @@ Every emitted error takes one of three forms. Pattern-match by prefix:
 ----
 [author-error] <message> [; did you mean: A, B, C]
 [invalid-schema] <message>
-[deferred] <message> [— see graphitron-rewrite/roadmap/<plan-slug>.md]
+[deferred] <message> [— see roadmap/<plan-slug>.md]
 ----
 
 The `did you mean: ...` suffix only appears for `UnknownName` variants (the nine attempt-kinds in this page); a structural `[author-error]` carries no candidate list. The roadmap-path suffix only appears for `Deferred` variants whose `planSlug` is non-empty.
@@ -49,7 +49,7 @@ Three prefixes. Triage by which one you saw.
 [#kind-deferred]
 === deferred
 
-*Sample line.* `[deferred] split-batch emitter does not yet support @condition with a join step — see graphitron-rewrite/roadmap/condition-join-step.md`.
+*Sample line.* `[deferred] split-batch emitter does not yet support @condition with a join step — see roadmap/condition-join-step.md`.
 
 *Cause.* Recognised but not yet generator-supported. The classifier understands what the schema asks for, the rewrite roadmap tracks the work, but emission is stubbed until the relevant plan ships.
 

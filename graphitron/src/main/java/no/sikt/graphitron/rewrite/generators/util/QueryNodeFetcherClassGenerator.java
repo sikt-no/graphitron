@@ -37,7 +37,7 @@ import java.util.List;
  * <p>Emitted only when at least one {@link NodeType} is classified for the schema.
  *
  * <p>{@code Query.node(id:)} dispatch shipped under {@code @nodeId} + {@code @node} directive
- * support; see {@code graphitron-rewrite/roadmap/changelog.md}.
+ * support; see {@code roadmap/changelog.md}.
  */
 public class QueryNodeFetcherClassGenerator {
 

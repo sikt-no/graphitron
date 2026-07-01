@@ -25,8 +25,8 @@ You are not a reviewer. The Spec → Ready and In Review → Done gates are hand
 These are the principle sources. Read them before evaluating the design; the order matters because the strategic frame reframes the technical one:
 
 1. `docs/graphitron-principles.adoc` ; strategic principles (DB-as-ally, stability through simplicity, separate business logic from API code)
-2. `graphitron-rewrite/docs/rewrite-design-principles.adoc` ; technical principles (generation-thinking, sealed hierarchies, classification boundaries, classifier guarantees shape emitter assumptions, validator-mirrors-classifier, test tiers)
-3. `graphitron-rewrite/docs/README.adoc` ; pipeline orientation
+2. `docs/architecture/explanation/rewrite-design-principles.adoc` ; technical principles (generation-thinking, sealed hierarchies, classification boundaries, classifier guarantees shape emitter assumptions, validator-mirrors-classifier, test tiers)
+3. `docs/architecture/index.adoc` ; pipeline orientation
 4. Any doc the design touches directly (`code-generation-triggers.adoc`, `argument-resolution.adoc`, `runtime-extension-points.adoc`, `testing.adoc`, `workflow.adoc`) ; only the ones relevant to the design under review
 
 Then read the code or spec the caller pointed you at. Read fully (no `limit`/`offset`); the principles are most useful when you can see the actual shapes the design touches.

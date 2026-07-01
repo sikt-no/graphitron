@@ -1051,7 +1051,7 @@ public class GraphitronSchemaValidator {
                 field.qualifiedName(),
             Rejection.deferred("Field '" + field.qualifiedName() + "': @service with a @reference path "
                     + "(condition-join lift form) is not yet supported — see "
-                    + "graphitron-rewrite/roadmap/service-record-field.md", ""),
+                    + "roadmap/service-record-field.md", ""),
                 field.location()));
             return;
         }
@@ -1084,7 +1084,7 @@ public class GraphitronSchemaValidator {
                 field.qualifiedName(),
             Rejection.deferred("Field '" + field.qualifiedName() + "': @externalField with a @reference path "
                     + "(condition-join lift form) is not yet supported — see "
-                    + "graphitron-rewrite/roadmap/computed-field-with-reference.md", ""),
+                    + "roadmap/computed-field-with-reference.md", ""),
                 field.location()));
             return;
         }

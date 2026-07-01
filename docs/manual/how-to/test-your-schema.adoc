@@ -261,7 +261,7 @@ The test passes representations via GraphQL variables, and asserts on the dispat
 
 == See also
 
-* `GraphQLQueryTest` (`graphitron-rewrite/graphitron-sakila-example/src/test/java/no/sikt/graphitron/rewrite/test/querydb/GraphQLQueryTest.java`) is the canonical template; copy its `@BeforeAll` setup.
+* `GraphQLQueryTest` (`graphitron-sakila-example/src/test/java/no/sikt/graphitron/rewrite/test/querydb/GraphQLQueryTest.java`) is the canonical template; copy its `@BeforeAll` setup.
 * `FederationEntitiesDispatchTest` (same package) covers the federation-side test pattern.
 * xref:apollo-federation.adoc[How-to: Apollo Federation transport] covers the framework-level wiring this recipe assumes is in place when testing federation entities.
 * xref:handle-services.adoc[How-to: Handle services] covers the `@service` argument-binding contract that consumer tests exercise.

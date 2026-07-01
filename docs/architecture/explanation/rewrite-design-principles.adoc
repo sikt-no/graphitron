@@ -154,7 +154,7 @@ See xref:../how-to/testing.adoc[Test-tier guide] for build commands and guidance
 
 Graphitron is a code generator. The Java version used to build the generator is independent of the Java version of the source it emits.
 
-- *Generator implementation* (almost everything under `graphitron-rewrite/`) may freely use Java 25 features ; sealed classes, pattern matching, records, switch expressions, switch patterns, text blocks, scoped values, and so on. The parent pom's `requireJavaVersion` enforcer pins the minimum to 25. The one exception is the hand-written runtime category below, which opts back down to 17 in its own pom.
+- *Generator implementation* (almost everything in the reactor) may freely use Java 25 features ; sealed classes, pattern matching, records, switch expressions, switch patterns, text blocks, scoped values, and so on. The parent pom's `requireJavaVersion` enforcer pins the minimum to 25. The one exception is the hand-written runtime category below, which opts back down to 17 in its own pom.
 - *Generated source files* must target Java 17. Consumers compile Graphitron's output with their own toolchain, which may be Java 17. Generator authors are responsible for ensuring that any syntax emitted into generated files is valid Java 17 ; no switch patterns, no sequenced collections API, nothing that requires 21+. `graphitron-sakila-example` compiles with `<release>17</release>` to verify this.
 - *Hand-written runtime artifacts consumers depend on* must target Java 17, for the same reason as generated output: a runtime jar a consumer puts on the same classpath as Graphitron-generated sources must not require newer bytecode than that Java 17 floor. This is a distinct category from both of the above: not generated, but shipped to and run by consumers. `graphitron-jakarta-rest` (the reusable GraphQL-over-HTTP serving library) is the first instance; it overrides its main compile to `<release>17</release>` in its own pom while inheriting the parent's `-Xlint:all -Werror`. The generator itself stays Java 25.
 
@@ -174,13 +174,11 @@ Concrete rules for any code a generator emits:
 
 The smell to watch for: an emitter building a `CodeBlock` whose template spans several lines of nested `? :`, casts to `Object` to dodge a parameterised `instanceof`, and binds `_x`-style locals. That block is being written for the emitter author's convenience, not the consumer's; the fix is a named helper with a statement body. `ArgCallEmitter.buildNodeIdDecodeExtraction` is the current worked counter-example and the R260 cleanup target.
 
-== Rewrite builds independently of legacy Graphitron modules
+== The reactor is self-contained
 
-`graphitron-rewrite/pom.xml` is a self-contained Maven aggregator. `mvn install -f graphitron-rewrite/pom.xml` on a clean local repo builds the rewrite modules (`graphitron-javapoet`, `graphitron`, `graphitron-fixtures-codegen`, `graphitron-sakila-db`, `graphitron-sakila-service`, `graphitron-maven-plugin`, `graphitron-sakila-example`, `graphitron-lsp`, `roadmap-tool`) without resolving any legacy artifact (`graphitron-common`, `graphitron-java-codegen`, `graphitron-maven-plugin`, `graphitron-schema-transform`). The rewrite tree publishes its own `graphitron-javapoet` at `10-SNAPSHOT`, distinct from the legacy `9-SNAPSHOT` coord.
+The repo root `pom.xml` is a single self-contained Maven reactor. `mvn install` on a clean local repo builds every module (`graphitron-javapoet`, `graphitron`, `graphitron-fixtures-codegen`, `graphitron-sakila-db`, `graphitron-sakila-service`, `graphitron-mcp`, `graphitron-jakarta-rest`, `graphitron-maven-plugin`, `graphitron-sakila-example`, `graphitron-lsp`, `roadmap-tool`) with no dependency outside the pinned third-party set.
 
-The invariant is enforced by `graphitron-rewrite/scripts/verify-standalone-build.sh`, which runs the aggregator against a fresh empty local repo and greps the resulting repo for forbidden legacy coords. Any future change that pulls a legacy dep back into the rewrite tree fails this check.
-
-Rationale: rewrite is the successor; consumers migrating off the legacy generator should be able to depend on the rewrite aggregator alone. The rewrite-owned Maven plugin (`graphitron-maven-plugin`) is the entry point; the legacy plugin and schema-transform module remain available for consumers who haven't migrated yet, but rewrite code does not import from them.
+The legacy `graphitron-parent` generator has been retired, so there is no second reactor and no cross-tree coordinate to guard against. The `graphitron-maven-plugin` module is the consumer entry point.
 
 '''
 

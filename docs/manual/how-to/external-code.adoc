@@ -36,7 +36,7 @@ The rewrite's Maven plugin reflects on the named class at code-generation time (
 
 The dependency is plugin-scoped: the consumer module never imports the artifact at compile time (the generator emits sources that wire in via `DSLContext`-mediated reflection bindings, not via direct `import` statements). Putting the artifact in the *outer* `<dependencies>` block instead would compile the consumer module against it for no benefit and pollute the runtime jar.
 
-`graphitron-sakila-example` follows this pattern: the example POM declares `graphitron-sakila-service` (which carries `SampleQueryService`, `FilmService`, `InventoryExtensions`, etc.) under the `<plugin>...<dependencies>` block of the `graphitron-maven-plugin` plugin in `graphitron-rewrite/graphitron-sakila-example/pom.xml`, not under the module's outer dependency list.
+`graphitron-sakila-example` follows this pattern: the example POM declares `graphitron-sakila-service` (which carries `SampleQueryService`, `FilmService`, `InventoryExtensions`, etc.) under the `<plugin>...<dependencies>` block of the `graphitron-maven-plugin` plugin in `graphitron-sakila-example/pom.xml`, not under the module's outer dependency list.
 
 == Reference the class from the schema
 

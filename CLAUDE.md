@@ -1,17 +1,17 @@
 # Graphitron Project - Claude Code Reference
 
-Rules and constraints for working in this repo. **Scope: `graphitron-rewrite/` and `docs/`.** The legacy modules at the repo root (`graphitron-codegen-parent`, `graphitron-common`, `graphitron-example`, `graphitron-maven-plugin`, `graphitron-schema-transform`, `graphitron-servlet-parent`) are out of scope for AI work; do not modify them. `/docs/` is the source for the public documentation site at `graphitron.sikt.no`; see [Documentation site](#documentation-site) below.
+Rules and constraints for working in this repo. The whole repo is the rewrite reactor and in scope. `/docs/` is the source for the public documentation site at `graphitron.sikt.no`; see [Documentation site](#documentation-site) below.
 
 Links elsewhere in this file point at deep references. **Don't fetch them up front;** open one only when its stated trigger applies to the task at hand. The rules and commands here are meant to be self-contained for routine work.
 
 ## What graphitron-rewrite is
 
-The next-generation Graphitron generator: a Maven-based code generator that turns GraphQL schemas + jOOQ-generated database models into Java resolvers. Lives as a nested monorepo under `graphitron-rewrite/` with its own parent pom (`graphitron-rewrite-parent`, `10-SNAPSHOT`). Modules: `graphitron-javapoet`, `graphitron`, `graphitron-fixtures-codegen`, `graphitron-sakila-db`, `graphitron-sakila-service`, `graphitron-maven`, `graphitron-sakila-example`, `graphitron-lsp`, `roadmap-tool`. Developed by Sikt.
+The next-generation Graphitron generator: a Maven-based code generator that turns GraphQL schemas + jOOQ-generated database models into Java resolvers. The repo root is the reactor, with its parent pom (`graphitron-rewrite-parent`, `10-SNAPSHOT`). Modules: `graphitron-javapoet`, `graphitron`, `graphitron-fixtures-codegen`, `graphitron-sakila-db`, `graphitron-sakila-service`, `graphitron-mcp`, `graphitron-jakarta-rest`, `graphitron-maven-plugin`, `graphitron-sakila-example`, `graphitron-lsp`, `roadmap-tool` (plus the `graphitron-tree-sitter-natives` subdirectory). Developed by Sikt.
 
 ## Technology constraints
 
-- **Java 25** for generator code (`<release>25</release>` in `graphitron-rewrite/pom.xml` and most child modules); **Java 17** for generated output (`graphitron-sakila-example` compiles with `<release>17</release>` to verify this). Generator implementation may use Java 25 features freely. Generated source files must target Java 17, consumers may still be on 17, and we control what syntax appears in those files. The parent pom's `requireJavaVersion` enforcer rule fails the build with a clear message when run on a JDK older than 25.
-- **jOOQ 3.20.11**, **GraphQL-Java 25.0**, **JUnit 6.0.3 + AssertJ 3.27.7**, **PostgreSQL 42.7.10** (Testcontainers 2.0.4). Versions are pinned in `graphitron-rewrite/pom.xml` properties; don't add dependencies without checking that pom first.
+- **Java 25** for generator code (`<release>25</release>` in the root `pom.xml` and most child modules); **Java 17** for generated output (`graphitron-sakila-example` compiles with `<release>17</release>` to verify this). Generator implementation may use Java 25 features freely. Generated source files must target Java 17, consumers may still be on 17, and we control what syntax appears in those files. The parent pom's `requireJavaVersion` enforcer rule fails the build with a clear message when run on a JDK older than 25.
+- **jOOQ 3.20.11**, **GraphQL-Java 25.0**, **JUnit 6.0.3 + AssertJ 3.27.7**, **PostgreSQL 42.7.10** (Testcontainers 2.0.4). Versions are pinned in the root `pom.xml` properties; don't add dependencies without checking that pom first.
 
 ## Environment (agent sessions)
 
@@ -31,10 +31,10 @@ If `mvn -version` reports Java 21, the session inherited a stale `JAVA_HOME`; se
 
 ```bash
 # Build the rewrite (always include -Plocal-db; see footgun below)
-mvn -f graphitron-rewrite/pom.xml install -Plocal-db
+mvn install -Plocal-db
 
-# Regenerate graphitron-rewrite/roadmap/README.md from item front-matter
-mvn -f graphitron-rewrite/pom.xml -pl roadmap-tool exec:java -q
+# Regenerate roadmap/README.md from item front-matter
+mvn -pl roadmap-tool exec:java -q
 ```
 
 The full install is fast; prefer it over targeted `-pl` builds. If you do need `-pl`, always pair it with `-am` (also-make) or `-amd` (also-make-dependents); a bare `-pl` skips dependent modules and produces stale results.
@@ -43,13 +43,13 @@ The full install is fast; prefer it over targeted `-pl` builds. If you do need `
 
 The `mvn install -Plocal-db` command above runs the full pipeline (build-fixtures → test → compile-spec → execute-spec). Reach for the deeper docs only when the task requires it:
 
-- Adding/structuring tests, or unsure which tier (unit vs pipeline vs compilation vs execution) to put a test in: `graphitron-rewrite/docs/rewrite-design-principles.adoc`.
-- Navigating the sealed variant hierarchy, classification taxonomy, or runtime extension points: `graphitron-rewrite/docs/README.adoc`.
+- Adding/structuring tests, or unsure which tier (unit vs pipeline vs compilation vs execution) to put a test in: `docs/architecture/explanation/rewrite-design-principles.adoc`.
+- Navigating the sealed variant hierarchy, classification taxonomy, or runtime extension points: `docs/architecture/index.adoc`.
 - Diagnosing build/test failures specific to the web sandbox: `.claude/web-environment.md`.
 
 **Footgun: catalog-jar clobber.** Omitting `-Plocal-db` silently empties the jOOQ catalog jar; pipeline tests then fail with `UnclassifiedType` / `NoSuchElement` / "table … could not be resolved" cascades. Recovery: rerun with `-Plocal-db`.
 
-**Sub-module gotcha (handled for standard layouts): `graphitron:dev` sibling scan.** Running `mvn graphitron:dev` from inside one module of a multi-module reactor used to see only that module's classes, so services / conditions / records in sibling modules silently produced empty completions. The dev goal now walks the parent pom's `<modules>` and folds siblings' `target/classes` and sources into the scan automatically (standard layout only; a sibling must have been compiled once). See R99 (`lsp-submodule-sibling-classpath`) and the "Multi-module projects" note in `graphitron-rewrite/docs/getting-started.adoc`.
+**Sub-module gotcha (handled for standard layouts): `graphitron:dev` sibling scan.** Running `mvn graphitron:dev` from inside one module of a multi-module reactor used to see only that module's classes, so services / conditions / records in sibling modules silently produced empty completions. The dev goal now walks the parent pom's `<modules>` and folds siblings' `target/classes` and sources into the scan automatically (standard layout only; a sibling must have been compiled once). See R99 (`lsp-submodule-sibling-classpath`) and the "Multi-module projects" note in `docs/architecture/how-to/dev-loop-internals.adoc`.
 
 ## Writing style
 
@@ -67,23 +67,23 @@ Prefer many small `Edit` calls over one large `Write` when trimming or rewriting
 
 ## Documentation site
 
-`/docs/` is a Maven module (`graphitron-docs`, packaging `pom`) that renders an AsciiDoc site to `docs/target/generated-docs/` and gets deployed to GitHub Pages by the `docs-build` / `docs-deploy` jobs in `.github/workflows/rewrite-build.yml` (trunk pushes only). The rewrite-internal docs under `/graphitron-rewrite/docs/` and the roadmap under `/graphitron-rewrite/roadmap/` also render into the site. PR preview builds run through `.github/workflows/preview-docs.yml` and upload `target/generated-docs/` as a workflow artifact. Doc changes ship through the same trunk-based flow as code; PR breakage on `.adoc` files fails CI.
+`/docs/` is a Maven module (`graphitron-docs`, packaging `pom`) that renders an AsciiDoc site to `docs/target/generated-docs/` and gets deployed to GitHub Pages by the `docs-build` / `docs-deploy` jobs in `.github/workflows/rewrite-build.yml` (trunk pushes only). The contributor-facing architecture docs under `/docs/architecture/` and the roadmap under `/roadmap/` also render into the site. PR preview builds run through `.github/workflows/preview-docs.yml` and upload `target/generated-docs/` as a workflow artifact. Doc changes ship through the same trunk-based flow as code; PR breakage on `.adoc` files fails CI.
 
 To skip the AsciiDoctor render in a local build (saves ~10s of JRuby startup):
 
 ```bash
-mvn -f graphitron-rewrite/pom.xml install -P!docs -Plocal-db
+mvn install -P!docs -Plocal-db
 ```
 
 ## Development Workflow
 
-**Before editing under `graphitron-rewrite/`, confirm a roadmap item covers the change.** If none exists, file a Backlog item first via the `roadmap` skill; this applies even to "fix this error" / "make it accept X" framings. The default when unsure is to file a Backlog stub and ask whether to skip the gate, not to implement and ask later; the case for bypassing the pipeline is the user's to make.
+**Before editing the reactor, confirm a roadmap item covers the change.** If none exists, file a Backlog item first via the `roadmap` skill; this applies even to "fix this error" / "make it accept X" framings. The default when unsure is to file a Backlog stub and ask whether to skip the gate, not to implement and ask later; the case for bypassing the pipeline is the user's to make.
 
-**Size is not an exemption.** The documented workflow applies to *every* change under `graphitron-rewrite/`, including one-line patches, "trivial" bug fixes, and obvious-looking corrections. Small or urgent-feeling does not mean skip the roadmap item, the Spec → ... → Done states, or the reviewer-rule gates; a bug fix moves through the same pipeline as a feature. If the workflow genuinely should be short-circuited for a given fix, that is the user's call to make explicitly, not a default you reach for because the change looks simple.
+**Size is not an exemption.** The documented workflow applies to *every* change in the reactor, including one-line patches, "trivial" bug fixes, and obvious-looking corrections. Small or urgent-feeling does not mean skip the roadmap item, the Spec → ... → Done states, or the reviewer-rule gates; a bug fix moves through the same pipeline as a feature. If the workflow genuinely should be short-circuited for a given fix, that is the user's call to make explicitly, not a default you reach for because the change looks simple.
 
-Every change moves Backlog → Spec → Ready → In Progress → In Review → Done. Each item has its own file in `graphitron-rewrite/roadmap/` carrying YAML front-matter (`status:`, `bucket:`, etc.); `graphitron-rewrite/roadmap/README.md` is the rendered roll-up, regenerated by `mvn -f graphitron-rewrite/pom.xml -pl roadmap-tool exec:java -q`. Reviewer must be a different party than the author (for Spec → Ready) and the implementer (for In Review → Done). Any session can add Backlog items.
+Every change moves Backlog → Spec → Ready → In Progress → In Review → Done. Each item has its own file in `roadmap/` carrying YAML front-matter (`status:`, `bucket:`, etc.); `roadmap/README.md` is the rendered roll-up, regenerated by `mvn -pl roadmap-tool exec:java -q`. Reviewer must be a different party than the author (for Spec → Ready) and the implementer (for In Review → Done). Any session can add Backlog items.
 
-When transitioning a roadmap item between states, or unsure of the file conventions for a new item, consult `graphitron-rewrite/docs/workflow.adoc` for the full state table and canonical paths.
+When transitioning a roadmap item between states, or unsure of the file conventions for a new item, consult `roadmap/workflow.adoc` for the full state table and canonical paths.
 
 Consult the `principles-architect` subagent while drafting (Backlog → Spec, design forks in In Progress, or as a self-check before `srp`); it's read-only and produces no verdict. Reviewer-rule gates stay with `srp` / `reviewer-prompt`, which hand off to a *different* Claude Code session; identity is the `https://claude.ai/code/session_<id>` trailer on each commit, not git author.
 

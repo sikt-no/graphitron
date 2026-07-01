@@ -32,7 +32,7 @@ For other statuses (Backlog, Ready, In Progress), no formal review handoff appli
 1. **Resolve the item.** Resolve `R<n>` to a file via:
 
    ```bash
-   grep -lE "^id: R<n>$" graphitron-rewrite/roadmap/*.md
+   grep -lE "^id: R<n>$" roadmap/*.md
    ```
 
    Multiple matches: roadmap-tool bug; stop and surface. No matches: ID is unallocated, or the item shipped (file deleted on Done) and only its changelog entry remains; tell the user.
@@ -44,11 +44,11 @@ For other statuses (Backlog, Ready, In Progress), no formal review handoff appli
    - `In Review` → Implementation-stage template (gate: In Review → Done)
    - Anything else → stop, tell the user no review handoff applies at status `<X>`.
 
-4. **Resolve the disqualified party.** This is the load-bearing piece — the next reviewer applies the rule by ID, not by re-deriving it. Per `graphitron-rewrite/docs/workflow.adoc` § "States and transitions" (Reviewer rule paragraph), the comparison identifier is the Claude Code session ID recorded as the `https://claude.ai/code/session_<id>` trailer on each commit. Resolve both the session ID (primary) and the git author name (fallback for trailer-less commits) so the emitted template carries both.
+4. **Resolve the disqualified party.** This is the load-bearing piece — the next reviewer applies the rule by ID, not by re-deriving it. Per `roadmap/workflow.adoc` § "States and transitions" (Reviewer rule paragraph), the comparison identifier is the Claude Code session ID recorded as the `https://claude.ai/code/session_<id>` trailer on each commit. Resolve both the session ID (primary) and the git author name (fallback for trailer-less commits) so the emitted template carries both.
 
    Spec stage:
    ```bash
-   sha=$(git log -1 --format=%H -- graphitron-rewrite/roadmap/<slug>.md)
+   sha=$(git log -1 --format=%H -- roadmap/<slug>.md)
    git log -1 --format=%B "$sha" | grep -oE 'session_[A-Za-z0-9]+' | head -1
    git log -1 --format='%an' "$sha"
    ```
@@ -69,7 +69,7 @@ For other statuses (Backlog, Ready, In Progress), no formal review handoff appli
 
 5. **Get the recent-commits block.** Indent four spaces under `Recent commits ...:`:
    ```bash
-   git log --oneline -10 -- graphitron-rewrite/roadmap/<slug>.md
+   git log --oneline -10 -- roadmap/<slug>.md
    ```
 
 6. **Emit the prompt.** Output exactly one fenced block, pre-filled with the resolved values. Use the appropriate template below verbatim.
@@ -89,7 +89,7 @@ Spec:    {{spec-path}}  (id: {{Rn}}, title: {{title}}, status: Spec)
 
 # Workflow rule
 
-Per graphitron-rewrite/docs/workflow.adoc § "States and transitions", the
+Per roadmap/workflow.adoc § "States and transitions", the
 Spec → Ready guard is "reviewer ≠ last committer". The "Reviewer rule"
 paragraph below the state diagram pins the identifier: the comparison is by
 Claude Code session ID, recorded as the `https://claude.ai/code/session_<id>`
@@ -123,9 +123,9 @@ If the rebase conflicts, surface and stop until resolved. Don't review a
 # Read first (in this order)
 
 1. {{spec-path}}  (the spec under review)
-2. graphitron-rewrite/docs/rewrite-design-principles.adoc  (technical principles, esp. "Documentation names only live tests/code")
-3. graphitron-rewrite/docs/workflow.adoc  (state machine + reviewer-rule paragraph)
-4. graphitron-rewrite/docs/README.adoc  (architectural orientation)
+2. docs/architecture/explanation/rewrite-design-principles.adoc  (technical principles, esp. "Documentation names only live tests/code")
+3. roadmap/workflow.adoc  (state machine + reviewer-rule paragraph)
+4. docs/architecture/index.adoc  (architectural orientation)
 
 # What to assess
 
@@ -181,7 +181,7 @@ Spec:    {{spec-path}}  (id: {{Rn}}, title: {{title}}, status: In Review)
 
 # Workflow rule
 
-Per graphitron-rewrite/docs/workflow.adoc § "States and transitions", the
+Per roadmap/workflow.adoc § "States and transitions", the
 In Review → Done guard is "reviewer ≠ implementer". The "Reviewer rule"
 paragraph below the state diagram pins the identifier: the comparison is by
 Claude Code session ID, recorded as the `https://claude.ai/code/session_<id>`
@@ -216,10 +216,10 @@ diff is worse than waiting for a clean checkout.
 # Read first (in this order)
 
 1. {{spec-path}}  (the contract; what the implementer was building)
-2. The implementation diff: `git log --oneline -20 -- graphitron-rewrite/` and
+2. The implementation diff: `git log --oneline -20` and
    `git show <sha>` on the implementation commits.
-3. graphitron-rewrite/docs/rewrite-design-principles.adoc  (technical principles)
-4. graphitron-rewrite/docs/README.adoc  (architectural orientation)
+3. docs/architecture/explanation/rewrite-design-principles.adoc  (technical principles)
+4. docs/architecture/index.adoc  (architectural orientation)
 
 # What to assess
 
@@ -235,7 +235,7 @@ Implementation-stage framing: spec is the contract, diff is the delivery.
 - **Test coverage.** Spec-named pipeline-tier, execution-tier, audit, and unit
   tests are present and assert what the spec said they would assert. No
   code-string assertions on generated method bodies.
-- **Build green.** `mvn -f graphitron-rewrite/pom.xml install -Plocal-db` passes.
+- **Build green.** `mvn install -Plocal-db` passes.
   A failing build is automatic rework.
 - **Plan housekeeping.** The spec body should be marked up to reflect what
   shipped: phases collapsed to one-line `shipped at <sha>` notes, remaining
@@ -244,7 +244,7 @@ Implementation-stage framing: spec is the contract, diff is the delivery.
 # Two acceptable outcomes
 
 1. **Approve.** Delete the spec file (`rm {{spec-path}}`); if the milestone is
-   worth preserving, append a one-line entry to graphitron-rewrite/roadmap/
+   worth preserving, append a one-line entry to roadmap/
    changelog.md naming the {{Rn}} ID and landing commit SHAs. Regenerate the
    README via the `roadmap` skill, commit on a fresh feature branch, then
    `publish` to push and fast-forward trunk.

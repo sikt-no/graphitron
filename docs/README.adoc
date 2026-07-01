@@ -30,13 +30,13 @@ toc::[]
 | Build output. Gitignored.
 |===
 
-The rewrite-specific architecture docs live under `/graphitron-rewrite/docs/` and the roadmap under `/graphitron-rewrite/roadmap/`. Both render into this site, but their authoring conventions stay in their own folders.
+The contributor-facing architecture docs live under `/docs/architecture/` (Diataxis-shaped) and the roadmap under `/roadmap/`. Both render into this site, but their authoring conventions stay in their own folders.
 
 == Building locally
 
 [source,bash]
 ----
-mvn -f graphitron-rewrite/pom.xml -pl :graphitron-docs -am package
+mvn -pl :graphitron-docs -am package
 ----
 
 Output lands in `docs/target/generated-docs/`. Open `index.html` in a browser to spot-check.
@@ -45,7 +45,7 @@ To skip the AsciiDoctor render in a local Maven run (the JRuby startup adds ~10s
 
 [source,bash]
 ----
-mvn -f graphitron-rewrite/pom.xml install -P!docs -Plocal-db
+mvn install -P!docs -Plocal-db
 ----
 
 The resources copy and any roadmap-tool emit still run, so the staging tree is verified even when the HTML render is skipped.

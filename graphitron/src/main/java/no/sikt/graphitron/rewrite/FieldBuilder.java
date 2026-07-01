@@ -6069,14 +6069,14 @@ class FieldBuilder {
             // Synthesis shim: a scalar ID field on a NodeType without `@nodeId`, `@reference`, or
             // `@field` is treated as an implicit `@nodeId`. Fires a per-site deprecation diagnostic;
             // the canonical form is to declare `@nodeId` explicitly. See plan:
-            // graphitron-rewrite/roadmap/retire-synthesis-shims.md.
+            // roadmap/retire-synthesis-shims.md.
             if (tableType instanceof NodeType nodeType
                     && "ID".equals(typeName)
                     && !isList
                     && !hasFieldDirective) {
                 LOG.warn("field '{}.{}' synthesizes an `@nodeId` carrier without the directive;"
                     + " declare `@nodeId` explicitly. The synthesis shim will be removed in a"
-                    + " future release. See graphitron-rewrite/roadmap/retire-synthesis-shims.md",
+                    + " future release. See roadmap/retire-synthesis-shims.md",
                     parentTypeName, name);
                 return buildNodeIdOutputCarrier(parentTypeName, name, location, nodeType);
             }
@@ -6120,7 +6120,7 @@ class FieldBuilder {
      *       emit through {@link ColumnReferenceField} / {@link ChildField.CompositeColumnReferenceField}
      *       carrying the target's keyColumns plus the resolved {@code joinPath}. Multi-hop and
      *       condition-join paths surface as runtime stubs at the emitter; see
-     *       graphitron-rewrite/roadmap/nodeidreferencefield-join-projection-form.md.</li>
+     *       roadmap/nodeidreferencefield-join-projection-form.md.</li>
      * </ul>
      */
     private ChildField buildNodeIdReferenceCarrier(

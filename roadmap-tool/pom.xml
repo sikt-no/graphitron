@@ -13,7 +13,7 @@
 
     <artifactId>graphitron-roadmap-tool</artifactId>
     <name>${project.groupId}:${project.artifactId}</name>
-    <description>Renders graphitron-rewrite/roadmap/*.md (YAML front-matter) into roadmap/README.md.</description>
+    <description>Renders roadmap/*.md (YAML front-matter) into roadmap/README.md.</description>
 
     <properties>
         <maven.deploy.skip>true</maven.deploy.skip>

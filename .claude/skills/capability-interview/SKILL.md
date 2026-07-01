@@ -32,7 +32,7 @@ Once a target is chosen, follow this loop:
 2. **Pose the journalist question.** Ask one open question at a time: "what does this exist to deliver to a developer?", "how would a developer recognise this in a generated API?", "what would break for them if it disappeared?". Probe for the user-facing promise, not the implementation mechanism.
 
 3. **Listen and converge.** The user's answer falls into one of three buckets:
-   - **Existing capability.** The slug already exists in `graphitron-rewrite/capabilities/`. Propose attaching `@capability(name: "<slug>")` to the coordinates the target backs; surface the list as SDL tag candidates.
+   - **Existing capability.** The slug already exists in `capabilities/`. Propose attaching `@capability(name: "<slug>")` to the coordinates the target backs; surface the list as SDL tag candidates.
    - **New capability.** The slug doesn't exist yet. Propose a slug + one-sentence definition; hand off to `capability-catalog add` to write the stub. Then surface SDL tag candidates as above.
    - **Plumbing, no capability.** The target is internal machinery; no slug applies. Acknowledge and move on.
 
@@ -44,15 +44,15 @@ When the user doesn't supply a hint, the skill picks from a bounded list of *unc
 
 The **candidate set**:
 
-- Classifier sealed-variant families that produce non-trivial fetchers (`graphitron-rewrite/graphitron/src/main/java`, grep `sealed `). Each family is a candidate capability boundary.
+- Classifier sealed-variant families that produce non-trivial fetchers (`graphitron/src/main/java`, grep `sealed `). Each family is a candidate capability boundary.
 - Directive resolvers (`*DirectiveResolver.java` in the same tree). Each is the implementation side of a directive whose user-facing capability needs naming.
-- SDL coordinates in the sakila example with directive applications (`graphitron-rewrite/graphitron-sakila-example/src/main/resources/graphql/`).
+- SDL coordinates in the sakila example with directive applications (`graphitron-sakila-example/src/main/resources/graphql/`).
 - The "missing surfaces" finding from `capability-catalog audit` — sealed-variant families with no covering capability slug, the highest-priority targets.
 
 Minus the **covered set**:
 
 - SDL coordinates already carrying `@capability(name:)`.
-- Surfaces named in any authored `graphitron-rewrite/capabilities/*.adoc` body (capabilities frequently mention the Java types or directive families they cover).
+- Surfaces named in any authored `capabilities/*.adoc` body (capabilities frequently mention the Java types or directive families they cover).
 - Sealed-variant families reachable from a covered coordinate via the KB join (once R112's projection lands; until then, approximated by reading SDL).
 
 This subtraction is what makes the journalist idempotent. A surface investigated and resolved with a positive verdict drops off the candidate list automatically — re-running `/capability-interview` after a seeding pass yields a shrinking list, not a repeat. State lives in the SDL and the catalog; the skill reads them, never writes them outside the `capability-catalog add` handoff.
@@ -61,7 +61,7 @@ This subtraction is what makes the journalist idempotent. A surface investigated
 
 "Plumbing, no capability" verdicts are not currently persisted between sessions. The journalist may revisit a surface the user previously dismissed as plumbing, and the user re-says so. This is acceptable during the seeding pass because the candidate set is small and verdicts are cheap; it's not acceptable forever.
 
-When repetition becomes the actual annoyance, escalate to a single `graphitron-rewrite/capabilities/_plumbing.adoc` (reserved id `_plumbing`) listing dismissed surfaces with a one-sentence rationale each. The journalist would then subtract this from the candidate set the same way it subtracts covered surfaces, and R112's validator would enforce mutual exclusion (a surface in `_plumbing` cannot appear under any positive slug). Treat this as a TODO that surfaces when the cost of re-asking exceeds the cost of authoring; don't preemptively build the file.
+When repetition becomes the actual annoyance, escalate to a single `capabilities/_plumbing.adoc` (reserved id `_plumbing`) listing dismissed surfaces with a one-sentence rationale each. The journalist would then subtract this from the candidate set the same way it subtracts covered surfaces, and R112's validator would enforce mutual exclusion (a surface in `_plumbing` cannot appear under any positive slug). Treat this as a TODO that surfaces when the cost of re-asking exceeds the cost of authoring; don't preemptively build the file.
 
 ## Hard rules
 

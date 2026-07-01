@@ -7,7 +7,7 @@ One-shot Vite build for the GraphiQL playground served by `graphitron-sakila-exa
 ## Rebuild
 
 ```bash
-cd graphitron-rewrite/graphitron-sakila-example/tools/graphiql-build
+cd graphitron-sakila-example/tools/graphiql-build
 npm install
 npm run build
 ```
