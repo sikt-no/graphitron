@@ -67,4 +67,4 @@ The upstream is dormant. If a grammar change is needed:
    match the produced node names.
 3. Bump the natives module version `<build-n>` (or `<runtime-version>` if
    the tree-sitter runtime is also updated) and cut a new release per
-   `graphitron-rewrite/docs/tree-sitter-natives-release.adoc`.
+   `docs/architecture/how-to/release-natives.adoc`.

@@ -190,7 +190,7 @@ The canonical generate-and-deploy `<execution>` against the example schema:
 </plugin>
 ----
 
-For the dev loop add a second execution bound to no phase, or invoke `mvn graphitron:dev` directly. `graphitron-sakila-example`'s pre-wired POM (`graphitron-rewrite/graphitron-sakila-example/pom.xml`) is the canonical worked example.
+For the dev loop add a second execution bound to no phase, or invoke `mvn graphitron:dev` directly. `graphitron-sakila-example`'s pre-wired POM (`graphitron-sakila-example/pom.xml`) is the canonical worked example.
 
 == Codegen classpath
 

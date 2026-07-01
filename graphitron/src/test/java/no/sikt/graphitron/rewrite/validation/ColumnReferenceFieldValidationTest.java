@@ -30,7 +30,7 @@ class ColumnReferenceFieldValidationTest {
         "Field 'Film.languageName': "
         + "ColumnReferenceField NodeIdEncodeKeys (rooted-at-parent NodeId reference) not yet implemented"
         + " — requires JOIN-with-projection emission"
-        + " — see graphitron-rewrite/roadmap/nodeidreferencefield-join-projection-form.md";
+        + " — see roadmap/nodeidreferencefield-join-projection-form.md";
 
     private static final List<JoinStep> FK_PATH = List.of(TestFixtures.fkJoin(
         TestFixtures.foreignKeyRef("film_language_id_fkey"), null, List.of(),

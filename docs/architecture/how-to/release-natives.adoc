@@ -91,7 +91,7 @@ follows.
 Three steps, the second being the GitHub Actions trigger.
 
 . *Bump the version* in
-  `graphitron-rewrite/graphitron-tree-sitter-natives/pom.xml`. If the
+  `graphitron-tree-sitter-natives/pom.xml`. If the
   parser ABI moved, also update the matching pin in
   `src/main/native/grammars/graphql/UPSTREAM.md` and the module-level
   `UPSTREAM.md`. Commit on a normal feature branch and push.
@@ -144,7 +144,7 @@ the next working `<build-n>`.
 Three design choices worth knowing about for anyone maintaining this:
 
 . *Standalone pom, no parent inheritance.* The natives module lives in the
-  `graphitron-rewrite/` directory but its `pom.xml` does not declare
+  repo root alongside the reactor modules but its `pom.xml` does not declare
   `<parent>graphitron-rewrite-parent</parent>`. Trunk's parent runs at
   `10-SNAPSHOT` and declares no `<snapshotRepository>`; inheriting would
   publish a natives jar whose parent reference is unresolvable for any
@@ -153,7 +153,7 @@ Three design choices worth knowing about for anyone maintaining this:
   `maven-javadoc-plugin`, `maven-deploy-plugin`) is inlined into the
   module's pom for the same reason. The parent's `<modules>` list also
   does not include this module, so the regular reactor build
-  (`mvn install -f graphitron-rewrite/pom.xml -Plocal-db`) pays zero cost
+  (`mvn install -Plocal-db`) pays zero cost
   for it.
 
 . *No CI build per PR.* The binaries don't change per PR (they're a
@@ -179,7 +179,7 @@ Three design choices worth knowing about for anyone maintaining this:
 Not committed. The eight binaries (four grammar + four runtime) are produced
 fresh on four native runners per release and merged into the jar during the
 package+deploy stage. The vendored grammar sources under
-`graphitron-rewrite/graphitron-tree-sitter-natives/src/main/native/grammars/graphql/`
+`graphitron-tree-sitter-natives/src/main/native/grammars/graphql/`
 are the grammar's only git-resident input; the runtime is built from the
 pinned upstream source tag cloned at release time, not vendored in git. Its
 provenance (source tag, per-platform build invocation and flags, the

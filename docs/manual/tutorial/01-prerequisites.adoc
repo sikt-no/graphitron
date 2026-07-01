@@ -6,7 +6,7 @@ By the end of this page you have the rewrite checked out, a PostgreSQL database 
 
 == Tools you need
 
-* *JDK 25.* The generator runs on Java 25 (`graphitron-rewrite/pom.xml` sets `<release>25</release>` and the parent's `requireJavaVersion` enforcer fails the build on anything older). Run `java -version` to confirm.
+* *JDK 25.* The generator runs on Java 25 (`pom.xml` sets `<release>25</release>` and the parent's `requireJavaVersion` enforcer fails the build on anything older). Run `java -version` to confirm.
 * *Maven 3.9 or later.* Run `mvn -version` to confirm.
 * *Docker.* The simplest way to get a PostgreSQL with the example schema. If you already run PostgreSQL natively, see the alternative below.
 * *git.* For checking out the repository.
@@ -19,11 +19,11 @@ git clone https://github.com/sikt-no/graphitron.git
 cd graphitron
 ----
 
-The example you build against lives at `graphitron-rewrite/graphitron-sakila-example/`. Everything in this tutorial happens from the repository root unless stated otherwise.
+The example you build against lives at `graphitron-sakila-example/`. Everything in this tutorial happens from the repository root unless stated otherwise.
 
 == Start PostgreSQL with the example data
 
-The example reads from a database named `rewrite_test` on `localhost:5432` with `postgres` / `postgres` credentials. The DDL and seed data live in `graphitron-rewrite/graphitron-sakila-db/src/main/resources/init.sql`; load that file into a fresh database and you are done.
+The example reads from a database named `rewrite_test` on `localhost:5432` with `postgres` / `postgres` credentials. The DDL and seed data live in `graphitron-sakila-db/src/main/resources/init.sql`; load that file into a fresh database and you are done.
 
 With Docker:
 
@@ -33,7 +33,7 @@ docker run -d --name graphitron-pg \
   -e POSTGRES_PASSWORD=postgres \
   -e POSTGRES_DB=rewrite_test \
   -p 5432:5432 \
-  -v "$PWD/graphitron-rewrite/graphitron-sakila-db/src/main/resources/init.sql:/docker-entrypoint-initdb.d/init.sql:ro" \
+  -v "$PWD/graphitron-sakila-db/src/main/resources/init.sql:/docker-entrypoint-initdb.d/init.sql:ro" \
   postgres:16
 ----
 
@@ -44,14 +44,14 @@ If you already run PostgreSQL natively: create the database, then load `init.sql
 [source,bash]
 ----
 createdb rewrite_test
-psql -d rewrite_test -f graphitron-rewrite/graphitron-sakila-db/src/main/resources/init.sql
+psql -d rewrite_test -f graphitron-sakila-db/src/main/resources/init.sql
 ----
 
 == Build the rewrite
 
 [source,bash]
 ----
-mvn -f graphitron-rewrite/pom.xml install -Plocal-db
+mvn install -Plocal-db
 ----
 
 The first build pulls jOOQ, graphql-java, Quarkus, and a few hundred other artifacts; expect a couple of minutes on a warm Maven repository, longer on a cold one. The `-Plocal-db` profile points the jOOQ code generator at the database you just started instead of spinning up a Testcontainer.
@@ -62,7 +62,7 @@ You will see the rewrite's modules build in order: javapoet, the generator, the 
 
 [source,bash]
 ----
-cd graphitron-rewrite/graphitron-sakila-example
+cd graphitron-sakila-example
 mvn quarkus:dev
 ----
 

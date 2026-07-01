@@ -63,7 +63,7 @@ a `BodyParam` with `NestedInputField` extraction to the same
 === Data model
 
 Three `InputField` variants
-(`graphitron-rewrite/.../model/InputField.java`) carry
+(`graphitron/.../model/InputField.java`) carry
 `Optional<ArgConditionRef> condition`:
 
 - `InputField.ColumnField`

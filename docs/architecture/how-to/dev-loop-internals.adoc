@@ -37,6 +37,25 @@ flowchart TD
     Sources -- mtime change --> IDE["IDE recompile<br/>(IntelliJ / Quarkus / DevTools)"]
 ----
 
+[#dev-multi-module]
+.Multi-module projects
+****
+Running `mvn graphitron:dev` from inside a sub-module of a multi-module
+build (for example `cd opptak-subgraph && mvn graphitron:dev`, for faster
+startup and scoped logs) picks up the `@service` / `@condition` /
+`@record` classes declared in *sibling* modules automatically: completion,
+hover, go-to-definition, and the unknown-class diagnostics all resolve
+against them. Graphitron reads the parent pom's `<modules>` list to find the
+siblings, so this works for the standard reactor layout without running from
+the aggregator.
+
+The one caveat: a sibling must have been compiled at least once, so its
+`target/classes` exists on disk. `graphitron:dev` does not build siblings for
+you; run `mvn install` (or `mvn -pl <sibling> compile`) once after a checkout.
+If the dev goal reports that it resolved a single module and found no siblings,
+check that the parent pom's `<modules>` lists the module you started from.
+****
+
 [#federation-internals]
 == Federation: how the wrap is wired
 

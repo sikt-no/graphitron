@@ -11,26 +11,23 @@ Graphitron is used as a Maven plugin, offering two main functionalities:
 **New to Graphitron?** Start with the [documentation guide](./docs/README.adoc) for conceptual understanding:
 -   [Vision and Goal](./docs/vision-and-goal.adoc) - What problem Graphitron solves and why
 -   [Graphitron Principles](./docs/graphitron-principles.adoc) - Design philosophy for building systems that last decades
--   [Code Generation Triggers](./graphitron-rewrite/docs/code-generation-triggers.adoc) - Schema patterns → what gets generated
+-   [Code Generation Triggers](./docs/architecture/reference/code-generation-triggers.adoc) - Schema patterns → what gets generated
 
 **Ready to use Graphitron?** See the technical reference documentation:
 -   [Online documentation](https://graphitron.sikt.no/)
--   [Example project README](./graphitron-example/README.md) - Quickstart guide with working example
--   [Java Code Generator README](./graphitron-codegen-parent/graphitron-java-codegen/README.md) - Complete directive reference
--   [Schema Transform README](./graphitron-schema-transform/README.md) - Schema transformation features
--   [Common Module README](./graphitron-common/README.md) - Exception handling framework and shared utilities
+-   [Tutorial](./docs/manual/tutorial/index.adoc) - A fresh checkout to a working GraphQL query against the Sakila example
+-   [How-to guides](./docs/manual/how-to/index.adoc) - Day-to-day recipes: joins, conditions, mutations, services, pagination, errors, federation
+-   [Reference](./docs/manual/reference/index.adoc) - Every directive, Maven plugin parameter, runtime API entry point, and diagnostic code
+-   [Example project README](./graphitron-sakila-example/README.md) - A runnable Quarkus + JAX-RS reference application
 
 ## Building
 
-`mvn install` at the repo root builds the legacy plugin tree
-(`graphitron-common`, `graphitron-java-codegen`, `graphitron-maven-plugin`,
-`graphitron-schema-transform`, etc).
-
-Rewrite-only work can build standalone from the rewrite aggregator without
-any legacy module in the dependency graph:
+The repo root is a single Maven reactor. Build it with the `local-db` profile
+(which switches jOOQ codegen to a native PostgreSQL; see `CLAUDE.md` for the
+catalog-jar footgun):
 
 ```bash
-mvn install -f graphitron-rewrite/pom.xml -Plocal-db
+mvn install -Plocal-db
 ```
 
-See [Getting Started](./graphitron-rewrite/docs/getting-started.adoc) for the rewrite build flow.
+See the [Tutorial](./docs/manual/tutorial/index.adoc) for the end-to-end build and query flow.

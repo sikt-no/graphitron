@@ -133,7 +133,7 @@ final class NodeIdLeafResolver {
          *   <li>{@link TranslatedFk} — FK target-side columns differ from {@code T}'s key columns
          *       (e.g. parent_node + child_ref where the FK targets parent.alt_key but the
          *       NodeType key is parent.pk_id). Emission requires JOIN-with-translation; deferred
-         *       (see graphitron-rewrite/roadmap/nodeid-fk-target-arg-join-translation.md and
+         *       (see roadmap/nodeid-fk-target-arg-join-translation.md and
          *       nodeidreferencefield-join-projection-form.md).</li>
          * </ul>
          */

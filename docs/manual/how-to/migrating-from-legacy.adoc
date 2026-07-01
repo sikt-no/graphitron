@@ -57,7 +57,7 @@ Migration is a one-step delete-and-rebuild: drop the `@multitableReference` dire
 
 == Synthesis shims: WARN today, error later
 
-Two paths still work in the rewrite for backwards compatibility but emit a per-occurrence WARN at build time. Plan to migrate them before the shim retirement gate fires (no committed date; tracked at `graphitron-rewrite/roadmap/retire-synthesis-shims.md`).
+Two paths still work in the rewrite for backwards compatibility but emit a per-occurrence WARN at build time. Plan to migrate them before the shim retirement gate fires (no committed date; tracked at `roadmap/retire-synthesis-shims.md`).
 
 === Bare `id: ID!` on `@node` types
 

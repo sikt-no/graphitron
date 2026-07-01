@@ -48,7 +48,7 @@ if command -v pg_ctlcluster >/dev/null 2>&1 && command -v pg_isready >/dev/null 
     if ! sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname='rewrite_test'" 2>/dev/null | grep -q 1; then
       if sudo -u postgres psql -qc "CREATE DATABASE rewrite_test;" >/dev/null 2>&1 \
          && sudo -u postgres psql -q -d rewrite_test \
-              -f "$REPO_ROOT/graphitron-rewrite/graphitron-sakila-db/src/main/resources/init.sql" >/dev/null 2>&1; then
+              -f "$REPO_ROOT/graphitron-sakila-db/src/main/resources/init.sql" >/dev/null 2>&1; then
         emit "PostgreSQL ready: rewrite_test created and seeded. -Plocal-db builds are ready."
       else
         emit "rewrite_test create/seed failed. See .claude/web-environment.md."

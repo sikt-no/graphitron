@@ -9,7 +9,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * R178 step 3 regression pin for the SettKvotesporsmal bug
- * (see {@code graphitron-rewrite/roadmap/retire-single-record-carrier-walk.md}'s
+ * (see {@code roadmap/retire-single-record-carrier-walk.md}'s
  * "reported bug" section). The bug surfaced as classification divergence between two
  * semantically identical schemas: a record-backed payload (bound by reflection on the
  * {@code @service} producer's return type) with one {@code @table}-typed data field, classified

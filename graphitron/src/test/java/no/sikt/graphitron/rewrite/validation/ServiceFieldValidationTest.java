@@ -58,7 +58,7 @@ class ServiceFieldValidationTest {
                 RESOLVED_METHOD, RECORD_SOURCE_KEY, RECORD_LR, Optional.empty()),
             List.of("Field 'Film.externalChild': @service with a @reference path "
                 + "(condition-join lift form) is not yet supported — see "
-                + "graphitron-rewrite/roadmap/service-record-field.md"));
+                + "roadmap/service-record-field.md"));
 
         private final String description;
         private final GraphitronField field;
