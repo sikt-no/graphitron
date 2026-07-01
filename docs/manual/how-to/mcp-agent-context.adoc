@@ -1,0 +1,123 @@
+= How-to: Agent context over MCP
+:description: Connect an MCP-aware agent (Claude Code, Cursor) to the graphitron:dev server so it can answer questions about your project's schema, catalog, and directives without grepping.
+:!toc:
+
+You are working on a Graphitron subgraph with an MCP-aware coding agent (Claude Code, Cursor), and you want the agent to understand your project: which tables the catalog holds, which `@service` classes exist, what the directive vocabulary means, and where to find the right pattern in the manual. `mvn graphitron:dev` already runs an MCP server for exactly this. Point your agent at it once and the agent stops guessing.
+
+[TIP]
+====
+This is the companion to xref:dev-loop.adoc[the dev loop]. The same `mvn graphitron:dev` process serves both the LSP (for your editor) and the MCP server (for your agent) off one warm workspace. If you have the dev loop running, the MCP server is already up.
+====
+
+== TLDR
+
+[cols="1,3"]
+|===
+| Step | What to run
+
+| 1. Start the dev server
+| `mvn graphitron:dev` in a side terminal. Alongside the LSP on `localhost:8487`, it binds an MCP server on `http://127.0.0.1:8488/mcp` (Streamable HTTP, loopback only).
+
+| 2. Register the server
+| Run the copy-pasteable line the dev server prints on startup: `claude mcp add --transport http graphitron http://127.0.0.1:8488/mcp`. Or commit a `.mcp.json` (see <<setup>>).
+
+| 3. Ask the agent
+| Run the `+/mcp__graphitron__about+` slash command for orientation, then ask questions in natural language ("which directive joins two tables?", "where are customer addresses stored?"). The agent calls the MCP tools to answer.
+|===
+
+The MCP server is loopback-only and read-only: it exposes context about the project you are running `graphitron:dev` in, nothing else.
+
+== What the MCP server gives an agent
+
+An MCP-aware agent connected to the server gets three kinds of context, all served off the same warm workspace the dev loop keeps current.
+
+An **`about` prompt** (surfaced as the `+/mcp__graphitron__about+` slash command) that orients the agent on the dev loop and how to use the other tools. Run it first in a fresh session.
+
+A **`directives` resource**, the Graphitron directive vocabulary, so the agent knows what `@table`, `@field`, `@reference`, `@service`, and the rest mean without you pasting the reference in.
+
+A set of **tools** the agent calls to answer questions:
+
+[cols="1,3"]
+|===
+| Tool | What it answers
+
+| `docs.search`
+| Natural-language retrieval over the bundled manual ("which directive joins two tables?"). Returns the matching passages with a link into this site, so the agent finds the right pattern without already knowing the vocabulary to grep for.
+
+| `catalog.search`
+| Semantic, fuzzy discovery over your jOOQ catalog ("where are customer addresses stored?"). Returns the most relevant tables ranked by similarity, by schema-qualified SQL name. Feed a hit straight into `catalog.describe`.
+
+| `catalog.tables`
+| Lists the tables in the catalog.
+
+| `catalog.describe`
+| Full column / key / foreign-key detail for one table.
+
+| `schema`
+| Describes the classified GraphQL schema.
+
+| `services`, `conditions`, `records`
+| List the `@service` classes, `@condition` methods, and `@record` classes the generator resolved on the classpath.
+
+| `edges`
+| Traverses the cross-reference edges between schema elements and their backing Java / jOOQ.
+
+| `diagnostics`
+| The current schema validation diagnostics, the same `(file, location, message)` triples the LSP delivers to your editor.
+
+| `status`
+| Dev-loop status (ports, warm state).
+|===
+
+[NOTE]
+====
+`catalog.search` and `docs.search` are backed by a semantic index that loads asynchronously when `graphitron:dev` starts and refreshes after a schema change. While the index warms, those two tools return a short notice and point the agent at the structured tools (`catalog.tables`, `catalog.describe`, `schema`, and the rest), which answer immediately in the meantime.
+
+`catalog.search` is much stronger when your jOOQ-generated catalog carries table and column comments. Enable comment generation in your jOOQ codegen configuration so the database's own documentation feeds the search; without comments, search still works on table and column names alone.
+====
+
+[#setup]
+== Connect your agent
+
+The server speaks the Model Context Protocol over Streamable HTTP at `http://127.0.0.1:8488/mcp`. Any MCP-aware agent that supports HTTP transport can connect.
+
+=== Claude Code
+
+The dev server prints a copy-pasteable line on startup:
+
+----
+claude mcp add --transport http graphitron http://127.0.0.1:8488/mcp
+----
+
+Run it once and Claude Code registers the `graphitron` server. Alternatively, commit a `.mcp.json` at the project root so anyone who clones the repo gets the server with zero configuration:
+
+[source,json]
+----
+{
+  "mcpServers": {
+    "graphitron": {
+      "type": "http",
+      "url": "http://127.0.0.1:8488/mcp"
+    }
+  }
+}
+----
+
+The `graphitron-sakila-example` project ships exactly this file, so cloning it needs no MCP setup at all.
+
+=== Cursor and other agents
+
+Any MCP client that accepts an HTTP endpoint works: register a server named `graphitron` pointing at `http://127.0.0.1:8488/mcp` with transport type HTTP (sometimes labelled "Streamable HTTP" or "http"). The shape is the same as the `.mcp.json` above; consult your agent's MCP configuration docs for where that config lives.
+
+== Port and lifecycle
+
+The MCP port is fixed at `8488` (the LSP's is `8487`) and, unlike the LSP port, is *not* overridable. It stays a well-known value so a committed `.mcp.json` never drifts. If `8488` is already taken, typically a second `graphitron:dev` for another project, the dev server fails fast on startup with a message naming the conflict rather than silently rebinding, so a stale `.mcp.json` never points an agent at the wrong project's server. Stop the other session occupying the port, then retry.
+
+The server is part of the one `graphitron:dev` JVM: no daemon, no separate process to manage. Ctrl+C on the dev goal closes the MCP server along with the LSP socket and the watchers.
+
+== See also
+
+* xref:dev-loop.adoc[The dev loop (Quarkus + LSP)]: the editor-facing half of the same `graphitron:dev` process.
+* xref:../../../architecture/getting-started.adoc#dev-loop-detail[Dev loop reference] (architecture docs): how the `dev` goal wires the LSP, MCP server, watchers, and generator dispatch into one JVM.
+
+xref:index.adoc[← How-to index]

@@ -72,7 +72,7 @@ The xref:code-generation-triggers.adoc[Code Generation Triggers] page is a zoome
 | Editor LSP server for `.graphqls` authoring.
 
 | `graphitron-mcp`
-| MCP server embedded in the `dev` Mojo: serves ambient context and an `about` prompt to an MCP-aware agent over loopback Streamable HTTP. The dependency-quarantine seam for the live discovery tools (R118).
+| MCP server embedded in the `dev` Mojo: serves an `about` prompt, a `directives` resource, and read-only catalog / schema / diagnostics / `docs.search` tools to an MCP-aware agent over loopback Streamable HTTP (R118, R385). The dependency-quarantine seam that keeps its heavy semantic-index dependencies off the plugin's own compile surface.
 
 | `graphitron-jakarta-rest`
 | Reusable, spec-conformant GraphQL-over-HTTP serving library (vendor-neutral Jakarta REST + CDI) over a Graphitron schema: the `/graphql` resource, status-code semantics, SDL endpoint, and GraphiQL page, behind a `GraphitronApplication` SPI the consumer's adapter implements (R399). The first hand-written *runtime* artifact consumers depend on; compiles at `<release>17</release>`.
