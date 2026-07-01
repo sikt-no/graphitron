@@ -4,9 +4,8 @@ on:
   pull_request:
     paths:
       - 'docs/**'
-      - 'graphitron-rewrite/docs/**'
-      - 'graphitron-rewrite/roadmap/**'
-      - 'graphitron-rewrite/pom.xml'
+      - 'roadmap/**'
+      - 'pom.xml'
       - '.github/workflows/preview-docs.yml'
 
 permissions:
@@ -24,7 +23,7 @@ jobs:
           distribution: 'temurin'
           cache: maven
       - name: Build docs site
-        run: mvn -f graphitron-rewrite/pom.xml -pl :graphitron-docs -am package -DskipTests
+        run: mvn -pl :graphitron-docs -am package -DskipTests
       - name: Upload preview artifact
         uses: actions/upload-artifact@v7
         with:
