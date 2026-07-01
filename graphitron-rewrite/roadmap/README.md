@@ -14,7 +14,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 | ID | Item | Status | Updated | Plan |
 |---|---|---|---|---|
-| `R261` | Generation-time wire-coercion cast guard across arg-classification sites <sub>blocked by: [dimensional-model-pivot](dimensional-model-pivot.md)</sub> | Spec | 2026-06-30 <sub>created 2026-05-29</sub> | [plan](wire-coercion-cast-guard.md) |
+| `R261` | Generation-time wire-coercion cast guard across arg-classification sites <sub>blocked by: [dimensional-model-pivot](dimensional-model-pivot.md)</sub> | Ready | 2026-07-01 <sub>created 2026-05-29</sub> | [plan](wire-coercion-cast-guard.md) |
 | `R19` | Rebase and squash rewrite branch onto main | Ready |  | [plan](history-squash.md) |
 | `R222` | Dimensional model pivot: slots over cross-product permits | Spec | 2026-06-18 <sub>created 2026-05-21</sub> | [plan](dimensional-model-pivot.md) |
 | `R384` | Support converted/@nodeId/developer-@condition filters on multitable interface/union queries | Spec | 2026-06-27 <sub>created 2026-06-25</sub> | [plan](multitable-interface-converted-nodeid-condition-filters.md) |
@@ -234,7 +234,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### structural-refactor
 
-- `R261` [**Generation-time wire-coercion cast guard across arg-classification sites**](wire-coercion-cast-guard.md) — Spec, architecture, blocked by [dimensional-model-pivot](dimensional-model-pivot.md)
+- `R261` [**Generation-time wire-coercion cast guard across arg-classification sites**](wire-coercion-cast-guard.md) — Ready, architecture, blocked by [dimensional-model-pivot](dimensional-model-pivot.md)
 - `R222` [**Dimensional model pivot: slots over cross-product permits**](dimensional-model-pivot.md) — Spec, structural
 - `R334` [**Generated @condition arg extraction is an unreadable nested-ternary one-liner**](readable-condition-arg-extraction.md) — Backlog, Backlog
 - `R333` [**The Graphitron data model**](coordinate-lowers-to-datafetcher-queryparts.md) — Spec, structural

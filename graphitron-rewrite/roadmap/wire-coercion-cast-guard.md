@@ -1,13 +1,13 @@
 ---
 id: R261
 title: "Generation-time wire-coercion cast guard across arg-classification sites"
-status: Spec
+status: Ready
 bucket: architecture
 priority: 2
 theme: structural-refactor
 depends-on: [dimensional-model-pivot]
 created: 2026-05-29
-last-updated: 2026-06-30
+last-updated: 2026-07-01
 ---
 
 # Generation-time wire-coercion cast guard across arg-classification sites
