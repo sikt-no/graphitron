@@ -1,7 +1,7 @@
 ---
 id: R406
 title: "Support single-table discriminated interface as a DML @mutation return type"
-status: Spec
+status: Ready
 bucket: feature
 priority: 4
 theme: mutations-errors

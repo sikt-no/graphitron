@@ -24,7 +24,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R346` | Regenerate and guard the generated supported-directives migration doc against directive-set drift | Ready | 2026-06-19 | [plan](supported-directives-regen-guard.md) |
 | `R308` | Fix the @service list-payload N+1 by deriving many-arrival for list-returning carriers | Spec | 2026-06-14 | [plan](service-list-payload-arrival.md) |
 | `R335` | Fold input/scalar/enum classification into the single classify-and-emit walk | Spec | 2026-06-19 | [plan](walk-classifies-input-surface.md) |
-| `R406` | Support single-table discriminated interface as a DML @mutation return type | Spec | 2026-07-01 | [plan](dml-single-table-interface-return.md) |
+| `R406` | Support single-table discriminated interface as a DML @mutation return type | Ready | 2026-07-01 | [plan](dml-single-table-interface-return.md) |
 | `R407` | Exclude generator-injected federation/link definitions from linting | Spec | 2026-07-01 | [plan](lint-skip-injected-definitions.md) |
 | `R381` | LSP-guided @reference path authoring | Spec | 2026-06-25 | [plan](lsp-reference-path-authoring.md) |
 | `R273` | Source NodeId metadata from @node + catalog PK (inferred from `implements Node`), and settle wrong-type/malformed mismatch semantics, retiring the legacy __NODE bare-ID arm | Spec | 2026-06-02 | [plan](nodeid-skip-mismatch-error-surfacing.md) |
@@ -206,7 +206,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 - `R397` [**Let bare-entity query fields host @error so decode and other client errors route through handlers**](error-directive-on-query-fields.md) — Backlog, architecture
 - `R170` [**Sakila execute-tier fixture for the Jakarta ValidationHandler channel (R94-blocked)**](validator-integration-execute-coverage.md) — Backlog, testing
-- `R406` [**Support single-table discriminated interface as a DML @mutation return type**](dml-single-table-interface-return.md) — Spec, feature
+- `R406` [**Support single-table discriminated interface as a DML @mutation return type**](dml-single-table-interface-return.md) — Ready, feature
 - `R98` [**Multi-source input validation: SDL directives + DB CHECK + Jakarta on a unified rendered schema**](multi-source-input-validation.md) — Backlog, architecture, blocked by [catalog-check-constraint-validation](catalog-check-constraint-validation.md)
 - `R63` [**Type UPSERT dialect requirement on the model**](dml-dialect-requirement-on-model.md) — In Review, architecture
 - `R172` [**Audit: forbid service-side references to <outputPackage>.inputs.***](inputs-package-internal-use-audit.md) — Backlog, architecture
