@@ -1,7 +1,7 @@
 ---
 id: R370
 title: "Record-backed parent with a nested backing class emits a non-compiling $-qualified cast"
-status: Spec
+status: Ready
 bucket: bug
 priority: 6
 theme: interface-union
