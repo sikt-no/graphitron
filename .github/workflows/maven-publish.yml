@@ -80,7 +80,7 @@ jobs:
           PGPASSWORD: postgres
         run: |
           psql -h localhost -p 5432 -U postgres -d rewrite_test \
-            -f graphitron-rewrite/graphitron-sakila-db/src/main/resources/init.sql
+            -f graphitron-sakila-db/src/main/resources/init.sql
 
       - name: Validate and extract version from release tag
         run: |
@@ -96,11 +96,11 @@ jobs:
           VERSION=${TAG#v}
           echo "Extracted VERSION: $VERSION"
 
-          # Update the version for release across the rewrite reactor
-          mvn -f graphitron-rewrite/pom.xml versions:set -DnewVersion=$VERSION -DgenerateBackupPoms=false -DprocessAllModules=true
+          # Update the version for release across the reactor
+          mvn versions:set -DnewVersion=$VERSION -DgenerateBackupPoms=false -DprocessAllModules=true
 
       - name: Build and publish release to Maven Central
-        run: mvn -f graphitron-rewrite/pom.xml --batch-mode --errors -Prelease,local-db clean deploy
+        run: mvn --batch-mode --errors -Prelease,local-db clean deploy
         env:
           MAVEN_USERNAME: ${{ secrets.CENTRAL_PORTAL_USERNAME }}
           MAVEN_PASSWORD: ${{ secrets.CENTRAL_PORTAL_TOKEN }}

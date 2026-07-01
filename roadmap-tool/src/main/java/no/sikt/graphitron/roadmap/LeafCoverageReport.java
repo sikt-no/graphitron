@@ -126,11 +126,11 @@ final class LeafCoverageReport {
 
         // Default output paths. Internal report lands next to the roadmap; migration fragment
         // lands directly in the docs site tree so the asciidoctor build picks it up via
-        // include:: without an additional copy step. The root-dir argument points at
-        // graphitron-rewrite/, so the migration fragment goes one level up under docs/.
+        // include:: without an additional copy step. The root-dir argument points at the repo
+        // root, so both roadmap/ and docs/ sit directly under it.
         Path outFile = outputOverride != null ? outputOverride
             : (migration
-                ? root.resolveSibling("docs/manual/_generated/supported-schema-shapes.adoc")
+                ? root.resolve("docs/manual/_generated/supported-schema-shapes.adoc")
                 : roadmapDir.resolve("inference-axis-coverage.adoc"));
 
         String rendered;
@@ -147,8 +147,8 @@ final class LeafCoverageReport {
                 // Portable form: regenerate from the repo root; the trailing positional uses the
                 // project-relative path the contributor would type instead of the absolute one
                 // resolved at runtime, so CI logs and local error prints read the same.
-                System.err.println("  mvn -f graphitron-rewrite/pom.xml -pl roadmap-tool exec:java"
-                    + " -Dexec.args='leaf-coverage graphitron-rewrite"
+                System.err.println("  mvn -pl roadmap-tool exec:java"
+                    + " -Dexec.args='leaf-coverage ."
                     + (migration ? " --mode=migration" : "") + "'");
                 // Throw rather than return non-zero (which the Main dispatcher turns into
                 // System.exit): exec-maven-plugin's `java` goal runs in-process, so System.exit
