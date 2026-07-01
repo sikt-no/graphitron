@@ -8,7 +8,7 @@
         <groupId>no.sikt</groupId>
         <artifactId>graphitron-rewrite-parent</artifactId>
         <version>10-SNAPSHOT</version>
-        <relativePath>../graphitron-rewrite/pom.xml</relativePath>
+        <relativePath>../pom.xml</relativePath>
     </parent>
 
     <artifactId>graphitron-docs</artifactId>
@@ -262,7 +262,7 @@
                             <mainClass>no.sikt.graphitron.roadmap.Main</mainClass>
                             <arguments>
                                 <argument>render-adoc</argument>
-                                <argument>${project.basedir}/../graphitron-rewrite/roadmap</argument>
+                                <argument>${project.basedir}/../roadmap</argument>
                                 <argument>${project.build.directory}/staging/roadmap</argument>
                             </arguments>
                             <classpathScope>compile</classpathScope>

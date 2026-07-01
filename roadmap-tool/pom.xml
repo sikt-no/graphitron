@@ -88,15 +88,17 @@
                         </configuration>
                     </execution>
                     <execution>
-                        <!-- Fail the build if any authored .adoc file under graphitron-rewrite/ or
-                             docs/ carries a markdown-formatted table (pipe-and-dash separator row
-                             outside a |=== block). Asciidoctor renders such tables as paragraph
-                             text with literal pipes; the typo is invisible until publish. -->
+                        <!-- Fail the build if any authored .adoc file under the repo root
+                             (modules, roadmap/, and the docs/ site) carries a markdown-formatted
+                             table (pipe-and-dash separator row outside a |=== block). Asciidoctor
+                             renders such tables as paragraph text with literal pipes; the typo is
+                             invisible until publish. A single repo-root scan covers docs/ too, so
+                             no second root is needed post-unnest. -->
                         <id>check-adoc-tables</id>
                         <phase>verify</phase>
                         <goals><goal>java</goal></goals>
                         <configuration>
-                            <commandlineArgs>check-adoc-tables ${project.basedir}/.. ${project.basedir}/../../docs</commandlineArgs>
+                            <commandlineArgs>check-adoc-tables ${project.basedir}/..</commandlineArgs>
                         </configuration>
                     </execution>
                 </executions>
