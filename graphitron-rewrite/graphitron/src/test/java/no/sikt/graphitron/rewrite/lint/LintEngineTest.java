@@ -3,6 +3,8 @@ package no.sikt.graphitron.rewrite.lint;
 import graphql.schema.idl.SchemaParser;
 import graphql.schema.idl.TypeDefinitionRegistry;
 import no.sikt.graphitron.rewrite.BuildWarning;
+import no.sikt.graphitron.rewrite.lint.rules.DeprecationsHaveAReasonVisitor;
+import no.sikt.graphitron.rewrite.lint.rules.TypesAndFieldsHaveDescriptionsVisitor;
 import no.sikt.graphitron.rewrite.schema.RewriteSchemaLoader;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
@@ -40,6 +42,11 @@ class LintEngineTest {
 
     private static List<BuildWarning.LintFinding> forRule(List<BuildWarning.LintFinding> all, LintRule rule) {
         return all.stream().filter(f -> f.rule() == rule).toList();
+    }
+
+    private static LintFix fixOf(BuildWarning.LintFinding finding) {
+        assertThat(finding.fix()).as("finding carries a suggested fix").isPresent();
+        return finding.fix().get();
     }
 
     // --- type-names-pascal-case ---
@@ -207,6 +214,124 @@ class LintEngineTest {
     void noDeprecatedDirectiveUsage_silentWhenNoDeprecatedUsage() {
         assertThat(forRule(findingsWithDirectives("type Query { films: String }"),
             LintRule.NO_DEPRECATED_DIRECTIVE_USAGE)).isEmpty();
+    }
+
+    // --- suggested fixes (R398 fix slice): assert the LintFix edit ranges and replacement text ---
+
+    @Test
+    void fieldNamesCamelCase_offersRenameFix() {
+        var found = forRule(findings("type Widget { created_at: String }"), LintRule.FIELD_NAMES_CAMEL_CASE);
+        var fix = fixOf(found.getFirst());
+        assertThat(fix.edits()).singleElement().satisfies(e -> {
+            assertThat(e.replacement()).isEqualTo("createdAt");
+            // 'created_at' begins at column 15 on the single line and spans its 10 characters.
+            assertThat(e.start().getLine()).isEqualTo(1);
+            assertThat(e.start().getColumn()).isEqualTo(15);
+            assertThat(e.end().getColumn()).isEqualTo(25);
+        });
+    }
+
+    @Test
+    void fieldNamesCamelCase_describedFieldOffersNoFix() {
+        // graphql-java reports a described node's location at the description, so the name token range
+        // cannot be derived: the finding still fires, but without a fix.
+        var found = forRule(findings("""
+            type Widget {
+              \"\"\"the timestamp\"\"\"
+              created_at: String
+            }"""), LintRule.FIELD_NAMES_CAMEL_CASE);
+        assertThat(found).singleElement().satisfies(f -> assertThat(f.fix()).isEmpty());
+    }
+
+    @Test
+    void noTypenamePrefix_offersDropPrefixFix() {
+        var found = forRule(findings("type User { userName: String }"), LintRule.NO_TYPENAME_PREFIX);
+        var fix = fixOf(found.getFirst());
+        assertThat(fix.edits()).singleElement().satisfies(e -> {
+            assertThat(e.replacement()).isEqualTo("name");
+            // 'userName' begins at column 13 and spans its 8 characters.
+            assertThat(e.start().getColumn()).isEqualTo(13);
+            assertThat(e.end().getColumn()).isEqualTo(21);
+        });
+    }
+
+    @Test
+    void deprecationsHaveAReason_offersAdditiveReasonFix() {
+        var found = forRule(findings("type Widget { old: String @deprecated }"), LintRule.DEPRECATIONS_HAVE_A_REASON);
+        var fix = fixOf(found.getFirst());
+        assertThat(fix.edits()).singleElement().satisfies(e -> {
+            // Zero-width insertion right after '@deprecated' (the '@' is at column 27).
+            assertThat(e.start()).isEqualTo(e.end());
+            assertThat(e.start().getColumn()).isEqualTo(38);
+            assertThat(e.replacement()).isEqualTo(DeprecationsHaveAReasonVisitor.REASON_PLACEHOLDER);
+        });
+    }
+
+    @Test
+    void typesAndFieldsHaveDescriptions_offersAdditiveDescriptionFix() {
+        var found = forRule(findings("type Query { widgets: String }"),
+            LintRule.TYPES_AND_FIELDS_HAVE_DESCRIPTIONS);
+        assertThat(found).allSatisfy(f -> assertThat(f.fix()).isPresent());
+        var typeFinding = found.stream().filter(f -> f.message().contains("Query")).findFirst().orElseThrow();
+        var fix = fixOf(typeFinding);
+        assertThat(fix.edits()).singleElement().satisfies(e -> {
+            assertThat(e.start()).isEqualTo(e.end());
+            assertThat(e.start().getColumn()).isEqualTo(1);
+            assertThat(e.replacement())
+                .startsWith(TypesAndFieldsHaveDescriptionsVisitor.DESCRIPTION_PLACEHOLDER)
+                .endsWith("\n");
+        });
+    }
+
+    @Test
+    void noDeprecatedDirectiveUsage_offersSuccessorSwapDerivedFromDocstring() {
+        // Self-contained directive surface with the @index docstring convention, so columns are known.
+        var found = forRule(findings("""
+            \"\"\"Connect this enum value to an index. @deprecated use @order(index:) instead\"\"\"
+            directive @index(name: String) on ENUM_VALUE
+            directive @order(index: Int) on ENUM_VALUE
+            enum Color { RED @index(name: "r") }"""),
+            LintRule.NO_DEPRECATED_DIRECTIVE_USAGE);
+        var fix = fixOf(found.getFirst());
+        // Two edits: the directive name (@index -> @order) and its sole argument (name -> index),
+        // both derived from the docstring "use @order(index:)", both on the usage line (line 4).
+        assertThat(fix.edits()).hasSize(2);
+        var directiveEdit = fix.edits().getFirst();
+        assertThat(directiveEdit.replacement()).isEqualTo("order");
+        assertThat(directiveEdit.start().getLine()).isEqualTo(4);
+        assertThat(directiveEdit.start().getColumn()).isEqualTo(19);
+        assertThat(directiveEdit.end().getColumn()).isEqualTo(24);
+        var argEdit = fix.edits().get(1);
+        assertThat(argEdit.replacement()).isEqualTo("index");
+        assertThat(argEdit.start().getColumn()).isEqualTo(25);
+        assertThat(argEdit.end().getColumn()).isEqualTo(29);
+    }
+
+    // --- no-fix rules offer none (rename ripples to references, or awaits confirmation) ---
+
+    @Test
+    void typeNamesPascalCase_offersNoFix() {
+        var found = forRule(findings("type widget { id: ID }"), LintRule.TYPE_NAMES_PASCAL_CASE);
+        assertThat(found).singleElement().satisfies(f -> assertThat(f.fix()).isEmpty());
+    }
+
+    @Test
+    void inputObjectNameSuffix_offersNoFix() {
+        var found = forRule(findings("input WidgetData { id: ID }"), LintRule.INPUT_OBJECT_NAME_SUFFIX);
+        assertThat(found).singleElement().satisfies(f -> assertThat(f.fix()).isEmpty());
+    }
+
+    @Test
+    void enumValuesScreamingSnakeCase_offersNoFix() {
+        var found = forRule(findings("enum Color { red }"), LintRule.ENUM_VALUES_SCREAMING_SNAKE_CASE);
+        assertThat(found).singleElement().satisfies(f -> assertThat(f.fix()).isEmpty());
+    }
+
+    @Test
+    void inputAndArgumentNamesCamelCase_offersNoFix() {
+        var found = forRule(findings("input WidgetInput { bad_field: String }"),
+            LintRule.INPUT_AND_ARGUMENT_NAMES_CAMEL_CASE);
+        assertThat(found).singleElement().satisfies(f -> assertThat(f.fix()).isEmpty());
     }
 
     // --- graphitron's own bundled directive surface is never linted ---

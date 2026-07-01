@@ -16,6 +16,7 @@ import graphql.schema.GraphQLTypeUtil;
 import graphql.schema.GraphQLUnionType;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
+import no.sikt.graphitron.rewrite.lint.LintFix;
 import no.sikt.graphitron.rewrite.lint.LintRule;
 import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.rewrite.JooqCatalog;
@@ -598,6 +599,11 @@ class TypeBuilder {
                 ? locationOf(inp)
                 : null;
 
+        // Safe deletion fix for the ignored directive: offered only for the bare @record form, since
+        // graphql-java gives no end location to span @record(record: {...}) (R398).
+        var recordFix = LintFix.deleteBareAppliedDirective(
+            container.getAppliedDirective(DIR_RECORD), "Remove the redundant @record");
+
         // Shadowed by @table. R276: a @table + @record combination is no longer a hard
         // conflict (detectTypeDirectiveConflict ignores @record), so both OBJECT and INPUT
         // carriers reach this site; @table wins and @record is ignored. Warn so the author
@@ -608,7 +614,8 @@ class TypeBuilder {
                 + formatRecordRef(declaredClassName)
                 + ". Graphitron derives the backing class from @table; "
                 + "the @record directive is ignored. Remove it.";
-            ctx.addWarning(BuildWarning.LintFinding.of(message, loc, LintRule.REDUNDANT_RECORD_DIRECTIVE));
+            ctx.addWarning(new BuildWarning.LintFinding(
+                message, loc, LintRule.REDUNDANT_RECORD_DIRECTIVE, recordFix));
             return;
         }
 
@@ -626,14 +633,16 @@ class TypeBuilder {
                 + formatRecordRef(declaredClassName)
                 + ". Graphitron derives the same backing class from the producing field's "
                 + "reflected return type. The directive is redundant; remove it.";
-            ctx.addWarning(BuildWarning.LintFinding.of(message, loc, LintRule.REDUNDANT_RECORD_DIRECTIVE));
+            ctx.addWarning(new BuildWarning.LintFinding(
+                message, loc, LintRule.REDUNDANT_RECORD_DIRECTIVE, recordFix));
         } else {
             String message = "Type '" + name + "' carries "
                 + formatRecordRef(declaredClassName)
                 + ". Graphitron derives a different backing class (" + reflectedClass.getName()
                 + ") from the producing field's reflected return type and uses that; "
                 + "the directive is ignored. Remove it.";
-            ctx.addWarning(BuildWarning.LintFinding.of(message, loc, LintRule.REDUNDANT_RECORD_DIRECTIVE));
+            ctx.addWarning(new BuildWarning.LintFinding(
+                message, loc, LintRule.REDUNDANT_RECORD_DIRECTIVE, recordFix));
         }
     }
 
