@@ -1682,15 +1682,18 @@ public class TypeFetcherGenerator {
      * reflected return type. See {@link #buildQueryServiceRecordFetcher} for the policy.
      */
     private static TypeName computeServiceRecordReturnType(QueryField.QueryServiceRecordField qsrf) {
-        boolean isList = qsrf.returnType().wrapper().isList();
-        if (qsrf.returnType() instanceof ReturnTypeRef.ResultReturnType r && r.fqClassName() != null) {
-            ClassName recordCls = ClassName.bestGuess(r.fqClassName());
-            return isList ? ParameterizedTypeName.get(LIST, recordCls) : recordCls;
-        }
-        // PojoResultType (null fqClassName) or ScalarReturnType: faithfully reflect the
-        // developer's declared return type. ServiceMethodCall.javaReturnType is the structured
-        // TypeName captured at walk time, so the emitter declares the matching shape directly
-        // without parsing a string.
+        // Source the declared return from ServiceMethodCall.javaReturnType, the structured TypeName
+        // captured at walk time, so the emitter declares the matching shape directly without
+        // parsing a string. This covers both sub-shapes uniformly:
+        //   - ResultReturnType with a non-null fqClassName (a reflected Java backing class):
+        //     checkServiceReturnMatchesPayload has verified javaReturnType equals the SDL payload
+        //     type (isList ? List<payload> : payload), so this is the specific validated class.
+        //   - PojoResultType (null fqClassName) or ScalarReturnType: the developer's declared
+        //     return is the source of truth and graphql-java coerces.
+        // R370: the class-backed arm previously rebuilt the type via ClassName.bestGuess over the
+        // binary fqClassName, which carries a nested backing class through as the non-compiling
+        // Outer$Nested (bestGuess never splits on '$'). javaReturnType resolves it structurally to
+        // Outer.Nested, the JLS-legal form, while leaving top-level classes unchanged.
         return qsrf.serviceMethodCall().javaReturnType();
     }
 

@@ -3030,7 +3030,22 @@ class FieldBuilder {
                 && admit.element() instanceof BuildContext.DmlElementKind.RecordElement) {
             isList = GraphQLTypeUtil.unwrapNonNull(admit.dataField().getType()) instanceof GraphQLList;
         }
-        var payloadClassName = ClassName.bestGuess(result.fqClassName());
+        // R370: build the expected payload ClassName structurally, not via bestGuess over the
+        // binary fqClassName. A nested backing class has a `$`-qualified binary name
+        // (Outer$Nested); bestGuess splits only on `.` and would carry it as a single simple name,
+        // whereas method.returnType() is TypeName.get(genericReturnType) with the enclosing
+        // structure resolved (Outer.Nested). The two ClassNames would then never compare equal for
+        // a nested carrier even when the method returns exactly the payload type, spuriously
+        // rejecting it. fqClassName() is the classloader's binary-name contract, so Class.forName
+        // loads it; ClassName.get(Class) then walks the enclosing structure the same way
+        // method.returnType() does. Top-level classes are unchanged.
+        ClassName payloadClassName;
+        try {
+            payloadClassName = ClassName.get(
+                Class.forName(result.fqClassName(), false, ctx.codegenLoader()));
+        } catch (ClassNotFoundException e) {
+            payloadClassName = ClassName.bestGuess(result.fqClassName());
+        }
         no.sikt.graphitron.javapoet.TypeName sdlPayloadTypeName = isList
             ? no.sikt.graphitron.javapoet.ParameterizedTypeName.get(
                 ClassName.get("java.util", "List"), payloadClassName)
@@ -5470,9 +5485,9 @@ class FieldBuilder {
             case AccessorMatch.CardinalityMismatch _ -> throw new IllegalStateException("filtered above");
         };
         var ref = new AccessorRef(
-            ClassName.bestGuess(parentFqClassName),
+            ClassName.get(parentClass),
             accessorMethod.getName(),
-            ClassName.bestGuess(accessorElementClass.getName()));
+            ClassName.get(accessorElementClass));
         SourceKey sourceKey = new SourceKey(
             tb.table(),
             expectedTable.primaryKeyColumns(),
@@ -5786,9 +5801,9 @@ class FieldBuilder {
         // lives); cardinality follows the accessor (Single → ONE, Many → MANY for per-element
         // walk through the parent's typed list-accessor).
         var ref = new AccessorRef(
-            ClassName.bestGuess(parentFqClassName),
+            ClassName.get(parentClass),
             accessorMethod.getName(),
-            ClassName.bestGuess(elementClass.getName()));
+            ClassName.get(elementClass));
         SourceKey parentSourceKey = new SourceKey(
             hubTable,
             hubTable.primaryKeyColumns(),
