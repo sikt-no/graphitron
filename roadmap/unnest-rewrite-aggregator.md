@@ -1,7 +1,7 @@
 ---
 id: R182
 title: "Retire legacy reactor and unnest graphitron-rewrite to repo root"
-status: In Progress
+status: In Review
 bucket: structural
 theme: legacy-migration
 depends-on: []
