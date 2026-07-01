@@ -2,7 +2,7 @@
 :description: The inner loop for working on an existing Graphitron subgraph under Quarkus, why macOS needs the LSP, and how to connect IntelliJ to it.
 :!toc:
 
-You have an existing Graphitron subgraph and you want a tight edit-save-see-it loop. The short version: run two long-lived terminals, one for `mvn graphitron:dev` (regenerates Java from your `.graphqls` and serves an LSP), one for `mvn quarkus:dev` (hot-reloads the running app). Edit the schema, save, and the change flows through both without restarting anything.
+You have an existing Graphitron subgraph and you want a tight edit-save-see-it loop. The short version: run two long-lived terminals, one for `mvn graphitron:dev` (regenerates Java from your `.graphqls`, serves an LSP to your editor, and serves an MCP server to your agent), one for `mvn quarkus:dev` (hot-reloads the running app). Edit the schema, save, and the change flows through both without restarting anything.
 
 [TIP]
 ====
@@ -24,7 +24,10 @@ On macOS the filesystem-watch half of this loop is slow on its own. Attaching yo
 | 3. Connect your editor
 | Point your LSP client at `localhost:8487` (TCP) for diagnostics, hover, completion, and go-to-definition on `.graphqls`. IntelliJ users: see <<intellij>>.
 
-| 4. Edit and save
+| 4. Connect your agent (optional)
+| Point an MCP-aware agent (Claude Code, Cursor) at `http://127.0.0.1:8488/mcp`. See <<mcp>>.
+
+| 5. Edit and save
 | Save a `.graphqls`. Graphitron regenerates, Quarkus reloads, your editor refreshes diagnostics. No restart of either terminal.
 |===
 
@@ -108,8 +111,24 @@ Notes:
 * The dev goal serves all connected clients off the same warm catalog, so you can attach IntelliJ and another editor at once; a save in either is seen by both.
 * A native IntelliJ plugin that removes the manual LSP4IJ + netcat setup is on the roadmap; until it ships, this is the supported IntelliJ path.
 
+[#mcp]
+== Connect your agent to the MCP server
+
+The same `mvn graphitron:dev` process that serves the LSP also runs an MCP server on `http://127.0.0.1:8488/mcp` (Streamable HTTP, loopback only). An MCP-aware agent (Claude Code, Cursor) connected to it gets read-only context about your project: it can search the bundled manual (`docs.search`), discover tables in your jOOQ catalog (`catalog.search`, `catalog.describe`), inspect the classified schema, `@service` / `@condition` / `@record` bindings, and the current validation diagnostics, plus a `+/mcp__graphitron__about+` slash command that orients it on the loop.
+
+For Claude Code, run the line the dev server prints on startup:
+
+----
+claude mcp add --transport http graphitron http://127.0.0.1:8488/mcp
+----
+
+Unlike the LSP port, the MCP port is fixed at `8488` and not overridable, so a committed `.mcp.json` stays valid across machines. If `8488` is already taken, the dev goal fails fast naming the conflict rather than rebinding.
+
+The full setup, the complete tool list, and the `.mcp.json` for zero-config sharing are in xref:mcp-agent-context.adoc[Agent context over MCP].
+
 == See also
 
+* xref:mcp-agent-context.adoc[Agent context over MCP]: connect an MCP-aware agent to the same dev server.
 * xref:../../../architecture/getting-started.adoc#dev-loop-detail[Dev loop reference] (architecture docs): how the `dev` goal is wired internally.
 * xref:../reference/lsp-inlay-hints.adoc[LSP inlay hints]: the editor hints the LSP surfaces.
 * xref:test-your-schema.adoc[Test your schema]: the consumer-side execution test that complements the inner loop.

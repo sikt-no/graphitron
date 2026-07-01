@@ -24,6 +24,7 @@ a|
 * xref:handle-services.adoc[Handle services]: bind GraphQL arguments to Java parameters and pick a return shape the framework recognises.
 * xref:join-with-references.adoc[Join with references]: pin foreign-key paths between table-bound types so the generator emits a JOIN.
 * xref:map-types-to-tables.adoc[Map types to tables]: bind types and fields with `@table` + `@field` across the four directive sites.
+* xref:mcp-agent-context.adoc[Agent context over MCP]: connect an MCP-aware agent (Claude Code, Cursor) to `graphitron:dev` so it can answer questions about your schema, catalog, and directives.
 * xref:migrating-from-legacy.adoc[Migrating from the legacy generator]: walk a schema authored against `graphitron-codegen-parent` to the rewrite.
 * xref:multi-hop-nodeid-filter.adoc[Multi-hop `@nodeId` filters]: reach a related node type through one or more intermediate tables when the FKs carry the target's keys positionally by SQL name.
 * xref:polymorphic-types.adoc[Polymorphic types]: choose between single-table and multi-table layouts for GraphQL interfaces and unions.
@@ -70,7 +71,7 @@ xref:migrating-from-legacy.adoc[Migrating from the legacy generator]
 xref:test-your-schema.adoc[Test your schema]
 
 *Editor and dev loop* +
-xref:dev-loop.adoc[The dev loop (Quarkus + LSP)]
+xref:dev-loop.adoc[The dev loop (Quarkus + LSP)], xref:mcp-agent-context.adoc[Agent context over MCP]
 
 |===
 
