@@ -28,9 +28,8 @@ These types are not in the consumer's SDL. `FederationLinkApplier.apply`
 (`schema/input/FederationLinkApplier.java`, via
 `LinkDirectiveProcessor.loadFederationImportedDefinitions`) injects the federation `@link`
 import definitions (`federation__FieldSet`, `federation__Scope`, `link__Import`,
-`link__Purpose`, ...) into the registry, and when a federation `@link` is present
-`KeyNodeSynthesiser.apply` injects further federation nodes (see
-`GraphQLRewriteGenerator.loadAttributedRegistry`, lines 176-187). The `null` source name in
+`link__Purpose`, ...) into the registry (`GraphQLRewriteGenerator.loadAttributedRegistry`, lines
+176-187, captures its return value). The `null` source name in
 the warning is the tell: these definitions were parsed from no consumer `.graphqls`. The
 type name (`federation__`, `link__`) is dictated by the federation spec, and the description
 is owned by `federation-graphql-java-support`; the developer can neither rename them nor
@@ -58,8 +57,17 @@ is the code that adds the definitions.
 - `FederationLinkApplier.apply` already returns a `boolean` (present / not) that the pipeline
   captures onto `AttributedRegistry.federationLink`. Widen it to also yield the names of the
   definitions it injected (the `defs.forEach` loop at `FederationLinkApplier.java:65-70` is the
-  single place they are added). `KeyNodeSynthesiser.apply` contributes the names it synthesises
-  the same way, since those are also non-author nodes with a `null` source.
+  single place they are added). This is the **sole** contributor of injected names.
+  `KeyNodeSynthesiser.apply` (`schema/federation/KeyNodeSynthesiser.java:55-69`) is *not* a
+  contributor: it injects no new definitions. It walks existing types and decorates
+  author-written `@node` object types **in place** (`registry.remove(old)` +
+  `registry.add(transformed)`) by attaching a `@key` directive. Those types are author-owned and
+  carry real source locations, and none of the lint rules fire on the added `@key` directive (the
+  casing/description rules fire on type/field names and descriptions; the only applied-directive
+  rule is `no-deprecated-directive-usage`, and `@key` is not deprecated). So there is nothing to
+  exclude on its behalf. Unioning the names it touched into the exclusion set would silence
+  legitimate findings on author `@node` types, directly violating acceptance criterion 2.
+  `KeyNodeSynthesiser.apply` keeps its `void` signature.
 - Carry the union of injected names on `AttributedRegistry` alongside the existing
   `federationLink` flag (a new `injectedNames()` component; the `federationLink` boolean is then
   derivable as "injected anything", so this collapses state rather than adding a parallel
@@ -94,12 +102,14 @@ separate item and this one must not depend on it.
 - `schema/input/FederationLinkApplier.java`: widen `apply` to return the injected definition
   names (an `Injected(boolean present, Set<String> names)` record, or a `Set<String>` with
   emptiness meaning "no federation `@link`"). Collect names in the existing `defs.forEach` loop.
-- `KeyNodeSynthesiser`: return the names of the nodes it synthesises.
-- `AttributedRegistry.java`: add an `injectedNames()` component carrying the union; keep
+  `KeyNodeSynthesiser` is untouched (it injects nothing; see Decision) and keeps its `void`
+  signature.
+- `AttributedRegistry.java`: add an `injectedNames()` component carrying the set; keep
   `federationLink` (derive it from non-empty, or retain both for a minimal diff, implementer's
   call). Update `from(TypeDefinitionRegistry)` to populate the set for ad-hoc test registries.
-- `GraphQLRewriteGenerator.loadAttributedRegistry`: thread the injected names from the two
-  injectors into the `AttributedRegistry` it returns.
+- `GraphQLRewriteGenerator.loadAttributedRegistry`: thread the injected names from
+  `FederationLinkApplier.apply` into the `AttributedRegistry` it returns. No second injector to
+  thread; the `KeyNodeSynthesiser.apply(registry)` call at line 182 stays as-is.
 - `lint/LintEngine.java`: accept the injected-name set (via `AttributedRegistry` or an explicit
   argument on `run`) and union it into the exclusion tested at the two skip points. Update
   `GraphQLRewriteGenerator.withLintFindings` (line 297-299) to pass it.
@@ -107,12 +117,15 @@ separate item and this one must not depend on it.
 ## Tests
 
 - **Pipeline tier (primary oracle).** Add a fixture SDL that carries a federation `@link`
-  import and *also* an author-written non-compliant type (e.g. a `lowercase` object name).
+  import and *also* an author-written non-compliant type. Make that type an author `@node` object
+  with a non-compliant name (e.g. `type lowercase @node { id: ID! }`): it is both a real author
+  violation *and* the exact type `KeyNodeSynthesiser` decorates in place, so the single fixture
+  guards against a future implementer folding decorated `@node` names into the exclusion set.
   Assert the finding set contains the `type-names-pascal-case` (and description) findings for
-  the authored type and **zero** findings on any injected `federation__*` / `link__*` /
-  `KeyNodeSynthesiser` name. This one fixture pins both halves: injected names are silent, real
-  author violations still fire. Assert on the typed `LintRule` and the offending node, never on
-  rendered message substrings (R398 testing-strategy ban).
+  the authored `@node` type and **zero** findings on any injected `federation__*` / `link__*`
+  name. This one fixture pins both halves: injected names are silent, real author violations
+  (including on decorated `@node` types) still fire. Assert on the typed `LintRule` and the
+  offending node, never on rendered message substrings (R398 testing-strategy ban).
 - Do **not** add a per-name unit test enumerating `federation__FieldSet`, `link__Import`, etc.
   That would re-encode the `FEDERATION_NAMESPACE_SCALARS` hand-list as a test assertion and
   would pass even if the provenance plumbing were bypassed by a coincidental heuristic. The
@@ -124,8 +137,9 @@ separate item and this one must not depend on it.
 ## Acceptance criteria
 
 - A schema with a federation `@link` produces no lint findings on the injected
-  `federation__*` / `link__*` definitions or on `KeyNodeSynthesiser`-synthesised nodes.
-- Author-written non-compliant types in the same schema still produce their findings.
+  `federation__*` / `link__*` definitions.
+- Author-written non-compliant types in the same schema still produce their findings, including
+  author `@node` types that `KeyNodeSynthesiser` decorates in place with a `@key` directive.
 - The injected-name set is sourced from the injectors (provenance), not a name heuristic and
   not `FEDERATION_NAMESPACE_SCALARS`.
 - The federation-fixture pipeline test above is added and green; no per-name unit list.
