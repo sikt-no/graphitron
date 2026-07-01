@@ -1,7 +1,7 @@
 ---
 id: R370
 title: "Record-backed parent with a nested backing class emits a non-compiling $-qualified cast"
-status: Ready
+status: In Review
 bucket: bug
 priority: 6
 theme: interface-union
@@ -175,6 +175,42 @@ point at the contract it protects.
   spells `Outer.Nested` by grepping the fetcher `toString()`. The cast's correctness is pinned by the
   compiler (it compiles), which is what actually matters; the exact source text is the compiler's
   concern, not a string-grep's.
+
+## Scope note: two co-path sites absorbed (discovered during implementation)
+
+The mandated compilation witness (a nested-record carrier wired through a `@service` producer, compiled
+by `mvn install -Plocal-db`) cannot pass by fixing only the two `AccessorRef` producers. The identical
+`bestGuess`-over-binary-name defect sits at two further sites that lie **directly on the nested-`@service`
+path**, upstream of the `AccessorRef` cast, so a nested carrier never even reaches the cast until they
+are fixed:
+
+1. **`FieldBuilder.checkServiceReturnMatchesPayload`** (`FieldBuilder.java:3030`) — the `@service`
+   return-type validator built the expected payload `ClassName` via `ClassName.bestGuess(fqClassName)`
+   and compared it (`TypeName.equals`) against `method.returnType()`, which is
+   `TypeName.get(genericReturnType)` (structurally correct). For a nested carrier the two never compare
+   equal (`Outer$Nested` vs `Outer.Nested`), so the field is **rejected at classify time** with a
+   spurious author-error before codegen runs. Fixed by loading the class
+   (`Class.forName(fqClassName, false, ctx.codegenLoader())`; the binary name is the classloader's
+   contract) and building the expected `ClassName` via `ClassName.get(Class)`.
+2. **`TypeFetcherGenerator.computeServiceRecordReturnType`** (`TypeFetcherGenerator.java:1633`) — the
+   `@service` fetcher's declared return type (and the `result` local it feeds) was built via
+   `ClassName.bestGuess(fqClassName)`, emitting `DataFetcherResult<Outer$Nested>` / `Outer$Nested
+   result = ...`, which fails `javac`. Fixed by sourcing the type from
+   `ServiceMethodCall.javaReturnType()`, the structured `TypeName` already captured at walk time and
+   already used by the sibling `PojoResultType` arm of the same method. `checkServiceReturnMatchesPayload`
+   guarantees it equals the SDL payload type, so this is the same shape the `bestGuess` arm intended,
+   only structurally correct.
+
+These are the **same defect class and the same fix shape** as the two `AccessorRef` producers (use the
+structural name already in hand), **not** the "no reflected `Class`/`TypeName` at the site, needs a
+model-lift" category the Sibling-latent-bug section below defers. Both had a structurally-correct name
+already available (a loadable binary name plus `codegenLoader`; a captured `javaReturnType`), so both
+are one-for-one swaps at their site, the same altitude R370's thesis argues for. They are absorbed
+because they sit on the critical path of the witness this item requires: without them the item would
+ship a fix no consumer can reach (every nested `@service` carrier is rejected upstream), guarded by a
+test that proves the producer is correct while the feature stays broken end-to-end. The four fixes
+together make nested carriers compile and run end-to-end, which the two compilation fixtures now
+demonstrate.
 
 ## Sibling latent bug (flag, do not absorb)
 

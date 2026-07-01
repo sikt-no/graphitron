@@ -349,6 +349,27 @@ type Query {
             className: "no.sikt.graphitron.rewrite.test.services.AddressOccupantCarrierService",
             method: "byId"
         })
+    # R370 compilation-tier fixture (producer #2): the photo-negative of addressOccupantCarrier.
+    # The service returns a NESTED record (NestedOccupantCarrierHolder.Carrier), whose binary name
+    # carries a $ segment, so NestedOccupantCarrier binds as a PojoResultType with a $-qualified
+    # fqClassName. Its single-cardinality polymorphic firstOccupant child routes through
+    # derivePolymorphicHubSource -> buildScalarPerParentFetcher; the emitted cast to the parent
+    # backing class must spell Outer.Nested (not Outer$Nested) or the generated fetcher fails javac.
+    nestedOccupantCarrier(addressId: Int!): NestedOccupantCarrier
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.NestedOccupantCarrierService",
+            method: "byId"
+        })
+    # R370 compilation-tier fixture (producer #1): the nested-carrier counterpart of
+    # recentlyCreatedFilmsBatched. The service returns List<NestedFilmsPayloadHolder.Payload>
+    # (a nested record); the films accessor derives an AccessorCall-keyed, list-cardinality
+    # SourceKey via deriveAccessorRecordParentSource, whose key extraction (buildAccessorKeyMany)
+    # casts env.getSource() to the nested backing class. Independent witness for producer #1.
+    nestedRecentlyCreatedFilms: [NestedFilmsPayload!]!
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.NestedFilmsPayloadService",
+            method: "nestedRecentlyCreatedFilms"
+        })
     # stub-interface-union-fetchers.md Track A: QueryTableInterfaceField fixture.
     # Content is a TableInterfaceType (@table + @discriminate); the generator emits a
     # fetcher that selects from the shared 'content' table and projects the discriminator
@@ -845,6 +866,26 @@ input OccupantFilter {
 # (binds parentRecord to the accessor return rather than casting env.getSource() to a jOOQ Record).
 type AddressOccupantCarrier {
     firstOccupant: AddressOccupant @field(name: "address")
+}
+
+# R370 fixture: the nested-carrier counterpart of AddressOccupantCarrier. Produced by
+# Query.nestedOccupantCarrier, which returns NestedOccupantCarrierHolder.Carrier (a NESTED Java
+# record holding an AddressRecord), so this type binds as a PojoResultType whose fqClassName has a
+# $ segment. firstOccupant is the single-cardinality polymorphic child: @field(name: "address")
+# points the accessor-derivation at the carrier's address() accessor (the hub). This is the only
+# compiling witness that derivePolymorphicHubSource resolves a nested backing class to Outer.Nested.
+type NestedOccupantCarrier {
+    firstOccupant: AddressOccupant @field(name: "address")
+}
+
+# R370 fixture: the nested-carrier counterpart of CreateFilmsPayload. Produced by
+# Query.nestedRecentlyCreatedFilms, which returns List<NestedFilmsPayloadHolder.Payload> (a NESTED
+# Java record with a typed List<FilmRecord> accessor). No batching directive on `films`; the
+# classifier auto-derives an AccessorCall-keyed, list-cardinality SourceKey. The generated key
+# extraction (buildAccessorKeyMany) casts env.getSource() to the nested backing class, which must
+# spell Outer.Nested. Independent compiling witness for producer #1 (deriveAccessorRecordParentSource).
+type NestedFilmsPayload {
+    films: [Film!]!
 }
 
 type Store @table(name: "store") {
