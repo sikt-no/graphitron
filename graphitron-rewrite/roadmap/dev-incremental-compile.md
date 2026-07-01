@@ -110,14 +110,42 @@ R333's "the projection seam re-sources from the facts" applied to a fourth consu
 - **The per-save recompile set.** Given the writer's delta, recompile =
   `delta ∪ {reverse-transitive dependents of the delta files whose ABI changed}`. Body-only changes do
   not propagate; ABI changes propagate along reverse edges. Compile that set into
-  `target/graphitron-classes/<outputPackage>`, sweep orphan `.class` (below), and route compiler
-  diagnostics into the existing `WatchErrorFormatter` / LSP surface, the same tree validation errors
-  already use.
+  `target/graphitron-classes/<outputPackage>`, sweep orphan `.class` (below), and surface any compiler
+  diagnostics per *Surfacing compile diagnostics* below.
 - **Invalidation triggers.** A schema save produces the delta (regen path). A consumer `.class`
   change (the existing classpath watcher) invalidates the generated units that reference the changed
   consumer types, using the same graph, so a service ABI edit recompiles the generated fetchers that
   call it. A removed coordinate removes its `.java` (already), and must remove its `.class` and
   invalidate its dependents.
+
+## Surfacing compile diagnostics
+
+In theory this is dead code. A schema or consumer-ABI problem that would break the generated code
+should be rejected at validate time as a schema-anchored `ValidationError` (validator-mirrors-classifier),
+long before javac runs. So a compile diagnostic that reaches this engine means one of two things, both
+worth showing loudly: the validator is missing a check (the real fix is to add the validator arm, per
+"no generator-side invariant goes unchecked at validate time"), or graphitron emitted invalid Java (a
+graphitron bug). We are fallible, so the engine treats compile errors as a safety net and never swallows
+one; but it does not try to be clever about them.
+
+- **No schema re-anchoring (explicit non-goal).** Tracing a javac error back to the emitting schema
+  coordinate is a nice-to-have, not a requirement of this item. Compile diagnostics stay anchored to the
+  generated `.java` where javac reports them (file path + `line:col` + severity + message).
+- **A small dedicated collection, not the schema report.** Diagnostics are collected per compile round
+  into their own list, kept separate from `ValidationReport` (forcing a generated-file error into a
+  schema-coordinate `ValidationError` would fabricate a coordinate it does not have). They surface
+  through the *same three consumers* validation errors already reach:
+  - **Console dev loop** renders them as a distinct compile-error block (a companion to
+    `WatchErrorFormatter`'s validation tree), labelled as generated-code compilation failure so the user
+    is not sent hunting in the schema for a javac error. This is the primary human channel.
+  - **MCP `diagnostics` tool** includes them with a `source: "compile"` discriminator alongside the
+    existing schema entries, so an agent editing through MCP reads compile failures back in the tool it
+    already polls.
+  - **LSP** publishes them against the generated file's URI, best-effort, so an editor with that file
+    open shows them.
+- **A failed round does not report success.** javac emits no `.class` for a unit with errors, so a
+  failing unit keeps its last-good `.class`; the round surfaces the failure rather than reporting a clean
+  compile, so the user knows the running tree is stale for those units instead of silently trusting it.
 
 ## Design forks (resolved)
 
@@ -279,9 +307,11 @@ correctness-only gate perfectly while delivering none of the item's value:
    constant-value change (propagates).
 4. **The warm compiler + incremental engine.** Wire the `JavaCompiler` / reused
    `StandardJavaFileManager`, compile the recompile set into the graphitron-exclusive
-   `target/graphitron-classes`, `.class` orphan sweep of that dir, diagnostics into
-   `WatchErrorFormatter`. `@UnitTier` on the engine over a synthetic source set; the stale-symbol
-   regression test lives here.
+   `target/graphitron-classes`, `.class` orphan sweep of that dir, and collect the compile-diagnostic
+   list per *Surfacing compile diagnostics*. `@UnitTier` on the engine over a synthetic source set,
+   including a source that fails to compile (asserts the diagnostic is collected, the failing unit keeps
+   its last-good `.class`, and the round reports failure not success); the stale-symbol regression test
+   lives here.
 5. **The correctness invariant harness (two clauses).** Clause (a) incremental-equals-clean-full and
    clause (b) recompile-set pruning, as above. New tier-crossing harness in the maven-plugin module;
    the acceptance gate.
@@ -292,9 +322,10 @@ correctness-only gate perfectly while delivering none of the item's value:
    it does not produce unread output. No fail-fast: the exclusive dir means a mis-set-up consumer
    degrades to today's behaviour rather than corrupting, so there is nothing to fail on. Extend
    `DevMojoTest`: the sweep drops an orphaned generated `.class` (removed coordinate) from the exclusive
-   dir; the `-Dgraphitron.dev.compile=false` opt-out path; and a precedence assertion that a stale copy
-   of a class in `target/classes` is shadowed by graphitron's fresh copy when its dir is first. Pin the
-   per-framework reload behaviour (Spring DevTools reloads from external `.class`; Quarkus dev's
+   dir; the `-Dgraphitron.dev.compile=false` opt-out path; a precedence assertion that a stale copy
+   of a class in `target/classes` is shadowed by graphitron's fresh copy when its dir is first; and that
+   a compile error reaches the console block and the MCP `diagnostics` tool (with `source: "compile"`).
+   Pin the per-framework reload behaviour (Spring DevTools reloads from external `.class`; Quarkus dev's
    source-oriented reload verified or documented as unsupported) so the docs claim only what holds. Land
    the *First-client user-doc draft* block into `getting-started.adoc`'s dev-loop section.
 
