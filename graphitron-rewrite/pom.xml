@@ -362,6 +362,20 @@
         <developerConnection>scm:git:ssh://github.com:sikt-no/graphitron.git</developerConnection>
         <url>https://github.com/sikt-no/graphitron/tree/main</url>
     </scm>
+    <developers>
+        <developer>
+            <name>Alf Lervåg</name>
+            <email>alf.lervag@sikt.no</email>
+            <organization>Sikt</organization>
+            <organizationUrl>http://www.sikt.no</organizationUrl>
+        </developer>
+        <developer>
+            <name>Filip Folkesson</name>
+            <email>filip.folkesson@sikt.no</email>
+            <organization>Sikt</organization>
+            <organizationUrl>http://www.sikt.no</organizationUrl>
+        </developer>
+    </developers>
     <licenses>
         <license>
             <name>MIT License</name>
