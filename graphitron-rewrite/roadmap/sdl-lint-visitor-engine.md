@@ -1,20 +1,21 @@
 ---
 id: R398
 title: "SDL lint engine with ESLint-style built-in visitors"
-status: In Progress
+status: In Review
 bucket: feature
 priority: 5
 theme: lsp
 depends-on: []
 created: 2026-06-29
-last-updated: 2026-06-30
+last-updated: 2026-07-01
 ---
 
 # SDL lint engine with ESLint-style built-in visitors
 
-## Implementation status (In Progress)
+## Implementation status (In Review)
 
-Landed:
+All Scope and Acceptance-criteria items are landed; the full reactor is green
+(`mvn -f graphitron-rewrite/pom.xml install -Plocal-db`). Landed:
 
 - Typed `LintRule` (9 engine rules + 3 classifier advisories, with a `Source` axis), `LintFix`, and
   the sealed `BuildWarning` (`NoRule` / `LintFinding`); all six producers migrated; the three
@@ -26,17 +27,33 @@ Landed:
   channel, wired into the three report surfaces in `GraphQLRewriteGenerator` (build / validate /
   `buildOutput`) so the LSP and MCP get them for free. Coverage meta-test asserts the declared
   partition; per-rule pipeline tests cover positive / negative / range.
+- `LintFix` populated for every fix-bearing rule, computing edit ranges from graphql-java source
+  locations: additive inserts (`deprecations-have-a-reason`, `types-and-fields-have-descriptions`),
+  local renames (`field-names-camel-case`, `no-typename-prefix`, offered only when the field has no
+  description so the name-token range is exact), the `@index` to `@order` swap derived from the
+  docstring convention, and the two classifier safe-deletion advisories (bare form only). Pipeline
+  tests pin every edit range and the no-fix rules.
+- The LSP finding-keyed `QuickFix` branch (`LintQuickFixes`) alongside the detector-driven
+  `SdlActions` path: it projects the build-side `LintFix` off the `ValidationReport`, respects the
+  R139 freshness silence, and its applied `WorkspaceEdit` yields the corrected SDL (LSP-tier tests).
+- `@record` aligned with the deprecation convention (docstring `@deprecated` marker); covered on the
+  `MANUAL_MIGRATION_DEPRECATIONS` allow-list, since its removal is offered contextually by the
+  redundant-record advisory's build-side fix (`SdlActionDriftTest` updated).
+- Integration gates: an engine finding reaches the `ValidationReport` through `buildOutput()` with its
+  fix (`BuildOutputReportPipelineTest`), and an engine finding replays into a `Warning` squiggle,
+  silenced on a stale snapshot (`ValidatorDiagnosticsTest`).
 
-Remaining (kept for follow-on commits under this item):
+Implementer's note for the reviewer: three of the spec's fix targets narrowed to the provably-safe
+subset graphql-java permits, all within the spec's "a fix is offered only when applying it is safe":
 
-- Populate `LintFix` for the fix-bearing rules (additive: `deprecations-have-a-reason`,
-  `types-and-fields-have-descriptions`; local: `no-deprecated-directive-usage`, `no-typename-prefix`,
-  `field-names-camel-case`) and the two safe-deletion classifier advisories.
-- The LSP finding-keyed `QuickFix` `CodeAction` branch projecting `LintFix`, with fix tests both tiers.
-- Align `@record` with the deprecation convention (docstring marker + migration action +
-  `SdlActionDriftTest` update), the coordinated edit described under Starter rule set.
-- A build to `ValidationReport` integration test pinning lint findings reach the report, and the
-  LSP-projection parity test for a lint finding.
+- The `name:` to `className:` swap under `no-deprecated-directive-usage` is deferred, not shipped:
+  graphql-java returns a null source location for `ObjectField`, so a directive-argument input-field
+  rename cannot be safely ranged build-side. That exact migration already ships as R93's tree-sitter
+  `SdlAction`, so it is covered, just not via the lint fix.
+- The field renames supply a fix only for undescribed fields (a described node's graphql-java location
+  is the description, not the name token).
+- The `@record` deletion is offered only for the bare form (graphql-java gives no end location to span
+  `@record(record: {...})`); `@splitQuery`, argument-less, is always deletable.
 
 ## Problem
 
