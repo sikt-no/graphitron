@@ -168,22 +168,22 @@ public class GraphQLRewriteGenerator {
      * always go through {@link #generate()}.
      *
      * <p>Returns the loaded {@link AttributedRegistry} carrying both the
-     * {@link graphql.schema.idl.TypeDefinitionRegistry} and the
-     * {@code federationLink} flag captured from
-     * {@link FederationLinkApplier#apply}'s return value, so downstream stages
-     * read the flag without re-walking the registry.
+     * {@link graphql.schema.idl.TypeDefinitionRegistry} and the federation
+     * {@code injectedNames} captured from {@link FederationLinkApplier#apply}'s
+     * return value (the {@code federationLink} flag is derived from it), so
+     * downstream stages read both without re-walking the registry.
      */
     AttributedRegistry loadAttributedRegistry() {
         var bySource = SchemaInputAttribution.build(ctx.schemaInputs());
         var registry = RewriteSchemaLoader.load(bySource.keySet());
         TagLinkSynthesiser.apply(registry, bySource);
-        boolean federationLink = FederationLinkApplier.apply(registry);
-        if (federationLink) {
+        var injectedNames = FederationLinkApplier.apply(registry);
+        if (!injectedNames.isEmpty()) {
             KeyNodeSynthesiser.apply(registry);
         }
         TagApplier.apply(registry, bySource);
         DescriptionNoteApplier.apply(registry, bySource);
-        return new AttributedRegistry(registry, federationLink);
+        return new AttributedRegistry(registry, injectedNames);
     }
 
     private void runPipeline(AttributedRegistry attributed) {
@@ -296,7 +296,8 @@ public class GraphQLRewriteGenerator {
      */
     private static List<BuildWarning> withLintFindings(GraphitronSchema schema, AttributedRegistry attributed) {
         var all = new java.util.ArrayList<BuildWarning>(schema.warnings());
-        all.addAll(no.sikt.graphitron.rewrite.lint.LintEngine.builtIn().run(attributed.registry()));
+        all.addAll(no.sikt.graphitron.rewrite.lint.LintEngine.builtIn()
+            .run(attributed.registry(), attributed.injectedNames()));
         return all;
     }
 
