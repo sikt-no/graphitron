@@ -1926,9 +1926,13 @@ class GraphitronSchemaBuilderTest {
     }
 
     @Test
-    void serviceReturningTableInterface_deferred() {
-        // R365 scope: a @service returning a single-table discriminated interface (TableInterfaceType)
-        // is deferred (no per-row discriminator dispatch on the service path), not silently emitted.
+    @ProjectionFor({QueryField.QueryServiceTableInterfaceField.class, MutationField.MutationServiceTableInterfaceField.class})
+    void serviceReturningTableInterface_classifiesAsServiceTableInterfaceField() {
+        // R405: a @service returning a single-table discriminated interface (TableInterfaceType) is no
+        // longer deferred. It resolves through the table-bound service arm to the single-table
+        // service-interface variant, carrying the service method plus the read-side discrimination data
+        // (participant set, discriminator column, known discriminator values). Query arm is single
+        // cardinality; Mutation arm is list. Modelled on servicePolymorphicProjectionCarriesParticipantsAndMethod.
         var schema = build("""
             interface MediaItem @table(name: "film") @discriminate(on: "kind") { title: String }
             type FilmItem implements MediaItem @table(name: "film") @discriminator(value: "film") { title: String }
@@ -1936,12 +1940,29 @@ class GraphitronSchemaBuilderTest {
               media: MediaItem
                 @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getFilm"})
             }
+            type Mutation {
+              mediaSearch: [MediaItem]
+                @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getFilms"})
+            }
             """);
-        var f = schema.field("Query", "media");
-        assertThat(f).isInstanceOf(no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField.class);
-        var unc = (no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField) f;
-        assertThat(unc.kind()).isEqualTo(no.sikt.graphitron.rewrite.RejectionKind.DEFERRED);
-        assertThat(unc.reason()).contains("single-table discriminated interface");
+
+        var q = schema.field("Query", "media");
+        assertThat(q).isInstanceOf(QueryField.QueryServiceTableInterfaceField.class);
+        var qf = (QueryField.QueryServiceTableInterfaceField) q;
+        assertThat(qf.serviceMethodCall().methodName()).isEqualTo("getFilm");
+        assertThat(qf.discriminatorColumn()).isEqualTo("kind");
+        assertThat(qf.knownDiscriminatorValues()).containsExactly("film");
+        assertThat(qf.participants()).hasSize(1);
+        assertThat(qf.returnType().wrapper().isList()).isFalse();
+
+        var m = schema.field("Mutation", "mediaSearch");
+        assertThat(m).isInstanceOf(MutationField.MutationServiceTableInterfaceField.class);
+        var mf = (MutationField.MutationServiceTableInterfaceField) m;
+        assertThat(mf.serviceMethodCall().methodName()).isEqualTo("getFilms");
+        assertThat(mf.discriminatorColumn()).isEqualTo("kind");
+        assertThat(mf.knownDiscriminatorValues()).containsExactly("film");
+        assertThat(mf.participants()).hasSize(1);
+        assertThat(mf.returnType().wrapper().isList()).isTrue();
     }
 
     // ===== ComputedField =====

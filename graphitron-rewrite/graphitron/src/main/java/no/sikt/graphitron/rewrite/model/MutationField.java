@@ -18,6 +18,7 @@ import java.util.Optional;
 public sealed interface MutationField extends RootField, WithErrorChannel
     permits MutationField.DmlTableField, MutationField.MutationServiceTableField,
             MutationField.MutationServiceRecordField, MutationField.MutationServicePolymorphicField,
+            MutationField.MutationServiceTableInterfaceField,
             MutationField.MutationDmlRecordField,
             MutationField.MutationBulkDmlRecordField,
             MutationField.MutationUpdatePayloadField, MutationField.MutationBulkUpdatePayloadField,
@@ -36,6 +37,7 @@ public sealed interface MutationField extends RootField, WithErrorChannel
             case MutationServiceTableField f -> OutputField.serviceCall(f.serviceMethodCall());
             case MutationServiceRecordField f -> OutputField.serviceCall(f.serviceMethodCall());
             case MutationServicePolymorphicField f -> OutputField.serviceCall(f.serviceMethodCall());
+            case MutationServiceTableInterfaceField f -> OutputField.serviceCall(f.serviceMethodCall());
             // The record-backed DML carriers read their verb off the DmlKind discriminator.
             case MutationDmlRecordField f -> dmlOperation(f.kind(), f.tableInputArg());
             case MutationBulkDmlRecordField f -> dmlOperation(f.kind(), f.tableInputArg());
@@ -60,6 +62,10 @@ public sealed interface MutationField extends RootField, WithErrorChannel
             case MutationServiceRecordField f -> OutputField.listOrSingle(f.returnType().wrapper(), new TargetShape.Record());
             // Interface-only service-polymorphic return (union/table-interface rejected at classify).
             case MutationServicePolymorphicField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Interface());
+            // Single-table service interface return (R405): raw Record / List<Record> routed by the
+            // discriminated TypeResolver; Interface (not Table) keeps requiresReFetch() false so the
+            // re-fetch mirror agrees with the service fetcher's own by-PK re-projection.
+            case MutationServiceTableInterfaceField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Interface());
             case MutationDmlRecordField f -> OutputField.listOrSingle(f.returnType().wrapper(), new TargetShape.Record());
             case MutationBulkDmlRecordField f -> OutputField.listOrSingle(f.returnType().wrapper(), new TargetShape.Record());
             case MutationUpdatePayloadField f -> OutputField.listOrSingle(f.returnType().wrapper(), new TargetShape.Record());
@@ -323,6 +329,38 @@ public sealed interface MutationField extends RootField, WithErrorChannel
         Optional<ErrorChannel> errorChannel
     ) implements MutationField, ServiceField {
         public MutationServicePolymorphicField {
+            participants = List.copyOf(participants);
+        }
+        @Override public DomainReturnType domainReturnType() {
+            return new DomainReturnType.Plain(OutputField.OBJECT_CLASS);
+        }
+    }
+
+    /**
+     * R405 — the mutation analogue of {@link QueryField.QueryServiceTableInterfaceField}: a root
+     * {@code @service} mutation returning a single-table discriminated interface
+     * ({@code @table @discriminate}). Single-table sibling of {@link MutationServicePolymorphicField}
+     * (route (a)); the service hands back records of the one shared table, and the emitted fetcher
+     * collects their PKs, runs one by-PK SELECT projecting {@code __discriminator__} plus the
+     * participant field set and discriminator-gated cross-table {@code LEFT JOIN}s, and lets the
+     * per-{@code TableInterfaceType} {@code TypeResolver} route each row off the live discriminator
+     * value (rather than route (a)'s runtime-class dispatch, which cannot distinguish same-table
+     * subtypes). Carries the read-side single-table discrimination data plus the service binding; the
+     * payload is a raw {@code Record} / {@code List<Record>}.
+     */
+    record MutationServiceTableInterfaceField(
+        String parentTypeName,
+        String name,
+        SourceLocation location,
+        ReturnTypeRef.TableBoundReturnType returnType,
+        String discriminatorColumn,
+        List<String> knownDiscriminatorValues,
+        List<ParticipantRef> participants,
+        ServiceMethodCall serviceMethodCall,
+        Optional<ErrorChannel> errorChannel
+    ) implements MutationField, ServiceField {
+        public MutationServiceTableInterfaceField {
+            knownDiscriminatorValues = List.copyOf(knownDiscriminatorValues);
             participants = List.copyOf(participants);
         }
         @Override public DomainReturnType domainReturnType() {

@@ -392,6 +392,42 @@ public final class ClassifiedCorpus {
             }
             """),
 
+        /*
+         * R405: a root @service field returning a single-table discriminated interface
+         * (QueryServiceTableInterfaceField, single cardinality). Unlike route (a) above, all
+         * implementers share one @table @discriminate table, so the service hands back records of that
+         * one table; the emitted fetcher collects their PKs and re-fetches by PK, routing each row off
+         * the live discriminator via the TableInterfaceType TypeResolver. Verdict: source Query,
+         * operation ServiceCall, target Single, target shape Interface (same wiring shape as route (a),
+         * keeping requiresReFetch() false). Corpus-only: adds the QueryServiceTableInterfaceField leaf.
+         */
+        new Example("query-service-table-interface", """
+            interface MediaItem @table(name: "film") @discriminate(on: "kind") @classifiedType(as: TableInterfaceType) { title: String }
+            type FilmItem implements MediaItem @table(name: "film") @discriminator(value: "film") { title: String }
+            type Query {
+              mediaService: MediaItem
+                @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getFilm"})
+                @classified(source: Query, operation: ServiceCall, target: Single, targetShape: Interface)
+            }
+            """),
+
+        /*
+         * R405: mutation analogue (MutationServiceTableInterfaceField), list cardinality. Same
+         * single-table by-PK re-fetch as the query arm. Verdict: source Mutation, operation
+         * ServiceCall, target List, target shape Interface. Corpus-only: adds the
+         * MutationServiceTableInterfaceField leaf.
+         */
+        new Example("mutation-service-table-interface", """
+            interface MediaItem @table(name: "film") @discriminate(on: "kind") @classifiedType(as: TableInterfaceType) { title: String }
+            type FilmItem implements MediaItem @table(name: "film") @discriminator(value: "film") { title: String }
+            type Query { film: FilmItem }
+            type Mutation {
+              mediaSearch: [MediaItem]
+                @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getFilms"})
+                @classified(source: Mutation, operation: ServiceCall, target: List, targetShape: Interface)
+            }
+            """),
+
         new Example("table-interface", """
             interface MediaItem @table(name: "film") @discriminate(on: "kind") @classifiedType(as: TableInterfaceType) { title: String }
             type Film implements MediaItem @table(name: "film") @discriminator(value: "film") { title: String }

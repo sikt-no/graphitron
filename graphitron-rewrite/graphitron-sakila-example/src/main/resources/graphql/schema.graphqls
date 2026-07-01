@@ -401,6 +401,19 @@ type Query {
     searchManyService: [Searchable!]! @service(service: {
         className: "no.sikt.graphitron.rewrite.test.services.PolymorphicSearchService", method: "searchDocuments"})
 
+    # R405: a @service field returning a single-table discriminated interface (Content: shared
+    # `content` table, CONTENT_TYPE discriminator, FilmContent / ShortContent subtypes). Unlike route
+    # (a) above, every returned record is the same ContentRecord, so runtime-class dispatch cannot tell
+    # the subtypes apart; the generated fetcher collects the returned records' PKs, runs one by-PK
+    # SELECT projecting __discriminator__ (+ the participant field set and the discriminator-gated
+    # cross-table LEFT JOIN for FilmContent.rating), and routes each row off the live discriminator.
+    # contentSearchOne is single cardinality (routes to FilmContent); contentSearchMany is list
+    # cardinality exercising both subtypes plus a PK with no live row (drop contract).
+    contentSearchOne: Content @service(service: {
+        className: "no.sikt.graphitron.rewrite.test.services.ContentSearchService", method: "searchOne"})
+    contentSearchMany: [Content!]! @service(service: {
+        className: "no.sikt.graphitron.rewrite.test.services.ContentSearchService", method: "searchContents"})
+
     # stub-interface-union-fetchers.md Track B (B4a): polymorphic connection. Same Searchable
     # interface as Query.search, but wrapped in @asConnection so the schema-transform exposes
     # SearchableConnection / SearchableEdge / pageInfo / totalCount. The polymorphic emitter
@@ -2257,6 +2270,13 @@ type Mutation {
     # framing is what pins the mutation-root path.
     searchManyMutation: [Searchable!]! @service(service: {
         className: "no.sikt.graphitron.rewrite.test.services.PolymorphicSearchService", method: "searchDocuments"})
+
+    # R405: the mutation analogue of contentSearchMany — a @service MUTATION returning a single-table
+    # discriminated interface (Content). Pins the MutationServiceTableInterfaceField emit + registration
+    # + runtime by-PK re-fetch path end-to-end (the Query fields cannot reach the Mutation coordinate).
+    # The service is read-only here; the mutation framing pins the mutation-root path.
+    contentSearchManyMutation: [Content!]! @service(service: {
+        className: "no.sikt.graphitron.rewrite.test.services.ContentSearchService", method: "searchContents"})
 
     # R22 Phase 2: INSERT emitter with TableBoundReturnType return. The fetcher emits
     # `dsl.insertInto(film, title, language_id).values(...).returningResult(<$fields>).fetchOne(r -> r)`.

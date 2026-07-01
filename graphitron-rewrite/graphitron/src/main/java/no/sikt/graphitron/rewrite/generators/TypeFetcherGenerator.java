@@ -198,6 +198,10 @@ public class TypeFetcherGenerator {
         QueryField.QueryServiceTableField.class,
         QueryField.QueryServiceRecordField.class,
         QueryField.QueryServicePolymorphicField.class,
+        // R405 adds QueryServiceTableInterfaceField / MutationServiceTableInterfaceField to
+        // IMPLEMENTED_LEAVES (the partition GeneratorCoverageTest checks).
+        QueryField.QueryServiceTableInterfaceField.class,
+        MutationField.MutationServiceTableInterfaceField.class,
         MutationField.MutationInsertTableField.class,
         MutationField.MutationUpdateTableField.class,
         MutationField.MutationDeleteTableField.class,
@@ -464,6 +468,12 @@ public class TypeFetcherGenerator {
                         .emitServiceMethods(ctx, f.name(), f.serviceMethodCall(), f.participants(),
                             f.returnType().wrapper().isList(), outputPackage)
                         .forEach(builder::addMethod);
+                case QueryField.QueryServiceTableInterfaceField f ->
+                    MultiTablePolymorphicEmitter
+                        .emitServiceTableInterfaceMethods(ctx, f.name(), f.serviceMethodCall(), f.returnType(),
+                            f.discriminatorColumn(), f.knownDiscriminatorValues(), f.participants(),
+                            f.returnType().wrapper().isList(), outputPackage)
+                        .forEach(builder::addMethod);
                 // Stub variants — see STUBBED_VARIANTS
                 case QueryField.QueryTableInterfaceField f    -> builder.addMethod(buildQueryTableInterfaceFieldFetcher(ctx, f, outputPackage));
                 case QueryField.QueryInterfaceField f -> {
@@ -501,6 +511,12 @@ public class TypeFetcherGenerator {
                 case MutationField.MutationServicePolymorphicField f ->
                     MultiTablePolymorphicEmitter
                         .emitServiceMethods(ctx, f.name(), f.serviceMethodCall(), f.participants(),
+                            f.returnType().wrapper().isList(), outputPackage)
+                        .forEach(builder::addMethod);
+                case MutationField.MutationServiceTableInterfaceField f ->
+                    MultiTablePolymorphicEmitter
+                        .emitServiceTableInterfaceMethods(ctx, f.name(), f.serviceMethodCall(), f.returnType(),
+                            f.discriminatorColumn(), f.knownDiscriminatorValues(), f.participants(),
                             f.returnType().wrapper().isList(), outputPackage)
                         .forEach(builder::addMethod);
                 case MutationField.MutationDmlRecordField f    -> builder.addMethod(buildMutationDmlRecordFetcher(ctx, f, outputPackage));
@@ -857,20 +873,14 @@ public class TypeFetcherGenerator {
         builder.addCode(GeneratorUtils.declareTableLocal(names, tableRef));
         String tableLocal = names.tableLocalName();
         builder.addCode(buildConditionCall(qtif.parentTypeName(), qtif.name(), tableLocal, outputPackage));
-        builder.addCode(buildDiscriminatorFilter(qtif.discriminatorColumn(), qtif.knownDiscriminatorValues(), tableLocal));
-        builder.addCode(buildInterfaceFieldsList(ctx, qtif.participants(), qtif.discriminatorColumn(), tableLocal, outputPackage));
-        builder.addCode(buildCrossTableAliasDeclarations(qtif.participants(), tableLocal));
-        builder.addCode(buildJoinedDetailAliasDeclarations(ctx, qtif.participants(), tableLocal));
 
         var dslContextClass = ClassName.get("org.jooq", "DSLContext");
-        var selectJoinStepClass = ClassName.get("org.jooq", "SelectJoinStep");
-        var selectJoinStepOfRecord = ParameterizedTypeName.get(selectJoinStepClass, RECORD);
-
         builder.addStatement("$T dsl = $L.getDslContext(env)", dslContextClass, ctx.graphitronContextCall());
-        builder.addStatement("$T step = dsl.select(new $T<>(fields)).from($L)",
-            selectJoinStepOfRecord, ArrayList.class, tableLocal);
-        builder.addCode(buildCrossTableJoinChain(qtif.participants(), qtif.discriminatorColumn(), tableLocal));
-        builder.addCode(buildJoinedDetailJoinChain(ctx, qtif.participants(), qtif.discriminatorColumn(), tableLocal));
+        // R405: shared discriminator-filter + projection + join assembly, ending with the
+        // `step` local. The service single-table-interface fetcher reuses the same helper with a
+        // by-PK condition (see MultiTablePolymorphicEmitter).
+        builder.addCode(buildTableInterfaceReprojection(ctx, qtif.participants(), qtif.discriminatorColumn(),
+            qtif.knownDiscriminatorValues(), List.of(), tableLocal, outputPackage));
 
         if (isList) {
             builder.addCode(buildOrderByCode(qtif.orderBy(), qtif.name(), tableLocal));
@@ -933,17 +943,9 @@ public class TypeFetcherGenerator {
         // Build join-path condition. Only single-hop FkJoin is supported; multi-hop and
         // ConditionJoin paths are caught at classification time.
         builder.addCode(buildJoinPathCondition(tif.joinPath(), tableRef.tableName()));
-        builder.addCode(buildDiscriminatorFilter(tif.discriminatorColumn(), tif.knownDiscriminatorValues(), tableLocal));
-        builder.addCode(buildInterfaceFieldsList(ctx, tif.participants(), tif.discriminatorColumn(), tableLocal, outputPackage));
-        builder.addCode(buildCrossTableAliasDeclarations(tif.participants(), tableLocal));
-        builder.addCode(buildJoinedDetailAliasDeclarations(ctx, tif.participants(), tableLocal));
-
-        var selectJoinStepClass = ClassName.get("org.jooq", "SelectJoinStep");
-        var selectJoinStepOfRecord = ParameterizedTypeName.get(selectJoinStepClass, RECORD);
-        builder.addStatement("$T step = dsl.select(new $T<>(fields)).from($L)",
-            selectJoinStepOfRecord, ArrayList.class, tableLocal);
-        builder.addCode(buildCrossTableJoinChain(tif.participants(), tif.discriminatorColumn(), tableLocal));
-        builder.addCode(buildJoinedDetailJoinChain(ctx, tif.participants(), tif.discriminatorColumn(), tableLocal));
+        // R405: shared discriminator-filter + projection + join assembly (see the query twin).
+        builder.addCode(buildTableInterfaceReprojection(ctx, tif.participants(), tif.discriminatorColumn(),
+            tif.knownDiscriminatorValues(), List.of(), tableLocal, outputPackage));
 
         if (isList) {
             builder.addCode(buildOrderByCode(tif.orderBy(), tif.name(), tableLocal));
@@ -982,6 +984,55 @@ public class TypeFetcherGenerator {
             .addStatement("$T condition = $T.field($T.name($S)).eq(parentRecord.get($T.name($S)))",
                 CONDITION, DSL, DSL, childCol, DSL, parentRecordCol)
             .build();
+    }
+
+    /**
+     * R405: the shared read/projection body of {@link #buildQueryTableInterfaceFieldFetcher} and
+     * {@link #buildTableInterfaceFieldFetcher}, extracted so the service single-table-interface fetcher
+     * ({@link MultiTablePolymorphicEmitter}) can reuse the exact projection + join assembly with a
+     * caller-supplied {@code Condition}.
+     *
+     * <p>Precondition: the caller has declared {@code condition} ({@code Condition}) and {@code dsl}
+     * ({@code DSLContext}) locals and a {@code tableLocal} holding the shared {@code @table}'s jOOQ
+     * instance. This helper emits, in order:
+     * <ol>
+     *   <li>the discriminator {@code IN (knownValues)} restriction, ANDed into {@code condition};</li>
+     *   <li>the {@code LinkedHashSet<Field<?>> fields} projection ({@code __discriminator__} first,
+     *       each table-bound participant's {@code $fields}, the joined-table base slice), plus
+     *       {@code alwaysProject} — extra base-table columns projected unconditionally (the shared
+     *       table's PK columns for the service by-PK re-map; {@code List.of()} for the read paths, so
+     *       their generated output is unchanged);</li>
+     *   <li>the cross-table and joined-detail alias declarations;</li>
+     *   <li>the {@code SelectJoinStep<Record> step = dsl.select(new ArrayList<>(fields)).from(tableLocal)}
+     *       declaration, then the discriminator-gated cross-table / joined-detail {@code LEFT JOIN}
+     *       chains.</li>
+     * </ol>
+     * The caller finishes the chain ({@code step.where(condition)…fetch()}); this helper knows nothing
+     * about services or the fetch cardinality.
+     */
+    static CodeBlock buildTableInterfaceReprojection(
+            TypeFetcherEmissionContext ctx,
+            List<ParticipantRef> participants, String discriminatorColumn,
+            List<String> knownDiscriminatorValues, List<ColumnRef> alwaysProject,
+            String tableLocal, String outputPackage) {
+        var b = CodeBlock.builder();
+        b.add(buildDiscriminatorFilter(discriminatorColumn, knownDiscriminatorValues, tableLocal));
+        b.add(buildInterfaceFieldsList(ctx, participants, discriminatorColumn, tableLocal, outputPackage));
+        // Extra always-projected base columns (deduped by the LinkedHashSet declared above). Used by
+        // the service path to guarantee the shared table's PK reaches the fetched Record for the
+        // by-PK re-map; empty for the read paths.
+        for (var col : alwaysProject) {
+            b.addStatement("fields.add($L.$L)", tableLocal, col.javaName());
+        }
+        b.add(buildCrossTableAliasDeclarations(participants, tableLocal));
+        b.add(buildJoinedDetailAliasDeclarations(ctx, participants, tableLocal));
+        var selectJoinStepClass = ClassName.get("org.jooq", "SelectJoinStep");
+        var selectJoinStepOfRecord = ParameterizedTypeName.get(selectJoinStepClass, RECORD);
+        b.addStatement("$T step = dsl.select(new $T<>(fields)).from($L)",
+            selectJoinStepOfRecord, ArrayList.class, tableLocal);
+        b.add(buildCrossTableJoinChain(participants, discriminatorColumn, tableLocal));
+        b.add(buildJoinedDetailJoinChain(ctx, participants, discriminatorColumn, tableLocal));
+        return b.build();
     }
 
     /**

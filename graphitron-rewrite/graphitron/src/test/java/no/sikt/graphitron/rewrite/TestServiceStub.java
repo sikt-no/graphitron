@@ -111,6 +111,20 @@ class TestServiceStub {
     public static Result<FilmRecord> getFilms() { throw new UnsupportedOperationException(); }
 
     /**
+     * R405: returns a {@link no.sikt.graphitron.rewrite.test.jooq.tables.records.ContentRecord} — used
+     * by {@code @service} on a single-table discriminated interface ({@code Content}) return, whose
+     * shared {@code content} table's record class is {@code ContentRecord}.
+     */
+    public static no.sikt.graphitron.rewrite.test.jooq.tables.records.ContentRecord getContent() {
+        throw new UnsupportedOperationException();
+    }
+
+    /** R405: list form of {@link #getContent()} for a {@code [Content!]!} single-table interface return. */
+    public static Result<no.sikt.graphitron.rewrite.test.jooq.tables.records.ContentRecord> getContents() {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
      * Returns a {@link java.util.List List} of {@link FilmRecord} — used by {@code @service} on a
      * {@code [Film!]!} return to exercise the looser pair check that accepts either
      * {@code Result<XRecord>} or {@code List<XRecord>} at the root.
