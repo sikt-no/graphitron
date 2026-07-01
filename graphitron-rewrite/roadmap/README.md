@@ -44,7 +44,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R212` | IntelliJ plugin wrapping graphitron:dev LSP | Spec | 2026-05-21 | [plan](intellij-lsp-plugin.md) |
 | `R112` | Operation-driven test corpus, capability catalog, and runtime trace <sub>blocked by: [capability-catalog](capability-catalog.md)</sub> | Spec |  | [plan](operation-driven-test-corpus.md) |
 | `R182` | Retire legacy reactor and unnest graphitron-rewrite to repo root | Spec | 2026-07-01 <sub>created 2026-05-19</sub> | [plan](unnest-rewrite-aggregator.md) |
-| `R409` | Quiet graphitron:dev RAG-warm log noise (Lucene JUL + DJL SLF4J) and document recommended .mvn/jvm.config | In Review | 2026-07-01 | [plan](quiet-dev-rag-warm-log-noise.md) |
 
 ---
 
@@ -311,7 +310,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R123` [**Parent-context-aware schema coordinates for per-directive Behavior policy**](parent-context-aware-schema-coordinates.md) — Backlog, architecture
 - `R118` [**Graphitron MCP server programme: agent-facing schema, catalog, code, and docs tools in graphitron:dev**](graphitron-mcp-server.md) — Backlog, feature
 - `R212` [**IntelliJ plugin wrapping graphitron:dev LSP**](intellij-lsp-plugin.md) — Spec, feature
-- `R409` [**Quiet graphitron:dev RAG-warm log noise (Lucene JUL + DJL SLF4J) and document recommended .mvn/jvm.config**](quiet-dev-rag-warm-log-noise.md) — In Review, cleanup
 - `R152` [**Scope @nodeId(typeName:) hover column lookup to the @node type's @table**](lsp-nodetype-hover-column-scoping.md) — Backlog, bug
 
 ### (untagged)
