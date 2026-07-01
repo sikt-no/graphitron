@@ -17,10 +17,10 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R19` | Rebase and squash rewrite branch onto main | Ready |  | [plan](history-squash.md) |
 | `R222` | Dimensional model pivot: slots over cross-product permits | Spec | 2026-06-18 <sub>created 2026-05-21</sub> | [plan](dimensional-model-pivot.md) |
 | `R333` | The Graphitron data model | Spec | 2026-06-25 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
-| `R410` | graphitron:dev owns incremental compilation of generated sources | Spec | 2026-07-01 | [plan](dev-incremental-compile.md) |
 | `R396` | @reference FK-connection validation rejects schema-qualified or case-mismatched @table base names | Ready | 2026-06-30 <sub>created 2026-06-29</sub> | [plan](reference-fk-connection-qualified-table-name.md) |
 | `R346` | Regenerate and guard the generated supported-directives migration doc against directive-set drift | Ready | 2026-06-19 | [plan](supported-directives-regen-guard.md) |
 | `R384` | Support converted/@nodeId/developer-@condition filters on multitable interface/union queries | Ready | 2026-07-01 <sub>created 2026-06-25</sub> | [plan](multitable-interface-converted-nodeid-condition-filters.md) |
+| `R410` | graphitron:dev owns incremental compilation of generated sources | Ready | 2026-07-01 | [plan](dev-incremental-compile.md) |
 | `R308` | Fix the @service list-payload N+1 by deriving many-arrival for list-returning carriers | Spec | 2026-06-14 | [plan](service-list-payload-arrival.md) |
 | `R335` | Fold input/scalar/enum classification into the single classify-and-emit walk | Spec | 2026-06-19 | [plan](walk-classifies-input-surface.md) |
 | `R406` | Support single-table discriminated interface as a DML @mutation return type | Ready | 2026-07-01 | [plan](dml-single-table-interface-return.md) |
@@ -297,7 +297,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### lsp
 
-- `R410` [**graphitron:dev owns incremental compilation of generated sources**](dev-incremental-compile.md) — Spec, feature
+- `R410` [**graphitron:dev owns incremental compilation of generated sources**](dev-incremental-compile.md) — Ready, feature
 - `R347` [**Consolidate graphitron-lsp navigation, dispatch, and result-building**](lsp-structural-consolidation.md) — In Progress, architecture
 - `R407` [**Exclude generator-injected federation/link definitions from linting**](lint-skip-injected-definitions.md) — Spec, cleanup
 - `R398` [**SDL lint engine with ESLint-style built-in visitors**](sdl-lint-visitor-engine.md) — In Review, feature
