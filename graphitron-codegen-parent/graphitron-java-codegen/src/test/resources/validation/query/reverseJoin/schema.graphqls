@@ -1,3 +1,0 @@
-type Address @table {
-  customer: CustomerTable @splitQuery
-}

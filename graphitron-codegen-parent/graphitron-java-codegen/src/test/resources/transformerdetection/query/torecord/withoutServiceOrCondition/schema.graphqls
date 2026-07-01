@@ -1,4 +1,0 @@
-type Query {
-  customer1(in1: CustomerInputTable): ID
-  customer2(in2: DummyInputRecord): ID
-}

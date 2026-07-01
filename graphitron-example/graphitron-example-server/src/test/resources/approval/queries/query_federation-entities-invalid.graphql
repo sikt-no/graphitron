@@ -1,5 +1,0 @@
-query FederationEntities($representations: [_Any!]!) {
-    _entities(representations: $representations) {
-        __typename
-    }
-}

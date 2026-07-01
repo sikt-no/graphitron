@@ -1,3 +1,0 @@
-type Address @record(record: {name: "NESTED_RECORD"}) {
-  customer: CustomerTable
-}

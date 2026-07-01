@@ -1,7 +1,0 @@
-type Query {
-  query(email: String @lookupKey, orderBy: Order @orderBy): [CustomerTable]
-}
-
-enum OrderByField {
-  NAME @order(index: "IDX_LAST_NAME")
-}

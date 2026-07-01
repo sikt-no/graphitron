@@ -1,7 +1,0 @@
-type Query {
-  query(district: String! @reference(path: [{table: "ADDRESS"}])): Customer
-}
-
-type Customer @table {
-  district: String! @reference(path: [{table: "ADDRESS"}])
-}

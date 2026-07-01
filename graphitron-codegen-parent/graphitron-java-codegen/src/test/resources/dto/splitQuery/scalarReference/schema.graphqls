@@ -1,3 +1,0 @@
-type VacationDestination @table(name: "VACATION_DESTINATION") {
-    vacationDescription: String @field(name: "DESCRIPTION") @reference(path: [{table: "VACATION"}]) @splitQuery
-}

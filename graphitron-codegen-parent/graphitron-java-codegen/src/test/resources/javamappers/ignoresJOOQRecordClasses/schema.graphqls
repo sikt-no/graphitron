@@ -1,3 +1,0 @@
-type Query {
-  customerQuery(in: CustomerInputTable): CustomerTable @service(service: {name: "DUMMY_SERVICE"})
-}

@@ -1,5 +1,0 @@
-scalar Date
-
-type Query {
-  query(createdDate: Date! @field(name: "CREATE_DATE")): CustomerTable
-}

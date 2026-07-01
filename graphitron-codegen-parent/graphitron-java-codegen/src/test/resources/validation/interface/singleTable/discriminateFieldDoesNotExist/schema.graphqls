@@ -1,3 +1,0 @@
-interface AddressByDistrict @discriminate(on: "COLUMN_DOES_NOT_EXIST") @table(name: "ADDRESS") {
-  postalCode: String @field(name: "POSTAL_CODE")
-}

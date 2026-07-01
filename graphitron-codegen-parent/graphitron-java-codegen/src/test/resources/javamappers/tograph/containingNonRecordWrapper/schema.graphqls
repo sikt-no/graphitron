@@ -1,7 +1,0 @@
-type Address @record(record: {name: "MAPPER_RECORD_ADDRESS"}) {
-  inner: Wrapper
-}
-
-type Wrapper {
-  postalCode: String!
-}

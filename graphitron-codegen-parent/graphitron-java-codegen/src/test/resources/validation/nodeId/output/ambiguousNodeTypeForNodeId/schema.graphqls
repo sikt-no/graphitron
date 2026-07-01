@@ -1,3 +1,0 @@
-type Customer @table(name: "CUSTOMER") {
-    id: ID! @nodeId
-}

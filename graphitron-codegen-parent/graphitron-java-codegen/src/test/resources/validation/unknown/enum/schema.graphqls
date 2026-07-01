@@ -1,3 +1,0 @@
-enum Enum @enum(enumReference: {name: "UNKNOWN_ENUM"}) {
-  E
-}

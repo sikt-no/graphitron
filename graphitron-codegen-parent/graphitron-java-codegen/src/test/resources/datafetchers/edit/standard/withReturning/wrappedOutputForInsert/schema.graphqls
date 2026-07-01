@@ -1,7 +1,0 @@
-type Mutation {
-    mutation(in: CustomerInputTable): Wrapper @mutation(typeName: INSERT)
-}
-
-type Wrapper {
-    id: ID
-}

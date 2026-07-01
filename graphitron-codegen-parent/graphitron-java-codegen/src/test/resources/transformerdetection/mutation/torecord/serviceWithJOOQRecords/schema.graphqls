@@ -1,4 +1,0 @@
-type Mutation {
-  service1(cityInput: CityInput1): ID @service(service: {name: "DUMMY_SERVICE"})
-  service2(cityInput: CityInput3): ID @service(service: {name: "DUMMY_SERVICE"})
-}

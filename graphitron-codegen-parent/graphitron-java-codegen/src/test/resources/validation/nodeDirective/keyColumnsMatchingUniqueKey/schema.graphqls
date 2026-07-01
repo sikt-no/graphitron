@@ -1,3 +1,0 @@
-type Actor implements Node @table @node(keyColumns: ["LAST_NAME", "ACTOR_ID"]){
-  id: ID!
-}

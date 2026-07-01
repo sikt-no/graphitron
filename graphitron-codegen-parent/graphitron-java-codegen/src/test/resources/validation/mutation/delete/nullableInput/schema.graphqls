@@ -1,3 +1,0 @@
-type Mutation {
-    mutation(in: CustomerNodeInputTable): ID @mutation(typeName: DELETE) @nodeId(typeName: "CustomerNode")
-}

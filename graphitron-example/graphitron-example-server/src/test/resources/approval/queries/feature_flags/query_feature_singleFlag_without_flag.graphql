@@ -1,9 +1,0 @@
-# activeBool requires @feature(flags: "experimental"), no header set - should fail
-query CustomerWithSingleFlagField {
-    customers(first: 1) {
-        nodes {
-            id
-            activeBool
-        }
-    }
-}

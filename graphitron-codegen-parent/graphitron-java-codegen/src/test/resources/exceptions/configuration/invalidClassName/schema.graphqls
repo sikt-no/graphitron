@@ -1,8 +1,0 @@
-type Response {
-  errors: [OtherError]
-}
-
-type OtherError implements Error @error(handlers: [{handler: GENERIC, className: "INVALID"}]) {
-  path: [String!]!
-  message: String!
-}

@@ -1,7 +1,0 @@
-type Query {
-  query(in: Input @condition(condition: {name: "DUMMY_CONDITION"})): CustomerTable
-}
-
-input Input {
-  wrong: String
-}

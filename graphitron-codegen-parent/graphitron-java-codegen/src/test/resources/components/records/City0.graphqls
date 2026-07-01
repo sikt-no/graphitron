@@ -1,3 +1,0 @@
-type AddressCity0 @table(name: "CITY") {
-  city: String!
-}

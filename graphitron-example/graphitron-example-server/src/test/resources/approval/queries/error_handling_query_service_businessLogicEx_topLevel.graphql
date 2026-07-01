@@ -1,5 +1,0 @@
-query {
-    allCustomerEmails_topLevelError {
-        id
-    }
-}

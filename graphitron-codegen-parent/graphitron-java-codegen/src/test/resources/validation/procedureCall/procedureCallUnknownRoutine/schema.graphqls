@@ -1,3 +1,0 @@
-type Customer @table {
-  heldBy: ID @experimental_procedureCall(procedure: "no_such_routine", arguments: "p_inventory_id: CUSTOMER_ID")
-}

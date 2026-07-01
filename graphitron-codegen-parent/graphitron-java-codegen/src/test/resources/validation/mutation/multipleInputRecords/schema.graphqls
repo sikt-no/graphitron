@@ -1,7 +1,0 @@
-type Query {
-  query(in0: CustomerInputTable, in1: AddressInput): ID
-}
-
-input AddressInput @table(name: "ADDRESS") {
-  id: ID!
-}

@@ -1,4 +1,0 @@
-input NameInput {
-  firstname: String! @field(name: "FIRST_NAME")
-  lastname: String! @field(name: "LAST_NAME")
-}

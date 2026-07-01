@@ -1,8 +1,0 @@
-query OneToManyFilter($filmId: ID) {
-    languagesFilteredByFilm(filmId: $filmId) {
-        nodes {
-            id
-            name
-        }
-    }
-}

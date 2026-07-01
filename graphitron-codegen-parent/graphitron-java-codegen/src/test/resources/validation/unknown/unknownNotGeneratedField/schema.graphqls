@@ -1,8 +1,0 @@
-type Customer @table {
-  wrong: String @notGenerated
-  wrongWrapper: WrongWrapper
-}
-
-type WrongWrapper {
-  wrong: String @notGenerated
-}

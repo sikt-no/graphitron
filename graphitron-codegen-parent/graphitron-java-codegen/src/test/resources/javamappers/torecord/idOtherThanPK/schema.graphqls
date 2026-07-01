@@ -1,7 +1,0 @@
-type Query {
-  query(in: Customer): ID @service(service: {name: "DUMMY_SERVICE"})
-}
-
-input Customer @record(record: {name: "JAVA_RECORD_CUSTOMER"}) {
-  addressId: ID
-}

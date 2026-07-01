@@ -1,8 +1,0 @@
-mutation {
-    updateCityName(in: {cityId: "Q2l0eVR5cGU6MTAw", name: "NEW_NAME"}) {
-        name
-        addresses {
-            id
-        }
-    }
-}

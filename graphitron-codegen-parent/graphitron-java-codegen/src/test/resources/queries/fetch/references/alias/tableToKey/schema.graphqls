@@ -1,3 +1,0 @@
-type Customer @table {
-  city: String! @reference(path: [{table: "ADDRESS"}, {key: "ADDRESS__ADDRESS_CITY_ID_FKEY"}])
-}

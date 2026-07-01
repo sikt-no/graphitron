@@ -1,4 +1,0 @@
-type Query {
-  customers(first: Int = 100, after: String): CustomerNoOptionalsConnection @service(
-    service: {name: "RESOLVER_FETCH_SERVICE", method: "queryList"})
-}

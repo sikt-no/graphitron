@@ -1,8 +1,0 @@
-extend schema
-@link(url: "https://specs.apollo.dev/federation/v2.4",
-    import: ["@key"])
-
-scalar _Any
-scalar FieldSet
-
-directive @key(fields: FieldSet!, resolvable: Boolean = true) repeatable on OBJECT | INTERFACE

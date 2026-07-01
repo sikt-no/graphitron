@@ -1,7 +1,0 @@
-type Query {
-  query: Store
-}
-
-type Store @table {
-  customers(first: Int = 100, after: String): CustomerConnection @splitQuery
-}

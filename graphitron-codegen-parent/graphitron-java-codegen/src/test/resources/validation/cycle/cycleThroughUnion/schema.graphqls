@@ -1,9 +1,0 @@
-type TypeA {
-    u: U
-}
-
-union U = TypeB
-
-type TypeB {
-    a: TypeA
-}

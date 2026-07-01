@@ -1,3 +1,0 @@
-type Staff @table {
-    id: ID!
-}

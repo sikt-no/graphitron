@@ -1,5 +1,0 @@
-mutation {
-    updateFilmName(in: {filmId: "RmlsbToxNQ", title: "ALIEN BASE"}) {
-        title
-    }
-}

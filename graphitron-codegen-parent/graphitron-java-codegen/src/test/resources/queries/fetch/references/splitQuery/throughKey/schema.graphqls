@@ -1,7 +1,0 @@
-type Customer @table {
-  city: City @splitQuery @reference(path: [{key: "CUSTOMER__CUSTOMER_ADDRESS_ID_FKEY"}])
-}
-
-type City @table {
-  id: ID!
-}

@@ -1,3 +1,0 @@
-type Vacation @table(name: "VACATION") {
-    someString: String @splitQuery
-}

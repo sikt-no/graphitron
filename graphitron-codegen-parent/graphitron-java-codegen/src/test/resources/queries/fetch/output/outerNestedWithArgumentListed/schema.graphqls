@@ -1,7 +1,0 @@
-type Query {
-  query(firstName: [String!]! @field(name: "FIRST_NAME")): Outer
-}
-
-type Outer {
-  customers: [CustomerTable!]!
-}

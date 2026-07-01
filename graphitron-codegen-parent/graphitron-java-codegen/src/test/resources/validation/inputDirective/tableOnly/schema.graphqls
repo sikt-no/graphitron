@@ -1,7 +1,0 @@
-type Query {
-    test(in: TestInput): ID @notGenerated
-}
-
-input TestInput @table(name: "ADDRESS") {
-    addressId: Int @field(name: "ADDRESS_ID")
-}

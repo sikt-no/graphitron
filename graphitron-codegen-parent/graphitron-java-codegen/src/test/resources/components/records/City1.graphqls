@@ -1,3 +1,0 @@
-type AddressCity1 @record(record: {name: "DUMMY_RECORD"}) {
-  city: String!
-}

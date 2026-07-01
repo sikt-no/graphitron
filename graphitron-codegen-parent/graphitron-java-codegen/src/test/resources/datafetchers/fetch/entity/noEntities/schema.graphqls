@@ -1,5 +1,0 @@
-union _Entity = Dummy
-
-type Dummy {
-  string: String
-}

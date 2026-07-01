@@ -1,8 +1,0 @@
-type Response {
-  errors: [HandledError]
-}
-
-type HandledError implements Error @error(handlers: [{handler: GENERIC, className: "java.lang.UnsupportedOperationException"}]) {
-  path: [String!]!
-  message: String!
-}

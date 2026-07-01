@@ -1,3 +1,0 @@
-type Query {
-  query(first: Int = 100, after: String): DummyConnection @service(service: {name: "CONTEXT_SERVICE"}, contextArguments: "ctxField")
-}

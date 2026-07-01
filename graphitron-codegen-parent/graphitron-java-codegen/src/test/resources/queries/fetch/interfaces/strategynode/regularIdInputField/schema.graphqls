@@ -1,3 +1,0 @@
-type Query {
-  customer(id: ID! @field(name: "CUSTOMER_ID")): CustomerTable
-}

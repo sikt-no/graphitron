@@ -1,8 +1,0 @@
-type Inventory @table {
-    store1: Store @splitQuery @reference(path: [{key: "INVENTORY__INVENTORY_STORE_ID_FKEY"}])
-    store2: Store @splitQuery @reference
-}
-
-type Store @table {
-    id: ID
-}

@@ -1,9 +1,0 @@
-# Java record input, @table type output. The service sets the PK from the input;
-# the returned firstName comes from the database, not from the input name.
-{
-    customerServiceWithJavaRecordInput(input: {name: "This name is used to do some logic in the service"}) {
-        name {
-            firstName
-        }
-    }
-}

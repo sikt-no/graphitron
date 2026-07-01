@@ -1,3 +1,0 @@
-type Query {
-  query(id: String @nodeId(typeName: "CustomerNode")): CustomerNode
-}
