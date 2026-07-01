@@ -18,4 +18,4 @@ Database enforcement doesn't mean the UI can ignore security. Good usability req
 
 What we insist on: *the database is the enforcement point.* If the UI gets it wrong, the result is a confusing experience. If the database gets it wrong, data is exposed. These are not equivalent failures.
 
-The practical approach is PostgreSQL Row-Level Security with session variables set per request. See xref:architecture/runtime-extension-points.adoc[Runtime Extension Points] for how that wires through the per-request `DSLContext` you pass to `Graphitron.newExecutionInput(dsl, ...)`.
+The practical approach is PostgreSQL Row-Level Security with session variables set per request. See xref:architecture/reference/runtime-extension-points.adoc[Runtime Extension Points] for how that wires through the per-request `DSLContext` you pass to `Graphitron.newExecutionInput(dsl, ...)`.

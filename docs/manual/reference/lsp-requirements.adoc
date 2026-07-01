@@ -31,6 +31,6 @@ Because nothing is installed, the only native failure mode is the bundled runtim
 == See also
 
 * xref:lsp-inlay-hints.adoc[LSP inlay hints and classification hover]: the editor-side config keys that surface Graphitron's inference and classification layers.
-* xref:../../../architecture/getting-started.adoc#native-runtime-dependency[Getting Started: native runtime dependency] for the same "nothing to install" note in the context of the full `dev`-loop walkthrough.
+* xref:../../architecture/how-to/dev-loop-internals.adoc#native-runtime-dependency[Dev loop internals: native runtime dependency] for the same "nothing to install" note in the context of the `dev`-loop internals.
 
 xref:index.adoc[← Back to the reference index]

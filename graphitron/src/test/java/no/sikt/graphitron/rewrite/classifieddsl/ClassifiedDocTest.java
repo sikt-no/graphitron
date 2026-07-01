@@ -29,9 +29,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 class ClassifiedDocTest {
 
     private static final List<Path> PAGE_CANDIDATES = List.of(
-        Path.of("..", "docs", "code-generation-triggers.adoc"),
-        Path.of("graphitron-rewrite", "docs", "code-generation-triggers.adoc"),
-        Path.of("docs", "code-generation-triggers.adoc"));
+        Path.of("..", "docs", "architecture", "reference", "code-generation-triggers.adoc"),
+        Path.of("docs", "architecture", "reference", "code-generation-triggers.adoc"));
 
     static Stream<Example> docExamples() {
         return ClassifiedCorpus.docExamples().stream();

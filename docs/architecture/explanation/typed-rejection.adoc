@@ -89,7 +89,7 @@ The contract has consolidated onto two construction sites: `BuildContext.candida
 
 When adding a new existence check to the validator or builder, follow the same pattern: pass the relevant candidate list from `JooqCatalog` (or whatever closed set the lookup ranges over) to `candidateHint`, or produce the rejection through `Rejection.unknownName(...)` so the candidate list rides on the typed result.
 
-The diagnostic surface that consumers see, what each rejection class renders as, what severity it gets, what the build's log line looks like, is documented at xref:../manual/reference/diagnostics-glossary.adoc[the diagnostics glossary]; that page is the user-facing entry point for "I saw this message, what does it mean."
+The diagnostic surface that consumers see, what each rejection class renders as, what severity it gets, what the build's log line looks like, is documented at xref:../../manual/reference/diagnostics-glossary.adoc[the diagnostics glossary]; that page is the user-facing entry point for "I saw this message, what does it mean."
 
 == Drift protection
 
@@ -180,4 +180,4 @@ The overlay shows `LookupKeyDirectiveResolver.Resolved` as one worked example of
 
 * {empty}xref:rewrite-design-principles.adoc#_builder_step_results_are_sealed_not_strings_or_out_params[Builder-step results are sealed]: the principle this page is the canonical source for.
 * {empty}xref:rewrite-design-principles.adoc#_validator_mirrors_classifier_invariants[Validator mirrors classifier invariants]: the validator-side rule that consumes typed rejections at the build's diagnostic surface.
-* {empty}xref:../manual/reference/diagnostics-glossary.adoc[Diagnostics glossary]: the user-facing reference for what each rejection-derived diagnostic message means.
+* {empty}xref:../../manual/reference/diagnostics-glossary.adoc[Diagnostics glossary]: the user-facing reference for what each rejection-derived diagnostic message means.

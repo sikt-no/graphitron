@@ -1,0 +1,11 @@
+= Architecture: How-to
+:description: Contributor-facing recipes for working on the Graphitron generator.
+:!toc:
+
+Recipes for specific contributor tasks.
+
+* xref:testing.adoc[Test-tier guide] — choosing between the unit, pipeline, compilation, and execution tiers.
+* xref:dev-loop-internals.adoc[Dev loop internals] — how the `dev` goal wires the LSP, MCP server, watchers, and generator dispatch into one JVM.
+* xref:release-natives.adoc[Release the tree-sitter natives] — cutting a `graphitron-tree-sitter-natives` release.
+
+xref:../index.adoc[← Architecture]

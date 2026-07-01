@@ -1,0 +1,12 @@
+= Architecture: Reference
+:description: Authoritative contributor-facing reference for the Graphitron generator.
+:!toc:
+
+The facts, for when you know what you are looking for.
+
+* xref:code-generation-triggers.adoc[Code Generation Triggers] — the classification taxonomy and what each generator emits.
+* xref:argument-resolution.adoc[Argument Resolution] — the unified argument-resolution lift.
+* xref:runtime-extension-points.adoc[Runtime Extension Points] — the runtime seams a consumer extends.
+* xref:modules.adoc[Modules] — the reactor module map.
+
+xref:../index.adoc[← Architecture]

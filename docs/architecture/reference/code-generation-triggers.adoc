@@ -654,15 +654,15 @@ Four families, by what they emit. The Generators package holds emitter helpers (
 | Runtime helpers (`util/`) | `ColumnFetcherClassGenerator`, `ConnectionResultClassGenerator`, `ConnectionHelperClassGenerator`, `GraphitronValuesClassGenerator`, `EntityFetcherDispatchClassGenerator`, `GraphitronContextInterfaceGenerator`, `NodeIdEncoderClassGenerator`, `OrderByResultClassGenerator`, `QueryNodeFetcherClassGenerator` | Per-app emitted runtime classes (`ColumnFetcher`, `ConnectionResult`, `ConnectionHelper`, `GraphitronValues`, `EntityFetcherDispatch`, `GraphitronContext`, `NodeIdEncoder`, `OrderByResult`, `QueryNodeFetcher`) — the runtime extension points graphql-java and the federation library plug into
 |===
 
-`GeneratorUtils` (root of `generators/`) holds shared building blocks reached from any family ; `ResolvedTableNames`, key-type construction, constants. `QueryConditionsGenerator` is part of fetcher emission and emits the `(env, ...) -> typed-args` adapter that fronts user-written `*Conditions` composers (see the "Wire boundaries are typed adapter / composer pairs" principle in xref:rewrite-design-principles.adoc[Rewrite Design Principles]).
+`GeneratorUtils` (root of `generators/`) holds shared building blocks reached from any family ; `ResolvedTableNames`, key-type construction, constants. `QueryConditionsGenerator` is part of fetcher emission and emits the `(env, ...) -> typed-args` adapter that fronts user-written `*Conditions` composers (see the "Wire boundaries are typed adapter / composer pairs" principle in xref:../explanation/rewrite-design-principles.adoc[Rewrite Design Principles]).
 
 === Directives
 
 - *SDL definitions*: `graphitron-rewrite/graphitron/src/main/resources/no/sikt/graphitron/rewrite/schema/directives.graphqls`. `RewriteSchemaLoader` auto-injects this file into the merged schema.
-- *Directive reference with examples*: see the directive reference under `docs/manual/reference/directives/` (rendered at the published manual). For the contributor-facing chapter consolidating runtime extension points and the typed-rejection narrative, see xref:runtime-extension-points.adoc[Runtime Extension Points] and xref:typed-rejection.adoc[Typed rejection]; this Source Map is the canonical reference for what each generator emits.
+- *Directive reference with examples*: see the directive reference under `docs/manual/reference/directives/` (rendered at the published manual). For the contributor-facing chapter consolidating runtime extension points and the typed-rejection narrative, see xref:runtime-extension-points.adoc[Runtime Extension Points] and xref:../explanation/typed-rejection.adoc[Typed rejection]; this Source Map is the canonical reference for what each generator emits.
 
 '''
 
 *See also:*
-- xref:rewrite-design-principles.adoc[Rewrite Design Principles] ; architectural and technical principles for the rewrite pipeline
+- xref:../explanation/rewrite-design-principles.adoc[Rewrite Design Principles] ; architectural and technical principles for the rewrite pipeline
 - link:https://github.com/sikt-no/graphitron/tree/claude/graphitron-rewrite/graphitron-rewrite/roadmap[Rewrite Roadmap] ; remaining generator work
