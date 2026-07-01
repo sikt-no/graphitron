@@ -1,7 +1,7 @@
 ---
 id: R416
 title: "Self-host GraphiQL assets in graphitron-jakarta-rest (retire CDN, relocate Vite recipe)"
-status: Spec
+status: Ready
 bucket: feature
 priority: 6
 theme: structural-refactor
@@ -39,11 +39,11 @@ Self-host in the **core** `graphitron-jakarta-rest` module (the architect's "opt
 
 ### 4. Rewrite `graphiql.html`
 
-- Replace the three unpkg `<script>`/`<link>` URLs with `{{ASSET_BASE}}`-prefixed local references. Update the rationale comment (lines 11-15): it currently justifies the CDN "so the runtime jar stays lean"; replace with the self-hosted rationale (offline/CSP/air-gap-safe, version-pinned, reproducible) and a one-line note that leanness was consciously traded for a small known consumer set, with option C as the escape hatch if that changes.
+- Replace the four unpkg URLs (one `<link>` stylesheet, three `<script>` tags: react, react-dom, graphiql) with `{{ASSET_BASE}}`-prefixed local references. Update the rationale comment (lines 11-15): it currently justifies the CDN "so the runtime jar stays lean"; replace with the self-hosted rationale (offline/CSP/air-gap-safe, version-pinned, reproducible) and a one-line note that leanness was consciously traded for a small known consumer set, with option C as the escape hatch if that changes.
 
 ### 5. Reconcile stale docs (already false today, independent of this change)
 
-- `graphitron-sakila-example/README.md` line 12 and lines 39-43: rewrite to describe the library-provided self-hosted playground at `GET /graphql` (browser + `Accept: text/html`). Remove the dead links to the deleted `META-INF/resources/graphiql/` and the deleted example-owned `GraphqlResource.java`, and the `/graphiql/` path.
+- `graphitron-sakila-example/README.md` line 12, line 22, and lines 39-45: rewrite to describe the library-provided self-hosted playground at `GET /graphql` (browser + `Accept: text/html`). Remove the dead links to the deleted `META-INF/resources/graphiql/` and the deleted example-owned `GraphqlResource.java`, and the `/graphiql/` path. Line 22 is prose in the module walkthrough asserting the (deleted) example `GraphqlResource` returns a `303` redirect to `/graphiql/`; lines 39-45 are the whole `### GraphiQL playground` section, including the closing paragraph that still claims the recipe under `tools/graphiql-build/` is "the only place node lives in this repo" (it moves to jakarta-rest under §1).
 - Relocated `tools/graphiql-build/README.md`: rewrite for its new home and new output path under jakarta-rest.
 - `docs/architecture/reference/modules.adoc`: note jakarta-rest now carries the committed bundle + recipe.
 - Tutorial: `docs/manual/tutorial/01-prerequisites.adoc:103` and `03-first-query.adoc:5` point at `http://localhost:8080/graphiql/`, which no longer serves anything (the example's bundle is already gone) — repoint to `http://localhost:8080/graphql`. **Verify `TutorialSmokeTest` and `GraphqlResourceSmokeTest` in `graphitron-sakila-example` do not assert on the `/graphiql/` path** before/while editing the prose.
