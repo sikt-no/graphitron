@@ -1,7 +1,7 @@
 ---
 id: R410
 title: "graphitron:dev owns incremental compilation of generated sources"
-status: Ready
+status: Spec
 bucket: feature
 priority: 3
 theme: lsp
@@ -38,11 +38,12 @@ Two boundaries keep this item finite and keep it from re-implementing a framewor
   Quarkus dev and DevTools already do well; it stays out. The pain being solved is the compile cost,
   and that is what this addresses. A consumer who wants live reload still runs their framework's dev
   mode; the difference is that the generated-code compile no longer rides that tool.
-- **The generated closure, not consumer code.** graphitron compiles only what it emits, into
-  `target/classes/<outputPackage>/`. The generated code's references *into* consumer services, jOOQ
-  tables, and dependency jars are already compiled and on the resolved classpath (the classpath
-  watcher depends on that being true). Recompiling the consumer's own hand-written code when a
-  generated ABI changes remains the consumer build tool's job.
+- **The generated closure, not consumer code.** graphitron compiles only what it emits, into a
+  graphitron-exclusive output dir (`target/graphitron-classes/<outputPackage>/`, see *Output
+  ownership*), never the shared `target/classes`. The generated code's references *into* consumer
+  services, jOOQ tables, and dependency jars are already compiled and on the resolved classpath (the
+  classpath watcher depends on that being true). Recompiling the consumer's own hand-written code when
+  a generated ABI changes remains the consumer build tool's job.
 
 ## What we already have
 
@@ -65,11 +66,13 @@ Four mechanics already exist; this item composes them rather than building from 
   `requiresDependencyResolution = COMPILE` and `AbstractRewriteMojo.buildCodegenLoader()` assembles
   the reactor classpath, consumer `target/classes`, and dependency jars: exactly a
   `StandardJavaFileManager`'s inputs.
-- **The output sink and its watcher already exist.** The classpath watcher already watches
-  `target/classes/…` for `.class` changes to rebuild the catalog; generated `.class` landing under
-  `target/classes/<outputPackage>/` fits that model, and the `.java` orphan sweep
-  (`GraphQLRewriteGenerator.java:264-284`, scoped to `OWNED_SUBPACKAGES`) has a `.class` twin whose
-  scoping discipline is load-bearing (see *Output ownership*).
+- **The consumer-`.class` watcher and the orphan-sweep pattern already exist.** The classpath watcher
+  already watches `target/classes/…` for *consumer* `.class` changes to rebuild the catalog; that watch
+  is unchanged and continues to drive the consumer-ABI invalidation trigger below. graphitron's own
+  generated `.class` lands in the separate `target/graphitron-classes/<outputPackage>/` (see *Output
+  ownership*), so it does not feed that watcher and does not need to. The `.java` orphan sweep
+  (`GraphQLRewriteGenerator.java:264-284`, scoped to `OWNED_SUBPACKAGES`) is the template for the
+  `.class` twin, which sweeps the graphitron-exclusive dir.
 
 ## The sourcing seam (the one-model guard)
 
@@ -107,7 +110,7 @@ R333's "the projection seam re-sources from the facts" applied to a fourth consu
 - **The per-save recompile set.** Given the writer's delta, recompile =
   `delta ∪ {reverse-transitive dependents of the delta files whose ABI changed}`. Body-only changes do
   not propagate; ABI changes propagate along reverse edges. Compile that set into
-  `target/classes/<outputPackage>`, sweep orphan `.class` (scoped, below), and route compiler
+  `target/graphitron-classes/<outputPackage>`, sweep orphan `.class` (below), and route compiler
   diagnostics into the existing `WatchErrorFormatter` / LSP surface, the same tree validation errors
   already use.
 - **Invalidation triggers.** A schema save produces the delta (regen path). A consumer `.class`
@@ -118,16 +121,44 @@ R333's "the projection seam re-sources from the facts" applied to a fourth consu
 
 ## Design forks (resolved)
 
-- **Output ownership.** graphitron owns the generated package's bytecode: it compiles
-  `<outputPackage>` into `target/classes/<outputPackage>/`, and consumers exclude `generated-sources`
-  from their own build tool's compile so the two do not race as two writers into the same tree. A
-  separate-output-dir alternative was rejected as it leaves the ownership split ambiguous. **The
-  contract is verified, not just documented:** because `target/classes` is a *shared* tree (unlike
-  `generated-sources/graphitron`, which graphitron solely owns), the `.class` orphan sweep is scoped to
-  the same `OWNED_SUBPACKAGES` under `target/classes/<outputPackage>/`, so it can never delete consumer
-  bytecode (a silent `NoClassDefFoundError`-at-runtime failure), and dev startup **fails fast** if the
-  consumer's compile plugin is still configured to compile `generated-sources` (drafted in
-  *First-client user-doc draft* below, landed by slice 6; it does not yet exist).
+- **Output ownership: a graphitron-exclusive output dir, not the shared `target/classes`.**
+  graphitron compiles `<outputPackage>` into `target/graphitron-classes/<outputPackage>/`, a directory
+  graphitron **solely writes**, and that dir is placed **first** on the dev/runtime classpath, ahead of
+  `target/classes`. This is the load-bearing decision, and it is chosen precisely to make incremental
+  compilation *sound by construction*: incremental compile is only correct when a single authority owns
+  the output set (a second compiler that does not know graphitron's dependency graph recompiles a
+  different set, so an interleaved run leaves `target/classes` holding a mix of ABIs from two fronts,
+  a `LinkageError`/`NoSuchMethodError` at reload time). An exclusive dir gives graphitron that sole
+  authority without asking any other tool to stand down.
+  - **Why not the shared tree.** Writing generated `.class` into `target/classes/<outputPackage>/` (the
+    earlier draft) races every other compiler pointed at the generated source root. That source root is
+    a *conventional* one (added so the IDE indexes it), so three actors compile it into `target/classes`
+    by default: `maven-compiler-plugin` (during a `compile`/`package`/framework goal), the IDE
+    (continuously, governed by its own module settings, **not** by `maven-compiler-plugin` `<excludes>`),
+    and the framework dev process (Quarkus/Spring, which the scope boundary *intends* to run alongside).
+    A fail-fast that inspects the pom catches only the first and is blind to the IDE and the framework
+    JVM, exactly the two most likely to be running next to `graphitron:dev`. The shared tree made the
+    consumer-side exclusion a *precondition of correctness* that graphitron could not enforce.
+  - **Misconfiguration degrades safely, never corrupts.** Because the dir is exclusive, no file-write
+    race is possible regardless of what the consumer's other tools do. If the consumer forgets the
+    one-time classpath setup, their framework simply falls back to compiling `generated-sources` into
+    `target/classes` itself, today's slower behaviour, and graphitron's output sits unread; degraded,
+    not broken. If they add the dir first but *also* let their tool compile `generated-sources`, the
+    graphitron-classes-first ordering means the fresh copy always wins and the redundant `target/classes`
+    copy is harmless. Every misconfiguration is safe; the exclusion of `generated-sources` from the
+    consumer compile becomes an *advisory* optimisation (avoid redundant work), not a load-bearing guard.
+  - **Sweep safety is now structural.** Because `target/graphitron-classes` is graphitron-exclusive
+    (unlike the shared `target/classes`), the `.class` orphan sweep can drop anything under it not
+    emitted this run without needing the `OWNED_SUBPACKAGES` scoping as a safety fence, that scoping was
+    the shared-tree guard against deleting consumer bytecode, and it no longer has any consumer bytecode
+    to protect. The sweep still mirrors the `.java` sweep for parity; its *safety* just no longer
+    depends on scoping.
+  - **Open question, bounds where the feature helps (slice 6 answers it).** graphitron compiles; the
+    framework reloads. That only works for frameworks that reload from an externally-produced `.class`
+    on the classpath. Spring Boot DevTools watches the classpath and restarts on `.class` changes, so it
+    does. Quarkus dev is more source-oriented and may reload only what *it* recompiled; if so, the
+    feature buys a Quarkus consumer nothing and slice 6 must say so plainly rather than imply universal
+    benefit. Slice 6 pins the per-framework reload behaviour before the docs claim it.
 - **Sequencing vs R333/R314.** Ship the model-sourced graph now behind `CompileDependencyGraph` (see
   *The sourcing seam*), rather than blocking on either. The compile-dependency graph is a coarsening of
   R333's method graph and becomes a view over it once that method graph exists: a fourth consumer
@@ -143,15 +174,23 @@ check: if it does not read simply, the design is wrong. This is the block slice 
 `getting-started.adoc`'s dev-loop section (final wording may tighten, the shape is the contract).
 
 > **`graphitron:dev` compiles the generated code for you.** In a dev session the goal writes the
-> generated Java *and* compiles it, dropping the `.class` files straight into
-> `target/classes/<outputPackage>/` as you edit the schema. Only the classes affected by an edit are
-> recompiled, so a one-field change is fast even on a large schema. You no longer need `quarkus:dev`
-> or the IDE to recompile the generated code; they still own reloading it into a running app.
+> generated Java *and* compiles it, dropping the `.class` files into its own output directory,
+> `target/graphitron-classes/<outputPackage>/`, as you edit the schema. Only the classes affected by an
+> edit are recompiled, so a one-field change is fast even on a large schema. You no longer need
+> `quarkus:dev` or the IDE to recompile the generated code; they still own reloading it into a running
+> app.
 >
-> **One-time setup: let graphitron own the generated package.** Because graphitron now compiles the
-> generated sources itself, your own build must not also compile them, or the two race to write the
-> same `.class` files. Exclude the generated-sources root from your module's compile (it stays a
-> source root for IDE indexing and go-to-definition; it is just not double-compiled):
+> **One-time setup: put graphitron's output first on your run classpath.** graphitron writes its
+> compiled classes to `target/graphitron-classes` so nothing ever writes to the same file it does.
+> For your running app (dev mode, tests) to pick up the fast, freshly-compiled classes, add that
+> directory to the runtime classpath **ahead of** `target/classes`. In Maven, add it as an extra
+> classpath element for your framework's dev/run goal (exact key depends on the plugin); the ordering
+> is what matters, graphitron's copy must win over any copy your own build produces.
+>
+> You can *optionally* also stop your own build from re-compiling the generated sources (it stays a
+> source root for IDE indexing and go-to-definition either way). This only saves the redundant compile;
+> it is not required for correctness, because graphitron writes to a separate directory and the
+> classpath ordering already decides which copy wins:
 >
 > ```xml
 > <plugin>
@@ -165,18 +204,16 @@ check: if it does not read simply, the design is wrong. This is the block slice 
 > </plugin>
 > ```
 >
-> If the exclusion is missing, `graphitron:dev` stops at startup rather than racing silently:
->
-> ```
-> graphitron:dev: your build compiles the generated package <outputPackage> itself, which would
-> race graphitron's own compilation into target/classes. Exclude the generated-sources root from
-> maven-compiler-plugin (see the dev-loop docs), or run with -Dgraphitron.dev.compile=false to let
-> your build own it.
-> ```
+> **If you skip the setup, nothing breaks, it just isn't faster.** Without the classpath entry your
+> app runs exactly as today: your build compiles the generated sources into `target/classes` and runs
+> from there, and graphitron's separate output goes unused. There is no race and no corruption to guard
+> against, because the two never write the same file. To turn graphitron's compile off entirely (so it
+> does not spend time producing output you are not consuming), run with `-Dgraphitron.dev.compile=false`.
 
-The `-Dgraphitron.dev.compile=false` escape hatch (fall back to today's generate-only behaviour, let
-the consumer's tool compile) is part of slice 6's surface, so a consumer who cannot change their build
-config is not blocked.
+The `-Dgraphitron.dev.compile=false` switch (fall back to today's generate-only behaviour) is part of
+slice 6's surface. Note what the exclusive-dir design buys over a shared `target/classes`: there is no
+fail-fast startup check to write, because there is no cross-writer race to fail on; every
+misconfiguration degrades to today's behaviour instead of corrupting bytecode.
 
 ## Risk centers (where the spec's difficulty concentrates)
 
@@ -216,8 +253,8 @@ gate is a **pair**, because a degenerate engine that recompiles everything every
 correctness-only gate perfectly while delivering none of the item's value:
 
 - **(a) Correctness / completeness.** After a sequence of schema edits through the incremental engine,
-  the `target/classes/<outputPackage>` tree is byte-for-byte identical to a clean full compile of the
-  final sources. Falsifies graph incompleteness, ABI-hash misses, and stale-symbol leaks.
+  the `target/graphitron-classes/<outputPackage>` tree is byte-for-byte identical to a clean full
+  compile of the final sources. Falsifies graph incompleteness, ABI-hash misses, and stale-symbol leaks.
 - **(b) Pruning / ABI discrimination.** For a known edit sequence, an assertion over the *recompile
   set* that a body-only edit excluded its reverse-dependents (and that an ABI edit included exactly the
   transitive dependents). This is what makes "the design is wrong if it can't pass cheaply" bite;
@@ -241,19 +278,25 @@ correctness-only gate perfectly while delivering none of the item's value:
    with hand-built graphs covering body-only (no propagation), ABI change (one-hop and transitive), and
    constant-value change (propagates).
 4. **The warm compiler + incremental engine.** Wire the `JavaCompiler` / reused
-   `StandardJavaFileManager`, compile the recompile set into `target/classes`, scoped `.class` orphan
-   sweep, diagnostics into `WatchErrorFormatter`. `@UnitTier` on the engine over a synthetic source
-   set; the stale-symbol regression test lives here.
+   `StandardJavaFileManager`, compile the recompile set into the graphitron-exclusive
+   `target/graphitron-classes`, `.class` orphan sweep of that dir, diagnostics into
+   `WatchErrorFormatter`. `@UnitTier` on the engine over a synthetic source set; the stale-symbol
+   regression test lives here.
 5. **The correctness invariant harness (two clauses).** Clause (a) incremental-equals-clean-full and
    clause (b) recompile-set pruning, as above. New tier-crossing harness in the maven-plugin module;
    the acceptance gate.
 6. **Dev-loop integration.** Fold the engine into `DevMojo`: schema-save and classpath-change triggers
-   drive it, consumer `.class` changes invalidate dependent generated units, Ctrl+C shuts the engine
-   down cleanly, dev startup fails fast on a mis-configured consumer compile (with the
-   `-Dgraphitron.dev.compile=false` opt-out for consumers who cannot change their build config). Extend
-   `DevMojoTest`, including a clause mirroring `IdempotentWriterTest`'s third (a planted `.class`
-   outside owned sub-packages survives a sweep) and the fail-fast / opt-out paths. Land the
-   *First-client user-doc draft* block into `getting-started.adoc`'s dev-loop section.
+   drive it, generated `.class` lands in `target/graphitron-classes` (surfaced as a classpath element
+   ahead of `target/classes`), consumer `.class` changes invalidate dependent generated units, Ctrl+C
+   shuts the engine down cleanly, and `-Dgraphitron.dev.compile=false` disables graphitron's compile so
+   it does not produce unread output. No fail-fast: the exclusive dir means a mis-set-up consumer
+   degrades to today's behaviour rather than corrupting, so there is nothing to fail on. Extend
+   `DevMojoTest`: the sweep drops an orphaned generated `.class` (removed coordinate) from the exclusive
+   dir; the `-Dgraphitron.dev.compile=false` opt-out path; and a precedence assertion that a stale copy
+   of a class in `target/classes` is shadowed by graphitron's fresh copy when its dir is first. Pin the
+   per-framework reload behaviour (Spring DevTools reloads from external `.class`; Quarkus dev's
+   source-oriented reload verified or documented as unsupported) so the docs claim only what holds. Land
+   the *First-client user-doc draft* block into `getting-started.adoc`'s dev-loop section.
 
 ## Non-goals
 
