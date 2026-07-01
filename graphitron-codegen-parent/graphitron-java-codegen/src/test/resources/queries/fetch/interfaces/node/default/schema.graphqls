@@ -1,7 +1,0 @@
-type Query {
-  node(id: ID!): Node
-}
-
-type Customer implements Node @table {
-  id: ID
-}

@@ -1,3 +1,0 @@
-type Query {
-  query(enumInput: DummyEnum! @condition(condition: {name: "QUERY_FETCH_CONDITION", method: "email"})): CustomerTable
-}

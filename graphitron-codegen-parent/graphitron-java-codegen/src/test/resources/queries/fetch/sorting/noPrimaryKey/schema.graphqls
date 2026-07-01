@@ -1,7 +1,0 @@
-type Query {
-    query: [PgUser]
-}
-
-type PgUser @table(name: "PG_USER") {
-    usesysid: String
-}

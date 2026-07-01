@@ -1,7 +1,0 @@
-type Film implements Node @node @table {
-    id: ID!
-}
-
-type Customer implements Node @node(typeId: "Film") @table {
-    id: ID!
-}

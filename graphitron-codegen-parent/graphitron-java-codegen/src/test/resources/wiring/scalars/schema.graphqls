@@ -1,3 +1,0 @@
-scalar LocalTime #defined in ExtendedScalars.LocalTime
-scalar BigInteger #defined in ExtendedScalars.GraphQLBigInteger
-scalar MyLittleScalar #not recognized by ExtendedScalars

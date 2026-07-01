@@ -1,3 +1,0 @@
-type Film @table {
-  reset: ID @experimental_procedureCall(procedure: "reset_film_rental_duration", arguments: "p_film_id: FILM_ID")
-}

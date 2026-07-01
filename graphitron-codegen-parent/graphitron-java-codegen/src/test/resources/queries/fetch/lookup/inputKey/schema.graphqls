@@ -1,7 +1,0 @@
-type Query {
-  query(in: [Input] @lookupKey): CustomerTable
-}
-
-input Input {
-  id: ID!
-}

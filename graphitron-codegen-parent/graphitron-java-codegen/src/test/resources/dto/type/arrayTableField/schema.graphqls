@@ -1,3 +1,0 @@
-type CustomerTable @table(name: "CUSTOMER") {
-    usernames: [String]
-}

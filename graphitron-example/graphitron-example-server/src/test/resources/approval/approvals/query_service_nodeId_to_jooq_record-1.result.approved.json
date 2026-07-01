@@ -1,7 +1,0 @@
-{
-    "data": {
-        "helloWorldWithNodeIdToJooqRecord": {
-            "greeting": "Hello, customer with CUSTOMER_ID 1 from jOOQ record!"
-        }
-    }
-}

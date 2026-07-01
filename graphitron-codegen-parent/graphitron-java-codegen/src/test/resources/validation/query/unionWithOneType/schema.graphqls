@@ -1,9 +1,0 @@
-type Query {
-    someUnion: SomeUnion
-}
-
-union SomeUnion = Customer
-
-type Customer @table(name: "CUSTOMER") {
-    customer_id: Int
-}

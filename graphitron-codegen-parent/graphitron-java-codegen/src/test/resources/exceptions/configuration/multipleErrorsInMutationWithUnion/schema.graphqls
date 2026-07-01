@@ -1,6 +1,0 @@
-type Response {
-  errors0: [ValidationError]
-  errors1: [ValidationUnion]
-}
-
-union ValidationUnion = ValidationError

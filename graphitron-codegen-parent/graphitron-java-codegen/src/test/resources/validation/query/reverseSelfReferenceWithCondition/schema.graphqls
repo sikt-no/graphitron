@@ -1,7 +1,0 @@
-type Query {
-  query: Film
-}
-
-type Film @table {
-  sequels: [Film] @splitQuery @reference(path: [{condition: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyCondition"}}])
-}

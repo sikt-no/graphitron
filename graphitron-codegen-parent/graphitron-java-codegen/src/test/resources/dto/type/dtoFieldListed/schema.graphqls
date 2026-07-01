@@ -1,7 +1,0 @@
-type Query {
-    customers: CustomerContainerListed
-}
-
-type CustomerContainerListed {
-    customers: [Customer]
-}

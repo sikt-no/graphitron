@@ -1,7 +1,0 @@
-type Query {
-  query(in: Customer): ID!
-}
-
-input Customer @table(name: "CUSTOMER") {
-  id: ID!
-}

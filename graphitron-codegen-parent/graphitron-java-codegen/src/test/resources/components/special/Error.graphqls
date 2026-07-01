@@ -1,4 +1,0 @@
-interface Error {
-  path: [String!]!
-  message: String!
-}

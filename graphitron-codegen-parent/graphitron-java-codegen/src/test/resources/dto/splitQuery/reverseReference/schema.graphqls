@@ -1,7 +1,0 @@
-type Vacation @table(name: "VACATION") {
-    destination: VacationDestination @splitQuery
-}
-
-type VacationDestination @table(name: "VACATION_DESTINATION") {
-    someString: String
-}

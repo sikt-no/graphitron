@@ -1,3 +1,0 @@
-interface Node {
-  id: ID!
-}

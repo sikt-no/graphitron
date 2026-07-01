@@ -1,9 +1,0 @@
-{
-    customers(first: 4) {
-        nodes {
-            id
-            usernames
-            pastAddressIds
-        }
-    }
-}

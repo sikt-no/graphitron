@@ -1,9 +1,0 @@
-{
-    cities(first: 2) {
-        nodes {
-            payments {
-                paymentId
-            }
-        }
-    }
-}

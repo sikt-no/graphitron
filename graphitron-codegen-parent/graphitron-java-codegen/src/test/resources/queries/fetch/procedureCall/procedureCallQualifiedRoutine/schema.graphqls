@@ -1,3 +1,0 @@
-type Customer @table {
-  lastDay: String @experimental_procedureCall(procedure: "utils.last_day", arguments: "_1: LAST_UPDATE")
-}

@@ -1,8 +1,0 @@
-type Response {
-  errors: [UnrelatedError]
-}
-
-type UnrelatedError implements Error {
-  path: [String!]!
-  message: String!
-}

@@ -1,3 +1,0 @@
-type Mutation {
-  mutation(in: DummyInputRecord): ID @service(service: {name: "RESOLVER_MUTATION_SERVICE"})
-}

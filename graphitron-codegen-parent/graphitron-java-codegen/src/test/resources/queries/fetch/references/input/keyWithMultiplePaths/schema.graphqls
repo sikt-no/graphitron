@@ -1,7 +1,0 @@
-type Query {
-  query(name: String! @reference(path: [{key: "FILM__FILM_ORIGINAL_LANGUAGE_ID_FKEY"}])): Film
-}
-
-type Film @table {
-  id: ID!
-}

@@ -1,8 +1,0 @@
-type Query {
-    query: Wrapper
-}
-
-type Wrapper {
-    customer: CustomerTable
-    errors: [ValidationError]
-}

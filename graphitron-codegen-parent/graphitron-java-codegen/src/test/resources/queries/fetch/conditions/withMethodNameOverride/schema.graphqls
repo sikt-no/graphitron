@@ -1,3 +1,0 @@
-type Query {
-  query(someID: ID! @condition(condition: {name: "QUERY_FETCH_CONDITION", method: "id"})): CustomerTable
-}

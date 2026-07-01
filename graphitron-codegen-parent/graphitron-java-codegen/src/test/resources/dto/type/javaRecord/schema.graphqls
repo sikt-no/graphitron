@@ -1,3 +1,0 @@
-type MyJavaRecord @record(record: {name: "JAVA_RECORD_CUSTOMER"}) {
-    myString: String
-}

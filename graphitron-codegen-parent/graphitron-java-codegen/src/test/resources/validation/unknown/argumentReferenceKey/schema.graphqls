@@ -1,3 +1,0 @@
-type Dummy {
-  id(id: ID @reference(path: {key: "UNKNOWN_KEY"})): ID
-}

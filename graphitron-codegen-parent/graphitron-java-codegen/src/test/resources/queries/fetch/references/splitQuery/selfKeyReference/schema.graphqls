@@ -1,8 +1,0 @@
-type Query {
-  films: Film @notGenerated
-}
-
-type Film @table {
-  id: ID!
-  sequel: Film @splitQuery @reference(path: [{key: "FILM__SEQUEL_FKEY"}])
-}

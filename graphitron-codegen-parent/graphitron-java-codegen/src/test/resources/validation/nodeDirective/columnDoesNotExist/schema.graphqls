@@ -1,3 +1,0 @@
-type Language implements Node @table @node(keyColumns: ["WRONG"]){
-  id: ID!
-}

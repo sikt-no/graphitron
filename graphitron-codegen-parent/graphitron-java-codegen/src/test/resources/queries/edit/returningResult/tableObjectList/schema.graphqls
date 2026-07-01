@@ -1,3 +1,0 @@
-type Mutation {
-  mutation(in: [CustomerNodeInputTable!]!): [CustomerNode] @mutation(typeName: DELETE)
-}

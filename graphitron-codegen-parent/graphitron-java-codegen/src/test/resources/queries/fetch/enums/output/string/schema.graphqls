@@ -1,8 +1,0 @@
-type Query {
-  query: FilmTable
-}
-
-type FilmTable @table(name: "FILM") {
-  id: ID
-  e: DummyEnum @field(name: "RATING")
-}

@@ -1,7 +1,0 @@
-type Vacation @table(name: "VACATION") {
-    someString: String
-}
-
-type VacationDestination @table(name: "VACATION_DESTINATION") {
-    vacations: Vacation @splitQuery @reference(path: [{condition: {name: "DUMMY_CONDITION"}, table: "VACATION"}])
-}

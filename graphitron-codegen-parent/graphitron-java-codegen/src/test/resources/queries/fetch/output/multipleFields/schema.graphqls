@@ -1,8 +1,0 @@
-type Query {
-  query: Customer
-}
-
-type Customer @table {
-  id: ID
-  email: String
-}

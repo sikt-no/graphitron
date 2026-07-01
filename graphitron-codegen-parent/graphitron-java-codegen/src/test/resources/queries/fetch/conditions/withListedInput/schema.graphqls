@@ -1,7 +1,0 @@
-type Query {
-  query(input: [Input!]!): CustomerTable @condition(condition: {name: "QUERY_FETCH_CONDITION"})
-}
-
-input Input {
-  id: ID! # Must be non-nullable.
-}

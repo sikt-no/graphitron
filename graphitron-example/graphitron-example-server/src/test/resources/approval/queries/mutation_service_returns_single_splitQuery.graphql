@@ -1,9 +1,0 @@
-# Service mutation returning wrapper type with single @splitQuery field
-mutation {
-    singleCustomerMutation {
-        customer {
-            id
-            email
-        }
-    }
-}

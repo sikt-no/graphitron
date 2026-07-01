@@ -1,7 +1,0 @@
-type Address implements Node @node @table {
-  customer: Customer @splitQuery
-}
-
-type Customer implements Node @node @table {
-  id: ID! @nodeId
-}

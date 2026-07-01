@@ -1,7 +1,0 @@
-query QueryWithJooqRecordInput ($input: CustomerInput!){
-    customerWithJooqRecordInput(input: $input) {
-        nodes {
-            id
-        }
-    }
-}

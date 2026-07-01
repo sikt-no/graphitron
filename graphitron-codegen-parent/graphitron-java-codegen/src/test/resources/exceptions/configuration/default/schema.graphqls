@@ -1,3 +1,0 @@
-type Response {
-  errors: [ValidationError]
-}

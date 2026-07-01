@@ -1,9 +1,0 @@
-type Query {
-  fromSchema1: CustomerTable
-
-  fromSchema2: PgUser
-}
-
-type PgUser @table(name: "PG_USER") {
-  id: ID!
-}
