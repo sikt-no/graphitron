@@ -1,7 +1,7 @@
 ---
 id: R332
 title: "Mark @table on input types as deprecated (signal ahead of R97 removal)"
-status: Spec
+status: Ready
 bucket: cleanup
 priority: 6
 theme: model-cleanup
