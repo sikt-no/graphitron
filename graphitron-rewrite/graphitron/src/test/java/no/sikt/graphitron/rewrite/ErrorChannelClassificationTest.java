@@ -549,6 +549,53 @@ class ErrorChannelClassificationTest {
         assertThat(reason).contains("errors-shaped carrier field 'errors'", "more than one", "VALIDATION");
     }
 
+    // R370: the two @service-path in-hand bestGuess swaps (resolveErrorChannel and
+    // computeMutationServiceRecordReturnType) are pinned end-to-end by a nested-payload compilation
+    // fixture in graphitron-sakila-example. This unit-tier case additionally pins resolveErrorChannel's
+    // boundary directly: @service outcome fields classify to ErrorChannel.Mapped (no payload class is
+    // constructed), so the PayloadClass arm resolveErrorChannel builds is reached by a *child* @service
+    // field. With a nested payload backing class, the resolved PayloadClass.payloadClass() must be the
+    // JLS-legal Outer.Nested, not the $-qualified binary Outer$Nested that bestGuess would carry as a
+    // single simple name. This is the belt-and-suspenders object-equality assertion on the resolved
+    // TypeName (no code-string match, no database) that guards the swap against reintroduction.
+    @Test
+    void childServiceRecordField_nestedPayloadBacking_payloadClassIsStructurallyResolved() {
+        var schema = build("""
+            type ValidationErr @error(handlers: [{handler: VALIDATION}]) {
+                path: [String!]!
+                message: String!
+            }
+            type DbErr @error(handlers: [{handler: DATABASE, sqlState: "23503"}]) {
+                path: [String!]!
+                message: String!
+            }
+            union SakError = ValidationErr | DbErr
+            type NestedErrPayload {
+                data: String
+                errors: [SakError]
+            }
+            type Film @table(name: "film") {
+                title: String
+                sak: NestedErrPayload @service(service: {
+                    className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "runNestedErrors"})
+            }
+            type Query { films: [Film!] }
+            """);
+
+        var f = schema.field("Film", "sak");
+        assertThat(f).isInstanceOf(no.sikt.graphitron.rewrite.model.ChildField.ServiceRecordField.class);
+        var ch = (ErrorChannel.PayloadClass)
+            ((WithErrorChannel) f).errorChannel().orElseThrow();
+        // The payload's binary name is AccessorPayloads$NestedErrorsPayload; resolveErrorChannel must
+        // resolve the enclosing structure via ClassName.get(Class), matching the reflected class.
+        assertThat(ch.payloadClass())
+            .isEqualTo(ClassName.get(
+                no.sikt.graphitron.codereferences.dummyreferences.AccessorPayloads.NestedErrorsPayload.class));
+        // Pin the exact defect: a bestGuess over the binary name would keep the whole
+        // "AccessorPayloads$NestedErrorsPayload" as one simple name (it never splits on '$').
+        assertThat(ch.payloadClass().simpleName()).isEqualTo("NestedErrorsPayload");
+    }
+
     private GraphitronSchema build(String schemaText) {
         return TestSchemaHelper.buildSchema(schemaText);
     }

@@ -444,6 +444,18 @@ class TestServiceStub {
     }
 
     /**
+     * R370 classification-tier witness: returns the <em>nested</em> dummy payload
+     * {@link no.sikt.graphitron.codereferences.dummyreferences.AccessorPayloads.NestedErrorsPayload}
+     * (binary name {@code AccessorPayloads$NestedErrorsPayload}). A child {@code @service} field
+     * returning this payload resolves an {@code ErrorChannel.PayloadClass} whose {@code payloadClass()}
+     * must be the structural {@code AccessorPayloads.NestedErrorsPayload}, not the {@code $}-qualified
+     * binary name. Pins {@code FieldBuilder.resolveErrorChannel}'s {@code ClassName.get} boundary.
+     */
+    public static no.sikt.graphitron.codereferences.dummyreferences.AccessorPayloads.NestedErrorsPayload runNestedErrors() {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
      * Returns the dummy {@code SakPayload} from a {@link TestInputBean} input. Used by the
      * validator-pre-step regression test that needs an Input-typed arg (for the R94 fromMap
      * materialisation path) plus a SakPayload return (so the surrounding ErrorChannel resolves
