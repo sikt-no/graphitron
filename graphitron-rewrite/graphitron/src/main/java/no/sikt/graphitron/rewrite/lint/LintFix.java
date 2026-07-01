@@ -1,8 +1,11 @@
 package no.sikt.graphitron.rewrite.lint;
 
+import graphql.language.Directive;
 import graphql.language.SourceLocation;
+import graphql.schema.GraphQLAppliedDirective;
 
 import java.util.List;
+import java.util.Optional;
 
 /**
  * An optional, user-accepted suggested fix carried on a
@@ -38,5 +41,61 @@ public record LintFix(String description, List<Edit> edits) {
     /** Convenience for a single-edit fix. */
     public static LintFix of(String description, SourceLocation start, SourceLocation end, String replacement) {
         return new LintFix(description, List.of(new Edit(start, end, replacement)));
+    }
+
+    /**
+     * A single-token replacement: replace the {@code tokenLength} characters starting at
+     * {@code start} with {@code replacement}. A token never spans a line, so the end is
+     * {@code start.column + tokenLength} on the same line. Used for the local-rename fixes
+     * (a field name, a directive name).
+     */
+    public static LintFix replaceToken(
+        String description, SourceLocation start, int tokenLength, String replacement
+    ) {
+        return of(description, start, endOnSameLine(start, tokenLength), replacement);
+    }
+
+    /**
+     * A safe token deletion: remove the {@code tokenLength} characters starting at {@code start}
+     * (a zero-width replacement). Used for the classifier safe-deletion advisories (a redundant
+     * {@code @record} / {@code @splitQuery}). The token itself is removed exactly; any surrounding
+     * whitespace is left intact (a lone extra space is valid SDL), so no source text is needed to
+     * compute the range.
+     */
+    public static LintFix deleteToken(String description, SourceLocation start, int tokenLength) {
+        return of(description, start, endOnSameLine(start, tokenLength), "");
+    }
+
+    /**
+     * An additive insertion at {@code at}: a zero-width edit ({@code start.equals(end)}) whose
+     * replacement is the inserted text. Nothing existing is changed. Used for the additive fixes
+     * (insert a {@code reason:} placeholder, insert a description placeholder).
+     */
+    public static LintFix insertAt(String description, SourceLocation at, String text) {
+        return of(description, at, at, text);
+    }
+
+    private static SourceLocation endOnSameLine(SourceLocation start, int tokenLength) {
+        return new SourceLocation(start.getLine(), start.getColumn() + tokenLength);
+    }
+
+    /**
+     * A safe deletion fix for a redundant applied directive whose value graphitron ignores anyway
+     * (the classifier advisories {@code redundant-record-directive} and
+     * {@code splitquery-redundant-on-record-parent}). The fix is offered only for the bare form (no
+     * arguments): graphql-java records a node's start location but no end, so the span of
+     * {@code @record(record: {...})} cannot be derived, whereas a bare {@code @record} /
+     * {@code @splitQuery} is exactly {@code '@' + name}. Returns empty when the directive is absent,
+     * carries arguments, or has no retained source location (a programmatically built schema).
+     */
+    public static Optional<LintFix> deleteBareAppliedDirective(
+        GraphQLAppliedDirective applied, String description
+    ) {
+        if (applied == null) return Optional.empty();
+        Directive definition = applied.getDefinition();
+        if (definition == null || !definition.getArguments().isEmpty()) return Optional.empty();
+        SourceLocation at = definition.getSourceLocation();
+        if (at == null) return Optional.empty();
+        return Optional.of(deleteToken(description, at, 1 + applied.getName().length()));
     }
 }

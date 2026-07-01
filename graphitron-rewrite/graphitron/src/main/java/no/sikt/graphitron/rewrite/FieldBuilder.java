@@ -16,6 +16,7 @@ import graphql.schema.GraphQLTypeUtil;
 import graphql.schema.GraphQLUnionType;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.rewrite.JooqCatalog;
+import no.sikt.graphitron.rewrite.lint.LintFix;
 import no.sikt.graphitron.rewrite.lint.LintRule;
 import no.sikt.graphitron.rewrite.model.AccessorResolution;
 import no.sikt.graphitron.rewrite.model.ChildField;
@@ -5041,11 +5042,16 @@ class FieldBuilder {
     private void warnIfSplitQueryOnRecordParent(GraphQLFieldDefinition fieldDef, String parentTypeName,
             String name, SourceLocation location) {
         if (!fieldDef.hasAppliedDirective(DIR_SPLIT_QUERY)) return;
-        ctx.addWarning(BuildWarning.LintFinding.of(
+        // Safe deletion fix: @splitQuery takes no arguments, so removing the token is always
+        // computable and never touches an SDL reference (R398).
+        var fix = LintFix.deleteBareAppliedDirective(
+            fieldDef.getAppliedDirective(DIR_SPLIT_QUERY), "Remove the redundant @splitQuery");
+        ctx.addWarning(new BuildWarning.LintFinding(
             parentTypeName + "." + name + ": @splitQuery is redundant on a record-backed parent field; "
             + "the record handoff already opens a new DataLoader-backed scope. The directive will be ignored.",
             location,
-            LintRule.SPLITQUERY_REDUNDANT_ON_RECORD_PARENT));
+            LintRule.SPLITQUERY_REDUNDANT_ON_RECORD_PARENT,
+            fix));
     }
 
     /**
