@@ -78,6 +78,74 @@ final class EnumMappingResolver {
         }
     }
 
+    /**
+     * Column-agnostic result of {@link #checkEnumConstants}: does every value of a GraphQL enum
+     * type map to a constant on a given Java enum class? This is the single parity home (R261, D3):
+     * {@link #validateEnumFilter} (the column path) delegates its value-name comparison here, and
+     * the {@code @service} enum producers (site E, in {@code InputBeanResolver} / {@code ServiceCatalog})
+     * call it directly, so the SDL-value vs Java-constant diff is not re-implemented at each producer.
+     *
+     * <ul>
+     *   <li>{@link Valid} — every GraphQL enum value's runtime name is a Java constant.</li>
+     *   <li>{@link GraphqlNotEnum} — the GraphQL type name does not resolve to a classified enum
+     *       (mid-build, or a genuine "this isn't an enum" mistake). The two callers treat this
+     *       differently: the column path (where the Java side is definitely a jOOQ enum) surfaces a
+     *       mismatch; the {@code @service} enum path falls back to an unchecked {@code EnumValueOf}
+     *       so it does not over-reject when the type registry is empty.</li>
+     *   <li>{@link Divergence} — the GraphQL side is a classified enum but one or more values have
+     *       no matching Java constant. Carries the per-value diff so each caller can shape its own
+     *       result (a column-flavoured {@link Mismatch} message, or a typed
+     *       {@link no.sikt.graphitron.rewrite.model.WireCoercionError.EnumConstantDivergence}).</li>
+     * </ul>
+     */
+    sealed interface EnumConstantParity {
+        record Valid() implements EnumConstantParity {}
+        record GraphqlNotEnum() implements EnumConstantParity {}
+        record Divergence(List<ValueMismatch> mismatches) implements EnumConstantParity {
+            public Divergence { mismatches = List.copyOf(mismatches); }
+        }
+        /**
+         * One divergent GraphQL enum value: {@code sdlValueName} is the SDL value name,
+         * {@code runtimeValue} is its {@code @field(name:)}-mapped runtime form (equal to
+         * {@code sdlValueName} when no mapping applies), {@code candidates} is the full set of Java
+         * constant names (the candidate space for a "did you mean" hint).
+         */
+        record ValueMismatch(String sdlValueName, String runtimeValue, List<String> candidates) {
+            public ValueMismatch { candidates = List.copyOf(candidates); }
+        }
+    }
+
+    /**
+     * Column-agnostic enum-constant parity: compares every value of the GraphQL enum named
+     * {@code graphqlTypeName} (resolved through {@code ctx.types}) against the constant names of
+     * {@code javaEnumClass}. Returns {@link EnumConstantParity.GraphqlNotEnum} when the GraphQL type
+     * is not a classified {@link GraphitronType.EnumType}; otherwise {@link EnumConstantParity.Valid}
+     * or {@link EnumConstantParity.Divergence} carrying the per-value diff. The comparison is on the
+     * pre-resolved {@link no.sikt.graphitron.rewrite.model.EnumValueSpec#runtimeValue} (the same
+     * form {@code EnumClass.valueOf(...)} receives at runtime), identical to what
+     * {@link #validateEnumFilter} did inline before R261 lifted it here.
+     */
+    EnumConstantParity checkEnumConstants(String graphqlTypeName, Class<?> javaEnumClass) {
+        var modelType = ctx.types == null ? null : ctx.types.get(graphqlTypeName);
+        if (!(modelType instanceof GraphitronType.EnumType enumType)) {
+            return new EnumConstantParity.GraphqlNotEnum();
+        }
+        var javaConstants = Arrays.stream(javaEnumClass.getEnumConstants())
+            .map(c -> ((Enum<?>) c).name())
+            .collect(Collectors.toCollection(java.util.LinkedHashSet::new));
+        var candidates = new ArrayList<>(javaConstants);
+        var mismatches = new ArrayList<EnumConstantParity.ValueMismatch>();
+        for (var spec : enumType.values()) {
+            String target = spec.runtimeValue();
+            if (!javaConstants.contains(target)) {
+                mismatches.add(new EnumConstantParity.ValueMismatch(spec.sdlName(), target, candidates));
+            }
+        }
+        return mismatches.isEmpty()
+            ? new EnumConstantParity.Valid()
+            : new EnumConstantParity.Divergence(mismatches);
+    }
+
     private static final EnumValidation NOT_ENUM = new EnumValidation.NotEnum();
 
     private final BuildContext ctx;
@@ -121,28 +189,21 @@ final class EnumMappingResolver {
         if (!colClass.isEnum()) {
             return NOT_ENUM;
         }
-        var modelType = ctx.types.get(graphqlTypeName);
-        if (!(modelType instanceof GraphitronType.EnumType enumType)) {
-            return new EnumValidation.Mismatch(Rejection.structural("column '" + column.sqlName() + "' is a jOOQ enum ("
-                + colClass.getSimpleName() + ") but GraphQL type '" + graphqlTypeName + "' is not an enum"));
-        }
-        var javaConstants = Arrays.stream(colClass.getEnumConstants())
-            .map(c -> ((Enum<?>) c).name())
-            .collect(Collectors.toSet());
-        var mismatches = new ArrayList<String>();
-        for (var spec : enumType.values()) {
-            String target = spec.runtimeValue();
-            if (!javaConstants.contains(target)) {
-                mismatches.add("'" + spec.sdlName() + "'" + (target.equals(spec.sdlName()) ? "" : " (mapped to '" + target + "')")
-                    + candidateHint(target, new ArrayList<>(javaConstants)));
+        return switch (checkEnumConstants(graphqlTypeName, colClass)) {
+            case EnumConstantParity.GraphqlNotEnum ignored -> new EnumValidation.Mismatch(
+                Rejection.structural("column '" + column.sqlName() + "' is a jOOQ enum ("
+                    + colClass.getSimpleName() + ") but GraphQL type '" + graphqlTypeName + "' is not an enum"));
+            case EnumConstantParity.Valid ignored -> new EnumValidation.Valid(colClass.getName());
+            case EnumConstantParity.Divergence d -> {
+                var rendered = d.mismatches().stream()
+                    .map(m -> "'" + m.sdlValueName() + "'"
+                        + (m.runtimeValue().equals(m.sdlValueName()) ? "" : " (mapped to '" + m.runtimeValue() + "')")
+                        + candidateHint(m.runtimeValue(), m.candidates()))
+                    .collect(Collectors.joining("; "));
+                yield new EnumValidation.Mismatch(Rejection.structural("GraphQL enum '" + graphqlTypeName
+                    + "' has values that don't match jOOQ enum " + colClass.getSimpleName() + ": " + rendered));
             }
-        }
-        if (!mismatches.isEmpty()) {
-            return new EnumValidation.Mismatch(Rejection.structural("GraphQL enum '" + graphqlTypeName
-                + "' has values that don't match jOOQ enum " + colClass.getSimpleName() + ": "
-                + String.join("; ", mismatches)));
-        }
-        return new EnumValidation.Valid(colClass.getName());
+        };
     }
 
     /**

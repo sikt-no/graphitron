@@ -1,11 +1,11 @@
 ---
 id: R261
 title: "Generation-time wire-coercion cast guard across arg-classification sites"
-status: Ready
+status: In Review
 bucket: architecture
 priority: 2
 theme: structural-refactor
-depends-on: [dimensional-model-pivot]
+depends-on: []
 created: 2026-05-29
 last-updated: 2026-07-01
 ---
@@ -261,6 +261,13 @@ are touched only in Slice 2.
   from `depends-on` and close on the `@service` slice alone. Keeping them in one item
   is acceptable only if Slice 2 explicitly reuses the Slice 1 predicate with no
   re-derivation. The slice boundary is the decision to confirm at `Spec → Ready`.
+- **Resolution (landed).** R222 was still `Spec` when Slice 1 landed, so C/D were carved into a
+  separate item, `reject-wire-coercion-nonservice-sites` (R411), which `depends-on`
+  `dimensional-model-pivot` and consumes this item's predicate unchanged. R261 dropped
+  `dimensional-model-pivot` from its `depends-on` and closes on the `@service` slice alone (sites
+  A, B, E). The `@tableMethod` / `@condition` argument caller keeps
+  `ServiceCatalog.legacyArgExtraction` (no wire-coercion check) until R411 threads the predicate
+  through R222's channel.
 
 ## Secondary scope (MED, from the audit)
 

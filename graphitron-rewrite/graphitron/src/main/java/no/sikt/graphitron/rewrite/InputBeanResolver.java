@@ -17,6 +17,7 @@ import no.sikt.graphitron.rewrite.model.MethodRef;
 import no.sikt.graphitron.rewrite.model.ParamSource;
 import no.sikt.graphitron.rewrite.model.Rejection;
 import no.sikt.graphitron.rewrite.model.TableRef;
+import no.sikt.graphitron.rewrite.model.WireCoercionError;
 
 import java.lang.reflect.Modifier;
 import java.util.ArrayList;
@@ -763,9 +764,24 @@ final class InputBeanResolver {
                 return new FieldResult.Fail(f.rejection());
             }
             leaf = ((Built.Ok) nested).bean();
-        } else if (sdlElt.elementType() instanceof GraphQLEnumType
+        } else if (sdlElt.elementType() instanceof GraphQLEnumType enumSdl
                 && tryLoad(javaElementTypeName) != null
                 && tryLoad(javaElementTypeName).isEnum()) {
+            // Site E (R261): the declared type IS the enum and assignment succeeds, but
+            // Enum.valueOf((String) ...) throws IllegalArgumentException when an SDL enum value name
+            // diverges from the Java constant names. Route through the single enum-constant parity
+            // home (EnumMappingResolver, D3) — a divergence rejects loudly rather than emitting a
+            // valueOf that crashes at runtime. This closes the asymmetry where the @service enum
+            // producer built EnumValueOf with no parity check while the column/arg enum path did.
+            var parity = new EnumMappingResolver(ctx).checkEnumConstants(enumSdl.getName(), tryLoad(javaElementTypeName));
+            if (parity instanceof EnumMappingResolver.EnumConstantParity.Divergence d) {
+                return new FieldResult.Fail(new WireCoercionError.EnumConstantDivergence(
+                    javaElementTypeName,
+                    d.mismatches().stream().map(EnumMappingResolver.EnumConstantParity.ValueMismatch::sdlValueName).toList(),
+                    d.mismatches().isEmpty() ? List.of() : d.mismatches().get(0).candidates(),
+                    "input-bean field '" + sdlFieldName + "' on parameter '" + paramName + "' of method '"
+                        + methodName + "' in class '" + className + "'"));
+            }
             leaf = new CallSiteExtraction.EnumValueOf(javaElementTypeName);
         } else {
             // Scalar SDL field. A jOOQ-record-typed member never lands on Direct: a wire ID
@@ -781,6 +797,18 @@ final class InputBeanResolver {
                 }
                 leaf = ((RecordLeaf.Ok) recordLeaf).leaf();
             } else {
+                // Site A (R261): a scalar SDL field bound to a consumer-declared Java type only
+                // lands on Direct once the wire-coercion predicate confirms graphql-java's coercion
+                // output for the SDL scalar is assignable to that declared type. This widens R195's
+                // narrow jOOQ-record-only rejection to the full wire-incompatible family (numeric
+                // width, ID-as-numeric, domain types). The predicate is the sole producer of Direct.
+                var wire = WireCoercionResolver.checkScalar(sdlElt.elementType(), javaElementTypeName,
+                    ctx.types == null ? null : ctx.types.values(),
+                    "input-bean field '" + sdlFieldName + "' on parameter '" + paramName + "' of method '"
+                        + methodName + "' in class '" + className + "'");
+                if (wire instanceof WireCoercionResolver.Result.Rejected rej) {
+                    return new FieldResult.Fail(rej.error());
+                }
                 leaf = new CallSiteExtraction.Direct();
             }
         }
