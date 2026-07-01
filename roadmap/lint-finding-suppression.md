@@ -1,7 +1,7 @@
 ---
 id: R408
 title: "Lint finding suppression mechanism"
-status: Ready
+status: In Progress
 bucket: feature
 priority: 6
 theme: lsp

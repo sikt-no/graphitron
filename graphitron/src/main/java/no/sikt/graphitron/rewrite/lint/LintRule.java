@@ -61,4 +61,13 @@ public enum LintRule {
     public Source source() {
         return source;
     }
+
+    /**
+     * Every rule's stable {@link #id()} in enum-declaration order. This is the valid namespace a
+     * consumer's {@code <lint>} config (R408) names a rule by; the suppression config validates each
+     * configured id against this set and lists it back when an id resolves to no rule.
+     */
+    public static java.util.List<String> ids() {
+        return java.util.Arrays.stream(values()).map(LintRule::id).toList();
+    }
 }

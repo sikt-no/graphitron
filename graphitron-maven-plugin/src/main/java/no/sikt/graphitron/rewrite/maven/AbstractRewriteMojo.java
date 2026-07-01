@@ -4,6 +4,7 @@ import graphql.schema.idl.errors.SchemaProblem;
 import no.sikt.graphitron.rewrite.GraphQLRewriteGenerator;
 import no.sikt.graphitron.rewrite.RewriteContext;
 import no.sikt.graphitron.rewrite.ValidationError;
+import no.sikt.graphitron.rewrite.lint.LintConfig;
 import no.sikt.graphitron.rewrite.ValidationFailedException;
 import no.sikt.graphitron.rewrite.maven.watch.WatchErrorFormatter;
 import org.apache.maven.artifact.DependencyResolutionRequiredException;
@@ -76,6 +77,17 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
     @Parameter
     List<NamedReferenceBinding> namedReferences;
 
+    /**
+     * Lint suppression (R408). A {@code <lint>} block naming rule ids to silence everywhere
+     * ({@code <disabledRules>}) and type-name globs to exclude from the SDL lint engine
+     * ({@code <excludedTypes>}). Threaded through {@link RewriteContext} so suppression is applied at
+     * the one build evaluator; the {@code graphitron:dev} LSP and MCP diagnostics suppress
+     * identically. A disabled rule id that resolves to no rule fails the build with the list of valid
+     * ids. Omit the block to lint every author-owned type with every rule.
+     */
+    @Parameter
+    LintBinding lint;
+
     @FunctionalInterface
     protected interface GeneratorCall {
         void invoke(GraphQLRewriteGenerator gen);
@@ -146,8 +158,36 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
             toNamedReferenceMap(namedReferences),
             resolveClasspathRoots(),
             codegenLoader,
-            resolveCompileSourceRoots()
+            resolveCompileSourceRoots(),
+            buildLintConfig()
         );
+    }
+
+    /**
+     * Builds the {@link LintConfig} from the {@code <lint>} block, trimming blanks and validating every
+     * disabled rule id against {@code LintRule.id()}. An unknown id is a typo the build must not
+     * silently ignore, so {@link LintConfig#validated} throws and this wraps it as a
+     * {@link MojoExecutionException} carrying the list of valid ids. Returns {@link LintConfig#empty()}
+     * when the block is omitted (R408).
+     */
+    private LintConfig buildLintConfig() throws MojoExecutionException {
+        if (lint == null) {
+            return LintConfig.empty();
+        }
+        var disabled = trimmedNonBlank(lint.disabledRules).collect(Collectors.toCollection(LinkedHashSet::new));
+        var excluded = trimmedNonBlank(lint.excludedTypes).toList();
+        try {
+            return LintConfig.validated(disabled, excluded);
+        } catch (IllegalArgumentException e) {
+            throw new MojoExecutionException(e.getMessage(), e);
+        }
+    }
+
+    private static Stream<String> trimmedNonBlank(List<String> raw) {
+        if (raw == null) {
+            return Stream.empty();
+        }
+        return raw.stream().filter(s -> s != null).map(String::trim).filter(s -> !s.isEmpty());
     }
 
     /**

@@ -26,6 +26,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 /**
  * The SDL lint engine (R398): one shared traversal over the parsed graphql-java AST that dispatches
@@ -46,8 +47,14 @@ public final class LintEngine {
 
     private final List<LintVisitor> visitors;
     private final Map<LintNodeKind, List<LintVisitor>> byKind;
+    /** Author-owned type names matching one of these globs are skipped alongside the bundled surface (R408). */
+    private final List<Pattern> excludedTypeMatchers;
 
     public LintEngine(List<LintVisitor> visitors) {
+        this(visitors, List.of());
+    }
+
+    public LintEngine(List<LintVisitor> visitors, List<String> excludedTypePatterns) {
         this.visitors = List.copyOf(visitors);
         var map = new EnumMap<LintNodeKind, List<LintVisitor>>(LintNodeKind.class);
         for (var v : visitors) {
@@ -56,11 +63,22 @@ public final class LintEngine {
             }
         }
         this.byKind = map;
+        this.excludedTypeMatchers = excludedTypePatterns.stream().map(LintEngine::globToPattern).toList();
     }
 
-    /** The engine wired with the built-in rule set. */
+    /** The engine wired with the built-in rule set, linting every author-owned type. */
     public static LintEngine builtIn() {
         return new LintEngine(LintRules.builtIn());
+    }
+
+    /**
+     * The built-in engine that additionally skips author-owned types whose name matches one of
+     * {@code excludedTypePatterns} (glob syntax; {@code *} any run, {@code ?} one char). This is the
+     * {@code <lint>} block's {@code excludedTypes} axis (R408): it widens the same skip boundary the
+     * bundled-type exclusion uses, so the exclusion covers only the engine's AST walk.
+     */
+    public static LintEngine builtIn(List<String> excludedTypePatterns) {
+        return new LintEngine(LintRules.builtIn(), excludedTypePatterns);
     }
 
     /**
@@ -89,15 +107,48 @@ public final class LintEngine {
         excluded.addAll(injectedNames);
 
         for (TypeDefinition<?> def : registry.types().values()) {
-            if (excluded.contains(def.getName())) continue;
+            if (excluded.contains(def.getName()) || matchesExcludedType(def.getName())) continue;
             visitTypeDefinition(def, registry, recognizer, rootOps, out);
         }
         for (ScalarTypeDefinition scalar : registry.scalars().values()) {
-            if (excluded.contains(scalar.getName())) continue;
+            if (excluded.contains(scalar.getName()) || matchesExcludedType(scalar.getName())) continue;
             dispatch(LintNodeKind.SCALAR_TYPE, scalar, scalar.getName(), false, registry, recognizer, out);
             visitAppliedDirectives(scalar, scalar.getName(), registry, recognizer, out);
         }
         return out;
+    }
+
+    /**
+     * Whether a type name matches a configured {@code excludedTypes} glob (R408). This widens the same
+     * per-type skip boundary the bundled ({@code BUNDLED_TYPE_NAMES}) and federation-injected
+     * ({@code injectedNames}, R407) name-set exclusions use, and stays scoped to the engine's AST walk;
+     * a classifier advisory on an excluded type still fires.
+     */
+    private boolean matchesExcludedType(String typeName) {
+        for (Pattern matcher : excludedTypeMatchers) {
+            if (matcher.matcher(typeName).matches()) return true;
+        }
+        return false;
+    }
+
+    /**
+     * Translates a type-name glob ({@code *} any run, {@code ?} one char) into an anchored regex,
+     * escaping every other regex metacharacter so a pattern like {@code Legacy*} matches literally.
+     */
+    private static Pattern globToPattern(String glob) {
+        var sb = new StringBuilder();
+        for (int i = 0; i < glob.length(); i++) {
+            char c = glob.charAt(i);
+            switch (c) {
+                case '*' -> sb.append(".*");
+                case '?' -> sb.append('.');
+                default -> {
+                    if ("\\.[]{}()+-^$|".indexOf(c) >= 0) sb.append('\\');
+                    sb.append(c);
+                }
+            }
+        }
+        return Pattern.compile(sb.toString());
     }
 
     private void visitTypeDefinition(

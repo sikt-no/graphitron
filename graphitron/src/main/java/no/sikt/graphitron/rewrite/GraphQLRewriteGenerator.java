@@ -10,6 +10,8 @@ import no.sikt.graphitron.rewrite.generators.QueryConditionsGenerator;
 import no.sikt.graphitron.rewrite.generators.TypeClassGenerator;
 import no.sikt.graphitron.rewrite.generators.TypeConditionsGenerator;
 import no.sikt.graphitron.rewrite.generators.TypeFetcherGenerator;
+import no.sikt.graphitron.rewrite.lint.LintConfig;
+import no.sikt.graphitron.rewrite.lint.LintEngine;
 import no.sikt.graphitron.rewrite.schema.RewriteSchemaLoader;
 import no.sikt.graphitron.rewrite.schema.federation.KeyNodeSynthesiser;
 import no.sikt.graphitron.rewrite.schema.input.DescriptionNoteApplier;
@@ -294,10 +296,22 @@ public class GraphQLRewriteGenerator {
      * report-assembly surfaces rather than inside {@link GraphitronSchemaBuilder}, so the per-build
      * classifier model stays advisory-only and only the user-facing report carries the lint surface.
      */
-    private static List<BuildWarning> withLintFindings(GraphitronSchema schema, AttributedRegistry attributed) {
+    private List<BuildWarning> withLintFindings(GraphitronSchema schema, AttributedRegistry attributed) {
+        LintConfig lintConfig = ctx.lintConfig();
         var all = new java.util.ArrayList<BuildWarning>(schema.warnings());
-        all.addAll(no.sikt.graphitron.rewrite.lint.LintEngine.builtIn()
+        // excludedTypes widens the engine's per-type skip; injectedNames (R407) excludes the
+        // federation @link injector's generator-owned definitions at the same boundary.
+        all.addAll(LintEngine.builtIn(lintConfig.excludedTypePatterns())
             .run(attributed.registry(), attributed.injectedNames()));
+        // Disabled-rule filter over the *combined* list: keying on the typed rule id after the
+        // classifier advisories (schema.warnings()) and engine findings are concatenated means it
+        // covers both channels, so a classifier advisory is suppressible by rule id like any other
+        // (R408). excludedTypes, in contrast, is applied inside the engine above and reaches only the
+        // AST walk; a classifier advisory on an excluded type still fires.
+        if (!lintConfig.disabledRuleIds().isEmpty()) {
+            all.removeIf(w -> w instanceof BuildWarning.LintFinding lf
+                && lintConfig.disabledRuleIds().contains(lf.rule().id()));
+        }
         return all;
     }
 

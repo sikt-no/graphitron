@@ -102,6 +102,18 @@
           Streamable HTTP client transport (HttpClientStreamableHttpTransport, McpClient),
           which ships in the core `mcp` artifact pulled above; no extra coordinate needed.
         -->
+        <!--
+          Test-only: the R408 single-evaluator parity test drives the real build pipeline
+          (GraphQLRewriteGenerator.buildOutput) against the sakila jOOQ catalog to prove a
+          build-suppressed lint finding does not surface through the diagnostics tool. Mirrors the
+          catalog dependency graphitron-lsp already carries for its pipeline tests.
+        -->
+        <dependency>
+            <groupId>no.sikt</groupId>
+            <artifactId>graphitron-sakila-db</artifactId>
+            <version>${project.version}</version>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>

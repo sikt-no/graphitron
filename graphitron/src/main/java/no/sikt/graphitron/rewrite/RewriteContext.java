@@ -1,5 +1,6 @@
 package no.sikt.graphitron.rewrite;
 
+import no.sikt.graphitron.rewrite.lint.LintConfig;
 import no.sikt.graphitron.rewrite.schema.input.SchemaInput;
 
 import java.nio.file.Path;
@@ -55,7 +56,8 @@ public record RewriteContext(
     Map<String, String> namedReferences,
     List<Path> classpathRoots,
     ClassLoader codegenLoader,
-    List<Path> compileSourceRoots
+    List<Path> compileSourceRoots,
+    LintConfig lintConfig
 ) {
     /** Standard schema file extensions accepted out of the box. */
     public static final Set<String> DEFAULT_SCHEMA_FILE_EXTENSIONS = Set.of(".graphqls", ".graphql");
@@ -82,6 +84,44 @@ public record RewriteContext(
         // project (unit tier, validate-only) omit them and goto-definition / hover fall
         // back to file-level / UNKNOWN locations.
         compileSourceRoots = compileSourceRoots == null ? List.of() : List.copyOf(compileSourceRoots);
+        // Lint suppression is null-tolerant: only the build mojos populate it from the <lint> block;
+        // every other caller (unit tier, LSP/MCP dev-loop) defaults to no suppression (R408).
+        lintConfig = lintConfig == null ? LintConfig.empty() : lintConfig;
+    }
+
+    /**
+     * Returns a copy of this context with {@code lintConfig} replaced. The other fields are shared by
+     * reference (all immutable or defensively copied by the canonical constructor). Lets a caller that
+     * built a context through a convenience constructor layer the {@code <lint>} suppression on
+     * afterwards without re-threading every field.
+     */
+    public RewriteContext withLintConfig(LintConfig lintConfig) {
+        return new RewriteContext(schemaInputs, schemaFileExtensions, basedir, outputDirectory,
+            outputResourcesDirectory, outputPackage, jooqPackage, namedReferences, classpathRoots,
+            codegenLoader, compileSourceRoots, lintConfig);
+    }
+
+    /**
+     * Back-compatible eleven-arg constructor (pre-{@code lintConfig}). Defaults {@code lintConfig}
+     * to {@link LintConfig#empty()} so callers that predate lint suppression, and every non-Mojo
+     * caller, keep linting every author-owned type with every rule.
+     */
+    public RewriteContext(
+        List<SchemaInput> schemaInputs,
+        Set<String> schemaFileExtensions,
+        Path basedir,
+        Path outputDirectory,
+        Path outputResourcesDirectory,
+        String outputPackage,
+        String jooqPackage,
+        Map<String, String> namedReferences,
+        List<Path> classpathRoots,
+        ClassLoader codegenLoader,
+        List<Path> compileSourceRoots
+    ) {
+        this(schemaInputs, schemaFileExtensions, basedir, outputDirectory, outputResourcesDirectory,
+            outputPackage, jooqPackage, namedReferences, classpathRoots, codegenLoader,
+            compileSourceRoots, LintConfig.empty());
     }
 
     /**
@@ -103,7 +143,8 @@ public record RewriteContext(
         ClassLoader codegenLoader
     ) {
         this(schemaInputs, schemaFileExtensions, basedir, outputDirectory, outputResourcesDirectory,
-            outputPackage, jooqPackage, namedReferences, classpathRoots, codegenLoader, List.of());
+            outputPackage, jooqPackage, namedReferences, classpathRoots, codegenLoader, List.of(),
+            LintConfig.empty());
     }
 
     /**
@@ -123,7 +164,8 @@ public record RewriteContext(
     ) {
         this(schemaInputs, DEFAULT_SCHEMA_FILE_EXTENSIONS, basedir, outputDirectory,
             defaultResourcesDirectory(outputDirectory), outputPackage, jooqPackage,
-            namedReferences, classpathRoots, Thread.currentThread().getContextClassLoader(), List.of());
+            namedReferences, classpathRoots, Thread.currentThread().getContextClassLoader(), List.of(),
+            LintConfig.empty());
     }
 
     /**
@@ -143,7 +185,8 @@ public record RewriteContext(
     ) {
         this(schemaInputs, DEFAULT_SCHEMA_FILE_EXTENSIONS, basedir, outputDirectory,
             defaultResourcesDirectory(outputDirectory), outputPackage, jooqPackage,
-            namedReferences, List.of(), Thread.currentThread().getContextClassLoader(), List.of());
+            namedReferences, List.of(), Thread.currentThread().getContextClassLoader(), List.of(),
+            LintConfig.empty());
     }
 
     private static Path defaultResourcesDirectory(Path outputDirectory) {
