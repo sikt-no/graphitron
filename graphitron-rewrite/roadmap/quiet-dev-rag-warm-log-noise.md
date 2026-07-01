@@ -1,7 +1,7 @@
 ---
 id: R409
 title: "Quiet graphitron:dev RAG-warm log noise (Lucene JUL + DJL SLF4J) and document recommended .mvn/jvm.config"
-status: Spec
+status: Ready
 bucket: cleanup
 theme: lsp
 depends-on: []
