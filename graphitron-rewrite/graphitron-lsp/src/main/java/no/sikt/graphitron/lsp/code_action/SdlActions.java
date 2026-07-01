@@ -57,7 +57,13 @@ public final class SdlActions {
         // rewrite from @index(name: "X") on an enum value to
         // @order(index: "X"); tractable as a future SdlAction but
         // not in R93's scope.
-        new SchemaCoordinate.Directive("index")
+        new SchemaCoordinate.Directive("index"),
+        // R398: @record is wholesale deprecated (it binds no class; the backing
+        // is inferred). Its removal is offered contextually by the classifier's
+        // redundant-record advisory, whose build-side LintFix is projected as a
+        // "Remove the redundant @record" QuickFix (see LintQuickFixes), so no
+        // separate blanket detector-driven SdlAction is registered here.
+        new SchemaCoordinate.Directive("record")
     );
 
     /**

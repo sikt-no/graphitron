@@ -304,6 +304,9 @@ type: an @service method's return type (or parameter type, for inputs), a @table
 resolution, a @tableMethod return, or a parent-accessor chain. A reachable type
 that still carries @record produces a build warning telling you to remove it.
 Remove @record from the schema.
+
+@deprecated remove @record; the backing class is inferred, so there is no
+successor directive.
 """
 directive @record(record: ExternalCodeReference) on OBJECT | INPUT_OBJECT
 
