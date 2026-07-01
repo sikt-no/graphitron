@@ -38,9 +38,31 @@ import static org.assertj.core.api.Assertions.assertThat;
  * example used to carry were removed in R294 (their warning paths are owned by
  * {@code R96RecordBindingPipelineTest} and
  * {@code SingleRecordTableFieldServiceProducerPipelineTest} on minimal SDL).
+ *
+ * <p>R332 adds a per-usage {@code @table}-on-input deprecation advisory ({@link BuildWarning.NoRule}).
+ * The example is a broad fixture that legitimately keeps {@code @table} on its mutation / lookup
+ * input types (removing them is R97's consumer-derived migration, out of R332 scope), so it emits one
+ * such advisory per {@code @table}-on-input type except the encoded-ID / scalar-return INSERT/UPSERT
+ * carve-out. That advisory's per-usage behavior and its carve-out are owned and asserted on minimal
+ * SDL by {@code TableOnInputDeprecationWarningTest}; this gate therefore segregates that category
+ * (exactly as it segregates the ENGINE lint findings above) so the "exactly one classifier/generator
+ * advisory" assertion stays precise, while still pinning the category's presence and its load-bearing
+ * carve-out on the real example ({@link #tableOnInputDeprecationsCarveOutEncodedIdInsert}). Pinning an
+ * exact count of these is deliberately avoided: it would churn with every {@code @table} input a
+ * fixture author adds or removes, for a signal already exhaustively covered on minimal SDL.
  */
 @PipelineTier
 class FixtureWarningsGateTest {
+
+    /**
+     * R332: the {@code @table}-on-input deprecation advisory signature. Untyped ({@link BuildWarning.NoRule}),
+     * so matched by its stable message shape rather than a rule tag; see {@code TableOnInputDeprecationWarningTest}.
+     */
+    private static boolean isTableOnInputDeprecation(BuildWarning w) {
+        return w instanceof BuildWarning.NoRule
+            && w.message().contains("`@table` on input type '")
+            && w.message().contains("is deprecated and will be removed in a future release");
+    }
 
     private static final Path FIXTURE_SCHEMA =
         Path.of("src/main/resources/graphql/schema.graphqls").toAbsolutePath();
@@ -48,8 +70,7 @@ class FixtureWarningsGateTest {
     private static final String OUTPUT_PACKAGE = "no.sikt.graphitron.generated";
     private static final String JOOQ_PACKAGE = "no.sikt.graphitron.rewrite.test.jooq";
 
-    @Test
-    void exampleSchemaEmitsExactlyTheExpectedWarningSet() {
+    private static List<BuildWarning> buildAllWarnings() {
         var ctx = new RewriteContext(
             List.of(new SchemaInput(FIXTURE_SCHEMA.toString(), Optional.empty(), Optional.empty())),
             FIXTURE_SCHEMA.getParent(),
@@ -58,8 +79,12 @@ class FixtureWarningsGateTest {
             JOOQ_PACKAGE,
             Map.of()
         );
+        return new GraphQLRewriteGenerator(ctx).buildOutput().report().warnings();
+    }
 
-        List<BuildWarning> allWarnings = new GraphQLRewriteGenerator(ctx).buildOutput().report().warnings();
+    @Test
+    void exampleSchemaEmitsExactlyTheExpectedWarningSet() {
+        List<BuildWarning> allWarnings = buildAllWarnings();
 
         // R398: SDL lint findings (the engine's syntactic visitors) ride this same warning channel
         // and are exercised by LintEngineTest. This R294 gate pins the classifier/generator advisory
@@ -68,6 +93,11 @@ class FixtureWarningsGateTest {
         List<BuildWarning> warnings = allWarnings.stream()
             .filter(w -> !(w instanceof BuildWarning.LintFinding lf
                 && lf.rule().source() == no.sikt.graphitron.rewrite.lint.LintRule.Source.ENGINE))
+            // R332: the @table-on-input deprecation advisories are a category owned and asserted on
+            // minimal SDL by TableOnInputDeprecationWarningTest, segregated here just like the ENGINE
+            // lint findings above. Their presence and carve-out on the real example are pinned by
+            // tableOnInputDeprecationsCarveOutEncodedIdInsert below.
+            .filter(w -> !isTableOnInputDeprecation(w))
             .toList();
 
         // Exactly one expected advisory: a new accidental warning grows this list and fails here.
@@ -98,5 +128,43 @@ class FixtureWarningsGateTest {
         assertThat(warning.location().getLine())
             .as("warning is attributed to the filmsConnectionByRequiredIds field definition")
             .isEqualTo(221);
+    }
+
+    /**
+     * R332: pins the {@code @table}-on-input deprecation advisory on the broad example (the minimal-SDL
+     * behavior lives in {@code TableOnInputDeprecationWarningTest}). The example keeps {@code @table} on
+     * many mutation / lookup inputs, so the category must be present and every entry must be
+     * deprecation-shaped and attributed to the schema. The load-bearing assertion is the carve-out: the
+     * one encoded-ID INSERT the fixture declares ({@code createKeyedNode(in: CreateKeyedNodeInput!): ID},
+     * whose {@code KeyedNode @node} return carries no {@code @table} for a field-relative derivation to
+     * collapse to) must <em>not</em> warn, while a projected consumer like {@code FilmCreateInput} must.
+     * When R97 Phase 2b makes the write target field-relative and empties the carve-out, the
+     * {@code CreateKeyedNodeInput} exclusion here flips, which is the intended signal.
+     */
+    @Test
+    void tableOnInputDeprecationsCarveOutEncodedIdInsert() {
+        List<BuildWarning> deprecations = buildAllWarnings().stream()
+            .filter(FixtureWarningsGateTest::isTableOnInputDeprecation)
+            .toList();
+
+        assertThat(deprecations)
+            .as("the example keeps @table on input types, so the R332 deprecation category must fire")
+            .isNotEmpty();
+
+        assertThat(deprecations)
+            .allSatisfy(w -> {
+                assertThat(w.location()).isNotNull();
+                assertThat(w.location().getSourceName())
+                    .as("each @table-on-input advisory is attributed to the example schema source")
+                    .endsWith("schema.graphqls");
+            });
+
+        assertThat(deprecations).extracting(BuildWarning::message)
+            .as("a projected-return INSERT input (FilmCreateInput -> Film / FilmPayload) warns")
+            .anyMatch(m -> m.contains("'FilmCreateInput'"))
+            .as("a DELETE @table-on-input (FilmDeleteInput) warns; the carve-out is INSERT/UPSERT-only")
+            .anyMatch(m -> m.contains("'FilmDeleteInput'"))
+            .as("the encoded-ID INSERT input (CreateKeyedNodeInput -> ID) is carved out and must not warn")
+            .noneMatch(m -> m.contains("'CreateKeyedNodeInput'"));
     }
 }
