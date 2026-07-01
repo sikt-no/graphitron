@@ -108,9 +108,13 @@ design is wrong and changes before implementation.
 > ```
 >
 > Rule ids are the kebab-case names shown in each warning and in the `graphitron:diagnostics`
-> MCP tool. A misspelled rule id fails the build with the list of valid ids. Disabling a rule or
-> excluding a type here silences the warning everywhere it would fire, in the build log, in your
-> editor's squiggles, and in the MCP diagnostics tool.
+> MCP tool. A misspelled rule id fails the build with the list of valid ids.
+>
+> `disabledRules` silences a rule everywhere it would fire, in the build log, in your editor's
+> squiggles, and in the MCP diagnostics tool. `excludedTypes` skips the schema linter's checks
+> on the matching types. A handful of advisories come from graphitron's schema classifier rather
+> than the linter (for example `redundant-record-directive`); these are not tied to a single
+> type name, so they are silenced by rule id in `disabledRules`, not by `excludedTypes`.
 
 (When the feature ships, this block moves out of the plan into its real home and drops any
 `R<n>` / phase vocabulary.)
@@ -122,13 +126,26 @@ design is wrong and changes before implementation.
   `AbstractRewriteMojo`, threaded through `RewriteContext` into `GraphQLRewriteGenerator`.
 - Validate `disabledRuleIds` against `LintRule.id()` at config-build time; unknown id →
   build failure naming the valid ids.
-- `LintEngine`: replace the bare `builtIn()` call at
-  `GraphQLRewriteGenerator.withLintFindings` with a configured engine. Two filters:
-  - a disabled-rule filter dropping findings whose `LintRule.id()` is in `disabledRuleIds`
-    (applied to both `ENGINE` findings and the `CLASSIFIER`-sourced `BuildWarning.LintFinding`
-    arms, so classifier advisories are suppressible too);
-  - a type-name-pattern filter widening the existing exclusion set at `LintEngine.run`'s skip
-    points (the same boundary R407 widens for injected names).
+- Suppression is applied in `GraphQLRewriteGenerator.withLintFindings`, where the classifier
+  advisories (`schema.warnings()`) and the SDL engine findings (`LintEngine.builtIn().run(...)`)
+  are already combined into one `List<BuildWarning>`. Two filters at two different boundaries,
+  and they cover deliberately different scopes:
+  - a **disabled-rule filter** over the *combined* list, dropping any `BuildWarning.LintFinding`
+    whose `LintRule.id()` is in `disabledRuleIds`. Because it keys on the typed rule id and runs
+    after concatenation, it covers both the engine findings and the classifier-sourced
+    `LintFinding` arms (redundant `@record`, `@splitQuery`-on-record, same-table
+    `@asConnection`). A classifier advisory is therefore suppressible by rule id like any other.
+  - a **type-name-pattern filter** inside the engine, widening the existing exclusion set at
+    `LintEngine.run`'s skip points (the same boundary R407 widens for injected names). It is
+    **scoped to engine findings only**, and this is the asymmetry to settle in prose rather than
+    leave the implementer to invent: the classifier advisories never pass through the engine's
+    AST walk (they arrive pre-formed on `schema.warnings()`), and the flat `BuildWarning` list
+    they ride carries a `SourceLocation` plus a message string but no structured owning-type
+    handle to glob against. Reverse-mapping a location, or scraping the type name out of the
+    message text, back to a type would be exactly the fragile-anchor trap this spec already
+    rejects for option C. So `excludedTypes` skips the linter's checks on the matching types,
+    but a classifier advisory on an excluded type still fires; classifier advisories are
+    suppressible by rule id (`disabledRules`) only. The asymmetry is pinned by a test below.
 - `DevMojo.bindServer` and the validate path construct the engine with the same `LintConfig`, so
   the LSP and MCP suppress identically.
 
@@ -136,7 +153,7 @@ design is wrong and changes before implementation.
 
 - **Pipeline tier (primary).** Fixture SDL that trips a rule; with that rule id in
   `disabledRules`, assert the finding set no longer contains it and *other* rules still fire.
-  Second fixture: a type matching an `excludedTypes` pattern produces no findings while a
+  Second fixture: a type matching an `excludedTypes` pattern produces no engine findings while a
   non-matching sibling still does. Assert on the typed `LintRule` set, not message substrings.
 - **Config validation.** An unknown rule id in `disabledRules` fails config build with a message
   listing valid ids (assert the failure, not the exact wording).
@@ -144,10 +161,16 @@ design is wrong and changes before implementation.
   finding suppressed at the build does not replay as a squiggle, and one MCP-tier test (template:
   `GraphitronMcpServerTest`) that it does not surface through `diagnostics`. This pins that
   suppression rides the single evaluator rather than being a log-only filter.
-- **Classifier-advisory suppression.** Disabling a `Source.CLASSIFIER` rule id (e.g.
-  `redundant-record-directive`) suppresses that advisory too, verifying the filter sits on the
-  `BuildWarning` channel and not inside the engine's AST walk (which never sees classifier
-  advisories).
+- **Classifier-advisory suppression by rule id.** Disabling a `Source.CLASSIFIER` rule id (e.g.
+  `redundant-record-directive`) suppresses that advisory too, verifying the disabled-rule filter
+  sits on the combined `BuildWarning` channel and not inside the engine's AST walk (which never
+  sees classifier advisories).
+- **`excludedTypes` asymmetry (pins the intended scope).** A fixture where an `excludedTypes`
+  pattern matches a type that trips *both* an engine rule and a classifier advisory: assert the
+  engine finding is gone while the classifier advisory on that same excluded type still fires.
+  This locks in that `excludedTypes` is engine-scoped and prevents a future refactor from
+  quietly extending it to the classifier channel (which would need the fragile owning-type
+  reverse-map option C rejects).
 
 ## Non-goals
 
