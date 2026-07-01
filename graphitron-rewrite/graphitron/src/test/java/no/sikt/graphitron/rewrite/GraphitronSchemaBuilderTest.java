@@ -7872,6 +7872,154 @@ class GraphitronSchemaBuilderTest {
                     .isEqualTo(new no.sikt.graphitron.rewrite.model.DmlReturnExpression.ProjectedList("Film"));
             }),
 
+        DML_INSERT_DISCRIMINATED_INTERFACE_SINGLE(
+            "R406: INSERT returning a single-table discriminated interface → MutationInsertTableField "
+                + "carrying DmlReturnExpression.DiscriminatedSingle with the discriminator column, known "
+                + "values, and participant set (not ProjectedSingle).",
+            """
+            interface Content @table(name: "content") @discriminate(on: "CONTENT_TYPE") {
+              contentId: Int! @field(name: "CONTENT_ID")
+              title: String! @field(name: "TITLE")
+            }
+            type FilmContent implements Content @table(name: "content") @discriminator(value: "FILM") {
+              contentId: Int! @field(name: "CONTENT_ID")
+              title: String! @field(name: "TITLE")
+              rating: String @reference(path: [{key: "content_film_id_fkey"}]) @field(name: "RATING")
+            }
+            type ShortContent implements Content @table(name: "content") @discriminator(value: "SHORT") {
+              contentId: Int! @field(name: "CONTENT_ID")
+              title: String! @field(name: "TITLE")
+              description: String @field(name: "SHORT_DESCRIPTION")
+            }
+            input ContentInput @table(name: "content") {
+              title: String! @field(name: "TITLE")
+              contentType: String! @field(name: "CONTENT_TYPE")
+            }
+            type Query { content: Content }
+            type Mutation { createContent(in: ContentInput!): Content @mutation(typeName: INSERT) }
+            """,
+            schema -> {
+                var f = (MutationField.MutationInsertTableField) schema.field("Mutation", "createContent");
+                assertThat(f.returnExpression())
+                    .isInstanceOf(no.sikt.graphitron.rewrite.model.DmlReturnExpression.DiscriminatedSingle.class);
+                var ds = (no.sikt.graphitron.rewrite.model.DmlReturnExpression.DiscriminatedSingle) f.returnExpression();
+                assertThat(ds.interfaceName()).isEqualTo("Content");
+                assertThat(ds.discriminatorColumn()).isEqualToIgnoringCase("CONTENT_TYPE");
+                assertThat(ds.knownDiscriminatorValues()).containsExactlyInAnyOrder("FILM", "SHORT");
+                assertThat(ds.participants()).hasSize(2);
+                // Regression pin against the pre-R406 silent-accept to ProjectedSingle.
+                assertThat(f.returnExpression())
+                    .isNotInstanceOf(no.sikt.graphitron.rewrite.model.DmlReturnExpression.ProjectedSingle.class);
+            }) {
+            @Override public Set<Class<?>> variants() { return Set.of(MutationField.MutationInsertTableField.class); }
+        },
+
+        DML_UPDATE_DISCRIMINATED_INTERFACE_SINGLE(
+            "R406: UPDATE returning a single-table discriminated interface → MutationUpdateTableField "
+                + "carrying DmlReturnExpression.DiscriminatedSingle (not ProjectedSingle).",
+            """
+            interface Content @table(name: "content") @discriminate(on: "CONTENT_TYPE") {
+              contentId: Int! @field(name: "CONTENT_ID")
+              title: String! @field(name: "TITLE")
+            }
+            type FilmContent implements Content @table(name: "content") @discriminator(value: "FILM") {
+              contentId: Int! @field(name: "CONTENT_ID")
+              title: String! @field(name: "TITLE")
+            }
+            type ShortContent implements Content @table(name: "content") @discriminator(value: "SHORT") {
+              contentId: Int! @field(name: "CONTENT_ID")
+              title: String! @field(name: "TITLE")
+            }
+            input ContentUpdateInput @table(name: "content") {
+              contentId: Int! @field(name: "CONTENT_ID")
+              title: String @field(name: "TITLE")
+            }
+            type Query { content: Content }
+            type Mutation { updateContent(in: ContentUpdateInput!): Content @mutation(typeName: UPDATE) }
+            """,
+            schema -> {
+                var f = (MutationField.MutationUpdateTableField) schema.field("Mutation", "updateContent");
+                assertThat(f.returnExpression())
+                    .isInstanceOf(no.sikt.graphitron.rewrite.model.DmlReturnExpression.DiscriminatedSingle.class);
+                var ds = (no.sikt.graphitron.rewrite.model.DmlReturnExpression.DiscriminatedSingle) f.returnExpression();
+                assertThat(ds.interfaceName()).isEqualTo("Content");
+                assertThat(ds.discriminatorColumn()).isEqualToIgnoringCase("CONTENT_TYPE");
+                assertThat(ds.knownDiscriminatorValues()).containsExactlyInAnyOrder("FILM", "SHORT");
+                assertThat(f.returnExpression())
+                    .isNotInstanceOf(no.sikt.graphitron.rewrite.model.DmlReturnExpression.ProjectedSingle.class);
+            }) {
+            @Override public Set<Class<?>> variants() { return Set.of(MutationField.MutationUpdateTableField.class); }
+        },
+
+        DML_INSERT_DISCRIMINATED_INTERFACE_LIST(
+            "R406: INSERT with listed input returning a listed single-table discriminated interface "
+                + "([Content!]!) → MutationInsertTableField carrying DmlReturnExpression.DiscriminatedList "
+                + "(not ProjectedList).",
+            """
+            interface Content @table(name: "content") @discriminate(on: "CONTENT_TYPE") {
+              contentId: Int! @field(name: "CONTENT_ID")
+              title: String! @field(name: "TITLE")
+            }
+            type FilmContent implements Content @table(name: "content") @discriminator(value: "FILM") {
+              contentId: Int! @field(name: "CONTENT_ID")
+              title: String! @field(name: "TITLE")
+            }
+            type ShortContent implements Content @table(name: "content") @discriminator(value: "SHORT") {
+              contentId: Int! @field(name: "CONTENT_ID")
+              title: String! @field(name: "TITLE")
+            }
+            input ContentInput @table(name: "content") {
+              title: String! @field(name: "TITLE")
+              contentType: String! @field(name: "CONTENT_TYPE")
+            }
+            type Query { content: Content }
+            type Mutation { createContents(in: [ContentInput!]!): [Content!]! @mutation(typeName: INSERT) }
+            """,
+            schema -> {
+                var f = (MutationField.MutationInsertTableField) schema.field("Mutation", "createContents");
+                assertThat(f.tableInputArg().list()).isTrue();
+                assertThat(f.returnExpression())
+                    .isInstanceOf(no.sikt.graphitron.rewrite.model.DmlReturnExpression.DiscriminatedList.class);
+                var dl = (no.sikt.graphitron.rewrite.model.DmlReturnExpression.DiscriminatedList) f.returnExpression();
+                assertThat(dl.interfaceName()).isEqualTo("Content");
+                assertThat(dl.knownDiscriminatorValues()).containsExactlyInAnyOrder("FILM", "SHORT");
+                assertThat(f.returnExpression())
+                    .isNotInstanceOf(no.sikt.graphitron.rewrite.model.DmlReturnExpression.ProjectedList.class);
+            }) {
+            @Override public Set<Class<?>> variants() { return Set.of(MutationField.MutationInsertTableField.class); }
+        },
+
+        DML_DELETE_DISCRIMINATED_INTERFACE_REJECTED(
+            "R406: DELETE returning a single-table discriminated interface still rejects through the "
+                + "TableBoundReturnType DELETE floor (the interface is a TableBackedType, routes through "
+                + "the same arm); the row is gone and RETURNING carries only the PK. Not a Discriminated "
+                + "accept.",
+            """
+            interface Content @table(name: "content") @discriminate(on: "CONTENT_TYPE") {
+              contentId: Int! @field(name: "CONTENT_ID")
+              title: String! @field(name: "TITLE")
+            }
+            type FilmContent implements Content @table(name: "content") @discriminator(value: "FILM") {
+              contentId: Int! @field(name: "CONTENT_ID")
+              title: String! @field(name: "TITLE")
+            }
+            type ShortContent implements Content @table(name: "content") @discriminator(value: "SHORT") {
+              contentId: Int! @field(name: "CONTENT_ID")
+              title: String! @field(name: "TITLE")
+            }
+            input ContentDeleteInput @table(name: "content") {
+              contentId: Int! @field(name: "CONTENT_ID")
+            }
+            type Query { content: Content }
+            type Mutation { deleteContent(in: ContentDeleteInput!): Content @mutation(typeName: DELETE) }
+            """,
+            schema -> {
+                var f = (UnclassifiedField) schema.field("Mutation", "deleteContent");
+                assertThat(f.reason()).contains(
+                    "@mutation(typeName: DELETE) return type", "(@table)",
+                    "RETURNING carries only the primary key", "return ID");
+            }),
+
         DML_DELETE_LIST_TABLE_REJECTED(
             "R287: DML DELETE with a listed @table return ([Film!]!) → UnclassifiedField. DELETE cannot "
                 + "project a @table (the rows are gone, RETURNING carries only the PK); only INSERT / "

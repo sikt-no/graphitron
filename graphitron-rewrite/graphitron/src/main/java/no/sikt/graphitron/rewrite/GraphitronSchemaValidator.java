@@ -143,8 +143,12 @@ public class GraphitronSchemaValidator {
             case no.sikt.graphitron.rewrite.model.ChildField.RecordLookupTableField ignored -> true;
             case no.sikt.graphitron.rewrite.model.ChildField.RecordTableMethodField ignored -> true;
             case no.sikt.graphitron.rewrite.model.MutationField.DmlTableField dml ->
+                // R406: the discriminated-interface arms re-project the shared @table (a follow-up
+                // SELECT keyed by the RETURNING PK) exactly as the projected @table arms do.
                 dml.returnExpression() instanceof no.sikt.graphitron.rewrite.model.DmlReturnExpression.ProjectedSingle
-                || dml.returnExpression() instanceof no.sikt.graphitron.rewrite.model.DmlReturnExpression.ProjectedList;
+                || dml.returnExpression() instanceof no.sikt.graphitron.rewrite.model.DmlReturnExpression.ProjectedList
+                || dml.returnExpression() instanceof no.sikt.graphitron.rewrite.model.DmlReturnExpression.DiscriminatedSingle
+                || dml.returnExpression() instanceof no.sikt.graphitron.rewrite.model.DmlReturnExpression.DiscriminatedList;
             default -> false;
         };
     }

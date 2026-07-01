@@ -1844,6 +1844,28 @@ type ShortContent implements Content @table(name: "content") @discriminator(valu
     description: String  @field(name: "SHORT_DESCRIPTION")
 }
 
+# R406: DML write surface for the single-table discriminated Content interface. Every writable
+# column lives on the one shared 'content' @table; the discriminator (CONTENT_TYPE) is written as
+# an ordinary input column the client sets. length / shortDescription are the FILM- / SHORT-specific
+# same-table columns; filmId is the FK the FilmContent.rating cross-table LEFT JOIN reads back on
+# the follow-up discriminator re-projection. Cross-table subtype fields (FilmContent.rating, on the
+# joined film row) are read-side projections only and are not writable through a 'content' INSERT.
+input ContentInput @table(name: "content") {
+    title:       String! @field(name: "TITLE")
+    contentType: String! @field(name: "CONTENT_TYPE")
+    length:      Int     @field(name: "LENGTH")
+    description: String  @field(name: "SHORT_DESCRIPTION")
+    filmId:      Int     @field(name: "FILM_ID")
+}
+
+# R406 UPDATE twin: covers the content PK (CONTENT_ID) plus the set columns.
+input ContentUpdateInput @table(name: "content") {
+    contentId:   Int!    @field(name: "CONTENT_ID")
+    title:       String  @field(name: "TITLE")
+    length:      Int     @field(name: "LENGTH")
+    description: String  @field(name: "SHORT_DESCRIPTION")
+}
+
 # R36 item 1 fixture: composite-PK participants in @asConnection multi-table polymorphic.
 # Two tables share the same composite (Integer, Integer) PK shape so the polymorphic emitter
 # can produce JSONB-typed __sort__ across both branches without per-branch coercion.
@@ -2277,6 +2299,14 @@ type Mutation {
     createFilms(in: [FilmCreateInput!]!): [Film!]! @mutation(typeName: INSERT)
     updateFilms(in: [FilmUpdateInput!]!): [Film!]! @mutation(typeName: UPDATE)
     deleteFilms(in: [FilmDeleteInput!]!): [ID!]! @mutation(typeName: DELETE)
+
+    # R406: INSERT / UPDATE returning the single-table discriminated Content interface. The write
+    # is a plain single-@table 'content' write; the follow-up SELECT re-projects by PK through the
+    # discriminator re-projection (projecting __discriminator__ + the participant field set + the
+    # discriminator-gated cross-table LEFT JOIN for FilmContent.rating), so the interface's
+    # TypeResolver routes the returned row to FilmContent / ShortContent off its live discriminator.
+    createContent(in: ContentInput!): Content @mutation(typeName: INSERT)
+    updateContent(in: ContentUpdateInput!): Content @mutation(typeName: UPDATE)
 
     # R144 execution-tier proof of the multiRow opt-out. Filter column is non-PK
     # (release_year); a single input row can affect many database rows. The

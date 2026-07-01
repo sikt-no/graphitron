@@ -3092,7 +3092,17 @@ class FieldBuilder {
                 return new UnclassifiedField(parentTypeName, fieldName, location, fieldDef, Rejection.structural(r.reason()));
             }
         }
-        DmlReturnExpression returnExpression = buildDmlReturnExpression(returnType, encodeReturn);
+        // R406: resolve the return's look-ahead verdict once at this single DML chokepoint. A
+        // TableInterfaceType return (single-table @table @discriminate) classifies to a
+        // TableBoundReturnType (it is a TableBackedType), so the "is this a discriminated interface?"
+        // fork lives here, not per verb; the resolved verdict is threaded into the static
+        // buildDmlReturnExpression rather than making it non-static.
+        Optional<GraphitronType.TableInterfaceType> interfaceVerdict = Optional.empty();
+        if (returnType instanceof ReturnTypeRef.TableBoundReturnType tb
+                && typeBuilder.lookAheadVerdict(tb.returnTypeName()) instanceof GraphitronType.TableInterfaceType tit) {
+            interfaceVerdict = Optional.of(tit);
+        }
+        DmlReturnExpression returnExpression = buildDmlReturnExpression(returnType, encodeReturn, interfaceVerdict);
         return builder.apply(returnExpression, channel);
     }
 
@@ -3504,16 +3514,19 @@ class FieldBuilder {
     }
 
     /**
-     * Folds the pre-validated {@code returnType} and {@code encodeReturn} (populated for ID
-     * returns that resolve to a {@code @node} type) into the single {@link DmlReturnExpression}
-     * arm the DML emitter pattern-matches on. Total over the post-R161 admitted return-type set
-     * (Scalar-ID / TableBound, single or list); unreachable on anything else
+     * Folds the pre-validated {@code returnType}, {@code encodeReturn} (populated for ID
+     * returns that resolve to a {@code @node} type), and {@code interfaceVerdict} (present when the
+     * TableBound return is a single-table discriminated interface, R406) into the single
+     * {@link DmlReturnExpression} arm the DML emitter pattern-matches on. Total over the post-R161
+     * admitted return-type set (Scalar-ID / TableBound / discriminated-interface, single or list);
+     * unreachable on anything else
      * ({@code MutationInputResolver.validateReturnType} already rejected list-payload returns
      * and the @mutation classifier routes class-backed returns to {@code MutationDmlRecordField}).
      */
     private static DmlReturnExpression buildDmlReturnExpression(
             ReturnTypeRef returnType,
-            Optional<HelperRef.Encode> encodeReturn) {
+            Optional<HelperRef.Encode> encodeReturn,
+            Optional<GraphitronType.TableInterfaceType> interfaceVerdict) {
         boolean isList = returnType.wrapper().isList();
         if (returnType instanceof ReturnTypeRef.ScalarReturnType s && "ID".equals(s.returnTypeName())) {
             HelperRef.Encode enc = encodeReturn.orElseThrow(() -> new AssertionError(
@@ -3521,6 +3534,16 @@ class FieldBuilder {
             return isList ? new DmlReturnExpression.EncodedList(enc) : new DmlReturnExpression.EncodedSingle(enc);
         }
         if (returnType instanceof ReturnTypeRef.TableBoundReturnType tb) {
+            // R406: a single-table discriminated interface return re-projects through the
+            // discriminator path rather than the concrete-type $fields projection; carry the
+            // read-side discrimination data (same as R405's *ServiceTableInterfaceField).
+            if (interfaceVerdict.isPresent()) {
+                var tit = interfaceVerdict.get();
+                var knownValues = knownDiscriminatorValues(tit);
+                return isList
+                    ? new DmlReturnExpression.DiscriminatedList(tit.name(), tit.discriminatorColumn(), knownValues, tit.participants())
+                    : new DmlReturnExpression.DiscriminatedSingle(tit.name(), tit.discriminatorColumn(), knownValues, tit.participants());
+            }
             return isList
                 ? new DmlReturnExpression.ProjectedList(tb.returnTypeName())
                 : new DmlReturnExpression.ProjectedSingle(tb.returnTypeName());

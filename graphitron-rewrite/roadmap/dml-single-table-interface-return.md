@@ -1,7 +1,7 @@
 ---
 id: R406
 title: "Support single-table discriminated interface as a DML @mutation return type"
-status: Ready
+status: In Review
 bucket: feature
 priority: 4
 theme: mutations-errors
@@ -11,6 +11,45 @@ last-updated: 2026-07-01
 ---
 
 # Support single-table discriminated interface as a DML @mutation return type
+
+## Implementation (landed, pending review)
+
+Implemented exactly on the return half, per the design below. Summary of the diff for the
+reviewer:
+
+- **Model** (`DmlReturnExpression.java`): added the sibling `DiscriminatedSingle` /
+  `DiscriminatedList` arms carrying `interfaceName`, `discriminatorColumn`,
+  `knownDiscriminatorValues`, `participants`. `MutationField.dmlDomainReturnType` and
+  `OutputField.dmlTarget` map both arms to the same `Record` / `Table` shape as `Projected*`
+  (they re-project the shared table).
+- **Classify** (`FieldBuilder.java`): the single DML chokepoint `buildDmlField` resolves the
+  return's look-ahead verdict once; when it is a `TableInterfaceType`, the (still-`static`)
+  `buildDmlReturnExpression` builds the `Discriminated*` arm instead of `Projected*`. No new
+  `MutationField` leaf.
+- **Validate** (`GraphitronSchemaValidator.java`): `dispatchPerformsReFetch` now recognises the
+  `Discriminated*` arms as re-fetching (they run a follow-up SELECT), keeping the emitter and the
+  `requiresReFetch` derivation in agreement. The DELETE / Connection floors in
+  `MutationInputResolver.validateReturnType` already fire for the interface case (it is a
+  `TableBackedType`); no change needed there.
+- **Emit** (`TypeFetcherGenerator.java`): added `emitDiscriminated`, which reuses step 1 (PK-only
+  `RETURNING` in a transaction) verbatim and swaps step 2 for the shared re-projection helper.
+  **Extracted the shared read-side re-projection into `buildDiscriminatedReprojection`** (the
+  helper R405 consumes; both read fetchers now call it), plus `emitKeysTransaction` and the
+  composite-safe PK-IN condition builder `buildPkKeysCondition` (both now shared with
+  `emitProjected`).
+
+Tests: classification + regression + DELETE-floor pins in `GraphitronSchemaBuilderTest`
+(`MutationDmlCase`); INSERT/UPDATE pipeline shape assertions in `FetcherPipelineTest`; execution
+proof (`DmlTableInterfaceReturnExecutionTest`) over the `content` fixture + a new
+`ContentInput` / `createContent` / `updateContent` schema fixture, covering per-`__typename`
+routing off the live discriminator, the cross-table `rating` join, same-table `description`
+isolation, and the unknown-discriminator write/read asymmetry (row commits, return is `null`).
+Full reactor green under `mvn -f graphitron-rewrite/pom.xml install -Plocal-db`.
+
+**On approval (In Review → Done):** delete this file and add a `changelog.md` entry citing the
+landing SHA, `R405`, and that **R406 extracted the shared read-side re-projection helper**
+(`buildDiscriminatedReprojection` + `buildPkKeysCondition` + `emitKeysTransaction`), so R405's
+implementer consumes rather than re-extracts.
 
 ## Problem
 

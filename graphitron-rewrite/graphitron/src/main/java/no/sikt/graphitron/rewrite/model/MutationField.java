@@ -138,6 +138,10 @@ public sealed interface MutationField extends RootField, WithErrorChannel
             case DmlReturnExpression.EncodedList ignored   -> new DomainReturnType.Plain(OutputField.STRING_CLASS);
             case DmlReturnExpression.ProjectedSingle ignored -> new DomainReturnType.Record(table);
             case DmlReturnExpression.ProjectedList ignored   -> new DomainReturnType.Record(table);
+            // R406: discriminated-interface return re-projects the shared table into a jOOQ Record
+            // (carrying __discriminator__) exactly like the projected @table return.
+            case DmlReturnExpression.DiscriminatedSingle ignored -> new DomainReturnType.Record(table);
+            case DmlReturnExpression.DiscriminatedList ignored   -> new DomainReturnType.Record(table);
         };
     }
 
