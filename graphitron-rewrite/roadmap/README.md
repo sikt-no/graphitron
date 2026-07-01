@@ -32,7 +32,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R398` | SDL lint engine with ESLint-style built-in visitors | In Progress | 2026-06-30 <sub>created 2026-06-29</sub> | [plan](sdl-lint-visitor-engine.md) |
 | `R408` | Lint finding suppression mechanism | Spec | 2026-07-01 | [plan](lint-finding-suppression.md) |
 | `R332` | Mark @table on input types as deprecated (signal ahead of R97 removal) | Spec | 2026-06-22 <sub>created 2026-06-18</sub> | [plan](table-on-input-deprecation-signal.md) |
-| `R370` | Record-backed parent with a nested backing class emits a non-compiling $-qualified cast | Spec | 2026-06-30 <sub>created 2026-06-24</sub> | [plan](nested-backing-class-accessor-cast.md) |
+| `R370` | Record-backed parent with a nested backing class emits a non-compiling $-qualified cast | Spec | 2026-07-01 <sub>created 2026-06-24</sub> | [plan](nested-backing-class-accessor-cast.md) |
 | `R13` | Faceted search on `@asConnection` | Ready | 2026-06-26 | [plan](faceted-search.md) |
 | `R63` | Type UPSERT dialect requirement on the model | Ready | 2026-07-01 | [plan](dml-dialect-requirement-on-model.md) |
 | `R92` | Surface database CHECK constraints as Jakarta validation rules | Spec |  | [plan](catalog-check-constraint-validation.md) |

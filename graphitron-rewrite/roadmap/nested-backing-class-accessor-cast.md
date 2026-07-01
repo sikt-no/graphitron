@@ -7,7 +7,7 @@ priority: 6
 theme: interface-union
 depends-on: []
 created: 2026-06-24
-last-updated: 2026-06-30
+last-updated: 2026-07-01
 ---
 
 # Record-backed parent with a nested backing class emits a non-compiling $-qualified cast
@@ -47,13 +47,13 @@ that stated contract, so this also brings the code back in line with the type's 
 binary names, and both with the reflected `Class<?>` objects already in hand so the cast target can be
 resolved structurally:
 
-- **`deriveAccessorRecordParentSource`** (`FieldBuilder.java:5443-5446`) ; the non-polymorphic R367
+- **`deriveAccessorRecordParentSource`** (`FieldBuilder.java:5446-5449`) ; the non-polymorphic R367
   accessor-derivation path. Builds `new AccessorRef(ClassName.bestGuess(parentFqClassName), ...,
-  ClassName.bestGuess(accessorElementClass.getName()))`. `parentClass` is loaded at `:5381`,
-  `accessorElementClass` at `:5438`. This is the producer that feeds the list-arm helpers
+  ClassName.bestGuess(accessorElementClass.getName()))`. `parentClass` is loaded at `:5384`,
+  `accessorElementClass` at `:5441`. This is the producer that feeds the list-arm helpers
   `buildAccessorKeySingle` / `buildAccessorKeyMany`.
-- **`derivePolymorphicHubSource`** (`FieldBuilder.java:5759-5762`) ; the polymorphic hub-discovery
-  path. Same `bestGuess` pair; `parentClass` at `:5691`, `elementClass` at `:5741`. Feeds the
+- **`derivePolymorphicHubSource`** (`FieldBuilder.java:5762-5765`) ; the polymorphic hub-discovery
+  path. Same `bestGuess` pair; `parentClass` at `:5694`, `elementClass` at `:5744`. Feeds the
   single-cardinality polymorphic emitter `buildScalarPerParentFetcher`.
 
 The three consumers (`buildScalarPerParentFetcher`, `buildAccessorKeySingle`, `buildAccessorKeyMany`)
@@ -101,14 +101,14 @@ against.
 
 ## Implementation seams
 
-1. **`FieldBuilder.deriveAccessorRecordParentSource`** (`FieldBuilder.java:5443-5446`) — the
+1. **`FieldBuilder.deriveAccessorRecordParentSource`** (`FieldBuilder.java:5446-5449`) — the
    non-polymorphic `AccessorRef` constructor (feeds the list-arm helpers). Replace
    `ClassName.bestGuess(parentFqClassName)` with `ClassName.get(parentClass)` and
    `ClassName.bestGuess(accessorElementClass.getName())` with `ClassName.get(accessorElementClass)`.
-   Both reflected classes are local already (`:5381`, `:5438`).
-2. **`FieldBuilder.derivePolymorphicHubSource`** (`FieldBuilder.java:5759-5762`) — the polymorphic
+   Both reflected classes are local already (`:5384`, `:5441`).
+2. **`FieldBuilder.derivePolymorphicHubSource`** (`FieldBuilder.java:5762-5765`) — the polymorphic
    hub `AccessorRef` constructor (feeds `buildScalarPerParentFetcher`). Same swap; reflected classes
-   local at `:5691`, `:5741`. Neither site changes `methodName`, the `SourceKey`, the `LiftedHop`, or
+   local at `:5694`, `:5744`. Neither site changes `methodName`, the `SourceKey`, the `LiftedHop`, or
    the cardinality split.
 3. **No change to the three consumers.** `MultiTablePolymorphicEmitter.buildScalarPerParentFetcher`
    (`:588-590`), `GeneratorUtils.buildAccessorKeySingle` (`:318-347`), and `buildAccessorKeyMany`
@@ -139,10 +139,23 @@ point at the contract it protects.
   producer and a single-cardinality polymorphic `firstOccupant`-style child in
   `graphitron-sakila-example/schema.graphqls`, and let `mvn install -Plocal-db` compile the emitted
   fetcher. Before the fix the cast is `((pkg.Outer$Nested) env.getSource())...` and `javac` fails;
-  after, it is `((pkg.Outer.Nested) env.getSource())...` and compiles. The single arm is the
-  irreducible core (smallest carrier shape, and the arm R367 deferred this from); the list arm
-  (`buildAccessorKeyMany`) shares the same fixed `ClassName`, so a list-cardinality nested carrier is a
-  cheap add but not strictly required to pin the defect.
+  after, it is `((pkg.Outer.Nested) env.getSource())...` and compiles.
+- **Both producers must have a compiling nested witness; one fixture is not enough.** The
+  single-cardinality polymorphic fixture above exercises `derivePolymorphicHubSource` →
+  `buildScalarPerParentFetcher` (producer #2) only. `deriveAccessorRecordParentSource` →
+  `buildAccessorKeySingle` / `buildAccessorKeyMany` (producer #1) is a *separate call site* with its
+  own reflected `Class<?>` pair; compiling producer #2's output does not compile producer #1's, so a
+  botched or later-reverted swap at producer #1 would still leave a nested carrier emitting
+  `Outer$Nested` with no failing test. That is exactly the latency condition R370 exists to close
+  (the defect survived because *no* nested carrier was ever compiled), and it directly undercuts this
+  section's stated purpose ; that a future contributor who reintroduces `bestGuess` sees a red test.
+  So a **second, required** compilation fixture: a nested-record carrier driving a list-cardinality
+  (or otherwise non-polymorphic split-query) `AccessorCall`-keyed child that routes through
+  `buildAccessorKeyMany` / `buildAccessorKeySingle`. Same `Outer.Nested` shape, same
+  `mvn install -Plocal-db` compile gate; this is the only witness that guards producer #1. The
+  single-cardinality polymorphic arm remains the irreducible core R367 deferred (smallest carrier
+  shape), but the two producers are independent boundaries and each needs its own compiling witness ;
+  the list-arm fixture is required, not a cheap optional add.
 - **No execution-tier case.** Execution would add a Postgres round-trip for a defect that never
   reaches SQL: once the file compiles, the nested-backed parent threads its source through exactly as
   the top-level carrier already does (proven by the existing `AddressOccupantCarrierSingleCardinality`
