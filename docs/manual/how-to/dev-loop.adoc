@@ -41,7 +41,7 @@ That idempotence is exactly what lets `quarkus:dev` sit on top. Quarkus detects 
 
 If `8487` is already in use, pass `-Dgraphitron.dev.port=N` to `mvn graphitron:dev` and use the matching port in your editor config. The goal fails fast on a bind conflict with a message naming the property; it never silently rebinds to a port the editor would not know about.
 
-For the full picture of how the schema watcher, classpath watcher, and generator dispatch cooperate inside the `dev` goal, see xref:../../../architecture/getting-started.adoc#dev-loop-detail[the dev loop reference] in the architecture docs.
+For the full picture of how the schema watcher, classpath watcher, and generator dispatch cooperate inside the `dev` goal, see xref:../../architecture/how-to/dev-loop-internals.adoc#dev-loop-detail[the dev loop reference] in the architecture docs.
 
 [#macos]
 == Why macOS needs the LSP
@@ -129,7 +129,7 @@ The full setup, the complete tool list, and the `.mcp.json` for zero-config shar
 == See also
 
 * xref:mcp-agent-context.adoc[Agent context over MCP]: connect an MCP-aware agent to the same dev server.
-* xref:../../../architecture/getting-started.adoc#dev-loop-detail[Dev loop reference] (architecture docs): how the `dev` goal is wired internally.
+* xref:../../architecture/how-to/dev-loop-internals.adoc#dev-loop-detail[Dev loop reference] (architecture docs): how the `dev` goal is wired internally.
 * xref:../reference/lsp-inlay-hints.adoc[LSP inlay hints]: the editor hints the LSP surfaces.
 * xref:test-your-schema.adoc[Test your schema]: the consumer-side execution test that complements the inner loop.
 

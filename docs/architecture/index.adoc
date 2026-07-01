@@ -1,0 +1,59 @@
+= Architecture
+:description: Contributor-facing documentation for the Graphitron generator, shaped as a Diataxis tree.
+:!toc:
+
+Contributor-facing documentation for the Graphitron generator: how the pipeline classifies a GraphQL schema, what code it emits, and the design principles that govern both. For end-user documentation (writing schemas, wiring up Maven, running the generator), see xref:../manual/index.adoc[the user manual].
+
+These pages are Diataxis-shaped; pick the quadrant that matches what you are trying to do right now.
+
+[.quadrants,cols="1,1",frame=none,grid=none]
+|===
+a|
+[.quadrant-title]*xref:explanation/index.adoc[Explanation]*
+
+I want to understand why the generator is shaped the way it is.
+
+The design principles that govern classifier and emitter, the dispatch-axis model, the typed-rejection contract, and how the pipeline fits together end to end.
+
+a|
+[.quadrant-title]*xref:reference/index.adoc[Reference]*
+
+I know what I am looking for and want the facts.
+
+The classification taxonomy and what each generator emits, the unified argument-resolution lift, the runtime extension points, and the module map.
+
+a|
+[.quadrant-title]*xref:how-to/index.adoc[How-to guides]*
+
+I have a specific contributor task and want a recipe.
+
+Choosing a test tier, wiring an editor or agent into the `dev` loop internals, and cutting a tree-sitter natives release.
+
+a|
+[.quadrant-title]*Ongoing work*
+
+I want to see what is planned or in flight.
+
+The forward-looking view lives at xref:../roadmap/index.adoc[the Rewrite Roadmap].
+
+|===
+
+== You came here because…
+
+You want to *extend the runtime*, wire per-request values into `Graphitron.newExecutionInput(...)`, register custom scalars, hook in jOOQ listeners. → xref:reference/runtime-extension-points.adoc[Runtime Extension Points].
+
+You're *integrating with Apollo Federation*, the `@link` opt-in, the `<schemaInput tag>` flag, providing a custom entity fetcher. → xref:../manual/how-to/apollo-federation.adoc[How-to: Apollo Federation transport]; the contributor-facing wiring rationale lives in xref:how-to/dev-loop-internals.adoc#federation-internals[Dev loop internals → Federation].
+
+You want to *understand rejections*, what `AUTHOR_ERROR` / `INVALID_SCHEMA` / `DEFERRED` actually mean in the builder, why rejection is a typed variant rather than a string, how Levenshtein candidate hints get attached. → xref:explanation/typed-rejection.adoc[Typed rejection].
+
+You're *integrating an editor or agent with the dev loop*, what the `dev` Mojo wires up, what the LSP / schema watcher / classpath watcher each watch, why idempotent writes matter. → xref:how-to/dev-loop-internals.adoc#dev-loop-detail[Dev loop internals].
+
+You want to *read the classification taxonomy*, every variant the schema builder produces, every generator's input. → xref:reference/code-generation-triggers.adoc[Code Generation Triggers].
+
+You're looking for a *deeper reference*, the architectural principles that govern both classifier and emitter, the test-tier rubric, the unified argument-resolution lift, the dispatch-axis model behind DataLoader-backed source-side fields. → see xref:explanation/rewrite-design-principles.adoc[Rewrite Design Principles], xref:how-to/testing.adoc[Test-tier guide], xref:reference/argument-resolution.adoc[Argument Resolution], xref:explanation/dispatch-axes.adoc[Dispatch axes]. The module map is at xref:reference/modules.adoc[Modules]; the pipeline overview at xref:explanation/pipeline-overview.adoc[Pipeline overview].
+
+== Publishing
+
+Trunk runs at `10-SNAPSHOT`; releases are cut from tag-driven GitHub Releases. The `.github/workflows/maven-publish.yml` workflow accepts `v<MAJOR>.<MINOR>.<PATCH>` and `v<MAJOR>.<MINOR>.<PATCH>-RC<n>`, sets the version across the reactor, signs (sources + javadoc + GPG), and pushes to Maven Central via the `central-publishing-maven-plugin` with `autoPublish=true`. Maven version ordering treats `10.0.0-RC1` as strictly less than `10.0.0`, so consumers asking for `[10.0.0,)` won't pick up RCs by accident. Snapshots aren't published; the parent declares no `<snapshotRepository>`, so an accidental `mvn deploy` on `10-SNAPSHOT` fails fast.
+
+Publishable surface: `graphitron-javapoet`, `graphitron`, `graphitron-lsp`, `graphitron-mcp`, `graphitron-maven-plugin`, `graphitron-jakarta-rest`. `graphitron-jakarta-rest` is a real artifact consumers pull onto their runtime classpath, so it joins the deploy set (no `maven.deploy.skip`), unlike `graphitron-sakila-example`, which only consumes the library and stays deploy-skipped. `graphitron-mcp` is published like `graphitron-lsp` because the plugin declares a compile-scope dependency on it and a Maven plugin resolves its declared dependencies from the consumer's repositories at execution time; it must not join the `maven.deploy.skip` list. Test fixtures and example consumers (`graphitron-fixtures-codegen`, `graphitron-sakila-db`, `graphitron-sakila-service`, `graphitron-sakila-example`, `roadmap-tool`, `docs`) carry `<maven.deploy.skip>true</maven.deploy.skip>`.

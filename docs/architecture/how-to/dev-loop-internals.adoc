@@ -1,0 +1,107 @@
+= Dev loop internals
+:description: How the graphitron:dev Mojo wires the LSP, MCP server, watchers, and generator dispatch into one JVM, plus the contributor-facing federation and native-runtime rationale.
+:!toc:
+
+Contributor-facing material for anyone extending the `dev`-loop surface, the federation wrap, or the native-runtime packaging. For the consumer-facing inner loop (how to run it, connect an editor, and connect an agent), see xref:../../manual/how-to/dev-loop.adoc[How-to: The dev loop] and xref:../../manual/how-to/mcp-agent-context.adoc[How-to: Agent context over MCP].
+
+[#dev-loop-detail]
+== Dev loop: how the goal is wired internally
+
+The `dev` goal runs five cooperating components in one JVM:
+
+* *LSP server* binds the TCP port (default `8487`) and speaks LSP to whatever editor or agent connects. It serves diagnostics, hover, completion, and go-to-definition off the most recent classified `GraphitronSchema` and the validator's report on it. State is in-memory only; no LSP cache lives on disk. Its `didSave` notification is the primary fast path into the generator dispatch when an editor is attached.
+* *MCP server* binds a second loopback port (`8488`) and speaks the Model Context Protocol over Streamable HTTP to an MCP-aware agent. It serves the handshake `instructions` string, an `about` prompt, a `directives` resource, and a set of read-only tools backed by the warm `Workspace`: catalog discovery (`catalog.tables`, `catalog.describe`, and the semantic `catalog.search`), `schema`, the `@service` / `@condition` / `@record` bindings, `diagnostics`, cross-reference `edges`, `status`, and `docs.search` over the bundled manual (R118, R385). It reads the warm `Workspace` but does not feed the generator dispatch; the connection is read-only. It lives in its own `graphitron-mcp` module so its heavy native (semantic-index) dependencies stay off the plugin's own compile surface. Hosted in embedded Jetty; the literal `8488` is pinned by a `DevMojoTest` assertion on `DevMojo.DEFAULT_MCP_PORT`.
+* *Schema watcher* is a `WatchService` over the consumer's `.graphqls` source roots; the headless fallback when no editor is attached. On a save, it debounces same-file events that arrive in clusters (some editors emit several `MODIFY` events per save) and signals the generator dispatch. The LSP `didSave` path feeds the same debounce, so the two routes coalesce on a single regen when both fire.
+* *Classpath watcher* is a `WatchService` over the consumer's compiled jOOQ output (`target/classes/<jooqPackage>/`). When `mvn compile` in another terminal lands new `.class` files for jOOQ tables and columns, the watcher signals the generator dispatch the same way a schema save does. This is what lets a jOOQ schema regen pick up automatically without a `dev`-session restart.
+* *Generator dispatch* is the lifecycle thread that consumes wake-up events from either watcher, loads the (possibly-updated) classpath, runs the generator over the (possibly-updated) `.graphqls` sources, and feeds the resulting `GraphitronSchema` and emit results to the LSP server's in-memory state and to disk via the idempotent writer.
+
+One JVM, two loopback ports (LSP and MCP), one process tree. There's no daemon, no client/server split, no shared cache directory. The Mojo binds, watches, regenerates, and serves; on Ctrl+C the JVM shutdown hook closes the LSP socket, the MCP server, the `WatchService` instances, and the debounce executor cleanly.
+
+The idempotent-write coupling is what makes the loop usable as an editor backend. Because `JavaFile.writeToPath` writes only files whose rendered content actually changed (SHA-256 comparison) and deletes orphans in rewrite-owned sub-packages, a schema edit that touches one type rewrites that type's files and leaves every other generated file byte-identical on disk. The IDE's incremental compiler, Quarkus `quarkus:dev`, and Spring Boot DevTools all detect changes by mtime; unchanged files keep their mtimes, so only the actually-changed files trigger an IDE recompile. Two effects fall out: editor latency is proportional to the edit (not to the schema size), and `git diff` after a `dev` session shows only what a human-readable summary of the schema edit would predict.
+
+[#diagram-d7]
+[source,mermaid]
+----
+flowchart TD
+    subgraph JVM["dev JVM (one process)"]
+        Editor["editor / agent"] -. LSP/TCP :8487 .-> LSP["LSP server"]
+        Editor -. MCP/HTTP :8488 .-> MCP["MCP server<br/>(read-only tools +<br/>about prompt)"]
+        LSP -- didSave<br/>(primary) --> Disp["generator dispatch"]
+        SW["schema watcher<br/>(.graphqls,<br/>headless fallback)"] -- debounced<br/>save events --> Disp
+        CW["classpath watcher<br/>(target/classes/&lt;jooq&gt;)"] -- .class change<br/>events --> Disp
+        Disp -- run --> Gen["generator<br/>(classify + emit)"]
+        Gen -- in-memory<br/>GraphitronSchema --> LSP
+        Gen -- emit results --> Writer["JavaFile.writeToPath<br/>(idempotent + orphan sweep)"]
+        Writer -- only-changed<br/>files written --> Sources["target/generated-sources/graphitron"]
+    end
+    Sources -- mtime change --> IDE["IDE recompile<br/>(IntelliJ / Quarkus / DevTools)"]
+----
+
+[#federation-internals]
+== Federation: how the wrap is wired
+
+`@link` is the opt-in. `Graphitron.buildSchema(...)` checks the parsed SDL for an `@link` to a federation spec; if present, it routes through `federation-graphql-java-support` to wrap the schema with the `_Service.sdl` field, the `_Entity` union, and the `_entities` resolver. If absent, the build skips the wrap entirely and emits a vanilla schema. A consumer who wants federation just adds the `@link`; a consumer who doesn't gets no federation surface, no `_entities`, no `_Service`. The opt-in is the SDL declaration, nothing else.
+
+`<schemaInput tag>` is the second federation entry point. It exists because `@tag(name: "...")` directives are only meaningful to a federation gateway, and a consumer setting tag values has implicitly committed to federation 2. The plugin synthesises an `@link` with `import: ["@tag"]` if none was declared, fails the build if `@link` is declared but `"@tag"` is missing from `import`, and stays out of the way if neither is set. The decision lives in the plugin so it's visible at build configuration; the runtime never sees the synthesis logic.
+
+`Graphitron.buildSchema` does the wrap, not the consumer. A second `Federation.transform(...)` call by the consumer would double-add `_Service` and `_Entity` and break composition; the contract is *the consumer never wraps*. The two-arg form takes a federation customizer (`fed -> fed.fetchEntities(...)`) for cases where a consumer needs to override `fetchEntities` for hand-rolled entity types.
+
+The `fetchEntities` seam lives where it does because the default fetcher only knows about Graphitron-classified types: `@node` types resolve via the NodeId path, types with a `@key` directive resolve via column-value lookup, and both share the same per-type batched `SELECT`. Anything outside that classification surface (hand-rolled objects, types from a non-Graphitron source) needs a custom fetcher; the customizer lets the consumer plug one in without touching `buildSchema`'s wiring.
+
+For the consumer-facing federation transport (the `@link` declaration, the two-arg `buildSchema` customizer, the don't-double-wrap rule), see xref:../../manual/how-to/apollo-federation.adoc[How-to: Apollo Federation transport].
+
+[#diagram-d9]
+[source,mermaid]
+----
+sequenceDiagram
+    participant SDL as .graphqls SDL
+    participant Build as Graphitron.buildSchema
+    participant Wrap as federation-graphql-java-support
+    participant Engine as graphql-java engine
+    participant Fetch as _entities resolver
+    participant DB as PostgreSQL
+
+    SDL->>Build: parse + classify
+    alt @link present
+        Build->>Wrap: wrap(schema, fetchEntities)
+        Wrap-->>Build: federation-wrapped schema<br/>(adds _Service.sdl, _entities)
+    else no @link
+        Build-->>Engine: vanilla schema (no federation surface)
+    end
+    Build-->>Engine: ready
+    Engine->>Fetch: _entities([{__typename, key…}, …])
+    alt @node type
+        Fetch->>DB: SELECT by NodeId-decoded keys (batched per type)
+    else @key type
+        Fetch->>DB: SELECT by key-column tuples (batched per type)
+    else custom fetcher (fed.fetchEntities)
+        Fetch->>Fetch: consumer-supplied resolver
+    end
+    DB-->>Fetch: rows
+    Fetch-->>Engine: typed results
+----
+
+[#native-runtime-dependency]
+== Native runtime dependency
+
+There isn't one. `mvn graphitron:dev` runs an LSP server backed by a
+tree-sitter-based GraphQL parser whose two native pieces, the
+`tree_sitter_graphql` grammar and the `libtree-sitter` runtime, both ship in
+the `no.sikt:graphitron-tree-sitter-natives` jar and are extracted at startup.
+You do not install anything: no `brew install`, no `vcpkg install`, no
+from-source build on Debian/Ubuntu, and no `LD_LIBRARY_PATH` /
+`JAVA_TOOL_OPTIONS` wiring (NixOS included).
+
+Supported host architectures are `linux-x86_64`, `linux-aarch64`,
+`macos-aarch64`, and `windows-x86_64`. Intel-Mac (`macos-x86_64`) is not
+shipped; on an unsupported host the LSP fails fast at startup naming the
+`os.name` / `os.arch` it saw and the supported set.
+
+If the bundled runtime fails to load after extraction (a `noexec`
+`java.io.tmpdir`, a corrupt extract, or a missing system C runtime), the LSP
+surfaces a single startup error naming the extracted path rather than an opaque
+`UnsatisfiedLinkError`. See
+xref:../../manual/reference/lsp-requirements.adoc[LSP requirements] for the
+startup-diagnostics detail.
+
+xref:index.adoc[← How-to index]

@@ -20,7 +20,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Bidirectional drift-protection seam between {@link Rejection}'s sealed permit set
- * and the prose enumeration on {@code graphitron-rewrite/docs/typed-rejection.adoc}.
+ * and the prose enumeration on {@code docs/architecture/explanation/typed-rejection.adoc}.
  *
  * <p>Forward: every concrete leaf reachable from {@link Rejection#getPermittedSubclasses()},
  * qualified by its sealed-parent ancestry under {@code Rejection}, must appear at least once
@@ -48,7 +48,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 @UnitTier
 class SealedHierarchyDocCoverageTest {
 
-    private static final String DOCS_PATH = "graphitron-rewrite/docs/typed-rejection.adoc";
+    private static final String DOCS_PATH = "docs/architecture/explanation/typed-rejection.adoc";
 
     @Test
     void everyRejectionPermitAppearsOnTypedRejectionDocAndViceVersa() throws IOException {
@@ -176,7 +176,7 @@ class SealedHierarchyDocCoverageTest {
 
     /**
      * Walks up from the test working directory until it finds
-     * {@code graphitron-rewrite/docs/typed-rejection.adoc}. Surefire runs from the
+     * {@code docs/architecture/explanation/typed-rejection.adoc}. Surefire runs from the
      * module directory; the file lives two parents up under the rewrite-docs subtree.
      */
     private static Path locateDoc() {

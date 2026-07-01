@@ -1,6 +1,6 @@
 = Rewrite Design Principles
 
-Technical and architectural principles that govern the rewrite pipeline. For Graphitron's strategic/philosophical principles, see xref:../graphitron-principles.adoc[graphitron-principles.md].
+Technical and architectural principles that govern the rewrite pipeline. For Graphitron's strategic/philosophical principles, see xref:../../graphitron-principles.adoc[graphitron-principles.md].
 
 The typed-rejection narrative (the sealed `Resolved` shape across the resolver siblings, the `Rejection` taxonomy, the Levenshtein-ranked candidate hint contract) is consolidated at xref:typed-rejection.adoc[Typed rejection]; this doc retains the principle-list shape, with the rejection-related principle below collapsed to a forward pointer.
 
@@ -62,7 +62,7 @@ Each new sub-taxonomy proposal comes with a one-line note on what distinct infor
 
 When a builder step classifies inputs into many variants that project into *different* generation-ready outputs, introduce a builder-internal sealed hierarchy. It captures the full classification, enables exhaustive projection into each target, and is discarded before reaching the model.
 
-`ArgumentRef` (see xref:argument-resolution.adoc[argument-resolution.md]) classifies every GraphQL argument once into a variant (`ColumnArg`, `OrderByArg`, `PaginationArgRef`, `TableInputArg`, etc.). Separate projection steps then switch on the classified values to produce `GeneratedConditionFilter`, `LookupMapping`, `OrderBySpec`, and `PaginationSpec` ; each projection is exhaustive and independent. The alternative ; multiple independent passes that implicitly coordinate by skipping each other's arguments (e.g., `buildFilters()` skipping pagination args using the same hardcoded names as `buildPaginationSpec()`) ; is fragile and makes adding new argument types error-prone.
+`ArgumentRef` (see xref:../reference/argument-resolution.adoc[argument-resolution.md]) classifies every GraphQL argument once into a variant (`ColumnArg`, `OrderByArg`, `PaginationArgRef`, `TableInputArg`, etc.). Separate projection steps then switch on the classified values to produce `GeneratedConditionFilter`, `LookupMapping`, `OrderBySpec`, and `PaginationSpec` ; each projection is exhaustive and independent. The alternative ; multiple independent passes that implicitly coordinate by skipping each other's arguments (e.g., `buildFilters()` skipping pagination args using the same hardcoded names as `buildPaginationSpec()`) ; is fragile and makes adding new argument types error-prone.
 
 The key distinction from model-level sealed hierarchies: builder-internal hierarchies are ephemeral. They exist to structure a complex builder decision, not to carry information to generators. Generators never see `ArgumentRef` ; they see the projected results.
 
@@ -130,7 +130,7 @@ Behaviour is asserted at the SDL → classified model → generated `TypeSpec` p
 
 Complementary tiers layered above: compilation of `graphitron-sakila-example` against real jOOQ classes (type correctness); execution of the generated code against real PostgreSQL (behaviour correctness). Code-string assertions on generated method bodies are banned at every tier; they test implementation, not behaviour, and break on every refactor.
 
-For canonical tier names, file locations, the decision rubric, and the `@UnitTier` / `@PipelineTier` / `@CompilationTier` / `@ExecutionTier` meta-annotations, see xref:testing.adoc[Test-tier guide].
+For canonical tier names, file locations, the decision rubric, and the `@UnitTier` / `@PipelineTier` / `@CompilationTier` / `@ExecutionTier` meta-annotations, see xref:../how-to/testing.adoc[Test-tier guide].
 
 == Documentation names only live tests/code
 
@@ -148,7 +148,7 @@ Reviewers check this explicitly during Draft → Approved and Pending Review →
 
 The complementary tier above it, execution against a real PostgreSQL via the same fixture database, is the behaviour check. Together, compile + execute replace the body-content assertions that the "generation-thinking" principle bans.
 
-See xref:testing.adoc[Test-tier guide] for build commands and guidance on choosing between tiers.
+See xref:../how-to/testing.adoc[Test-tier guide] for build commands and guidance on choosing between tiers.
 
 == Generator Java version vs. generated output Java version
 

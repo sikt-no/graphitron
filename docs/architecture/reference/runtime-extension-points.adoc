@@ -7,8 +7,8 @@ code.
 
 This document is the reference for the rewrite-emitted `GraphitronContext`
 interface. For the minimal wiring that stands up a working endpoint, see
-xref:getting-started.adoc[Getting Started]; this file picks up where that leaves
-off.
+xref:../../manual/tutorial/index.adoc[the tutorial]; this file picks up where
+that leaves off.
 
 '''
 
@@ -65,7 +65,7 @@ The singleton's default methods then read the per-request values back from
 `env.getGraphQlContext()`: `DSLContext.class` for the per-request `DSLContext`,
 the contextArgument's string name for each typed value the factory put. The full
 minimum viable wiring (building the schema, wiring `GraphQL`, calling the factory)
-lives in xref:getting-started.adoc#hello-world[Getting Started > Hello world].
+lives in xref:../../manual/reference/runtime-api.adoc[the Runtime API reference].
 
 [#diagram-d4]
 [source,mermaid]
@@ -253,10 +253,11 @@ the database enforces the policies automatically.
 
 *See also:*
 
-* xref:getting-started.adoc[Getting Started]: Hello world, custom scalar,
-  federation, tenant-scoped `DSLContext`, JWT-claim context arguments
+* xref:../../manual/reference/runtime-api.adoc[Runtime API reference]: `buildSchema`,
+  the `GraphitronContext` factory, custom scalars, federation, and context arguments
+  from the consumer side
 * xref:code-generation-triggers.adoc[Code Generation Triggers]: Schema patterns
   to sealed variants, including the `@condition` / `@tableMethod` directives
   that drive `getContextArgument` calls
-* xref:../security.adoc[Security Model]: Database-level security
+* xref:../../security.adoc[Security Model]: Database-level security
   philosophy
