@@ -38,8 +38,10 @@ import no.sikt.graphitron.rewrite.model.ChildField.TableMethodField;
 import no.sikt.graphitron.rewrite.model.ChildField.UnionField;
 import no.sikt.graphitron.rewrite.model.AccessorRef;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
+import no.sikt.graphitron.rewrite.model.DialectRequirement;
 import no.sikt.graphitron.rewrite.model.DmlKind;
 import no.sikt.graphitron.rewrite.model.ErrorChannel;
+import no.sikt.graphitron.rewrite.model.SqlDialectFamily;
 import no.sikt.graphitron.rewrite.model.ErrorChannelWalkerError;
 import no.sikt.graphitron.rewrite.model.OutcomeType;
 import no.sikt.graphitron.rewrite.model.DmlReturnExpression;
@@ -4026,7 +4028,8 @@ class FieldBuilder {
                 Optional<HelperRef.Encode> enc = encodeReturn;
                 return switch (kind) {
                     case INSERT -> buildDmlField(returnType, parentTypeName, name, location, fieldDef,
-                        (rex, ch) -> new MutationField.MutationInsertTableField(parentTypeName, name, location, rex, tia, ch),
+                        (rex, ch) -> new MutationField.MutationInsertTableField(parentTypeName, name, location, rex,
+                            DialectRequirement.None.INSTANCE, tia, ch),
                         enc);
                     case UPDATE -> throw new IllegalStateException(
                         "R246 / R258: every UPDATE is intercepted before resolveInput — the "
@@ -4038,8 +4041,18 @@ class FieldBuilder {
                         + "direct-@table/ID-return shape by classifyDeleteTableField, the payload-"
                         + "returning shape by classifyDeletePayloadField; the final-switch DELETE arm "
                         + "is unreachable for field '" + name + "'");
+                    // R63: UPSERT rejects only the Oracle family. jOOQ silently translates
+                    // INSERT ... ON CONFLICT to Oracle MERGE INTO, whose concurrency and RETURNING
+                    // semantics differ from PostgreSQL; other dialects throw their own error rather
+                    // than mistranslate, so only Oracle needs gating. The reason string is the
+                    // request-time message the emitter renders into the guard.
                     case UPSERT -> buildDmlField(returnType, parentTypeName, name, location, fieldDef,
-                        (rex, ch) -> new MutationField.MutationUpsertTableField(parentTypeName, name, location, rex, tia, ch),
+                        (rex, ch) -> new MutationField.MutationUpsertTableField(parentTypeName, name, location, rex,
+                            new DialectRequirement.RejectsFamily(SqlDialectFamily.ORACLE,
+                                "@mutation(typeName: UPSERT) is not supported on Oracle: jOOQ would translate "
+                                    + "INSERT ... ON CONFLICT to MERGE INTO, whose concurrency and RETURNING "
+                                    + "semantics differ from PostgreSQL. Graphitron targets PostgreSQL."),
+                            tia, ch),
                         enc);
                 };
             }
@@ -4101,11 +4114,21 @@ class FieldBuilder {
         var walkerResult = new no.sikt.graphitron.rewrite.walker.UpdateRowsWalker()
             .walk(fieldDef, foundTit.table(), foundTit.inputFields(), ctx.catalog, inputArg.name());
         var enc = encodeReturn;
+        // R63: the bulk arm emits UPDATE ... FROM (VALUES ...), a Postgres extension jOOQ silently
+        // emulates with semantics drift on other dialects, so it requires the Postgres family;
+        // single-row UPDATE has no dialect constraint. The bulk-vs-single split is the emitter's
+        // (driven by inputArg.list()); this reads the same bit to pick the arm at construction.
+        DialectRequirement updateDialect = list
+            ? new DialectRequirement.RequiresFamily(SqlDialectFamily.POSTGRES,
+                "@mutation(typeName: UPDATE) with a listed @table input requires PostgreSQL; "
+                    + "the UPDATE ... FROM (VALUES ...) form is a Postgres extension. "
+                    + "Use a single-row input for portability.")
+            : DialectRequirement.None.INSTANCE;
         return switch (walkerResult) {
             case no.sikt.graphitron.rewrite.model.WalkerResult.Ok<no.sikt.graphitron.rewrite.model.UpdateRows> ok ->
                 buildDmlField(returnType, parentTypeName, name, location, fieldDef,
                     (rex, ch) -> new MutationField.MutationUpdateTableField(
-                        parentTypeName, name, location, rex, inputArg, ok.carrier(), ch),
+                        parentTypeName, name, location, rex, updateDialect, inputArg, ok.carrier(), ch),
                     enc);
             case no.sikt.graphitron.rewrite.model.WalkerResult.Err<no.sikt.graphitron.rewrite.model.UpdateRows> err ->
                 new UnclassifiedField(parentTypeName, name, location, fieldDef, err.errors().getFirst());
@@ -4318,8 +4341,11 @@ class FieldBuilder {
         return switch (walkerResult) {
             case no.sikt.graphitron.rewrite.model.WalkerResult.Ok<no.sikt.graphitron.rewrite.model.DeleteRows> ok ->
                 buildDmlField(returnType, parentTypeName, name, location, fieldDef,
+                    // R63: DELETE emits a portable statement on every dialect graphitron targets, so
+                    // it carries no dialect constraint (the bulk row-tuple IN form is standard SQL).
                     (rex, ch) -> new MutationField.MutationDeleteTableField(
-                        parentTypeName, name, location, rex, inputArg, ok.carrier(), ch),
+                        parentTypeName, name, location, rex, DialectRequirement.None.INSTANCE,
+                        inputArg, ok.carrier(), ch),
                     enc);
             case no.sikt.graphitron.rewrite.model.WalkerResult.Err<no.sikt.graphitron.rewrite.model.DeleteRows> err ->
                 new UnclassifiedField(parentTypeName, name, location, fieldDef, err.errors().getFirst());

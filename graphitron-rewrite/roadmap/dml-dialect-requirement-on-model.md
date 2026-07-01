@@ -1,7 +1,7 @@
 ---
 id: R63
 title: "Type UPSERT dialect requirement on the model"
-status: Ready
+status: In Review
 bucket: architecture
 priority: 7
 theme: mutations-errors
@@ -96,10 +96,14 @@ public enum SqlDialectFamily {
      * {@code POSTGRES}, the {@code POSTGRESPLUS} spelling, and
      * {@code YUGABYTEDB} all map to {@code POSTGRES} (cross-check against
      * jOOQ 3.20.11's {@code SQLDialect.family()} membership, the source of
-     * truth, rather than guessing). Generated code consults this at request
-     * time via the dispatched {@code dsl.dialect().name()} string.
+     * truth, rather than guessing). Consulted by the generator / a future
+     * validator that reads the model; see the implementation note below on why
+     * the emitted guard does not call this at request time.
      */
     public static SqlDialectFamily fromDialectName(String name) { ... }
+
+    /** The {@code dsl.dialect().family().name()} string a runtime dialect in this family reports. */
+    public String jooqFamilyName() { ... }
 }
 ```
 
@@ -203,60 +207,89 @@ private static MethodSpec buildDmlFetcher(
 private static void emitDialectGuard(MethodSpec.Builder b, DialectRequirement req) {
     switch (req) {
         case DialectRequirement.None ignored -> { /* no-op */ }
-        case DialectRequirement.RequiresFamily r -> {
-            b.beginControlFlow("if ($T.fromDialectName(dsl.dialect().name()) != $T.$L)",
-                    SqlDialectFamily.class, SqlDialectFamily.class, r.family().name())
+        case DialectRequirement.RequiresFamily r ->
+            b.beginControlFlow("if (!$S.equals(dsl.dialect().family().name()))",
+                    r.family().jooqFamilyName())
              .addStatement("throw new $T($S)",
                     UnsupportedOperationException.class, r.reason())
              .endControlFlow();
-        }
-        case DialectRequirement.RejectsFamily r -> {
-            b.beginControlFlow("if ($T.fromDialectName(dsl.dialect().name()) == $T.$L)",
-                    SqlDialectFamily.class, SqlDialectFamily.class, r.family().name())
+        case DialectRequirement.RejectsFamily r ->
+            b.beginControlFlow("if ($S.equals(dsl.dialect().family().name()))",
+                    r.family().jooqFamilyName())
              .addStatement("throw new $T($S)",
                     UnsupportedOperationException.class, r.reason())
              .endControlFlow();
-        }
     }
 }
 ```
+
+> **Implementation note (divergence from the initial draft).** The draft had
+> `emitDialectGuard` emit `SqlDialectFamily.fromDialectName(dsl.dialect().name())`,
+> i.e. a reference to the generator-internal `SqlDialectFamily` enum in the
+> generated code. That does not compile in a consumer: the `graphitron`
+> artifact is on the consumer's **test** classpath only
+> (`no.sikt:graphitron:jar:test` in `graphitron-sakila-example`), while these
+> fetchers compile as the consumer's **main** sources (the generate mojo adds
+> them via `project.addCompileSourceRoot`). Generated code sees only its own
+> output package plus jOOQ, exactly why `ErrorRouter` etc. are generated *into*
+> the output package. So the emitted guard stays self-contained: it compares
+> jOOQ's own `dsl.dialect().family().name()` against the family's
+> `jooqFamilyName()`. jOOQ's `family()` folds every versioned dialect spelling
+> onto its family constant (so the ORACLE gate still catches `ORACLE19C` etc.),
+> the typed `DialectRequirement` on the model still selects *which* family and
+> carries the `reason()`, and the reachable bulk-UPDATE output is byte-identical
+> to today's inline `family().name().equals("POSTGRES")` guard.
+> `SqlDialectFamily.fromDialectName` is retained on the model for the future
+> validator-time check (which reads the model, not runtime).
 
 Verb-neutral skeleton stays verb-neutral; UPSERT no longer needs special-case
 handling at the call site. INSERT/DELETE and single-row UPDATE pass
 `DialectRequirement.None` and the helper emits nothing.
 
-The runtime check on the consumer side runs through `SqlDialectFamily`'s
-mapping, not a string-prefix check (UPSERT today) or a `family()` call (bulk
-UPDATE today). This is the same logic for both, consolidated onto one
-boundary mapping that lives once instead of being inlined into emitted Java.
+The runtime check on the consumer side runs through jOOQ's own `family()`
+collapse, the same call bulk UPDATE used before (UPSERT's former string-prefix
+`name().startsWith("ORACLE")` is behaviour-equivalent, since `family()` folds
+every Oracle version to `ORACLE`). This is now the same boundary for both arms
+(`dsl.dialect().family().name()`), keyed by the typed `DialectRequirement`
+arm and its `SqlDialectFamily.jooqFamilyName()`, instead of two different
+hand-built inline checks.
 
 ## Tests
 
 Pure model refactor, not a behaviour change: UPSERT still rejects only
 Oracle, bulk UPDATE still rejects only non-Postgres. Acceptance gates:
 
-- Existing execution-tier PostgreSQL tests against UPSERT pass unchanged
-  (`upsertFilm_updateBranch_writesAndReturnsProjectedFilm`,
-  `upsertFilm_insertBranch_writesAndReturnsProjectedFilm` in
-  `graphitron-sakila-example/.../querydb/GraphQLQueryTest.java`). The emitted
-  guard body changes (now consults `SqlDialectFamily.fromDialectName`), but
-  under PostgreSQL the `RejectsFamily(ORACLE)` arm does not fire, exactly as
-  today's `startsWith("ORACLE")` check does not fire.
-- New unit-tier assertion: `MutationUpsertTableField.dialectRequirement()`
-  returns `RejectsFamily(ORACLE, ...)`; INSERT, DELETE, and single-row UPDATE
-  return `None.INSTANCE`; the bulk-UPDATE arm returns
-  `RequiresFamily(POSTGRES, ...)`.
-- New unit-tier assertion on `SqlDialectFamily.fromDialectName`: covers
-  `POSTGRES` for any `POSTGRES*` name plus the `POSTGRESPLUS` spelling and
-  `YUGABYTEDB` (mirroring jOOQ's `family()` collapse); `ORACLE` for `ORACLE`,
-  `ORACLE12C`, `ORACLE19C`, `ORACLE23AI`, etc.; `OTHER` for unrecognised
-  names.
-- New compilation-tier test: a generated UPSERT fetcher's body throws
-  `UnsupportedOperationException` with the message from the model's
-  `reason()` slot when invoked under an Oracle-flavoured `DSLContext`. Either
-  via a Testcontainers Oracle instance, which is heavy, or via a stub
-  `DSLContext` that reports `dialect().name() == "ORACLE19C"`; the latter is
-  cheaper and the existing fixture path doesn't include Oracle.
+- The bulk-UPDATE `FetcherPipelineTest` assertion
+  (`dmlUpdateField_bulkInput_emitsValuesJoinWithUniformShapeAndDuplicateKeyAndDialectGuards`)
+  stays green *unchanged in substance*: the self-contained emitter produces the
+  identical `if (!"POSTGRES".equals(dsl.dialect().family().name()))` guard it
+  produced before the lift (byte-identical reachable output, proving the pure
+  refactor). (Note: the UPSERT execution-tier tests named in the original draft
+  are `@Disabled` under R144, which refuses UPSERT at
+  `MutationInputResolver.resolveInput`; no UPSERT fetcher is emitted through the
+  pipeline today, so that acceptance gate does not run. UPSERT coverage moves to
+  the direct-construction emitter test below.)
+- New pipeline-tier assertions (`DmlDialectRequirementClassificationTest`):
+  the classifier populates `dialectRequirement()` as `None.INSTANCE` for INSERT,
+  DELETE, and single-row UPDATE, and `RequiresFamily(POSTGRES, ...)` for the
+  bulk-UPDATE arm. (`MutationUpsertTableField`'s `RejectsFamily(ORACLE, ...)`
+  cannot be reached through the pipeline under R144, so it is pinned by the
+  emitter test below against a directly-constructed field.)
+- New unit-tier assertions on `SqlDialectFamily` (`SqlDialectFamilyTest`):
+  `fromDialectName` covers `POSTGRES` for any `POSTGRES*` name plus the
+  `POSTGRESPLUS` spelling and `YUGABYTEDB` (mirroring jOOQ's `family()`
+  collapse); `ORACLE` for `ORACLE`, `ORACLE12C`, `ORACLE19C`, `ORACLE23AI`,
+  etc.; `OTHER` for unrecognised names (including `MARIADB`, `REDSHIFT`), null,
+  and blank; plus `jooqFamilyName()` for each family (and its `OTHER` rejection).
+- New emitter test (`TypeFetcherGeneratorTest`): a directly-constructed
+  `MutationUpsertTableField` carrying `RejectsFamily(ORACLE, reason)` emits a
+  self-contained `if ("ORACLE".equals(dsl.dialect().family().name()))` guard
+  throwing `UnsupportedOperationException` with the model's `reason()` and
+  references no generator-internal class; the `None` (INSERT) counterpart emits
+  no guard at all. (A stub-`DSLContext` / Testcontainers-Oracle execution test
+  was dropped: since generated code no longer references `SqlDialectFamily` and
+  the guard is a plain jOOQ `family()` string comparison, the emitter test is
+  the meaningful pin.)
 
 ## Implementation sites
 

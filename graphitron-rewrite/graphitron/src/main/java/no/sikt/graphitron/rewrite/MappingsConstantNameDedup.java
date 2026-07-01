@@ -179,17 +179,17 @@ public final class MappingsConstantNameDedup {
         var present = Optional.of(newChannel);
         return switch (field) {
             case MutationField.MutationInsertTableField f -> new MutationField.MutationInsertTableField(
-                f.parentTypeName(), f.name(), f.location(), f.returnExpression(), f.tableInputArg(),
-                present);
+                f.parentTypeName(), f.name(), f.location(), f.returnExpression(), f.dialectRequirement(),
+                f.tableInputArg(), present);
             case MutationField.MutationUpdateTableField f -> new MutationField.MutationUpdateTableField(
-                f.parentTypeName(), f.name(), f.location(), f.returnExpression(), f.inputArg(), f.updateRows(),
-                present);
+                f.parentTypeName(), f.name(), f.location(), f.returnExpression(), f.dialectRequirement(),
+                f.inputArg(), f.updateRows(), present);
             case MutationField.MutationDeleteTableField f -> new MutationField.MutationDeleteTableField(
-                f.parentTypeName(), f.name(), f.location(), f.returnExpression(), f.inputArg(), f.deleteRows(),
-                present);
+                f.parentTypeName(), f.name(), f.location(), f.returnExpression(), f.dialectRequirement(),
+                f.inputArg(), f.deleteRows(), present);
             case MutationField.MutationUpsertTableField f -> new MutationField.MutationUpsertTableField(
-                f.parentTypeName(), f.name(), f.location(), f.returnExpression(), f.tableInputArg(),
-                present);
+                f.parentTypeName(), f.name(), f.location(), f.returnExpression(), f.dialectRequirement(),
+                f.tableInputArg(), present);
             case MutationField.MutationServiceTableField f -> new MutationField.MutationServiceTableField(
                 f.parentTypeName(), f.name(), f.location(), f.returnType(), f.serviceMethodCall(), present);
             case MutationField.MutationServiceRecordField f -> new MutationField.MutationServiceRecordField(

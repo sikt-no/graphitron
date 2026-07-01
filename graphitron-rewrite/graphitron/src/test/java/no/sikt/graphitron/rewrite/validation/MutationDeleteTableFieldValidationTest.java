@@ -4,6 +4,7 @@ import no.sikt.graphitron.rewrite.ValidationError;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.DeleteRows;
+import no.sikt.graphitron.rewrite.model.DialectRequirement;
 import no.sikt.graphitron.rewrite.model.DmlReturnExpression;
 import no.sikt.graphitron.rewrite.model.HelperRef;
 import no.sikt.graphitron.rewrite.model.InputArgRef;
@@ -36,6 +37,7 @@ class MutationDeleteTableFieldValidationTest {
                         ClassName.get("fake.code.generated", "NodeIdEncoder"),
                         "encodeFilm",
                         List.of(new ColumnRef("film_id", "FILM_ID", "java.lang.Long")))),
+                DialectRequirement.None.INSTANCE,
                 // R266: DELETE carries the slim InputArgRef + the DeleteRows walker carrier (no
                 // TableInputArg). filmId covers the PK, so this is an Identified single-row delete.
                 new InputArgRef("in", "FilmKey",
