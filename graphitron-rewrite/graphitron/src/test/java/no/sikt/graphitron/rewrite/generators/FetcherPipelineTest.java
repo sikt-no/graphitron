@@ -600,6 +600,81 @@ class FetcherPipelineTest {
             .contains("@mutation(typeName: UPDATE) call has no settable fields present");
     }
 
+    // ===== R406: single-table discriminated interface as a DML return =====
+    // Body-content assertions (justified as in TypeFetcherGeneratorTest's discriminator tests): the
+    // return-half re-projection has no structural equivalent, and the load-bearing facts are the
+    // synthetic __discriminator__ projection, the participant $fields sets, the discriminator-gated
+    // cross-table LEFT JOIN, and that the follow-up SELECT keys off the RETURNING PK rather than
+    // rescanning. Model shape is pinned separately in GraphitronSchemaBuilderTest; runtime routing
+    // in DmlTableInterfaceReturnExecutionTest.
+
+    private static final String DISCRIMINATED_CONTENT_TYPES = """
+        interface Content @table(name: "content") @discriminate(on: "CONTENT_TYPE") {
+          contentId: Int! @field(name: "CONTENT_ID")
+          title: String! @field(name: "TITLE")
+        }
+        type FilmContent implements Content @table(name: "content") @discriminator(value: "FILM") {
+          contentId: Int! @field(name: "CONTENT_ID")
+          title: String! @field(name: "TITLE")
+          rating: String @reference(path: [{key: "content_film_id_fkey"}]) @field(name: "RATING")
+        }
+        type ShortContent implements Content @table(name: "content") @discriminator(value: "SHORT") {
+          contentId: Int! @field(name: "CONTENT_ID")
+          title: String! @field(name: "TITLE")
+          description: String @field(name: "SHORT_DESCRIPTION")
+        }
+        type Query { content: Content }
+        """;
+
+    @Test
+    void dmlInsertField_discriminatedInterfaceReturn_reprojectsThroughDiscriminatorKeyedByReturningPk() {
+        var sdl = DISCRIMINATED_CONTENT_TYPES + """
+            input ContentInput @table(name: "content") {
+              title: String! @field(name: "TITLE")
+              contentType: String! @field(name: "CONTENT_TYPE")
+            }
+            type Mutation { createContent(in: ContentInput!): Content @mutation(typeName: INSERT) }
+            """;
+        var createContent = method(findSpec("MutationFetchers", sdl), "createContent");
+        var body = createContent.code().toString();
+        assertThat(body)
+            .as("write half unchanged: PK-only RETURNING inside a transaction")
+            .contains("dsl.transactionResult")
+            .contains(".returningResult(")
+            .as("re-projection projects the synthetic __discriminator__ alias for the TypeResolver")
+            .contains("__discriminator__")
+            .as("each implementer's participant field set projected via its $fields")
+            .contains("FilmContent.$fields(")
+            .contains("ShortContent.$fields(")
+            .as("discriminator-gated cross-table LEFT JOIN for FilmContent.rating")
+            .contains(".leftJoin(")
+            .as("follow-up SELECT keyed by the RETURNING PK (single-column .eq(keys.value1())), not a rescan")
+            .contains("keys.value1()");
+        assertThat(createContent.returnType().toString())
+            .as("Record return, as the projected-@table single arm")
+            .isEqualTo("graphql.execution.DataFetcherResult<org.jooq.Record>");
+    }
+
+    @Test
+    void dmlUpdateField_discriminatedInterfaceReturn_reprojectsThroughDiscriminator() {
+        var sdl = DISCRIMINATED_CONTENT_TYPES + """
+            input ContentUpdateInput @table(name: "content") {
+              contentId: Int! @field(name: "CONTENT_ID")
+              title: String @field(name: "TITLE")
+            }
+            type Mutation { updateContent(in: ContentUpdateInput!): Content @mutation(typeName: UPDATE) }
+            """;
+        var updateContent = method(findSpec("MutationFetchers", sdl), "updateContent");
+        var body = updateContent.code().toString();
+        assertThat(body)
+            .contains("dsl.transactionResult")
+            .contains("__discriminator__")
+            .contains("FilmContent.$fields(")
+            .contains("ShortContent.$fields(")
+            .contains(".leftJoin(")
+            .contains("keys.value1()");
+    }
+
     // ===== Column fields → wired via ColumnFetcher =====
 
     @Test

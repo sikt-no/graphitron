@@ -193,6 +193,10 @@ public sealed interface OutputField extends GraphitronField permits RootField, C
             case DmlReturnExpression.EncodedList ignored -> new Target.List(new TargetShape.Column());
             case DmlReturnExpression.ProjectedSingle ignored -> new Target.Single(new TargetShape.Table());
             case DmlReturnExpression.ProjectedList ignored -> new Target.List(new TargetShape.Table());
+            // R406: a discriminated-interface return re-projects the shared table just like a
+            // projected @table return (Record / List<Record>); only the follow-up SELECT differs.
+            case DmlReturnExpression.DiscriminatedSingle ignored -> new Target.Single(new TargetShape.Table());
+            case DmlReturnExpression.DiscriminatedList ignored -> new Target.List(new TargetShape.Table());
         };
     }
 
