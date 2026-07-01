@@ -4416,6 +4416,9 @@ public class TypeFetcherGenerator {
             case no.sikt.graphitron.rewrite.model.DmlReturnExpression.ProjectedSingle ps -> RECORD;
             case no.sikt.graphitron.rewrite.model.DmlReturnExpression.ProjectedList pl ->
                 ParameterizedTypeName.get(ClassName.get(List.class), RECORD);
+            case no.sikt.graphitron.rewrite.model.DmlReturnExpression.DiscriminatedSingle ds -> RECORD;
+            case no.sikt.graphitron.rewrite.model.DmlReturnExpression.DiscriminatedList dl ->
+                ParameterizedTypeName.get(ClassName.get(List.class), RECORD);
         };
         var builder = MethodSpec.methodBuilder(fetcherName)
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
@@ -4445,7 +4448,7 @@ public class TypeFetcherGenerator {
             tablesOnly.jooqTableClass(), tableLocal,
             tablesOnly.tablesClass(), tableRef.javaFieldName());
 
-        builder.addCode(emitDmlReturnExpression(rex, valueType, tableRef, tablesOnly,
+        builder.addCode(emitDmlReturnExpression(ctx, rex, valueType, tableRef, tablesOnly,
             outputPackage, tableLocal, dmlChain));
         builder.addCode(returnSyncSuccess(valueType, "payload"));
         builder.nextControlFlow("catch ($T e)", Exception.class);
@@ -4498,6 +4501,7 @@ public class TypeFetcherGenerator {
      * {@code .returningResult(...).fetchOne(...)}.
      */
     private static CodeBlock emitDmlReturnExpression(
+            TypeFetcherEmissionContext ctx,
             no.sikt.graphitron.rewrite.model.DmlReturnExpression rex,
             TypeName valueType,
             TableRef tableRef,
@@ -4516,6 +4520,12 @@ public class TypeFetcherGenerator {
             case no.sikt.graphitron.rewrite.model.DmlReturnExpression.ProjectedList pl ->
                 emitProjected(pl.returnTypeName(), valueType, tableRef, tablesOnly, outputPackage,
                     tableLocal, dmlChain, /*isList=*/ true);
+            case no.sikt.graphitron.rewrite.model.DmlReturnExpression.DiscriminatedSingle ds ->
+                emitDiscriminated(ctx, ds.discriminatorColumn(), ds.knownDiscriminatorValues(), ds.participants(),
+                    valueType, tableRef, tablesOnly, outputPackage, tableLocal, dmlChain, /*isList=*/ false);
+            case no.sikt.graphitron.rewrite.model.DmlReturnExpression.DiscriminatedList dl ->
+                emitDiscriminated(ctx, dl.discriminatorColumn(), dl.knownDiscriminatorValues(), dl.participants(),
+                    valueType, tableRef, tablesOnly, outputPackage, tableLocal, dmlChain, /*isList=*/ true);
         };
     }
 
@@ -4585,10 +4595,40 @@ public class TypeFetcherGenerator {
                 .add(isList ? ".fetch(r -> r);\n" : ".fetchOne(r -> r);\n").unindent();
             return body.build();
         }
+
+        var body = CodeBlock.builder()
+            .add(emitKeysTransaction(tableRef, tablesOnly, dmlChain, isList));
+
+        if (!isList) {
+            // Single-row UPDATE / DELETE with no match: keys is null. Skip the follow-up SELECT
+            // and return null; matches the pre-two-step .fetchOne(r -> r) contract.
+            body.add("if (keys == null) return $T.<$T>newResult().data(null).build();\n",
+                DATA_FETCHER_RESULT, valueType);
+        }
+
+        body.add("$T payload = dsl.select($T.$$fields(env.getSelectionSet(), $L, env))\n",
+            valueType, typeClass, tableLocal)
+            .add("    .from($L)\n", tableLocal)
+            .add("    .where(").add(buildPkKeysCondition(tableRef, tablesOnly, isList)).add(")\n")
+            .add(isList ? "    .fetch(r -> r);\n" : "    .fetchOne(r -> r);\n");
+        return body.build();
+    }
+
+    /**
+     * Step 1 of the two-step DML re-projection, shared by {@link #emitProjected} and
+     * {@link #emitDiscriminated}: runs the {@code dmlChain} inside {@code dsl.transactionResult(...)}
+     * with a PK-only {@code RETURNING} clause and declares a {@code keys} local holding the
+     * committed primary keys ({@code RecordN<...>} for single, {@code Result<RecordN<...>>} for
+     * list). Requires {@code dsl} in scope; the caller supplies the verb-specific {@code dmlChain}.
+     */
+    private static CodeBlock emitKeysTransaction(
+            TableRef tableRef, GeneratorUtils.ResolvedTableNames tablesOnly,
+            CodeBlock dmlChain, boolean isList) {
+        var pkCols = tableRef.primaryKeyColumns();
         var keyRowType = no.sikt.graphitron.rewrite.model.SourceKey.keyElementType(
             new no.sikt.graphitron.rewrite.model.SourceKey.Wrap.Record(), pkCols);
         TypeName keysType = isList
-            ? ParameterizedTypeName.get(ClassName.get("org.jooq", "Result"), keyRowType)
+            ? ParameterizedTypeName.get(RESULT, keyRowType)
             : keyRowType;
 
         var body = CodeBlock.builder()
@@ -4602,62 +4642,105 @@ public class TypeFetcherGenerator {
         }
         body.add(")\n")
             .add(isList ? ".fetch());\n" : ".fetchOne());\n").unindent();
+        return body.build();
+    }
+
+    /**
+     * The PK-IN {@code Condition} expression that keys the follow-up SELECT off the {@code keys}
+     * local declared by {@link #emitKeysTransaction}. Composite-safe: a single-column PK emits
+     * {@code TABLE.PK.eq(keys.value1())} / {@code TABLE.PK.in(keys.getValues(TABLE.PK))}, a
+     * multi-column PK emits the {@code DSL.row(...).eq(DSL.row(...))} /
+     * {@code DSL.row(...).in(...toList())} row-value form. Shared by {@link #emitProjected}
+     * (inlined into {@code .where(...)}) and {@link #emitDiscriminated} (the base condition).
+     */
+    private static CodeBlock buildPkKeysCondition(
+            TableRef tableRef, GeneratorUtils.ResolvedTableNames tablesOnly, boolean isList) {
+        var pkCols = tableRef.primaryKeyColumns();
+        var b = CodeBlock.builder();
+        if (isList) {
+            if (pkCols.size() == 1) {
+                var col = pkCols.get(0);
+                b.add("$T.$L.$L.in(keys.getValues($T.$L.$L))",
+                    tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName(),
+                    tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName());
+            } else {
+                b.add("$T.row(", DSL);
+                for (int i = 0; i < pkCols.size(); i++) {
+                    if (i > 0) b.add(", ");
+                    var col = pkCols.get(i);
+                    b.add("$T.$L.$L", tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName());
+                }
+                b.add(").in(keys.stream().map(r -> $T.row(", DSL);
+                for (int i = 0; i < pkCols.size(); i++) {
+                    if (i > 0) b.add(", ");
+                    var col = pkCols.get(i);
+                    b.add("r.get($T.$L.$L)", tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName());
+                }
+                b.add(")).toList())");
+            }
+        } else {
+            if (pkCols.size() == 1) {
+                var col = pkCols.get(0);
+                b.add("$T.$L.$L.eq(keys.value1())",
+                    tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName());
+            } else {
+                b.add("$T.row(", DSL);
+                for (int i = 0; i < pkCols.size(); i++) {
+                    if (i > 0) b.add(", ");
+                    var col = pkCols.get(i);
+                    b.add("$T.$L.$L", tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName());
+                }
+                b.add(").eq($T.row(", DSL);
+                for (int i = 0; i < pkCols.size(); i++) {
+                    if (i > 0) b.add(", ");
+                    var col = pkCols.get(i);
+                    b.add("keys.get($T.$L.$L)", tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName());
+                }
+                b.add("))");
+            }
+        }
+        return b.build();
+    }
+
+    /**
+     * R406: single-table discriminated interface DML return. The write half is identical to
+     * {@link #emitProjected} (a plain single-{@code @table} write, its {@code RETURNING} PK captured
+     * by {@link #emitKeysTransaction}); only the follow-up SELECT differs. Rather than the
+     * concrete-type {@code Type.$fields(...)} projection, it re-projects through R405's shared
+     * read-side re-projection ({@link #buildTableInterfaceReprojection}) keyed by the same
+     * PK-IN condition ({@link #buildPkKeysCondition}). The generated row carries
+     * {@code __discriminator__}; the interface's {@code TypeResolver} sets {@code __typename} per
+     * row, so no new resolver and no per-typename UNION are emitted. A {@code RETURNING} key whose
+     * live row's discriminator is outside the known participant set drops on the read-side
+     * discriminator filter (shorter list / {@code null} single), matching R405's drop contract.
+     */
+    private static CodeBlock emitDiscriminated(
+            TypeFetcherEmissionContext ctx,
+            String discriminatorColumn, List<String> knownDiscriminatorValues,
+            List<ParticipantRef> participants,
+            TypeName valueType, TableRef tableRef,
+            GeneratorUtils.ResolvedTableNames tablesOnly,
+            String outputPackage, String tableLocal,
+            CodeBlock dmlChain, boolean isList) {
+        var body = CodeBlock.builder()
+            .add(emitKeysTransaction(tableRef, tablesOnly, dmlChain, isList));
 
         if (!isList) {
-            // Single-row UPDATE / DELETE with no match: keys is null. Skip the follow-up SELECT
-            // and return null; matches the pre-two-step .fetchOne(r -> r) contract.
+            // Single-row write with no match: keys is null. Skip the follow-up SELECT and return
+            // null; matches emitProjected's single-row contract.
             body.add("if (keys == null) return $T.<$T>newResult().data(null).build();\n",
                 DATA_FETCHER_RESULT, valueType);
         }
 
-        body.add("$T payload = dsl.select($T.$$fields(env.getSelectionSet(), $L, env))\n",
-            valueType, typeClass, tableLocal)
-            .add("    .from($L)\n", tableLocal)
-            .add("    .where(");
-        if (isList) {
-            if (pkCols.size() == 1) {
-                var col = pkCols.get(0);
-                body.add("$T.$L.$L.in(keys.getValues($T.$L.$L))",
-                    tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName(),
-                    tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName());
-            } else {
-                body.add("$T.row(", DSL);
-                for (int i = 0; i < pkCols.size(); i++) {
-                    if (i > 0) body.add(", ");
-                    var col = pkCols.get(i);
-                    body.add("$T.$L.$L", tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName());
-                }
-                body.add(").in(keys.stream().map(r -> $T.row(", DSL);
-                for (int i = 0; i < pkCols.size(); i++) {
-                    if (i > 0) body.add(", ");
-                    var col = pkCols.get(i);
-                    body.add("r.get($T.$L.$L)", tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName());
-                }
-                body.add(")).toList())");
-            }
-            body.add(")\n").add("    .fetch(r -> r);\n");
-        } else {
-            if (pkCols.size() == 1) {
-                var col = pkCols.get(0);
-                body.add("$T.$L.$L.eq(keys.value1())",
-                    tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName());
-            } else {
-                body.add("$T.row(", DSL);
-                for (int i = 0; i < pkCols.size(); i++) {
-                    if (i > 0) body.add(", ");
-                    var col = pkCols.get(i);
-                    body.add("$T.$L.$L", tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName());
-                }
-                body.add(").eq($T.row(", DSL);
-                for (int i = 0; i < pkCols.size(); i++) {
-                    if (i > 0) body.add(", ");
-                    var col = pkCols.get(i);
-                    body.add("keys.get($T.$L.$L)", tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName());
-                }
-                body.add("))");
-            }
-            body.add(")\n").add("    .fetchOne(r -> r);\n");
-        }
+        // Base condition is the PK-IN over the RETURNING keys; R405's re-projection helper appends
+        // the discriminator IN-filter and assembles the field list + cross-table LEFT JOINs. No
+        // extra always-projected columns: the DML path keys the SELECT by the PK-IN condition above
+        // rather than re-mapping fetched rows to input positions by PK (the service path's need).
+        body.addStatement("$T condition = $L", CONDITION, buildPkKeysCondition(tableRef, tablesOnly, isList));
+        body.add(buildTableInterfaceReprojection(ctx, participants, discriminatorColumn,
+            knownDiscriminatorValues, List.of(), tableLocal, outputPackage));
+        body.addStatement("$T payload = step.where(condition)$L", valueType,
+            isList ? ".fetch()" : ".fetchOne()");
         return body.build();
     }
 
