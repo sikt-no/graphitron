@@ -4,6 +4,7 @@ import no.sikt.graphitron.rewrite.ArgumentRef;
 import no.sikt.graphitron.rewrite.ValidationError;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
+import no.sikt.graphitron.rewrite.model.DialectRequirement;
 import no.sikt.graphitron.rewrite.model.DmlReturnExpression;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.MutationField.MutationInsertTableField;
@@ -28,6 +29,7 @@ class MutationInsertTableFieldValidationTest {
             new MutationInsertTableField(
                 "Mutation", "createFilm", null,
                 new DmlReturnExpression.ProjectedSingle("Film"),
+                DialectRequirement.None.INSTANCE,
                 ArgumentRef.InputTypeArg.TableInputArg.of(
                     "in", "FilmInput", true, false,
                     TestFixtures.tableRef("film", "FILM", "Film", List.of()),

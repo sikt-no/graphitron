@@ -26,6 +26,7 @@ class MutationUpdateTableFieldValidationTest {
             new MutationUpdateTableField(
                 "Mutation", "updateFilm", null,
                 new DmlReturnExpression.ProjectedSingle("Film"),
+                no.sikt.graphitron.rewrite.model.DialectRequirement.None.INSTANCE,
                 new no.sikt.graphitron.rewrite.model.InputArgRef(
                     "in", "FilmInput",
                     TestFixtures.tableRef("film", "FILM", "Film", List.of()), false),

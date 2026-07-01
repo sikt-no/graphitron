@@ -22,8 +22,10 @@ import no.sikt.graphitron.rewrite.model.SourceKey;
 import no.sikt.graphitron.rewrite.model.CallParam;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.ChildField;
+import no.sikt.graphitron.rewrite.model.DialectRequirement;
 import no.sikt.graphitron.rewrite.model.ErrorChannel;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
+import no.sikt.graphitron.rewrite.model.SqlDialectFamily;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.InputColumnBinding;
@@ -2144,7 +2146,7 @@ public class TypeFetcherGenerator {
         return buildDmlFetcher(ctx, f.name(), f.returnExpression(), f.errorChannel(),
             inputArg.name(), tableRef, tablesOnly, tableLocal,
             outputPackage, dmlChain.build(),
-            /*postDslGuard=*/ CodeBlock.of(""), postInGuard.build(), inputArg.list());
+            f.dialectRequirement(), postInGuard.build(), inputArg.list());
     }
 
     /**
@@ -2203,7 +2205,7 @@ public class TypeFetcherGenerator {
         return buildDmlFetcher(ctx, f.name(), f.returnExpression(), f.errorChannel(),
             tia.name(), tableRef, tablesOnly, tableLocal,
             outputPackage, dmlChain.build(),
-            /*postDslGuard=*/ CodeBlock.of(""), postInGuard.build(), tia.list());
+            f.dialectRequirement(), postInGuard.build(), tia.list());
     }
 
     /**
@@ -3541,7 +3543,7 @@ public class TypeFetcherGenerator {
 
         return buildDmlFetcher(ctx, f.name(), f.returnExpression(), f.errorChannel(),
             inputArg.name(), tableRef, tablesOnly, tableLocal,
-            outputPackage, dmlChain, /*postDslGuard=*/ CodeBlock.of(""), postInGuard.build(), inputArg.list());
+            outputPackage, dmlChain, f.dialectRequirement(), postInGuard.build(), inputArg.list());
     }
 
     /**
@@ -3555,9 +3557,11 @@ public class TypeFetcherGenerator {
      *   <li><b>Duplicate-lookup-key</b> — distinct lookup-key tuples per row, otherwise
      *       Postgres' implementation-defined join silently drops one row's data.</li>
      * </ol>
-     * A separate {@code postDslGuard} rejects non-Postgres dialects: only Postgres speaks the
-     * {@code UPDATE … FROM (VALUES …)} form jOOQ renders here. R63 lifts both this guard and
-     * UPSERT's existing Oracle-dialect guard onto typed {@code DialectRequirement} later.
+     * A separate typed {@link DialectRequirement.RequiresFamily}({@code POSTGRES}) on the model
+     * rejects non-Postgres dialects: only Postgres speaks the {@code UPDATE … FROM (VALUES …)} form
+     * jOOQ renders here. R63 lifted both this guard and UPSERT's Oracle-dialect guard off inline
+     * {@code postDslGuard} {@link CodeBlock}s onto typed {@code DialectRequirement}, rendered by
+     * {@link #emitDialectGuard}.
      */
     private static MethodSpec buildBulkUpdateFetcher(TypeFetcherEmissionContext ctx,
                                                      MutationField.MutationUpdateTableField f,
@@ -3702,20 +3706,12 @@ public class TypeFetcherGenerator {
             .add(".where(").add(whereExpr.build()).add(")\n")
             .build();
 
-        // Postgres-only dialect guard: UPDATE ... FROM (VALUES ...) is a Postgres extension.
-        // family() collapses POSTGRES, POSTGRESPLUS, YUGABYTEDB into POSTGRES.
-        var postDslGuard = CodeBlock.builder()
-            .beginControlFlow("if (!$S.equals(dsl.dialect().family().name()))", "POSTGRES")
-            .addStatement("throw new $T($S)", UnsupportedOperationException.class,
-                "@mutation(typeName: UPDATE) with a listed @table input requires PostgreSQL; "
-                    + "the UPDATE ... FROM (VALUES ...) form is a Postgres extension. "
-                    + "Use a single-row input for portability.")
-            .endControlFlow()
-            .build();
-
+        // R63: the Postgres-only dialect guard (UPDATE ... FROM (VALUES ...) is a Postgres
+        // extension) is now a typed DialectRequirement.RequiresFamily(POSTGRES) on the model,
+        // rendered by emitDialectGuard; the inline postDslGuard CodeBlock is gone.
         return buildDmlFetcher(ctx, f.name(), f.returnExpression(), f.errorChannel(),
             inputArg.name(), tableRef, tablesOnly, tableLocal,
-            outputPackage, dmlChain, postDslGuard, postInGuard.build(), inputArg.list());
+            outputPackage, dmlChain, f.dialectRequirement(), postInGuard.build(), inputArg.list());
     }
 
     /**
@@ -3824,26 +3820,17 @@ public class TypeFetcherGenerator {
             dmlChain.add(".doNothing()\n");
         }
 
-        // jOOQ silently translates `.onConflict(...).doUpdate()` (and `.doNothing()`) to an
-        // Oracle `MERGE INTO ... WHEN MATCHED THEN UPDATE ... WHEN NOT MATCHED THEN INSERT`
-        // statement. Concurrency, conflict-key matching, and `RETURNING` semantics differ from
-        // PostgreSQL `ON CONFLICT`; jOOQ exposes no setting to disable the emulation. Reject at
-        // runtime on the Oracle dialect family rather than letting the silent translation ship.
-        // Name-prefix check (rather than `SQLDialect.ORACLE`) because the OSS jOOQ distribution
-        // omits commercial-only dialect enum values; the prefix covers ORACLE, ORACLE11G,
-        // ORACLE12C, ORACLE18C, ORACLE19C, ORACLE21C, ORACLE23AI.
-        var postDslGuard = CodeBlock.builder()
-            .beginControlFlow("if (dsl.dialect().name().startsWith($S))", "ORACLE")
-            .addStatement("throw new $T($S)", UnsupportedOperationException.class,
-                "@mutation(typeName: UPSERT) is not supported on Oracle: jOOQ would translate "
-                    + "INSERT ... ON CONFLICT to MERGE INTO, whose concurrency and RETURNING "
-                    + "semantics differ from PostgreSQL. Graphitron targets PostgreSQL.")
-            .endControlFlow()
-            .build();
-
+        // R63: jOOQ silently translates `.onConflict(...).doUpdate()` (and `.doNothing()`) to an
+        // Oracle `MERGE INTO ...` statement whose concurrency, conflict-key matching, and
+        // `RETURNING` semantics differ from PostgreSQL `ON CONFLICT`, and it exposes no setting to
+        // disable the emulation. The Oracle rejection is now a typed
+        // DialectRequirement.RejectsFamily(ORACLE) on the model, rendered by emitDialectGuard as a
+        // self-contained `dsl.dialect().family().name().equals("ORACLE")` check (jOOQ's family()
+        // folds every commercial ORACLE* version to ORACLE, so the guard still gates them all); the
+        // inline postDslGuard CodeBlock is gone.
         return buildDmlFetcher(ctx, f.name(), f.returnExpression(), f.errorChannel(),
             tia.name(), tableRef, tablesOnly, tableLocal,
-            outputPackage, dmlChain.build(), postDslGuard, postInGuard.build(), tia.list());
+            outputPackage, dmlChain.build(), f.dialectRequirement(), postInGuard.build(), tia.list());
     }
 
     /**
@@ -4321,38 +4308,25 @@ public class TypeFetcherGenerator {
             String tableLocal,
             String outputPackage,
             CodeBlock dmlChain,
+            DialectRequirement dialectRequirement,
             boolean listInput) {
         return buildDmlFetcher(ctx, fetcherName, rex, errorChannel, inputArgName, tableRef,
             tablesOnly, tableLocal, outputPackage, dmlChain,
-            /*postDslGuard=*/ CodeBlock.of(""), /*postInGuard=*/ CodeBlock.of(""), listInput);
-    }
-
-    private static MethodSpec buildDmlFetcher(
-            TypeFetcherEmissionContext ctx,
-            String fetcherName,
-            no.sikt.graphitron.rewrite.model.DmlReturnExpression rex,
-            Optional<ErrorChannel> errorChannel,
-            String inputArgName,
-            TableRef tableRef,
-            GeneratorUtils.ResolvedTableNames tablesOnly,
-            String tableLocal,
-            String outputPackage,
-            CodeBlock dmlChain,
-            CodeBlock postDslGuard,
-            boolean listInput) {
-        return buildDmlFetcher(ctx, fetcherName, rex, errorChannel, inputArgName, tableRef,
-            tablesOnly, tableLocal, outputPackage, dmlChain,
-            postDslGuard, /*postInGuard=*/ CodeBlock.of(""), listInput);
+            dialectRequirement, /*postInGuard=*/ CodeBlock.of(""), listInput);
     }
 
     /**
-     * Two optional {@link CodeBlock} slots and the bulk-input cardinality bit:
+     * The typed dialect guard plus the optional {@code postInGuard} {@link CodeBlock} and the
+     * bulk-input cardinality bit:
      * <ul>
-     *   <li>{@code postDslGuard} — emitted immediately after the {@code dsl} local is bound,
-     *       before the {@code in} cast. Used by UPSERT to gate the Oracle dialect (jOOQ silently
-     *       translates {@code .onConflict(...)} to {@code MERGE INTO} on Oracle, with semantics
-     *       drift), and by bulk UPDATE to gate non-PostgreSQL dialects on the
-     *       {@code UPDATE ... FROM (VALUES ...)} form.</li>
+     *   <li>{@code dialectRequirement} — R63: the verb's typed dialect constraint, always present
+     *       from the model ({@link DialectRequirement.None} when unconstrained). Rendered by
+     *       {@link #emitDialectGuard} immediately after the {@code dsl} local is bound, before the
+     *       {@code in} cast. UPSERT carries {@link DialectRequirement.RejectsFamily}({@code ORACLE})
+     *       (jOOQ silently translates {@code .onConflict(...)} to {@code MERGE INTO} on Oracle, with
+     *       semantics drift) and bulk UPDATE carries {@link DialectRequirement.RequiresFamily}
+     *       ({@code POSTGRES}) (the {@code UPDATE ... FROM (VALUES ...)} form is a Postgres
+     *       extension); INSERT / DELETE / single-row UPDATE carry {@code None} and emit nothing.</li>
      *   <li>{@code postInGuard} — emitted immediately after the {@code in} cast and before
      *       {@code tableLocal} is bound (and after the empty-list short-circuit when
      *       {@code listInput}). Used by UPDATE / UPSERT to build the dynamic SET map from the
@@ -4377,7 +4351,7 @@ public class TypeFetcherGenerator {
             String tableLocal,
             String outputPackage,
             CodeBlock dmlChain,
-            CodeBlock postDslGuard,
+            DialectRequirement dialectRequirement,
             CodeBlock postInGuard,
             boolean listInput) {
         var dslContextClass = ClassName.get("org.jooq", "DSLContext");
@@ -4396,9 +4370,7 @@ public class TypeFetcherGenerator {
 
         builder.beginControlFlow("try");
         builder.addStatement("$T dsl = $L.getDslContext(env)", dslContextClass, ctx.graphitronContextCall());
-        if (!postDslGuard.isEmpty()) {
-            builder.addCode(postDslGuard);
-        }
+        emitDialectGuard(builder, dialectRequirement);
         if (listInput) {
             builder.addStatement("$T<$T<?, ?>> in = env.getArgument($S)",
                 ClassName.get(List.class), MAP, inputArgName);
@@ -4426,6 +4398,42 @@ public class TypeFetcherGenerator {
         builder.addCode(catchArm(outputPackage, errorChannel));
         builder.endControlFlow();
         return builder.build();
+    }
+
+    /**
+     * R63: renders the request-time dialect guard from the model's typed
+     * {@link DialectRequirement}, replacing the two hand-built {@code postDslGuard}
+     * {@link CodeBlock}s (UPSERT's Oracle gate, bulk UPDATE's Postgres gate) with a single helper
+     * keyed on the typed arm. Both the {@code RequiresFamily} and {@code RejectsFamily} arms compare
+     * {@code dsl.dialect().family().name()} against the family's {@link SqlDialectFamily#jooqFamilyName()}
+     * and throw an {@link UnsupportedOperationException} carrying the model's {@code reason()}.
+     *
+     * <p>The check uses jOOQ's own {@code SQLDialect.family()} rather than
+     * {@link SqlDialectFamily#fromDialectName(String)} because emitted code cannot reference the
+     * generator-internal {@code SqlDialectFamily} enum: the {@code graphitron} artifact is on a
+     * consumer's <em>test</em> classpath only, while these fetchers compile as the consumer's main
+     * sources (the generate mojo adds them via {@code addCompileSourceRoot}); generated code sees
+     * only its own output package plus jOOQ. jOOQ's {@code family()} collapses every versioned
+     * dialect spelling onto its family constant, so the check gates every version of the family:
+     * it matches the intent of UPSERT's original {@code name().startsWith("ORACLE")} (all Oracle
+     * versions fold to {@code ORACLE}) and reproduces bulk UPDATE's original
+     * {@code family().name().equals("POSTGRES")} byte-for-byte. The {@link DialectRequirement.None}
+     * arm emits nothing, keeping INSERT / DELETE / single-row UPDATE fetchers guard-free.
+     */
+    private static void emitDialectGuard(MethodSpec.Builder b, DialectRequirement req) {
+        switch (req) {
+            case DialectRequirement.None ignored -> { /* no dialect constraint */ }
+            case DialectRequirement.RequiresFamily r ->
+                b.beginControlFlow("if (!$S.equals(dsl.dialect().family().name()))",
+                        r.family().jooqFamilyName())
+                 .addStatement("throw new $T($S)", UnsupportedOperationException.class, r.reason())
+                 .endControlFlow();
+            case DialectRequirement.RejectsFamily r ->
+                b.beginControlFlow("if ($S.equals(dsl.dialect().family().name()))",
+                        r.family().jooqFamilyName())
+                 .addStatement("throw new $T($S)", UnsupportedOperationException.class, r.reason())
+                 .endControlFlow();
+        }
     }
 
     /**

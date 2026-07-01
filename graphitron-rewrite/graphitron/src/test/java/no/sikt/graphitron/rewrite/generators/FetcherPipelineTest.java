@@ -514,7 +514,8 @@ class FetcherPipelineTest {
         var updateFilms = method(findSpec("MutationFetchers", sdl), "updateFilms");
         var body = updateFilms.code().toString();
         assertThat(body)
-            .as("Postgres dialect guard rides postDslGuard, before the in binding")
+            .as("R63: Postgres dialect guard now renders from the typed DialectRequirement, but the "
+                + "emitted self-contained family() check is byte-identical to the former inline guard")
             .contains("if (!\"POSTGRES\".equals(dsl.dialect().family().name()))")
             .as("bulk arm binds in as List<Map<?,?>> (getArgument inference, no cast)")
             .contains("java.util.List<java.util.Map<?, ?>> in = env.getArgument")

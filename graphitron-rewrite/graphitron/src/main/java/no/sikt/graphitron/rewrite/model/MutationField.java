@@ -110,6 +110,16 @@ public sealed interface MutationField extends RootField, WithErrorChannel
             permits MutationInsertTableField, MutationUpdateTableField,
                     MutationDeleteTableField, MutationUpsertTableField {
         DmlReturnExpression returnExpression();
+
+        /**
+         * R63: the verb's typed dialect constraint, set at construction. Never null. UPSERT carries
+         * {@link DialectRequirement.RejectsFamily}({@code ORACLE}); bulk UPDATE carries
+         * {@link DialectRequirement.RequiresFamily}({@code POSTGRES}); INSERT, DELETE, and single-row
+         * UPDATE carry {@link DialectRequirement.None#INSTANCE}. The emitter renders the request-time
+         * guard from this arm rather than a hand-built {@code CodeBlock}.
+         */
+        DialectRequirement dialectRequirement();
+
         SourceLocation location();
     }
 
@@ -136,6 +146,7 @@ public sealed interface MutationField extends RootField, WithErrorChannel
         String name,
         SourceLocation location,
         DmlReturnExpression returnExpression,
+        DialectRequirement dialectRequirement,
         ArgumentRef.InputTypeArg.TableInputArg tableInputArg,
         Optional<ErrorChannel> errorChannel
     ) implements DmlTableField {
@@ -157,6 +168,7 @@ public sealed interface MutationField extends RootField, WithErrorChannel
         String name,
         SourceLocation location,
         DmlReturnExpression returnExpression,
+        DialectRequirement dialectRequirement,
         InputArgRef inputArg,
         UpdateRows updateRows,
         Optional<ErrorChannel> errorChannel
@@ -193,6 +205,7 @@ public sealed interface MutationField extends RootField, WithErrorChannel
         String name,
         SourceLocation location,
         DmlReturnExpression returnExpression,
+        DialectRequirement dialectRequirement,
         InputArgRef inputArg,
         DeleteRows deleteRows,
         Optional<ErrorChannel> errorChannel
@@ -218,6 +231,7 @@ public sealed interface MutationField extends RootField, WithErrorChannel
         String name,
         SourceLocation location,
         DmlReturnExpression returnExpression,
+        DialectRequirement dialectRequirement,
         ArgumentRef.InputTypeArg.TableInputArg tableInputArg,
         Optional<ErrorChannel> errorChannel
     ) implements DmlTableField {

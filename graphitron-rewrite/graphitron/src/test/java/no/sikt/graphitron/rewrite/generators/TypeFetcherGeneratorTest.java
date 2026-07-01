@@ -7,12 +7,17 @@ import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.javapoet.WildcardTypeName;
+import no.sikt.graphitron.rewrite.ArgumentRef;
 import no.sikt.graphitron.rewrite.TestFixtures;
 import no.sikt.graphitron.rewrite.model.BodyParam;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
+import no.sikt.graphitron.rewrite.model.DialectRequirement;
+import no.sikt.graphitron.rewrite.model.DmlReturnExpression;
 import no.sikt.graphitron.rewrite.model.ErrorChannel;
+import no.sikt.graphitron.rewrite.model.HelperRef;
+import no.sikt.graphitron.rewrite.model.SqlDialectFamily;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.JoinStep;
@@ -1013,6 +1018,67 @@ class TypeFetcherGeneratorTest {
         var body = method(spec, "doThing").code().toString();
         assertThat(body).contains("ErrorRouter.surfaceClientErrorOrRedact(e, env)");
         assertThat(body).doesNotContain("ErrorRouter.dispatch");
+    }
+
+    // ===== R63: typed DialectRequirement rendered as the request-time guard =====
+    //
+    // emitDialectGuard renders the guard from the model's typed DialectRequirement. The
+    // RequiresFamily(POSTGRES) arm is exercised end-to-end by the reachable bulk-UPDATE pipeline
+    // path (FetcherPipelineTest). UPSERT's RejectsFamily(ORACLE) arm cannot classify through the
+    // pipeline (R144 refuses UPSERT at resolveInput, deferred to R145), so its guard rendering is
+    // pinned here against a directly-constructed field. The None arm (INSERT / DELETE / single
+    // UPDATE) must emit no guard at all.
+
+    @Test
+    void upsertFetcher_rejectsFamilyOracle_emitsDialectGuardFromModel() {
+        // The Oracle rejection is now typed data on the model; emitDialectGuard renders it as a
+        // self-contained family() == "ORACLE" check that throws the model's reason() message. The
+        // emitted code references no generator-internal class (graphitron is test-scoped in
+        // consumers; these fetchers compile as consumer main sources).
+        var upsert = new MutationField.MutationUpsertTableField(
+            "Mutation", "upsertFilm", null,
+            new DmlReturnExpression.EncodedSingle(new HelperRef.Encode(
+                ClassName.get("fake.code.generated", "NodeIdEncoder"), "encodeFilm",
+                List.of(new ColumnRef("film_id", "FILM_ID", "java.lang.Long")))),
+            new DialectRequirement.RejectsFamily(SqlDialectFamily.ORACLE,
+                "@mutation(typeName: UPSERT) is not supported on Oracle: test reason"),
+            ArgumentRef.InputTypeArg.TableInputArg.of(
+                "in", "FilmInput", true, false, FILM_TABLE, List.of(), Optional.empty(), List.of()),
+            Optional.empty());
+        var spec = TypeFetcherGenerator.generateTypeSpec("Mutation", null, null,
+            List.of(upsert), DEFAULT_OUTPUT_PACKAGE);
+
+        var body = method(spec, "upsertFilm").code().toString();
+        assertThat(body)
+            .as("guard is self-contained (no generator-internal SqlDialectFamily reference in "
+                + "emitted code) and rejects the ORACLE family via jOOQ's own family() collapse")
+            .contains("if (\"ORACLE\".equals(dsl.dialect().family().name()))")
+            .doesNotContain("SqlDialectFamily")
+            .as("throws UnsupportedOperationException carrying the model's reason() message")
+            .contains("throw new java.lang.UnsupportedOperationException(")
+            .contains("@mutation(typeName: UPSERT) is not supported on Oracle: test reason");
+    }
+
+    @Test
+    void insertFetcher_noneRequirement_emitsNoDialectGuard() {
+        // INSERT carries DialectRequirement.None; the None arm of emitDialectGuard emits nothing,
+        // so the fetcher body references no SqlDialectFamily and throws no dialect guard.
+        var insert = new MutationField.MutationInsertTableField(
+            "Mutation", "createFilm", null,
+            new DmlReturnExpression.EncodedSingle(new HelperRef.Encode(
+                ClassName.get("fake.code.generated", "NodeIdEncoder"), "encodeFilm",
+                List.of(new ColumnRef("film_id", "FILM_ID", "java.lang.Long")))),
+            DialectRequirement.None.INSTANCE,
+            ArgumentRef.InputTypeArg.TableInputArg.of(
+                "in", "FilmInput", true, false, FILM_TABLE, List.of(), Optional.empty(), List.of()),
+            Optional.empty());
+        var spec = TypeFetcherGenerator.generateTypeSpec("Mutation", null, null,
+            List.of(insert), DEFAULT_OUTPUT_PACKAGE);
+
+        var body = method(spec, "createFilm").code().toString();
+        assertThat(body)
+            .doesNotContain("SqlDialectFamily")
+            .doesNotContain("UnsupportedOperationException");
     }
 
     @Test

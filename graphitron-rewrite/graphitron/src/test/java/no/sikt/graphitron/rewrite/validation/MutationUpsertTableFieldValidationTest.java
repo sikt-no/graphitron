@@ -2,9 +2,11 @@ package no.sikt.graphitron.rewrite.validation;
 
 import no.sikt.graphitron.rewrite.ArgumentRef;
 import no.sikt.graphitron.rewrite.ValidationError;
+import no.sikt.graphitron.rewrite.model.DialectRequirement;
 import no.sikt.graphitron.rewrite.model.DmlReturnExpression;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.MutationField.MutationUpsertTableField;
+import no.sikt.graphitron.rewrite.model.SqlDialectFamily;
 import no.sikt.graphitron.rewrite.model.TableRef;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
@@ -26,6 +28,7 @@ class MutationUpsertTableFieldValidationTest {
             new MutationUpsertTableField(
                 "Mutation", "upsertFilm", null,
                 new DmlReturnExpression.ProjectedSingle("Film"),
+                new DialectRequirement.RejectsFamily(SqlDialectFamily.ORACLE, "upsert not on oracle"),
                 ArgumentRef.InputTypeArg.TableInputArg.of(
                     "in", "FilmInput", true, false,
                     TestFixtures.tableRef("film", "FILM", "Film", List.of()),
