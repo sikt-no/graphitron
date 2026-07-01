@@ -471,12 +471,11 @@ public final class Main {
         sb.append("= Rewrite Roadmap\n");
         sb.append(":description: Active and Backlog work on the Graphitron rewrite generator.\n\n");
         sb.append("This is the rendered roadmap. Plans are authored as markdown in ")
-          .append("`graphitron-rewrite/roadmap/`; this view derives from the per-item front-matter ")
+          .append("`roadmap/`; this view derives from the per-item front-matter ")
           .append("and the plan bodies. For the model taxonomy, see ")
-          .append("xref:../architecture/code-generation-triggers.adoc[Code Generation Triggers]. ")
+          .append("xref:../architecture/reference/code-generation-triggers.adoc[Code Generation Triggers]. ")
           .append("For design principles, see ")
-          .append("xref:../architecture/rewrite-design-principles.adoc[Rewrite Design Principles]. ")
-          .append("For workflow conventions, see xref:../architecture/workflow.adoc[Workflow]. ")
+          .append("xref:../architecture/explanation/rewrite-design-principles.adoc[Rewrite Design Principles]. ")
           .append("For per-leaf classifier coverage, see ")
           .append("xref:inference-axis-coverage.adoc[Inference-axis coverage report]. ")
           .append("Or jump to the xref:by-theme.adoc[by-theme view] or the xref:changelog.adoc[changelog]. ")
@@ -895,6 +894,23 @@ public final class Main {
 
     private static final Pattern MD_LINK = Pattern.compile("\\[([^\\]]+)\\]\\(([^)]+)\\)");
     private static final String GH_BASE = "https://github.com/sikt-no/graphitron";
+
+    // Diataxis quadrant for each authored architecture page (R182). Drives the
+    // ../docs/<slug>.adoc → ../architecture/<quadrant>/<slug>.adoc mapping in
+    // mapAdocTarget. A slug absent from this map (e.g. index) renders flat under
+    // architecture/; workflow.adoc is handled separately (it left the site).
+    private static final Map<String, String> ARCH_QUADRANT = Map.ofEntries(
+        Map.entry("rewrite-design-principles", "explanation"),
+        Map.entry("dispatch-axes", "explanation"),
+        Map.entry("typed-rejection", "explanation"),
+        Map.entry("pipeline-overview", "explanation"),
+        Map.entry("code-generation-triggers", "reference"),
+        Map.entry("argument-resolution", "reference"),
+        Map.entry("runtime-extension-points", "reference"),
+        Map.entry("modules", "reference"),
+        Map.entry("testing", "how-to"),
+        Map.entry("release-natives", "how-to"),
+        Map.entry("dev-loop-internals", "how-to"));
     private static final String GH_REWRITE_BRANCH = "claude/graphitron-rewrite";
 
     /**
@@ -943,13 +959,22 @@ public final class Main {
             String prefix = ctx == ChangelogContext.PLAN ? "" : "plans/";
             return "xref:" + prefix + slug + ".adoc" + anchor + "[$$TEXT$$]";
         }
-        // ../docs/<file>.{md,adoc} → architecture under staging/. Phase 2 already
-        // updated most roadmap-side references to .adoc, but the mapper accepts
-        // both extensions so any stragglers also resolve.
+        // ../docs/<file>.{md,adoc} → architecture under staging/, quadrant-aware
+        // after the R182 Diataxis move. The mapper accepts both extensions so any
+        // stragglers also resolve. workflow.adoc left the site entirely and now
+        // co-locates with the roadmap items, so it maps to a roadmap sibling, not
+        // an /architecture/ page.
         var docs = Pattern.compile("\\.\\./docs/([\\w-]+)\\.(?:md|adoc)").matcher(target);
         if (docs.matches()) {
-            String prefix = ctx == ChangelogContext.PLAN ? "../../architecture/" : "../architecture/";
-            return "xref:" + prefix + docs.group(1) + ".adoc" + anchor + "[$$TEXT$$]";
+            String slug = docs.group(1);
+            if ("workflow".equals(slug)) {
+                String prefix = ctx == ChangelogContext.PLAN ? "../" : "";
+                return "xref:" + prefix + "workflow.adoc" + anchor + "[$$TEXT$$]";
+            }
+            String archPrefix = ctx == ChangelogContext.PLAN ? "../../architecture/" : "../architecture/";
+            String quadrant = ARCH_QUADRANT.get(slug);
+            String path = quadrant != null ? quadrant + "/" + slug : slug;
+            return "xref:" + archPrefix + path + ".adoc" + anchor + "[$$TEXT$$]";
         }
         // ../../docs/<file>.{md,adoc} → top-level
         var topdocs = Pattern.compile("\\.\\./\\.\\./docs/([\\w-]+)\\.(?:md|adoc)").matcher(target);
@@ -1208,16 +1233,16 @@ public final class Main {
         sb.append("never edit this file by hand._\n\n");
 
         sb.append("Tracks remaining generator work. ");
-        sb.append("For the model taxonomy, see [Code Generation Triggers](../docs/code-generation-triggers.adoc). ");
-        sb.append("For design principles, see [Rewrite Design Principles](../docs/rewrite-design-principles.adoc). ");
-        sb.append("For workflow conventions, see [Workflow](../docs/workflow.adoc). ");
+        sb.append("For the model taxonomy, see [Code Generation Triggers](../docs/architecture/reference/code-generation-triggers.adoc). ");
+        sb.append("For design principles, see [Rewrite Design Principles](../docs/architecture/explanation/rewrite-design-principles.adoc). ");
+        sb.append("For workflow conventions, see [Workflow](workflow.adoc). ");
         sb.append("For per-leaf classifier coverage, see [Inference-axis coverage report](inference-axis-coverage.adoc) ");
         sb.append("(regenerated by `mvn verify -Pleaf-coverage`).\n\n");
 
         sb.append("**First time contributing?** Read in this order: ");
-        sb.append("[Workflow](../docs/workflow.adoc), ");
-        sb.append("[Rewrite Design Principles](../docs/rewrite-design-principles.adoc), ");
-        sb.append("[Code Generation Triggers](../docs/code-generation-triggers.adoc). ");
+        sb.append("[Workflow](workflow.adoc), ");
+        sb.append("[Rewrite Design Principles](../docs/architecture/explanation/rewrite-design-principles.adoc), ");
+        sb.append("[Code Generation Triggers](../docs/architecture/reference/code-generation-triggers.adoc). ");
         sb.append("Then read an Active plan to see the shape, and pick a Backlog item or take a Ready item from Active.\n\n");
 
         sb.append("**Front-matter dimensions.** Each item carries `id:` (monotonic `R<n>`, never "

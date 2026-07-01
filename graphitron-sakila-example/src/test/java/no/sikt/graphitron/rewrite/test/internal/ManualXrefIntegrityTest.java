@@ -32,24 +32,14 @@ import static org.assertj.core.api.Assertions.assertThat;
  * URLs ({@code http(s)://}) are not xrefs and never match the pattern in the first
  * place.
  *
- * <p>The {@code /architecture/} subtree is staged into the rendered site from
- * {@code graphitron-rewrite/docs/} (see {@code docs/pom.xml}'s
- * {@code stage-architecture} block); xrefs whose resolved path falls inside the
- * not-yet-staged {@code architecture/} directory at the repo root are remapped to
- * {@code graphitron-rewrite/docs/} for source-tree resolution.
+ * <p>Since R182 the {@code architecture/} chapter is first-class local content under
+ * {@code docs/architecture/} (Diataxis-shaped), so source-relative xrefs from the
+ * manual into it resolve directly with no staging-time remap.
  */
 @UnitTier
 class ManualXrefIntegrityTest {
 
     private static final String DOCS_MANUAL_PATH = "docs/manual";
-
-    /**
-     * Source-tree directory that backs the rendered {@code architecture/} subtree.
-     * The staging block in {@code docs/pom.xml} copies {@code graphitron-rewrite/docs/*.adoc}
-     * to {@code staging/architecture/} at build time; the test mimics that mapping so
-     * source-relative xrefs to the architecture chapter resolve without staging.
-     */
-    private static final String ARCHITECTURE_SOURCE_PATH = "graphitron-rewrite/docs";
 
     /**
      * Matches an AsciiDoc {@code xref:<target>[<text>]}.
@@ -63,14 +53,12 @@ class ManualXrefIntegrityTest {
     @Test
     void everyManualXrefResolvesToAnExistingFile() throws IOException {
         Path manualDir = locateManualDir();
-        Path repoRoot = manualDir.getParent().getParent();
-        Path architectureSource = repoRoot.resolve(ARCHITECTURE_SOURCE_PATH);
         List<String> failures = new ArrayList<>();
 
         try (Stream<Path> files = Files.walk(manualDir)) {
             files.filter(Files::isRegularFile)
                 .filter(p -> p.getFileName().toString().endsWith(".adoc"))
-                .forEach(adoc -> collectFailures(adoc, manualDir, repoRoot, architectureSource, failures));
+                .forEach(adoc -> collectFailures(adoc, manualDir, failures));
         }
 
         assertThat(failures)
@@ -80,7 +68,7 @@ class ManualXrefIntegrityTest {
             .isEmpty();
     }
 
-    private static void collectFailures(Path adoc, Path manualDir, Path repoRoot, Path architectureSource, List<String> failures) {
+    private static void collectFailures(Path adoc, Path manualDir, List<String> failures) {
         String text;
         try {
             text = Files.readString(adoc, StandardCharsets.UTF_8);
@@ -101,33 +89,11 @@ class ManualXrefIntegrityTest {
                 if (filePart.isEmpty()) continue; // edge: xref:#anchor[] forms after a stripped path
                 Path resolved = adoc.getParent().resolve(filePart).normalize();
                 if (Files.isRegularFile(resolved)) continue;
-                Path remapped = remapToArchitectureSource(resolved, repoRoot, architectureSource);
-                if (remapped != null && Files.isRegularFile(remapped)) continue;
                 Path sourceRel = manualDir.relativize(adoc);
                 failures.add(sourceRel + ":" + (lineNo + 1)
                     + ": xref:" + target + " -> " + resolved + " (missing)");
             }
         }
-    }
-
-    /**
-     * Remaps an unresolved path from the rendered {@code architecture/} subtree to the
-     * source-tree {@code graphitron-rewrite/docs/} location that backs it at staging time.
-     * Returns {@code null} when {@code resolved} doesn't fall inside the rendered
-     * {@code architecture/} subtree (so unrelated dangling xrefs still surface as failures).
-     *
-     * <p>Handles the {@code README.adoc → index.adoc} rename the staging block applies
-     * to {@code graphitron-rewrite/docs/README.adoc}: an xref that resolves to
-     * {@code architecture/index.adoc} maps back to the {@code README.adoc} source.
-     */
-    private static Path remapToArchitectureSource(Path resolved, Path repoRoot, Path architectureSource) {
-        Path renderedArchitecture = repoRoot.resolve("architecture").normalize();
-        if (!resolved.startsWith(renderedArchitecture)) return null;
-        Path subPath = renderedArchitecture.relativize(resolved);
-        if (subPath.toString().equals("index.adoc")) {
-            return architectureSource.resolve("README.adoc");
-        }
-        return architectureSource.resolve(subPath);
     }
 
     /**

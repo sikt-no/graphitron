@@ -1,0 +1,49 @@
+= Modules
+:description: The reactor module map for the Graphitron generator.
+:!toc:
+
+The repository is a single Maven reactor rooted at the `graphitron-rewrite-parent` parent pom (`10-SNAPSHOT`). Eleven modules cover the generator, its inputs, its consumers, the reusable runtime surface, and the tooling that wraps both ends:
+
+[cols="1,3"]
+|===
+| Module | Purpose
+
+| `graphitron-javapoet`
+| Internal fork of Square JavaPoet; the emit-time API every generator builds through.
+
+| `graphitron`
+| The generator core: schema loader, classifier, validator, and every generator.
+
+| `graphitron-fixtures-codegen`
+| Builds the test database and runs jOOQ codegen against it.
+
+| `graphitron-sakila-db`
+| Packages those generated jOOQ classes (Sakila-inspired catalog plus the `nodeidfixture` and `idreffixture` sub-schemas) as a jar that downstream tests depend on.
+
+| `graphitron-sakila-service`
+| `@service` / `@externalField` / `@condition` implementations referenced from the example schemas (`FilmService`, `SampleQueryService`, ...). Compile-scope dep on `graphitron-sakila-db` for the jOOQ tables.
+
+| `graphitron-maven-plugin`
+| Maven plugin: `generate`, `validate`, and `dev` Mojos (the dev mojo provides the watch loop).
+
+| `graphitron-sakila-example`
+| End-to-end consumer: compiles emitted Java against a real jOOQ catalog, executes it against Postgres, and serves a runnable Quarkus + JAX-RS reference application from the same module.
+
+| `graphitron-lsp`
+| Editor LSP server for `.graphqls` authoring.
+
+| `graphitron-mcp`
+| MCP server embedded in the `dev` Mojo: serves an `about` prompt, a `directives` resource, and read-only catalog / schema / diagnostics / `docs.search` tools to an MCP-aware agent over loopback Streamable HTTP (R118, R385). The dependency-quarantine seam that keeps its heavy semantic-index dependencies off the plugin's own compile surface.
+
+| `graphitron-jakarta-rest`
+| Reusable, spec-conformant GraphQL-over-HTTP serving library (vendor-neutral Jakarta REST + CDI) over a Graphitron schema: the `/graphql` resource, status-code semantics, SDL endpoint, and GraphiQL page, behind a `GraphitronApplication` SPI the consumer's adapter implements (R399). The first hand-written *runtime* artifact consumers depend on; compiles at `<release>17</release>`.
+
+| `roadmap-tool`
+| Regenerates `roadmap/README.md` from per-item front-matter.
+|===
+
+`graphitron-tree-sitter-natives` sits alongside these as a plain subdirectory (not a reactor module); it packages the `tree_sitter_graphql` grammar and `libtree-sitter` runtime the LSP loads at startup.
+
+Per-module READMEs are deliberately not maintained; this table is the orientation surface, and lives next to the architecture pages so it stays in sync with the pipeline they describe.
+
+xref:index.adoc[← Reference index]

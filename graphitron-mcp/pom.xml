@@ -21,9 +21,9 @@
           across the reactor's directory boundary into the sibling /docs tree: the dependency graph
           does not encode "the index depends on /docs content", so the cross-directory read is made
           explicit here and the content-hash stamp tracks recompute. graphitron-mcp lives at
-          graphitron-rewrite/graphitron-mcp, so the repo-root /docs tree is two levels up.
+          the repo root alongside the /docs tree, so the /docs tree is one level up.
         -->
-        <docs.source.dir>${project.basedir}/../../docs</docs.source.dir>
+        <docs.source.dir>${project.basedir}/../docs</docs.source.dir>
     </properties>
 
     <!--

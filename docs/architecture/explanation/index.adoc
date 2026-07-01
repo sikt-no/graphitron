@@ -1,0 +1,12 @@
+= Architecture: Explanation
+:description: Design rationale for the Graphitron generator.
+:!toc:
+
+Why the generator is shaped the way it is.
+
+* xref:rewrite-design-principles.adoc[Rewrite Design Principles] — the architectural and technical principles that govern classifier and emitter.
+* xref:pipeline-overview.adoc[Pipeline overview] — how a `.graphqls` schema flows from parse to consumer compile.
+* xref:dispatch-axes.adoc[Dispatch axes] — the four-axis dispatch model behind DataLoader-backed source-side fields.
+* xref:typed-rejection.adoc[Typed rejection] — why rejection is a typed variant, the `Rejection` taxonomy, and the candidate-hint contract.
+
+xref:../index.adoc[← Architecture]

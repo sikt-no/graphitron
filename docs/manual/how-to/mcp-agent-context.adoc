@@ -118,6 +118,6 @@ The server is part of the one `graphitron:dev` JVM: no daemon, no separate proce
 == See also
 
 * xref:dev-loop.adoc[The dev loop (Quarkus + LSP)]: the editor-facing half of the same `graphitron:dev` process.
-* xref:../../../architecture/getting-started.adoc#dev-loop-detail[Dev loop reference] (architecture docs): how the `dev` goal wires the LSP, MCP server, watchers, and generator dispatch into one JVM.
+* xref:../../architecture/how-to/dev-loop-internals.adoc#dev-loop-detail[Dev loop reference] (architecture docs): how the `dev` goal wires the LSP, MCP server, watchers, and generator dispatch into one JVM.
 
 xref:index.adoc[← How-to index]
