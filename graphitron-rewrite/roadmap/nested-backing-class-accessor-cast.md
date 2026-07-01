@@ -1,7 +1,7 @@
 ---
 id: R370
 title: "Record-backed parent with a nested backing class emits a non-compiling $-qualified cast"
-status: Ready
+status: In Review
 bucket: bug
 priority: 6
 theme: interface-union
@@ -54,6 +54,41 @@ least be explicitly named in scope and filed as their own item; they do **not** 
 `AccessorRef` producer swaps, the `checkServiceReturnMatchesPayload` and query-side
 `computeServiceRecordReturnType` fixes, both nested compilation witnesses (verified emitting `Outer.Nested`
 and compiling), the R412 filing, and a green `mvn install -Plocal-db` (after a local catalog re-seed).
+
+## Second rework pass (In Progress, 2026-07-01): both swaps landed; one review premise corrected
+
+The two one-for-one swaps are applied. Verifying them against the actual generated code turned up a
+factual correction to the review's second witness suggestion:
+
+1. **`TypeFetcherGenerator.computeMutationServiceRecordReturnType`** — collapsed the class-backed arm
+   to `serviceMethodCall().javaReturnType()` (the mutation twin of the query-side fix), and corrected
+   the now-true "Identical policy" javadoc. **Compile-witnessed** by a nested mutation `@service` record
+   payload (`NestedFilmReviewPayload` / `NestedFilmReviewPayloadHolder.Payload`, an `Outer.Nested`
+   carrier): `mvn install -Plocal-db` emits `DataFetcherResult<Outcome<NestedFilmReviewPayloadHolder.Payload>>`
+   and compiles; reverting the swap reproduces the `Outer$Nested` `javac` break.
+
+2. **`FieldBuilder.resolveErrorChannel`** — swapped `bestGuess(fqClassName)` → `ClassName.get(payloadCls)`
+   (in-hand; `payloadCls` is already loaded). **The review's stated witness ("a nested `@service` payload
+   with an `@error` channel emits `Outer$Nested` in the ctor/bean arms") does not hold in the current
+   code**, and this is the correction: after the R244 Outcome flip, root `@service` outcome fields (query
+   *and* mutation service-record/table) classify to `ErrorChannel.Mapped`, whose emit is
+   `new Outcome.ErrorList<>(...)` — **no developer payload class is constructed**, so `resolveErrorChannel`'s
+   `payloadClass` `ClassName` is never emitted on the `@service` path. Verified two ways: reverting the swap
+   leaves the sakila-example generated output byte-identical, and `ErrorChannelClassificationTest` pins
+   `@service` → `Mapped`. `resolveErrorChannel`'s `PayloadClass` arm is reached instead by a **child
+   `@service`** field (via `buildMethodBackedWithChannel`); DML record fields resolve to `LocalContext`.
+   The swap is therefore **witnessed at the classification tier**, not by a sakila compile fixture:
+   `ErrorChannelClassificationTest.childServiceRecordField_nestedPayloadBacking_payloadClassIsStructurallyResolved`
+   classifies a child `@service` returning the nested `AccessorPayloads.NestedErrorsPayload` and asserts
+   (object-equality on the `TypeName`, no code-string match, no database) that the resolved
+   `ErrorChannel.PayloadClass.payloadClass()` is the structural `Outer.Nested`, not `Outer$Nested`.
+   Reverting the swap fails this test (`AccessorPayloads$NestedErrorsPayload`).
+
+The consciously-scoped-out `FetcherEmitter` data-field cast sites (`propertyOrRecordBinding` /
+`inlineSuccessRead`, which cast the payload's own scalar/property reads to the backing class via
+`bestGuess`) remain **R412**: they hold no reflected `Class<?>`/`codegenLoader` at the site. The
+error-channel witness above is deliberately errors-only (no scalar data field) so it does not depend on
+those R412 sites; a scalar data field on a nested payload would trip them.
 
 ## Problem
 

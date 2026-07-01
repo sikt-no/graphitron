@@ -697,6 +697,24 @@ type FilmReviewPayload {
     errors: [FilmReviewError]
 }
 
+# R370 compilation-tier fixture: the nested-payload photo-negative of FilmReviewPayload. Produced by
+# Mutation.submitNestedFilmReview, whose service returns NestedFilmReviewPayloadHolder.Payload (a
+# NESTED record), so this type binds as a class-backed ResultReturnType whose fqClassName carries a
+# $-qualified binary name. Reusing the FilmReviewError union gives it the same errors slot, so the
+# field classifies as a MutationServiceRecordField WITH an @error channel, the single shape that
+# reaches both remaining in-hand bestGuess sites this pass fixes: the fetcher return type
+# (computeMutationServiceRecordReturnType) and the Outcome payload ctor arm (resolveErrorChannel /
+# buildErrorChannelCtorArm). Before R370 both emitted NestedFilmReviewPayloadHolder$Payload and
+# failed javac; after, they spell NestedFilmReviewPayloadHolder.Payload and compile.
+#
+# Errors-only on purpose: a scalar data field (e.g. a reviewId) would be read off the backing record
+# through FetcherEmitter.propertyOrRecordBinding / inlineSuccessRead, whose own bestGuess cast is the
+# no-Class-in-hand emit-site defect scoped to R412 (not R370). Keeping the payload errors-only isolates
+# this witness to the two in-hand sites so it compiles without depending on R412.
+type NestedFilmReviewPayload {
+    errors: [FilmReviewError]
+}
+
 # R329 fixture (service-record-composite-payload-carrier.md): the two-level @service record-composite
 # carrier. FilmsWithActorsService.create returns List<FilmWithActors> (one FilmRecord + a
 # List<ActorRecord> per element); the payload's `results` data field is a source-passthrough projection
@@ -2539,6 +2557,19 @@ type Mutation {
     submitFilmReview(filmId: Int!, rating: Int!): FilmReviewPayload
         @service(service: {
             className: "no.sikt.graphitron.rewrite.test.services.FilmReviewService",
+            method: "submit"
+        })
+
+    # R370 compilation-tier fixture: the nested-payload counterpart of submitFilmReview. The service
+    # returns NestedFilmReviewPayloadHolder.Payload (a NESTED record) with a FilmReviewError errors
+    # slot, so the field classifies as a MutationServiceRecordField carrying an @error channel. This
+    # is the only compiling witness for the two remaining in-hand nested-class emit sites this R370
+    # pass fixes: computeMutationServiceRecordReturnType (the fetcher return type) and
+    # resolveErrorChannel (the Outcome payload construction ctor arm). Both previously emitted the
+    # $-qualified Outer$Nested and failed the sakila-example compile gate.
+    submitNestedFilmReview(filmId: Int!, rating: Int!): NestedFilmReviewPayload
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.NestedFilmReviewService",
             method: "submit"
         })
 

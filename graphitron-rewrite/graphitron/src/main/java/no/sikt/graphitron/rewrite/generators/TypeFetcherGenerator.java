@@ -1731,25 +1731,29 @@ public class TypeFetcherGenerator {
 
     /**
      * Mirrors {@link #computeServiceRecordReturnType} for the mutation side. Identical policy:
-     * {@code ResultReturnType} with a non-null {@code fqClassName} produces a typed declaration;
-     * everything else faithfully reflects the developer method's reflected return type.
+     * source the declared return from {@link no.sikt.graphitron.rewrite.model.ServiceMethodCall#javaReturnType()},
+     * the structured {@link TypeName} captured at walk time. {@code checkServiceReturnMatchesPayload}
+     * guards the mutation path (as it does the query path) and has verified that {@code javaReturnType}
+     * equals the SDL payload type at the re-levelled cardinality ({@code isList ? List<payload> : payload},
+     * with the R329 composite-carrier re-levelling applied), so trusting {@code javaReturnType} directly
+     * yields exactly the validated shape for both sub-shapes:
+     * <ul>
+     *   <li>{@code ResultReturnType} with a non-null {@code fqClassName} (a reflected backing class):
+     *   {@code javaReturnType} is the validated payload type, {@code List<composite>} included, so the
+     *   fetcher and its Outcome wrapping match the exact type the service yields.</li>
+     *   <li>{@code PojoResultType} (null {@code fqClassName}) or {@code ScalarReturnType}: the developer's
+     *   reflected return is the source of truth and graphql-java coerces.</li>
+     * </ul>
+     *
+     * <p>R370: the class-backed arm previously rebuilt the type via {@code ClassName.bestGuess} over the
+     * binary {@code fqClassName}, which carries a nested backing class through as the non-compiling
+     * {@code Outer$Nested} ({@code bestGuess} never splits on {@code '$'}). {@code javaReturnType} resolves
+     * it structurally to {@code Outer.Nested}, the JLS-legal form, while leaving top-level classes
+     * unchanged. The manual cardinality reconstruction that arm carried only reproduced {@code javaReturnType}
+     * the long way; collapsing to it is both strictly more correct for nested carriers and keeps this method
+     * a true mirror of {@link #computeServiceRecordReturnType}.
      */
     private static TypeName computeMutationServiceRecordReturnType(MutationField.MutationServiceRecordField msrf) {
-        if (msrf.returnType() instanceof ReturnTypeRef.ResultReturnType r && r.fqClassName() != null) {
-            ClassName recordCls = ClassName.bestGuess(r.fqClassName());
-            // R329: read the arrival cardinality from the reflected method return, not the SDL payload
-            // wrapper. A two-level record-composite carrier has a single payload wrapper but a
-            // List<composite> producer return (the per-element composite is the fqClassName, with the
-            // list cardinality on the data field); the SDL wrapper would understate it and the fetcher
-            // would declare `composite` for a `List<composite>` value. The reflected return is the exact
-            // type the service yields, so the fetcher and its Outcome wrapping must match it. For the
-            // single-level / plain-DTO payloads the two agree (single wrapper, single return).
-            boolean methodReturnsList =
-                msrf.serviceMethodCall().javaReturnType() instanceof ParameterizedTypeName p
-                    && p.rawType().equals(LIST);
-            boolean isList = methodReturnsList || msrf.returnType().wrapper().isList();
-            return isList ? ParameterizedTypeName.get(LIST, recordCls) : recordCls;
-        }
         return msrf.serviceMethodCall().javaReturnType();
     }
 

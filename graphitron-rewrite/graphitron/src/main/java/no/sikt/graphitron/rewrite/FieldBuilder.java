@@ -2566,7 +2566,10 @@ class FieldBuilder {
         }
         var shape = ((PayloadConstructionShapeResult.Resolved) shapeResult).shape();
 
-        var payloadClassName = ClassName.bestGuess(result.fqClassName());
+        // ClassName.get walks getEnclosingClass(), so a nested payload resolves to Outer.Nested
+        // (JLS-legal) rather than the binary Outer$Nested that bestGuess would emit verbatim and
+        // that javac cannot resolve; payloadCls is already loaded above.
+        var payloadClassName = ClassName.get(payloadCls);
         String mappingsConstantName = toScreamingSnake(payloadCls.getSimpleName());
 
         return switch (shape) {
