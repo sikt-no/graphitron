@@ -796,4 +796,35 @@ class TestServiceStub {
     public static no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord getOverloaded(String id) {
         throw new UnsupportedOperationException();
     }
+
+    // ===== R261 wire-coercion fixtures =====
+
+    /**
+     * R261 site B: a scalar {@code ID} arg bound to a {@code Long} parameter. graphql-java delivers
+     * {@code ID} as {@code String}, so {@code (Long) env.getArgument("id")} would throw at runtime;
+     * the wire-coercion predicate must reject this as {@code WireCoercionError.Assignability}.
+     */
+    public static String wireIdAsLong(Long id) { throw new UnsupportedOperationException(); }
+
+    /**
+     * R261 site B non-regression: a scalar {@code ID} arg bound to a {@code String} parameter. This
+     * is a true wire pass-through (graphql-java delivers {@code ID} as {@code String}); the
+     * predicate must classify it to {@code Direct}, not reject.
+     */
+    public static String wireIdAsString(String id) { throw new UnsupportedOperationException(); }
+
+    /**
+     * R261 custom-scalar non-regression: a {@code @scalarType}-resolved {@code Money} arg bound to a
+     * {@code Money} parameter. The predicate consults the resolved scalar Java type, so a declared
+     * type equal to the resolution classifies to {@code Direct} rather than a spurious rejection.
+     */
+    public static String wireMoney(no.sikt.graphitron.rewrite.scalarfixture.Money amount) {
+        throw new UnsupportedOperationException();
+    }
+
+    /** R261 site A: an input bean whose {@code Long filmId} member is bound to an SDL {@code Int} field. */
+    public static String useLongBean(TestWireLongBean input) { throw new UnsupportedOperationException(); }
+
+    /** R261 site E: an input bean whose jOOQ-enum member is bound to an SDL enum with a divergent value. */
+    public static String useEnumBean(TestWireEnumBean input) { throw new UnsupportedOperationException(); }
 }

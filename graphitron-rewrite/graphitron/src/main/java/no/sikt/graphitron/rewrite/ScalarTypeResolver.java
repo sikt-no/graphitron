@@ -563,6 +563,55 @@ public final class ScalarTypeResolver {
     }
 
     /**
+     * Forward mapping SDL scalar name → the Java {@link TypeName} graphql-java's argument-coercion
+     * path produces for that scalar. The missing half of the existing bidirectional pair (of which
+     * {@link #builtInJavaType} / {@link #isClassifiedScalarJavaType} are the other directions): where
+     * those ask "is this Java type any classified scalar's resolution", this answers "what Java type
+     * does <em>this named</em> scalar coerce to". Consulted by the R261 wire-coercion predicate to
+     * confirm a {@code Direct} raw-cast leaf is genuinely wire-pass-through.
+     *
+     * <p>Total over the recognised scalar space:
+     * <ul>
+     *   <li>The five spec built-ins from the closed {@link #SPEC_BUILT_INS} table
+     *       ({@code Int}→{@code Integer}, {@code Float}→{@code Double}, {@code String}/{@code ID}→{@code String},
+     *       {@code Boolean}→{@code Boolean}).</li>
+     *   <li>Federation-namespace scalars → {@code String} (they deserialise to strings on the wire).</li>
+     *   <li>Consumer-declared scalars carried in {@code classifiedTypes} as a
+     *       {@link no.sikt.graphitron.rewrite.model.GraphitronType.ScalarType}: the resolved
+     *       {@link ScalarResolution.Successful#javaType()}.</li>
+     * </ul>
+     *
+     * <p>Returns {@code null} for a name that resolves to none of these (an enum, an input object,
+     * or a consumer scalar not present in {@code classifiedTypes}); the predicate treats a
+     * {@code null} as "cannot judge, do not over-reject" and leaves the leaf on its existing arm.
+     * The enum→{@code String} and input-object→{@code Map} coercion facts are deliberately not
+     * added here: they are already carried structurally by {@code EnumValueOf} / {@code InputBean},
+     * so the classifier reads them from the existing fork, not from this mapping.
+     */
+    public static TypeName coercionOutputType(String scalarName,
+            Iterable<no.sikt.graphitron.rewrite.model.GraphitronType> classifiedTypes) {
+        if (scalarName == null) {
+            return null;
+        }
+        BuiltIn builtIn = SPEC_BUILT_INS.get(scalarName);
+        if (builtIn != null) {
+            return ClassName.get(builtIn.javaType());
+        }
+        if (FEDERATION_NAMESPACE_SCALARS.contains(scalarName)) {
+            return ClassName.get(String.class);
+        }
+        if (classifiedTypes != null) {
+            for (var t : classifiedTypes) {
+                if (t instanceof no.sikt.graphitron.rewrite.model.GraphitronType.ScalarType st
+                        && scalarName.equals(st.name())) {
+                    return st.resolution().javaType();
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
      * True when {@code javaTypeFqn} is the Java type FQN any classified GraphQL scalar in
      * {@code classifiedTypes} resolves to. Consults consumer-defined scalars (those registered
      * via {@code @scalarType} or the extended-scalars convention layer carry their resolved

@@ -236,8 +236,13 @@ class ServiceCatalog {
                 TypeName javaType = TypeName.get(p.getParameterizedType());
                 PathExpr resolvedPath = pName != null ? argByJavaName.get(pName) : null;
                 if (resolvedPath != null) {
+                    ArgExtraction ext = argExtraction(typeName, resolvePathLeafType(resolvedPath, slotTypes),
+                        "parameter '" + displayName + "' of method '" + methodName + "' in class '" + className + "'");
+                    if (ext instanceof ArgExtraction.Rejected rej) {
+                        return new ServiceReflectionResult(null, rej.rejection());
+                    }
                     params.add(new MethodRef.Param.Typed(displayName, typeName, javaType,
-                        new ParamSource.Arg(argExtraction(typeName, ctx.codegenLoader()), resolvedPath)));
+                        new ParamSource.Arg(((ArgExtraction.Resolved) ext).extraction(), resolvedPath)));
                 } else if (pName != null && ctxKeys.contains(pName)) {
                     params.add(new MethodRef.Param.Typed(displayName, typeName, javaType, new ParamSource.Context()));
                 } else {
@@ -638,8 +643,11 @@ class ServiceCatalog {
                 TypeName javaType = TypeName.get(p.getParameterizedType());
                 PathExpr resolvedPath = argByJavaName.get(pName);
                 if (resolvedPath != null) {
+                    // @tableMethod / @condition (sites C/D) keep legacy extraction until Slice 2:
+                    // their dimensional wire-coercion channel (R222) is not yet pinned, so the shared
+                    // predicate is not enforced here — only the @service caller (site B) rejects.
                     params.add(new MethodRef.Param.Typed(pName, typeName, javaType,
-                        new ParamSource.Arg(argExtraction(typeName, ctx.codegenLoader()), resolvedPath)));
+                        new ParamSource.Arg(legacyArgExtraction(typeName, ctx.codegenLoader()), resolvedPath)));
                 } else if (ctxKeys.contains(pName)) {
                     params.add(new MethodRef.Param.Typed(pName, typeName, javaType, new ParamSource.Context()));
                 } else {
@@ -783,22 +791,121 @@ class ServiceCatalog {
     }
 
     /**
-     * Returns the {@link CallSiteExtraction} for a GraphQL {@code Arg} parameter based on its
-     * Java type. jOOQ-generated enums get {@link CallSiteExtraction.EnumValueOf}; all other
-     * types default to {@link CallSiteExtraction.Direct}.
-     *
-     * <p>Text-mapped enums (GraphQL enum bound to a varchar column via {@code @field(name:)})
-     * route through {@code Direct}: graphql-java translates the wire form to the runtime form
-     * at the boundary via {@code GraphQLEnumValueDefinition.value(...)} (R229), so resolvers
-     * receive the runtime string and no extra extraction step is needed.
+     * Outcome of {@link #argExtraction}: either the resolved {@link CallSiteExtraction} or a typed
+     * wire-coercion rejection (R261). Widening the return type past a bare {@code CallSiteExtraction}
+     * is the D2 lift: a wire-incompatible arg now <em>rejects</em> instead of silently classifying to
+     * a {@code Direct} raw cast that crashes at runtime, and every downstream {@code ParamSource.Arg}
+     * consumer can assume the extraction is wire-sound.
      */
-    static CallSiteExtraction argExtraction(String typeName, ClassLoader codegenLoader) {
+    sealed interface ArgExtraction {
+        record Resolved(CallSiteExtraction extraction) implements ArgExtraction {}
+        record Rejected(Rejection rejection) implements ArgExtraction {}
+    }
+
+    /**
+     * Legacy extraction (no wire-coercion check): a jOOQ enum gets {@link CallSiteExtraction.EnumValueOf},
+     * everything else {@link CallSiteExtraction.Direct}. Retained for the {@code @tableMethod} /
+     * {@code @condition} argument path (sites C/D), which R261 Slice 1 does not touch: those sites
+     * consume the same predicate in a later slice once their dimensional channel is pinned (R222), so
+     * threading the reject here now would fire ahead of the channel that surfaces it. Slice 1 gates
+     * only the {@code @service} path (site B) via {@link #argExtraction}.
+     */
+    static CallSiteExtraction legacyArgExtraction(String typeName, ClassLoader codegenLoader) {
         try {
             if (Class.forName(typeName, false, codegenLoader).isEnum()) {
                 return new CallSiteExtraction.EnumValueOf(typeName);
             }
         } catch (ClassNotFoundException ignored) {}
         return new CallSiteExtraction.Direct();
+    }
+
+    /**
+     * Returns the {@link CallSiteExtraction} for a GraphQL {@code Arg} parameter given its declared
+     * Java type and the resolved SDL leaf type at the bound argument position (R261, D2). A
+     * jOOQ-generated enum gets {@link CallSiteExtraction.EnumValueOf} after an enum-constant parity
+     * check against the SDL enum values (site E: a divergent value name rejects rather than emitting
+     * an {@code Enum.valueOf} that throws at runtime); a scalar gets {@link CallSiteExtraction.Direct}
+     * only once the wire-coercion predicate confirms graphql-java's coercion output for the SDL leaf
+     * is assignable to the declared Java type (site B), else an
+     * {@link no.sikt.graphitron.rewrite.model.WireCoercionError.Assignability} rejection.
+     *
+     * <p>Text-mapped enums (GraphQL enum bound to a varchar column via {@code @field(name:)})
+     * route through {@code Direct}: graphql-java translates the wire form to the runtime form
+     * at the boundary via {@code GraphQLEnumValueDefinition.value(...)} (R229), so resolvers
+     * receive the runtime string and no extra extraction step is needed.
+     *
+     * <p>{@code sdlLeafType} may be {@code null} when the bound path cannot be resolved against the
+     * field's slot types (e.g. a dot-path through an input type not in {@code slotTypes}); the
+     * wire-coercion check then passes through conservatively rather than over-rejecting.
+     */
+    ArgExtraction argExtraction(String typeName, GraphQLInputType sdlLeafType, String site) {
+        var classifiedTypes = ctx.types == null ? null : ctx.types.values();
+        Class<?> javaClass;
+        try {
+            javaClass = Class.forName(typeName, false, ctx.codegenLoader());
+        } catch (ClassNotFoundException e) {
+            // Unloadable declared type: keep the legacy Direct fall-through (the reflect path has
+            // already surfaced any hard class-loading failure for the method itself).
+            return new ArgExtraction.Resolved(new CallSiteExtraction.Direct());
+        }
+        if (javaClass.isEnum()) {
+            var namedSdl = namedSdlType(sdlLeafType);
+            if (namedSdl instanceof graphql.schema.GraphQLEnumType enumType) {
+                var parity = new EnumMappingResolver(ctx).checkEnumConstants(enumType.getName(), javaClass);
+                if (parity instanceof EnumMappingResolver.EnumConstantParity.Divergence d) {
+                    return new ArgExtraction.Rejected(
+                        new no.sikt.graphitron.rewrite.model.WireCoercionError.EnumConstantDivergence(
+                            typeName,
+                            d.mismatches().stream().map(EnumMappingResolver.EnumConstantParity.ValueMismatch::sdlValueName).toList(),
+                            d.mismatches().isEmpty() ? List.of() : d.mismatches().get(0).candidates(),
+                            site));
+                }
+            }
+            return new ArgExtraction.Resolved(new CallSiteExtraction.EnumValueOf(typeName));
+        }
+        return switch (WireCoercionResolver.checkScalar(sdlLeafType, typeName, classifiedTypes, site)) {
+            case WireCoercionResolver.Result.PassThrough ignored ->
+                new ArgExtraction.Resolved(new CallSiteExtraction.Direct());
+            case WireCoercionResolver.Result.Rejected r ->
+                new ArgExtraction.Rejected(r.error());
+        };
+    }
+
+    /** Unwraps one NonNull, one optional List, one inner NonNull to the named SDL leaf type, or null. */
+    private static GraphQLType namedSdlType(GraphQLInputType type) {
+        if (type == null) return null;
+        GraphQLType t = type;
+        if (t instanceof GraphQLNonNull nn) t = nn.getWrappedType();
+        if (t instanceof GraphQLList lst) {
+            t = lst.getWrappedType();
+            if (t instanceof GraphQLNonNull nn2) t = nn2.getWrappedType();
+        }
+        return t;
+    }
+
+    /**
+     * Resolves the SDL leaf type a {@link PathExpr} binds to, walking from the head slot in
+     * {@code slotTypes} through each subsequent dot-path segment's input-object field (R261). Returns
+     * {@code null} when the head slot is absent or the path descends through a non-input-object
+     * intermediate (the caller then passes through the wire-coercion check conservatively).
+     */
+    private static GraphQLInputType resolvePathLeafType(PathExpr path, Map<String, GraphQLInputType> slotTypes) {
+        if (path == null || slotTypes == null) return null;
+        GraphQLInputType current = slotTypes.get(path.headName());
+        var segments = path.segments();
+        for (int i = 1; i < segments.size() && current != null; i++) {
+            GraphQLType t = current;
+            while (t instanceof GraphQLNonNull nn) t = nn.getWrappedType();
+            if (t instanceof GraphQLList lst) {
+                t = lst.getWrappedType();
+                while (t instanceof GraphQLNonNull nn2) t = nn2.getWrappedType();
+            }
+            if (!(t instanceof GraphQLInputObjectType iot)) return null;
+            var field = iot.getField(segments.get(i).name());
+            if (field == null) return null;
+            current = field.getType();
+        }
+        return current;
     }
 
     /**

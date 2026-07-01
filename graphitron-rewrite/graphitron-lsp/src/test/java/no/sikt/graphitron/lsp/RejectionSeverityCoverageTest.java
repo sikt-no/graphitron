@@ -299,6 +299,18 @@ class RejectionSeverityCoverageTest {
             return new no.sikt.graphitron.rewrite.model.ErrorChannelWalkerError.HandlerSourceAccessorMissing(
                 "FilmPayload", "FilmError", "com.example.FilmErrorHandler", "code", List.of("message", "path"));
         }
+        // R261: WireCoercionError sub-seal of AuthorError. One sample per arm; Diagnostics.compute's
+        // switch on Rejection.AuthorError catches them uniformly (Error severity), and lspCodeOf
+        // forwards each arm's stable graphitron.wire-coercion.* code.
+        if (permit == no.sikt.graphitron.rewrite.model.WireCoercionError.Assignability.class) {
+            return new no.sikt.graphitron.rewrite.model.WireCoercionError.Assignability(
+                "ID", "java.lang.String", "java.lang.Long", "@service argument 'id' of method 'getFilm'");
+        }
+        if (permit == no.sikt.graphitron.rewrite.model.WireCoercionError.EnumConstantDivergence.class) {
+            return new no.sikt.graphitron.rewrite.model.WireCoercionError.EnumConstantDivergence(
+                "com.example.jooq.enums.MpaaRating", List.of("PG_13"), List.of("G", "PG", "R"),
+                "input-bean field 'rating' of method 'createFilm'");
+        }
         return null;
     }
 }
