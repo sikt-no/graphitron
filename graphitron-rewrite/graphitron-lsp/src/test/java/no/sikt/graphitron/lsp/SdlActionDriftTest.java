@@ -55,7 +55,12 @@ class SdlActionDriftTest {
         assertThat(VOCAB.deprecatedCoordinates()).containsExactlyInAnyOrder(
             new SchemaCoordinate.InputField("ExternalCodeReference", "name"),
             new SchemaCoordinate.DirectiveArg("asConnection", "connectionName"),
-            new SchemaCoordinate.Directive("index")
+            new SchemaCoordinate.Directive("index"),
+            // R398: @record's docstring now carries the @deprecated marker, so the
+            // deprecation convention is uniform (hover / deprecatedCoordinates). Its
+            // removal is covered by the MANUAL_MIGRATION_DEPRECATIONS allow-list, since
+            // the contextual deletion rides the redundant-record advisory's build-side fix.
+            new SchemaCoordinate.Directive("record")
         );
     }
 
