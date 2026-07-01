@@ -36,7 +36,7 @@ The repository is a single Maven reactor rooted at the `graphitron-rewrite-paren
 | MCP server embedded in the `dev` Mojo: serves an `about` prompt, a `directives` resource, and read-only catalog / schema / diagnostics / `docs.search` tools to an MCP-aware agent over loopback Streamable HTTP (R118, R385). The dependency-quarantine seam that keeps its heavy semantic-index dependencies off the plugin's own compile surface.
 
 | `graphitron-jakarta-rest`
-| Reusable, spec-conformant GraphQL-over-HTTP serving library (vendor-neutral Jakarta REST + CDI) over a Graphitron schema: the `/graphql` resource, status-code semantics, SDL endpoint, and GraphiQL page, behind a `GraphitronApplication` SPI the consumer's adapter implements (R399). The first hand-written *runtime* artifact consumers depend on; compiles at `<release>17</release>`.
+| Reusable, spec-conformant GraphQL-over-HTTP serving library (vendor-neutral Jakarta REST + CDI) over a Graphitron schema: the `/graphql` resource, status-code semantics, SDL endpoint, and GraphiQL page, behind a `GraphitronApplication` SPI the consumer's adapter implements (R399). The GraphiQL page is self-hosted: a version-pinned GraphiQL 5 + React bundle ships as committed classpath resources and is streamed from the resource's `assets/{name}` endpoint (no runtime CDN), with the one-shot Vite recipe that reproduces it under `tools/graphiql-build/` (R416); the Maven build never invokes node. The first hand-written *runtime* artifact consumers depend on; compiles at `<release>17</release>`.
 
 | `roadmap-tool`
 | Regenerates `roadmap/README.md` from per-item front-matter.

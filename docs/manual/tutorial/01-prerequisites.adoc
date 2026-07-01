@@ -100,7 +100,7 @@ On macOS or Windows, install a JDK 25 distribution (Temurin, Liberica, etc.) and
 
 == Use GraphiQL instead of curl (optional)
 
-The example bundles the GraphiQL playground: an in-browser editor with auto-complete, query history, and a one-click run button against the same `/graphql` endpoint. Open `http://localhost:8080/graphiql/` directly, or visit `http://localhost:8080/graphql` in a browser and you are redirected there automatically.
+The example serves the GraphiQL playground: an in-browser editor with auto-complete, query history, and a one-click run button against the same `/graphql` endpoint. Open `http://localhost:8080/graphql` in a browser (any request with `Accept: text/html`, which is what a browser sends) and you get the playground; curl and other POST traffic to the same URL route to the engine.
 
 Every query and mutation in the rest of this tutorial works in GraphiQL too: paste the GraphQL string (the part inside `"query":"..."` in each curl body) into the editor's left pane and hit run. We show curl in the prose because it copies cleanly into a terminal, but if you prefer a GUI the playground is the ergonomic choice.
 

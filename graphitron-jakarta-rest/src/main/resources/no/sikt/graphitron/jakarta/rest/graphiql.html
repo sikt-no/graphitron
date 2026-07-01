@@ -9,23 +9,19 @@
         #graphiql { height: 100dvh; }
     </style>
     <!--
-      CDN-based GraphiQL. The library bundles only this small page, not the GraphiQL assets, so the
-      runtime jar stays lean; the playground loads from unpkg. The fetcher posts to the same path the
-      page is served from, so it works wherever the consumer mounts the resource.
+      Self-hosted GraphiQL. The version-pinned bundle (built by tools/graphiql-build) ships as
+      classpath resources under this package's graphiql/ directory; GraphqlResource streams them
+      from the assets endpoint, so the playground works offline, behind a strict CSP, and on
+      air-gapped networks with no runtime CDN dependency. {{ASSET_BASE}} is rewritten at serve
+      time to the absolute .../graphql/assets/ prefix so the entry files resolve correctly wherever
+      the resource is mounted; every downstream chunk/worker/font resolves relative to them.
+      Self-hosting trades a leaner runtime jar for the small, known consumer set (see R416); an
+      opt-in -graphiql artifact is the escape hatch if that trade-off ever pinches a consumer.
     -->
-    <link rel="stylesheet" href="https://unpkg.com/graphiql/graphiql.min.css"/>
+    <link rel="stylesheet" href="{{ASSET_BASE}}graphiql.css"/>
 </head>
 <body>
 <div id="graphiql">Loading GraphiQL…</div>
-<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-<script crossorigin src="https://unpkg.com/graphiql/graphiql.min.js"></script>
-<script>
-    const fetcher = GraphiQL.createFetcher({
-        url: window.location.origin + window.location.pathname,
-    });
-    const root = ReactDOM.createRoot(document.getElementById('graphiql'));
-    root.render(React.createElement(GraphiQL, {fetcher: fetcher, defaultEditorToolsVisibility: true}));
-</script>
+<script type="module" src="{{ASSET_BASE}}graphiql.js"></script>
 </body>
 </html>

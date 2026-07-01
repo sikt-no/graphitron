@@ -1,7 +1,7 @@
 ---
 id: R416
 title: "Self-host GraphiQL assets in graphitron-jakarta-rest (retire CDN, relocate Vite recipe)"
-status: Ready
+status: In Review
 bucket: feature
 priority: 6
 theme: structural-refactor
@@ -19,6 +19,17 @@ Self-host the GraphiQL assets *in the core `graphitron-jakarta-rest` module*: co
 ## Design decision (settled)
 
 Self-host in the **core** `graphitron-jakarta-rest` module (the architect's "option B"), not a companion artifact ("option C"). The consumer set is small and known; we accept the bundle weight in the core jar now and split to an opt-in artifact later only if a real consumer is pinched. Rejected alternatives: keeping the CDN and merely pinning versions ("option A") leaves the runtime unpkg/CSP/air-gap coupling unaddressed; a companion artifact ("option C") is the principled shape for leanness but adds a module boundary and a new signed-to-Maven-Central artifact carrying vendored JS, which is not worth the ceremony for a small consumer set today.
+
+## Implemented
+
+Shipped as one change. What landed, and where it deviated from the plan below:
+
+- **Recipe relocated + pinned.** `git mv` moved `tools/graphiql-build/` into `graphitron-jakarta-rest/`. `package.json` pins exact `graphiql@5.2.2`, `react@18.3.1`, `react-dom@18.3.1`, `graphql@16.13.2`, `@graphiql/toolkit@0.11.3`, `vite@6.4.2`, `@vitejs/plugin-react@4.7.0`; `package-lock.json` refreshed. **Deviation:** stayed on vite 6 / plugin-react 4 rather than #506's vite 8 / plugin-react 6 majors, since these build a working bundle (the plan's "take whatever versions build" latitude); plugin-react 6 drops Babel for Oxc, a larger change with no benefit here.
+- **Bundle committed** under `.../rest/graphiql/`. **Deviation from §4's "swap four URLs":** GraphiQL 5 is a monaco-based bundler SPA, not the old UMD global-script shape, so the shell became a module-entry shell (a `graphiql.css` `<link>`, a `graphiql.js` `<script type="module">`, and the `#graphiql` mount div) rather than four swapped CDN tags. `vite.config.js` does a JS-entry build (no `index.html`; the recipe's `index.html` was deleted as unused), `base: './'` so every chunk/worker/font resolves relative to the entry files' served URL, `cssCodeSplit: false` for a single fixed `graphiql.css`, fixed `graphiql.js` entry, hashed names for chunks/workers/the codicon font. `src/main.jsx`'s fetcher uses `window.location.origin + window.location.pathname` to stay mount-agnostic.
+- **Asset serving** added to `GraphqlResource`: `@GET @Path("assets/{name}")` streams `graphiql/{name}` via `getResourceAsStream`, guarded by a `[A-Za-z0-9._-]+` allowlist + explicit `..` reject, an extension→MIME map, and the `graphiqlEnabled()` gate. **Note:** the MIME map covers `js`/`css`/`map`/`ttf`/`woff`/`woff2`/`svg` (the plan listed only js/css/map; monaco emits a codicon `.ttf`). `graphiql()` gained `@Context UriInfo` and rewrites `{{ASSET_BASE}}` to the absolute `.../graphql/assets/` prefix per request.
+- **Docs reconciled:** `graphiql.html` rationale comment, relocated `tools/graphiql-build/README.md`, `modules.adoc`, both tutorial pages, and the GraphiQL surfaces of the sakila-example README. **Scope call:** the sakila-example README's broader "app" section (dead `GraphqlEngine`/`GraphqlResource`/`AppContext` links) is uniform R399 drift, not GraphiQL-specific; filed as **R417** rather than expanded into R416. `changelog.md`'s historical `/graphiql/` mention (R68 record) left intact as history.
+- **Verification.** `graphitron-jakarta-rest` compiles clean. Full `mvn install -Plocal-db` could **not** be run green because trunk is pre-existing-red: a `Person` joined-table-inheritance type fails schema validation in `graphitron-sakila-example` generation and `JoinedTableInheritancePipelineTest` + `allParties` corpus tests fail in `graphitron` core, all on a tree byte-identical to trunk (unrelated to this item). The `@QuarkusTest` conformance test (below) is written but blocked from running in-pipeline by that breakage. The asset endpoints and the `{{ASSET_BASE}}` scheme were instead verified end-to-end in headless Chromium against a faithful mirror of the resource: the SPA mounts (`.graphiql-container` renders, all chunks/workers/font resolve), zero failed/external requests, no `unpkg`, and bogus/unknown-extension names 404 — exactly what the conformance test asserts.
+- **Remaining:** close Dependabot #504/#506 as superseded.
 
 ## Plan
 

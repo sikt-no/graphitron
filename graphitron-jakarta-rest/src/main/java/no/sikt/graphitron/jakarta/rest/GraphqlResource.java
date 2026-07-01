@@ -17,12 +17,14 @@ import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.POST;
 import jakarta.ws.rs.Path;
+import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.QueryParam;
 import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.HttpHeaders;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
+import jakarta.ws.rs.core.UriInfo;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -122,11 +124,75 @@ public class GraphqlResource {
 
     @GET
     @Produces(MediaType.TEXT_HTML)
-    public Response graphiql() {
+    public Response graphiql(@Context UriInfo uriInfo) {
         if (!application.graphiqlEnabled()) {
             return Response.status(Response.Status.NOT_FOUND).build();
         }
-        return Response.ok(GRAPHIQL_HTML, MediaType.TEXT_HTML).build();
+        // Rewrite the {{ASSET_BASE}} placeholder to the absolute path of this page's assets
+        // endpoint, so the self-hosted bundle resolves wherever the consumer mounts the resource
+        // (/graphql, /api/graphql, ...). The page URL is the GraphQL endpoint itself; appending
+        // "assets/" targets the streaming method below. Every downstream chunk/worker/font is
+        // referenced relative to the entry files, so only the entry references need the absolute base.
+        String base = uriInfo.getAbsolutePath().toString();
+        if (!base.endsWith("/")) {
+            base += "/";
+        }
+        String html = GRAPHIQL_HTML.replace("{{ASSET_BASE}}", base + "assets/");
+        return Response.ok(html, MediaType.TEXT_HTML).build();
+    }
+
+    /**
+     * Streams a committed GraphiQL bundle asset (built by {@code tools/graphiql-build}) from this
+     * package's {@code graphiql/} classpath directory. Vendor-neutral: reads via
+     * {@code getResourceAsStream} rather than relying on a container's static-asset serving.
+     *
+     * <p>The {@code name} is validated against a strict {@code [A-Za-z0-9._-]+} allowlist (and an
+     * explicit {@code ..} reject) so it cannot escape the bundle directory, and its extension must
+     * map to a known asset media type; anything else, or a missing resource, is a {@code 404}.
+     * Gated behind {@link GraphitronApplication#graphiqlEnabled()}, same as the page itself.
+     */
+    @GET
+    @Path("assets/{name}")
+    public Response asset(@PathParam("name") String name) {
+        if (!application.graphiqlEnabled()) {
+            return Response.status(Response.Status.NOT_FOUND).build();
+        }
+        if (name == null || !name.matches("[A-Za-z0-9._-]+") || name.contains("..")) {
+            return Response.status(Response.Status.NOT_FOUND).build();
+        }
+        String mediaType = assetMediaType(name);
+        if (mediaType == null) {
+            return Response.status(Response.Status.NOT_FOUND).build();
+        }
+        try (InputStream in = GraphqlResource.class.getResourceAsStream("graphiql/" + name)) {
+            if (in == null) {
+                return Response.status(Response.Status.NOT_FOUND).build();
+            }
+            return Response.ok(in.readAllBytes(), mediaType).build();
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+    }
+
+    /**
+     * Maps a bundle asset's extension to its media type. Returns {@code null} for anything the
+     * GraphiQL build does not emit, so unknown extensions fall through to a {@code 404}.
+     */
+    private static String assetMediaType(String name) {
+        int dot = name.lastIndexOf('.');
+        if (dot < 0) {
+            return null;
+        }
+        return switch (name.substring(dot + 1)) {
+            case "js" -> "text/javascript";
+            case "css" -> "text/css";
+            case "map" -> "application/json";
+            case "ttf" -> "font/ttf";
+            case "woff" -> "font/woff";
+            case "woff2" -> "font/woff2";
+            case "svg" -> "image/svg+xml";
+            default -> null;
+        };
     }
 
     @GET

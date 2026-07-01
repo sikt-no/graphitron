@@ -9,6 +9,9 @@ import { createGraphiQLFetcher } from '@graphiql/toolkit';
 import 'graphiql/setup-workers/vite';
 import 'graphiql/style.css';
 
-const fetcher = createGraphiQLFetcher({ url: '/graphql' });
+// Post to the exact path the playground is served from, so the fetcher stays correct wherever
+// the consumer mounts GraphqlResource (/graphql, /api/graphql, ...). GraphqlResource serves the
+// page at the GraphQL endpoint itself, so origin + pathname is that endpoint.
+const fetcher = createGraphiQLFetcher({ url: window.location.origin + window.location.pathname });
 const root = createRoot(document.getElementById('graphiql'));
 root.render(<GraphiQL fetcher={fetcher} defaultEditorToolsVisibility="variables" />);
