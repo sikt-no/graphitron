@@ -27,7 +27,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R45` | Multi-tenant routing on top of the schema-driven ExecutionInput factory | Ready | 2026-06-26 | [plan](tenant-routing-and-execution-input.md) |
 | `R347` | Consolidate graphitron-lsp navigation, dispatch, and result-building | In Progress | 2026-07-01 <sub>created 2026-06-19</sub> | [plan](lsp-structural-consolidation.md) |
 | `R408` | Lint finding suppression mechanism | In Review | 2026-07-01 | [plan](lint-finding-suppression.md) |
-| `R416` | Self-host GraphiQL assets in graphitron-jakarta-rest (retire CDN, relocate Vite recipe) | In Review | 2026-07-01 | [plan](self-host-graphiql-assets-jakarta-rest.md) |
 | `R13` | Faceted search on `@asConnection` | Ready | 2026-06-26 | [plan](faceted-search.md) |
 | `R92` | Surface database CHECK constraints as Jakarta validation rules | Spec |  | [plan](catalog-check-constraint-validation.md) |
 | `R180` | Centralize ResultType column-read emission for @record parents | Spec | 2026-05-19 | [plan](record-parent-column-read-helper.md) |
@@ -257,7 +256,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R319` [**Warn on pruned unreachable output types instead of dropping them silently**](warn-on-pruned-unreachable-types.md) — Backlog, architecture
 - `R239` [**Lift ColumnField.parentTable from emitter parameter to record component**](column-field-parent-table-record-component.md) — Backlog, architecture
 - `R278` [**Polymorphic type classification: sealed union-type variants over ParticipantRef**](polymorphic-type-sealed-variants.md) — Backlog, structural-refactor
-- `R416` [**Self-host GraphiQL assets in graphitron-jakarta-rest (retire CDN, relocate Vite recipe)**](self-host-graphiql-assets-jakarta-rest.md) — In Review, feature
 - `R277` [**Support @tableMethod under a table-bound NestingField**](tablemethod-under-nested-type.md) — Backlog, feature
 - `R235` [**Tidy @reference path-element surface: separate join-shape from WHERE-filter**](path-element-surface-cleanup.md) — Backlog, cleanup
 - `R66` [**Widen string-carrier intermediates onto Rejection (R58 follow-up)**](rejection-string-carrier-widening.md) — Backlog, architecture
