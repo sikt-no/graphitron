@@ -27,12 +27,12 @@ import java.util.stream.Stream;
  * @param displayName the code-action title shown in the editor (e.g.
  *                    "Migrate `name:` to `className:`").
  * @param targets     the deprecation sites this action migrates,
- *                    keyed by {@link SchemaCoordinate}. Drift-test
- *                    invariants assert every target points at a real
- *                    deprecation marker in {@code directives.graphqls}
- *                    and (going the other direction) every marker is
- *                    covered by an action or the
- *                    {@code MANUAL_MIGRATION_DEPRECATIONS} allow-list.
+ *                    keyed by {@link SchemaCoordinate}. When an action
+ *                    targets a deprecation, {@code SdlActionDriftTest}
+ *                    asserts the target points at a real deprecation
+ *                    marker in {@code directives.graphqls} so a renamed
+ *                    or removed marker cannot leave a stale action; a
+ *                    deprecation is not required to have an action.
  * @param detector    finds matched literals in a file, in source
  *                    order. Eager / finite stream; the consumer
  *                    materialises before iterating multiple times.

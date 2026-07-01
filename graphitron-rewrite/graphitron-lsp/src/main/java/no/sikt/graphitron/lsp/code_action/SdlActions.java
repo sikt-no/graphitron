@@ -24,12 +24,13 @@ import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.OBJECT_VALUE;
 import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.VALUE;
 
 /**
- * Registry of every {@link SdlAction} the LSP knows how to apply, plus
- * the allow-list for deprecations whose migration is intentionally
- * manual. {@code SdlActionDriftTest} asserts bidirectional coverage:
- * every action targets an existing deprecation marker in
- * {@code directives.graphqls}, and every marker is covered by either
- * an action or {@link #MANUAL_MIGRATION_DEPRECATIONS}.
+ * Registry of every {@link SdlAction} the LSP knows how to apply. A quick-fix
+ * action is registered here explicitly; it is never divined from a deprecation's
+ * prose reason (R398). Deprecation comments and quick-fix actions are independent:
+ * a deprecation may carry no action, and an action need not correspond to a
+ * deprecation. {@code SdlActionDriftTest} keeps the one remaining coupling honest,
+ * an action that <em>does</em> target a deprecation must target a real one, so a
+ * renamed or removed marker cannot leave a stale action behind.
  *
  * <p>{@code SdlAction} instances are bound to a
  * {@link CompletionData} catalog so the rewrite slot can read the
@@ -40,31 +41,6 @@ import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.VALUE;
 public final class SdlActions {
 
     private SdlActions() {}
-
-    /**
-     * Deprecations the LSP intentionally does not auto-migrate.
-     * Drift-test invariant: every entry here must match a real
-     * deprecation marker in {@code directives.graphqls}; orphan
-     * entries fail the build the same way orphan deprecations do.
-     */
-    public static final Set<SchemaCoordinate> MANUAL_MIGRATION_DEPRECATIONS = Set.of(
-        // Per-field semantics differ across instances (the override
-        // exists as a transition mechanism for legacy schemas); no
-        // mechanical rewrite is correct.
-        new SchemaCoordinate.DirectiveArg("asConnection", "connectionName"),
-        // The directive itself is deprecated, superseded by
-        // @order(index:), but the migration shape is a per-call-site
-        // rewrite from @index(name: "X") on an enum value to
-        // @order(index: "X"); tractable as a future SdlAction but
-        // not in R93's scope.
-        new SchemaCoordinate.Directive("index"),
-        // R398: @record is wholesale deprecated (it binds no class; the backing
-        // is inferred). Its removal is offered contextually by the classifier's
-        // redundant-record advisory, whose build-side LintFix is projected as a
-        // "Remove the redundant @record" QuickFix (see LintQuickFixes), so no
-        // separate blanket detector-driven SdlAction is registered here.
-        new SchemaCoordinate.Directive("record")
-    );
 
     /**
      * Returns every {@link SdlAction} bound to {@code catalog}. R93

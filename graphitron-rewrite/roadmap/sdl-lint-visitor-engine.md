@@ -30,26 +30,35 @@ All Scope and Acceptance-criteria items are landed; the full reactor is green
 - `LintFix` populated for every fix-bearing rule, computing edit ranges from graphql-java source
   locations: additive inserts (`deprecations-have-a-reason`, `types-and-fields-have-descriptions`),
   local renames (`field-names-camel-case`, `no-typename-prefix`, offered only when the field has no
-  description so the name-token range is exact), the `@index` to `@order` swap derived from the
-  docstring convention, and the two classifier safe-deletion advisories (bare form only). Pipeline
-  tests pin every edit range and the no-fix rules.
+  description so the name-token range is exact), and the two classifier safe-deletion advisories (bare
+  form only). Pipeline tests pin every edit range and the no-fix rules.
 - The LSP finding-keyed `QuickFix` branch (`LintQuickFixes`) alongside the detector-driven
   `SdlActions` path: it projects the build-side `LintFix` off the `ValidationReport`, respects the
   R139 freshness silence, and its applied `WorkspaceEdit` yields the corrected SDL (LSP-tier tests).
-- `@record` aligned with the deprecation convention (docstring `@deprecated` marker); covered on the
-  `MANUAL_MIGRATION_DEPRECATIONS` allow-list, since its removal is offered contextually by the
-  redundant-record advisory's build-side fix (`SdlActionDriftTest` updated).
+- `@record` aligned with the deprecation convention (docstring `@deprecated` marker). Deprecation
+  comments and quick-fix actions are decoupled (settled with the user): a deprecation may carry no
+  registered fix, and a quick fix is registered explicitly, never divined from prose. So `@record`
+  carries no migration action (its removal is offered contextually by the redundant-record advisory's
+  build-side fix), the `MANUAL_MIGRATION_DEPRECATIONS` allow-list and the drift test's
+  every-deprecation-must-be-covered invariant are removed, and `SdlActionDriftTest` keeps only the
+  stale-action guard plus the canonical deprecated-set pin.
 - Integration gates: an engine finding reaches the `ValidationReport` through `buildOutput()` with its
   fix (`BuildOutputReportPipelineTest`), and an engine finding replays into a `Warning` squiggle,
   silenced on a stale snapshot (`ValidatorDiagnosticsTest`).
 
-Implementer's note for the reviewer: three of the spec's fix targets narrowed to the provably-safe
-subset graphql-java permits, all within the spec's "a fix is offered only when applying it is safe":
+Implementer's note for the reviewer: fixes are registered explicitly, never derived from a
+deprecation's prose reason (settled with the user: prose-parsing is fragile). Consequently
+`no-deprecated-directive-usage` reports without a fix; the message points at the directive's
+description, and an explicitly registered successor fix can follow later. Three of the spec's fix
+targets also narrowed to the provably-safe subset graphql-java permits, within the spec's "a fix is
+offered only when applying it is safe":
 
-- The `name:` to `className:` swap under `no-deprecated-directive-usage` is deferred, not shipped:
-  graphql-java returns a null source location for `ObjectField`, so a directive-argument input-field
-  rename cannot be safely ranged build-side. That exact migration already ships as R93's tree-sitter
-  `SdlAction`, so it is covered, just not via the lint fix.
+- The `@index` to `@order` swap is not shipped as a lint fix: it could only be produced by parsing the
+  docstring's "use @order(index:)" prose, which is the divining the user ruled out. It can return as
+  an explicitly registered fix.
+- The `name:` to `className:` swap is deferred: graphql-java returns a null source location for
+  `ObjectField`, so a directive-argument input-field rename cannot be safely ranged build-side. That
+  exact migration already ships as R93's tree-sitter `SdlAction`.
 - The field renames supply a fix only for undescribed fields (a described node's graphql-java location
   is the description, not the name token).
 - The `@record` deletion is offered only for the bare form (graphql-java gives no end location to span
