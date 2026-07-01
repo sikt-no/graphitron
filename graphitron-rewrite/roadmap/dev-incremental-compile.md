@@ -17,27 +17,35 @@ last-updated: 2026-07-01
 `mvn graphitron:dev` today generates Java sources and stops: it writes `.java` under
 `target/generated-sources/graphitron` through the idempotent writer and relies on *something else*,
 the Quarkus dev environment, Spring Boot DevTools, or IntelliJ's incremental compiler, to turn those
-sources into `.class`. On a real subgraph of thousands of generated files that hand-off is the slow
-part of the loop: a full compile is minutes, not seconds, and the external tools recompile far more
-than the edit actually touched. But we author the generated code, so we know its reference graph
-exactly rather than having to infer it. This item makes `graphitron:dev` own the generated-source
-compile step, driving an in-process compiler over a **model-sourced** dependency graph so that a
-one-field schema edit recompiles the affected sub-closure (a handful of files) regardless of subgraph
-size. That graph is a file-level coarsening of the same structure R333 models as the back half of the
-lowering (a referentially-closed graph of emitted Java methods); the sourcing seam is built so it
+sources into `.class`. The primary reason to own that step is not build speed but a capability it
+unblocks: the dev loop's **MCP server should execute GraphQL queries against the generated resolvers
+in-process**, so an agent (or the developer) can ask "what does this query return" and get a real
+answer without spinning up Quarkus or any app server. That needs the generated code present as loaded,
+runnable `.class` on the dev JVM, which today only an external build produces; compiling in-process is
+the prerequisite. (The query-execution capability itself is a separate item; this one delivers the
+loadable classes it stands on.) Doing the compile *incrementally* is what keeps it viable at scale: on
+a real subgraph of thousands of generated files a full compile is minutes, and because we author the
+generated code we know its reference graph exactly, so a one-field schema edit recompiles only the
+affected sub-closure. That graph is a file-level coarsening of the same structure R333 models as the
+back half of the lowering (a referentially-closed graph of emitted Java methods); the sourcing seam
 re-sources from R333's method graph once that graph exists, and the coverage obligation that keeps it
 one model (not a revived parallel structure) is a compile-checked exhaustive switch that is live from
-day one, not a stub promised in prose.
+day one, not a stub promised in prose. A *secondary* benefit, gated on a per-framework spike (see
+*Output ownership*), is that a co-running framework dev process can consume the same fresh classes
+instead of recompiling them.
 
 ## Scope boundary
 
 Two boundaries keep this item finite and keep it from re-implementing a framework.
 
-- **Compile, not hot-reload.** This owns generated `.java` → generated `.class`. Getting a *running*
-  application to pick up new classes (class redefinition, application restart) is a separate job that
-  Quarkus dev and DevTools already do well; it stays out. The pain being solved is the compile cost,
-  and that is what this addresses. A consumer who wants live reload still runs their framework's dev
-  mode; the difference is that the generated-code compile no longer rides that tool.
+- **Compile and load into the dev JVM; not consumer-app hot-reload.** This owns generated `.java` →
+  generated `.class` and makes those classes loadable in the `graphitron:dev` JVM so the MCP server can
+  execute against them (the driver above). What stays out is swapping new classes into the *consumer's*
+  separately-running application: class redefinition and app restart are jobs Quarkus dev and Spring
+  DevTools already do, and a consumer who wants their app live-reloaded still runs their framework's dev
+  mode. Whether that framework can additionally *consume* graphitron's compiled classes, skipping its
+  own recompile of the generated code, is the secondary benefit under spike, not a promise this item
+  makes.
 - **The generated closure, not consumer code.** graphitron compiles only what it emits, into a
   graphitron-exclusive output dir (`target/graphitron-classes/<outputPackage>/`, see *Output
   ownership*), never the shared `target/classes`. The generated code's references *into* consumer
@@ -107,6 +115,13 @@ R333's "the projection seam re-sources from the facts" applied to a fourth consu
 - **A persistent file-level dependency graph** behind `CompileDependencyGraph`, nodes = generated
   compilation units, edges = "references type in", held in memory across saves alongside the LSP's
   in-memory state, updated (not rebuilt) as the delta lands.
+- **Startup generates *and* compiles the whole tree.** The first dev-loop pass emits every generated
+  source and compiles the complete set into `target/graphitron-classes`, so the exclusive dir holds a
+  full, runnable image before any edit. This is required, not an optimisation: the MCP server executes
+  against a whole graph, and a half-populated dir is not runnable; it also closes the classpath gap in
+  *Output ownership*, since a consumer who takes the advisory `generated-sources` exclusion has no
+  generated `.class` in `target/classes`, so graphitron-classes must be complete from startup or an
+  un-edited class would be missing. Every later save is incremental over that baseline.
 - **The per-save recompile set.** Given the writer's delta, recompile =
   `delta ∪ {reverse-transitive dependents of the delta files whose ABI changed}`. Body-only changes do
   not propagate; ABI changes propagate along reverse edges. Compile that set into
@@ -120,13 +135,26 @@ R333's "the projection seam re-sources from the facts" applied to a fourth consu
 
 ## Surfacing compile diagnostics
 
-In theory this is dead code. A schema or consumer-ABI problem that would break the generated code
-should be rejected at validate time as a schema-anchored `ValidationError` (validator-mirrors-classifier),
-long before javac runs. So a compile diagnostic that reaches this engine means one of two things, both
-worth showing loudly: the validator is missing a check (the real fix is to add the validator arm, per
-"no generator-side invariant goes unchecked at validate time"), or graphitron emitted invalid Java (a
-graphitron bug). We are fallible, so the engine treats compile errors as a safety net and never swallows
-one; but it does not try to be clever about them.
+In steady state this is close to dead code: a schema problem that would break the generated code should
+be rejected at validate time as a schema-anchored `ValidationError` (validator-mirrors-classifier), long
+before javac runs. But a compile diagnostic that reaches this engine has *three* possible sources, and
+only two are defects, so the messaging must not treat every one as an alarm:
+
+- **A missing validator check**, a generator-side invariant that no validate-time arm guards. The real
+  fix is to add the validator arm (per "no generator-side invariant goes unchecked at validate time");
+  the compile error is the symptom.
+- **A graphitron bug**: we emitted invalid Java. Also a defect.
+- **Transient consumer inconsistency, and this one is benign and self-resolving.** The classpath watcher
+  fires on consumer `.class` changes, so a consumer mid-refactor, a service whose ABI just changed while
+  the generated fetcher that calls it has not yet been regenerated, or a consumer class that is
+  momentarily uncompilable, can fail a round through no fault of the schema or the generator. The next
+  consumer compile or the next regen clears it. This is the *most common* live cause, so it sets the
+  default tone.
+
+The engine treats compile errors as a safety net and never swallows one, but it does not cry wolf: the
+console block reports the failure and names the offending generated file without asserting a defect,
+because mid-edit inconsistency, not a bug, is the usual cause. A compile error that *survives a clean
+regen and a clean consumer compile* is the signal that it is really one of the first two.
 
 - **No schema re-anchoring (explicit non-goal).** Tracing a javac error back to the emitting schema
   coordinate is a nice-to-have, not a requirement of this item. Compile diagnostics stay anchored to the
@@ -173,20 +201,34 @@ one; but it does not try to be clever about them.
     `target/classes` itself, today's slower behaviour, and graphitron's output sits unread; degraded,
     not broken. If they add the dir first but *also* let their tool compile `generated-sources`, the
     graphitron-classes-first ordering means the fresh copy always wins and the redundant `target/classes`
-    copy is harmless. Every misconfiguration is safe; the exclusion of `generated-sources` from the
-    consumer compile becomes an *advisory* optimisation (avoid redundant work), not a load-bearing guard.
+    copy is harmless. No misconfiguration corrupts bytecode on disk; the exclusion of `generated-sources`
+    from the consumer compile becomes an *advisory* optimisation (avoid redundant work), not a
+    load-bearing guard. One caveat, surfaced by the Quarkus spike in the open-question bullet below:
+    front-loading the dir helps only frameworks that consume external `.class`, so the "put it first on
+    the classpath" step is framework-scoped, for `quarkus:dev` it is a no-op-to-hazard and is omitted.
   - **Sweep safety is now structural.** Because `target/graphitron-classes` is graphitron-exclusive
     (unlike the shared `target/classes`), the `.class` orphan sweep can drop anything under it not
     emitted this run without needing the `OWNED_SUBPACKAGES` scoping as a safety fence, that scoping was
     the shared-tree guard against deleting consumer bytecode, and it no longer has any consumer bytecode
     to protect. The sweep still mirrors the `.java` sweep for parity; its *safety* just no longer
     depends on scoping.
-  - **Open question, bounds where the feature helps (slice 6 answers it).** graphitron compiles; the
-    framework reloads. That only works for frameworks that reload from an externally-produced `.class`
-    on the classpath. Spring Boot DevTools watches the classpath and restarts on `.class` changes, so it
-    does. Quarkus dev is more source-oriented and may reload only what *it* recompiled; if so, the
-    feature buys a Quarkus consumer nothing and slice 6 must say so plainly rather than imply universal
-    benefit. Slice 6 pins the per-framework reload behaviour before the docs claim it.
+  - **Resolved by spike: no co-run reload benefit for Quarkus; the Quarkus consumer's value is the
+    MCP-execution driver, not framework reload.** A source-level spike against
+    `io.quarkus.deployment.dev.RuntimeUpdatesProcessor` (Quarkus 3.34.5, the sakila-example's pinned
+    version) found `quarkus:dev` watches its *own* source roots and its *own* compile output only: on a
+    change it recompiles the sources itself through its `CompilationProvider` into the module's
+    `classesPath`, and it never scans an arbitrary external classes dir like `target/graphitron-classes`.
+    Because the `generate` mojo registers the generated dir as a compile source root
+    (`GenerateMojo.java:30`, `addCompileSourceRoot`), Quarkus keeps recompiling the generated sources
+    itself; there is no dev-mode switch to say "use these precompiled classes for this source root". So
+    front-loading our dir on a `quarkus:dev` classpath is a no-op at best and, if our copy ever lags
+    Quarkus's own recompile, *shadows* the fresher classes (live reload silently does nothing). The
+    conclusion: for a Quarkus consumer, do **not** front-load `target/graphitron-classes`; graphitron's
+    compiled output serves the in-process MCP execution driver, while Quarkus goes on compiling the
+    generated sources for its own app exactly as today. The co-run consume benefit survives only for
+    frameworks that watch the classpath and restart on external `.class` (Spring Boot DevTools) and for
+    plain `java` / IDE runs. Slice 6 confirms the Quarkus negative empirically before the docs claim
+    anything.
 - **Sequencing vs R333/R314.** Ship the model-sourced graph now behind `CompileDependencyGraph` (see
   *The sourcing seam*), rather than blocking on either. The compile-dependency graph is a coarsening of
   R333's method graph and becomes a view over it once that method graph exists: a fourth consumer
@@ -201,24 +243,31 @@ Per workflow.adoc's item conventions, the user-visible contract is drafted here 
 check: if it does not read simply, the design is wrong. This is the block slice 6 lands in
 `getting-started.adoc`'s dev-loop section (final wording may tighten, the shape is the contract).
 
-> **`graphitron:dev` compiles the generated code for you.** In a dev session the goal writes the
-> generated Java *and* compiles it, dropping the `.class` files into its own output directory,
-> `target/graphitron-classes/<outputPackage>/`, as you edit the schema. Only the classes affected by an
-> edit are recompiled, so a one-field change is fast even on a large schema. You no longer need
-> `quarkus:dev` or the IDE to recompile the generated code; they still own reloading it into a running
-> app.
+> **`graphitron:dev` compiles the generated code, so the dev tools can run it.** In a dev session the
+> goal writes the generated Java *and* compiles it into its own output directory,
+> `target/graphitron-classes/<outputPackage>/`, keeping a runnable image of your whole schema as you
+> edit. Only the classes an edit touches are recompiled, so a one-field change is fast even on a large
+> schema. The immediate payoff: the dev loop's MCP tools can *execute a query against your resolvers
+> in-process*, with no app server and no `quarkus:dev` needed to see what a query returns.
 >
-> **One-time setup: put graphitron's output first on your run classpath.** graphitron writes its
-> compiled classes to `target/graphitron-classes` so nothing ever writes to the same file it does.
-> For your running app (dev mode, tests) to pick up the fast, freshly-compiled classes, add that
-> directory to the runtime classpath **ahead of** `target/classes`. In Maven, add it as an extra
-> classpath element for your framework's dev/run goal (exact key depends on the plugin); the ordering
-> is what matters, graphitron's copy must win over any copy your own build produces.
+> **Do you need to configure anything? Usually not.** graphitron writes to its own directory and never
+> touches a file your build owns, so there is nothing to guard against and no required setup. Two
+> situations where a one-liner helps:
 >
-> You can *optionally* also stop your own build from re-compiling the generated sources (it stays a
-> source root for IDE indexing and go-to-definition either way). This only saves the redundant compile;
-> it is not required for correctness, because graphitron writes to a separate directory and the
-> classpath ordering already decides which copy wins:
+> * **Spring Boot DevTools, plain `java`, IDE runs.** These load `.class` off the classpath, so putting
+>   `target/graphitron-classes` **ahead of** `target/classes` on the run classpath lets your running app
+>   use graphitron's fresh classes directly. Ordering is what matters; graphitron's copy wins over any
+>   copy your own build produced.
+> * **Quarkus dev (`quarkus:dev`).** Do *not* add graphitron's directory to the Quarkus classpath.
+>   Quarkus recompiles the generated sources itself and will not pick up an external `.class`, so
+>   front-loading our directory buys nothing and only risks shadowing Quarkus's own reload. Run
+>   `quarkus:dev` exactly as today; graphitron's compile still powers the in-process MCP query tools
+>   running alongside it.
+>
+> **Optional: skip the redundant compile.** Independently of the above, you can stop your own build from
+> re-compiling the generated sources (they stay a source root for IDE indexing and go-to-definition
+> either way). This only saves double-work; it is never required for correctness, because graphitron
+> writes to a separate directory:
 >
 > ```xml
 > <plugin>
@@ -232,11 +281,12 @@ check: if it does not read simply, the design is wrong. This is the block slice 
 > </plugin>
 > ```
 >
-> **If you skip the setup, nothing breaks, it just isn't faster.** Without the classpath entry your
-> app runs exactly as today: your build compiles the generated sources into `target/classes` and runs
-> from there, and graphitron's separate output goes unused. There is no race and no corruption to guard
-> against, because the two never write the same file. To turn graphitron's compile off entirely (so it
-> does not spend time producing output you are not consuming), run with `-Dgraphitron.dev.compile=false`.
+> **If you skip the classpath step, nothing breaks.** Your app runs exactly as today: your build
+> compiles the generated sources into `target/classes` and runs from there, while graphitron's separate
+> output still powers the in-process MCP query tools, it just is not fed to your running app. There is
+> no race and no corruption to guard against, because the two never write the same file. To turn
+> graphitron's compile off entirely (giving up the MCP query tools too), run with
+> `-Dgraphitron.dev.compile=false`.
 
 The `-Dgraphitron.dev.compile=false` switch (fall back to today's generate-only behaviour) is part of
 slice 6's surface. Note what the exclusive-dir design buys over a shared `target/classes`: there is no
@@ -325,8 +375,9 @@ correctness-only gate perfectly while delivering none of the item's value:
    dir; the `-Dgraphitron.dev.compile=false` opt-out path; a precedence assertion that a stale copy
    of a class in `target/classes` is shadowed by graphitron's fresh copy when its dir is first; and that
    a compile error reaches the console block and the MCP `diagnostics` tool (with `source: "compile"`).
-   Pin the per-framework reload behaviour (Spring DevTools reloads from external `.class`; Quarkus dev's
-   source-oriented reload verified or documented as unsupported) so the docs claim only what holds. Land
+   Confirm the per-framework reload story the spike established (`quarkus:dev` does not consume an
+   external `.class` and is documented as unsupported for co-run reload, with the Quarkus value routed
+   to MCP execution; Spring DevTools consumes it) with a live check before the docs claim it, and land
    the *First-client user-doc draft* block into `getting-started.adoc`'s dev-loop section.
 
 ## Non-goals
