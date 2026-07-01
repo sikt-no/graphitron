@@ -284,27 +284,16 @@ class LintEngineTest {
     }
 
     @Test
-    void noDeprecatedDirectiveUsage_offersSuccessorSwapDerivedFromDocstring() {
-        // Self-contained directive surface with the @index docstring convention, so columns are known.
+    void noDeprecatedDirectiveUsage_offersNoFix() {
+        // A quick fix for a deprecated directive must be registered explicitly, not divined from the
+        // deprecation's prose reason; the finding reports without a fix and points at the description.
         var found = forRule(findings("""
             \"\"\"Connect this enum value to an index. @deprecated use @order(index:) instead\"\"\"
             directive @index(name: String) on ENUM_VALUE
             directive @order(index: Int) on ENUM_VALUE
             enum Color { RED @index(name: "r") }"""),
             LintRule.NO_DEPRECATED_DIRECTIVE_USAGE);
-        var fix = fixOf(found.getFirst());
-        // Two edits: the directive name (@index -> @order) and its sole argument (name -> index),
-        // both derived from the docstring "use @order(index:)", both on the usage line (line 4).
-        assertThat(fix.edits()).hasSize(2);
-        var directiveEdit = fix.edits().getFirst();
-        assertThat(directiveEdit.replacement()).isEqualTo("order");
-        assertThat(directiveEdit.start().getLine()).isEqualTo(4);
-        assertThat(directiveEdit.start().getColumn()).isEqualTo(19);
-        assertThat(directiveEdit.end().getColumn()).isEqualTo(24);
-        var argEdit = fix.edits().get(1);
-        assertThat(argEdit.replacement()).isEqualTo("index");
-        assertThat(argEdit.start().getColumn()).isEqualTo(25);
-        assertThat(argEdit.end().getColumn()).isEqualTo(29);
+        assertThat(found).singleElement().satisfies(f -> assertThat(f.fix()).isEmpty());
     }
 
     // --- no-fix rules offer none (rename ripples to references, or awaits confirmation) ---

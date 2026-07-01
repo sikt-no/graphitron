@@ -8,42 +8,34 @@ import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import org.junit.jupiter.api.Test;
 
 import java.util.LinkedHashSet;
-import java.util.Set;
 import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Bidirectional drift-protection seam between {@code directives.graphqls}
- * deprecation markers and the {@link SdlActions} registry. Mirrors the
- * pattern of {@code DeprecationsDocCoverageTest} (SDL ↔ docs index) one
- * layer down: SDL ↔ tooling.
+ * Drift-protection seam between {@code directives.graphqls} deprecation markers and
+ * the {@link SdlActions} registry. Mirrors the pattern of
+ * {@code DeprecationsDocCoverageTest} (SDL ↔ docs index) one layer down: SDL ↔ tooling.
  *
- * <p>Two invariants:
+ * <p>Deprecation comments and quick-fix actions are independent (R398): a deprecation
+ * may carry no action, and a quick fix is registered explicitly rather than divined
+ * from the deprecation's prose. So there is no "every deprecation must have a
+ * migration" invariant. The one coupling that remains is a stale-reference guard:
  *
  * <ul>
- *   <li>Every {@link SdlAction#targets()} entry must point at an
- *       existing deprecation marker. A stale action (target whose
- *       deprecation was removed, or whose directive / arg was renamed
- *       or deleted) breaks the build.</li>
- *   <li>Every deprecation marker must be covered by either an
- *       {@link SdlAction} or
- *       {@link SdlActions#MANUAL_MIGRATION_DEPRECATIONS}. An orphan
- *       deprecation (we said it's deprecated but offer no migration
- *       and no documented "manual" reason) breaks the build.</li>
+ *   <li>Every {@link SdlAction#targets()} entry that names a deprecation must point at
+ *       an existing marker. A stale action (target whose deprecation was removed, or
+ *       whose directive / arg was renamed or deleted) breaks the build.</li>
  * </ul>
  *
- * <p>The at-landing-time canonical set is also pinned here; a hand-edit
- * that adds (or loses) a deprecation flips this assertion as well, so
- * the per-arm invariants don't silently keep passing through changes
- * the spec didn't anticipate.
+ * <p>The at-landing-time canonical set of deprecated coordinates is also pinned here;
+ * a hand-edit that adds (or loses) a deprecation flips this assertion, so a marker
+ * change is a deliberate edit rather than a silent one.
  *
- * <p>Both sides of the seam now key on {@link SchemaCoordinate}: the
- * vocabulary's {@link LspVocabulary#deprecatedCoordinates()} and the
- * registry's {@link SdlAction#targets()}, plus
- * {@link SdlActions#MANUAL_MIGRATION_DEPRECATIONS}, all hold
- * {@code Set<SchemaCoordinate>}. The previous parallel
- * {@code SdlAction.DeprecationTarget} hierarchy collapsed into the
+ * <p>Both sides of the seam key on {@link SchemaCoordinate}: the vocabulary's
+ * {@link LspVocabulary#deprecatedCoordinates()} and the registry's
+ * {@link SdlAction#targets()} both hold {@code Set<SchemaCoordinate>}. The previous
+ * parallel {@code SdlAction.DeprecationTarget} hierarchy collapsed into the
  * vocabulary type as part of R119 phase 3 cleanup.
  */
 class SdlActionDriftTest {
@@ -56,10 +48,10 @@ class SdlActionDriftTest {
             new SchemaCoordinate.InputField("ExternalCodeReference", "name"),
             new SchemaCoordinate.DirectiveArg("asConnection", "connectionName"),
             new SchemaCoordinate.Directive("index"),
-            // R398: @record's docstring now carries the @deprecated marker, so the
-            // deprecation convention is uniform (hover / deprecatedCoordinates). Its
-            // removal is covered by the MANUAL_MIGRATION_DEPRECATIONS allow-list, since
-            // the contextual deletion rides the redundant-record advisory's build-side fix.
+            // R398: @record's docstring carries the @deprecated marker, so the deprecation
+            // convention is uniform (hover / deprecatedCoordinates). It carries no registered
+            // migration action; its removal is offered contextually by the redundant-record
+            // advisory's build-side fix, and a deprecation without an action is fine.
             new SchemaCoordinate.Directive("record")
         );
     }
@@ -78,38 +70,6 @@ class SdlActionDriftTest {
         assertThat(stale)
             .as("SdlAction targets without a corresponding deprecation marker in "
                 + "directives.graphqls; either add the deprecation or drop the action")
-            .isEmpty();
-    }
-
-    @Test
-    void everyMarkerIsCoveredByAnActionOrTheManualMigrationAllowList() {
-        var actionTargets = new LinkedHashSet<SchemaCoordinate>();
-        for (SdlAction action : SdlActions.all(CompletionData.empty())) {
-            actionTargets.addAll(action.targets());
-        }
-        Set<SchemaCoordinate> covered = new LinkedHashSet<>(actionTargets);
-        covered.addAll(SdlActions.MANUAL_MIGRATION_DEPRECATIONS);
-
-        var orphans = VOCAB.deprecatedCoordinates().stream()
-            .filter(m -> !covered.contains(m))
-            .collect(Collectors.toSet());
-
-        assertThat(orphans)
-            .as("deprecation markers in directives.graphqls without an SdlAction or "
-                + "MANUAL_MIGRATION_DEPRECATIONS allow-list entry; either add an "
-                + "action / allow-list entry or drop the deprecation")
-            .isEmpty();
-    }
-
-    @Test
-    void manualMigrationAllowListEntriesAllPointAtRealMarkers() {
-        var stale = SdlActions.MANUAL_MIGRATION_DEPRECATIONS.stream()
-            .filter(t -> !VOCAB.deprecatedCoordinates().contains(t))
-            .collect(Collectors.toSet());
-
-        assertThat(stale)
-            .as("MANUAL_MIGRATION_DEPRECATIONS entries without a corresponding "
-                + "deprecation marker in directives.graphqls; remove the stale entries")
             .isEmpty();
     }
 }

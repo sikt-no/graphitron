@@ -80,9 +80,13 @@ class LintQuickFixTest {
 
     @Test
     void multiEditFinding_appliesEveryEdit() {
+        // Projection-layer coverage: a LintFix may carry more than one edit, and LintQuickFixes must
+        // project every one onto the WorkspaceEdit. The fix is constructed directly (no rule derives a
+        // multi-edit fix today, per R398 fixes are registered, not divined from prose), so this pins
+        // the projection mechanics rather than any rule's behaviour.
         String source = "enum Color { RED @index(name: \"r\") }\n";
-        // Two edits on line 1: @index -> @order (cols 19..24) and its arg name -> index (cols 25..29).
-        var fix = new LintFix("Replace with the successor directive", List.of(
+        // Two edits on line 1: cols 19..24 and cols 25..29.
+        var fix = new LintFix("Rewrite the directive and its argument", List.of(
             new LintFix.Edit(new SourceLocation(1, 19, PATH), new SourceLocation(1, 24, PATH), "order"),
             new LintFix.Edit(new SourceLocation(1, 25, PATH), new SourceLocation(1, 29, PATH), "index")));
         var finding = new BuildWarning.LintFinding(
@@ -90,7 +94,7 @@ class LintQuickFixTest {
             new SourceLocation(1, 18, PATH), LintRule.NO_DEPRECATED_DIRECTIVE_USAGE, Optional.of(fix));
 
         var action = quickFix(currentWorkspace(source, finding), lineRange(0),
-            "Replace with the successor directive");
+            "Rewrite the directive and its argument");
 
         assertThat(action).isNotNull();
         assertThat(applyEdits(source, action)).isEqualTo("enum Color { RED @order(index: \"r\") }\n");
