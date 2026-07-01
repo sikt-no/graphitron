@@ -21,8 +21,8 @@ permissions:
   contents: read
 
 env:
-  NATIVES_MODULE: graphitron-rewrite/graphitron-tree-sitter-natives
-  GRAMMAR_DIR: graphitron-rewrite/graphitron-tree-sitter-natives/src/main/native/grammars/graphql
+  NATIVES_MODULE: graphitron-tree-sitter-natives
+  GRAMMAR_DIR: graphitron-tree-sitter-natives/src/main/native/grammars/graphql
 
 jobs:
   build-matrix:

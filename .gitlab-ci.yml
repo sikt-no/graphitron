@@ -85,8 +85,8 @@ publish:release:
     make -C "$TS_DIR" install
     ldconfig
     rm -rf "$TS_DIR"
-    PGPASSWORD=postgres psql -h postgres -U postgres -d rewrite_test -f graphitron-rewrite/graphitron-sakila-db/src/main/resources/init.sql
+    PGPASSWORD=postgres psql -h postgres -U postgres -d rewrite_test -f graphitron-sakila-db/src/main/resources/init.sql
     VERSION=${CI_COMMIT_TAG#v}
     echo "Releasing version $VERSION to GitLab Packages"
-    mvn -f graphitron-rewrite/pom.xml $MAVEN_CLI_OPTS versions:set -DnewVersion=$VERSION -DgenerateBackupPoms=false -DprocessAllModules=true
-    mvn -f graphitron-rewrite/pom.xml $MAVEN_CLI_OPTS -Ddb.url=jdbc:postgresql://postgres:5432/rewrite_test -Dtest.db.url=jdbc:postgresql://postgres:5432/rewrite_test -s ci_settings.xml clean deploy -P gitlab,local-db
+    mvn $MAVEN_CLI_OPTS versions:set -DnewVersion=$VERSION -DgenerateBackupPoms=false -DprocessAllModules=true
+    mvn $MAVEN_CLI_OPTS -Ddb.url=jdbc:postgresql://postgres:5432/rewrite_test -Dtest.db.url=jdbc:postgresql://postgres:5432/rewrite_test -s ci_settings.xml clean deploy -P gitlab,local-db
