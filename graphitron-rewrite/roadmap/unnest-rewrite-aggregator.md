@@ -6,7 +6,7 @@ bucket: structural
 theme: legacy-migration
 depends-on: [retire-maven-plugin]
 created: 2026-05-19
-last-updated: 2026-06-30
+last-updated: 2026-07-01
 ---
 
 # Retire legacy reactor and unnest graphitron-rewrite to repo root
@@ -24,7 +24,7 @@ Every legacy consumer must be migrated to the new plugin before this lands; cade
 ## End state
 
 - `graphitron-rewrite/`'s aggregator POM becomes the repo root POM.
-- Modules relocate up one level: `graphitron-javapoet`, `graphitron`, `graphitron-fixtures-codegen`, `graphitron-sakila-db`, `graphitron-sakila-service`, `graphitron-maven`, `graphitron-sakila-example`, `graphitron-lsp`, `roadmap-tool`.
+- Modules relocate up one level: `graphitron-javapoet`, `graphitron`, `graphitron-fixtures-codegen`, `graphitron-sakila-db`, `graphitron-sakila-service`, `graphitron-mcp`, `graphitron-jakarta-rest`, `graphitron-maven-plugin`, `graphitron-sakila-example`, `graphitron-lsp`, `roadmap-tool` (the full `<modules>` list in `graphitron-rewrite/pom.xml`, corrected from an earlier draft that named a nonexistent `graphitron-maven` and omitted `graphitron-mcp` / `graphitron-jakarta-rest`). `graphitron-tree-sitter-natives` moves too (it's a plain subdirectory, not a reactor module ; no `<parent>`/`relativePath` fix needed) but its hardcoded path shows up in CI, see step 5.
 - The legacy `graphitron-parent` reactor is gone, so the sole remaining parent (`graphitron-rewrite-parent`) is promoted to the root POM; no two-way POM merge is needed once the legacy root is deleted first.
 - The duplicated `graphitron-javapoet` becomes the only copy (the legacy copy is already gone after the delete commit).
 - `.github/workflows/maven-publish.yml` on `main` drops the `-f graphitron-rewrite/pom.xml` flag and adopts the RC-aware tag regex from the rewrite-branch workflow. `rewrite-build.yml`, `preview-docs.yml`, and any path filters lose their `graphitron-rewrite/` prefixes.
@@ -34,14 +34,15 @@ Every legacy consumer must be migrated to the new plugin before this lands; cade
 
 ## Concrete steps
 
-Two commits, not one. The deletion and the rename are separated so the rename commit gives `git log --follow` a clean boundary; we are **not** routing this through an R19-style history squash (R19 is abandoned).
+Two commits, not one. The deletion and the rename are separated so the rename commit gives `git log --follow` a clean boundary; we are **not** routing this through an R19-style history squash.
 
 1. Confirm gating: every legacy consumer migrated, signed off by user. **Cleared 2026-06-30.**
-2. **Commit 1 — delete the legacy reactor.** `git rm -r` the six legacy modules (`graphitron-codegen-parent`, `graphitron-common`, `graphitron-example`, `graphitron-maven-plugin`, `graphitron-servlet-parent`, `graphitron-schema-transform`) and the root `pom.xml` (its `<modules>` list is exactly those six). Delete `.github/workflows/maven-build.yml` in the same commit: it runs `mvn --file pom.xml` against the legacy root reactor on every push/PR to `main` and would fail the required `build` check the moment the root POM is gone (`rewrite-build.yml` already covers the rewrite reactor). `graphitron-rewrite/` stays nested and `docs/` stays put; both still build via `-f graphitron-rewrite/pom.xml`.
-3. **Commit 2 — unwrap.** `git mv` the contents of `graphitron-rewrite/` up to the repo root; promote `graphitron-rewrite-parent` to the root POM (fix `relativePath`s; no two-way merge needed since the legacy parent is already deleted); the surviving `graphitron-javapoet` is now the only copy. Keep this commit isolated.
-4. Update workflows and CI to drop the `-f graphitron-rewrite/pom.xml` flag and `graphitron-rewrite/` path prefixes: `maven-publish.yml`, `rewrite-build.yml`, `preview-docs.yml`, `.gitlab-ci.yml`, and every workflow `paths:` filter. (`.gitlab-ci.yml` already targets the rewrite reactor, so this is a path-prefix edit, not a legacy-removal.)
-5. Update docs and tooling paths: `CLAUDE.md` (scope section, common commands), `.claude/web-environment.md`, the `.claude/skills/*` and roadmap-tool path defaults (`graphitron-rewrite/roadmap` → `roadmap`), `graphitron-rewrite/docs/README.adoc`, and the AsciiDoctor site.
-6. Cut a release tag (`v10.0.0` or the next planned RC) to verify the consolidated publish workflow end-to-end against Maven Central staging. Note the release-event publish workflow is governed by `main`'s copy of `maven-publish.yml`, so the hazard only closes once this lands on `main`.
+2. Discard R19 (`history-squash.md`) before or alongside landing this item. R19's front-matter still reads `status: Ready`, which is inconsistent with this spec's "R19 is abandoned" claim ; a `Ready` item that a `Spec` item explicitly supersedes shouldn't stay `Ready`. R19's own numbers are also stale (April-2026 commit counts against a merge base that's since moved thousands of commits). Flip R19's status to `Discarded` (delete `graphitron-rewrite/roadmap/history-squash.md`) once this item's approach is confirmed as the accepted path, per the 2026-07-01 staleness audit's recommendation for R19.
+3. **Commit 1 — delete the legacy reactor.** `git rm -r` the six legacy modules (`graphitron-codegen-parent`, `graphitron-common`, `graphitron-example`, `graphitron-maven-plugin`, `graphitron-servlet-parent`, `graphitron-schema-transform`) and the root `pom.xml` (its `<modules>` list is exactly those six). Delete `.github/workflows/maven-build.yml` in the same commit: it runs `mvn --file pom.xml` against the legacy root reactor on every push/PR to `main` and would fail the required `build` check the moment the root POM is gone (`rewrite-build.yml` already covers the rewrite reactor). `graphitron-rewrite/` stays nested and `docs/` stays put; both still build via `-f graphitron-rewrite/pom.xml`.
+4. **Commit 2 — unwrap.** `git mv` the contents of `graphitron-rewrite/` up to the repo root; promote `graphitron-rewrite-parent` to the root POM (fix `relativePath`s; no two-way merge needed since the legacy parent is already deleted); the surviving `graphitron-javapoet` is now the only copy. Keep this commit isolated.
+5. Update workflows and CI to drop the `-f graphitron-rewrite/pom.xml` flag and `graphitron-rewrite/` path prefixes: `maven-publish.yml`, `rewrite-build.yml`, `preview-docs.yml`, `.gitlab-ci.yml`, and every workflow `paths:` filter. (`.gitlab-ci.yml` already targets the rewrite reactor, so this is a path-prefix edit, not a legacy-removal.) Also fix `.github/workflows/tree-sitter-natives-release.yml`: its `NATIVES_MODULE` and `GRAMMAR_DIR` env vars hardcode `graphitron-rewrite/graphitron-tree-sitter-natives/...`, which is not a `paths:` trigger filter and is easy to miss by grepping only for that key ; both need the `graphitron-rewrite/` prefix dropped or the release workflow silently breaks on the next natives release after the move.
+6. Update docs and tooling paths: `CLAUDE.md` (scope section, common commands), `.claude/web-environment.md`, the `.claude/skills/*` and roadmap-tool path defaults (`graphitron-rewrite/roadmap` → `roadmap`), `graphitron-rewrite/docs/README.adoc`, and the AsciiDoctor site.
+7. Cut a release tag (`v10.0.0` or the next planned RC) to verify the consolidated publish workflow end-to-end against Maven Central staging. Note the release-event publish workflow is governed by `main`'s copy of `maven-publish.yml`, so the hazard only closes once this lands on `main`.
 
 ## Verified facts (2026-06-30)
 
@@ -61,3 +62,4 @@ Two commits, not one. The deletion and the rename are separated so the rename co
 
 - R26 sub-item "Retire legacy + unnest the rewrite aggregator" (its closing landing marker). On Done, edit R26 to remove that bullet or mark it shipped.
 - The `release`-event publish hazard: legacy artifacts can no longer be cut at 10.0.0 because there is no legacy reactor to build.
+- R19 (`history-squash.md`), superseded outright: this item does not use the squash approach R19 describes. R19 discards (step 2 above) rather than shipping.
