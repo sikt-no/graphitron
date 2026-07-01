@@ -1,11 +1,12 @@
 ---
 id: R63
 title: "Type UPSERT dialect requirement on the model"
-status: Spec
+status: Ready
 bucket: architecture
 priority: 7
 theme: mutations-errors
 depends-on: []
+last-updated: 2026-07-01
 ---
 
 # Type UPSERT dialect requirement on the model
@@ -26,7 +27,7 @@ work after R22's stub-lift phases shipped.
 ## Motivation
 
 `TypeFetcherGenerator.buildMutationUpsertFetcher` builds a `postDslGuard`
-`CodeBlock` inline (`generators/TypeFetcherGenerator.java:3821-3828`):
+`CodeBlock` inline (`generators/TypeFetcherGenerator.java:3835-3842`):
 
 ```java
 var postDslGuard = CodeBlock.builder()
@@ -39,12 +40,12 @@ var postDslGuard = CodeBlock.builder()
 
 The shared `buildDmlFetcher` carries a `postDslGuard` `CodeBlock` slot as a
 generic pre-DSL guard, threaded through a chain of three overloads
-(`generators/TypeFetcherGenerator.java:4299`, `:4316`, `:4355`): a base
+(`generators/TypeFetcherGenerator.java:4313`, `:4330`, `:4369`): a base
 overload with neither guard, one adding `postDslGuard`, and the deepest
 adding a sibling `postInGuard` (13 params total). Two verbs fill the
-`postDslGuard` slot today: UPSERT rejects Oracle (`:3821-3828`, above), and
+`postDslGuard` slot today: UPSERT rejects Oracle (`:3835-3842`, above), and
 bulk UPDATE rejects non-PostgreSQL dialects on the `UPDATE ... FROM (VALUES
-...)` form (`:3693-3700`). INSERT, DELETE, and single-row UPDATE pass an
+...)` form (`:3708-3713`). INSERT, DELETE, and single-row UPDATE pass an
 empty block. The two guards have *different* semantics: UPSERT rejects a
 single named family, bulk UPDATE requires one.
 
@@ -155,10 +156,10 @@ lambda; the new component value is supplied by each lambda. Population:
   `UPDATE...FROM` on non-Postgres dialects with semantics drift. UPDATE is a
   single record type (`MutationUpdateTableField`) whose bulk-vs-single split is
   the emitter's, driven by `inputArg.list()`; `classifyUpdateTableField` reads
-  the same `inputArg.list()` (already resolved at `:4069`) to pick the arm at
+  the same `inputArg.list()` (already resolved at `:4071`) to pick the arm at
   construction. (Bulk DML, R77, has shipped; the
   bulk-UPDATE arm and its inline `postDslGuard` are live at
-  `generators/TypeFetcherGenerator.java:3684-3704`.)
+  `generators/TypeFetcherGenerator.java:3705-3718`.)
 - UPSERT: `new DialectRequirement.RejectsFamily(SqlDialectFamily.ORACLE,
   "...UPSERT...MERGE INTO...")`. The reason string carries the actionable
   message that today is hardcoded in the inline `CodeBlock`. UPSERT rejects
@@ -167,8 +168,8 @@ lambda; the new component value is supplied by each lambda. Population:
   MySQL / MSSQL keep today's behaviour (no guard; jOOQ throws its own error
   if it cannot emit `ON CONFLICT`).
 
-Both `postDslGuard` call sites (UPSERT's Oracle gate at `:3821-3828`, bulk
-UPDATE's Postgres gate at `:3693-3700`) are live today, and this item lifts
+Both `postDslGuard` call sites (UPSERT's Oracle gate at `:3835-3842`, bulk
+UPDATE's Postgres gate at `:3708-3713`) are live today, and this item lifts
 both at once. The `postDslGuard`-parameter removal below covers both.
 
 ## Emitter rewrite
@@ -276,16 +277,16 @@ Oracle, bulk UPDATE still rejects only non-Postgres. Acceptance gates:
 - `generators/TypeFetcherGenerator`:
   - Replace the `postDslGuard` `CodeBlock` parameter with a
     `DialectRequirement` (always present from the model), collapsing the
-    three `buildDmlFetcher` overloads (`:4299`, `:4316`, `:4355`) into two:
+    three `buildDmlFetcher` overloads (`:4313`, `:4330`, `:4369`) into two:
     base and `+postInGuard`.
   - Add `emitDialectGuard` private helper.
   - `buildDmlFetcher` calls `emitDialectGuard` where it currently emits
-    `postDslGuard` (`:4385-4387`).
+    `postDslGuard` (`:4399-4400`).
   - `buildMutationUpsertFetcher` deletes the inline `postDslGuard`
-    `CodeBlock` (`:3821-3828`); the call site shrinks toward the shape of
+    `CodeBlock` (`:3835-3842`); the call site shrinks toward the shape of
     `buildMutationInsertFetcher` etc.
   - `buildMutationUpdateFetcher`'s bulk arm deletes its inline
-    `postDslGuard` (`:3693-3700`) symmetrically.
+    `postDslGuard` (`:3708-3713`) symmetrically.
 - `MappingsConstantNameDedup` and any other site that rebuilds DML records:
   thread the new component through.
 
@@ -312,7 +313,7 @@ Oracle, bulk UPDATE still rejects only non-Postgres. Acceptance gates:
   `DmlTableField` only; promote it to a wider field-set if a second
   `DialectRequirement`-bearing field type appears.
 - Typifying `postInGuard`, the sibling free-form `CodeBlock` slot on
-  `buildDmlFetcher` (`:4367`). Unlike `postDslGuard`, which carries a
+  `buildDmlFetcher` (`:4381`). Unlike `postDslGuard`, which carries a
   discoverable model fact ("UPSERT mistranslates on Oracle") that belongs as
   typed data a validator could one day read, `postInGuard` carries imperative
   per-row emission mechanics (building the dynamic SET map, the
