@@ -8,9 +8,10 @@ package no.sikt.graphitron.rewrite.lint;
  * pins that, mirroring the {@code VariantCoverageTest} / {@code EdgeCoverageTest} no-silent-default
  * pattern, so a future node position cannot be silently skipped by a {@code default} arm.
  *
- * <p>The engine maps each node it visits to one of these via an exhaustive instanceof chain that
- * throws on an unmapped node type rather than falling through, so the enum and the traversal cannot
- * drift apart.
+ * <p>The engine names the {@link LintNodeKind} explicitly at each dispatch site as it walks the
+ * parsed types (see {@code LintEngine}), rather than deriving it from the node's runtime type; the
+ * coverage test guards the enum against a rule subscribing to, or declaring not-linted, a kind
+ * outside this set.
  */
 public enum LintNodeKind {
     // Linted in v1 (subscribed by at least one engine visitor).

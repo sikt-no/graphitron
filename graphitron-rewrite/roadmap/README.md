@@ -29,7 +29,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R273` | Source NodeId metadata from @node + catalog PK (inferred from `implements Node`), and settle wrong-type/malformed mismatch semantics, retiring the legacy __NODE bare-ID arm | Spec | 2026-06-02 | [plan](nodeid-skip-mismatch-error-surfacing.md) |
 | `R45` | Multi-tenant routing on top of the schema-driven ExecutionInput factory | Ready | 2026-06-26 | [plan](tenant-routing-and-execution-input.md) |
 | `R347` | Consolidate graphitron-lsp navigation, dispatch, and result-building | In Progress | 2026-06-19 | [plan](lsp-structural-consolidation.md) |
-| `R398` | SDL lint engine with ESLint-style built-in visitors | In Review | 2026-07-01 <sub>created 2026-06-29</sub> | [plan](sdl-lint-visitor-engine.md) |
 | `R408` | Lint finding suppression mechanism | Spec | 2026-07-01 | [plan](lint-finding-suppression.md) |
 | `R370` | Record-backed parent with a nested backing class emits a non-compiling $-qualified cast | Ready | 2026-07-01 <sub>created 2026-06-24</sub> | [plan](nested-backing-class-accessor-cast.md) |
 | `R13` | Faceted search on `@asConnection` | Ready | 2026-06-26 | [plan](faceted-search.md) |
@@ -300,7 +299,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R410` [**graphitron:dev owns incremental compilation of generated sources**](dev-incremental-compile.md) — Ready, feature
 - `R347` [**Consolidate graphitron-lsp navigation, dispatch, and result-building**](lsp-structural-consolidation.md) — In Progress, architecture
 - `R407` [**Exclude generator-injected federation/link definitions from linting**](lint-skip-injected-definitions.md) — Spec, cleanup
-- `R398` [**SDL lint engine with ESLint-style built-in visitors**](sdl-lint-visitor-engine.md) — In Review, feature
 - `R345` [**Surface schema parse failures as LSP red squiggles**](lsp-squiggle-schema-parse-failure.md) — Backlog, feature
 - `R408` [**Lint finding suppression mechanism**](lint-finding-suppression.md) — Spec, feature
 - `R123` [**Parent-context-aware schema coordinates for per-directive Behavior policy**](parent-context-aware-schema-coordinates.md) — Backlog, architecture
