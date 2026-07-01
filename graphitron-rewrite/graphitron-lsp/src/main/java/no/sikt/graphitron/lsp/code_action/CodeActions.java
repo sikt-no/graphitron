@@ -133,6 +133,10 @@ public final class CodeActions {
                     action, wsEdits, wsResolvable, wsSkipped)));
             }
         }
+        // R398: the finding-keyed lint QuickFix branch, alongside the detector-driven SdlActions
+        // above. It projects the LintFix the rule computed build-side straight off the
+        // ValidationReport, sharing only the WorkspaceEdit / TextEdit / QuickFix emit primitives.
+        out.addAll(LintQuickFixes.compute(params, workspace));
         return out;
     }
 
