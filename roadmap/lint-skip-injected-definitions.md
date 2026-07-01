@@ -143,7 +143,7 @@ separate item and this one must not depend on it.
 - The injected-name set is sourced from the injectors (provenance), not a name heuristic and
   not `FEDERATION_NAMESPACE_SCALARS`.
 - The federation-fixture pipeline test above is added and green; no per-name unit list.
-- Full reactor green: `mvn -f graphitron-rewrite/pom.xml install -Plocal-db`.
+- Full reactor green: `mvn install -Plocal-db`.
 
 ## Relationships
 
