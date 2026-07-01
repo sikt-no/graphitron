@@ -209,9 +209,18 @@ A grab-bag of independently shippable fixes that share no new abstraction:
 - Make `vocabulary` a required parameter on the feature `compute()` methods; delete the
   `LspVocabulary.load()`-calling overloads (a test helper supplies the bundled vocabulary once);
   thread `workspace.vocabulary()` into `SdlActions` so code-action requests stop re-parsing the SDL.
-- Bundle `catalog` / `snapshot` / `validationReport` into one immutable `BuildOutput` record behind a
-  single `volatile` reference, so `setBuildOutput` is an atomic swap and readers never see a torn
-  triple.
+- Bundle `catalog` / `catalogFacts` / `sourceIndex` / `snapshot` / `validationReport` into one
+  immutable `BuildOutput` record behind a single `volatile` reference, so `setBuildOutput` is an atomic
+  swap and readers never see a torn set. **Raised stakes since this item opened: the R341/R361
+  `graphitron-mcp` server is now a second concurrent reader of the same `Workspace`, on Jetty's servlet
+  thread pool rather than the LSP's, and several of its tools read more than one field per call
+  (`schemaTool`: `snapshot` + `catalog`; `diagnosticsTool`: `validationReport` + `snapshot`;
+  `edgesTool`: `snapshot` + `catalogFacts`).** The per-field `volatile`s (and the R362 comment on
+  `Workspace.catalogFacts` claiming "a single set of volatile reads observes one consistent build
+  state") do not actually make those multi-field reads atomic: a reader interleaving with
+  `setBuildOutput`'s separate writes can still pair a new snapshot with an old catalog/facts. The
+  single-reference swap is the fix, and the bundle must include `catalogFacts` and `sourceIndex`, not
+  just the original triple, because the MCP reads those too.
 - Give `WorkspaceFile` a `close()` (free the native `Tree`/`Parser`) and call it on `didClose`.
 - Materialize `CodeActions` rewrite results once per match, then partition (drop the 3× call).
 - Switch the recalc queue dedup to a `LinkedHashSet`; collapse the duplicated native-library path
@@ -234,8 +243,18 @@ traversal groups. Lowest urgency; do it only if Slices 1-2 leave it still hard t
   feature work that will *consume* the consolidated primitives. Sequencing is soft, but landing
   Slice 1 first means those features add one provider/arm against a shared navigation layer rather
   than forking another copy. No hard dependency either way.
-- **`intellij-lsp-plugin`** / **`mcp-server-skeleton`**: downstream surfaces of the same server; they
-  benefit from the cleaner seams but are not blocked on this.
+- **`intellij-lsp-plugin`** / **`graphitron-mcp`**: downstream surfaces of the same server; they
+  benefit from the cleaner seams but are not blocked on this. Since this item opened, the MCP server
+  landed for real: R341 shipped the skeleton (`graphitron-mcp` module), R361 gave it a compile edge on
+  `graphitron-lsp`, and R118 is the wider programme. It is "one model, two views": it reads the same
+  live `Workspace` the LSP reads (`catalog` / `catalogFacts` / `snapshot` / `sourceIndex` /
+  `validationReport` / `LspVocabulary`) and deliberately does **not** speak LSP or reuse the
+  caret-centric completion providers, so Slice 3's completion-dispatch rework is orthogonal to it
+  (verified: `graphitron-mcp` imports only `Workspace` from the LSP, none of `completions` /
+  `Completions` / `GraphitronTextDocumentService`, and the full reactor build stays green). Its two
+  live intersections with the remaining slices are the shared `Workspace` read surface (Slice 5's
+  torn-read fix, now a two-consumer concern, above) and `LspVocabulary`, which its `directives`
+  resource reads (so Slice 6's optional split must keep `LspVocabulary`'s read API stable).
 
 ## Open questions (to settle before / during Ready)
 
