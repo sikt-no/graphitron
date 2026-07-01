@@ -1,7 +1,7 @@
 ---
 id: R407
 title: "Exclude generator-injected federation/link definitions from linting"
-status: Spec
+status: Ready
 bucket: cleanup
 priority: 5
 theme: lsp
