@@ -37,7 +37,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R109` | How-to recipe and Sakila fixture for grouped collections via Field<Result<R>> @externalField + multiset | Spec |  | [plan](list-valued-external-field-multiset.md) |
 | `R212` | IntelliJ plugin wrapping graphitron:dev LSP | Spec | 2026-05-21 | [plan](intellij-lsp-plugin.md) |
 | `R112` | Operation-driven test corpus, capability catalog, and runtime trace <sub>blocked by: [capability-catalog](capability-catalog.md)</sub> | Spec |  | [plan](operation-driven-test-corpus.md) |
-| `R182` | Retire legacy reactor and unnest graphitron-rewrite to repo root | Ready | 2026-07-01 <sub>created 2026-05-19</sub> | [plan](unnest-rewrite-aggregator.md) |
+| `R182` | Retire legacy reactor and unnest graphitron-rewrite to repo root | In Progress | 2026-07-01 <sub>created 2026-05-19</sub> | [plan](unnest-rewrite-aggregator.md) |
 
 ---
 
@@ -293,7 +293,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R27` [**Retire `@nodeId` and `IdReferenceField` synthesis shims**](retire-synthesis-shims.md) — Backlog, cleanup, blocked by [sis-rewrite-migration](sis-rewrite-migration.md)
 - `R47` [**Short class-name resolution for `@service` and `@externalField` (legacy parity)**](service-short-classname-resolution.md) — Backlog, cleanup
 - `R34` [**sis-graphql-spec migration to graphitron-rewrite**](sis-rewrite-migration.md) — Backlog, cleanup
-- `R182` [**Retire legacy reactor and unnest graphitron-rewrite to repo root**](unnest-rewrite-aggregator.md) — Ready, structural
+- `R182` [**Retire legacy reactor and unnest graphitron-rewrite to repo root**](unnest-rewrite-aggregator.md) — In Progress, structural
 
 ### lsp
 
