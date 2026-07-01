@@ -12,6 +12,88 @@ last-updated: 2026-07-01
 
 # Support single-table discriminated interface as a DML @mutation return type
 
+## Review outcome 2026-07-01: rework required (implementation exists, does not land)
+
+An implementation pass completed on branch `claude/r406-implementation-gjfkxe`
+(commit `1b6971d`) and was independently reviewed (In Review → Done gate). The
+core design is sound and the item is close, but it **cannot land as-is** because
+the sibling item R405 landed on trunk first and changed the shared seam this
+item was written against.
+
+**What is already verified sound** (do not re-litigate these in the next pass):
+
+- Model: the sibling `DmlReturnExpression.DiscriminatedSingle` / `DiscriminatedList`
+  arms (not a new per-verb `MutationField` leaf), with `dmlDomainReturnType` /
+  `dmlTarget` mapping both to the `Record` / `Table` shape like `Projected*`.
+- Classify: the single chokepoint in `FieldBuilder.buildDmlField` resolving the
+  look-ahead verdict once and threading it into the static
+  `buildDmlReturnExpression`.
+- Validate: `dispatchPerformsReFetch` recognising the `Discriminated*` arms; the
+  DELETE floor pin.
+- Emit logic of `emitDiscriminated` (reuse the PK-only `RETURNING` transaction,
+  swap the follow-up SELECT for the discriminator re-projection keyed by a PK-IN
+  condition).
+- Execution-tier `DmlTableInterfaceReturnExecutionTest` (per-`__typename`
+  routing off the live discriminator, the cross-table `rating` join, same-table
+  `description` isolation, the unknown-discriminator write/read asymmetry) and
+  the `ContentInput` / `createContent` / `updateContent` sakila fixture.
+
+**Blocking reason: R405 landed first and R406 is now the second lander.** R405
+(`support single-table discriminated interface as a @service polymorphic return`,
+commit `7b9d051`) extracted the shared read-side re-projection helper into
+`TypeFetcherGenerator.buildTableInterfaceReprojection` and rewired both read
+fetchers (`buildQueryTableInterfaceFieldFetcher` /
+`buildTableInterfaceFieldFetcher`) to call it. R406's implementation predates
+that and **re-extracts the same logic** under its own name
+`buildDiscriminatedReprojection`, which (a) conflicts on the two read fetchers
+(a real `git rebase` conflict in `TypeFetcherGenerator`, confirmed at review),
+and (b) violates this spec's own contract in "Relationship to R405 (no hard
+dependency)": *"Whichever of R405 / R406 lands first extracts it; the second
+consumes."* R405 landed first, so R406 must **consume** its helper, not
+re-extract.
+
+**Required rework (next In Progress pass):**
+
+1. Rebase the R406 implementation onto current trunk (which now carries R405).
+2. Delete `buildDiscriminatedReprojection`; make `emitDiscriminated` call R405's
+   `buildTableInterfaceReprojection`.
+3. Reconcile the helper-shape difference. R405's helper projects the shared
+   table's **PK columns for its by-position re-map** (its service fetcher re-maps
+   fetched rows to input positions by PK); R406 instead keys the follow-up SELECT
+   by a **PK-IN `Condition` in the `WHERE`** off the `RETURNING` keys. Confirm
+   R406's PK-IN keying composes with R405's helper (which appends its own
+   discriminator filter + field list + joins) and that the extra projected PK
+   columns are harmless to the DML `Record` the `TypeResolver` consumes.
+4. Reconcile the PK-IN row-value condition builder. This spec said "whichever
+   item lands first introduces" the composite-safe `DSL.row(...).in(...)` builder;
+   check what R405 introduced and have R406 consume/align rather than duplicate
+   `buildPkKeysCondition`. `emitKeysTransaction` (the DML write half R405 has no
+   equivalent of) can stay R406-owned; verify no duplication.
+5. Re-run `mvn -f graphitron-rewrite/pom.xml install -Plocal-db` (the reactor's
+   pre-existing `Query.allParties` / `JoinedTableInheritancePipelineTest` failures
+   are an unrelated stale-sandbox `party_*` catalog gap, confirmed at review to
+   reproduce identically on trunk without R406, on a classification path R406
+   does not touch).
+
+**Two minor findings to fix in the same pass:**
+
+- The two new `FetcherPipelineTest` cases pin the fetcher body with
+  `code().toString()` `contains(...)` assertions, contrary to design principle
+  "no code-string assertions on generated method bodies" (`rewrite-design-principles.adoc`
+  §"Complementary tiers") and to this spec's Tests section ("shape assertions on
+  the model + `TypeSpec`, not on method-body strings"). They match the file's
+  existing DML-fetcher convention (`dmlInsertField_bulkInput` / `dmlUpdateField_bulkInput`)
+  and behaviour is proven at the execution tier, so either drop them or convert
+  to model / `TypeSpec`-shape assertions (the model shape is already pinned in
+  `GraphitronSchemaBuilderTest`). Consistent with R380's carried-debt precedent.
+- The spec-named Connection-wrapped-interface rejection pin did not ship (only
+  the DELETE pin did). Add it, or note the reliance on the general `@asConnection`
+  rejection tests since `TableInterfaceType` routes through the same
+  `TableBoundReturnType` arm.
+
+Reviewer ≠ implementer applies again next cycle (both the Spec→Ready reviewer
+and this In Review reviewer are recorded on the item's commit trailers).
+
 ## Problem
 
 A DML `@mutation(typeName: INSERT|UPDATE)` returning a single-table
