@@ -45,6 +45,58 @@ runtime-class dispatch, re-fetch by the service-provided PKs against the
 shared table projecting `__discriminator__`, then route per row, that is,
 the read-side single-table fetcher fed by a service-provided PK list.
 
+## How discrimination works (reused, not reinvented)
+
+`@discriminate(on: "CONTENT_TYPE")` names a real column on the shared
+`@table`; each implementer's `@discriminator(value: "FILM")` pins that
+implementer to a literal value of that column. At emit the read-side
+fetcher (`buildInterfaceFieldsList`, `TypeFetcherGenerator.java:1037`)
+projects that column first and unconditionally, aliased to the synthetic
+`__discriminator__` (`MultiTablePolymorphicEmitter.DISCRIMINATOR_COLUMN`),
+so the routing read stays unambiguous even when the interface also
+exposes the discriminator as a queryable field. One `TypeResolver` per
+`TableInterfaceType` is generated
+(`GraphitronSchemaClassGenerator.java:126-158`): it reads
+`record.get(DSL.field(DSL.name("__discriminator__")), String.class)` and
+`switch`es the value to `env.getSchema().getObjectType(<implementer>)`.
+
+The row that reaches the resolver only has to carry `__discriminator__`;
+its Java type is irrelevant. That is exactly why the read side handles
+single-table fine and route (a) does not, route (a) routes off the
+record's runtime *class*, which is identical across all single-table
+subtypes.
+
+## Proposed flow
+
+The service already hands back rows of the one shared table,
+PK-populated, so class-dispatch is unnecessary; feed the read-side
+single-table SELECT from the service's PKs instead:
+
+1. Call the service, normalise into `List<Record>` in input order (the
+   same normalisation route (a) does at
+   `MultiTablePolymorphicEmitter.java:214-231`).
+2. Collect the PKs off those records.
+3. One SELECT against the shared table `WHERE pk IN (:servicePks)`,
+   projecting `__discriminator__` + the unified participant field set +
+   conditional cross-table `LEFT JOIN`s for subtype-specific fields, i.e.
+   `buildInterfaceFieldsList` + `buildCrossTableJoinChain` reused with a
+   different `WHERE` source.
+4. Re-map result rows back to input positions by PK (single return is one
+   PK). A PK matching no live row leaves that position null.
+5. Return `Record` / `List<Record>`; the existing `TableInterfaceType`
+   `TypeResolver` handles per-row typename off `__discriminator__`, no new
+   resolver.
+
+So the only genuinely new emit code is "service call, collect PKs, feed
+the SELECT, re-map to positions"; discrimination, cross-table joins, and
+the resolver are all reused. A distinct field variant
+(`MutationServiceTableInterfaceField` + query twin) reads more cleanly
+than overloading `MutationServicePolymorphicField`, since the emit is one
+SELECT rather than route (a)'s stage-1/stage-2 UNION ALL. The participant
+model is already right: single-table participants are
+`ParticipantRef.TableBacked` (carry `discriminatorValue`), multi-table are
+`ParticipantRef.TableBound`.
+
 ## Scope
 
 - Covers the `@service` path only (both query and mutation surfaces,
