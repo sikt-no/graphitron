@@ -40,7 +40,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R109` | How-to recipe and Sakila fixture for grouped collections via Field<Result<R>> @externalField + multiset | Spec |  | [plan](list-valued-external-field-multiset.md) |
 | `R212` | IntelliJ plugin wrapping graphitron:dev LSP | Spec | 2026-05-21 | [plan](intellij-lsp-plugin.md) |
 | `R112` | Operation-driven test corpus, capability catalog, and runtime trace <sub>blocked by: [capability-catalog](capability-catalog.md)</sub> | Spec |  | [plan](operation-driven-test-corpus.md) |
-| `R182` | Retire legacy reactor and unnest graphitron-rewrite to repo root <sub>blocked by: [retire-maven-plugin](retire-maven-plugin.md)</sub> | Spec | 2026-06-30 <sub>created 2026-05-19</sub> | [plan](unnest-rewrite-aggregator.md) |
+| `R182` | Retire legacy reactor and unnest graphitron-rewrite to repo root <sub>blocked by: [retire-maven-plugin](retire-maven-plugin.md)</sub> | Spec | 2026-07-01 <sub>created 2026-05-19</sub> | [plan](unnest-rewrite-aggregator.md) |
 
 ---
 
