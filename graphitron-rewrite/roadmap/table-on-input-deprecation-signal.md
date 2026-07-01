@@ -7,7 +7,7 @@ priority: 6
 theme: model-cleanup
 depends-on: []
 created: 2026-06-18
-last-updated: 2026-06-22
+last-updated: 2026-07-01
 ---
 
 # Mark @table on input types as deprecated (signal ahead of R97 removal)
@@ -150,9 +150,14 @@ columns, not the write target table.
   these compute anything per usage, so they state the carve-out in prose and are safe
   to ship now.
 - *Actionable tier (fires per `@table`-on-input usage; must respect the carve-out).*
-  A non-fatal build warning (`BuildWarning.NoRule` via `ctx.addWarning`, the same channel and arm as
+  A non-fatal build warning (`BuildWarning.NoRule` via `ctx.addWarning`, the same channel as
   the `@record` "directive ignored" warning at `TypeBuilder.emitDirectiveIgnoredWarning`).
-  Non-fatal by the `BuildContext` warnings contract: it never fails the build.
+  Non-fatal by the `BuildContext` warnings contract: it never fails the build. Note the *arm*
+  deliberately differs from that `@record` warning: `emitDirectiveIgnoredWarning` emits the
+  `BuildWarning.LintFinding` arm (carrying `LintRule.REDUNDANT_RECORD_DIRECTIVE` and an optional
+  fix); this deprecation uses the plain `BuildWarning.NoRule` arm instead, because it is not a lint
+  rule and D4 requires it stay unconditional, whereas lint findings run through the lint engine. The
+  live `NoRule` precedent is the federation compound-key warning at `EntityResolutionBuilder.java:318`.
 
 The LSP per-usage diagnostic is **deferred** (see Out of scope): the directive-description
 edit already surfaces on LSP hover for free (the LSP reads `directives.graphqls` through
@@ -202,8 +207,10 @@ Flat file list; the only ordering constraint is "the warning pass reads the clas
   which carries no author-written directive); (3) for each not in the carve-out set,
   `ctx.addWarning(new BuildWarning.NoRule(message, inputType.getSourceLocation()))` (`BuildWarning` is
   a sealed interface, `permits BuildWarning.NoRule, BuildWarning.LintFinding`; `NoRule(String message,
-  SourceLocation location)` is the plain non-lint arm the `@record` directive-ignored warning also
-  emits, so there is no `new BuildWarning(...)` to call). Inline emission in
+  SourceLocation location)` is the plain non-lint arm, constructed the same way as the federation
+  compound-key warning at `EntityResolutionBuilder.java:318`, so there is no `new BuildWarning(...)` to
+  call. The `@record` directive-ignored warning at `emitDirectiveIgnoredWarning` uses the *other* arm,
+  `LintFinding`; D1 explains why this deprecation takes `NoRule` rather than a lint rule.) Inline emission in
   `TypeBuilder.buildInputType` is wrong: it lacks the consuming-field view the carve-out needs.
 - **`encodedWriteTargetInputTypes(...)`** — a single named helper returning `Set<String>`. This
   is the find-usages anchor R97 Phase 2b retires (see Roadmap coordination); keep it named
