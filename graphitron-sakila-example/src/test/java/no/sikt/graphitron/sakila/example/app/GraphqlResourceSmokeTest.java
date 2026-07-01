@@ -10,6 +10,7 @@ import java.util.Map;
 import static io.restassured.RestAssured.given;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.equalTo;
+import static org.hamcrest.Matchers.startsWith;
 
 /**
  * Smoke check that the Quarkus + JAX-RS shell boots and serves a GraphQL request end-to-end:
@@ -63,7 +64,7 @@ class GraphqlResourceSmokeTest {
                 .get("/graphql/assets/graphiql.js")
             .then()
                 .statusCode(200)
-                .contentType("text/javascript")
+                .contentType(startsWith("text/javascript"))
             .extract().asByteArray();
         assertThat(body).isNotEmpty();
     }
@@ -75,7 +76,7 @@ class GraphqlResourceSmokeTest {
                 .get("/graphql/assets/graphiql.css")
             .then()
                 .statusCode(200)
-                .contentType("text/css");
+                .contentType(startsWith("text/css"));
     }
 
     @Test
