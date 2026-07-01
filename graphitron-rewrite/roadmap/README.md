@@ -30,7 +30,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R45` | Multi-tenant routing on top of the schema-driven ExecutionInput factory | Ready | 2026-06-26 | [plan](tenant-routing-and-execution-input.md) |
 | `R347` | Consolidate graphitron-lsp navigation, dispatch, and result-building | In Progress | 2026-06-19 | [plan](lsp-structural-consolidation.md) |
 | `R398` | SDL lint engine with ESLint-style built-in visitors | In Review | 2026-07-01 <sub>created 2026-06-29</sub> | [plan](sdl-lint-visitor-engine.md) |
-| `R405` | Support single-table discriminated interface as a @service polymorphic return | In Review | 2026-07-01 | [plan](service-single-table-interface-return.md) |
 | `R408` | Lint finding suppression mechanism | Spec | 2026-07-01 | [plan](lint-finding-suppression.md) |
 | `R370` | Record-backed parent with a nested backing class emits a non-compiling $-qualified cast | Ready | 2026-07-01 <sub>created 2026-06-24</sub> | [plan](nested-backing-class-accessor-cast.md) |
 | `R332` | Mark @table on input types as deprecated (signal ahead of R97 removal) | In Review | 2026-07-01 <sub>created 2026-06-18</sub> | [plan](table-on-input-deprecation-signal.md) |
@@ -176,7 +175,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R396` [**@reference FK-connection validation rejects schema-qualified or case-mismatched @table base names**](reference-fk-connection-qualified-table-name.md) — Ready, bug
 - `R382` [**Lower orderBy onto multitable-interface/union queries**](multitable-interface-query-orderby-lowering.md) — Backlog, bug
 - `R384` [**Support converted/@nodeId/developer-@condition filters on multitable interface/union queries**](multitable-interface-converted-nodeid-condition-filters.md) — Ready, bug
-- `R405` [**Support single-table discriminated interface as a @service polymorphic return**](service-single-table-interface-return.md) — In Review, feature
 - `R370` [**Record-backed parent with a nested backing class emits a non-compiling $-qualified cast**](nested-backing-class-accessor-cast.md) — Ready, bug
 - `R393` [**Disambiguate the base-to-detail (interface-to-implementer) join path via @reference**](joined-table-base-detail-fk-override.md) — Backlog, feature
 - `R412` [**Nested backing class emits $-qualified names at the no-Class-in-hand emit sites (backingClassOf, recordColumnReadArgs, FetcherEmitter, ChildField)**](nested-backing-class-emitter-lift.md) — Backlog, bug
