@@ -1,7 +1,7 @@
 ---
 id: R410
 title: "graphitron:dev owns incremental compilation of generated sources"
-status: Spec
+status: Ready
 bucket: feature
 priority: 3
 theme: lsp
