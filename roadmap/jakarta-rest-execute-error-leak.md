@@ -1,7 +1,7 @@
 ---
 id: R421
 title: "jakarta-rest resource leaks internals on server-side execution failure"
-status: Spec
+status: Ready
 bucket: bug
 priority: 4
 theme: mutations-errors
