@@ -18,7 +18,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R333` | The Graphitron data model | Spec | 2026-06-25 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
 | `R346` | Regenerate and guard the generated supported-directives migration doc against directive-set drift | Ready | 2026-06-19 | [plan](supported-directives-regen-guard.md) |
 | `R410` | graphitron:dev owns incremental compilation of generated sources | Ready | 2026-07-01 | [plan](dev-incremental-compile.md) |
-| `R396` | @reference FK-connection validation rejects schema-qualified or case-mismatched @table base names | In Review | 2026-07-02 <sub>created 2026-06-29</sub> | [plan](reference-fk-connection-qualified-table-name.md) |
 | `R308` | Fix the @service list-payload N+1 by deriving many-arrival for list-returning carriers | Spec | 2026-06-14 | [plan](service-list-payload-arrival.md) |
 | `R335` | Fold input/scalar/enum classification into the single classify-and-emit walk | Spec | 2026-06-19 | [plan](walk-classifies-input-surface.md) |
 | `R421` | jakarta-rest resource leaks internals on server-side execution failure | In Review | 2026-07-02 | [plan](jakarta-rest-execute-error-leak.md) |
@@ -173,7 +172,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### interface-union
 
-- `R396` [**@reference FK-connection validation rejects schema-qualified or case-mismatched @table base names**](reference-fk-connection-qualified-table-name.md) — In Review, bug
 - `R422` [**@reference terminal-target verdict must compare return-type identity, not the verbatim @table echo**](reference-terminal-verdict-return-type-identity.md) — Backlog, bug
 - `R382` [**Lower orderBy onto multitable-interface/union queries**](multitable-interface-query-orderby-lowering.md) — Backlog, bug
 - `R393` [**Disambiguate the base-to-detail (interface-to-implementer) join path via @reference**](joined-table-base-detail-fk-override.md) — Backlog, feature
