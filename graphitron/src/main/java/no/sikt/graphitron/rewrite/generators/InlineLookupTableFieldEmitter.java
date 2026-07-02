@@ -163,6 +163,12 @@ public final class InlineLookupTableFieldEmitter {
         Map<WhereFilter, List<String>> fkTargetAliases =
             FkTargetConditionEmitter.declareAliases(code, lf.filters(), terminalAlias, true);
 
+        // R424: pre-lift any converter-backed list filter arg into a `<name>Keys` local (read by the
+        // JooqConvert list arm), routed through the field's own SelectedField — same parity fix as
+        // InlineTableFieldEmitter. Declared inside the non-empty (else) branch alongside the aliases,
+        // since only the inner SELECT here references it.
+        ArgCallEmitter.emitJooqConvertKeyLifts(code, lf.filters(), new ArgumentValueSource.FromSelectedField(sfName));
+
         CodeBlock innerSelect = buildInnerSelect(lf, path, aliases, terminalAlias, typeClass,
             parentAlias, onCondition.build(), sfName, registry, fkTargetAliases);
         code.addStatement("fields.add($T.multiset($L).as($S))", DSL, innerSelect, lf.name());
@@ -181,6 +187,10 @@ public final class InlineLookupTableFieldEmitter {
             String parentAlias, CodeBlock onCondition, String sfName, CompositeDecodeHelperRegistry registry,
             Map<WhereFilter, List<String>> fkTargetAliases) {
         var sel = CodeBlock.builder();
+        // Invariant (R424): `env` threaded onward into the nested $fields call is correct — each
+        // nested level re-derives its own SelectedField and env is only needed there for
+        // request-scoped context reads. Only this arm's own runtime argument reads route through the
+        // SelectedField (ArgumentValueSource.FromSelectedField). Do not "fix" env to the SelectedField.
         sel.add("$T.select($T.$$fields($L.getSelectionSet(), $L, env))",
             DSL, typeClass, sfName, terminalAlias);
 
@@ -230,7 +240,8 @@ public final class InlineLookupTableFieldEmitter {
         }
         for (WhereFilter f : lf.filters()) {
             where.add("\n        .and($L)",
-                FkTargetConditionEmitter.emitTerm(new TypeFetcherEmissionContext(), f, terminalAlias, registry, null, fkTargetAliases));
+                FkTargetConditionEmitter.emitTerm(new TypeFetcherEmissionContext(), f, terminalAlias, registry, null, fkTargetAliases,
+                    new ArgumentValueSource.FromSelectedField(sfName)));
         }
         sel.add("\n        .where($L)", where.build());
 

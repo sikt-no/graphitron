@@ -74,4 +74,38 @@ public record CallParam(
         return list && extraction instanceof CallSiteExtraction.NestedInputField nif
             && !(nif.leaf() instanceof CallSiteExtraction.JooqConvert);
     }
+
+    /**
+     * True when emitting this argument under the {@code FromSelectedField} argument source (R424, the
+     * two inline emission sites) produces a Java unchecked cast, so the enclosing {@code $fields}
+     * method must carry {@code @SuppressWarnings("unchecked")}. This is the source-aware companion to
+     * {@link #emitsUncheckedCast()}: the {@code $fields} host asks here, while the {@code Env} hosts
+     * ({@code QueryConditionsGenerator}, {@code MultiTablePolymorphicEmitter}) ask
+     * {@link #emitsUncheckedCast()}. Keeping both predicates on the model, keyed by source, is why
+     * broadening the source-agnostic {@code emitsUncheckedCast} would wrongly stamp the {@code Env}
+     * hosts (whose reads target-type and are warning-free) and break their byte-identical output.
+     *
+     * <p>The casts that exist only under {@code FromSelectedField} (because {@code Map.get} is
+     * statically {@code Object}, unlike {@code env.getArgument}'s generic target-typing):
+     * <ul>
+     *   <li>a list-typed {@link CallSiteExtraction.Direct} arg — extracts as {@code (List) sf.getArguments().get(name)};</li>
+     *   <li>a list-typed {@link CallSiteExtraction.JooqConvert} arg — its {@code <name>Keys} pre-lift
+     *       casts to {@code (List<String>)};</li>
+     *   <li>a list-typed {@link CallSiteExtraction.NestedInputField} whose leaf casts — identical to
+     *       the {@code Env} case (the leaf cast is source-independent), so this one also shows up in
+     *       {@link #emitsUncheckedCast()}. A {@link CallSiteExtraction.JooqConvert} leaf is carved out
+     *       (its {@code instanceof List<?>} guard + {@code DSL.val} coercion own the runtime shape).</li>
+     * </ul>
+     * Scalar {@code Direct} / {@code EnumValueOf} casts are checked (reifiable target); the
+     * {@code first} pagination read casts to {@code (Integer)}, also checked; neither counts.
+     */
+    public boolean emitsUncheckedCastFromSelectedField() {
+        if (!list) return false;
+        if (extraction instanceof CallSiteExtraction.Direct) return true;
+        if (extraction instanceof CallSiteExtraction.JooqConvert) return true;
+        if (extraction instanceof CallSiteExtraction.NestedInputField nif) {
+            return !(nif.leaf() instanceof CallSiteExtraction.JooqConvert);
+        }
+        return false;
+    }
 }

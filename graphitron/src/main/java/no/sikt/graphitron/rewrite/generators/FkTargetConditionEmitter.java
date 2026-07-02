@@ -92,15 +92,21 @@ public final class FkTargetConditionEmitter {
      * Emits one composed WHERE term. The plain arm hands the developer method {@code baseAlias};
      * the FK-target arm emits the correlated {@code EXISTS} against the alias declared by
      * {@link #declareAliases} (read from {@code fkTargetAliases}).
+     *
+     * <p>{@code source} (R424) routes the runtime argument-value reads inside the composed call:
+     * root/{@code @splitQuery} sites pass {@link ArgumentValueSource.Env} (byte-identical output);
+     * the two inline emitters pass {@link ArgumentValueSource.FromSelectedField} so the arguments
+     * are read off the inline field's own {@code SelectedField}, not the ancestor fetcher's env.
      */
     public static CodeBlock emitTerm(TypeFetcherEmissionContext ctx, WhereFilter filter,
             String baseAlias, CompositeDecodeHelperRegistry registry,
-            Map<String, String> liftedOuters, Map<WhereFilter, List<String>> fkTargetAliases) {
+            Map<String, String> liftedOuters, Map<WhereFilter, List<String>> fkTargetAliases,
+            ArgumentValueSource source) {
         if (filter instanceof FkTargetConditionFilter fk) {
-            return emitFkTargetExists(ctx, fk, baseAlias, registry, liftedOuters, fkTargetAliases.get(fk));
+            return emitFkTargetExists(ctx, fk, baseAlias, registry, liftedOuters, fkTargetAliases.get(fk), source);
         }
         var callArgs = ArgCallEmitter.buildCallArgs(
-            ctx, filter.callParams(), filter.className(), baseAlias, registry, liftedOuters);
+            ctx, filter.callParams(), filter.className(), baseAlias, registry, liftedOuters, source);
         return CodeBlock.of("$T.$L($L)",
             ClassName.bestGuess(filter.className()), filter.methodName(), callArgs);
     }
@@ -114,7 +120,7 @@ public final class FkTargetConditionEmitter {
      */
     private static CodeBlock emitFkTargetExists(TypeFetcherEmissionContext ctx,
             FkTargetConditionFilter fk, String baseAlias, CompositeDecodeHelperRegistry registry,
-            Map<String, String> liftedOuters, List<String> hopAliases) {
+            Map<String, String> liftedOuters, List<String> hopAliases, ArgumentValueSource source) {
         var path = fk.joinPath();
         String terminalAlias = hopAliases.get(hopAliases.size() - 1);
 
@@ -141,7 +147,7 @@ public final class FkTargetConditionEmitter {
         }
         var correlation = JoinPathEmitter.emitCorrelationWhere(firstHop, hopAliases.get(0), baseAlias);
         var callArgs = ArgCallEmitter.buildCallArgs(
-            ctx, fk.callParams(), fk.className(), terminalAlias, registry, liftedOuters);
+            ctx, fk.callParams(), fk.className(), terminalAlias, registry, liftedOuters, source);
         var devCall = CodeBlock.of("$T.$L($L)", ClassName.bestGuess(fk.className()), fk.methodName(), callArgs);
         sel.add("\n        .where($L.and($L))", correlation, devCall);
 

@@ -189,12 +189,12 @@ public class QueryConditionsGenerator {
             builder.addStatement("return $T.noCondition()", DSL);
         } else if (filters.size() == 1) {
             builder.addStatement("return $L",
-                FkTargetConditionEmitter.emitTerm(ctx, filters.get(0), "table", registry, liftedOuters, fkTargetAliases));
+                FkTargetConditionEmitter.emitTerm(ctx, filters.get(0), "table", registry, liftedOuters, fkTargetAliases, new ArgumentValueSource.Env()));
         } else {
             builder.addStatement("$T condition = $T.noCondition()", CONDITION, DSL);
             for (var filter : filters) {
                 builder.addStatement("condition = condition.and($L)",
-                    FkTargetConditionEmitter.emitTerm(ctx, filter, "table", registry, liftedOuters, fkTargetAliases));
+                    FkTargetConditionEmitter.emitTerm(ctx, filter, "table", registry, liftedOuters, fkTargetAliases, new ArgumentValueSource.Env()));
             }
             builder.addStatement("return condition");
         }

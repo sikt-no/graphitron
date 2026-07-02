@@ -5237,7 +5237,7 @@ public class TypeFetcherGenerator {
                 }
             }
             builder.addStatement("condition = condition.and($L)",
-                FkTargetConditionEmitter.emitTerm(ctx, filter, tableLocal, registry, null, fkTargetAliases));
+                FkTargetConditionEmitter.emitTerm(ctx, filter, tableLocal, registry, null, fkTargetAliases, new ArgumentValueSource.Env()));
         }
 
         var typeFieldsCall = CodeBlock.of("$T.$$fields(env.getSelectionSet(), $L, env)",

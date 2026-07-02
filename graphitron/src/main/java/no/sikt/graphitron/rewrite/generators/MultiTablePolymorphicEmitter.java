@@ -1269,7 +1269,7 @@ public final class MultiTablePolymorphicEmitter {
         var b = CodeBlock.builder();
         for (int i = 0; i < filters.size(); i++) {
             var term = FkTargetConditionEmitter.emitTerm(ctx, filters.get(i), alias,
-                registry, plumbing.liftedOuters(), plumbing.fkTargetAliases());
+                registry, plumbing.liftedOuters(), plumbing.fkTargetAliases(), new ArgumentValueSource.Env());
             if (i == 0) {
                 b.add("$L", term);
             } else {

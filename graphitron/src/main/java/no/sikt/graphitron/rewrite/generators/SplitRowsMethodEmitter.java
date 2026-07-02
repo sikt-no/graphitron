@@ -475,7 +475,7 @@ public final class SplitRowsMethodEmitter {
         }
         for (WhereFilter f : filters) {
             where.add("\n        .and($L)",
-                FkTargetConditionEmitter.emitTerm(ctx, f, terminalAlias, registry, null, fkTargetAliases));
+                FkTargetConditionEmitter.emitTerm(ctx, f, terminalAlias, registry, null, fkTargetAliases, new ArgumentValueSource.Env()));
         }
         return where.build();
     }

@@ -321,6 +321,66 @@ class GraphQLQueryTest {
     }
 
     @Test
+    void store_customersByFirstName_inlineScalarCondition_narrowsByArgument() {
+        // R424: inline (non-@splitQuery) @reference child list whose filter carries a scalar
+        // @condition arg (customer.first_name = ?). Pre-fix the inline emitter read the argument off
+        // the ancestor fetcher's env (env.getArgument("filter")), which is null there, so the
+        // predicate collapsed to noCondition() and the field returned ALL of the store's customers.
+        // The fix reads the argument off the inline field's own SelectedField, so it narrows.
+        // Seed by store: store 1 = {Mary, Patricia, Barbara}, store 2 = {Linda, Elizabeth}.
+        Map<String, Object> data = execute(
+            "{ storeById(store_id: [1, 2]) { storeId customersByFirstName(filter: {firstName: \"Mary\"}) { firstName } } }");
+        assertThat(data).extractingByKey("storeById", as(list(Map.class)))
+            .anySatisfy(s -> {
+                assertThat(s.get("storeId")).isEqualTo(1);
+                // Narrowed to exactly Mary — not the pre-fix unfiltered {Mary, Patricia, Barbara}.
+                assertThat((List<Map<String, Object>>) s.get("customersByFirstName"))
+                    .extracting(c -> c.get("firstName")).containsExactly("Mary");
+            })
+            .anySatisfy(s -> {
+                assertThat(s.get("storeId")).isEqualTo(2);
+                // Mary is not a store-2 customer: correct behaviour returns empty; the pre-fix bug
+                // would return store 2's unfiltered customers (the reproducer's "returns rows it did
+                // not ask for" shape).
+                assertThat((List<Map<String, Object>>) s.get("customersByFirstName")).isEmpty();
+            });
+    }
+
+    @Test
+    void store_customersByFirstName_inlineVsSplit_identicalResults() {
+        // R424: the @splitQuery sibling has always resolved the argument correctly (its env genuinely
+        // is the field's own environment). Pin that the fixed inline path now matches it byte-for-byte
+        // for the identical filter — inline/split parity.
+        Map<String, Object> data = execute(
+            "{ storeById(store_id: [1]) {"
+            + " inlineList: customersByFirstName(filter: {firstName: \"Mary\"}) { firstName }"
+            + " splitList: customersByFirstNameSplit(filter: {firstName: \"Mary\"}) { firstName } } }");
+        assertThat(data).extractingByKey("storeById", as(list(Map.class)))
+            .singleElement(as(map(String.class, Object.class)))
+            .satisfies(s -> {
+                var inline = (List<Map<String, Object>>) s.get("inlineList");
+                var split = (List<Map<String, Object>>) s.get("splitList");
+                assertThat(inline).extracting(c -> c.get("firstName")).containsExactly("Mary");
+                assertThat(split).extracting(c -> c.get("firstName")).containsExactly("Mary");
+            });
+    }
+
+    @Test
+    void store_customersFirstN_inlinePagination_limitsRows() {
+        // R424: inline @reference list `first` pagination. Pre-fix the limit was read off the ancestor
+        // env (env.getArgument("first")), so `first` was silently ignored (Integer.MAX_VALUE) and all
+        // rows came back. The fix reads it off the inline field's SelectedField. Store 1 has three
+        // customers ordered by primary key (Mary, Patricia, Barbara); first: 2 keeps the first two.
+        Map<String, Object> data = execute(
+            "{ storeById(store_id: [1]) { customersFirstN(first: 2) { firstName } } }");
+        assertThat(data).extractingByKey("storeById", as(list(Map.class)))
+            .singleElement(as(map(String.class, Object.class)))
+            .satisfies(s ->
+                assertThat((List<Map<String, Object>>) s.get("customersFirstN"))
+                    .extracting(c -> c.get("firstName")).containsExactly("Mary", "Patricia"));
+    }
+
+    @Test
     void customersByAddressDistrictActive_fieldOverridePlusFkTarget_composesBothShimTerms() {
         // R330: the opptak shim shape exactly — a field-level @condition(override) (customersActiveOnly,
         // against the root customer table) AND an FK-target @nodeId @condition(override)

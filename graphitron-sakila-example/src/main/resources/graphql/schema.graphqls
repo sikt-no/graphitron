@@ -977,6 +977,21 @@ type Store @table(name: "store") {
     # emission path (the third WHERE-emitting site).
     customersByAddressDistrictSplit(filter: CustomerAddressNodeFilter!): [Customer!]! @splitQuery
         @reference(path: [{key: "customer_store_id_fkey"}]) @defaultOrder(primaryKey: true)
+    # R424: inline (non-@splitQuery) @reference child list whose filter carries a scalar @condition
+    # arg that genuinely narrows (customer.first_name = ?). The condition method maps a null value to
+    # noCondition(), so the pre-R424 bug (reading the argument off the ancestor fetcher's env, which
+    # has no such argument) drops the filter and returns UNFILTERED rows. The fix reads the argument
+    # off the inline field's own SelectedField. customersByFirstNameSplit is the @splitQuery sibling
+    # asserting inline/split parity for the identical filter.
+    customersByFirstName(filter: CustomerFirstNameFilter): [Customer!]!
+        @reference(path: [{key: "customer_store_id_fkey"}]) @defaultOrder(primaryKey: true)
+    customersByFirstNameSplit(filter: CustomerFirstNameFilter): [Customer!]! @splitQuery
+        @reference(path: [{key: "customer_store_id_fkey"}]) @defaultOrder(primaryKey: true)
+    # R424: inline @reference child list with a `first` pagination arg. Pre-R424 the limit was read
+    # off the ancestor env (env.getArgument("first")), so `first` was silently ignored; the fix reads
+    # it off the inline field's SelectedField.
+    customersFirstN(first: Int): [Customer!]!
+        @reference(path: [{key: "customer_store_id_fkey"}]) @defaultOrder(primaryKey: true)
     # plan-single-cardinality-split-query.md §5: single-cardinality @splitQuery with a
     # NULLABLE FK (store.manager_staff_id). At least one store seeds manager_staff_id as
     # NULL in init.sql, so the §4 null-FK short-circuit returns null for that store without
@@ -1804,6 +1819,17 @@ input CustomerAddressNodeFilter @table(name: "customer") {
         @condition(condition: {
             className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
             method: "addressDistrictAlberta"
+        }, override: true)
+}
+
+# R424: a plain scalar @condition(override) filter on customer.first_name. Narrows by the argument
+# value; a null value maps to noCondition() (absent == unconstrained), so a dropped inline argument
+# returns unfiltered rows. Drives Store.customersByFirstName{,Split}.
+input CustomerFirstNameFilter @table(name: "customer") {
+    firstName: String
+        @condition(condition: {
+            className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
+            method: "customerFirstNameEquals"
         }, override: true)
 }
 

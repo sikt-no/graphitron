@@ -1,18 +1,21 @@
 package no.sikt.graphitron.rewrite.generators;
 
 
+import no.sikt.graphitron.javapoet.AnnotationSpec;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.javapoet.WildcardTypeName;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
+import no.sikt.graphitron.rewrite.model.CallParam;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.TableRef;
+import no.sikt.graphitron.rewrite.model.WhereFilter;
 
 import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.*;
 
@@ -229,6 +232,19 @@ public class TypeClassGenerator {
         flat.addAll(lookupTableFields);
         flat.addAll(nestingFields);
         flat.addAll(computedFields);
+        // R424: stamp @SuppressWarnings("unchecked") on $fields — the narrowest enclosing member —
+        // when any inline field's filter param emits an unchecked cast under the FromSelectedField
+        // argument source (a list-typed Direct / JooqConvert / non-JooqConvert-leaf NestedInputField).
+        // The predicate is source-aware (CallParam.emitsUncheckedCastFromSelectedField): the casts
+        // exist only here, so the Env hosts (QueryConditionsGenerator / MultiTablePolymorphicEmitter)
+        // keep their warning-free, byte-identical output. Walks nested inline fields too, since
+        // NestingField sub-trees emit their inline arms into this same $fields method.
+        if (inlineFiltersNeedUncheckedSuppression(flat)) {
+            builder.addAnnotation(AnnotationSpec.builder(SuppressWarnings.class)
+                .addMember("value", "$S", "unchecked")
+                .build());
+        }
+
         emitSelectionSwitch(builder, 0, flat, "table", entryType, outputPackage, registry);
 
         // Required-projection set: columns the parent SELECT must include regardless of the
@@ -255,6 +271,12 @@ public class TypeClassGenerator {
      * <p>A {@code NestingField} arm recurses with {@code depth + 1}, reading from the current
      * depth's {@code sf.getSelectionSet()}. The nested type shares the parent's table context, so
      * {@code tableArg} is threaded through unchanged.
+     *
+     * <p>R424: the per-depth {@code sfN} local is the {@code SelectedField} the inline table /
+     * lookup-field arms read their own runtime <em>arguments</em> from (via
+     * {@code ArgumentValueSource.FromSelectedField}). The {@code $fields} method's {@code env}
+     * parameter stays the ancestor fetcher's environment at every depth and is used only for
+     * request-scoped context reads; it is deliberately <em>not</em> the source of field arguments.
      */
     private static void emitSelectionSwitch(MethodSpec.Builder builder, int depth,
                                             List<ChildField> fields, String tableArg,
@@ -321,6 +343,33 @@ public class TypeClassGenerator {
 
     private static String sfName(int depth) { return depth == 0 ? "sf" : "sf" + depth; }
     private static String entryName(int depth) { return depth == 0 ? "entry" : "entry" + depth; }
+
+    /**
+     * R424: true when any inline {@link ChildField.TableField} / {@link ChildField.LookupTableField}
+     * filter among {@code fields} (recursing into {@link ChildField.NestingField} sub-trees, which
+     * emit their inline arms into the same {@code $fields} method) carries a call param that emits an
+     * unchecked cast under the {@code FromSelectedField} argument source. The model owns the
+     * per-source cast fact ({@link CallParam#emitsUncheckedCastFromSelectedField()}), so this host and
+     * the {@code Env} hosts cannot drift.
+     */
+    private static boolean inlineFiltersNeedUncheckedSuppression(List<? extends ChildField> fields) {
+        for (var f : fields) {
+            List<WhereFilter> filters = switch (f) {
+                case ChildField.TableField tf -> tf.filters();
+                case ChildField.LookupTableField lf -> lf.filters();
+                default -> List.of();
+            };
+            boolean hit = filters.stream()
+                .flatMap(wf -> wf.callParams().stream())
+                .anyMatch(CallParam::emitsUncheckedCastFromSelectedField);
+            if (hit) return true;
+            if (f instanceof ChildField.NestingField nf
+                    && inlineFiltersNeedUncheckedSuppression(nf.nestedFields())) {
+                return true;
+            }
+        }
+        return false;
+    }
 
     /**
      * Walks the children of a type and surfaces every column the parent SELECT must project

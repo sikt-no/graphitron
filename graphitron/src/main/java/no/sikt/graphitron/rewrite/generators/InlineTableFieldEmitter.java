@@ -110,6 +110,12 @@ public final class InlineTableFieldEmitter {
         Map<WhereFilter, List<String>> fkTargetAliases =
             FkTargetConditionEmitter.declareAliases(code, tf.filters(), terminalAlias, true);
 
+        // R424: pre-lift any converter-backed list filter arg into a `<name>Keys` local (read by the
+        // JooqConvert list arm), routed through the field's own SelectedField. Without this the arm
+        // would reference an undeclared local; the (List<String>) cast is why the $fields host stamps
+        // @SuppressWarnings (see TypeClassGenerator).
+        ArgCallEmitter.emitJooqConvertKeyLifts(code, tf.filters(), new ArgumentValueSource.FromSelectedField(sfName));
+
         // Assemble the inner SELECT.
         CodeBlock innerSelect = buildInnerSelect(tf, path, aliases, terminalAlias, typeClass, parentAlias, sfName, registry, fkTargetAliases);
 
@@ -135,6 +141,12 @@ public final class InlineTableFieldEmitter {
 
         var sel = CodeBlock.builder();
         // SELECT projection: always unwrapped $fields(...) fed into DSL.multiset at the outer wrap.
+        // Invariant (R424): `env` is threaded onward into the nested $fields call unchanged — that is
+        // correct. Each nested level re-derives its own SelectedField (the switch loop's `sfN` local),
+        // and env is needed there only for request-scoped context reads (ContextArg), which
+        // legitimately read the ancestor env. Do NOT "fix" this env to the SelectedField: only the
+        // field's own runtime *argument* reads route through the SelectedField (via ArgumentValueSource
+        // .FromSelectedField), and those are emitted here in this arm, not down the recursion.
         sel.add("$T.select($T.$$fields($L.getSelectionSet(), $L, env))",
             DSL, typeClass, sfName, terminalAlias);
 
@@ -186,7 +198,8 @@ public final class InlineTableFieldEmitter {
         }
         for (WhereFilter f : tf.filters()) {
             where.add("\n        .and($L)",
-                FkTargetConditionEmitter.emitTerm(new TypeFetcherEmissionContext(), f, terminalAlias, registry, null, fkTargetAliases));
+                FkTargetConditionEmitter.emitTerm(new TypeFetcherEmissionContext(), f, terminalAlias, registry, null, fkTargetAliases,
+                    new ArgumentValueSource.FromSelectedField(sfName)));
         }
         sel.add("\n        .where($L)", where.build());
 
@@ -207,9 +220,12 @@ public final class InlineTableFieldEmitter {
         if (singleCardinality) {
             sel.add("\n        .limit(1)");
         } else if (tf.pagination() != null && tf.pagination().first() != null) {
-            sel.add("\n        .limit(env.getArgument($S) == null ? $T.MAX_VALUE : ($T) env.getArgument($S))",
-                "first",
-                Integer.class, Integer.class, "first");
+            // R424: read `first` off the inline field's own SelectedField, not the ancestor env
+            // (which has no such argument, so the old env.getArgument read silently dropped the
+            // pagination limit). The (Integer) cast is checked — no unchecked warning.
+            sel.add("\n        .limit($L.getArguments().get($S) == null ? $T.MAX_VALUE : ($T) $L.getArguments().get($S))",
+                sfName, "first",
+                Integer.class, Integer.class, sfName, "first");
         }
 
         return sel.build();

@@ -40,6 +40,22 @@ public final class InputFieldConditionFixtures {
     }
 
     /**
+     * R424: input-field {@code @condition} narrowing customers by first name. A {@code null}
+     * {@code firstName} maps to {@code noCondition()} (absent value == unconstrained), so a query
+     * whose inline {@code @reference} filter argument is silently dropped returns UNFILTERED rows.
+     * This is the reproducer for the R424 defect: an inline (non-{@code @splitQuery}) reference
+     * filter used to read its argument off the ancestor fetcher's {@code env} (which has no such
+     * argument), collapsing the predicate to {@code noCondition()}. The fix reads it off the inline
+     * field's own {@code SelectedField}, so the predicate narrows as the client asked.
+     */
+    public static Condition customerFirstNameEquals(Table<?> table, String firstName) {
+        if (firstName == null) {
+            return DSL.noCondition();
+        }
+        return table.field(Customer.CUSTOMER.FIRST_NAME).eq(firstName);
+    }
+
+    /**
      * Outer field-level {@code @condition(override: true)} method. Reads the enclosing
      * {@code filter} input argument as a Map and produces {@code film.film_id >= 2}. Paired
      * with an inner {@code filmIdCondition} method via {@code filter.filmId = "1"}, the combined
