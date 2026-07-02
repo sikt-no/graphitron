@@ -247,7 +247,7 @@ class GraphQLOverHttpConformanceTest {
      * there must be caught by the resource, logged server-side under a correlation id, and returned as
      * a generic spec-compliant 500, never leaked as the container's raw error page.
      */
-    private static final String FAULT_HEADER = SakilaGraphitronApplication.FAULT_HEADER;
+    private static final String FAULT_HEADER = FaultInjectingGraphitronApplication.FAULT_HEADER;
 
     /** The reference-only body shape both redaction sites emit: id in the message, no extensions. */
     private static final String REFERENCE_MESSAGE = "An error occurred\\. Reference: [0-9a-fA-F-]{36}\\.";
@@ -312,7 +312,16 @@ class GraphQLOverHttpConformanceTest {
     @Test
     @DisplayName("Single redaction contract (R421): the input-building-throw shape matches the fetcher-throw shape (Film.durabilityError). -- " + SPEC_REVISION)
     void redactionShapeMatchesFetcherPath() {
-        // Input-building throw (this resource's guard).
+        // The shared, consumer-facing contract is the reference MESSAGE: the correlation id an
+        // operator uses to find the real cause in the logs, byte-identical whether the fault was
+        // thrown while building the input (this resource) or inside a fetcher (generated ErrorRouter).
+        // The two sites are not byte-identical objects: the fetcher path builds its error through
+        // graphql-java's GraphqlErrorBuilder, which serialises a default extensions.classification;
+        // the resource emits a plain {message} with no extensions, consistent with its own 400/422
+        // errors and the spec's "no extensions" requirement for the resource side. What must never
+        // differ is the reference string and the absence of any leaked internal detail.
+
+        // Input-building throw (this resource's guard): reference message, no extensions at all.
         given()
             .contentType(APPLICATION_JSON)
             .accept(GRAPHQL_RESPONSE_JSON)
@@ -321,9 +330,13 @@ class GraphQLOverHttpConformanceTest {
         .when()
             .post("/graphql")
         .then()
-            .body("errors[0].message", matchesPattern(REFERENCE_MESSAGE));
+            .body("errors[0].message", matchesPattern(REFERENCE_MESSAGE))
+            .body("errors[0].extensions", nullValue());
 
-        // Fetcher throw (graphql-java + generated ErrorRouter.redact), same wire shape.
+        // Fetcher throw (graphql-java + generated ErrorRouter.redact): the SAME reference message.
+        // Its extensions carry only graphql-java's classification, never the thrown exception's
+        // message, class, or stack, so the redaction contract (reference-only, no leaked internals)
+        // holds on both legs even though the resource carries no extensions and this leg does.
         given()
             .contentType(APPLICATION_JSON)
             .accept(GRAPHQL_RESPONSE_JSON)
@@ -332,6 +345,9 @@ class GraphQLOverHttpConformanceTest {
             .post("/graphql")
         .then()
             .statusCode(200)
-            .body("errors[0].message", matchesPattern(REFERENCE_MESSAGE));
+            .body("errors[0].message", matchesPattern(REFERENCE_MESSAGE))
+            .body("errors[0].extensions.classification", notNullValue())
+            .body(not(containsString("R75 durability")))
+            .body(not(containsString("RuntimeException")));
     }
 }
