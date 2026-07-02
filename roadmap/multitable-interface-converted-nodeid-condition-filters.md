@@ -1,7 +1,7 @@
 ---
 id: R384
 title: "Support converted/@nodeId/developer-@condition filters on multitable interface/union queries"
-status: Ready
+status: In Progress
 bucket: bug
 priority: 3
 theme: interface-union

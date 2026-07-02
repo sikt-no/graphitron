@@ -123,6 +123,11 @@ public final class MultiTablePolymorphicEmitter {
      * Root-fetcher overload: emits the public main fetcher plus one private
      * {@code select<Participant>For<Field>} helper per table-bound participant. Stage 1's
      * UNION ALL has no per-branch WHERE; the SELECT spans the full participant tables.
+     *
+     * <p>{@code registry} is the enclosing {@code <Type>Fetchers} class's
+     * {@link CompositeDecodeHelperRegistry} (R384 phase 0): {@code @nodeId}-decoded filter args on
+     * the branch path lift their decode helpers onto the same class that hosts the fetcher call
+     * site, mirroring the split-rows / lookup-rows precedent in {@code TypeFetcherGenerator}.
      */
     public static List<MethodSpec> emitMethods(
             TypeFetcherEmissionContext ctx,
@@ -130,13 +135,14 @@ public final class MultiTablePolymorphicEmitter {
             List<ParticipantRef> participants,
             Map<String, List<WhereFilter>> participantFilters,
             boolean isList,
-            String outputPackage) {
+            String outputPackage,
+            CompositeDecodeHelperRegistry registry) {
         var tableBoundParticipants = participants.stream()
             .filter(p -> p instanceof ParticipantRef.TableBound)
             .map(p -> (ParticipantRef.TableBound) p)
             .toList();
         var methods = new ArrayList<MethodSpec>();
-        methods.add(buildMainFetcher(ctx, fieldName, tableBoundParticipants, participantFilters, isList, outputPackage));
+        methods.add(buildMainFetcher(ctx, fieldName, tableBoundParticipants, participantFilters, isList, outputPackage, registry));
         for (var participant : tableBoundParticipants) {
             methods.add(buildPerTypenameSelect(fieldName, participant, false, outputPackage));
         }
@@ -589,7 +595,8 @@ public final class MultiTablePolymorphicEmitter {
             int defaultPageSize,
             SourceKey parentSourceKey,
             GraphitronType.ResultType parentResultType,
-            String outputPackage) {
+            String outputPackage,
+            CompositeDecodeHelperRegistry registry) {
         var tableBoundParticipants = participants.stream()
             .filter(p -> p instanceof ParticipantRef.TableBound)
             .map(p -> (ParticipantRef.TableBound) p)
@@ -604,7 +611,7 @@ public final class MultiTablePolymorphicEmitter {
                 participantJoinPaths, defaultPageSize, parentSourceKey, outputPackage));
         } else {
             methods.add(buildRootConnectionFetcher(ctx, fieldName, tableBoundParticipants,
-                participantFilters, defaultPageSize, outputPackage));
+                participantFilters, defaultPageSize, outputPackage, registry));
         }
         for (var participant : tableBoundParticipants) {
             methods.add(buildPerTypenameSelect(fieldName, participant, true,
@@ -627,7 +634,8 @@ public final class MultiTablePolymorphicEmitter {
             TypeFetcherEmissionContext ctx,
             String fieldName, List<ParticipantRef.TableBound> participants,
             Map<String, List<WhereFilter>> participantFilters,
-            boolean isList, String outputPackage) {
+            boolean isList, String outputPackage,
+            CompositeDecodeHelperRegistry registry) {
 
         var listOfRecord = ParameterizedTypeName.get(LIST, RECORD);
         TypeName valueType = isList ? listOfRecord : RECORD;
@@ -654,7 +662,7 @@ public final class MultiTablePolymorphicEmitter {
         }
 
         stampUncheckedSuppressionIfNeeded(builder, participantFilters);
-        builder.addCode(buildStage1Block(ctx, participants, Map.of(), participantFilters));
+        builder.addCode(buildStage1Block(ctx, participants, Map.of(), participantFilters, registry));
 
         int pkArity = participants.get(0).table().primaryKeyColumns().size();
         builder.addStatement("Object[] result = new Object[stage1.size()]");
@@ -756,8 +764,9 @@ public final class MultiTablePolymorphicEmitter {
             builder.addStatement("$T parentRecord = ($T) env.getSource()", RECORD, RECORD);
         }
 
-        // Child polymorphic fields carry no field-level filter surface (R363 is root-only).
-        builder.addCode(buildStage1Block(ctx, participants, participantJoinPaths, Map.of()));
+        // Child polymorphic fields carry no field-level filter surface (R363 is root-only), so no
+        // decode registry is threaded here.
+        builder.addCode(buildStage1Block(ctx, participants, participantJoinPaths, Map.of(), null));
 
         int pkArity = participants.get(0).table().primaryKeyColumns().size();
         builder.addStatement("Object[] result = new Object[stage1.size()]");
@@ -839,7 +848,8 @@ public final class MultiTablePolymorphicEmitter {
             TypeFetcherEmissionContext ctx,
             String fieldName, List<ParticipantRef.TableBound> participants,
             Map<String, List<WhereFilter>> participantFilters,
-            int defaultPageSize, String outputPackage) {
+            int defaultPageSize, String outputPackage,
+            CompositeDecodeHelperRegistry registry) {
 
         var connectionResultClass = ClassName.get(outputPackage + ".util",
             no.sikt.graphitron.rewrite.generators.util.ConnectionResultClassGenerator.CLASS_NAME);
@@ -921,7 +931,7 @@ public final class MultiTablePolymorphicEmitter {
 
         // Stage 1: UNION ALL of branches as derived table; outer SELECT applies .orderBy/.seek/.limit.
         stampUncheckedSuppressionIfNeeded(builder, participantFilters);
-        builder.addCode(buildStage1ConnectionBlock(ctx, participants, participantFilters));
+        builder.addCode(buildStage1ConnectionBlock(ctx, participants, participantFilters, registry));
 
         // Stage 1.5: group stage-1 rows by __typename into (idx, pks) bindings. Reads all
         // {@code __pk0__..__pkN__} columns per row so the per-typename helper has the full PK
@@ -988,7 +998,8 @@ public final class MultiTablePolymorphicEmitter {
     private static CodeBlock buildStage1ConnectionBlock(
             TypeFetcherEmissionContext ctx,
             List<ParticipantRef.TableBound> participants,
-            Map<String, List<WhereFilter>> participantFilters) {
+            Map<String, List<WhereFilter>> participantFilters,
+            CompositeDecodeHelperRegistry registry) {
         var b = CodeBlock.builder();
 
         for (var participant : participants) {
@@ -997,6 +1008,8 @@ public final class MultiTablePolymorphicEmitter {
             b.addStatement("$T $L = $T.$L", jooqTableClass, alias, participant.table().constantsClass(), participant.table().javaFieldName());
         }
 
+        var plumbing = declareFilterPlumbing(b, participants, participantFilters);
+
         var tableWildcard = ParameterizedTypeName.get(TABLE, WildcardTypeName.subtypeOf(Object.class));
         b.add("$T $L =\n", tableWildcard, CONNECTION_PAGES_LOCAL);
         for (int p = 0; p < participants.size(); p++) {
@@ -1004,7 +1017,7 @@ public final class MultiTablePolymorphicEmitter {
             String alias = "stage1_" + participant.typeName();
             // Root connection has no parent-FK restriction, so the branch WHERE is the @field filter
             // predicate alone (R363). buildStage1ConnectionBlock previously emitted no per-branch WHERE.
-            CodeBlock branchWhere = branchFilterWhere(ctx, participant, participantFilters);
+            CodeBlock branchWhere = branchFilterWhere(ctx, participant, participantFilters, registry, plumbing);
             if (p == 0) {
                 b.add("    dsl.select($L)\n", branchProjection(participant, alias));
                 b.add("        .from($L)\n", alias);
@@ -1067,7 +1080,8 @@ public final class MultiTablePolymorphicEmitter {
             TypeFetcherEmissionContext ctx,
             List<ParticipantRef.TableBound> participants,
             Map<String, List<JoinStep>> participantJoinPaths,
-            Map<String, List<WhereFilter>> participantFilters) {
+            Map<String, List<WhereFilter>> participantFilters,
+            CompositeDecodeHelperRegistry registry) {
         var b = CodeBlock.builder();
 
         // Declare per-participant table aliases for stage 1. Stage-1 aliases are distinct from
@@ -1077,6 +1091,8 @@ public final class MultiTablePolymorphicEmitter {
             String alias = "stage1_" + participant.typeName();
             b.addStatement("$T $L = $T.$L", jooqTableClass, alias, participant.table().constantsClass(), participant.table().javaFieldName());
         }
+
+        var plumbing = declareFilterPlumbing(b, participants, participantFilters);
 
         var resultBound = ParameterizedTypeName.get(RESULT,
             WildcardTypeName.subtypeOf(RECORD));
@@ -1088,7 +1104,7 @@ public final class MultiTablePolymorphicEmitter {
             // (R363, root fields); either may be null, in which case the other stands alone.
             CodeBlock branchWhere = andWhere(
                 branchParentFkWhere(participant, participantJoinPaths),
-                branchFilterWhere(ctx, participant, participantFilters));
+                branchFilterWhere(ctx, participant, participantFilters, registry, plumbing));
             if (p == 0) {
                 b.add("dsl.select($L)\n", branchProjection(participant, alias));
                 b.add("    .from($L)\n", alias);
@@ -1152,6 +1168,74 @@ public final class MultiTablePolymorphicEmitter {
     }
 
     /**
+     * Pre-declared extraction plumbing shared by every stage-1 branch of one fetcher method
+     * (R384 phase 0). {@code fkTargetAliases} maps each {@link no.sikt.graphitron.rewrite.model.FkTargetConditionFilter}
+     * to its declared per-hop alias locals (namespaced by the participant's {@code stage1_<Type>}
+     * base, so two participants' filters never collide); {@code liftedOuters} maps a
+     * {@link CallSiteExtraction.NestedInputField#outerArgName()} referenced by ≥2 call params
+     * across all participants to the shared {@code Map<?, ?>} local holding its one
+     * {@code env.getArgument} read.
+     */
+    private record FilterPlumbing(
+            Map<WhereFilter, List<String>> fkTargetAliases,
+            Map<String, String> liftedOuters) {
+        static final FilterPlumbing EMPTY = new FilterPlumbing(Map.of(), Map.of());
+    }
+
+    /**
+     * Declares, as statements ahead of the inline stage-1 union expression, every local the branch
+     * filter terms need but cannot introduce themselves (filter terms compose as expressions):
+     *
+     * <ul>
+     *   <li>FK-target join-hop aliases ({@link FkTargetConditionEmitter#declareAliases}), invoked
+     *       once per participant with the participant's {@code stage1_<Type>} base alias so the
+     *       Java locals stay unique across participants within the one enclosing method;</li>
+     *   <li>one {@code List<String> <name>Keys} local per {@code JooqConvert}-list arg name,
+     *       deduped across participants (the env argument is the same for every branch), matching
+     *       the single-table {@code QueryConditionsGenerator} pre-lift;</li>
+     *   <li>one {@code Map<?, ?>} local per nested-input outer arg referenced ≥2 times across all
+     *       participants' filters ({@link QueryConditionsGenerator#computeLiftedOuters}) — on this
+     *       path two branches filtering on the same input object share the read.</li>
+     * </ul>
+     *
+     * Returns {@link FilterPlumbing#EMPTY} without emitting anything when no participant carries
+     * filters (the child-fetcher and service forms).
+     */
+    private static FilterPlumbing declareFilterPlumbing(CodeBlock.Builder b,
+            List<ParticipantRef.TableBound> participants,
+            Map<String, List<WhereFilter>> participantFilters) {
+        if (participantFilters.values().stream().allMatch(List::isEmpty)) {
+            return FilterPlumbing.EMPTY;
+        }
+        var fkTargetAliases = new java.util.IdentityHashMap<WhereFilter, List<String>>();
+        for (var participant : participants) {
+            var filters = participantFilters.getOrDefault(participant.typeName(), List.of());
+            if (filters.isEmpty()) continue;
+            fkTargetAliases.putAll(FkTargetConditionEmitter.declareAliases(
+                b, filters, "stage1_" + participant.typeName(), false));
+        }
+        var allFilters = participants.stream()
+            .flatMap(p -> participantFilters.getOrDefault(p.typeName(), List.<WhereFilter>of()).stream())
+            .toList();
+        var declaredKeys = new java.util.LinkedHashSet<String>();
+        for (var filter : allFilters) {
+            for (var param : filter.callParams()) {
+                if (param.extraction() instanceof CallSiteExtraction.JooqConvert && param.list()
+                        && declaredKeys.add(param.name())) {
+                    b.addStatement("$T<$T> $L = env.getArgument($S)",
+                        LIST, String.class, toCamelCase(param.name()) + "Keys", param.name());
+                }
+            }
+        }
+        var liftedOuters = QueryConditionsGenerator.computeLiftedOuters(allFilters);
+        for (var entry : liftedOuters.entrySet()) {
+            b.addStatement("$T<?, ?> $L = env.getArgument($S) instanceof $T<?, ?> map ? map : null",
+                Map.class, entry.getValue(), entry.getKey(), Map.class);
+        }
+        return new FilterPlumbing(fkTargetAliases, liftedOuters);
+    }
+
+    /**
      * Builds the {@code @field} filter predicate for one stage-1 branch by ANDing each lowered
      * {@link WhereFilter} as a condition term bound to the branch alias {@code stage1_<Type>} (R363),
      * or {@code null} when the participant has no filters. Reuses
@@ -1159,19 +1243,24 @@ public final class MultiTablePolymorphicEmitter {
      * exactly as the single-table fetcher path does — each participant's filters were lowered against
      * its own table, with a participant-named {@code <Participant>Conditions} method.
      *
-     * <p>The classifier ({@code FieldBuilder.lowerParticipantFilters}) admits only branch-safe
-     * {@link GeneratedConditionFilter}s with registry-free, local-free extractions, so this path
-     * needs no {@code CompositeDecodeHelperRegistry}, no lift context, and no FK-target aliases —
-     * unsupported filter shapes are rejected at build time before reaching here.
+     * <p>R384 phase 0 threads the real extraction plumbing through this seam: the enclosing
+     * {@code <Type>Fetchers} class's {@link CompositeDecodeHelperRegistry} (decode helpers land on
+     * the class hosting the call site, mirroring the split-rows / lookup-rows precedent), the
+     * lifted-outer Map locals, and the FK-target aliases declared by
+     * {@link #declareFilterPlumbing} ahead of the union expression. The classifier
+     * ({@code FieldBuilder.firstUnsupportedFilterArg}) still gates which extraction kinds reach
+     * here; each R384 phase flips one arm on top of this shared threading.
      */
     private static CodeBlock branchFilterWhere(TypeFetcherEmissionContext ctx,
-            ParticipantRef.TableBound participant, Map<String, List<WhereFilter>> participantFilters) {
+            ParticipantRef.TableBound participant, Map<String, List<WhereFilter>> participantFilters,
+            CompositeDecodeHelperRegistry registry, FilterPlumbing plumbing) {
         var filters = participantFilters.getOrDefault(participant.typeName(), List.of());
         if (filters.isEmpty()) return null;
         String alias = "stage1_" + participant.typeName();
         var b = CodeBlock.builder();
         for (int i = 0; i < filters.size(); i++) {
-            var term = FkTargetConditionEmitter.emitTerm(ctx, filters.get(i), alias, null, null, Map.of());
+            var term = FkTargetConditionEmitter.emitTerm(ctx, filters.get(i), alias,
+                registry, plumbing.liftedOuters(), plumbing.fkTargetAliases());
             if (i == 0) {
                 b.add("$L", term);
             } else {

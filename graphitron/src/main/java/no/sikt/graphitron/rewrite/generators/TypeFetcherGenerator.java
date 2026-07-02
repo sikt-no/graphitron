@@ -481,11 +481,11 @@ public class TypeFetcherGenerator {
                     if (f.returnType().wrapper() instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.Connection conn) {
                         MultiTablePolymorphicEmitter
                             .emitConnectionMethods(ctx, f.name(), f.participants(), participantFilters, Map.of(),
-                                conn.defaultPageSize(), null, null, outputPackage)
+                                conn.defaultPageSize(), null, null, outputPackage, registry)
                             .forEach(builder::addMethod);
                     } else {
                         MultiTablePolymorphicEmitter
-                            .emitMethods(ctx, f.name(), f.participants(), participantFilters, f.returnType().wrapper().isList(), outputPackage)
+                            .emitMethods(ctx, f.name(), f.participants(), participantFilters, f.returnType().wrapper().isList(), outputPackage, registry)
                             .forEach(builder::addMethod);
                     }
                 }
@@ -494,11 +494,11 @@ public class TypeFetcherGenerator {
                     if (f.returnType().wrapper() instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.Connection conn) {
                         MultiTablePolymorphicEmitter
                             .emitConnectionMethods(ctx, f.name(), f.participants(), participantFilters, Map.of(),
-                                conn.defaultPageSize(), null, null, outputPackage)
+                                conn.defaultPageSize(), null, null, outputPackage, registry)
                             .forEach(builder::addMethod);
                     } else {
                         MultiTablePolymorphicEmitter
-                            .emitMethods(ctx, f.name(), f.participants(), participantFilters, f.returnType().wrapper().isList(), outputPackage)
+                            .emitMethods(ctx, f.name(), f.participants(), participantFilters, f.returnType().wrapper().isList(), outputPackage, registry)
                             .forEach(builder::addMethod);
                     }
                 }
@@ -576,7 +576,7 @@ public class TypeFetcherGenerator {
                     if (f.returnType().wrapper() instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.Connection conn) {
                         MultiTablePolymorphicEmitter
                             .emitConnectionMethods(ctx, f.name(), f.participants(), Map.of(), f.participantJoinPaths(),
-                                conn.defaultPageSize(), f.parentSourceKey(), f.parentResultType(), outputPackage)
+                                conn.defaultPageSize(), f.parentSourceKey(), f.parentResultType(), outputPackage, registry)
                             .forEach(builder::addMethod);
                     } else {
                         MultiTablePolymorphicEmitter
@@ -590,7 +590,7 @@ public class TypeFetcherGenerator {
                     if (f.returnType().wrapper() instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.Connection conn) {
                         MultiTablePolymorphicEmitter
                             .emitConnectionMethods(ctx, f.name(), f.participants(), Map.of(), f.participantJoinPaths(),
-                                conn.defaultPageSize(), f.parentSourceKey(), f.parentResultType(), outputPackage)
+                                conn.defaultPageSize(), f.parentSourceKey(), f.parentResultType(), outputPackage, registry)
                             .forEach(builder::addMethod);
                     } else {
                         MultiTablePolymorphicEmitter
