@@ -1,13 +1,13 @@
 ---
 id: R410
 title: "graphitron:dev owns incremental compilation of generated sources"
-status: Ready
+status: In Progress
 bucket: feature
 priority: 3
 theme: lsp
 depends-on: []
 created: 2026-07-01
-last-updated: 2026-07-01
+last-updated: 2026-07-02
 ---
 
 # graphitron:dev owns incremental compilation of generated sources
