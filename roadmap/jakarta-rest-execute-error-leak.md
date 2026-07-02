@@ -113,15 +113,28 @@ for a second redaction site and should be stated as such in the code.
 
 ## Align with the existing redaction path
 
-Because two sites now redact, they must produce **one** client-facing shape, or consumer
-log-correlation tooling and clients reading the reference must handle both and they drift. Adopt the
-`ErrorRouterClassGenerator.redactBody()` contract verbatim: message `"An error occurred. Reference: "
-+ correlationId + "."`, no `extensions`, the id embedded in the message. The resource cannot reference
-the generated `ErrorRouter` (wrong module; `redact` returns a `DataFetcherResult`, not an HTTP body),
-so "one contract" is enforced by a Spec-level format decision plus a conformance assertion that the
-fetcher-thrown path and the input-building path yield the same error shape, not by code reuse. If a
-future change wants `extensions.errorId` instead, that is a change to the generated `redactBody()` too,
-in scope of that change, not a divergence introduced only here.
+Because two sites now redact, they must present **one** client-facing correlation contract, or
+consumer log-correlation tooling and clients reading the reference must handle both and they drift.
+The shared contract is the **message**: `"An error occurred. Reference: " + correlationId + "."`, the
+id embedded in the message, verbatim on both sites. The resource emits this as a plain `{ "errors":
+[ { "message": ... } ] }` with **no `extensions`**, matching its own request-error family (400/405/422
+all go through `errorBody`, which carries no extensions).
+
+**Implementation note (In Progress):** the two sites are *not* byte-identical error objects, and the
+earlier "no `extensions` on both" wording overstated the alignment. `ErrorRouterClassGenerator.redactBody()`
+builds its error through graphql-java's `GraphqlErrorBuilder.newError(env)`, which serialises a default
+`extensions.classification` (`DataFetchingException`); the resource, emitting a hand-built map, carries
+no extensions. Both still satisfy the redaction contract, no exception message, class, or stack, and an
+identical reference message. Matching graphql-java's `classification` from the resource was rejected: it
+would contradict the "no extensions" requirement below, make the 500 inconsistent with the resource's own
+400/422 errors, misclassify a pre-execution input-building fault as a data-fetching one, and couple the
+resource to graphql-java error internals. The resource cannot reference the generated `ErrorRouter`
+(wrong module; `redact` returns a `DataFetcherResult`, not an HTTP body), so the contract is enforced by a
+Spec-level format decision plus the `redactionShapeMatchesFetcherPath` conformance assertion, which pins
+message-identity on both legs, no-extensions on the resource leg, and absence of leaked internals on both,
+not by code reuse. If a future change wants `extensions.errorId` on the message, that is a change to the
+generated `redactBody()` and to the resource together, in scope of that change, not a divergence
+introduced only here.
 
 ## Design notes and constraints
 
@@ -200,8 +213,12 @@ request that makes `newExecutionInput()` throw, then asserts: modern mode return
 `application/graphql-response+json`; the body has an `errors` array whose message is the
 `"An error occurred. Reference: <uuid>."` shape; and the body contains none of the exception's
 internals (no class name, stack frame, or `localhost`/port substring). This needs a **fault-injection
-seam** in the sakila adapter (e.g. a sentinel query, header, or operation that makes the adapter's
-`newExecutionInput()` throw on demand); choosing the least-intrusive seam is part of In Progress. A
+seam** that makes `newExecutionInput()` throw on demand. **Resolved (In Progress):** a test-scoped
+`@Alternative @Priority` bean (`FaultInjectingGraphitronApplication`) subclasses the real
+`SakilaGraphitronApplication`, throwing on a sentinel `X-Graphitron-Fault` header and delegating every
+other request to `super.newExecutionInput()`. This keeps the fault path out of the shipped reference
+adapter (which subgraph authors copy as a template) while still driving the real seam wiring and the real
+`execute()` guard end-to-end. A
 legacy-mode variant asserts the 200 + generic `errors` body per fork 2. A third case asserts the
 `WebApplicationException` passthrough: when the fault-injection seam throws a `WebApplicationException`
 (e.g. `ForbiddenException`), the response carries the container-mapped status (403), **not** a redacted
@@ -216,13 +233,17 @@ the input-building-throw response shape matches the fetcher-throw redaction shap
   `WebApplicationException` (and subtypes) is re-thrown unredacted so the container maps its status; no
   *other* `Exception` escapes the resource.
 - The 500 (modern) / 200 (legacy) response is spec-compliant `errors` JSON whose single error uses the
-  same `"An error occurred. Reference: <uuid>."` shape the generated `ErrorRouter` emits, no extensions,
-  no exception message/class/stack.
+  same `"An error occurred. Reference: <uuid>."` message the generated `ErrorRouter` emits, with **no
+  `extensions`** on the resource side and no exception message/class/stack. (The fetcher path carries
+  graphql-java's default `extensions.classification`; the shared contract is the reference message, not
+  byte-identity, see *Align with the existing redaction path*.)
 - The real cause is logged server-side under that id via SLF4J.
 - Conformance cases in `GraphQLOverHttpConformanceTest` assert: the sanitized redaction response and the
   absence of any leaked internal string (no class name, stack frame, or `localhost`/port substring); the
   `WebApplicationException` passthrough (a thrown `ForbiddenException` yields the container-mapped 403,
-  not a redacted 500); and that the input-building-throw shape matches the fetcher-throw shape.
+  not a redacted 500); and that the input-building-throw message matches the fetcher-throw message
+  (`redactionShapeMatchesFetcherPath`: message-identical on both legs, no-extensions on the resource leg,
+  no leaked internals on either).
 - The only dependency added to the module's pom is `org.slf4j:slf4j-api` at `provided` scope (already
   version-pinned in the parent `dependencyManagement`); no unpinned dependency and no RESTEasy/Quarkus
   type is introduced.
