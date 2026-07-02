@@ -259,6 +259,64 @@ class MultiTableFilterExecutionTest {
 
     @Test
     @SuppressWarnings("unchecked")
+    void fieldLevelCondition_runsPerBranch() {
+        // R384 phase c: a field-level developer @condition runs against each branch's own stage-1
+        // table local. firstNameStartsWithM matches customer Mary and staff Mike.
+        Map<String, Object> data = execute("""
+            { occupantsStartingWithM {
+                __typename
+                ... on Customer { firstName }
+                ... on Staff { firstName }
+            } }
+            """);
+        List<Map<String, Object>> rows = (List<Map<String, Object>>) data.get("occupantsStartingWithM");
+        assertThat(rows).extracting(r -> (String) r.get("firstName"))
+            .containsExactlyInAnyOrder("Mary", "Mike");
+        assertThat(rows).extracting(r -> (String) r.get("__typename"))
+            .containsExactlyInAnyOrder("Customer", "Staff");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void argLevelConditionOverride_replacesImplicitEquality() {
+        // R384 phase c: @condition(override: true) suppresses the implicit first_name equality and
+        // the developer prefix-match runs instead — equality on "M" would match no row, so Mary
+        // and Mike coming back proves the method fired per branch.
+        Map<String, Object> data = execute("""
+            { occupantsByNamePrefix(firstName: "M") {
+                __typename
+                ... on Customer { firstName }
+                ... on Staff { firstName }
+            } }
+            """);
+        List<Map<String, Object>> rows = (List<Map<String, Object>>) data.get("occupantsByNamePrefix");
+        assertThat(rows).extracting(r -> (String) r.get("firstName"))
+            .containsExactlyInAnyOrder("Mary", "Mike");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void nestedInputCondition_receivesMapTraversedValue() {
+        // R384 phase c: a nested-input developer @condition (OccupantFilter.namePrefix) receives
+        // the Map-traversed value per branch. Prefix "Li" matches only customer Linda.
+        Map<String, Object> data = execute("""
+            { occupantsByFilter(filter: { namePrefix: "Li" }) {
+                __typename
+                ... on Customer { firstName }
+                ... on Staff { firstName }
+            } }
+            """);
+        List<Map<String, Object>> rows = (List<Map<String, Object>>) data.get("occupantsByFilter");
+        assertThat(rows)
+            .singleElement()
+            .satisfies(r -> {
+                assertThat(r.get("__typename")).isEqualTo("Customer");
+                assertThat(r.get("firstName")).isEqualTo("Linda");
+            });
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
     void connectionForm_filterApplied_returnsOnlyMatchingNodes() {
         Map<String, Object> data = execute("""
             { occupantsByNameConnection(firstName: ["Mike"]) {

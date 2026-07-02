@@ -6,7 +6,6 @@ import no.sikt.graphitron.rewrite.model.GeneratedConditionFilter;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.ParticipantFilters;
 import no.sikt.graphitron.rewrite.model.QueryField;
-import no.sikt.graphitron.rewrite.model.Rejection;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
 
@@ -15,11 +14,11 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R363: a {@code @field}-mapped filter input on a root multitable interface / union query field is
- * lowered <em>per participant</em>, each against the participant's own table, and the model carries
- * the resolved filters in a field-local {@link ParticipantFilters} list. A column absent from one
- * participant fails classification, and a {@code @condition} on the path is rejected with a
- * non-deferred ({@code structural}) rejection.
+ * R363/R383/R384: a filter input on a root multitable interface / union query field is lowered
+ * <em>per participant</em>, each against the participant's own table, and the model carries the
+ * resolved filters in a field-local {@link ParticipantFilters} list. Column filters (plain, enum,
+ * jOOQ-converted, {@code @nodeId}-decoded; top-level or nested-input) and developer
+ * {@code @condition} filters all lower; a column absent from one participant fails classification.
  */
 @PipelineTier
 class MultiTableFilterLoweringTest {
@@ -146,21 +145,38 @@ class MultiTableFilterLoweringTest {
     }
 
     @Test
-    void nestedInputFieldCondition_rejectedStructuralNotDeferred() {
-        // A developer @condition on a nested input field is a ConditionFilter (not a
-        // GeneratedConditionFilter), so it stays rejected even though plain nested @field filters
-        // are now admitted: the branch path carries no @condition adapter/registry plumbing.
+    void nestedInputFieldCondition_lowersPerParticipantAsRewrappedConditionFilter() {
+        // R384 phase c: a developer @condition on a nested input field lowers per participant as a
+        // ConditionFilter whose arg param extracts via the Map traversal (rewrapForNested). The
+        // field/arg-level guard never reached this shape; the relaxed extraction gate admits it.
         var schema = TestSchemaHelper.buildSchema(CUSTOMER_STAFF + """
             input OccupantFilter {
-                firstName: String @condition(condition: {
-                    className: "no.sikt.graphitron.rewrite.TestConditionStub", method: "anyMethod"})
+                firstName: String @field(name: "first_name") @condition(condition: {
+                    className: "no.sikt.graphitron.rewrite.TestConditionStub", method: "occupantsFirstName"})
             }
             union Occupant = Customer | Staff
             type Query {
                 occupants(filter: OccupantFilter): [Occupant!]!
             }
             """);
-        assertConditionRejectedStructural(schema.field("Query", "occupants"));
+        var field = schema.field("Query", "occupants");
+        assertThat(field).isInstanceOf(QueryField.QueryUnionField.class);
+        var union = (QueryField.QueryUnionField) field;
+        assertThat(union.participantFilters()).hasSize(2);
+        for (var pf : union.participantFilters()) {
+            var cf = pf.filters().stream()
+                .filter(f -> f instanceof no.sikt.graphitron.rewrite.model.ConditionFilter)
+                .map(f -> (no.sikt.graphitron.rewrite.model.ConditionFilter) f)
+                .findFirst()
+                .orElseThrow(() -> new AssertionError(
+                    "participant '" + pf.participant().typeName() + "' carries no ConditionFilter: "
+                        + pf.filters()));
+            assertThat(cf.methodName()).isEqualTo("occupantsFirstName");
+            var callParam = cf.callParams().get(0);
+            assertThat(callParam.extraction())
+                .as("a nested-input @condition arg extracts via the Map traversal")
+                .isInstanceOf(CallSiteExtraction.NestedInputField.class);
+        }
     }
 
     @Test
@@ -305,42 +321,48 @@ class MultiTableFilterLoweringTest {
     }
 
     @Test
-    void fieldLevelCondition_rejectedStructuralNotDeferred() {
+    void fieldLevelCondition_lowersPerParticipant() {
+        // R384 phase c: a field-level developer @condition lowers per participant; the reflected
+        // ConditionFilter is table-agnostic (Table<?> first parameter), so the same method serves
+        // every branch against its own stage-1 alias.
         var schema = TestSchemaHelper.buildSchema(CUSTOMER_STAFF + """
             union Occupant = Customer | Staff
             type Query {
                 occupants: [Occupant!]! @condition(condition: {
-                    className: "no.sikt.graphitron.rewrite.TestConditionStub", method: "anyMethod"})
+                    className: "no.sikt.graphitron.rewrite.TestConditionStub", method: "lifterFieldCondition"})
             }
             """);
-        assertConditionRejectedStructural(schema.field("Query", "occupants"));
+        assertLowersConditionFilterPerParticipant(schema.field("Query", "occupants"), "lifterFieldCondition");
     }
 
     @Test
-    void argLevelCondition_rejectedStructuralNotDeferred() {
+    void argLevelCondition_lowersPerParticipant() {
         var schema = TestSchemaHelper.buildSchema(CUSTOMER_STAFF + """
             union Occupant = Customer | Staff
             type Query {
-                occupants(firstName: String @condition(condition: {
-                    className: "no.sikt.graphitron.rewrite.TestConditionStub", method: "anyMethod"})): [Occupant!]!
+                occupants(firstName: String @field(name: "first_name") @condition(condition: {
+                    className: "no.sikt.graphitron.rewrite.TestConditionStub", method: "occupantsFirstName"})): [Occupant!]!
             }
             """);
-        assertConditionRejectedStructural(schema.field("Query", "occupants"));
+        assertLowersConditionFilterPerParticipant(schema.field("Query", "occupants"), "occupantsFirstName");
     }
 
     /**
-     * The {@code @condition} rejection must be a non-deferred {@code structural} author error: a
-     * deferred rejection would pin a dangling {@code planSlug}, the hazard R363 avoids. Asserting the
-     * <em>kind</em> (not merely that some rejection fires) pins that decision.
+     * R384 phase c: the field classifies as a {@link QueryField.QueryUnionField} and every
+     * table-bound participant's filter list carries the developer
+     * {@link no.sikt.graphitron.rewrite.model.ConditionFilter} with the expected method.
      */
-    private static void assertConditionRejectedStructural(GraphitronField field) {
-        assertThat(field).isInstanceOf(GraphitronField.UnclassifiedField.class);
-        var unc = (GraphitronField.UnclassifiedField) field;
-        assertThat(unc.kind())
-            .as("structural rejection is an AUTHOR_ERROR, never DEFERRED (no dangling slug)")
-            .isEqualTo(RejectionKind.AUTHOR_ERROR);
-        assertThat(unc.rejection())
-            .isInstanceOf(Rejection.AuthorError.Structural.class);
-        assertThat(unc.reason()).contains("@condition");
+    private static void assertLowersConditionFilterPerParticipant(GraphitronField field, String methodName) {
+        assertThat(field).isInstanceOf(QueryField.QueryUnionField.class);
+        var union = (QueryField.QueryUnionField) field;
+        assertThat(union.participantFilters()).hasSize(2);
+        for (var pf : union.participantFilters()) {
+            assertThat(pf.filters())
+                .as("participant '" + pf.participant().typeName() + "' carries the developer @condition")
+                .anySatisfy(f -> {
+                    assertThat(f).isInstanceOf(no.sikt.graphitron.rewrite.model.ConditionFilter.class);
+                    assertThat(f.methodName()).isEqualTo(methodName);
+                });
+        }
     }
 }

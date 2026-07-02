@@ -682,15 +682,6 @@ class FieldBuilder {
         record Rejected(Rejection rejection) implements ParticipantFiltersResult {}
     }
 
-    /** True iff the field, or any of its arguments, carries a developer {@code @condition} directive. */
-    private static boolean hasCondition(GraphQLFieldDefinition fieldDef) {
-        if (fieldDef.hasAppliedDirective(DIR_CONDITION)) return true;
-        for (var arg : fieldDef.getArguments()) {
-            if (arg.hasAppliedDirective(DIR_CONDITION)) return true;
-        }
-        return false;
-    }
-
     /**
      * Lowers {@code @field}-mapped filter arguments once per table-bound participant of a multi-table
      * polymorphic root query field, each against the participant's own table so the generated
@@ -700,10 +691,12 @@ class FieldBuilder {
      * participant surfaces as that participant's classifier rejection, failing the build. The
      * {@code @asConnection} same-table advisory is emitted at most once across participants.
      *
-     * <p>Callers must reject a field- or argument-level {@code @condition} before invoking this:
-     * {@link #resolveTableFieldComponents} itself lowers a {@code @condition} into a
-     * {@code ConditionFilter} bound to the table it is handed, so running it across N participant
-     * tables would pin the developer's single-table method to the wrong table on N-1 branches.
+     * <p>Developer {@code @condition} filters (R384 phase c) lower through the same per-participant
+     * loop: {@link #resolveTableFieldComponents} reflects the {@code @condition} method once per
+     * participant, and the branch emitter calls it against each participant's stage-1 alias. The
+     * contract is the one every {@code @condition} already carries: a {@code Table<?>}-typed first
+     * parameter serves every branch, while a concrete participant-table parameter surfaces a
+     * mismatched branch at the consumer's javac (mirroring R379's concrete-parameter semantics).
      */
     private ParticipantFiltersResult lowerParticipantFilters(
             GraphQLFieldDefinition fieldDef, List<ParticipantRef> participants) {
@@ -727,11 +720,12 @@ class FieldBuilder {
             var unsupported = firstUnsupportedFilterArg(tfc.filters());
             if (unsupported != null) {
                 return new ParticipantFiltersResult.Rejected(Rejection.structural(
-                    "filter argument '" + unsupported + "' on a multitable interface/union is not yet "
+                    "filter argument '" + unsupported + "' on a multitable interface/union is not "
                     + "supported: the polymorphic branch emitter handles plain scalar, enum, "
-                    + "jOOQ-converted (e.g. ID-typed), and @nodeId-decoded column filters (top-level "
-                    + "or nested-input @field), but not developer @condition filters (participant '"
-                    + tb.typeName() + "')"));
+                    + "jOOQ-converted (e.g. ID-typed), and @nodeId-decoded column filters plus "
+                    + "developer @condition filters (top-level or nested-input), but this argument's "
+                    + "extraction is a record/bean-decode shape the branch path does not carry "
+                    + "(participant '" + tb.typeName() + "')"));
             }
             result.add(new ParticipantFilters(tb, tfc.filters()));
         }
@@ -745,24 +739,24 @@ class FieldBuilder {
      * the enclosing fetcher class's {@code CompositeDecodeHelperRegistry} and the pre-declared lift
      * locals threaded through it (R384 phase 0), and supports {@code Direct}, {@code EnumValueOf},
      * {@code ContextArg}, {@code JooqConvert} (R384 phase a), {@code NodeIdDecodeKeys} (R384
-     * phase b), and a {@code NestedInputField} whose leaf is itself one of those. {@code InputBean}
-     * and the record-decode shapes stay rejected, and a developer {@code @condition}
-     * ({@code ConditionFilter} / {@code FkTargetConditionFilter}) is not a
-     * {@code GeneratedConditionFilter} at all, so it is rejected by the first guard below. Rejecting
-     * at classify time keeps the failure a clean build error rather than an emitter
-     * {@code IllegalStateException} or uncompilable output ("classifier guarantees shape emitter
-     * assumptions").
+     * phase b), a {@code NestedInputField} whose leaf is itself one of those, and developer
+     * {@code @condition} filters (R384 phase c: {@code ConditionFilter} /
+     * {@code FkTargetConditionFilter} gate on their per-param extractions like every other filter;
+     * the FK-target alias pass and the registry supply their plumbing). {@code InputBean} and the
+     * record-decode shapes stay rejected. Rejecting at classify time keeps the failure a clean
+     * build error rather than an emitter {@code IllegalStateException} or uncompilable output
+     * ("classifier guarantees shape emitter assumptions").
      */
     private static String firstUnsupportedFilterArg(List<WhereFilter> filters) {
         for (var filter : filters) {
-            // Only Graphitron-generated column filters are emittable on the branch path. A developer
-            // @condition (ConditionFilter / FkTargetConditionFilter, e.g. from a nested-input
-            // @condition the field/arg-level hasCondition guard does not reach) needs the
-            // adapter/registry plumbing the polymorphic branch does not carry.
-            if (!(filter instanceof GeneratedConditionFilter)) {
-                return filter.callParams().isEmpty()
-                    ? "@condition" : filter.callParams().get(0).name();
-            }
+            // R384 phase c: developer @condition filters (ConditionFilter / FkTargetConditionFilter)
+            // are no longer rejected outright — the phase-0 threading supplies the FK-target alias
+            // pass and the decode registry their emission needs, so every filter kind is gated
+            // uniformly on its per-param extractions below. The developer method runs once per
+            // branch against that participant's stage-1 alias; a method whose Table parameter is
+            // declared as a concrete participant table surfaces any mismatch at the consumer's
+            // javac (the same contract as R379's concrete-parameter checks), while the common
+            // Table<?> signature serves every branch.
             for (var param : filter.callParams()) {
                 if (!isBranchSafeExtraction(param.extraction())) {
                     return param.name();
@@ -3775,18 +3769,6 @@ class FieldBuilder {
                 new ReturnTypeRef.TableBoundReturnType(elementTypeName, tableInterfaceType.table(), wrapper),
                 tableInterfaceType.discriminatorColumn(), knownValues, tableInterfaceType.participants(),
                 tfc.filters(), tfc.orderBy(), tfc.pagination());
-        }
-        if (elementType instanceof InterfaceType || elementType instanceof UnionType) {
-            // R363: reject @condition on the multitable path BEFORE the per-participant lowering.
-            // resolveTableFieldComponents lowers a @condition into a ConditionFilter bound to the
-            // table it is handed; running it per participant would pin the developer's single-table
-            // method to a different participant table on each branch (a consumer-compile failure),
-            // so the guard must precede the loop. A structural (non-deferred) rejection: nothing in
-            // the build pins a deferred planSlug to a roadmap file, so a slug would dangle.
-            if (hasCondition(fieldDef)) {
-                return new UnclassifiedField(parentTypeName, name, location, fieldDef,
-                    Rejection.structural("@condition on a multitable interface/union is not yet supported"));
-            }
         }
         if (elementType instanceof InterfaceType interfaceType) {
             var lowered = lowerParticipantFilters(fieldDef, interfaceType.participants());

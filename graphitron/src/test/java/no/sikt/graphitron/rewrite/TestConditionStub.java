@@ -109,6 +109,16 @@ class TestConditionStub {
     }
 
     /**
+     * R384 phase c fixture: arg-level / input-field {@code @condition} on a multitable
+     * interface/union query field. The {@code Table<?>} first parameter serves every participant
+     * branch (the emitter passes each branch's own {@code stage1_<Type>} alias); {@code firstName}
+     * binds the same-named GraphQL argument or input field.
+     */
+    public static Condition occupantsFirstName(org.jooq.Table<?> table, String firstName) {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
      * R210 fixture: {@code @condition(override: true)} on an input field whose name does not
      * match any column on the resolving table. Parameter name {@code sakskode} matches the
      * GraphQL input field name used in {@link GraphitronSchemaBuilderTest}'s R210 cases.
