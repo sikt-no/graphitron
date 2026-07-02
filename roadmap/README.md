@@ -23,7 +23,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R308` | Fix the @service list-payload N+1 by deriving many-arrival for list-returning carriers | Spec | 2026-06-14 | [plan](service-list-payload-arrival.md) |
 | `R335` | Fold input/scalar/enum classification into the single classify-and-emit walk | Spec | 2026-06-19 | [plan](walk-classifies-input-surface.md) |
 | `R421` | jakarta-rest resource leaks internals on server-side execution failure | Spec | 2026-07-02 | [plan](jakarta-rest-execute-error-leak.md) |
-| `R415` | Connection first/last arguments are not clamped to >= 0, so a negative page size reaches SQL LIMIT and throws a redacted 500 | In Review | 2026-07-02 <sub>created 2026-07-01</sub> | [plan](connection-first-last-negative-unclamped.md) |
 | `R381` | LSP-guided @reference path authoring | Spec | 2026-06-25 | [plan](lsp-reference-path-authoring.md) |
 | `R273` | Source NodeId metadata from @node + catalog PK (inferred from `implements Node`), and settle wrong-type/malformed mismatch semantics, retiring the legacy __NODE bare-ID arm | Spec | 2026-06-02 | [plan](nodeid-skip-mismatch-error-surfacing.md) |
 | `R418` | Always drop-and-recreate rewrite_test on SessionStart | Ready | 2026-07-02 <sub>created 2026-07-01</sub> | [plan](reseed-rewrite-test-on-sessionstart.md) |
@@ -213,7 +212,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 ### pagination
 
 - `R298` [**First-client contract-composition check: do type-level @tag-only synthesised connection types satisfy a real federation contract?**](federation-tag-first-client-contract-check.md) — Backlog, bug
-- `R415` [**Connection first/last arguments are not clamped to >= 0, so a negative page size reaches SQL LIMIT and throws a redacted 500**](connection-first-last-negative-unclamped.md) — In Review, bug
 - `R297` [**Collapse the shareable boolean on ConnectionType/EdgeType/PageInfoType; read federation flags off schemaType()**](collapse-connection-shareable-boolean.md) — Backlog, tech-debt
 - `R13` [**Faceted search on `@asConnection`**](faceted-search.md) — Ready
 - `R10` [**Drop the assembled-schema rebuild in favour of per-variant graphql-java forms**](drop-assembled-schema-rebuild.md) — Backlog, cleanup
