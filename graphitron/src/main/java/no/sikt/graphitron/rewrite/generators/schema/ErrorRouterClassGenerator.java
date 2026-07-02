@@ -159,6 +159,21 @@ public final class ErrorRouterClassGenerator {
         return generate("");
     }
 
+    /**
+     * The one definition of the no-channel error disposition: a router call surfacing a
+     * {@code GraphitronClientException} and redacting everything else, as
+     * {@code ErrorRouter.surfaceClientErrorOrRedact(<throwableVar>, env)}. All four no-channel
+     * emit sites consult this helper: the sync catch arms and the async {@code .exceptionally}
+     * arms of both {@code TypeFetcherGenerator} and {@code MultiTablePolymorphicEmitter}. R378
+     * flipped only the sync arms, leaving the async arms on plain {@code redact} until R415;
+     * centralising the call here makes the next disposition change one edit instead of a
+     * four-site coordination.
+     */
+    public static CodeBlock noChannelRouterCall(String outputPackage, String throwableVar) {
+        return CodeBlock.of("$T.surfaceClientErrorOrRedact($L, env)",
+            ClassName.get(outputPackage + ".schema", CLASS_NAME), throwableVar);
+    }
+
     private static TypeSpec buildMappingInterface() {
         var match = MethodSpec.methodBuilder("match")
             .addModifiers(Modifier.PUBLIC, Modifier.ABSTRACT)

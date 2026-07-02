@@ -177,6 +177,17 @@ class ErrorRouterClassGeneratorTest {
     }
 
     @Test
+    void noChannelRouterCall_emitsSurfaceClientErrorOrRedact() {
+        // R415: the one definition of the no-channel disposition every emit site consults —
+        // sync catch arms and async .exceptionally arms alike route through
+        // surfaceClientErrorOrRedact, parameterised on the local throwable's name.
+        assertThat(ErrorRouterClassGenerator.noChannelRouterCall("com.example", "e").toString())
+            .isEqualTo("com.example.schema.ErrorRouter.surfaceClientErrorOrRedact(e, env)");
+        assertThat(ErrorRouterClassGenerator.noChannelRouterCall("com.example", "t").toString())
+            .isEqualTo("com.example.schema.ErrorRouter.surfaceClientErrorOrRedact(t, env)");
+    }
+
+    @Test
     void noConstructor_otherThanPrivateNoArg() {
         var router = generate();
         var ctors = router.methodSpecs().stream()

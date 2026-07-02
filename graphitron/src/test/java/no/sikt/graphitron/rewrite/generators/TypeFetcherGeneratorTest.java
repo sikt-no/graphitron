@@ -2192,10 +2192,12 @@ class TypeFetcherGeneratorTest {
             .contains("org.dataloader.DataLoader<org.jooq.Row1<java.sql.Timestamp>, java.util.List<org.jooq.Record>>")
             .contains("DataLoaderFactory.newDataLoader");
         assertThat(fetcher)
-            .as("Loader.load(key, env) tail with thenApply + exceptionally")
+            .as("Loader.load(key, env) tail with thenApply + exceptionally routing through the "
+                + "no-channel disposition (surfaceClientErrorOrRedact, R415)")
             .contains("loader.load(key, env)")
             .contains(".thenApply(payload -> graphql.execution.DataFetcherResult.")
-            .contains(".exceptionally(t -> ");
+            .contains(".exceptionally(t -> ")
+            .contains("ErrorRouter.surfaceClientErrorOrRedact(t, env)");
         // Exactly one rows method emitted alongside the fetcher.
         var rowsMethod = method(spec, "rowsRelated");
         assertThat(rowsMethod).as("paired rows<Field> batch loader exists").isNotNull();
@@ -2362,10 +2364,12 @@ class TypeFetcherGeneratorTest {
             .contains("org.jooq.Row1<java.sql.Timestamp> key = org.jooq.impl.DSL.row("
                 + "((org.jooq.Record) env.getSource()).get(no.sikt.graphitron.rewrite.test.jooq.Tables.FILM_ACTOR.LAST_UPDATE))");
         assertThat(body)
-            .as("Async tail: thenApply lifts ConnectionResult into DataFetcherResult, exceptionally redacts")
+            .as("Async tail: thenApply lifts ConnectionResult into DataFetcherResult, exceptionally "
+                + "routes through the no-channel disposition (surfaceClientErrorOrRedact, R415)")
             .contains("loader.load(key, env)")
             .contains(".thenApply(payload -> graphql.execution.DataFetcherResult.")
-            .contains(".exceptionally(t -> ");
+            .contains(".exceptionally(t -> ")
+            .contains("ErrorRouter.surfaceClientErrorOrRedact(t, env)");
     }
 
     @Test

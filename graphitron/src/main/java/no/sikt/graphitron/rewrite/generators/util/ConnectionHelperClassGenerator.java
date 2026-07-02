@@ -55,6 +55,10 @@ public class ConnectionHelperClassGenerator {
     public static List<TypeSpec> generate(String outputPackage) {
         var connectionResultClass = ClassName.get(
             outputPackage + ".util", ConnectionResultClassGenerator.CLASS_NAME);
+        // R378 client-error marker: pageRequest's client-mistake guards throw it so the
+        // no-channel disposition surfaces the real message instead of redacting (R415).
+        var clientException = ClassName.get(outputPackage + ".schema",
+            no.sikt.graphitron.rewrite.generators.schema.GraphitronClientExceptionClassGenerator.CLASS_NAME);
 
         // --- Edge nested class ---
         var edgeClass = TypeSpec.classBuilder("Edge")
@@ -120,13 +124,15 @@ public class ConnectionHelperClassGenerator {
         //                 int defaultPageSize, List<SortField<?>> orderBy,
         //                 List<Field<?>> extraFields, List<Field<?>> selection) → PageRequest ---
         // Collapses every line of pagination boilerplate the fetcher used to inline:
-        //   - first/last mutual-exclusion guard
+        //   - client-mistake guards: first/last mutual exclusion, negative first/last, and the
+        //     derived-limit overflow — all thrown as GraphitronClientException so the real
+        //     message reaches the client instead of a redacted correlation-id 500 (R415)
         //   - backward/pageSize/cursor derivation
         //   - column-driven cursor decode (delegates to decodeCursor)
         //   - reverse ordering for backward pagination (delegates to reverseOrderBy)
         //   - name-based merge of extraFields into the selection (avoids Field.equals identity
         //     dependence — a name-matching column is treated as already selected).
-        // Has no graphql-java dependency (four env-arg extractions stay on the fetcher side),
+        // Takes no DataFetchingEnvironment (four env-arg extractions stay on the fetcher side),
         // matching the purity contract on the entity-scoped *Conditions classes.
         var integer = ClassName.get(Integer.class);
         var pageRequestRef = ClassName.get("", "PageRequest");
@@ -143,9 +149,21 @@ public class ConnectionHelperClassGenerator {
             .addParameter(listOfField, "selection")
             .addCode("if (first != null && last != null)\n")
             .addCode("    throw new $T($S);\n",
-                IllegalArgumentException.class, "first and last must not both be specified")
+                clientException, "first and last must not both be specified")
+            .addCode("if (first != null && first < 0)\n")
+            .addCode("    throw new $T($S + first + $S);\n",
+                clientException, "first must not be negative (was: ", ")")
+            .addCode("if (last != null && last < 0)\n")
+            .addCode("    throw new $T($S + last + $S);\n",
+                clientException, "last must not be negative (was: ", ")")
             .addStatement("boolean backward = last != null")
             .addStatement("int pageSize = backward ? last : (first != null ? first : defaultPageSize)")
+            // Guard the derived value PostgreSQL actually enforces: limit = pageSize + 1 >= 0.
+            // At MAX_VALUE the + 1 wraps to Integer.MIN_VALUE and reaches SQL as a negative
+            // LIMIT; guarding here (not per input) also covers a pathological defaultPageSize.
+            .addCode("if (pageSize == Integer.MAX_VALUE)\n")
+            .addCode("    throw new $T($S);\n",
+                clientException, "page size must be less than 2147483647")
             .addStatement("String cursor = backward ? before : after")
             .addStatement("$T seekFields = decodeCursor(cursor, extraFields)", fieldArray)
             .addStatement("$T effectiveOrderBy = backward ? reverseOrderBy(orderBy) : orderBy", listOfSortField)

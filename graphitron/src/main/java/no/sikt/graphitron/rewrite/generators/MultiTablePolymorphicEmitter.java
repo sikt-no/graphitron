@@ -2075,13 +2075,13 @@ public final class MultiTablePolymorphicEmitter {
     }
 
     private static CodeBlock noChannelCatchArm(String outputPackage) {
-        var errorRouter = ClassName.get(
-            outputPackage + ".schema",
-            no.sikt.graphitron.rewrite.generators.schema.ErrorRouterClassGenerator.CLASS_NAME);
         // Route through surfaceClientErrorOrRedact so a GraphitronClientException (e.g. a
         // malformed/wrong-type @nodeId filter id) surfaces its real message while internal faults
-        // still redact (R378); uniform with TypeFetcherGenerator's no-channel arm.
-        return CodeBlock.of("return $T.surfaceClientErrorOrRedact(e, env);\n", errorRouter);
+        // still redact (R378); uniform with TypeFetcherGenerator's no-channel arm via the shared
+        // ErrorRouterClassGenerator.noChannelRouterCall definition.
+        return CodeBlock.of("return $L;\n",
+            no.sikt.graphitron.rewrite.generators.schema.ErrorRouterClassGenerator
+                .noChannelRouterCall(outputPackage, "e"));
     }
 
     /** {@code CompletableFuture<DataFetcherResult<P>>}; primitives box. Mirror of TypeFetcherGenerator's helper. */
@@ -2092,21 +2092,22 @@ public final class MultiTablePolymorphicEmitter {
     /**
      * Async tail for fetchers whose body ends with {@code loader.load(key, env)}: lifts the
      * payload into a {@code DataFetcherResult<P>} via {@code .thenApply(...)} and routes any
-     * escape via {@code .exceptionally(t -> ErrorRouter.redact(...))}. Mirrors
+     * escape through the shared no-channel disposition
+     * ({@code ErrorRouter.surfaceClientErrorOrRedact}); the cause-chain walk unwraps the
+     * {@code CompletionException} DataLoader puts around a batch-function throw. Mirrors
      * {@code TypeFetcherGenerator.asyncWrapTail} for the no-error-channel path
      * ({@link no.sikt.graphitron.rewrite.model.ChildField.InterfaceField} /
      * {@link no.sikt.graphitron.rewrite.model.ChildField.UnionField} do not implement
      * {@code WithErrorChannel}).
      */
     private static CodeBlock asyncWrapTail(TypeName valueType, String outputPackage) {
-        var errorRouter = ClassName.get(
-            outputPackage + ".schema",
-            no.sikt.graphitron.rewrite.generators.schema.ErrorRouterClassGenerator.CLASS_NAME);
         TypeName boxed = valueType.isPrimitive() ? valueType.box() : valueType;
         return CodeBlock.builder()
             .add(".thenApply(payload -> $T.<$T>newResult().data(payload).build())\n",
                 DATA_FETCHER_RESULT, boxed)
-            .add(".exceptionally(t -> $T.redact(t, env))", errorRouter)
+            .add(".exceptionally(t -> $L)",
+                no.sikt.graphitron.rewrite.generators.schema.ErrorRouterClassGenerator
+                    .noChannelRouterCall(outputPackage, "t"))
             .build();
     }
 

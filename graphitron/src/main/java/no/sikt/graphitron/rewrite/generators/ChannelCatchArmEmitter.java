@@ -18,7 +18,8 @@ import java.util.Optional;
  * {@code catchArm} overloads:
  *
  * <ul>
- *   <li>{@code Optional.empty()} : {@code return ErrorRouter.redact(e, env);} (redact-only).</li>
+ *   <li>{@code Optional.empty()} : {@code return ErrorRouter.surfaceClientErrorOrRedact(e, env);}
+ *       (the shared no-channel disposition, R378/R415).</li>
  *   <li>{@link ErrorChannel.Mapped} : the inline mapping-walk loop that, on the first matching
  *       {@code (Mapping, cause)}, returns {@code DataFetcherResult.<P>newResult()
  *       .data(new Outcome.ErrorList<>(List.of(t))).build()}, falling through to
@@ -48,7 +49,9 @@ public final class ChannelCatchArmEmitter {
         if (channel.isEmpty()) {
             // No-channel disposition routes through surfaceClientErrorOrRedact (R378): a
             // GraphitronClientException surfaces its real message; everything else still redacts.
-            return CodeBlock.of("return $T.surfaceClientErrorOrRedact(e, env);\n", errorRouterClass(outputPackage));
+            // One definition for all no-channel emit sites (R415).
+            return CodeBlock.of("return $L;\n",
+                ErrorRouterClassGenerator.noChannelRouterCall(outputPackage, "e"));
         }
         return switch (channel.get()) {
             case ErrorChannel.Mapped m -> mappedCatchArm(m, valueType, outputPackage);

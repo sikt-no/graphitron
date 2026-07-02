@@ -1252,17 +1252,59 @@ class GraphQLQueryTest {
     @Test
     void filmsConnection_rejectsFirstAndLastTogether() {
         // Relay spec: must reject when both first and last are supplied. The connection helper
-        // throws IllegalArgumentException with both arg names in the message; under R12 §3 the
-        // fetcher's redacting catch arm replaces the raw message with a UUID-keyed redaction
-        // (the privacy contract) so the client-visible payload no longer carries "first"/"last".
-        // Schemas that want the raw IAE message back must declare {handler: GENERIC, className:
-        // "java.lang.IllegalArgumentException"} on the payload's @error type.
+        // throws GraphitronClientException (R415, migrated from IllegalArgumentException), which
+        // the no-channel disposition surfaces with the real message instead of redacting to a
+        // correlation-id 500: a client mistake reads as a client error.
         var result = executeRaw(
             "{ filmsConnection(first: 2, last: 2) { nodes { title } } }");
         assertThat(result.getErrors()).isNotEmpty();
         assertThat(result.getErrors().get(0).getMessage())
-            .startsWith("An error occurred. Reference: ")
-            .endsWith(".");
+            .isEqualTo("first and last must not both be specified");
+    }
+
+    @Test
+    void filmsConnection_negativeFirst_surfacesClientError() {
+        // R415: a negative page size is a client mistake and must not reach SQL LIMIT (which
+        // would throw PostgreSQL's "LIMIT must not be negative" and redact into an opaque 500).
+        // The pageRequest guard throws GraphitronClientException naming the argument and value.
+        var result = executeRaw(
+            "{ filmsConnection(first: -1) { nodes { title } } }");
+        assertThat(result.getErrors()).isNotEmpty();
+        assertThat(result.getErrors().get(0).getMessage())
+            .isEqualTo("first must not be negative (was: -1)")
+            .doesNotContain("An error occurred. Reference:");
+    }
+
+    @Test
+    void filmsConnection_negativeLast_surfacesClientError() {
+        var result = executeRaw(
+            "{ filmsConnection(last: -1) { nodes { title } } }");
+        assertThat(result.getErrors()).isNotEmpty();
+        assertThat(result.getErrors().get(0).getMessage())
+            .isEqualTo("last must not be negative (was: -1)");
+    }
+
+    @Test
+    void filmsConnection_firstMaxInt_surfacesClientError() {
+        // R415 derived-limit overflow guard: limit = pageSize + 1 wraps to Integer.MIN_VALUE at
+        // Integer.MAX_VALUE, reaching SQL as a negative LIMIT — same redacted-500 family as the
+        // negative inputs, guarded at the derived value.
+        var result = executeRaw(
+            "{ filmsConnection(first: 2147483647) { nodes { title } } }");
+        assertThat(result.getErrors()).isNotEmpty();
+        assertThat(result.getErrors().get(0).getMessage())
+            .isEqualTo("page size must be less than 2147483647");
+    }
+
+    @Test
+    void filmsConnection_firstZero_returnsEmptyPageWithoutError() {
+        // first: 0 stays valid (R415 clamps only below zero): an empty page whose hasNextPage is
+        // still computable from the limit+1 probe row.
+        Map<String, Object> data = execute(
+            "{ filmsConnection(first: 0) { nodes { title } pageInfo { hasNextPage } } }");
+        var conn = assertThat(data).extractingByKey("filmsConnection", as(MAP));
+        conn.extractingByKey("nodes", as(LIST)).isEmpty();
+        conn.extractingByKey("pageInfo", as(MAP)).containsEntry("hasNextPage", true);
     }
 
     @Test
@@ -2575,6 +2617,21 @@ class GraphQLQueryTest {
             .filteredOn(s -> s.contains("select count"))
             .as("selecting totalCount should issue one per-parent count statement per parent")
             .hasSize(2);
+    }
+
+    @Test
+    void splitQueryConnection_negativeFirst_surfacesClientErrorThroughAsyncArm() {
+        // R415 load-bearing test for the async no-channel flip: the nested (DataLoader-based)
+        // connection's pageRequest guard throws inside the batch lambda, DataLoader wraps it in
+        // a CompletionException, and the fetcher's .exceptionally arm — surfaceClientErrorOrRedact
+        // since R415, plain redact before — unwraps the cause chain and surfaces the real message.
+        // A root-connection test alone would pass without the flip (the sync catch arm has
+        // surfaced client errors since R378).
+        var result = executeRaw(
+            "{ filmById(film_id: [\"1\"]) { actorsConnection(first: -1) { nodes { lastName } } } }");
+        assertThat(result.getErrors()).isNotEmpty();
+        assertThat(result.getErrors().get(0).getMessage())
+            .isEqualTo("first must not be negative (was: -1)");
     }
 
     // ===== SplitTableField / SplitLookupTableField under NestingField

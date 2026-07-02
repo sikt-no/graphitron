@@ -1,7 +1,7 @@
 ---
 id: R415
 title: "Connection first/last arguments are not clamped to >= 0, so a negative page size reaches SQL LIMIT and throws a redacted 500"
-status: Ready
+status: In Review
 bucket: bug
 priority: 4
 theme: pagination

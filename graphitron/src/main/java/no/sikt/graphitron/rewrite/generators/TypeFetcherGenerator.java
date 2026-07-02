@@ -4786,10 +4786,10 @@ public class TypeFetcherGenerator {
         builder.addStatement("String after = env.getArgument($S)", "after");
         builder.addStatement("String before = env.getArgument($S)", "before");
 
-        // Pagination resolved in one call : first/last guard, backward/pageSize/cursor derivation,
+        // Pagination resolved in one call : first/last guards, backward/pageSize/cursor derivation,
         // cursor decode, backward-ordering reversal, and name-based selection+extraFields merge
         // all live inside ConnectionHelper.pageRequest. The fetcher keeps the four env.getArgument
-        // calls above so pageRequest itself has no graphql-java dependency.
+        // calls above so pageRequest itself takes no DataFetchingEnvironment.
         var pageRequestClass = ClassName.get(
             outputPackage + ".util", "ConnectionHelper", "PageRequest");
         builder.addStatement(
@@ -6300,11 +6300,14 @@ public class TypeFetcherGenerator {
     // CompletableFuture<DataFetcherResult<P>> (async). The success arm wraps the
     // produced payload; the catch arm forks on the field's ErrorChannel:
     //   - present  -> ErrorRouter.dispatch(e, ErrorMappings.<CONST>, env, factory)
-    //   - empty    -> ErrorRouter.redact(e, env)
-    // Async paths today are all DataLoader-based child fields (BatchKeyField); none
-    // implement WithErrorChannel, so they remain on the redact branch. When the
-    // mutation-service builders (today still stubs) become live emitters, the same
-    // fork applies on the .exceptionally(...) arm via asyncWrapTail's channel param.
+    //   - empty    -> ErrorRouter.surfaceClientErrorOrRedact(e, env)
+    // The no-channel disposition is uniform across sync catch arms and async
+    // .exceptionally arms (R415); its one definition lives on
+    // ErrorRouterClassGenerator.noChannelRouterCall. Async paths today are all
+    // DataLoader-based child fields (BatchKeyField); none implement WithErrorChannel,
+    // so they take the no-channel branch. When the mutation-service builders (today
+    // still stubs) become live emitters, the same fork applies on the
+    // .exceptionally(...) arm via asyncWrapTail's channel param.
     // -----------------------------------------------------------------------
 
     /** Box primitive value types so they can sit inside {@code DataFetcherResult<P>}. */
@@ -6407,7 +6410,9 @@ public class TypeFetcherGenerator {
      * client-error marker type, so the blast radius is bounded to those throws.
      */
     private static CodeBlock noChannelCatchArm(String outputPackage) {
-        return CodeBlock.of("return $T.surfaceClientErrorOrRedact(e, env);\n", errorRouterClass(outputPackage));
+        return CodeBlock.of("return $L;\n",
+            no.sikt.graphitron.rewrite.generators.schema.ErrorRouterClassGenerator
+                .noChannelRouterCall(outputPackage, "e"));
     }
 
     /**
@@ -6504,7 +6509,11 @@ public class TypeFetcherGenerator {
                                            Optional<ErrorChannel> errorChannel) {
         CodeBlock routerCall;
         if (errorChannel.isEmpty()) {
-            routerCall = CodeBlock.of("$T.redact(t, env)", errorRouterClass(outputPackage));
+            // Same no-channel disposition as the sync catch arm: surfaceClientErrorOrRedact
+            // walks the cause chain, so the CompletionException that DataLoader wraps around a
+            // batch-function throw unwraps to the client-error marker; everything else redacts.
+            routerCall = no.sikt.graphitron.rewrite.generators.schema.ErrorRouterClassGenerator
+                .noChannelRouterCall(outputPackage, "t");
         } else {
             routerCall = switch (errorChannel.get()) {
                 // R244 additive window: Mapped is not produced yet; the async Outcome-wrapper tail
