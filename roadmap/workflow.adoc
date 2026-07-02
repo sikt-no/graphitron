@@ -82,6 +82,13 @@ The per-item front-matter is the source of truth. The roll-up README is derived.
 
 "Publish" = commit + push. A change that lives only in your working copy doesn't exist for the rest of the workflow. The trunk-push rule from `CLAUDE.md` applies: any push to your branch must be followed by a fast-forward to `claude/graphitron-rewrite`.
 
+*Fast-forward trunk before and after every transition.* Because we work trunk-based and many sessions edit `roadmap/` concurrently, each state change (`Backlog → Spec`, `Spec → Ready`, `Ready → In Progress`, `In Progress → In Review`, `In Review → Done`, and every reopen or discard) is bracketed by two trunk syncs:
+
+. *Before* you make the transition, fast-forward trunk into your branch (`git fetch origin claude/graphitron-rewrite && git rebase origin/claude/graphitron-rewrite`) so you transition from the roadmap's current state and don't clobber another session's edit to the same item.
+. *After* you commit the transition, push your branch and fast-forward trunk (`git push -u origin <your-branch> && git push origin <your-branch>:claude/graphitron-rewrite`) so the new state is immediately visible to every other session before anyone acts on it.
+
+This matters most at the reviewer-rule gates: a stale local view of an item can miss a sign-off, a reopen, or a competing edit that another session already landed on trunk. Syncing before means the reviewer rule is evaluated against the true latest history; syncing after means the next party sees your transition without a gap. If trunk moved while you were working, rebase and repeat both ends.
+
 == Adding to the roadmap
 
 Any session can add items at any time: drop a new `<slug>.md` under `roadmap/` with `status: Backlog` and the appropriate `bucket:`, then regenerate the README. Opportunities spotted during review, implementation, or unrelated work all land that way. The expectation is that they're substantive enough to justify eventual planning, not every passing thought.
