@@ -20,7 +20,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R413` | Parent-input VALUES table in split/reference batch fetchers drops converter-backed column DataType, breaking joins on numeric-domain keys | Ready | 2026-07-02 <sub>created 2026-07-01</sub> | [plan](split-parent-input-values-converter-datatype.md) |
 | `R346` | Regenerate and guard the generated supported-directives migration doc against directive-set drift | Ready | 2026-06-19 | [plan](supported-directives-regen-guard.md) |
 | `R410` | graphitron:dev owns incremental compilation of generated sources | Ready | 2026-07-01 | [plan](dev-incremental-compile.md) |
-| `R414` | Split/DataLoader connections omit table+condition from ConnectionResult, so totalCount is always null on nested connections | In Review | 2026-07-02 <sub>created 2026-07-01</sub> | [plan](nested-connection-totalcount-always-null.md) |
 | `R384` | Support converted/@nodeId/developer-@condition filters on multitable interface/union queries | In Review | 2026-07-02 <sub>created 2026-06-25</sub> | [plan](multitable-interface-converted-nodeid-condition-filters.md) |
 | `R308` | Fix the @service list-payload N+1 by deriving many-arrival for list-returning carriers | Spec | 2026-06-14 | [plan](service-list-payload-arrival.md) |
 | `R335` | Fold input/scalar/enum classification into the single classify-and-emit walk | Spec | 2026-06-19 | [plan](walk-classifies-input-surface.md) |
@@ -214,7 +213,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 ### pagination
 
 - `R298` [**First-client contract-composition check: do type-level @tag-only synthesised connection types satisfy a real federation contract?**](federation-tag-first-client-contract-check.md) — Backlog, bug
-- `R414` [**Split/DataLoader connections omit table+condition from ConnectionResult, so totalCount is always null on nested connections**](nested-connection-totalcount-always-null.md) — In Review, bug
 - `R415` [**Connection first/last arguments are not clamped to >= 0, so a negative page size reaches SQL LIMIT and throws a redacted 500**](connection-first-last-negative-unclamped.md) — In Review, bug
 - `R297` [**Collapse the shareable boolean on ConnectionType/EdgeType/PageInfoType; read federation flags off schemaType()**](collapse-connection-shareable-boolean.md) — Backlog, tech-debt
 - `R13` [**Faceted search on `@asConnection`**](faceted-search.md) — Ready
