@@ -25,9 +25,9 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R308` | Fix the @service list-payload N+1 by deriving many-arrival for list-returning carriers | Spec | 2026-06-14 | [plan](service-list-payload-arrival.md) |
 | `R335` | Fold input/scalar/enum classification into the single classify-and-emit walk | Spec | 2026-06-19 | [plan](walk-classifies-input-surface.md) |
 | `R415` | Connection first/last arguments are not clamped to >= 0, so a negative page size reaches SQL LIMIT and throws a redacted 500 | Ready | 2026-07-02 <sub>created 2026-07-01</sub> | [plan](connection-first-last-negative-unclamped.md) |
-| `R418` | Always drop-and-recreate rewrite_test on SessionStart | Spec | 2026-07-01 | [plan](reseed-rewrite-test-on-sessionstart.md) |
 | `R381` | LSP-guided @reference path authoring | Spec | 2026-06-25 | [plan](lsp-reference-path-authoring.md) |
 | `R273` | Source NodeId metadata from @node + catalog PK (inferred from `implements Node`), and settle wrong-type/malformed mismatch semantics, retiring the legacy __NODE bare-ID arm | Spec | 2026-06-02 | [plan](nodeid-skip-mismatch-error-surfacing.md) |
+| `R418` | Always drop-and-recreate rewrite_test on SessionStart | Ready | 2026-07-02 <sub>created 2026-07-01</sub> | [plan](reseed-rewrite-test-on-sessionstart.md) |
 | `R45` | Multi-tenant routing on top of the schema-driven ExecutionInput factory | Ready | 2026-06-26 | [plan](tenant-routing-and-execution-input.md) |
 | `R347` | Consolidate graphitron-lsp navigation, dispatch, and result-building | In Progress | 2026-07-01 <sub>created 2026-06-19</sub> | [plan](lsp-structural-consolidation.md) |
 | `R408` | Lint finding suppression mechanism | In Review | 2026-07-01 | [plan](lint-finding-suppression.md) |
@@ -284,7 +284,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### testing
 
-- `R418` [**Always drop-and-recreate rewrite_test on SessionStart**](reseed-rewrite-test-on-sessionstart.md) — Spec, tech-debt
+- `R418` [**Always drop-and-recreate rewrite_test on SessionStart**](reseed-rewrite-test-on-sessionstart.md) — Ready, tech-debt
 - `R25` [**Rebalance test pyramid**](rebalance-test-pyramid.md) — Backlog, architecture
 
 ### legacy-migration

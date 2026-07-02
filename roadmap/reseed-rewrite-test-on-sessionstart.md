@@ -1,13 +1,13 @@
 ---
 id: R418
 title: "Always drop-and-recreate rewrite_test on SessionStart"
-status: Spec
+status: Ready
 bucket: tech-debt
 priority: 5
 theme: testing
 depends-on: []
 created: 2026-07-01
-last-updated: 2026-07-01
+last-updated: 2026-07-02
 ---
 
 # Always drop-and-recreate rewrite_test on SessionStart
