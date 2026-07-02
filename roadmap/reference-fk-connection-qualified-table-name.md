@@ -1,13 +1,13 @@
 ---
 id: R396
 title: "@reference FK-connection validation rejects schema-qualified or case-mismatched @table base names"
-status: Ready
+status: In Progress
 bucket: bug
 priority: 3
 theme: interface-union
 depends-on: []
 created: 2026-06-29
-last-updated: 2026-06-30
+last-updated: 2026-07-02
 ---
 
 # @reference FK-connection validation rejects schema-qualified @table base names
