@@ -8,8 +8,11 @@ import org.junit.jupiter.api.Test;
 
 import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.equalTo;
+import static org.hamcrest.Matchers.matchesPattern;
+import static org.hamcrest.Matchers.not;
 import static org.hamcrest.Matchers.notNullValue;
 import static org.hamcrest.Matchers.nullValue;
+import static org.hamcrest.Matchers.containsString;
 
 /**
  * Spec-traceable GraphQL-over-HTTP conformance suite for {@code graphitron-jakarta-rest}, run
@@ -39,7 +42,18 @@ import static org.hamcrest.Matchers.nullValue;
  * | Legacy application/json -> always 200          | "application/json"                   | legacyApplicationJsonIsAlways200      |
  * | query is required                             | "Request Parameters"                 | queryParameterIsRequired              |
  * | variables/operationName/extensions handling   | "Request Parameters"                 | variablesOperationNameExtensions      |
+ * | Server-side seam fault redacted -> 500 (R421) | "application/graphql-response+json"  | serverSideFaultIsRedacted500          |
+ * | Server-side seam fault redacted -> 200 legacy | "application/json"                   | serverSideFaultIsRedacted200Legacy    |
+ * | WebApplicationException passthrough (R421)     | "application/graphql-response+json"  | webApplicationExceptionPassesThrough  |
+ * | Redaction shape matches fetcher path (R421)    | "application/graphql-response+json"  | redactionShapeMatchesFetcherPath      |
  * </pre>
+ *
+ * <p>The last four cases (R421) drive the reference adapter's {@code X-Graphitron-Fault} seam, which
+ * makes {@code newExecutionInput()} throw before execution begins, the one region neither a normal
+ * query nor the per-fetcher {@code ErrorRouter} can reach. They pin that a genuine fault is redacted to
+ * the same reference-only wire shape the fetcher path emits (proven against {@code Film.durabilityError}
+ * in {@link #redactionShapeMatchesFetcherPath()}) and that a {@code WebApplicationException} propagates
+ * to the container instead of being swallowed.
  */
 @QuarkusTest
 @QuarkusTestResource(SmokeTestPostgresResource.class)
@@ -223,5 +237,101 @@ class GraphQLOverHttpConformanceTest {
             .body("data.customers", notNullValue())
             .body("data.films", nullValue())
             .body("errors", nullValue());
+    }
+
+    // ===== server-side execution failure (R421) =====
+
+    /**
+     * The one hole R421 closes: {@code newExecutionInput()} runs before execution begins, outside
+     * every request-error branch and beyond the reach of the per-fetcher {@code ErrorRouter}. A fault
+     * there must be caught by the resource, logged server-side under a correlation id, and returned as
+     * a generic spec-compliant 500, never leaked as the container's raw error page.
+     */
+    private static final String FAULT_HEADER = "X-Graphitron-Fault";
+
+    /** The reference-only body shape both redaction sites emit: id in the message, no extensions. */
+    private static final String REFERENCE_MESSAGE = "An error occurred\\. Reference: [0-9a-fA-F-]{36}\\.";
+
+    @Test
+    @DisplayName("Server-side fault [application/graphql-response+json] (R421): a seam failure before execution is redacted to a generic 500, not leaked. -- " + SPEC_REVISION)
+    void serverSideFaultIsRedacted500() {
+        given()
+            .contentType(APPLICATION_JSON)
+            .accept(GRAPHQL_RESPONSE_JSON)
+            .header(FAULT_HEADER, "internal")
+            .body("{\"query\":\"{ customers { firstName } }\"}")
+        .when()
+            .post("/graphql")
+        .then()
+            .statusCode(500)
+            .contentType(GRAPHQL_RESPONSE_JSON)
+            // The single error is the reference-only redaction shape; nothing else in data.
+            .body("errors[0].message", matchesPattern(REFERENCE_MESSAGE))
+            .body("errors[0].extensions", nullValue())
+            // None of the thrown exception's internals leak: no class name, no host/port, no message.
+            .body(not(containsString("IllegalStateException")))
+            .body(not(containsString("db-fault-host")))
+            .body(not(containsString("5432")))
+            .body(not(containsString("no.sikt.graphitron.internal")));
+    }
+
+    @Test
+    @DisplayName("Server-side fault [application/json] (R421): legacy mode keeps the always-200 invariant while still redacting. -- " + SPEC_REVISION)
+    void serverSideFaultIsRedacted200Legacy() {
+        given()
+            .contentType(APPLICATION_JSON)
+            .accept(APPLICATION_JSON)
+            .header(FAULT_HEADER, "internal")
+            .body("{\"query\":\"{ customers { firstName } }\"}")
+        .when()
+            .post("/graphql")
+        .then()
+            .statusCode(200)
+            .body("errors[0].message", matchesPattern(REFERENCE_MESSAGE))
+            .body(not(containsString("db-fault-host")))
+            .body(not(containsString("5432")))
+            .body(not(containsString("IllegalStateException")));
+    }
+
+    @Test
+    @DisplayName("WebApplicationException passthrough (R421): a client fault thrown while seeding is mapped by the container (403), not swallowed into a redacted 500. -- " + SPEC_REVISION)
+    void webApplicationExceptionPassesThrough() {
+        given()
+            .contentType(APPLICATION_JSON)
+            .accept(GRAPHQL_RESPONSE_JSON)
+            .header(FAULT_HEADER, "forbidden")
+            .body("{\"query\":\"{ customers { firstName } }\"}")
+        .when()
+            .post("/graphql")
+        .then()
+            // The ordered first catch arm re-throws the ForbiddenException; JAX-RS maps it to 403.
+            // A 500 here would mean the redaction arm swallowed it, the bug R421's ordering prevents.
+            .statusCode(403);
+    }
+
+    @Test
+    @DisplayName("Single redaction contract (R421): the input-building-throw shape matches the fetcher-throw shape (Film.durabilityError). -- " + SPEC_REVISION)
+    void redactionShapeMatchesFetcherPath() {
+        // Input-building throw (this resource's guard).
+        given()
+            .contentType(APPLICATION_JSON)
+            .accept(GRAPHQL_RESPONSE_JSON)
+            .header(FAULT_HEADER, "internal")
+            .body("{\"query\":\"{ customers { firstName } }\"}")
+        .when()
+            .post("/graphql")
+        .then()
+            .body("errors[0].message", matchesPattern(REFERENCE_MESSAGE));
+
+        // Fetcher throw (graphql-java + generated ErrorRouter.redact), same wire shape.
+        given()
+            .contentType(APPLICATION_JSON)
+            .accept(GRAPHQL_RESPONSE_JSON)
+            .body("{\"query\":\"{ films { durabilityError } }\"}")
+        .when()
+            .post("/graphql")
+        .then()
+            .statusCode(200)
+            .body("errors[0].message", matchesPattern(REFERENCE_MESSAGE));
     }
 }

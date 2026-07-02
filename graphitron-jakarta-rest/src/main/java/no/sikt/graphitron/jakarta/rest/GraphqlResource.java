@@ -20,11 +20,14 @@ import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.QueryParam;
+import jakarta.ws.rs.WebApplicationException;
 import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.HttpHeaders;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.core.UriInfo;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -32,6 +35,7 @@ import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 /**
  * GraphQL-over-HTTP endpoint serving a Graphitron schema, per the
@@ -58,6 +62,8 @@ public class GraphqlResource {
 
     /** The modern GraphQL-over-HTTP response media type. */
     public static final String GRAPHQL_RESPONSE_JSON = "application/graphql-response+json";
+
+    private static final Logger LOGGER = LoggerFactory.getLogger(GraphqlResource.class);
 
     private static final MediaType GRAPHQL_RESPONSE_TYPE =
         new MediaType("application", "graphql-response+json");
@@ -227,22 +233,50 @@ public class GraphqlResource {
             }
         }
 
-        ExecutionInput.Builder builder = application.newExecutionInput()
-            .query(request.query())
-            .operationName(request.operationName());
-        if (request.variables() != null) {
-            builder.variables(request.variables());
-        }
-        if (request.extensions() != null) {
-            builder.extensions(request.extensions());
-        }
+        // The input-building seam (application.newExecutionInput(), a consumer-implemented,
+        // auth-seeded SPI) and the engine execution both run under one ordered two-arm guard. The
+        // arm order is load-bearing: WebApplicationException is a RuntimeException, so the broad
+        // second arm would otherwise swallow it (see the WebApplicationException passthrough below).
+        try {
+            ExecutionInput.Builder builder = application.newExecutionInput()
+                .query(request.query())
+                .operationName(request.operationName());
+            if (request.variables() != null) {
+                builder.variables(request.variables());
+            }
+            if (request.extensions() != null) {
+                builder.extensions(request.extensions());
+            }
 
-        ExecutionResult result = engine.get().execute(builder.build());
-        int status = legacy ? 200 : statusFor(result);
-        return Response.status(status)
-            .type(responseType(legacy))
-            .entity(serialise(result.toSpecification()))
-            .build();
+            ExecutionResult result = engine.get().execute(builder.build());
+            int status = legacy ? 200 : statusFor(result);
+            return Response.status(status)
+                .type(responseType(legacy))
+                .entity(serialise(result.toSpecification()))
+                .build();
+        } catch (WebApplicationException clientFault) {
+            // The auth-seeded seam can throw a WebApplicationException (e.g. NotAuthorizedException
+            // -> 401, ForbiddenException -> 403) to signal a client-facing 4xx. Re-throw it
+            // unredacted: this catch runs inside execute(), so JAX-RS only maps the status the
+            // consumer chose if the exception propagates out of the method. The seam, not a swallow,
+            // carries the 4xx.
+            throw clientFault;
+        } catch (Exception thrown) {
+            // Any other escape is a genuine internal fault (the observed case: the seam forcing a
+            // JDBC connection with the database down). This resource-level guard is the structural
+            // complement to the generated ErrorRouter's per-fetcher redaction: newExecutionInput()
+            // runs before graphql-java execution begins, so neither ErrorRouter nor graphql-java's
+            // own exception handling can ever see a fault thrown here. Redact to the same
+            // reference-only wire shape ErrorRouter.redact emits, so both sites present one contract:
+            // log the real cause under a correlation id, return no exception message/class/stack.
+            UUID correlationId = UUID.randomUUID();
+            LOGGER.error("Uncaught exception building/executing GraphQL request; correlation id = {}",
+                correlationId, thrown);
+            return Response.status(legacy ? 200 : 500)
+                .type(responseType(legacy))
+                .entity(serialise(errorBody("An error occurred. Reference: " + correlationId + ".")))
+                .build();
+        }
     }
 
     /**

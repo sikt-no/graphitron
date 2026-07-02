@@ -44,6 +44,16 @@
             <artifactId>jakarta.json.bind-api</artifactId>
             <scope>provided</scope>
         </dependency>
+        <!-- SLF4J API only (version-pinned in the parent dependencyManagement). provided, matching the
+             vendor-neutral pattern of the Jakarta APIs above: the resource logs the real cause of a
+             redacted server-side fault under a correlation id, on the same logging surface the generated
+             ErrorRouter already uses, so operators look in one place. A consumer running a generated
+             ErrorRouter already binds an SLF4J implementation at runtime. -->
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-api</artifactId>
+            <scope>provided</scope>
+        </dependency>
     </dependencies>
 
     <build>
