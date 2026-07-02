@@ -58,7 +58,7 @@ jobs:
             cli-asset: tree-sitter-windows-x64.gz
             cli-binary: tree-sitter.exe
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Download tree-sitter CLI (${{ inputs.tree-sitter-cli-version }})
         shell: bash
@@ -260,7 +260,7 @@ jobs:
     needs: build-matrix
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Set up Java for publishing
         uses: actions/setup-java@v5
@@ -366,7 +366,7 @@ jobs:
           - platform: windows-x86_64
             runner: windows-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Set up JDK 25
         uses: actions/setup-java@v5
