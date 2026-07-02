@@ -1,7 +1,7 @@
 ---
 id: R414
 title: "Split/DataLoader connections omit table+condition from ConnectionResult, so totalCount is always null on nested connections"
-status: In Progress
+status: In Review
 bucket: bug
 priority: 3
 theme: pagination
