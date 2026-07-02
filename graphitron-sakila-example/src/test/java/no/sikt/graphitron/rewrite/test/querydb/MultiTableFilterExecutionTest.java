@@ -168,6 +168,56 @@ class MultiTableFilterExecutionTest {
 
     @Test
     @SuppressWarnings("unchecked")
+    void idTypedFilter_coercesPerBranchAndReturnsMatchingRows() {
+        // R384 phase a: store_id is a shared int column; the [ID!] wire Strings coerce per branch
+        // through the participant column's DataType. Store 2 holds customers Linda and Elizabeth
+        // and staff Jon, so the filter must narrow EACH branch by its own store_id column.
+        Map<String, Object> data = execute("""
+            { occupantsByStoreId(storeId: ["2"]) {
+                __typename
+                ... on Customer { firstName }
+                ... on Staff { firstName }
+            } }
+            """);
+        List<Map<String, Object>> rows = (List<Map<String, Object>>) data.get("occupantsByStoreId");
+        assertThat(rows).extracting(r -> (String) r.get("firstName"))
+            .containsExactlyInAnyOrder("Linda", "Elizabeth", "Jon");
+        assertThat(rows).extracting(r -> (String) r.get("__typename"))
+            .containsExactlyInAnyOrder("Customer", "Customer", "Staff");
+        assertThat(SQL_LOG)
+            .as("the ID-typed filter lowers to a per-branch store_id predicate")
+            .anyMatch(s -> s.contains("store_id") && s.contains(" in ("));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void idTypedFilter_matchingNoRows_returnsEmpty() {
+        Map<String, Object> data = execute("""
+            { occupantsByStoreId(storeId: ["999"]) { __typename } }
+            """);
+        assertThat((List<Map<String, Object>>) data.get("occupantsByStoreId")).isEmpty();
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void nestedIdTypedFilter_coercesThroughMapTraversal() {
+        // R384 phase a: the nested [ID!] @field (OccupantFilter.storeIds) routes through a
+        // JooqConvert leaf inside the self-contained Map traversal, aligned with the top-level
+        // conversion semantics. Same store-2 expectation as the top-level form.
+        Map<String, Object> data = execute("""
+            { occupantsByFilter(filter: { storeIds: ["2"] }) {
+                __typename
+                ... on Customer { firstName }
+                ... on Staff { firstName }
+            } }
+            """);
+        List<Map<String, Object>> rows = (List<Map<String, Object>>) data.get("occupantsByFilter");
+        assertThat(rows).extracting(r -> (String) r.get("firstName"))
+            .containsExactlyInAnyOrder("Linda", "Elizabeth", "Jon");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
     void connectionForm_filterApplied_returnsOnlyMatchingNodes() {
         Map<String, Object> data = execute("""
             { occupantsByNameConnection(firstName: ["Mike"]) {

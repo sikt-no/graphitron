@@ -464,6 +464,13 @@ type Query {
     # `first_name IN (...)` into each UNION branch via a self-contained Map traversal (no registry).
     occupantsByFilter(filter: OccupantFilter): [AddressOccupant!]!
 
+    # R384 phase a fixture: an ID-typed @field filter on a multitable union. store_id is a shared
+    # int column on customer and staff, so the wire [ID!] Strings coerce per branch through the
+    # participant column's DataType (JooqConvert). This is the first generated fetcher to emit the
+    # DSL.val(raw, col.getDataType()).getValue() coercion, so this module's -Xlint:all -Werror
+    # compile is the pin that the arm stays off the deprecated-for-removal DataType.convert(Object).
+    occupantsByStoreId(storeId: [ID!] @field(name: "store_id")): [AddressOccupant!]!
+
     # R36 item 1 fixture: composite-PK participants in connection-mode. paged_a + paged_b have
     # composite (Integer, Integer) PKs; the polymorphic emitter projects DSL.jsonbArray(k1, k2)
     # as the synthetic __sort__ column and types it as JSONB so PostgreSQL's lexicographic
@@ -871,8 +878,12 @@ union AddressOccupant = Customer | Staff
 
 # R383 fixture: a plain filter input wrapping the shared first_name column. Used by
 # Query.occupantsByFilter to exercise nested-input @field filter lowering on a multitable union.
+# R384 phase a adds storeIds: a nested [ID!] @field over the shared store_id int column, whose
+# JooqConvert leaf coerces each wire String through the column's DataType inside the self-contained
+# Map traversal (nested leaf aligned with the top-level ID conversion semantics).
 input OccupantFilter {
     firstNames: [String!] @field(name: "first_name")
+    storeIds: [ID!] @field(name: "store_id")
 }
 
 # R367 fixture: record-backed (Pojo) parent for a single-cardinality polymorphic child. Produced by

@@ -180,11 +180,12 @@ class MultiTableFilterLoweringTest {
     }
 
     @Test
-    void idTypedFilter_unsupportedExtraction_rejectedStructural() {
-        // store_id is a shared int column on both participants, so this is NOT an absent-column
-        // rejection: an ID-typed @field arg lowers to a jOOQ-converted extraction the polymorphic
-        // branch emitter does not support day-one, so it is rejected at classify time rather than
-        // emitting deprecated-API / uncompilable code.
+    void idTypedFilter_lowersPerParticipantWithJooqConvertExtraction() {
+        // R384 phase a: store_id is a shared int column on both participants; the ID-typed @field
+        // arg lowers per participant with a JooqConvert call-site extraction (the wire String
+        // coerces through the participant column's DataType), no longer rejected at the classify
+        // gate now that the branch emitter carries the shared <name>Keys pre-lift and the arm
+        // emits the non-deprecated DSL.val(...).getValue() coercion.
         var schema = TestSchemaHelper.buildSchema(CUSTOMER_STAFF + """
             union Occupant = Customer | Staff
             type Query {
@@ -192,11 +193,68 @@ class MultiTableFilterLoweringTest {
             }
             """);
         var field = schema.field("Query", "occupants");
-        assertThat(field).isInstanceOf(GraphitronField.UnclassifiedField.class);
-        var unc = (GraphitronField.UnclassifiedField) field;
-        assertThat(unc.kind()).isEqualTo(RejectionKind.AUTHOR_ERROR);
-        assertThat(unc.rejection()).isInstanceOf(Rejection.AuthorError.Structural.class);
-        assertThat(unc.reason()).contains("storeId");
+        assertThat(field).isInstanceOf(QueryField.QueryUnionField.class);
+        var union = (QueryField.QueryUnionField) field;
+        assertThat(union.participantFilters())
+            .as("one filter carrier per table-bound participant")
+            .hasSize(2);
+        for (var pf : union.participantFilters()) {
+            var gcf = pf.filters().stream()
+                .filter(f -> f instanceof GeneratedConditionFilter)
+                .map(f -> (GeneratedConditionFilter) f)
+                .findFirst()
+                .orElseThrow(() -> new AssertionError(
+                    "participant '" + pf.participant().typeName() + "' carries no GeneratedConditionFilter: "
+                        + pf.filters()));
+            assertThat(gcf.bodyParams())
+                .anySatisfy(bp -> {
+                    assertThat(bp).isInstanceOf(BodyParam.In.class);
+                    assertThat(((BodyParam.In) bp).column().sqlName()).isEqualTo("store_id");
+                });
+            var callParam = gcf.callParams().stream()
+                .filter(p -> p.name().equals("storeId"))
+                .findFirst()
+                .orElseThrow();
+            assertThat(callParam.extraction())
+                .as("an ID-typed @field filter coerces through the column's DataType")
+                .isInstanceOf(CallSiteExtraction.JooqConvert.class);
+            assertThat(callParam.list()).isTrue();
+        }
+    }
+
+    @Test
+    void nestedIdTypedFilter_lowersWithJooqConvertLeaf() {
+        // R384 phase a: the nested @field leaf is aligned with the top-level conversion semantics —
+        // a nested [ID!] @field over a plain column routes through a JooqConvert leaf rather than
+        // the formerly hardcoded Direct leaf, so the wire String coerces through the column's
+        // DataType on the nested path exactly as it does top-level.
+        var schema = TestSchemaHelper.buildSchema(CUSTOMER_STAFF + """
+            input OccupantFilter { storeIds: [ID!] @field(name: "store_id") }
+            union Occupant = Customer | Staff
+            type Query {
+                occupants(filter: OccupantFilter): [Occupant!]!
+            }
+            """);
+        var field = schema.field("Query", "occupants");
+        assertThat(field).isInstanceOf(QueryField.QueryUnionField.class);
+        var union = (QueryField.QueryUnionField) field;
+        assertThat(union.participantFilters()).hasSize(2);
+        for (var pf : union.participantFilters()) {
+            var gcf = pf.filters().stream()
+                .filter(f -> f instanceof GeneratedConditionFilter)
+                .map(f -> (GeneratedConditionFilter) f)
+                .findFirst()
+                .orElseThrow();
+            var callParam = gcf.callParams().stream()
+                .filter(p -> p.name().equals("storeIds"))
+                .findFirst()
+                .orElseThrow();
+            assertThat(callParam.extraction()).isInstanceOf(CallSiteExtraction.NestedInputField.class);
+            var nif = (CallSiteExtraction.NestedInputField) callParam.extraction();
+            assertThat(nif.leaf())
+                .as("a nested ID-typed @field column carries a JooqConvert leaf (top-level alignment)")
+                .isInstanceOf(CallSiteExtraction.JooqConvert.class);
+        }
     }
 
     @Test

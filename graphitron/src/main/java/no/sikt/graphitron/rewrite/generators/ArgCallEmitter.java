@@ -13,6 +13,7 @@ import no.sikt.graphitron.rewrite.model.ParamSource;
 import java.util.List;
 import java.util.Map;
 
+import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.DSL;
 import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.toCamelCase;
 
 /**
@@ -281,14 +282,22 @@ public final class ArgCallEmitter {
             case CallSiteExtraction.ContextArg ignored ->
                 CodeBlock.of("($T) $L.getContextArgument(env, $S)",
                     rawTypeOfCallParam(param), ctx.graphitronContextCall(), param.name());
+            // Coerce the wire value through the column's DataType and its registered Converter via
+            // DSL.val(Object, DataType<T>).getValue() — the non-deprecated replacement for
+            // DataType.convert(Object), which is @Deprecated(forRemoval = true) in jOOQ 3.20 and
+            // would fail the consumer's -Xlint:all -Werror compile (R384 phase a; R267 rule: fix a
+            // deprecation-for-removal at the source, never suppress). val coerces eagerly, so
+            // getValue() yields the column's Java type with any custom converter applied; null in,
+            // null out. The list form reads the shared <name>Keys local the enclosing generator
+            // pre-declares (QueryConditionsGenerator / MultiTablePolymorphicEmitter pre-lifts).
             case CallSiteExtraction.JooqConvert jc -> param.list()
-                ? CodeBlock.of("$L.stream().map($L.$L.getDataType()::convert).toList()",
-                    toCamelCase(param.name()) + "Keys", srcAlias, jc.columnJavaName())
-                : CodeBlock.of("$L.$L.getDataType().convert((String) env.getArgument($S))",
-                    srcAlias, jc.columnJavaName(), param.name());
+                ? CodeBlock.of("$L.stream().map(k -> $T.val(k, $L.$L.getDataType()).getValue()).toList()",
+                    toCamelCase(param.name()) + "Keys", DSL, srcAlias, jc.columnJavaName())
+                : CodeBlock.of("$T.val(env.getArgument($S), $L.$L.getDataType()).getValue()",
+                    DSL, param.name(), srcAlias, jc.columnJavaName());
             case CallSiteExtraction.NestedInputField nif ->
                 buildNestedInputFieldExtraction(nif.outerArgName(), nif.path(), nif.leaf(),
-                    param.typeName(), param.list(), registry, liftedOuters);
+                    param.typeName(), param.list(), registry, liftedOuters, srcAlias);
             case CallSiteExtraction.NodeIdDecodeKeys nidk ->
                 buildNodeIdDecodeExtraction(
                     CodeBlock.of("env.getArgument($S)", param.name()),
@@ -452,7 +461,8 @@ public final class ArgCallEmitter {
      */
     private static CodeBlock buildNestedInputFieldExtraction(String outerArgName, List<String> path,
             CallSiteExtraction leaf, String leafTypeName, boolean list,
-            CompositeDecodeHelperRegistry registry, Map<String, String> liftedOuters) {
+            CompositeDecodeHelperRegistry registry, Map<String, String> liftedOuters,
+            String srcAlias) {
         // For a Direct leaf the Map.get value is cast directly to the parameter type. For a
         // NodeIdDecodeKeys leaf the leaf cast is omitted -- the decode chain takes Object and
         // its own instanceof guard validates the runtime shape -- so the inner pattern stays
@@ -470,6 +480,22 @@ public final class ArgCallEmitter {
             CodeBlock mapChain = buildMapChain(root, path, 0, /* leafType= */ null, topBinding);
             return buildNodeIdDecodeExtraction(mapChain, (CallSiteExtraction.NodeIdDecodeKeys) leaf,
                 list, registry);
+        }
+        // A JooqConvert leaf (a nested [ID!]/ID @field over a converted column, R384 phase a)
+        // coerces the traversal result through the column's DataType, mirroring the top-level
+        // JooqConvert arm's DSL.val(...).getValue() form. The scalar form needs no null guard
+        // (val takes Object; null in, null out); the list form guards with an instanceof List
+        // pattern so the traversal runs once. Like NodeIdDecodeKeys, the leaf cast is omitted --
+        // the coercion owns the runtime shape.
+        if (leaf instanceof CallSiteExtraction.JooqConvert jc) {
+            CodeBlock mapChain = buildMapChain(root, path, 0, /* leafType= */ null, topBinding);
+            if (list) {
+                return CodeBlock.of(
+                    "($L) instanceof $T<?> keys ? keys.stream().map(k -> $T.val(k, $L.$L.getDataType()).getValue()).toList() : null",
+                    mapChain, List.class, DSL, srcAlias, jc.columnJavaName());
+            }
+            return CodeBlock.of("$T.val($L, $L.$L.getDataType()).getValue()",
+                DSL, mapChain, srcAlias, jc.columnJavaName());
         }
         ClassName rawLeaf = ClassName.bestGuess(rawComponent(leafTypeName));
         TypeName castTarget = list

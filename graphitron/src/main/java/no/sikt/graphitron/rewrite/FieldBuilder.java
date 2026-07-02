@@ -728,9 +728,9 @@ class FieldBuilder {
             if (unsupported != null) {
                 return new ParticipantFiltersResult.Rejected(Rejection.structural(
                     "filter argument '" + unsupported + "' on a multitable interface/union is not yet "
-                    + "supported: the polymorphic branch emitter handles plain scalar and enum column "
-                    + "filters (top-level or nested-input @field, R383), but not jOOQ-converted "
-                    + "(e.g. ID-typed), @nodeId-decoded, or developer @condition filters (participant '"
+                    + "supported: the polymorphic branch emitter handles plain scalar, enum, and "
+                    + "jOOQ-converted (e.g. ID-typed) column filters (top-level or nested-input "
+                    + "@field), but not @nodeId-decoded or developer @condition filters (participant '"
                     + tb.typeName() + "')"));
             }
             result.add(new ParticipantFilters(tb, tfc.filters()));
@@ -741,14 +741,12 @@ class FieldBuilder {
     /**
      * Returns the name of the first filter argument whose extraction the multitable branch emitter
      * ({@code MultiTablePolymorphicEmitter.branchFilterWhere}) cannot emit, or {@code null} if every
-     * filter is branch-safe. The branch path reuses the single-table condition-term emission with a
-     * {@code null} {@code CompositeDecodeHelperRegistry} and no pre-declared lift locals, so it
-     * supports only the registry-free, local-free extractions: {@code Direct}, {@code EnumValueOf},
-     * {@code ContextArg}, and (R383) a {@code NestedInputField} whose leaf is itself one of those
-     * (the call-site emitter's {@code NestedInputField} arm produces a self-contained null-safe Map
-     * traversal in that case). {@code JooqConvert} (deprecated-API emission, see
-     * {@link #isBranchSafeExtraction}) / a {@code NodeIdDecodeKeys} leaf / {@code InputBean} still
-     * need plumbing this slice does not carry, and a developer {@code @condition}
+     * filter is branch-safe. The branch path reuses the single-table condition-term emission with
+     * the enclosing fetcher class's {@code CompositeDecodeHelperRegistry} and the pre-declared lift
+     * locals threaded through it (R384 phase 0), and supports {@code Direct}, {@code EnumValueOf},
+     * {@code ContextArg}, {@code JooqConvert} (R384 phase a), and a {@code NestedInputField} whose
+     * leaf is itself one of those (R383 / R384 phase a). A {@code NodeIdDecodeKeys} leaf /
+     * {@code InputBean} still need plumbing later phases carry, and a developer {@code @condition}
      * ({@code ConditionFilter} / {@code FkTargetConditionFilter}) is not a
      * {@code GeneratedConditionFilter} at all, so it is rejected by the first guard below. Rejecting
      * at classify time keeps the failure a clean build error rather than an emitter
@@ -775,24 +773,24 @@ class FieldBuilder {
     }
 
     /**
-     * The polymorphic branch emitter ({@code MultiTablePolymorphicEmitter.branchFilterWhere}) emits a
-     * filter term with a {@code null} {@code CompositeDecodeHelperRegistry} and no pre-declared
-     * extraction locals, so it supports only the registry-free, local-free extractions.
-     * {@code JooqConvert} is excluded because its emission goes through a jOOQ {@code DataType.convert}
-     * call that is deprecated-for-removal and trips the consumer's {@code -Werror}; {@code InputBean}
-     * and a {@code NodeIdDecodeKeys} leaf need plumbing this slice does not carry.
+     * The polymorphic branch emitter ({@code MultiTablePolymorphicEmitter.branchFilterWhere}) emits
+     * a filter term with the plumbing R384 phase 0 threads through it (the enclosing fetcher
+     * class's {@code CompositeDecodeHelperRegistry}, pre-declared {@code <name>Keys} /
+     * lifted-outer locals, and FK-target aliases); each arm below states whether the corresponding
+     * extraction's emission is covered by that plumbing.
      *
      * <p>R383: a {@code NestedInputField} (a filter delivered through an input object rather than as a
      * top-level argument) is branch-safe exactly when its {@code leaf} transform is. The call-site
      * emitter's {@code NestedInputField} arm ({@code ArgCallEmitter.buildArgExtraction}) emits a
      * self-contained {@code env.getArgument(outer) instanceof Map<?, ?> ...} traversal that needs no
-     * registry and no lift locals, provided the leaf does not. A nested {@code @field} column is
-     * always built with a {@link CallSiteExtraction.Direct} leaf ({@code BuildContext}), so this
-     * admits every plain nested filter; a nested {@code @nodeId} field carries a
-     * {@code NodeIdDecodeKeys} leaf and stays rejected through the recursion (it needs the decode
-     * registry). The condition-method generator ({@code TypeConditionsGenerator}) is
-     * extraction-agnostic, so the generated {@code <Participant>Conditions} method is identical
-     * whether the value arrives top-level or Map-traversed.
+     * registry and no lift locals, provided the leaf does not. A nested plain {@code @field} column
+     * carries a {@link CallSiteExtraction.Direct} leaf, an ID-typed one a
+     * {@link CallSiteExtraction.JooqConvert} leaf ({@code FieldBuilder.implicitBodyParam}, R384
+     * phase a), both admitted; a nested {@code @nodeId} field carries a {@code NodeIdDecodeKeys}
+     * leaf and stays rejected through the recursion (it needs the decode registry). The
+     * condition-method generator ({@code TypeConditionsGenerator}) is extraction-agnostic, so the
+     * generated {@code <Participant>Conditions} method is identical whether the value arrives
+     * top-level or Map-traversed.
      *
      * <p>Rejecting at classify time keeps the failure a clean build error rather than an emitter
      * {@code IllegalStateException} or uncompilable output ("classifier guarantees shape emitter
@@ -804,13 +802,18 @@ class FieldBuilder {
             case CallSiteExtraction.EnumValueOf ignored -> true;
             case CallSiteExtraction.ContextArg ignored -> true;
             case CallSiteExtraction.NestedInputField nif -> isBranchSafeExtraction(nif.leaf());
-            // Not branch-safe: each needs plumbing the polymorphic branch path does not carry (a
-            // non-deprecated converter and the shared <name>Keys local for JooqConvert; the
+            // R384 phase a: branch-safe. The shared arm now emits the non-deprecated
+            // DSL.val(raw, col.getDataType()).getValue() coercion, and the branch path pre-declares
+            // the shared <name>Keys local (deduped across participants) ahead of the stage-1 union
+            // (MultiTablePolymorphicEmitter.declareFilterPlumbing); the nested-leaf form is a
+            // self-contained traversal-plus-coercion expression needing no local at all.
+            case CallSiteExtraction.JooqConvert ignored -> true;
+            // Not branch-safe: each needs plumbing the polymorphic branch path does not carry (the
             // CompositeDecodeHelperRegistry for a NodeId decode; helper instantiation for a bean /
-            // record). Listed exhaustively with no default on purpose: when R384 makes one of these
-            // branch-safe, or a new CallSiteExtraction permit is added, this switch fails to compile
-            // and forces a deliberate decision at this gate rather than silently rejecting.
-            case CallSiteExtraction.JooqConvert ignored -> false;
+            // record). Listed exhaustively with no default on purpose: when a remaining R384 phase
+            // makes one of these branch-safe, or a new CallSiteExtraction permit is added, this
+            // switch fails to compile and forces a deliberate decision at this gate rather than
+            // silently rejecting.
             case CallSiteExtraction.NodeIdDecodeKeys ignored -> false;
             case CallSiteExtraction.NodeIdDecodeRecord ignored -> false;
             case CallSiteExtraction.InputBean ignored -> false;
@@ -1979,11 +1982,22 @@ class FieldBuilder {
                                                String graphqlTypeName, boolean nonNull, boolean list,
                                                CallSiteExtraction leaf,
                                                String outerArgName, List<String> leafPath) {
-        // For NodeId-decoded leaves the post-decode value is the column's typed Java class
-        // (single scalar or List of it). For Direct, ID scalars stay String; everything else
-        // takes the column's Java type.
-        boolean nodeIdLeaf = leaf instanceof CallSiteExtraction.NodeIdDecodeKeys;
-        String javaType = nodeIdLeaf
+        // R384 phase a: align the nested @field leaf with the top-level conversion semantics
+        // (EnumMappingResolver.deriveExtraction) — a nested ID-typed @field over a plain column
+        // coerces through the column's DataType via a JooqConvert leaf instead of the hardcoded
+        // Direct leaf BuildContext builds, so a converted column's wire String reaches the
+        // condition method as the column's Java type on the nested path exactly as it does
+        // top-level. @nodeId leaves branch earlier in BuildContext and arrive here as
+        // NodeIdDecodeKeys, so this substitution never touches them.
+        if (leaf instanceof CallSiteExtraction.Direct && "ID".equals(graphqlTypeName)) {
+            leaf = new CallSiteExtraction.JooqConvert(column.javaName());
+        }
+        // For NodeId-decoded and JooqConvert leaves the post-coercion value is the column's typed
+        // Java class (single scalar or List of it). For Direct, ID scalars stay String; everything
+        // else takes the column's Java type.
+        boolean coercedLeaf = leaf instanceof CallSiteExtraction.NodeIdDecodeKeys
+            || leaf instanceof CallSiteExtraction.JooqConvert;
+        String javaType = coercedLeaf
             ? column.columnClass()
             : ("ID".equals(graphqlTypeName) ? String.class.getName() : column.columnClass());
         var nested = new CallSiteExtraction.NestedInputField(outerArgName, leafPath, leaf);

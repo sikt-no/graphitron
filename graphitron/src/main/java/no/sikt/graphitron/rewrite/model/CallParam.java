@@ -61,14 +61,17 @@ public record CallParam(
      * {@code list() && extraction instanceof …} predicate (Generation-thinking: a fact two consumers
      * branch on belongs on the model).
      *
-     * <p>Today the only such shape is a list-typed {@link CallSiteExtraction.NestedInputField}, which
-     * extracts as {@code (List<X>) map.get(key)} — {@code Map.get} is statically {@code Object} and
-     * {@code List<X>} is not reifiable, so the cast is unchecked even though graphql-java has already
-     * coerced the input-object field to {@code List<X>}. When a future extraction (e.g. R384's
-     * {@code JooqConvert} lift) starts emitting an unchecked cast, its arm is added here once and both
-     * hosts pick it up.
+     * <p>Today the only such shape is a list-typed {@link CallSiteExtraction.NestedInputField} whose
+     * leaf casts, which extracts as {@code (List<X>) map.get(key)} — {@code Map.get} is statically
+     * {@code Object} and {@code List<X>} is not reifiable, so the cast is unchecked even though
+     * graphql-java has already coerced the input-object field to {@code List<X>}. A
+     * {@link CallSiteExtraction.JooqConvert} leaf does not cast (its {@code instanceof List<?>}
+     * guard plus {@code DSL.val} coercion own the runtime shape), so it is carved out. If a future
+     * extraction starts emitting an unchecked cast, its arm is added here once and both hosts pick
+     * it up.
      */
     public boolean emitsUncheckedCast() {
-        return list && extraction instanceof CallSiteExtraction.NestedInputField;
+        return list && extraction instanceof CallSiteExtraction.NestedInputField nif
+            && !(nif.leaf() instanceof CallSiteExtraction.JooqConvert);
     }
 }

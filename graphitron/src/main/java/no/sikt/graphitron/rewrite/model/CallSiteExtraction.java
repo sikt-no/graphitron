@@ -52,16 +52,18 @@ public sealed interface CallSiteExtraction
 
     /**
      * Coerce a GraphQL {@code ID} scalar (delivered as {@code String} by GraphQL-Java) to the
-     * column Java type via jOOQ's {@code DataType.convert()}.
+     * column Java type by binding it through the column's {@code DataType} (and any registered
+     * {@code Converter}) via {@code DSL.val(Object, DataType<T>).getValue()} — the non-deprecated
+     * replacement for {@code DataType.convert(Object)} (forRemoval in jOOQ 3.20; R384 phase a).
      *
      * <p>{@code columnJavaName} is the jOOQ field constant name (e.g. {@code "FILM_ID"}) used to
      * reach the target {@code DataType} from the table alias:
      * <ul>
-     *   <li>Scalar: {@code table.FILM_ID.getDataType().convert((String) env.getArgument("film_id"))}</li>
+     *   <li>Scalar: {@code DSL.val(env.getArgument("film_id"), table.FILM_ID.getDataType()).getValue()}</li>
      *   <li>List (with {@link CallParam#list()} / {@link BodyParam#list()}): local variable
      *       {@code List<String> filmIdKeys = env.getArgument("film_id")} is declared before the
      *       condition call, then passed as
-     *       {@code filmIdKeys.stream().map(table.FILM_ID.getDataType()::convert).toList()}.</li>
+     *       {@code filmIdKeys.stream().map(k -> DSL.val(k, table.FILM_ID.getDataType()).getValue()).toList()}.</li>
      * </ul>
      */
     record JooqConvert(String columnJavaName) implements CallSiteExtraction {}
