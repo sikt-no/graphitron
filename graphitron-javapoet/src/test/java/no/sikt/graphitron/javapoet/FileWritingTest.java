@@ -258,4 +258,35 @@ public final class FileWritingTest {
         // Cast to avoid ambiguity between assertThat(Path) and assertThat(Iterable<?>)
         assertThat((Iterable<?>) filePath).isEqualTo(fsRoot.resolve(fs.getPath("foo", "Taco.java")));
     }
+
+    @Test
+    public void writeToPathReportingFlagsFreshWriteAsChanged() throws IOException {
+        JavaFile javaFile = JavaFile.builder("foo", TypeSpec.classBuilder("Taco").build()).build();
+        JavaFile.WriteResult result = javaFile.writeToPathReporting(fsRoot, UTF_8);
+        assertThat(result.changed()).isTrue();
+        // Cast to avoid ambiguity between assertThat(Path) and assertThat(Iterable<?>)
+        assertThat((Iterable<?>) result.path()).isEqualTo(fsRoot.resolve(fs.getPath("foo", "Taco.java")));
+    }
+
+    @Test
+    public void writeToPathReportingFlagsIdenticalRewriteAsUnchanged() throws IOException {
+        JavaFile javaFile = JavaFile.builder("foo", TypeSpec.classBuilder("Taco").build()).build();
+        javaFile.writeToPathReporting(fsRoot, UTF_8);
+
+        // Second write of identical content: skipped, reported as not changed.
+        JavaFile.WriteResult second = javaFile.writeToPathReporting(fsRoot, UTF_8);
+        assertThat(second.changed()).isFalse();
+        assertThat((Iterable<?>) second.path()).isEqualTo(fsRoot.resolve(fs.getPath("foo", "Taco.java")));
+    }
+
+    @Test
+    public void writeToPathReportingFlagsContentMismatchAsChanged() throws IOException {
+        JavaFile javaFile = JavaFile.builder("foo", TypeSpec.classBuilder("Taco").build()).build();
+        Path written = javaFile.writeToPath(fsRoot);
+        Files.writeString(written, "// tampered\n");
+
+        // Content differs from disk: rewritten, reported as changed.
+        JavaFile.WriteResult result = javaFile.writeToPathReporting(fsRoot, UTF_8);
+        assertThat(result.changed()).isTrue();
+    }
 }

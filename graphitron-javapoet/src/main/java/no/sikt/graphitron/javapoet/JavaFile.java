@@ -143,11 +143,29 @@ public final class JavaFile {
     }
 
     /**
+     * The outcome of a single idempotent write: the {@link Path} the source belongs at, and whether
+     * this run actually {@code changed} the on-disk content (a fresh write or a content mismatch) as
+     * opposed to skipping an already-identical file. The {@code changed} flag is the per-file delta
+     * signal downstream consumers (the incremental compile engine, R410) coarsen into the recompile set.
+     */
+    public record WriteResult(Path path, boolean changed) {}
+
+    /**
      * Writes this to {@code directory} with the provided {@code charset} using the standard directory
      * structure.
      * Returns the {@link Path} instance to which source is actually written.
      */
     public Path writeToPath(Path directory, Charset charset) throws IOException {
+        return writeToPathReporting(directory, charset).path();
+    }
+
+    /**
+     * Content-idempotent write that additionally reports whether the file changed. Writes only when the
+     * target is absent or its SHA-256 differs from the rendered content, exactly as {@link #writeToPath}
+     * does; the returned {@link WriteResult#changed()} is {@code true} on that write path and
+     * {@code false} when an identical file let the write be skipped.
+     */
+    public WriteResult writeToPathReporting(Path directory, Charset charset) throws IOException {
         checkArgument(Files.notExists(directory) || Files.isDirectory(directory),
                 "path %s exists but is not a directory.", directory);
         var outputDirectory = directory;
@@ -159,15 +177,18 @@ public final class JavaFile {
 
         Path outputPath = outputDirectory.resolve(typeSpec.name() + ".java");
         var existing = hashExistingFile(outputPath);
+        boolean changed;
         if (existing.isPresent()) {
-            if (!existing.get().equals(sha256())) {
+            changed = !existing.get().equals(sha256());
+            if (changed) {
                 writeJavaFile(charset, outputDirectory, outputPath);
             }
         } else {
             writeJavaFile(charset, outputDirectory, outputPath);
+            changed = true;
         }
 
-        return outputPath;
+        return new WriteResult(outputPath, changed);
     }
 
     private void writeJavaFile(Charset charset, Path outputDirectory, Path outputPath) throws IOException {

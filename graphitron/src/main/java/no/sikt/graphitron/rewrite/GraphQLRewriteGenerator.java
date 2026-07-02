@@ -53,6 +53,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
@@ -86,9 +87,46 @@ public class GraphQLRewriteGenerator {
     /**
      * Runs the full code-generation pipeline: loads and attributes schema inputs, classifies,
      * validates, and writes all generated sources to the configured output directory.
+     *
+     * <p>Returns the run's {@link GenerationResult}: every compilation unit emitted and the subset
+     * whose on-disk content actually changed. The idempotent writer already computes that delta per
+     * file (it writes only on a content mismatch); surfacing it here is what lets the incremental
+     * compile engine (R410) recompile the changed sub-closure instead of the whole tree. Callers that
+     * only need the write-to-disk side effect may ignore the return value.
      */
-    public void generate() {
-        runPipeline(loadAttributedRegistry());
+    public GenerationResult generate() {
+        return runPipeline(loadAttributedRegistry());
+    }
+
+    /**
+     * The result of a generation run: {@code emitted} is every source and resource path written or
+     * confirmed this run (the orphan-sweep survivor set), {@code changed} is the subset of generated
+     * {@code .java} compilation units whose content differed from disk and was (re)written. The
+     * emitted SDL resource is reported in {@code emitted} but never in {@code changed}: it is not a
+     * compilation unit, so it never feeds the recompile set.
+     */
+    public record GenerationResult(Set<Path> emitted, Set<Path> changed) {}
+
+    /**
+     * Mutable per-run accumulator for the emitted set and the changed-file delta. Kept internal;
+     * {@link #runPipeline} converts it to the immutable {@link GenerationResult} it returns.
+     */
+    private static final class EmissionLog {
+        private final Set<Path> emitted = new LinkedHashSet<>();
+        private final Set<Path> changed = new LinkedHashSet<>();
+
+        /** Records a compilation-unit write, folding its {@code changed} flag into the delta. */
+        void record(JavaFile.WriteResult result) {
+            emitted.add(result.path());
+            if (result.changed()) {
+                changed.add(result.path());
+            }
+        }
+
+        /** Records an emitted path (e.g. the SDL resource) as present without touching the delta. */
+        void add(Path path) {
+            emitted.add(path);
+        }
     }
 
     /**
@@ -188,7 +226,7 @@ public class GraphQLRewriteGenerator {
         return new AttributedRegistry(registry, injectedNames);
     }
 
-    private void runPipeline(AttributedRegistry attributed) {
+    private GenerationResult runPipeline(AttributedRegistry attributed) {
         var bundle = GraphitronSchemaBuilder.buildBundle(attributed, ctx);
         var schema = bundle.model();
         var assembled = bundle.assembled();
@@ -206,7 +244,7 @@ public class GraphQLRewriteGenerator {
         var fetcherClasses = TypeFetcherGenerator.generate(schema, assembled, outputPackage);
         var fetcherBodies  = FetcherRegistrationsEmitter.emit(schema, outputPackage);
 
-        Set<Path> emittedThisRun = new LinkedHashSet<>();
+        EmissionLog emittedThisRun = new EmissionLog();
         write(GraphitronValuesClassGenerator.generate(),                                          "util",       emittedThisRun);
         write(LightFetcherClassGenerator.generate(outputPackage),                                 "util",       emittedThisRun);
         write(NodeIdEncoderClassGenerator.generate(schema),                                       "util",       emittedThisRun);
@@ -243,19 +281,23 @@ public class GraphQLRewriteGenerator {
         write(ErrorTypeFetcherClassGenerator.generate(schema, outputPackage),                      "fetchers",   emittedThisRun);
         write(QueryNodeFetcherClassGenerator.generate(schema, outputPackage),                      "fetchers",   emittedThisRun);
         emittedThisRun.add(SchemaSdlEmitter.emit(assembled, schema, federationLink, ctx.outputResourcesDirectory(), outputPackage));
-        sweepOrphans(emittedThisRun);
+        sweepOrphans(emittedThisRun.emitted);
+        return new GenerationResult(
+            Collections.unmodifiableSet(emittedThisRun.emitted),
+            Collections.unmodifiableSet(emittedThisRun.changed)
+        );
     }
 
-    private void write(List<TypeSpec> specs, String subPackage, Set<Path> emittedThisRun) {
+    private void write(List<TypeSpec> specs, String subPackage, EmissionLog emittedThisRun) {
         String outputPackage = ctx.outputPackage();
         var packageName = subPackage.isEmpty()
             ? outputPackage
             : outputPackage + "." + subPackage;
         for (TypeSpec spec : specs) {
             try {
-                emittedThisRun.add(
+                emittedThisRun.record(
                     JavaFile.builder(packageName, spec).indent("    ").build()
-                        .writeToPath(ctx.outputDirectory(), StandardCharsets.UTF_8)
+                        .writeToPathReporting(ctx.outputDirectory(), StandardCharsets.UTF_8)
                 );
             } catch (IOException e) {
                 throw new RuntimeException(e);

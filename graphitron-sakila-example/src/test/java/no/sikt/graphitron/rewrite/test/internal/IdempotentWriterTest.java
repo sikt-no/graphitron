@@ -48,6 +48,65 @@ class IdempotentWriterTest {
     }
 
     @Test
+    void firstRunReportsEveryJavaUnitAsChanged(@TempDir Path root) throws IOException {
+        Path schemaFile = root.resolve("schema.graphqls");
+        Files.writeString(schemaFile, SCHEMA_SDL, StandardCharsets.UTF_8);
+        Path outDir = root.resolve("out");
+        Files.createDirectories(outDir);
+
+        var result = new GraphQLRewriteGenerator(contextFor(schemaFile, outDir)).generate();
+
+        // Fresh output dir: every emitted compilation unit is a first write, so changed == the
+        // .java subset of emitted. The SDL resource is emitted but never counted as changed.
+        assertThat(result.changed()).isNotEmpty();
+        assertThat(result.changed()).allMatch(p -> p.toString().endsWith(".java"));
+        assertThat(result.changed())
+            .isEqualTo(result.emitted().stream()
+                .filter(p -> p.toString().endsWith(".java"))
+                .collect(java.util.stream.Collectors.toCollection(java.util.LinkedHashSet::new)));
+    }
+
+    @Test
+    void identicalRerunReportsEmptyDelta(@TempDir Path root) throws IOException {
+        Path schemaFile = root.resolve("schema.graphqls");
+        Files.writeString(schemaFile, SCHEMA_SDL, StandardCharsets.UTF_8);
+        Path outDir = root.resolve("out");
+        Files.createDirectories(outDir);
+
+        var ctx = contextFor(schemaFile, outDir);
+        var first = new GraphQLRewriteGenerator(ctx).generate();
+        var second = new GraphQLRewriteGenerator(ctx).generate();
+
+        // Nothing changed on disk between runs: the delta is empty, but the emitted set is stable.
+        assertThat(second.changed()).isEmpty();
+        assertThat(second.emitted()).isEqualTo(first.emitted());
+    }
+
+    @Test
+    void tamperedFileIsReportedInDelta(@TempDir Path root) throws IOException {
+        Path schemaFile = root.resolve("schema.graphqls");
+        Files.writeString(schemaFile, SCHEMA_SDL, StandardCharsets.UTF_8);
+        Path outDir = root.resolve("out");
+        Files.createDirectories(outDir);
+
+        var ctx = contextFor(schemaFile, outDir);
+        new GraphQLRewriteGenerator(ctx).generate();
+
+        Path anyFile;
+        try (var walk = Files.walk(outDir)) {
+            anyFile = walk.filter(Files::isRegularFile)
+                .filter(p -> p.toString().endsWith(".java"))
+                .findFirst().orElseThrow();
+        }
+        Files.writeString(anyFile, "// CORRUPTED\n" + Files.readString(anyFile), StandardCharsets.UTF_8);
+
+        var afterTamper = new GraphQLRewriteGenerator(ctx).generate();
+
+        // Only the tampered unit differs from disk, so the delta is exactly that file.
+        assertThat(afterTamper.changed()).containsExactly(anyFile);
+    }
+
+    @Test
     void tamperedFileIsOverwritten(@TempDir Path root) throws IOException {
         Path schemaFile = root.resolve("schema.graphqls");
         Files.writeString(schemaFile, SCHEMA_SDL, StandardCharsets.UTF_8);
