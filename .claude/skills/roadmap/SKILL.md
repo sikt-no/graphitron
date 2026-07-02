@@ -44,7 +44,16 @@ mvn -pl roadmap-tool exec:java -q \
 
 ### status `<R<n>-or-slug>` `<new-state>`
 
-Use the tool's `status` subcommand. It resolves the slug or ID, validates the transition against the state table below, atomically writes the new `status:` value plus a fresh `last-updated: <today>` (leaving `created:` strictly untouched, never invented), and regenerates the README. Then run the reviewer-rule guards.
+**Sync trunk before transitioning.** We work trunk-based and many sessions edit `roadmap/` concurrently, so fast-forward trunk into your branch *before* touching the item's `status:`. This makes the transition start from the roadmap's true current state: you don't clobber another session's edit to the same file, and the reviewer-rule guard below is evaluated against the latest history (a stale `git log -- <slug>.md` produces stale attribution and can miss a sign-off or reopen another session already landed). Run:
+
+```bash
+git fetch origin claude/graphitron-rewrite
+git rebase origin/claude/graphitron-rewrite
+```
+
+If the rebase reports conflicts, surface and stop; the user resolves before the transition is meaningful. Working-copy dirt is the user's call (don't auto-stash).
+
+Then use the tool's `status` subcommand. It resolves the slug or ID, validates the transition against the state table below, atomically writes the new `status:` value plus a fresh `last-updated: <today>` (leaving `created:` strictly untouched, never invented), and regenerates the README. Then run the reviewer-rule guards.
 
 ```bash
 mvn -pl roadmap-tool exec:java -q \
@@ -86,4 +95,4 @@ Run after every front-matter edit and every delete. (`add` regenerates as part o
 - IDs are monotonic and never reused. Don't guess one — call the tool. The validator will reject malformed or duplicate IDs at build time.
 - Slug = work, not phase. No `plan-` prefix. Lowercase kebab-case.
 - The reviewer-rule guard cannot be bypassed because "the user said so" — if the same session both authored and is approving, that's the rule itself failing. Surface it, stop, ask the user to bring in a different party.
-- After any roadmap-changing commit, the publish skill still applies: push your branch, then fast-forward trunk.
+- Fast-forward trunk before *and* after every transition. Before: sync trunk into your branch (the "Sync trunk before transitioning" step above) so you transition from the true current state. After: run the publish skill on the roadmap-changing commit — push your branch, then fast-forward trunk — so the new state is visible before anyone acts on it. See `roadmap/workflow.adoc` § Publishing.
