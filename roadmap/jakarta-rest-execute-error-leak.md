@@ -66,12 +66,14 @@ throwable from engine internals, would still escape here.
 
 ## Scope
 
-**In scope.** Guard `(1)` and `(2)` in `execute()`. On any escaping `Exception` (see fork 2):
-generate a correlation id, log the real cause server-side, and return a generic, spec-compliant
-response, HTTP `500` in modern mode (media type `application/graphql-response+json`; `200` +
-`application/json` for legacy clients, per fork 3), whose body **reuses the redaction contract the
-generated `ErrorRouter` already emits** rather than inventing a second one (see *Align with the
-existing redaction path* below):
+**In scope.** Guard `(1)` and `(2)` in `execute()`. The guard is a two-arm catch: an ordered
+`catch (WebApplicationException wae) { throw wae; }` first, then `catch (Exception)` (see *The
+WebApplicationException passthrough* below for why the order is load-bearing). On any `Exception`
+caught by the second arm: generate a correlation id, log the real cause server-side, and return a
+generic, spec-compliant response, HTTP `500` in modern mode (media type
+`application/graphql-response+json`; `200` + `application/json` for legacy clients, per fork 2), whose
+body **reuses the redaction contract the generated `ErrorRouter` already emits** rather than inventing
+a second one (see *Align with the existing redaction path* below):
 
 ```json
 { "errors": [ { "message": "An error occurred. Reference: <uuid>." } ] }
@@ -81,9 +83,12 @@ The correlation id rides *in the message text*, with no `extensions`, exactly as
 `ErrorRouterClassGenerator.redactBody()` produces it, so a consumer's log-correlation tooling sees one
 wire shape whether the fault was thrown inside a fetcher (ErrorRouter) or while building the input
 (this resource). No exception message, class name, or stack in the response. Reuse `serialise()` /
-`responseType()`; extend `errorBody()` (or add a sibling) to carry the message. Add a conformance case
-to the `GraphQLOverHttpConformanceTest` suite in `graphitron-sakila-example` (the module has no `@Test`
-classes of its own by R399).
+`responseType()` / `errorBody()` directly: `errorBody(String message)` (`GraphqlResource.java:312`)
+already takes an arbitrary message, so the redaction message passes straight through, no extension
+needed. Add a conformance case to the `GraphQLOverHttpConformanceTest` suite in
+`graphitron-sakila-example` (this module, `graphitron-jakarta-rest`, carries no `@Test` classes of its
+own by R399; its coverage lives in the sakila-example conformance suite, which carries many authored
+`@Test` classes including that one).
 
 **Out of scope (name explicitly).**
 
@@ -138,30 +143,54 @@ in scope of that change, not a divergence introduced only here.
 - **The correlation id** lets an operator find the full cause in server logs while the client sees only
   the reference, the standard split. Generate with `java.util.UUID.randomUUID()` (JDK, no dependency).
 
+## The WebApplicationException passthrough (the 4xx-vs-fault watershed)
+
+`newExecutionInput()` is the auth-seeded SPI seam, so it can throw two very different kinds of
+exception: a *genuine internal fault* (the observed DB-down `CreationException`, a true 500) and a
+*client fault* (an authentication/authorization failure while seeding the builder, a 401/403). A naive
+single `catch (Exception)` would redact **both** to a generic 500, silently reclassifying a real
+401/403 as an internal error, exactly the request-error-vs-fault watershed the rest of this resource
+is built to own (its Javadoc: it owns "the request-error-vs-field-error status watershed").
+
+The reconciliation is an **ordered two-arm catch**, and the order is load-bearing:
+
+```java
+try {
+    // build input via application.newExecutionInput(), then engine.execute(...)
+} catch (WebApplicationException wae) {
+    throw wae;                       // let JAX-RS map it to the consumer's intended status
+} catch (Exception e) {
+    // redact: correlation id + log + generic spec-compliant body
+}
+```
+
+A consumer wanting auth-failure-as-4xx throws a Jakarta `WebApplicationException` (or a subtype, e.g.
+`NotAuthorizedException` -> 401, `ForbiddenException` -> 403) from its adapter's `newExecutionInput()`.
+Because that catch runs **inside** `execute()`, JAX-RS exception mapping only sees the exception if it
+*propagates out of the resource method*, so the first arm must re-throw `WebApplicationException`
+unredacted; the container then maps it to the status the consumer chose. Only the second arm redacts.
+`WebApplicationException` is a `RuntimeException` (hence an `Exception`), so without the ordered first
+arm the redaction arm would swallow it, which is the bug this section exists to prevent. The type is
+`jakarta.ws.rs.WebApplicationException`, already on the classpath via the module's `provided`
+`jakarta.ws.rs-api` dependency, so honoring the passthrough adds no dependency and names no
+RESTEasy/Quarkus type. This is the deliberate division: the resource redacts genuine faults; the SPI
+seam, via `WebApplicationException`, carries any client-facing 4xx. (A full mirror of the generator's
+`GraphitronClientException` surface-vs-redact model is out of reach here anyway: the resource is
+vendor-neutral and cannot name that generated type.)
+
 ## Open design forks (resolve during In Progress)
 
-1. **The catch collapses the 4xx-vs-fault watershed; is that acceptable?** `newExecutionInput()` is
-   the auth-seeded SPI seam. A blanket catch maps *every* escape to 500, including a client's fault:
-   an authentication/authorization failure thrown while seeding the builder is a 401/403 event, not a
-   500. The observed DB-down case is a genuine 500, but the same catch silently reclassifies auth
-   failures as internal errors, which the rest of this resource is built precisely to avoid (its
-   Javadoc: it owns "the request-error-vs-field-error status watershed"). The model already has a
-   surface-vs-redact marker for this fork (`GraphitronClientException` /
-   `ErrorRouter.surfaceClientErrorOrRedact`), but the resource is vendor-neutral and cannot name the
-   generated `GraphitronClientException`, so a full mirror is not free. **Recommendation:** state
-   deliberately that every `newExecutionInput`/execution escape collapses to 500 here, and that a
-   consumer wanting auth-failure-as-4xx should throw a Jakarta `WebApplicationException` (or a subtype)
-   from its adapter, which the container maps to the right status *before* it reaches this catch, so
-   the seam, not a swallow, carries the 4xx. Confirm this division.
-2. **`Exception` vs. `Throwable`.** Catching `Exception` leaves `Error` (e.g. `OutOfMemoryError`) to
-   propagate, the usual JVM convention. The leak we saw is an `Exception`. Recommendation: catch
-   `Exception`, let `Error` through.
-3. **Status for legacy clients.** The legacy `application/json` mode is always-200 across the resource
+1. **`Exception` vs. `Throwable`.** The redaction arm catches `Exception`, so `Error` (e.g.
+   `OutOfMemoryError`) propagates, the usual JVM convention, and `WebApplicationException` is handled
+   by the earlier arm (see above). The leak we saw is an `Exception`. Recommendation: catch
+   `Exception` in the redaction arm, let `Error` through.
+2. **Status for legacy clients.** The legacy `application/json` mode is always-200 across the resource
    (see `legacyApplicationJsonIsAlways200`; `requestError` maps every modern status to 200 for legacy).
    Silently emitting 500 for legacy would break that invariant; silently emitting 200 hides a real
    fault. **Recommendation:** mirror the existing rule, 200 + the generic `errors` body for legacy,
    500 for modern, so the fourth disposition follows the same watershed as the other three rather than
-   forking it. Confirm this is the intended reading.
+   forking it. (This applies only to the redaction arm; a re-thrown `WebApplicationException` is mapped
+   by the container regardless of media type.) Confirm this is the intended reading.
 
 ## Testing
 
@@ -173,21 +202,27 @@ request that makes `newExecutionInput()` throw, then asserts: modern mode return
 internals (no class name, stack frame, or `localhost`/port substring). This needs a **fault-injection
 seam** in the sakila adapter (e.g. a sentinel query, header, or operation that makes the adapter's
 `newExecutionInput()` throw on demand); choosing the least-intrusive seam is part of In Progress. A
-legacy-mode variant asserts the 200 + generic `errors` body per fork 3. Where practical, also pin that
-this input-building-throw response shape matches the fetcher-throw redaction shape (the existing
+legacy-mode variant asserts the 200 + generic `errors` body per fork 2. A third case asserts the
+`WebApplicationException` passthrough: when the fault-injection seam throws a `WebApplicationException`
+(e.g. `ForbiddenException`), the response carries the container-mapped status (403), **not** a redacted
+500, proving the ordered first catch arm re-throws rather than swallows. Where practical, also pin that
+the input-building-throw response shape matches the fetcher-throw redaction shape (the existing
 `Film.durabilityError` @service leaf exercises the fetcher path), so the single-contract requirement of
 *Align with the existing redaction path* is enforced by a test rather than by convention.
 
 ## Done when
 
-- `execute()` guards both the input-building and execution calls; no `Exception` escapes the resource.
+- `execute()` guards both the input-building and execution calls with an ordered two-arm catch: a
+  `WebApplicationException` (and subtypes) is re-thrown unredacted so the container maps its status; no
+  *other* `Exception` escapes the resource.
 - The 500 (modern) / 200 (legacy) response is spec-compliant `errors` JSON whose single error uses the
   same `"An error occurred. Reference: <uuid>."` shape the generated `ErrorRouter` emits, no extensions,
   no exception message/class/stack.
 - The real cause is logged server-side under that id via SLF4J.
-- A conformance case in `GraphQLOverHttpConformanceTest` asserts the sanitized response and the absence
-  of any leaked internal string (no class name, stack frame, or `localhost`/port substring), and pins
-  that the input-building-throw shape matches the fetcher-throw shape.
+- Conformance cases in `GraphQLOverHttpConformanceTest` assert: the sanitized redaction response and the
+  absence of any leaked internal string (no class name, stack frame, or `localhost`/port substring); the
+  `WebApplicationException` passthrough (a thrown `ForbiddenException` yields the container-mapped 403,
+  not a redacted 500); and that the input-building-throw shape matches the fetcher-throw shape.
 - The only dependency added to the module's pom is `org.slf4j:slf4j-api` at `provided` scope (already
   version-pinned in the parent `dependencyManagement`); no unpinned dependency and no RESTEasy/Quarkus
   type is introduced.
