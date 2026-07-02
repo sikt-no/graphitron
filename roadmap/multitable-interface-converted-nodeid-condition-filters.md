@@ -7,7 +7,7 @@ priority: 3
 theme: interface-union
 depends-on: []
 created: 2026-06-25
-last-updated: 2026-07-01
+last-updated: 2026-07-02
 ---
 
 # Support converted/@nodeId/developer-@condition filters on multitable interface/union queries
@@ -219,3 +219,22 @@ wire `String`) and `org.jooq.tools.Convert` (itself `forRemoval`) were ruled out
 predicate, or per-member stamp. Design and phase a were rewritten accordingly. The next Spec → Ready
 sign-off must come from a session distinct from both the original author and the reviewer who landed this
 revision.
+
+**2026-07-02 (Spec → Ready re-review, sign-off recorded).** Re-review by a session distinct from both the
+original author and the revising reviewer, closing the sign-off this item's status flip was missing: the
+front-matter went `Spec` → `Ready` inside the unrelated R370 commit (`21ed3cf`, a third session) with no
+review recorded, so this entry supplies the missing gate record. Verified on live code: every symbol, path,
+and line citation still holds on current trunk (`isBranchSafeExtraction`'s exhaustive nine-permit switch,
+`branchFilterWhere`'s `emitTerm(ctx, filter, alias, null, null, Map.of())` seam, `ArgCallEmitter` lines
+284-288, the `QueryConditionsGenerator` 144-153 pre-lift, `CallParam.emitsUncheckedCast`'s stale R384
+forward-reference, `BuildContext`'s hardcoded `Direct` nested leaf, `FkTargetConditionEmitter.declareAliases`,
+one-registry-per-class `collectInto` precedents, the `AddressOccupant` fixture family, and the R267 rule
+text). The revised phase-a design was re-verified empirically against jOOQ 3.20.11: on a converted domain
+type, `DSL.val("42", convertedType).getValue()` is `.equals`-identical to the deprecated
+`convertedType.convert("42")`, the list and null cases behave (null in, null out), and under
+`-Xlint:all -Werror` the deprecated form fails with `[removal]` while the `DSL.val` form compiles
+warning-free, confirming both the substitution and the compilation-backstop claim. One reviewer note, not
+blocking: `MultiTableFilterLoweringTest` has rejection tests for `JooqConvert` (`idTypedFilter_...`) and
+developer `@condition` (three cases) but none for `NodeIdDecodeKeys`, so phase b adds a new
+rejection-to-lowered test rather than flipping an existing one; the Tests section's "the kind's rejection
+test flips" reads loosely for that phase. Status stays `Ready`.
