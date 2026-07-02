@@ -247,7 +247,7 @@ class GraphQLOverHttpConformanceTest {
      * there must be caught by the resource, logged server-side under a correlation id, and returned as
      * a generic spec-compliant 500, never leaked as the container's raw error page.
      */
-    private static final String FAULT_HEADER = "X-Graphitron-Fault";
+    private static final String FAULT_HEADER = SakilaGraphitronApplication.FAULT_HEADER;
 
     /** The reference-only body shape both redaction sites emit: id in the message, no extensions. */
     private static final String REFERENCE_MESSAGE = "An error occurred\\. Reference: [0-9a-fA-F-]{36}\\.";
