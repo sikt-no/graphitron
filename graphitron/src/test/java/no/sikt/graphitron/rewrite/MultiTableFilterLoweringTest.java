@@ -258,6 +258,53 @@ class MultiTableFilterLoweringTest {
     }
 
     @Test
+    void nodeIdFilter_lowersPerParticipantWithNodeIdDecodeExtraction() {
+        // R384 phase b: an FK-target @nodeId filter arg on a multitable union. Both participant
+        // tables carry an address_id FK to address (a @node type), so the decoded Address key
+        // filters each branch by its own lifted FK column; the call-site extraction is the
+        // NodeIdDecodeKeys decode chain, lifted through the fetcher class's registry. No rejection
+        // test flips here: phase b adds this as new coverage (the pre-R384 suite carried no
+        // NodeIdDecodeKeys rejection case).
+        var schema = TestSchemaHelper.buildSchema("""
+            type Address @table(name: "address") @node { id: ID! @nodeId }
+            type Customer @table(name: "customer") { firstName: String @field(name: "first_name") }
+            type Staff @table(name: "staff") { firstName: String @field(name: "first_name") }
+            union Occupant = Customer | Staff
+            type Query {
+                occupants(addressId: [ID!] @nodeId(typeName: "Address")): [Occupant!]!
+            }
+            """);
+        var field = schema.field("Query", "occupants");
+        assertThat(field).isInstanceOf(QueryField.QueryUnionField.class);
+        var union = (QueryField.QueryUnionField) field;
+        assertThat(union.participantFilters())
+            .as("one filter carrier per table-bound participant")
+            .hasSize(2);
+        for (var pf : union.participantFilters()) {
+            var gcf = pf.filters().stream()
+                .filter(f -> f instanceof GeneratedConditionFilter)
+                .map(f -> (GeneratedConditionFilter) f)
+                .findFirst()
+                .orElseThrow(() -> new AssertionError(
+                    "participant '" + pf.participant().typeName() + "' carries no GeneratedConditionFilter: "
+                        + pf.filters()));
+            assertThat(gcf.bodyParams())
+                .as("the decoded Address key filters the participant's own lifted FK column")
+                .anySatisfy(bp -> {
+                    assertThat(bp).isInstanceOf(BodyParam.In.class);
+                    assertThat(((BodyParam.In) bp).column().sqlName()).isEqualTo("address_id");
+                });
+            var callParam = gcf.callParams().stream()
+                .filter(p -> p.name().equals("addressId"))
+                .findFirst()
+                .orElseThrow();
+            assertThat(callParam.extraction())
+                .as("an authored @nodeId filter decodes with throw-on-mismatch semantics")
+                .isInstanceOf(CallSiteExtraction.ThrowOnMismatch.class);
+        }
+    }
+
+    @Test
     void fieldLevelCondition_rejectedStructuralNotDeferred() {
         var schema = TestSchemaHelper.buildSchema(CUSTOMER_STAFF + """
             union Occupant = Customer | Staff

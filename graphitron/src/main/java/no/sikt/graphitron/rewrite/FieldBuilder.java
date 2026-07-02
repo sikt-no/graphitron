@@ -728,9 +728,9 @@ class FieldBuilder {
             if (unsupported != null) {
                 return new ParticipantFiltersResult.Rejected(Rejection.structural(
                     "filter argument '" + unsupported + "' on a multitable interface/union is not yet "
-                    + "supported: the polymorphic branch emitter handles plain scalar, enum, and "
-                    + "jOOQ-converted (e.g. ID-typed) column filters (top-level or nested-input "
-                    + "@field), but not @nodeId-decoded or developer @condition filters (participant '"
+                    + "supported: the polymorphic branch emitter handles plain scalar, enum, "
+                    + "jOOQ-converted (e.g. ID-typed), and @nodeId-decoded column filters (top-level "
+                    + "or nested-input @field), but not developer @condition filters (participant '"
                     + tb.typeName() + "')"));
             }
             result.add(new ParticipantFilters(tb, tfc.filters()));
@@ -744,9 +744,9 @@ class FieldBuilder {
      * filter is branch-safe. The branch path reuses the single-table condition-term emission with
      * the enclosing fetcher class's {@code CompositeDecodeHelperRegistry} and the pre-declared lift
      * locals threaded through it (R384 phase 0), and supports {@code Direct}, {@code EnumValueOf},
-     * {@code ContextArg}, {@code JooqConvert} (R384 phase a), and a {@code NestedInputField} whose
-     * leaf is itself one of those (R383 / R384 phase a). A {@code NodeIdDecodeKeys} leaf /
-     * {@code InputBean} still need plumbing later phases carry, and a developer {@code @condition}
+     * {@code ContextArg}, {@code JooqConvert} (R384 phase a), {@code NodeIdDecodeKeys} (R384
+     * phase b), and a {@code NestedInputField} whose leaf is itself one of those. {@code InputBean}
+     * and the record-decode shapes stay rejected, and a developer {@code @condition}
      * ({@code ConditionFilter} / {@code FkTargetConditionFilter}) is not a
      * {@code GeneratedConditionFilter} at all, so it is rejected by the first guard below. Rejecting
      * at classify time keeps the failure a clean build error rather than an emitter
@@ -782,15 +782,14 @@ class FieldBuilder {
      * <p>R383: a {@code NestedInputField} (a filter delivered through an input object rather than as a
      * top-level argument) is branch-safe exactly when its {@code leaf} transform is. The call-site
      * emitter's {@code NestedInputField} arm ({@code ArgCallEmitter.buildArgExtraction}) emits a
-     * self-contained {@code env.getArgument(outer) instanceof Map<?, ?> ...} traversal that needs no
-     * registry and no lift locals, provided the leaf does not. A nested plain {@code @field} column
-     * carries a {@link CallSiteExtraction.Direct} leaf, an ID-typed one a
-     * {@link CallSiteExtraction.JooqConvert} leaf ({@code FieldBuilder.implicitBodyParam}, R384
-     * phase a), both admitted; a nested {@code @nodeId} field carries a {@code NodeIdDecodeKeys}
-     * leaf and stays rejected through the recursion (it needs the decode registry). The
-     * condition-method generator ({@code TypeConditionsGenerator}) is extraction-agnostic, so the
-     * generated {@code <Participant>Conditions} method is identical whether the value arrives
-     * top-level or Map-traversed.
+     * self-contained {@code env.getArgument(outer) instanceof Map<?, ?> ...} traversal. A nested
+     * plain {@code @field} column carries a {@link CallSiteExtraction.Direct} leaf, an ID-typed one
+     * a {@link CallSiteExtraction.JooqConvert} leaf ({@code FieldBuilder.implicitBodyParam}, R384
+     * phase a), and a nested {@code @nodeId} field a {@code NodeIdDecodeKeys} leaf (R384 phase b,
+     * lifting its decode helper through the threaded registry) — all admitted through the
+     * recursion. The condition-method generator ({@code TypeConditionsGenerator}) is
+     * extraction-agnostic, so the generated {@code <Participant>Conditions} method is identical
+     * whether the value arrives top-level or Map-traversed.
      *
      * <p>Rejecting at classify time keeps the failure a clean build error rather than an emitter
      * {@code IllegalStateException} or uncompilable output ("classifier guarantees shape emitter
@@ -808,13 +807,17 @@ class FieldBuilder {
             // (MultiTablePolymorphicEmitter.declareFilterPlumbing); the nested-leaf form is a
             // self-contained traversal-plus-coercion expression needing no local at all.
             case CallSiteExtraction.JooqConvert ignored -> true;
-            // Not branch-safe: each needs plumbing the polymorphic branch path does not carry (the
-            // CompositeDecodeHelperRegistry for a NodeId decode; helper instantiation for a bean /
-            // record). Listed exhaustively with no default on purpose: when a remaining R384 phase
-            // makes one of these branch-safe, or a new CallSiteExtraction permit is added, this
-            // switch fails to compile and forces a deliberate decision at this gate rather than
-            // silently rejecting.
-            case CallSiteExtraction.NodeIdDecodeKeys ignored -> false;
+            // R384 phase b: branch-safe. The enclosing <Type>Fetchers class's
+            // CompositeDecodeHelperRegistry is threaded through branchFilterWhere (phase 0), so a
+            // NodeId-decoded filter arg lifts its decode helper onto the class hosting the branch
+            // call site — top-level and as a NestedInputField leaf, which the recursion above
+            // covers once this arm flips.
+            case CallSiteExtraction.NodeIdDecodeKeys ignored -> true;
+            // Not branch-safe: mutation-input / record-decode shapes that do not occur as a
+            // multitable root-query filter arg. Listed exhaustively with no default on purpose:
+            // if a schema ever produces one here, or a new CallSiteExtraction permit is added,
+            // this switch fails to compile and forces a deliberate decision at this gate rather
+            // than silently rejecting.
             case CallSiteExtraction.NodeIdDecodeRecord ignored -> false;
             case CallSiteExtraction.InputBean ignored -> false;
             case CallSiteExtraction.JooqRecord ignored -> false;

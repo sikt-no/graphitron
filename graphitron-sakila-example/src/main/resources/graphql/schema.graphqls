@@ -471,6 +471,12 @@ type Query {
     # compile is the pin that the arm stays off the deprecated-for-removal DataType.convert(Object).
     occupantsByStoreId(storeId: [ID!] @field(name: "store_id")): [AddressOccupant!]!
 
+    # R384 phase b fixture: an FK-target @nodeId filter on a multitable union. Both participant
+    # tables FK to address (a @node type), so each decoded Address key filters a branch by its own
+    # lifted address_id column; the decode chain lifts a per-class helper through the QueryFetchers
+    # registry (the class hosting the branch call site).
+    occupantsByAddress(addressId: [ID!] @nodeId(typeName: "Address")): [AddressOccupant!]!
+
     # R36 item 1 fixture: composite-PK participants in connection-mode. paged_a + paged_b have
     # composite (Integer, Integer) PKs; the polymorphic emitter projects DSL.jsonbArray(k1, k2)
     # as the synthetic __sort__ column and types it as JSONB so PostgreSQL's lexicographic

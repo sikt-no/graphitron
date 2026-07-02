@@ -40,9 +40,9 @@ genuinely needs plumbing the branch path does not carry, so the classifier
   `CompositeDecodeHelperRegistry` threaded into the emitter and a home for the drained
   composite-decode helper methods. `CompositeDecodeHelperRegistry.collectInto` brackets one
   construct → thread → drain lifecycle against a single `TypeSpec.Builder`, and the single-table path
-  drains onto its one `<Root>Conditions` class. The polymorphic path emits a `<Participant>Conditions`
-  composer per participant, so the helper home is a real decision, not a typo: see Design below
-  (one registry per participant composer, mirroring the single-table one-registry-per-class precedent).
+  drains onto its one `<Root>Conditions` class. The multitable branch path extracts inline in the
+  fetcher body, so the helper home is the `<Type>Fetchers` class hosting the call site: see Design
+  below (revised in phase b; the original per-participant-composer wording was not implementable).
 - **Developer `@condition` filters** (`ConditionFilter` / `FkTargetConditionFilter`), including a
   nested-input `@condition` that the field/arg-level `hasCondition` guard does not reach. These are
   not `GeneratedConditionFilter`s at all, so `firstUnsupportedFilterArg` rejects them at the first
@@ -76,12 +76,19 @@ guard for developer `@condition`. `NodeIdDecodeRecord`, `InputBean`, and `JooqRe
 they are mutation-input / record-decode shapes that do not occur as a multitable root-query filter arg,
 so they remain explicit `false` arms (the switch keeps forcing a decision if that ever changes).
 
-**Decode-helper home (`NodeIdDecodeKeys`).** One `CompositeDecodeHelperRegistry` per participant
-`<Participant>Conditions` composer, each its own `collectInto` construct → thread → drain bracket. This
-mirrors the single-table precedent (one registry per emitted `<Root>Conditions` class) and keeps the
-registry's "cannot silently forget to emit a registered helper" invariant intact: a registry maps to
-exactly one host builder, never to one-of-N. A participant's decode helpers land on that participant's
-composer, alongside the participant-named condition method its filters already lower to.
+**Decode-helper home (`NodeIdDecodeKeys`): the `<Type>Fetchers` class hosting the branch call site.**
+(Revised in phase b from the original "one registry per participant `<Participant>Conditions`
+composer" wording, which misidentified the boundary: `<Participant>Conditions` is the pure-function
+composer, contractually free of graphql-java/env concerns, while the multitable branch path does its
+env extraction inline in the fetcher body, where the registry's helper calls are emitted unqualified
+as private statics of the enclosing class. Draining onto a different class in a different package
+cannot compile, and would put wire-decode machinery on the composer side of the adapter/composer
+boundary.) The implemented home is the existing per-`<Type>Fetchers` `collectInto` bracket in
+`TypeFetcherGenerator`, threaded through `emitMethods` / `emitConnectionMethods` into
+`branchFilterWhere`. This matches the true single-table precedent, one registry per class doing env
+extraction (`QueryConditions` for the shim layer, `<Type>Fetchers` for the split-rows / lookup-rows
+sites), and keeps the registry's "cannot silently forget to emit a registered helper" invariant
+intact: one registry, one host builder, hosting the call sites it serves.
 
 **`JooqConvert` deprecation: fix at the source with `DSL.val(...).getValue()`, do not suppress.** The
 `JooqConvert` arm produces a column-typed Java *value* for a developer condition-method parameter (the
@@ -123,45 +130,19 @@ exercises the non-deprecated form from the start.
 
 ### Phase 0: thread the shared plumbing (behaviorally inert)
 
-Widen the branch path to carry what the lifted kinds need, **without flipping any classifier arm**, so
-the existing pipeline/execution tests stay green and prove the threading is inert:
-
-- `MultiTablePolymorphicEmitter`: thread a per-participant `CompositeDecodeHelperRegistry` (and its
-  drain) through `emitMethods` / `emitConnectionMethods` → `buildStage1Block` /
-  `buildStage1ConnectionBlock` → `branchFilterWhere`, and call `FkTargetConditionEmitter.declareAliases`
-  for each participant's filters, emitting the alias declarations as statements **before** the inline
-  union expression begins (the union branches read the resulting alias map). Pre-declare the shared
-  `<name>Keys` local once per arg name (deduped), matching the single-table
-  `QueryConditionsGenerator` pre-lift at lines 144-153. Pass the threaded `registry` /
-  `liftedOuters` / `fkTargetAliases` into `emitTerm` in place of `null, null, Map.of()`.
+Shipped at `367abe2`. (One deviation from the original text: the threaded registry is the enclosing
+`<Type>Fetchers` class's, not per-participant; see the revised Design.)
 
 ### Phase a: `JooqConvert`
 
-- Replace the deprecated `DataType.convert(Object)` in `ArgCallEmitter`'s `JooqConvert` arm with
-  `DSL.val(rawValue, table.COL.getDataType()).getValue()` (see Design for why this is the correct
-  non-deprecated coercion):
-  - scalar: `DSL.val(env.getArgument("<name>"), <alias>.COL.getDataType()).getValue()` (no `(String)`
-    cast needed; `val` takes `Object`).
-  - list: `<name>Keys.stream().map(k -> DSL.val(k, <alias>.COL.getDataType()).getValue()).toList()`.
-
-  This lives in the shared arm, so it fixes the single-table path in the same change. No
-  `@SuppressWarnings` is added at any site, and the arm emits neither a deprecation nor an unchecked
-  warning, so no suppression-stamp machinery is needed.
-- Align the nested `@field` leaf with top-level conversion semantics so a nested `[ID!] @field` over a
-  converted column routes through `JooqConvert` rather than the hardcoded `Direct` leaf `BuildContext`
-  builds today.
-- Correct the stale forward-reference in `CallParam.emitsUncheckedCast()`'s javadoc: it speculates that
-  "R384's `JooqConvert` lift" will start emitting an *unchecked cast* and gain an arm there. With the
-  `DSL.val(...).getValue()` form it does not (the scalar takes `Object`, the list maps to `List<T>`); the
-  example should be dropped so the doc does not name a future that will not happen
-  ("Documentation names only live tests/code").
-- Flip the `case CallSiteExtraction.JooqConvert` arm in `FieldBuilder.isBranchSafeExtraction` to
-  branch-safe.
+Shipped at `5183f7c` (`DSL.val(...).getValue()` in the shared arm, nested-leaf alignment,
+`emitsUncheckedCast` doc/predicate fix, classifier arm flip, pipeline + execution + `-Werror`
+compile-pin coverage).
 
 ### Phase b: `NodeIdDecodeKeys`
 
-- Per-participant registry home as in Design; the threaded registry from phase 0 now actually collects
-  helpers on the `NodeIdDecodeKeys` path.
+- Registry home as in the revised Design (the `<Type>Fetchers` class hosting the branch call site);
+  the threaded registry from phase 0 now actually collects helpers on the `NodeIdDecodeKeys` path.
 - Flip the `case CallSiteExtraction.NodeIdDecodeKeys` arm to branch-safe (top-level and as a
   `NestedInputField` leaf, which the recursion already covers once the arm flips).
 

@@ -401,16 +401,18 @@ public final class ArgCallEmitter {
         // pattern locals plus a Supplier-lambda-throw trick to stay an expression) with a body a
         // developer can breakpoint and read a meaningful stack frame from (R260).
         if (registry == null) {
-            // All NodeId-decoded condition arguments are emitted through QueryConditionsGenerator,
-            // which owns a CompositeDecodeHelperRegistry and drains it onto the <Root>Conditions
-            // class. A registry-less call site reaching a decode is a wiring bug: there would be
-            // nowhere to emit the lifted helper. Fail loudly rather than fall back to the inline
-            // expression-trick form this item removed.
+            // Every NodeId-decoded condition argument is emitted through a generator that owns a
+            // CompositeDecodeHelperRegistry and drains it onto the class hosting the call site:
+            // QueryConditionsGenerator (<Root>Conditions) for the single-table shim layer, and the
+            // <Type>Fetchers collectInto bracket for the fetcher-inline sites (split/lookup rows
+            // methods; the multitable branch path, R384 phase b). A registry-less call site
+            // reaching a decode is a wiring bug: there would be nowhere to emit the lifted helper.
+            // Fail loudly rather than fall back to the inline expression-trick form R260 removed.
             throw new IllegalStateException(
                 "NodeId-decode extraction must be lifted into a per-class decode helper, which requires a "
                 + "CompositeDecodeHelperRegistry; none was supplied for decode '" + decode.methodName()
-                + "'. NodeId-decoded condition arguments are emitted through QueryConditionsGenerator, "
-                + "which owns and drains a registry.");
+                + "'. NodeId-decoded condition arguments must be emitted through a generator that owns "
+                + "and drains a registry onto the call site's host class.");
         }
         var mode = throwOnMismatch
             ? CompositeDecodeHelperRegistry.Mode.THROW

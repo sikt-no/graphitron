@@ -218,6 +218,47 @@ class MultiTableFilterExecutionTest {
 
     @Test
     @SuppressWarnings("unchecked")
+    void nodeIdFilter_decodesAndFiltersPerBranch() {
+        // R384 phase b: an FK-target @nodeId(typeName: "Address") filter. Address 3 is customer
+        // Linda's and staff Mike's address, so the decoded key must narrow EACH branch by its own
+        // address_id FK column.
+        String address3 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Address", 3);
+        Map<String, Object> data = execute("""
+            { occupantsByAddress(addressId: ["%s"]) {
+                __typename
+                ... on Customer { firstName }
+                ... on Staff { firstName }
+            } }
+            """.formatted(address3));
+        List<Map<String, Object>> rows = (List<Map<String, Object>>) data.get("occupantsByAddress");
+        assertThat(rows).extracting(r -> (String) r.get("firstName"))
+            .containsExactlyInAnyOrder("Linda", "Mike");
+        assertThat(rows).extracting(r -> (String) r.get("__typename"))
+            .containsExactlyInAnyOrder("Customer", "Staff");
+        assertThat(SQL_LOG)
+            .as("the decoded node id lowers to a per-branch address_id predicate")
+            .anyMatch(s -> s.contains("address_id") && s.contains(" in ("));
+    }
+
+    @Test
+    void nodeIdFilter_wrongTypeId_surfacesClientError() {
+        // An authored @nodeId filter decodes with throw-on-mismatch semantics: a well-formed id of
+        // the wrong node type is a client error, not a silent empty narrowing.
+        String filmId = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Film", 1);
+        var input = Graphitron.newExecutionInput(dsl, "test-user")
+            .query("""
+                { occupantsByAddress(addressId: ["%s"]) { __typename } }
+                """.formatted(filmId))
+            .build();
+        var result = graphql.execute(input);
+        assertThat(result.getErrors())
+            .as("a wrong-type node id surfaces as a GraphQL error")
+            .isNotEmpty();
+        assertThat(result.getErrors().get(0).getMessage()).contains("Address");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
     void connectionForm_filterApplied_returnsOnlyMatchingNodes() {
         Map<String, Object> data = execute("""
             { occupantsByNameConnection(firstName: ["Mike"]) {
