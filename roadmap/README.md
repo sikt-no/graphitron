@@ -25,7 +25,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R45` | Multi-tenant routing on top of the schema-driven ExecutionInput factory | Ready | 2026-06-26 | [plan](tenant-routing-and-execution-input.md) |
 | `R347` | Consolidate graphitron-lsp navigation, dispatch, and result-building | In Progress | 2026-07-01 <sub>created 2026-06-19</sub> | [plan](lsp-structural-consolidation.md) |
 | `R426` | TableRecord-sourced @service keys are partial records; service bodies reading non-key columns get silent nulls <sub>blocked by: [service-splitquery-key-columns-in-parent-projection](service-splitquery-key-columns-in-parent-projection.md)</sub> | Spec | 2026-07-02 | [plan](service-tablerecord-partial-record-nonkey-reads.md) |
-| `R408` | Lint finding suppression mechanism | In Review | 2026-07-01 | [plan](lint-finding-suppression.md) |
 | `R13` | Faceted search on `@asConnection` | Ready | 2026-06-26 | [plan](faceted-search.md) |
 | `R424` | Inline @reference field reads its filter/pagination args from the top-level env, silently dropping them | In Review | 2026-07-02 | [plan](inline-field-args-from-selectedfield.md) |
 | `R92` | Surface database CHECK constraints as Jakarta validation rules | Spec |  | [plan](catalog-check-constraint-validation.md) |
@@ -302,7 +301,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R410` [**graphitron:dev owns incremental compilation of generated sources**](dev-incremental-compile.md) — Ready, feature
 - `R347` [**Consolidate graphitron-lsp navigation, dispatch, and result-building**](lsp-structural-consolidation.md) — In Progress, architecture
 - `R345` [**Surface schema parse failures as LSP red squiggles**](lsp-squiggle-schema-parse-failure.md) — Backlog, feature
-- `R408` [**Lint finding suppression mechanism**](lint-finding-suppression.md) — In Review, feature
 - `R123` [**Parent-context-aware schema coordinates for per-directive Behavior policy**](parent-context-aware-schema-coordinates.md) — Backlog, architecture
 - `R118` [**Graphitron MCP server programme: agent-facing schema, catalog, code, and docs tools in graphitron:dev**](graphitron-mcp-server.md) — Backlog, feature
 - `R212` [**IntelliJ plugin wrapping graphitron:dev LSP**](intellij-lsp-plugin.md) — Spec, feature
