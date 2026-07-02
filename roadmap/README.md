@@ -16,10 +16,10 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 |---|---|---|---|---|
 | `R222` | Dimensional model pivot: slots over cross-product permits | Spec | 2026-06-18 <sub>created 2026-05-21</sub> | [plan](dimensional-model-pivot.md) |
 | `R413` | Parent-input VALUES table in split/reference batch fetchers drops converter-backed column DataType, breaking joins on numeric-domain keys | Spec | 2026-07-02 <sub>created 2026-07-01</sub> | [plan](split-parent-input-values-converter-datatype.md) |
-| `R414` | Split/DataLoader connections omit table+condition from ConnectionResult, so totalCount is always null on nested connections | Spec | 2026-07-02 <sub>created 2026-07-01</sub> | [plan](nested-connection-totalcount-always-null.md) |
 | `R333` | The Graphitron data model | Spec | 2026-06-25 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
 | `R396` | @reference FK-connection validation rejects schema-qualified or case-mismatched @table base names | Ready | 2026-06-30 <sub>created 2026-06-29</sub> | [plan](reference-fk-connection-qualified-table-name.md) |
 | `R346` | Regenerate and guard the generated supported-directives migration doc against directive-set drift | Ready | 2026-06-19 | [plan](supported-directives-regen-guard.md) |
+| `R414` | Split/DataLoader connections omit table+condition from ConnectionResult, so totalCount is always null on nested connections | Ready | 2026-07-02 <sub>created 2026-07-01</sub> | [plan](nested-connection-totalcount-always-null.md) |
 | `R384` | Support converted/@nodeId/developer-@condition filters on multitable interface/union queries | Ready | 2026-07-02 <sub>created 2026-06-25</sub> | [plan](multitable-interface-converted-nodeid-condition-filters.md) |
 | `R410` | graphitron:dev owns incremental compilation of generated sources | Ready | 2026-07-01 | [plan](dev-incremental-compile.md) |
 | `R415` | Connection first/last arguments are not clamped to >= 0, so a negative page size reaches SQL LIMIT and throws a redacted 500 | Spec | 2026-07-02 <sub>created 2026-07-01</sub> | [plan](connection-first-last-negative-unclamped.md) |
@@ -209,7 +209,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 ### pagination
 
 - `R298` [**First-client contract-composition check: do type-level @tag-only synthesised connection types satisfy a real federation contract?**](federation-tag-first-client-contract-check.md) — Backlog, bug
-- `R414` [**Split/DataLoader connections omit table+condition from ConnectionResult, so totalCount is always null on nested connections**](nested-connection-totalcount-always-null.md) — Spec, bug
+- `R414` [**Split/DataLoader connections omit table+condition from ConnectionResult, so totalCount is always null on nested connections**](nested-connection-totalcount-always-null.md) — Ready, bug
 - `R415` [**Connection first/last arguments are not clamped to >= 0, so a negative page size reaches SQL LIMIT and throws a redacted 500**](connection-first-last-negative-unclamped.md) — Spec, bug
 - `R297` [**Collapse the shareable boolean on ConnectionType/EdgeType/PageInfoType; read federation flags off schemaType()**](collapse-connection-shareable-boolean.md) — Backlog, tech-debt
 - `R13` [**Faceted search on `@asConnection`**](faceted-search.md) — Ready
