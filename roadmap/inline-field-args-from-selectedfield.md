@@ -118,10 +118,15 @@ the arm can appear in a `WhereFilter.callParams()` emitted by the two inline emi
 
 Inline-reachable arms — route the runtime read through the source:
 
-- `Direct` (`:275`): `Env` unchanged; `FromSelectedField` emits
-  `(<RawParamType>) sf.getArguments().get(name)`, reusing the existing `rawComponent`
-  lift for the cast target. Scalar casts are checked; a generic param type (e.g.
-  `List<String>`) makes the cast unchecked — see suppression note below.
+- `Direct` (`:275`): the `Env` form emits a bare, *uncast* `env.getArgument(name)` and
+  relies on generic-method target-typing; unchanged. `FromSelectedField` cannot target-type
+  (`Map.get` is statically `Object`), so it emits `(<RawParamType>) sf.getArguments().get(name)`,
+  deriving the cast target with the `rawComponent(...)` helper already used by the
+  `NestedInputField` leaf path (`:502`). Scalar casts are checked; a generic param type
+  (e.g. `List<String>`) makes the cast unchecked, see the suppression note below. This is
+  the first cast the `Direct` arm has ever emitted, so the byte-identical invariant at the
+  `Env` sites holds only if the suppression predicate stays `FromSelectedField`-scoped
+  (see below).
 - `EnumValueOf` (`:279`): `FromSelectedField` reads the wire value once via
   `(String) sf.getArguments().get(name)` in both the null-guard and the `valueOf` call.
 - `JooqConvert` scalar (`:296`): swap the wire read; no cast needed (`DSL.val` takes
@@ -136,21 +141,26 @@ Inline-reachable arms — route the runtime read through the source:
   so the shape is inline-reachable in principle even if no fixture exercises it yet.
 - `NestedInputField` root (`:479`): swap the depth-0 read
   (`sf.getArguments().get(outer)`); no cast (the existing `instanceof Map<?, ?>` guard
-  owns the runtime shape). The `liftedOuters` dedup stays `QueryConditionsGenerator`-only
-  (inline sites pass `null` today; unchanged).
+  owns the runtime shape). The `liftedOuters` dedup is populated only by
+  `QueryConditionsGenerator` and `MultiTablePolymorphicEmitter` (the latter via
+  `QueryConditionsGenerator.computeLiftedOuters`); both inline sites pass `null` for it
+  today, so the lifted path is inert for inline and stays unchanged.
 - `NodeIdDecodeKeys` top-level wire (`:303`): swap the wire expression; no cast (the
   lifted decode helper's parameter is `Object wire`,
   `CompositeDecodeHelperRegistry:128`).
 - `ContextArg` (`:283`): stays env-based under *both* variants — GraphQL context is
   request-scoped, so the ancestor `env` is legitimately correct. Document this on the arm.
 
-Root-only arms — unreachable from inline `WhereFilter.callParams()`; guard, don't route:
+Never-inline arms — not reachable from inline `WhereFilter.callParams()`; guard, don't route:
 
-- `InputBean` (`:335`) and `JooqRecord` (`:350`): produced only by `InputBeanResolver` /
-  the R311 child-`@service` path (`@service` concepts, never inline `@reference`
-  filters). If reached with `FromSelectedField`, throw `IllegalStateException` matching
-  the existing guard discipline at `ArgCallEmitter.java:197-218` — never silently emit
-  the wrong form.
+- `InputBean` (`:335`) and `JooqRecord` (`:350`): live arms (`JooqRecord` is reached at
+  the R311 child-`@service` coordinate, not only at the root, per the comment at
+  `ArgCallEmitter.java:307-311`), but they are `@service`/input-bean concepts, never
+  inline `@reference` filters. All their producers (root and child-`@service`) keep the
+  implicit `Env`, so `FromSelectedField` is never actually threaded here. Make the guard
+  a defensive `IllegalStateException` on the `FromSelectedField` branch, matching the
+  existing guard discipline at `ArgCallEmitter.java:197-218`, so the wrong form can never
+  be silently emitted even if a future caller mis-wires the source.
 - `buildMethodBackedCallArgs` family and `buildListAwarePathExtraction` (`:636`): root
   `@service`/`@tableMethod` emission; these entry points never receive a
   `FromSelectedField` source (their signatures keep the implicit `Env`), so no change.
@@ -175,10 +185,20 @@ lift the read into a local for legibility (see below).
 new unchecked cast must be suppressed at the narrowest enclosing member, mirroring
 `QueryConditionsGenerator:135-142`: `TypeClassGenerator.build$FieldsMethod` stamps
 `@SuppressWarnings("unchecked")` on `$fields` when any inline field's filter params
-would emit one under `FromSelectedField`. Reuse `CallParam.emitsUncheckedCast` and
-extend the predicate (or add a source-aware companion) for the casts the
-`FromSelectedField` form introduces that the `Env` form did not: list-typed `Direct`
-params and the `JooqConvert`+list pre-lift. Keep the predicate model-side so the
+would emit one under `FromSelectedField`.
+
+The predicate must be **source-aware**, not a blanket widening of today's
+`CallParam.emitsUncheckedCast`. That method is source-agnostic and is consumed at the
+`Env` sites too (`QueryConditionsGenerator:137`, `MultiTablePolymorphicEmitter:1296`) to
+decide *their* `@SuppressWarnings` stamp. The new casts (`FromSelectedField` list-typed
+`Direct` params, and the `JooqConvert`+list pre-lift) exist *only* under
+`FromSelectedField`: their `Env` counterparts are target-typed and warning-free. So
+broadening `emitsUncheckedCast` unconditionally would newly stamp `@SuppressWarnings` on
+`QueryConditionsGenerator` / `MultiTablePolymorphicEmitter` methods that carry a list
+`Direct` param, changing their output and breaking the byte-identical invariant this plan
+pins as a non-goal. Route the source into the predicate (pass `ArgumentValueSource`, or
+add a `FromSelectedField`-only companion that the `$fields` host calls) so the `Env`
+callers see the unchanged answer. Keep whatever shape it takes model-side so the
 `$fields` host and any future host cannot drift.
 
 ### Generated-code legibility (optional, implementer's call)
