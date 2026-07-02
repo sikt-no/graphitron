@@ -1,7 +1,7 @@
 ---
 id: R384
 title: "Support converted/@nodeId/developer-@condition filters on multitable interface/union queries"
-status: In Progress
+status: In Review
 bucket: bug
 priority: 3
 theme: interface-union
@@ -130,32 +130,29 @@ exercises the non-deprecated form from the start.
 
 ### Phase 0: thread the shared plumbing (behaviorally inert)
 
-Shipped at `367abe2`. (One deviation from the original text: the threaded registry is the enclosing
+Shipped at `60b58ae`. (One deviation from the original text: the threaded registry is the enclosing
 `<Type>Fetchers` class's, not per-participant; see the revised Design.)
 
 ### Phase a: `JooqConvert`
 
-Shipped at `5183f7c` (`DSL.val(...).getValue()` in the shared arm, nested-leaf alignment,
+Shipped at `6021bda` (`DSL.val(...).getValue()` in the shared arm, nested-leaf alignment,
 `emitsUncheckedCast` doc/predicate fix, classifier arm flip, pipeline + execution + `-Werror`
 compile-pin coverage).
 
 ### Phase b: `NodeIdDecodeKeys`
 
-- Registry home as in the revised Design (the `<Type>Fetchers` class hosting the branch call site);
-  the threaded registry from phase 0 now actually collects helpers on the `NodeIdDecodeKeys` path.
-- Flip the `case CallSiteExtraction.NodeIdDecodeKeys` arm to branch-safe (top-level and as a
-  `NestedInputField` leaf, which the recursion already covers once the arm flips).
+Shipped at `fb1b2e4` (arm flip; registry home per the revised Design; new pipeline lowering case
+plus `occupantsByAddress` execution fixture with a wrong-type-id client-error case).
 
 ### Phase c: developer `@condition`
 
-- Relax the `firstUnsupportedFilterArg` first guard so a `ConditionFilter` / `FkTargetConditionFilter`
-  is no longer rejected outright; the FK-target alias pass from phase 0 supplies the `EXISTS`
-  correlation aliases, and the registry covers any composite decode a nested-input `@condition` carries
-  (the field/arg-level `hasCondition` guard does not reach the nested case).
-
-Each phase updates this file (collapse the shipped phase to a one-line "shipped at `<sha>`" note,
-keep pending phases); status stays `Ready` while phases remain and flips to `In Review` only when the
-last phase is pending review.
+Shipped at `feadbcb` (removed the R363 field/arg-level `hasCondition` pre-guard *and* relaxed the
+`firstUnsupportedFilterArg` first guard: developer filters gate uniformly on their per-param
+extractions; the developer method reflects once per participant and runs against each branch's
+stage-1 alias, `Table<?>`-generic or surfacing a concrete-table mismatch at consumer javac per
+R379's semantics; three pipeline rejection cases flipped to lowered, plus `occupantsStartingWithM`
+/ `occupantsByNamePrefix` / `OccupantFilter.namePrefix` execution fixtures over
+`MultiTableConditionFixtures`).
 
 ## Tests
 
@@ -200,6 +197,21 @@ wire `String`) and `org.jooq.tools.Convert` (itself `forRemoval`) were ruled out
 predicate, or per-member stamp. Design and phase a were rewritten accordingly. The next Spec → Ready
 sign-off must come from a session distinct from both the original author and the reviewer who landed this
 revision.
+
+**2026-07-02 (In Progress → In Review, all four phases shipped).** Phases 0/a/b/c landed at
+`60b58ae` / `6021bda` / `fb1b2e4` / `feadbcb`, full `mvn install -Plocal-db` green after each.
+Two deviations from the Ready text, both recorded in place: (1) the decode-helper home is the
+`<Type>Fetchers` class hosting the branch call site, not a per-participant `<Participant>Conditions`
+composer — the original wording put wire-decode machinery on the env-free pure-function composer
+and was not implementable (unqualified private-static helper calls cannot cross classes/packages);
+the per-`<Type>Fetchers` `collectInto` bracket is the true single-table precedent (one registry per
+env-extracting class) and was confirmed against the design principles (principles-architect consult).
+(2) Phase c also removed the field/arg-level `hasCondition` pre-guard, not just the
+`firstUnsupportedFilterArg` first guard — with the per-participant reflection running anyway, the
+pre-guard was the only thing keeping top-level `@condition` rejected, and the `Table<?>` /
+concrete-parameter contract (R379 semantics) covers the wrong-table hazard the R363 comment feared.
+The `emitsUncheckedCast` fix went slightly beyond doc-only: a `JooqConvert` nested leaf is carved
+out of the predicate since its emission (instanceof-guard + `DSL.val`) casts nothing.
 
 **2026-07-02 (Spec → Ready re-review, sign-off recorded).** Re-review by a session distinct from both the
 original author and the revising reviewer, closing the sign-off this item's status flip was missing: the
