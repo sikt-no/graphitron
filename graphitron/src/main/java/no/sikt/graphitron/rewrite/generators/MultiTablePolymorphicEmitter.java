@@ -505,6 +505,10 @@ public final class MultiTablePolymorphicEmitter {
      *                              only catalog-FK / {@code ColumnRead}-reader parent keys
      *                              (table-backed parents); R105 wires the class-backed-parent
      *                              classifier arm to reach the lifter and accessor reader permits.
+     * @param parentKeyOwnerTable   the parent/hub table owning {@code parentSourceKey.columns()},
+     *                              threaded from the field's classification site so the batched
+     *                              rows method's VALUES cells and JOIN lookups can bind through
+     *                              the key columns' registered Converter DataTypes (R413).
      * @param parentResultType      the parent's classified {@link GraphitronType.ResultType};
      *                              threaded into {@link GeneratorUtils#buildRecordParentKeyExtraction}
      *                              so {@code env.getSource()} is cast and read against the right
@@ -516,6 +520,7 @@ public final class MultiTablePolymorphicEmitter {
             List<ParticipantRef> participants,
             Map<String, List<JoinStep>> participantJoinPaths,
             SourceKey parentSourceKey,
+            TableRef parentKeyOwnerTable,
             GraphitronType.ResultType parentResultType,
             boolean isList,
             String outputPackage) {
@@ -527,7 +532,7 @@ public final class MultiTablePolymorphicEmitter {
         if (isList && !tableBoundParticipants.isEmpty()) {
             methods.add(buildBatchedListFetcher(ctx, fieldName, parentSourceKey, parentResultType, outputPackage));
             methods.add(buildBatchedListRowsMethod(ctx, fieldName, tableBoundParticipants,
-                participantJoinPaths, parentSourceKey, outputPackage));
+                participantJoinPaths, parentSourceKey, parentKeyOwnerTable, outputPackage));
         } else {
             methods.add(buildScalarPerParentFetcher(ctx, fieldName, tableBoundParticipants,
                 participantJoinPaths, parentSourceKey, isList, outputPackage));
@@ -580,6 +585,9 @@ public final class MultiTablePolymorphicEmitter {
      *                              non-empty otherwise.
      * @param parentSourceKey       parent-object source-side key; non-null for child
      *                              connections, null for root queries.
+     * @param parentKeyOwnerTable   the parent/hub table owning {@code parentSourceKey.columns()};
+     *                              non-null when {@code parentSourceKey} is non-null (see the
+     *                              child overload of {@code emitMethods} for the R413 rationale).
      * @param parentResultType      the parent's classified {@link GraphitronType.ResultType};
      *                              non-null when {@code parentSourceKey} is non-null. Threaded
      *                              into {@link GeneratorUtils#buildRecordParentKeyExtraction} so
@@ -594,6 +602,7 @@ public final class MultiTablePolymorphicEmitter {
             Map<String, List<JoinStep>> participantJoinPaths,
             int defaultPageSize,
             SourceKey parentSourceKey,
+            TableRef parentKeyOwnerTable,
             GraphitronType.ResultType parentResultType,
             String outputPackage,
             CompositeDecodeHelperRegistry registry) {
@@ -608,7 +617,7 @@ public final class MultiTablePolymorphicEmitter {
             methods.add(buildBatchedConnectionFetcher(ctx, fieldName, parentSourceKey, parentResultType,
                 outputPackage));
             methods.add(buildBatchedConnectionRowsMethod(ctx, fieldName, tableBoundParticipants,
-                participantJoinPaths, defaultPageSize, parentSourceKey, outputPackage));
+                participantJoinPaths, defaultPageSize, parentSourceKey, parentKeyOwnerTable, outputPackage));
         } else {
             methods.add(buildRootConnectionFetcher(ctx, fieldName, tableBoundParticipants,
                 participantFilters, defaultPageSize, outputPackage, registry));
@@ -1518,7 +1527,7 @@ public final class MultiTablePolymorphicEmitter {
             TypeFetcherEmissionContext ctx,
             String fieldName, List<ParticipantRef.TableBound> participants,
             Map<String, List<JoinStep>> participantJoinPaths,
-            int defaultPageSize, SourceKey parentSourceKey,
+            int defaultPageSize, SourceKey parentSourceKey, TableRef parentKeyOwnerTable,
             String outputPackage) {
 
         var connectionResultClass = ClassName.get(outputPackage + ".util",
@@ -1560,7 +1569,7 @@ public final class MultiTablePolymorphicEmitter {
             b.addStatement("$T $L = $T.$L", jooqTableClass, alias, participant.table().constantsClass(), participant.table().javaFieldName());
         }
 
-        b.add(buildParentInputValuesEmitter(parentPkCols, keyType));
+        b.add(buildParentInputValuesEmitter(parentSourceKey, parentKeyOwnerTable));
 
         // Pagination args (shared across the batch — graphql-java resolves field args once per
         // selection regardless of fanout).
@@ -1599,7 +1608,7 @@ public final class MultiTablePolymorphicEmitter {
             var participant = participants.get(p);
             String alias = "stage1_" + participant.typeName();
             CodeBlock projection = batchedBranchProjection(participant, alias);
-            CodeBlock joinPredicate = batchedBranchJoinPredicate(participant, participantJoinPaths);
+            CodeBlock joinPredicate = batchedBranchJoinPredicate(participant, participantJoinPaths, parentKeyOwnerTable);
             if (p == 0) {
                 b.add("    dsl.select($L)\n", projection);
                 b.add("        .from($L)\n", alias);
@@ -1730,7 +1739,7 @@ public final class MultiTablePolymorphicEmitter {
      * structurally impossible because no two parallel lists are paired.
      */
     private static CodeBlock batchedBranchJoinPredicate(ParticipantRef.TableBound participant,
-            Map<String, List<JoinStep>> participantJoinPaths) {
+            Map<String, List<JoinStep>> participantJoinPaths, TableRef parentKeyOwnerTable) {
         var path = participantJoinPaths.get(participant.typeName());
         var fkJoin = (JoinStep.FkJoin) path.get(0);
         String tableAlias = "stage1_" + participant.typeName();
@@ -1739,13 +1748,15 @@ public final class MultiTablePolymorphicEmitter {
         for (var slot : fkJoin.slots()) {
             ColumnRef parentCol = slot.sourceSide();
             ColumnRef participantCol = slot.targetSide();
-            ClassName parentColClass = ClassName.bestGuess(parentCol.columnClass());
+            // Lookup by sqlName + the owner column's DataType so converter-backed parent keys
+            // keep faithful type metadata, matching the VALUES cell binds (R413).
+            CodeBlock lookup = CodeBlock.of("parentInput.field($S, $T.$L.$L.getDataType())",
+                parentCol.sqlName(), parentKeyOwnerTable.constantsClass(),
+                parentKeyOwnerTable.javaFieldName(), parentCol.javaName());
             if (i == 0) {
-                b.add("$L.$L.eq(parentInput.field($S, $T.class))",
-                    tableAlias, participantCol.javaName(), parentCol.sqlName(), parentColClass);
+                b.add("$L.$L.eq($L)", tableAlias, participantCol.javaName(), lookup);
             } else {
-                b.add(".and($L.$L.eq(parentInput.field($S, $T.class)))",
-                    tableAlias, participantCol.javaName(), parentCol.sqlName(), parentColClass);
+                b.add(".and($L.$L.eq($L))", tableAlias, participantCol.javaName(), lookup);
             }
             i++;
         }
@@ -1868,9 +1879,21 @@ public final class MultiTablePolymorphicEmitter {
      * {@code parentInput("idx", pk_col_0_sqlName, ..., pk_col_N-1_sqlName)}. Used by every
      * batched-rows method (list arm and connection arm) so the JOIN parentInput predicate has a
      * consistent shape.
+     *
+     * <p>Cells are delegated to {@link ValuesJoinRowBuilder#cellsCode} (the single VALUES-cell
+     * authority) so each cell binds as
+     * {@code DSL.val(<scalar>, Tables.<OWNER>.<COL>.getDataType())} through the parent-key
+     * column's registered Converter (R413). The scalar extraction forks on the key's
+     * {@link SourceKey.Wrap}: {@code RecordN} keys expose {@code k.valueN()}; {@code RowN} keys
+     * have no value accessors, so the value is recovered from the bind {@code Param} via the
+     * per-fetcher-class {@code parentKeyCellValue} helper (emission gated in
+     * {@code TypeFetcherGenerator}). {@code parentKeyOwnerTable} is the parent/hub table owning
+     * {@code parentSourceKey.columns()}, threaded from the field's classification site.
      */
     private static CodeBlock buildParentInputValuesEmitter(
-            List<ColumnRef> parentPkCols, TypeName keyType) {
+            SourceKey parentSourceKey, TableRef parentKeyOwnerTable) {
+        List<ColumnRef> parentPkCols = parentSourceKey.columns();
+        TypeName keyType = parentSourceKey.keyElementType();
         var integerClass = ClassName.get(Integer.class);
         int parentKeyArity = parentPkCols.size();
         int parentRowArity = parentKeyArity + 1;
@@ -1889,12 +1912,21 @@ public final class MultiTablePolymorphicEmitter {
             parentRowType, parentRowType, rowClass(parentRowArity));
         b.beginControlFlow("for (int i = 0; i < keys.size(); i++)");
         b.addStatement("$T k = keys.get(i)", keyType);
-        var parentRowArgs = CodeBlock.builder();
-        parentRowArgs.add("$T.inline(i)", DSL);
-        for (int i = 0; i < parentKeyArity; i++) {
-            parentRowArgs.add(", k.field$L()", i + 1);
-        }
-        b.addStatement("parentRows[i] = $T.row($L)", DSL, parentRowArgs.build());
+        CodeBlock ownerExpr = CodeBlock.of("$T.$L",
+            parentKeyOwnerTable.constantsClass(), parentKeyOwnerTable.javaFieldName());
+        java.util.function.BiFunction<ColumnRef, Integer, CodeBlock> valueExpr =
+            switch (parentSourceKey.wrap()) {
+                case SourceKey.Wrap.Record ignored -> (col, i) -> CodeBlock.of("k.value$L()", i + 1);
+                case SourceKey.Wrap.Row ignored -> (col, i) -> CodeBlock.of("parentKeyCellValue(k.field$L())", i + 1);
+                case SourceKey.Wrap.TableRecord tr -> throw new IllegalStateException(
+                    "SourceKey.Wrap.TableRecord (" + tr.className() + ") cannot reach the "
+                    + "polymorphic parent-input VALUES seam; the resolution sites produce "
+                    + "Wrap.Row (table-backed parents) or Wrap.Record (accessor arms) keys only.");
+            };
+        CodeBlock cells = ValuesJoinRowBuilder.cellsCode(
+            parentPkCols, Function.identity(),
+            CodeBlock.of("$T.inline(i)", DSL), ownerExpr, valueExpr);
+        b.addStatement("parentRows[i] = $T.row($L)", DSL, cells);
         b.endControlFlow();
 
         var parentInputAliasArgs = CodeBlock.builder();
@@ -1919,7 +1951,7 @@ public final class MultiTablePolymorphicEmitter {
             TypeFetcherEmissionContext ctx,
             String fieldName, List<ParticipantRef.TableBound> participants,
             Map<String, List<JoinStep>> participantJoinPaths,
-            SourceKey parentSourceKey,
+            SourceKey parentSourceKey, TableRef parentKeyOwnerTable,
             String outputPackage) {
 
         var integerClass = ClassName.get(Integer.class);
@@ -1951,7 +1983,7 @@ public final class MultiTablePolymorphicEmitter {
                 participant.table().constantsClass(), participant.table().javaFieldName());
         }
 
-        b.add(buildParentInputValuesEmitter(parentPkCols, keyType));
+        b.add(buildParentInputValuesEmitter(parentSourceKey, parentKeyOwnerTable));
 
         // Stage 1: per-branch UNION ALL projecting (typename, pk0..pkN, __idx__) plus
         // JOIN parentInput. No windowed CTE — list arm has no per-parent pagination.
@@ -1961,7 +1993,7 @@ public final class MultiTablePolymorphicEmitter {
             var participant = participants.get(p);
             String alias = "stage1_" + participant.typeName();
             CodeBlock projection = batchedListBranchProjection(participant, alias);
-            CodeBlock joinPredicate = batchedBranchJoinPredicate(participant, participantJoinPaths);
+            CodeBlock joinPredicate = batchedBranchJoinPredicate(participant, participantJoinPaths, parentKeyOwnerTable);
             if (p == 0) {
                 b.add("dsl.select($L)\n", projection);
                 b.add("    .from($L)\n", alias);

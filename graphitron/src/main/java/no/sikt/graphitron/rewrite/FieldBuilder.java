@@ -976,7 +976,8 @@ class FieldBuilder {
                 new GraphitronType.JooqTableRecordType(parentTypeName, location, null, parentTableType.table());
             return new InterfaceField(parentTypeName, name, location,
                 new ReturnTypeRef.PolymorphicReturnType(elementTypeName, buildWrapper(fieldDef)),
-                interfaceType.participants(), resolved.paths(), parentSourceKey, parentResultType);
+                interfaceType.participants(), resolved.paths(), parentSourceKey,
+                parentTableType.table(), parentResultType);
         }
 
         if (elementType instanceof UnionType unionType) {
@@ -996,7 +997,8 @@ class FieldBuilder {
                 new GraphitronType.JooqTableRecordType(parentTypeName, location, null, parentTableType.table());
             return new UnionField(parentTypeName, name, location,
                 new ReturnTypeRef.PolymorphicReturnType(elementTypeName, buildWrapper(fieldDef)),
-                unionType.participants(), resolved.paths(), parentSourceKey, parentResultType);
+                unionType.participants(), resolved.paths(), parentSourceKey,
+                parentTableType.table(), parentResultType);
         }
 
         // NestingField: a plain object type in the schema with no Graphitron domain classification.
@@ -5648,19 +5650,21 @@ class FieldBuilder {
 
         if (isInterface) {
             return new InterfaceField(parentTypeName, name, location, returnType,
-                participants, paths.paths(), resolved.parentSourceKey(), parentResultType);
+                participants, paths.paths(), resolved.parentSourceKey(), resolved.hubTable(),
+                parentResultType);
         }
         return new UnionField(parentTypeName, name, location, returnType,
-            participants, paths.paths(), resolved.parentSourceKey(), parentResultType);
+            participants, paths.paths(), resolved.parentSourceKey(), resolved.hubTable(),
+            parentResultType);
     }
 
     /**
      * Builder-internal sealed result of {@link #resolvePolymorphicRecordParent}. The classifier
      * arm reads {@code Resolved.parentSourceKey()} / {@code Resolved.hubTable()} when
-     * constructing the {@link InterfaceField} / {@link UnionField}; the hub is consumed at this
-     * site only (handed to {@link #resolveChildPolymorphicJoinPaths}) and never lives on the
-     * field record. See the spec section "Hub table is a classifier-internal local" for the
-     * rationale on not lifting the hub onto a slot.
+     * constructing the {@link InterfaceField} / {@link UnionField}: the hub is handed to
+     * {@link #resolveChildPolymorphicJoinPaths} and (since R413) also carried onto the field
+     * record as {@code parentKeyOwnerTable}, so the batched rows methods can bind the parent-key
+     * VALUES cells through the hub columns' registered Converter DataTypes.
      */
     private sealed interface PolymorphicRecordParentResolution {
         record Resolved(SourceKey parentSourceKey, TableRef hubTable)

@@ -18,6 +18,7 @@ import no.sikt.graphitron.rewrite.model.RowsMethodBody;
 import no.sikt.graphitron.rewrite.model.SourceKey;
 import no.sikt.graphitron.rewrite.model.TableRef;
 import no.sikt.graphitron.rewrite.model.WhereFilter;
+import no.sikt.graphitron.rewrite.generators.util.ValuesJoinRowBuilder;
 
 import javax.lang.model.element.Modifier;
 import java.util.ArrayList;
@@ -152,6 +153,80 @@ public final class SplitRowsMethodEmitter {
     ) {}
 
     /**
+     * Builds the {@code DSL.row(...)} cell list for one parent-input {@code VALUES} row:
+     * {@code DSL.inline(i)} followed by one
+     * {@code DSL.val(<scalar>, Tables.<OWNER>.<COL>.getDataType())} per key column, delegated
+     * to {@link ValuesJoinRowBuilder#cellsCode} (the single VALUES-cell authority) so jOOQ
+     * binds each cell through the column's registered {@code Converter} at the DB type (R413:
+     * an untyped bind renders converter-backed / domain-typed keys at the wrong SQL type and
+     * the correlation JOIN has no matching operator).
+     *
+     * <p>The scalar extraction forks on {@link SourceKey.Wrap} — the axis that decides whether
+     * the key row exposes value accessors: {@code RecordN} keys read {@code k.valueN()}
+     * directly; {@code RowN} keys have no value accessors (jOOQ {@code Row} is a schema
+     * construct), so the value is pulled out of the bind {@code Param} the key was constructed
+     * from via the per-fetcher-class {@code parentKeyCellValue} helper (see
+     * {@link #buildParentKeyCellValueHelper()}). {@link SourceKey.Wrap.TableRecord} keys never
+     * reach the parent-input seam (their variants route through service-lift or produced-record
+     * reads, not this prelude).
+     */
+    private static CodeBlock parentKeyCells(SourceKey sourceKey, List<ColumnRef> pkCols, TableRef ownerTable) {
+        CodeBlock ownerExpr = CodeBlock.of("$T.$L", ownerTable.constantsClass(), ownerTable.javaFieldName());
+        java.util.function.BiFunction<ColumnRef, Integer, CodeBlock> valueExpr = switch (sourceKey.wrap()) {
+            case SourceKey.Wrap.Record ignored -> (col, i) -> CodeBlock.of("k.value$L()", i + 1);
+            case SourceKey.Wrap.Row ignored -> (col, i) -> CodeBlock.of("parentKeyCellValue(k.field$L())", i + 1);
+            case SourceKey.Wrap.TableRecord tr -> throw new IllegalStateException(
+                "SourceKey.Wrap.TableRecord (" + tr.className() + ") cannot reach the parent-input "
+                + "VALUES seam; TableRecord-keyed variants do not emit a parent-input rows method.");
+        };
+        return ValuesJoinRowBuilder.cellsCode(
+            pkCols, java.util.function.Function.identity(),
+            CodeBlock.of("$T.inline(i)", DSL), ownerExpr, valueExpr);
+    }
+
+    /**
+     * The typed {@code parentInput.field(...)} lookup for one JOIN-predicate slot:
+     * {@code parentInput.field("<sqlName>", Tables.<OWNER>.<COL>.getDataType())}. Paired with
+     * {@link #parentKeyCells} so the looked-up {@code Field}'s type metadata matches the cell
+     * binds (the derived table's column SQL types come from the cells; the lookup's
+     * {@code DataType} keeps the predicate's Java-side view faithful and symmetric).
+     */
+    private static CodeBlock parentInputFieldLookup(String valuesLocal, ColumnRef parentCol, TableRef ownerTable) {
+        return CodeBlock.of("$L.field($S, $T.$L.$L.getDataType())",
+            valuesLocal, parentCol.sqlName(),
+            ownerTable.constantsClass(), ownerTable.javaFieldName(), parentCol.javaName());
+    }
+
+    /**
+     * Builds the private static {@code parentKeyCellValue(Field<?>)} helper that extracts the
+     * scalar value out of a {@code RowN}-shaped DataLoader key's cell. {@code RowN} keys are
+     * constructed via {@code DSL.row(value, ...)}, which wraps each scalar in a bind
+     * {@code Param}; jOOQ's {@code Row} exposes cells only as {@code Field}s, so the value is
+     * recovered through the {@code Param} narrowing. For generator-built keys the cast always
+     * holds; for {@code @sourceRow} lifter keys it is a documented contract — a lifter that
+     * builds its {@code RowN} from column references (not scalar values) gets this diagnostic
+     * instead of a silently mistyped bind. Emitted once per fetcher class that has any
+     * Row-keyed parent-input rows method (gate in {@code TypeFetcherGenerator}).
+     */
+    public static MethodSpec buildParentKeyCellValueHelper() {
+        TypeName fieldWildcard = ParameterizedTypeName.get(FIELD, WildcardTypeName.subtypeOf(Object.class));
+        ClassName param = ClassName.get("org.jooq", "Param");
+        return MethodSpec.methodBuilder("parentKeyCellValue")
+            .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+            .returns(Object.class)
+            .addParameter(fieldWildcard, "f")
+            .addCode(CodeBlock.builder()
+                .beginControlFlow("if (f instanceof $T<?> p)", param)
+                .addStatement("return p.getValue()")
+                .endControlFlow()
+                .addStatement("throw new $T($S + f)",
+                    IllegalStateException.class,
+                    "DataLoader key cell must be a bind value (DSL.row over scalar values); got ")
+                .build())
+            .build();
+    }
+
+    /**
      * Emits the five-act prelude shared by {@link #buildListMethod}, {@link #buildSingleMethod},
      * and {@link #buildConnectionMethod}: empty-input short-circuit, {@code dsl} resolution,
      * typed {@code parentRows[]} VALUES with its {@code @SuppressWarnings} cast,
@@ -250,26 +325,8 @@ public final class SplitRowsMethodEmitter {
             parentRowType, parentRowType, rowClass(parentRowArity));
         body.beginControlFlow("for (int i = 0; i < keys.size(); i++)");
         body.addStatement("$T k = keys.get(i)", keyElement);
-        var rowArgs = CodeBlock.builder();
-        rowArgs.add("$T.inline(i)", DSL);
-        // RowN-keyed arms (RowKeyed, LifterLeafKeyed, LifterPathKeyed) construct keys via DSL.row(value, ...)
-        // where field<N>() returns a bind-parameter Field<T> wrapping the value, so passing
-        // k.field<N>() into the parent VALUES row renders the value (not a column reference).
-        //
-        // RecordN-keyed arms (AccessorKeyedSingle / AccessorKeyedMany) construct keys via
-        // record.into(table.col, ...): field<N>() returns the source-table column reference,
-        // which would leak into the VALUES table as the column name instead of the value. We
-        // pull the scalar via value<N>() and wrap it in DSL.val(...) so the argument typechecks
-        // against jOOQ's Field-based DSL.row overload alongside the inline-i first argument.
-        boolean isAccessor = sourceKey.reader() instanceof SourceKey.Reader.AccessorCall;
-        for (int i = 0; i < pkCols.size(); i++) {
-            if (isAccessor) {
-                rowArgs.add(", $T.val(k.value$L())", DSL, i + 1);
-            } else {
-                rowArgs.add(", k.field$L()", i + 1);
-            }
-        }
-        body.addStatement("parentRows[i] = $T.row($L)", DSL, rowArgs.build());
+        body.addStatement("parentRows[i] = $T.row($L)", DSL,
+            parentKeyCells(sourceKey, pkCols, parentCorrelation.parentKeyOwnerTable()));
         body.endControlFlow();
 
         // VALUES derived-table alias: "parentInput", "idx", pk_col1_sqlName, pk_col2_sqlName, …
@@ -362,17 +419,17 @@ public final class SplitRowsMethodEmitter {
         // JOIN parentInput on the carrier's parent-correlation columns. For OnFkSlots, joinOnAlias
         // is firstAlias and the predicate pairs slot.targetSide()/slot.sourceSide(). For
         // OnConditionJoin, joinOnAlias is parentAlias and the predicate pairs parent-PK on both
-        // sides. The parentInput field is resolved by sqlName + Java type rather than positional
-        // index, sidestepping @node(keyColumns: [...]) vs FK column ordering mismatches.
+        // sides. The parentInput field is resolved by sqlName + the owner column's DataType rather
+        // than positional index, sidestepping @node(keyColumns: [...]) vs FK column ordering
+        // mismatches and keeping converter-backed columns' type metadata faithful (R413).
+        TableRef ownerTable = parentCorrelation.parentKeyOwnerTable();
         var onCond = CodeBlock.builder();
         for (int i = 0; i < joinOnCols.size(); i++) {
             if (i > 0) onCond.add(".and(");
-            ColumnRef parentCol = joinOnParentCols.get(i);
-            ClassName parentColType = ClassName.bestGuess(parentCol.columnClass());
-            onCond.add("$L.$L.eq(parentInput.field($S, $T.class))",
+            onCond.add("$L.$L.eq($L)",
                 joinOnAlias,
                 joinOnCols.get(i).javaName(),
-                parentCol.sqlName(), parentColType);
+                parentInputFieldLookup("parentInput", joinOnParentCols.get(i), ownerTable));
             if (i > 0) onCond.add(")");
         }
         sel.add(".join(parentInput).on($L)\n", onCond.build());
@@ -606,17 +663,8 @@ public final class SplitRowsMethodEmitter {
             parentRowType, parentRowType, rowClass(parentRowArity));
         body.beginControlFlow("for (int i = 0; i < keys.size(); i++)");
         body.addStatement("$T k = keys.get(i)", keyElement);
-        var rowArgs = CodeBlock.builder();
-        rowArgs.add("$T.inline(i)", DSL);
-        boolean isAccessor = sourceKey.reader() instanceof SourceKey.Reader.AccessorCall;
-        for (int i = 0; i < pkCols.size(); i++) {
-            if (isAccessor) {
-                rowArgs.add(", $T.val(k.value$L())", DSL, i + 1);
-            } else {
-                rowArgs.add(", k.field$L()", i + 1);
-            }
-        }
-        body.addStatement("parentRows[i] = $T.row($L)", DSL, rowArgs.build());
+        body.addStatement("parentRows[i] = $T.row($L)", DSL,
+            parentKeyCells(sourceKey, pkCols, rtmf.parentCorrelation().parentKeyOwnerTable()));
         body.endControlFlow();
 
         var parentInputAlias = CodeBlock.builder();
@@ -648,19 +696,19 @@ public final class SplitRowsMethodEmitter {
             Integer.class, IDX_COLUMN);
 
         // JOIN parentInput on FK columns. The single FkJoin's slots pair source (parent) and
-        // target (developer table) columns; the parent-side column lookup goes by sqlName + Java
-        // type (sidestepping potential @node ordering mismatches).
+        // target (developer table) columns; the parent-side column lookup goes by sqlName + the
+        // owner column's DataType (sidestepping potential @node ordering mismatches and keeping
+        // converter-backed columns' type metadata faithful; R413).
         JoinStep.FkJoin firstHop = (JoinStep.FkJoin) rtmf.joinPath().get(0);
+        TableRef ownerTable = rtmf.parentCorrelation().parentKeyOwnerTable();
         var onCond = CodeBlock.builder();
         int slotIdx = 0;
         for (var slot : firstHop.slots()) {
             if (slotIdx > 0) onCond.add(".and(");
-            ColumnRef parentCol = slot.sourceSide();
-            ClassName parentColType = ClassName.bestGuess(parentCol.columnClass());
-            onCond.add("$L.$L.eq(parentInput.field($S, $T.class))",
+            onCond.add("$L.$L.eq($L)",
                 terminalAlias,
                 slot.targetSide().javaName(),
-                parentCol.sqlName(), parentColType);
+                parentInputFieldLookup("parentInput", slot.sourceSide(), ownerTable));
             if (slotIdx > 0) onCond.add(")");
             slotIdx++;
         }
@@ -1368,13 +1416,14 @@ public final class SplitRowsMethodEmitter {
         body.addStatement("int seq = 0");
         body.beginControlFlow("for (int idx = 0; idx < perParent.size(); idx++)");
         body.beginControlFlow("for ($T rec : perParent.get(idx))", xRecord);
-        var rowArgs = CodeBlock.builder();
-        rowArgs.add("$T.inline(idx), $T.inline(seq)", DSL, DSL);
-        for (ColumnRef pk : pks) {
-            rowArgs.add(", $T.val(rec.get($T.$L.$L))",
-                DSL, table.constantsClass(), table.javaFieldName(), pk.javaName());
-        }
-        body.addStatement("rows.add($T.row($L))", DSL, rowArgs.build());
+        // Cells delegated to the shared VALUES-cell authority so converter-backed target PKs
+        // bind through the column's registered Converter DataType (R413).
+        CodeBlock liftOwnerExpr = CodeBlock.of("$T.$L", table.constantsClass(), table.javaFieldName());
+        CodeBlock liftCells = ValuesJoinRowBuilder.cellsCode(
+            pks, java.util.function.Function.identity(),
+            CodeBlock.of("$T.inline(idx), $T.inline(seq)", DSL, DSL), liftOwnerExpr,
+            (pk, i) -> CodeBlock.of("rec.get($L.$L)", liftOwnerExpr, pk.javaName()));
+        body.addStatement("rows.add($T.row($L))", DSL, liftCells);
         body.addStatement("seq++");
         body.endControlFlow();
         body.endControlFlow();
@@ -1409,9 +1458,8 @@ public final class SplitRowsMethodEmitter {
         for (int i = 0; i < pks.size(); i++) {
             if (i > 0) onCond.add(".and(");
             ColumnRef pk = pks.get(i);
-            ClassName pkType = ClassName.bestGuess(pk.columnClass());
-            onCond.add("boundTable.$L.eq(projectionInput.field($S, $T.class))",
-                pk.javaName(), pk.sqlName(), pkType);
+            onCond.add("boundTable.$L.eq($L)",
+                pk.javaName(), parentInputFieldLookup("projectionInput", pk, table));
             if (i > 0) onCond.add(")");
         }
         var sel = CodeBlock.builder();

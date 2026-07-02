@@ -2156,7 +2156,7 @@ class TypeFetcherGeneratorTest {
                 null));
         return new ChildField.InterfaceField(parentType, name, null,
             returnType, participants, filmActorChildJoinPaths(),
-            filmActorParentSourceKey(), filmActorParentResultType());
+            filmActorParentSourceKey(), filmActorParentTableForList(), filmActorParentResultType());
     }
 
     private static ChildField.UnionField childUnionField(String parentType, String name, boolean isList) {
@@ -2170,7 +2170,7 @@ class TypeFetcherGeneratorTest {
                 null));
         return new ChildField.UnionField(parentType, name, null,
             returnType, participants, filmActorChildJoinPaths(),
-            filmActorParentSourceKey(), filmActorParentResultType());
+            filmActorParentSourceKey(), filmActorParentTableForList(), filmActorParentResultType());
     }
 
     @Test
@@ -2280,7 +2280,7 @@ class TypeFetcherGeneratorTest {
                 "Project", null, null, parentTable);
         return new ChildField.InterfaceField("Project", "items", null,
             returnType, participants, compositePkParentJoinPaths(),
-            parentSourceKey, parentResultType);
+            parentSourceKey, parentTable, parentResultType);
     }
 
     @Test
@@ -2312,7 +2312,7 @@ class TypeFetcherGeneratorTest {
                 null));
         return new ChildField.InterfaceField(parentType, name, null,
             returnType, participants, filmActorChildJoinPaths(),
-            filmActorParentSourceKey(), filmActorParentResultType());
+            filmActorParentSourceKey(), filmActorParentTableForList(), filmActorParentResultType());
     }
 
     private static ChildField.UnionField childUnionConnectionField(
@@ -2327,7 +2327,7 @@ class TypeFetcherGeneratorTest {
                 null));
         return new ChildField.UnionField(parentType, name, null,
             returnType, participants, filmActorChildJoinPaths(),
-            filmActorParentSourceKey(), filmActorParentResultType());
+            filmActorParentSourceKey(), filmActorParentTableForList(), filmActorParentResultType());
     }
 
     /**
@@ -2390,8 +2390,10 @@ class TypeFetcherGeneratorTest {
             .contains("org.jooq.Row2<java.lang.Integer, java.sql.Timestamp>[] parentRows")
             .contains("org.jooq.impl.DSL.values(parentRows).as(\"parentInput\", \"idx\", \"last_update\")");
         assertThat(rows)
-            .as("each parent row carries (DSL.inline(i), k.field1())")
-            .contains("org.jooq.impl.DSL.row(org.jooq.impl.DSL.inline(i), k.field1())");
+            .as("each parent row rebinds the RowN key cell at the owner column's Converter DataType (R413)")
+            .contains("org.jooq.impl.DSL.row(org.jooq.impl.DSL.inline(i), "
+                + "org.jooq.impl.DSL.val(parentKeyCellValue(k.field1()), "
+                + "no.sikt.graphitron.rewrite.test.jooq.Tables.FILM_ACTOR.LAST_UPDATE.getDataType()))");
     }
 
     @Test
@@ -2406,10 +2408,12 @@ class TypeFetcherGeneratorTest {
         var rows = method(spec, "rowsRelatedConnection").code().toString();
         assertThat(rows)
             .as("Film branch JOINs parentInput on FILM_ID")
-            .contains("stage1_Film.FILM_ID.eq(parentInput.field(\"last_update\", java.sql.Timestamp.class))");
+            .contains("stage1_Film.FILM_ID.eq(parentInput.field(\"last_update\", "
+                + "no.sikt.graphitron.rewrite.test.jooq.Tables.FILM_ACTOR.LAST_UPDATE.getDataType()))");
         assertThat(rows)
             .as("Actor branch JOINs parentInput on ACTOR_ID")
-            .contains("stage1_Actor.ACTOR_ID.eq(parentInput.field(\"last_update\", java.sql.Timestamp.class))");
+            .contains("stage1_Actor.ACTOR_ID.eq(parentInput.field(\"last_update\", "
+                + "no.sikt.graphitron.rewrite.test.jooq.Tables.FILM_ACTOR.LAST_UPDATE.getDataType()))");
         assertThat(rows)
             .as("each branch projects parentInput.field(0) as __idx__")
             .contains("parentInput.field(0, java.lang.Integer.class).as(\"__idx__\")");
@@ -2478,8 +2482,10 @@ class TypeFetcherGeneratorTest {
             .contains("loader.load(key, env)");
         assertThat(rows)
             .as("union variant: same JOIN parentInput per branch")
-            .contains("stage1_Film.FILM_ID.eq(parentInput.field(\"last_update\", java.sql.Timestamp.class))")
-            .contains("stage1_Actor.ACTOR_ID.eq(parentInput.field(\"last_update\", java.sql.Timestamp.class))");
+            .contains("stage1_Film.FILM_ID.eq(parentInput.field(\"last_update\", "
+                + "no.sikt.graphitron.rewrite.test.jooq.Tables.FILM_ACTOR.LAST_UPDATE.getDataType()))")
+            .contains("stage1_Actor.ACTOR_ID.eq(parentInput.field(\"last_update\", "
+                + "no.sikt.graphitron.rewrite.test.jooq.Tables.FILM_ACTOR.LAST_UPDATE.getDataType()))");
         assertThat(rows)
             .as("union variant: same per-parent ConnectionResult with idxField.eq(i)")
             .contains(".util.ConnectionResult(buckets.get(i), page, pagesTable, idxField.eq(i))");
@@ -2557,7 +2563,7 @@ class TypeFetcherGeneratorTest {
                 "Project", null, null, parentTable);
         return new ChildField.InterfaceField("Project", "itemsConnection", null,
             returnType, participants, compositePkParentJoinPaths(),
-            parentSourceKey, parentResultType);
+            parentSourceKey, parentTable, parentResultType);
     }
 
     @Test
@@ -2594,8 +2600,12 @@ class TypeFetcherGeneratorTest {
             .as("Row3<Integer, Integer, Integer>[] parentRows for idx + 2 parent PK columns")
             .contains("org.jooq.Row3<java.lang.Integer, java.lang.Integer, java.lang.Integer>[] parentRows");
         assertThat(rows)
-            .as("DSL.row(DSL.inline(i), k.field1(), k.field2()) for each parent row")
-            .contains("org.jooq.impl.DSL.row(org.jooq.impl.DSL.inline(i), k.field1(), k.field2())");
+            .as("DSL.row rebinds each composite key cell at the owner column's Converter DataType (R413)")
+            .contains("org.jooq.impl.DSL.row(org.jooq.impl.DSL.inline(i), "
+                + "org.jooq.impl.DSL.val(parentKeyCellValue(k.field1()), "
+                + "no.sikt.graphitron.rewrite.test.jooq.Tables.PROJECT.ORG_ID.getDataType()), "
+                + "org.jooq.impl.DSL.val(parentKeyCellValue(k.field2()), "
+                + "no.sikt.graphitron.rewrite.test.jooq.Tables.PROJECT.PROJECT_ID.getDataType()))");
         assertThat(rows)
             .as("parentInput.as carries both parent PK column SQL names")
             .contains("org.jooq.impl.DSL.values(parentRows).as(\"parentInput\", \"idx\", \"org_id\", \"project_id\")");
@@ -2612,12 +2622,16 @@ class TypeFetcherGeneratorTest {
         var rows = method(spec, "rowsItemsConnection").code().toString();
         assertThat(rows)
             .as("ProjectNote branch JOINs on (org_id AND project_id)")
-            .contains("stage1_ProjectNote.ORG_ID.eq(parentInput.field(\"org_id\", java.lang.Integer.class))"
-                + ".and(stage1_ProjectNote.PROJECT_ID.eq(parentInput.field(\"project_id\", java.lang.Integer.class)))");
+            .contains("stage1_ProjectNote.ORG_ID.eq(parentInput.field(\"org_id\", "
+                + "no.sikt.graphitron.rewrite.test.jooq.Tables.PROJECT.ORG_ID.getDataType()))"
+                + ".and(stage1_ProjectNote.PROJECT_ID.eq(parentInput.field(\"project_id\", "
+                + "no.sikt.graphitron.rewrite.test.jooq.Tables.PROJECT.PROJECT_ID.getDataType())))");
         assertThat(rows)
             .as("ProjectEvent branch JOINs on (org_id AND project_id) — same AND-chain shape")
-            .contains("stage1_ProjectEvent.ORG_ID.eq(parentInput.field(\"org_id\", java.lang.Integer.class))"
-                + ".and(stage1_ProjectEvent.PROJECT_ID.eq(parentInput.field(\"project_id\", java.lang.Integer.class)))");
+            .contains("stage1_ProjectEvent.ORG_ID.eq(parentInput.field(\"org_id\", "
+                + "no.sikt.graphitron.rewrite.test.jooq.Tables.PROJECT.ORG_ID.getDataType()))"
+                + ".and(stage1_ProjectEvent.PROJECT_ID.eq(parentInput.field(\"project_id\", "
+                + "no.sikt.graphitron.rewrite.test.jooq.Tables.PROJECT.PROJECT_ID.getDataType())))");
     }
 
     // ===== R150 InputBean helper emission =====

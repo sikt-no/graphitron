@@ -12,11 +12,16 @@ import java.util.function.BiFunction;
 import java.util.function.Function;
 
 /**
- * Shared row-construction core for the two emitters that produce
+ * Shared row-construction core for the emitters that produce
  * {@code VALUES (idx, c1, …) JOIN <table> … ORDER BY idx} SELECTs:
  * {@link no.sikt.graphitron.rewrite.generators.LookupValuesJoinEmitter} (root and inline-child
- * lookup paths) and {@link SelectMethodBody} (federated {@code _entities} and
- * {@code Query.node} / {@code Query.nodes} dispatch).
+ * lookup paths), {@link SelectMethodBody} (federated {@code _entities} and
+ * {@code Query.node} / {@code Query.nodes} dispatch), and — since R413 — the parent-input
+ * {@code VALUES} cells of the DataLoader rows methods
+ * ({@link no.sikt.graphitron.rewrite.generators.SplitRowsMethodEmitter} and
+ * {@link no.sikt.graphitron.rewrite.generators.MultiTablePolymorphicEmitter}'s batched arms),
+ * which route through {@link #cellsCode} so every VALUES cell in the generator binds as
+ * {@code DSL.val(value, col.getDataType())} through the column's registered Converter.
  *
  * <p>Each method takes the caller's slot list as {@code List<S>} plus a
  * {@code Function<S, ColumnRef>} projection. The lookup site keeps its rich {@code Slot} record
@@ -133,12 +138,26 @@ public final class ValuesJoinRowBuilder {
     public static <S> CodeBlock cellsCode(List<S> slots, Function<S, ColumnRef> column,
                                           CodeBlock idxCellExpr, String tableLocal,
                                           BiFunction<S, Integer, CodeBlock> valueExpr) {
+        return cellsCode(slots, column, idxCellExpr, CodeBlock.of("$L", tableLocal), valueExpr);
+    }
+
+    /**
+     * Variant of {@link #cellsCode(List, Function, CodeBlock, String, BiFunction)} whose table
+     * reference is an arbitrary {@link CodeBlock} expression rather than a Java-local name —
+     * typically a constants-class reference like {@code Tables.FILM} for callers that have no
+     * aliased table local in scope (the parent-input rows methods; R413). Cell shape is
+     * identical: {@code DSL.val(<value>, <tableExpr>.<COL>.getDataType())} per slot, binding
+     * through the column's registered Converter.
+     */
+    public static <S> CodeBlock cellsCode(List<S> slots, Function<S, ColumnRef> column,
+                                          CodeBlock idxCellExpr, CodeBlock tableExpr,
+                                          BiFunction<S, Integer, CodeBlock> valueExpr) {
         var cells = CodeBlock.builder().add("$L", idxCellExpr);
         ClassName dsl = ClassName.get("org.jooq.impl", "DSL");
         for (int i = 0; i < slots.size(); i++) {
             S slot = slots.get(i);
             cells.add(", $T.val($L, $L.$L.getDataType())",
-                dsl, valueExpr.apply(slot, i), tableLocal, column.apply(slot).javaName());
+                dsl, valueExpr.apply(slot, i), tableExpr, column.apply(slot).javaName());
         }
         return cells.build();
     }

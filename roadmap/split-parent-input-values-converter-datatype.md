@@ -1,7 +1,7 @@
 ---
 id: R413
 title: "Parent-input VALUES table in split/reference batch fetchers drops converter-backed column DataType, breaking joins on numeric-domain keys"
-status: Ready
+status: In Progress
 bucket: bug
 priority: 3
 depends-on: []

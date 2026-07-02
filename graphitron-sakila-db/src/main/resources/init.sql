@@ -580,6 +580,36 @@ INSERT INTO email (mailbox_id, message_no, in_reply_to_no, subject) VALUES
     (9, 1, NULL, 'root-in-9');
 
 -- ===========================
+-- R413 converter-domain fixture
+-- ===========================
+--
+-- Mirrors the utdanningsregisteret shape that exposed R413: a numeric domain over BIGINT whose
+-- jOOQ column carries a Converter<Long, String> (registered via <forcedTypes> on the public-schema
+-- codegen execution; converter class OrgCodeStringConverter in graphitron-fixtures-codegen). A
+-- parent/child pair keyed on the domain lets the execution tier prove the DataLoader parent-input
+-- VALUES cells bind through the Converter: an untyped bind renders the converted user type
+-- (character varying), and PostgreSQL has no <bigint domain> = varchar operator, so the pre-R413
+-- correlation JOIN failed with "operator does not exist: org_code_domain = character varying".
+CREATE DOMAIN org_code_domain AS bigint;
+
+CREATE TABLE converter_org (
+    org_code  org_code_domain PRIMARY KEY,
+    org_name  varchar(50) NOT NULL
+);
+
+CREATE TABLE converter_campus (
+    campus_id    serial      PRIMARY KEY,
+    campus_name  varchar(50) NOT NULL,
+    org_code     org_code_domain NOT NULL REFERENCES converter_org(org_code)
+);
+
+INSERT INTO converter_org (org_code, org_name) VALUES (186, 'UiT'), (1120, 'NTNU');
+INSERT INTO converter_campus (campus_id, campus_name, org_code) VALUES
+    (1, 'Tromsø',    186),
+    (2, 'Trondheim', 1120),
+    (3, 'Gjøvik',    1120);
+
+-- ===========================
 -- nodeidfixture schema
 -- ===========================
 --

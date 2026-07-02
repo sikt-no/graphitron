@@ -42,6 +42,37 @@ public sealed interface ParentCorrelation
     }
 
     /**
+     * The table that owns the DataLoader key columns ({@code SourceKey.columns()}) this
+     * correlation pairs the parent-input {@code VALUES} table against. The rows-method emitters
+     * read {@code Tables.<OWNER>.<COL>.getDataType()} off this table so each {@code VALUES} cell
+     * binds through the column's registered jOOQ {@code Converter} (R413); which table owns the
+     * key columns was decided by the classifier when it chose them, so the fork is folded here
+     * rather than re-derived per emit site:
+     *
+     * <ul>
+     *   <li>{@link OnFkSlots} with a {@link JoinStep.FkJoin} first hop — the hop-0 origin table
+     *       (the side the key columns are drawn from, per {@code deriveSplitQuerySource} /
+     *       {@code deriveFkRecordParentSource} / {@code SourceRowDirectiveResolver}).</li>
+     *   <li>{@link OnFkSlots} with a {@link JoinStep.LiftedHop} first hop — the hop's target
+     *       table (the key tuple IS the target-column tuple by {@code LiftedHop}
+     *       construction).</li>
+     *   <li>{@link OnConditionJoin} — the parent table (keys are the parent's own PK).</li>
+     * </ul>
+     */
+    default TableRef parentKeyOwnerTable() {
+        return switch (this) {
+            case OnFkSlots fk -> switch ((JoinStep) fk.firstHop()) {
+                case JoinStep.FkJoin fkJoin -> fkJoin.originTable();
+                case JoinStep.LiftedHop lifted -> lifted.targetTable();
+                case JoinStep.ConditionJoin unreachable -> throw new IllegalStateException(
+                    "ParentCorrelation.OnFkSlots.firstHop is JoinStep.WithTarget (FkJoin or "
+                    + "LiftedHop); ConditionJoin cannot reach this arm: " + unreachable);
+            };
+            case OnConditionJoin cj -> cj.parentTable();
+        };
+    }
+
+    /**
      * Carrier-side classifier invariant: a non-empty {@code joinPath} carries a non-null
      * {@link ParentCorrelation} whose {@link #firstStep()} is the same instance as
      * {@code joinPath.get(0)}; an empty joinPath carries a null correlation

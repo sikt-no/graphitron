@@ -481,7 +481,7 @@ public class TypeFetcherGenerator {
                     if (f.returnType().wrapper() instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.Connection conn) {
                         MultiTablePolymorphicEmitter
                             .emitConnectionMethods(ctx, f.name(), f.participants(), participantFilters, Map.of(),
-                                conn.defaultPageSize(), null, null, outputPackage, registry)
+                                conn.defaultPageSize(), null, null, null, outputPackage, registry)
                             .forEach(builder::addMethod);
                     } else {
                         MultiTablePolymorphicEmitter
@@ -494,7 +494,7 @@ public class TypeFetcherGenerator {
                     if (f.returnType().wrapper() instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.Connection conn) {
                         MultiTablePolymorphicEmitter
                             .emitConnectionMethods(ctx, f.name(), f.participants(), participantFilters, Map.of(),
-                                conn.defaultPageSize(), null, null, outputPackage, registry)
+                                conn.defaultPageSize(), null, null, null, outputPackage, registry)
                             .forEach(builder::addMethod);
                     } else {
                         MultiTablePolymorphicEmitter
@@ -576,12 +576,13 @@ public class TypeFetcherGenerator {
                     if (f.returnType().wrapper() instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.Connection conn) {
                         MultiTablePolymorphicEmitter
                             .emitConnectionMethods(ctx, f.name(), f.participants(), Map.of(), f.participantJoinPaths(),
-                                conn.defaultPageSize(), f.parentSourceKey(), f.parentResultType(), outputPackage, registry)
+                                conn.defaultPageSize(), f.parentSourceKey(), f.parentKeyOwnerTable(),
+                                f.parentResultType(), outputPackage, registry)
                             .forEach(builder::addMethod);
                     } else {
                         MultiTablePolymorphicEmitter
                             .emitMethods(ctx, f.name(), f.participants(), f.participantJoinPaths(),
-                                f.parentSourceKey(), f.parentResultType(),
+                                f.parentSourceKey(), f.parentKeyOwnerTable(), f.parentResultType(),
                                 f.returnType().wrapper().isList(), outputPackage)
                             .forEach(builder::addMethod);
                     }
@@ -590,12 +591,13 @@ public class TypeFetcherGenerator {
                     if (f.returnType().wrapper() instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.Connection conn) {
                         MultiTablePolymorphicEmitter
                             .emitConnectionMethods(ctx, f.name(), f.participants(), Map.of(), f.participantJoinPaths(),
-                                conn.defaultPageSize(), f.parentSourceKey(), f.parentResultType(), outputPackage, registry)
+                                conn.defaultPageSize(), f.parentSourceKey(), f.parentKeyOwnerTable(),
+                                f.parentResultType(), outputPackage, registry)
                             .forEach(builder::addMethod);
                     } else {
                         MultiTablePolymorphicEmitter
                             .emitMethods(ctx, f.name(), f.participants(), f.participantJoinPaths(),
-                                f.parentSourceKey(), f.parentResultType(),
+                                f.parentSourceKey(), f.parentKeyOwnerTable(), f.parentResultType(),
                                 f.returnType().wrapper().isList(), outputPackage)
                             .forEach(builder::addMethod);
                     }
@@ -761,7 +763,48 @@ public class TypeFetcherGenerator {
             builder.addMethod(SplitRowsMethodEmitter.buildEmptyScatterHelper());
         }
 
+        // parentKeyCellValue is the RowN-key scalar extraction used by the parent-input VALUES
+        // cells (R413): RowN keys expose their cells only as Fields, so the bind Param's value is
+        // recovered through this per-class helper. Emitted iff any field on this class emits a
+        // Row-keyed parent-input rows method; RecordN-keyed fields read k.valueN() directly.
+        boolean hasRowKeyedParentInput = fields.stream()
+            .anyMatch(TypeFetcherGenerator::emitsRowKeyedParentInputRowsMethod);
+        if (hasRowKeyedParentInput) {
+            builder.addMethod(SplitRowsMethodEmitter.buildParentKeyCellValueHelper());
+        }
+
         return builder.build();
+    }
+
+    /**
+     * Whether this field's emit includes a rows method that materialises its DataLoader keys
+     * into a parent-input {@code VALUES} table from {@code RowN}-shaped keys — the gate for the
+     * per-class {@code parentKeyCellValue} helper (see
+     * {@link SplitRowsMethodEmitter#buildParentKeyCellValueHelper()}). Mirrors the emission
+     * routing above: the four split/record prelude variants always emit the parent-input rows
+     * method; {@link ChildField.RecordTableMethodField} only on its supported single-hop shape
+     * (the unsupported shapes emit a throwing stub with no VALUES table); the polymorphic child
+     * fields only on the batched (list / connection) arms with at least one table-bound
+     * participant.
+     */
+    private static boolean emitsRowKeyedParentInputRowsMethod(GraphitronField field) {
+        return switch (field) {
+            case ChildField.SplitTableField f -> f.sourceKey().wrap() instanceof SourceKey.Wrap.Row;
+            case ChildField.SplitLookupTableField f -> f.sourceKey().wrap() instanceof SourceKey.Wrap.Row;
+            case ChildField.RecordTableField f -> f.sourceKey().wrap() instanceof SourceKey.Wrap.Row;
+            case ChildField.RecordLookupTableField f -> f.sourceKey().wrap() instanceof SourceKey.Wrap.Row;
+            case ChildField.RecordTableMethodField f ->
+                f.joinPath().size() == 1 && f.sourceKey().wrap() instanceof SourceKey.Wrap.Row;
+            case ChildField.InterfaceField f ->
+                (f.returnType().wrapper().isList() || f.returnType().wrapper() instanceof FieldWrapper.Connection)
+                    && f.participants().stream().anyMatch(p -> p instanceof ParticipantRef.TableBound)
+                    && f.parentSourceKey().wrap() instanceof SourceKey.Wrap.Row;
+            case ChildField.UnionField f ->
+                (f.returnType().wrapper().isList() || f.returnType().wrapper() instanceof FieldWrapper.Connection)
+                    && f.participants().stream().anyMatch(p -> p instanceof ParticipantRef.TableBound)
+                    && f.parentSourceKey().wrap() instanceof SourceKey.Wrap.Row;
+            default -> false;
+        };
     }
 
     /**

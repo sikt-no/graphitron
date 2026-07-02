@@ -620,6 +620,13 @@ public sealed interface ChildField extends OutputField
      * Through R102 the classifier produces only catalog-FK / {@code ColumnRead}-reader parent
      * source-keys (table-backed parents); R105 wires the class-backed-parent classifier arm
      * to reach the lifter and accessor reader permits.
+     *
+     * <p>{@code parentKeyOwnerTable} is the parent/hub table owning
+     * {@code parentSourceKey.columns()} — the parent's {@code @table} on the table-backed arm,
+     * the accessor-discovered hub on the record-backed arm — resolved at the same classification
+     * site as the key. The batched rows methods read
+     * {@code Tables.<OWNER>.<COL>.getDataType()} off it so converter-backed parent keys bind
+     * through the column's registered jOOQ Converter at the DB type (R413).
      */
     record InterfaceField(
         String parentTypeName,
@@ -629,6 +636,7 @@ public sealed interface ChildField extends OutputField
         List<ParticipantRef> participants,
         java.util.Map<String, List<JoinStep>> participantJoinPaths,
         SourceKey parentSourceKey,
+        TableRef parentKeyOwnerTable,
         GraphitronType.ResultType parentResultType
     ) implements ChildField {
         public InterfaceField {
@@ -638,6 +646,7 @@ public sealed interface ChildField extends OutputField
             // unconditionally; carry the non-null contract in the type system rather than
             // by reviewer-tracked correspondence.
             java.util.Objects.requireNonNull(parentSourceKey, "parentSourceKey");
+            java.util.Objects.requireNonNull(parentKeyOwnerTable, "parentKeyOwnerTable");
             java.util.Objects.requireNonNull(parentResultType, "parentResultType");
         }
         @Override public DomainReturnType domainReturnType() {
@@ -658,12 +667,14 @@ public sealed interface ChildField extends OutputField
         List<ParticipantRef> participants,
         java.util.Map<String, List<JoinStep>> participantJoinPaths,
         SourceKey parentSourceKey,
+        TableRef parentKeyOwnerTable,
         GraphitronType.ResultType parentResultType
     ) implements ChildField {
         public UnionField {
             participants = List.copyOf(participants);
             participantJoinPaths = java.util.Map.copyOf(participantJoinPaths);
             java.util.Objects.requireNonNull(parentSourceKey, "parentSourceKey");
+            java.util.Objects.requireNonNull(parentKeyOwnerTable, "parentKeyOwnerTable");
             java.util.Objects.requireNonNull(parentResultType, "parentResultType");
         }
         @Override public DomainReturnType domainReturnType() {

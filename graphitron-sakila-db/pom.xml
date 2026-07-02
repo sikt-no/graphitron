@@ -16,7 +16,7 @@
     <properties>
         <maven.deploy.skip>true</maven.deploy.skip>
         <!-- Increment when init.sql changes to force jOOQ regeneration on incremental builds -->
-        <jooq.codegen.schema.version>2.3</jooq.codegen.schema.version>
+        <jooq.codegen.schema.version>2.4</jooq.codegen.schema.version>
         <db.url>jdbc:tc:postgresql:18:///rewrite_test?TC_TMPFS=/testtmpfs:rw&amp;TC_INITSCRIPT=file:${project.basedir}/src/main/resources/init.sql</db.url>
         <db.username>postgres</db.username>
         <db.password>postgres</db.password>
@@ -39,6 +39,23 @@
         <dependency>
             <groupId>org.jooq</groupId>
             <artifactId>jooq</artifactId>
+        </dependency>
+        <!-- R413: the generated ConverterOrg / ConverterCampus tables reference
+             OrgCodeStringConverter (registered via <forcedTypes> below) at compile time and at
+             runtime, so the fixtures-codegen module rides the regular classpath too — not just
+             the codegen plugin's. jooq-codegen is excluded: it is needed only to compile the
+             NodeIdFixtureGenerator inside that module, and the converter itself uses org.jooq
+             core only. -->
+        <dependency>
+            <groupId>no.sikt</groupId>
+            <artifactId>graphitron-fixtures-codegen</artifactId>
+            <version>${project.version}</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>org.jooq</groupId>
+                    <artifactId>jooq-codegen</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
     </dependencies>
 
@@ -75,6 +92,19 @@
                                     <includes>public.*</includes>
                                     <schemaVersionProvider>${jooq.codegen.schema.version}</schemaVersionProvider>
                                     <includeIndexes>true</includeIndexes>
+                                    <forcedTypes>
+                                        <!-- R413: converter-backed domain column. Maps the
+                                             org_code_domain (bigint) columns to java.lang.String
+                                             via OrgCodeStringConverter so the generated columns
+                                             carry a Converter DataType, mirroring the consumer
+                                             shape (kodeverk.kode_numerisk_domain) whose split-query
+                                             join keys exposed the untyped-VALUES-cell bug. -->
+                                        <forcedType>
+                                            <userType>java.lang.String</userType>
+                                            <converter>no.sikt.graphitron.rewrite.fixtures.codegen.OrgCodeStringConverter</converter>
+                                            <includeTypes>org_code_domain</includeTypes>
+                                        </forcedType>
+                                    </forcedTypes>
                                 </database>
                                 <generate>
                                     <!-- Turn off to-many implicit-join-path methods. Sakila's

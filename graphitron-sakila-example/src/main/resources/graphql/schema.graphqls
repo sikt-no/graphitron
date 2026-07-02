@@ -99,6 +99,22 @@ type Query {
     stores: [Store!]! @asConnection @defaultOrder(primaryKey: true)
     # R338 execution-tier root for the non-PK-referenced-FK @splitQuery fixture below.
     splitParents: [SplitParent!]! @defaultOrder(primaryKey: true)
+    # R413 execution-tier roots for the converter-backed-domain @splitQuery fixtures below
+    # (ConverterOrg / ConverterCampus). The join key org_code is a BIGINT domain carrying a
+    # Converter<Long, String>; both directions of the split fetch must bind the parent-input
+    # VALUES cells through the Converter DataType or PostgreSQL rejects the correlation JOIN
+    # with "operator does not exist: org_code_domain = character varying".
+    converterOrgs: [ConverterOrg!]! @defaultOrder(primaryKey: true)
+    converterCampuses: [ConverterCampus!]! @defaultOrder(primaryKey: true)
+    # R413 @sourceRow-over-converter-backed-key root: the service hand-rolls three
+    # ConverterOrgSummary rows (no DB round-trip); the lifter's Row1<String> cells are scalar
+    # bind Params whose value the generated parentKeyCellValue helper extracts and rebinds at
+    # the converter DataType — the live pin for that Param contract.
+    converterOrgSummaries: [ConverterOrgSummary!]!
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.ConverterOrgSummaryService",
+            method: "converterOrgSummaries"
+        })
     filmsConnection(
         first: Int, last: Int, after: String, before: String
     ): FilmsConnection! @defaultOrder(primaryKey: true)
@@ -1007,6 +1023,48 @@ type SplitParent @table(name: "split_parent") {
 type SplitParentTag @table(name: "split_parent_tag") {
     tagId: Int!    @field(name: "TAG_ID")
     tag:   String! @field(name: "TAG")
+}
+
+# R413 execution-tier fixture: @splitQuery over a converter-backed domain key. org_code is a
+# PostgreSQL domain over BIGINT whose jOOQ columns are forced to java.lang.String via
+# OrgCodeStringConverter (see graphitron-sakila-db's public-schema codegen execution). The
+# DataLoader key is therefore Row1<String> while the SQL type is the bigint domain; the rows
+# method's parent-input VALUES cells must rebind each scalar at Tables.CONVERTER_*.ORG_CODE's
+# Converter DataType. Pre-R413 the cell was the raw key Field (bound as varchar) and PostgreSQL
+# rejected the correlation JOIN with "operator does not exist: org_code_domain = character
+# varying", nulling out every child. Mirrors utdanningsregisteret's Campus.organisasjon over
+# kodeverk.kode_numerisk_domain.
+type ConverterOrg @table(name: "converter_org") {
+    orgCode: String! @field(name: "ORG_CODE")
+    orgName: String! @field(name: "ORG_NAME")
+    # list-cardinality @splitQuery, child-holds-FK: keyed on the parent's converter-backed PK.
+    campuses: [ConverterCampus!]! @splitQuery
+        @reference(path: [{key: "converter_campus_org_code_fkey"}])
+        @defaultOrder(primaryKey: true)
+}
+
+type ConverterCampus @table(name: "converter_campus") {
+    campusId:   Int!    @field(name: "CAMPUS_ID")
+    campusName: String! @field(name: "CAMPUS_NAME")
+    orgCode:    String! @field(name: "ORG_CODE")
+    # single-cardinality @splitQuery, parent-holds-FK: the reported Campus.organisasjon shape,
+    # keyed on the converter-backed FK column.
+    organisation: ConverterOrg @splitQuery
+        @reference(path: [{key: "converter_campus_org_code_fkey"}])
+}
+
+# R413 fixture: @sourceRow lifter whose lifted key column is converter-backed. The backing class
+# is a plain Java record carrying the org code as its converted user type (String); the lifter
+# returns Row1<String> matching converter_org's PK (leaf-PK arm, no @reference). The lifter's
+# cells are DSL.row(value) bind Params — the contract the generated parentKeyCellValue helper
+# extracts through; this fixture pins it with a live execution test instead of javadoc.
+type ConverterOrgSummary {
+    orgCode: String!
+    org: [ConverterOrg!]!
+        @sourceRow(
+            className: "no.sikt.graphitron.rewrite.test.services.ConverterOrgSummaryLifter",
+            method: "liftOrgCode"
+        )
 }
 
 # R61 execution-tier fixture: @externalField returning Field<TableRecord<?>> and

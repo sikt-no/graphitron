@@ -20,6 +20,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.as;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.tuple;
 import static org.assertj.core.api.InstanceOfAssertFactories.INTEGER;
 import static org.assertj.core.api.InstanceOfAssertFactories.LIST;
 import static org.assertj.core.api.InstanceOfAssertFactories.MAP;
@@ -1712,6 +1713,77 @@ class GraphQLQueryTest {
             .extractingByKey("tags", as(list(Map.class)))
             .extracting(t -> t.get("tag"))
             .containsExactly("b-one");
+    }
+
+    // ===== R413: @splitQuery / @sourceRow over a converter-backed domain key =====
+    //
+    // converter_campus.org_code -> converter_org.org_code is a BIGINT domain (org_code_domain)
+    // whose jOOQ columns carry Converter<Long, String> (OrgCodeStringConverter), so the DataLoader
+    // key is Row1<String> while the SQL type is the domain. The rows method's parent-input VALUES
+    // cells must rebind each scalar at the column's Converter DataType; before R413 the raw key
+    // Field bound as varchar and PostgreSQL rejected the correlation JOIN with "operator does not
+    // exist: org_code_domain = character varying", nulling every child out.
+
+    @SuppressWarnings("unchecked")
+    @Test
+    void splitSingle_converterBackedFkKey_bindsThroughConverterDataType() {
+        // Single-cardinality parent-holds-FK: the reported Campus.organisasjon shape.
+        QUERY_COUNT.set(0);
+        Map<String, Object> data = execute(
+            "{ converterCampuses { campusName organisation { orgName } } }");
+        // 2 round-trips: converterCampuses root + one batched organisation fetch.
+        assertThat(QUERY_COUNT.get()).isEqualTo(2);
+        assertThat(data).extractingByKey("converterCampuses", as(list(Map.class)))
+            .extracting(c -> c.get("campusName"),
+                c -> ((Map<String, Object>) c.get("organisation")).get("orgName"))
+            .containsExactly(
+                tuple("Tromsø", "UiT"),
+                tuple("Trondheim", "NTNU"),
+                tuple("Gjøvik", "NTNU"));
+    }
+
+    @Test
+    void splitList_converterBackedFkKey_bindsThroughConverterDataType() {
+        // List-cardinality child-holds-FK over the same converter-backed key.
+        QUERY_COUNT.set(0);
+        Map<String, Object> data = execute(
+            "{ converterOrgs { orgName campuses { campusName } } }");
+        assertThat(QUERY_COUNT.get()).isEqualTo(2);
+        var orgs = assertThat(data).extractingByKey("converterOrgs", as(list(Map.class)));
+        orgs.filteredOn(o -> "UiT".equals(o.get("orgName")))
+            .singleElement(as(MAP))
+            .extractingByKey("campuses", as(list(Map.class)))
+            .extracting(c -> c.get("campusName"))
+            .containsExactly("Tromsø");
+        orgs.filteredOn(o -> "NTNU".equals(o.get("orgName")))
+            .singleElement(as(MAP))
+            .extractingByKey("campuses", as(list(Map.class)))
+            .extracting(c -> c.get("campusName"))
+            .containsExactly("Trondheim", "Gjøvik");
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    void sourceRowLifter_converterBackedLeafPkKey_extractsParamValueAndBinds() {
+        // @sourceRow leaf-PK arm: the lifter's Row1<String> cells are DSL.row(value) bind Params;
+        // the generated parentKeyCellValue helper extracts the scalar and rebinds it at
+        // converter_org.org_code's Converter DataType. Live pin for the Param contract — a lifter
+        // building its RowN from column references would throw the helper's IllegalStateException
+        // instead of silently mistyping the bind.
+        QUERY_COUNT.set(0);
+        Map<String, Object> data = execute(
+            "{ converterOrgSummaries { orgCode org { orgName } } }");
+        // 1 round-trip: the service hand-rolls the payloads; only the batched org fetch hits JDBC
+        // (three parents dedup to two distinct keys in one query).
+        assertThat(QUERY_COUNT.get()).isEqualTo(1);
+        assertThat(data).extractingByKey("converterOrgSummaries", as(list(Map.class)))
+            .extracting(s -> s.get("orgCode"),
+                s -> ((List<Map<String, Object>>) s.get("org")).stream()
+                    .map(o -> o.get("orgName")).toList())
+            .containsExactly(
+                tuple("1120", List.of("NTNU")),
+                tuple("186", List.of("UiT")),
+                tuple("1120", List.of("NTNU")));
     }
 
     @SuppressWarnings("unchecked")
