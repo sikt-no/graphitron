@@ -34,9 +34,13 @@ fi
 
 # 2. PostgreSQL for -Plocal-db builds. Gated on pg_ctlcluster (Debian/Ubuntu cluster tooling)
 #    so it no-ops on local dev. Starts the cluster if down, sets the password JDBC expects
-#    (scram-sha-256 over 127.0.0.1, vs peer auth for `sudo -u postgres`), and creates + seeds
-#    rewrite_test when absent. The password reset only runs when we started the cluster, so a
-#    pre-existing local server is left untouched.
+#    (scram-sha-256 over 127.0.0.1, vs peer auth for `sudo -u postgres`), and drops + recreates +
+#    seeds rewrite_test on every start so the DB is a pure function of the checked-out init.sql
+#    (an existence guard would freeze a stale schema from an older init.sql, e.g. missing R389's
+#    party_* tables, and -Plocal-db jOOQ codegen would then build a catalog off that stale DB).
+#    DROP ... WITH (FORCE) (PG13+, cluster here is PG16) terminates any lingering backend so the
+#    drop cannot fail on a connection a prior session left open. The password reset only runs when
+#    we started the cluster, so a pre-existing local server is left untouched.
 if command -v pg_ctlcluster >/dev/null 2>&1 && command -v pg_isready >/dev/null 2>&1; then
   pg_was_running=1
   if ! pg_isready -h localhost -p 5432 -q 2>/dev/null; then
@@ -45,14 +49,13 @@ if command -v pg_ctlcluster >/dev/null 2>&1 && command -v pg_isready >/dev/null 
   fi
   if pg_isready -h localhost -p 5432 -q 2>/dev/null; then
     [ "$pg_was_running" -eq 0 ] && { sudo -u postgres psql -qc "ALTER USER postgres PASSWORD 'postgres';" >/dev/null 2>&1 || true; }
-    if ! sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname='rewrite_test'" 2>/dev/null | grep -q 1; then
-      if sudo -u postgres psql -qc "CREATE DATABASE rewrite_test;" >/dev/null 2>&1 \
-         && sudo -u postgres psql -q -d rewrite_test \
-              -f "$REPO_ROOT/graphitron-sakila-db/src/main/resources/init.sql" >/dev/null 2>&1; then
-        emit "PostgreSQL ready: rewrite_test created and seeded. -Plocal-db builds are ready."
-      else
-        emit "rewrite_test create/seed failed. See .claude/web-environment.md."
-      fi
+    if sudo -u postgres psql -qc "DROP DATABASE IF EXISTS rewrite_test WITH (FORCE);" >/dev/null 2>&1 \
+       && sudo -u postgres psql -qc "CREATE DATABASE rewrite_test;" >/dev/null 2>&1 \
+       && sudo -u postgres psql -q -d rewrite_test \
+            -f "$REPO_ROOT/graphitron-sakila-db/src/main/resources/init.sql" >/dev/null 2>&1; then
+      emit "PostgreSQL ready: rewrite_test dropped, recreated, and seeded from init.sql. -Plocal-db builds are ready."
+    else
+      emit "rewrite_test drop/create/seed failed. See .claude/web-environment.md."
     fi
   elif [ "$pg_was_running" -eq 0 ]; then
     emit "PostgreSQL bring-up failed. See .claude/web-environment.md."

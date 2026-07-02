@@ -21,8 +21,12 @@ sandbox to a buildable state. Each step is idempotent and no-ops on local develo
   `JAVA_HOME` resolves to `/usr/lib/jvm/java-25-openjdk-amd64` in every new shell.
 - **Brings up PostgreSQL for `-Plocal-db`.** Starts the cluster, sets the `postgres`/`postgres`
   password (JDBC connects over 127.0.0.1 with scram-sha-256, while `sudo -u postgres` uses peer
-  auth), and creates + seeds the `rewrite_test` database from
-  `graphitron-sakila-db/src/main/resources/init.sql`.
+  auth), and drops, recreates, and re-seeds the `rewrite_test` database from
+  `graphitron-sakila-db/src/main/resources/init.sql` on every session start (with
+  `DROP DATABASE ... WITH (FORCE)`, so a connection a prior session left open cannot block it).
+  Re-seeding unconditionally, rather than only when the DB is absent, keeps the schema a pure
+  function of the checked-out `init.sql`: a sandbox seeded from an older revision would otherwise
+  keep that stale schema forever. Re-seeding is sub-second on this fixture.
 - **Clears a stale Maven proxy.** Replaces `~/.m2/settings.xml` with an empty settings file if it
   still carries the legacy `21.0.0.129` proxy that blocks Maven Central.
 - **Builds libtree-sitter `0.26.9`.** `graphitron-lsp`'s jtreesitter 0.26 resolves runtime symbols
@@ -83,3 +87,10 @@ mvn install -pl :graphitron-sakila-db -Plocal-db
 `-Plocal-db` — e.g. `mvn install -pl X -am` that transitively rebuilds the catalog, or a full-tree
 install — silently re-emits the jar with an empty jOOQ catalog and re-triggers the cascade. After
 any broad install, re-run the `-Plocal-db` install for the catalog as a final step before testing.
+
+**A second, now-eliminated cause of the same cascade** was a *stale sandbox DB* (as opposed to a
+stale `.m2` catalog jar): a `rewrite_test` seeded from an older `init.sql` — e.g. one predating
+R389's `party_*` tables — kept that outdated schema, so `-Plocal-db` codegen built its catalog
+against a DB missing tables the current corpus expects. The SessionStart hook now drops and
+re-seeds `rewrite_test` on every start (see "Brings up PostgreSQL" above), so a stale sandbox DB no
+longer produces this cascade; if you still see it, it is the catalog-jar clobber above, not the DB.
