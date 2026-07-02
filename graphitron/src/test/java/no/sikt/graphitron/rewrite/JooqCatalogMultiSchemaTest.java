@@ -472,6 +472,94 @@ class JooqCatalogMultiSchemaTest {
         assertThat(result.asFkJoin()).isEmpty();
     }
 
+    // ---- R396: FK source-side identity primitives (schema-qualified / case-mismatched @table) ----
+    //
+    // The signal→widget FK (signal_widget_id_fkey) lives entirely in multischema_a. jOOQ renders
+    // both endpoint names unqualified ("signal", "widget"), so a schema-qualified or case-mismatched
+    // @table echo ("multischema_a.signal", "multischema_a.SIGNAL") missed the pre-R396 bare
+    // equalsIgnoreCase compare. Class identity, resolved through findTable, restores the match.
+
+    @Test
+    void foreignKeyTouchesTable_qualifiedSourceOnFkChildSide_isTrue() {
+        var fk = multi().findForeignKey("signal_widget_id_fkey").orElseThrow();
+        assertThat(multi().foreignKeyTouchesTable(fk, "multischema_a.signal")).isTrue();
+    }
+
+    @Test
+    void foreignKeyTouchesTable_qualifiedUpperCaseSource_isTrue() {
+        // The schema-qualified + upper-case form the R395 execution fixture is tightened to.
+        var fk = multi().findForeignKey("signal_widget_id_fkey").orElseThrow();
+        assertThat(multi().foreignKeyTouchesTable(fk, "multischema_a.SIGNAL")).isTrue();
+    }
+
+    @Test
+    void foreignKeyTouchesTable_qualifiedSourceOnReferencedSide_isTrue() {
+        // widget is the referenced (key) endpoint — touches, but is not the source side.
+        var fk = multi().findForeignKey("signal_widget_id_fkey").orElseThrow();
+        assertThat(multi().foreignKeyTouchesTable(fk, "multischema_a.widget")).isTrue();
+    }
+
+    @Test
+    void foreignKeyTouchesTable_nonEndpointTable_isFalse() {
+        // gadget is neither endpoint of the signal→widget FK.
+        var fk = multi().findForeignKey("signal_widget_id_fkey").orElseThrow();
+        assertThat(multi().foreignKeyTouchesTable(fk, "gadget")).isFalse();
+    }
+
+    @Test
+    void foreignKeyTouchesTable_crossSchemaSameName_distinguishesByIdentity() {
+        // 'event' collides across schemas; identity (not bare name) picks the right one. The
+        // signal→widget FK touches neither event, so both qualified forms resolve to false.
+        var fk = multi().findForeignKey("signal_widget_id_fkey").orElseThrow();
+        assertThat(multi().foreignKeyTouchesTable(fk, "multischema_a.event")).isFalse();
+        assertThat(multi().foreignKeyTouchesTable(fk, "multischema_b.event")).isFalse();
+    }
+
+    @Test
+    void foreignKeyOnSource_qualifiedSourceIsFkChildSide_isTrue() {
+        var fk = multi().findForeignKey("signal_widget_id_fkey").orElseThrow();
+        assertThat(multi().foreignKeyOnSource(fk, "multischema_a.signal", /*selfRefHint=*/false)).isTrue();
+        assertThat(multi().foreignKeyOnSource(fk, "multischema_a.SIGNAL", /*selfRefHint=*/false)).isTrue();
+    }
+
+    @Test
+    void foreignKeyOnSource_qualifiedSourceIsReferencedSide_isFalse() {
+        // From the widget (referenced) side the FK is not on the source — the orientation the
+        // pre-R396 bare compare silently inverted for a schema-qualified name.
+        var fk = multi().findForeignKey("signal_widget_id_fkey").orElseThrow();
+        assertThat(multi().foreignKeyOnSource(fk, "multischema_a.widget", /*selfRefHint=*/false)).isFalse();
+    }
+
+    @Test
+    void findForeignKeysBetweenTables_qualifiedBothArgs_returnsTheFk() {
+        var fks = multi().findForeignKeysBetweenTables("multischema_a.signal", "multischema_a.widget");
+        assertThat(fks).extracting(fk -> fk.getName())
+            .containsExactly("signal_widget_id_fkey");
+    }
+
+    // ---- R396: synthesizeFkJoin orients correctly under a schema-qualified source @table ----
+
+    @Test
+    void synthesizeFkJoin_qualifiedSource_orientsOriginSignalTargetWidget() {
+        var ctx = new BuildContext(null, multi(), stubRewriteContext());
+        var fk = multi().findForeignKey("signal_widget_id_fkey").orElseThrow();
+        var result = ctx.synthesizeFkJoin(fk, "multischema_a.signal", "widget", 0, null,
+            /*selfRefFkOnSource=*/false);
+        assertThat(result).isInstanceOf(BuildContext.FkJoinResolution.Resolved.class);
+        var fkJoin = ((BuildContext.FkJoinResolution.Resolved) result).fkJoin();
+
+        // Origin is signal, target is widget — the pre-R396 bare compare would fail the
+        // "multischema_a.signal".equalsIgnoreCase("signal") test, mis-orient the join, and
+        // swap origin/target so the slot pairing inverts.
+        assertThat(fkJoin.originTable().tableClass())
+            .isEqualTo(ClassName.get(MULTI_PACKAGE + ".multischema_a.tables", "Signal"));
+        assertThat(fkJoin.targetTable().tableClass())
+            .isEqualTo(ClassName.get(MULTI_PACKAGE + ".multischema_a.tables", "Widget"));
+        // Slot orientation: source column sits on signal (widget_id), target on widget (widget_id).
+        assertThat(fkJoin.sourceSideColumns()).extracting(c -> c.sqlName()).containsExactly("widget_id");
+        assertThat(fkJoin.targetSideColumns()).extracting(c -> c.sqlName()).containsExactly("widget_id");
+    }
+
     private static RewriteContext stubRewriteContext() {
         return new RewriteContext(
             java.util.List.of(),

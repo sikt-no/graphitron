@@ -457,22 +457,93 @@ public class JooqCatalog {
     }
 
     /**
+     * True when {@code sourceSqlName} names a catalog table that is an endpoint of {@code fk}
+     * (either the FK-child side or the referenced-key side). This is the FK source-side membership
+     * predicate the {@code @reference} connection check needs: it answers "does this FK touch the
+     * table the author is standing on", regardless of orientation.
+     *
+     * <p>Comparison is by <em>jOOQ table class identity</em> once {@code sourceSqlName} resolves
+     * through {@link #findTable(String)} to a single catalog table (schema-aware, case-insensitive).
+     * Class identity is schema-unique by construction (each table's generated class is owned by one
+     * schema), so a schema-qualified or case-mismatched {@code @table(name:)} echo
+     * ({@code "multischema_a.signal"}, {@code "multischema_a.SIGNAL"}) matches the endpoint the bare
+     * {@code equalsIgnoreCase} against jOOQ's always-unqualified endpoint name missed, and it also
+     * tells {@code multischema_a.signal} apart from a same-named {@code multischema_b.signal}.
+     *
+     * <p>Fallback: when {@code sourceSqlName} does not resolve to a single class ({@code Ambiguous}
+     * or {@code NotInCatalog}), identity cannot fire, so the predicate falls back to the historical
+     * bare {@code equalsIgnoreCase} against the endpoint names — preserving today's diagnostic surface
+     * for genuinely-unknown or unqualified-ambiguous names.
+     */
+    public boolean foreignKeyTouchesTable(ForeignKey<?, ?> fk, String sourceSqlName) {
+        if (fk == null || sourceSqlName == null) return false;
+        Optional<Class<?>> resolved = findTable(sourceSqlName).asEntry().map(e -> e.table().getClass());
+        return endpointMatches(fk.getTable(), sourceSqlName, resolved)
+            || endpointMatches(fk.getKey().getTable(), sourceSqlName, resolved);
+    }
+
+    /**
+     * Which end of {@code fk} the source sits on: {@code true} when {@code sourceSqlName} is the
+     * FK-child (referencing) side, {@code false} when it is the referenced-key side. This is the FK
+     * <em>orientation</em> predicate {@link BuildContext#synthesizeFkJoin} and
+     * {@link BuildContext#resolveFkSlots} share to decide join/population direction.
+     *
+     * <p>Self-referential FKs (both endpoints are the same table, hence the same generated class)
+     * cannot be told apart by identity or by name, so the caller's {@code selfRefHint} decides
+     * (mirroring the pre-existing {@code selfRefFkOnSource} contract). For non-self-ref FKs the
+     * decision is by class identity when {@code sourceSqlName} resolves, and by the historical bare
+     * {@code equalsIgnoreCase} against the FK-child endpoint name otherwise. See
+     * {@link #foreignKeyTouchesTable} for why identity fixes the schema-qualified / case-mismatched
+     * {@code @table} echo the bare compare mis-oriented.
+     */
+    public boolean foreignKeyOnSource(ForeignKey<?, ?> fk, String sourceSqlName, boolean selfRefHint) {
+        if (fk.getTable().getClass() == fk.getKey().getTable().getClass()) {
+            return selfRefHint;
+        }
+        Optional<Class<?>> resolved = findTable(sourceSqlName).asEntry().map(e -> e.table().getClass());
+        return endpointMatches(fk.getTable(), sourceSqlName, resolved);
+    }
+
+    /**
+     * True when {@code endpoint} denotes the table named by {@code sqlName}: by jOOQ table class
+     * identity when {@code resolvedClass} is present (the source resolved to a single catalog table),
+     * otherwise by the historical bare case-insensitive endpoint-name compare (the source did not
+     * resolve). Shared by {@link #foreignKeyTouchesTable}, {@link #foreignKeyOnSource}, and
+     * {@link #findForeignKeysBetweenTables} so the resolve-to-identity-or-fall-back-to-name contract
+     * lives in exactly one place.
+     */
+    private static boolean endpointMatches(Table<?> endpoint, String sqlName, Optional<Class<?>> resolvedClass) {
+        return resolvedClass
+            .map(c -> endpoint.getClass() == c)
+            .orElseGet(() -> endpoint.getName().equalsIgnoreCase(sqlName));
+    }
+
+    /**
      * Returns all foreign keys that connect {@code tableA} and {@code tableB}, in either direction.
-     * A FK is included when one endpoint is {@code tableA} and the other is {@code tableB}
-     * (case-insensitive). Used to resolve {@code @reference(path: [{table: "..."}])} elements
-     * when no explicit FK name is given.
+     * A FK is included when one endpoint is {@code tableA} and the other is {@code tableB}.
+     * Used to resolve {@code @reference(path: [{table: "..."}])} elements when no explicit FK name
+     * is given, and the empty-path FK inference.
+     *
+     * <p>Each argument is resolved through {@link #findTable(String)} and matched by jOOQ table
+     * class identity when it resolves to a single catalog table; a non-resolving argument
+     * ({@code Ambiguous} / {@code NotInCatalog}) falls back to the historical bare
+     * {@code equalsIgnoreCase} against the endpoint names. Identity lets a schema-qualified or
+     * case-mismatched {@code @table} echo match, and distinguishes same-named tables in different
+     * schemas; see {@link #foreignKeyTouchesTable}.
      */
     @SuppressWarnings("unchecked")
     public List<ForeignKey<?, ?>> findForeignKeysBetweenTables(String tableA, String tableB) {
         if (catalog == null) return List.of();
+        Optional<Class<?>> classA = findTable(tableA).asEntry().map(e -> e.table().getClass());
+        Optional<Class<?>> classB = findTable(tableB).asEntry().map(e -> e.table().getClass());
         return (List<ForeignKey<?, ?>>) (List<?>) catalog.schemaStream()
             .flatMap(schema -> schema.getTables().stream())
             .flatMap(table -> table.getReferences().stream())
             .filter(fk -> {
-                String fkSide  = fk.getTable().getName();
-                String keySide = fk.getKey().getTable().getName();
-                return (fkSide.equalsIgnoreCase(tableA) && keySide.equalsIgnoreCase(tableB))
-                    || (fkSide.equalsIgnoreCase(tableB) && keySide.equalsIgnoreCase(tableA));
+                Table<?> fkSide  = fk.getTable();
+                Table<?> keySide = fk.getKey().getTable();
+                return (endpointMatches(fkSide, tableA, classA) && endpointMatches(keySide, tableB, classB))
+                    || (endpointMatches(fkSide, tableB, classB) && endpointMatches(keySide, tableA, classA));
             })
             .toList();
     }
@@ -482,11 +553,13 @@ public class JooqCatalog {
      * references {@code targetTableSqlName}; empty otherwise (zero or many).
      *
      * <p>Directional: only FKs where {@code sourceTableSqlName} is the FK source (not the target)
-     * are counted. Uses {@link #findForeignKeysBetweenTables} and filters to the source side.
+     * are counted. Uses {@link #findForeignKeysBetweenTables} and filters to the source side via
+     * {@link #foreignKeyOnSource} (identity-based, so a schema-qualified source is not silently
+     * dropped by the bare endpoint-name compare).
      */
     public Optional<String> findUniqueFkToTable(String sourceTableSqlName, String targetTableSqlName) {
         var matches = findForeignKeysBetweenTables(sourceTableSqlName, targetTableSqlName).stream()
-            .filter(fk -> fk.getTable().getName().equalsIgnoreCase(sourceTableSqlName))
+            .filter(fk -> foreignKeyOnSource(fk, sourceTableSqlName, /*selfRefHint=*/true))
             .toList();
         return matches.size() == 1 ? Optional.of(matches.get(0).getName()) : Optional.empty();
     }
@@ -541,7 +614,7 @@ public class JooqCatalog {
      */
     public Optional<String> qualifierForFk(String sourceTableSqlName, String fkName) {
         return findForeignKey(fkName)
-            .filter(fk -> fk.getTable().getName().equalsIgnoreCase(sourceTableSqlName))
+            .filter(fk -> foreignKeyOnSource(fk, sourceTableSqlName, /*selfRefHint=*/true))
             .map(JooqCatalog::localGetQualifier);
     }
 

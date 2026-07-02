@@ -124,18 +124,20 @@ class MultiSchemaQueryTest {
     @Test
     @SuppressWarnings("unchecked")
     void signalsRouteToDiscriminatedTypesUnderNamedSchema() {
-        // R395 regression guard. Signal is a single-table discriminated interface over
-        // multischema_a.signal, declared as @table(name: "signal"): unqualified and lowercase.
-        // 'signal' is unique to multischema_a so it resolves there, yet jOOQ renders the FROM token
-        // schema-qualified as "multischema_a"."signal", which the bare directive string does not match
-        // (it omits the schema). The selection drives all three discriminator emit sites: the
-        // __discriminator__ routing projection, the WHERE ... IN restriction, and the AlertSignal
-        // cross-table LEFT JOIN gate (widgetName, signal -> widget via the in-schema FK). Before R395
-        // each qualified off the directive string and Postgres rejected the query with
-        // "missing FROM-clause entry", surfacing as a fetch error so the field resolved null. After
-        // the fix the rows route to their concrete types and the cross-table column resolves. This
-        // pins the schema-qualification dimension; the uppercase/case-mismatch dimension is pinned at
-        // the unit tier (TypeFetcherGeneratorTest's INTERFACE_BASE fixture), not here.
+        // R395/R396 regression guard. Signal is a single-table discriminated interface over
+        // multischema_a.signal, declared as @table(name: "multischema_a.SIGNAL"): schema-qualified
+        // AND upper-case over the real lowercase name. 'signal' is unique to multischema_a so it
+        // resolves there, yet jOOQ renders the FROM token schema-qualified as "multischema_a"."signal",
+        // which the bare directive string does not match. The selection drives all three discriminator
+        // emit sites: the __discriminator__ routing projection, the WHERE ... IN restriction, and the
+        // AlertSignal cross-table LEFT JOIN gate (widgetName, signal -> widget via the in-schema FK).
+        // Before R395 each qualified off the directive string and Postgres rejected the query with
+        // "missing FROM-clause entry". R396 is what lets the base @table itself be schema-qualified:
+        // before R396 the widgetName @reference rejected at schema-validation time
+        // ("key 'signal_widget_id_fkey' does not connect to table 'multischema_a.SIGNAL'"), which is
+        // why R395 had to fall back to the unqualified @table(name: "signal"). With both fixes the rows
+        // route to their concrete types and the cross-table column resolves. This now pins the
+        // schema-qualifier AND case dimensions together at the execution tier.
         Map<String, Object> data = execute("""
             { signals { __typename signalId label ... on AlertSignal { widgetName } } }
             """);

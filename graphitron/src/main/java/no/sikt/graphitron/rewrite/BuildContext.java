@@ -1352,10 +1352,7 @@ class BuildContext {
             int stepIndex, MethodRef whereFilter, boolean selfRefFkOnSource) {
         String fkSideTable  = f.getTable().getName();
         String keySideTable = f.getKey().getTable().getName();
-        boolean isSelfRef = fkSideTable.equalsIgnoreCase(keySideTable);
-        boolean fkOnSource = isSelfRef
-            ? selfRefFkOnSource
-            : sourceSqlName.equalsIgnoreCase(fkSideTable);
+        boolean fkOnSource = catalog.foreignKeyOnSource(f, sourceSqlName, selfRefFkOnSource);
         String targetSqlName = fkOnSource ? keySideTable : fkSideTable;
 
         var fkResolution = catalog.findForeignKeyByName(f.getName());
@@ -1374,7 +1371,7 @@ class BuildContext {
 
         TableRef targetTable = targetResolved.entry().toTableRef(targetSqlName);
         TableRef originTable = originResolved.entry().toTableRef(sourceSqlName);
-        List<JoinSlot.FkSlot> slots = resolveFkSlots(f, sourceSqlName, selfRefFkOnSource);
+        List<JoinSlot.FkSlot> slots = resolveFkSlots(f, fkOnSource);
         String alias = fieldName + "_" + stepIndex;
         return new FkJoinResolution.Resolved(new FkJoin(fkResolved.ref(), originTable,
             targetTable, slots, whereFilter, alias));
@@ -1402,17 +1399,15 @@ class BuildContext {
      * predicates when the FK column types are heterogeneous, and (R315) as values decoded into the wrong
      * record columns. See {@code SynthesizeFkJoinReorderedKeysTest}.
      *
-     * @param selfRefFkOnSource for self-referential FKs (where {@code f.getTable()} equals
-     *     {@code f.getKey().getTable()}), the table-name comparison cannot decide orientation; the
-     *     caller supplies this hint (ignored for non-self-ref FKs).
+     * @param fkOnSource the FK orientation, decided once by the caller via
+     *     {@link JooqCatalog#foreignKeyOnSource}: {@code true} when the source table is the FK-child
+     *     (referencing) side, {@code false} when it is the referenced-key side. Collapsing the
+     *     orientation decision into a single precomputed boolean keeps the FK source-side predicate
+     *     in exactly one place ({@code JooqCatalog.foreignKeyOnSource}); this method no longer
+     *     recomputes it from raw endpoint names, so a schema-qualified source no longer mis-orients
+     *     the slot pairing.
      */
-    List<JoinSlot.FkSlot> resolveFkSlots(ForeignKey<?, ?> f, String sourceSqlName, boolean selfRefFkOnSource) {
-        String fkSideTable  = f.getTable().getName();
-        String keySideTable = f.getKey().getTable().getName();
-        boolean isSelfRef = fkSideTable.equalsIgnoreCase(keySideTable);
-        boolean fkOnSource = isSelfRef
-            ? selfRefFkOnSource
-            : sourceSqlName.equalsIgnoreCase(fkSideTable);
+    List<JoinSlot.FkSlot> resolveFkSlots(ForeignKey<?, ?> f, boolean fkOnSource) {
         List<ColumnRef> fkSideCols  = resolveFkColumnRefs(f.getTable(), f.getFields());
         List<ColumnRef> keySideCols = resolveFkColumnRefs(f.getKey().getTable(), f.getKeyFields());
         List<JoinSlot.FkSlot> slots = new java.util.ArrayList<>(fkSideCols.size());
@@ -1537,8 +1532,7 @@ class BuildContext {
             String fkSideTable  = f.getTable().getName();
             String keySideTable = f.getKey().getTable().getName();
             if (currentSourceSqlName != null
-                && !currentSourceSqlName.equalsIgnoreCase(fkSideTable)
-                && !currentSourceSqlName.equalsIgnoreCase(keySideTable)) {
+                && !catalog.foreignKeyTouchesTable(f, currentSourceSqlName)) {
                 errors.add("key '" + f.getName() + "' does not connect to table '" + currentSourceSqlName + "'"
                     + candidateHint(currentSourceSqlName, List.of(fkSideTable, keySideTable)));
                 return;
@@ -2619,7 +2613,7 @@ class BuildContext {
         } else {
             var directional = catalog.findForeignKeysBetweenTables(recordTable.tableName(), nodeTableSqlName)
                 .stream()
-                .filter(k -> recordTable.sameTable(k.getTable().getName()))
+                .filter(k -> catalog.foreignKeyOnSource(k, recordTable.tableName(), /*selfRefHint=*/true))
                 .toList();
             if (directional.size() != 1) {
                 return new RecordFkTargets.Rejected(
@@ -2633,7 +2627,7 @@ class BuildContext {
         // CAMPUS_EIER_CAMPUS_FK), the table-name comparison cannot decide orientation, so the
         // selfRefFkOnSource=true hint places the FK on the record (source) side and the decoded
         // node-key values land on the self-FK's child columns rather than the record's own PK.
-        var slots = resolveFkSlots(fk, recordTable.tableName(), /*selfRefFkOnSource=*/true);
+        var slots = resolveFkSlots(fk, catalog.foreignKeyOnSource(fk, recordTable.tableName(), /*selfRefHint=*/true));
         var targetColumns = new ArrayList<ColumnRef>(nodeKeyColumns.size());
         for (var nodeKeyCol : nodeKeyColumns) {
             var match = slots.stream()
