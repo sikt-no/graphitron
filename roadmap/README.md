@@ -28,7 +28,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R426` | TableRecord-sourced @service keys are partial records; service bodies reading non-key columns get silent nulls <sub>blocked by: [service-splitquery-key-columns-in-parent-projection](service-splitquery-key-columns-in-parent-projection.md)</sub> | Spec | 2026-07-02 | [plan](service-tablerecord-partial-record-nonkey-reads.md) |
 | `R408` | Lint finding suppression mechanism | In Review | 2026-07-01 | [plan](lint-finding-suppression.md) |
 | `R13` | Faceted search on `@asConnection` | Ready | 2026-06-26 | [plan](faceted-search.md) |
-| `R424` | Inline @reference field reads its filter/pagination args from the top-level env, silently dropping them | In Progress | 2026-07-02 | [plan](inline-field-args-from-selectedfield.md) |
+| `R424` | Inline @reference field reads its filter/pagination args from the top-level env, silently dropping them | In Review | 2026-07-02 | [plan](inline-field-args-from-selectedfield.md) |
 | `R92` | Surface database CHECK constraints as Jakarta validation rules | Spec |  | [plan](catalog-check-constraint-validation.md) |
 | `R425` | Parent projection omits key columns a @splitQuery/@service child needs, so its dataloader key is silently null | Ready | 2026-07-02 | [plan](service-splitquery-key-columns-in-parent-projection.md) |
 | `R180` | Centralize ResultType column-read emission for @record parents | Spec | 2026-05-19 | [plan](record-parent-column-read-helper.md) |
@@ -266,7 +266,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R235` [**Tidy @reference path-element surface: separate join-shape from WHERE-filter**](path-element-surface-cleanup.md) — Backlog, cleanup
 - `R66` [**Widen string-carrier intermediates onto Rejection (R58 follow-up)**](rejection-string-carrier-widening.md) — Backlog, architecture
 - `R76` [**Emit per-participant fieldsJoin and orderBy; replace SelectJoinStep mutation in interface fetchers**](participant-fieldsjoin-helpers.md) — Backlog, cleanup
-- `R424` [**Inline @reference field reads its filter/pagination args from the top-level env, silently dropping them**](inline-field-args-from-selectedfield.md) — In Progress, bug
+- `R424` [**Inline @reference field reads its filter/pagination args from the top-level env, silently dropping them**](inline-field-args-from-selectedfield.md) — In Review, bug
 - `R240` [**Type-token threading on MethodRef.StaticOnly + ReturnTypeRef.TableBoundReturnType**](tablemethod-return-type-token-threading.md) — Backlog, architecture
 - `R174` [**graphitron-javapoet: emit records, sealed/permits, package-info.java**](javapoet-record-sealed-package-info-support.md) — Backlog, architecture
 - `R7` [**Decompose `TypeFetcherGenerator`**](decompose-typefetchergenerator.md) — Backlog, architecture
