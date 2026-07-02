@@ -20,7 +20,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R410` | graphitron:dev owns incremental compilation of generated sources | Ready | 2026-07-01 | [plan](dev-incremental-compile.md) |
 | `R308` | Fix the @service list-payload N+1 by deriving many-arrival for list-returning carriers | Spec | 2026-06-14 | [plan](service-list-payload-arrival.md) |
 | `R335` | Fold input/scalar/enum classification into the single classify-and-emit walk | Spec | 2026-06-19 | [plan](walk-classifies-input-surface.md) |
-| `R421` | jakarta-rest resource leaks internals on server-side execution failure | In Review | 2026-07-02 | [plan](jakarta-rest-execute-error-leak.md) |
 | `R381` | LSP-guided @reference path authoring | Spec | 2026-06-25 | [plan](lsp-reference-path-authoring.md) |
 | `R273` | Source NodeId metadata from @node + catalog PK (inferred from `implements Node`), and settle wrong-type/malformed mismatch semantics, retiring the legacy __NODE bare-ID arm | Spec | 2026-06-02 | [plan](nodeid-skip-mismatch-error-surfacing.md) |
 | `R45` | Multi-tenant routing on top of the schema-driven ExecutionInput factory | Ready | 2026-06-26 | [plan](tenant-routing-and-execution-input.md) |
@@ -207,7 +206,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R423` [**redaction reference id derives from OTel trace_id (via MDC) when present**](redaction-reference-id-from-otel-traceid.md) — Backlog, enhancement
 - `R397` [**Let bare-entity query fields host @error so decode and other client errors route through handlers**](error-directive-on-query-fields.md) — Backlog, architecture
 - `R170` [**Sakila execute-tier fixture for the Jakarta ValidationHandler channel (R94-blocked)**](validator-integration-execute-coverage.md) — Backlog, testing
-- `R421` [**jakarta-rest resource leaks internals on server-side execution failure**](jakarta-rest-execute-error-leak.md) — In Review, bug
 - `R98` [**Multi-source input validation: SDL directives + DB CHECK + Jakarta on a unified rendered schema**](multi-source-input-validation.md) — Backlog, architecture, blocked by [catalog-check-constraint-validation](catalog-check-constraint-validation.md)
 - `R172` [**Audit: forbid service-side references to <outputPackage>.inputs.***](inputs-package-internal-use-audit.md) — Backlog, architecture
 - `R122` [**Compound mutations: parent entity row + child normalised rows in one INSERT**](compound-entity-mutations.md) — Backlog, architecture
