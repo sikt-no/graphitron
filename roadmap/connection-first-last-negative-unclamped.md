@@ -1,7 +1,7 @@
 ---
 id: R415
 title: "Connection first/last arguments are not clamped to >= 0, so a negative page size reaches SQL LIMIT and throws a redacted 500"
-status: Spec
+status: Ready
 bucket: bug
 priority: 4
 theme: pagination
@@ -117,7 +117,8 @@ connection flavour funnels through; per-fetcher emission would duplicate the gua
 `GraphitronClientException` subclasses `graphql.GraphqlErrorException`, so reword the comment to
 the property that is actually load-bearing: the method takes no `DataFetchingEnvironment` (the
 four env-arg extractions stay on the fetcher side). The enclosing class already imports
-graphql-java heavily.
+graphql-java heavily. The fetcher-side comment at `TypeFetcherGenerator:4792` ("so pageRequest
+itself has no graphql-java dependency") makes the same claim and gets the same reword.
 
 ### One no-channel disposition, four sites
 
