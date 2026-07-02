@@ -19,7 +19,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R396` | @reference FK-connection validation rejects schema-qualified or case-mismatched @table base names | Ready | 2026-06-30 <sub>created 2026-06-29</sub> | [plan](reference-fk-connection-qualified-table-name.md) |
 | `R346` | Regenerate and guard the generated supported-directives migration doc against directive-set drift | Ready | 2026-06-19 | [plan](supported-directives-regen-guard.md) |
 | `R410` | graphitron:dev owns incremental compilation of generated sources | Ready | 2026-07-01 | [plan](dev-incremental-compile.md) |
-| `R413` | Parent-input VALUES table in split/reference batch fetchers drops converter-backed column DataType, breaking joins on numeric-domain keys | In Review | 2026-07-02 <sub>created 2026-07-01</sub> | [plan](split-parent-input-values-converter-datatype.md) |
 | `R308` | Fix the @service list-payload N+1 by deriving many-arrival for list-returning carriers | Spec | 2026-06-14 | [plan](service-list-payload-arrival.md) |
 | `R335` | Fold input/scalar/enum classification into the single classify-and-emit walk | Spec | 2026-06-19 | [plan](walk-classifies-input-surface.md) |
 | `R421` | jakarta-rest resource leaks internals on server-side execution failure | Spec | 2026-07-02 | [plan](jakarta-rest-execute-error-leak.md) |
@@ -320,7 +319,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R288` [**Inline TableInterfaceField and TableMethodField children (currently N+1)**](inline-interface-and-tablemethod-children.md)
 - `R252` [**Multi-file federation fixture coverage for schema.graphqls emission**](multi-file-federation-fixture-coverage.md)
 - `R274` [**OutcomeType carries its success projection so the nullability invariant lives on the carrier**](outcometype-carry-success-projection.md)
-- `R413` [**Parent-input VALUES table in split/reference batch fetchers drops converter-backed column DataType, breaking joins on numeric-domain keys**](split-parent-input-values-converter-datatype.md)
 - `R213` [**Plain-input field rejections attributed to consumer field, losing input-field source location**](input-field-rejection-attribution.md)
 - `R304` [**Reify @error PayloadAccessor errors fetcher into a named method**](reify-error-payload-accessor-fetcher.md)
 - `R326` [**Render Mermaid diagrams on the published docs site**](render-mermaid-diagrams-on-docs-site.md)
