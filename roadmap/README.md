@@ -28,7 +28,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R347` | Consolidate graphitron-lsp navigation, dispatch, and result-building | In Progress | 2026-07-01 <sub>created 2026-06-19</sub> | [plan](lsp-structural-consolidation.md) |
 | `R408` | Lint finding suppression mechanism | In Review | 2026-07-01 | [plan](lint-finding-suppression.md) |
 | `R13` | Faceted search on `@asConnection` | Ready | 2026-06-26 | [plan](faceted-search.md) |
-| `R424` | Inline @reference field reads its filter/pagination args from the top-level env, silently dropping them | Ready | 2026-07-02 | [plan](inline-field-args-from-selectedfield.md) |
+| `R424` | Inline @reference field reads its filter/pagination args from the top-level env, silently dropping them | In Progress | 2026-07-02 | [plan](inline-field-args-from-selectedfield.md) |
 | `R92` | Surface database CHECK constraints as Jakarta validation rules | Spec |  | [plan](catalog-check-constraint-validation.md) |
 | `R180` | Centralize ResultType column-read emission for @record parents | Spec | 2026-05-19 | [plan](record-parent-column-read-helper.md) |
 | `R242` | DML payload positional input/output alignment | Spec | 2026-06-15 <sub>created 2026-05-26</sub> | [plan](dml-payload-positional-alignment.md) |
@@ -266,7 +266,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R235` [**Tidy @reference path-element surface: separate join-shape from WHERE-filter**](path-element-surface-cleanup.md) — Backlog, cleanup
 - `R66` [**Widen string-carrier intermediates onto Rejection (R58 follow-up)**](rejection-string-carrier-widening.md) — Backlog, architecture
 - `R76` [**Emit per-participant fieldsJoin and orderBy; replace SelectJoinStep mutation in interface fetchers**](participant-fieldsjoin-helpers.md) — Backlog, cleanup
-- `R424` [**Inline @reference field reads its filter/pagination args from the top-level env, silently dropping them**](inline-field-args-from-selectedfield.md) — Ready, bug
+- `R424` [**Inline @reference field reads its filter/pagination args from the top-level env, silently dropping them**](inline-field-args-from-selectedfield.md) — In Progress, bug
 - `R240` [**Type-token threading on MethodRef.StaticOnly + ReturnTypeRef.TableBoundReturnType**](tablemethod-return-type-token-threading.md) — Backlog, architecture
 - `R174` [**graphitron-javapoet: emit records, sealed/permits, package-info.java**](javapoet-record-sealed-package-info-support.md) — Backlog, architecture
 - `R7` [**Decompose `TypeFetcherGenerator`**](decompose-typefetchergenerator.md) — Backlog, architecture
