@@ -2510,6 +2510,73 @@ class GraphQLQueryTest {
         assertThat(((Map<String, Object>) byId.get(1).get("pageInfo")).get("hasPreviousPage")).isEqualTo(true);
     }
 
+    // ===== Film.actorsConnection — per-parent totalCount (R414) =====
+
+    @SuppressWarnings("unchecked")
+    @Test
+    void splitQueryConnection_totalCount_isParentScoped() {
+        // R414: the rows method emits a shared cursor-independent countSource derived table;
+        // each per-parent ConnectionResult binds it with __idx__ = i, so totalCount counts the
+        // whole per-parent connection independent of the page size. Seed: film 1 -> {1, 2},
+        // film 2 -> {1, 3}, film 3 -> {1}, film 4 -> {2}, film 5 -> {3}. first: 1 distinguishes
+        // the connection count from the page size.
+        Map<String, Object> data = execute(
+            "{ filmById(film_id: [\"1\", \"2\", \"3\", \"4\", \"5\"]) { filmId "
+                + "actorsConnection(first: 1) { totalCount } } }");
+        List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("filmById");
+        var byId = films.stream().collect(java.util.stream.Collectors.toMap(
+            f -> (Integer) f.get("filmId"),
+            f -> ((Map<String, Object>) f.get("actorsConnection")).get("totalCount")));
+        assertThat(byId).containsEntry(1, 2).containsEntry(2, 2)
+            .containsEntry(3, 1).containsEntry(4, 1).containsEntry(5, 1);
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    void splitQueryConnection_totalCount_isCursorIndependent() {
+        // The countSource has no orderBy/seek, so paging past a cursor still reports the full
+        // per-parent connection count. Page 1 of film 1's connection yields a cursor; paging
+        // after it still reports totalCount 2.
+        Map<String, Object> page1 = execute(
+            "{ filmById(film_id: [\"1\"]) { actorsConnection(first: 1) "
+                + "{ totalCount pageInfo { endCursor } } } }");
+        Map<String, Object> conn1 = (Map<String, Object>)
+            ((List<Map<String, Object>>) page1.get("filmById")).get(0).get("actorsConnection");
+        assertThat(conn1.get("totalCount")).isEqualTo(2);
+        String endCursor = (String) ((Map<String, Object>) conn1.get("pageInfo")).get("endCursor");
+        assertThat(endCursor).isNotNull();
+
+        Map<String, Object> page2 = execute(
+            "{ filmById(film_id: [\"1\"]) { actorsConnection(first: 1, after: \"" + endCursor
+                + "\") { totalCount nodes { actorId } } } }");
+        Map<String, Object> conn2 = (Map<String, Object>)
+            ((List<Map<String, Object>>) page2.get("filmById")).get(0).get("actorsConnection");
+        assertThat((List<Map<String, Object>>) conn2.get("nodes"))
+            .extracting(n -> n.get("actorId")).containsExactly(2);
+        assertThat(conn2.get("totalCount")).isEqualTo(2);
+    }
+
+    @Test
+    void splitQueryConnection_totalCount_isLazyOnSelection() {
+        // graphql-java only invokes the registered totalCount resolver on selection: no count
+        // SQL when the field is unselected, per-parent count statements when it is (matching
+        // the B4c-2 cost profile: N lazy count queries for a batch of N parents).
+        SQL_LOG.clear();
+        execute("{ filmById(film_id: [\"1\", \"2\"]) { filmId actorsConnection(first: 1) "
+            + "{ nodes { actorId } } } }");
+        assertThat(SQL_LOG)
+            .as("no SELECT count statement should be issued when totalCount is not selected")
+            .noneMatch(s -> s.contains("select count"));
+
+        SQL_LOG.clear();
+        execute("{ filmById(film_id: [\"1\", \"2\"]) { filmId actorsConnection(first: 1) "
+            + "{ totalCount } } }");
+        assertThat(SQL_LOG)
+            .filteredOn(s -> s.contains("select count"))
+            .as("selecting totalCount should issue one per-parent count statement per parent")
+            .hasSize(2);
+    }
+
     // ===== SplitTableField / SplitLookupTableField under NestingField
     // (plan-splittablefield-nestingfield) =====
 

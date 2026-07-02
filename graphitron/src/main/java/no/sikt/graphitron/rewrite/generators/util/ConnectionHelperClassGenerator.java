@@ -19,9 +19,9 @@ import java.util.List;
  *   <li>{@code edges(env)} — trims result to page size, wraps each Record into an Edge</li>
  *   <li>{@code nodes(env)} — trims result to page size, returns Records directly</li>
  *   <li>{@code pageInfo(env)} — computes hasNextPage, hasPreviousPage, startCursor, endCursor</li>
- *   <li>{@code totalCount(env)} — issues {@code SELECT count(*)} against the parent field's
+ *   <li>{@code totalCount(env)} — issues {@code SELECT count(*)} against the field's
  *       {@code (table, condition)} carried on {@code ConnectionResult}; returns {@code null}
- *       when those are absent (Split-Connection scatter path)</li>
+ *       when those are absent (only the polymorphic empty-participants defensive path)</li>
  *   <li>{@code edgeNode(env)} — returns the Record from an Edge</li>
  *   <li>{@code edgeCursor(env)} — returns the cursor string from an Edge</li>
  * </ul>
@@ -260,9 +260,10 @@ public class ConnectionHelperClassGenerator {
         // --- totalCount(DataFetchingEnvironment) → Integer ---
         // Lazy on selection: graphql-java only invokes the registered resolver when the client
         // selects totalCount, so the count SQL is skipped on every query that does not ask for
-        // it. Returns null when (table, condition) are absent — the Split-Connection scatter
-        // path supplies a ConnectionResult without (table, condition); selecting totalCount on
-        // those carriers returns null until per-parent count plumbing lands (see roadmap follow-up).
+        // it. Returns null when (table, condition) are absent — the only remaining producer of
+        // such a carrier is the validator-unreachable empty-participants defensive path in
+        // MultiTablePolymorphicEmitter.buildRootConnectionFetcher (new ConnectionResult(List.of(),
+        // page, null, null)); every reachable path binds a real pair.
         var dslContextClass = ClassName.get("org.jooq", "DSLContext");
         var graphitronContextClass = ClassName.get(outputPackage + ".schema", "GraphitronContext");
         var totalCountMethod = MethodSpec.methodBuilder("totalCount")

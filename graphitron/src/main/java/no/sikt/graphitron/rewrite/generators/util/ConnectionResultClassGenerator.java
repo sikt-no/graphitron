@@ -18,10 +18,14 @@ import java.util.List;
  * Connection-level resolvers ({@code edges}, {@code nodes}, {@code pageInfo},
  * {@code totalCount}).
  *
- * <p>Also carries the parent field's {@code Table<?>} and {@code Condition} when supplied by
- * a root connection fetcher; per-connection derivables ({@code totalCount} and, in the future,
- * faceted-search aggregates) read these to issue their own SQL using the same source and
- * predicate as the page query. Split-Connection scatter passes {@code null} for both.
+ * <p>Also carries the field's {@code Table<?>} and {@code Condition}; per-connection
+ * derivables ({@code totalCount} and, in the future, faceted-search aggregates) read these to
+ * issue their own SQL using the same source and predicate as the page query. Root fetchers
+ * bind the page query's own (table, condition); batched paths (Split-Connection scatter,
+ * polymorphic B4c-2) bind a shared count-source derived table with a per-parent
+ * {@code __idx__ = i} condition. The only remaining {@code (null, null)} producer is the
+ * validator-unreachable empty-participants defensive path in
+ * {@code MultiTablePolymorphicEmitter.buildRootConnectionFetcher}.
  *
  * <p>Generated as a source file rather than shipped as a library dependency so that consuming
  * projects have no runtime dependency on Graphitron itself.
@@ -51,9 +55,10 @@ public class ConnectionResultClassGenerator {
         var beforeCursorField = FieldSpec.builder(String.class, "beforeCursor", Modifier.PRIVATE, Modifier.FINAL).build();
         var backwardField = FieldSpec.builder(boolean.class, "backward", Modifier.PRIVATE, Modifier.FINAL).build();
         var orderByColumnsField = FieldSpec.builder(listOfField, "orderByColumns", Modifier.PRIVATE, Modifier.FINAL).build();
-        // table and condition are nullable: Split-Connection scatter has no single (table, condition)
-        // pair (rows are partitioned per-parent across one wider query), so it passes null and the
-        // totalCount resolver returns null on that path.
+        // table and condition are nullable: the polymorphic root connection fetcher's
+        // validator-unreachable empty-participants defensive path constructs
+        // new ConnectionResult(List.of(), page, null, null), and the totalCount resolver
+        // returns null on that carrier. Every reachable path binds a real pair.
         var tableField = FieldSpec.builder(tableWildcard, "table", Modifier.PRIVATE, Modifier.FINAL).build();
         var conditionField = FieldSpec.builder(CONDITION, "condition", Modifier.PRIVATE, Modifier.FINAL).build();
 
@@ -82,20 +87,10 @@ public class ConnectionResultClassGenerator {
         // Convenience constructor accepting a PageRequest from ConnectionHelper.pageRequest(...).
         // Takes the pure extra-ordering list (orderByColumns) off page.extraFields(), not
         // page.selectFields() — cursor encoding must hash only the ordering columns, not the
-        // selection-merged list. Used by Split-Connection scatter, which has no (table, condition)
-        // pair to carry; totalCount returns null on that path.
+        // selection-merged list. Callers bind (table, condition) so totalCount can issue its own
+        // SELECT count(*) using the same source and predicate.
         var pageRequestRef = ClassName.get(
             outputPackage + ".util", "ConnectionHelper", "PageRequest");
-        var pageConstructor = MethodSpec.constructorBuilder()
-            .addModifiers(Modifier.PUBLIC)
-            .addParameter(listOfRecordField, "result")
-            .addParameter(pageRequestRef, "page")
-            .addStatement("this(result, page.pageSize(), page.after(), page.before(),"
-                + " page.backward(), page.extraFields(), null, null)")
-            .build();
-
-        // Convenience constructor for root connection fetchers that bind (table, condition) so
-        // totalCount can issue its own SELECT count(*) using the same source and predicate.
         var pageWithSourceConstructor = MethodSpec.constructorBuilder()
             .addModifiers(Modifier.PUBLIC)
             .addParameter(listOfRecordField, "result")
@@ -193,7 +188,6 @@ public class ConnectionResultClassGenerator {
             .addField(tableField)
             .addField(conditionField)
             .addMethod(constructor)
-            .addMethod(pageConstructor)
             .addMethod(pageWithSourceConstructor)
             .addMethod(getResult)
             .addMethod(getPageSize)

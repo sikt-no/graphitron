@@ -1045,6 +1045,14 @@ public final class SplitRowsMethodEmitter {
         body.addStatement("selectFields.add($T.rowNumber().over($T.partitionBy(idxField).orderBy(page.effectiveOrderBy())).as($S))",
             DSL, DSL, RN_COLUMN);
 
+        // WHERE hoisted into a local so the windowed page query and the totalCount countSource
+        // below share the exact same predicate. buildWhereCondition must be called exactly once:
+        // it declares FK-target alias locals into the method body as a side effect
+        // (FkTargetConditionEmitter.declareAliases), so a second call would emit duplicate
+        // local declarations.
+        body.addStatement("$T where = $L", ClassName.get("org.jooq", "Condition"),
+            buildWhereCondition(body, ctx, path, aliases, terminalAlias, firstAlias, filters, registry));
+
         // Inner windowed SELECT — attaches .orderBy()/.seek() for cursor-driven filtering; the
         // OS-level seek predicate falls in as WHERE, filtering BEFORE ROW_NUMBER() is computed.
         var inner = CodeBlock.builder();
@@ -1056,8 +1064,7 @@ public final class SplitRowsMethodEmitter {
         // (.orderBy/.seek/.asTable) is appended after.
         emitFromBridgeAndParentJoin(inner, path, aliases, terminalAlias, firstAlias,
             parentCorrelation, joinOnAlias, joinOnCols, joinOnParentCols);
-        inner.add(".where($L)\n",
-            buildWhereCondition(body, ctx, path, aliases, terminalAlias, firstAlias, filters, registry));
+        inner.add(".where(where)\n");
         inner.add(".orderBy(page.effectiveOrderBy())\n");
         inner.add(".seek(page.seekFields())\n");
         inner.add(".asTable($S);\n", "ranked");
@@ -1080,7 +1087,25 @@ public final class SplitRowsMethodEmitter {
         outer.unindent();
         body.add(outer.build());
 
-        body.addStatement("return scatterConnectionByIdx(flat, keys.size(), page)");
+        // Count-source derived table for per-parent totalCount: the same join topology and
+        // hoisted WHERE as the page query, but no orderBy/seek so the count is cursor-independent.
+        // Each per-parent ConnectionResult pairs it with an __idx__ = i condition; the generated
+        // ConnectionHelper.totalCount then runs SELECT count(*) FROM countSource WHERE __idx__ = i
+        // lazily on selection. Mirrors B4c-2's count semantics (MultiTablePolymorphicEmitter
+        // .buildBatchedConnectionRowsMethod): zero count SQL when totalCount is unselected, N
+        // count queries for a batch of N parents when selected.
+        var count = CodeBlock.builder();
+        count.add("$T<?> countSource = dsl\n", TABLE);
+        count.indent();
+        count.add(".select(idxField.as($S))\n", IDX_COLUMN);
+        emitFromBridgeAndParentJoin(count, path, aliases, terminalAlias, firstAlias,
+            parentCorrelation, joinOnAlias, joinOnCols, joinOnParentCols);
+        count.add(".where(where)\n");
+        count.add(".asTable($S);\n", "countSource");
+        count.unindent();
+        body.add(count.build());
+
+        body.addStatement("return scatterConnectionByIdx(flat, keys.size(), page, countSource)");
 
         return RowsMethodSkeleton.build(
             rowsMethodName,
@@ -1191,6 +1216,11 @@ public final class SplitRowsMethodEmitter {
      * seed); the shared {@code PageRequest} is what lets every per-parent
      * {@code ConnectionResult} answer {@code hasNextPage()} correctly: the over-fetch-by-1
      * lives per-partition in the windowed CTE, so each parent's bucket is 0..(pageSize+1).
+     *
+     * <p>{@code countSource} is the shared cursor-independent count derived table emitted by
+     * the rows method; each per-parent carrier binds it with an {@code __idx__ = i} condition
+     * so the generated {@code ConnectionHelper.totalCount} can serve a per-parent count on
+     * selection (same shape as the polymorphic batched path's shared {@code pages} table).
      */
     public static MethodSpec buildScatterConnectionByIdxHelper(String outputPackage) {
         TypeName resultRecord = ParameterizedTypeName.get(ClassName.get("org.jooq", "Result"), RECORD);
@@ -1198,6 +1228,7 @@ public final class SplitRowsMethodEmitter {
             outputPackage + ".util", "ConnectionResult");
         ClassName pageRequestClass = ClassName.get(
             outputPackage + ".util", "ConnectionHelper", "PageRequest");
+        TypeName tableWildcard = ParameterizedTypeName.get(TABLE, WildcardTypeName.subtypeOf(Object.class));
         TypeName listOfRecord = ParameterizedTypeName.get(LIST, RECORD);
         TypeName listOfListOfRecord = ParameterizedTypeName.get(LIST, listOfRecord);
         TypeName listOfConnectionResult = ParameterizedTypeName.get(LIST, connectionResultClass);
@@ -1207,6 +1238,7 @@ public final class SplitRowsMethodEmitter {
             .addParameter(resultRecord, "flat")
             .addParameter(int.class, "keyCount")
             .addParameter(pageRequestClass, "page")
+            .addParameter(tableWildcard, "countSource")
             .addCode(CodeBlock.builder()
                 .addStatement("$T buckets = new $T<>(keyCount)", listOfListOfRecord, ARRAY_LIST)
                 .beginControlFlow("for (int i = 0; i < keyCount; i++)")
@@ -1218,7 +1250,9 @@ public final class SplitRowsMethodEmitter {
                 .endControlFlow()
                 .addStatement("$T out = new $T<>(keyCount)", listOfConnectionResult, ARRAY_LIST)
                 .beginControlFlow("for (int i = 0; i < keyCount; i++)")
-                .addStatement("out.add(new $T(buckets.get(i), page))", connectionResultClass)
+                .addStatement("out.add(new $T(buckets.get(i), page, countSource,"
+                        + " countSource.field($S, $T.class).eq($T.inline(i))))",
+                    connectionResultClass, IDX_COLUMN, Integer.class, DSL)
                 .endControlFlow()
                 .addStatement("return out")
                 .build())

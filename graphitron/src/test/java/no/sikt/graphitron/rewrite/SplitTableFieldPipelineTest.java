@@ -321,6 +321,19 @@ class SplitTableFieldPipelineTest {
         assertThat(methodNames).contains("scatterConnectionByIdx");
         assertThat(methodNames).as("plain-list scatterByIdx not emitted when no plain-list-cardinality Split* field")
             .doesNotContain("scatterByIdx");
+
+        // R414: the scatter carries the shared count-source derived table so each per-parent
+        // ConnectionResult can bind (countSource, __idx__ = i) for a real totalCount.
+        var scatter = filmFetchers.methodSpecs().stream()
+            .filter(m -> m.name().equals("scatterConnectionByIdx"))
+            .findFirst().orElseThrow();
+        assertThat(scatter.parameters())
+            .extracting(p -> p.type().toString())
+            .containsExactly(
+                "org.jooq.Result<org.jooq.Record>",
+                "int",
+                "fake.code.generated.util.ConnectionHelper.PageRequest",
+                "org.jooq.Table<?>");
     }
 
     @Test

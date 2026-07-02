@@ -1486,6 +1486,10 @@ type ActorsConnection {
     edges: [ActorsEdge!]!
     nodes: [Actor!]!
     pageInfo: PageInfo!
+    # R414: per-parent totalCount on @splitQuery connections. The rows method emits a shared
+    # cursor-independent countSource derived table; each per-parent ConnectionResult carries it
+    # with an __idx__ = i condition, so ConnectionHelper.totalCount serves a real count lazily.
+    totalCount: Int
 }
 
 type ActorsEdge {
