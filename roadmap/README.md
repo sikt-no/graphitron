@@ -19,7 +19,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R428` | MCP tool executes GraphQL against generated resolvers in-process (graphitron:dev) <sub>blocked by: [dev-incremental-compile](dev-incremental-compile.md), [connection-transaction-lifecycle](connection-transaction-lifecycle.md)</sub> | Spec | 2026-07-03 | [plan](mcp-execute-query-in-process.md) |
 | `R333` | The Graphitron data model | Spec | 2026-06-25 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
 | `R346` | Regenerate and guard the generated supported-directives migration doc against directive-set drift | Ready | 2026-06-19 | [plan](supported-directives-regen-guard.md) |
-| `R410` | graphitron:dev owns incremental compilation of generated sources | In Progress | 2026-07-02 <sub>created 2026-07-01</sub> | [plan](dev-incremental-compile.md) |
+| `R410` | graphitron:dev owns incremental compilation of generated sources | In Review | 2026-07-03 <sub>created 2026-07-01</sub> | [plan](dev-incremental-compile.md) |
 | `R308` | Fix the @service list-payload N+1 by deriving many-arrival for list-returning carriers | Spec | 2026-06-14 | [plan](service-list-payload-arrival.md) |
 | `R335` | Fold input/scalar/enum classification into the single classify-and-emit walk | Spec | 2026-06-19 | [plan](walk-classifies-input-surface.md) |
 | `R45` | Database-per-tenant routing on the graphitron-owned connection lifecycle <sub>blocked by: [connection-transaction-lifecycle](connection-transaction-lifecycle.md)</sub> | Spec | 2026-07-03 | [plan](tenant-routing-and-execution-input.md) |
@@ -298,7 +298,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 ### lsp
 
 - `R428` [**MCP tool executes GraphQL against generated resolvers in-process (graphitron:dev)**](mcp-execute-query-in-process.md) — Spec, feature, blocked by [dev-incremental-compile](dev-incremental-compile.md), [connection-transaction-lifecycle](connection-transaction-lifecycle.md)
-- `R410` [**graphitron:dev owns incremental compilation of generated sources**](dev-incremental-compile.md) — In Progress, feature
+- `R410` [**graphitron:dev owns incremental compilation of generated sources**](dev-incremental-compile.md) — In Review, feature
 - `R347` [**Consolidate graphitron-lsp navigation, dispatch, and result-building**](lsp-structural-consolidation.md) — In Progress, architecture
 - `R345` [**Surface schema parse failures as LSP red squiggles**](lsp-squiggle-schema-parse-failure.md) — Backlog, feature
 - `R123` [**Parent-context-aware schema coordinates for per-directive Behavior policy**](parent-context-aware-schema-coordinates.md) — Backlog, architecture
