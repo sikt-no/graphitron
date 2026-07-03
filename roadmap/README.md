@@ -15,7 +15,8 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | ID | Item | Status | Updated | Plan |
 |---|---|---|---|---|
 | `R222` | Dimensional model pivot: slots over cross-product permits | Spec | 2026-06-18 <sub>created 2026-05-21</sub> | [plan](dimensional-model-pivot.md) |
-| `R428` | MCP tool executes GraphQL against generated resolvers in-process (graphitron:dev) <sub>blocked by: [dev-incremental-compile](dev-incremental-compile.md)</sub> | Spec | 2026-07-03 | [plan](mcp-execute-query-in-process.md) |
+| `R429` | Graphitron owns connection and transaction lifecycle: operation-typed read-only/commit semantics and RLS-first session state | Spec | 2026-07-03 | [plan](connection-transaction-lifecycle.md) |
+| `R428` | MCP tool executes GraphQL against generated resolvers in-process (graphitron:dev) <sub>blocked by: [dev-incremental-compile](dev-incremental-compile.md), [connection-transaction-lifecycle](connection-transaction-lifecycle.md)</sub> | Spec | 2026-07-03 | [plan](mcp-execute-query-in-process.md) |
 | `R333` | The Graphitron data model | Spec | 2026-06-25 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
 | `R346` | Regenerate and guard the generated supported-directives migration doc against directive-set drift | Ready | 2026-06-19 | [plan](supported-directives-regen-guard.md) |
 | `R410` | graphitron:dev owns incremental compilation of generated sources | In Progress | 2026-07-02 <sub>created 2026-07-01</sub> | [plan](dev-incremental-compile.md) |
@@ -186,6 +187,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### service
 
+- `R429` [**Graphitron owns connection and transaction lifecycle: operation-typed read-only/commit semantics and RLS-first session state**](connection-transaction-lifecycle.md) — Spec, architecture
 - `R201` [**Honor @field(name:) in @error payload construction shape resolution**](honor-field-directive-in-payload-construction-shape.md) — Backlog, bug
 - `R202` [**Honor @field(name:) in @error type extra-field accessor matching against handler source class**](honor-field-directive-in-error-type-source-accessors.md) — Backlog, bug
 - `R45` [**Multi-tenant routing on top of the schema-driven ExecutionInput factory**](tenant-routing-and-execution-input.md) — Ready, architecture
@@ -295,7 +297,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### lsp
 
-- `R428` [**MCP tool executes GraphQL against generated resolvers in-process (graphitron:dev)**](mcp-execute-query-in-process.md) — Spec, feature, blocked by [dev-incremental-compile](dev-incremental-compile.md)
+- `R428` [**MCP tool executes GraphQL against generated resolvers in-process (graphitron:dev)**](mcp-execute-query-in-process.md) — Spec, feature, blocked by [dev-incremental-compile](dev-incremental-compile.md), [connection-transaction-lifecycle](connection-transaction-lifecycle.md)
 - `R410` [**graphitron:dev owns incremental compilation of generated sources**](dev-incremental-compile.md) — In Progress, feature
 - `R347` [**Consolidate graphitron-lsp navigation, dispatch, and result-building**](lsp-structural-consolidation.md) — In Progress, architecture
 - `R345` [**Surface schema parse failures as LSP red squiggles**](lsp-squiggle-schema-parse-failure.md) — Backlog, feature

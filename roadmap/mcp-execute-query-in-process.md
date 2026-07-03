@@ -5,7 +5,7 @@ status: Spec
 bucket: feature
 priority: 3
 theme: lsp
-depends-on: [dev-incremental-compile]
+depends-on: [dev-incremental-compile, connection-transaction-lifecycle]
 created: 2026-07-03
 last-updated: 2026-07-03
 ---
@@ -100,30 +100,27 @@ developer keeps credentials out of the checked-in pom):
 When no connection is configured the execution tool is **absent / disabled with a clear message**, exactly
 the degrade-gracefully posture the RAG tools use. Every other MCP tool keeps working with no DB.
 
-## Session state for RLS/RAS (the one pluggable seam) — OPEN QUESTION for Spec
+## Session state, transactions, and RLS/RAS — delegated to R429
 
-The one thing graphitron cannot synthesize is per-request session state, because it is product-specific
-(Postgres `set_config` vs Oracle Real Application Security session attach) and value-dependent. Sikt's own
-subgraphs need it: RLS/RAS policies read session variables (current user, tenant, roles) that must be set on
-the connection before the query runs. The values are exactly the **contextArguments** the tool call already
-carries, so session-init binds from the same map the executor uses, and it runs at the host layer (which
-owns the connection) between `open` and `execute`. RLS is a safety bonus for a dev tool: the caller only
-ever sees rows their identity is permitted, and everything rolls back.
+The earlier draft carried an open fork here (config-driven session statements vs a Java hook) for setting
+RLS/RAS session state on the dev connection. That concern has been **promoted into its own item, R429**
+(`connection-transaction-lifecycle`), which gives the *generated runtime* a strong opinion on connection
+acquisition, operation-typed transaction mode (query read-only; mutation commit-then-project), and
+RLS-first transaction-local session state with built-in Postgres/Oracle/generic strategies. This item is a
+**consumer** of that machinery rather than reinventing it:
 
-Two candidate shapes; **which one V0 commits to depends on whether Oracle RAS attach can be expressed
-declaratively**, to be resolved in Spec review:
+- The dev tool builds a `DataSource` from its `GRAPHITRON_DEV_DB_*` config (below) and feeds graphitron's
+  R429 runtime, so it exercises the *same* connection/transaction/session-state path a real app does, higher
+  execution fidelity for free.
+- **Rollback-by-default is R429's transaction model with commit suppressed:** the dev tool runs every
+  operation (query or mutation) as if read-only and never commits, so exploration cannot persist. An opt-in
+  commit is a later nicety.
+- Session state (the current user/tenant RLS values) comes from R429's session-state strategy, keyed off the
+  same contextArgs the executor binds. No R428-local session-state seam.
 
-- **(a) Config-driven session-init statements.** An ordered list of SQL/PLSQL (pom + env) run before
-  execution, with named placeholders bound from contextArgs, e.g. Postgres
-  `SELECT set_config('rls.user_id', :userId, false)` or an Oracle `BEGIN … END;` block binding `:userId`.
-  Zero user code. Sufficient iff RAS session attach fits in a handful of parameterized callable statements.
-- **(b) A narrow Java hook.** `interface DevConnectionInitializer { void initSession(Connection conn,
-  Map<String,Object> contextArgs) throws SQLException; }`, configured by FQCN (pom + env), loaded via the
-  R410 classloader, invoked by the host. Plain JDBC types only, no jOOQ / facade / injection, so it does not
-  reintroduce the container/SPI weight rejected below. Full procedural power for RAS.
-
-Lean: ship (a) alone if it covers RAS; otherwise make (b) primary and treat (a) as sugar. They are not
-exclusive. This is the last open design fork.
+If R429 has not landed when R428 is implemented, the fallback is R428's minimal host-side connection handling
+(open connection, `setAutoCommit(false)`, rollback in `finally`) with a generic session-statement list; R429
+then subsumes it. This keeps R428 shippable without blocking on the larger runtime item.
 
 ## Considered and rejected
 
