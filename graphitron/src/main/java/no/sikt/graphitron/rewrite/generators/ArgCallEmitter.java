@@ -413,11 +413,13 @@ public final class ArgCallEmitter {
      * pre-declared {@code List<String> <name>Keys} local because the arm composes as an expression
      * and cannot introduce the local itself. {@link QueryConditionsGenerator} and
      * {@link MultiTablePolymorphicEmitter} declare it inline under {@link ArgumentValueSource.Env};
-     * the two inline emitters route it here under {@link ArgumentValueSource.FromSelectedField},
-     * where {@code sf.getArguments().get(name)} is statically {@code Object} and needs the
-     * (unchecked) {@code (List<String>)} cast — the {@code $fields} host stamps
-     * {@code @SuppressWarnings} for it (see {@code CallParam.emitsUncheckedCastFromSelectedField}).
-     * Dedupes by arg name so two filters sharing a converter-backed list arg declare one local.
+     * only the two inline emitters route it here, always under
+     * {@link ArgumentValueSource.FromSelectedField} (hence the narrowed parameter type — there is no
+     * {@code Env} caller, so no {@code Env} branch), where {@code sf.getArguments().get(name)} is
+     * statically {@code Object} and needs the (unchecked) {@code (List<String>)} cast; the
+     * {@code $fields} host stamps {@code @SuppressWarnings} for it (see
+     * {@code CallParam.emitsUncheckedCastFromSelectedField}). Dedupes by arg name so two filters
+     * sharing a converter-backed list arg declare one local.
      *
      * <p>Fixes a latent defect at the inline sites: without this pre-lift the JooqConvert list arm
      * emits a reference to an undeclared {@code <name>Keys} local (the generated code fails the
@@ -425,21 +427,15 @@ public final class ArgCallEmitter {
      * {@code @splitQuery}, so the shape is inline-reachable in principle.
      */
     static void emitJooqConvertKeyLifts(CodeBlock.Builder stmts, List<? extends WhereFilter> filters,
-            ArgumentValueSource source) {
+            ArgumentValueSource.FromSelectedField source) {
         var declared = new LinkedHashSet<String>();
         for (var filter : filters) {
             for (var param : filter.callParams()) {
                 if (param.extraction() instanceof CallSiteExtraction.JooqConvert && param.list()
                         && declared.add(param.name())) {
-                    CodeBlock rhs = switch (source) {
-                        case ArgumentValueSource.Env ignored ->
-                            CodeBlock.of("env.getArgument($S)", param.name());
-                        case ArgumentValueSource.FromSelectedField sf ->
-                            CodeBlock.of("($T<$T>) $L.getArguments().get($S)",
-                                List.class, String.class, sf.sfLocal(), param.name());
-                    };
-                    stmts.addStatement("$T<$T> $L = $L",
-                        List.class, String.class, toCamelCase(param.name()) + "Keys", rhs);
+                    stmts.addStatement("$T<$T> $L = ($T<$T>) $L.getArguments().get($S)",
+                        List.class, String.class, toCamelCase(param.name()) + "Keys",
+                        List.class, String.class, source.sfLocal(), param.name());
                 }
             }
         }

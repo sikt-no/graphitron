@@ -381,6 +381,55 @@ class GraphQLQueryTest {
     }
 
     @Test
+    void store_customersByNodeId_inlineDecodeNarrows_foreignNodeIdReturnsEmpty() {
+        // R424: inline (non-@splitQuery) @reference child list whose filter carries a same-table
+        // @nodeId field. The decoded predicate (customer.customer_id IN (decoded)) genuinely consumes
+        // the argument, so it is the reproducer's decode-with-value path (unlike customersByAddressDistrict,
+        // whose @condition(override) ignores its addressId). Pre-fix the inline emitter read the filter
+        // off the ancestor env (null), so the decode saw null and the predicate collapsed — the field
+        // returned ALL of the store's customers. The fix reads it off the field's own SelectedField.
+        // Seed: customer 3 (Linda) belongs to store 2. Filtering store 1's children by Linda's node id
+        // must return empty (a node id NOT under the parent); the same filter under store 2 returns Linda,
+        // proving the decode narrows rather than always-empties.
+        String linda = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Customer", 3);
+        Map<String, Object> data = execute(
+            "{ storeById(store_id: [1, 2]) { storeId customersByNodeId(filter: {customerRefs: [\"" + linda + "\"]}) { firstName } } }");
+        assertThat(data).extractingByKey("storeById", as(list(Map.class)))
+            .anySatisfy(s -> {
+                assertThat(s.get("storeId")).isEqualTo(1);
+                // Linda is a store-2 customer: not under store 1, so empty. Pre-fix returned store 1's
+                // unfiltered customers (the reproducer's "returns rows it did not ask for" shape).
+                assertThat((List<Map<String, Object>>) s.get("customersByNodeId")).isEmpty();
+            })
+            .anySatisfy(s -> {
+                assertThat(s.get("storeId")).isEqualTo(2);
+                assertThat((List<Map<String, Object>>) s.get("customersByNodeId"))
+                    .extracting(c -> c.get("firstName")).containsExactly("Linda");
+            });
+    }
+
+    @Test
+    void store_customersByNodeId_inlineVsSplit_identicalResults() {
+        // R424: the @splitQuery sibling has always resolved the argument correctly (its env is the
+        // field's own environment). Pin that the fixed inline decode path now matches it for the
+        // identical @nodeId filter — inline/split parity. Store 2 = {Linda (3), Elizabeth (5)}.
+        String linda = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Customer", 3);
+        String elizabeth = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Customer", 5);
+        Map<String, Object> data = execute(
+            "{ storeById(store_id: [2]) {"
+            + " inlineList: customersByNodeId(filter: {customerRefs: [\"" + linda + "\", \"" + elizabeth + "\"]}) { firstName }"
+            + " splitList: customersByNodeIdSplit(filter: {customerRefs: [\"" + linda + "\", \"" + elizabeth + "\"]}) { firstName } } }");
+        assertThat(data).extractingByKey("storeById", as(list(Map.class)))
+            .singleElement(as(map(String.class, Object.class)))
+            .satisfies(s -> {
+                var inline = (List<Map<String, Object>>) s.get("inlineList");
+                var split = (List<Map<String, Object>>) s.get("splitList");
+                assertThat(inline).extracting(c -> c.get("firstName")).containsExactly("Linda", "Elizabeth");
+                assertThat(split).extracting(c -> c.get("firstName")).containsExactly("Linda", "Elizabeth");
+            });
+    }
+
+    @Test
     void customersByAddressDistrictActive_fieldOverridePlusFkTarget_composesBothShimTerms() {
         // R330: the opptak shim shape exactly — a field-level @condition(override) (customersActiveOnly,
         // against the root customer table) AND an FK-target @nodeId @condition(override)

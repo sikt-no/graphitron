@@ -1007,6 +1007,18 @@ type Store @table(name: "store") {
     # it off the inline field's SelectedField.
     customersFirstN(first: Int): [Customer!]!
         @reference(path: [{key: "customer_store_id_fkey"}]) @defaultOrder(primaryKey: true)
+    # R424: inline (non-@splitQuery) @reference child list whose filter carries a same-table @nodeId
+    # field. The implicit decoded predicate (customer.customer_id IN (decoded ids)) genuinely CONSUMES
+    # the argument value, unlike customersByAddressDistrict's @condition(override) which ignores it.
+    # Pre-R424 the inline emitter read the filter off the ancestor fetcher's env (null there), so the
+    # decode saw null and the predicate collapsed to noCondition() — the field returned ALL of the
+    # store's customers. The fix reads the filter off the field's own SelectedField, so a node id
+    # whose customer sits under a DIFFERENT store narrows the child list to empty. customersByNodeIdSplit
+    # is the @splitQuery sibling pinning inline/split parity for the identical filter.
+    customersByNodeId(filter: CustomerByNodeIdFilter): [Customer!]!
+        @reference(path: [{key: "customer_store_id_fkey"}]) @defaultOrder(primaryKey: true)
+    customersByNodeIdSplit(filter: CustomerByNodeIdFilter): [Customer!]! @splitQuery
+        @reference(path: [{key: "customer_store_id_fkey"}]) @defaultOrder(primaryKey: true)
     # plan-single-cardinality-split-query.md §5: single-cardinality @splitQuery with a
     # NULLABLE FK (store.manager_staff_id). At least one store seeds manager_staff_id as
     # NULL in init.sql, so the §4 null-FK short-circuit returns null for that store without
@@ -1846,6 +1858,15 @@ input CustomerFirstNameFilter @table(name: "customer") {
             className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
             method: "customerFirstNameEquals"
         }, override: true)
+}
+
+# R424: same-table @nodeId filter input. Each ID decodes to a Customer PK; the generated condition
+# emits a primary-key IN predicate (customer.customer_id IN (decoded)) that genuinely consumes the
+# decoded value. Drives Store.customersByNodeId{,Split}, pinning the inline NodeIdDecodeKeys
+# decode-with-value path (customersByAddressDistrict's override condition ignores its addressId, so
+# that fixture never exercised the decode narrowing).
+input CustomerByNodeIdFilter @table(name: "customer") {
+    customerRefs: [ID!] @nodeId(typeName: "Customer")
 }
 
 # R330 rework reproduction: mirrors the opptak SoknadsmangeltypeFilterInput shape exactly that the

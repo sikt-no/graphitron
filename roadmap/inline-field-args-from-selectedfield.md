@@ -12,7 +12,7 @@ last-updated: 2026-07-03
 
 # Inline @reference field reads its filter/pagination args from the top-level env, silently dropping them
 
-## Review feedback (In Review → Ready, 2026-07-03)
+## Review feedback (In Review → Ready, 2026-07-03) — rework shipped
 
 The core implementation at `7400c67` is approved as-is: the sealed `ArgumentValueSource`
 threading, the per-arm audit (all arms match the classification table below, `ContextArg`
@@ -21,33 +21,37 @@ source-aware `CallParam.emitsUncheckedCastFromSelectedField` predicate keeping t
 hosts byte-identical, and the shipped tests (`InlineFilterArgumentSourcePipelineTest`,
 the three `GraphQLQueryTest` cases on `Store.customersByFirstName{,Split}` /
 `customersFirstN`) are all sound. `mvn install -Plocal-db` verified green at review time.
-Do not redesign any of it. The rework pass is test-completion only:
+Do not redesign any of it. The rework pass is test-completion only. **All four items below
+are now done** (`mvn install -Plocal-db` green); the reviewer for the next In Review → Done
+gate should see no open work here:
 
-1. **JooqConvert+list inline pipeline pin (required).** The Tests section promised a
-   pipeline-tier pin that the inline `JooqConvert`+list shape generates end-to-end
-   (pre-R424 it emitted an undeclared `<name>Keys` local). It did not ship, so
-   `ArgCallEmitter.emitJooqConvertKeyLifts`, new emission code fixing a
-   compile-breaking latent defect, has zero test coverage at any tier. Add the pin
-   (an inline `@reference` filter whose input carries an `[ID!]`-over-int-column shape,
-   like `OccupantFilter.storeIds`, against a fixture catalog); assert generation
-   succeeds and, per the suppression tests' pattern, that the `$fields` host stamps
-   `@SuppressWarnings`. An execution-tier fixture instead/in addition is welcome but
-   the generation pin is the floor.
-2. **Inline @nodeId execution fixture (required).** Tests item (a) promised an
-   execution-tier fixture: an inline (non-`@splitQuery`) `@reference` list field whose
-   filter carries a `@nodeId` field, asserting the filter narrows (reproducer shape:
-   a node ID not under the parent returns empty). Only the plain-scalar `@condition`
-   fixture (b) shipped. The existing `Store.customersByAddressDistrict` tests pass
-   `filter: {}` and its override condition ignores the value, so the inline
-   `NodeIdDecodeKeys`/decode-with-value path is behaviourally unpinned. Add a fixture
-   whose condition actually consumes the decoded value (the `Soknadskladd.opptakId`
-   reproducer shape).
-3. **Minor, fix while there:** the `Env` branch of `emitJooqConvertKeyLifts` is dead
-   (both callers pass `FromSelectedField`); either drop it or note why it stays.
-   `InlineFilterArgumentSourcePipelineTest.stampsUncheckedSuppression` matches any
-   `@SuppressWarnings` annotation; assert the `"unchecked"` value.
-4. **Housekeeping:** mark the plan body up with `shipped at 7400c67` notes on the parts
-   that landed, so the next reviewer sees only the delta above as open work.
+1. **JooqConvert+list inline pipeline pin (required). — DONE.** Two cases added to
+   `InlineFilterArgumentSourcePipelineTest`
+   (`inlineReferenceFilter_jooqConvertListArg_{stampsUncheckedSuppressionOnFieldsMethod,
+   generatesEndToEndWithoutThrowing}`). Finding during rework: the review's suggested
+   shape (an input carrying `[ID!] @field`, like `OccupantFilter.storeIds`) is a
+   *nested-input* leaf whose list form inlines its own stream and never reaches
+   `emitJooqConvertKeyLifts`. A **top-level** `JooqConvert`+list callParam needs a direct
+   `[ID!] @field` column arg over a **non-`@node`** reference target, so the pin uses the
+   default Sakila catalog (`Store.customersByStoreId(storeIds: [ID!] @field(name:
+   "store_id"))` over the non-node `store→customer` FK); the all-`@node` nodeidfixture
+   reroutes `[ID!] @field` through the id-reference shim and cannot express it. The test
+   pins the callParam is top-level `JooqConvert`+list (so the shape cannot silently
+   degrade off the arm) plus `@SuppressWarnings("unchecked")` on `$fields`.
+2. **Inline @nodeId execution fixture (required). — DONE.** Added
+   `CustomerByNodeIdFilter` (`customerRefs: [ID!] @nodeId(typeName: "Customer")`) driving
+   inline `Store.customersByNodeId` + `@splitQuery` sibling `customersByNodeIdSplit`, plus
+   `GraphQLQueryTest.store_customersByNodeId_{inlineDecodeNarrows_foreignNodeIdReturnsEmpty,
+   inlineVsSplit_identicalResults}`. The implicit decoded predicate
+   (`customer.customer_id IN (decoded)`) genuinely consumes the value: a node id whose
+   customer sits under a different store narrows the inline child list to empty
+   (reproducer shape), while the same filter under the owning store returns the row.
+3. **Minor. — DONE.** `emitJooqConvertKeyLifts`'s parameter was narrowed to
+   `ArgumentValueSource.FromSelectedField` (both callers already pass it; the dead `Env`
+   branch is gone rather than commented). `stampsUncheckedSuppression` now asserts the
+   `"unchecked"` member value, not just the annotation's presence.
+4. **Housekeeping. — DONE (this edit).** The plan body below is annotated
+   `shipped at 7400c67` on the parts that landed with the core.
 
 > Route runtime argument reads at the two inline emission sites
 > (`InlineTableFieldEmitter`, `InlineLookupTableFieldEmitter`) through the in-scope
@@ -119,6 +123,11 @@ The same defect hits inline pagination: `InlineTableFieldEmitter.java:210` emits
 each nested level re-derives its own `SelectedField`).
 
 ## Design
+
+> _All of the Design below shipped at `7400c67`_, except (a) `emitJooqConvertKeyLifts`
+> was later narrowed to take `ArgumentValueSource.FromSelectedField` directly (its `Env`
+> branch was dead — see rework item 3 above), and (b) the `$fields` unchecked-suppression
+> predicate is the shipped `CallParam.emitsUncheckedCastFromSelectedField`.
 
 ### `ArgumentValueSource`, threaded as a parameter
 
@@ -260,15 +269,19 @@ GraphQL field merging requires identical arguments for fields sharing a result k
 ## Tests
 
 Per the tier rubric (pipeline pins shape, execution pins behaviour; body-string
-assertions banned at every tier):
+assertions banned at every tier). Status: the `@nodeId`+`@condition` pipeline case, the
+plain-`@condition` and `first` execution cases all shipped at `7400c67`; the two
+`_(required)_` gaps (the `JooqConvert`+list pipeline pin and the decode-consuming `@nodeId`
+execution fixture) shipped in the rework pass (items 1–2 above).
 
 - **Pipeline-tier** (`graphitron`, next to `NodeIdReferenceFilterPipelineTest`): an SDL
   with an inline `@reference` list field carrying a filter argument (a `@nodeId` filter
   field and a plain `@condition` arg) classifies and generates end-to-end; assert on the
   classified model / `TypeSpec` structure (the arm exists, the decode helper lifts onto
-  the type class), not on `getArguments()` body strings. Add the `JooqConvert`+list
-  inline shape here too, pinning that generation succeeds (pre-R424 it emits an
-  undeclared local).
+  the type class), not on `getArguments()` body strings. _(shipped at `7400c67`.)_ Add the
+  `JooqConvert`+list inline shape here too, pinning that generation succeeds (pre-R424 it
+  emits an undeclared local). _(rework item 1 — shipped as the `jooqConvertListArg` cases;
+  see item 1 above for the top-level-vs-nested finding and the Sakila-catalog choice.)_
 - **Execution-tier** (`graphitron-sakila-example`, `GraphQLQueryTest` siblings): new
   schema fixtures — an inline (non-`@splitQuery`) `@reference` list field with (a) a
   `@nodeId`-bearing filter input, (b) a plain `@condition` scalar arg, and (c) a
@@ -277,10 +290,19 @@ assertions banned at every tier):
   filter targeting a row that does not exist under the parent must return empty), and
   that `first` limits the inline list. Mirror fixture (a) with the identical filter on a
   `@splitQuery` sibling asserting identical results, pinning inline/split parity.
+  _((b) and (c) shipped at `7400c67`; (a), the decode-consuming `@nodeId` fixture, is
+  rework item 2 — shipped as `CustomerByNodeIdFilter` + `Store.customersByNodeId{,Split}`
+  and the two `store_customersByNodeId_*` tests, including the `@splitQuery` parity mirror.)_
 - **Compilation-tier**: the sakila-example compile (with `-Werror`) covers the new casts
   and the suppression plumbing; the new fixtures make it exercise the changed arms.
+  _(shipped at `7400c67`; the rework fixtures extend the coverage.)_
 
 ## Implementation sites
+
+> _All production-code sites below shipped at `7400c67`_ (the `emitJooqConvertKeyLifts`
+> parameter was later narrowed to `FromSelectedField`, item 3). The rework pass added only
+> tests: `InlineFilterArgumentSourcePipelineTest` (the two `jooqConvertListArg` cases) and
+> the `graphitron-sakila-example` schema fixture + `GraphQLQueryTest` `@nodeId` cases.
 
 - New file `generators/ArgumentValueSource.java`: the sealed type.
 - `generators/ArgCallEmitter.java`: thread the source through `buildCallArgs` /
