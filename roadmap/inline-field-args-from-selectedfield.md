@@ -1,7 +1,7 @@
 ---
 id: R424
 title: "Inline @reference field reads its filter/pagination args from the top-level env, silently dropping them"
-status: Ready
+status: In Progress
 bucket: bug
 priority: 7
 theme: structural-refactor
