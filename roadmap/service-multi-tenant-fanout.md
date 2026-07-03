@@ -22,13 +22,15 @@ Two production patterns need the same shape:
 
 This item is the deliberate no-binding arm of R45's `TenantBinding` axis. An explicit schema marker (form open: a directive such as `@fanOut`, or a list-typed contextArgument naming the tenant subset) classifies the field into a fan-out arm; the arm and its emitters land together here, so R45's `noTenantBinding` rejection keeps guarding every unmarked unroutable field.
 
-Mechanics ride the R429 substrate: acquisition per tenant through the `Map<TenantId, DataSource>`, one read-only transaction per tenant (R429's demarcation rule already covers N transactions per operation), session state set per acquisition so per-tenant RLS composes (a tenant where the user has no access contributes nothing). Results union; nulls and empties drop. Connection threading is R429's acquisition seam, not hand-rolled executor code in generated fetchers.
+**Fan-out domain (resolved):** the intersection of the `Map<TenantId, DataSource>` keys and the tenantIds the user holds roles for in the request's claims. Intersection gives both safety properties for free: a claimed tenant absent from the map is skipped, not an unknown-tenant error, and a mapped tenant the user holds no role for is never queried, an authorization pre-filter ahead of RLS. Neither the whole map nor the raw claims set alone is ever the domain.
+
+Mechanics ride the R429 substrate: acquisition per tenant in the domain through the map, one read-only transaction per tenant (R429's demarcation rule already covers N transactions per operation), session state set per acquisition so per-tenant RLS composes (a tenant where the user has no row access contributes nothing). Results union; nulls and empties drop. Connection threading is R429's acquisition seam, not hand-rolled executor code in generated fetchers.
 
 The previous design here (a `ContextValueRegistration<FanOut>` permit, `DslContextPerElement`, and `GraphitronContext` widening with `getContextFanOut` / `openContextDslContext` / `getExecutor`) predates R190 sealing `GraphitronContext` and R429 owning connections; it is superseded and recorded in this file's git history.
 
 ## Open questions for the Spec pass
 
-1. **Fan-out domain.** The whole `Map<TenantId, DataSource>`, or a subset resolved per request (the user's memberships, from a contextArgument)? Both motivating cases exist; possibly both are needed, with the subset as the safer default.
+1. **Claims extraction seam.** The domain is resolved (map keys intersected with the user's role-bearing tenantIds, above); what remains is how graphitron reads the tenant set out of the claims. Candidates: the consumer derives a collection-typed contextArgument (e.g. `Set<Long> tenantRoles`) from the JWT before calling the factory, keeping graphitron claims-format-agnostic; or graphitron takes a claims-map contextArgument plus a configured extraction. The pre-derived contextArgument is the lighter seam and matches how the hand-written resolver already reads `institusjonsroller`.
 2. **Marker syntax.** Directive vs contextArgument-driven; reconcile with R45's inference posture (fan-out cannot be inferred, it must be asked for).
 3. **Result semantics.** Ordering across the union; pagination and `@asConnection` over a fanned-out field; per-tenant partial failure (null-drop vs error surfacing, composing with the typed-errors plan).
 4. **Parallelism bounds.** Fanning out to dozens of databases per field needs a concurrency cap and a timeout story; likely R429 config.
