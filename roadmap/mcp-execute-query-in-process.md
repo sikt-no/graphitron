@@ -5,7 +5,7 @@ status: Spec
 bucket: feature
 priority: 3
 theme: lsp
-depends-on: [dev-incremental-compile, connection-transaction-lifecycle]
+depends-on: [connection-transaction-lifecycle]
 created: 2026-07-03
 last-updated: 2026-07-03
 ---
@@ -26,9 +26,9 @@ into a closed loop, validate-error → compile-error → *real result*, without 
 
 ## Relationship to R410 and R118
 
-- **`depends-on: R410`.** The generated `Graphitron` facade lives in the consumer's `<outputPackage>` and
-  only exists as a `.class` because R410 compiles it into `target/graphitron-classes` and loads it on the
-  dev JVM. No R410, nothing to execute against.
+- **Builds on R410 (shipped, so no longer in `depends-on`).** The generated `Graphitron` facade lives in
+  the consumer's `<outputPackage>` and only exists as a `.class` because R410 compiles it into
+  `target/graphitron-classes` and loads it on the dev JVM. No R410, nothing to execute against.
 - **Sibling of R118, not a slice.** R118's spine is "read the live `Workspace` model; structured tools need
   no store; only two tools are semantic." Execution reads neither the model nor RAG; it stands on R410's
   compiled classes plus a live DB connection. Different foundation, so it is a peer MCP tool hosted on the
