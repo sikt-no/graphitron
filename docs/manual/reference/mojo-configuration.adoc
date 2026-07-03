@@ -99,6 +99,12 @@ Three watch-loop knobs unique to the `dev` goal, each driven from a CLI property
 | `false`
 | `graphitron.dev.skipInitial`
 | Skip the initial generator pass at startup. Useful when the consumer has just run `mvn graphitron:generate` and the generated sources are already on disk; the dev loop still re-runs on every subsequent save.
+
+| `compile`
+| `boolean`
+| `true`
+| `graphitron.dev.compile`
+| Compile the generated sources in-process into `target/graphitron-classes/<outputPackage>/` (a Graphitron-exclusive directory), incrementally on every save. This runnable image is what the in-process MCP query tools execute against. Set to `false` to fall back to generate-only behaviour (giving up the query tools). No fail-fast: because the output directory is Graphitron's alone, any misconfiguration degrades to generate-only rather than corrupting bytecode. See xref:../how-to/dev-loop.adoc#compiled-classes[Compiled generated classes].
 |===
 
 The CLI properties take precedence over `<configuration>` values, so `mvn graphitron:dev -Dgraphitron.dev.port=9090` works without editing the POM.

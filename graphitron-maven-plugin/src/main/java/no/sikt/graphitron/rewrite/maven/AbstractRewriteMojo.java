@@ -260,6 +260,49 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
     }
 
     /**
+     * The graphitron-exclusive class output root ({@code target/graphitron-classes}) the R410
+     * incremental compile driver writes into, derived from {@code project.build.directory} with the same
+     * {@code basedir/target} fallback {@link #resolveOutputResourcesDirectory(Path)} uses for hand-built
+     * {@link MavenProject} test instances. A directory graphitron solely writes (never the shared
+     * {@code target/classes}), which is what makes the incremental compile sound by construction; it is
+     * placed first on the run classpath so a fresh copy shadows any stale copy in {@code target/classes}.
+     */
+    final Path resolveGraphitronClassesDirectory(Path basedir) {
+        var buildDirectory = project.getBuild() != null
+            ? project.getBuild().getDirectory()
+            : null;
+        var targetDir = buildDirectory != null
+            ? Path.of(buildDirectory)
+            : basedir.resolve("target");
+        return (targetDir.isAbsolute() ? targetDir : basedir.resolve(targetDir))
+            .resolve("graphitron-classes")
+            .normalize();
+    }
+
+    /**
+     * The compile classpath the R410 incremental compile engine scans once at dev startup: every entry
+     * in {@code project.getCompileClasspathElements()} (the consumer's compile dep graph plus its own
+     * {@code target/classes}) unioned with every reactor sibling's {@code target/classes} (the same set
+     * {@link #resolveClasspathRoots()} feeds the LSP catalog scan). This is exactly a
+     * {@code StandardJavaFileManager}'s input set; the engine additionally front-loads its own output dir
+     * so already-compiled units resolve as dependencies of a later round. The generated code's references
+     * <em>into</em> consumer / jOOQ / dependency classes are already compiled and resolve off this path.
+     */
+    protected final List<Path> resolveCompileClasspath() throws MojoExecutionException {
+        var paths = new LinkedHashSet<Path>();
+        try {
+            for (String element : project.getCompileClasspathElements()) {
+                paths.add(Path.of(element).toAbsolutePath().normalize());
+            }
+        } catch (DependencyResolutionRequiredException e) {
+            throw new MojoExecutionException(
+                "Failed to assemble the project compile classpath for incremental compile.", e);
+        }
+        paths.addAll(resolveClasspathRoots());
+        return new ArrayList<>(paths);
+    }
+
+    /**
      * The reactor projects whose roots the LSP scans: every project in the
      * Maven session, so a consumer running {@code mvn graphitron:dev} from one
      * module sees services / tables declared in sibling modules of the same

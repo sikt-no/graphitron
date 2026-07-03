@@ -654,16 +654,19 @@ public final class GraphitronMcpServer implements AutoCloseable {
                     "cursor", Map.of("type", "string",
                         "description", "Opaque page cursor from a prior call's nextCursor."))))
             .title("List schema diagnostics")
-            .description("Lists the current validation errors and warnings (severity, coordinate, "
-                + "message, rejection kind, location), paged via an opaque cursor, with optional "
-                + "severity and coordinate filters. Reports the snapshot's availability and freshness "
-                + "alongside so you can tell whether the diagnostics are current relative to the "
-                + "schema. Closes the authoring loop: edit, then read your own diagnostics back.")
+            .description("Lists the current diagnostics (severity, source, coordinate, message, "
+                + "rejection kind, location), paged via an opaque cursor, with optional severity and "
+                + "coordinate filters. Each entry carries a source: \"schema\" for validation "
+                + "rejections, \"compile\" for graphitron:dev generated-code compile errors. Reports "
+                + "the snapshot's availability and freshness alongside so you can tell whether the "
+                + "diagnostics are current relative to the schema. Closes the authoring loop: edit, "
+                + "then read your own diagnostics back.")
             .build();
         return McpServerFeatures.SyncToolSpecification.builder()
             .tool(tool)
             .callHandler((exchange, request) -> DiagnosticsTool.diagnosticsResult(
-                workspace.validationReport(), workspace.snapshot(), request.arguments()))
+                workspace.validationReport(), workspace.compileDiagnostics(),
+                workspace.snapshot(), request.arguments()))
             .build();
     }
 

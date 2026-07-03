@@ -2,6 +2,8 @@ package no.sikt.graphitron.rewrite;
 
 import no.sikt.graphitron.javapoet.JavaFile;
 import no.sikt.graphitron.javapoet.TypeSpec;
+import no.sikt.graphitron.rewrite.compile.CompileDependencyGraph;
+import no.sikt.graphitron.rewrite.compile.CompileDependencyGraphBuilder;
 import no.sikt.graphitron.rewrite.catalog.CatalogBuilder;
 import no.sikt.graphitron.rewrite.catalog.CatalogFacts;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
@@ -97,8 +99,29 @@ public class GraphQLRewriteGenerator {
      * only need the write-to-disk side effect may ignore the return value.
      */
     public GenerationResult generate() {
-        return runPipeline(loadAttributedRegistry());
+        return runPipeline(loadAttributedRegistry(), false).result();
     }
+
+    /**
+     * The dev-loop variant of {@link #generate()}: emits every source and additionally builds the
+     * {@link CompileDependencyGraph} the R410 incremental compile driver needs to compute the per-save
+     * recompile set. Production one-shot generation ({@code GenerateMojo}) stays on {@link #generate()}
+     * and never pays the graph-build cost; only {@code graphitron:dev} (with compilation enabled) reaches
+     * for this. The graph is built from the same classified model this run rendered, so it is always
+     * consistent with the sources just written.
+     */
+    public IncrementalGeneration generateIncremental() {
+        return runPipeline(loadAttributedRegistry(), true);
+    }
+
+    /**
+     * A {@link #generateIncremental()} run's products: the {@link GenerationResult} (emitted set + writer
+     * delta + emitted {@link TypeSpec}s) paired with the {@link CompileDependencyGraph} coarsened from
+     * the same classified model. Together these are the raw material the R410 dev-loop compile driver
+     * reads: the graph and the ABI hashes derived from {@code result.emittedUnits()} decide which units a
+     * save must recompile.
+     */
+    public record IncrementalGeneration(GenerationResult result, CompileDependencyGraph graph) {}
 
     /**
      * The result of a generation run: {@code emitted} is every source and resource path written or
@@ -244,7 +267,7 @@ public class GraphQLRewriteGenerator {
         return new AttributedRegistry(registry, injectedNames);
     }
 
-    private GenerationResult runPipeline(AttributedRegistry attributed) {
+    private IncrementalGeneration runPipeline(AttributedRegistry attributed, boolean buildCompileGraph) {
         var bundle = GraphitronSchemaBuilder.buildBundle(attributed, ctx);
         var schema = bundle.model();
         var assembled = bundle.assembled();
@@ -300,12 +323,19 @@ public class GraphQLRewriteGenerator {
         write(QueryNodeFetcherClassGenerator.generate(schema, outputPackage),                      "fetchers",   emittedThisRun);
         emittedThisRun.add(SchemaSdlEmitter.emit(assembled, schema, federationLink, ctx.outputResourcesDirectory(), outputPackage));
         sweepOrphans(emittedThisRun.emitted);
-        return new GenerationResult(
+        var result = new GenerationResult(
             Collections.unmodifiableSet(emittedThisRun.emitted),
             Collections.unmodifiableSet(emittedThisRun.changed),
             Collections.unmodifiableMap(emittedThisRun.emittedUnits),
             Collections.unmodifiableSet(emittedThisRun.changedUnits)
         );
+        // The compile-dependency graph is coarsened from the same classified model, but only the
+        // dev-loop incremental compiler needs it; production generate() skips the build (buildCompileGraph
+        // is false there). See the sourcing seam in CompileDependencyGraph.
+        CompileDependencyGraph graph = buildCompileGraph
+            ? CompileDependencyGraphBuilder.fromModel(schema, outputPackage)
+            : null;
+        return new IncrementalGeneration(result, graph);
     }
 
     private void write(List<TypeSpec> specs, String subPackage, EmissionLog emittedThisRun) {

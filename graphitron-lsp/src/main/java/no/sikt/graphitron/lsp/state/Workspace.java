@@ -2,6 +2,7 @@ package no.sikt.graphitron.lsp.state;
 
 import no.sikt.graphitron.rewrite.GraphQLRewriteGenerator;
 import no.sikt.graphitron.rewrite.ValidationReport;
+import no.sikt.graphitron.rewrite.compile.CompileDiagnostic;
 import no.sikt.graphitron.rewrite.catalog.CatalogFacts;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
@@ -56,6 +57,12 @@ public final class Workspace {
     private volatile SourceWalker.Index sourceIndex = SourceWalker.Index.EMPTY;
     private volatile LspSchemaSnapshot snapshot = LspSchemaSnapshot.unavailable();
     private volatile ValidationReport validationReport = ValidationReport.empty();
+    // R410 slice 6 — the last incremental-compile round's diagnostics, kept separate from the
+    // schema-anchored validationReport (a generated-file javac error has no schema coordinate to
+    // fabricate). The graphitron:dev compile driver swaps this after each round; the MCP diagnostics
+    // tool surfaces it with a source:"compile" discriminator. Independent of setBuildOutput's swap: a
+    // compile round follows generation, so the two never need to move atomically.
+    private volatile List<CompileDiagnostic> compileDiagnostics = List.of();
     private volatile InlayHintConfig inlayHintConfig = InlayHintConfig.defaults();
     private volatile Runnable recalculateListener = () -> {};
 
@@ -208,6 +215,27 @@ public final class Workspace {
      */
     public ValidationReport validationReport() {
         return validationReport;
+    }
+
+    /**
+     * R410 slice 6 — the last incremental-compile round's diagnostics (generated-code javac errors and
+     * warnings), anchored to the generated {@code .java} where javac reports them. Distinct from
+     * {@link #validationReport()}: these have no schema coordinate, so they ride their own channel and
+     * the MCP diagnostics tool tags them {@code source:"compile"}. Stays empty until the first compile
+     * round; {@code volatile} so the swap is observable on the next request without the file lock.
+     */
+    public List<CompileDiagnostic> compileDiagnostics() {
+        return compileDiagnostics;
+    }
+
+    /**
+     * Swaps in the diagnostics from the latest {@code graphitron:dev} incremental-compile round. Called
+     * by the compile driver after each round (including the empty list on a clean round, which clears a
+     * prior failure). Independent of {@link #setBuildOutput}: compilation runs after generation, so the
+     * two swaps never need to be atomic.
+     */
+    public void setCompileDiagnostics(List<CompileDiagnostic> diagnostics) {
+        this.compileDiagnostics = List.copyOf(diagnostics);
     }
 
     /**

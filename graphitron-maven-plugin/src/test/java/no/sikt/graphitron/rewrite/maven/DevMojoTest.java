@@ -1,6 +1,9 @@
 package no.sikt.graphitron.rewrite.maven;
 
 import no.sikt.graphitron.rewrite.RewriteContext;
+import no.sikt.graphitron.rewrite.compile.CompileDiagnostic;
+import no.sikt.graphitron.rewrite.compile.CompileOutcome;
+import no.sikt.graphitron.rewrite.compile.CompileRound;
 import no.sikt.graphitron.rewrite.schema.input.SchemaInput;
 import no.sikt.graphitron.lsp.state.Workspace;
 import no.sikt.graphitron.mcp.GraphitronMcpServer;
@@ -204,6 +207,77 @@ class DevMojoTest {
             .isNotEmpty();
         assertThat(log.errors)
             .anySatisfy(line -> assertThat(line).contains("failed (infrastructure)"));
+    }
+
+    @Test
+    void compileOptOut_leavesTheCompilerUnbuiltAndTouchesNoOutputDir(@TempDir Path basedir) {
+        // -Dgraphitron.dev.compile=false is the generate-only fall-back: the driver is never built and
+        // the graphitron-exclusive output dir is never created. No fail-fast, nothing to corrupt.
+        var mojo = new DevMojo();
+        var project = new MavenProject();
+        project.setFile(basedir.resolve("pom.xml").toFile());
+        mojo.project = project;
+        mojo.compile = false;
+        mojo.setLog(new CapturingLog());
+
+        mojo.maybeStartIncrementalCompiler(new Workspace());
+
+        assertThat(mojo.incrementalCompiler)
+            .as("compile opt-out: no incremental compile driver is built")
+            .isNull();
+        assertThat(Files.exists(basedir.resolve("target/graphitron-classes")))
+            .as("compile opt-out: the exclusive output dir is never created")
+            .isFalse();
+    }
+
+    @Test
+    void reportCompile_failure_rendersConsoleBlockAndPublishesToMcpChannel() {
+        // A failed compile round surfaces through the two channels the spec names: the console (a
+        // labelled generated-code block) and the MCP diagnostics channel (Workspace.compileDiagnostics,
+        // which the diagnostics tool tags source:"compile"). One assertion per channel.
+        var workspace = new Workspace();
+        var diagnostic = new CompileDiagnostic(
+            "gen/pkg/FilmFetchers.java", 12, 7, "ERROR", "cannot find symbol");
+        var outcome = new CompileOutcome(
+            new CompileRound(false, List.of(diagnostic)), Set.of("gen.pkg.FilmFetchers"));
+        var log = new CapturingLog();
+        var mojo = new DevMojo();
+        mojo.setLog(log);
+
+        mojo.reportCompile(workspace, outcome, "recompile");
+
+        assertThat(log.errors)
+            .as("console: a labelled generated-code compile block naming the offending file")
+            .anySatisfy(line -> assertThat(line)
+                .contains("generated-code compilation failed")
+                .contains("gen/pkg/FilmFetchers.java")
+                .contains("cannot find symbol"));
+        assertThat(workspace.compileDiagnostics())
+            .as("MCP channel: the round's diagnostics are published for the diagnostics tool")
+            .containsExactly(diagnostic);
+    }
+
+    @Test
+    void reportCompile_success_clearsAPriorFailureAndLogsNoError() {
+        // A clean round publishes the empty list, clearing a prior failure so the diagnostics tool no
+        // longer shows a stale compile error, and it does not log an error.
+        var workspace = new Workspace();
+        workspace.setCompileDiagnostics(List.of(
+            new CompileDiagnostic("gen/pkg/Old.java", 1, 1, "ERROR", "stale")));
+        var outcome = new CompileOutcome(
+            new CompileRound(true, List.of()), Set.of("gen.pkg.A", "gen.pkg.B"));
+        var log = new CapturingLog();
+        var mojo = new DevMojo();
+        mojo.setLog(log);
+
+        mojo.reportCompile(workspace, outcome, "recompile");
+
+        assertThat(workspace.compileDiagnostics())
+            .as("a clean round clears the prior failure")
+            .isEmpty();
+        assertThat(log.errors)
+            .as("a clean round logs no error")
+            .isEmpty();
     }
 
     private static RewriteContext contextFor(Path basedir, Path schemaFile) {

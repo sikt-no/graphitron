@@ -43,6 +43,35 @@ If `8487` is already in use, pass `-Dgraphitron.dev.port=N` to `mvn graphitron:d
 
 For the full picture of how the schema watcher, classpath watcher, and generator dispatch cooperate inside the `dev` goal, see xref:../../architecture/how-to/dev-loop-internals.adoc#dev-loop-detail[the dev loop reference] in the architecture docs.
 
+[#compiled-classes]
+== Compiled generated classes
+
+`graphitron:dev` compiles the generated code, so the dev tools can run it. In a dev session the goal writes the generated Java _and_ compiles it into its own output directory, `target/graphitron-classes/<outputPackage>/`, keeping a runnable image of your whole schema as you edit. Only the classes an edit touches are recompiled, so a one-field change is fast even on a large schema. The immediate payoff: the dev loop's MCP tools can _execute a query against your resolvers in-process_, with no app server and no `quarkus:dev` needed to see what a query returns.
+
+**Do you need to configure anything? Usually not.** Graphitron writes to its own directory and never touches a file your build owns, so there is nothing to guard against and no required setup. Two situations where a one-liner helps:
+
+* **Spring Boot DevTools, plain `java`, IDE runs.** These load `.class` off the classpath, so putting `target/graphitron-classes` *ahead of* `target/classes` on the run classpath lets your running app use Graphitron's fresh classes directly. Ordering is what matters; Graphitron's copy wins over any copy your own build produced.
+* **Quarkus dev (`quarkus:dev`).** Do _not_ add Graphitron's directory to the Quarkus classpath. Quarkus recompiles the generated sources itself and will not pick up an external `.class`, so front-loading our directory buys nothing and only risks shadowing Quarkus's own reload. Run `quarkus:dev` exactly as today; Graphitron's compile still powers the in-process MCP query tools running alongside it.
+
+**Optional: skip the redundant compile.** Independently of the above, you can stop your own build from re-compiling the generated sources (they stay a source root for IDE indexing and go-to-definition either way). This only saves double-work; it is never required for correctness, because Graphitron writes to a separate directory:
+
+[source,xml]
+----
+<plugin>
+  <groupId>org.apache.maven.plugins</groupId>
+  <artifactId>maven-compiler-plugin</artifactId>
+  <configuration>
+    <excludes>
+      <exclude>**/<outputPackage-as-path>/**</exclude>
+    </excludes>
+  </configuration>
+</plugin>
+----
+
+**If you skip the classpath step, nothing breaks.** Your app runs exactly as today: your build compiles the generated sources into `target/classes` and runs from there, while Graphitron's separate output still powers the in-process MCP query tools; it just is not fed to your running app. There is no race and no corruption to guard against, because the two never write the same file.
+
+To turn Graphitron's compile off entirely (giving up the MCP query tools too), run with `-Dgraphitron.dev.compile=false`. Because the output directory is Graphitron's alone, there is no cross-writer race and no fail-fast check: every misconfiguration degrades to today's generate-only behaviour rather than corrupting bytecode.
+
 [#macos]
 == Why macOS needs the LSP
 

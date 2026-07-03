@@ -10,6 +10,8 @@ import no.sikt.graphitron.rewrite.RewriteContext;
 import no.sikt.graphitron.rewrite.SchemaParseException;
 import no.sikt.graphitron.rewrite.ValidationFailedException;
 import no.sikt.graphitron.rewrite.ValidationReport;
+import no.sikt.graphitron.rewrite.compile.CompileOutcome;
+import no.sikt.graphitron.rewrite.compile.IncrementalCompiler;
 import no.sikt.graphitron.rewrite.maven.dev.DevServer;
 import no.sikt.graphitron.mcp.GraphitronMcpServer;
 import no.sikt.graphitron.mcp.rag.AsyncWarm;
@@ -19,6 +21,7 @@ import no.sikt.graphitron.mcp.rag.RagLogQuieting;
 import no.sikt.graphitron.mcp.rag.WarmState;
 import no.sikt.graphitron.mcp.rag.docs.DocsIndex;
 import no.sikt.graphitron.mcp.rag.docs.DocsRag;
+import no.sikt.graphitron.rewrite.maven.watch.CompileErrorFormatter;
 import no.sikt.graphitron.rewrite.maven.watch.DebounceExecutor;
 import no.sikt.graphitron.rewrite.maven.watch.SchemaWatcher;
 import no.sikt.graphitron.rewrite.maven.watch.WatchErrorFormatter;
@@ -33,6 +36,7 @@ import java.net.InetSocketAddress;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
@@ -94,6 +98,17 @@ public class DevMojo extends AbstractRewriteMojo {
     @Parameter(property = "graphitron.dev.skipInitial", defaultValue = "false")
     boolean skipInitial;
 
+    /**
+     * R410 slice 6 — whether {@code graphitron:dev} compiles the generated sources into
+     * {@code target/graphitron-classes} (in-process, incrementally). On by default: the compiled tree is
+     * what the in-process MCP query tools execute against. Set {@code -Dgraphitron.dev.compile=false} to
+     * fall back to today's generate-only behaviour (giving up the in-process query tools too). No
+     * fail-fast: because the output dir is graphitron-exclusive, a mis-set-up consumer degrades to
+     * generate-only rather than corrupting bytecode, so there is nothing to fail on.
+     */
+    @Parameter(property = "graphitron.dev.compile", defaultValue = "true")
+    boolean compile = true;
+
     private SchemaWatcher schemaWatcher;
     private SchemaWatcher classpathWatcher;
     private SchemaWatcher sourceWatcher;
@@ -117,6 +132,15 @@ public class DevMojo extends AbstractRewriteMojo {
     java.util.function.Supplier<AsyncWarm<Embedder>> embedderWarmFactory = DocsRag::embedderWarm;
     java.util.function.Supplier<AsyncWarm<DocsIndex>> docsWarmFactory = DocsRag::docsWarm;
     private Set<WatchErrorFormatter.DeltaKey> previousErrorKeys = null;
+    // R410 slice 6 — the long-lived incremental compile driver (warm compiler + ABI-hash baseline),
+    // built at startup when compilation is enabled and closed on shutdown. Null when
+    // -Dgraphitron.dev.compile=false, or when no system compiler is available (graceful degrade to
+    // generate-only). Package-private so DevMojoTest can assert the opt-out leaves it unbuilt.
+    IncrementalCompiler incrementalCompiler;
+    // The last successful generation (result + compile graph), captured by runGeneratorPass. The
+    // consumer-.class-change path recompiles the whole cached tree off this; the schema-save path
+    // recompiles the delta against its graph.
+    private GraphQLRewriteGenerator.IncrementalGeneration lastGeneration;
 
     @Override
     protected boolean packagesRequired() {
@@ -197,6 +221,11 @@ public class DevMojo extends AbstractRewriteMojo {
                 + ". Build a module to put its generated sources on disk; a table that "
                 + "arrives only as a dependency JAR has no source to walk (see R369).");
         }
+        // Build the warm compiler and compile the whole generated tree before the watchers start, so
+        // the exclusive dir holds a complete runnable image the MCP query tools can execute against
+        // from the first edit. Must precede the classpath watcher: its rebuildCatalog callback drives
+        // the consumer-change recompile off this same driver.
+        maybeStartIncrementalCompiler(workspace);
         Set<Path> schemaRoots = startSchemaWatcher(initialCtx, workspace);
         startClasspathWatcher(initialCtx, workspace);
         startSourceWatcher(initialCtx, workspace);
@@ -358,7 +387,16 @@ public class DevMojo extends AbstractRewriteMojo {
         try {
             withCodegenScope(ctx -> {
                 getLog().info(banner("regenerate"));
-                runGeneratorPass(ctx, "regenerate");
+                boolean generated = runGeneratorPass(ctx, "regenerate");
+                // A clean regen produces the writer's delta + this schema's compile graph; recompile
+                // just the affected sub-closure into the exclusive dir. A failed regen leaves the last
+                // good .class in place (nothing to recompile from), matching the generate-only path.
+                if (generated && incrementalCompiler != null && lastGeneration != null) {
+                    var gen = lastGeneration;
+                    var outcome = incrementalCompiler.recompile(
+                        gen.result().emittedUnits(), gen.result().changedUnits(), gen.graph());
+                    reportCompile(workspace, outcome, "recompile");
+                }
                 for (Path root : resolveSchemaRoots(ctx)) {
                     try {
                         schemaWatcher.addRoot(root);
@@ -400,6 +438,15 @@ public class DevMojo extends AbstractRewriteMojo {
                     var catalog = output.artifacts().catalog();
                     getLog().info("graphitron:dev: catalog refreshed (" + catalog.tables().size()
                         + " tables, " + catalog.types().size() + " scalars)");
+                    // A consumer .class changed: a generated unit that compiles against it may now be
+                    // stale. The compile graph carries only generated→generated edges (no
+                    // generated→consumer edge to walk), so invalidate conservatively by recompiling the
+                    // whole cached generated tree. Precise generated→consumer invalidation is deferred,
+                    // and belongs with R333's method graph.
+                    if (incrementalCompiler != null && lastGeneration != null) {
+                        var outcome = incrementalCompiler.compileAll(lastGeneration.result().emittedUnits());
+                        reportCompile(workspace, outcome, "recompile (consumer classpath change)");
+                    }
                 } catch (RuntimeException e) {
                     // Bad schema mid-edit: keep the previous catalog so completions
                     // do not silently disappear, demote snapshot to Built.Previous so
@@ -449,8 +496,18 @@ public class DevMojo extends AbstractRewriteMojo {
     // Package-private so DevMojoTest can drive the catch-arm discrimination directly
     // (a malformed schema vs a missing file) without standing up the full watch loop.
     boolean runGeneratorPass(RewriteContext ctx, String label) {
+        // Cleared up front so a failed pass never leaves a stale generation for the compile driver to
+        // act on; reassigned only on a clean generate below.
+        this.lastGeneration = null;
         try {
-            new GraphQLRewriteGenerator(ctx).generate();
+            var generator = new GraphQLRewriteGenerator(ctx);
+            // When compiling, capture the emitted TypeSpecs + compile graph the incremental driver reads;
+            // otherwise stay on the cheaper generate().
+            if (compile) {
+                this.lastGeneration = generator.generateIncremental();
+            } else {
+                generator.generate();
+            }
             previousErrorKeys = Set.of();
             getLog().info("graphitron:dev: " + label + " ok");
             return true;
@@ -475,7 +532,63 @@ public class DevMojo extends AbstractRewriteMojo {
         }
     }
 
+    /**
+     * Builds the warm incremental compile driver and compiles the whole generated tree once, unless
+     * {@code -Dgraphitron.dev.compile=false} opts out. No fail-fast: if the driver cannot be built (a
+     * JRE with no system compiler, or a classpath-assembly failure), it degrades to generate-only for
+     * the session with a warning rather than aborting the dev loop. Called once at startup, before the
+     * watchers, so the exclusive dir holds a complete image and the consumer-change path has a driver.
+     */
+    void maybeStartIncrementalCompiler(Workspace workspace) {
+        if (!compile) {
+            getLog().info("graphitron:dev: -Dgraphitron.dev.compile=false; "
+                + "generating without compiling (in-process query tools unavailable)");
+            return;
+        }
+        Path classesDir = resolveGraphitronClassesDirectory(project.getBasedir().toPath());
+        try {
+            this.incrementalCompiler = new IncrementalCompiler(classesDir, resolveCompileClasspath());
+        } catch (Exception e) {
+            getLog().warn("graphitron:dev: incremental compile unavailable; "
+                + "generating without compiling this session: " + e.getMessage());
+            this.incrementalCompiler = null;
+            return;
+        }
+        getLog().info("graphitron:dev: compiling generated classes into " + classesDir
+            + " (put this ahead of target/classes on your run classpath; not for quarkus:dev, see docs)");
+        if (lastGeneration != null) {
+            var outcome = incrementalCompiler.compileAll(lastGeneration.result().emittedUnits());
+            reportCompile(workspace, outcome, "initial compile");
+        } else {
+            // No initial generation happened this startup (skipInitial, or the initial pass failed), so
+            // there are no in-memory TypeSpecs to compile the whole tree from. The exclusive dir fills in
+            // incrementally from the first save's recompile rather than as a complete image up front.
+            getLog().info("graphitron:dev: no initial generation; the generated-class image fills in "
+                + "from the first save (skip -Dgraphitron.dev.skipInitial to compile the whole tree at startup)");
+        }
+    }
+
+    /**
+     * Surfaces one compile round through the two channels the spec names: the console (a labelled
+     * generated-code block on failure via {@link CompileErrorFormatter}, a one-line summary on success)
+     * and the MCP {@code diagnostics} tool (via {@code Workspace.setCompileDiagnostics}, tagged
+     * {@code source:"compile"}). The round's full diagnostic list is published even on success so a prior
+     * failure is cleared once it resolves.
+     */
+    void reportCompile(Workspace workspace, CompileOutcome outcome, String label) {
+        var round = outcome.round();
+        workspace.setCompileDiagnostics(round.diagnostics());
+        if (round.success()) {
+            getLog().info("graphitron:dev: " + label + " compiled "
+                + outcome.compiledUnits().size() + " unit(s) ok");
+        } else {
+            getLog().error("graphitron:dev: " + label + "\n"
+                + CompileErrorFormatter.format(round.errors()));
+        }
+    }
+
     private void cleanup() {
+        if (incrementalCompiler != null) incrementalCompiler.close();
         if (schemaWatcher != null) schemaWatcher.close();
         if (classpathWatcher != null) classpathWatcher.close();
         if (sourceWatcher != null) sourceWatcher.close();
