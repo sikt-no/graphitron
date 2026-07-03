@@ -15,6 +15,7 @@ import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.JoinStep;
+import no.sikt.graphitron.rewrite.model.SourceKey;
 import no.sikt.graphitron.rewrite.model.TableRef;
 import no.sikt.graphitron.rewrite.model.WhereFilter;
 
@@ -51,6 +52,7 @@ public class TypeClassGenerator {
     private static final ClassName SELECTION_SET     = ClassName.get("graphql.schema", "DataFetchingFieldSelectionSet");
     private static final ClassName ARRAY_LIST        = ClassName.get(ArrayList.class);
     private static final ClassName LINKED_HASH_SET   = ClassName.get(LinkedHashSet.class);
+    private static final ClassName COLLECTIONS       = ClassName.get("java.util", "Collections");
 
     public static List<TypeSpec> generate(GraphitronSchema schema, String outputPackage) {
         return schema.types().entrySet().stream()
@@ -103,17 +105,18 @@ public class TypeClassGenerator {
         // project must opt those columns into $fields explicitly:
         //   - BatchKeyField fields (DataLoader-backed; they don't appear in $fields) — their
         //     SourceKey columns must land in the parent SELECT so key extraction reads non-null
-        //     values off env.getSource().
+        //     values off env.getSource(). When the key wrap is SourceKey.Wrap.TableRecord, the
+        //     extraction (into(Tables.X)) hands the service body a typed record whose documented
+        //     contract is "every column on the parent table", so the requirement widens from the
+        //     key columns to the full parent row (R426).
         //   - TableMethodField on a table-bound parent — buildChildTableMethodFetcher correlates
         //     via parentRecord.get(DSL.name("<sourceSqlName>"), …) on the FK's source-side
         //     columns; without this injection, the read throws IllegalArgumentException when the
         //     user didn't request the FK column in their SDL selection.
         // Recurse into NestingField.nestedFields() so nested fields' required columns are also
         // projected by the outer parent's SELECT.
-        var requiredProjectionColumns = collectRequiredProjectionColumns(schema.fieldsOf(typeName))
-            .distinct()
-            .toList();
-        return buildTypeSpec(typeName, type.table(), columnFields, compositeColumnFields, columnReferenceFields, tableFields, lookupTableFields, nestingFields, computedFields, requiredProjectionColumns, outputPackage);
+        var requiredProjection = collectRequiredProjection(schema.fieldsOf(typeName));
+        return buildTypeSpec(typeName, type.table(), columnFields, compositeColumnFields, columnReferenceFields, tableFields, lookupTableFields, nestingFields, computedFields, requiredProjection, outputPackage);
     }
 
     /**
@@ -135,7 +138,7 @@ public class TypeClassGenerator {
             List<ChildField.LookupTableField> lookupTableFields,
             List<ChildField.NestingField> nestingFields,
             List<ChildField.ComputedField> computedFields,
-            List<ColumnRef> requiredProjectionColumns,
+            RequiredProjection requiredProjection,
             String outputPackage) {
         var builder = TypeSpec.classBuilder(typeName)
             .addModifiers(Modifier.PUBLIC);
@@ -145,7 +148,7 @@ public class TypeClassGenerator {
         // alongside $fields and the lift can never be silently dropped. The registry threads through
         // emitSelectionSwitch's NestingField recursion, so nested inline fields share it.
         CompositeDecodeHelperRegistry.collectInto(builder, outputPackage, registry ->
-            builder.addMethod(build$FieldsMethod(tableRef, columnFields, compositeColumnFields, columnReferenceFields, tableFields, lookupTableFields, nestingFields, computedFields, requiredProjectionColumns, outputPackage, registry)));
+            builder.addMethod(build$FieldsMethod(tableRef, columnFields, compositeColumnFields, columnReferenceFields, tableFields, lookupTableFields, nestingFields, computedFields, requiredProjection, outputPackage, registry)));
         // Helpers for inline LookupTableFields are hoisted onto this outer type class — including
         // ones nested inside NestingField sub-types, which don't get their own type class (plain
         // objects share the parent's table context). The generated switch arm calls the helper
@@ -199,7 +202,7 @@ public class TypeClassGenerator {
             List<ChildField.LookupTableField> lookupTableFields,
             List<ChildField.NestingField> nestingFields,
             List<ChildField.ComputedField> computedFields,
-            List<ColumnRef> requiredProjectionColumns,
+            RequiredProjection requiredProjection,
             String outputPackage,
             CompositeDecodeHelperRegistry registry) {
         var names = GeneratorUtils.ResolvedTableNames.ofTable(tableRef);
@@ -248,13 +251,22 @@ public class TypeClassGenerator {
 
         emitSelectionSwitch(builder, 0, flat, "table", entryType, outputPackage, registry);
 
-        // Required-projection set: columns the parent SELECT must include regardless of the
-        // user's SDL selection — SourceKey columns for DataLoader-backed BatchKeyField children,
-        // FK source-side columns for child @tableMethod fields (see
-        // collectRequiredProjectionColumns for the full taxonomy). The LinkedHashSet accumulator dedupes on add by jOOQ Field
-        // identity, so a plain fields.add(...) is safe; no explicit contains() guard is needed.
-        for (ColumnRef col : requiredProjectionColumns) {
-            builder.addStatement("fields.add(table.$L)", col.javaName());
+        // Required-projection set: what the parent SELECT must include regardless of the user's
+        // SDL selection — SourceKey columns for DataLoader-backed BatchKeyField children, FK
+        // source-side columns for child @tableMethod fields, or the whole parent row when a
+        // child's key wrap is SourceKey.Wrap.TableRecord (see collectRequiredProjection for the
+        // full taxonomy). The LinkedHashSet accumulator dedupes on add by jOOQ Field identity, so
+        // plain adds are safe; no explicit contains() guard is needed. The full-row append is
+        // alias-correct by construction: `table` is the caller's (possibly aliased) instance, and
+        // its fields carry base column names — the same names into(Tables.X) reads by.
+        switch (requiredProjection) {
+            case RequiredProjection.FullParentRow ignored ->
+                builder.addStatement("$T.addAll(fields, table.fields())", COLLECTIONS);
+            case RequiredProjection.Columns cols -> {
+                for (ColumnRef col : cols.columns()) {
+                    builder.addStatement("fields.add(table.$L)", col.javaName());
+                }
+            }
         }
 
         builder.addStatement("return new $T<>(fields)", ARRAY_LIST);
@@ -373,14 +385,40 @@ public class TypeClassGenerator {
     }
 
     /**
-     * Walks the children of a type and surfaces every column the parent SELECT must project
-     * regardless of the user's SDL selection. Two sources today:
+     * The projection a table-parent's {@code $fields} SELECT must include regardless of the
+     * user's SDL selection. Sealed with an absorbing combine: {@link FullParentRow} dominates
+     * {@link Columns} ("full row subsumes columns" is a type fact, not a dedup accident), so
+     * {@code build$FieldsMethod} switches once — the full-row arm emits a single
+     * {@code Collections.addAll(fields, table.fields())} append and skips the per-column loop.
+     */
+    sealed interface RequiredProjection {
+        /**
+         * R426: some child's DataLoader key wrap is {@link SourceKey.Wrap.TableRecord}, whose
+         * key read ({@code into(Tables.X)}) hands the service body a typed record documented to
+         * carry every column on the parent table — so the SELECT projects the whole parent row.
+         */
+        record FullParentRow() implements RequiredProjection {}
+        /** These specific columns (possibly none) are force-included; nothing wider is needed. */
+        record Columns(List<ColumnRef> columns) implements RequiredProjection {
+            public Columns { columns = List.copyOf(columns); }
+        }
+    }
+
+    /**
+     * Walks the children of a type and surfaces what the parent SELECT must project regardless
+     * of the user's SDL selection, as a {@link RequiredProjection}. Sources today:
      *
      * <ul>
      *   <li>Table-parent {@link BatchKeyField} implementers' {@code SourceKey} columns — their
      *       DataLoader fetchers extract the parent-row key off {@code env.getSource()} after the
      *       parent {@code $fields()} SELECT runs (via {@code GeneratorUtils.buildKeyExtraction}),
-     *       so every {@code sourceKey().columns()} column must be in that SELECT.</li>
+     *       so every {@code sourceKey().columns()} column must be in that SELECT. When the key
+     *       wrap is {@link SourceKey.Wrap.TableRecord} the requirement widens to
+     *       {@link RequiredProjection.FullParentRow}: {@code buildKeyExtraction}'s wrap-forked
+     *       read for that arm ({@code into(Tables.X)}) touches arbitrary parent columns by name,
+     *       and the documented contract of the typed-record source shape is a fully-populated
+     *       parent record. Gated on the wrap, not the sealed variants, so any future
+     *       {@code BatchKeyField} acquiring the wrap gets the right projection for free.</li>
      *   <li>{@link ChildField.TableMethodField} on a table-bound parent — the fetcher built by
      *       {@code TypeFetcherGenerator.buildChildTableMethodFetcher} correlates the developer's
      *       returned table against the parent via {@code parentRecord.get(DSL.name("<src>"), …)}
@@ -391,10 +429,15 @@ public class TypeClassGenerator {
      * </ul>
      *
      * <p>Recurses into {@link ChildField.NestingField} so nested fields whose fetchers need
-     * parent-row columns get those columns into the outer table-class's {@code $fields}.
+     * parent-row columns (or the full row) surface that into the outer table-class's
+     * {@code $fields}. The nested type shares the parent's table context ({@code tableArg} is
+     * threaded through {@code emitSelectionSwitch} unchanged), so a nested full-row requirement
+     * correctly projects the <em>outer</em> parent table's fields.
      */
-    private static java.util.stream.Stream<ColumnRef> collectRequiredProjectionColumns(List<? extends GraphitronField> fields) {
-        return fields.stream().flatMap(f -> {
+    private static RequiredProjection collectRequiredProjection(List<? extends GraphitronField> fields) {
+        boolean fullParentRow = false;
+        var columns = new ArrayList<ColumnRef>();
+        for (var f : fields) {
             // Soundness invariant of the blanket BatchKeyField arm below: SourceKey.columns() is
             // parent-side or target-side depending on shape, and this walk runs only under
             // generate()'s TableType/NodeType filter, so every BatchKeyField it sees was
@@ -413,21 +456,32 @@ public class TypeClassGenerator {
             // A null sourceKey means the service method takes no Sources param: the field is a
             // plain per-parent service delegation, not DataLoader-backed, and its fetcher reads
             // no key columns off the parent row — nothing to force-project.
-            if (f instanceof BatchKeyField bk)
-                return bk.sourceKey() == null
-                    ? java.util.stream.Stream.<ColumnRef>empty()
-                    : bk.sourceKey().columns().stream();
-            if (f instanceof ChildField.TableMethodField tmf) {
-                var path = tmf.joinPath();
-                if (path.size() == 1 && path.get(0) instanceof JoinStep.FkJoin fk) {
-                    return fk.sourceSideColumns().stream();
+            switch (f) {
+                case BatchKeyField bk when bk.sourceKey() != null -> {
+                    if (bk.sourceKey().wrap() instanceof SourceKey.Wrap.TableRecord) {
+                        fullParentRow = true;
+                    } else {
+                        columns.addAll(bk.sourceKey().columns());
+                    }
                 }
-                return java.util.stream.Stream.empty();
+                case ChildField.TableMethodField tmf -> {
+                    var path = tmf.joinPath();
+                    if (path.size() == 1 && path.get(0) instanceof JoinStep.FkJoin fk) {
+                        columns.addAll(fk.sourceSideColumns());
+                    }
+                }
+                case ChildField.NestingField nf -> {
+                    switch (collectRequiredProjection(nf.nestedFields())) {
+                        case RequiredProjection.FullParentRow ignored -> fullParentRow = true;
+                        case RequiredProjection.Columns nested -> columns.addAll(nested.columns());
+                    }
+                }
+                default -> { }
             }
-            if (f instanceof ChildField.NestingField nf)
-                return collectRequiredProjectionColumns(nf.nestedFields());
-            return java.util.stream.Stream.empty();
-        });
+        }
+        return fullParentRow
+            ? new RequiredProjection.FullParentRow()
+            : new RequiredProjection.Columns(columns.stream().distinct().toList());
     }
 
 }

@@ -490,6 +490,35 @@ class FederationEntitiesDispatchTest {
     }
 
     /**
+     * R426: a representations-driven {@code _entities} fetch that selects <em>only</em> a
+     * typed-{@code TableRecord}-sourced {@code @service} child whose body reads a
+     * <em>non-key</em> column ({@code title}) off the source record. R425's sibling test
+     * ({@link #entities_serviceChildOnly_keyNotReselected_resolvesNonNull}) pins the key-column
+     * half of the silent-null family; this pins the residual surface — the router selects just
+     * the service child, the key arrives via the representation, and nothing in the selection
+     * projects {@code title}. The entity dispatch SELECT goes through {@code Film.$fields},
+     * which must project the full parent row for the TableRecord-sourced child so
+     * {@code .into(Tables.FILM)} hands the service a fully-populated record; pre-fix
+     * {@code getTitle()} was {@code null} and the child resolved to a titlecased {@code null}.
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    void entities_tableRecordServiceChildOnly_nonKeyColumnReadResolvesNonNull() {
+        // Seed: film_id 1 = 'ACADEMY DINOSAUR' (first row of the film INSERT in init.sql).
+        Map<String, Object> data = execute(
+            "query Q($reps: [_Any!]!) { _entities(representations: $reps) {"
+            + " __typename ... on Film { titleTitlecase } } }",
+            Map.of("reps", List.of(Map.of("__typename", "Film", "filmId", 1))));
+        List<Map<String, Object>> entities = (List<Map<String, Object>>) data.get("_entities");
+        assertThat(entities).hasSize(1);
+        assertThat(entities.get(0)).containsEntry("__typename", "Film");
+        assertThat((String) entities.get(0).get("titleTitlecase"))
+            .as("TableRecord-sourced service child must read non-key columns off a fully-populated "
+                + "source record when the key is supplied only via the representation")
+            .isEqualTo("Academy Dinosaur");
+    }
+
+    /**
      * Compound key batching: multiple reps of the same {@code (typename, alternative,
      * tenantId)} batch into a single SELECT via the {@code VALUES (idx, ...)} derived
      * table. Verifies the row-array machinery emits one SELECT for two reps, not two.

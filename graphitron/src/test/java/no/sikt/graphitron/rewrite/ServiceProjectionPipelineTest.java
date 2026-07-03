@@ -31,6 +31,11 @@ import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
  * child ({@code @splitQuery}/{@code @tableMethod} sibling), so a regression of the
  * {@code BatchKeyField} arm turns these red rather than being masked by an unrelated sibling's
  * projection.
+ *
+ * <p>R426 extends the same walk: when the child's key wrap is
+ * {@code SourceKey.Wrap.TableRecord} (typed-record Sources parameter), the projection
+ * requirement widens from the key columns to the full parent row — see the R426 test group
+ * below and {@code TypeClassGenerator.RequiredProjection}.
  */
 @PipelineTier
 class ServiceProjectionPipelineTest {
@@ -91,6 +96,101 @@ class ServiceProjectionPipelineTest {
 
         assertThat(TypeSpecAssertions.appendsRequiredColumn(languageType, "LANGUAGE_ID"))
             .as("outer parent $fields force-projects the nested @service child's SourceKey column")
+            .isTrue();
+    }
+
+    // ===== R426: typed-TableRecord source shape → full parent-row projection =====
+    //
+    // When the @service child's Sources parameter is a typed TableRecord (Set<LanguageRecord>),
+    // the key wrap is SourceKey.Wrap.TableRecord and the key extraction is
+    // env.getSource().into(Tables.LANGUAGE) — the service body may read ANY parent column off
+    // the record, per the documented contract ("fully-populated parent records"). The parent
+    // $fields must therefore project the whole parent row, not just the key columns.
+
+    /** List-valued typed-record {@code @service} return → {@code ServiceTableField}. */
+    @Test
+    void serviceTableFieldChild_tableRecordSource_projectsFullParentRow() {
+        var languageType = findType("Language", """
+            type Language @table(name: "language") { languageId: Int @field(name: "language_id") }
+            type Film @table(name: "film") { title: String }
+            type Query { language: Language }
+            extend type Language {
+                films: [Film!]! @service(
+                    service: {className: "no.sikt.graphitron.rewrite.generators.TestFilmService", method: "getFilmsMappedByRecord"}
+                )
+            }
+            """);
+
+        assertThat(TypeSpecAssertions.appendsFullParentRow(languageType))
+            .as("parent $fields projects the full parent row for a TableRecord-sourced @service child")
+            .isTrue();
+    }
+
+    /** Scalar typed-record {@code @service} return → {@code ServiceRecordField}. */
+    @Test
+    void serviceRecordFieldChild_tableRecordSource_projectsFullParentRow() {
+        var languageType = findType("Language", """
+            type Language @table(name: "language") {
+                name: String @field(name: "name")
+                rank: Int @service(
+                    service: {className: "no.sikt.graphitron.rewrite.generators.TestFilmService", method: "getRankMappedByRecord"}
+                )
+            }
+            type Query { language: Language }
+            """);
+
+        assertThat(TypeSpecAssertions.appendsFullParentRow(languageType))
+            .as("parent $fields projects the full parent row for a TableRecord-sourced @service child")
+            .isTrue();
+    }
+
+    /**
+     * Contrast: a {@code Record1}-sourced sibling of the same shape keeps the key-columns-only
+     * projection and gets no full-row append — the R426 widening is gated on the key wrap
+     * ({@code SourceKey.Wrap.TableRecord}), not on the {@code @service} field variants.
+     */
+    @Test
+    void record1SourcedServiceChild_projectsKeyColumnsOnly_noFullRowAppend() {
+        var languageType = findType("Language", """
+            type Language @table(name: "language") {
+                name: String @field(name: "name")
+                rank: Int @service(
+                    service: {className: "no.sikt.graphitron.rewrite.generators.TestFilmService", method: "getRankMappedRecordKeyed"}
+                )
+            }
+            type Query { language: Language }
+            """);
+
+        assertThat(TypeSpecAssertions.appendsRequiredColumn(languageType, "LANGUAGE_ID"))
+            .as("Record1-sourced @service child still force-projects its SourceKey column")
+            .isTrue();
+        assertThat(TypeSpecAssertions.appendsFullParentRow(languageType))
+            .as("Record1-sourced @service child must NOT widen the projection to the full row")
+            .isFalse();
+    }
+
+    /**
+     * A TableRecord-sourced {@code @service} child nested under a plain-object
+     * {@code NestingField} shares the outer table type's {@code $fields}; the recursion in
+     * {@code collectRequiredProjection} must surface the full-row requirement onto the outer
+     * parent. The projected fields are the outer parent table's by construction:
+     * {@code emitSelectionSwitch} threads {@code tableArg} unchanged into nested depths, so the
+     * nested child's {@code into(Tables.LANGUAGE)} reads against the outer table's row.
+     */
+    @Test
+    void nestedTableRecordServiceChild_projectsFullParentRowOnOuterParent() {
+        var languageType = findType("Language", """
+            type Language @table(name: "language") { info: LanguageInfo }
+            type LanguageInfo {
+                rank: Int @service(
+                    service: {className: "no.sikt.graphitron.rewrite.generators.TestFilmService", method: "getRankMappedByRecord"}
+                )
+            }
+            type Query { language: Language }
+            """);
+
+        assertThat(TypeSpecAssertions.appendsFullParentRow(languageType))
+            .as("outer parent $fields projects the full parent row for a nested TableRecord-sourced @service child")
             .isTrue();
     }
 

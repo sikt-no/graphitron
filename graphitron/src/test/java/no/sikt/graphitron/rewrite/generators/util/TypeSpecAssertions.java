@@ -105,6 +105,17 @@ public final class TypeSpecAssertions {
         return body.contains("fields.add(table." + columnJavaName + ")");
     }
 
+    /**
+     * True when {@code type}'s {@code $fields} method unconditionally appends the whole parent
+     * row to the projection via {@code Collections.addAll(fields, table.fields())} — the R426
+     * full-row projection emitted when a child's DataLoader key wrap is
+     * {@code SourceKey.Wrap.TableRecord}. Sibling of {@link #appendsRequiredColumn}.
+     */
+    public static boolean appendsFullParentRow(TypeSpec type) {
+        String body = methodBody(type, "$fields").orElse("");
+        return body.contains("java.util.Collections.addAll(fields, table.fields())");
+    }
+
     private static Optional<String> methodBody(TypeSpec type, String methodName) {
         return type.methodSpecs().stream()
             .filter(m -> m.name().equals(methodName))

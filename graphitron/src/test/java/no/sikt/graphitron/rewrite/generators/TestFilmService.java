@@ -1,6 +1,8 @@
 package no.sikt.graphitron.rewrite.generators;
 
 import no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord;
+import no.sikt.graphitron.rewrite.test.jooq.tables.records.LanguageRecord;
+import org.jooq.Record1;
 import org.jooq.Row1;
 
 import java.util.List;
@@ -53,6 +55,34 @@ public class TestFilmService {
      * stays unchanged alongside the enum fix.
      */
     public static Map<Row1<Integer>, Integer> getRankMapped(Set<Row1<Integer>> languageKeys) {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
+     * R426 fixture: typed-{@code TableRecord} source-shape sibling of {@link #getRankMapped}.
+     * {@code Set<LanguageRecord>} keys classify the wrap as {@code SourceKey.Wrap.TableRecord},
+     * which obliges the parent {@code $fields} SELECT to project the full parent row (the
+     * documented contract of the typed-record arm; the generated key extraction is
+     * {@code env.getSource().into(Tables.LANGUAGE)} and the body may read any parent column).
+     */
+    public static Map<LanguageRecord, Integer> getRankMappedByRecord(Set<LanguageRecord> languageKeys) {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
+     * R426 fixture: typed-{@code TableRecord} source-shape sibling of {@link #getFilmsMapped}
+     * (a list-valued {@code ServiceTableField} rather than a scalar {@code ServiceRecordField}).
+     */
+    public static Map<LanguageRecord, List<FilmRecord>> getFilmsMappedByRecord(Set<LanguageRecord> languageKeys) {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
+     * R426 contrast fixture: {@code Record1}-keyed sibling of {@link #getRankMappedByRecord}.
+     * {@code Wrap.Record} keys carry exactly the key columns, so the parent projection stays
+     * key-columns-only — pins that the R426 full-row widening is wrap-gated.
+     */
+    public static Map<Record1<Integer>, Integer> getRankMappedRecordKeyed(Set<Record1<Integer>> languageKeys) {
         throw new UnsupportedOperationException();
     }
 

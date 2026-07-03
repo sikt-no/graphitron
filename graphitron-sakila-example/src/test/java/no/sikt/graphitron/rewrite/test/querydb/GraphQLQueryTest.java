@@ -488,6 +488,9 @@ class GraphQLQueryTest {
         // already typed Set<FilmRecord>. Confirms the typed extraction
         // (env.getSource().into(Tables.FILM)) round-trips through the DataLoader and the
         // developer can read column values via FilmRecord.getTitle() without an extra fetch.
+        // Note: this query selects `title` alongside, so it does not by itself pin the
+        // "fully-populated parent records" contract — that lives in
+        // films_titleTitlecase_withoutSelectingTitle_readsNonKeyColumnOffSourceRecord (R426).
         Map<String, Object> data = execute("{ films { title titleTitlecase } }");
         assertThat(data).extractingByKey("films", as(list(Map.class)))
             .hasSize(5)
@@ -499,6 +502,29 @@ class GraphQLQueryTest {
                     .as("titleTitlecase must equal title-cased version for film '%s'", title)
                     .isEqualTo(expected);
             });
+    }
+
+    @Test
+    void films_titleTitlecase_withoutSelectingTitle_readsNonKeyColumnOffSourceRecord() {
+        // R426: the unmasked reproducer for the typed-TableRecord source-shape contract. The
+        // query selects ONLY the service child — no `title`, no `id` — so nothing in the client
+        // selection projects the `title` column. The service body reads film.getTitle() off the
+        // source record (a non-key column), which the manual documents as supported: "The
+        // framework supplies fully-populated parent records (every column on the parent table)"
+        // (handle-services.adoc). Film.$fields must therefore project the full parent row
+        // whenever a TableRecord-sourced service child is selected; pre-fix, getTitle() read
+        // null off the partial record and the field silently resolved to a titlecased null.
+        // This test is the live behaviour behind the manual's "fully-populated parent records"
+        // claim — if the projection regresses, this goes red, not just the docs stale.
+        Map<String, Object> data = execute("{ films { titleTitlecase } }");
+        assertThat(data).extractingByKey("films", as(list(Map.class)))
+            .extracting(f -> f.get("titleTitlecase"))
+            .containsExactlyInAnyOrder(
+                "Academy Dinosaur",
+                "Ace Goldfinger",
+                "Adaptation Holes",
+                "Affair Prejudice",
+                "Agent Truman");
     }
 
     private static String expectedTitleCase(String s) {

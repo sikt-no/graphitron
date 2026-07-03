@@ -61,6 +61,15 @@ type Film implements Node @table(name: "film") @node
     filmId:      Int!    @field(name: "FILM_ID")
     title:       String! @field(name: "TITLE")
     rentalRate:  Float!  @field(name: "RENTAL_RATE")
+    # R426 fixture: a typed-TableRecord-sourced @service child whose body reads a NON-KEY
+    # column (title) off the source record. A representations-driven _entities fetch that
+    # selects only this child supplies the key via the representation and projects nothing
+    # else, so Film.$fields must project the full parent row (the typed-record contract) or
+    # FilmRecord.getTitle() reads null and the child silently resolves to a titlecased null.
+    titleTitlecase: String @service(service: {
+        className: "no.sikt.graphitron.rewrite.test.services.FilmService",
+        method: "titleTitlecase"
+    })
 }
 
 # R425 fixture: an entity whose ONLY force-projecting child is a @service field. A
