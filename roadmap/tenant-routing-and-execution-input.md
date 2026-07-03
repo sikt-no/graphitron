@@ -1,6 +1,6 @@
 ---
 id: R45
-title: "Database-per-tenant routing on the graphitron-owned connection lifecycle"
+title: "Operation-divined tenant routing: tenant-column bindings select the per-tenant DataSource"
 status: Spec
 bucket: architecture
 priority: 5
@@ -9,99 +9,115 @@ depends-on: [connection-transaction-lifecycle]
 last-updated: 2026-07-03
 ---
 
-# Database-per-tenant routing on the graphitron-owned connection lifecycle
+# Operation-divined tenant routing: tenant-column bindings select the per-tenant DataSource
 
 ## Summary
 
-R429 (`connection-transaction-lifecycle`) is the substrate: graphitron takes a `DataSource`, owns connection acquisition and transaction demarcation, and sets RLS session state transaction-locally from the request's contextArguments. Multi-tenancy resolves into two deployment shapes there:
+The tenant is not known at request scope; it is divined from the operation itself:
 
-- **Shared database, RLS partition.** The tenant is one more session-state value, set transaction-locally by R429's session-state policy from a contextArgument. This flavor needs nothing from R45: no config element, no factory change.
-- **Database per tenant.** graphitron takes a `Map<TenantId, DataSource>`, resolves the tenant from request context once per operation at connection acquisition, and runs the identical transaction and session-state machinery against the routed source.
+```graphql
+query { emner(filter: { eierOrganisasjon: 1234 }) { ... } }
+```
 
-The tenant is therefore uniform across any one request. R45 owns the schema-integration layer for the second shape: how the tenant selector is declared and typed, the generated multi-tenant factory shape, the build-time validation tying the selector to the schema's contextArguments, and the retirement of the legacy per-field tenant machinery. R429 owns the runtime: the map lookup, acquisition, transactions, session state, and the execute-tier per-tenant isolation proof (its slice 4, which names this item's old coverage as its reshape target). One behaviour, one owner: R45 lands no runtime routing and no isolation execute test of its own.
+The main insight: graphitron already knows which database column every argument, input field, nodeId package, federation representation, and parent row binds to. If the consumer additionally declares **which column carries the tenant id**, graphitron can infer, per field, where the tenant key comes from and route the connection accordingly. No `@tenantId` directive, no request-level tenant parameter: the schema's existing column mappings are the declaration, and `eierOrganisasjon: 1234` above routes the whole subtree to tenant 1234's database.
+
+R429 (`connection-transaction-lifecycle`) is the substrate: graphitron owns connection acquisition and transactions, and database-per-tenant deployments hand it a `Map<TenantId, DataSource>`. R429 owns acquisition, transaction demarcation, and session state; R45 owns everything schema-shaped: the tenant-column declaration, the table classification, the per-field `TenantBinding` inference, the factory shape, the per-tenant partitioning at the fan-out points, and the validation that makes unroutable tenant-scoped fields a build error. The shared-database RLS flavor needs nothing from R45 (row scoping is the database's job there).
+
+One R429 amendment is required and is called out in [Siblings](#siblings): R429 currently assumes the tenant "arrives as a contextArgument" and demarcates one read-only transaction per query operation. Operation-divined tenancy means acquisition happens per divined tenant: a query touching N tenants runs N read-only transactions. Both items are in Spec; reconcile there before either is signed off.
 
 ## Design
 
-### Tenant selector declaration
+### Tenant column declaration and table classification
 
-A Mojo element declares the selector's name and Java type `T`:
+One Mojo element names the column:
 
 ```xml
-<tenantSelector>
-  <name>tenantId</name>
-  <javaType>java.lang.Long</javaType>
-</tenantSelector>
+<tenantColumn>eier_organisasjon</tenantColumn>
 ```
 
-Configured, it gates the multi-tenant factory below; absent, R429's single-`DataSource` factory is the whole surface. It is config rather than SDL because which database a request routes to is deployment topology, not data model, and R429 already treats the RLS identity values as config-mapped contextArguments. The element is specifically the database-per-tenant routing key: shared-database RLS deployments do not configure it.
+At catalog load, every table classifies as **tenant-scoped** (carries the column) or **global** (does not). The tenant Java type `T` is not configured; it is read off the jOOQ catalog's column type. All tenant-scoped tables must agree on that type; disagreement is a rejection (`tenantColumnTypeDisagreement`). Absent the element, none of the machinery below exists and R429's single-`DataSource` surface is the whole story.
 
-### Resolved selector model
+### `TenantBinding`: the per-field inference
 
-The selector name may or may not coincide with a declared contextArgument. Resolve that once, at build time, into a sealed outcome; the facade emitter, the GraphQLContext put site, and the validator all read the resolved arm rather than re-deriving a string comparison:
+A sealed per-field axis, an optional overlay sibling to R316's `source()` / `operation()` / `target()` (computed only when `<tenantColumn>` is configured; in single-tenant builds the axis is absent, not "everything `Untenanted`"):
 
 ```java
-sealed interface TenantSelector {
-    /** Name matches a declared contextArgument; one factory parameter serves both roles. */
-    record BoundToContextArg(ResolvedContextArg arg) implements TenantSelector {}
-    /** Routing-only selector; the factory adds a standalone parameter. */
-    record Standalone(String name, TypeName javaType) implements TenantSelector {}
+sealed interface TenantBinding {
+    /** An argument or input-object field whose column mapping resolves to a tenant column. */
+    record ArgumentBound(ArgPath path, ColumnRef column) implements TenantBinding {}
+    /** The field resolves by node id whose decoded key columns include the tenant column. */
+    record NodeIdBound(/* decoded-column position */) implements TenantBinding {}
+    /** A federation _entities representation carries the tenant column. */
+    record EntityRepBound(/* rep field ref */) implements TenantBinding {}
+    /** A child field inherits the tenant divined at its binding ancestor. */
+    record Inherited(/* ancestor coordinate */) implements TenantBinding {}
+    /** The field touches only global tables; runs on the default DataSource. */
+    record Untenanted() implements TenantBinding {}
 }
 ```
 
-`BoundToContextArg` construction checks that the configured `<javaType>` equals the contextArgument's reflected type; disagreement is a new rejection `tenantSelectorTypeConflict` (typed `AuthorError` record with a `message()` override and a factory on `Rejection`, mirroring `contextArgumentTypeConflict`). The classification is computed once and cached on the build result alongside `GraphitronSchema.contextArguments`, and `GraphitronSchemaValidator.validate` drains the rejection the same way `validateContextArgumentTypeAgreement` does. The four rejections of the previous design fall away with the machinery they mirrored.
+Classification rules:
 
-### Multi-tenant factory
+- An argument or input-object field whose column mapping (the same resolution filters and conditions already use) lands on a tenant column yields `ArgumentBound`. This is the `emner(filter: { eierOrganisasjon })` case, and it covers mutations too: an insert/update input field mapping to the tenant column divines the routing for that mutation field.
+- A field resolved by node id whose decoded key columns include the tenant column yields `NodeIdBound`; each id in a batch carries its own tenant.
+- A federation `_entities` resolution whose representation carries the tenant column yields `EntityRepBound`; each rep carries its own tenant.
+- A field below a bound ancestor yields `Inherited`: the divined tenant flows down the subtree. Within any execution context made tenant-homogeneous by the partitioning below, inheritance is a value hand-down, not a per-row re-read; the exact runtime carrier is an implementation choice against the `SourceKey.Reader` surfaces.
+- A field touching only global tables yields `Untenanted`.
+- A field reaching a tenant-scoped table with **no binding in scope** is a rejection (`noTenantBinding`), not a silent fallback: routing tenant data through a default connection because nothing named the tenant is exactly the cross-tenant leak this item exists to prevent.
 
-Rides R429's `DataSource` factory (its slice 5). With `<tenantSelector>` configured, the facade emits a second overload; for a schema with `@service(contextArguments: ["userInfo", "fnr"])` and a `Long` selector named `tenantId`:
+A binding whose runtime value is absent (the nullable filter arrived empty) is a request-level error before any SQL, same family as R429's unknown-tenant lookup failure.
+
+### Factory shape
+
+Rides R429's `DataSource` factory. With `<tenantColumn>` configured, the facade emits a multi-tenant overload; for the catalog-inferred `T = Long` and `@service(contextArguments: ["userInfo", "fnr"])`:
 
 ```java
 public static ExecutionInput.Builder newExecutionInput(
+    DataSource defaultDataSource,
     Map<Long, DataSource> dataSourcesByTenant,
-    Long tenantId,
     String fnr,
     UserInfo userInfo);
 ```
 
-The map sits first, the selector second, then the alphabetical contextArguments. Exactly one selector parameter is emitted in both arms: under `BoundToContextArg` it doubles as that contextArgument (no duplicate parameter), under `Standalone` it exists for routing alone. The body null-checks every slot and puts the selector value on `GraphQLContext` under its configured name, so it reaches R429's session-state policy and any `getContextArgument` read like every other contextArgument; the map and the value are handed to R429's acquisition seam, which performs the lookup at connection acquisition. An unknown tenant is a request-level error raised there, before any SQL runs.
+`defaultDataSource` serves `Untenanted` fields (global reference data); the map serves every divined key. There is no tenant parameter: the tenant is not a request-scope fact. Unknown divined key at acquisition is a request-level error before any SQL (R429's seam raises it). Body follows the R190 null-check + `graphQLContext.put` shape.
 
-Composition holds: a per-tenant database with RLS inside it works because the same selector value is available to the session-state policy as an ordinary contextArgument.
+### Execution: partition every fan-out point per tenant
 
-Why the map is a factory parameter rather than the consumer resolving a `DataSource` themselves: graphitron holding the map is what lets it own the unknown-tenant error and route the tenant into transaction-local session state, the single-authority argument R429 is built on, and it is the hook R46's fan-out needs (fanning out requires the whole map).
+Routing happens where the key is divined; batching machinery partitions so each SQL execution is tenant-homogeneous:
 
-### What the request-uniform tenant dissolves
-
-The previous design carried a per-field routing model. All of it collapses once the tenant is resolved once per operation:
-
-- **Per-field `TenantIdSource` axis and the `@tenantId` argument directive.** No per-field variation is left to classify. Per-field tenant selection would require per-field connection acquisition, contradicting R429's operation-scoped transaction; genuine many-tenants-in-one-request is R46's fan-out, a different execution model.
-- **`<tenantColumn>` table classification.** Row scoping is the database's job under R429's RLS-assumed principle; codegen has no remaining consumer for "which tables carry the tenant column".
-- **DataLoader-name tenant prefixes (five emission sites).** The generated `DataLoaderRegistry` is per-request and the tenant is request-uniform, so a name prefix partitions nothing.
-- **Federation `_entities` per-tenant grouping and node-dispatch tenant grouping.** A batch cannot span tenants.
+- **Root and mutation fields** (`ArgumentBound`): the emitted fetcher reads the bound value and acquires through R429 against the map. The DSLContext-selection sites are the direct-SQL fetchers, the DML fetcher in `TypeFetcherGenerator`, and `ServiceMethodCallEmitter`; all currently emit `getDslContext(env)` and gain the routed acquisition.
+- **Node dispatch** (`NodeIdBound`): `QueryNodeFetcherClassGenerator.dispatchNodes` groups by `(type, alternative, tenant)` and issues one SELECT per group against that tenant's source. This restores the pre-R190 grouping its stale comment still describes.
+- **Federation `_entities`** (`EntityRepBound`): `HandleMethodBody` re-widens the grouping to `Map<Integer, Map<TenantKey, List<Object[]>>>`, reads the tenant off each rep, and dispatches each inner group against its tenant's source.
+- **Batched children** (`Inherited`): DataLoader identity partitions per tenant (the tenant key joins the path-derived loader name), so each loader is tenant-homogeneous and its captured environment routes the right source. This is load-bearing, not cosmetic: a batch loader resolves one `DSLContext` from the environment captured at loader creation, so a tenant-mixed loader would execute every key against the first key's tenant. The per-request `DataLoaderRegistry` means the partition only matters within a request, which is exactly when node ids and entity reps span tenants.
 
 ### Legacy retirement (implementation tasks)
 
-- Delete the two commented-out execution-test stubs whose premise (per-`DataFetchingEnvironment` consumer-supplied tenant keys) no longer exists: `FederationEntitiesDispatchTest.entities_multiTenancyPartition_oneSelectPerTenant` and `GraphQLQueryTest.nodes_perTenantPartition_separateBatchPerTenant` in `graphitron-sakila-example`. R429 slice 4's isolation test is the successor coverage.
-- Sweep the stale pre-R190 tenant prose: `MultiTablePolymorphicEmitter` ("build the tenant-scoped DataLoader", ~`:1341`), `QueryNodeFetcherClassGenerator` ("(type, alternative, tenantId) grouping", ~`:180`), `LoaderRegistration` ("tenant-qualified DataLoader name", ~`:43`). Anchor on the quoted phrases; lines drift.
+- The two R190-commented execution tests come back to life as the canonical proofs of the per-key arms: `GraphQLQueryTest.nodes_perTenantPartition_separateBatchPerTenant` (`NodeIdBound`) and `FederationEntitiesDispatchTest.entities_multiTenancyPartition_oneSelectPerTenant` (`EntityRepBound`), reshaped from consumer-supplied `getTenantId` to inferred bindings.
+- Sweep the stale pre-R190 tenant prose where it is inaccurate today and true it up as the machinery returns: `MultiTablePolymorphicEmitter` ("build the tenant-scoped DataLoader", ~`:1341`), `QueryNodeFetcherClassGenerator` ("(type, alternative, tenantId) grouping", ~`:180`), `LoaderRegistration` (~`:43`). Anchor on the quoted phrases; lines drift.
 
 ## Tests
 
-- **Classification (L2).** `TenantSelector` arms: selector name matching a declared contextArgument yields `BoundToContextArg`; no match yields `Standalone`; a type disagreement yields `tenantSelectorTypeConflict`, asserted as the typed record and the rendered `message()`.
-- **Validation (L4).** The rejection drains through `validateTenantSelector` into a `ValidationError`, mirroring `ContextArgumentTypeAgreementValidationTest`.
-- **Pipeline (L4).** Facade snapshots: selector configured with a matching contextArgument (one shared parameter), configured standalone (one added parameter), and unconfigured (no overload).
-- **Compile (L5).** `graphitron-sakila-example` calls the multi-tenant overload.
-- **Execute (L6).** None here. Per-tenant isolation and unknown-tenant rejection are R429 slice 4's to land; R45's selector surface is what that test routes through, so sequencing is decided when the first of the two reaches implementation.
+- **Catalog (L1/L2).** Table classification against the configured column; `T` inferred from the catalog column type; `tenantColumnTypeDisagreement` on mixed types; no element, no axis.
+- **Classification (L2).** SDL fixtures per arm: the `emner(filter: { eierOrganisasjon })` shape yields `ArgumentBound` with the resolved column; a node-id field whose key embeds the tenant column yields `NodeIdBound`; an entity resolution yields `EntityRepBound`; a child under a bound root yields `Inherited`; a global-table field yields `Untenanted`; a tenant-scoped field with no binding yields `noTenantBinding`, asserted as the typed record and the rendered `message()`.
+- **Validation (L4).** Both rejections drain through `validateTenantBindings`, mirroring `ContextArgumentTypeAgreementValidationTest`.
+- **Pipeline (L4).** Facade snapshot (overload iff configured, map key type from the catalog); loader-name partition snapshot (`Inherited` prefixed, `Untenanted` bare); node-dispatch and `_entities` grouping snapshots.
+- **Compile (L5).** `graphitron-sakila-example` gains a multi-tenant fixture exercising the overload, an inferred argument binding, and a global reference-data fetch.
+- **Execute (L6).** The two revived tests above; single-request isolation through an inferred `ArgumentBound` (same query, two tenant values, disjoint rows); unknown divined tenant errors before any SQL; a mutation routed by its input's tenant field.
 
 ## Open questions
 
-1. **Element naming.** `<tenantSelector>` reads as if it applied to both multi-tenant shapes, but it configures only the database-per-tenant overload. Keep the name with explicit docs, or pick something overtly routing-flavored (`<tenantDataSourceKey>`)? Current pick: keep, document.
-2. **Selector parameter position.** Drafted map-first then selector. If R429's factory work settles a different convention for its own parameters, follow it.
+1. **R429 reconciliation (blocking).** R429's connection model says the tenant "arrives as a contextArgument" and a query runs one read-only transaction. Amend to: the tenant key is supplied by the caller *or divined from the operation* (this item), and acquisition is per divined tenant, so a query touching N tenants runs N read-only transactions. Both items are in Spec; land the amendment there.
+2. **Multiple bindings on one field.** Two arguments (or an argument plus a nodeId package) can both bind tenant columns. Recommendation: classify deterministically (document precedence), require runtime equality of the divined values, error on disagreement; a validate-time rejection would forbid legitimate schemas.
+3. **Explicit override.** Is a directive escape hatch (`@tenantId` on an argument) needed for schemas where inference picks the wrong binding? Deferred until a real schema demonstrates the misfire; inference-only keeps the surface clean.
+4. **Request-scope fallback.** Consumers who do know the tenant up front are covered by R429's contextArgument story; whether that fallback should also feed `TenantBinding` (an extra arm) is deferred to the R429 reconciliation.
+5. **`Inherited` runtime carrier.** Subtree value hand-down vs parent-row column read; resolve against the live `SourceKey.Reader` / `ColumnRef` surfaces at implementation time.
 
 ## Lineage
 
-Two earlier designs are superseded and recorded only in this file's git history: the 2026-05-20 draft widened the sealed `GraphitronContext` with `getTenantId(env)` and `getDslContext(T)`; the 2026-06-26 rework replaced that with a per-field sealed `TenantIdSource` axis, `<tenantColumn>` table classification, a `byTenant Function<T, DSLContext>` factory overload, DataLoader-name prefixes, and federation per-tenant grouping. Both predate R429, which moved the seam from consumer-built `DSLContext` to graphitron-owned `DataSource` acquisition and made the tenant request-uniform, dissolving the per-field model.
+Earlier designs, superseded and recorded in this file's git history: a 2026-05-20 draft widening the sealed `GraphitronContext` with `getTenantId(env)` / `getDslContext(T)`; a 2026-06-26 rework introducing a per-field `TenantIdSource` axis driven by an explicit `@tenantId` directive plus a `byTenant Function<T, DSLContext>` factory overload; and a brief 2026-07-03 request-scope `<tenantSelector>` variant, dropped the same day because the tenant is operation-divined, not request-scoped. The current design keeps the per-field axis but derives every binding from the column mappings the schema already carries.
 
 ## Siblings
 
-- **Depends on R429** ([`connection-transaction-lifecycle.md`](connection-transaction-lifecycle.md)): the substrate; owns runtime routing and the execute-tier isolation proof.
-- **R46** ([`service-multi-tenant-fanout.md`](service-multi-tenant-fanout.md)): the only remaining home for many-tenants-in-one-request. Its spec is stale (it still builds on a `ContextValueRegistration` permit dissolved by R190) and needs reconciliation before the deferral target is real.
-- **R190** (Done, recorded in [`changelog.md`](changelog.md)): the contextArguments classifier, `ResolvedContextArg`, the rejection pattern, and the validator-mirror wiring this item reuses.
-- Prior coordination and independence notes ([`dslcontext-on-condition-tablemethod.md`](dslcontext-on-condition-tablemethod.md), [`helper-emission-non-fetcher-hosts.md`](helper-emission-non-fetcher-hosts.md), [`service-short-classname-resolution.md`](service-short-classname-resolution.md)) dissolved with the `byTenant` dispatch; all three are independent of this item now.
+- **Depends on R429** ([`connection-transaction-lifecycle.md`](connection-transaction-lifecycle.md)): the substrate (DataSource acquisition, transactions, session state, the `Map<TenantId, DataSource>` shape). Needs the amendment in Open question 1; its slice 4 execute coverage and this item's overlap, so the isolation proofs should land once, split as: R429 proves routing given a caller-known tenant, R45 proves the divined bindings.
+- **R46** ([`service-multi-tenant-fanout.md`](service-multi-tenant-fanout.md)): fan-out (run one field across many tenants and union) stays separate; this item routes each field to the one tenant its data names. R46's spec is stale (it builds on a `ContextValueRegistration` permit dissolved by R190) and needs its own rework.
+- **R190** (Done, recorded in [`changelog.md`](changelog.md)): the factory, classifier-cache, rejection, and validator-mirror patterns this item reuses throughout.

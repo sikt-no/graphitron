@@ -22,8 +22,8 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R410` | graphitron:dev owns incremental compilation of generated sources | In Review | 2026-07-03 <sub>created 2026-07-01</sub> | [plan](dev-incremental-compile.md) |
 | `R308` | Fix the @service list-payload N+1 by deriving many-arrival for list-returning carriers | Spec | 2026-06-14 | [plan](service-list-payload-arrival.md) |
 | `R335` | Fold input/scalar/enum classification into the single classify-and-emit walk | Spec | 2026-06-19 | [plan](walk-classifies-input-surface.md) |
-| `R45` | Database-per-tenant routing on the graphitron-owned connection lifecycle <sub>blocked by: [connection-transaction-lifecycle](connection-transaction-lifecycle.md)</sub> | Spec | 2026-07-03 | [plan](tenant-routing-and-execution-input.md) |
 | `R381` | LSP-guided @reference path authoring | Spec | 2026-06-25 | [plan](lsp-reference-path-authoring.md) |
+| `R45` | Operation-divined tenant routing: tenant-column bindings select the per-tenant DataSource <sub>blocked by: [connection-transaction-lifecycle](connection-transaction-lifecycle.md)</sub> | Spec | 2026-07-03 | [plan](tenant-routing-and-execution-input.md) |
 | `R273` | Source NodeId metadata from @node + catalog PK (inferred from `implements Node`), and settle wrong-type/malformed mismatch semantics, retiring the legacy __NODE bare-ID arm | Spec | 2026-06-02 | [plan](nodeid-skip-mismatch-error-surfacing.md) |
 | `R347` | Consolidate graphitron-lsp navigation, dispatch, and result-building | In Progress | 2026-07-01 <sub>created 2026-06-19</sub> | [plan](lsp-structural-consolidation.md) |
 | `R13` | Faceted search on `@asConnection` | Ready | 2026-06-26 | [plan](faceted-search.md) |
@@ -188,9 +188,9 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 ### service
 
 - `R429` [**Graphitron owns connection and transaction lifecycle: operation-typed read-only/commit semantics and RLS-first session state**](connection-transaction-lifecycle.md) — Spec, architecture
-- `R45` [**Database-per-tenant routing on the graphitron-owned connection lifecycle**](tenant-routing-and-execution-input.md) — Spec, architecture, blocked by [connection-transaction-lifecycle](connection-transaction-lifecycle.md)
 - `R201` [**Honor @field(name:) in @error payload construction shape resolution**](honor-field-directive-in-payload-construction-shape.md) — Backlog, bug
 - `R202` [**Honor @field(name:) in @error type extra-field accessor matching against handler source class**](honor-field-directive-in-error-type-source-accessors.md) — Backlog, bug
+- `R45` [**Operation-divined tenant routing: tenant-column bindings select the per-tenant DataSource**](tenant-routing-and-execution-input.md) — Spec, architecture, blocked by [connection-transaction-lifecycle](connection-transaction-lifecycle.md)
 - `R54` [**Rename @externalField (parallel-support, deprecation, migration)**](rename-externalfield-directive.md) — Backlog, cleanup
 - `R192` [**Mojo-configured custom Bean Validation factory**](custom-validator-factory.md) — Backlog, architecture
 - `R46` [**Multi-tenant fan-out for `@service`**](service-multi-tenant-fanout.md) — Backlog, architecture, blocked by [tenant-routing-and-execution-input](tenant-routing-and-execution-input.md)
