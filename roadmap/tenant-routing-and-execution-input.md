@@ -1,15 +1,32 @@
 ---
 id: R45
 title: "Multi-tenant routing on top of the schema-driven ExecutionInput factory"
-status: Ready
+status: Spec
 bucket: architecture
 priority: 5
 theme: service
-depends-on: []
-last-updated: 2026-06-26
+depends-on: [connection-transaction-lifecycle]
+last-updated: 2026-07-03
 ---
 
 # Multi-tenant routing on top of the schema-driven ExecutionInput factory
+
+## Reopened to Spec (2026-07-03): reconcile the routing seam with R429
+
+This item was `Ready`, but R429 (`connection-transaction-lifecycle`) changes the substrate this design
+routes over, so the reviewer-approved shape needs rework before implementation. R429 has graphitron take a
+**`DataSource`** (owning connection acquisition and transaction demarcation) rather than a consumer-built
+`DSLContext`, and it resolves multi-tenancy two ways: a shared database where the **tenant is an RLS session
+value**, and database-per-tenant via a **`Map<TenantId, DataSource>`**. That **supersedes this item's
+`byTenant Function<T, DSLContext>` overload**: graphitron now builds the `DSLContext` from the routed
+`DataSource`, so a function returning a `DSLContext` is the wrong seam. What survives and is still this
+item's to own is the *schema-level* routing model, unchanged in spirit: the `<tenantColumn>` classification,
+the per-field `TenantIdSource` axis, the `@tenantId` argument directive, and the DataLoader-name / federation
+`_entities` partitioning. The rework is to re-target the *how does a request pick its database/identity* half
+from `byTenant`-returns-`DSLContext` onto R429's `Map<TenantId, DataSource>` lookup (db-per-tenant) and RLS
+session value (shared DB), keyed off the same contextArgument tenant selector. Depends on R429; do not
+implement the `byTenant` mechanism as written. The `byTenant` design below is retained for lineage until the
+Spec revision replaces it.
 
 ## Motivation
 

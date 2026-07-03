@@ -36,7 +36,14 @@ The `TenantId` and the RLS identity values share one origin, the per-request con
 ## Operation-typed transaction mode
 
 - **Query → real read-only transaction.** `SET TRANSACTION READ ONLY`, which Postgres and Oracle *enforce* at the database (not merely the JDBC `Connection.setReadOnly` hint). RLS + enforced read-only means the generated read surface is safe by construction: a query literally cannot write, and sees only permitted rows.
-- **Mutation → writable for the mutation root, commit, then read-only projection.** graphql-java runs top-level mutation fields *serially*; the leaning resolution is **per-top-level-mutation-field commit** (field 1 commits before field 2 begins, matching GraphQL's partial-success-with-errors semantics), after which the payload's selection set is resolved in a read-only transaction over the now-committed state (read-your-writes, safely). The exact boundary and its interaction with DataLoader dispatch is the spike below.
+- **Mutation → commit (or roll back) each mutation field serially (resolved).** graphql-java runs top-level
+  mutation fields serially, and graphitron matches that granularity: **each mutation field runs in its own
+  writable transaction that commits on success and rolls back on failure, before the next field begins.**
+  This is the decided boundary (not per-operation): it mirrors GraphQL's serial-mutation, partial-success-
+  with-errors semantics, so a failing field 2 rolls back its own write while field 1's committed write
+  stands. After a field commits, its payload selection set is resolved read-only over the now-committed state
+  (read-your-writes, safely). The implementation care point (not a design fork) is aligning this per-field
+  commit/rollback with graphql-java's DataLoader dispatch cycles; slice 2 verifies that alignment.
 
 ## Session-state strategies (the "do more")
 
@@ -66,7 +73,7 @@ This reopens the seam R190 deliberately settled and R45 built on. `newExecutionI
 ## Slices and test tiers
 
 1. **Connection/transaction runtime seam.** graphitron acquires from a `DataSource`, demarcates a transaction, releases; `@UnitTier` over a fake `DataSource` asserting acquisition/commit/rollback/close ordering.
-2. **Operation-typed mode.** Query → read-only transaction; mutation → writable-then-read-only-projection. `@PipelineTier` on the emitted wiring; **spike** the mutation boundary vs graphql-java serial execution + DataLoader dispatch before pinning per-field vs per-operation commit.
+2. **Operation-typed mode.** Query → read-only transaction; mutation → per-field commit/rollback then read-only projection (the decided boundary). `@PipelineTier` on the emitted wiring; `@ExecuteTier` asserting each mutation field commits/rolls back independently and serially (a failing field 2 leaves field 1's committed write, its own rolled back) and that the per-field commit aligns with graphql-java's serial mutation execution + DataLoader dispatch.
 3. **Session-state strategies.** Postgres `set_config(…, true)`, Oracle context/RAS, generic list; policy maps contextArgs → statements, transaction-local. `@ExecuteTier` (sakila, Postgres): an RLS-scoped read sees only permitted rows; transaction-local state does not leak to the next acquisition on the same pooled connection.
 4. **Multi-tenant DataSource map.** Tenant resolved from contextArgs selects the `DataSource`; `@UnitTier` on routing + `@ExecuteTier` per-tenant isolation (reshapes R45's execute-tier coverage).
 5. **Factory contract + migration.** Additive `DataSource` factory alongside the `DSLContext` form; `@PipelineTier` on the emitted facade; sakila example migrated to the `DataSource` form as the first client.
