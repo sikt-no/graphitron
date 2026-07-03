@@ -72,6 +72,15 @@
             <artifactId>graphql-java-extended-scalars</artifactId>
             <scope>test</scope>
         </dependency>
+        <!-- R410 slice 5: the incremental-compile acceptance harness (IncrementalCompileHarnessTest)
+             compiles the generated runtime, which references jakarta.validation (GraphitronContext /
+             ConstraintViolations); the API is a consumer runtime choice, carried here at test scope
+             only so the harness can compile that generated code. -->
+        <dependency>
+            <groupId>jakarta.validation</groupId>
+            <artifactId>jakarta.validation-api</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>

@@ -129,6 +129,86 @@ public final class TypeSpec {
         return typeSpecs;
     }
 
+    /**
+     * Every {@link ClassName} this type references anywhere in its declaration: supertypes,
+     * implemented interfaces, member signatures (field types, method return/parameter/thrown types),
+     * annotations, and, crucially, the {@code $T} arguments baked into member <em>bodies</em>
+     * (initializers, method code, static/instance blocks) and nested types, recursively. Unlike the
+     * {@code import} list a rendered {@link JavaFile} exposes, this includes same-package references
+     * (which render as bare simple names with no import), so it is a faithful superset of the file's
+     * type dependencies. It cannot see a class name baked into a {@code $L} literal string, which is
+     * not a structured type reference; a caller needing those must scan the rendered source too.
+     */
+    public Set<ClassName> referencedClassNames() {
+        Set<ClassName> out = new LinkedHashSet<>();
+        collectTypeReferences(this, out);
+        return out;
+    }
+
+    private static void collectTypeReferences(TypeSpec type, Set<ClassName> out) {
+        collect(type.superclass, out);
+        for (TypeName i : type.superinterfaces) collect(i, out);
+        collectAnnotations(type.annotations, out);
+        for (FieldSpec field : type.fieldSpecs) {
+            collect(field.type(), out);
+            collectAnnotations(field.annotations(), out);
+            collectCode(field.initializer(), out);
+        }
+        for (MethodSpec method : type.methodSpecs) {
+            collect(method.returnType(), out);
+            collectAnnotations(method.annotations(), out);
+            for (ParameterSpec p : method.parameters()) {
+                collect(p.type(), out);
+                collectAnnotations(p.annotations(), out);
+            }
+            for (TypeName e : method.exceptions()) collect(e, out);
+            collectCode(method.code(), out);
+            collectCode(method.defaultValue(), out);
+        }
+        collectCode(type.staticBlock, out);
+        collectCode(type.initializerBlock, out);
+        for (TypeSpec nested : type.typeSpecs) collectTypeReferences(nested, out);
+        for (TypeSpec constant : type.enumConstants.values()) {
+            if (constant != null) collectTypeReferences(constant, out);
+        }
+    }
+
+    private static void collectAnnotations(List<AnnotationSpec> annotations, Set<ClassName> out) {
+        for (AnnotationSpec annotation : annotations) {
+            collect(annotation.type(), out);
+            for (List<CodeBlock> members : annotation.members().values()) {
+                for (CodeBlock member : members) collectCode(member, out);
+            }
+        }
+    }
+
+    private static void collectCode(CodeBlock code, Set<ClassName> out) {
+        if (code == null) return;
+        for (Object arg : code.args()) {
+            if (arg instanceof TypeName typeName) collect(typeName, out);
+        }
+    }
+
+    private static void collect(TypeName type, Set<ClassName> out) {
+        if (type == null) return;
+        switch (type) {
+            case ClassName c -> out.add(c);
+            case ParameterizedTypeName p -> {
+                collect(p.rawType(), out);
+                for (TypeName arg : p.typeArguments()) collect(arg, out);
+            }
+            case ArrayTypeName a -> collect(a.componentType(), out);
+            case TypeVariableName v -> {
+                for (TypeName bound : v.bounds()) collect(bound, out);
+            }
+            case WildcardTypeName w -> {
+                for (TypeName bound : w.upperBounds()) collect(bound, out);
+                for (TypeName bound : w.lowerBounds()) collect(bound, out);
+            }
+            default -> { } // primitives, void, boxed voids: no class reference
+        }
+    }
+
     Set<String> nestedTypesSimpleNames() {
         return nestedTypesSimpleNames;
     }

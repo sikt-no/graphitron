@@ -54,8 +54,10 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.stream.Stream;
 
@@ -104,22 +106,38 @@ public class GraphQLRewriteGenerator {
      * {@code .java} compilation units whose content differed from disk and was (re)written. The
      * emitted SDL resource is reported in {@code emitted} but never in {@code changed}: it is not a
      * compilation unit, so it never feeds the recompile set.
+     *
+     * <p>{@code emittedUnits} and {@code changedUnits} are the same two sets keyed by fully-qualified
+     * class name rather than path, and {@code emittedUnits} additionally carries the emitted
+     * {@link TypeSpec} per unit. This is the raw material R410's incremental compile driver reads: the
+     * FQCN keys are the graph's node identities (and the live set for the {@code .class} orphan sweep),
+     * the {@link TypeSpec} values feed {@code AbiSignature.hash} for ABI-vs-body discrimination, and
+     * {@code changedUnits} is the writer's delta by FQCN. Hashing is left to the consumer, so a
+     * production {@code generate()} that ignores the result pays no ABI-hashing cost; retaining the
+     * specs is a transient reference the run discards. The SDL resource is not a compilation unit and
+     * appears in neither map.
      */
-    public record GenerationResult(Set<Path> emitted, Set<Path> changed) {}
+    public record GenerationResult(Set<Path> emitted, Set<Path> changed,
+                                   Map<String, TypeSpec> emittedUnits, Set<String> changedUnits) {}
 
     /**
-     * Mutable per-run accumulator for the emitted set and the changed-file delta. Kept internal;
+     * Mutable per-run accumulator for the emitted set and the changed-file delta, tracked both by path
+     * (for the {@code .java} sweep) and by FQCN (for the compile graph / recompile set). Kept internal;
      * {@link #runPipeline} converts it to the immutable {@link GenerationResult} it returns.
      */
     private static final class EmissionLog {
         private final Set<Path> emitted = new LinkedHashSet<>();
         private final Set<Path> changed = new LinkedHashSet<>();
+        private final Map<String, TypeSpec> emittedUnits = new LinkedHashMap<>();
+        private final Set<String> changedUnits = new LinkedHashSet<>();
 
-        /** Records a compilation-unit write, folding its {@code changed} flag into the delta. */
-        void record(JavaFile.WriteResult result) {
+        /** Records a compilation-unit write, folding its {@code changed} flag into both deltas. */
+        void record(String fqcn, TypeSpec spec, JavaFile.WriteResult result) {
             emitted.add(result.path());
+            emittedUnits.put(fqcn, spec);
             if (result.changed()) {
                 changed.add(result.path());
+                changedUnits.add(fqcn);
             }
         }
 
@@ -284,7 +302,9 @@ public class GraphQLRewriteGenerator {
         sweepOrphans(emittedThisRun.emitted);
         return new GenerationResult(
             Collections.unmodifiableSet(emittedThisRun.emitted),
-            Collections.unmodifiableSet(emittedThisRun.changed)
+            Collections.unmodifiableSet(emittedThisRun.changed),
+            Collections.unmodifiableMap(emittedThisRun.emittedUnits),
+            Collections.unmodifiableSet(emittedThisRun.changedUnits)
         );
     }
 
@@ -295,10 +315,9 @@ public class GraphQLRewriteGenerator {
             : outputPackage + "." + subPackage;
         for (TypeSpec spec : specs) {
             try {
-                emittedThisRun.record(
-                    JavaFile.builder(packageName, spec).indent("    ").build()
-                        .writeToPathReporting(ctx.outputDirectory(), StandardCharsets.UTF_8)
-                );
+                var result = JavaFile.builder(packageName, spec).indent("    ").build()
+                    .writeToPathReporting(ctx.outputDirectory(), StandardCharsets.UTF_8);
+                emittedThisRun.record(packageName + "." + spec.name(), spec, result);
             } catch (IOException e) {
                 throw new RuntimeException(e);
             }

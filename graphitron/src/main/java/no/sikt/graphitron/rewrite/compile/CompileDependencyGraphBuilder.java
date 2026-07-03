@@ -3,6 +3,7 @@ package no.sikt.graphitron.rewrite.compile;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.model.CallSiteCompaction;
 import no.sikt.graphitron.rewrite.model.ChildField;
+import no.sikt.graphitron.rewrite.model.DmlReturnExpression;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.InputField;
@@ -232,16 +233,20 @@ public final class CompileDependencyGraphBuilder {
      * here they contribute their root conditions and, where they encode a PK, the precise
      * {@code NodeIdEncoder} edge.
      *
-     * <p>Known slice-2 boundary: the DML {@code ProjectedSingle}/{@code ProjectedList} arms that
-     * project the {@code @table} type inline in the mutation fetcher itself (no payload child field)
-     * do not yet contribute the direct {@code fetcher → typeClass} edge, because the target type name
-     * lives behind {@link no.sikt.graphitron.rewrite.model.DmlReturnExpression} rather than a
-     * {@code returnType} slot. The {@link TypeSpecReferenceWalk} completeness oracle (slice 5) is
-     * where that residual is falsified and closed.
+     * <p>Slice-5 closes the slice-2 residual: the DML {@code ProjectedSingle}/{@code ProjectedList}
+     * (and {@code Discriminated*}) arms project the {@code @table} type inline in the mutation fetcher
+     * itself (no payload child field), so their {@code fetcher → typeClass} edge is now sourced from
+     * the {@link no.sikt.graphitron.rewrite.model.DmlReturnExpression} the field carries (see
+     * {@link #addDmlProjectionEdges}), model-sourced exactly like {@link #addTypeClassEdge}. The
+     * {@link TypeSpecReferenceWalk} oracle is what falsified the omission.
      */
     private void addRootFieldEdges(String fetcher, String parent, MutationField field) {
         switch (field) {
-            case MutationField.DmlTableField ignored -> { addConditionsEdge(fetcher, parent); addNodeIdEncoderEdge(fetcher); }
+            case MutationField.DmlTableField f -> {
+                addConditionsEdge(fetcher, parent);
+                addNodeIdEncoderEdge(fetcher);
+                addDmlProjectionEdges(fetcher, f.returnExpression());
+            }
             case MutationField.MutationServiceTableField f -> addTypeClassEdge(fetcher, f.returnType());
             case MutationField.MutationServiceTableInterfaceField f -> addTypeClassEdge(fetcher, f.returnType());
             case MutationField.MutationServiceRecordField ignored -> { }
@@ -252,6 +257,25 @@ public final class CompileDependencyGraphBuilder {
             case MutationField.MutationBulkUpdatePayloadField ignored -> addConditionsEdge(fetcher, parent);
             case MutationField.MutationDeletePayloadField ignored -> addConditionsEdge(fetcher, parent);
             case MutationField.MutationBulkDeletePayloadField ignored -> addConditionsEdge(fetcher, parent);
+        }
+    }
+
+    /**
+     * The DML mutation fetcher's inline projection edge, sourced from the {@link DmlReturnExpression}
+     * the {@link MutationField.DmlTableField} carries. Exhaustive over the return-shape arms (the
+     * drift guard extends to any new DML return shape): {@code Projected*} references the target
+     * {@code @table} type's projection class; {@code Discriminated*} references each participant's
+     * projection (single-table discriminated interface); {@code Encoded*} reaches only
+     * {@code NodeIdEncoder}, already added for the DML arm, so it contributes no projection edge here.
+     */
+    private void addDmlProjectionEdges(String fetcher, DmlReturnExpression expr) {
+        switch (expr) {
+            case DmlReturnExpression.ProjectedSingle p -> acc.addEdge(fetcher, units.typeClass(p.returnTypeName()));
+            case DmlReturnExpression.ProjectedList p -> acc.addEdge(fetcher, units.typeClass(p.returnTypeName()));
+            case DmlReturnExpression.DiscriminatedSingle d -> addParticipantTypeClassEdges(fetcher, d.participants());
+            case DmlReturnExpression.DiscriminatedList d -> addParticipantTypeClassEdges(fetcher, d.participants());
+            case DmlReturnExpression.EncodedSingle ignored -> { }
+            case DmlReturnExpression.EncodedList ignored -> { }
         }
     }
 
@@ -293,30 +317,47 @@ public final class CompileDependencyGraphBuilder {
 
     /**
      * Adds (a) the blanket over-approximation edges from every fetcher into each ABI-frozen runtime
-     * singleton, and (b) the wiring-hub edges: the schema class references every schema-shape unit and
-     * every fetcher it registers, each schema-shape unit references its own fetcher, and the facade
-     * references the schema and context. These are correct superset edges whose targets are the
-     * hub / frozen scaffolding, so they never harm pruning (see {@link UtilSingleton}).
+     * singleton and into the {@code GraphitronContext} interface every fetcher takes, and (b) the
+     * wiring-hub edges: the schema class references every schema-shape unit and every fetcher it
+     * registers; each schema-shape {@code <Type>Type} wiring class references its own {@code <Type>Fetchers}
+     * (it registers that data fetcher) and {@code LightFetcher}; the facade references the schema and
+     * context. These are correct superset edges whose targets are the hub / frozen scaffolding (the
+     * {@code LightFetcher} / {@code GraphitronContext} edges are over-approximated onto every shape and
+     * fetcher rather than only the ones that structurally use them), so they never harm pruning: the
+     * targets are ABI-frozen, so slice-3 ABI-gating never fires on them. The {@link TypeSpecReferenceWalk}
+     * oracle pins that these cover the real emitted wiring references.
      */
     private void addBlanketAndWiringEdges() {
         String schemaClass = units.singleton(GeneratedUnits.SUB_SCHEMA, "GraphitronSchema");
         String facade = units.rootUnit("Graphitron");
         String context = units.singleton(GeneratedUnits.SUB_SCHEMA, "GraphitronContext");
+        String lightFetcher = units.singleton(GeneratedUnits.SUB_UTIL, "LightFetcher");
         String schemaShapePrefix = units.fqcn(GeneratedUnits.SUB_SCHEMA, "");
+        var fetcherNodes = new java.util.LinkedHashSet<>(currentFetcherNodes());
 
-        for (String fetcher : currentFetcherNodes()) {
+        for (String fetcher : fetcherNodes) {
             for (var singleton : UtilSingleton.ALL) {
                 if (singleton instanceof UtilSingleton.FrozenScaffold fs) {
                     acc.addEdge(fetcher, units.singleton(fs.subPackage(), fs.simpleName()));
                 }
             }
+            // Every fetcher method takes a GraphitronContext (a frozen interface).
+            acc.addEdge(fetcher, context);
             // The schema class wires every fetcher; a fetcher ABI change recompiles the schema class.
             acc.addEdge(schemaClass, fetcher);
         }
-        // The schema class also wires every schema-shape unit; the facade builds off the schema class.
+        // The schema class wires every schema-shape unit; each shape registers its own data fetcher and
+        // uses LightFetcher; the facade builds off the schema class.
         for (String node : acc.nodesSnapshot()) {
             if (node.startsWith(schemaShapePrefix) && node.endsWith(GeneratedUnits.SCHEMA_SHAPE_SUFFIX)) {
                 acc.addEdge(schemaClass, node);
+                String typeName = node.substring(schemaShapePrefix.length(),
+                    node.length() - GeneratedUnits.SCHEMA_SHAPE_SUFFIX.length());
+                String ownFetcher = units.fetchers(typeName);
+                if (fetcherNodes.contains(ownFetcher)) {
+                    acc.addEdge(node, ownFetcher);
+                }
+                acc.addEdge(node, lightFetcher);
             }
         }
         acc.addEdge(facade, schemaClass);
