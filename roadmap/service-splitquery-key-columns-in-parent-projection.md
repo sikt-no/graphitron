@@ -1,7 +1,7 @@
 ---
 id: R425
 title: "Parent projection omits key columns a @splitQuery/@service child needs, so its dataloader key is silently null"
-status: In Progress
+status: In Review
 bucket: bug
 priority: 8
 theme: service
