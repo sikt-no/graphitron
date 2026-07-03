@@ -1,7 +1,7 @@
 ---
 id: R426
 title: "TableRecord-sourced @service keys are partial records; service bodies reading non-key columns get silent nulls"
-status: In Progress
+status: In Review
 bucket: bug
 priority: 6
 theme: service
