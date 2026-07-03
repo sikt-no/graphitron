@@ -24,11 +24,10 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R273` | Source NodeId metadata from @node + catalog PK (inferred from `implements Node`), and settle wrong-type/malformed mismatch semantics, retiring the legacy __NODE bare-ID arm | Spec | 2026-06-02 | [plan](nodeid-skip-mismatch-error-surfacing.md) |
 | `R45` | Multi-tenant routing on top of the schema-driven ExecutionInput factory | Ready | 2026-06-26 | [plan](tenant-routing-and-execution-input.md) |
 | `R347` | Consolidate graphitron-lsp navigation, dispatch, and result-building | In Progress | 2026-07-01 <sub>created 2026-06-19</sub> | [plan](lsp-structural-consolidation.md) |
-| `R426` | TableRecord-sourced @service keys are partial records; service bodies reading non-key columns get silent nulls <sub>blocked by: [service-splitquery-key-columns-in-parent-projection](service-splitquery-key-columns-in-parent-projection.md)</sub> | Ready | 2026-07-03 <sub>created 2026-07-02</sub> | [plan](service-tablerecord-partial-record-nonkey-reads.md) |
+| `R426` | TableRecord-sourced @service keys are partial records; service bodies reading non-key columns get silent nulls | Ready | 2026-07-03 <sub>created 2026-07-02</sub> | [plan](service-tablerecord-partial-record-nonkey-reads.md) |
 | `R13` | Faceted search on `@asConnection` | Ready | 2026-06-26 | [plan](faceted-search.md) |
 | `R424` | Inline @reference field reads its filter/pagination args from the top-level env, silently dropping them | In Progress | 2026-07-03 <sub>created 2026-07-02</sub> | [plan](inline-field-args-from-selectedfield.md) |
 | `R92` | Surface database CHECK constraints as Jakarta validation rules | Spec |  | [plan](catalog-check-constraint-validation.md) |
-| `R425` | Parent projection omits key columns a @splitQuery/@service child needs, so its dataloader key is silently null | In Review | 2026-07-03 <sub>created 2026-07-02</sub> | [plan](service-splitquery-key-columns-in-parent-projection.md) |
 | `R180` | Centralize ResultType column-read emission for @record parents | Spec | 2026-05-19 | [plan](record-parent-column-read-helper.md) |
 | `R242` | DML payload positional input/output alignment | Spec | 2026-06-15 <sub>created 2026-05-26</sub> | [plan](dml-payload-positional-alignment.md) |
 | `R115` | Enumerate the capabilities graphitron delivers | Spec |  | [plan](capability-catalog.md) |
@@ -194,12 +193,11 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R54` [**Rename @externalField (parallel-support, deprecation, migration)**](rename-externalfield-directive.md) — Backlog, cleanup
 - `R192` [**Mojo-configured custom Bean Validation factory**](custom-validator-factory.md) — Backlog, architecture
 - `R46` [**Multi-tenant fan-out for `@service`**](service-multi-tenant-fanout.md) — Backlog, architecture, blocked by [tenant-routing-and-execution-input](tenant-routing-and-execution-input.md)
-- `R426` [**TableRecord-sourced @service keys are partial records; service bodies reading non-key columns get silent nulls**](service-tablerecord-partial-record-nonkey-reads.md) — Ready, bug, blocked by [service-splitquery-key-columns-in-parent-projection](service-splitquery-key-columns-in-parent-projection.md)
+- `R426` [**TableRecord-sourced @service keys are partial records; service bodies reading non-key columns get silent nulls**](service-tablerecord-partial-record-nonkey-reads.md) — Ready, bug
 - `R11` [**`DSLContext` on `@condition` / `@tableMethod` methods**](dslcontext-on-condition-tablemethod.md) — Backlog, architecture
 - `R71` [**@batchKeyLifter Record return-type symmetry**](recordn-key-parity-lifter-and-non-jooq-record-parents.md) — Backlog, architecture
 - `R193` [**Sealed UnresolvedParam classification for @service parameter rejection arms**](service-param-classification-sealed-hierarchy.md) — Backlog, architecture
 - `R116` [**Cover composite-key Row2 path-keyed @sourceRow classification**](composite-key-row2-source-row-coverage.md) — Backlog, cleanup
-- `R425` [**Parent projection omits key columns a @splitQuery/@service child needs, so its dataloader key is silently null**](service-splitquery-key-columns-in-parent-projection.md) — In Review, bug
 
 ### mutations-errors
 

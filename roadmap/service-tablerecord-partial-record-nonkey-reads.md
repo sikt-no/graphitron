@@ -5,7 +5,7 @@ status: Ready
 bucket: bug
 priority: 6
 theme: service
-depends-on: [service-splitquery-key-columns-in-parent-projection]
+depends-on: []
 created: 2026-07-02
 last-updated: 2026-07-03
 ---
