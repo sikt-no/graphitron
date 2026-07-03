@@ -1,13 +1,13 @@
 ---
 id: R426
 title: "TableRecord-sourced @service keys are partial records; service bodies reading non-key columns get silent nulls"
-status: Spec
+status: Ready
 bucket: bug
 priority: 6
 theme: service
 depends-on: [service-splitquery-key-columns-in-parent-projection]
 created: 2026-07-02
-last-updated: 2026-07-02
+last-updated: 2026-07-03
 ---
 
 # TableRecord-sourced @service keys are partial records; service bodies reading non-key columns get silent nulls
