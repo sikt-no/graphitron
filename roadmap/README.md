@@ -28,7 +28,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R13` | Faceted search on `@asConnection` | Ready | 2026-06-26 | [plan](faceted-search.md) |
 | `R424` | Inline @reference field reads its filter/pagination args from the top-level env, silently dropping them | In Review | 2026-07-02 | [plan](inline-field-args-from-selectedfield.md) |
 | `R92` | Surface database CHECK constraints as Jakarta validation rules | Spec |  | [plan](catalog-check-constraint-validation.md) |
-| `R425` | Parent projection omits key columns a @splitQuery/@service child needs, so its dataloader key is silently null | Ready | 2026-07-02 | [plan](service-splitquery-key-columns-in-parent-projection.md) |
+| `R425` | Parent projection omits key columns a @splitQuery/@service child needs, so its dataloader key is silently null | In Progress | 2026-07-03 <sub>created 2026-07-02</sub> | [plan](service-splitquery-key-columns-in-parent-projection.md) |
 | `R180` | Centralize ResultType column-read emission for @record parents | Spec | 2026-05-19 | [plan](record-parent-column-read-helper.md) |
 | `R242` | DML payload positional input/output alignment | Spec | 2026-06-15 <sub>created 2026-05-26</sub> | [plan](dml-payload-positional-alignment.md) |
 | `R115` | Enumerate the capabilities graphitron delivers | Spec |  | [plan](capability-catalog.md) |
@@ -199,7 +199,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R71` [**@batchKeyLifter Record return-type symmetry**](recordn-key-parity-lifter-and-non-jooq-record-parents.md) — Backlog, architecture
 - `R193` [**Sealed UnresolvedParam classification for @service parameter rejection arms**](service-param-classification-sealed-hierarchy.md) — Backlog, architecture
 - `R116` [**Cover composite-key Row2 path-keyed @sourceRow classification**](composite-key-row2-source-row-coverage.md) — Backlog, cleanup
-- `R425` [**Parent projection omits key columns a @splitQuery/@service child needs, so its dataloader key is silently null**](service-splitquery-key-columns-in-parent-projection.md) — Ready, bug
+- `R425` [**Parent projection omits key columns a @splitQuery/@service child needs, so its dataloader key is silently null**](service-splitquery-key-columns-in-parent-projection.md) — In Progress, bug
 
 ### mutations-errors
 
