@@ -23,7 +23,7 @@ The main insight: graphitron already knows which database column every argument,
 
 R429 (`connection-transaction-lifecycle`) is the substrate: graphitron owns connection acquisition and transactions, and database-per-tenant deployments hand it a `Map<TenantId, DataSource>`. R429 owns acquisition, transaction demarcation, and session state; R45 owns everything schema-shaped: the tenant-column declaration, the table classification, the per-field `TenantBinding` inference, the factory shape, the per-tenant partitioning at the fan-out points, and the validation that makes unroutable tenant-scoped fields a build error. The shared-database RLS flavor needs nothing from R45 (row scoping is the database's job there).
 
-One R429 amendment is required and is called out in [Siblings](#siblings): R429 currently assumes the tenant "arrives as a contextArgument" and demarcates one read-only transaction per query operation. Operation-divined tenancy means acquisition happens per divined tenant: a query touching N tenants runs N read-only transactions. Both items are in Spec; reconcile there before either is signed off.
+R429's connection model was amended in step with this revision (2026-07-03) to cover operation-divined tenancy, and it owns the transaction demarcation rule this item routes through: within one operation, all SQL for the same divined tenant shares one transaction, so a query touching N tenants runs N read-only transactions. This item references that rule rather than restating it.
 
 ## Design
 
@@ -43,12 +43,14 @@ A sealed per-field axis, an optional overlay sibling to R316's `source()` / `ope
 
 ```java
 sealed interface TenantBinding {
-    /** An argument or input-object field whose column mapping resolves to a tenant column. */
-    record ArgumentBound(ArgPath path, ColumnRef column) implements TenantBinding {}
-    /** The field resolves by node id whose decoded key columns include the tenant column. */
+    /** Argument / input-object fields whose column mappings resolve to tenant columns.
+        Carries every co-binding; the first is the documented-precedence primary, and the
+        emitter guards that all divined values agree at runtime. */
+    record ArgumentBound(List<BoundSlot> bindings) implements TenantBinding {}
+    /** The field resolves by node id; the tenant is a decoded-column position of the batch key. */
     record NodeIdBound(/* decoded-column position */) implements TenantBinding {}
-    /** A federation _entities representation carries the tenant column. */
-    record EntityRepBound(/* rep field ref */) implements TenantBinding {}
+    /** The field resolves _entities representations; the tenant is a decoded-column position of the batch key. */
+    record EntityRepBound(/* decoded-column position */) implements TenantBinding {}
     /** A child field inherits the tenant divined at its binding ancestor. */
     record Inherited(/* ancestor coordinate */) implements TenantBinding {}
     /** The field touches only global tables; runs on the default DataSource. */
@@ -56,9 +58,11 @@ sealed interface TenantBinding {
 }
 ```
 
+The two per-key arms deliberately share the "positional slot in a decoded key" shape: node ids and federation representations both decode at the DataFetcher boundary, and the model carries the decoded position, never a reference into the raw id string or rep map (wire format stays a boundary concern).
+
 Classification rules:
 
-- An argument or input-object field whose column mapping (the same resolution filters and conditions already use) lands on a tenant column yields `ArgumentBound`. This is the `emner(filter: { eierOrganisasjon })` case, and it covers mutations too: an insert/update input field mapping to the tenant column divines the routing for that mutation field.
+- An argument or input-object field whose column mapping (the same resolution filters and conditions already use) lands on a tenant column yields `ArgumentBound`. This is the `emner(filter: { eierOrganisasjon })` case, and it covers mutations too: an insert/update input field mapping to the tenant column divines the routing for that mutation field. When several such bindings occur on one field, the classifier resolves the full set into the arm (deterministic precedence picks the primary) so the emitter reads the runtime-equality guard off the model rather than re-walking the arguments.
 - A field resolved by node id whose decoded key columns include the tenant column yields `NodeIdBound`; each id in a batch carries its own tenant.
 - A federation `_entities` resolution whose representation carries the tenant column yields `EntityRepBound`; each rep carries its own tenant.
 - A field below a bound ancestor yields `Inherited`: the divined tenant flows down the subtree. Within any execution context made tenant-homogeneous by the partitioning below, inheritance is a value hand-down, not a per-row re-read; the exact runtime carrier is an implementation choice against the `SourceKey.Reader` surfaces.
@@ -87,8 +91,8 @@ Routing happens where the key is divined; batching machinery partitions so each 
 
 - **Root and mutation fields** (`ArgumentBound`): the emitted fetcher reads the bound value and acquires through R429 against the map. The DSLContext-selection sites are the direct-SQL fetchers, the DML fetcher in `TypeFetcherGenerator`, and `ServiceMethodCallEmitter`; all currently emit `getDslContext(env)` and gain the routed acquisition.
 - **Node dispatch** (`NodeIdBound`): `QueryNodeFetcherClassGenerator.dispatchNodes` groups by `(type, alternative, tenant)` and issues one SELECT per group against that tenant's source. This restores the pre-R190 grouping its stale comment still describes.
-- **Federation `_entities`** (`EntityRepBound`): `HandleMethodBody` re-widens the grouping to `Map<Integer, Map<TenantKey, List<Object[]>>>`, reads the tenant off each rep, and dispatches each inner group against its tenant's source.
-- **Batched children** (`Inherited`): DataLoader identity partitions per tenant (the tenant key joins the path-derived loader name), so each loader is tenant-homogeneous and its captured environment routes the right source. This is load-bearing, not cosmetic: a batch loader resolves one `DSLContext` from the environment captured at loader creation, so a tenant-mixed loader would execute every key against the first key's tenant. The per-request `DataLoaderRegistry` means the partition only matters within a request, which is exactly when node ids and entity reps span tenants.
+- **Federation `_entities`** (`EntityRepBound`): `HandleMethodBody` re-widens the grouping to `Map<Integer, Map<TenantKey, List<Object[]>>>`, reads the tenant at the classified decoded position of each representation, and dispatches each inner group against its tenant's source.
+- **Batched children** (`Inherited`): DataLoader identity partitions per tenant (the tenant key joins the path-derived loader name), so each loader is tenant-homogeneous and its captured environment routes the right source. This is load-bearing, not cosmetic: a batch loader resolves one `DSLContext` from the environment captured at loader creation, so a tenant-mixed loader would execute every key against the first key's tenant. The per-request `DataLoaderRegistry` means the partition only matters within a request, which is exactly when node ids and entity reps span tenants. Two invariants keep the scheme honest: the name is composed by a single shared helper read by both the registration and lookup sites, and the tenant segment is an opaque partition key, never parsed back to recover the value (the captured environment carries the typed tenant).
 
 ### Legacy retirement (implementation tasks)
 
@@ -98,7 +102,7 @@ Routing happens where the key is divined; batching machinery partitions so each 
 ## Tests
 
 - **Catalog (L1/L2).** Table classification against the configured column; `T` inferred from the catalog column type; `tenantColumnTypeDisagreement` on mixed types; no element, no axis.
-- **Classification (L2).** SDL fixtures per arm: the `emner(filter: { eierOrganisasjon })` shape yields `ArgumentBound` with the resolved column; a node-id field whose key embeds the tenant column yields `NodeIdBound`; an entity resolution yields `EntityRepBound`; a child under a bound root yields `Inherited`; a global-table field yields `Untenanted`; a tenant-scoped field with no binding yields `noTenantBinding`, asserted as the typed record and the rendered `message()`.
+- **Classification (L2).** SDL fixtures per arm: the `emner(filter: { eierOrganisasjon })` shape yields `ArgumentBound` with the resolved binding set (plus a two-binding fixture asserting the precedence primary and the carried co-binding); a node-id field whose key embeds the tenant column yields `NodeIdBound`; an entity resolution yields `EntityRepBound`; a child under a bound root yields `Inherited`; a global-table field yields `Untenanted`; a tenant-scoped field with no binding yields `noTenantBinding`, asserted as the typed record and the rendered `message()`.
 - **Validation (L4).** Both rejections drain through `validateTenantBindings`, mirroring `ContextArgumentTypeAgreementValidationTest`.
 - **Pipeline (L4).** Facade snapshot (overload iff configured, map key type from the catalog); loader-name partition snapshot (`Inherited` prefixed, `Untenanted` bare); node-dispatch and `_entities` grouping snapshots.
 - **Compile (L5).** `graphitron-sakila-example` gains a multi-tenant fixture exercising the overload, an inferred argument binding, and a global reference-data fetch.
@@ -106,9 +110,9 @@ Routing happens where the key is divined; batching machinery partitions so each 
 
 ## Open questions
 
-1. **R429 reconciliation (blocking).** R429's connection model says the tenant "arrives as a contextArgument" and a query runs one read-only transaction. Amend to: the tenant key is supplied by the caller *or divined from the operation* (this item), and acquisition is per divined tenant, so a query touching N tenants runs N read-only transactions. Both items are in Spec; land the amendment there.
-2. **Multiple bindings on one field.** Two arguments (or an argument plus a nodeId package) can both bind tenant columns. Recommendation: classify deterministically (document precedence), require runtime equality of the divined values, error on disagreement; a validate-time rejection would forbid legitimate schemas.
-3. **Explicit override.** Is a directive escape hatch (`@tenantId` on an argument) needed for schemas where inference picks the wrong binding? Deferred until a real schema demonstrates the misfire; inference-only keeps the surface clean.
+1. **R429 sync through sign-off.** The R429 amendment landed with this revision (its connection model now covers operation-divined tenancy and owns the demarcation rule). The remaining task is discipline, not design: the two Specs share the `Map<TenantId, DataSource>` seam, so a change to either side's half re-checks the other before either item leaves Spec.
+2. **Multiple bindings on one field: resolved into the model.** `ArgumentBound` carries the full co-binding set with a documented-precedence primary; the emitter emits a runtime equality guard across the set and errors on disagreement. A validate-time rejection would forbid legitimate schemas, and build time cannot know the values agree.
+3. **Explicit override.** Is a directive escape hatch (`@tenantId` on an argument) needed for schemas where inference picks the wrong binding? Deferred until a real schema demonstrates the misfire; inference-only keeps the surface clean. Two shape notes for whoever picks this up: if the concern is SDL legibility (an author cannot see that a filter field routes databases), the mitigation is surfacing, not a directive (validation output, generated docs, or LSP hover naming each field's binding); and if a genuine single-connection cross-tenant read ever needs an escape hatch, it enters as an explicit positively-classified arm (`CrossTenant`) the validator and dispatcher both read, never a flag that suppresses the `noTenantBinding` rejection.
 4. **Request-scope fallback.** Consumers who do know the tenant up front are covered by R429's contextArgument story; whether that fallback should also feed `TenantBinding` (an extra arm) is deferred to the R429 reconciliation.
 5. **`Inherited` runtime carrier.** Subtree value hand-down vs parent-row column read; resolve against the live `SourceKey.Reader` / `ColumnRef` surfaces at implementation time.
 
@@ -118,6 +122,6 @@ Earlier designs, superseded and recorded in this file's git history: a 2026-05-2
 
 ## Siblings
 
-- **Depends on R429** ([`connection-transaction-lifecycle.md`](connection-transaction-lifecycle.md)): the substrate (DataSource acquisition, transactions, session state, the `Map<TenantId, DataSource>` shape). Needs the amendment in Open question 1; its slice 4 execute coverage and this item's overlap, so the isolation proofs should land once, split as: R429 proves routing given a caller-known tenant, R45 proves the divined bindings.
+- **Depends on R429** ([`connection-transaction-lifecycle.md`](connection-transaction-lifecycle.md)): the substrate (DataSource acquisition, transactions, session state, the `Map<TenantId, DataSource>` shape) and the owner of the transaction demarcation rule; amended 2026-07-03 to cover operation-divined tenancy. Its slice 4 execute coverage and this item's overlap, so the isolation proofs land once, split as: R429 proves routing given a caller-known tenant, R45 proves the divined bindings.
 - **R46** ([`service-multi-tenant-fanout.md`](service-multi-tenant-fanout.md)): fan-out (run one field across many tenants and union) stays separate; this item routes each field to the one tenant its data names. R46's spec is stale (it builds on a `ContextValueRegistration` permit dissolved by R190) and needs its own rework.
 - **R190** (Done, recorded in [`changelog.md`](changelog.md)): the factory, classifier-cache, rejection, and validator-mirror patterns this item reuses throughout.
