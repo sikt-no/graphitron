@@ -626,6 +626,21 @@ input CityCountryFilter @table(name: "city") {
 type City @table(name: "city") {
     cityId:   Int!    @field(name: "CITY_ID")
     cityName: String! @field(name: "CITY")
+    # R425 unmasked @service-child fixtures. City deliberately carries no @splitQuery/@tableMethod
+    # sibling, so the @service children themselves are the only reason CITY_ID is force-projected
+    # into the parent SELECT (via the BatchKeyField arm in
+    # TypeClassGenerator.collectRequiredProjectionColumns). Film's service children cannot pin
+    # this: its cast/castByKey split siblings already project FILM_ID into every parent SELECT.
+    # cityUppercase: typed-CityRecord source (Wrap.TableRecord) — the silent-null reproducer shape.
+    cityUppercase: String @service(service: {
+        className: "no.sikt.graphitron.rewrite.test.services.CityService",
+        method: "cityUppercase"
+    })
+    # cityLowercase: Row1 source (Wrap.Row) — the loud-throw shape (jOOQ throws on an absent field).
+    cityLowercase: String @service(service: {
+        className: "no.sikt.graphitron.rewrite.test.services.CityService",
+        method: "cityLowercase"
+    })
 }
 
 # R110 fixture: free-form (non-table-backed) record-backed payload. The backing class is a

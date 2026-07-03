@@ -463,6 +463,33 @@ class FederationEntitiesDispatchTest {
     }
 
     /**
+     * R425: a representations-driven {@code _entities} fetch that selects <em>only</em> a
+     * {@code @service} child — the key arrives via the representation ({@code cityId}) and is
+     * deliberately not re-selected in the sub-selection. This is the exact Apollo Router shape
+     * from the opptak reproducer: the router selects just the fields it needs and supplies key
+     * columns through the representation. The entity dispatch SELECT goes through
+     * {@code City.$fields}, which must force-project {@code CITY_ID} (the service child's
+     * SourceKey column) so the DataLoader key extraction ({@code .into(Tables.CITY)}) reads a
+     * non-null key; pre-fix the child silently resolved to {@code null}. City is the unmasked
+     * fixture — no other child of City force-projects the key column.
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    void entities_serviceChildOnly_keyNotReselected_resolvesNonNull() {
+        // Seed: city_id 1 = 'Lethbridge' (first row of the city INSERT in init.sql).
+        Map<String, Object> data = execute(
+            "query Q($reps: [_Any!]!) { _entities(representations: $reps) {"
+            + " __typename ... on City { cityUppercase } } }",
+            Map.of("reps", List.of(Map.of("__typename", "City", "cityId", 1))));
+        List<Map<String, Object>> entities = (List<Map<String, Object>>) data.get("_entities");
+        assertThat(entities).hasSize(1);
+        assertThat(entities.get(0)).containsEntry("__typename", "City");
+        assertThat((String) entities.get(0).get("cityUppercase"))
+            .as("service child must resolve non-null when the key is supplied only via the representation")
+            .isEqualTo("LETHBRIDGE");
+    }
+
+    /**
      * Compound key batching: multiple reps of the same {@code (typename, alternative,
      * tenantId)} batch into a single SELECT via the {@code VALUES (idx, ...)} derived
      * table. Verifies the row-array machinery emits one SELECT for two reps, not two.

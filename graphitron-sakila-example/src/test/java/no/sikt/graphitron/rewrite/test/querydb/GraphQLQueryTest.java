@@ -401,6 +401,12 @@ class GraphQLQueryTest {
         assertThat(data).extractingByKey("films", as(LIST)).hasSize(5);
     }
 
+    // R425 note: the Film service-child tests below do NOT pin the SourceKey force-projection
+    // (parent SELECT must include FILM_ID even when unselected) — Film's cast/castByKey
+    // @splitQuery siblings already force-project FILM_ID into every parent SELECT, so these
+    // stay green if the @service arm of TypeClassGenerator.collectRequiredProjectionColumns
+    // regresses. They cover the with-projecting-sibling scenario; the unmasked fixture is the
+    // City service children (cities_cityUppercase_* / cities_cityLowercase_* below).
     @Test
     void films_titleLowercase_resolvesViaServiceRecordFieldDataLoader_row1Source() {
         // R61 L6 sibling: identical wiring to titleUppercase but the developer-side method
@@ -2038,6 +2044,46 @@ class GraphQLQueryTest {
         List<Map<String, Object>> cities = (List<Map<String, Object>>) data.get("citiesByCountryName");
         assertThat(cities).extracting(c -> c.get("cityName"))
             .containsExactlyInAnyOrder("Lethbridge", "Rome", "Tokyo");
+    }
+
+    // ===== R425: unmasked @service-child SourceKey projection =====
+    // City carries no @splitQuery/@tableMethod sibling, so its @service children are the only
+    // reason CITY_ID lands in the parent SELECT. Both queries deliberately select NO field that
+    // maps to CITY_ID; if the BatchKeyField arm in
+    // TypeClassGenerator.collectRequiredProjectionColumns regresses, cityUppercase resolves to
+    // null (silent .into(Tables.CITY) extraction) and cityLowercase fails the request (loud
+    // per-column get(...) extraction), turning these red.
+
+    @SuppressWarnings("unchecked")
+    @Test
+    void cities_cityUppercase_withoutKeyFieldSelected_resolvesViaTableRecordSource() {
+        // Wrap.TableRecord — the silent-null reproducer shape from the opptak federation bug.
+        Map<String, Object> data = execute("{ citiesByCountryName { cityName cityUppercase } }");
+        assertThat(data).extractingByKey("citiesByCountryName", as(list(Map.class)))
+            .hasSize(3)
+            .allSatisfy(c -> {
+                var cityName = (String) c.get("cityName");
+                assertThat((String) c.get("cityUppercase"))
+                    .as("cityUppercase must resolve non-null for city '%s' even though no "
+                        + "selected field maps to CITY_ID", cityName)
+                    .isEqualTo(cityName.toUpperCase());
+            });
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    void cities_cityLowercase_withoutKeyFieldSelected_resolvesViaRow1Source() {
+        // Wrap.Row — the loud-throw shape (jOOQ throws on an absent field at key extraction).
+        Map<String, Object> data = execute("{ citiesByCountryName { cityName cityLowercase } }");
+        assertThat(data).extractingByKey("citiesByCountryName", as(list(Map.class)))
+            .hasSize(3)
+            .allSatisfy(c -> {
+                var cityName = (String) c.get("cityName");
+                assertThat((String) c.get("cityLowercase"))
+                    .as("cityLowercase must resolve non-null for city '%s' even though no "
+                        + "selected field maps to CITY_ID", cityName)
+                    .isEqualTo(cityName.toLowerCase());
+            });
     }
 
     @SuppressWarnings("unchecked")

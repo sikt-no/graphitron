@@ -8,6 +8,7 @@ import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.javapoet.WildcardTypeName;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
+import no.sikt.graphitron.rewrite.model.BatchKeyField;
 import no.sikt.graphitron.rewrite.model.CallParam;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
@@ -100,9 +101,9 @@ public class TypeClassGenerator {
             .toList();
         // Fields whose fetchers read parent-row columns the parent SELECT would not otherwise
         // project must opt those columns into $fields explicitly:
-        //   - Split* fields (DataLoader-backed; they don't appear in $fields) — their SourceKey
-        //     columns must land in the parent SELECT so key extraction reads non-null values
-        //     off env.getSource().
+        //   - BatchKeyField fields (DataLoader-backed; they don't appear in $fields) — their
+        //     SourceKey columns must land in the parent SELECT so key extraction reads non-null
+        //     values off env.getSource().
         //   - TableMethodField on a table-bound parent — buildChildTableMethodFetcher correlates
         //     via parentRecord.get(DSL.name("<sourceSqlName>"), …) on the FK's source-side
         //     columns; without this injection, the read throws IllegalArgumentException when the
@@ -248,9 +249,9 @@ public class TypeClassGenerator {
         emitSelectionSwitch(builder, 0, flat, "table", entryType, outputPackage, registry);
 
         // Required-projection set: columns the parent SELECT must include regardless of the
-        // user's SDL selection — SourceKey columns for DataLoader-backed Split* children, FK
-        // source-side columns for child @tableMethod fields (see collectRequiredProjectionColumns
-        // for the full taxonomy). The LinkedHashSet accumulator dedupes on add by jOOQ Field
+        // user's SDL selection — SourceKey columns for DataLoader-backed BatchKeyField children,
+        // FK source-side columns for child @tableMethod fields (see
+        // collectRequiredProjectionColumns for the full taxonomy). The LinkedHashSet accumulator dedupes on add by jOOQ Field
         // identity, so a plain fields.add(...) is safe; no explicit contains() guard is needed.
         for (ColumnRef col : requiredProjectionColumns) {
             builder.addStatement("fields.add(table.$L)", col.javaName());
@@ -376,8 +377,10 @@ public class TypeClassGenerator {
      * regardless of the user's SDL selection. Two sources today:
      *
      * <ul>
-     *   <li>Split* fields' {@code SourceKey} columns — their fetchers extract the parent-row
-     *       key off {@code env.getSource()} after the parent {@code $fields()} SELECT runs.</li>
+     *   <li>Table-parent {@link BatchKeyField} implementers' {@code SourceKey} columns — their
+     *       DataLoader fetchers extract the parent-row key off {@code env.getSource()} after the
+     *       parent {@code $fields()} SELECT runs (via {@code GeneratorUtils.buildKeyExtraction}),
+     *       so every {@code sourceKey().columns()} column must be in that SELECT.</li>
      *   <li>{@link ChildField.TableMethodField} on a table-bound parent — the fetcher built by
      *       {@code TypeFetcherGenerator.buildChildTableMethodFetcher} correlates the developer's
      *       returned table against the parent via {@code parentRecord.get(DSL.name("<src>"), …)}
@@ -392,10 +395,28 @@ public class TypeClassGenerator {
      */
     private static java.util.stream.Stream<ColumnRef> collectRequiredProjectionColumns(List<? extends GraphitronField> fields) {
         return fields.stream().flatMap(f -> {
-            if (f instanceof ChildField.SplitTableField stf)
-                return stf.sourceKey().columns().stream();
-            if (f instanceof ChildField.SplitLookupTableField slf)
-                return slf.sourceKey().columns().stream();
+            // Soundness invariant of the blanket BatchKeyField arm below: SourceKey.columns() is
+            // parent-side or target-side depending on shape, and this walk runs only under
+            // generate()'s TableType/NodeType filter, so every BatchKeyField it sees was
+            // classified on a table-backed parent and carries parent-side columns read by
+            // buildKeyExtraction. The record-parent implementers key off a Java accessor via
+            // buildRecordParentKeyExtraction instead and may carry target-aligned columns; if one
+            // ever leaked into this walk, the blanket arm would silently project wrong columns.
+            // Fail at generation time rather than at runtime with a null DataLoader key.
+            if (f instanceof ChildField.RecordTableField
+                    || f instanceof ChildField.RecordLookupTableField
+                    || f instanceof ChildField.RecordTableMethodField)
+                throw new IllegalStateException(
+                    "Record-parent field '" + f.name() + "' (" + f.getClass().getSimpleName()
+                        + ") reached a table-parent $fields projection walk; its SourceKey columns"
+                        + " are not parent-row columns and must not be force-projected");
+            // A null sourceKey means the service method takes no Sources param: the field is a
+            // plain per-parent service delegation, not DataLoader-backed, and its fetcher reads
+            // no key columns off the parent row — nothing to force-project.
+            if (f instanceof BatchKeyField bk)
+                return bk.sourceKey() == null
+                    ? java.util.stream.Stream.<ColumnRef>empty()
+                    : bk.sourceKey().columns().stream();
             if (f instanceof ChildField.TableMethodField tmf) {
                 var path = tmf.joinPath();
                 if (path.size() == 1 && path.get(0) instanceof JoinStep.FkJoin fk) {

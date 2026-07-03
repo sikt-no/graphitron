@@ -63,6 +63,20 @@ type Film implements Node @table(name: "film") @node
     rentalRate:  Float!  @field(name: "RENTAL_RATE")
 }
 
+# R425 fixture: an entity whose ONLY force-projecting child is a @service field. A
+# representations-driven _entities fetch that selects just the service child (the key arrives
+# via the representation and is NOT re-selected in the sub-selection) is the exact Apollo
+# Router shape that surfaced the silent-null bug: the entity dispatch SELECT must still
+# project CITY_ID (the child's SourceKey column) or the DataLoader key extraction reads null.
+type City @table(name: "city") @key(fields: "cityId") {
+    cityId:   Int!    @field(name: "CITY_ID")
+    cityName: String! @field(name: "CITY")
+    cityUppercase: String @service(service: {
+        className: "no.sikt.graphitron.rewrite.test.services.CityService",
+        method: "cityUppercase"
+    })
+}
+
 # Compound @key on a junction table. Exercises multi-column Row arity emission
 # in the dispatcher's VALUES-derived-table SELECT.
 type FilmActor @table(name: "film_actor") @key(fields: "filmId actorId") {

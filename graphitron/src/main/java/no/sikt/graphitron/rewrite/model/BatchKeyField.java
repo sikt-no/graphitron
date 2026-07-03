@@ -8,7 +8,8 @@ package no.sikt.graphitron.rewrite.model;
  * <p>Implemented by all field variants that are DataLoader-backed:
  * {@link ChildField.SplitTableField}, {@link ChildField.SplitLookupTableField},
  * {@link ChildField.ServiceTableField}, {@link ChildField.RecordTableField},
- * {@link ChildField.RecordLookupTableField}, {@link ChildField.ServiceRecordField}.
+ * {@link ChildField.RecordLookupTableField}, {@link ChildField.RecordTableMethodField},
+ * {@link ChildField.ServiceRecordField}.
  *
  * <p>This interface is intentionally standalone (does not extend {@link GraphitronField}) so that
  * it can be applied as an orthogonal capability without being restricted by the sealed hierarchy.
