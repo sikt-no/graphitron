@@ -1,16 +1,53 @@
 ---
 id: R424
 title: "Inline @reference field reads its filter/pagination args from the top-level env, silently dropping them"
-status: In Review
+status: Ready
 bucket: bug
 priority: 7
 theme: structural-refactor
 depends-on: []
 created: 2026-07-02
-last-updated: 2026-07-02
+last-updated: 2026-07-03
 ---
 
 # Inline @reference field reads its filter/pagination args from the top-level env, silently dropping them
+
+## Review feedback (In Review → Ready, 2026-07-03)
+
+The core implementation at `7400c67` is approved as-is: the sealed `ArgumentValueSource`
+threading, the per-arm audit (all arms match the classification table below, `ContextArg`
+stays env-based, `InputBean`/`JooqRecord` guard with `IllegalStateException`), the
+source-aware `CallParam.emitsUncheckedCastFromSelectedField` predicate keeping the `Env`
+hosts byte-identical, and the shipped tests (`InlineFilterArgumentSourcePipelineTest`,
+the three `GraphQLQueryTest` cases on `Store.customersByFirstName{,Split}` /
+`customersFirstN`) are all sound. `mvn install -Plocal-db` verified green at review time.
+Do not redesign any of it. The rework pass is test-completion only:
+
+1. **JooqConvert+list inline pipeline pin (required).** The Tests section promised a
+   pipeline-tier pin that the inline `JooqConvert`+list shape generates end-to-end
+   (pre-R424 it emitted an undeclared `<name>Keys` local). It did not ship, so
+   `ArgCallEmitter.emitJooqConvertKeyLifts`, new emission code fixing a
+   compile-breaking latent defect, has zero test coverage at any tier. Add the pin
+   (an inline `@reference` filter whose input carries an `[ID!]`-over-int-column shape,
+   like `OccupantFilter.storeIds`, against a fixture catalog); assert generation
+   succeeds and, per the suppression tests' pattern, that the `$fields` host stamps
+   `@SuppressWarnings`. An execution-tier fixture instead/in addition is welcome but
+   the generation pin is the floor.
+2. **Inline @nodeId execution fixture (required).** Tests item (a) promised an
+   execution-tier fixture: an inline (non-`@splitQuery`) `@reference` list field whose
+   filter carries a `@nodeId` field, asserting the filter narrows (reproducer shape:
+   a node ID not under the parent returns empty). Only the plain-scalar `@condition`
+   fixture (b) shipped. The existing `Store.customersByAddressDistrict` tests pass
+   `filter: {}` and its override condition ignores the value, so the inline
+   `NodeIdDecodeKeys`/decode-with-value path is behaviourally unpinned. Add a fixture
+   whose condition actually consumes the decoded value (the `Soknadskladd.opptakId`
+   reproducer shape).
+3. **Minor, fix while there:** the `Env` branch of `emitJooqConvertKeyLifts` is dead
+   (both callers pass `FromSelectedField`); either drop it or note why it stays.
+   `InlineFilterArgumentSourcePipelineTest.stampsUncheckedSuppression` matches any
+   `@SuppressWarnings` annotation; assert the `"unchecked"` value.
+4. **Housekeeping:** mark the plan body up with `shipped at 7400c67` notes on the parts
+   that landed, so the next reviewer sees only the delta above as open work.
 
 > Route runtime argument reads at the two inline emission sites
 > (`InlineTableFieldEmitter`, `InlineLookupTableFieldEmitter`) through the in-scope
