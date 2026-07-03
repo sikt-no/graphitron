@@ -5,6 +5,7 @@ import no.sikt.graphitron.javapoet.FieldSpec;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.javapoet.TypeSpec;
+import no.sikt.graphitron.javapoet.TypeVariableName;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import org.junit.jupiter.api.Test;
 
@@ -128,6 +129,35 @@ class AbiSignatureTest {
             .build();
 
         assertThat(AbiSignature.hash(fieldEdited)).isNotEqualTo(AbiSignature.hash(original));
+    }
+
+    @Test
+    void typeVariableBoundEditMovesTheHash() {
+        // A bound change alone moves no member signature (the variable's name stays "T" everywhere), so
+        // the type-variable declaration itself must be part of the surface, on the type and per method.
+        TypeSpec unbounded = base()
+            .addTypeVariable(TypeVariableName.get("T"))
+            .build();
+        TypeSpec bounded = base()
+            .addTypeVariable(TypeVariableName.get("T", ClassName.get("java.lang", "Number")))
+            .build();
+        assertThat(AbiSignature.hash(bounded)).isNotEqualTo(AbiSignature.hash(unbounded));
+
+        TypeSpec genericMethod = base()
+            .addMethod(MethodSpec.methodBuilder("lift")
+                .addModifiers(Modifier.PUBLIC)
+                .addTypeVariable(TypeVariableName.get("R"))
+                .returns(TypeVariableName.get("R"))
+                .addStatement("return null").build())
+            .build();
+        TypeSpec genericMethodBounded = base()
+            .addMethod(MethodSpec.methodBuilder("lift")
+                .addModifiers(Modifier.PUBLIC)
+                .addTypeVariable(TypeVariableName.get("R", ClassName.get("java.lang", "Number")))
+                .returns(TypeVariableName.get("R"))
+                .addStatement("return null").build())
+            .build();
+        assertThat(AbiSignature.hash(genericMethodBounded)).isNotEqualTo(AbiSignature.hash(genericMethod));
     }
 
     @Test

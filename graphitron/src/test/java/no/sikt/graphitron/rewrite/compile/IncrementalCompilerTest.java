@@ -46,6 +46,18 @@ class IncrementalCompilerTest {
             .build();
     }
 
+    /** {@code gen.pkg.<name>} whose method body references a symbol that does not exist: never compiles. */
+    private static TypeSpec typeThatFailsToCompile(String name) {
+        return TypeSpec.classBuilder(name)
+            .addModifiers(Modifier.PUBLIC)
+            .addMethod(MethodSpec.methodBuilder("value")
+                .addModifiers(Modifier.PUBLIC)
+                .returns(String.class)
+                .addStatement("return $L", "noSuchSymbol()")
+                .build())
+            .build();
+    }
+
     /** Same as {@link #typeReturning} but with an extra method, so its ABI (not just its body) moves. */
     private static TypeSpec typeWithExtraMethod(String name) {
         return TypeSpec.classBuilder(name)
@@ -137,6 +149,62 @@ class IncrementalCompilerTest {
 
             assertThat(outcome.round().success()).isTrue();
             assertThat(outcome.compiledUnits()).containsExactlyInAnyOrder(fqcn("A"), fqcn("B"));
+        }
+    }
+
+    @Test
+    void recompile_afterFailedRound_reattemptsTheFailedUnitUntilClean(@TempDir Path dir) {
+        // B fails to compile; its .java then never changes, so it never re-enters the writer's delta.
+        // A later save touching only A must still re-attempt B (and keep reporting failure), or the
+        // round would read as clean while B's stale last-good .class lingered.
+        var noEdges = new CompileDependencyGraph() {
+            @Override public Set<String> nodes() { return Set.of(fqcn("A"), fqcn("B")); }
+            @Override public Set<String> directReferences(String node) { return Set.of(); }
+            @Override public Set<String> directDependents(String node) { return Set.of(); }
+        };
+        try (var compiler = new IncrementalCompiler(dir, List.of())) {
+            var startup = compiler.compileAll(units(typeReturning("A", "v0"), typeThatFailsToCompile("B")));
+            assertThat(startup.round().success()).isFalse();
+
+            // Body-only edit to A; B unchanged (and still broken): B is re-attempted, round still fails.
+            var retried = compiler.recompile(
+                units(typeReturning("A", "v1"), typeThatFailsToCompile("B")),
+                Set.of(fqcn("A")),
+                noEdges);
+            assertThat(retried.compiledUnits()).containsExactlyInAnyOrder(fqcn("A"), fqcn("B"));
+            assertThat(retried.round().success()).isFalse();
+
+            // B's fix arrives through the delta: the round is clean and the retry set drains, so the
+            // next unrelated save is back to pure delta compilation.
+            var fixed = compiler.recompile(
+                units(typeReturning("A", "v1"), typeReturning("B", "v0")),
+                Set.of(fqcn("B")),
+                noEdges);
+            assertThat(fixed.round().success()).isTrue();
+            assertThat(classFile(dir, "B")).exists();
+
+            var afterwards = compiler.recompile(
+                units(typeReturning("A", "v2"), typeReturning("B", "v0")),
+                Set.of(fqcn("A")),
+                noEdges);
+            assertThat(afterwards.compiledUnits()).containsExactly(fqcn("A"));
+        }
+    }
+
+    @Test
+    void recompile_withoutAnAbiBaseline_compilesTheWholeTree(@TempDir Path dir) {
+        // No startup compileAll happened (the skipInitial path): the first recompile has no ABI baseline
+        // to diff against, so it must establish the complete image rather than leaving every un-edited
+        // unit's .class missing.
+        try (var compiler = new IncrementalCompiler(dir, List.of())) {
+            var outcome = compiler.recompile(
+                units(typeReturning("A", "v0"), typeReturning("B", "v0")),
+                Set.of(fqcn("A")),
+                bDependsOnA());
+
+            assertThat(outcome.round().success()).isTrue();
+            assertThat(outcome.compiledUnits()).containsExactlyInAnyOrder(fqcn("A"), fqcn("B"));
+            assertThat(classFile(dir, "B")).exists();
         }
     }
 

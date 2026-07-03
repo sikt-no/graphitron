@@ -139,8 +139,9 @@ public class DevMojo extends AbstractRewriteMojo {
     IncrementalCompiler incrementalCompiler;
     // The last successful generation (result + compile graph), captured by runGeneratorPass. The
     // consumer-.class-change path recompiles the whole cached tree off this; the schema-save path
-    // recompiles the delta against its graph.
-    private GraphQLRewriteGenerator.IncrementalGeneration lastGeneration;
+    // recompiles the delta against its graph. Volatile: written by the schema-watcher thread and read
+    // by the classpath-watcher thread, so the consumer-change path must see the freshest generation.
+    private volatile GraphQLRewriteGenerator.IncrementalGeneration lastGeneration;
 
     @Override
     protected boolean packagesRequired() {

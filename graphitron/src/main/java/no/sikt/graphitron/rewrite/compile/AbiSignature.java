@@ -6,6 +6,7 @@ import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.ParameterSpec;
 import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.javapoet.TypeSpec;
+import no.sikt.graphitron.javapoet.TypeVariableName;
 
 import javax.lang.model.element.Modifier;
 import java.nio.charset.StandardCharsets;
@@ -24,8 +25,9 @@ import java.util.Map;
  * edit to the public surface moves it.
  *
  * <p>The surface captured is exactly what a <em>dependent</em> unit recompiles against: type kind,
- * modifiers, supertype, implemented interfaces, type-level annotations, and, per member, its
- * signature (field type; method return/parameter/thrown types) with its annotations, plus the
+ * modifiers, type variables (with bounds), supertype, implemented interfaces, type-level annotations,
+ * and, per member, its signature (field type; method type variables and return/parameter/thrown types)
+ * with its annotations, plus the
  * <em>value</em> of every {@code static final} constant (because javac inlines those into callers, so
  * a value change is an ABI change even though no signature moves). What it deliberately drops is the
  * body: method code, static/instance initializer blocks, and javadoc. That drop is what makes a
@@ -75,6 +77,7 @@ public final class AbiSignature {
     private static void appendType(StringBuilder sb, TypeSpec type) {
         sb.append(type.kind().name())
             .append(' ').append(type.name())
+            .append(" typevars=").append(typeVariables(type.typeVariables()))
             .append(" mods=").append(modifiers(type.modifiers()))
             .append(" ann=").append(annotations(type.annotations()))
             .append(" extends=").append(type.superclass() == null ? "" : type.superclass().toString())
@@ -132,6 +135,9 @@ public final class AbiSignature {
     private static String methodSignature(MethodSpec method) {
         StringBuilder sb = new StringBuilder();
         sb.append(modifiers(method.modifiers())).append(' ');
+        if (!method.typeVariables().isEmpty()) {
+            sb.append(typeVariables(method.typeVariables())).append(' ');
+        }
         if (method.isConstructor()) {
             sb.append("<init>");
         } else {
@@ -159,6 +165,19 @@ public final class AbiSignature {
         for (String signature : signatures) {
             sb.append(prefix).append(signature).append('\n');
         }
+    }
+
+    /**
+     * Type variables in declaration order (they are positional: {@code Foo<A, B>} binds by index, so a
+     * reorder is itself an ABI change), each with its bounds — a bound change alone (no signature
+     * mentioning the variable moves) must still move the hash.
+     */
+    private static String typeVariables(List<TypeVariableName> typeVariables) {
+        List<String> rendered = new ArrayList<>();
+        for (TypeVariableName tv : typeVariables) {
+            rendered.add(tv.name() + ":" + typeNames(tv.bounds()));
+        }
+        return rendered.toString();
     }
 
     private static String modifiers(Iterable<Modifier> modifiers) {

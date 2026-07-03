@@ -90,6 +90,9 @@ public final class CompileDependencyGraphBuilder {
                 acc.addNode(units.fetchers(t.name()));
                 acc.addNode(units.schemaShape(t.name()));
                 addConditionsNodeIfSql(t.name());
+                // EntityFetcherDispatch's select<Type>Alt<N> methods project this node type's
+                // $fields, so the dispatch unit recompiles when the projection's ABI moves.
+                acc.addEdge(entityFetcherDispatchFqcn(), units.typeClass(t.name()));
             }
             case GraphitronType.TableInterfaceType t -> {
                 acc.addNode(units.fetchers(t.name()));
@@ -220,8 +223,9 @@ public final class CompileDependencyGraphBuilder {
             case QueryField.QueryServicePolymorphicField ignored -> { }
             case QueryField.QueryServiceTableInterfaceField ignored -> { }
             case QueryField.QueryServiceRecordField ignored -> { }
-            case QueryField.QueryNodeField ignored -> addNodeIdEncoderEdge(fetcher);
-            case QueryField.QueryNodesField ignored -> addNodeIdEncoderEdge(fetcher);
+            // node(id:) / nodes(ids:) fields delegate to the QueryNodeFetcher dispatcher.
+            case QueryField.QueryNodeField ignored -> { addNodeIdEncoderEdge(fetcher); addQueryNodeFetcherEdge(fetcher); }
+            case QueryField.QueryNodesField ignored -> { addNodeIdEncoderEdge(fetcher); addQueryNodeFetcherEdge(fetcher); }
         }
     }
 
@@ -305,6 +309,10 @@ public final class CompileDependencyGraphBuilder {
         acc.addEdge(fetcher, nodeIdEncoderFqcn());
     }
 
+    private void addQueryNodeFetcherEdge(String fetcher) {
+        acc.addEdge(fetcher, queryNodeFetcherFqcn());
+    }
+
     private void addNodeIdEncoderEdgeIfEncoded(String fetcher, CallSiteCompaction compaction) {
         if (compaction instanceof CallSiteCompaction.NodeIdEncodeKeys) {
             addNodeIdEncoderEdge(fetcher);
@@ -362,6 +370,31 @@ public final class CompileDependencyGraphBuilder {
         }
         acc.addEdge(facade, schemaClass);
         acc.addEdge(facade, context);
+        addNodeLookupAndEntityDispatchEdges(schemaClass, context);
+    }
+
+    /**
+     * The node-lookup / federation dispatch wiring. {@code QueryNodeFetcher} branches per typeId
+     * through {@code EntityFetcherDispatch}'s select methods after peeking the id via
+     * {@code NodeIdEncoder}; {@code EntityFetcherDispatch} decodes reps via {@code NodeIdEncoder} and
+     * projects each node type's {@code $fields} (the per-node-type edge is added from the
+     * {@link GraphitronType.NodeType} arm) plus each federation entity type's (added here from
+     * {@code entitiesByType}); the schema class registers the node fetcher. Superset-safe when the
+     * schema has no node or entity types: the units are then never emitted and the recompile render
+     * skips them.
+     */
+    private void addNodeLookupAndEntityDispatchEdges(String schemaClass, String context) {
+        String queryNodeFetcher = queryNodeFetcherFqcn();
+        String entityDispatch = entityFetcherDispatchFqcn();
+        acc.addEdge(queryNodeFetcher, nodeIdEncoderFqcn());
+        acc.addEdge(queryNodeFetcher, entityDispatch);
+        acc.addEdge(queryNodeFetcher, context);
+        acc.addEdge(entityDispatch, nodeIdEncoderFqcn());
+        acc.addEdge(entityDispatch, context);
+        acc.addEdge(schemaClass, queryNodeFetcher);
+        for (String entityTypeName : schema.entitiesByType().keySet()) {
+            acc.addEdge(entityDispatch, units.typeClass(entityTypeName));
+        }
     }
 
     private void addSingletonNodes() {
@@ -379,6 +412,14 @@ public final class CompileDependencyGraphBuilder {
 
     private String nodeIdEncoderFqcn() {
         return units.singleton(UtilSingleton.NODE_ID_ENCODER.subPackage(), UtilSingleton.NODE_ID_ENCODER.simpleName());
+    }
+
+    private String queryNodeFetcherFqcn() {
+        return units.singleton(GeneratedUnits.SUB_FETCHERS, "QueryNodeFetcher");
+    }
+
+    private String entityFetcherDispatchFqcn() {
+        return units.singleton(GeneratedUnits.SUB_UTIL, "EntityFetcherDispatch");
     }
 
     private List<String> currentFetcherNodes() {

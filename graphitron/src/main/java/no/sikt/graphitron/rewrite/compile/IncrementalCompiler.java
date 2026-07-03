@@ -8,6 +8,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -27,7 +28,9 @@ import java.util.Set;
  *       generated→consumer edges (the graph only carries generated→generated edges; a precise
  *       generated→consumer invalidation is deferred, and belongs with R333's method graph).</li>
  *   <li><b>Schema save</b> → {@link #recompile}: recompile the writer's delta plus the reverse-transitive
- *       dependents of the delta units whose ABI moved, then advance the ABI baseline.</li>
+ *       dependents of the delta units whose ABI moved, then advance the ABI baseline. A failed round's
+ *       units are re-attempted on every later round until one compiles them clean, so an unrelated save
+ *       can never report a clean round while a stale last-good {@code .class} lingers.</li>
  * </ul>
  *
  * <p>The graph is supplied per call (rebuilt from the freshly classified model by
@@ -45,6 +48,11 @@ public final class IncrementalCompiler implements AutoCloseable {
     private final IncrementalCompileEngine engine;
     // The previous round's ABI hash per unit; the baseline abiChanged() compares this round against.
     private Map<String, String> previousHashes = Map.of();
+    // The units attempted in a failed round, re-attempted on every later round until one compiles them
+    // clean. Without this, a failing unit whose .java is unchanged never re-enters the writer's delta,
+    // so a later save touching only other units would report a clean round and clear the failure while
+    // the failed unit's last-good .class stayed silently stale.
+    private Set<String> retryUnits = Set.of();
 
     /**
      * @param classOutputDir the graphitron-exclusive class output root ({@code target/graphitron-classes})
@@ -71,6 +79,7 @@ public final class IncrementalCompiler implements AutoCloseable {
         CompileRound round = engine.compile(render(units, emittedUnits));
         engine.sweepOrphans(units);
         this.previousHashes = hashes(emittedUnits);
+        this.retryUnits = round.success() ? Set.of() : Set.copyOf(units);
         return new CompileOutcome(round, units);
     }
 
@@ -86,12 +95,24 @@ public final class IncrementalCompiler implements AutoCloseable {
      */
     public synchronized CompileOutcome recompile(Map<String, TypeSpec> emittedUnits, Set<String> changedUnits,
                                     CompileDependencyGraph graph) {
+        if (previousHashes.isEmpty()) {
+            // No ABI baseline yet (skipInitial, or the startup compile never ran): an incremental round
+            // would compile only the delta and leave every un-edited unit's .class missing, a
+            // half-populated dir the MCP execution driver cannot run. Establish the full image first.
+            return compileAll(emittedUnits);
+        }
         Map<String, String> currentHashes = hashes(emittedUnits);
         Set<String> abiChanged = RecompileSet.abiChanged(changedUnits, previousHashes, currentHashes);
-        Set<String> recompileSet = RecompileSet.compute(graph, changedUnits, abiChanged);
+        Set<String> recompileSet = new LinkedHashSet<>(RecompileSet.compute(graph, changedUnits, abiChanged));
+        for (String unit : retryUnits) {
+            if (emittedUnits.containsKey(unit)) {
+                recompileSet.add(unit);
+            }
+        }
         CompileRound round = engine.compile(render(recompileSet, emittedUnits));
         engine.sweepOrphans(emittedUnits.keySet());
         this.previousHashes = currentHashes;
+        this.retryUnits = round.success() ? Set.of() : Set.copyOf(recompileSet);
         return new CompileOutcome(round, recompileSet);
     }
 

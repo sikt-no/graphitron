@@ -54,16 +54,22 @@ class IncrementalCompileHarnessTest {
 
     private static final String OUTPUT_PACKAGE = TestConfiguration.DEFAULT_OUTPUT_PACKAGE;
 
-    /** Base schema: exercises root table read, child table reference, connection, DML insert projection. */
+    /**
+     * Base schema: exercises root table read, child table reference, connection, DML insert projection,
+     * plus a node type with a {@code node(id:)} lookup so the oracle also covers the NodeType /
+     * QueryNodeField arms and the precise NodeIdEncoder edges.
+     */
     private static final String SCHEMA = """
         interface Node { id: ID! }
 
         type Query {
           film: Film
           films: [Film!]! @asConnection
+          node(id: ID!): Node
         }
 
-        type Film @table(name: "film") {
+        type Film implements Node @table(name: "film") @node {
+          id: ID! @nodeId
           title: String
           language: Language @reference(path: [{key: "film_language_id_fkey"}])
         }
@@ -86,9 +92,11 @@ class IncrementalCompileHarnessTest {
         type Query {
           film: Film
           films: [Film!]! @asConnection
+          node(id: ID!): Node
         }
 
-        type Film @table(name: "film") {
+        type Film implements Node @table(name: "film") @node {
+          id: ID! @nodeId
           title: String
           description: String
           language: Language @reference(path: [{key: "film_language_id_fkey"}])
