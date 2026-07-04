@@ -5,8 +5,9 @@ status: Spec
 bucket: structural
 priority: 3
 theme: structural-refactor
+depends-on: []
 created: 2026-06-18
-last-updated: 2026-06-25
+last-updated: 2026-07-04
 ---
 
 # The Graphitron data model
@@ -1509,7 +1510,12 @@ R316's wrapper algebra become statements about QueryParts and anchors:
   `target.wrapper` (R316's wrapper algebra, unchanged). This governs the DataFetcher's arrival.
 - **Key projection flows up** (per-anchor): a new-query coordinate's correlation key is a QueryPart
   addressed to its enclosing anchor's SELECT. This is the parent-key injection, no longer a bespoke
-  emit-time relation but a QueryPart with an address.
+  emit-time relation but a QueryPart with an address. This edge carries a named integrity invariant:
+  **when a child's key tuple is lifted off the parent's held object, the parent anchor's projection
+  must contain the key columns.** It is a referential-integrity check between the child's source fact
+  and the parent anchor's projection, exactly thread I's class of check; R425 (parent projection
+  omits a `@splitQuery`/`@service` child's key columns) is the shipped bug that shows what its
+  absence costs.
 
 The address unifies composite and split: composite's column QueryParts are addressed to the coordinate's
 **own** anchor (same scope), split's key projection is addressed to an **ancestor** anchor. `address in
@@ -1524,8 +1530,10 @@ The address unifies composite and split: composite's column QueryParts are addre
   to the parent anchor (its enclosing scope is a graphitron-generated SELECT it can impose on);
   `RecordTableField` does not (its enclosing scope is a produced record, the key already rides it). They
   stop being distinct leaves and become the same emit units composed differently. NB: this confirms,
-  rather than overturns, R316's `SourceShape.Table` for `SplitTableField`: its source is a live catalog
-  row; the kinship with `RecordTableField` is at the keyed-re-query QueryPart, not the source shape.
+  rather than overturns, R316's `SourceShape.Table` for `SplitTableField`: its held source object is a
+  jOOQ record materialized by the parent's query (there is no liveness axis; see the re-query
+  resolution in *Open questions*); the kinship with `RecordTableField` is at the keyed-re-query
+  QueryPart, not the source shape.
 - **The leaf cross-product**: every "multiplicity-as-a-leaf-variant" modifier becomes QueryPart
   multiplicity (composite), addressing (split / re-fetch), or shape, not a leaf type. `Bulk` was never a
   leaf variant in the first place, it was already the `target` `List` wrapper, which is the tell that
@@ -1752,9 +1760,18 @@ contribution.
   seam structural and reframes `leafReconstructsFromCoordinate` as "lower the coordinate to its
   DataFetcher + QueryParts" (the leaf zoo being the denormalized form). R316 stays the stepping stone;
   this does not reopen its slices.
-- **R314** (dissolve-reentry-leaves-dimensional-emit): this is the structural enabler. R314's dissolution
-  becomes "lower every coordinate to its DataFetcher + QueryParts" rather than leaf-by-leaf surgery. This
-  spec likely reframes R314's plan or feeds it directly; sequence to be decided.
+- **R314** (dissolve-reentry-leaves-dimensional-emit): this is the structural enabler, and the sequence
+  is now decided (2026-07-04). R314 stays the *reentry slice* of the emit re-platforming, re-specced
+  onto this model's vocabulary; it does not widen into an umbrella. The run-up is R431
+  (`decompose-sourcekey`, eager, first) then R432 (`collapse-split-and-record-table-leaves`, the
+  beachhead), then R314 emits the reentry family off the model and retires `dispatchPerformsReFetch`.
+  Acceptance across the run-up is **execution-tier equivalence** (same rows, same order, error paths
+  intact), not byte-for-byte generated-output equality: the goal is gradual improvement toward this
+  model, and slices may normalize generated-code shape as they go.
+- **R222** (dimensional-model-pivot): the umbrella this model grew out of, and it keeps the
+  umbrella/stage-tracking role; slices keep filing under its stages. Where its sketches lag this
+  document (notably the Stage 3 destination sketch and the carrier table), **this document governs
+  the model**; R222 is being aligned incrementally rather than rewritten wholesale.
 
 ## Directive coverage
 
@@ -1860,14 +1877,32 @@ The gaps, in resolution order:
   parent-key projection is already implemented as "opt these columns into the parent type's `$fields`"
   (`collectRequiredProjectionColumns`, `TypeClassGenerator:341`). The open residue is the
   grandchild-through-inline-ancestor threading, not the primitive.
-- **Re-query unification**: do `SplitTableField`'s and `RecordTableField`'s keyed-re-query QueryParts
-  fully merge into one primitive (the child reads a *laundered* key, decoupled from parent backing), or
-  share a primitive while keeping distinct source shapes (the child reads the raw parent)? Picking this
-  decides whether the two collapse to one emit unit or two that share machinery.
-- **DataFetcher totality vs synthetic nodes**: every coordinate has exactly one DataFetcher (an SDL field
-  has one resolver), so there is no "synthetic DataFetcher". Confirm there is likewise no synthetic
-  *coordinate*: the synthetic key projection is a QueryPart, owned by the splitting coordinate and
-  addressed elsewhere, never a fabricated SDL field.
+- **Re-query unification. Resolved (2026-07-04): full merge, laundered key.** The keyed re-query is
+  one primitive, `f(keys, correlation)`: `VALUES(idx, key...)` joined to the target over a
+  `correlation` that is the FK column pairs for split and PK self-identity for re-fetch (the
+  degenerate case named in *Two levels of natural key*). The source endpoint's only contribution is
+  how the key tuple is lifted, and the lift owns no machinery of its own: it is N reads through the
+  same field-level locator facts the ordinary read side uses, gated on the held object's shape.
+  Exactly **two** lift arms, matching the source-object shape: a jOOQ record (project columns) or a
+  Java object (read members: record component / getter / field, one locator family). `@sourceRow`'s
+  lifter is *provenance* on the member-read arm (authored where the catalog cannot infer the mapping),
+  not a third mechanism, consistent with provenance everywhere else in this model; a lifter yielding
+  many key rows per parent is the wrapper algebra's business (source-field arity), not the reader's.
+  There is **no liveness axis**: every fetcher reads a held object its parent's fetcher deposited, and
+  split's parent (a jOOQ record materialized by the parent query) is exactly as held as a service's
+  DTO; "same keys, same rows" is the whole contract, and arguments flow into children identically
+  regardless of source. Consequences: `SplitTableField` / `RecordTableField` collapse to **one leaf
+  gated on the source fact** with zero residue (the beachhead, filed as R432), the key contract
+  becomes the named parent-projection invariant in *Query anchors and the two flows*, and
+  `SourceKey.Reader`'s seven arms are confirmed as shape x provenance x envelope conflated into one
+  seal, dissolved by the decomposition (filed as R431).
+- **DataFetcher totality vs synthetic nodes. Resolved (2026-07-04): confirmed against the emit.**
+  Every coordinate has exactly one DataFetcher (an SDL field has one resolver), so there is no
+  "synthetic DataFetcher"; and there is likewise no synthetic *coordinate* in the current emit: the
+  parent-key projection rides `collectRequiredProjectionColumns` into the parent type's `$fields`
+  (a QueryPart owned by the splitting coordinate, addressed to the enclosing anchor), and the
+  `__idx__` scatter column is a synthetic *column* inside one query scope, never a fabricated SDL
+  field. The model asserts this as an invariant: coordinates come only from the SDL.
 - **Corpus assertion shape**: the `@classified` verdict generalizes from one triple to the
   `(DataFetcher, QueryPart*)` decomposition. **Resolved by the normalized schema:** the directive asserts
   the coordinate's `source` fact, its `target` fact, and a *set* of `operation` rows, each independently
@@ -1922,9 +1957,14 @@ engine). Out of scope: the emit
 re-platforming that consumes it (R314), any rewrite of R316 slices 1-4 (they are the valid
 denormalized projection), and any incremental-query engine for the LSP (a separate, later perf question).
 No code in this item beyond what is needed to make the model executable as
-tests, if that is split out at Ready: the lowering function and its coverage, plus thread I's bidirectional
-graph-closure invariant (every emitted method is one command's output; every callee name resolves to a
-committed command).
+tests, and that split is now decided (2026-07-04): the Ready code deliverable is **thread I's closure
+oracle at level 1**, a characterization harness over the *current* emit that walks the generated
+TypeSpecs, collects declared method names and intra-generated call references, and asserts every such
+callee resolves to an emitted method (R410's `TypeSpecReferenceWalk` is most of the walking
+machinery). Level 1 is valid before any re-platforming and survives it as the harness. The
+**bidirectional** form (every emitted method is exactly one command's output; every callee name
+resolves to a committed command) needs the command/name registry and lands with the emit slices,
+first populated for the reentry family by R314.
 
 ## Lineage
 

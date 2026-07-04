@@ -7,7 +7,7 @@ priority: 3
 theme: structural-refactor
 depends-on: []
 created: 2026-05-21
-last-updated: 2026-06-18
+last-updated: 2026-07-04
 ---
 
 # Dimensional model pivot: slots over cross-product permits
@@ -15,6 +15,14 @@ last-updated: 2026-06-18
 R222 is the umbrella for the rewrite's dimensional pivot. Three sealed hierarchies pack multi-dimensional information onto single permit sets — input-side classification (`GraphitronType.InputType` + `TableInputType`), field-side classification (`QueryField` / `MutationField` / `ChildField` with 46 cross-product permits), and classification-failure encoding (`UnclassifiedType` / `UnclassifiedField` riding as permits alongside legitimate carriers). The same disease in three organs. R222 absorbs R164 (field-model three-dimension pivot) and R226 (type-level classification failure pivot) and unifies them as one architectural shift, landing the target architecture stage-by-stage through independent spin-out slices.
 
 ## Direction, not contract
+
+**Governance (2026-07-04): R333 (`coordinate-lowers-to-datafetcher-queryparts`) is the current
+statement of the model.** This umbrella keeps the stage-tracking role and slices keep filing under its
+stages, but where its sketches lag R333 — notably the Stage 3 destination sketch and the carrier
+table, several of whose planned carriers R333 redistributes onto coordinate facts (generated
+conditions become operation rows minted from input coordinates; ordering is `operation: orderBy`
+payload; the lookup partition is the `Lookup` operation) — R333 governs. This file is being aligned
+incrementally rather than rewritten wholesale.
 
 The model sketched in this umbrella is the *target direction* — where the rewrite is heading. Specific slot names, carrier shapes, the boundary between walker carriers and dimensional slots, and the vocabulary itself are expected to shift as implementation slices land and surface new understanding. Each spin-out slice gets its own spec item where the specifics for that scope get pinned; the slice is free to redraw the diagram so long as it doesn't break the load-bearing claim (cross-product permits dissolve into dimensional slots; producers read graphql-java primitives directly; validity rides on the wrapper). What's stable is the *shape*: slots on a single unified field type, one per consumer concern, populated by thin layers over the SDL substrate. Read the sketches below as illustrative of that shape, not as a frozen contract.
 
@@ -65,7 +73,7 @@ Within each sub-seal, R164's permit consolidation collapses the cross-product pe
 
 `Diagnostic` is an LSP-aligned sealed family — `severity` (`Error` / `Warning` / `Information` / `Hint`, mirroring LSP `DiagnosticSeverity`), `code` (stable string id), `source` (`"graphitron"`), `message`, `tags` (`Unnecessary`, `Deprecated`), `relatedInformation`. Arms keep type-safe pattern matching on the producer side; the LSP wire-format adapter reads the LSP fields and projects mechanically. `AuthorError` (the existing `Rejection.AuthorError` sealed family) carries on `WalkerResult.Err.errors`; the wire-format adapter projects each leaf to severity=Error LSP `Diagnostic` records with a code derived per leaf type.
 
-`ValidationReport` carries `errors: List<ValidationError>` and `warnings: List<BuildWarning>` today; the foundation slice adds a `walkerDiagnostics: List<Diagnostic>` slot alongside them, and once every producer migrates the three slots collapse into one diagnostic stream. From the foundation slice forward, walker output reaches the editor through the same channel today's validator output does — `Workspace.setBuildOutput(BuildArtifacts, ValidationReport)` is the seam, the rest of the wire (`recalculateListener` → `Diagnostics.compute` → `LanguageClient.publishDiagnostics`) is already live, and `Diagnostics.validatorDiagnostics` gains an arm projecting the walker `Diagnostic` family.
+`ValidationReport` carries `errors: List<ValidationError>` and `warnings: List<BuildWarning>` today; a later slice adds a `walkerDiagnostics: List<Diagnostic>` slot alongside them (the foundation slice, R238, shipped `WalkerResult` and the `Diagnostic` record but not this slot — as of 2026-07-04 it is still to come, and the shipped `Diagnostic` does not yet carry `tags`), and once every producer migrates the three slots collapse into one diagnostic stream. From that slice forward, walker output reaches the editor through the same channel today's validator output does — `Workspace.setBuildOutput(BuildArtifacts, ValidationReport)` is the seam, the rest of the wire (`recalculateListener` → `Diagnostics.compute` → `LanguageClient.publishDiagnostics`) is already live, and `Diagnostics.validatorDiagnostics` gains an arm projecting the walker `Diagnostic` family.
 
 ### Single field namespace, no failure permit
 
@@ -86,7 +94,10 @@ first two axes were under-named. A field is an **edge**: it **arrives into** a `
 wrapper a multiplicity layer, the shape the named thing inside); `operation` is a sealed interface of
 payload-carrying verbs. The producer dimension still dissolves entirely (see below); what changed is the
 naming of the three surviving axes and the recognition that the two endpoints share one form. The full
-argument is R316 and its backing audit; this section records the model the umbrella now speaks.
+argument is R316 and its backing audit; this section records the model the umbrella now speaks. R333
+subsequently normalized the triple into the coordinate-and-its-facts schema (the triple is a
+per-coordinate summary row over independent facts; `operation` is a 0..N set) — per the governance
+note above, read this section through R333 where they differ.
 
 **`source`** — the arrival endpoint: a wrapper around a `SourceShape`, the wrapper being the field's
 **arrival cardinality** (how many source objects reach its fetcher).
