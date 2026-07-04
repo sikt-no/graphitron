@@ -5,7 +5,7 @@ status: Spec
 bucket: docs
 priority: 4
 theme: docs
-depends-on: [R433]
+depends-on: [principles-doc-altitude-trim]
 created: 2026-07-04
 last-updated: 2026-07-04
 ---
@@ -72,7 +72,7 @@ cross-product thesis, and falsified four pieces of the original cut. All adopted
    invariant (with R433's corrected discovery recipes), and the ephemeral-vs-carried distinction
    for builder-internal hierarchies ("carry the decision as a type" must not flatten "carry it to
    the generator" and "discard it before the model" into one verb).
-8. **Drafted against R433's landed text** (`depends-on: [R433]`); the replacement below embeds
+8. **Drafted against R433's landed text** (`depends-on: [principles-doc-altitude-trim]`); the replacement below embeds
    R433's corrected recipes and altitude trims. Cutover verifies none of R433's fixes regress.
 9. **The Emitter Conventions catalogue carries over verbatim** and is spliced at cutover rather
    than duplicated in this spec: it is unchanged by this item, and a second copy would race
