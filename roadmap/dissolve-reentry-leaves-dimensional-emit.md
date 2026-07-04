@@ -27,18 +27,24 @@ source-gated leaf's record arm after R432), `RecordLookupTableField`, `RecordTab
 where `correlation` is PK self-identity (the degenerate case of the FK join; R333 *Two levels of
 natural key*). The per-member variation is exactly what the facts own:
 
-- **The source endpoint** owns the key lift: N reads through the ordinary field-level locator facts,
-  gated on the held object's shape (jOOQ record → column projection; Java object → member read, with
-  `@sourceRow` as authored provenance on that arm). Post-R431 this lives on the decomposed
-  source-object / locator facts, not on `SourceKey.Reader`. There is no liveness axis; "same keys,
-  same rows" is the whole contract.
+- **The source endpoint** owns the key lift: N reads through the ordinary field-level locator facts.
+  The lift-arm selection **reads the type-level source-object fact** — the same fact the accessor
+  read side already forks on (jOOQ record → column projection; Java object → member read, with
+  `@sourceRow` as authored provenance on that arm) — and reuses the accessor locator per key column.
+  The "two arms" are the source-object shape, not a new sealed switch the key lift owns: a second
+  field-granular gate at the lift site would be the same predicate evaluated by a second consumer.
+  Post-R431 this lives on the decomposed source-object / locator facts, not on `SourceKey.Reader`.
+  There is no liveness axis; "same keys, same rows" is the whole contract.
 - **The operation** owns the per-member payload: `Fetch` a plain re-projection, `Lookup` the
   positional correspondence (`LookupMapping`), `ServiceCall` the service lift, the DML arms their
   projected payload.
 - **The target** owns the projection: the re-projected `@table` (`$fields`), pagination on
   `Paginate`.
 
-So `emit(reentry) = f(source facts, operation, target)` with no `instanceof` on leaf classes.
+So `emit(reentry) = f(source facts, operation, target)` with no `instanceof` on leaf classes. One
+line to hold: `correlation` as a uniform column-pair set with PK self-identity as the degenerate arm
+is clean **only if no emit site forks on "is this self-identity"**; if an emit site needs that
+predicate, it belongs in the model as a fact, not recomputed at the emit site.
 
 ## Goals
 
@@ -52,11 +58,13 @@ So `emit(reentry) = f(source facts, operation, target)` with no `instanceof` on 
    `OutputField.requiresReFetch()` (already axis-derived since R305/R316) directly, so the derivation
    and the emit cannot drift by construction — "if two consumers evaluate the same predicate over a
    model field, the branch belongs in the model."
-4. **First seam-named family.** The reentry query unit gets regime-1 naming (model-carried method
-   names, thread J), making it the first family thread I's **bidirectional** closure check (every
-   emitted method is one command's output; every callee resolves to a committed command) can assert.
-   The level-1 characterization oracle over the whole emit ships earlier under R333's Ready
-   deliverable and is the harness this slice runs against.
+4. **First seam-named family, and the bidirectional oracle that asserts it.** The reentry query unit
+   gets regime-1 naming (model-carried method names, thread J). **This slice builds the command/name
+   registry and thread I's bidirectional closure oracle** (every emitted method is exactly one
+   command's output; every callee name resolves to a committed command) and populates it for the
+   reentry family — the bidirectional check is this item's deliverable, not a pre-existing gate. The
+   level-1 characterization oracle over the whole emit ships earlier under R333's Ready deliverable
+   and is the harness this slice runs against throughout.
 
 ## Scope
 
@@ -75,7 +83,8 @@ gradual improvement toward R333/R222, so the slice may normalize generated-code 
 gates are the R305 reentry execution tier (`SingleRecordPayloadDmlTest`, the service-producer
 execution test, the LocalContext error path) — same rows, same order, error paths intact — plus the
 `@classified` corpus classifying unchanged, plus the level-1 closure oracle staying green across the
-re-platforming.
+re-platforming, plus the goal-4 deliverable: the bidirectional closure oracle exists and passes for
+the reentry family.
 
 ## Lineage
 

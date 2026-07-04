@@ -28,9 +28,12 @@ self-identity for re-fetch (the degenerate case R333 already names). So the outc
 record-sourced arm is the reentry case, not two leaves sharing machinery.
 
 Scope notes for Spec pickup: the lookup twin (`SplitLookupTableField` / `RecordLookupTableField`)
-mirrors the same merge; decide at Spec whether it rides along or follows as its own slice. The
-parent-projection key contract (the child's key columns must appear in the parent anchor's
-projection; R425 is the bug you get without it) becomes a named, checkable invariant as part of this
-merge. Acceptance is execution-tier equivalence (same rows, same order) plus the `@classified` corpus
+mirrors the same merge; decide at Spec whether it rides along or follows as its own slice. **This
+merge adds the parent-projection containment check**: a validate-time (or pipeline-tier) assertion
+that, for a coordinate whose key tuple is lifted off the parent's held object, each key column
+appears in the enclosing anchor's projection set (`collectRequiredProjectionColumns`); R425 is the
+bug you get without it. This is a facts-level referential-integrity check, distinct from the level-1
+closure oracle (which checks method-name resolution only) — naming the invariant without the check
+would be exactly the false-invariant family the design principles warn about. Acceptance is execution-tier equivalence (same rows, same order) plus the `@classified` corpus
 classifying unchanged; byte-for-byte generated-output equality is explicitly not required. Sequenced
 after R431 (`decompose-sourcekey`); feeds R314.

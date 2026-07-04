@@ -1513,9 +1513,10 @@ R316's wrapper algebra become statements about QueryParts and anchors:
   emit-time relation but a QueryPart with an address. This edge carries a named integrity invariant:
   **when a child's key tuple is lifted off the parent's held object, the parent anchor's projection
   must contain the key columns.** It is a referential-integrity check between the child's source fact
-  and the parent anchor's projection, exactly thread I's class of check; R425 (parent projection
-  omits a `@splitQuery`/`@service` child's key columns) is the shipped bug that shows what its
-  absence costs.
+  and the parent anchor's projection — thread I's *discipline* applied to facts rather than method
+  names; the level-1 closure oracle (method-name resolution) does not cover it, so R432 owns adding
+  the containment check. R425 (parent projection omits a `@splitQuery`/`@service` child's key
+  columns) is the shipped bug that shows what its absence costs.
 
 The address unifies composite and split: composite's column QueryParts are addressed to the coordinate's
 **own** anchor (same scope), split's key projection is addressed to an **ancestor** anchor. `address in
