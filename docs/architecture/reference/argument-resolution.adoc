@@ -414,7 +414,7 @@ code.
   references it (complicates projection with a new emission slot and
   doesn't compose with `NestingField` chains). The sealed hierarchy is
   already the right place for extraction-shape variations (`Direct`,
-  `EnumValueOf`, `TextMapLookup`, `ContextArg`, `JooqConvert`);
+  `EnumValueOf`, `ContextArg`, `JooqConvert`);
   `NestedInputField` fits the same pattern, makes the nested case explicit
   at every emitter switch, and composes cleanly with `NestingField`
   recursion in projection.

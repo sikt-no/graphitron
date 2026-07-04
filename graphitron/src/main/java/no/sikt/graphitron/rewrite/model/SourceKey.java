@@ -210,7 +210,7 @@ public record SourceKey(
     }
 
     /**
-     * The rows-method body's input contract. Six permits today.
+     * The rows-method body's input contract.
      *
      * <p>The permits split on what data the rows-method body reads to produce its
      * output:
@@ -234,6 +234,10 @@ public record SourceKey(
      *       {@link SourceKey#wrap()} × {@link SourceKey#columns()} and extracts
      *       {@code SourceRow} instances directly; no DataLoader, no
      *       {@link LoaderRegistration}.</li>
+     *   <li>{@link ProducedRecordRead} — the source <em>is</em> the produced target record(s):
+     *       a DML or {@code @service} producer handed back the target table's record(s), and
+     *       the field reads the identifying PK off them to re-project the {@code @table}
+     *       (source=target re-fetch).</li>
      * </ul>
      */
     public sealed interface Reader {

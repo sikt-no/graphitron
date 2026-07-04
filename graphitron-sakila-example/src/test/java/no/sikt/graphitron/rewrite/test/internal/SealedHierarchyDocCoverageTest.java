@@ -39,7 +39,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * {@link DeprecationsDocCoverageTest}; same shape, scoped to the typed-rejection
  * sealed surface rather than the SDL or Mojo or diagnostic surface.
  *
- * <p>The sealed-{@code Resolved} pattern across the thirteen sibling
+ * <p>The sealed-{@code Resolved} pattern across the sibling
  * {@code *DirectiveResolver} classes is described shape-only on the page; per-resolver
  * arms are not pinned by this test, since there is no single {@code Resolved} parent
  * class to walk and the chapter intentionally lets javadoc on each

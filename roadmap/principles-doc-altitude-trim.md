@@ -93,3 +93,25 @@ anchors but unguarded under the new principle's letter; `SourceKey.Reader`'s jav
 "Six permits today" while seven arms exist (`ProducedRecordRead` missing from its list) — outside
 this item's file, but it is the exact rot the doc now points readers at ("read the type for the
 current arm set"), worth a follow-up stub or a ride-along on R431.
+
+## Rework as-built (2026-07-04, fixer = the gate-review session; disqualified from Done approval)
+
+All four blocking findings fixed in the principles doc: the DSL.val section states the coercion
+strategies at altitude (no arm list); the reactor section points at the root pom's `<modules>` as
+the live inventory; "thirteen" dropped from the resolver-siblings sentence; the parse-boundary
+discovery recipe now keys on the `Type`-tree reads themselves (`java.lang.reflect.Type`,
+`getGeneric*`) with an explicit note that a bare `java.lang.reflect` import is not the
+discriminator.
+
+Ride-alongs taken (same rot family, verified against the code): `TextMapLookup` (retired by R229)
+removed from `code-generation-triggers.adoc`'s argument-extraction row and from
+`argument-resolution.adoc`'s design-rationale parenthetical; the triggers row now names the current
+`CallSiteExtraction` permit set (`NodeIdDecodeRecord`, `InputBean`, `JooqRecord` added) and the
+DataLoader-keys row the current seven `Reader` arms; "thirteen sibling resolvers" dropped from
+`typed-rejection.adoc` and `SealedHierarchyDocCoverageTest`'s javadoc (only 7 `*DirectiveResolver`
+classes exist; the count was never test-pinned); `SourceKey.Reader`'s javadoc drops the "Six
+permits today" count and gains the missing `ProducedRecordRead` list entry.
+
+Judgment on the remaining non-blocking observation: the wire-format section's live arm lists stay
+as worked-example slot anchors; the R50 story needs the concrete slot names to show where decode
+and encode live, and the arms are named at their carrier slots, not as a census.
