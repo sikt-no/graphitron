@@ -7,7 +7,7 @@ priority: 3
 theme: service
 depends-on: []
 created: 2026-07-03
-last-updated: 2026-07-04
+last-updated: 2026-07-05
 ---
 
 # Graphitron owns connection and transaction lifecycle: operation-typed read-only/commit semantics and RLS-first session state
@@ -131,6 +131,24 @@ graphql-java can run deferred fetchers *after* the initial result is delivered; 
 - Per-tenant *dialect* variation in V0 (dialect is global config; note as a possible extension if a `Map<TenantId, DataSource>` ever spans dialects).
 - Application hot-reload or distributed transactions.
 - Enabling `@defer` / incremental delivery on the owned-connection path (see the V0 stance above; follow-on item).
+
+## Spec review findings (Spec → Spec revise, 2026-07-05)
+
+Independent Spec → Ready review outcome: **revisions requested**; the design core (owned boundary, single provider seam, enum mode, conditional escape-hatch suppression) is sound, but the following must be resolved before sign-off. Stale-reference spot-checks all passed (`newExecutionInput(DSLContext, …)`, `RowsMethodCall.batchLoaderLambda`, `TypeFetcherGenerator`'s `transactionResult` DML shape, `DeferBehaviorTest`, R45/R428 cross-references).
+
+1. **Name the mode carrier; reconcile it with the "rejected" paragraph.** Within one mutation operation the provider sees at least two modes: `WRITABLE_COMMIT` for a field's `transactionResult`, then `READ_ONLY` for its read-back projection. So the mode is not derivable from the operation type at the provider, yet § "One transaction boundary" rejects "mode awareness threaded into emission" while the slice-2 read-back requirement forces a distinct emitted read-only wrapper, which *is* per-site mode awareness. Recommended shape: the emitted site that opens each transaction declares its mode (query fetcher `READ_ONLY`, per-field `transactionResult` `WRITABLE_COMMIT`, read-back wrapper `READ_ONLY`); the provider only honours what it is handed. State that and rewrite the rejection paragraph to reject only the original alternative (a mode switch at every commit site), not the per-open declaration the read-back already requires.
+
+2. **Commit to the session-state policy declaration surface.** "Which session variables map from which contextArgs" is listed as schema-varying generated code, but the spec never says where the author declares that mapping: Mojo config, SDL directive, or runtime argument. § Migration says the consumer hands the factory "a session-state policy" at runtime, while R45's pinned factory signature carries no policy parameter; the two readings conflict. This is the feature's primary configuration API and cannot be invented in slice 3. Recommendation: Mojo config (deployment/infra binding, same family as `<tenantColumn>`), with dialect → strategy selection stated alongside; then fix the § Migration sentence to match.
+
+3. **Resolve the generic strategy's "(or a hook)" fork.** An ordered statement list is generation-time data bound inside the owned boundary; a consumer-implemented hook reintroduces the hand-implemented runtime seam R190 removed, on the one path whose read-only enforcement is hint-only. Pick the statement list; a hook needs its own justification if a real consumer demands it.
+
+4. **State the Oracle scoping concretely and name its test tier.** "Transaction- or request-scoped as the dialect allows" hedges the load-bearing linchpin (transaction-local state, cleared on commit, no reset dance) on one of the two named dialects, and slice 3's execution coverage is Postgres-only, so the uncertain scoping is exactly the untested part. Either pin Oracle's guarantee as transaction-local, or scope the leak-safety claim to Postgres for V0 and mark Oracle leak-safety a follow-on. Name what tier covers the Oracle strategy's emission (there is no Oracle container in the test stack).
+
+5. **Drop "(or `TransactionListener`)".** A jOOQ `TransactionListener` observes lifecycle events and cannot suppress a commit; `ROLLBACK_ONLY` therefore requires the `TransactionProvider`. The seam should name the provider only.
+
+6. **The slice-1 invariant pin is a code-string assertion on an emitted body**, which the principles doc bans at every tier. The behavioural property (no two SQL fetches of one operation run concurrently on the pinned connection) is what needs pinning; a `completedFuture(` string match breaks on harmless refactors and can survive a genuinely async change. Recommended: pin the property at the execution tier (one connection serves the whole operation), keep the `{@link}` as navigation, and if a structural check is still wanted, mark it explicitly as extending `RowsMethodCallTest`'s existing tolerated unit-tier assertions rather than presenting it as the invariant's guardian.
+
+7. **Minor, one sentence each.** (a) Size the V0 emitted surface (provider, mode enum, three strategies, policy binding) against the spec's own "a few classes" revisit trigger, and acknowledge the fix-propagation trade for security-critical machinery: emitted code patches by regenerate-per-consumer, a runtime jar patches by dependency bump. (b) Note that the escape-hatch suppression's build-time failure lives at the consumer's compile (missing overload), not at `ValidateMojo`; readers of the validator-mirrors-classifier principle will look for a validate-time rejection.
 
 ## First-client user-doc draft
 
