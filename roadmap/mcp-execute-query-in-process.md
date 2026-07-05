@@ -7,7 +7,7 @@ priority: 3
 theme: lsp
 depends-on: [connection-transaction-lifecycle]
 created: 2026-07-03
-last-updated: 2026-07-04
+last-updated: 2026-07-05
 ---
 
 # MCP tool executes GraphQL against generated resolvers in-process (graphitron:dev)
@@ -157,7 +157,7 @@ non-federation path; flag `_entities` execution as a known gap.
 2. **Host execution path.** Connection open from config, `setAutoCommit(false)`, rollback-in-`finally`,
    reflect the one JDK-typed entry point, marshal the JSON result. `@UnitTier` over a synthetic executor;
    the reflection boundary is JDK-types-only so the test needs no generated classpath.
-3. **Session-state seam.** R429's session-state strategy keyed off contextArgs, with the transaction mode
+3. **Session-state seam.** R429's session-state strategy keyed off contextArgs, with the commit policy
    set to R429's `ROLLBACK_ONLY` (the named commit-suppression seam on its provider). Test with a Postgres
    `set_config` round-trip asserting an RLS-scoped read sees only permitted rows and that rollback leaves
    no trace.
