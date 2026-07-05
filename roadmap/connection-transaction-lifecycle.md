@@ -1,7 +1,7 @@
 ---
 id: R429
 title: "Graphitron owns connection and transaction lifecycle: operation-typed read-only/commit semantics and RLS-first session state"
-status: Spec
+status: Ready
 bucket: architecture
 priority: 3
 theme: service
@@ -158,4 +158,4 @@ The independent Spec → Ready review requested revisions on seven findings; all
 
 > **Graphitron manages the database connection for you.** You give graphitron a `DataSource` (single database) or a `Map<TenantId, DataSource>` (a database per tenant) and tell it the dialect. For every request graphitron takes a connection, runs your query in a **read-only transaction**, and hands it back, so a query can never write. A mutation runs in a writable transaction, commits, and then reads back its result read-only.
 >
-> **Row-level security is assumed.** Because graphitron maps your tables directly, you should be running row-level security (RLS on Postgres, RAS on Oracle). Tell graphitron which session variables carry the current user/tenant, taken from your query's context arguments, and it sets them at the start of every transaction and guarantees they are gone when it ends, so each request sees exactly what its identity is allowed and nothing leaks between pooled connections. Graphitron ships this wiring for Postgres and Oracle; a generic form lets you supply the statements yourself. If you configure no session state, graphitron warns you at startup: an unsecured direct-to-database API is a data-exposure risk.
+> **Row-level security is assumed.** Because graphitron maps your tables directly, you should be running row-level security (RLS on Postgres, RAS on Oracle). Tell graphitron which session variables carry the current user/tenant, taken from your query's context arguments, and it sets them at the start of every transaction and guarantees they are gone when it ends, so each request sees exactly what its identity is allowed and nothing leaks between pooled connections. Graphitron ships this wiring for Postgres and Oracle; a generic form lets you supply the statements yourself. If you configure no session state, graphitron warns you at build time: an unsecured direct-to-database API is a data-exposure risk.
