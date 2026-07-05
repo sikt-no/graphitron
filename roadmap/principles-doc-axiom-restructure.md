@@ -42,13 +42,13 @@ rewrite"; "Development" avoids colliding with the strategic `graphitron-principl
 
 How Graphitron is built: six axioms, each with corollary principles, and every principle ends with
 an *Enforced by* line naming what fails when it is broken ; the compiler, a named meta-test, a
-build tier, or the honest gap label "review only". The strategic principles (why Graphitron exists,
-what it promises consumers) live at xref:../../graphitron-principles.adoc[graphitron-principles.md];
-the typed-rejection narrative at xref:typed-rejection.adoc[Typed rejection]; how structural pivots
-land (additive-then-cutover) is change discipline, in `roadmap/workflow.adoc`. Roadmap items R222
-(`dimensional-model-pivot`) and R333 (`coordinate-lowers-to-datafetcher-queryparts`) name the
-target internal architecture; where an exemplar below sits on a surface the pivot dissolves, a
-forward note says so ; the principle itself survives the surface.
+build tier, or the honest gap label "review only". The axioms share one root, the insight R222 and
+R333 install as the target architecture: the classified model is a normalized fact base ;
+classification asserts each fact once at the parse boundary, everything downstream (generation,
+validation, the LSP) is a derived view over the same facts, and wire formats are its I/O. The
+strategic principles live at xref:../../graphitron-principles.adoc[graphitron-principles.md]; the
+typed-rejection narrative at xref:typed-rejection.adoc[Typed rejection]; additive-then-cutover
+change discipline in `roadmap/workflow.adoc`.
 
 '''
 
@@ -72,11 +72,10 @@ Signs a model type needs more pre-resolution:
 
 When different variants of a concept carry different data, use a sealed interface, not an enum
 with a shared field set: a sealed record hierarchy gives each variant exactly the fields it needs,
-and every switch that misses a new variant becomes a compile error. `SourceKey.Reader` is the
-exemplar ; each arm carries exactly the payload its rows-method body needs; read the type for the
-current arm set, this doc deliberately does not enumerate it. (Forward note: R431 decomposes
-`SourceKey` onto the R333 model's facts; each destination fact is itself a sealed type whose arms
-carry exactly their own data.)
+and every switch that misses a new variant becomes a compile error. `CallSiteExtraction` is the
+exemplar ; some arms carry nothing, others exactly the references their extraction strategy needs,
+payloads no enum constant could hold; read the type for the current arm set, this doc deliberately
+does not enumerate it.
 
 *Enforced by:* the compiler ; exhaustive switches over a sealed hierarchy break when a variant is
 added.
@@ -111,11 +110,11 @@ the broad sealed-interface root: a field whose return type is always table-bound
 
 === Sub-taxonomies for resolution outcomes
 
-Complex resolution outcomes get their own sealed type rather than raw strings: `SourceKey.Wrap`
-is the key-shape sub-taxonomy, `TableRef` the resolved-table one, `ColumnRef` the resolved-column
-one. Each new sub-taxonomy proposal comes with a one-line note on what distinct information it
-carries that a sibling cannot ; otherwise it's probably a field on an existing record. At
-milestone boundaries, audit which sub-taxonomies could collapse.
+Complex resolution outcomes get their own sealed type rather than raw strings: `TableRef` is the
+resolved-table sub-taxonomy, `ColumnRef` the resolved-column one. Each new sub-taxonomy proposal
+comes with a one-line note on what distinct information it carries that a sibling cannot ;
+otherwise it's probably a field on an existing record. At milestone boundaries, audit which
+sub-taxonomies could collapse.
 
 *Enforced by:* review only (the one-line justification note at proposal time; the
 milestone-boundary collapse audit).
@@ -136,12 +135,11 @@ is the tell.
 
 === Builder-step results are sealed, not strings or out-params
 
-Every builder-step lift returns a sealed `Resolved`; rejection is a typed variant, never a string
-or out-param. The full narrative lives at xref:typed-rejection.adoc[Typed rejection]. The walker
-slices apply the same rule one level up: a walker returns a typed carrier (`WalkerResult.Ok |
-Err`) whose failures are typed `AuthorError` sub-seal arms with stable LSP codes, never prose.
-(Forward note: the walker-as-translator shape is R222's transition technique; R333 relocates the
-carriers onto the model's coordinate facts; the typed-result rule is what survives.)
+Every builder-step lift returns a sealed `Resolved`; rejection is a typed variant with a stable
+LSP code, never a string or out-param. The full narrative lives at
+xref:typed-rejection.adoc[Typed rejection]. In fact-base terms, rejections are facts too: located
+violations asserted once and rendered into views ; the build log, the LSP ; never prose composed
+at the detection site.
 
 *Enforced by:* the compiler on the sealed results; `SealedHierarchyDocCoverageTest` pins the
 permit-to-doc mapping for the `Rejection` taxonomy.
@@ -152,16 +150,16 @@ permit-to-doc mapping for the `Rejection` taxonomy.
 derived fact.* When a concept's variants multiply, the usual cause is independent axes spliced
 into one identifier: the permit set becomes the cross-product of its axes, and adding a value to
 any axis multiplies the permits below it. Carry each axis as its own slot or sealed
-sub-interface, and compute cross-axis views at the read site ; a stored derived fact is a second
-copy of a decision, and second copies drift. R222 (`dimensional-model-pivot`) is the
-roadmap-scale application; R333 is the current statement of the target model.
+sub-interface, and compute cross-axis views at the read site ; a spliced identifier or a stored
+derived fact is denormalization, a second copy of a decision that will drift. R222
+(`dimensional-model-pivot`) is the roadmap-scale application; R333 is the current statement of the
+target model.
 
-The DataLoader-backed source side is the worked example today: key shape, body input contract,
-row count, and loader registration are independent axes, and each dispatch site reads off
-whichever axis it forks on (xref:dispatch-axes.adoc[Dispatch axes] narrates the split; forward
-note: R431 relocates these axes onto the R333 model's facts). The smell to watch for: a single
-shared accessor whose meaning depends on the variant, a sealed permit name that splices two axes
-together, or a record component another component already determines.
+The DataLoader-backed source side is the worked example: key shape, body input contract, row
+count, and loader registration are independent axes, and each dispatch site reads off whichever
+axis it forks on (xref:dispatch-axes.adoc[Dispatch axes] narrates the split). The smell to watch
+for: a single shared accessor whose meaning depends on the variant, a sealed permit name that
+splices two axes together, or a record component another component already determines.
 
 *Enforced by:* the compiler where cross-axis invariants live in compact constructors; review at
 model-design time otherwise.
@@ -170,11 +168,9 @@ model-design time otherwise.
 
 Capabilities express what is *uniformly true* across variants; sealed switches express what
 *varies by identity*. When a generation pattern applies uniformly, use an orthogonal capability
-interface (`SqlGeneratingField`, `BatchKeyField`; `ServiceField` per R238 is the per-directive
-shape newer slices follow) rather than an N-way `instanceof` chain; when the generator forks on
-identity, use a sealed switch. Capabilities don't eliminate exhaustiveness bookkeeping ; they
-relocate it. (Forward note: R222 retires `MethodBackedField` in favour of per-directive siblings;
-the distinction is untouched.)
+interface (`SqlGeneratingField`, `BatchKeyField`, `ServiceField`) rather than an N-way
+`instanceof` chain; when the generator forks on identity, use a sealed switch. Capabilities don't
+eliminate exhaustiveness bookkeeping ; they relocate it.
 
 *Enforced by:* the compiler ; capabilities relocate exhaustiveness bookkeeping, sealed switches
 keep it.
@@ -198,9 +194,9 @@ named thing didn't resolve" to a cross-product of missing/inconsistent-slot erro
 consumers (the LSP snapshot today) re-source from the same classified facts; no consumer owns a
 private model, and a view's coverage guarantee lives at its projection seam.
 `CatalogBuilder.projectFieldClassification` is the exemplar: an exhaustive switch over the field
-permits, so a new permit fails compilation until the view covers it. The smell is a consumer-side
-shadow taxonomy ; a second model maintained by hand to feed a view. (Forward note: R333 widens the
-model these views project from; the coverage switch moves with the seam.)
+permits, so a new permit fails compilation until the view covers it; the coverage switch moves
+with the seam. The smell is a consumer-side shadow taxonomy ; a second model maintained by hand to
+feed a view.
 
 *Enforced by:* the compile-checked projection switch at each view's seam.
 
@@ -311,7 +307,9 @@ An unguarded inventory in this document ; an arm list, a file census, an occurre
 compliance roster ; reads as authoritative and rots silently. A principle names the rule, one
 canonical exemplar, and the smell; an inventory appears only when a named live test pins it (the
 dispatch partition under "Rejections" is the pattern). Counts and arm lists otherwise belong in
-guarded tests or generated reports; read the type for the current arm set.
+guarded tests or generated reports; read the type for the current arm set. Exemplars are chosen on
+stable surfaces: an exemplar that needs a forward note about its own demolition is the wrong
+exemplar.
 
 *Enforced by:* review; the named-test requirement is the rule itself.
 
@@ -562,6 +560,10 @@ Cut without a new home; recorded because v2 carries nothing forward implicitly:
 - The classifier-guarantees expansions (three-anchor elaborations, worked-example detail): R240
   and R239 item files carry the lift designs; the compressed corollary keeps all three anchors and
   both citations.
+- All forward notes and the transitional exemplars that required them (`SourceKey.Reader`,
+  `SourceKey.Wrap`, the R431 decomposition notes, the `MethodBackedField` retirement note, the
+  walker-carrier sentence): replaced by stable exemplars per the altitude principle's new
+  stable-exemplar rule; R222/R333/R431 carry their own transition narratives.
 - Assorted sentence-level restatements throughout (each principle previously explained itself two
   to three times; v2 states each rule once).
 
@@ -586,9 +588,10 @@ From the 2026-07-04 principles-architect consult and the user's Spec review, in 
 4. **Walker-carrier is an exemplar, not a principle** (consult): its permanent kernel (typed
    carrier, typed `AuthorError` sub-seal with stable LSP codes) is the intersection of principles
    the doc keeps; the distinctive translator-over-permits part is R222's own "transition
-   technique, not prescription" with a scheduled death in R256/R333. It rides as a forward-noted
-   paragraph under the sealed-results corollary. R268's second-switch drift is the enforcement
-   axiom's headline smell, not a walker smell.
+   technique, not prescription" with a scheduled death in R256/R333. Initially it rode as a
+   forward-noted sentence under the sealed-results corollary; the stable-exemplar rule (decision
+   12) removed it entirely ; that corollary and typed-rejection carry the kernel. R268's
+   second-switch drift is the enforcement axiom's headline smell, not a walker smell.
 5. **Additive-then-cutover leaves the principles doc** (consult): change discipline, not design;
    both source items (R222, R431) call it a technique slices may discard. It moves to
    `roadmap/workflow.adoc` (deliverable below); the ingress keeps a pointer clause.
@@ -620,6 +623,18 @@ From the 2026-07-04 principles-architect consult and the user's Spec review, in 
     question toward extraction), the `__` rule's full semantics move to
     `GeneratedSourcesLintTest`'s javadoc, and everything cut without a destination is recorded in
     "Dropped, with reasons".
+12. **Stable exemplars, and the fact-base frame** (user review, 2026-07-05). Two connected calls.
+    First: an exemplar that needs a forward note about its own demolition is the wrong exemplar ;
+    the rule is now written into "Principles are stated at altitude", and every forward note is
+    gone from v2: `SourceKey.Reader` gave way to `CallSiteExtraction` (sealed hierarchies),
+    `SourceKey.Wrap` left the sub-taxonomy exemplars, `MethodBackedField` left the capability
+    list, and the walker sentence left sealed-results. The pivot items themselves carry the
+    transitional narratives; the principles only name surfaces expected to outlive them. Second:
+    R333's deeper insight colors the whole doc from the ingress ; the classified model is a
+    normalized fact base (classification asserts facts once, everything downstream is a derived
+    view, wire formats are its I/O), which is the shared root of the first three axioms, makes
+    the cross-product/stored-derived-fact smell literally denormalization, and recasts rejections
+    as located-violation facts rendered into views (folded into the sealed-results corollary).
 
 ## Deliverable 2: workflow.adoc addition
 
