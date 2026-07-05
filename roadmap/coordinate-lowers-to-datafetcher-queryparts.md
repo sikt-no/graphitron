@@ -7,7 +7,7 @@ priority: 3
 theme: structural-refactor
 depends-on: []
 created: 2026-06-18
-last-updated: 2026-07-04
+last-updated: 2026-07-05
 ---
 
 # The Graphitron data model
@@ -1825,7 +1825,9 @@ The gaps, in resolution order:
    Predicate`, and joins adjacent to the FK-less routine are keyed by a name-matched `key:` or a `condition:`.
    The `@reference` path is the linearized join graph; verified rules
    (source-gives-first, terminus-equals-target, `table:` = derived-`key:`, root-iff-routine) hold. See *The
-   table expression* and *The join path*. Deferred follow-on: the `@oneOf` SDL surface.
+   table expression* and *The join path*. The SDL surface settled (2026-07-05) as R435: order-significant,
+   repeatable `@routine` / `@reference` co-occurrence composes the chain, so no `@oneOf` path-element
+   surface is needed at all.
 3. **Discrimination** (`@discriminate` / `@discriminator`). **Resolved (in model).** Not a conditional cast,
    and no break of the monomorphic axiom: an interface/union recovers its concrete type *first* (the read-side
    dual of the accessor), then reads monomorphically per concrete type. The discriminator's signal is
@@ -1858,12 +1860,13 @@ The gaps, in resolution order:
   name-matched `key:` or a `condition:`; `@tableMethod` is a `MethodCall` projected node. The FROM-graph
   generalization collapses into the linearized join path, no separate top-level structure. A routine node may
   be the projected terminus (a function-backed query) or a join target / root entry; the only constraint is
-  FK-less joins adjacent to it. **Open residue:** (a) the `@oneOf` SDL surface for the path element (target
-  `table` | `routine`, on `key` | `condition`), deferred; (b) an explicit validator for the root-iff-routine
-  guard, today root classification simply does not consult `@reference`, so the invariant rests on omission
-  rather than a check. Both directives are unused, so this is greenfield, and the existing `@routine` code is
-  broken not because the routine result is projected, but because that is the *only* shape it allows, with no
-  composition. Likely its own Backlog item once the surface settles.
+  FK-less joins adjacent to it. **Residue discharged (2026-07-05) by R435** (`routine-table-node-composition`):
+  (a) the SDL surface is *not* a `@oneOf` path element; it is order-significant, repeatable `@routine` /
+  `@reference` co-occurrence, the field's directive list read left to right *being* the linearized join graph
+  (`ReferenceElement` untouched); (b) the root-iff-routine guard becomes R435's explicit
+  first-application-supplies-the-head validator. Both directives are unused, so this is greenfield, and the
+  existing `@routine` code is broken not because the routine result is projected, but because that is the
+  *only* shape it allows, with no composition; R435 is the Backlog item that supplies the composition.
 - **Node-relation granularity** (the open fork from the session). **Resolved (thread K):** the node is one
   pair per *whole emitted method*; arm-renderers fold into a pair. *Which* methods exist in the target is
   governed by the seam-placement rule, not by a fixed count.
