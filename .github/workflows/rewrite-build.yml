@@ -115,7 +115,7 @@ jobs:
       - name: Build docs site
         run: mvn -pl :graphitron-docs -am package -DskipTests
       - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-pages-artifact@v5
         with:
           path: docs/target/generated-docs
 
