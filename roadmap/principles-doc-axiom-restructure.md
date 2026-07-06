@@ -120,18 +120,20 @@ sub-taxonomies could collapse.
 *Enforced by:* review only (the one-line justification note at proposal time; the
 milestone-boundary collapse audit).
 
-=== Builder-internal hierarchies are ephemeral; model hierarchies are carried
+=== Classification and validation gather facts; the gathering stays out of the model
 
-"Carry the decision as a type" answers *how*; this corollary answers *where the type lives*. A
-model-level hierarchy is carried all the way to the generator; a builder-internal hierarchy
-structures a complex multi-target classification and is discarded before the model ; generators
-never see it. `ArgumentRef` is the exemplar
-(xref:../reference/argument-resolution.adoc[argument-resolution.md]): every GraphQL argument is
-classified once, then exhaustive projections produce each generation-ready output. The smell is
-the alternative: multiple independent passes that implicitly coordinate by skipping each other's
-arguments.
+"Carry the decision as a type" says what the model holds; this corollary says what it must not.
+Classification gathers facts and populates the model; the scaffolding it carries while gathering ; a
+builder-internal sealed hierarchy, a re-classification of the same argument in each output field's
+context, any intermediate resolution state ; is an implementation detail, discarded before the
+model and invisible to every downstream view (generator, LSP). Validation is the same activity
+pointed the other way: it gathers facts too, reifying each missing or conflicting fact into a
+located violation the build acts on later (that violation's typed shape lives under "Builder-step
+results are sealed" and "Rejections", not restated here). The smell either way: gathering
+scaffolding leaking into a model type, or a downstream view branching on a builder-internal type
+instead of the landed fact.
 
-*Enforced by:* review only ; a generator referencing `ArgumentRef` (or any builder-internal type)
+*Enforced by:* review only ; a downstream view referencing a builder-internal classification type
 is the tell.
 
 === Builder-step results are sealed, not strings or out-params
@@ -567,6 +569,12 @@ Cut without a new home; recorded because v2 carries nothing forward implicitly:
   stable-exemplar rule; R222/R333/R431 carry their own transition narratives.
 - Assorted sentence-level restatements throughout (each principle previously explained itself two
   to three times; v2 states each rule once).
+- The `ArgumentRef` "classified once, then exhaustive projections" exemplar and its
+  `argument-resolution.md` xref (builder-internal-hierarchy corollary): argument resolution is
+  moving output-field-context-aware and may re-classify the same argument (`@condition(override:
+  false)`; R123, R333/R222), so per the stable-exemplar rule it is the wrong exemplar. Rather than
+  swap surfaces, the corollary reframes onto the fact-gathering lens (decision 13); it now names no
+  demolishable exemplar. `argument-resolution.md` keeps the current design.
 
 ## Design decisions
 
@@ -606,8 +614,8 @@ From the 2026-07-04 principles-architect consult and the user's Spec review, in 
    for, and a runtime cast is explicitly not an enforcer. The code-string-assertion ban stays in
    the body, not behind the testing.adoc xref.
 8. **Axiom 1 keeps two corollaries with teeth** (consult): the parse boundary as a *containment*
-   invariant with R433's corrected discovery recipes, and the ephemeral-vs-carried distinction for
-   builder-internal hierarchies.
+   invariant with R433's corrected discovery recipes, and the fact-gathering corollary (decision 13)
+   that the gathering process's transient state stays out of the model.
 9. **Stale process-state names fixed in v2**: the live doc's "Draft → Approved and Pending Review
    → Done" (pre-current-workflow vocabulary) becomes "Spec → Ready and In Review → Done".
 10. **Drafted against R433's landed text** (`depends-on: [principles-doc-altitude-trim]`); v2
@@ -636,8 +644,21 @@ From the 2026-07-04 principles-architect consult and the user's Spec review, in 
     view, wire formats are its I/O), which is the shared root of the first three axioms, makes
     the cross-product/stored-derived-fact smell literally denormalization, and recasts rejections
     as located-violation facts rendered into views (folded into the sealed-results corollary).
-
-## Deliverable 2: workflow.adoc addition
+13. **The ephemeral-hierarchy corollary reframed onto fact-gathering** (user's Spec review,
+    2026-07-06). The prior exemplar `ArgumentRef` ("classified once, then exhaustive projections")
+    sat on the surface R123/R333/R222 are reworking toward output-field-context-aware, possibly
+    repeated classification (an `@condition(override: false)` argument re-classifies in each output
+    field's context) ; the wrong exemplar by decision 12's own rule, missed because the compression
+    carried it over from the live doc's "Builder-internal sealed hierarchies" section. No stable
+    twin of the fan-out-projection shape exists in the tree (the nearest, `TypeBuilder.CarrierBinding`,
+    projects into R222-territory `GraphitronType`), so rather than swap surfaces the corollary
+    reframes onto the fact-base lens the doc already roots itself in (decision 12): classification
+    gathers facts and populates the model, validation gathers facts too (reifying missing and
+    conflicting facts into located violations), and the transient state either carries while
+    gathering is an implementation detail invisible in the model. The corollary names no
+    demolishable exemplar; the review-only enforcer (nothing builder-internal reaches a downstream
+    view) is the pin. The violation shape is cross-referenced, not restated, to avoid the
+    parallel-statement smell the enforcement axiom warns against.
 
 Append to `roadmap/workflow.adoc` (after the plan-shape bullets), receiving the technique the
 principles doc no longer carries:
