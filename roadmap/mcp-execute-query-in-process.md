@@ -47,13 +47,13 @@ entry point whose signature is **JDK types only**:
 // generated; compiled in-process alongside the rest of the closure
 public static String execute(
     java.sql.Connection conn, String dialect, String query,
-    java.util.Map<String,Object> variables, String identity, java.util.Map<String,Object> contextArgs);
+    java.util.Map<String,Object> variables, String claims, java.util.Map<String,Object> contextArgs);
 ```
 
 Inside, it references the generated facade and R429's runtime **symbolically** (compile-time, since it is
 compiled against them): it wraps the connection in a single-connection `DataSource`, constructs the R429
 runtime with the requested dialect and the `ROLLBACK_ONLY` commit policy, calls the per-request factory with
-the opaque `identity` payload, binds `contextArgs` to the schema's typed context parameters using the *same
+the opaque `claims` payload, binds `contextArgs` to the schema's typed context parameters using the *same
 classified model that produced the facade*, executes, and returns `ExecutionResult.toSpecification()`
 serialized to a JSON string. This buys three simplifications at once:
 
@@ -76,8 +76,8 @@ dialect. The **host** (dev-loop code, not generated) owns the connection lifecyc
 
 ```
 open Connection            (url/user/password/dialect from config)
-resolve identity payload   (GRAPHITRON_DEV_IDENTITY; opaque string, passed through untouched)
-reflect GraphitronDevExecutor.execute(conn, dialect, query, variables, identity, contextArgs)
+resolve claims payload   (GRAPHITRON_DEV_CLAIMS; opaque string, passed through untouched)
+reflect GraphitronDevExecutor.execute(conn, dialect, query, variables, claims, contextArgs)
 close                      (transactions, session hooks, and rollback ran inside, via R429's machinery)
 ```
 
@@ -92,8 +92,8 @@ environment variables (`GRAPHITRON_DEV_DB_URL` / `_USER` / `_PASSWORD` / `_DIALE
 developer keeps credentials out of the checked-in pom):
 
 - `url`, `user`, `password`
-- `identity`: the opaque per-request identity payload handed to R429's connect hook
-  (`GRAPHITRON_DEV_IDENTITY`; inline, or `@/path/to/file` to keep tokens out of the environment listing).
+- `claims`: the opaque per-request claims payload handed to R429's connect hook
+  (`GRAPHITRON_DEV_CLAIMS`; inline, or `@/path/to/file` to keep tokens out of the environment listing).
   Required when the schema configures `<sessionState>`; see the section below.
 - `dialect`: **explicit, enumerated, never defaulted to Postgres.** graphitron is already multi-dialect
   (see the `DialectRequirement` classification: bulk DML requires the Postgres family, most operations are
@@ -106,19 +106,19 @@ the degrade-gracefully posture the RAG tools use. Every other MCP tool keeps wor
 ## Session identity, transactions, and RLS/RAS: delegated to R429
 
 R429 (`connection-transaction-lifecycle`) gives the generated runtime ownership of connection acquisition,
-operation-typed transactions, and session identity: an opaque per-request identity payload (typically the
+operation-typed transactions, and session identity: an opaque per-request claims payload (typically the
 caller's JWT) is handed to a consumer-owned database *connect hook* at acquisition, with a paired
 *disconnect hook* at release. This item is a **consumer** of that machinery rather than reinventing it:
 
 - The executor wraps its single dev connection in a `DataSource` and executes through the R429 runtime, so
   the dev loop exercises the *same* acquisition/hook/transaction path a real app does, including the
   consumer's own connect hook. Higher execution fidelity for free.
-- **Identity is developer-supplied and opaque.** Graphitron does not know what the consumer's connect hook
+- **Claims are developer-supplied and opaque.** Graphitron does not know what the consumer's connect hook
   expects; that opacity is R429's point, the hook is the only party that understands the payload. The
-  developer, who owns the hook, supplies the payload via `GRAPHITRON_DEV_IDENTITY`, and the tool passes it
+  developer, who owns the hook, supplies the payload via `GRAPHITRON_DEV_CLAIMS`, and the tool passes it
   through untouched, exactly as the production factory does. This channel is disjoint from `contextArgs`,
   which remain the Java-typed service/condition channel and carry no session state.
-- **Fail loud, never skip.** If the schema configures `<sessionState>` and no dev identity is supplied, the
+- **Fail loud, never skip.** If the schema configures `<sessionState>` and no dev claims are supplied, the
   execute tool fails with a pointer at the config knob. Silently skipping the connect hook would run dev
   queries under a different security posture than production: seeing nothing (RLS denies), or on a
   convention-fence Postgres setup, seeing everything.
@@ -132,14 +132,14 @@ caller's JWT) is handed to a consumer-owned database *connect hook* at acquisiti
 whoever holds them can call the connect hook with any payload, because the hook validates *entitlement*
 (is this person a saksbehandler in this database), not *authentication*, which was the edge's job. The
 fences are config separation (the tool reads `GRAPHITRON_DEV_DB_*`, never the app's runtime datasource),
-the loopback-only posture, `ROLLBACK_ONLY` for writes, and the identity payload for reads. That last one
+the loopback-only posture, `ROLLBACK_ONLY` for writes, and the claims payload for reads. That last one
 earns its own sentence: rollback protects against mutation, not disclosure, so against a prod-copy database
-the configured identity decides what an agent can *read*; pin a low-privilege identity there. A per-call
-identity override on the execute tool (for multi-identity RLS probing: does the student role really not see
-other students' rows?) is opt-in via config, default off, so shared or sensitive dev databases keep one
-pinned identity. One divergence is by design: a consumer whose hook verifies token signatures in-database
-(R429's cryptographic fence) will reject hand-written claims JSON, correctly; the dev identity there must
-be a genuinely issued dev token. Graphitron does not soften this, because a hook with a dev-mode bypass
+the configured claims decide which identity mounts and therefore what an agent can *read*; pin
+low-privilege claims there. A per-call claims override on the execute tool (for multi-identity RLS probing:
+does the student role really not see other students' rows?) is opt-in via config, default off, so shared or
+sensitive dev databases keep one pinned identity. One divergence is by design: a consumer whose hook
+verifies token signatures in-database (R429's cryptographic fence) will reject hand-written claims JSON,
+correctly; the dev claims payload there must be a genuinely issued dev token. Graphitron does not soften this, because a hook with a dev-mode bypass
 would be a hole in the production fence.
 
 If R429's runtime has not landed when R428 is implemented, the fallback is R428's minimal host-side
@@ -183,13 +183,13 @@ non-federation path; flag `_entities` execution as a known gap.
 2. **Host execution path.** Connection open from config, `setAutoCommit(false)`, rollback-in-`finally`,
    reflect the one JDK-typed entry point, marshal the JSON result. `@UnitTier` over a synthetic executor;
    the reflection boundary is JDK-types-only so the test needs no generated classpath.
-3. **Identity and session hooks.** Executor constructs the R429 runtime with `ROLLBACK_ONLY`; identity
-   payload passed through opaquely; fail-loud when `<sessionState>` is configured and no identity is
+3. **Claims and session hooks.** Executor constructs the R429 runtime with `ROLLBACK_ONLY`; claims
+   payload passed through opaquely; fail-loud when `<sessionState>` is configured and no claims are
    supplied; connect-hook failures surfaced verbatim as the tool result. `@UnitTier` on the fail-loud and
-   error-surfacing rules; a Postgres round-trip asserting an RLS-scoped read sees only the configured
-   identity's permitted rows and that rollback leaves no trace.
+   error-surfacing rules; a Postgres round-trip asserting an RLS-scoped read sees only the rows the
+   configured claims permit and that rollback leaves no trace.
 4. **DB configuration + degrade-gracefully.** pom `<configuration>` and env resolution (env wins), explicit
-   dialect, identity payload (inline and `@file` forms) and the opt-in per-call identity-override flag
+   dialect, claims payload (inline and `@file` forms) and the opt-in per-call claims-override flag
    (default off), tool absent/disabled with a clear message when unconfigured. `DevMojoTest` extension.
 5. **Execution-tier integration.** A real query and a real mutation (rolled back) against the sakila example
    DB through the tool, asserting the returned JSON matches a direct in-app execution, the fidelity check
@@ -211,10 +211,10 @@ non-federation path; flag `_entities` execution as a known gap.
 > Mutations run in a transaction that is always rolled back, so you can probe freely without changing data.
 >
 > **Row-level security still applies.** If your schema mounts identity (graphitron's `<sessionState>`
-> connect hook), give the dev tool an identity payload via `GRAPHITRON_DEV_IDENTITY`: the same string your
+> connect hook), give the dev tool a claims payload via `GRAPHITRON_DEV_CLAIMS`: the same string your
 > connect function expects in production (claims JSON, or a genuinely issued dev token if your function
-> verifies signatures). The tool runs your real connect function and sees only what that identity is
-> permitted, just like your running service. If identity is required and missing, the tool says so loudly
+> verifies signatures). The tool runs your real connect function and sees only what the mounted identity is
+> permitted, just like your running service. If claims are required and missing, the tool says so loudly
 > instead of running unsecured; if your connect function rejects the payload, you get its error message
 > verbatim, so you can fix the payload and retry.
 >
