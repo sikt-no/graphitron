@@ -367,7 +367,7 @@ public final class ArgCallEmitter {
             }
             case CallSiteExtraction.JooqRecord jr -> {
                 requireEnv(source, "JooqRecord", param.name());
-                yield buildJooqRecordCallExtraction(jr, param.name(), isListShaped(param));
+                yield buildJooqRecordCallExtraction(ctx.jooqRecordHelperNames(), jr, param.name(), isListShaped(param));
             }
             case CallSiteExtraction.NodeIdDecodeRecord ignored ->
                 throw new IllegalStateException(
@@ -460,15 +460,15 @@ public final class ArgCallEmitter {
     /**
      * R311 sibling of {@link #buildInputBeanCallExtraction} for a jOOQ {@code TableRecord} param: emits
      * the {@code create<Record>} / {@code create<Record>List} call (the helper itself is emitted by
-     * {@code JooqRecordInstantiationEmitter}, named from the record class). The helper picks singular
-     * vs plural by the param's Java list-shape, identical to the root emitter's choice.
+     * {@code JooqRecordInstantiationEmitter}). The helper name is resolved through the shared
+     * {@link JooqRecordHelperNames} for <em>this specific carrier's shape</em>, so when two {@code @service}
+     * fields take the same record through different input shapes the call routes to its own helper rather
+     * than the first-seen one (R437). The helper picks singular vs plural by the param's Java list-shape,
+     * identical to the root emitter's choice.
      */
-    private static CodeBlock buildJooqRecordCallExtraction(CallSiteExtraction.JooqRecord jr,
-            String argName, boolean list) {
-        String simpleName = jr.table().recordClass().simpleName();
-        String helperName = list
-            ? "create" + simpleName + "List"
-            : "create" + simpleName;
+    private static CodeBlock buildJooqRecordCallExtraction(JooqRecordHelperNames names,
+            CallSiteExtraction.JooqRecord jr, String argName, boolean list) {
+        String helperName = list ? names.plural(jr) : names.singular(jr);
         return CodeBlock.of("$L(env.getArgument($S))", helperName, argName);
     }
 

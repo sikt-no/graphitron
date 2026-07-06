@@ -57,7 +57,17 @@ public final class ServiceMethodCallEmitter {
      * records the dependency on the way out).
      */
     public static List<CodeBlock> emit(ServiceMethodCall call, String outputPackage) {
-        return emit(call, outputPackage, call.javaReturnType());
+        return emit(call, outputPackage, call.javaReturnType(), JooqRecordHelperNames.bare());
+    }
+
+    /**
+     * Variant carrying the shape-aware {@link JooqRecordHelperNames} for the enclosing
+     * {@code <Type>Fetchers} class (R437), used by the in-generator callers so a jOOQ-record
+     * {@code @service} arg routes to the helper matching its own binding shape. The {@code result} local
+     * uses the carrier's reflected return type.
+     */
+    public static List<CodeBlock> emit(ServiceMethodCall call, String outputPackage, JooqRecordHelperNames names) {
+        return emit(call, outputPackage, call.javaReturnType(), names);
     }
 
     /**
@@ -67,8 +77,18 @@ public final class ServiceMethodCallEmitter {
      * class) rather than the dev method's reflected return; the actual method return value is
      * shape-compatible by classifier-time validation.
      */
-    @SuppressWarnings("unused")
     public static List<CodeBlock> emit(ServiceMethodCall call, String outputPackage, TypeName resultLocalType) {
+        return emit(call, outputPackage, resultLocalType, JooqRecordHelperNames.bare());
+    }
+
+    /**
+     * Canonical form: declares the {@code result} local with {@code resultLocalType} and resolves any
+     * jOOQ-record {@code @service} arg's {@code create<Record>} helper name through the shape-aware
+     * {@code names} (R437), so a call site and its emitted helper never disagree on the name.
+     */
+    @SuppressWarnings("unused")
+    public static List<CodeBlock> emit(ServiceMethodCall call, String outputPackage, TypeName resultLocalType,
+            JooqRecordHelperNames names) {
         List<CodeBlock> out = new ArrayList<>();
 
         boolean needsDsl = anyFromDsl(allEntries(call));
@@ -78,11 +98,11 @@ public final class ServiceMethodCallEmitter {
 
         if (call instanceof ServiceMethodCall.Instance inst) {
             for (MappingEntry e : inst.ctorArgs()) {
-                addVarDecl(out, e);
+                addVarDecl(out, e, names);
             }
         }
         for (MappingEntry e : call.methodArgs()) {
-            addVarDecl(out, e);
+            addVarDecl(out, e, names);
         }
 
         out.add(finalAssignment(call, resultLocalType));
@@ -116,14 +136,14 @@ public final class ServiceMethodCallEmitter {
         return false;
     }
 
-    private static void addVarDecl(List<CodeBlock> out, MappingEntry entry) {
+    private static void addVarDecl(List<CodeBlock> out, MappingEntry entry, JooqRecordHelperNames names) {
         switch (entry) {
             case MappingEntry.FromDsl ignored -> { /* shares the prelude's dsl local */ }
             case MappingEntry.FromContext ctx ->
                 out.add(CodeBlock.of("$T $L = ($T) graphitronContext(env).getContextArgument(env, $S)",
                     ctx.javaType(), ctx.javaName(), ctx.javaType(), ctx.contextKey()));
             case MappingEntry.FromArg arg -> {
-                CodeBlock expr = valueShapeExpression(arg.shape());
+                CodeBlock expr = valueShapeExpression(arg.shape(), names);
                 // A nested-input arg of generic type extracts as `(List<X>) map.get(key)`, where the
                 // map value is statically Object, so the cast is inherently unchecked (top-level args
                 // ride `<T> T env.getArgument` inference and need no cast). Suppress at the narrowest
@@ -150,13 +170,13 @@ public final class ServiceMethodCallEmitter {
      * additive cutover, so the queue still sees them via the legacy {@code method().callParams()}
      * walk).
      */
-    static CodeBlock valueShapeExpression(ValueShape shape) {
+    static CodeBlock valueShapeExpression(ValueShape shape, JooqRecordHelperNames names) {
         return switch (shape) {
             case ValueShape.Scalar s -> scalarExpression(s);
-            case ValueShape.ListOf list -> listExpression(list);
+            case ValueShape.ListOf list -> listExpression(list, names);
             case ValueShape.RecordInput rec -> compositeHelperCall(rec.javaClass(), rec.fields());
             case ValueShape.JavaBeanInput bean -> compositeHelperCall(bean.javaClass(), bean.fields());
-            case ValueShape.JooqRecordInput jr -> jooqRecordHelperCall(jr);
+            case ValueShape.JooqRecordInput jr -> jooqRecordHelperCall(jr, names);
         };
     }
 
@@ -164,11 +184,12 @@ public final class ServiceMethodCallEmitter {
      * Call the {@code create<Record>} singular helper for a jOOQ {@code TableRecord} param (R311). A
      * {@link ValueShape.JooqRecordInput} carries its own {@code sdlPath}, so it reads the arg name
      * directly rather than recovering it from a {@code fields} list (the reason it does not reuse
-     * {@link #compositeHelperCall}). The helper is named from the carrier's record class.
+     * {@link #compositeHelperCall}). The helper name is resolved through the shape-aware
+     * {@link JooqRecordHelperNames} for this carrier's binding shape (R437).
      */
-    private static CodeBlock jooqRecordHelperCall(ValueShape.JooqRecordInput jr) {
+    private static CodeBlock jooqRecordHelperCall(ValueShape.JooqRecordInput jr, JooqRecordHelperNames names) {
         return CodeBlock.of("$L(env.getArgument($S))",
-            singularHelperName(jr.carrier().table().recordClass()), jr.sdlPath().outerArgName());
+            names.singular(jr.carrier()), jr.sdlPath().outerArgName());
     }
 
     /**
@@ -308,7 +329,7 @@ public final class ServiceMethodCallEmitter {
             currentExpr, mapClass, mBind, recursed);
     }
 
-    private static CodeBlock listExpression(ValueShape.ListOf list) {
+    private static CodeBlock listExpression(ValueShape.ListOf list, JooqRecordHelperNames names) {
         ValueShape elt = list.elementShape();
         String outerArg = list.sdlPath().outerArgName();
         return switch (elt) {
@@ -321,9 +342,9 @@ public final class ServiceMethodCallEmitter {
             case ValueShape.JooqRecordInput jr ->
                 // R311: List<Record> param — the plural create<Record>List helper maps the singular
                 // create<Record> over each element; the wire value for a [Input!] arg is a
-                // List<Map<String, Object>>.
+                // List<Map<String, Object>>. R437: the name is shape-aware, matching the emitted helper.
                 CodeBlock.of("$L(env.getArgument($S))",
-                    pluralHelperName(jr.carrier().table().recordClass()), outerArg);
+                    names.plural(jr.carrier()), outerArg);
             case ValueShape.Scalar ignored ->
                 // List of scalars at a top-level path: the walker produces a Scalar directly
                 // for {@code List<X>} args, so this arm is defensive. getArgument is <T> T, so the

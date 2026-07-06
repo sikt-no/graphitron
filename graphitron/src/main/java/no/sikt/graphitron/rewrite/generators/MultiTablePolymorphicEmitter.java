@@ -213,7 +213,7 @@ public final class MultiTablePolymorphicEmitter {
         // Service call: declares `<reflectedReturnType> result = ServiceClass.method(args);` and a
         // `dsl` local iff the method binds a DSLContext / is instance-shaped. Stage 2's by-PK
         // auto-fetch needs a `dsl` local, so declare one here when the service call did not.
-        ServiceMethodCallEmitter.emit(serviceCall, outputPackage).forEach(builder::addStatement);
+        ServiceMethodCallEmitter.emit(serviceCall, outputPackage, ctx.jooqRecordHelperNames()).forEach(builder::addStatement);
         if (!ServiceMethodCallEmitter.declaresDslLocal(serviceCall)) {
             builder.addStatement("$T dsl = $L.getDslContext(env)", DSL_CONTEXT, ctx.graphitronContextCall());
         }
@@ -385,7 +385,7 @@ public final class MultiTablePolymorphicEmitter {
         builder.beginControlFlow("try");
         // Service call: declares `result` and a `dsl` local iff the method binds a DSLContext /
         // is instance-shaped. The by-PK re-fetch needs `dsl`, so declare one here when it did not.
-        ServiceMethodCallEmitter.emit(serviceCall, outputPackage).forEach(builder::addStatement);
+        ServiceMethodCallEmitter.emit(serviceCall, outputPackage, ctx.jooqRecordHelperNames()).forEach(builder::addStatement);
         if (!ServiceMethodCallEmitter.declaresDslLocal(serviceCall)) {
             builder.addStatement("$T dsl = $L.getDslContext(env)", DSL_CONTEXT, ctx.graphitronContextCall());
         }

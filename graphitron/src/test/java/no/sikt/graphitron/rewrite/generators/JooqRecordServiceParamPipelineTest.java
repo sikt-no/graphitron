@@ -158,6 +158,100 @@ class JooqRecordServiceParamPipelineTest {
             .isNotInstanceOf(UnclassifiedField.class);
     }
 
+    // ===== R437: two @service fields sharing a record through different input shapes =====
+
+    private static final String TWO_SHAPES_SDL = """
+        type Film implements Node @table(name: "film") @node { id: ID! title: String }
+        input RegisterFilmInput {
+            filmId: ID! @nodeId(typeName: "Film")
+            title: String @field(name: "title")
+            releaseYear: Int @field(name: "release_year")
+        }
+        input TouchFilmInput {
+            filmId: ID! @nodeId(typeName: "Film")
+            title: String @field(name: "title")
+        }
+        type Query {
+            registerFilm(in: RegisterFilmInput!): String
+                @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "modifyFilmRecord"})
+            touchFilm(in: TouchFilmInput!): String
+                @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "modifyFilmRecord2"})
+        }
+        """;
+
+    @Test
+    void twoServiceFieldsShareRecordWithDifferentInputShapes_eachHelperKeepsItsOwnColumns() {
+        // R437 red test: registerFilm's input carries releaseYear -> release_year, touchFilm's does not,
+        // and both @service fields bind FilmRecord. On main the record-class-keyed dedup emits a single
+        // createFilmRecord (the first-seen shape) and BOTH fetchers call it, so one mutation silently
+        // drops its column. The fix keys the helper by binding shape: two distinct shapes -> two distinct
+        // singular helpers, one setting RELEASE_YEAR and one not, and each fetcher routes to its own.
+        var fetchers = findSpec("QueryFetchers", TWO_SHAPES_SDL);
+
+        var singularHelpers = fetchers.methodSpecs().stream()
+            .filter(m -> m.name().startsWith("createFilmRecord") && !m.name().endsWith("List"))
+            .map(MethodSpec::name)
+            .toList();
+        assertThat(singularHelpers)
+            .as("two distinct binding shapes on FilmRecord -> two distinct singular create<Record> helpers")
+            .hasSize(2);
+
+        // One helper sets RELEASE_YEAR (register), the other omits it (touch) — shape-specific columns.
+        assertThat(singularHelpers.stream().anyMatch(n -> bodyOf(fetchers, n).contains("RELEASE_YEAR")))
+            .as("a helper for the register shape sets RELEASE_YEAR").isTrue();
+        assertThat(singularHelpers.stream().anyMatch(n -> !bodyOf(fetchers, n).contains("RELEASE_YEAR")))
+            .as("a helper for the touch shape omits RELEASE_YEAR").isTrue();
+
+        // Routing: registerFilm must call the RELEASE_YEAR helper; touchFilm the other. This is the actual
+        // bug — on main both fetchers call the same (touch) helper, so registerFilm loses release_year.
+        String registerBody = bodyOf(fetchers, "registerFilm");
+        String touchBody = bodyOf(fetchers, "touchFilm");
+        String registerHelper = singularHelpers.stream().filter(registerBody::contains).findFirst()
+            .orElseThrow(() -> new AssertionError("registerFilm calls no create<Record> helper"));
+        String touchHelper = singularHelpers.stream().filter(touchBody::contains).findFirst()
+            .orElseThrow(() -> new AssertionError("touchFilm calls no create<Record> helper"));
+        assertThat(registerHelper).as("the two fields route to different helpers").isNotEqualTo(touchHelper);
+        assertThat(bodyOf(fetchers, registerHelper))
+            .as("registerFilm routes to the helper that sets RELEASE_YEAR").contains("RELEASE_YEAR");
+        assertThat(bodyOf(fetchers, touchHelper))
+            .as("touchFilm routes to the helper that omits RELEASE_YEAR").doesNotContain("RELEASE_YEAR");
+    }
+
+    @Test
+    void twoServiceFieldsWithIdenticalInputShape_shareOneHelper() {
+        // The dedup must still collapse *identical* shapes: two @service fields taking FilmRecord through
+        // the same column/decode shape (here the same input type) share ONE helper, and it keeps the bare
+        // createFilmRecord name (single distinct shape -> no ordinal suffix, no churn for the common case).
+        var sdl = """
+            type Film implements Node @table(name: "film") @node { id: ID! title: String }
+            input ModifyFilmInput {
+                filmId: ID! @nodeId(typeName: "Film")
+                title: String @field(name: "title")
+            }
+            type Query {
+                registerFilm(in: ModifyFilmInput!): String
+                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "modifyFilmRecord"})
+                touchFilm(in: ModifyFilmInput!): String
+                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "modifyFilmRecord2"})
+            }
+            """;
+        var singularHelpers = findSpec("QueryFetchers", sdl).methodSpecs().stream()
+            .filter(m -> m.name().startsWith("createFilmRecord") && !m.name().endsWith("List"))
+            .map(MethodSpec::name)
+            .toList();
+        assertThat(singularHelpers)
+            .as("identical shapes collapse to one bare create<Record> helper")
+            .containsExactly("createFilmRecord");
+    }
+
+    private static String bodyOf(TypeSpec spec, String methodName) {
+        return spec.methodSpecs().stream()
+            .filter(m -> m.name().equals(methodName))
+            .findFirst()
+            .orElseThrow(() -> new AssertionError("no method '" + methodName + "' on " + spec.name()))
+            .toString();
+    }
+
     // ===== Child @service coordinate (ArgCallEmitter real arm) =====
 
     private static final String CHILD_SDL = """

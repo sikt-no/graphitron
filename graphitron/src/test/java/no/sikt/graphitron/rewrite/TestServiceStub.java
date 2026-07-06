@@ -685,6 +685,17 @@ class TestServiceStub {
     }
 
     /**
+     * R437 regression fixture: a second {@link FilmRecord} {@code @service} method so a test can declare
+     * two {@code @service} fields both binding {@code FilmRecord} through <em>different</em> input shapes
+     * (one with {@code release_year}, one without). Distinct methods keep the two fields independent; the
+     * point is that each field's differing binding shape gets its own {@code create<Record>} helper rather
+     * than collapsing onto the first-seen one.
+     */
+    public static String modifyFilmRecord2(FilmRecord in) {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
      * R311 root list: a {@code List<FilmRecord>} bound directly as a {@code @service} input param —
      * the consumer's motivating shape ({@code endreUtdanningsspesifikasjonsstatus(List<…Record>)}).
      * Differs from the singular only by a {@code ValueShape.ListOf} wrap; the same {@code JooqRecord}

@@ -23,11 +23,14 @@ import java.util.stream.Collectors;
  * consumer's typed parameter at the fetcher boundary" goal, but on the column / identity axis rather
  * than the Java-member axis.
  *
- * <p>Driven by a {@link CallSiteExtraction.JooqRecord} dedup queue keyed by record class, collected in
- * {@link TypeFetcherGenerator} by the same dual walk the {@code InputBean} helper queue uses (the
- * {@code MethodBackedField.callParams()} walk for the child / root-permit coordinate and the
- * {@code ServiceField}-carrier walk for the root {@code ValueShape}). A record reached by either
- * coordinate emits its helper exactly once.
+ * <p>Driven by a {@link CallSiteExtraction.JooqRecord} dedup queue keyed by binding <em>shape</em>
+ * (record class + ordered column bindings + ordered key decodes; see {@link JooqRecordHelperNames}),
+ * collected in {@link TypeFetcherGenerator} by the same dual walk the {@code InputBean} helper queue uses
+ * (the {@code MethodBackedField.callParams()} walk for the child / root-permit coordinate and the
+ * {@code ServiceField}-carrier walk for the root {@code ValueShape}). Each distinct shape emits its helper
+ * exactly once, and its shape-aware name (bare {@code create<Record>} for a record class with a single
+ * shape, ordinal-suffixed when a class carries several) is supplied by the shared {@link JooqRecordHelperNames}
+ * so the call site and the helper never drift (R437).
  *
  * <p>Helper signatures:
  * <pre>
@@ -64,14 +67,14 @@ final class JooqRecordInstantiationEmitter {
      * needs no {@code @SuppressWarnings}; the {@code Tables.<T>.<col>} references keep the real
      * compile-tier check that every bound column exists on the record's table.
      */
-    static MethodSpec buildSingularHelper(CallSiteExtraction.JooqRecord jr) {
+    static MethodSpec buildSingularHelper(CallSiteExtraction.JooqRecord jr, JooqRecordHelperNames names) {
         ClassName recordType = jr.table().recordClass();
         ClassName tablesClass = jr.table().constantsClass();
         String tableField = jr.table().javaFieldName();
         TypeName mapStringObject = ParameterizedTypeName.get(MAP,
             ClassName.get(String.class), ClassName.get(Object.class));
 
-        var b = MethodSpec.methodBuilder(singularName(recordType))
+        var b = MethodSpec.methodBuilder(names.singular(jr))
             .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
             .returns(recordType)
             .addParameter(mapStringObject, "raw")
@@ -502,11 +505,11 @@ final class JooqRecordInstantiationEmitter {
      * per-element unchecked cast carries the same {@code @SuppressWarnings("unchecked")} the
      * {@code InputBean} plural helper does.
      */
-    static MethodSpec buildPluralHelper(CallSiteExtraction.JooqRecord jr) {
+    static MethodSpec buildPluralHelper(CallSiteExtraction.JooqRecord jr, JooqRecordHelperNames names) {
         ClassName recordType = jr.table().recordClass();
         TypeName listOfRecord = ParameterizedTypeName.get(LIST, recordType);
-        String pluralName = pluralName(recordType);
-        String singularName = singularName(recordType);
+        String pluralName = names.plural(jr);
+        String singularName = names.singular(jr);
         return MethodSpec.methodBuilder(pluralName)
             .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
             .returns(listOfRecord)
@@ -524,13 +527,5 @@ final class JooqRecordInstantiationEmitter {
                 MAP, ClassName.get(String.class), ClassName.get(Object.class),
                 singularName)
             .build();
-    }
-
-    private static String singularName(ClassName recordType) {
-        return "create" + recordType.simpleName();
-    }
-
-    private static String pluralName(ClassName recordType) {
-        return "create" + recordType.simpleName() + "List";
     }
 }

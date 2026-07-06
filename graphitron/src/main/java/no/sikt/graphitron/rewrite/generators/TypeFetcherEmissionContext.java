@@ -36,6 +36,15 @@ final class TypeFetcherEmissionContext {
     private final String parentTypeName;
     private final no.sikt.graphitron.rewrite.GraphitronSchema graphitronSchema;
 
+    /**
+     * Shape-aware naming for this class's {@code create<Record>} jOOQ-record {@code @service} helpers
+     * (R437). Populated once, before the field bodies are emitted, from the carriers collected on this
+     * class; both the call-site emitters ({@code ArgCallEmitter} / {@code ServiceMethodCallEmitter}) and
+     * the helper-emission drain read it so a call site and its helper always agree on the name. Defaults
+     * to the bare (single-shape) naming so schema-free / out-of-band contexts behave as before.
+     */
+    private JooqRecordHelperNames jooqRecordHelperNames = JooqRecordHelperNames.bare();
+
     TypeFetcherEmissionContext(GraphQLSchema assembledSchema, String parentTypeName) {
         this(assembledSchema, parentTypeName, null);
     }
@@ -94,5 +103,15 @@ final class TypeFetcherEmissionContext {
      */
     no.sikt.graphitron.rewrite.GraphitronSchema graphitronSchema() {
         return graphitronSchema;
+    }
+
+    /** Record the shape-aware jOOQ-record helper naming for this class (see the field javadoc, R437). */
+    void setJooqRecordHelperNames(JooqRecordHelperNames names) {
+        this.jooqRecordHelperNames = names;
+    }
+
+    /** The shape-aware jOOQ-record helper naming for this class; bare (single-shape) until set. */
+    JooqRecordHelperNames jooqRecordHelperNames() {
+        return jooqRecordHelperNames;
     }
 }
