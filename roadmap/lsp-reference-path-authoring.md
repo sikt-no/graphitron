@@ -229,6 +229,14 @@ carry `@UnitTier`.
 
 - **R379** (terminal-hop reject): the safety net this item prevents; Slice B
   consumes its typed verdict.
+- **R435** (`routine-table-node-composition`): makes directive order on a field
+  semantically significant (the table chain is the concatenation of the implicit
+  head and each `@routine` / `@reference` application in written order), so the
+  resolved chain becomes load-bearing while authoring. A display rung noted here
+  from R435: an inlay hint / hover that renders the resolved chain, including
+  the implied head at child positions (which cannot be anything but the parent's
+  table), riding this item's stepper substrate. Display only; no authoring
+  surface, per R435's rejected `@reference(from:)` alternative.
 - **`intellij-lsp-plugin`**: the delivery vehicle (transport + IntelliJ plugin);
   no overlap with authoring intelligence. This item's behaviour reaches IntelliJ
   through that plugin once both land.
