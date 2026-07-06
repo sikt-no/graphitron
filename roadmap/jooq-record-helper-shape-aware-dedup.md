@@ -1,7 +1,7 @@
 ---
 id: R437
 title: "Shape-aware create-Record service helper dedup (R311 correctness bug)"
-status: Spec
+status: Ready
 bucket: architecture
 priority: 2
 theme: service
