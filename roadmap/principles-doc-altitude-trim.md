@@ -1,7 +1,7 @@
 ---
 id: R433
 title: "Rewrite design principles: state principles at altitude, drop live-inventory enumerations"
-status: Ready
+status: In Progress
 bucket: docs
 priority: 4
 theme: docs
