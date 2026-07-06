@@ -115,7 +115,7 @@ This revises R190's factory contract: from a per-request, consumer-built `DSLCon
 3. **Session hooks.** Function hooks with handle threading; the Postgres `<variables>` sugar generating both halves from one resolved carrier; build-time rejection of unpaired or handle-inconsistent `<sessionState>` config. `@UnitTier` over a fake connection asserting the emitted call shapes, handle capture and rebinding, that disconnect fires on both commit and rollback outcomes, and that eviction happens exactly when disconnect fails (and not otherwise); validator-tier assertions on the pairing rejections. `@ExecutionTier` (sakila, Postgres): an RLS-scoped read sees only permitted rows; a mutation's post-commit read-back still sees only permitted rows; state is demonstrably absent on the next acquisition of the same pooled connection. Oracle/RAS execution-tier coverage is a named follow-on (no Oracle container in the build); Oracle stays unit-tier in V0.
 4. **Multi-tenant runtime map.** Tenant-keyed acquisition against the runtime's map; `@UnitTier` routing plus `@ExecutionTier` per-tenant isolation (reshapes R45's planned coverage).
 5. **Runtime/factory contract and migration.** Runtime construction, per-request factory, escape-hatch emission and its suppression under tenant routing; `@PipelineTier` on the emitted facade shapes; sakila example migrated as first client.
-6. **Principle docs and warnings.** RLS-assumed principle, integrity gradient, the `runtime-extension-points.adoc` rewrite; docs plus `@UnitTier` on all three notice conditions: the no-`<sessionState>` generation-time warning, the convention-fence note (Postgres `<variables>` sugar combined with `@service` methods in the schema), and the escape hatch's wiring-time notice.
+6. **Principle docs and warnings.** RLS-assumed principle, integrity gradient, the `runtime-extension-points.adoc` rewrite; docs plus `@UnitTier` on all three notice conditions: the no-`<sessionState>` generation-time warning, the convention-fence note (Postgres `<variables>` sugar combined with `@service` methods in the schema), and the escape hatch's wiring-time notice. The claims-payload docs include the adapter-side recipe for producing each payload form from MicroProfile JWT or a similar verified-token API (see the user-doc draft below): raw compact token for the cryptographic fence, JDK-only base64url decode of the JWS payload segment for bare claims JSON, and the JWE caveat. No MP JWT dependency enters any graphitron artifact; the recipe is consumer adapter code.
 
 ## Non-goals
 
@@ -131,6 +131,17 @@ This revises R190's factory contract: from a per-request, consumer-built `DSLCon
 > **Graphitron manages the database connection for you.** At startup you give graphitron a `DataSource` and the dialect. For every request graphitron takes a connection, mounts your caller's identity on it, runs queries in a read-only transaction (a query cannot write), commits each mutation field separately, and unmounts the identity before the connection goes back to the pool.
 >
 > **Identity goes to the database, not to Java code.** You pass the authenticated request's token (or any string you choose) to `newExecutionInput`; graphitron hands it, untouched, to a connect function you write in your database. That function parses the claims, validates what it must, and sets your row-level security state; a disconnect function clears it. Graphitron guarantees the pair runs at connection mount and unmount and that a connection whose unmount failed is never reused. If you configure no session state, graphitron warns you at build time: an unsecured direct-to-database API is a data-exposure risk.
+>
+> **Producing the claims payload from MicroProfile JWT (or any JWS bearer).** The two payload forms come straight off the injected `JsonWebToken`. For the signed compact token (the cryptographic-fence form; your connect hook decodes or verifies it in-database), pass `jwt.getRawToken()`. For bare claims JSON (the form the `<variables>` sugar expects), the payload segment of a JWS already is the claims JSON, so decode it with the JDK alone, no JSON parser needed:
+>
+> ```java
+> String claims = new String(
+>     Base64.getUrlDecoder().decode(jwt.getRawToken().split("\\.")[1]),
+>     StandardCharsets.UTF_8);
+> return runtime.newExecutionInput(claims);
+> ```
+>
+> Note that `getRawToken()` returns the three-segment compact serialization, not JSON; passing it where claims JSON is expected fails at the hook's `jsonb` cast. If your platform hands you an encrypted token (JWE), the payload segment is ciphertext; rebuild the claims JSON from the platform's claim accessors instead. Which form to pick is the integrity-gradient decision: the signed token keeps working even if you must distrust SQL running on the connection; bare claims JSON trusts the edge verification you already rely on everywhere else.
 
 ## Notes on discarded earlier designs
 
