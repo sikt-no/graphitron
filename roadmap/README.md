@@ -35,7 +35,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R109` | How-to recipe and Sakila fixture for grouped collections via Field<Result<R>> @externalField + multiset | Spec |  | [plan](list-valued-external-field-multiset.md) |
 | `R212` | IntelliJ plugin wrapping graphitron:dev LSP | Spec | 2026-05-21 | [plan](intellij-lsp-plugin.md) |
 | `R112` | Operation-driven test corpus, capability catalog, and runtime trace <sub>blocked by: [capability-catalog](capability-catalog.md)</sub> | Spec |  | [plan](operation-driven-test-corpus.md) |
-| `R435` | Routine table nodes: order-significant @routine / @reference composition <sub>blocked by: [coordinate-lowers-to-datafetcher-queryparts](coordinate-lowers-to-datafetcher-queryparts.md), [materialize-joinpath-facts](materialize-joinpath-facts.md)</sub> | Spec | 2026-07-06 <sub>created 2026-07-05</sub> | [plan](routine-table-node-composition.md) |
+| `R435` | Routine table nodes: order-significant @routine / @reference composition <sub>blocked by: [coordinate-lowers-to-datafetcher-queryparts](coordinate-lowers-to-datafetcher-queryparts.md), [materialize-joinpath-facts](materialize-joinpath-facts.md)</sub> | Ready | 2026-07-06 <sub>created 2026-07-05</sub> | [plan](routine-table-node-composition.md) |
 
 ---
 
@@ -203,7 +203,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R71` [**@batchKeyLifter Record return-type symmetry**](recordn-key-parity-lifter-and-non-jooq-record-parents.md) — Backlog, architecture
 - `R193` [**Sealed UnresolvedParam classification for @service parameter rejection arms**](service-param-classification-sealed-hierarchy.md) — Backlog, architecture
 - `R116` [**Cover composite-key Row2 path-keyed @sourceRow classification**](composite-key-row2-source-row-coverage.md) — Backlog, cleanup
-- `R435` [**Routine table nodes: order-significant @routine / @reference composition**](routine-table-node-composition.md) — Spec, feature, blocked by [coordinate-lowers-to-datafetcher-queryparts](coordinate-lowers-to-datafetcher-queryparts.md), [materialize-joinpath-facts](materialize-joinpath-facts.md)
+- `R435` [**Routine table nodes: order-significant @routine / @reference composition**](routine-table-node-composition.md) — Ready, feature, blocked by [coordinate-lowers-to-datafetcher-queryparts](coordinate-lowers-to-datafetcher-queryparts.md), [materialize-joinpath-facts](materialize-joinpath-facts.md)
 
 ### mutations-errors
 
