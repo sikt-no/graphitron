@@ -1,7 +1,7 @@
 ---
 id: R436
 title: "Unsafe into() key extraction collides with multiset aliases and escapes error redaction"
-status: Spec
+status: Ready
 bucket: bug
 priority: 5
 theme: service
@@ -177,7 +177,10 @@ Execution tier (`graphitron-sakila-example`) carries the behavioural proof for b
   alongside its existing `TableRecord`-wrap `@service` child. Concrete suggestion: `Film` gains
   `length: Language @reference(...)` (colliding with `FILM.LENGTH`, smallint; a nested `Result`
   cannot convert to it), queried together with `titleTitlecase`. Red pre-fix with the
-  `MappingException` escape, green post-fix with both fields resolving.
+  `MappingException` escape, green post-fix with both fields resolving. Reviewer note: `Film`
+  already declares `length: Int @field(name: "LENGTH")`, so the object field cannot be *added*
+  under that exact name; either replace the scalar or pick a differently-cased colliding name
+  (the collision, like the validator, is case-insensitive). Implementer's choice.
 * R426's existing contract tests (`titleTitlecase` reading a non-key column without selecting it;
   the federation `_entities` shape in `FederationEntitiesDispatchTest`) keep passing, pinning that
   the reserved-alias scheme still delivers the fully-populated record.
