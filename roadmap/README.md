@@ -23,7 +23,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R308` | Fix the @service list-payload N+1 by deriving many-arrival for list-returning carriers | Spec | 2026-06-14 | [plan](service-list-payload-arrival.md) |
 | `R335` | Fold input/scalar/enum classification into the single classify-and-emit walk | Spec | 2026-06-19 | [plan](walk-classifies-input-surface.md) |
 | `R434` | Restructure rewrite design principles around axioms with named enforcement <sub>blocked by: [principles-doc-altitude-trim](principles-doc-altitude-trim.md)</sub> | Ready | 2026-07-06 <sub>created 2026-07-04</sub> | [plan](principles-doc-axiom-restructure.md) |
-| `R433` | Rewrite design principles: state principles at altitude, drop live-inventory enumerations | In Progress | 2026-07-06 <sub>created 2026-07-04</sub> | [plan](principles-doc-altitude-trim.md) |
+| `R433` | Rewrite design principles: state principles at altitude, drop live-inventory enumerations | In Review | 2026-07-06 <sub>created 2026-07-04</sub> | [plan](principles-doc-altitude-trim.md) |
 | `R381` | LSP-guided @reference path authoring | Spec | 2026-06-25 | [plan](lsp-reference-path-authoring.md) |
 | `R45` | Operation-divined tenant routing: tenant-column bindings select the per-tenant DataSource <sub>blocked by: [connection-transaction-lifecycle](connection-transaction-lifecycle.md)</sub> | Spec | 2026-07-03 | [plan](tenant-routing-and-execution-input.md) |
 | `R273` | Source NodeId metadata from @node + catalog PK (inferred from `implements Node`), and settle wrong-type/malformed mismatch semantics, retiring the legacy __NODE bare-ID arm | Spec | 2026-06-02 | [plan](nodeid-skip-mismatch-error-surfacing.md) |
@@ -287,7 +287,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R346` [**Regenerate and guard the generated supported-directives migration doc against directive-set drift**](supported-directives-regen-guard.md) — Ready, tech-debt
 - `R348` [**Regenerate and guard the generated supported-schema-shapes migration doc against drift**](supported-schema-shapes-regen-guard.md) — Backlog, tech-debt
 - `R434` [**Restructure rewrite design principles around axioms with named enforcement**](principles-doc-axiom-restructure.md) — Ready, docs, blocked by [principles-doc-altitude-trim](principles-doc-altitude-trim.md)
-- `R433` [**Rewrite design principles: state principles at altitude, drop live-inventory enumerations**](principles-doc-altitude-trim.md) — In Progress, docs
+- `R433` [**Rewrite design principles: state principles at altitude, drop live-inventory enumerations**](principles-doc-altitude-trim.md) — In Review, docs
 - `R394` [**roadmap-tool verify tripwires throw BuildFailure, not System.exit**](roadmap-tool-tripwire-buildfailure.md) — Backlog, docs
 - `R17` [**Annotated walkthrough of a generated file**](generated-output-walkthrough.md) — Backlog, cleanup
 - `R417` [**Reconcile sakila-example README app-section with R399 (dead GraphqlEngine/GraphqlResource/AppContext links)**](sakila-readme-app-section-r399-drift.md) — Backlog, cleanup

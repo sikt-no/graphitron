@@ -1,7 +1,7 @@
 ---
 id: R433
 title: "Rewrite design principles: state principles at altitude, drop live-inventory enumerations"
-status: In Progress
+status: In Review
 bucket: docs
 priority: 4
 theme: docs
@@ -138,3 +138,19 @@ in `graphitron/src/main/java/no/sikt/graphitron/rewrite/` (`ExternalFieldDirecti
 `SourceRowDirectiveResolver`, `TableMethodDirectiveResolver`). Fix: drop the count on line 9 too
 (e.g. "The directive resolvers share the same shape."), consistent with the already-fixed sentence
 two lines below it, and do not replace it with a fresh number.
+
+## Rework 2 as-built (2026-07-06, same fixer session as rework 1; still disqualified from Done)
+
+Both parts of the finding verified and fixed:
+
+- `typed-rejection.adoc:9` now reads "The directive resolvers share the same shape." No fresh
+  number, matching the already-fixed sentence below it. Root cause of the miss: rework 1 swept
+  with a case-sensitive grep for "thirteen", so the capitalized sentence-initial occurrence
+  survived. A case-insensitive re-sweep of `docs/` and `graphitron*/src` now returns zero
+  occurrences (the only hits are an unrelated `PGThirteen` enum fixture in
+  `WireCoercionCastGuardPipelineTest`).
+- The "7 `*DirectiveResolver` classes" claim in the sections above is wrong as the reviewer says:
+  exactly the six they list exist. The 7 came from a loose `class.*DirectiveResolver` grep that
+  matched a seventh file mentioning the pattern without being one. The earlier sections stand as
+  historical record, corrected here. Fittingly, both errors are the item's own thesis in
+  miniature: counts rot, including the ones written while removing counts.

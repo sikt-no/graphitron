@@ -6,7 +6,7 @@ This page is the chapter narrative for that contract. Reference detail (the per-
 
 == Sealed `Resolved` across the resolver siblings
 
-Thirteen directive resolvers share the same shape. Each entry point returns a sealed `Resolved` whose arms split success from failure; the caller's switch is exhaustive across both. The arm names vary by domain (the `@lookupKey` resolver has only `Ok` / `Rejected`; the `@service` resolver fans `Ok` into typed sub-arms because the downstream emitters need different model types per success kind), but the contract is uniform: rejection is a typed sibling of success, not a return-string-or-null.
+The directive resolvers share the same shape. Each entry point returns a sealed `Resolved` whose arms split success from failure; the caller's switch is exhaustive across both. The arm names vary by domain (the `@lookupKey` resolver has only `Ok` / `Rejected`; the `@service` resolver fans `Ok` into typed sub-arms because the downstream emitters need different model types per success kind), but the contract is uniform: rejection is a typed sibling of success, not a return-string-or-null.
 
 Where a rejection comes from is at the boundary of one builder step; how it surfaces to the user is at the boundary of the validator. In between, the typed value rides on the result without losing structure: a `Rejection.AuthorError.UnknownName` arm carries its `attempt`, its `candidates`, and a typed `AttemptKind` tag identifying the lookup space, all the way from the resolver that built it to the LSP fix-it that reads them off the wire.
 
