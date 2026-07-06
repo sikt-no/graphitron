@@ -54,10 +54,11 @@ change discipline in `roadmap/workflow.adoc`.
 
 == Decide once, at the parse boundary; carry the decision as a type
 
-*Before implementing a generator body, ensure the model carries what the generator needs ;
-pre-resolved, generation-ready.* `GraphitronSchemaBuilder` reads directives once and resolves
-everything: table names, column references, method names, extraction strategies. Generators
-receive a model in terms of "what to emit", not "what to interpret".
+*Before implementing a feature, ensure the model carries what the feature needs ; pre-resolved,
+ready to consume.* `GraphitronSchemaBuilder` reads directives once and resolves everything: table
+names, column references, method names, extraction strategies. Every consumer receives the model
+in terms of "what to do", never "what to interpret" ; a generator sees "what to emit", the
+validator "what to check", the LSP "what to show".
 
 Signs a model type needs more pre-resolution:
 
