@@ -1,13 +1,13 @@
 ---
 id: R433
 title: "Rewrite design principles: state principles at altitude, drop live-inventory enumerations"
-status: In Review
+status: Ready
 bucket: docs
 priority: 4
 theme: docs
 depends-on: []
 created: 2026-07-04
-last-updated: 2026-07-04
+last-updated: 2026-07-06
 ---
 
 # Rewrite design principles: state principles at altitude, drop live-inventory enumerations
@@ -115,3 +115,26 @@ permits today" count and gains the missing `ProducedRecordRead` list entry.
 Judgment on the remaining non-blocking observation: the wire-format section's live arm lists stay
 as worked-example slot anchors; the R50 story needs the concrete slot names to show where decode
 and encode live, and the arms are named at their carrier slots, not as a census.
+
+## In Review -> Ready gate findings (2026-07-06, reviewer session != implementer)
+
+Build green (`mvn install -Plocal-db`, full reactor, all 13 modules incl. `docs`), docs render
+clean (no asciidoctor/xref warnings), all four blocking net-effect findings from the first gate
+correctly fixed, `CallSiteExtraction` permit set and `SourceKey.Reader`'s 7-arm list match the
+ride-along doc updates, root pom `<modules>` includes `docs`, all cited roadmap ids
+(R222/R229/R238/R239/R240/R333/R334/R431) resolve, wire-format judgment call is defensible.
+
+One blocking finding: `docs/architecture/explanation/typed-rejection.adoc:9` still reads "Thirteen
+directive resolvers share the same shape." The rework's "Rework as-built" section above claims
+"'thirteen sibling resolvers' dropped from `typed-rejection.adoc`" but `d905fac` only fixed one of
+two "thirteen" occurrences in that file (the other, in the section body two lines below, at "The
+sealed-`Resolved` pattern across the thirteen sibling resolvers", was correctly changed to "sibling
+resolvers"). Line 9, right under the section heading, was missed. This is exactly the inventory-rot
+smell this item's new "Principles are stated at altitude" section exists to eliminate, and it
+undermines the as-built section's account of what shipped. Additionally the as-built's own
+justification is numerically wrong: it cites "7 `*DirectiveResolver` classes exist" but only 6 exist
+in `graphitron/src/main/java/no/sikt/graphitron/rewrite/` (`ExternalFieldDirectiveResolver`,
+`LookupKeyDirectiveResolver`, `RoutineDirectiveResolver`, `ServiceDirectiveResolver`,
+`SourceRowDirectiveResolver`, `TableMethodDirectiveResolver`). Fix: drop the count on line 9 too
+(e.g. "The directive resolvers share the same shape."), consistent with the already-fixed sentence
+two lines below it, and do not replace it with a fresh number.
