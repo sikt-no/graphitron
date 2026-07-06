@@ -42,13 +42,19 @@ rewrite"; "Development" avoids colliding with the strategic `graphitron-principl
 
 How Graphitron is built: six axioms, each with corollary principles, and every principle ends with
 an *Enforced by* line naming what fails when it is broken ; the compiler, a named meta-test, a
-build tier, or the honest gap label "review only". The axioms share one root, the insight R222 and
-R333 install as the target architecture: the classified model is a normalized fact base ;
-classification asserts each fact once at the parse boundary, everything downstream (generation,
-validation, the LSP) is a derived view over the same facts, and wire formats are its I/O. The
-strategic principles live at xref:../../graphitron-principles.adoc[graphitron-principles.md]; the
-typed-rejection narrative at xref:typed-rejection.adoc[Typed rejection]; additive-then-cutover
-change discipline in `roadmap/workflow.adoc`.
+build tier, or the honest gap label "review only". Two theories give the axioms their spine.
+*Functional core, imperative shell* fixes the topology: untyped external inputs (wire formats,
+reflection, jOOQ) are confined to a thin boundary that decodes inbound and encodes outbound, and
+the interior is pure derivation over typed facts. *Normalization* is the design discipline in that
+interior, and it governs both ends of the pipe. It shapes the authoring surface ; the SDL author
+states each fact once, at its grain, and Graphitron derives the rest ; guides how the model is
+discovered and extended, find a concept's grain and natural key first ; and keeps the classified
+model a normalized fact base: each fact asserted once at the parse boundary, everything downstream
+(generation, validation, the LSP) a derived view. Because the model is rebuilt from source every
+build, each such view is a materialized view, never a copy that can drift from its source. Strategic principles live at
+xref:../../graphitron-principles.adoc[graphitron-principles.md]; the typed-rejection narrative at
+xref:typed-rejection.adoc[Typed rejection]; additive-then-cutover change discipline in
+`roadmap/workflow.adoc`.
 
 '''
 
@@ -152,16 +158,13 @@ permit-to-doc mapping for the `Rejection` taxonomy.
 *Assert what nothing else carries; derive the rest from that base ; and never let a derived fact
 become a copy maintained apart from its source.* When a concept's variants multiply, the usual
 cause is independent axes spliced into one identifier: the permit set becomes the cross-product of
-its axes, and adding a value to any axis multiplies the permits below it. Carry each axis as its
-own slot or sealed sub-interface, and either compute cross-axis views at the read site or
-materialize them as a mechanical function of the base, regenerated every build ; the classified
-model is itself such a materialized view over the SDL and the jOOQ catalog. What drifts, and what
-this axiom forbids, is neither storage nor derivation but the *hand-maintained* second copy: a
-spliced identifier, or a fact kept in parallel to the source it should track (R268's emit-side
-allow-list that drifted from the switch it mirrored, until it was deleted and re-sourced).
-Single-sourced, regenerated denormalization is not the smell; an independently-edited copy is. R222
-(`dimensional-model-pivot`) is the roadmap-scale application; R333 is the current statement of the
-target model.
+its axes, and adding a value to any axis multiplies the permits below it. Find the concept's grain
+and natural key, carry each axis as its own slot or sealed sub-interface, and either compute
+cross-axis views at the read site or materialize them from the base. What this axiom forbids is
+neither storage nor derivation but the *hand-maintained* second copy: a spliced identifier, or a
+fact kept in parallel to the source it should track (R268's emit-side allow-list that drifted from
+the switch it mirrored, until it was deleted and re-sourced). R222 (`dimensional-model-pivot`) is
+the roadmap-scale application; R333 is the current statement of the target model.
 
 The DataLoader-backed source side is the worked example: key shape, body input contract, row
 count, and loader registration are independent axes, and each dispatch site reads off whichever
@@ -190,11 +193,12 @@ is a silent skip, so a membership meta-test is candidate roadmap material.
 
 === Directives carry only what the SDL author needs to say
 
-The authoring-surface instance of the cross-product smell. Directive arguments are flat scalars
-whenever the directive site already disambiguates the axis; an input-object wrapper is justified
-only for several genuinely-orthogonal pieces of information at once. `@field(name: String!)` is
-the worked example: the site (field, input field, argument, enum value) tells the classifier which
-axis is bound, so the directive carries only the name ; the axis is structural. The smell: an
+Where the ingress's authoring-surface principle, state each fact once at its grain, is enforced at
+directive-design time. Directive arguments are flat scalars whenever the directive site already
+disambiguates the axis; an input-object wrapper is justified only for several genuinely-orthogonal
+pieces of information at once. `@field(name: String!)` is the worked example: the site (field,
+input field, argument, enum value) tells the classifier which axis is bound, so the directive
+carries only the name ; the axis is structural. The smell: an
 input wrapper most callsites fill in two-of-four slots on, whose failure surface widens from "the
 named thing didn't resolve" to a cross-product of missing/inconsistent-slot errors
 (`ExternalCodeReference` is the existing case new directives should not lean on).
@@ -684,6 +688,25 @@ From the 2026-07-04 principles-architect consult and the user's Spec review, in 
     be *controlled* ; membership single-sourced (mechanically assigned or pinned by a meta-test)
     rather than a hand-declared copy that can silently drift (the review-only gap the corollary now
     names honestly).
+15. **The spine is FCIS + normalization, stated at the ingress; the authoring surface is
+    first-class** (user's Spec review, 2026-07-06). The prior ingress named a single root, "the
+    classified model is a normalized fact base." Two corrections promoted that. First, the root is
+    two theories, not one: *functional core, imperative shell* fixes the topology (untyped external
+    inputs confined to a decode/encode boundary; the interior pure derivation), and *normalization*
+    is the design discipline inside it. Second, normalization is not merely an internal storage
+    property; it governs *both ends of the pipe*. It shapes the authoring surface, the SDL author
+    states each fact once at its grain and Graphitron derives the rest, guides how the model is
+    discovered and extended (grain and natural key first), and keeps the classified model
+    single-sourced. Build-time regeneration is what makes every derived view a materialized view
+    rather than a drift-prone copy, so normalization's structural theory transfers whole; only
+    OLTP's update-anomaly mechanism (the "never store a derived fact" rule decision 14 already
+    rejected) does not, because there is no in-place mutation to have anomalies. Ripples: the
+    ingress carries the two-theory spine and the authoring-surface principle; "Directives carry
+    only what the SDL author needs to say" is reframed as that principle's enforcement instance at
+    directive-design time (was: an instance of the cross-product smell); axiom 2's body gains the
+    constructive method (find grain and natural key) and sheds the materialized-view sentences now
+    stated at the ingress. Net word change displaced against the 3,500 budget (decision 11): the
+    v2 block lands at 3,498, essentially at cap, so the next substantive addition must displace.
 
 Append to `roadmap/workflow.adoc` (after the plan-shape bullets), receiving the technique the
 principles doc no longer carries:
