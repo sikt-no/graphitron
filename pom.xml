@@ -34,7 +34,7 @@
         <version.org.junit>6.0.3</version.org.junit>
         <version.ch.qos.logback>1.5.32</version.ch.qos.logback>
         <version.postgresql>42.7.10</version.postgresql>
-        <version.testcontainers.postgresql>2.0.4</version.testcontainers.postgresql>
+        <version.testcontainers.postgresql>2.0.5</version.testcontainers.postgresql>
         <version.io.modelcontextprotocol>2.0.0</version.io.modelcontextprotocol>
         <version.org.eclipse.jetty>12.0.36</version.org.eclipse.jetty>
         <!--
