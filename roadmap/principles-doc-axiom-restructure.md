@@ -5,7 +5,7 @@ status: Ready
 bucket: docs
 priority: 4
 theme: docs
-depends-on: [principles-doc-altitude-trim]
+depends-on: []
 created: 2026-07-04
 last-updated: 2026-07-06
 ---
