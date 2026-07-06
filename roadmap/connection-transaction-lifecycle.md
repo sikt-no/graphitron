@@ -1,7 +1,7 @@
 ---
 id: R429
 title: "Graphitron owns the connection lifecycle: application runtime, operation-typed transactions, and database-mounted session identity"
-status: Spec
+status: Ready
 bucket: architecture
 priority: 3
 theme: service
