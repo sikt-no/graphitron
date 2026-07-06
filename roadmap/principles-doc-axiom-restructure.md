@@ -1,13 +1,13 @@
 ---
 id: R434
 title: "Restructure rewrite design principles around axioms with named enforcement"
-status: Spec
+status: Ready
 bucket: docs
 priority: 4
 theme: docs
 depends-on: [principles-doc-altitude-trim]
 created: 2026-07-04
-last-updated: 2026-07-04
+last-updated: 2026-07-06
 ---
 
 # Restructure rewrite design principles around axioms with named enforcement
