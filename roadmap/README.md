@@ -28,8 +28,8 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R381` | LSP-guided @reference path authoring | Spec | 2026-06-25 | [plan](lsp-reference-path-authoring.md) |
 | `R45` | Operation-divined tenant routing: tenant-column bindings select the per-tenant DataSource <sub>blocked by: [connection-transaction-lifecycle](connection-transaction-lifecycle.md)</sub> | Spec | 2026-07-03 | [plan](tenant-routing-and-execution-input.md) |
 | `R273` | Source NodeId metadata from @node + catalog PK (inferred from `implements Node`), and settle wrong-type/malformed mismatch semantics, retiring the legacy __NODE bare-ID arm | Spec | 2026-06-02 | [plan](nodeid-skip-mismatch-error-surfacing.md) |
-| `R436` | Unsafe into() key extraction collides with multiset aliases and escapes error redaction | Ready | 2026-07-06 | [plan](key-extraction-multiset-alias-collision.md) |
 | `R347` | Consolidate graphitron-lsp navigation, dispatch, and result-building | In Progress | 2026-07-01 <sub>created 2026-06-19</sub> | [plan](lsp-structural-consolidation.md) |
+| `R436` | Unsafe into() key extraction collides with multiset aliases and escapes error redaction | In Review | 2026-07-06 | [plan](key-extraction-multiset-alias-collision.md) |
 | `R13` | Faceted search on `@asConnection` | Ready | 2026-06-26 | [plan](faceted-search.md) |
 | `R92` | Surface database CHECK constraints as Jakarta validation rules | Spec |  | [plan](catalog-check-constraint-validation.md) |
 | `R180` | Centralize ResultType column-read emission for @record parents | Spec | 2026-05-19 | [plan](record-parent-column-read-helper.md) |
@@ -200,7 +200,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R202` [**Honor @field(name:) in @error type extra-field accessor matching against handler source class**](honor-field-directive-in-error-type-source-accessors.md) — Backlog, bug
 - `R45` [**Operation-divined tenant routing: tenant-column bindings select the per-tenant DataSource**](tenant-routing-and-execution-input.md) — Spec, architecture, blocked by [connection-transaction-lifecycle](connection-transaction-lifecycle.md)
 - `R54` [**Rename @externalField (parallel-support, deprecation, migration)**](rename-externalfield-directive.md) — Backlog, cleanup
-- `R436` [**Unsafe into() key extraction collides with multiset aliases and escapes error redaction**](key-extraction-multiset-alias-collision.md) — Ready, bug
+- `R436` [**Unsafe into() key extraction collides with multiset aliases and escapes error redaction**](key-extraction-multiset-alias-collision.md) — In Review, bug
 - `R192` [**Mojo-configured custom Bean Validation factory**](custom-validator-factory.md) — Backlog, architecture
 - `R46` [**Multi-tenant fan-out: run one field across many tenants and union the results**](service-multi-tenant-fanout.md) — Backlog, architecture, blocked by [tenant-routing-and-execution-input](tenant-routing-and-execution-input.md), [connection-transaction-lifecycle](connection-transaction-lifecycle.md)
 - `R11` [**`DSLContext` on `@condition` / `@tableMethod` methods**](dslcontext-on-condition-tablemethod.md) — Backlog, architecture
