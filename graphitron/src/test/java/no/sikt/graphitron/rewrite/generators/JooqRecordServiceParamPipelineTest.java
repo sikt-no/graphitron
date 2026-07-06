@@ -836,7 +836,202 @@ class JooqRecordServiceParamPipelineTest {
             .containsExactly("filmId->film_id");
     }
 
+    // ===== R437: shape-aware create<Record> helper dedup =====
+
+    private static final String CONTENDED_SINGULAR_SDL = """
+        type Film implements Node @table(name: "film") @node { id: ID! title: String }
+        input RegisterFilmInput {
+            filmId: ID! @nodeId(typeName: "Film")
+            title: String @field(name: "title")
+            releaseYear: Int @field(name: "release_year")
+        }
+        input DeactivateFilmInput {
+            filmId: ID! @nodeId(typeName: "Film")
+            title: String @field(name: "title")
+        }
+        type Query {
+            registerFilm(in: RegisterFilmInput!): String
+                @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "modifyFilmRecord"})
+            deactivateFilm(in: DeactivateFilmInput!): String
+                @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "modifyFilmRecord"})
+        }
+        """;
+
+    @Test
+    void contendedSingularShapes_emitTwoDistinctHelpers_andEachFetcherRoutesToItsOwn() {
+        // The R311 correctness-bug regression: two @service fields bind the same FilmRecord through
+        // different input shapes (register carries release_year, deactivate does not). Pre-R437 the
+        // dedup keyed by record class emitted ONE createFilmRecord (the first-seen shape) and both
+        // fetchers routed to it, so one mutation silently dropped its unique column. R437 keys by shape:
+        // two distinct ordinal-suffixed helpers, and each fetcher routes to the one matching its input.
+        var fetchers = findSpec("QueryFetchers", CONTENDED_SINGULAR_SDL);
+        assertThat(singularHelperNames(fetchers))
+            .as("one create<Record> per distinct binding shape, not one shared by record class")
+            .containsExactlyInAnyOrder("createFilmRecord1", "createFilmRecord2");
+
+        String withYear = singularHelperSettingReleaseYear(fetchers);
+        String withoutYear = withYear.equals("createFilmRecord1") ? "createFilmRecord2" : "createFilmRecord1";
+        // Exactly one singular helper writes RELEASE_YEAR — the register shape's — never both, never neither.
+        assertThat(singularHelperBodies(fetchers).stream().filter(body -> body.contains("RELEASE_YEAR")).count())
+            .as("exactly one of the two contended helpers sets RELEASE_YEAR").isEqualTo(1L);
+
+        assertThat(methodBody(fetchers, "registerFilm"))
+            .as("the register fetcher (input carries release_year) routes to the RELEASE_YEAR-setting helper")
+            .contains(withYear + "(env.getArgument(");
+        assertThat(methodBody(fetchers, "deactivateFilm"))
+            .as("the deactivate fetcher (no release_year) routes to the helper that does not set it")
+            .contains(withoutYear + "(env.getArgument(")
+            .doesNotContain(withYear + "(env.getArgument(");
+    }
+
+    private static final String CONTENDED_LIST_SDL = """
+        type Film implements Node @table(name: "film") @node { id: ID! title: String }
+        input RegisterFilmInput {
+            filmId: ID! @nodeId(typeName: "Film")
+            title: String @field(name: "title")
+            releaseYear: Int @field(name: "release_year")
+        }
+        input DeactivateFilmInput {
+            filmId: ID! @nodeId(typeName: "Film")
+            title: String @field(name: "title")
+        }
+        type Query {
+            registerFilms(in: [RegisterFilmInput!]!): String
+                @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "modifyFilmRecords"})
+            deactivateFilms(in: [DeactivateFilmInput!]!): String
+                @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "modifyFilmRecords"})
+        }
+        """;
+
+    @Test
+    void contendedListShapes_emitTwoDistinctListHelpers_andEachFetcherRoutesToItsOwn() {
+        // The list arm derives its name at the same three sites but must be pinned separately from the
+        // singular case: the plural create<Record>List helper is what routes here, and it delegates to
+        // the singular of the SAME shape. Two list-shaped contended fields → two distinct list helpers.
+        var fetchers = findSpec("QueryFetchers", CONTENDED_LIST_SDL);
+        assertThat(fetchers.methodSpecs().stream().map(MethodSpec::name)
+                .filter(n -> n.startsWith("createFilmRecord") && n.endsWith("List")).toList())
+            .as("one create<Record>List per distinct list-shape")
+            .containsExactlyInAnyOrder("createFilmRecord1List", "createFilmRecord2List");
+        assertThat(singularHelperNames(fetchers))
+            .as("the singular delegates each plural maps over, also distinct by shape")
+            .containsExactlyInAnyOrder("createFilmRecord1", "createFilmRecord2");
+
+        String withYearPlural = singularHelperSettingReleaseYear(fetchers) + "List";
+        String withoutYearPlural = withYearPlural.equals("createFilmRecord1List")
+            ? "createFilmRecord2List" : "createFilmRecord1List";
+        assertThat(methodBody(fetchers, "registerFilms"))
+            .as("the register list fetcher routes to the plural whose singular delegate sets RELEASE_YEAR")
+            .contains(withYearPlural + "(env.getArgument(");
+        assertThat(methodBody(fetchers, "deactivateFilms"))
+            .as("the deactivate list fetcher routes to the other plural")
+            .contains(withoutYearPlural + "(env.getArgument(")
+            .doesNotContain(withYearPlural + "(env.getArgument(");
+    }
+
+    private static final String COLLAPSE_SDL = """
+        type Film implements Node @table(name: "film") @node { id: ID! title: String }
+        input AlphaFilmInput {
+            filmId: ID! @nodeId(typeName: "Film")
+            title: String @field(name: "title")
+        }
+        input BetaFilmInput {
+            filmId: ID! @nodeId(typeName: "Film")
+            title: String @field(name: "title")
+        }
+        type Query {
+            alpha(in: AlphaFilmInput!): String
+                @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "modifyFilmRecord"})
+            beta(in: BetaFilmInput!): String
+                @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "modifyFilmRecord"})
+        }
+        """;
+
+    @Test
+    void identicalShapesAcrossDifferentInputTypes_collapseToOneBareHelper() {
+        // Using two DIFFERENTLY-NAMED input types with an identical column/decode shape is what pins
+        // shape-keying over input-type-name keying: naming by input type would wrongly split these into
+        // two helpers. They share one bare createFilmRecord (no ordinal suffix, no churn), and both
+        // fetchers route to it.
+        var fetchers = findSpec("QueryFetchers", COLLAPSE_SDL);
+        assertThat(singularHelperNames(fetchers))
+            .as("two input types with one shape share a single bare helper")
+            .containsExactly("createFilmRecord");
+        assertThat(fetchers.methodSpecs()).extracting(MethodSpec::name)
+            .doesNotContain("createFilmRecord1", "createFilmRecord2");
+        assertThat(methodBody(fetchers, "alpha")).contains("createFilmRecord(env.getArgument(");
+        assertThat(methodBody(fetchers, "beta")).contains("createFilmRecord(env.getArgument(");
+    }
+
+    @Test
+    void contendedOrdinals_areStableAcrossGeneratorRuns() {
+        // Determinism pin: the ordinal→shape mapping is ordered by canonical render, not the carrier's
+        // hashCode (unstable across runs), so a re-generation assigns the same names.
+        var run1 = findSpec("QueryFetchers", CONTENDED_SINGULAR_SDL);
+        var run2 = findSpec("QueryFetchers", CONTENDED_SINGULAR_SDL);
+        assertThat(singularHelperSettingReleaseYear(run1))
+            .as("the RELEASE_YEAR shape keeps the same ordinal across runs")
+            .isEqualTo(singularHelperSettingReleaseYear(run2));
+        assertThat(singularHelperNames(run1))
+            .containsExactlyInAnyOrderElementsOf(singularHelperNames(run2));
+    }
+
+    @Test
+    void contendedHelpers_carryColumnNamingJavadoc_uncontendedDoNot() {
+        // D2 legibility: each contended helper's javadoc names the columns it binds, so a reader maps
+        // helper → mutation without decoding the ordinal. The uncontended bare helper stays javadoc-free.
+        var contended = findSpec("QueryFetchers", CONTENDED_SINGULAR_SDL);
+        assertThat(singularHelperBodies(contended)).isNotEmpty();
+        assertThat(contended.methodSpecs().stream()
+                .filter(m -> m.name().equals(singularHelperSettingReleaseYear(contended)))
+                .findFirst().orElseThrow().javadoc().toString())
+            .as("the release-year contended helper names RELEASE_YEAR in its javadoc")
+            .contains("Binds").contains("RELEASE_YEAR");
+
+        var uncontended = findSpec("QueryFetchers", SINGLE_KEY_SDL);
+        assertThat(uncontended.methodSpecs().stream()
+                .filter(m -> m.name().equals("createFilmRecord"))
+                .findFirst().orElseThrow().javadoc().toString())
+            .as("the uncontended bare helper stays javadoc-free (byte-identical to pre-R437)")
+            .isEmpty();
+    }
+
     // ===== Helpers =====
+
+    /** The singular create<Record> helper names on a *Fetchers class (excludes the List plural variant). */
+    private static List<String> singularHelperNames(TypeSpec fetchers) {
+        return fetchers.methodSpecs().stream()
+            .map(MethodSpec::name)
+            .filter(n -> n.startsWith("createFilmRecord") && !n.endsWith("List"))
+            .toList();
+    }
+
+    /** The bodies of the singular create<Record> helpers, as rendered strings. */
+    private static List<String> singularHelperBodies(TypeSpec fetchers) {
+        return fetchers.methodSpecs().stream()
+            .filter(m -> m.name().startsWith("createFilmRecord") && !m.name().endsWith("List"))
+            .map(m -> m.code().toString())
+            .toList();
+    }
+
+    /** The name of the singular create<Record> helper whose body sets RELEASE_YEAR. */
+    private static String singularHelperSettingReleaseYear(TypeSpec fetchers) {
+        return fetchers.methodSpecs().stream()
+            .filter(m -> m.name().startsWith("createFilmRecord") && !m.name().endsWith("List"))
+            .filter(m -> m.code().toString().contains("RELEASE_YEAR"))
+            .map(MethodSpec::name)
+            .findFirst()
+            .orElseThrow(() -> new AssertionError("no singular helper sets RELEASE_YEAR"));
+    }
+
+    /** The rendered body of a named method on a spec. */
+    private static String methodBody(TypeSpec spec, String methodName) {
+        return spec.methodSpecs().stream()
+            .filter(m -> m.name().equals(methodName))
+            .findFirst()
+            .orElseThrow(() -> new AssertionError("no method " + methodName))
+            .code().toString();
+    }
 
     private static CallSiteExtraction.JooqRecord carrier(String sdl, String queryField, boolean list) {
         return carrier(TestSchemaHelper.buildSchema(sdl).field("Query", queryField), list);

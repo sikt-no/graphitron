@@ -36,6 +36,11 @@ final class TypeFetcherEmissionContext {
     private final String parentTypeName;
     private final no.sikt.graphitron.rewrite.GraphitronSchema graphitronSchema;
 
+    // R437: the shape-aware create<Record> helper-name resolver for this <Type>Fetchers class. Defaults
+    // to the bare resolver so schema-free / unit / out-of-band contexts (which carry at most one shape
+    // per record class) behave exactly as before; TypeFetcherGenerator installs a populated one up front.
+    private JooqRecordHelperNames jooqRecordHelperNames = JooqRecordHelperNames.bare();
+
     TypeFetcherEmissionContext(GraphQLSchema assembledSchema, String parentTypeName) {
         this(assembledSchema, parentTypeName, null);
     }
@@ -94,5 +99,25 @@ final class TypeFetcherEmissionContext {
      */
     no.sikt.graphitron.rewrite.GraphitronSchema graphitronSchema() {
         return graphitronSchema;
+    }
+
+    /**
+     * The shape-aware {@code create<Record>} helper-name resolver for this class (R437). Consulted by
+     * the two call-site emitters ({@link ArgCallEmitter}, {@link ServiceMethodCallEmitter}) and by the
+     * helper-emission drain in {@link TypeFetcherGenerator}, so a call site and its helper always agree
+     * on the name. Defaults to the bare resolver until {@link #setJooqRecordHelperNames} installs a
+     * populated one.
+     */
+    JooqRecordHelperNames jooqRecordHelperNames() {
+        return jooqRecordHelperNames;
+    }
+
+    /**
+     * Install the populated {@link JooqRecordHelperNames} resolver for this class. Called once by
+     * {@link TypeFetcherGenerator} <em>before</em> any field body emits, so every call site and the
+     * helper drain read the same resolver.
+     */
+    void setJooqRecordHelperNames(JooqRecordHelperNames names) {
+        this.jooqRecordHelperNames = names;
     }
 }

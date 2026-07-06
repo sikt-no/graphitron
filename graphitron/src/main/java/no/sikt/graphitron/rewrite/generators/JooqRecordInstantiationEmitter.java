@@ -23,11 +23,14 @@ import java.util.stream.Collectors;
  * consumer's typed parameter at the fetcher boundary" goal, but on the column / identity axis rather
  * than the Java-member axis.
  *
- * <p>Driven by a {@link CallSiteExtraction.JooqRecord} dedup queue keyed by record class, collected in
- * {@link TypeFetcherGenerator} by the same dual walk the {@code InputBean} helper queue uses (the
- * {@code MethodBackedField.callParams()} walk for the child / root-permit coordinate and the
- * {@code ServiceField}-carrier walk for the root {@code ValueShape}). A record reached by either
- * coordinate emits its helper exactly once.
+ * <p>Driven by the distinct {@link CallSiteExtraction.JooqRecord} binding shapes collected in
+ * {@link TypeFetcherGenerator} by the dual walk (the {@code MethodBackedField.callParams()} walk for the
+ * child / root-permit coordinate and the {@code ServiceField}-carrier walk for the root
+ * {@code ValueShape}). R437 keys the dedup and naming on the full binding <em>shape</em> rather than the
+ * record class (via {@link JooqRecordHelperNames}): two {@code @service} fields taking one record through
+ * different input shapes emit distinct helpers, while identical shapes still collapse to one. The helper
+ * name is resolved through the same {@link JooqRecordHelperNames} the call sites consult, so a call and
+ * its helper always agree.
  *
  * <p>Helper signatures:
  * <pre>
@@ -64,18 +67,25 @@ final class JooqRecordInstantiationEmitter {
      * needs no {@code @SuppressWarnings}; the {@code Tables.<T>.<col>} references keep the real
      * compile-tier check that every bound column exists on the record's table.
      */
-    static MethodSpec buildSingularHelper(CallSiteExtraction.JooqRecord jr) {
+    static MethodSpec buildSingularHelper(CallSiteExtraction.JooqRecord jr, JooqRecordHelperNames names) {
         ClassName recordType = jr.table().recordClass();
         ClassName tablesClass = jr.table().constantsClass();
         String tableField = jr.table().javaFieldName();
         TypeName mapStringObject = ParameterizedTypeName.get(MAP,
             ClassName.get(String.class), ClassName.get(Object.class));
 
-        var b = MethodSpec.methodBuilder(singularName(recordType))
+        var b = MethodSpec.methodBuilder(names.singularName(jr))
             .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
             .returns(recordType)
-            .addParameter(mapStringObject, "raw")
-            .addStatement("if (raw == null) return null")
+            .addParameter(mapStringObject, "raw");
+        // R437: a contended helper (one of several shapes for one record class) carries a one-line
+        // javadoc naming the columns it binds, so a reader maps helper → mutation without decoding the
+        // ordinal. Uncontended helpers stay javadoc-free, byte-identical to pre-R437.
+        String javadoc = names.javadocFor(jr);
+        if (javadoc != null) {
+            b.addJavadoc("$L\n", javadoc);
+        }
+        b.addStatement("if (raw == null) return null")
             .addStatement("$T rec = new $T()", recordType, recordType);
 
         // D1 (R322): per-column overlap analysis. When two or more writers (plain @field columns or
@@ -502,15 +512,22 @@ final class JooqRecordInstantiationEmitter {
      * per-element unchecked cast carries the same {@code @SuppressWarnings("unchecked")} the
      * {@code InputBean} plural helper does.
      */
-    static MethodSpec buildPluralHelper(CallSiteExtraction.JooqRecord jr) {
+    static MethodSpec buildPluralHelper(CallSiteExtraction.JooqRecord jr, JooqRecordHelperNames names) {
         ClassName recordType = jr.table().recordClass();
         TypeName listOfRecord = ParameterizedTypeName.get(LIST, recordType);
-        String pluralName = pluralName(recordType);
-        String singularName = singularName(recordType);
-        return MethodSpec.methodBuilder(pluralName)
+        String pluralName = names.pluralName(jr);
+        String singularName = names.singularName(jr);
+        var b = MethodSpec.methodBuilder(pluralName)
             .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
             .returns(listOfRecord)
-            .addParameter(Object.class, "raw")
+            .addParameter(Object.class, "raw");
+        // R437: mirror the singular helper's contended javadoc so both helpers of a contended pair are
+        // self-describing; uncontended helpers stay javadoc-free.
+        String javadoc = names.javadocFor(jr);
+        if (javadoc != null) {
+            b.addJavadoc("$L\n", javadoc);
+        }
+        return b
             .addStatement("if (raw == null) return null")
             .addStatement("$T<?> list = ($T<?>) raw", LIST, LIST)
             .addStatement("return list.stream().map(e -> {\n"
@@ -524,13 +541,5 @@ final class JooqRecordInstantiationEmitter {
                 MAP, ClassName.get(String.class), ClassName.get(Object.class),
                 singularName)
             .build();
-    }
-
-    private static String singularName(ClassName recordType) {
-        return "create" + recordType.simpleName();
-    }
-
-    private static String pluralName(ClassName recordType) {
-        return "create" + recordType.simpleName() + "List";
     }
 }
