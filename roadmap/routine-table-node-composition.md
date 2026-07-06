@@ -1,7 +1,7 @@
 ---
 id: R435
 title: "Routine table nodes: order-significant @routine / @reference composition"
-status: Backlog
+status: Spec
 bucket: feature
 theme: service
 depends-on: [coordinate-lowers-to-datafetcher-queryparts, materialize-joinpath-facts]
@@ -55,6 +55,18 @@ shape downstream.
   result-columns-expose-key-columns-by-name build check, or a `condition:`.
 * **Cardinality.** The wrapper stays author-declared; jOOQ exposes no TVF row-cardinality (same
   stance as R300).
+* **Child fetch form.** A routine-backed child field rides the batched keyed re-query (the
+  `VALUES(idx, key...)` key set with the routine joined `LATERAL` over the lifted parent columns)
+  or the inline parent join; **never** a per-row synchronous fetcher. This is the R288 constraint
+  that `ChildField.TableMethodField` violates; the spec pins the form, the emitter choice between
+  inline and batched follows the ordinary `@splitQuery` / arrival rules.
+* **Order contract.** Graphitron consumes the authored SDL, where graphql-java preserves directive
+  application order. Tooling that rewrites SDL and reorders repeatable directive applications
+  (schema printers, federation composition pipelines) is out of contract and documented as such:
+  the terminus and keying checks catch most reorders, but two orderings can both terminate
+  correctly and mean different join graphs (the `sandwich` case), so order-preserving round-trips
+  are a stated requirement, not an assumption. The editor surfaces the resolved chain (the R381
+  inlay/hover) so the load-bearing order is always visible while authoring.
 
 ## Substrate and sequencing
 
@@ -72,8 +84,11 @@ either way, but the emit conventions should be coordinated.
 
 * The column binding lands as a new `ParamSource` arm, the column-granularity sibling of
   `ParamSource.SourceTable`: one call-source taxonomy for service / condition / tableMethod /
-  routine calls. `RoutineRef.ArgBinding` keeps only the routine-specific envelope (parameter name,
-  boxed type) around the shared source arm.
+  routine calls. Concretely: `RoutineRef.ArgBinding` becomes
+  `(routineParamName, paramType, ParamSource)`, the existing argument case routes through
+  `ParamSource.Arg` (not a bare `String`), and the new column arm carries the correlated case, so a
+  routine parameter has exactly one source shape. `ParamSource`'s javadoc, today scoped to "a
+  single parameter in a `MethodRef`", widens to cover `RoutineRef`.
 * Lateralness is a positive third arm on the join step's `on` axis
   (`ColumnPairs | Predicate | Lateral`); R333's invariant "`on` absent iff start node" survives.
 
@@ -88,8 +103,75 @@ All typed rejections; the validator owns misordering since order now carries mea
 * `columnMapping` legal iff a previous node exists; bound columns must exist on the previous node
   with types compatible with the routine parameters.
 * `repeatable` applies semantically only where order-composition does (FIELD_DEFINITION table
-  chains); GraphQL cannot scope repeatability per location, so the classifier rejects repeats at
-  other locations.
+  chains); GraphQL cannot scope repeatability per location, so the classifier rejects repeated
+  `@reference` on `ARGUMENT_DEFINITION` and `INPUT_FIELD_DEFINITION` with a message pointing at
+  the field-level composition surface (the `@lookupKey` declared-but-rejected precedent).
+
+## Composition with other field surfaces
+
+Day-one verdicts for the directives that could co-occur on a routine-backed field; each rejection
+is a typed classifier rejection with a validator mirror and a fixture.
+
+* **`@splitQuery`**: composes. It forces the new-query anchor, which is the same batched keyed
+  re-query form the child fetch already rides; no special casing.
+* **`@asConnection` / pagination**: rejected on any field whose chain contains a routine node
+  (R300 already rejects Connection at root). Keyset pagination needs an ordering contract the
+  FK-less routine result does not carry. Named deferral: chains whose terminus is a catalog table
+  could support it later.
+* **`@orderBy` / `@condition`**: rejected on routine-backed fields day one, extending R300's
+  no-field-level-filter-surface stance from the root slice to every chain position. Named
+  deferral: both key on `resolvedTable` (R333) and are meaningful for catalog-terminus chains.
+
+## Implementation
+
+* `directives.graphqls`: `repeatable` on `@reference` and `@routine`; `columnMapping: String` on
+  `@routine`.
+* `RoutineRef.ArgBinding` gains the `ParamSource` slot; `ParamSource` gains the column arm; the
+  existing arg case migrates to `ParamSource.Arg` (see *Model placements*).
+* `JooqCatalog.resolveTableValuedFunction`: additionally resolve the `Field`-overload call surface
+  (today filtered out) for correlated emission.
+* Classifier (`FieldBuilder` + `RoutineDirectiveResolver`): read the ordered directive
+  applications off the field definition, build the chain (implicit head at child positions),
+  desugar the single-application case, mint the `RoutineCall` target arm and `Lateral` `on`-arm
+  onto R438's two-axis `JoinStep`.
+* `GraphitronSchemaValidator`: the four validation rules plus the composition verdicts above,
+  mirroring the classifier.
+* Emitters: chain rendering in the fetcher generators (root and child), `DSL.lateral()` for
+  correlated calls, name-matched keying for hops out of a routine.
+* Docs: `routine.adoc` rewrite and the `@reference` page's composition section (see the draft
+  below); the order contract documented where repeatable directives are introduced.
+
+## Tests
+
+Pipeline tier is primary; no code-string assertions at any tier.
+
+* **Pipeline (SDL to model to TypeSpec)**: one fixture per chain shape in *The rule*'s example
+  block (root single-node, root routine-then-hops, child correlated single-node, child
+  hops-then-routine, sandwich), plus `ClassifiedCorpus` entries asserting the classification
+  facts.
+* **Execution (PostgreSQL)**: a correlated child (`films_for_actor(actor_id)`-shaped fixture
+  function added to `init.sql`) verifying the LATERAL correlation returns per-parent rows under
+  batching; a root routine-then-hops chain verifying the hop out of the routine keys correctly;
+  selection narrowing on a routine-result table (extends `RoutineFieldExecutionTest`).
+* **Rejection fixtures**, one per validator rule: root chain not starting with `@routine`;
+  terminus mismatch; `columnMapping` with no previous node; `columnMapping` naming a column absent
+  from the previous node; name-match keying failure (routine result lacking the key columns);
+  repeated `@reference` on `ARGUMENT_DEFINITION` / `INPUT_FIELD_DEFINITION`; `@asConnection`,
+  `@orderBy`, and `@condition` on a routine-backed field.
+
+## User documentation (first-client check)
+
+Draft for the directive reference / how-to; moves to its real home when the feature ships.
+
+> *Backing a field with a database function.* A table-valued function in your database appears in
+> the jOOQ catalog like any table. To back a field with one, add `@routine(name: "...")`: the
+> field's type maps to the function's result table, and the function's parameters are filled from
+> the field's GraphQL arguments (`argMapping`) or from columns of the enclosing type's row
+> (`columnMapping`). To reach other tables from the function's result, or to reach the function
+> through other tables, combine it with `@reference`: the directives on a field, read left to
+> right, describe the path your data travels, starting at the enclosing type's table and ending at
+> the field's type. The order you write them in is the order the tables are joined; your editor
+> shows the resolved path as you type.
 
 ## Out of scope
 
