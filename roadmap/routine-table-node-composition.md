@@ -4,9 +4,9 @@ title: "Routine table nodes: order-significant @routine / @reference composition
 status: Backlog
 bucket: feature
 theme: service
-depends-on: []
+depends-on: [coordinate-lowers-to-datafetcher-queryparts, materialize-joinpath-facts]
 created: 2026-07-05
-last-updated: 2026-07-05
+last-updated: 2026-07-06
 ---
 
 # Routine table nodes: order-significant @routine / @reference composition
@@ -55,6 +55,18 @@ shape downstream.
   result-columns-expose-key-columns-by-name build check, or a `condition:`.
 * **Cardinality.** The wrapper stays author-declared; jOOQ exposes no TVF row-cardinality (same
   stance as R300).
+
+## Substrate and sequencing
+
+The model placements below target R333's join-path facts, **not** the shipped model: the live
+`JoinStep` is the flat `FkJoin | ConditionJoin | LiftedHop` seal with no `on` axis and no
+`tableExpr`, and root `@routine` is the sealed `QueryField.QueryRoutineTableField` leaf. R438
+(`materialize-joinpath-facts`) is the substrate slice that reshapes `JoinStep` to
+`(tableExpr target, on)`; this item then adds the `RoutineCall` target arm and the `Lateral`
+`on`-arm, and retires `QueryRoutineTableField` by re-homing the root slice onto the single-node
+chain, at which point (and not before) the "exactly one resolved shape downstream" claim in *The
+rule* holds. R314's reentry emit re-platform is the parallel source-side thread; no dependency
+either way, but the emit conventions should be coordinated.
 
 ## Model placements
 
