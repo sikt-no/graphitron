@@ -14,7 +14,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 | ID | Item | Status | Updated | Plan |
 |---|---|---|---|---|
-| `R437` | Shape-aware create-Record service helper dedup (R311 correctness bug) | In Progress | 2026-07-06 <sub>created 2026-07-03</sub> | [plan](jooq-record-helper-shape-aware-dedup.md) |
+| `R437` | Shape-aware create-Record service helper dedup (R311 correctness bug) | In Review | 2026-07-06 <sub>created 2026-07-03</sub> | [plan](jooq-record-helper-shape-aware-dedup.md) |
 | `R222` | Dimensional model pivot: slots over cross-product permits | Spec | 2026-07-04 <sub>created 2026-05-21</sub> | [plan](dimensional-model-pivot.md) |
 | `R428` | MCP tool executes GraphQL against generated resolvers in-process (graphitron:dev) <sub>blocked by: [connection-transaction-lifecycle](connection-transaction-lifecycle.md)</sub> | Spec | 2026-07-05 <sub>created 2026-07-03</sub> | [plan](mcp-execute-query-in-process.md) |
 | `R333` | The Graphitron data model | Spec | 2026-07-05 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
@@ -194,7 +194,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### service
 
-- `R437` [**Shape-aware create-Record service helper dedup (R311 correctness bug)**](jooq-record-helper-shape-aware-dedup.md) — In Progress, architecture
+- `R437` [**Shape-aware create-Record service helper dedup (R311 correctness bug)**](jooq-record-helper-shape-aware-dedup.md) — In Review, architecture
 - `R429` [**Graphitron owns connection and transaction lifecycle: operation-typed read-only/commit semantics and RLS-first session state**](connection-transaction-lifecycle.md) — Ready, architecture
 - `R201` [**Honor @field(name:) in @error payload construction shape resolution**](honor-field-directive-in-payload-construction-shape.md) — Backlog, bug
 - `R202` [**Honor @field(name:) in @error type extra-field accessor matching against handler source class**](honor-field-directive-in-error-type-source-accessors.md) — Backlog, bug
