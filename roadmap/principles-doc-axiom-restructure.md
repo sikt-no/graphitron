@@ -51,7 +51,8 @@ states each fact once, at its grain, and Graphitron derives the rest ; guides ho
 discovered and extended, find a concept's grain and natural key first ; and keeps the classified
 model a normalized fact base: each fact asserted once at the parse boundary, everything downstream
 (generation, validation, the LSP) a derived view. Because the model is rebuilt from source every
-build, each such view is a materialized view, never a copy that can drift from its source. Strategic principles live at
+build, each such view is a materialized view, never a copy that can drift from its source ; that
+copy is *the drift smell*, and it recurs at every scale below. Strategic principles live at
 xref:../../graphitron-principles.adoc[graphitron-principles.md]; the typed-rejection narrative at
 xref:typed-rejection.adoc[Typed rejection]; additive-then-cutover change discipline in
 `roadmap/workflow.adoc`.
@@ -160,11 +161,10 @@ become a copy maintained apart from its source.* When a concept's variants multi
 cause is independent axes spliced into one identifier: the permit set becomes the cross-product of
 its axes, and adding a value to any axis multiplies the permits below it. Find the concept's grain
 and natural key, carry each axis as its own slot or sealed sub-interface, and either compute
-cross-axis views at the read site or materialize them from the base. What this axiom forbids is
-neither storage nor derivation but the *hand-maintained* second copy: a spliced identifier, or a
-fact kept in parallel to the source it should track (R268's emit-side allow-list that drifted from
-the switch it mirrored, until it was deleted and re-sourced). R222 (`dimensional-model-pivot`) is
-the roadmap-scale application; R333 is the current statement of the target model.
+cross-axis views at the read site or materialize them from the base. The drift smell at field
+scale is the spliced identifier: two axes fused into one permit name, so the cross-product falls to
+hand-maintenance rather than derivation. R222 (`dimensional-model-pivot`) is the roadmap-scale
+application; R333 is the current statement of the target model.
 
 The DataLoader-backed source side is the worked example: key shape, body input contract, row
 count, and loader registration are independent axes, and each dispatch site reads off whichever
@@ -212,8 +212,8 @@ consumers (the LSP snapshot today) re-source from the same classified facts; no 
 private model, and a view's coverage guarantee lives at its projection seam.
 `CatalogBuilder.projectFieldClassification` is the exemplar: an exhaustive switch over the field
 permits, so a new permit fails compilation until the view covers it; the coverage switch moves
-with the seam. The smell is a consumer-side shadow taxonomy ; a second model maintained by hand to
-feed a view.
+with the seam. The drift smell at model scale is a consumer-side shadow taxonomy: a second model
+hand-maintained to feed a view.
 
 *Enforced by:* the compile-checked projection switch at each view's seam.
 
@@ -241,8 +241,8 @@ When the model already carries typed information, runtime data formats derive fr
 rather than inventing a parallel type system. The cursor format is the exemplar: each cursor
 column's jOOQ `DataType` is already known, so encode/decode goes through
 `field.getDataType().convert()` instead of a hand-rolled type-tag system ; the column metadata
-*is* the type information. A parallel type system in a runtime format is redundant and will
-diverge.
+*is* the type information. A parallel type system in a runtime format is the drift smell at the
+format boundary: redundant, and diverges.
 
 *Enforced by:* review only.
 
@@ -267,10 +267,10 @@ for the symmetry itself.
 three directions the rule flows ; rejections (classifier to validator), acceptances (classifier to
 emitter), claims (documentation to test or type) ; and the direction matters because each has a
 different enforcer. Enforcers run at build time or earlier; a runtime cast is not one ; it fails
-on a real request, days after the build passed. The shared smell: a parallel statement of the same
-fact with no single enforcer (a second dispatch set, a defensive cast, an unguarded census), which
-drifts silently ; R268 is the worked example, an emit-side allow-list that drifted from the arms
-the emitter implemented until it was deleted and the invariant re-sourced. A review-only label
+on a real request, days after the build passed. This axiom enforces against the drift smell: a
+fact restated with no single enforcer (a second dispatch set, a defensive cast, an
+unguarded census) drifts silently. R268 is the worked example, an emit-side allow-list that drifted
+from the arms the emitter implemented until it was deleted and the invariant re-sourced. A review-only label
 anywhere in this document is an invitation: filing the meta-test that pins it is roadmap material.
 The set of review-only principles is read off the labels, never stored as its own list.
 
@@ -707,6 +707,22 @@ From the 2026-07-04 principles-architect consult and the user's Spec review, in 
     constructive method (find grain and natural key) and sheds the materialized-view sentences now
     stated at the ingress. Net word change displaced against the 3,500 budget (decision 11): the
     v2 block lands at 3,498, essentially at cap, so the next substantive addition must displace.
+16. **The drift smell is named once and cited, not restated four times** (user's Spec review,
+    2026-07-06; "Finding A"). The same failure, a fact stated a second time with nothing enforcing
+    the two copies agree, appeared as four independent restatements: a hand-maintained second copy
+    under "Orthogonal facts" (with R268 narrated in full), a consumer-side shadow taxonomy under
+    "One model, many views", a parallel runtime type system under "Model metadata", and a parallel
+    statement with no enforcer under "Every invariant has an enforcer" (R268 narrated again). The
+    doc was committing the parallel-statement smell it warns against. Fix: the ingress coins *the
+    drift smell* at the point it already discusses drift; "Every invariant has an enforcer" is its
+    enforced home and the sole site R268 is narrated; the other three become scale-tagged one-liners
+    (field / model / format) that cite the named smell rather than re-explaining it. This also
+    dissolves the residual 2-vs-3 redundancy noted in the axiom review: axiom 3's smell is now
+    visibly axiom 2's smell one scale up, not a separate rule. Roughly word-neutral (R268 stated
+    once buys back the coinage and the scale tags); the value is correctness, not budget. The
+    narrower instances that are not general restatements, the DataLoader worked-example smell and
+    capability-membership drift, stay in place. Findings B (axiom 5's body promising "three
+    directions" while carrying five corollaries) and C (micro-merges under axiom 1) remain open.
 
 Append to `roadmap/workflow.adoc` (after the plan-shape bullets), receiving the technique the
 principles doc no longer carries:
