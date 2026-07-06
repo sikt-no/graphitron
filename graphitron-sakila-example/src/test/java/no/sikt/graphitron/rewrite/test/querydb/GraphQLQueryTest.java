@@ -527,6 +527,37 @@ class GraphQLQueryTest {
                 "Agent Truman");
     }
 
+    @Test
+    @SuppressWarnings("unchecked")
+    void films_titleTitlecase_withCollidingMultisetSibling_bothResolve_noMappingException() {
+        // R436 Defect 1 repro (key-extraction-multiset-alias-collision.md). Film.Length is a
+        // multiset-backed object field whose projection is aliased "Length", case-insensitively
+        // shadowing the physical FILM.LENGTH (smallint) column. titleTitlecase is a
+        // Wrap.TableRecord @service child that projects the full parent row and rebuilds a
+        // FilmRecord from it. Pre-fix the rebuild did env.getSource().into(Tables.FILM), which maps
+        // by column name; the "Length" multiset Result shadowed FILM.LENGTH and could not convert
+        // to smallint, so every film crashed with a MappingException (and the raw record-dumping
+        // message escaped redaction — Defect 2). Post-fix the full row is projected under reserved
+        // __src_<col>__ aliases and rebuilt column by column, so the multiset alias cannot collide.
+        // Selecting only the two colliding participants isolates the seam.
+        Map<String, Object> data = execute("{ films { titleTitlecase Length { inventoryId } } }");
+        var films = (java.util.List<Map<String, Object>>) data.get("films");
+        assertThat(films).hasSize(5);
+        assertThat(films)
+            .as("every film's titleTitlecase resolves — pre-fix this threw a MappingException")
+            .extracting(f -> f.get("titleTitlecase"))
+            .containsExactlyInAnyOrder(
+                "Academy Dinosaur", "Ace Goldfinger", "Adaptation Holes",
+                "Affair Prejudice", "Agent Truman");
+        int totalInventory = 0;
+        for (var f : films) {
+            totalInventory += ((java.util.List<?>) f.get("Length")).size();
+        }
+        assertThat(totalInventory)
+            .as("the colliding multiset sibling resolves too: films 1-3 each carry one inventory row")
+            .isEqualTo(3);
+    }
+
     private static String expectedTitleCase(String s) {
         StringBuilder out = new StringBuilder(s.length());
         boolean nextUpper = true;

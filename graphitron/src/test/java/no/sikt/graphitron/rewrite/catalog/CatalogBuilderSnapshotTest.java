@@ -134,7 +134,7 @@ class CatalogBuilderSnapshotTest {
     void tableTypeProjectsToTableBacking() {
         var registry = new SchemaParser().parse("type Query { x: Int }");
         var schema = schemaOf("Film", new GraphitronType.TableType("Film", SourceLocation.EMPTY,
-            new TableRef("film", "FILM", null, null, null, List.of())));
+            new TableRef("film", "FILM", null, null, null, List.of(), List.of())));
 
         var snapshot = CatalogBuilder.buildSnapshot(registry, schema, CompletionData.empty());
 
@@ -151,7 +151,7 @@ class CatalogBuilderSnapshotTest {
         var registry = new SchemaParser().parse("type Query { x: Int }");
         var schema = schemaOf("Movie", new GraphitronType.TableInterfaceType("Movie", SourceLocation.EMPTY,
             "kind",
-            new TableRef("film", "FILM", null, null, null, List.of()),
+            new TableRef("film", "FILM", null, null, null, List.of(), List.of()),
             List.of()));
 
         var snapshot = CatalogBuilder.buildSnapshot(registry, schema, CompletionData.empty());
@@ -230,7 +230,7 @@ class CatalogBuilderSnapshotTest {
         var schema = schemaOf("FilmRecord",
             new GraphitronType.JooqTableRecordType("FilmRecord", SourceLocation.EMPTY,
                 "no.sikt.example.tables.records.FilmRecord",
-                new TableRef("film", "FILM", null, null, null, List.of())));
+                new TableRef("film", "FILM", null, null, null, List.of(), List.of())));
 
         var snapshot = CatalogBuilder.buildSnapshot(registry, schema, CompletionData.empty());
 

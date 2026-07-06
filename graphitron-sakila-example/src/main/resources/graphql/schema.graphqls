@@ -1252,6 +1252,16 @@ type Film implements Node & Searchable @table(name: "film") @node {
     rating:      MpaaRating   @field(name: "RATING")
     textRating:  String       @field(name: "TEXT_RATING")
     length:      Int          @field(name: "LENGTH")
+    # R436 collision-repro fixture (key-extraction-multiset-alias-collision.md): a multiset-backed
+    # object field whose GraphQL name case-insensitively collides with the physical FILM.LENGTH
+    # column (smallint). Selected alongside titleTitlecase (a Wrap.TableRecord @service child that
+    # projects the full parent row), this reproduced the pre-R436 into(Tables.FILM)-by-name
+    # MappingException: the "Length" multiset Result shadowed the LENGTH column and could not
+    # convert to smallint. R436 projects the full row under reserved __src_<col>__ aliases and
+    # rebuilds the record column by column, so the multiset alias no longer collides. GraphQL names
+    # are case-sensitive, so `Length` coexists with the `length` scalar above; the collision is with
+    # the physical column, and it is case-insensitive.
+    Length:      [Inventory!]! @reference(path: [{key: "inventory_film_id_fkey"}]) @defaultOrder(primaryKey: true)
     languageId:  Int          @field(name: "LANGUAGE_ID")
     # R42 ColumnReferenceField fixture: Direct + FK-only single-hop scalar @reference.
     # Projects Language.NAME via the film_language_id_fkey FK; classifier produces a

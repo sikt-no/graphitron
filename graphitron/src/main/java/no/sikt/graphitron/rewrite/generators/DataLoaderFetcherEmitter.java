@@ -96,9 +96,10 @@ public final class DataLoaderFetcherEmitter {
             LoaderRegistration registration,
             CodeBlock batchLoaderLambda,
             CodeBlock keyExtraction,
-            CodeBlock asyncWrapTail) {
+            CodeBlock asyncWrapTail,
+            CodeBlock syncCatchBody) {
         return build(fieldName, keyType, loaderValueType, outerReturnType, registration,
-            batchLoaderLambda, CodeBlock.of(""), keyExtraction, asyncWrapTail);
+            batchLoaderLambda, CodeBlock.of(""), keyExtraction, asyncWrapTail, syncCatchBody);
     }
 
     /**
@@ -121,13 +122,24 @@ public final class DataLoaderFetcherEmitter {
             CodeBlock batchLoaderLambda,
             CodeBlock preRegistrationPrelude,
             CodeBlock keyExtraction,
-            CodeBlock asyncWrapTail) {
+            CodeBlock asyncWrapTail,
+            CodeBlock syncCatchBody) {
 
         TypeName loaderType = ParameterizedTypeName.get(DATA_LOADER, keyType, loaderValueType);
         String factoryMethod = registration.container() == LoaderRegistration.Container.MAPPED_SET
             ? "newMappedDataLoader"
             : "newDataLoader";
 
+        // R436 Defect 2: the key extraction runs synchronously, before dispatch and the async
+        // .exceptionally tail exists, so a throw out of it (e.g. a jOOQ into(...)/accessor failure)
+        // used to escape DataFetcher.get() unrouted — leaking a raw, record-dumping message past
+        // ErrorRouter's redaction. Wrap the extraction + dispatch + async tail in a
+        // try/catch(Throwable) whose arm routes through the SAME disposition the .exceptionally tail
+        // uses (threaded as syncCatchBody), lifted into a completed future. The
+        // preRegistrationPrelude (R268 Outcome narrowing) stays outside the guard: its early return
+        // is deliberate control flow, not a failure path, and precedes loader registration by
+        // design. keyExtraction's own early returns (single-cardinality null-FK short-circuit) stay
+        // legal inside the try.
         var b = MethodSpec.methodBuilder(fieldName)
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(outerReturnType)
@@ -138,9 +150,13 @@ public final class DataLoaderFetcherEmitter {
                 "$T loader = env.getDataLoaderRegistry()\n" +
                 "    .computeIfAbsent(name, k -> $T.$L($L));\n",
                 loaderType, DATA_LOADER_FACTORY, factoryMethod, batchLoaderLambda)
+            .beginControlFlow("try")
             .addCode(keyExtraction)
             .addCode(dispatchCall(registration.dispatch()))
-            .addCode(CodeBlock.builder().add("    ").add(asyncWrapTail).add(";\n").build());
+            .addCode(CodeBlock.builder().add("    ").add(asyncWrapTail).add(";\n").build())
+            .nextControlFlow("catch ($T e)", ClassName.get(Throwable.class))
+            .addCode(syncCatchBody)
+            .endControlFlow();
 
         return b.build();
     }

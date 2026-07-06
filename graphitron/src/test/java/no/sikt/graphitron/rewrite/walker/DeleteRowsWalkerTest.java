@@ -248,7 +248,7 @@ class DeleteRowsWalkerTest {
 
     private static TableRef table(String sqlName) {
         var cn = ClassName.get("fixture", "T");
-        return new TableRef(sqlName, sqlName.toUpperCase(), cn, cn, cn, List.of());
+        return new TableRef(sqlName, sqlName.toUpperCase(), cn, cn, cn, List.of(), List.of());
     }
 
     private static ColumnRef col(JooqCatalog catalog, String table, String name) {

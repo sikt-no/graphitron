@@ -42,6 +42,7 @@ public class GraphitronSchemaValidator {
         validateOutcomeTypeShape(schema, errors);
         validateOutcomeChildArmSwitch(schema, errors);
         validateContextArgumentTypeAgreement(schema, errors);
+        validateAliasKeyColumnCollisions(schema, errors);
         drainBuildDiagnostics(schema, errors);
         return List.copyOf(errors);
     }
@@ -86,6 +87,118 @@ public class GraphitronSchemaValidator {
                 graphql.language.SourceLocation.EMPTY
             ));
         }
+    }
+
+    /**
+     * R436 (Defect 1, residual collision): reject a sibling field whose parent-{@code $fields}
+     * projection is aliased to a GraphQL name that case-insensitively shadows a <em>key or
+     * correlation</em> column another child on the same table-backed parent reads by base name.
+     *
+     * <p>The broad whole-row collision (a client selection alias shadowing an arbitrary physical
+     * column touched by a {@code SourceKey.Wrap.TableRecord} {@code into(Tables.X)}) is <em>fixed</em>
+     * by the reserved {@code __src_<col>__} aliases, not rejected here — that keeps legitimate
+     * schemas working. This check is deliberately narrow: the base-named reads that survive the
+     * reserved-alias fix — {@code Wrap.Row}/{@code Wrap.Record} key reads
+     * ({@code get(Tables.X.COL)} / {@code into(Tables.X.COL, …)}) and {@link ChildField.TableMethodField}
+     * single-hop FK correlation reads ({@code parentRecord.get(DSL.name("<src>"), …)}) — resolve
+     * their columns by name in a record whose namespace a sibling alias can shadow. Both name sets
+     * are known at build time, and a schema carrying the collision has legal queries that cannot
+     * succeed, so it is rejected with the colliding field, the column, and the remedy (rename the
+     * field). Defect 2's runtime guard remains the backstop for anything static analysis cannot see.
+     */
+    private void validateAliasKeyColumnCollisions(GraphitronSchema schema, List<ValidationError> errors) {
+        for (var type : schema.types().values()) {
+            if (!(type instanceof GraphitronType.TableBackedType)) continue;
+            List<GraphitronField> fields = schema.fieldsOf(type.name());
+            // lower(sqlName) -> sqlName (verbatim, for the message)
+            var keyColumns = new java.util.LinkedHashMap<String, String>();
+            collectBaseNamedKeyColumns(fields, keyColumns);
+            if (keyColumns.isEmpty()) continue;
+            checkAliasKeyColumnCollisions(fields, keyColumns, errors);
+        }
+    }
+
+    /**
+     * Accumulates the SQL names of columns a table-backed parent's children read by <em>base</em>
+     * name off the parent record: {@code Wrap.Row}/{@code Wrap.Record} {@link BatchKeyField} key
+     * columns and single-hop-FK {@link ChildField.TableMethodField} correlation columns. Recurses
+     * through {@link ChildField.NestingField}, whose nested children share the outer table context.
+     * Mirrors the base-column half of {@code TypeClassGenerator.collectRequiredProjection}.
+     */
+    private static void collectBaseNamedKeyColumns(List<? extends GraphitronField> fields,
+            java.util.Map<String, String> out) {
+        for (var f : fields) {
+            switch (f) {
+                case no.sikt.graphitron.rewrite.model.BatchKeyField bk when bk.sourceKey() != null -> {
+                    var wrap = bk.sourceKey().wrap();
+                    if (wrap instanceof no.sikt.graphitron.rewrite.model.SourceKey.Wrap.Row
+                            || wrap instanceof no.sikt.graphitron.rewrite.model.SourceKey.Wrap.Record) {
+                        for (var c : bk.sourceKey().columns()) {
+                            out.putIfAbsent(c.sqlName().toLowerCase(java.util.Locale.ROOT), c.sqlName());
+                        }
+                    }
+                }
+                case ChildField.TableMethodField tmf -> {
+                    var path = tmf.joinPath();
+                    if (path.size() == 1 && path.get(0) instanceof JoinStep.FkJoin fk) {
+                        for (var c : fk.sourceSideColumns()) {
+                            out.putIfAbsent(c.sqlName().toLowerCase(java.util.Locale.ROOT), c.sqlName());
+                        }
+                    }
+                }
+                case ChildField.NestingField nf -> collectBaseNamedKeyColumns(nf.nestedFields(), out);
+                default -> { }
+            }
+        }
+    }
+
+    /**
+     * Flags each sibling whose {@link #parentProjectionAlias} shadows a key/correlation column in
+     * {@code keyColumns}. Recurses through {@link ChildField.NestingField} so a nested object field
+     * shadowing an outer key column is caught (its projection lands in the same outer {@code $fields}).
+     */
+    private void checkAliasKeyColumnCollisions(List<? extends GraphitronField> fields,
+            java.util.Map<String, String> keyColumns, List<ValidationError> errors) {
+        for (var f : fields) {
+            if (f instanceof ChildField.NestingField nf) {
+                checkAliasKeyColumnCollisions(nf.nestedFields(), keyColumns, errors);
+                continue;
+            }
+            java.util.Optional<String> alias = parentProjectionAlias(f);
+            if (alias.isEmpty()) continue;
+            String column = keyColumns.get(alias.get().toLowerCase(java.util.Locale.ROOT));
+            if (column == null) continue;
+            errors.add(new ValidationError(
+                f.qualifiedName(),
+                Rejection.invalidSchema("Field '" + f.qualifiedName() + "': its parent projection is "
+                    + "aliased to '" + alias.get() + "', which case-insensitively collides with column '"
+                    + column + "' that a sibling @splitQuery/@service/@tableMethod field reads by name off "
+                    + "the parent record — the alias would shadow the column and break the key read. "
+                    + "Rename the GraphQL field so it no longer shadows the column."),
+                f.location()));
+        }
+    }
+
+    /**
+     * The GraphQL-name alias a field contributes to its parent's {@code $fields} projection, or
+     * empty when the field contributes no such alias. Mirrors {@code TypeClassGenerator}'s
+     * {@code emitSelectionSwitch}: only {@link ChildField.ColumnReferenceField},
+     * {@link ChildField.TableField}, {@link ChildField.LookupTableField}, and
+     * {@link ChildField.ComputedField} project a term {@code .as(<graphqlName>)} into the parent
+     * record; {@link ChildField.ColumnField} / {@link ChildField.CompositeColumnField} project
+     * under their <em>column</em> names (no GraphQL-name alias); every other field is fetched
+     * separately and contributes nothing to the parent record namespace. If a new field variant is
+     * added to that projection switch with a {@code .as(name)} term, add it here too — the two must
+     * agree on which names reach the parent record.
+     */
+    private static java.util.Optional<String> parentProjectionAlias(GraphitronField f) {
+        return switch (f) {
+            case ChildField.ColumnReferenceField crf -> java.util.Optional.of(crf.name());
+            case ChildField.TableField tf           -> java.util.Optional.of(tf.name());
+            case ChildField.LookupTableField lf     -> java.util.Optional.of(lf.name());
+            case ChildField.ComputedField cf        -> java.util.Optional.of(cf.name());
+            default                                 -> java.util.Optional.empty();
+        };
     }
 
     private void validateType(GraphitronType type, Map<String, GraphitronType> types, List<ValidationError> errors) {

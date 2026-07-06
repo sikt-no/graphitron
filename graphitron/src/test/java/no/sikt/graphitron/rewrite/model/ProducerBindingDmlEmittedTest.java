@@ -36,6 +36,7 @@ class ProducerBindingDmlEmittedTest {
         ClassName.get("java.lang", "Object"),
         ClassName.get("java.lang", "String"),
         ClassName.get("java.lang", "Object"),
+        List.of(),
         List.of());
     private static final SourceLocation LOC = new SourceLocation(1, 1, "schema.graphqls");
 

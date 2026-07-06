@@ -47,6 +47,39 @@ class GeneratorUtils {
     static final ClassName SELECTED_FIELD   = ClassName.get("graphql.schema", "SelectedField");
 
     /**
+     * Reserved SQL-alias affixes for the full-parent-row projection that backs a
+     * {@link SourceKey.Wrap.TableRecord} key read (R436). The parent {@code $fields} SELECT
+     * projects every column re-aliased as {@code __src_<sqlColumnName>__}, and
+     * {@link #buildKeyExtraction(SourceKey, TableRef)}'s {@code TableRecord} arm reconstructs the
+     * typed record by reading those same aliases back. The {@code __}-lead is deliberate: GraphQL
+     * reserves leading-{@code __} names for introspection, so no client-driven sibling projection
+     * alias (multiset object fields, {@code .as(fieldName)} scalar aliases, interface-participant
+     * aliases) can ever collide with one. This moves the whole-row read out of the shared
+     * base-column namespace where {@code into(Tables.X)} used to map by name and crash on a
+     * colliding alias. Producer and consumer must agree on the exact string, so both
+     * {@link #reservedSourceAlias(String)} (the sole formatter) and the two emit sites drive off
+     * {@link TableRef#allColumns()} — the column set and the alias basis are single-homed there and
+     * cannot drift. Reaches generated code only as a string literal, never a Java identifier, so it
+     * is invisible to the dunder-identifier lints.
+     *
+     * @see no.sikt.graphitron.rewrite.generators.TypeClassGenerator (the producer: reserved-alias
+     *      full-row projection in {@code $fields})
+     */
+    static final String RESERVED_SRC_ALIAS_PREFIX = "__src_";
+    static final String RESERVED_SRC_ALIAS_SUFFIX = "__";
+
+    /**
+     * The reserved SQL alias a parent column is projected under for the full-parent-row read; the
+     * inverse operation the {@code TableRecord} key reconstruction reads back by. Basis is the
+     * column's SQL name ({@link ColumnRef#sqlName()}, i.e. jOOQ's {@code Field.getName()}), so the
+     * projection and extraction sites resolve to byte-identical strings. See
+     * {@link #RESERVED_SRC_ALIAS_PREFIX}.
+     */
+    static String reservedSourceAlias(String columnSqlName) {
+        return RESERVED_SRC_ALIAS_PREFIX + columnSqlName + RESERVED_SRC_ALIAS_SUFFIX;
+    }
+
+    /**
      * The default source binding for a record-parent key extraction: the fetcher reads its backing
      * object straight off {@code env.getSource()}. The R268 arm-switch substitutes
      * {@code success.value()} here once it has narrowed the {@code Outcome} source to
@@ -479,8 +512,9 @@ class GeneratorUtils {
      *       {@code DSL.row((Record) env.getSource().get(table.col), ...)}</li>
      *   <li>{@link SourceKey.Wrap.Record} →
      *       {@code ((Record) env.getSource()).into(table.col, ...)}</li>
-     *   <li>{@link SourceKey.Wrap.TableRecord} →
-     *       {@code ((Record) env.getSource()).into(Tables.X)}</li>
+     *   <li>{@link SourceKey.Wrap.TableRecord} → a typed record reconstructed per-column from the
+     *       reserved full-row aliases: {@code XRecord key = new XRecord();
+     *       key.set(Tables.X.COL, source.get("__src_col__", ColType.class)); …} (R436)</li>
      * </ul>
      *
      * <p>The container axis (positional list vs mapped set) is orthogonal and not consulted
@@ -488,6 +522,17 @@ class GeneratorUtils {
      * the batch as a {@code List<K>} or {@code Set<K>}. The resolver-side parent-table
      * consistency check guarantees the {@code TableRecord} arm's class matches the parent's
      * table, so the extraction's projection target is the parent table itself.
+     *
+     * <p>R436: the {@code TableRecord} arm no longer does a whole-record {@code into(Tables.X)}.
+     * That mapped the parent row into the typed record <em>by column name</em>, so a sibling
+     * projection aliased to a name colliding with a physical column (multiset object fields are the
+     * concrete trigger) poisoned the conversion and threw a {@code MappingException}. Instead the
+     * parent {@code $fields} projects the full row under reserved {@code __src_<col>__} aliases
+     * (see {@link #reservedSourceAlias(String)}) and this arm rebuilds the typed record column by
+     * column, reading each value back by its reserved alias with an explicit type. Both sites
+     * enumerate {@link TableRef#allColumns()}, so the projected names and the names read here are
+     * single-homed and cannot drift. The R426 contract is preserved: the reconstructed record
+     * carries every column on the parent table.
      */
     static CodeBlock buildKeyExtraction(SourceKey sourceKey, TableRef parentTable) {
         TypeName keyType = sourceKey.keyElementType();
@@ -516,10 +561,18 @@ class GeneratorUtils {
                     .addStatement("$T key = (($T) env.getSource()).into($L)", keyType, RECORD, intoArgs.build())
                     .build();
             }
-            case SourceKey.Wrap.TableRecord tr -> CodeBlock.builder()
-                .addStatement("$T key = (($T) env.getSource()).into($T.$L)",
-                    keyType, RECORD, tablesClass, tableField)
-                .build();
+            case SourceKey.Wrap.TableRecord tr -> {
+                var out = CodeBlock.builder();
+                out.addStatement("$T source = ($T) env.getSource()", RECORD, RECORD);
+                out.addStatement("$T key = new $T()", keyType, keyType);
+                for (ColumnRef col : parentTable.allColumns()) {
+                    out.addStatement("key.set($T.$L.$L, source.get($S, $T.class))",
+                        tablesClass, tableField, col.javaName(),
+                        reservedSourceAlias(col.sqlName()),
+                        ClassName.bestGuess(col.columnClass()));
+                }
+                yield out.build();
+            }
         };
     }
 }

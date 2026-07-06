@@ -35,6 +35,16 @@ import java.util.List;
  * ordered list of PK columns (each a fully resolved {@link ColumnRef}) populated from
  * {@code table.getPrimaryKey().getFields()} at parse time.
  *
+ * <p>{@code allColumns} is the ordered list of every column on the table (each a fully resolved
+ * {@link ColumnRef}), populated from the jOOQ table's fields at parse time in the same catalog
+ * traversal that fixes {@code primaryKeyColumns}. It exists so emit-time consumers can enumerate
+ * the whole row without reaching back for the catalog (which is closed by then): R436's
+ * {@code SourceKey.Wrap.TableRecord} key reconstruction ({@code GeneratorUtils.buildKeyExtraction})
+ * and the reserved-alias full-parent-row projection ({@code TypeClassGenerator}) both drive their
+ * per-column emit off this one list, so the projected reserved-alias names and the names the key
+ * read looks them up by are single-homed and cannot drift. Empty only when constructed outside the
+ * catalog flow (test fixtures that do not exercise those paths).
+ *
  * <p>When the owning GraphQL type also carries {@code @node}, the type is classified as
  * {@link GraphitronType.NodeType} instead of {@link GraphitronType.TableType}, with the
  * {@code @node} directive properties ({@code typeId} and key columns) stored directly on it.
@@ -45,7 +55,8 @@ public record TableRef(
     ClassName tableClass,
     ClassName recordClass,
     ClassName constantsClass,
-    List<ColumnRef> primaryKeyColumns
+    List<ColumnRef> primaryKeyColumns,
+    List<ColumnRef> allColumns
 ) {
     public boolean hasPrimaryKey() {
         return !primaryKeyColumns.isEmpty();

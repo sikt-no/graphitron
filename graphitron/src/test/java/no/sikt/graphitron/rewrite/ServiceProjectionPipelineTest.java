@@ -194,6 +194,36 @@ class ServiceProjectionPipelineTest {
             .isTrue();
     }
 
+    /**
+     * R436 two-axis: a parent with <em>both</em> a {@code TableRecord}-wrap {@code @service} child
+     * (flips the {@code reservedFullRow} axis) and a {@code Wrap.Row} {@code @splitQuery} sibling
+     * (adds a base-named key column) must emit both — the reserved-aliased full row and the
+     * base-named force-included column. Before R436 the sealed {@code FullParentRow} absorbed the
+     * columns axis, so the base-named column would have been dropped; the product record keeps both.
+     */
+    @Test
+    void tableRecordServiceChild_withSplitRowSibling_projectsReservedFullRowAndBaseKeyColumn() {
+        var languageType = findType("Language", """
+            type Language @table(name: "language") { languageId: Int @field(name: "language_id") }
+            type Film @table(name: "film") { title: String }
+            type Query { language: Language }
+            extend type Language {
+                filmsService: [Film!]! @service(
+                    service: {className: "no.sikt.graphitron.rewrite.generators.TestFilmService", method: "getFilmsMappedByRecord"}
+                )
+                filmsSplit: [Film!]! @splitQuery @reference(path: [{key: "film_language_id_fkey"}]) @defaultOrder(primaryKey: true)
+            }
+            """);
+
+        assertThat(TypeSpecAssertions.appendsFullParentRow(languageType))
+            .as("the TableRecord-wrap @service child flips the reserved-full-row axis")
+            .isTrue();
+        assertThat(TypeSpecAssertions.appendsRequiredColumn(languageType, "LANGUAGE_ID"))
+            .as("the Wrap.Row @splitQuery sibling still force-projects its base-named key column "
+                + "(no absorption by the full-row axis)")
+            .isTrue();
+    }
+
     private static TypeSpec findType(String className, String sdl) {
         return TypeClassGenerator.generate(TestSchemaHelper.buildSchema(sdl), DEFAULT_OUTPUT_PACKAGE).stream()
             .filter(t -> t.name().equals(className))

@@ -109,6 +109,7 @@ class DomainReturnTypeCoverageTest {
             ClassName.bestGuess("com.example.jooq.tables.Film"),
             ClassName.bestGuess("com.example.jooq.tables.records.FilmRecord"),
             ClassName.bestGuess("com.example.jooq.Tables"),
+            List.of(),
             List.of());
     }
 

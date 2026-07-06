@@ -106,14 +106,17 @@ public final class TypeSpecAssertions {
     }
 
     /**
-     * True when {@code type}'s {@code $fields} method unconditionally appends the whole parent
-     * row to the projection via {@code Collections.addAll(fields, table.fields())} — the R426
-     * full-row projection emitted when a child's DataLoader key wrap is
-     * {@code SourceKey.Wrap.TableRecord}. Sibling of {@link #appendsRequiredColumn}.
+     * True when {@code type}'s {@code $fields} method appends the whole parent row to the
+     * projection under the reserved {@code __src_<col>__} aliases — the R426 full-row projection
+     * (reshaped by R436 from {@code Collections.addAll(fields, table.fields())} to a per-column
+     * reserved-alias append) emitted when a child's DataLoader key wrap is
+     * {@code SourceKey.Wrap.TableRecord}. Detects the reserved-alias family
+     * ({@code fields.add(table.<COL>.as("__src_..."))}) rather than a specific column, so it stays
+     * a shape assertion. Sibling of {@link #appendsRequiredColumn}.
      */
     public static boolean appendsFullParentRow(TypeSpec type) {
         String body = methodBody(type, "$fields").orElse("");
-        return body.contains("java.util.Collections.addAll(fields, table.fields())");
+        return body.contains(".as(\"__src_");
     }
 
     private static Optional<String> methodBody(TypeSpec type, String methodName) {

@@ -35,7 +35,7 @@ class JoinSlotOrientationTest {
 
     private static TableRef tableRef(String sqlName) {
         var name = ClassName.get("test.fixture", sqlName);
-        return new TableRef(sqlName, sqlName.toUpperCase(), name, name, name, List.of());
+        return new TableRef(sqlName, sqlName.toUpperCase(), name, name, name, List.of(), List.of());
     }
 
     @Test

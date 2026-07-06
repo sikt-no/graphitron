@@ -326,7 +326,11 @@ public final class TestFixtures {
             ClassName.get(TEST_JOOQ_ROOT + ".tables", simpleClassName),
             ClassName.get(TEST_JOOQ_ROOT + ".tables.records", simpleClassName + "Record"),
             ClassName.get(TEST_JOOQ_ROOT, "Tables"),
-            pkColumns);
+            pkColumns,
+            // allColumns: fixtures that build a TableRef by hand don't enumerate the whole row; the
+            // reserved-alias full-row emit / TableRecord key reconstruction (R436) that read this
+            // are exercised through the real-catalog pipeline tests, not these hand-built refs.
+            List.of());
     }
 
     public static TableRef filmTable() {

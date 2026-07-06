@@ -138,6 +138,7 @@ class RejectionSeverityCoverageTest {
                 no.sikt.graphitron.javapoet.ClassName.bestGuess("com.example.jooq.tables.Film"),
                 no.sikt.graphitron.javapoet.ClassName.bestGuess("com.example.jooq.tables.records.FilmRecord"),
                 no.sikt.graphitron.javapoet.ClassName.bestGuess("com.example.jooq.Tables"),
+                List.of(),
                 List.of());
             return new Rejection.AuthorError.MultiProducerDomainTypeDisagreement(
                 "FilmListPayload",

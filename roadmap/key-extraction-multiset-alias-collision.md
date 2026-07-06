@@ -208,3 +208,39 @@ Pipeline tier (`ServiceProjectionPipelineTest`, helpers in `TypeSpecAssertions`)
 Validation: a fixture with a sibling field shadowing a `Wrap.Row` key column asserting the new
 validator error fires with the field/column/remedy message, in whichever tier hosts validator
 coverage today.
+
+## In-Review notes
+
+Implemented as specified, with two deliberate refinements surfaced during implementation (both
+`principles-architect`-reviewed):
+
+* **Both full-row emit sites drive off `TableRef.allColumns` at generation time.** The spec sketched
+  the projection side as a runtime `for (Field<?> f : table.fields()) fields.add(f.as(...))` loop.
+  Instead a new `TableRef.allColumns` component (populated in `JooqCatalog.TableEntry.toTableRef`)
+  feeds a generation-time per-column unroll on *both* the projection side (`TypeClassGenerator`,
+  `fields.add(table.<COL>.as("__src_col__"))`) and the extraction side (`GeneratorUtils`,
+  `key.set(Tables.X.COL, source.get("__src_col__", <type>.class))`). This single-homes the column set
+  and the reserved-alias basis, so the projected names and the names the key read looks up by cannot
+  drift; it also removes the runtime `Field<?>` loop / unchecked cast the emitted-code principles push
+  against. `__src_*` reaches generated code only as string literals, so the dunder lints need no
+  allowlist entry (their doc comments record the new family).
+
+* **Collision validator keys off a single-homed alias predicate, not a hand-maintained exclusion
+  list.** `parentProjectionAlias(field)` mirrors `TypeClassGenerator.emitSelectionSwitch` exactly
+  (only `ColumnReferenceField` / `TableField` / `LookupTableField` / `ComputedField` project a
+  `.as(<graphqlName>)` term into the parent record; `ColumnField` / `CompositeColumnField` are
+  base-named; everything else is fetched separately), recursing into `NestingField`. This avoids the
+  false positives a naive "not-a-column-field" exclusion would produce.
+
+* **Execution-tier redaction test: fallback taken.** Defect 1's fix removes the collision throw
+  entirely, so the remaining sync-throw trigger is the record-parent accessor path (a hand-rolled
+  record whose accessor throws). Rather than wire a bespoke throwing-accessor `@record` execution
+  fixture (~5 new moving parts: backing class, extension method, SDL type, query entry, test), the
+  redaction proof rests on: (1) `DataLoaderFetcherEmitterTest` proving the guard wraps
+  extraction+dispatch and routes through the sync catch body; (2) the sync catch and async
+  `.exceptionally` arms sharing one router-call definition (`asyncRouterCall`), so their disposition
+  cannot diverge; and (3) the async arm's redaction already being execution-proven end-to-end via
+  `Film.durabilityError` (a DataLoader batch throw → redacted field error, asserted in
+  `SingleRecordPayloadDmlTest` / `GraphQLOverHttpConformanceTest`). The spec explicitly permits this
+  fallback ("If the implementer finds that shape unreachable in practice, note the fallback taken on
+  the item at In Review").

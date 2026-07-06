@@ -38,6 +38,7 @@ class DataLoaderFetcherEmitterTest {
         .addStatement("$T<Integer> keys = java.util.List.of()", LIST)
         .build();
     private static final CodeBlock TRIVIAL_TAIL = CodeBlock.of(".thenApply(java.util.function.Function.identity())");
+    private static final CodeBlock CATCH_BODY = CodeBlock.of("return $T.completedFuture(null);\n", CF);
 
     @Test
     void positionalList_loadOne_emitsNewDataLoaderAndLoadKeyEnv() {
@@ -48,7 +49,7 @@ class DataLoaderFetcherEmitterTest {
             "films",
             KEY, LIST_OF_RECORD, ASYNC_RESULT,
             reg,
-            LAMBDA, KEY_EXTRACTION, TRIVIAL_TAIL);
+            LAMBDA, KEY_EXTRACTION, TRIVIAL_TAIL, CATCH_BODY);
 
         String src = spec.toString();
         assertThat(src).contains("public static java.util.concurrent.CompletableFuture<graphql.execution.DataFetcherResult<java.util.List<org.jooq.Record>>> films(");
@@ -67,7 +68,7 @@ class DataLoaderFetcherEmitterTest {
             "filmsByActor",
             KEY, LIST_OF_RECORD, ASYNC_RESULT,
             reg,
-            LAMBDA, KEY_EXTRACTION, TRIVIAL_TAIL);
+            LAMBDA, KEY_EXTRACTION, TRIVIAL_TAIL, CATCH_BODY);
 
         String src = spec.toString();
         assertThat(src).contains("org.dataloader.DataLoaderFactory.newMappedDataLoader(");
@@ -83,7 +84,7 @@ class DataLoaderFetcherEmitterTest {
             "films",
             KEY, RECORD, ASYNC_RESULT,
             reg,
-            LAMBDA, KEYS_EXTRACTION, TRIVIAL_TAIL);
+            LAMBDA, KEYS_EXTRACTION, TRIVIAL_TAIL, CATCH_BODY);
 
         String src = spec.toString();
         assertThat(src).contains("return loader.loadMany(keys, java.util.Collections.nCopies(keys.size(), env))");
@@ -98,7 +99,7 @@ class DataLoaderFetcherEmitterTest {
             "films",
             KEY, LIST_OF_RECORD, ASYNC_RESULT,
             reg,
-            LAMBDA, KEY_EXTRACTION, TRIVIAL_TAIL);
+            LAMBDA, KEY_EXTRACTION, TRIVIAL_TAIL, CATCH_BODY);
 
         // DataLoader<Integer, List<Record>> — first generic = key, second = loader's per-key V.
         assertThat(spec.toString())
@@ -115,10 +116,36 @@ class DataLoaderFetcherEmitterTest {
             "films",
             KEY, LIST_OF_RECORD, ASYNC_RESULT,
             reg,
-            LAMBDA, KEY_EXTRACTION, customTail);
+            LAMBDA, KEY_EXTRACTION, customTail, CATCH_BODY);
 
         String src = spec.toString();
         assertThat(src).contains("return loader.load(key, env)");
         assertThat(src).contains(".thenApply(payload -> payload).exceptionally(t -> null);");
+    }
+
+    @Test
+    void keyExtractionAndDispatch_areWrappedInTryCatchRoutingSyncCatchBody() {
+        // R436 Defect 2: a synchronous throw out of the key extraction (before dispatch) must be
+        // caught and routed, not escape DataFetcher.get() unredacted. The guard wraps the
+        // extraction + dispatch + async tail; the caller-supplied catch body is the arm.
+        var reg = new LoaderRegistration(
+            true, LoaderRegistration.Container.POSITIONAL_LIST, LoaderRegistration.Dispatch.LOAD_ONE);
+
+        MethodSpec spec = DataLoaderFetcherEmitter.build(
+            "films",
+            KEY, LIST_OF_RECORD, ASYNC_RESULT,
+            reg,
+            LAMBDA, KEY_EXTRACTION, TRIVIAL_TAIL, CATCH_BODY);
+
+        String src = spec.toString();
+        // Loader registration is outside the guard; the key extraction is inside it.
+        int registration = src.indexOf("computeIfAbsent");
+        int tryStart = src.indexOf("try {");
+        int extraction = src.indexOf("key = ((org.jooq.Record) env.getSource())");
+        int catchArm = src.indexOf("catch (java.lang.Throwable e)");
+        assertThat(tryStart).isGreaterThan(registration);
+        assertThat(extraction).isGreaterThan(tryStart);
+        assertThat(catchArm).isGreaterThan(extraction);
+        assertThat(src).contains("return java.util.concurrent.CompletableFuture.completedFuture(null);");
     }
 }

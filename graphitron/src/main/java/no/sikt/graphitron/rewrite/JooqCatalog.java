@@ -1171,6 +1171,24 @@ public class JooqCatalog {
         }
 
         /**
+         * Every column on the table as fully-resolved {@link ColumnRef}s, in generated-jOOQ-class
+         * declaration order (the same order {@code table.fields()} yields at runtime). Backs
+         * {@link no.sikt.graphitron.rewrite.model.TableRef#allColumns()}: R436's typed-record key
+         * reconstruction and reserved-alias full-row projection enumerate this at generation time
+         * rather than reflecting the catalog at emit time. Mirrors {@link #allColumnsOf(String)}'s
+         * reflection but keyed off this entry's already-resolved {@code table()}.
+         */
+        public List<ColumnRef> allColumnRefs() {
+            return Arrays.stream(table.getClass().getFields())
+                .filter(f -> org.jooq.Field.class.isAssignableFrom(f.getType()))
+                .map(f -> {
+                    var col = (org.jooq.Field<?>) instanceFieldValue(f, table);
+                    return new ColumnRef(col.getName(), f.getName(), col.getType().getName());
+                })
+                .toList();
+        }
+
+        /**
          * Materialises a {@link no.sikt.graphitron.rewrite.model.TableRef} from this entry. The
          * {@code sqlName} argument is the directive-supplied form (case-preserved for error
          * messages), not {@code entry.table().getName()} — the catalog lookup key is preserved
@@ -1194,7 +1212,8 @@ public class JooqCatalog {
                 tableClass(),
                 recordClass(),
                 cc,
-                pkColumnRefs());
+                pkColumnRefs(),
+                allColumnRefs());
         }
     }
 

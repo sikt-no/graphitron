@@ -6137,7 +6137,8 @@ public class TypeFetcherGenerator {
             registration,
             RowsMethodCall.batchLoaderLambda(bkf.rowsMethodName(), keyType, registration),
             GeneratorUtils.buildKeyExtraction(sourceKey, prt),
-            asyncWrapTail(valueType, outputPackage, errorChannel));
+            asyncWrapTail(valueType, outputPackage, errorChannel),
+            dataLoaderSyncCatchBody(valueType, outputPackage, errorChannel));
     }
 
     /**
@@ -6263,7 +6264,8 @@ public class TypeFetcherGenerator {
             registration,
             RowsMethodCall.batchLoaderLambda(bkf.rowsMethodName(), keyType, registration),
             keyExtraction,
-            asyncWrapTail(valueType, outputPackage, Optional.empty()));
+            asyncWrapTail(valueType, outputPackage, Optional.empty()),
+            dataLoaderSyncCatchBody(valueType, outputPackage, Optional.empty()));
     }
 
     /**
@@ -6359,7 +6361,8 @@ public class TypeFetcherGenerator {
             RowsMethodCall.batchLoaderLambda(field.rowsMethodName(), keyType, registration),
             prelude,
             keyExtraction,
-            asyncWrapTail(resultValueType, outputPackage, Optional.empty()));
+            asyncWrapTail(resultValueType, outputPackage, Optional.empty()),
+            dataLoaderSyncCatchBody(resultValueType, outputPackage, Optional.empty()));
     }
 
     private static String bkfFieldName(BatchKeyField bkf) {
@@ -6601,38 +6604,68 @@ public class TypeFetcherGenerator {
      */
     private static CodeBlock asyncWrapTail(TypeName valueType, String outputPackage,
                                            Optional<ErrorChannel> errorChannel) {
-        CodeBlock routerCall;
-        if (errorChannel.isEmpty()) {
-            // Same no-channel disposition as the sync catch arm: surfaceClientErrorOrRedact
-            // walks the cause chain, so the CompletionException that DataLoader wraps around a
-            // batch-function throw unwraps to the client-error marker; everything else redacts.
-            routerCall = no.sikt.graphitron.rewrite.generators.schema.ErrorRouterClassGenerator
-                .noChannelRouterCall(outputPackage, "t");
-        } else {
-            routerCall = switch (errorChannel.get()) {
-                // R244 additive window: Mapped is not produced yet; the async Outcome-wrapper tail
-                // lands with the in-scope flip. Handle the arm so the sealed switch compiles.
-                case ErrorChannel.Mapped m -> throw new IllegalStateException(
-                    "asyncWrapTail reached ErrorChannel.Mapped before the Outcome-wrapper emit seam landed");
-                case ErrorChannel.PayloadClass pc -> CodeBlock.builder()
-                    .add("$T.dispatch(t, $T.$L, env, ",
-                        errorRouterClass(outputPackage),
-                        errorMappingsClass(outputPackage),
-                        pc.mappingsConstantName())
-                    .add(payloadFactoryLambda(pc))
-                    .add(")")
-                    .build();
-                case ErrorChannel.LocalContext lc -> CodeBlock.of(
-                    "$T.dispatchToLocalContext(t, $T.$L, env)",
-                    errorRouterClass(outputPackage),
-                    errorMappingsClass(outputPackage),
-                    lc.mappingsConstantName());
-            };
-        }
         return CodeBlock.builder()
             .add(".thenApply(payload -> $T.<$T>newResult().data(payload).build())\n",
                 DATA_FETCHER_RESULT, boxed(valueType))
-            .add(".exceptionally(t -> ").add(routerCall).add(")")
+            .add(".exceptionally(t -> ").add(asyncRouterCall(outputPackage, errorChannel, "t")).add(")")
+            .build();
+    }
+
+    /**
+     * The ErrorRouter disposition for an async DataLoader-registering fetcher, as a bare expression
+     * over the throwable local named {@code throwableVar}. One definition, shared by both arms that
+     * can route an async fetcher's throw (R415, extended by R436): the {@code .exceptionally(t -> …)}
+     * tail in {@link #asyncWrapTail} (an escaped <em>async</em> throw) and the synchronous
+     * {@code try}/{@code catch (Throwable e)} guard {@link DataLoaderFetcherEmitter} now wraps the
+     * key extraction + dispatch in (a throw <em>before</em> loader dispatch, e.g. an
+     * {@code into(...)} / accessor failure during key extraction). Threading the router call rather
+     * than the whole tail keeps the disposition from drifting between the two arms. Forks on
+     * {@code errorChannel} exactly as the sync {@link #catchArm} does; a no-channel fetcher redacts
+     * via {@code surfaceClientErrorOrRedact}, which walks the cause chain so a DataLoader-wrapped
+     * {@code CompletionException} still unwraps to the client-error marker.
+     */
+    private static CodeBlock asyncRouterCall(String outputPackage, Optional<ErrorChannel> errorChannel,
+                                             String throwableVar) {
+        if (errorChannel.isEmpty()) {
+            return no.sikt.graphitron.rewrite.generators.schema.ErrorRouterClassGenerator
+                .noChannelRouterCall(outputPackage, throwableVar);
+        }
+        return switch (errorChannel.get()) {
+            // R244 additive window: Mapped is not produced yet; the async Outcome-wrapper tail
+            // lands with the in-scope flip. Handle the arm so the sealed switch compiles.
+            case ErrorChannel.Mapped m -> throw new IllegalStateException(
+                "asyncRouterCall reached ErrorChannel.Mapped before the Outcome-wrapper emit seam landed");
+            case ErrorChannel.PayloadClass pc -> CodeBlock.builder()
+                .add("$T.dispatch($L, $T.$L, env, ",
+                    errorRouterClass(outputPackage), throwableVar,
+                    errorMappingsClass(outputPackage),
+                    pc.mappingsConstantName())
+                .add(payloadFactoryLambda(pc))
+                .add(")")
+                .build();
+            case ErrorChannel.LocalContext lc -> CodeBlock.of(
+                "$T.dispatchToLocalContext($L, $T.$L, env)",
+                errorRouterClass(outputPackage), throwableVar,
+                errorMappingsClass(outputPackage),
+                lc.mappingsConstantName());
+        };
+    }
+
+    /**
+     * The synchronous {@code catch (Throwable e)} body for a DataLoader-registering fetcher: routes
+     * the pre-dispatch throw through the same {@link #asyncRouterCall} disposition the async
+     * {@code .exceptionally} arm uses, then lifts the resulting {@code DataFetcherResult<P>} into a
+     * completed future so it satisfies the fetcher's {@code CompletableFuture<DataFetcherResult<P>>}
+     * return type. Built by the caller (which knows {@code valueType} and the field's
+     * {@code errorChannel}) and threaded into {@link DataLoaderFetcherEmitter#build}, so the sync
+     * catch and the async tail cannot disagree on the disposition.
+     */
+    private static CodeBlock dataLoaderSyncCatchBody(TypeName valueType, String outputPackage,
+                                                     Optional<ErrorChannel> errorChannel) {
+        return CodeBlock.builder()
+            .add("return $T.<$T>completedFuture(", COMPLETABLE_FUTURE, syncResultType(valueType))
+            .add(asyncRouterCall(outputPackage, errorChannel, "e"))
+            .add(");\n")
             .build();
     }
 

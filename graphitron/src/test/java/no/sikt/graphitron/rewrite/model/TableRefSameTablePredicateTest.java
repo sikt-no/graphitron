@@ -20,7 +20,7 @@ class TableRefSameTablePredicateTest {
 
     /** Only {@code tableName} participates in the predicate; the rest is irrelevant here. */
     private static TableRef ref(String tableName) {
-        return new TableRef(tableName, null, null, null, null, List.of());
+        return new TableRef(tableName, null, null, null, null, List.of(), List.of());
     }
 
     @Test

@@ -216,16 +216,20 @@ class GeneratedSourcesLintTest {
      * {@link #DUNDER_IDENTIFIER} in the first place; the GraphQL introspection {@code __typename}
      * meta-field (and the synthetic {@code __typename} SQL column sharing its spelling) reaches
      * generated code only as a string literal, so it is masked before the scan and needs no
-     * allowlist entry. See rewrite-design-principles.adoc, "Generated code is read and debugged".
+     * allowlist entry. R436's {@code __src_<col>__} full-parent-row aliases are the same case:
+     * string-literal-only ({@code table.COL.as("__src_col__")} / {@code source.get("__src_col__",
+     * …)}), masked before the scan, no allowlist entry needed. See rewrite-design-principles.adoc,
+     * "Generated code is read and debugged".
      */
     private static final List<String> EXTERNAL_TOKEN_PREFIXES = List.of("__NODE_");
 
     /**
      * The no-regression guard for R271: no emitted Java <em>identifier</em> (local, parameter, or
      * field) may lead with {@code __}. Synthetic SQL column aliases ({@code __sort__},
-     * {@code __idx__}, {@code __rn__}, {@code __typename}, {@code __pkN__}) are deliberate
-     * collision-avoidance names that reach generated code only as string literals, so masking
-     * literals (and comments) before the scan leaves them alone; the discriminator is exactly
+     * {@code __idx__}, {@code __rn__}, {@code __typename}, {@code __pkN__}, and R436's
+     * {@code __src_<col>__} full-parent-row aliases) are deliberate collision-avoidance names that
+     * reach generated code only as string literals, so masking literals (and comments) before the
+     * scan leaves them alone; the discriminator is exactly
      * "Java identifier vs string literal in the emitted output". A reintroduced lazy dunder local
      * surfaces as a bare identifier and trips this with file and line.
      *

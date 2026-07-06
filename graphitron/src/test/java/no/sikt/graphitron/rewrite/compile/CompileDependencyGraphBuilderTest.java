@@ -38,6 +38,7 @@ class CompileDependencyGraphBuilderTest {
             ClassName.get("jooq.tables", "Film"),
             ClassName.get("jooq.tables.records", "FilmRecord"),
             ClassName.get("jooq", "Tables"),
+            List.of(),
             List.of());
     }
 
