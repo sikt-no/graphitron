@@ -149,12 +149,17 @@ permit-to-doc mapping for the `Rejection` taxonomy.
 
 == Orthogonal facts are independent axes
 
-*Assert what nothing else carries; derive what another axis or slot already forces; never store a
-derived fact.* When a concept's variants multiply, the usual cause is independent axes spliced
-into one identifier: the permit set becomes the cross-product of its axes, and adding a value to
-any axis multiplies the permits below it. Carry each axis as its own slot or sealed
-sub-interface, and compute cross-axis views at the read site ; a spliced identifier or a stored
-derived fact is denormalization, a second copy of a decision that will drift. R222
+*Assert what nothing else carries; derive the rest from that base ; and never let a derived fact
+become a copy maintained apart from its source.* When a concept's variants multiply, the usual
+cause is independent axes spliced into one identifier: the permit set becomes the cross-product of
+its axes, and adding a value to any axis multiplies the permits below it. Carry each axis as its
+own slot or sealed sub-interface, and either compute cross-axis views at the read site or
+materialize them as a mechanical function of the base, regenerated every build ; the classified
+model is itself such a materialized view over the SDL and the jOOQ catalog. What drifts, and what
+this axiom forbids, is neither storage nor derivation but the *hand-maintained* second copy: a
+spliced identifier, or a fact kept in parallel to the source it should track (R268's emit-side
+allow-list that drifted from the switch it mirrored, until it was deleted and re-sourced).
+Single-sourced, regenerated denormalization is not the smell; an independently-edited copy is. R222
 (`dimensional-model-pivot`) is the roadmap-scale application; R333 is the current statement of the
 target model.
 
@@ -162,21 +167,26 @@ The DataLoader-backed source side is the worked example: key shape, body input c
 count, and loader registration are independent axes, and each dispatch site reads off whichever
 axis it forks on (xref:dispatch-axes.adoc[Dispatch axes] narrates the split). The smell to watch
 for: a single shared accessor whose meaning depends on the variant, a sealed permit name that
-splices two axes together, or a record component another component already determines.
+splices two axes together, or a record component set in parallel to the one that already determines
+it (rather than derived from it in the canonical constructor).
 
 *Enforced by:* the compiler where cross-axis invariants live in compact constructors; review at
 model-design time otherwise.
 
-=== Capability interfaces and sealed switches serve different roles
+=== Capabilities reify an orthogonal axis; sealed switches fork on identity
 
-Capabilities express what is *uniformly true* across variants; sealed switches express what
-*varies by identity*. When a generation pattern applies uniformly, use an orthogonal capability
-interface (`SqlGeneratingField`, `BatchKeyField`, `ServiceField`) rather than an N-way
-`instanceof` chain; when the generator forks on identity, use a sealed switch. Capabilities don't
-eliminate exhaustiveness bookkeeping ; they relocate it.
+A fact true across a subset of variants is an orthogonal axis: reify it as a capability interface
+that exposes the fact uniformly (`SqlGeneratingField.filters()` over variants that carry filters in
+structurally different places), not as an `instanceof` chain re-enumerating the members. A view that
+forks on identity uses a sealed switch. Membership in a capability is itself a derived fact, so the
+axiom above governs it: safe when it is single-sourced ; mechanically assigned by the classifier or
+pinned by a test ; and a drift risk when it is a hand-declared marker nothing binds to the base
+facts it should track. Capabilities relocate exhaustiveness bookkeeping off the sealed switch rather
+than eliminating it.
 
-*Enforced by:* the compiler ; capabilities relocate exhaustiveness bookkeeping, sealed switches
-keep it.
+*Enforced by:* the compiler for the accessor contract and the sealed-switch half; capability
+*membership* completeness is review only ; a variant that should implement a capability but omits it
+is a silent skip, so a membership meta-test is candidate roadmap material.
 
 === Directives carry only what the SDL author needs to say
 
@@ -641,8 +651,9 @@ From the 2026-07-04 principles-architect consult and the user's Spec review, in 
     transitional narratives; the principles only name surfaces expected to outlive them. Second:
     R333's deeper insight colors the whole doc from the ingress ; the classified model is a
     normalized fact base (classification asserts facts once, everything downstream is a derived
-    view, wire formats are its I/O), which is the shared root of the first three axioms, makes
-    the cross-product/stored-derived-fact smell literally denormalization, and recasts rejections
+    view, wire formats are its I/O), which is the shared root of the first three axioms, recasts
+    the cross-product and the hand-maintained parallel copy as the two faces of *uncontrolled*
+    denormalization (decision 14 sharpens this), and recasts rejections
     as located-violation facts rendered into views (folded into the sealed-results corollary).
 13. **The ephemeral-hierarchy corollary reframed onto fact-gathering** (user's Spec review,
     2026-07-06). The prior exemplar `ArgumentRef` ("classified once, then exhaustive projections")
@@ -659,6 +670,20 @@ From the 2026-07-04 principles-architect consult and the user's Spec review, in 
     demolishable exemplar; the review-only enforcer (nothing builder-internal reaches a downstream
     view) is the pin. The violation shape is cross-referenced, not restated, to avoid the
     parallel-statement smell the enforcement axiom warns against.
+14. **Axiom 2 is single-sourcing, not "never store a derived fact"** (user's Spec review,
+    2026-07-06). The prior slogan borrowed the OLTP rule against stored derivations, but the model
+    is a build-time materialization fully regenerated every run, not an OLTP table with in-place
+    updates ; there are no update anomalies, only recomputation. The classified model is *itself* a
+    materialized view over the SDL and jOOQ catalog (classification derives facts and stores them),
+    so "never store a derived fact" contradicted the architecture on line one. The real invariant is
+    single-sourcing: a derived fact may be materialized when the materialization is a mechanical
+    function of the base and regenerated from it (a materialized view; the model), or computed at the
+    read site ; what drifts and is forbidden is the *hand-maintained* second copy with no derivation
+    binding it to its source (R268's allow-list). Controlled denormalization is fine; uncontrolled is
+    the smell. This ripples into the capability corollary: a capability marker is not banned, it must
+    be *controlled* ; membership single-sourced (mechanically assigned or pinned by a meta-test)
+    rather than a hand-declared copy that can silently drift (the review-only gap the corollary now
+    names honestly).
 
 Append to `roadmap/workflow.adoc` (after the plan-shape bullets), receiving the technique the
 principles doc no longer carries:
