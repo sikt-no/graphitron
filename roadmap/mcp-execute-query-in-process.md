@@ -7,7 +7,7 @@ priority: 3
 theme: lsp
 depends-on: [connection-transaction-lifecycle]
 created: 2026-07-03
-last-updated: 2026-07-05
+last-updated: 2026-07-06
 ---
 
 # MCP tool executes GraphQL against generated resolvers in-process (graphitron:dev)
@@ -46,15 +46,16 @@ entry point whose signature is **JDK types only**:
 ```java
 // generated; compiled in-process alongside the rest of the closure
 public static String execute(
-    java.sql.Connection conn, String dialect,
-    String query, java.util.Map<String,Object> variables, java.util.Map<String,Object> contextArgs);
+    java.sql.Connection conn, String dialect, String query,
+    java.util.Map<String,Object> variables, String identity, java.util.Map<String,Object> contextArgs);
 ```
 
-Inside, it references `Graphitron.newGraphQL()` / `Graphitron.newExecutionInput(dsl, …)` **symbolically**
-(compile-time, since it is compiled against the facade), builds the `DSLContext` with the requested dialect,
-binds `contextArgs` to the schema's typed context parameters using the *same classified model that produced
-the facade*, executes, and returns `ExecutionResult.toSpecification()` serialized to a JSON string. This
-buys three simplifications at once:
+Inside, it references the generated facade and R429's runtime **symbolically** (compile-time, since it is
+compiled against them): it wraps the connection in a single-connection `DataSource`, constructs the R429
+runtime with the requested dialect and the `ROLLBACK_ONLY` commit policy, calls the per-request factory with
+the opaque `identity` payload, binds `contextArgs` to the schema's typed context parameters using the *same
+classified model that produced the facade*, executes, and returns `ExecutionResult.toSpecification()`
+serialized to a JSON string. This buys three simplifications at once:
 
 - **No provider seam.** No `GraphitronDevExecution` SPI, no `ServiceLoader`, no CDI/Weld container, no
   consumer-written provider class. The connection is plain config data (below).
@@ -75,15 +76,14 @@ dialect. The **host** (dev-loop code, not generated) owns the connection lifecyc
 
 ```
 open Connection            (url/user/password/dialect from config)
-setAutoCommit(false)
-set session state          (RLS/RAS seam, below; keyed off the request's contextArgs)
-reflect GraphitronDevExecutor.execute(conn, dialect, query, variables, contextArgs)
-rollback; close
+resolve identity payload   (GRAPHITRON_DEV_IDENTITY; opaque string, passed through untouched)
+reflect GraphitronDevExecutor.execute(conn, dialect, query, variables, identity, contextArgs)
+close                      (transactions, session hooks, and rollback ran inside, via R429's machinery)
 ```
 
-Rollback-by-default falls out of host ownership: the host wraps the reflective call in a transaction it
-always rolls back, so read *and* write operations are observable without persisting. An opt-in commit is a
-later nicety, not V0.
+Rollback-by-default is R429's `ROLLBACK_ONLY` commit policy on the executor-constructed runtime (the named
+commit-suppression seam on its transaction provider), so read *and* write operations are observable without
+persisting anything. An opt-in commit is a later nicety, not V0.
 
 ## Database configuration
 
@@ -92,7 +92,10 @@ environment variables (`GRAPHITRON_DEV_DB_URL` / `_USER` / `_PASSWORD` / `_DIALE
 developer keeps credentials out of the checked-in pom):
 
 - `url`, `user`, `password`
-- `dialect` — **explicit, enumerated, never defaulted to Postgres.** graphitron is already multi-dialect
+- `identity`: the opaque per-request identity payload handed to R429's connect hook
+  (`GRAPHITRON_DEV_IDENTITY`; inline, or `@/path/to/file` to keep tokens out of the environment listing).
+  Required when the schema configures `<sessionState>`; see the section below.
+- `dialect`: **explicit, enumerated, never defaulted to Postgres.** graphitron is already multi-dialect
   (see the `DialectRequirement` classification: bulk DML requires the Postgres family, most operations are
   portable), and Sikt runs Oracle. `POSTGRES` and `ORACLE` are the V0 targets; the consumer's JDBC driver is
   already on the R410-resolved classpath (jOOQ codegen and their app both need it).
@@ -100,27 +103,50 @@ developer keeps credentials out of the checked-in pom):
 When no connection is configured the execution tool is **absent / disabled with a clear message**, exactly
 the degrade-gracefully posture the RAG tools use. Every other MCP tool keeps working with no DB.
 
-## Session state, transactions, and RLS/RAS — delegated to R429
+## Session identity, transactions, and RLS/RAS: delegated to R429
 
-The earlier draft carried an open fork here (config-driven session statements vs a Java hook) for setting
-RLS/RAS session state on the dev connection. That concern has been **promoted into its own item, R429**
-(`connection-transaction-lifecycle`), which gives the *generated runtime* a strong opinion on connection
-acquisition, operation-typed transaction mode (query read-only; mutation commit-then-project), and
-RLS-first transaction-local session state with built-in Postgres/Oracle/generic strategies. This item is a
-**consumer** of that machinery rather than reinventing it:
+R429 (`connection-transaction-lifecycle`) gives the generated runtime ownership of connection acquisition,
+operation-typed transactions, and session identity: an opaque per-request identity payload (typically the
+caller's JWT) is handed to a consumer-owned database *connect hook* at acquisition, with a paired
+*disconnect hook* at release. This item is a **consumer** of that machinery rather than reinventing it:
 
-- The dev tool builds a `DataSource` from its `GRAPHITRON_DEV_DB_*` config (below) and feeds graphitron's
-  R429 runtime, so it exercises the *same* connection/transaction/session-state path a real app does, higher
-  execution fidelity for free.
-- **Rollback-by-default is R429's transaction model with commit suppressed:** the dev tool runs every
-  operation (query or mutation) as if read-only and never commits, so exploration cannot persist. An opt-in
-  commit is a later nicety.
-- Session state (the current user/tenant RLS values) comes from R429's session-state strategy, keyed off the
-  same contextArgs the executor binds. No R428-local session-state seam.
+- The executor wraps its single dev connection in a `DataSource` and executes through the R429 runtime, so
+  the dev loop exercises the *same* acquisition/hook/transaction path a real app does, including the
+  consumer's own connect hook. Higher execution fidelity for free.
+- **Identity is developer-supplied and opaque.** Graphitron does not know what the consumer's connect hook
+  expects; that opacity is R429's point, the hook is the only party that understands the payload. The
+  developer, who owns the hook, supplies the payload via `GRAPHITRON_DEV_IDENTITY`, and the tool passes it
+  through untouched, exactly as the production factory does. This channel is disjoint from `contextArgs`,
+  which remain the Java-typed service/condition channel and carry no session state.
+- **Fail loud, never skip.** If the schema configures `<sessionState>` and no dev identity is supplied, the
+  execute tool fails with a pointer at the config knob. Silently skipping the connect hook would run dev
+  queries under a different security posture than production: seeing nothing (RLS denies), or on a
+  convention-fence Postgres setup, seeing everything.
+- **The hook is the validator, and its errors are the feedback loop.** The tool surfaces connect-hook
+  failures verbatim as the tool result. An agent that supplies a payload missing a claim gets the hook's
+  own error message and corrects the payload; no graphitron-side payload validation exists, by design.
+- **Rollback-by-default is R429's `ROLLBACK_ONLY` commit policy**, consumed by name; no emission changes,
+  and exploration cannot persist writes.
 
-If R429 has not landed when R428 is implemented, the fallback is R428's minimal host-side connection handling
-(open connection, `setAutoCommit(false)`, rollback in `finally`) with a generic session-statement list; R429
-then subsumes it. This keeps R428 shippable without blocking on the larger runtime item.
+**Security posture.** The dev tool grants no capability the dev database credentials do not already grant:
+whoever holds them can call the connect hook with any payload, because the hook validates *entitlement*
+(is this person a saksbehandler in this database), not *authentication*, which was the edge's job. The
+fences are config separation (the tool reads `GRAPHITRON_DEV_DB_*`, never the app's runtime datasource),
+the loopback-only posture, `ROLLBACK_ONLY` for writes, and the identity payload for reads. That last one
+earns its own sentence: rollback protects against mutation, not disclosure, so against a prod-copy database
+the configured identity decides what an agent can *read*; pin a low-privilege identity there. A per-call
+identity override on the execute tool (for multi-identity RLS probing: does the student role really not see
+other students' rows?) is opt-in via config, default off, so shared or sensitive dev databases keep one
+pinned identity. One divergence is by design: a consumer whose hook verifies token signatures in-database
+(R429's cryptographic fence) will reject hand-written claims JSON, correctly; the dev identity there must
+be a genuinely issued dev token. Graphitron does not soften this, because a hook with a dev-mode bypass
+would be a hole in the production fence.
+
+If R429's runtime has not landed when R428 is implemented, the fallback is R428's minimal host-side
+connection handling (open connection, `setAutoCommit(false)`, rollback in `finally`) with the execute tool
+refusing to run when `<sessionState>` is configured (the fail-loud rule above; without R429 there is no
+hook machinery to honor it). R429 then subsumes the fallback. This keeps R428 shippable without blocking on
+the larger runtime item.
 
 ## Considered and rejected
 
@@ -157,12 +183,14 @@ non-federation path; flag `_entities` execution as a known gap.
 2. **Host execution path.** Connection open from config, `setAutoCommit(false)`, rollback-in-`finally`,
    reflect the one JDK-typed entry point, marshal the JSON result. `@UnitTier` over a synthetic executor;
    the reflection boundary is JDK-types-only so the test needs no generated classpath.
-3. **Session-state seam.** R429's session-state strategy keyed off contextArgs, with the commit policy
-   set to R429's `ROLLBACK_ONLY` (the named commit-suppression seam on its provider). Test with a Postgres
-   `set_config` round-trip asserting an RLS-scoped read sees only permitted rows and that rollback leaves
-   no trace.
+3. **Identity and session hooks.** Executor constructs the R429 runtime with `ROLLBACK_ONLY`; identity
+   payload passed through opaquely; fail-loud when `<sessionState>` is configured and no identity is
+   supplied; connect-hook failures surfaced verbatim as the tool result. `@UnitTier` on the fail-loud and
+   error-surfacing rules; a Postgres round-trip asserting an RLS-scoped read sees only the configured
+   identity's permitted rows and that rollback leaves no trace.
 4. **DB configuration + degrade-gracefully.** pom `<configuration>` and env resolution (env wins), explicit
-   dialect, tool absent/disabled with a clear message when unconfigured. `DevMojoTest` extension.
+   dialect, identity payload (inline and `@file` forms) and the opt-in per-call identity-override flag
+   (default off), tool absent/disabled with a clear message when unconfigured. `DevMojoTest` extension.
 5. **Execution-tier integration.** A real query and a real mutation (rolled back) against the sakila example
    DB through the tool, asserting the returned JSON matches a direct in-app execution, the fidelity check
    that the tool sees what the app sees.
@@ -182,9 +210,13 @@ non-federation path; flag `_entities` execution as a known gap.
 > generated resolvers *in-process*, no Quarkus, no deploy, and hands back exactly what the query returns.
 > Mutations run in a transaction that is always rolled back, so you can probe freely without changing data.
 >
-> **Row-level security still applies.** If your database uses RLS/RAS, configure the session state to set
-> per-request (the current user, tenant, and so on come from the query's context arguments), and the tool
-> sees only what that identity is permitted, just like your running service.
+> **Row-level security still applies.** If your schema mounts identity (graphitron's `<sessionState>`
+> connect hook), give the dev tool an identity payload via `GRAPHITRON_DEV_IDENTITY`: the same string your
+> connect function expects in production (claims JSON, or a genuinely issued dev token if your function
+> verifies signatures). The tool runs your real connect function and sees only what that identity is
+> permitted, just like your running service. If identity is required and missing, the tool says so loudly
+> instead of running unsecured; if your connect function rejects the payload, you get its error message
+> verbatim, so you can fix the payload and retry.
 >
 > **No database configured?** The `execute` tool simply does not appear; every other dev tool (schema,
 > catalog, diagnostics, docs) works with no database at all.

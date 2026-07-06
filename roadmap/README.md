@@ -15,7 +15,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | ID | Item | Status | Updated | Plan |
 |---|---|---|---|---|
 | `R222` | Dimensional model pivot: slots over cross-product permits | Spec | 2026-07-04 <sub>created 2026-05-21</sub> | [plan](dimensional-model-pivot.md) |
-| `R428` | MCP tool executes GraphQL against generated resolvers in-process (graphitron:dev) <sub>blocked by: [connection-transaction-lifecycle](connection-transaction-lifecycle.md)</sub> | Spec | 2026-07-05 <sub>created 2026-07-03</sub> | [plan](mcp-execute-query-in-process.md) |
+| `R428` | MCP tool executes GraphQL against generated resolvers in-process (graphitron:dev) <sub>blocked by: [connection-transaction-lifecycle](connection-transaction-lifecycle.md)</sub> | Spec | 2026-07-06 <sub>created 2026-07-03</sub> | [plan](mcp-execute-query-in-process.md) |
 | `R333` | The Graphitron data model | Spec | 2026-07-05 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
 | `R429` | Graphitron owns the connection lifecycle: application runtime, operation-typed transactions, and database-mounted session identity | Ready | 2026-07-06 <sub>created 2026-07-03</sub> | [plan](connection-transaction-lifecycle.md) |
 | `R346` | Regenerate and guard the generated supported-directives migration doc against directive-set drift | Ready | 2026-06-19 | [plan](supported-directives-regen-guard.md) |
