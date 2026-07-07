@@ -186,7 +186,7 @@ class GraphitronSchemaBuilderTest {
             schema -> {
                 var ref = (ColumnReferenceField) schema.field("Film", "languageName");
                 assertThat(ref.joinPath()).hasSize(1);
-                assertThat(ref.joinPath().get(0)).isInstanceOf(JoinStep.FkJoin.class);
+                assertThat(ref.joinPath().get(0)).matches(TestFixtures::isFkHop, "FK-derived hop");
             }),
 
         KNOWN_FK_BY_JAVA_CONSTANT(
@@ -200,7 +200,7 @@ class GraphitronSchemaBuilderTest {
             schema -> {
                 var ref = (ColumnReferenceField) schema.field("Film", "languageName");
                 assertThat(ref.joinPath()).hasSize(1);
-                assertThat(ref.joinPath().get(0)).isInstanceOf(JoinStep.FkJoin.class);
+                assertThat(ref.joinPath().get(0)).matches(TestFixtures::isFkHop, "FK-derived hop");
             }),
 
         UNKNOWN_FK(
@@ -247,8 +247,8 @@ class GraphitronSchemaBuilderTest {
             schema -> {
                 var ref = (ColumnReferenceField) schema.field("Customer", "district");
                 assertThat(ref.joinPath()).hasSize(1);
-                assertThat(ref.joinPath().get(0)).isInstanceOf(JoinStep.FkJoin.class);
-                var fk = (JoinStep.FkJoin) ref.joinPath().get(0);
+                assertThat(ref.joinPath().get(0)).matches(TestFixtures::isFkHop, "FK-derived hop");
+                var fk = TestFixtures.fkHop(ref.joinPath().get(0));
                 assertThat(fk.targetTable().tableName()).isEqualToIgnoringCase("address");
             }),
 
@@ -284,8 +284,8 @@ class GraphitronSchemaBuilderTest {
                 assertThat(it.table().tableName()).isEqualToIgnoringCase("customer");
                 var ref = (no.sikt.graphitron.rewrite.model.InputField.ColumnReferenceField) it.inputFields().get(0);
                 assertThat(ref.joinPath()).hasSize(1);
-                assertThat(ref.joinPath().get(0)).isInstanceOf(JoinStep.FkJoin.class);
-                var fk = (JoinStep.FkJoin) ref.joinPath().get(0);
+                assertThat(ref.joinPath().get(0)).matches(TestFixtures::isFkHop, "FK-derived hop");
+                var fk = TestFixtures.fkHop(ref.joinPath().get(0));
                 assertThat(fk.targetTable().tableName()).isEqualToIgnoringCase("address");
                 assertThat(ref.column().javaName()).isEqualTo("DISTRICT");
             }),
@@ -302,9 +302,9 @@ class GraphitronSchemaBuilderTest {
             schema -> {
                 var ref = (TableField) schema.field("Film", "actor");
                 assertThat(ref.joinPath()).hasSize(1);
-                assertThat(ref.joinPath().get(0)).isInstanceOf(JoinStep.ConditionJoin.class);
-                var cj = (JoinStep.ConditionJoin) ref.joinPath().get(0);
-                assertThat(cj.condition().method().methodName()).isEqualTo("join");
+                assertThat(ref.joinPath().get(0)).matches(TestFixtures::isConditionHop, "condition-join hop");
+                var cj = TestFixtures.conditionHop(ref.joinPath().get(0));
+                assertThat(TestFixtures.hopCondition(cj).method().methodName()).isEqualTo("join");
             }),
 
         CONDITION_PATH_UNKNOWN_CLASS(
@@ -477,7 +477,7 @@ class GraphitronSchemaBuilderTest {
                 assertThat(f).isInstanceOf(no.sikt.graphitron.rewrite.model.ChildField.ParticipantColumnReferenceField.class);
                 var pcrf = (no.sikt.graphitron.rewrite.model.ChildField.ParticipantColumnReferenceField) f;
                 assertThat(pcrf.targetTable().tableName()).isEqualToIgnoringCase("film");
-                assertThat(pcrf.fkJoin().fk().sqlName()).isEqualToIgnoringCase("content_film_id_fkey");
+                assertThat(pcrf.pairs().fk().sqlName()).isEqualToIgnoringCase("content_film_id_fkey");
                 assertThat(pcrf.aliasName()).isEqualTo("FilmContent_rating");
                 assertThat(pcrf.column().sqlName()).isEqualToIgnoringCase("rating");
             }),
@@ -764,7 +764,7 @@ class GraphitronSchemaBuilderTest {
                 assertThat(tf.returnType().wrapper()).isInstanceOf(FieldWrapper.Single.class);
                 assertThat(tf.filters()).isEmpty();
                 assertThat(tf.joinPath()).hasSize(1);
-                assertThat(tf.joinPath().get(0)).isInstanceOf(JoinStep.FkJoin.class);
+                assertThat(tf.joinPath().get(0)).matches(TestFixtures::isFkHop, "FK-derived hop");
             }),
 
         LIST_RETURN_TYPE(
@@ -927,8 +927,8 @@ class GraphitronSchemaBuilderTest {
                 var f = (SplitTableField) schema.field("Customer", "storeAddress");
                 assertThat(f.returnType().wrapper()).isInstanceOf(FieldWrapper.Single.class);
                 assertThat(f.joinPath()).hasSize(2);
-                assertThat(f.joinPath().get(0)).isInstanceOf(JoinStep.FkJoin.class);
-                assertThat(f.joinPath().get(1)).isInstanceOf(JoinStep.FkJoin.class);
+                assertThat(f.joinPath().get(0)).matches(TestFixtures::isFkHop, "FK-derived hop");
+                assertThat(f.joinPath().get(1)).matches(TestFixtures::isFkHop, "FK-derived hop");
                 // Keyed off the first hop's FK source columns (customer.store_id), hop-count
                 // agnostic per FieldBuilder.deriveSplitQuerySource; the emitter bridges store -> address.
                 assertThat(f.sourceKey().reader()).isInstanceOf(SourceKey.Reader.ColumnRead.class);
@@ -950,7 +950,7 @@ class GraphitronSchemaBuilderTest {
             schema -> {
                 var tf = (TableField) schema.field("Film", "language");
                 assertThat(tf.joinPath()).hasSize(1);
-                assertThat(tf.joinPath().get(0)).isInstanceOf(JoinStep.FkJoin.class);
+                assertThat(tf.joinPath().get(0)).matches(TestFixtures::isFkHop, "FK-derived hop");
             }),
 
         IMPLICIT_REFERENCE_SPLIT_TABLE(
@@ -963,7 +963,7 @@ class GraphitronSchemaBuilderTest {
             schema -> {
                 var f = (SplitTableField) schema.field("Store", "customers");
                 assertThat(f.joinPath()).hasSize(1);
-                assertThat(f.joinPath().get(0)).isInstanceOf(JoinStep.FkJoin.class);
+                assertThat(f.joinPath().get(0)).matches(TestFixtures::isFkHop, "FK-derived hop");
             }),
 
         IMPLICIT_REFERENCE_SPLIT_LOOKUP_TABLE(
@@ -978,7 +978,7 @@ class GraphitronSchemaBuilderTest {
             schema -> {
                 var f = (SplitLookupTableField) schema.field("Store", "customers");
                 assertThat(f.joinPath()).hasSize(1);
-                assertThat(f.joinPath().get(0)).isInstanceOf(JoinStep.FkJoin.class);
+                assertThat(f.joinPath().get(0)).matches(TestFixtures::isFkHop, "FK-derived hop");
             }),
 
         IMPLICIT_REFERENCE_ZERO_FK(
@@ -1264,8 +1264,8 @@ class GraphitronSchemaBuilderTest {
             schema -> {
                 var field = (TableField) schema.field("City", "actor");
                 assertThat(field.joinPath()).hasSize(1);
-                assertThat(field.joinPath().get(0)).isInstanceOf(JoinStep.ConditionJoin.class);
-                var cj = (JoinStep.ConditionJoin) field.joinPath().get(0);
+                assertThat(field.joinPath().get(0)).matches(TestFixtures::isConditionHop, "condition-join hop");
+                var cj = TestFixtures.conditionHop(field.joinPath().get(0));
                 assertThat(cj.targetTable().tableName()).isEqualToIgnoringCase("actor");
                 assertThat(field.parentCorrelation())
                     .isInstanceOf(ParentCorrelation.OnConditionJoin.class);
@@ -1288,9 +1288,9 @@ class GraphitronSchemaBuilderTest {
                 var field = (TableField) schema.field("Film", "actors");
                 assertThat(field.joinPath()).hasSize(2);
                 var first = field.joinPath().get(0);
-                assertThat(first).isInstanceOf(JoinStep.FkJoin.class);
-                assertThat(((JoinStep.FkJoin) first).whereFilter())
-                    .as("{table:, condition:} folds the condition into FkJoin.whereFilter, not a ConditionJoin")
+                assertThat(first).matches(TestFixtures::isFkHop, "FK-derived hop");
+                assertThat(TestFixtures.fkHop(first).filter())
+                    .as("{table:, condition:} folds the condition into Hop.filter, not a condition-join hop")
                     .isNotNull();
             }),
 
@@ -1310,9 +1310,9 @@ class GraphitronSchemaBuilderTest {
                 var field = (TableField) schema.field("Film", "actors");
                 assertThat(field.joinPath()).hasSize(2);
                 var first = field.joinPath().get(0);
-                assertThat(first).isInstanceOf(JoinStep.FkJoin.class);
-                assertThat(((JoinStep.FkJoin) first).whereFilter())
-                    .as("{key:, condition:} folds the condition into FkJoin.whereFilter, not a ConditionJoin")
+                assertThat(first).matches(TestFixtures::isFkHop, "FK-derived hop");
+                assertThat(TestFixtures.fkHop(first).filter())
+                    .as("{key:, condition:} folds the condition into Hop.filter, not a condition-join hop")
                     .isNotNull();
             }),
 
@@ -1338,8 +1338,8 @@ class GraphitronSchemaBuilderTest {
                 var first = field.joinPath().get(0);
                 assertThat(first)
                     .as("intermediate-hop condition resolves to ConditionJoin")
-                    .isInstanceOf(JoinStep.ConditionJoin.class);
-                var cj = (JoinStep.ConditionJoin) first;
+                    .matches(TestFixtures::isConditionHop, "condition-join hop");
+                var cj = TestFixtures.conditionHop(first);
                 assertThat(cj.targetTable().tableName())
                     .as("intermediate ConditionJoin.targetTable resolved from the condition method's second parameter type")
                     .isEqualToIgnoringCase("film_actor");
@@ -1497,7 +1497,7 @@ class GraphitronSchemaBuilderTest {
             schema -> {
                 var field = (TableMethodField) schema.field("Film", "language");
                 assertThat(field.joinPath()).hasSize(1);
-                assertThat(field.joinPath().get(0)).isInstanceOf(JoinStep.FkJoin.class);
+                assertThat(field.joinPath().get(0)).matches(TestFixtures::isFkHop, "FK-derived hop");
             }),
 
         WITH_AUTO_FK_INFERENCE(
@@ -1512,8 +1512,8 @@ class GraphitronSchemaBuilderTest {
             schema -> {
                 var field = (TableMethodField) schema.field("Inventory", "film");
                 assertThat(field.joinPath()).hasSize(1);
-                assertThat(field.joinPath().get(0)).isInstanceOf(JoinStep.FkJoin.class);
-                assertThat(((JoinStep.FkJoin) field.joinPath().get(0)).targetTable().tableName())
+                assertThat(field.joinPath().get(0)).matches(TestFixtures::isFkHop, "FK-derived hop");
+                assertThat(TestFixtures.fkHop(field.joinPath().get(0)).targetTable().tableName())
                     .isEqualToIgnoringCase("film");
             }),
 
@@ -1531,10 +1531,10 @@ class GraphitronSchemaBuilderTest {
             schema -> {
                 var field = (TableMethodField) schema.field("Film", "actor");
                 assertThat(field.joinPath()).hasSize(1);
-                assertThat(field.joinPath().get(0)).isInstanceOf(JoinStep.ConditionJoin.class);
+                assertThat(field.joinPath().get(0)).matches(TestFixtures::isConditionHop, "condition-join hop");
                 // R232: ConditionJoin.targetTable() resolves at parse time from the field's
                 // return-type @table binding (terminal-hop arm of resolveConditionJoinTarget).
-                var cj = (JoinStep.ConditionJoin) field.joinPath().get(0);
+                var cj = TestFixtures.conditionHop(field.joinPath().get(0));
                 assertThat(cj.targetTable()).isNotNull();
                 assertThat(cj.targetTable().tableName()).isEqualToIgnoringCase("actor");
             });
@@ -1745,14 +1745,14 @@ class GraphitronSchemaBuilderTest {
         // joinPath inferred from that parent's own table -> address FK.
         var customerAddress = nestedTableField(schema, "Customer", "info", "address");
         var staffAddress = nestedTableField(schema, "Staff", "info", "address");
-        assertThat(((JoinStep.FkJoin) customerAddress.joinPath().get(0)).targetTable().tableName())
+        assertThat(TestFixtures.fkHop(customerAddress.joinPath().get(0)).targetTable().tableName())
             .isEqualToIgnoringCase("address");
-        assertThat(((JoinStep.FkJoin) staffAddress.joinPath().get(0)).targetTable().tableName())
+        assertThat(TestFixtures.fkHop(staffAddress.joinPath().get(0)).targetTable().tableName())
             .isEqualToIgnoringCase("address");
         // The two parents resolve through their own FK constraints: the joinPath is genuinely
         // per-parent, not shared.
-        assertThat(((JoinStep.FkJoin) customerAddress.joinPath().get(0)).fk().sqlName())
-            .isNotEqualTo(((JoinStep.FkJoin) staffAddress.joinPath().get(0)).fk().sqlName());
+        assertThat(TestFixtures.fkPairs(customerAddress.joinPath().get(0)).fk().sqlName())
+            .isNotEqualTo(TestFixtures.fkPairs(staffAddress.joinPath().get(0)).fk().sqlName());
 
         // The multi-parent shape check admits the shared TableField (no "not yet supported" error).
         var errors = new GraphitronSchemaValidator().validate(schema);
@@ -1811,7 +1811,7 @@ class GraphitronSchemaBuilderTest {
             schema -> {
                 var f = (ServiceTableField) schema.field("Film", "language");
                 assertThat(f.joinPath()).hasSize(1);
-                var fk = (JoinStep.FkJoin) f.joinPath().get(0);
+                var fk = TestFixtures.fkHop(f.joinPath().get(0));
                 // @service path passes null currentSourceSqlName into parsePathElement, so the
                 // {key:} branch falls back to the FK-side ("film") as the implicit traversal
                 // origin (forward-traversal default).
@@ -2374,7 +2374,7 @@ class GraphitronSchemaBuilderTest {
             schema -> {
                 var f = (RecordTableField) schema.field("FilmDetails", "inventories");
                 assertThat(f.joinPath()).hasSize(1);
-                assertThat(f.joinPath().get(0)).isInstanceOf(JoinStep.FkJoin.class);
+                assertThat(f.joinPath().get(0)).matches(TestFixtures::isFkHop, "FK-derived hop");
             }) {
             @Override public Set<Class<?>> variants() { return Set.of(RecordTableField.class); }
         },
@@ -2395,7 +2395,7 @@ class GraphitronSchemaBuilderTest {
             schema -> {
                 var f = (RecordLookupTableField) schema.field("FilmDetails", "inventories");
                 assertThat(f.joinPath()).hasSize(1);
-                assertThat(f.joinPath().get(0)).isInstanceOf(JoinStep.FkJoin.class);
+                assertThat(f.joinPath().get(0)).matches(TestFixtures::isFkHop, "FK-derived hop");
                 assertThat(f.sourceKey().reader()).isInstanceOf(SourceKey.Reader.ColumnRead.class);
             }) {
             @Override public Set<Class<?>> variants() { return Set.of(RecordLookupTableField.class); }
@@ -3485,7 +3485,7 @@ class GraphitronSchemaBuilderTest {
             schema -> {
                 var f = (RecordTableMethodField) schema.field("FilmDetails", "inventories");
                 assertThat(f.joinPath()).hasSize(1);
-                assertThat(f.joinPath().get(0)).isInstanceOf(JoinStep.FkJoin.class);
+                assertThat(f.joinPath().get(0)).matches(TestFixtures::isFkHop, "FK-derived hop");
                 assertThat(f.sourceKey().reader()).isInstanceOf(SourceKey.Reader.ColumnRead.class);
                 assertThat(f.sourceKey().cardinality()).isEqualTo(SourceKey.Cardinality.MANY);
                 assertThat(f.method().methodName()).isEqualTo("getInventory");
@@ -3509,7 +3509,7 @@ class GraphitronSchemaBuilderTest {
             schema -> {
                 var f = (RecordTableMethodField) schema.field("FilmDetails", "language");
                 assertThat(f.joinPath()).hasSize(1);
-                assertThat(f.joinPath().get(0)).isInstanceOf(JoinStep.FkJoin.class);
+                assertThat(f.joinPath().get(0)).matches(TestFixtures::isFkHop, "FK-derived hop");
                 assertThat(f.sourceKey().reader()).isInstanceOf(SourceKey.Reader.ColumnRead.class);
             }),
 
@@ -5176,7 +5176,7 @@ class GraphitronSchemaBuilderTest {
                 var crf = (no.sikt.graphitron.rewrite.model.InputField.ColumnReferenceField) refField;
                 assertThat(crf.name()).isEqualTo("languageName");
                 assertThat(crf.joinPath()).hasSize(1);
-                assertThat(crf.joinPath().get(0)).isInstanceOf(no.sikt.graphitron.rewrite.model.JoinStep.FkJoin.class);
+                assertThat(crf.joinPath().get(0)).matches(TestFixtures::isFkHop, "FK-derived hop");
                 assertThat(crf.column().javaName()).isEqualTo("NAME");
             }) {
             @Override public Set<Class<?>> variants() { return Set.of(InputField.ColumnReferenceField.class); }
@@ -9936,7 +9936,7 @@ class GraphitronSchemaBuilderTest {
             schema -> {
                 var tf = (TableField) schema.field("Film", "language");
                 assertThat(tf.joinPath()).hasSize(1);
-                var fk = (JoinStep.FkJoin) tf.joinPath().get(0);
+                var fk = TestFixtures.fkHop(tf.joinPath().get(0));
                 assertThat(fk.alias()).isEqualTo("language_0");
             }),
 
@@ -9955,8 +9955,8 @@ class GraphitronSchemaBuilderTest {
             schema -> {
                 var tf = (TableField) schema.field("Customer", "city");
                 assertThat(tf.joinPath()).hasSize(2);
-                var step0 = (JoinStep.FkJoin) tf.joinPath().get(0);
-                var step1 = (JoinStep.FkJoin) tf.joinPath().get(1);
+                var step0 = TestFixtures.fkHop(tf.joinPath().get(0));
+                var step1 = TestFixtures.fkHop(tf.joinPath().get(1));
                 assertThat(step0.alias()).isEqualTo("city_0");
                 assertThat(step1.alias()).isEqualTo("city_1");
             }),
@@ -9972,8 +9972,8 @@ class GraphitronSchemaBuilderTest {
             type Query { film: Film }
             """,
             schema -> {
-                var fk1 = (JoinStep.FkJoin) ((TableField) schema.field("Film", "language")).joinPath().get(0);
-                var fk2 = (JoinStep.FkJoin) ((TableField) schema.field("Film", "originalLanguage")).joinPath().get(0);
+                var fk1 = TestFixtures.fkHop(((TableField) schema.field("Film", "language")).joinPath().get(0));
+                var fk2 = TestFixtures.fkHop(((TableField) schema.field("Film", "originalLanguage")).joinPath().get(0));
                 assertThat(fk1.alias()).isEqualTo("language_0");
                 assertThat(fk2.alias()).isEqualTo("originalLanguage_0");
                 // The two calls to Language.subselectMany/subselectOne in a Film query will

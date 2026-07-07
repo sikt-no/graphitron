@@ -15,6 +15,7 @@ import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.JoinStep;
+import no.sikt.graphitron.rewrite.model.On;
 import no.sikt.graphitron.rewrite.model.SourceKey;
 import no.sikt.graphitron.rewrite.model.TableRef;
 import no.sikt.graphitron.rewrite.model.WhereFilter;
@@ -488,7 +489,8 @@ public class TypeClassGenerator {
                 }
                 case ChildField.TableMethodField tmf -> {
                     var path = tmf.joinPath();
-                    if (path.size() == 1 && path.get(0) instanceof JoinStep.FkJoin fk) {
+                    if (path.size() == 1 && path.get(0) instanceof JoinStep.Hop hop
+                            && hop.on() instanceof On.ColumnPairs fk) {
                         columns.addAll(fk.sourceSideColumns());
                     }
                 }

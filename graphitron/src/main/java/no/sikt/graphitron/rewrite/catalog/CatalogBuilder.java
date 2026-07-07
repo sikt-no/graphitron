@@ -236,7 +236,7 @@ public final class CatalogBuilder {
                 new FieldClassification.ParticipantCrossTable(
                     f.targetTable() != null ? f.targetTable().tableName() : null,
                     f.column().sqlName(),
-                    f.fkJoin() != null && f.fkJoin().fk() != null ? f.fkJoin().fk().sqlName() : null,
+                    f.hop() != null ? f.pairs().fk().sqlName() : null,
                     f.aliasName());
             case ChildField.CompositeColumnField f ->
                 new FieldClassification.CompositeColumn(parentTableName(f, schema), columnSqlNames(f.columns()));
@@ -549,8 +549,13 @@ public final class CatalogBuilder {
         if (joinPath == null || joinPath.isEmpty()) return null;
         for (int i = joinPath.size() - 1; i >= 0; i--) {
             var step = joinPath.get(i);
-            if (step instanceof JoinStep.WithTarget t && t.targetTable() != null) {
-                return t.targetTable().tableName();
+            var stepTarget = switch (step) {
+                case JoinStep.Hop h when h.on() instanceof no.sikt.graphitron.rewrite.model.On.ColumnPairs -> h.targetTable();
+                case JoinStep.LiftedHop lh -> lh.targetTable();
+                default -> null;
+            };
+            if (stepTarget != null) {
+                return stepTarget.tableName();
             }
         }
         return null;

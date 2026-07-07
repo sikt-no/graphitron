@@ -10,7 +10,7 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Slot-orientation invariant tests for {@link JoinStep.FkJoin} and {@link JoinStep.LiftedHop}.
+ * Slot-orientation invariant tests for {@link On.ColumnPairs} and {@link JoinStep.LiftedHop}.
  *
  * <p>Asserts the structural contract the slot lift establishes: each {@link JoinSlot} carries
  * a {@code sourceSide()} column on the hop's source table and a {@code targetSide()} column on
@@ -65,11 +65,12 @@ class JoinSlotOrientationTest {
         var slots = List.of(
             new JoinSlot.FkSlot(PROJECT_ID, PROJECT_ID),
             new JoinSlot.FkSlot(ORG_CODE, ORG_CODE));
-        var fkJoin = new JoinStep.FkJoin(
-            TestFixtures.foreignKeyRef("project_note_project_fkey"), parentTable, childTable,
-            slots, null, "notes_0");
+        var hop = new JoinStep.Hop(new TableExpr.Catalog(childTable),
+            new On.ColumnPairs(TestFixtures.foreignKeyRef("project_note_project_fkey"), slots),
+            parentTable, null, "notes_0");
+        var fkJoin = (On.ColumnPairs) hop.on();
 
-        // Direction-blind reads through WithTarget.slots() / sourceSideColumns() / targetSideColumns().
+        // Direction-blind reads through HasSlots.slots() / sourceSideColumns() / targetSideColumns().
         assertThat(fkJoin.slotCount()).isEqualTo(2);
         assertThat(fkJoin.sourceSideColumns())
             .as("source-side columns sit on parent table in the FK's own declared order")
@@ -107,18 +108,24 @@ class JoinSlotOrientationTest {
     }
 
     @Test
-    void withTarget_slots_iterableNotList_compileTimeBan() {
+    void hasSlots_slots_iterableNotList_compileTimeBan() {
         // The capability-level slots() accessor returns Iterable<? extends JoinSlot>, not List —
         // positional reads (.get(i), .getFirst(), .subList(...)) are compile errors at any
-        // emitter that goes through WithTarget. Cardinality stays available through slotCount().
-        // This test pins that contract by binding the result to Iterable explicitly; if WithTarget
-        // ever widens slots()'s return type the binding here breaks.
-        var hop = new JoinStep.LiftedHop(tableRef("film"),
+        // emitter that goes through HasSlots. Cardinality stays available through slotCount().
+        // This test pins that contract by binding the result to Iterable explicitly; if HasSlots
+        // ever widens slots()'s return type the binding here breaks. Both slot-carrying types
+        // (On.ColumnPairs and the transitional LiftedHop) share the capability.
+        var lifted = new JoinStep.LiftedHop(tableRef("film"),
             List.of(new JoinSlot.LifterSlot(new ColumnRef("film_id", "FILM_ID", "java.lang.Integer"))),
             "f_0");
-        JoinStep.WithTarget asCapability = hop;
+        HasSlots asCapability = lifted;
         Iterable<? extends JoinSlot> slots = asCapability.slots();
         assertThat(slots).hasSize(1);
         assertThat(asCapability.slotCount()).isEqualTo(1);
+
+        HasSlots pairs = new On.ColumnPairs(
+            TestFixtures.foreignKeyRef("project_note_project_fkey"),
+            List.of(new JoinSlot.FkSlot(PROJECT_ID, PROJECT_ID)));
+        assertThat(pairs.slotCount()).isEqualTo(1);
     }
 }

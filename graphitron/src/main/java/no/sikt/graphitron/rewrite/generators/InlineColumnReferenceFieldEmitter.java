@@ -125,15 +125,15 @@ public final class InlineColumnReferenceFieldEmitter {
         var where = CodeBlock.builder();
         switch (crf.parentCorrelation()) {
             case ParentCorrelation.OnFkSlots fk ->
-                where.add("$L", JoinPathEmitter.emitCorrelationWhere((JoinStep.FkJoin) fk.firstHop(), firstAlias, parentAlias));
+                where.add("$L", JoinPathEmitter.emitCorrelationWhere(fk.slots(), firstAlias, parentAlias));
             case ParentCorrelation.OnConditionJoin cj ->
-                where.add("$L", JoinPathEmitter.emitTwoArgMethodCall(cj.firstHop().condition(), parentAlias, firstAlias));
+                where.add("$L", JoinPathEmitter.emitTwoArgMethodCall(cj.condition(), parentAlias, firstAlias));
         }
         for (JoinStep step : path) {
-            if (step instanceof JoinStep.FkJoin fk && fk.whereFilter() != null) {
-                String srcAlias = resolveSourceAlias(path, aliases, fk, parentAlias);
+            if (step instanceof JoinStep.Hop hop && hop.filter() != null) {
+                String srcAlias = resolveSourceAlias(path, aliases, hop, parentAlias);
                 where.add(".and($L)",
-                    JoinPathEmitter.emitTwoArgMethodCall(fk.whereFilter(), srcAlias, aliasForStep(path, aliases, fk)));
+                    JoinPathEmitter.emitTwoArgMethodCall(hop.filter(), srcAlias, aliasForStep(path, aliases, hop)));
             }
         }
         sel.add("\n        .where($L)", where.build());
@@ -144,7 +144,7 @@ public final class InlineColumnReferenceFieldEmitter {
         return sel.build();
     }
 
-    private static String resolveSourceAlias(List<JoinStep> path, List<String> aliases, JoinStep.FkJoin step, String parentAlias) {
+    private static String resolveSourceAlias(List<JoinStep> path, List<String> aliases, JoinStep.Hop step, String parentAlias) {
         int idx = path.indexOf(step);
         return idx == 0 ? parentAlias : aliases.get(idx - 1);
     }

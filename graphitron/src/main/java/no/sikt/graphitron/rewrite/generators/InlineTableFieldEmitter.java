@@ -193,16 +193,16 @@ public final class InlineTableFieldEmitter {
             String firstAlias = aliases.get(0);
             switch (tf.parentCorrelation()) {
                 case ParentCorrelation.OnFkSlots fk ->
-                    where.add("$L", JoinPathEmitter.emitCorrelationWhere((JoinStep.FkJoin) fk.firstHop(), firstAlias, parentAlias));
+                    where.add("$L", JoinPathEmitter.emitCorrelationWhere(fk.slots(), firstAlias, parentAlias));
                 case ParentCorrelation.OnConditionJoin cj ->
-                    where.add("$L", JoinPathEmitter.emitTwoArgMethodCall(cj.firstHop().condition(), parentAlias, firstAlias));
+                    where.add("$L", JoinPathEmitter.emitTwoArgMethodCall(cj.condition(), parentAlias, firstAlias));
             }
         }
         for (JoinStep step : path) {
-            if (step instanceof JoinStep.FkJoin fk && fk.whereFilter() != null) {
-                String srcAlias = resolveSourceAlias(path, aliases, fk, parentAlias);
+            if (step instanceof JoinStep.Hop hop && hop.filter() != null) {
+                String srcAlias = resolveSourceAlias(path, aliases, hop, parentAlias);
                 where.add("\n        .and($L)",
-                    JoinPathEmitter.emitTwoArgMethodCall(fk.whereFilter(), srcAlias, aliasForStep(path, aliases, fk)));
+                    JoinPathEmitter.emitTwoArgMethodCall(hop.filter(), srcAlias, aliasForStep(path, aliases, hop)));
             }
         }
         for (WhereFilter f : tf.filters()) {
@@ -240,8 +240,8 @@ public final class InlineTableFieldEmitter {
         return sel.build();
     }
 
-    /** Source alias for a hop's whereFilter call: the previous hop's alias, or the parent alias for step 0. */
-    private static String resolveSourceAlias(List<JoinStep> path, List<String> aliases, JoinStep.FkJoin step, String parentAlias) {
+    /** Source alias for a hop's filter call: the previous hop's alias, or the parent alias for step 0. */
+    private static String resolveSourceAlias(List<JoinStep> path, List<String> aliases, JoinStep.Hop step, String parentAlias) {
         int idx = path.indexOf(step);
         return idx == 0 ? parentAlias : aliases.get(idx - 1);
     }

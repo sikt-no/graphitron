@@ -7,6 +7,7 @@ import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.JoinSlot;
 import no.sikt.graphitron.rewrite.model.JoinStep;
+import no.sikt.graphitron.rewrite.model.On;
 import no.sikt.graphitron.rewrite.model.LifterRef;
 import no.sikt.graphitron.rewrite.model.LoaderRegistration;
 import no.sikt.graphitron.rewrite.model.Rejection;
@@ -276,15 +277,15 @@ final class SourceRowDirectiveResolver {
                     + "case or supply at least one path element"));
             }
             JoinStep firstStep = parsed.elements().getFirst();
-            if (!(firstStep instanceof JoinStep.WithTarget wt)) {
+            if (!(firstStep instanceof JoinStep.Hop firstHop
+                    && firstHop.on() instanceof On.ColumnPairs firstPairs)) {
                 return new Resolved.Rejected(Rejection.structural(
                     "@sourceRow on '" + parentTypeName + "." + fieldName
                     + "': @reference's first element resolved to a ConditionJoin which has no "
                     + "source-side columns; @sourceRow's first hop must be an FK"));
             }
-            String fkLabel = firstStep instanceof JoinStep.FkJoin fk
-                ? fk.fk().constantName() : "(non-FK first hop)";
-            derivation = new Derivation.Path(parsed.elements(), wt.sourceSideColumns(), fkLabel);
+            String fkLabel = firstPairs.fk().constantName();
+            derivation = new Derivation.Path(parsed.elements(), firstPairs.sourceSideColumns(), fkLabel);
         } else {
             // No @reference: read the leaf target's PK columns directly. The hop is a single
             // column-equality JOIN where source-side and target-side fold onto the same column.

@@ -333,11 +333,20 @@ public sealed interface ChildField extends OutputField
         String name,
         SourceLocation location,
         ColumnRef column,
-        JoinStep.FkJoin fkJoin,
+        JoinStep.Hop hop,
         String aliasName
     ) implements ChildField {
-        /** The cross table joined to project this field — equivalent to {@code fkJoin().targetTable()}. */
-        public TableRef targetTable() { return fkJoin.targetTable(); }
+        public ParticipantColumnReferenceField {
+            if (!(hop.on() instanceof On.ColumnPairs)) {
+                throw new IllegalArgumentException(
+                    "ParticipantColumnReferenceField.hop must be FK-derived (On.ColumnPairs); got "
+                    + hop.on());
+            }
+        }
+        /** The FK-derived column pairs of the single cross-table hop. */
+        public On.ColumnPairs pairs() { return (On.ColumnPairs) hop.on(); }
+        /** The cross table joined to project this field — equivalent to {@code hop().targetTable()}. */
+        public TableRef targetTable() { return hop.targetTable(); }
         @Override public DomainReturnType domainReturnType() {
             return new DomainReturnType.Plain(ClassName.bestGuess(column.columnClass()));
         }

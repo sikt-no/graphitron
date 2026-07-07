@@ -42,6 +42,7 @@ import no.sikt.graphitron.rewrite.model.GraphitronType.UnclassifiedType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.UnionType;
 import no.sikt.graphitron.rewrite.model.InputField;
 import no.sikt.graphitron.rewrite.model.JoinStep;
+import no.sikt.graphitron.rewrite.model.On;
 import no.sikt.graphitron.rewrite.model.ParticipantRef;
 import no.sikt.graphitron.rewrite.model.Rejection;
 import no.sikt.graphitron.rewrite.model.ScalarResolution;
@@ -818,7 +819,8 @@ class TypeBuilder {
             var parsed = ctx.parsePath(fieldDef, fieldName, interfaceTable.tableName(), null);
             if (parsed.hasError()) continue;
             if (parsed.elements().size() != 1) continue;
-            if (!(parsed.elements().get(0) instanceof JoinStep.FkJoin fk)) continue;
+            if (!(parsed.elements().get(0) instanceof JoinStep.Hop fk
+                && fk.on() instanceof On.ColumnPairs)) continue;
             if (fk.targetTable().denotesSameTableAs(interfaceTable)) continue;
 
             // Resolve the column on the target table that the field maps to. @field(name:) is the
@@ -870,7 +872,7 @@ class TypeBuilder {
      * Resolves an R389 joined-table inheritance participant: a participant whose own {@code @table}
      * ({@code detailTable}) is distinct from the discriminated {@code baseTable}. Its inherited
      * (base-resident) fields carry a parent-{@code @reference} back to the base; the single-hop
-     * {@link JoinStep.FkJoin} they name is the participant's child&rarr;parent hop, stored on the
+     * FK-derived {@link JoinStep.Hop} they name is the participant's child&rarr;parent hop, stored on the
      * {@link ParticipantRef.JoinedTableBound}.
      *
      * <p>Two invariants are checked here (the catalog is in scope; the validator has none, so it reads
@@ -891,14 +893,15 @@ class TypeBuilder {
     private ParticipantRef resolveJoinedTableParticipant(
             String typeName, TableRef detailTable, TableRef baseTable, String discriminatorValue) {
         var participantObj = ctx.schema.getObjectType(typeName);
-        JoinStep.FkJoin hop = null;
+        JoinStep.Hop hop = null;
         boolean sawNonBaseReference = false;
         if (participantObj != null) {
             for (var fieldDef : participantObj.getFieldDefinitions()) {
                 if (!fieldDef.hasAppliedDirective(DIR_REFERENCE)) continue;
                 var parsed = ctx.parsePath(fieldDef, fieldDef.getName(), detailTable.tableName(), null);
                 if (parsed.hasError() || parsed.elements().size() != 1) continue;
-                if (!(parsed.elements().get(0) instanceof JoinStep.FkJoin fk)) continue;
+                if (!(parsed.elements().get(0) instanceof JoinStep.Hop fk
+                    && fk.on() instanceof On.ColumnPairs)) continue;
                 if (!fk.targetTable().denotesSameTableAs(baseTable)) {
                     sawNonBaseReference = true;
                     continue;
@@ -931,7 +934,7 @@ class TypeBuilder {
             return null;
         }
 
-        var detailFkColumns = hop.sourceSideColumns().stream()
+        var detailFkColumns = ((On.ColumnPairs) hop.on()).sourceSideColumns().stream()
             .map(c -> c.sqlName().toLowerCase(java.util.Locale.ROOT))
             .collect(java.util.stream.Collectors.toSet());
         var detailPk = ctx.catalog.candidateKeys(detailTable.tableName()).stream()
@@ -941,7 +944,7 @@ class TypeBuilder {
                 .collect(java.util.stream.Collectors.toSet()))
             .orElse(java.util.Set.of());
         if (detailPkColumns.isEmpty() || !detailPkColumns.equals(detailFkColumns)) {
-            String fkColsText = hop.sourceSideColumns().stream().map(ColumnRef::sqlName).toList().toString();
+            String fkColsText = ((On.ColumnPairs) hop.on()).sourceSideColumns().stream().map(ColumnRef::sqlName).toList().toString();
             String pkColsText = detailPk.map(k -> k.columns().stream()
                 .map(JooqCatalog.ColumnEntry::sqlName).toList().toString()).orElse("absent");
             ctx.addDiagnostic(ValidationError.forType(typeName,

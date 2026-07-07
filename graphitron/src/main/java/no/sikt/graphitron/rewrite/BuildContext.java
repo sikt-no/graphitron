@@ -33,6 +33,7 @@ import no.sikt.graphitron.rewrite.model.JoinConditionRef;
 import no.sikt.graphitron.rewrite.model.JoinSlot;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.Rejection;
+import no.sikt.graphitron.rewrite.model.TableExpr;
 import no.sikt.graphitron.rewrite.model.TableRef;
 import no.sikt.graphitron.rewrite.model.GraphitronType.InterfaceType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.NodeType;
@@ -1235,7 +1236,7 @@ class BuildContext {
             if (fks.size() == 1) {
                 var stepResolution = synthesizeFkJoin(fks.get(0), startSqlTableName, fieldName, 0, null, /*selfRefFkOnSource=*/!isList);
                 switch (stepResolution) {
-                    case FkJoinResolution.Resolved r -> resolvedElements.add(r.fkJoin());
+                    case FkJoinResolution.Resolved r -> resolvedElements.add(r.hop());
                     case FkJoinResolution.UnknownTable u -> {
                         return new ParsedPath(List.of(),
                             unknownTableRejection(u.failure(), u.requestedName()).message(),
@@ -1327,12 +1328,12 @@ class BuildContext {
     }
 
     /**
-     * Builds an {@link FkJoin} step for a foreign key that connects {@code sourceSqlName} to some
+     * Builds an FK-derived {@link JoinStep.Hop} for a foreign key that connects {@code sourceSqlName} to some
      * other table, or surfaces the catalog-failure shape when one of the resolution inputs
      * (endpoint table, FK constraint name) is missing. Traversal direction is inferred from which
      * side of the FK the source name touches (case-insensitive). The step alias follows the
      * explicit-path convention, {@code fieldName + "_" + stepIndex}, so inferred and explicit
-     * position-0 steps produce record-equivalent {@code FkJoin} values for the same shape.
+     * position-0 steps produce record-equivalent hop values for the same shape.
      *
      * <p>{@code sourceSqlName} must be non-null; callers gate inference on that precondition.
      * {@code whereFilter} is {@code null} for pure inference; the {@code {table:}} and
@@ -1384,8 +1385,10 @@ class BuildContext {
         TableRef originTable = originResolved.entry().toTableRef(sourceSqlName);
         List<JoinSlot.FkSlot> slots = resolveFkSlots(f, fkOnSource);
         String alias = fieldName + "_" + stepIndex;
-        return new FkJoinResolution.Resolved(new FkJoin(fkResolved.ref(), originTable,
-            targetTable, slots, whereFilter, alias));
+        return new FkJoinResolution.Resolved(new JoinStep.Hop(
+            new TableExpr.Catalog(targetTable),
+            new On.ColumnPairs(fkResolved.ref(), slots),
+            originTable, whereFilter, alias));
     }
 
     /**
@@ -1440,8 +1443,11 @@ class BuildContext {
      * {@link UnknownForeignKey#fkName} routes through {@link #unknownForeignKeyRejection}.
      */
     public sealed interface FkJoinResolution {
-        /** Both endpoint tables and the FK name resolved; the {@link FkJoin} is ready. */
-        record Resolved(FkJoin fkJoin) implements FkJoinResolution {}
+        /**
+         * Both endpoint tables and the FK name resolved; the FK-derived {@link JoinStep.Hop}
+         * (an {@link On.ColumnPairs} join) is ready.
+         */
+        record Resolved(JoinStep.Hop hop) implements FkJoinResolution {}
 
         /**
          * One of the FK's endpoint tables did not resolve. {@code requestedName} is the SQL
@@ -1459,11 +1465,11 @@ class BuildContext {
         record UnknownForeignKey(String fkName) implements FkJoinResolution {}
 
         /**
-         * Project to {@link Optional}{@code <FkJoin>} for callers that ignore the failure
+         * Project to {@link Optional}{@code <JoinStep.Hop>} for callers that ignore the failure
          * sub-taxonomy. Diagnostic-bearing callers must switch on the variant instead.
          */
-        default Optional<FkJoin> asFkJoin() {
-            return this instanceof Resolved r ? Optional.of(r.fkJoin()) : Optional.empty();
+        default Optional<JoinStep.Hop> asHop() {
+            return this instanceof Resolved r ? Optional.of(r.hop()) : Optional.empty();
         }
     }
 
@@ -1561,8 +1567,8 @@ class BuildContext {
             var keyResolution = synthesizeFkJoin(f, effectiveSourceSqlName, fieldName, stepIndex, whereFilter, /*selfRefFkOnSource=*/!isList);
             switch (keyResolution) {
                 case FkJoinResolution.Resolved r -> {
-                    out.add(r.fkJoin());
-                    validateWhereFilterParamTables(r.fkJoin(), errors);
+                    out.add(r.hop());
+                    validateWhereFilterParamTables(r.hop(), errors);
                 }
                 case FkJoinResolution.UnknownTable u ->
                     errors.add(unknownTableRejection(u.failure(), u.requestedName()).message());
@@ -1593,8 +1599,8 @@ class BuildContext {
             var tableStepResolution = synthesizeFkJoin(fks.get(0), currentSourceSqlName, fieldName, stepIndex, whereFilter, /*selfRefFkOnSource=*/!isList);
             switch (tableStepResolution) {
                 case FkJoinResolution.Resolved r -> {
-                    out.add(r.fkJoin());
-                    validateWhereFilterParamTables(r.fkJoin(), errors);
+                    out.add(r.hop());
+                    validateWhereFilterParamTables(r.hop(), errors);
                 }
                 case FkJoinResolution.UnknownTable u ->
                     errors.add(unknownTableRejection(u.failure(), u.requestedName()).message());
@@ -1617,9 +1623,20 @@ class BuildContext {
             var targetResolution = resolveConditionJoinTarget(res.ref(), isTerminal, terminalTargetSqlName);
             switch (targetResolution) {
                 case ConditionJoinTargetResolution.Resolved r -> {
-                    out.add(new ConditionJoin(new JoinConditionRef(res.ref()), r.target(), alias));
+                    // originTable is kept mechanically on every hop (pre-resolved over
+                    // re-derived); null when the source is not table-backed.
+                    TableRef conditionOrigin = null;
+                    if (currentSourceSqlName != null
+                        && catalog.findTable(currentSourceSqlName)
+                            instanceof JooqCatalog.TableResolution.Resolved originResolved) {
+                        conditionOrigin = originResolved.entry().toTableRef(currentSourceSqlName);
+                    }
+                    out.add(new JoinStep.Hop(
+                        new TableExpr.Catalog(r.target()),
+                        new On.Predicate(new JoinConditionRef(res.ref())),
+                        conditionOrigin, null, alias));
                     // Check 2 (R379): the ON-clause method is called method(sourceAlias, targetAlias).
-                    // Source is the table entering this hop; target is the resolved ConditionJoin
+                    // Source is the table entering this hop; target is the resolved condition-join
                     // target (return table for a terminal hop, second-parameter-resolved otherwise).
                     validateConditionParamTables(res.ref(), currentSourceSqlName, r.target().tableName(), errors);
                 }
@@ -1685,11 +1702,7 @@ class BuildContext {
             return new ParentCorrelationResolution.Resolved(null);
         }
         JoinStep first = joinPath.get(0);
-        if (first instanceof JoinStep.WithTarget wt) {
-            return new ParentCorrelationResolution.Resolved(
-                new no.sikt.graphitron.rewrite.model.ParentCorrelation.OnFkSlots(wt));
-        }
-        if (first instanceof JoinStep.ConditionJoin cj) {
+        if (first instanceof JoinStep.Hop hop && hop.on() instanceof On.Predicate) {
             if (parentTable == null) {
                 return new ParentCorrelationResolution.AuthorError(
                     "condition-only first hop on `@reference` path with no parent `@table` "
@@ -1699,11 +1712,12 @@ class BuildContext {
             }
             return new ParentCorrelationResolution.Resolved(
                 new no.sikt.graphitron.rewrite.model.ParentCorrelation.OnConditionJoin(
-                    cj, parentTable, parentPkCols));
+                    hop, parentTable, parentPkCols));
         }
-        throw new IllegalStateException(
-            "JoinStep permit list exhausted unexpectedly at buildParentCorrelation: "
-            + first.getClass().getName());
+        // Everything else carries pairable slots (a Hop with On.ColumnPairs, or a LiftedHop);
+        // the OnFkSlots compact constructor is the structural guard.
+        return new ParentCorrelationResolution.Resolved(
+            new no.sikt.graphitron.rewrite.model.ParentCorrelation.OnFkSlots(first));
     }
 
     /**
@@ -1776,15 +1790,15 @@ class BuildContext {
     }
 
     /**
-     * Check 2 (R379) for an {@link FkJoin#whereFilter()}: the filter method is emitted as
+     * Check 2 (R379) for a {@link JoinStep.Hop#filter()}: the filter method is emitted as
      * {@code filter(sourceAlias, targetAlias)} by {@code JoinPathEmitter.emitTwoArgMethodCall},
-     * with source = the FK hop's {@code originTable} and target = its {@code targetTable}, both
+     * with source = the hop's {@code originTable} and target = its {@code targetTable}, both
      * already resolved by {@code synthesizeFkJoin}. A no-op when the hop carries no filter.
      */
-    private void validateWhereFilterParamTables(FkJoin fkJoin, List<String> errors) {
-        if (fkJoin.whereFilter() == null) return;
-        validateConditionParamTables(fkJoin.whereFilter().method(),
-            fkJoin.originTable().tableName(), fkJoin.targetTable().tableName(), errors);
+    private void validateWhereFilterParamTables(JoinStep.Hop hop, List<String> errors) {
+        if (hop.filter() == null) return;
+        validateConditionParamTables(hop.filter().method(),
+            hop.originTable().tableName(), hop.targetTable().tableName(), errors);
     }
 
     /**
@@ -2201,7 +2215,7 @@ class BuildContext {
                         return new InputFieldResolution.Unresolved(name, null,
                             unknownTableRejection(shimTargetResolution, targetTableOpt.get()).message());
                     }
-                    List<JoinStep> shimJoinPath = List.of(shimFkResolved.fkJoin());
+                    List<JoinStep> shimJoinPath = List.of(shimFkResolved.hop());
                     // Single-hop FK shim path: the lifted tuple is the first hop's source-side
                     // columns by construction (length-1 path; lift predicate is vacuous).
                     return buildInputNodeIdReference(
@@ -2209,7 +2223,9 @@ class BuildContext {
                         shimTargetResolved.entry().toTableRef(targetTableOpt.get()),
                         targetTypeOpt.get(), targetTableOpt.get(),
                         shimTargetMeta.get().typeId(), shimTargetMeta.get().keyColumns(),
-                        shimJoinPath, shimFkResolved.fkJoin().sourceSideColumns(), shimRefCond);
+                        shimJoinPath,
+                        ((On.ColumnPairs) shimFkResolved.hop().on()).sourceSideColumns(),
+                        shimRefCond);
                 }
             }
         }

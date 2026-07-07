@@ -15,6 +15,7 @@ import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.JoinStep;
+import no.sikt.graphitron.rewrite.model.On;
 import no.sikt.graphitron.rewrite.model.ParticipantRef;
 import no.sikt.graphitron.rewrite.model.QueryField;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
@@ -1154,7 +1155,8 @@ public final class MultiTablePolymorphicEmitter {
             Map<String, List<JoinStep>> participantJoinPaths) {
         var path = participantJoinPaths.get(participant.typeName());
         if (path == null || path.isEmpty()) return null;
-        if (!(path.get(0) instanceof JoinStep.FkJoin fkJoin)) return null;
+        if (!(path.get(0) instanceof JoinStep.Hop hop
+                && hop.on() instanceof On.ColumnPairs fkJoin)) return null;
         if (fkJoin.slotCount() == 0) return null;
 
         String tableAlias = "stage1_" + participant.typeName();
@@ -1741,7 +1743,7 @@ public final class MultiTablePolymorphicEmitter {
     private static CodeBlock batchedBranchJoinPredicate(ParticipantRef.TableBound participant,
             Map<String, List<JoinStep>> participantJoinPaths, TableRef parentKeyOwnerTable) {
         var path = participantJoinPaths.get(participant.typeName());
-        var fkJoin = (JoinStep.FkJoin) path.get(0);
+        var fkJoin = (On.ColumnPairs) ((JoinStep.Hop) path.get(0)).on();
         String tableAlias = "stage1_" + participant.typeName();
         var b = CodeBlock.builder();
         int i = 0;

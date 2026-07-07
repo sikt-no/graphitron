@@ -11,6 +11,8 @@ import no.sikt.graphitron.rewrite.model.JoinSlot;
 import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.LoaderRegistration;
 import no.sikt.graphitron.rewrite.model.MethodRef;
+import no.sikt.graphitron.rewrite.model.On;
+import no.sikt.graphitron.rewrite.model.TableExpr;
 import no.sikt.graphitron.rewrite.model.ParamSource;
 import no.sikt.graphitron.rewrite.model.ParentCorrelation;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
@@ -273,8 +275,11 @@ public final class TestFixtures {
                                                     List<JoinStep> joinPath) {
         TableRef target = null;
         if (!joinPath.isEmpty()) {
-            JoinStep last = joinPath.get(joinPath.size() - 1);
-            if (last instanceof JoinStep.WithTarget wt) target = wt.targetTable();
+            target = switch (joinPath.get(joinPath.size() - 1)) {
+                case JoinStep.Hop hop when hop.on() instanceof On.ColumnPairs -> hop.targetTable();
+                case JoinStep.LiftedHop lh -> lh.targetTable();
+                default -> null;
+            };
         }
         return new SourceKey(target, parentKeyColumns, List.of(), wrap,
             rt.wrapper().isList() ? SourceKey.Cardinality.MANY : SourceKey.Cardinality.ONE,
@@ -496,10 +501,10 @@ public final class TestFixtures {
      * {@code slot.targetSide()} — exactly the FK-on-source case the spec migration table covers,
      * kept mechanical for tests that don't care about the orientation specifically.
      */
-    public static JoinStep.FkJoin fkJoin(ForeignKeyRef fk, TableRef originTable,
-                                          List<ColumnRef> sourceColumns,
-                                          TableRef targetTable, List<ColumnRef> targetColumns,
-                                          JoinConditionRef whereFilter, String alias) {
+    public static JoinStep.Hop fkJoin(ForeignKeyRef fk, TableRef originTable,
+                                       List<ColumnRef> sourceColumns,
+                                       TableRef targetTable, List<ColumnRef> targetColumns,
+                                       JoinConditionRef whereFilter, String alias) {
         if (sourceColumns.size() != targetColumns.size()) {
             throw new IllegalArgumentException(
                 "fkJoin fixture: sourceColumns/targetColumns arity mismatch ("
@@ -509,7 +514,60 @@ public final class TestFixtures {
         for (int i = 0; i < sourceColumns.size(); i++) {
             slots.add(new JoinSlot.FkSlot(sourceColumns.get(i), targetColumns.get(i)));
         }
-        return new JoinStep.FkJoin(fk, originTable, targetTable, slots, whereFilter, alias);
+        return new JoinStep.Hop(new TableExpr.Catalog(targetTable),
+            new On.ColumnPairs(fk, slots), originTable, whereFilter, alias);
+    }
+
+    /** True when the step is a {@link JoinStep.Hop} joining on FK-derived column pairs. */
+    public static boolean isFkHop(JoinStep step) {
+        return step instanceof JoinStep.Hop h && h.on() instanceof On.ColumnPairs;
+    }
+
+    /** True when the step is a {@link JoinStep.Hop} joining on a condition method. */
+    public static boolean isConditionHop(JoinStep step) {
+        return step instanceof JoinStep.Hop h && h.on() instanceof On.Predicate;
+    }
+
+    /**
+     * Narrows a step to an FK-derived {@link JoinStep.Hop}, failing the test loudly when the
+     * step is not one. Assertion-side counterpart of the old {@code (JoinStep.FkJoin)} cast.
+     */
+    public static JoinStep.Hop fkHop(JoinStep step) {
+        if (!isFkHop(step)) {
+            throw new AssertionError("expected an FK-derived Hop (On.ColumnPairs); got " + step);
+        }
+        return (JoinStep.Hop) step;
+    }
+
+    /** The FK-derived column pairs of a step; fails loudly when the step is not an FK hop. */
+    public static On.ColumnPairs fkPairs(JoinStep step) {
+        return (On.ColumnPairs) fkHop(step).on();
+    }
+
+    /**
+     * Narrows a step to a condition-join {@link JoinStep.Hop}, failing the test loudly
+     * otherwise. Assertion-side counterpart of the old {@code (JoinStep.ConditionJoin)} cast.
+     */
+    public static JoinStep.Hop conditionHop(JoinStep step) {
+        if (!isConditionHop(step)) {
+            throw new AssertionError("expected a condition-join Hop (On.Predicate); got " + step);
+        }
+        return (JoinStep.Hop) step;
+    }
+
+    /** The join-condition method of a condition-join step. */
+    public static JoinConditionRef hopCondition(JoinStep step) {
+        return ((On.Predicate) conditionHop(step).on()).condition();
+    }
+
+    /**
+     * Builds a condition-join {@link JoinStep.Hop} (an {@link On.Predicate} join with no origin
+     * table and no per-hop filter), mirroring what {@code BuildContext.parsePathElement}
+     * produces for a {@code {condition:}}-only path element.
+     */
+    public static JoinStep.Hop conditionJoin(MethodRef condition, TableRef targetTable, String alias) {
+        return new JoinStep.Hop(new TableExpr.Catalog(targetTable),
+            new On.Predicate(new JoinConditionRef(condition)), null, null, alias);
     }
 
     /**
@@ -528,9 +586,9 @@ public final class TestFixtures {
 
     /**
      * Synthesises a {@link ParentCorrelation} mirroring
-     * {@code BuildContext.buildParentCorrelation}: {@link ParentCorrelation.OnFkSlots} when the
-     * first hop is FkJoin/LiftedHop, {@link ParentCorrelation.OnConditionJoin} when it is a
-     * condition method, and {@code null} when the joinPath is empty (standalone-lookup shape).
+     * {@code BuildContext.buildParentCorrelation}: {@link ParentCorrelation.OnConditionJoin}
+     * when the first hop joins on a condition method, {@link ParentCorrelation.OnFkSlots}
+     * otherwise, and {@code null} when the joinPath is empty (standalone-lookup shape).
      * Test fixtures use this to satisfy the ChildField compact-constructor invariant without
      * threading the resolver state through every test case.
      */
@@ -539,13 +597,9 @@ public final class TestFixtures {
             return null;
         }
         JoinStep first = joinPath.get(0);
-        if (first instanceof JoinStep.WithTarget wt) {
-            return new ParentCorrelation.OnFkSlots(wt);
+        if (first instanceof JoinStep.Hop hop && hop.on() instanceof On.Predicate) {
+            return new ParentCorrelation.OnConditionJoin(hop, parentTable, List.of());
         }
-        if (first instanceof JoinStep.ConditionJoin cj) {
-            return new ParentCorrelation.OnConditionJoin(cj, parentTable, List.of());
-        }
-        throw new IllegalStateException(
-            "JoinStep permit list exhausted at TestFixtures.pcFor: " + first.getClass().getName());
+        return new ParentCorrelation.OnFkSlots(first);
     }
 }

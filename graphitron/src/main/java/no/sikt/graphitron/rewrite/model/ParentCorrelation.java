@@ -4,21 +4,21 @@ import java.util.List;
 
 /**
  * Pre-resolved shape of the step-0 parent correlation for {@code @reference}-carrying child
- * fields. Lifts the binary fork between FK-slot correlation and ConditionJoin-method correlation
+ * fields. Lifts the binary fork between slot-pair correlation and condition-method correlation
  * out of the emitters into the model — the five emitter sites (inline {@code TableField} /
  * {@code LookupTableField} / {@code ColumnReferenceField} step-0; split-rows
  * {@code buildListMethod} / {@code buildSingleMethod} / {@code buildConnectionMethod}) all read
- * variant identity from a sealed switch on this carrier rather than evaluating
- * {@code instanceof JoinStep.ConditionJoin} over {@code joinPath.get(0)}.
+ * variant identity from a sealed switch on this carrier rather than inspecting
+ * {@code joinPath.get(0)} themselves.
  *
  * <p>The two axes are decoupled by design: {@link JoinStep.HasTargetTable} handles "what is this
  * hop's target table" (uniform across permits); {@link ParentCorrelation} handles "what shape does
- * parent correlation take at this path" (forks on first-hop identity). Any
+ * parent correlation take at this path" (forks on the first hop's {@link On}). Any
  * {@link no.sikt.graphitron.rewrite.model.ChildField} variant can carry
  * {@link OnConditionJoin} regardless of which intermediate hops appear in the joinPath.
  *
  * <p>Classifier-time invariant: each carrier field's compact constructor verifies
- * {@code parentCorrelation.firstHop() == joinPath.get(0)} so the model can never carry a
+ * {@code parentCorrelation.firstStep() == joinPath.get(0)} so the model can never carry a
  * correlation that disagrees with the path it sits on. The carrier is a denormalised view of
  * data already on {@code joinPath.get(0)} + {@code sourceKey} (where present) + the carrier
  * field's parent type's {@code @table} binding — pre-resolved once at parse time so consumers
@@ -28,15 +28,13 @@ public sealed interface ParentCorrelation
         permits ParentCorrelation.OnFkSlots, ParentCorrelation.OnConditionJoin {
 
     /**
-     * Identity of the first hop this correlation pairs against. The arm-specific accessors
-     * ({@link OnFkSlots#firstHop()}, {@link OnConditionJoin#firstHop()}) return narrower
-     * subtypes; this helper folds them onto the {@link JoinStep} root so the carrier-side
-     * invariant {@code parentCorrelation.firstStep() == joinPath.get(0)} can be expressed
-     * without an arm-specific cast at every consumer.
+     * Identity of the first hop this correlation pairs against, folded onto the
+     * {@link JoinStep} root so the carrier-side invariant
+     * {@code parentCorrelation.firstStep() == joinPath.get(0)} can be expressed uniformly.
      */
     default JoinStep firstStep() {
         return switch (this) {
-            case OnFkSlots fk -> (JoinStep) fk.firstHop();
+            case OnFkSlots fk -> fk.firstHop();
             case OnConditionJoin cj -> cj.firstHop();
         };
     }
@@ -50,7 +48,7 @@ public sealed interface ParentCorrelation
      * rather than re-derived per emit site:
      *
      * <ul>
-     *   <li>{@link OnFkSlots} with a {@link JoinStep.FkJoin} first hop — the hop-0 origin table
+     *   <li>{@link OnFkSlots} with a {@link JoinStep.Hop} first hop — the hop-0 origin table
      *       (the side the key columns are drawn from, per {@code deriveSplitQuerySource} /
      *       {@code deriveFkRecordParentSource} / {@code SourceRowDirectiveResolver}).</li>
      *   <li>{@link OnFkSlots} with a {@link JoinStep.LiftedHop} first hop — the hop's target
@@ -61,16 +59,14 @@ public sealed interface ParentCorrelation
      */
     default TableRef parentKeyOwnerTable() {
         return switch (this) {
-            case OnFkSlots fk -> switch ((JoinStep) fk.firstHop()) {
-                case JoinStep.FkJoin fkJoin -> fkJoin.originTable();
+            case OnFkSlots fk -> switch (fk.firstHop()) {
+                case JoinStep.Hop hop -> hop.originTable();
                 case JoinStep.LiftedHop lifted -> lifted.targetTable();
+                case JoinStep.FkJoin fkJoin -> fkJoin.originTable();
                 case JoinStep.ConditionJoin unreachable -> throw new IllegalStateException(
-                    "ParentCorrelation.OnFkSlots.firstHop is JoinStep.WithTarget (FkJoin or "
-                    + "LiftedHop); ConditionJoin cannot reach this arm: " + unreachable);
-                case JoinStep.Hop unreachable -> throw new IllegalStateException(
-                    "ParentCorrelation.OnFkSlots.firstHop is JoinStep.WithTarget (FkJoin or "
-                    + "LiftedHop); the two-axis Hop does not implement it and cannot reach "
-                    + "this arm until the R438 cutover retypes the carrier: " + unreachable);
+                    "ParentCorrelation.OnFkSlots.firstHop carries pairable slots (a Hop with "
+                    + "On.ColumnPairs, or a LiftedHop); ConditionJoin cannot reach this arm: "
+                    + unreachable);
             };
             case OnConditionJoin cj -> cj.parentTable();
         };
@@ -106,20 +102,51 @@ public sealed interface ParentCorrelation
     }
 
     /**
-     * First hop is an FK or lifter; emitter-side correlation is the existing slot-based
-     * predicate ({@code firstAlias.<slot.targetSide()> = parent.<slot.sourceSide()>} per slot).
+     * First hop carries pairable slots; emitter-side correlation is the slot-based predicate
+     * ({@code firstAlias.<slot.targetSide()> = parent.<slot.sourceSide()>} per slot), read
+     * through {@link #slots()}.
+     *
+     * <p>{@code firstHop} is a {@link JoinStep.Hop} whose {@code on} is
+     * {@link On.ColumnPairs}, or a {@link JoinStep.LiftedHop} — the two slot-carrying shapes.
+     * The compact constructor rejects everything else, so {@link #slots()} never throws.
      */
-    record OnFkSlots(JoinStep.WithTarget firstHop) implements ParentCorrelation {
+    record OnFkSlots(JoinStep firstHop) implements ParentCorrelation {
         public OnFkSlots {
             if (firstHop == null) {
                 throw new NullPointerException("ParentCorrelation.OnFkSlots.firstHop must not be null");
             }
+            boolean pairable = switch (firstHop) {
+                case JoinStep.Hop hop -> hop.on() instanceof On.ColumnPairs;
+                case JoinStep.LiftedHop ignored -> true;
+                case JoinStep.FkJoin ignored -> true;
+                case JoinStep.ConditionJoin ignored -> false;
+            };
+            if (!pairable) {
+                throw new IllegalArgumentException(
+                    "ParentCorrelation.OnFkSlots.firstHop must carry pairable slots (a Hop with "
+                    + "On.ColumnPairs, or a LiftedHop); got " + firstHop);
+            }
+        }
+
+        /** The slot pairs the correlation predicate is built from. */
+        public HasSlots slots() {
+            return switch (firstHop) {
+                case JoinStep.Hop hop -> (On.ColumnPairs) hop.on();
+                case JoinStep.LiftedHop lifted -> lifted;
+                case JoinStep.FkJoin fkJoin -> fkJoin;
+                case JoinStep.ConditionJoin unreachable -> throw new IllegalStateException(
+                    "rejected by the compact constructor: " + unreachable);
+            };
         }
     }
 
     /**
-     * First hop is a condition method; emitter-side correlation is the condition method call
-     * itself ({@code .join(firstAlias).on(method(parentAlias, firstAlias))}).
+     * First hop joins on a condition method; emitter-side correlation is the condition method
+     * call itself ({@code .join(firstAlias).on(method(parentAlias, firstAlias))}), read through
+     * {@link #condition()}.
+     *
+     * <p>{@code firstHop} is a {@link JoinStep.Hop} whose {@code on} is {@link On.Predicate};
+     * the compact constructor rejects everything else.
      *
      * <p>{@code parentTable} is the carrier field's parent type's {@code @table} binding —
      * pre-resolved at parse time so split-rows emitters can declare
@@ -133,7 +160,7 @@ public sealed interface ParentCorrelation
      * materialised.
      */
     record OnConditionJoin(
-            JoinStep.ConditionJoin firstHop,
+            JoinStep.Hop firstHop,
             TableRef parentTable,
             List<ColumnRef> parentPkCols
     ) implements ParentCorrelation {
@@ -141,12 +168,22 @@ public sealed interface ParentCorrelation
             if (firstHop == null) {
                 throw new NullPointerException("ParentCorrelation.OnConditionJoin.firstHop must not be null");
             }
+            if (!(firstHop.on() instanceof On.Predicate)) {
+                throw new IllegalArgumentException(
+                    "ParentCorrelation.OnConditionJoin.firstHop must join on a condition method "
+                    + "(On.Predicate); got " + firstHop.on());
+            }
             if (parentTable == null) {
                 throw new NullPointerException(
                     "ParentCorrelation.OnConditionJoin.parentTable must not be null; the parser "
                     + "routes the no-parent-table case through Rejection.AuthorError upstream.");
             }
             parentPkCols = List.copyOf(parentPkCols);
+        }
+
+        /** The step-0 condition method the correlation predicate calls. */
+        public JoinConditionRef condition() {
+            return ((On.Predicate) firstHop.on()).condition();
         }
     }
 }

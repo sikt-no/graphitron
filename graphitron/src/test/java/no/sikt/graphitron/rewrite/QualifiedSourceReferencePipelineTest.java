@@ -5,6 +5,7 @@ import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.JoinStep;
+import no.sikt.graphitron.rewrite.model.On;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
 
@@ -17,7 +18,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * R396 pipeline coverage: a {@code @reference} field on a type whose {@code @table(name:)} carries
  * a schema prefix (and/or a case difference from the real lowercase catalog name) must classify
- * to a {@link JoinStep.FkJoin} with the correct origin/target identity and slot orientation, and
+ * to an FK-derived {@link JoinStep.Hop} with the correct origin/target identity and slot orientation, and
  * must <em>not</em> reject at schema-validation time.
  *
  * <p>The fixture is the multi-schema jOOQ codegen output ({@code multischema_a} / {@code multischema_b}).
@@ -30,9 +31,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  * ({@code {key:}}, {@code {table:}}, and empty inference) plus the schema-qualified-and-upper-case
  * spelling through the classifier and pins the resulting model.
  *
- * <p>Assertions land at the model surface the emitter consumes: {@link JoinStep.FkJoin#originTable()}
- * / {@link JoinStep.FkJoin#targetTable()} identity and {@link JoinStep.FkJoin#sourceSideColumns()} /
- * {@link JoinStep.FkJoin#targetSideColumns()} orientation. The parent type must classify as a
+ * <p>Assertions land at the model surface the emitter consumes: {@link JoinStep.Hop#originTable()}
+ * / {@link JoinStep.Hop#targetTable()} identity and {@link On.ColumnPairs#sourceSideColumns()} /
+ * {@link On.ColumnPairs#targetSideColumns()} orientation. The parent type must classify as a
  * {@link GraphitronType.TableType} and the field as a {@link ChildField.TableField} (not a
  * {@link GraphitronField.UnclassifiedField}) — the "no author error" half of the invariant.
  */
@@ -69,7 +70,7 @@ class QualifiedSourceReferencePipelineTest {
             """.formatted(signalTable, fieldDecl);
     }
 
-    private static JoinStep.FkJoin firstHop(String signalTable, String fieldDecl) {
+    private static JoinStep.Hop firstHop(String signalTable, String fieldDecl) {
         var schema = TestSchemaHelper.buildSchema(sdl(signalTable, fieldDecl), multiSchemaContext());
         // No author error: the parent classifies as a table type and the field as a table field.
         assertThat(schema.type("Signal"))
@@ -79,15 +80,16 @@ class QualifiedSourceReferencePipelineTest {
         assertThat(widgetField)
             .as("@reference field must resolve, not become UnclassifiedField")
             .isInstanceOf(ChildField.TableField.class);
-        return (JoinStep.FkJoin) ((ChildField.TableField) widgetField).joinPath().get(0);
+        return TestFixtures.fkHop(((ChildField.TableField) widgetField).joinPath().get(0));
     }
 
-    private static void assertOrientedSignalToWidget(JoinStep.FkJoin hop) {
-        assertThat(hop.fk().sqlName()).isEqualToIgnoringCase("signal_widget_id_fkey");
+    private static void assertOrientedSignalToWidget(JoinStep.Hop hop) {
+        var pairs = (On.ColumnPairs) hop.on();
+        assertThat(pairs.fk().sqlName()).isEqualToIgnoringCase("signal_widget_id_fkey");
         assertThat(hop.originTable().tableClass()).isEqualTo(SIGNAL);
         assertThat(hop.targetTable().tableClass()).isEqualTo(WIDGET);
-        assertThat(hop.sourceSideColumns()).extracting(c -> c.sqlName()).containsExactly("widget_id");
-        assertThat(hop.targetSideColumns()).extracting(c -> c.sqlName()).containsExactly("widget_id");
+        assertThat(pairs.sourceSideColumns()).extracting(c -> c.sqlName()).containsExactly("widget_id");
+        assertThat(pairs.targetSideColumns()).extracting(c -> c.sqlName()).containsExactly("widget_id");
     }
 
     // ---- Phase 1: the {key:} form (the reported author-error path) ----

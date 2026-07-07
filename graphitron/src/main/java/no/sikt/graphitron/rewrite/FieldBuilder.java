@@ -64,6 +64,7 @@ import no.sikt.graphitron.rewrite.model.GraphitronType.UnionType;
 import no.sikt.graphitron.rewrite.model.HelperRef;
 import no.sikt.graphitron.rewrite.model.JoinSlot;
 import no.sikt.graphitron.rewrite.model.JoinStep;
+import no.sikt.graphitron.rewrite.model.On;
 import no.sikt.graphitron.rewrite.model.LoaderRegistration;
 import no.sikt.graphitron.rewrite.model.LookupMapping;
 import no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping;
@@ -262,8 +263,12 @@ class FieldBuilder {
     private static SourceKey buildServiceRecordSourceKey(
             MethodRef.Param.Sourced sourced, ReturnTypeRef rt, List<JoinStep> joinPath) {
         TableRef target = null;
-        if (!joinPath.isEmpty() && joinPath.get(joinPath.size() - 1) instanceof JoinStep.WithTarget wt) {
-            target = wt.targetTable();
+        if (!joinPath.isEmpty()) {
+            target = switch (joinPath.get(joinPath.size() - 1)) {
+                case JoinStep.Hop hop when hop.on() instanceof On.ColumnPairs -> hop.targetTable();
+                case JoinStep.LiftedHop lh -> lh.targetTable();
+                default -> null;
+            };
         }
         return new SourceKey(
             target,
@@ -1350,7 +1355,7 @@ class FieldBuilder {
                 return new ArgumentRef.UnclassifiedArg(name, typeName, nonNull, list,
                     Rejection.structural("argument '" + name + "': " + refPath.errorMessage()));
             }
-            if (refPath.elements().stream().anyMatch(h -> !(h instanceof JoinStep.FkJoin))) {
+            if (refPath.elements().stream().anyMatch(h -> !(h instanceof JoinStep.Hop hh && hh.on() instanceof On.ColumnPairs))) {
                 return new ArgumentRef.UnclassifiedArg(name, typeName, nonNull, list,
                     Rejection.structural(referenceFilterConditionJoinRejection(name)));
             }
@@ -4861,7 +4866,8 @@ class FieldBuilder {
                 joinPath = tmPath.elements();
             }
 
-            if (!joinPath.isEmpty() && joinPath.getLast() instanceof JoinStep.FkJoin lastFk
+            if (!joinPath.isEmpty() && joinPath.getLast() instanceof JoinStep.Hop lastFk
+                && lastFk.on() instanceof On.ColumnPairs
                 && !lastFk.targetTable().sameTable(targetTableName)) {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(
                     "@tableMethod @reference path: last hop lands on '" + lastFk.targetTable().tableName()
@@ -5267,8 +5273,9 @@ class FieldBuilder {
             TableRef parentTable, List<JoinStep> path, ReturnTypeRef.TableBoundReturnType returnType) {
         boolean isList = returnType.wrapper().isList();
         List<ColumnRef> entryColumns =
-            (!path.isEmpty() && path.get(0) instanceof JoinStep.FkJoin fk)
-                ? fk.sourceSideColumns()
+            (!path.isEmpty() && path.get(0) instanceof JoinStep.Hop hop
+                && hop.on() instanceof On.ColumnPairs cp)
+                ? cp.sourceSideColumns()
                 : parentTable.primaryKeyColumns();
         SourceKey sourceKey = new SourceKey(
             returnType.table(),
@@ -5326,7 +5333,8 @@ class FieldBuilder {
     private static RecordParentSource deriveFkRecordParentSource(
             List<JoinStep> joinPath, GraphitronType.ResultType parentResultType,
             ReturnTypeRef.TableBoundReturnType tb) {
-        if (joinPath.isEmpty() || !(joinPath.get(0) instanceof JoinStep.FkJoin fkJoin)) {
+        if (joinPath.isEmpty() || !(joinPath.get(0) instanceof JoinStep.Hop hop
+                && hop.on() instanceof On.ColumnPairs fkJoin)) {
             return null;
         }
         boolean isList = tb.wrapper().isList();
@@ -5955,7 +5963,8 @@ class FieldBuilder {
                         yield new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(tableMethodPath.errorMessage()));
                     }
                     var pathElements = tableMethodPath.elements();
-                    if (!pathElements.isEmpty() && pathElements.getLast() instanceof JoinStep.FkJoin lastFk
+                    if (!pathElements.isEmpty() && pathElements.getLast() instanceof JoinStep.Hop lastFk
+                        && lastFk.on() instanceof On.ColumnPairs
                         && !lastFk.targetTable().sameTable(targetTableName)) {
                         yield new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(
                             "@tableMethod @reference path: last hop lands on '" + lastFk.targetTable().tableName()
@@ -6038,7 +6047,7 @@ class FieldBuilder {
             if (crossTable != null) {
                 return new ParticipantColumnReferenceField(
                     parentTypeName, name, location,
-                    crossTable.column(), crossTable.fkJoin(), crossTable.aliasName());
+                    crossTable.column(), crossTable.hop(), crossTable.aliasName());
             }
             var refPath = ctx.parsePath(fieldDef, name, tableType.table().tableName(), null);
             if (refPath.hasError()) {
@@ -6171,8 +6180,9 @@ class FieldBuilder {
     private static List<ColumnRef> fkMirrorSourceColumns(TableRef parentTable, List<JoinStep> joinPath,
                                                           List<ColumnRef> targetKeyColumns) {
         if (joinPath.size() != 1) return null;
-        if (!(joinPath.get(0) instanceof JoinStep.FkJoin fk)) return null;
-        if (!fk.originTable().denotesSameTableAs(parentTable)) return null;
+        if (!(joinPath.get(0) instanceof JoinStep.Hop hop
+                && hop.on() instanceof On.ColumnPairs fk)) return null;
+        if (!hop.originTable().denotesSameTableAs(parentTable)) return null;
         if (fk.slotCount() != targetKeyColumns.size()) return null;
         List<ColumnRef> targetSide = fk.targetSideColumns();
         for (int i = 0; i < targetSide.size(); i++) {
@@ -6323,7 +6333,7 @@ class FieldBuilder {
             return "Field '" + fieldName + "': TableInterfaceField @reference paths must be a single FK hop "
                 + "(multi-hop paths are not yet supported — see stub-interface-union-fetchers.md)";
         }
-        if (!(path.get(0) instanceof JoinStep.FkJoin)) {
+        if (!(path.get(0) instanceof JoinStep.Hop hop0 && hop0.on() instanceof On.ColumnPairs)) {
             return "Field '" + fieldName + "': TableInterfaceField @reference paths must use a foreign key "
                 + "(ConditionJoin paths are not yet supported — see stub-interface-union-fetchers.md)";
         }

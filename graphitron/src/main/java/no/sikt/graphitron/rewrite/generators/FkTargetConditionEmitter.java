@@ -4,6 +4,7 @@ import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.rewrite.model.FkTargetConditionFilter;
 import no.sikt.graphitron.rewrite.model.JoinStep;
+import no.sikt.graphitron.rewrite.model.On;
 import no.sikt.graphitron.rewrite.model.WhereFilter;
 
 import java.util.ArrayList;
@@ -130,22 +131,24 @@ public final class FkTargetConditionEmitter {
         for (int i = path.size() - 1; i >= 1; i--) {
             var bridging = path.get(i);
             String prevAlias = hopAliases.get(i - 1);
-            if (bridging instanceof JoinStep.FkJoin fkHop) {
+            if (bridging instanceof JoinStep.Hop hop
+                    && hop.on() instanceof On.ColumnPairs cp) {
                 sel.add("\n        .join($L).onKey($T.$L)",
-                    prevAlias, fkHop.fk().keysClass(), fkHop.fk().constantName());
+                    prevAlias, cp.fk().keysClass(), cp.fk().constantName());
             } else {
                 throw new IllegalStateException(
                     "FK-target @nodeId override join hop " + i + " on '" + fk.methodName()
-                    + "' is not an FkJoin (" + bridging.getClass().getSimpleName()
+                    + "' is not FK-derived (" + bridging
                     + "); the validator must reject unresolved FK-target overrides before emission");
             }
         }
-        if (!(path.get(0) instanceof JoinStep.FkJoin firstHop)) {
+        if (!(path.get(0) instanceof JoinStep.Hop firstHop
+                && firstHop.on() instanceof On.ColumnPairs firstPairs)) {
             throw new IllegalStateException(
                 "FK-target @nodeId override first hop on '" + fk.methodName()
-                + "' is not an FkJoin; the validator must reject unresolved FK-target overrides before emission");
+                + "' is not FK-derived; the validator must reject unresolved FK-target overrides before emission");
         }
-        var correlation = JoinPathEmitter.emitCorrelationWhere(firstHop, hopAliases.get(0), baseAlias);
+        var correlation = JoinPathEmitter.emitCorrelationWhere(firstPairs, hopAliases.get(0), baseAlias);
         var callArgs = ArgCallEmitter.buildCallArgs(
             ctx, fk.callParams(), fk.className(), terminalAlias, registry, liftedOuters, source);
         var devCall = CodeBlock.of("$T.$L($L)", ClassName.bestGuess(fk.className()), fk.methodName(), callArgs);

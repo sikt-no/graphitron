@@ -1,6 +1,7 @@
 package no.sikt.graphitron.rewrite;
 
 import no.sikt.graphitron.javapoet.ClassName;
+import no.sikt.graphitron.rewrite.model.On;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -420,11 +421,12 @@ class JooqCatalogMultiSchemaTest {
         var fk = multi().findForeignKey("gadget_widget_id_fkey").orElseThrow();
         var result = ctx.synthesizeFkJoin(fk, "gadget", "fieldName", 0, null, /*selfRefFkOnSource=*/false);
         assertThat(result).isInstanceOf(BuildContext.FkJoinResolution.Resolved.class);
-        var resolved = ((BuildContext.FkJoinResolution.Resolved) result).fkJoin();
-        assertThat(resolved.fk().sqlName()).isEqualToIgnoringCase("gadget_widget_id_fkey");
-        // Non-null fk is enforced by the FkJoin canonical constructor; existence of the
+        var resolved = ((BuildContext.FkJoinResolution.Resolved) result).hop();
+        var pairs = (On.ColumnPairs) resolved.on();
+        assertThat(pairs.fk().sqlName()).isEqualToIgnoringCase("gadget_widget_id_fkey");
+        // Non-null fk is enforced by the On.ColumnPairs canonical constructor; existence of the
         // Resolved variant proves the type-encoded guarantee here.
-        assertThat(resolved.fk()).isNotNull();
+        assertThat(pairs.fk()).isNotNull();
     }
 
     @Test
@@ -453,7 +455,7 @@ class JooqCatalogMultiSchemaTest {
         // structural completeness so future call sites must handle the shape.
         var resolution = new BuildContext.FkJoinResolution.UnknownForeignKey("fabricated_fk");
         assertThat(resolution.fkName()).isEqualTo("fabricated_fk");
-        assertThat(resolution.asFkJoin()).isEmpty();
+        assertThat(resolution.asHop()).isEmpty();
     }
 
     @Test
@@ -461,7 +463,7 @@ class JooqCatalogMultiSchemaTest {
         var ctx = new BuildContext(null, multi(), stubRewriteContext());
         var fk = multi().findForeignKey("gadget_widget_id_fkey").orElseThrow();
         var result = ctx.synthesizeFkJoin(fk, "gadget", "fieldName", 0, null, /*selfRefFkOnSource=*/false);
-        assertThat(result.asFkJoin()).isPresent();
+        assertThat(result.asHop()).isPresent();
     }
 
     @Test
@@ -469,7 +471,7 @@ class JooqCatalogMultiSchemaTest {
         var ctx = new BuildContext(null, multi(), stubRewriteContext());
         var fk = multi().findForeignKey("gadget_widget_id_fkey").orElseThrow();
         var result = ctx.synthesizeFkJoin(fk, "fabricated_source", "fieldName", 0, null, /*selfRefFkOnSource=*/false);
-        assertThat(result.asFkJoin()).isEmpty();
+        assertThat(result.asHop()).isEmpty();
     }
 
     // ---- R396: FK source-side identity primitives (schema-qualified / case-mismatched @table) ----
@@ -546,7 +548,7 @@ class JooqCatalogMultiSchemaTest {
         var result = ctx.synthesizeFkJoin(fk, "multischema_a.signal", "widget", 0, null,
             /*selfRefFkOnSource=*/false);
         assertThat(result).isInstanceOf(BuildContext.FkJoinResolution.Resolved.class);
-        var fkJoin = ((BuildContext.FkJoinResolution.Resolved) result).fkJoin();
+        var fkJoin = ((BuildContext.FkJoinResolution.Resolved) result).hop();
 
         // Origin is signal, target is widget — the pre-R396 bare compare would fail the
         // "multischema_a.signal".equalsIgnoreCase("signal") test, mis-orient the join, and
@@ -556,8 +558,9 @@ class JooqCatalogMultiSchemaTest {
         assertThat(fkJoin.targetTable().tableClass())
             .isEqualTo(ClassName.get(MULTI_PACKAGE + ".multischema_a.tables", "Widget"));
         // Slot orientation: source column sits on signal (widget_id), target on widget (widget_id).
-        assertThat(fkJoin.sourceSideColumns()).extracting(c -> c.sqlName()).containsExactly("widget_id");
-        assertThat(fkJoin.targetSideColumns()).extracting(c -> c.sqlName()).containsExactly("widget_id");
+        var pairs = (On.ColumnPairs) fkJoin.on();
+        assertThat(pairs.sourceSideColumns()).extracting(c -> c.sqlName()).containsExactly("widget_id");
+        assertThat(pairs.targetSideColumns()).extracting(c -> c.sqlName()).containsExactly("widget_id");
     }
 
     private static RewriteContext stubRewriteContext() {

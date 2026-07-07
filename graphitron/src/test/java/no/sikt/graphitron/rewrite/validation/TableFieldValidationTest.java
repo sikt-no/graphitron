@@ -2,7 +2,6 @@ package no.sikt.graphitron.rewrite.validation;
 
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.rewrite.ValidationError;
-import no.sikt.graphitron.rewrite.model.JoinConditionRef;
 import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.OrderBySpec;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
@@ -32,9 +31,9 @@ class TableFieldValidationTest {
         return new ReturnTypeRef.TableBoundReturnType("Actor", TestFixtures.tableRef("actor", "ACTOR", "Actor", List.of()), wrapper);
     }
 
-    private static final List<JoinStep> CONDITION_PATH = List.of(new JoinStep.ConditionJoin(
-        new JoinConditionRef(TestFixtures.staticServiceMethodRef("com.example.Conditions", "actorCondition",
-            ClassName.get("org.jooq", "Condition"), List.of())),
+    private static final List<JoinStep> CONDITION_PATH = List.of(TestFixtures.conditionJoin(
+        TestFixtures.staticServiceMethodRef("com.example.Conditions", "actorCondition",
+            ClassName.get("org.jooq", "Condition"), List.of()),
         TestFixtures.actorTable(),
         ""));
 

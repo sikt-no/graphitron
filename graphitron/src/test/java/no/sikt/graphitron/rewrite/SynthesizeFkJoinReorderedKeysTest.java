@@ -1,6 +1,7 @@
 package no.sikt.graphitron.rewrite;
 
 import no.sikt.graphitron.rewrite.model.JoinSlot;
+import no.sikt.graphitron.rewrite.model.On;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import org.junit.jupiter.api.Test;
 
@@ -61,14 +62,15 @@ class SynthesizeFkJoinReorderedKeysTest {
         var result = ctx.synthesizeFkJoin(fk, "reordered_pk_parent", "fieldName", 0, null,
             /*selfRefFkOnSource=*/false);
         assertThat(result).isInstanceOf(BuildContext.FkJoinResolution.Resolved.class);
-        var fkJoin = ((BuildContext.FkJoinResolution.Resolved) result).fkJoin();
+        var fkJoin = ((BuildContext.FkJoinResolution.Resolved) result).hop();
+        var pairs = (On.ColumnPairs) fkJoin.on();
 
         // Per-slot type pairing: for a real catalog FK, both sides of every slot share their
         // declared SQL type. Under the regression (positional zip of two non-parallel lists),
         // slot[0] would pair pk_a (bigint) ↔ fk_b (varchar), slot[2] would pair pk_c (varchar)
         // ↔ fk_a (bigint) — both observable as a Java-class mismatch in ColumnRef.columnClass.
         int i = 0;
-        for (var slot : fkJoin.slots()) {
+        for (var slot : pairs.slots()) {
             assertThat(slot.sourceSide().columnClass())
                 .as("slot %d source/target columns share their declared FK column type "
                     + "(source=%s, target=%s)", i, slot.sourceSide().sqlName(), slot.targetSide().sqlName())
@@ -80,11 +82,11 @@ class SynthesizeFkJoinReorderedKeysTest {
         // same SQL name on both sides (pk_b ↔ fk_b… in spirit of the constraint declaration order).
         // The structural promise is: slot[i] pairs the FK referenced column at position i with the
         // FK referencing column at position i. Asserts the pairing in terms of the FK's own list.
-        assertThat(fkJoin.sourceSideColumns()).extracting(c -> c.sqlName())
+        assertThat(pairs.sourceSideColumns()).extracting(c -> c.sqlName())
             .as("source-side (parent) columns iterate the FK's own referenced-column list, "
                 + "not the parent UniqueKey's own field order")
             .containsExactly("pk_b", "pk_c", "pk_a");
-        assertThat(fkJoin.targetSideColumns()).extracting(c -> c.sqlName())
+        assertThat(pairs.targetSideColumns()).extracting(c -> c.sqlName())
             .as("target-side (child) columns iterate the FK's own referencing-column list")
             .containsExactly("fk_b", "fk_c", "fk_a");
     }

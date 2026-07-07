@@ -12,7 +12,7 @@ import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.GraphitronType.TableBackedType;
 import no.sikt.graphitron.rewrite.model.JoinStep;
-import no.sikt.graphitron.rewrite.model.JoinStep.FkJoin;
+import no.sikt.graphitron.rewrite.model.On;
 import no.sikt.graphitron.rewrite.model.LoaderRegistration;
 import no.sikt.graphitron.rewrite.model.MethodRef;
 import no.sikt.graphitron.rewrite.model.ParamSource;
@@ -86,21 +86,22 @@ class ServiceCatalog {
 
     /**
      * Walks the FK join path from {@code startSqlTableName} and returns the terminal table SQL
-     * name. Returns {@code null} when any path step is not a {@link FkJoin} (i.e. the path
+     * name. Returns {@code null} when any path step is not FK-derived (i.e. the path
      * contains a condition-only step whose target table is unknown at build time).
      */
     String terminalTableSqlName(List<JoinStep> path, String startSqlTableName) {
         String current = startSqlTableName;
         for (var step : path) {
-            if (!(step instanceof FkJoin fk)) return null;
-            current = fk.targetTable().tableName();
+            if (!(step instanceof JoinStep.Hop hop
+                    && hop.on() instanceof On.ColumnPairs)) return null;
+            current = hop.targetTable().tableName();
         }
         return current;
     }
 
     /**
      * Walks the FK join path to compute the terminal table SQL name. Returns {@code null} when any
-     * path step is not a {@link FkJoin} (i.e. the path contains a condition-only step).
+     * path step is not FK-derived (i.e. the path contains a condition-only step).
      */
     String terminalTableSqlNameForReference(List<JoinStep> path, TableBackedType sourceType) {
         return terminalTableSqlName(path, sourceType.table().tableName());

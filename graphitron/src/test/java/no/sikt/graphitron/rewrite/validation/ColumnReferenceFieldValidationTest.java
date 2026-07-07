@@ -4,7 +4,6 @@ import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.rewrite.ValidationError;
 import no.sikt.graphitron.rewrite.model.CallSiteCompaction;
 import no.sikt.graphitron.rewrite.model.ChildField.ColumnReferenceField;
-import no.sikt.graphitron.rewrite.model.JoinConditionRef;
 import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.HelperRef;
@@ -36,9 +35,9 @@ class ColumnReferenceFieldValidationTest {
     private static final List<JoinStep> FK_PATH = List.of(TestFixtures.fkJoin(
         TestFixtures.foreignKeyRef("film_language_id_fkey"), null, List.of(),
         TestFixtures.joinTarget("language"), List.of(), null, ""));
-    private static final List<JoinStep> CONDITION_PATH = List.of(new JoinStep.ConditionJoin(
-        new JoinConditionRef(TestFixtures.staticServiceMethodRef("com.example.Conditions", "languageCondition",
-            ClassName.get("org.jooq", "Condition"), List.of())),
+    private static final List<JoinStep> CONDITION_PATH = List.of(TestFixtures.conditionJoin(
+        TestFixtures.staticServiceMethodRef("com.example.Conditions", "languageCondition",
+            ClassName.get("org.jooq", "Condition"), List.of()),
         TestFixtures.languageTable(), ""));
 
     enum Case implements ValidatorCase {

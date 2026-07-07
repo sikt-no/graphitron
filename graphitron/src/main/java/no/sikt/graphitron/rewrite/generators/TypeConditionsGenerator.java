@@ -15,6 +15,7 @@ import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.GeneratedConditionFilter;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.JoinStep;
+import no.sikt.graphitron.rewrite.model.On;
 import no.sikt.graphitron.rewrite.model.LookupField;
 import no.sikt.graphitron.rewrite.model.QueryField;
 import no.sikt.graphitron.rewrite.model.SqlGeneratingField;
@@ -231,21 +232,23 @@ public class TypeConditionsGenerator {
         sel.add("\n        .from($L)", terminalAlias);
         // JOIN chain: walk from terminal back toward step 0, joining the previous hop's alias.
         for (int i = path.size() - 1; i >= 1; i--) {
-            if (!(path.get(i) instanceof JoinStep.FkJoin fk)) {
+            if (!(path.get(i) instanceof JoinStep.Hop hop
+                    && hop.on() instanceof On.ColumnPairs cp)) {
                 throw new IllegalStateException(
                     "RemoteColumnPredicate join hop " + i + " for '" + r.inner().name()
-                    + "' is not an FkJoin (" + path.get(i).getClass().getSimpleName()
+                    + "' is not FK-derived (" + path.get(i)
                     + "); the validator must reject non-foreign-key reference-filter paths before emission");
             }
             sel.add("\n        .join($L).onKey($T.$L)",
-                hopAliases.get(i - 1), fk.fk().keysClass(), fk.fk().constantName());
+                hopAliases.get(i - 1), cp.fk().keysClass(), cp.fk().constantName());
         }
-        if (!(path.get(0) instanceof JoinStep.FkJoin firstHop)) {
+        if (!(path.get(0) instanceof JoinStep.Hop firstHop
+                && firstHop.on() instanceof On.ColumnPairs firstPairs)) {
             throw new IllegalStateException(
                 "RemoteColumnPredicate first hop for '" + r.inner().name()
-                + "' is not an FkJoin; the validator must reject non-foreign-key reference-filter paths before emission");
+                + "' is not FK-derived; the validator must reject non-foreign-key reference-filter paths before emission");
         }
-        var correlation = JoinPathEmitter.emitCorrelationWhere(firstHop, hopAliases.get(0), "table");
+        var correlation = JoinPathEmitter.emitCorrelationWhere(firstPairs, hopAliases.get(0), "table");
         var predicate = emitColumnPredicateTerm(r.inner(), terminalAlias);
         sel.add("\n        .where($L.and($L))", correlation, predicate);
 

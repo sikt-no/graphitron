@@ -7,6 +7,7 @@ import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.JoinStep;
+import no.sikt.graphitron.rewrite.model.On;
 import no.sikt.graphitron.rewrite.model.OrderBySpec;
 import no.sikt.graphitron.rewrite.model.Rejection;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
@@ -140,7 +141,8 @@ public class GraphitronSchemaValidator {
                 }
                 case ChildField.TableMethodField tmf -> {
                     var path = tmf.joinPath();
-                    if (path.size() == 1 && path.get(0) instanceof JoinStep.FkJoin fk) {
+                    if (path.size() == 1 && path.get(0) instanceof JoinStep.Hop hop
+                            && hop.on() instanceof On.ColumnPairs fk) {
                         for (var c : fk.sourceSideColumns()) {
                             out.putIfAbsent(c.sqlName().toLowerCase(java.util.Locale.ROOT), c.sqlName());
                         }
@@ -1216,7 +1218,7 @@ public class GraphitronSchemaValidator {
         // resolved FkJoin. Mirror that emitter precondition here so a non-Fk / unresolved hop fails
         // at validate time with a directed message rather than as an emitter IllegalStateException.
         if (field.condition().isPresent() && !field.joinPath().isEmpty()
-                && field.joinPath().stream().anyMatch(h -> !(h instanceof no.sikt.graphitron.rewrite.model.JoinStep.FkJoin))) {
+                && field.joinPath().stream().anyMatch(h -> !(h instanceof no.sikt.graphitron.rewrite.model.JoinStep.Hop hh && hh.on() instanceof no.sikt.graphitron.rewrite.model.On.ColumnPairs))) {
             errors.add(new ValidationError(
                 field.qualifiedName(),
                 Rejection.structural("Input field '" + field.qualifiedName()
@@ -1236,7 +1238,7 @@ public class GraphitronSchemaValidator {
         if (field.condition().isEmpty()
                 && field.extraction() instanceof no.sikt.graphitron.rewrite.model.CallSiteExtraction.Direct
                 && !field.joinPath().isEmpty()
-                && field.joinPath().stream().anyMatch(h -> !(h instanceof no.sikt.graphitron.rewrite.model.JoinStep.FkJoin))) {
+                && field.joinPath().stream().anyMatch(h -> !(h instanceof no.sikt.graphitron.rewrite.model.JoinStep.Hop hh && hh.on() instanceof no.sikt.graphitron.rewrite.model.On.ColumnPairs))) {
             errors.add(new ValidationError(
                 field.qualifiedName(),
                 Rejection.structural("Input field '" + field.qualifiedName()
@@ -1259,7 +1261,7 @@ public class GraphitronSchemaValidator {
      */
     private void validateInputCompositeColumnReferenceField(no.sikt.graphitron.rewrite.model.InputField.CompositeColumnReferenceField field, List<ValidationError> errors) {
         if (field.condition().isPresent() && !field.joinPath().isEmpty()
-                && field.joinPath().stream().anyMatch(h -> !(h instanceof no.sikt.graphitron.rewrite.model.JoinStep.FkJoin))) {
+                && field.joinPath().stream().anyMatch(h -> !(h instanceof no.sikt.graphitron.rewrite.model.JoinStep.Hop hh && hh.on() instanceof no.sikt.graphitron.rewrite.model.On.ColumnPairs))) {
             errors.add(new ValidationError(
                 field.qualifiedName(),
                 Rejection.structural("Input field '" + field.qualifiedName()

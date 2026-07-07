@@ -2,6 +2,7 @@ package no.sikt.graphitron.rewrite.generators;
 
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.CodeBlock;
+import no.sikt.graphitron.rewrite.model.HasSlots;
 import no.sikt.graphitron.rewrite.model.JoinConditionRef;
 import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.TableRef;
@@ -74,7 +75,7 @@ public final class JoinPathEmitter {
      * time) emits a runtime-throwing {@code DSL.noCondition()} stub so the mismatch surfaces at
      * execution rather than silently producing broken SQL.
      */
-    public static CodeBlock emitCorrelationWhere(JoinStep.FkJoin first, String firstAlias,
+    public static CodeBlock emitCorrelationWhere(HasSlots first, String firstAlias,
             String parentAlias) {
         if (first.slotCount() == 0) {
             // No slots — jOOQ catalog was unavailable at build time. Emit a runtime-throwing

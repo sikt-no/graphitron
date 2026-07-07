@@ -147,17 +147,18 @@ class MultiSchemaPipelineTest {
     void gadgetWidget_fkReferenceRoutesToFkHolderKeysAndFkTargetTableClass() {
         var schema = buildSchema();
         var widgetField = (ChildField.TableField) schema.field("Gadget", "widget");
-        var firstHop = (JoinStep.FkJoin) widgetField.joinPath().get(0);
+        var firstHop = TestFixtures.fkHop(widgetField.joinPath().get(0));
+        var firstPairs = TestFixtures.fkPairs(widgetField.joinPath().get(0));
 
         // Keys class: FK constraint is held on multischema_b (gadget's schema); the lookup
         // routes to the FK-holder side (B), not the target side (A). The R78 bug case is a
         // per-emit-site `ClassName.get(jooqPackage, "Keys")` that compiles to root.Keys —
         // a class which does not exist under multi-schema codegen.
-        assertThat(firstHop.fk().keysClass())
+        assertThat(firstPairs.fk().keysClass())
             .isEqualTo(ClassName.get(MULTI_JOOQ_PACKAGE + ".multischema_b", "Keys"));
         // Stock JavaGenerator names the constant <TABLE>__<FK_NAME> uppercased; pin the
         // upper-cased SQL constraint name as the suffix to avoid coupling to the table prefix.
-        assertThat(firstHop.fk().constantName()).endsWith("GADGET_WIDGET_ID_FKEY");
+        assertThat(firstPairs.fk().constantName()).endsWith("GADGET_WIDGET_ID_FKEY");
 
         // Target-table class: every emitter that traverses the FK reads
         // firstHop.targetTable().tableClass() to bind the joined-table alias. R78's bug

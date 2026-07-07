@@ -84,7 +84,7 @@ public sealed interface ParticipantRef permits ParticipantRef.TableBacked, Parti
          * participant's discriminator value, projects {@link #column} aliased as {@link #aliasName},
          * and a per-field fetcher reads it back from the result {@code Record} by that alias.
          *
-         * <p>{@code fkJoin} is the single-hop {@code @reference} from the interface table to
+         * <p>{@code hop} is the single-hop {@code @reference} from the interface table to
          * the cross table (exposed via {@link #targetTable()}). Its {@code sourceColumns} sit on
          * the interface table (FK holder) and its {@code targetColumns} sit on the referenced
          * side; the generator builds the JOIN ON condition by equating the two arity-1 column
@@ -93,11 +93,19 @@ public sealed interface ParticipantRef permits ParticipantRef.TableBacked, Parti
         public record CrossTableField(
             String fieldName,
             ColumnRef column,
-            JoinStep.FkJoin fkJoin,
+            JoinStep.Hop hop,
             String aliasName
         ) {
-            /** The cross table joined to project this field — equivalent to {@code fkJoin().targetTable()}. */
-            public TableRef targetTable() { return fkJoin.targetTable(); }
+            public CrossTableField {
+                if (!(hop.on() instanceof On.ColumnPairs)) {
+                    throw new IllegalArgumentException(
+                        "CrossTableField.hop must be FK-derived (On.ColumnPairs); got " + hop.on());
+                }
+            }
+            /** The FK-derived column pairs of the single cross-table hop. */
+            public On.ColumnPairs pairs() { return (On.ColumnPairs) hop.on(); }
+            /** The cross table joined to project this field — equivalent to {@code hop().targetTable()}. */
+            public TableRef targetTable() { return hop.targetTable(); }
 
             /** Java variable name used in the generated interface fetcher to hold the aliased target table. */
             public String aliasVarName() { return aliasName + "_alias"; }
@@ -120,7 +128,7 @@ public sealed interface ParticipantRef permits ParticipantRef.TableBacked, Parti
      * it). {@code discriminatorValue} is the participant's {@code @discriminator(value:)}, always
      * non-null (a {@code TableInterfaceType} participant without one is rejected upstream).
      *
-     * <p>{@code childToParent} is the resolved single-hop {@link JoinStep.FkJoin} the author named in
+     * <p>{@code childToParent} is the resolved single-hop FK-derived {@link JoinStep.Hop} the author named in
      * the inherited fields' parent-{@code @reference}: {@code originTable} is the detail table,
      * {@code targetTable} the discriminated base. The hop is direction-blind ({@code slot.sourceSide()}
      * sits on the detail/FK side, {@code slot.targetSide()} on the base/PK side), so the standalone
@@ -136,8 +144,19 @@ public sealed interface ParticipantRef permits ParticipantRef.TableBacked, Parti
      * distinct projections, never one globally-restricted method.
      */
     record JoinedTableBound(String typeName, TableRef detailTable, String discriminatorValue,
-                            JoinStep.FkJoin childToParent)
+                            JoinStep.Hop childToParent)
             implements TableBacked {
+
+        public JoinedTableBound {
+            if (!(childToParent.on() instanceof On.ColumnPairs)) {
+                throw new IllegalArgumentException(
+                    "JoinedTableBound.childToParent must be FK-derived (On.ColumnPairs); got "
+                    + childToParent.on());
+            }
+        }
+
+        /** The FK-derived column pairs of the child->parent hop. */
+        public On.ColumnPairs childToParentPairs() { return (On.ColumnPairs) childToParent.on(); }
 
         /** The participant's detail table. Satisfies {@link TableBacked#table()}. */
         @Override public TableRef table() { return detailTable; }

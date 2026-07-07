@@ -28,6 +28,7 @@ import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.SqlDialectFamily;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.JoinStep;
+import no.sikt.graphitron.rewrite.model.On;
 import no.sikt.graphitron.rewrite.model.InputColumnBinding;
 import no.sikt.graphitron.rewrite.model.InputColumnBindingGroup;
 import no.sikt.graphitron.rewrite.model.InputField;
@@ -1013,11 +1014,11 @@ public class TypeFetcherGenerator {
      * the emitter reads {@code child.<targetSide> = parentRecord.<sourceSide>} uniformly without
      * re-deriving direction.
      *
-     * <p>Precondition: the classifier guarantees exactly one {@link JoinStep.FkJoin} step
-     * (multi-hop and {@link JoinStep.ConditionJoin} paths are rejected at classification time).
+     * <p>Precondition: the classifier guarantees exactly one FK-derived {@link JoinStep.Hop}
+     * (multi-hop and condition-join paths are rejected at classification time).
      */
     private static CodeBlock buildJoinPathCondition(List<JoinStep> joinPath, String childTableName) {
-        var fkJoin = (JoinStep.FkJoin) joinPath.get(0);
+        var fkJoin = (On.ColumnPairs) ((JoinStep.Hop) joinPath.get(0)).on();
         var slot = fkJoin.slots().get(0);
         String childCol        = slot.targetSide().sqlName();
         String parentRecordCol = slot.sourceSide().sqlName();
@@ -1184,7 +1185,7 @@ public class TypeFetcherGenerator {
      * to the detail column's name.
      */
     private static ColumnRef sharedKeyBaseColumn(ParticipantRef.JoinedTableBound jtb, ColumnRef detailColumn) {
-        for (var slot : jtb.childToParent().slots()) {
+        for (var slot : jtb.childToParentPairs().slots()) {
             if (slot.sourceSide().sqlName().equalsIgnoreCase(detailColumn.sqlName())) {
                 return slot.targetSide();
             }
@@ -1260,7 +1261,7 @@ public class TypeFetcherGenerator {
             if (detailExclusiveFields(ctx, jtb).isEmpty()) continue;
             String aliasVar = jtb.detailAliasVarName();
             CodeBlock keyOn = null;
-            for (var slot : jtb.childToParent().slots()) {
+            for (var slot : jtb.childToParentPairs().slots()) {
                 var eq = CodeBlock.of("$L.$L.eq($L.$L)",
                     aliasVar, slot.sourceSide().javaName(), tableLocal, slot.targetSide().javaName());
                 keyOn = keyOn == null ? eq : CodeBlock.of("$L.and($L)", keyOn, eq);
@@ -1353,7 +1354,7 @@ public class TypeFetcherGenerator {
                 // source side is on the parent (interface table = tableLocal) and target side on
                 // the joined alias. Slot orientation is direction-blind; emitCorrelationWhere
                 // reads target.<targetSide>.eq(parent.<sourceSide>) uniformly.
-                var fkOn = JoinPathEmitter.emitCorrelationWhere(ctf.fkJoin(), aliasVar, tableLocal);
+                var fkOn = JoinPathEmitter.emitCorrelationWhere(ctf.pairs(), aliasVar, tableLocal);
                 // Qualify the discriminator predicate to the base table; see buildInterfaceFieldsList
                 // for why a bare reference is ambiguous and why we qualify off the FROM table's own
                 // jOOQ instance (<tableLocal>.getQualifiedName()) rather than the @table-directive string.
@@ -1585,7 +1586,7 @@ public class TypeFetcherGenerator {
 
         List<JoinStep> path = tmf.joinPath();
         boolean unsupportedPath = path.isEmpty() || path.size() > 1
-            || !(path.get(0) instanceof JoinStep.FkJoin);
+            || !(path.get(0) instanceof JoinStep.Hop hop0 && hop0.on() instanceof On.ColumnPairs);
         if (unsupportedPath) {
             // Multi-hop FK paths and ConditionJoin terminals are accepted by the classifier so the
             // schema remains well-formed, but R43 commit 3 ships only the single-hop FK emit shape
@@ -1618,7 +1619,7 @@ public class TypeFetcherGenerator {
 
         // Parent-row correlation. For each slot in the single FK hop, target-side column on the
         // developer's table equals source-side column from the parent record. AND across composite FKs.
-        var fkJoin = (JoinStep.FkJoin) path.get(0);
+        var fkJoin = (On.ColumnPairs) ((JoinStep.Hop) path.get(0)).on();
         builder.addCode(buildTableMethodParentCorrelation(fkJoin));
 
         builder.addCode(CodeBlock.builder()
@@ -1648,7 +1649,7 @@ public class TypeFetcherGenerator {
      * <p>Composite FKs (more than one slot) are uncommon for {@code @tableMethod} fields in
      * practice, but the emitter handles them uniformly via {@code DSL.and(...)} composition.
      */
-    private static CodeBlock buildTableMethodParentCorrelation(JoinStep.FkJoin fkJoin) {
+    private static CodeBlock buildTableMethodParentCorrelation(On.ColumnPairs fkJoin) {
         var slots = fkJoin.slots();
         if (slots.isEmpty()) {
             // jOOQ catalog unavailable at build time — emit a runtime-throwing condition so the

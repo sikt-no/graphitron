@@ -6,7 +6,7 @@ import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.HelperRef;
 import no.sikt.graphitron.rewrite.model.JoinStep;
-import no.sikt.graphitron.rewrite.model.JoinStep.FkJoin;
+import no.sikt.graphitron.rewrite.model.On;
 import no.sikt.graphitron.rewrite.model.Rejection;
 import no.sikt.graphitron.rewrite.model.TableRef;
 
@@ -303,8 +303,8 @@ final class NodeIdLeafResolver {
             return new Resolved.Rejected(ctx.unknownTableRejection(targetTableResolution, targetTableName));
         }
         TableRef targetTable = targetTableResolved.entry().toTableRef(targetTableName);
-        var firstHop = (FkJoin) joinPath.path().get(0);
-        var terminalHop = (FkJoin) joinPath.path().getLast();
+        var firstHop = pairs(joinPath.path().get(0));
+        var terminalHop = pairs(joinPath.path().getLast());
         // DirectFk discriminator: the terminal hop's target-side columns must equal the NodeType's
         // key columns *as a set* (by SQL name). When equal positionally (identity permutation),
         // the lifted tuple already aligns with the decoded NodeType keys position-by-position.
@@ -411,7 +411,7 @@ final class NodeIdLeafResolver {
      *   <li>Explicit {@code @reference(path: [{key: ...}, ...])}: parsed elements are taken as-is.
      *       Length 1 (single-hop) is the existing direct-FK shape; length &ge; 2 (multi-hop) is
      *       the identity-carrying-lift shape and only succeeds when every adjacent pair satisfies
-     *       the lift predicate. Every step must be a {@link FkJoin}; condition-only steps are
+     *       the lift predicate. Every step must join on {@link On.ColumnPairs}; condition-only steps are
      *       rejected with the {@link #CONDITION_STEP_MARKER} text.</li>
      *   <li>No {@code @reference}: single-hop FK auto-discovery via
      *       {@link JooqCatalog#findUniqueFkToTable}. Multi-hop is always explicit; auto-discovery
@@ -435,7 +435,8 @@ final class NodeIdLeafResolver {
                     "@reference path on @nodeId leaf '" + leafName + "': path is empty");
             }
             for (int i = 0; i < path.elements().size(); i++) {
-                if (!(path.elements().get(i) instanceof FkJoin)) {
+                if (!(path.elements().get(i) instanceof JoinStep.Hop hop
+                        && hop.on() instanceof On.ColumnPairs)) {
                     return new JoinPathResult(null, null,
                         "@reference path on @nodeId leaf '" + leafName + "': step " + (i + 1)
                         + " is a condition step; every step in a multi-hop @nodeId path "
@@ -471,7 +472,7 @@ final class NodeIdLeafResolver {
             fkOpt.get(), containingTable.tableName(), leafName, 0, null, /*selfRefFkOnSource=*/true);
         return switch (fkStepResolution) {
             case BuildContext.FkJoinResolution.Resolved r ->
-                new JoinPathResult(List.of(r.fkJoin()), r.fkJoin().sourceSideColumns(), null);
+                new JoinPathResult(List.of(r.hop()), pairs(r.hop()).sourceSideColumns(), null);
             case BuildContext.FkJoinResolution.UnknownTable u ->
                 new JoinPathResult(null, null,
                     ctx.unknownTableRejection(u.failure(), u.requestedName()).message());
@@ -482,6 +483,15 @@ final class NodeIdLeafResolver {
     }
 
     /**
+     * Narrows a path step to its FK-derived column pairs. Every step on a @nodeId path is a
+     * {@link JoinStep.Hop} joining on {@link On.ColumnPairs} — enforced by the condition-step
+     * gate in {@code resolveFkJoinPath} before any caller reads pairs.
+     */
+    private static On.ColumnPairs pairs(JoinStep step) {
+        return (On.ColumnPairs) ((JoinStep.Hop) step).on();
+    }
+
+    /**
      * Lift predicate. For each {@code i ≥ 1}, every column in {@code hop[i].sourceSideColumns}
      * must match a column in {@code hop[i-1].targetSideColumns} by SQL name (case-insensitive).
      * Returns {@code null} on success; otherwise a fully formatted rejection message anchored on
@@ -489,8 +499,8 @@ final class NodeIdLeafResolver {
      */
     private static String validateLift(List<JoinStep> path, String leafName) {
         for (int i = 1; i < path.size(); i++) {
-            var current = (FkJoin) path.get(i);
-            var previous = (FkJoin) path.get(i - 1);
+            var current = pairs(path.get(i));
+            var previous = pairs(path.get(i - 1));
             var currentSources = current.sourceSideColumns();
             var previousTargets = previous.targetSideColumns();
             for (ColumnRef col : currentSources) {
@@ -526,9 +536,9 @@ final class NodeIdLeafResolver {
      * {@code null} for {@code path}.
      */
     private static List<ColumnRef> liftSourceColumns(List<JoinStep> path) {
-        var lifted = new ArrayList<>(((FkJoin) path.getLast()).sourceSideColumns());
+        var lifted = new ArrayList<>(pairs(path.getLast()).sourceSideColumns());
         for (int i = path.size() - 1; i >= 1; i--) {
-            var prev = (FkJoin) path.get(i - 1);
+            var prev = pairs(path.get(i - 1));
             var prevTargets = prev.targetSideColumns();
             var prevSources = prev.sourceSideColumns();
             var next = new ArrayList<ColumnRef>(lifted.size());

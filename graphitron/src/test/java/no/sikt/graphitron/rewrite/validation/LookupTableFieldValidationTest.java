@@ -6,7 +6,6 @@ import no.sikt.graphitron.rewrite.model.ChildField.LookupTableField;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
-import no.sikt.graphitron.rewrite.model.JoinConditionRef;
 import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.LookupMapping;
 import no.sikt.graphitron.rewrite.model.OrderBySpec;
@@ -39,9 +38,9 @@ class LookupTableFieldValidationTest {
     // correlated subquery via InlineLookupTableFieldEmitter; the validator no longer
     // surfaces a deferred-rejection for it.
 
-    private static final List<JoinStep> CONDITION_PATH = List.of(new JoinStep.ConditionJoin(
-        new JoinConditionRef(TestFixtures.staticServiceMethodRef("com.example.Conditions", "filmCondition",
-            ClassName.get("org.jooq", "Condition"), List.of())),
+    private static final List<JoinStep> CONDITION_PATH = List.of(TestFixtures.conditionJoin(
+        TestFixtures.staticServiceMethodRef("com.example.Conditions", "filmCondition",
+            ClassName.get("org.jooq", "Condition"), List.of()),
         TestFixtures.filmTable(), ""));
 
     enum Case implements ValidatorCase {

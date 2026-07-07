@@ -298,7 +298,7 @@ public final class SplitRowsMethodEmitter {
         List<ColumnRef> joinOnParentCols;
         switch (parentCorrelation) {
             case ParentCorrelation.OnFkSlots fk -> {
-                JoinStep.WithTarget firstWithTarget = fk.firstHop();
+                var firstWithTarget = fk.slots();
                 joinOnAlias = firstAlias;
                 joinOnCols = firstWithTarget.targetSideColumns();
                 joinOnParentCols = firstWithTarget.sourceSideColumns();
@@ -423,7 +423,7 @@ public final class SplitRowsMethodEmitter {
         // OnFkSlots needs no extra JOIN here — parentInput pairs directly with firstAlias.
         if (parentCorrelation instanceof ParentCorrelation.OnConditionJoin cj) {
             sel.add(".join(parentAlias).on($L)\n",
-                JoinPathEmitter.emitTwoArgMethodCall(cj.firstHop().condition(), "parentAlias", firstAlias));
+                JoinPathEmitter.emitTwoArgMethodCall(cj.condition(), "parentAlias", firstAlias));
         }
         // JOIN parentInput on the carrier's parent-correlation columns. For OnFkSlots, joinOnAlias
         // is firstAlias and the predicate pairs slot.targetSide()/slot.sourceSide(). For
@@ -446,13 +446,13 @@ public final class SplitRowsMethodEmitter {
 
     /**
      * Builds the WHERE condition expression shared by the three cardinality siblings:
-     * {@code DSL.noCondition()} AND-ed with each FK hop's {@code whereFilter} (paired
+     * {@code DSL.noCondition()} AND-ed with each hop's {@code filter} (paired
      * {@code (srcAlias, tgtAlias)} per hop) AND the field-level {@code filters} (projected off
      * {@code terminalAlias}). Returns the condition CodeBlock; the caller wraps it in
      * {@code .where(...)} so the connection sibling can chain {@code .orderBy()/.seek()} after.
      *
-     * <p>Only FK hops carry a per-hop whereFilter; condition / lifter hops are skipped (the
-     * {@code instanceof} guard also keeps a {@code ConditionJoin} bridging hop from a stray cast).
+     * <p>Only {@link JoinStep.Hop}s carry a per-hop filter; lifter hops are skipped by the
+     * {@code instanceof} guard.
      */
     private static CodeBlock buildWhereCondition(
             CodeBlock.Builder body,
@@ -474,12 +474,12 @@ public final class SplitRowsMethodEmitter {
         var where = CodeBlock.builder();
         where.add("$T.noCondition()", DSL);
         for (int i = 0; i < path.size(); i++) {
-            if (!(path.get(i) instanceof JoinStep.FkJoin hop)) continue;
-            if (hop.whereFilter() != null) {
+            if (!(path.get(i) instanceof JoinStep.Hop hop)) continue;
+            if (hop.filter() != null) {
                 String srcAlias = i == 0 ? firstAlias : aliases.get(i - 1);
                 String tgtAlias = aliases.get(i);
                 where.add("\n        .and($L)",
-                    JoinPathEmitter.emitTwoArgMethodCall(hop.whereFilter(), srcAlias, tgtAlias));
+                    JoinPathEmitter.emitTwoArgMethodCall(hop.filter(), srcAlias, tgtAlias));
             }
         }
         for (WhereFilter f : filters) {
@@ -708,7 +708,7 @@ public final class SplitRowsMethodEmitter {
         // target (developer table) columns; the parent-side column lookup goes by sqlName + the
         // owner column's DataType (sidestepping potential @node ordering mismatches and keeping
         // converter-backed columns' type metadata faithful; R413).
-        JoinStep.FkJoin firstHop = (JoinStep.FkJoin) rtmf.joinPath().get(0);
+        var firstHop = (On.ColumnPairs) ((JoinStep.Hop) rtmf.joinPath().get(0)).on();
         TableRef ownerTable = rtmf.parentCorrelation().parentKeyOwnerTable();
         var onCond = CodeBlock.builder();
         int slotIdx = 0;

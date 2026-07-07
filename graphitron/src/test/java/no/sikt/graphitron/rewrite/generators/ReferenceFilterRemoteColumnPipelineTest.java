@@ -1,5 +1,6 @@
 package no.sikt.graphitron.rewrite.generators;
 
+import no.sikt.graphitron.rewrite.TestFixtures;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.RewriteContext;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
@@ -65,7 +66,7 @@ class ReferenceFilterRemoteColumnPipelineTest {
 
         var remote = onlyRemotePredicate(schema, "cities");
         assertThat(remote.joinPath()).hasSize(1);
-        assertThat(remote.joinPath().get(0)).isInstanceOf(JoinStep.FkJoin.class);
+        assertThat(remote.joinPath().get(0)).matches(TestFixtures::isFkHop, "FK-derived hop");
         assertThat(remote.inner()).isInstanceOf(BodyParam.Eq.class);
         // The inner predicate binds the TERMINAL column, not a local one.
         assertThat(((BodyParam.Eq) remote.inner()).column().sqlName()).isEqualTo("country");
@@ -101,7 +102,7 @@ class ReferenceFilterRemoteColumnPipelineTest {
 
         var remote = onlyRemotePredicate(schema, "addresses");
         assertThat(remote.joinPath()).hasSize(2);
-        assertThat(remote.joinPath()).allMatch(JoinStep.FkJoin.class::isInstance);
+        assertThat(remote.joinPath()).allMatch(TestFixtures::isFkHop);
         assertThat(((BodyParam.Eq) remote.inner()).column().sqlName()).isEqualTo("country");
     }
 
@@ -153,7 +154,7 @@ class ReferenceFilterRemoteColumnPipelineTest {
 
         var remote = onlyRemotePredicate(schema, "addressesByCountry");
         assertThat(remote.joinPath()).hasSize(2);
-        assertThat(remote.joinPath()).allMatch(JoinStep.FkJoin.class::isInstance);
+        assertThat(remote.joinPath()).allMatch(TestFixtures::isFkHop);
     }
 
     @Test
