@@ -134,10 +134,14 @@ pointed the other way: it gathers facts too, reifying each missing or conflictin
 located violation the build acts on later (that violation's typed shape lives under "Builder-step
 results are sealed" and "Rejections"). The smell either way: gathering
 scaffolding leaking into a model type, or a downstream view branching on a builder-internal type
-instead of the landed fact.
+instead of the landed fact. A third form is inter-pass, not model-vs-scaffolding: several gathering
+passes coordinating implicitly through duplicated hardcoded skip-lists (`buildFilters()` skipping
+the pagination arguments `buildPaginationSpec()` claims, by the same hardcoded names) instead of
+each projecting exhaustively off one classification ; the lists must agree, nothing binds them, and
+a new argument type falls through both silently.
 
-*Enforced by:* review only ; a downstream view referencing a builder-internal classification type
-is the tell.
+*Enforced by:* review only ; a downstream view referencing a builder-internal classification type,
+or two passes sharing a hardcoded skip-list, is the tell.
 
 === Builder-step results are sealed, not strings or out-params
 
@@ -529,6 +533,20 @@ its correlated alias. The helper's column references resolve through the paramet
 
 The rule does not apply to helpers that are not Table-bound (e.g. cursor encode/decode helpers
 operating on `Field<?>` / `SortField<?>`).
+
+== Cursor encode/decode
+
+The emitter companion to the "Model metadata over parallel type systems" principle: each cursor
+column's jOOQ `DataType` is already known, so cursor round-tripping goes through the column
+metadata rather than a hand-rolled type-tag system (`i:`, `s:`, `l:`).
+
+- *Encode/decode a seek value*: `field.getDataType().convert(rawValue)` ; the `DataType` and its
+  registered `Converter` do the coercion, exactly as with `DSL.val`'s two-argument form.
+- *The no-seek case*: `DSL.noField(field)` where a column position must be present but no seek
+  value applies, rather than a null placeholder or an omitted column that would misalign the tuple.
+
+`OrderByResult` (pairing `List<SortField<?>>` with `List<Field<?>>`) is the carrier these operate
+over.
 ````
 
 ## Extracted: `GeneratedSourcesLintTest` javadoc (dunder semantics)
@@ -765,6 +783,21 @@ From the 2026-07-04 principles-architect consult and the user's Spec review, in 
     appears as a smell (scaffolding that must stay out of the model), a stable category, not as a
     positive exemplar with a scheduled death, so the stable-exemplar rule is respected. The typed
     carrier and `AuthorError` sub-seal kernel remains carried by sealed-results and typed-rejection.
+21. **Two more unrecorded drops given homes** (user's Spec review, 2026-07-07). Two load-bearing
+    hints from the old doc were carried by neither v2 nor the dropped list. Both are folded rather
+    than dropped. First, the *mutually-skipping-passes* smell (old doc's `ArgumentRef` section:
+    several builder passes coordinating implicitly via duplicated hardcoded skip-lists, e.g.
+    `buildFilters()` skipping the pagination args `buildPaginationSpec()` claims by the same names).
+    It lost its home when the `ArgumentRef` exemplar left (decision 13); the walker-carrier addition
+    (decision 20) is adjacent but covers carrier scaffolding, not inter-pass coordination. It joins
+    the fact-gathering corollary's smell as a third, inter-pass form (gather once and project
+    exhaustively, don't have passes agree via parallel skip-lists) and the enforcer's tell is
+    extended to name it. Second, the `DSL.noField(field)` no-seek cursor hint (old doc's cursor
+    paragraph): the principle half (`field.getDataType().convert()`, column metadata is the type
+    info) survives in the "Model metadata over parallel type systems" corollary, but the emitter
+    incantation is pure how-to, so it lands as a new "Cursor encode/decode" section on the Emitter
+    Conventions page (budget-free; only the principles doc is metered). The skip-list clause costs
+    ~60 words against the decision-19 headroom; the v2 block holds at 3,456, under the 3,500 cap.
 
 Append to `roadmap/workflow.adoc` (after the plan-shape bullets), receiving the technique the
 principles doc no longer carries:
